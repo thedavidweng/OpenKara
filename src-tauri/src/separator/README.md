@@ -2,14 +2,21 @@
 
 Stem separation backend built around the embedded Demucs ONNX model.
 
-Current Phase 3 coverage:
+Current coverage:
 
-- load the embedded ONNX model from `src-tauri/models/`
+- resolve the runtime model from either:
+  - `<app_data_dir>/models/htdemucs_embedded.onnx`
+  - `src-tauri/models/htdemucs_embedded.onnx` as the local development fallback
+- verify the model file with a pinned SHA-256 checksum
+- download the model in the background on first launch when neither location is
+  ready yet
 - preprocess decoded stereo PCM into the model's fixed input window
-- run ORT inference, including zero-filled auxiliary tensors required by the model
+- run ORT inference, including zero-filled auxiliary tensors required by the
+  model
 - extract the final stem output and write named WAV files for `drums`, `bass`,
   `other`, and `vocals`
 - mix `drums + bass + other` into a normalized accompaniment WAV
+- cache completed stems and expose separation progress through Tauri events
 
-Later Phase 3 work still needs to add caching, progress events, and background
-job execution.
+The runtime bootstrap contract is documented in
+`docs/contracts/phase-6-model-bootstrap-contract.md`.

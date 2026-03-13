@@ -1,3 +1,4 @@
+pub mod bootstrap;
 pub mod inference;
 pub mod job;
 pub mod mix;

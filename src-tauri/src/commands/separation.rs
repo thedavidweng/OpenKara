@@ -57,6 +57,8 @@ pub fn separate(
     app_handle: AppHandle,
     song_id: String,
 ) -> CommandResult<SeparationStatusSnapshot> {
+    crate::commands::bootstrap::ensure_model_ready(&state.model_bootstrap_status)?;
+
     let initial_status = {
         let mut statuses = state
             .separation_statuses

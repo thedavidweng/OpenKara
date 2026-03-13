@@ -1,9 +1,11 @@
+pub mod bootstrap;
 pub mod error;
 pub mod import;
 pub mod lyrics;
 pub mod playback;
 pub mod separation;
 
+pub use bootstrap::get_model_bootstrap_status;
 pub use error::{CommandError, CommandResult, ErrorCode, FallbackAction};
 pub use import::{get_library, import_songs, search_library};
 pub use lyrics::{fetch_lyrics, set_lyrics_offset};

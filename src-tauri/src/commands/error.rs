@@ -6,6 +6,7 @@ pub enum ErrorCode {
     DatabaseUnavailable,
     MediaReadFailed,
     SongNotFound,
+    ModelUnavailable,
     AudioDecodeFailed,
     AudioOutputUnavailable,
     KaraokeNotReady,
@@ -164,6 +165,15 @@ pub fn playback_error(message: impl ToString) -> CommandError {
     }
 
     internal_error(message)
+}
+
+pub fn model_bootstrap_error(message: impl ToString) -> CommandError {
+    CommandError::new(
+        ErrorCode::ModelUnavailable,
+        message.to_string(),
+        true,
+        FallbackAction::Retry,
+    )
 }
 
 pub fn lyrics_error(message: impl ToString) -> CommandError {
