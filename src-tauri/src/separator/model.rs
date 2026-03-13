@@ -10,7 +10,7 @@ pub struct LoadedModel {
     pub outputs: Vec<String>,
     pub input_shape: Vec<i64>,
     pub input_tensor_type: TensorElementType,
-    _session: ort::session::Session,
+    pub(crate) session: ort::session::Session,
 }
 
 impl std::fmt::Debug for LoadedModel {
@@ -70,6 +70,6 @@ pub fn load_from_path(path: &Path) -> Result<LoadedModel> {
         outputs,
         input_shape,
         input_tensor_type,
-        _session: session,
+        session,
     })
 }

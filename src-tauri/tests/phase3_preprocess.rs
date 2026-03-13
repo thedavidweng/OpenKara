@@ -27,9 +27,16 @@ fn preprocesses_stereo_audio_into_channels_first_model_tensor() {
     let prepared = preprocess::prepare_model_input(&loaded_model, &decoded)
         .expect("decoded audio should convert to model input");
 
-    assert_eq!(prepared.shape, vec![1, 2, 44_100]);
-    assert_eq!(prepared.samples.len(), 88_200);
+    assert_eq!(prepared.shape, vec![1, 2, 343_980]);
+    assert_eq!(prepared.samples.len(), 687_960);
     assert!(prepared.samples.iter().any(|sample| *sample != 0.0));
+
+    assert!(prepared.samples[44_100..343_980]
+        .iter()
+        .all(|sample| *sample == 0.0));
+    assert!(prepared.samples[388_080..]
+        .iter()
+        .all(|sample| *sample == 0.0));
 }
 
 #[test]

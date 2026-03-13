@@ -36,19 +36,30 @@ pub fn prepare_model_input(
     }
 
     let frame_count = decoded_audio.samples.len() / decoded_audio.channels;
-    let mut channels_first = vec![0.0_f32; decoded_audio.samples.len()];
+    let target_frame_count = match model.input_shape.get(2).copied() {
+        Some(frame_count_hint) if frame_count_hint > 0 => frame_count_hint as usize,
+        _ => frame_count,
+    };
+
+    if frame_count > target_frame_count {
+        bail!(
+            "Demucs preprocessing currently supports audio up to {target_frame_count} frames, got {frame_count}"
+        );
+    }
+
+    let mut channels_first = vec![0.0_f32; decoded_audio.channels * target_frame_count];
 
     for frame_index in 0..frame_count {
         let interleaved_offset = frame_index * decoded_audio.channels;
         for channel_index in 0..decoded_audio.channels {
-            let channels_first_offset = channel_index * frame_count + frame_index;
+            let channels_first_offset = channel_index * target_frame_count + frame_index;
             channels_first[channels_first_offset] =
                 decoded_audio.samples[interleaved_offset + channel_index];
         }
     }
 
     Ok(PreparedModelInput {
-        shape: vec![1, decoded_audio.channels as i64, frame_count as i64],
+        shape: vec![1, decoded_audio.channels as i64, target_frame_count as i64],
         samples: channels_first,
     })
 }
