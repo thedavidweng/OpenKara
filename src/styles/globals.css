@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --color-shell-night: #090b10;
+  --color-shell-ink: #10131b;
+  --color-shell-glow: #263452;
+}
+
+@layer base {
+  :root {
+    color: #f5f7fb;
+    background:
+      radial-gradient(circle at top, var(--color-shell-glow) 0%, var(--color-shell-ink) 45%, var(--color-shell-night) 100%);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    min-width: 320px;
+    margin: 0;
+  }
+}
