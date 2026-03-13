@@ -17,6 +17,7 @@
 4. `separation-complete` 事件 payload 为 `{ song_id: String }`
 5. `separation-error` 事件 payload 为 `{ song_id: String, error: CommandError }`
 6. stem cache 目录固定为 `<app_cache_dir>/stems/{song_hash}/`
+7. `separate(song_id)` 只有在模型 bootstrap 为 `ready` 时才会真正启动后台 worker
 
 ## Inputs / outputs / required dependencies
 
@@ -50,6 +51,7 @@
 2. 命令本身立即返回；实际推理在后台 `spawn_blocking` worker 中执行
 3. worker 会按阶段更新进度，并发出 progress / complete / error 事件
 4. 如果缓存命中，后台仍会发出一次 `separation-progress`，其 `percent` 为 `100`，然后再发 `separation-complete`
+5. 若运行时模型仍在下载或 bootstrap 失败，命令会直接返回 `CommandError`，不会创建任何分离任务；模型侧约束详见 [phase-6-model-bootstrap-contract.md](./phase-6-model-bootstrap-contract.md)
 
 ### Command: `get_separation_status`
 

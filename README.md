@@ -148,6 +148,11 @@ pnpm install
 pnpm tauri dev
 ```
 
+`./scripts/setup.sh` is still the recommended local-dev prewarm step because it
+places the Demucs model in `src-tauri/models/` for deterministic testing.
+Starting from Phase 6, the desktop app also auto-downloads the model into the
+app data directory on first launch when no verified local copy exists.
+
 ### Local Verification
 
 ```bash
@@ -160,7 +165,10 @@ pnpm tauri build --debug --no-bundle --ci
 
 ## Current Status
 
-Concept defined, MVP scoped, architecture documented, and Phase 0 foundations now include a runnable desktop shell, frontend tooling, SQLite migration bootstrap, model setup script, and CI verification.
+Concept defined, MVP scoped, architecture documented, and the current branch now
+includes import/playback/separation/lyrics backend foundations, structured
+errors, backend performance baselines, and runtime model bootstrap for
+first-launch installs.
 
 ## Contributing
 

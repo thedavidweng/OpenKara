@@ -1,18 +1,19 @@
 # Documentation
 
-| Document                                                                               | Description                                                           |
-| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| [architecture.md](./architecture.md)                                                   | System architecture, tech stack, data flow, and AI model details      |
-| [project-structure.md](./project-structure.md)                                         | Directory layout and module responsibilities                          |
-| [development-phases.md](./development-phases.md)                                       | Executable development phase checklist with verify steps              |
-| [roadmap.md](./roadmap.md)                                                             | Technical implementation roadmap — tech choices, API contracts, risks |
-| [milestones.md](./milestones.md)                                                       | Milestone task table with exit criteria and ownership tracking        |
-| [phase-5-performance-baseline.md](./phase-5-performance-baseline.md)                   | Current backend benchmark baseline for Phase 5 profiling              |
-| [contracts/phase-1-library-contract.md](./contracts/phase-1-library-contract.md)       | Frozen backend contract for Phase 1 library/import work               |
-| [contracts/phase-2-playback-contract.md](./contracts/phase-2-playback-contract.md)     | Frozen backend contract for Phase 2 playback work                     |
-| [contracts/phase-3-separation-contract.md](./contracts/phase-3-separation-contract.md) | Frozen backend contract for Phase 3 separation work                   |
-| [contracts/phase-4-lyrics-contract.md](./contracts/phase-4-lyrics-contract.md)         | Frozen backend contract for Phase 4 lyrics work                       |
-| [contracts/phase-5-error-contract.md](./contracts/phase-5-error-contract.md)           | Structured backend error contract for Phase 5 integration work        |
-| [plans/2026-03-13-handoff-master-plan.md](./plans/2026-03-13-handoff-master-plan.md)   | Master handoff plan for continuing `Phase 1-6` work                   |
-| [plans/2026-03-13-ui-agent-plan.md](./plans/2026-03-13-ui-agent-plan.md)               | UI-only execution plan for the specialist UI agent                    |
-| [plans/2026-03-13-code-agent-plan.md](./plans/2026-03-13-code-agent-plan.md)           | Code-only execution plan for backend and integration ownership        |
+| Document                                                                                         | Description                                                           |
+| ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| [architecture.md](./architecture.md)                                                             | System architecture, tech stack, data flow, and AI model details      |
+| [project-structure.md](./project-structure.md)                                                   | Directory layout and module responsibilities                          |
+| [development-phases.md](./development-phases.md)                                                 | Executable development phase checklist with verify steps              |
+| [roadmap.md](./roadmap.md)                                                                       | Technical implementation roadmap — tech choices, API contracts, risks |
+| [milestones.md](./milestones.md)                                                                 | Milestone task table with exit criteria and ownership tracking        |
+| [phase-5-performance-baseline.md](./phase-5-performance-baseline.md)                             | Current backend benchmark baseline for Phase 5 profiling              |
+| [contracts/phase-1-library-contract.md](./contracts/phase-1-library-contract.md)                 | Frozen backend contract for Phase 1 library/import work               |
+| [contracts/phase-2-playback-contract.md](./contracts/phase-2-playback-contract.md)               | Frozen backend contract for Phase 2 playback work                     |
+| [contracts/phase-3-separation-contract.md](./contracts/phase-3-separation-contract.md)           | Frozen backend contract for Phase 3 separation work                   |
+| [contracts/phase-4-lyrics-contract.md](./contracts/phase-4-lyrics-contract.md)                   | Frozen backend contract for Phase 4 lyrics work                       |
+| [contracts/phase-5-error-contract.md](./contracts/phase-5-error-contract.md)                     | Structured backend error contract for Phase 5 integration work        |
+| [contracts/phase-6-model-bootstrap-contract.md](./contracts/phase-6-model-bootstrap-contract.md) | Runtime model bootstrap contract for Phase 6 distribution work        |
+| [plans/2026-03-13-handoff-master-plan.md](./plans/2026-03-13-handoff-master-plan.md)             | Master handoff plan for continuing `Phase 1-6` work                   |
+| [plans/2026-03-13-ui-agent-plan.md](./plans/2026-03-13-ui-agent-plan.md)                         | UI-only execution plan for the specialist UI agent                    |
+| [plans/2026-03-13-code-agent-plan.md](./plans/2026-03-13-code-agent-plan.md)                     | Code-only execution plan for backend and integration ownership        |

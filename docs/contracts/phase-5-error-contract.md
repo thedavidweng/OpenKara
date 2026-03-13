@@ -39,7 +39,9 @@
 ## Shared enum: `ErrorCode`
 
 - `database_unavailable`
+- `media_read_failed`
 - `song_not_found`
+- `model_unavailable`
 - `audio_decode_failed`
 - `audio_output_unavailable`
 - `karaoke_not_ready`
@@ -108,6 +110,9 @@
 3. 分离前解码失败：
    - `code = audio_decode_failed`
    - `fallback = reimport_song`
+4. 运行时模型尚未下载完成、校验失败或 bootstrap 已失败：
+   - `code = model_unavailable`
+   - `fallback = retry`
 
 ## Important boundaries
 
