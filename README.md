@@ -127,6 +127,9 @@ If the product proves unviable, options include:
 
 - [Architecture](./docs/architecture.md) — System design, tech stack, data flow, and AI model details
 - [Project Structure](./docs/project-structure.md) — Directory layout and module responsibilities
+- [Development Phases](./docs/development-phases.md) — Executable phase checklist with verify steps
+- [Technical Roadmap](./docs/roadmap.md) — Tech choices, API contracts, and risk mitigations
+- [Milestones](./docs/milestones.md) — Milestone task table with exit criteria
 
 ## Current Status
 
