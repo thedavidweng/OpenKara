@@ -134,6 +134,29 @@ pub fn search_songs(connection: &Connection, query: &str) -> rusqlite::Result<Ve
     Ok(songs)
 }
 
+pub fn get_song_by_hash(connection: &Connection, hash: &str) -> rusqlite::Result<Option<Song>> {
+    let mut statement = connection.prepare(
+        "SELECT
+            hash,
+            file_path,
+            title,
+            artist,
+            album,
+            duration_ms,
+            cover_art,
+            imported_at
+        FROM songs
+        WHERE hash = ?1
+        LIMIT 1",
+    )?;
+
+    let mut rows = statement.query([hash])?;
+    match rows.next()? {
+        Some(row) => Ok(Some(map_song_row(row)?)),
+        None => Ok(None),
+    }
+}
+
 fn map_song_row(row: &Row<'_>) -> rusqlite::Result<Song> {
     Ok(Song {
         hash: row.get(0)?,
