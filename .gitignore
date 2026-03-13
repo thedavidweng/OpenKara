@@ -30,3 +30,6 @@ src-tauri/models/*.onnx
 
 # Cache
 *.log
+
+# Local worktrees
+.worktrees/
