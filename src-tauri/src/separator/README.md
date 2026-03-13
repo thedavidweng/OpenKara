@@ -8,6 +8,7 @@ Current Phase 3 coverage:
 - run ORT inference, including zero-filled auxiliary tensors required by the model
 - extract the final stem output and write named WAV files for `drums`, `bass`,
   `other`, and `vocals`
+- mix `drums + bass + other` into a normalized accompaniment WAV
 
 Later Phase 3 work still needs to add caching, progress events, and background
 job execution.
