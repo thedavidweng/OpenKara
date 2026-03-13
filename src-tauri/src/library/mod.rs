@@ -1,3 +1,4 @@
+use crate::commands::error::CommandError;
 use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -15,7 +16,7 @@ pub struct Song {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImportFailure {
     pub path: String,
-    pub error: String,
+    pub error: CommandError,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

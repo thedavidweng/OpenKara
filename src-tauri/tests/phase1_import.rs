@@ -2,7 +2,10 @@ use std::path::PathBuf;
 
 use openkara_lib::{
     cache,
-    commands::import::{get_library_from_connection, import_songs_from_paths},
+    commands::{
+        error::{ErrorCode, FallbackAction},
+        import::{get_library_from_connection, import_songs_from_paths},
+    },
 };
 use rusqlite::Connection;
 
@@ -56,6 +59,12 @@ fn reports_failures_without_aborting_other_imports() {
     assert_eq!(result.imported.len(), 1);
     assert_eq!(result.failed.len(), 1);
     assert_eq!(result.failed[0].path, missing_path);
+    assert_eq!(result.failed[0].error.code, ErrorCode::MediaReadFailed);
+    assert_eq!(
+        result.failed[0].error.fallback,
+        FallbackAction::ReimportSong
+    );
+    assert!(!result.failed[0].error.retryable);
 
     let library = get_library_from_connection(&connection).expect("library listing should succeed");
     assert_eq!(library.len(), 1);

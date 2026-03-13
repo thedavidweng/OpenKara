@@ -4,6 +4,7 @@ use serde::Serialize;
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
     DatabaseUnavailable,
+    MediaReadFailed,
     SongNotFound,
     AudioDecodeFailed,
     AudioOutputUnavailable,
@@ -60,6 +61,29 @@ pub fn database_error(message: impl ToString) -> CommandError {
         true,
         FallbackAction::Retry,
     )
+}
+
+pub fn library_error(message: impl ToString) -> CommandError {
+    let message = message.to_string();
+
+    if message.contains("failed to open audio file")
+        || message.contains("failed to read audio metadata")
+        || message.contains("failed to read audio file")
+        || message.contains("failed to canonicalize path")
+    {
+        return CommandError::new(
+            ErrorCode::MediaReadFailed,
+            message,
+            false,
+            FallbackAction::ReimportSong,
+        );
+    }
+
+    if message.contains("failed to open SQLite database") {
+        return database_error(message);
+    }
+
+    internal_error(message)
 }
 
 pub fn state_lock_error(message: impl ToString) -> CommandError {

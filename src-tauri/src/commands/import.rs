@@ -1,5 +1,6 @@
 use crate::{
     cache,
+    commands::error::{database_error, library_error, CommandResult},
     library::{ImportFailure, ImportSongsResult, Song},
     metadata, AppState,
 };
@@ -18,27 +19,24 @@ use tauri::State;
 pub fn import_songs(
     state: State<'_, AppState>,
     paths: Vec<String>,
-) -> Result<ImportSongsResult, String> {
-    let connection =
-        cache::open_database(&state.database_path).map_err(|error| error.to_string())?;
+) -> CommandResult<ImportSongsResult> {
+    let connection = cache::open_database(&state.database_path).map_err(database_error)?;
 
     Ok(import_songs_from_paths(&connection, &paths))
 }
 
 #[tauri::command]
-pub fn get_library(state: State<'_, AppState>) -> Result<Vec<Song>, String> {
-    let connection =
-        cache::open_database(&state.database_path).map_err(|error| error.to_string())?;
+pub fn get_library(state: State<'_, AppState>) -> CommandResult<Vec<Song>> {
+    let connection = cache::open_database(&state.database_path).map_err(database_error)?;
 
-    get_library_from_connection(&connection).map_err(|error| error.to_string())
+    get_library_from_connection(&connection).map_err(|error| database_error(error.to_string()))
 }
 
 #[tauri::command]
-pub fn search_library(state: State<'_, AppState>, query: String) -> Result<Vec<Song>, String> {
-    let connection =
-        cache::open_database(&state.database_path).map_err(|error| error.to_string())?;
+pub fn search_library(state: State<'_, AppState>, query: String) -> CommandResult<Vec<Song>> {
+    let connection = cache::open_database(&state.database_path).map_err(database_error)?;
 
-    cache::search_songs(&connection, &query).map_err(|error| error.to_string())
+    cache::search_songs(&connection, &query).map_err(|error| database_error(error.to_string()))
 }
 
 pub fn import_songs_from_paths(connection: &Connection, paths: &[String]) -> ImportSongsResult {
@@ -51,12 +49,12 @@ pub fn import_songs_from_paths(connection: &Connection, paths: &[String]) -> Imp
                 Ok(()) => imported.push(song),
                 Err(error) => failed.push(ImportFailure {
                     path: path.clone(),
-                    error: error.to_string(),
+                    error: database_error(error.to_string()),
                 }),
             },
             Err(error) => failed.push(ImportFailure {
                 path: path.clone(),
-                error: error.to_string(),
+                error: library_error(error.to_string()),
             }),
         }
     }

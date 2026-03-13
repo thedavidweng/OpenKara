@@ -1,5 +1,5 @@
 use openkara_lib::commands::error::{
-    lyrics_error, playback_error, separation_error, ErrorCode, FallbackAction,
+    library_error, lyrics_error, playback_error, separation_error, ErrorCode, FallbackAction,
 };
 
 #[test]
@@ -45,4 +45,13 @@ fn separation_errors_map_worker_failures_to_retry_fallback() {
     assert_eq!(error.code, ErrorCode::SeparationFailed);
     assert_eq!(error.fallback, FallbackAction::Retry);
     assert!(error.retryable);
+}
+
+#[test]
+fn library_errors_map_missing_media_to_reimport_fallback() {
+    let error = library_error("failed to open audio file at /tmp/missing.mp3");
+
+    assert_eq!(error.code, ErrorCode::MediaReadFailed);
+    assert_eq!(error.fallback, FallbackAction::ReimportSong);
+    assert!(!error.retryable);
 }
