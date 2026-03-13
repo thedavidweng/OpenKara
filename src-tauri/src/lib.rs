@@ -1,3 +1,4 @@
+pub mod audio;
 pub mod cache;
 pub mod commands;
 pub mod library;
