@@ -1,8 +1,8 @@
 # Phase 2 播放契约
 
-**Goal:** 固定 `Phase 2` 代码侧已实现的播放命令、状态快照与位置事件语义，保证后续 UI 和 `cpal` 细化工作都基于同一套契约继续推进。
+**Goal:** 固定当前播放层命令、状态快照、模式切换与位置事件语义，保证后续 UI 和 Karaoke 模式都基于同一套契约继续推进。
 
-**Current starting point:** 本契约对应分支 `codex/phase0-m0` 上 `feat: add audio decode pipeline`、`feat: add playback state machine and events`、`feat: add cpal playback output` 之后的状态。
+**Current starting point:** 本契约对应分支 `codex/phase0-m0` 上播放引擎、设备输出和 `original / karaoke` 模式切换接入之后的状态。
 
 ## Owner
 
@@ -17,12 +17,13 @@
 2. `pause() -> PlaybackStateSnapshot`
 3. `seek(ms: u64) -> PlaybackStateSnapshot`
 4. `set_volume(level: f32) -> PlaybackStateSnapshot`
-5. `get_playback_state() -> PlaybackStateSnapshot`
-6. `playback-position` 事件 payload 为 `{ ms: u64 }`
+5. `set_playback_mode(mode: "original" | "karaoke") -> PlaybackStateSnapshot`
+6. `get_playback_state() -> PlaybackStateSnapshot`
+7. `playback-position` 事件 payload 为 `{ ms: u64 }`
 
 ### 后续 Phase 依赖
 
-1. UI Agent 的 `Player` 组件依赖本契约驱动 seek bar、play/pause、volume 状态
+1. UI Agent 的 `Player` 组件依赖本契约驱动 seek bar、play/pause、volume 和 mode toggle 状态
 2. `Phase 4` 歌词高亮将依赖 `playback-position`
 3. `Phase 5` 的延迟与 jitter 验证会以本快照和事件为基线
 
@@ -46,7 +47,8 @@
   "isPlaying": true,
   "positionMs": 0,
   "durationMs": 1000,
-  "volume": 1.0
+  "volume": 1.0,
+  "mode": "original"
 }
 ```
 
@@ -99,15 +101,33 @@
 2. 默认初始音量为 `1.0`
 3. 音量状态独立于当前是否有已加载轨道
 
+### Command: `set_playback_mode`
+
+**Input**
+
+```json
+{
+  "mode": "karaoke"
+}
+```
+
+**Semantics**
+
+1. `original` 总是可切换
+2. `karaoke` 会尝试为当前已加载歌曲读取 `stems.accomp_path`
+3. 如果当前歌曲没有已缓存的 accompaniment，命令返回错误字符串
+4. 第一次切到 `karaoke` 时会懒加载 accompaniment 音频，之后复用已挂载的轨道
+
 ### Shared type: `PlaybackStateSnapshot`
 
-| Field        | Type             | Notes                     |
-| ------------ | ---------------- | ------------------------- |
-| `songId`     | `Option<String>` | 当前未加载轨道时为 `null` |
-| `isPlaying`  | `bool`           | 当前是否处于播放推进状态  |
-| `positionMs` | `u64`            | 当前播放位置              |
-| `durationMs` | `Option<u64>`    | 未加载轨道时为 `null`     |
-| `volume`     | `f32`            | `0.0..1.0`                |
+| Field        | Type                      | Notes                     |
+| ------------ | ------------------------- | ------------------------- |
+| `songId`     | `Option<String>`          | 当前未加载轨道时为 `null` |
+| `isPlaying`  | `bool`                    | 当前是否处于播放推进状态  |
+| `positionMs` | `u64`                     | 当前播放位置              |
+| `durationMs` | `Option<u64>`             | 未加载轨道时为 `null`     |
+| `volume`     | `f32`                     | `0.0..1.0`                |
+| `mode`       | `"original" \| "karaoke"` | 当前输出源模式            |
 
 ### Event: `playback-position`
 
@@ -131,7 +151,8 @@
 1. `symphonia` 负责解码支持格式
 2. `cpal` 负责设备输出
 3. `PlaybackController` 负责状态推进与位置计算
-4. `render_output_buffer` 负责把当前播放状态映射到输出 buffer
+4. `render_output_buffer` 负责把当前播放状态映射到当前模式的输出 buffer
+5. `stems` cache 为 `karaoke` 模式提供 accompaniment 文件路径
 
 ## Verification commands
 
