@@ -16,5 +16,6 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 anyhow = "1"
+lofty = "0.22"
 rusqlite = { version = "0.37", features = ["bundled"] }
 tauri = { version = "2", features = [] }
