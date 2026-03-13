@@ -2125,6 +2125,8 @@ dependencies = [
  "anyhow",
  "lofty",
  "rusqlite",
+ "serde",
+ "sha2",
  "tauri",
  "tauri-build",
 ]

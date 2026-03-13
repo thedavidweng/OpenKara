@@ -30,16 +30,20 @@ pub fn initialize_database(app_handle: &tauri::AppHandle) -> anyhow::Result<Path
     })?;
 
     let database_path = database_path(&app_data_dir);
-    let connection = Connection::open(&database_path).with_context(|| {
-        format!(
-            "failed to open SQLite database at {}",
-            database_path.display()
-        )
-    })?;
+    let connection = open_database(&database_path)?;
 
     apply_migrations(&connection).context("failed to apply SQLite migrations")?;
 
     Ok(database_path)
+}
+
+pub fn open_database(database_path: &Path) -> anyhow::Result<Connection> {
+    Connection::open(database_path).with_context(|| {
+        format!(
+            "failed to open SQLite database at {}",
+            database_path.display()
+        )
+    })
 }
 
 pub fn apply_migrations(connection: &Connection) -> rusqlite::Result<()> {
