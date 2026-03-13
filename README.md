@@ -153,6 +153,19 @@ places the Demucs model in `src-tauri/models/` for deterministic testing.
 Starting from Phase 6, the desktop app also auto-downloads the model into the
 app data directory on first launch when no verified local copy exists.
 
+## Supported Media Pipeline
+
+The current backend supports local import and decode for:
+
+- MP3
+- FLAC
+- WAV
+- OGG / Vorbis
+- AAC / M4A
+
+Stem separation currently targets the pinned Demucs ONNX model at `44.1 kHz`
+stereo input.
+
 ### Local Verification
 
 ```bash
@@ -162,6 +175,33 @@ cd src-tauri && cargo test
 cd ..
 pnpm tauri build --debug --no-bundle --ci
 ```
+
+## Release Automation
+
+- Pushes to `main` and `codex/**` run the verification workflow in
+  [`.github/workflows/ci.yml`](./.github/workflows/ci.yml).
+- Pushing a tag such as `v0.1.0` triggers the draft release workflow in
+  [`.github/workflows/release.yml`](./.github/workflows/release.yml).
+- The release workflow currently builds:
+  - macOS arm64
+  - macOS x64
+  - Windows
+  - Linux
+
+## Current Implementation Surface
+
+The current branch has backend-complete coverage for the MVP foundations:
+
+- library import and search
+- playback decode/output/state
+- Demucs stem separation and karaoke mode
+- synced lyrics fetch, parse, cache, and offset persistence
+- structured command errors
+- backend performance baseline
+- first-launch model bootstrap
+
+The remaining major work is primarily user-facing UI assembly and distribution
+polish.
 
 ## Current Status
 
