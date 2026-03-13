@@ -5,15 +5,18 @@ export const appShellCopy = {
   checkpoints: [
     {
       label: "Shell",
-      detail: "The desktop window boots against a minimal but real frontend entrypoint.",
+      detail:
+        "The desktop window boots against a minimal but real frontend entrypoint.",
     },
     {
       label: "Tooling",
-      detail: "Repo-level lint and format commands are in place for follow-up commits.",
+      detail:
+        "Repo-level lint and format commands are in place for follow-up commits.",
     },
     {
       label: "Pathing",
-      detail: "The '@/...' alias resolves from Vite and TypeScript, and this screen uses it.",
+      detail:
+        "The '@/...' alias resolves from Vite and TypeScript, and this screen uses it.",
     },
   ],
 } as const;

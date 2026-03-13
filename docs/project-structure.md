@@ -57,4 +57,3 @@ Architecture decisions, project structure, and development guides. Kept in the r
 ### `src-tauri/models/` — AI Models
 
 ONNX model files for Demucs v4. These are large binary files (~80 MB) and are **not checked into git**. A setup script downloads them on first build.
-

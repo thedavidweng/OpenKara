@@ -2,13 +2,13 @@
 
 Karaoke UI built with React + TypeScript + Vite.
 
-| Directory      | Responsibility                                    |
-| -------------- | ------------------------------------------------- |
-| `components/`  | React components organized by feature             |
-| `hooks/`       | Custom React hooks (audio state, lyrics sync, etc)|
-| `stores/`      | State management (player state, library, queue)   |
-| `types/`       | Shared TypeScript type definitions                |
-| `styles/`      | Global CSS / style tokens                         |
+| Directory     | Responsibility                                     |
+| ------------- | -------------------------------------------------- |
+| `components/` | React components organized by feature              |
+| `hooks/`      | Custom React hooks (audio state, lyrics sync, etc) |
+| `stores/`     | State management (player state, library, queue)    |
+| `types/`      | Shared TypeScript type definitions                 |
+| `styles/`     | Global CSS / style tokens                          |
 
 ## Component Structure
 

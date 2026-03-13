@@ -31,7 +31,9 @@ function App() {
               key={checkpoint.label}
               className="rounded-2xl border border-white/8 bg-white/4 p-4"
             >
-              <p className="text-sm font-medium text-slate-200">{checkpoint.label}</p>
+              <p className="text-sm font-medium text-slate-200">
+                {checkpoint.label}
+              </p>
               <p className="mt-2 text-sm leading-6 text-slate-400">
                 {checkpoint.detail}
               </p>

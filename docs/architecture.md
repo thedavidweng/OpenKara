@@ -38,19 +38,19 @@ User's local music files
 
 ## Tech Stack
 
-| Layer            | Technology                          |
-| ---------------- | ----------------------------------- |
-| Desktop framework| Tauri 2 (Rust + WebView)            |
-| Frontend         | React + TypeScript + Vite           |
-| Audio decode     | symphonia (Rust)                    |
-| Audio playback   | cpal (Rust)                         |
-| AI inference     | ONNX Runtime (ort crate)            |
-| AI model         | Demucs v4 (HTDemucs), ONNX export  |
-| Lyrics API       | LRCLIB (primary), Musixmatch (fallback) |
-| Metadata         | lofty (Rust, ID3/Vorbis/FLAC tags) |
-| Cache / DB       | SQLite via rusqlite                 |
-| Build / Bundle   | Tauri CLI + Vite                    |
-| Distribution     | GitHub Releases, Homebrew           |
+| Layer             | Technology                              |
+| ----------------- | --------------------------------------- |
+| Desktop framework | Tauri 2 (Rust + WebView)                |
+| Frontend          | React + TypeScript + Vite               |
+| Audio decode      | symphonia (Rust)                        |
+| Audio playback    | cpal (Rust)                             |
+| AI inference      | ONNX Runtime (ort crate)                |
+| AI model          | Demucs v4 (HTDemucs), ONNX export       |
+| Lyrics API        | LRCLIB (primary), Musixmatch (fallback) |
+| Metadata          | lofty (Rust, ID3/Vorbis/FLAC tags)      |
+| Cache / DB        | SQLite via rusqlite                     |
+| Build / Bundle    | Tauri CLI + Vite                        |
+| Distribution      | GitHub Releases, Homebrew               |
 
 ## Data Flow
 
@@ -121,18 +121,19 @@ GET https://lrclib.net/api/get?track_name={title}&artist_name={artist}&album_nam
 
 ### Lyrics Fetch Priority
 
-| Priority | Source                    | Notes                                   |
-| -------- | ------------------------- | --------------------------------------- |
-| 1        | LRCLIB API                | Best coverage for synced lyrics          |
-| 2        | Musixmatch API            | Wider catalog, free tier has rate limits |
-| 3        | Embedded lyrics in tags   | ID3v2 SYLT/USLT, Vorbis LYRICS tag      |
-| 4        | Sidecar .lrc file         | Same directory, same filename as audio   |
+| Priority | Source                  | Notes                                    |
+| -------- | ----------------------- | ---------------------------------------- |
+| 1        | LRCLIB API              | Best coverage for synced lyrics          |
+| 2        | Musixmatch API          | Wider catalog, free tier has rate limits |
+| 3        | Embedded lyrics in tags | ID3v2 SYLT/USLT, Vorbis LYRICS tag       |
+| 4        | Sidecar .lrc file       | Same directory, same filename as audio   |
 
 ### Playback Sync Mechanism
 
 > Learned from monochrome's `setupSync()` — a high-precision approach using `requestAnimationFrame` + `performance.now()`.
 
 The naive approach (relying solely on `timeupdate` events) has two problems:
+
 - `timeupdate` fires only ~4 times per second (every ~250ms)
 - Timing jitter makes lyric transitions feel choppy
 
@@ -158,6 +159,7 @@ The proven solution:
 ```
 
 Key points:
+
 - `performance.now()` provides sub-millisecond precision for interpolation between audio events
 - The loop runs only while audio is playing (paused → cancel)
 - `timeupdate` and `seeked` events re-anchor `baseTimeMs` to prevent drift
@@ -202,11 +204,11 @@ This is a nice-to-have, not MVP scope.
 
 ### Alternatives Considered
 
-| Model       | Pros                    | Cons                         |
-| ----------- | ----------------------- | ---------------------------- |
-| Open-Unmix  | Lighter weight          | Lower separation quality     |
-| Spleeter    | Fast, well-known        | Outdated, lower quality      |
-| BSRNN       | State-of-the-art quality| Larger model, slower, complex|
+| Model      | Pros                     | Cons                          |
+| ---------- | ------------------------ | ----------------------------- |
+| Open-Unmix | Lighter weight           | Lower separation quality      |
+| Spleeter   | Fast, well-known         | Outdated, lower quality       |
+| BSRNN      | State-of-the-art quality | Larger model, slower, complex |
 
 ## Caching Strategy
 
@@ -221,10 +223,10 @@ The cache key is a SHA-256 hash of the audio file content, ensuring deduplicatio
 
 ## Platform Considerations
 
-| Platform | Audio Backend | AI Acceleration       |
-| -------- | ------------- | --------------------- |
-| macOS    | CoreAudio     | CoreML (optional)     |
-| Windows  | WASAPI        | DirectML (optional)   |
-| Linux    | PulseAudio/ALSA| CPU only (default)   |
+| Platform | Audio Backend   | AI Acceleration     |
+| -------- | --------------- | ------------------- |
+| macOS    | CoreAudio       | CoreML (optional)   |
+| Windows  | WASAPI          | DirectML (optional) |
+| Linux    | PulseAudio/ALSA | CPU only (default)  |
 
 ONNX Runtime CPU execution provider works on all platforms out of the box. Hardware acceleration is a future optimization.

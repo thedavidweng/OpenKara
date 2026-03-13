@@ -8,11 +8,11 @@
 
 ### Why Tauri
 
-| Concern | Electron | Tauri 2 |
-|---------|----------|---------|
-| Bundle size | ~150 MB+ | ~5–10 MB |
-| Memory | Chromium per window | System WebView |
-| Native perf | Node.js bridge | Rust native |
+| Concern       | Electron              | Tauri 2                    |
+| ------------- | --------------------- | -------------------------- |
+| Bundle size   | ~150 MB+              | ~5–10 MB                   |
+| Memory        | Chromium per window   | System WebView             |
+| Native perf   | Node.js bridge        | Rust native                |
 | Audio/AI perf | Child process or WASM | Native Rust, zero overhead |
 
 ### Key Config
@@ -99,19 +99,19 @@ cpal::Stream (platform-specific backend)
 
 ### Rust Crates
 
-| Crate | Version | Purpose |
-|-------|---------|---------|
-| `tauri` | 2.x | Desktop framework |
-| `symphonia` | 0.5+ | Audio decode |
-| `cpal` | 0.15+ | Audio output |
-| `ort` | 2.x | ONNX Runtime binding |
-| `lofty` | 0.21+ | Audio tag reading |
-| `rusqlite` | 0.31+ | SQLite |
-| `reqwest` | 0.12+ | HTTP client (lyrics API) |
-| `tokio` | 1.x | Async runtime |
-| `sha2` | 0.10+ | File hashing for cache keys |
-| `serde` | 1.x | Serialization |
-| `rubato` | 0.15+ | Sample rate conversion (if needed) |
+| Crate       | Version | Purpose                            |
+| ----------- | ------- | ---------------------------------- |
+| `tauri`     | 2.x     | Desktop framework                  |
+| `symphonia` | 0.5+    | Audio decode                       |
+| `cpal`      | 0.15+   | Audio output                       |
+| `ort`       | 2.x     | ONNX Runtime binding               |
+| `lofty`     | 0.21+   | Audio tag reading                  |
+| `rusqlite`  | 0.31+   | SQLite                             |
+| `reqwest`   | 0.12+   | HTTP client (lyrics API)           |
+| `tokio`     | 1.x     | Async runtime                      |
+| `sha2`      | 0.10+   | File hashing for cache keys        |
+| `serde`     | 1.x     | Serialization                      |
+| `rubato`    | 0.15+   | Sample rate conversion (if needed) |
 
 ---
 
@@ -143,22 +143,22 @@ N segments × 2 channels × T samples
 
 ### Technical Risks & Mitigations
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| ONNX model too large for download | Users abandon setup | Host model on GitHub Releases (LFS or release asset). Provide SHA-256 checksum. |
-| Inference too slow on old CPUs | Bad UX | Show progress bar. Process in background. Cache aggressively. |
-| ONNX Runtime version mismatch | Build fails | Pin `ort` crate version. Test in CI on all platforms. |
-| Model produces artifacts | Audio glitches | Use overlap-add with crossfade between chunks. Tune chunk/overlap size. |
-| Memory spike during inference | App crash on 8 GB machines | Process in chunks, not entire song at once. Monitor peak RSS. |
+| Risk                              | Impact                     | Mitigation                                                                      |
+| --------------------------------- | -------------------------- | ------------------------------------------------------------------------------- |
+| ONNX model too large for download | Users abandon setup        | Host model on GitHub Releases (LFS or release asset). Provide SHA-256 checksum. |
+| Inference too slow on old CPUs    | Bad UX                     | Show progress bar. Process in background. Cache aggressively.                   |
+| ONNX Runtime version mismatch     | Build fails                | Pin `ort` crate version. Test in CI on all platforms.                           |
+| Model produces artifacts          | Audio glitches             | Use overlap-add with crossfade between chunks. Tune chunk/overlap size.         |
+| Memory spike during inference     | App crash on 8 GB machines | Process in chunks, not entire song at once. Monitor peak RSS.                   |
 
 ### Performance Targets
 
-| Metric | Target | Acceptable |
-|--------|--------|------------|
-| 4-min song, Apple Silicon M1 | < 45s | < 90s |
-| 4-min song, Intel i5 (2020) | < 120s | < 180s |
-| Peak memory during inference | < 2 GB | < 3 GB |
-| Cache hit playback start | < 500ms | < 1s |
+| Metric                       | Target  | Acceptable |
+| ---------------------------- | ------- | ---------- |
+| 4-min song, Apple Silicon M1 | < 45s   | < 90s      |
+| 4-min song, Intel i5 (2020)  | < 120s  | < 180s     |
+| Peak memory during inference | < 2 GB  | < 3 GB     |
+| Cache hit playback start     | < 500ms | < 1s       |
 
 ---
 
@@ -222,14 +222,14 @@ Song metadata (title, artist, album, duration)
 
 ### Stack
 
-| Concern | Choice | Rationale |
-|---------|--------|-----------|
-| Framework | React 19 | Ecosystem, hiring pool |
-| Language | TypeScript 5 | Type safety |
-| Bundler | Vite 6 | Fast HMR, Tauri integration |
-| Styling | Tailwind CSS 4 | Utility-first, no CSS-in-JS runtime |
-| State | Zustand | Minimal API, no boilerplate |
-| Icons | Lucide React | Consistent, tree-shakeable |
+| Concern   | Choice         | Rationale                           |
+| --------- | -------------- | ----------------------------------- |
+| Framework | React 19       | Ecosystem, hiring pool              |
+| Language  | TypeScript 5   | Type safety                         |
+| Bundler   | Vite 6         | Fast HMR, Tauri integration         |
+| Styling   | Tailwind CSS 4 | Utility-first, no CSS-in-JS runtime |
+| State     | Zustand        | Minimal API, no boilerplate         |
+| Icons     | Lucide React   | Consistent, tree-shakeable          |
 
 ### Component Tree
 
@@ -322,21 +322,21 @@ pnpm tauri build      → Vite build + Cargo build + bundle
 ```yaml
 # Trigger: push to main, pull request, tag push
 Jobs:
-  lint:     pnpm lint + cargo clippy
-  test:     cargo test + vitest
-  build:    matrix [macos-arm64, macos-x64, windows, ubuntu]
-  release:  on tag v* → create GitHub Release with artifacts
+  lint: pnpm lint + cargo clippy
+  test: cargo test + vitest
+  build: matrix [macos-arm64, macos-x64, windows, ubuntu]
+  release: on tag v* → create GitHub Release with artifacts
 ```
 
 ### Model Distribution
 
 The ONNX model (~80 MB) is not in the repo. Options:
 
-| Strategy | Pros | Cons |
-|----------|------|------|
-| GitHub Release asset | Simple, versioned | 2 GB per-release limit |
-| First-run download | Small initial install | Needs internet on first use |
-| CDN (Cloudflare R2) | Fast global download | Requires infra |
+| Strategy             | Pros                  | Cons                        |
+| -------------------- | --------------------- | --------------------------- |
+| GitHub Release asset | Simple, versioned     | 2 GB per-release limit      |
+| First-run download   | Small initial install | Needs internet on first use |
+| CDN (Cloudflare R2)  | Fast global download  | Requires infra              |
 
 **MVP choice**: First-run download from GitHub Release asset. Display download progress in the app.
 
@@ -344,13 +344,13 @@ The ONNX model (~80 MB) is not in the repo. Options:
 
 ## Technology Decision Log
 
-| Decision | Chosen | Alternatives Considered | Reason |
-|----------|--------|------------------------|--------|
-| Desktop framework | Tauri 2 | Electron, Flutter | Bundle size, Rust native perf for audio/AI |
-| Audio decode | symphonia | FFmpeg binding | Pure Rust, no C dependency hell |
-| Audio output | cpal | rodio | Lower-level control needed for seek/buffer |
-| AI runtime | ONNX Runtime (ort) | PyTorch C++, TFLite | Broadest hardware support, Demucs has ONNX export |
-| Lyrics API | LRCLIB | Musixmatch, Genius | Free, no API key, good synced lyrics coverage |
-| State management | Zustand | Redux, Jotai | Minimal boilerplate for small app |
-| Styling | Tailwind CSS | styled-components, CSS Modules | No runtime, great DX |
-| Database | SQLite (rusqlite) | sled, redb | Mature, SQL queries, Tauri plugin ecosystem |
+| Decision          | Chosen             | Alternatives Considered        | Reason                                            |
+| ----------------- | ------------------ | ------------------------------ | ------------------------------------------------- |
+| Desktop framework | Tauri 2            | Electron, Flutter              | Bundle size, Rust native perf for audio/AI        |
+| Audio decode      | symphonia          | FFmpeg binding                 | Pure Rust, no C dependency hell                   |
+| Audio output      | cpal               | rodio                          | Lower-level control needed for seek/buffer        |
+| AI runtime        | ONNX Runtime (ort) | PyTorch C++, TFLite            | Broadest hardware support, Demucs has ONNX export |
+| Lyrics API        | LRCLIB             | Musixmatch, Genius             | Free, no API key, good synced lyrics coverage     |
+| State management  | Zustand            | Redux, Jotai                   | Minimal boilerplate for small app                 |
+| Styling           | Tailwind CSS       | styled-components, CSS Modules | No runtime, great DX                              |
+| Database          | SQLite (rusqlite)  | sled, redb                     | Mature, SQL queries, Tauri plugin ecosystem       |

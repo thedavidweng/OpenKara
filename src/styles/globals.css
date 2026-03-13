@@ -10,8 +10,12 @@
 @layer base {
   :root {
     color: #f5f7fb;
-    background:
-      radial-gradient(circle at top, var(--color-shell-glow) 0%, var(--color-shell-ink) 45%, var(--color-shell-night) 100%);
+    background: radial-gradient(
+      circle at top,
+      var(--color-shell-glow) 0%,
+      var(--color-shell-ink) 45%,
+      var(--color-shell-night) 100%
+    );
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
