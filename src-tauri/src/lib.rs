@@ -65,6 +65,8 @@ pub fn run() {
             commands::import::import_songs,
             commands::import::get_library,
             commands::import::search_library,
+            commands::lyrics::fetch_lyrics,
+            commands::lyrics::set_lyrics_offset,
             commands::playback::play,
             commands::playback::pause,
             commands::playback::seek,

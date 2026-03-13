@@ -1,3 +1,4 @@
+pub mod lyrics;
 pub mod stems;
 
 use crate::library::Song;
@@ -12,9 +13,10 @@ use tauri::Manager;
 const DATABASE_FILENAME: &str = "openkara.sqlite3";
 // Keep the SQL in the migrations directory so tests and runtime initialization
 // execute the exact same schema definition.
-const MIGRATIONS: [&str; 2] = [
+const MIGRATIONS: [&str; 3] = [
     include_str!("../../migrations/001_init.sql"),
     include_str!("../../migrations/002_stems.sql"),
+    include_str!("../../migrations/003_lyrics.sql"),
 ];
 
 fn database_path(base_dir: &Path) -> PathBuf {
@@ -208,6 +210,16 @@ mod tests {
             .expect("stems table lookup should succeed");
 
         assert_eq!(stems_table_count, 1);
+
+        let lyrics_table_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'lyrics'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("lyrics table lookup should succeed");
+
+        assert_eq!(lyrics_table_count, 1);
     }
 
     #[test]
