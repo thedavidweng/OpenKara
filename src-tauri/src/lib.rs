@@ -4,8 +4,11 @@ pub mod commands;
 pub mod library;
 pub mod lyrics;
 pub mod metadata;
+pub mod perf;
 pub mod separator;
-use crate::audio::playback::{monotonic_now_ms, PlaybackController};
+use crate::audio::playback::{
+    monotonic_now_ms, PlaybackController, PLAYBACK_POSITION_POLL_INTERVAL_MS,
+};
 use std::{
     collections::HashMap,
     fs,
@@ -88,7 +91,7 @@ fn spawn_playback_position_emitter(
         let mut last_emitted_position = None;
 
         loop {
-            thread::sleep(Duration::from_millis(16));
+            thread::sleep(Duration::from_millis(PLAYBACK_POSITION_POLL_INTERVAL_MS));
 
             let snapshot = match playback.lock() {
                 Ok(mut controller) => controller.snapshot(monotonic_now_ms()),

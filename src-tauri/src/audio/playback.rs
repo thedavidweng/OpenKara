@@ -5,6 +5,7 @@ use std::sync::OnceLock;
 use std::time::Instant;
 
 pub const PLAYBACK_POSITION_EVENT: &str = "playback-position";
+pub const PLAYBACK_POSITION_POLL_INTERVAL_MS: u64 = 16;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PlaybackStateSnapshot {
