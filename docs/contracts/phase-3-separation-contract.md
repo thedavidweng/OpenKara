@@ -15,7 +15,7 @@
 2. `get_separation_status(song_id: String) -> SeparationStatusSnapshot`
 3. `separation-progress` 事件 payload 为 `{ song_id: String, percent: u8 }`
 4. `separation-complete` 事件 payload 为 `{ song_id: String }`
-5. `separation-error` 事件 payload 为 `{ song_id: String, error: String }`
+5. `separation-error` 事件 payload 为 `{ song_id: String, error: CommandError }`
 6. stem cache 目录固定为 `<app_cache_dir>/stems/{song_hash}/`
 
 ## Inputs / outputs / required dependencies
@@ -65,7 +65,7 @@
 
 1. 如果该歌曲还没有任何分离记录，返回 `idle` 状态
 2. `completed` 状态会带上 `vocalsPath` 和 `accompPath`
-3. `failed` 状态会带上错误字符串
+3. `failed` 状态会带上结构化错误 `CommandError`
 
 ### Shared type: `SeparationStatusSnapshot`
 
@@ -77,7 +77,7 @@
 | `cacheHit`   | `bool`                                           | 仅 `completed` 时可能为 `true` |
 | `vocalsPath` | `Option<String>`                                 | `completed` 时存在             |
 | `accompPath` | `Option<String>`                                 | `completed` 时存在             |
-| `error`      | `Option<String>`                                 | `failed` 时存在                |
+| `error`      | `Option<CommandError>`                           | `failed` 时存在                |
 
 ### Events
 
@@ -103,9 +103,18 @@
 ```json
 {
   "songId": "sha256 hash string",
-  "error": "readable error message"
+  "error": {
+    "code": "separation_failed",
+    "message": "failed to separate stems for song song-a",
+    "retryable": true,
+    "fallback": "retry"
+  }
 }
 ```
+
+### Shared error type: `CommandError`
+
+分离失败状态和 `separation-error` 事件统一复用结构化错误，字段定义与错误码含义见 [phase-5-error-contract.md](./phase-5-error-contract.md)。
 
 ## Cache semantics
 

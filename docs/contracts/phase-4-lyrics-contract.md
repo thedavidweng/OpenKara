@@ -16,6 +16,7 @@
 3. 抓取优先顺序固定为 `LRCLIB -> embedded -> sidecar .lrc`
 4. SQLite `lyrics` 表按 `song_hash` 缓存原始 LRC 和 `offset_ms`
 5. 对同一首歌重复调用 `fetch_lyrics` 时，优先命中 SQLite cache，不重复发起 HTTP 请求
+6. `Phase 5` 起，歌词命令失败值统一为 `CommandError`，详见 [phase-5-error-contract.md](./phase-5-error-contract.md)
 
 ## Inputs / outputs / required dependencies
 
@@ -66,7 +67,7 @@
    - 同名 sidecar `.lrc`
 4. 一旦抓到歌词，后端会先解析成 `Vec<LyricLine>`，再把原始 LRC、来源和 `offset_ms = 0` 写入 SQLite
 5. 如果所有来源都 miss，命令仍然成功返回；只是 `lines = []`、`source = null`
-6. 如果歌曲不存在、HTTP 请求失败、文件读取失败或 LRC 解析失败，命令返回错误字符串
+6. 如果歌曲不存在、HTTP 请求失败、文件读取失败或 LRC 解析失败，命令返回 `CommandError`
 
 ### Command: `set_lyrics_offset`
 
@@ -83,7 +84,7 @@
 
 1. `ms` 为该歌曲的用户手动 timing offset，单位毫秒，可正可负
 2. 只有在该歌曲已经存在缓存歌词时，命令才会成功
-3. 如果歌曲存在但还没有缓存歌词，命令返回错误字符串
+3. 如果歌曲存在但还没有缓存歌词，命令返回 `CommandError`
 4. 该命令只更新 SQLite 中的 `offset_ms`，不会重抓歌词
 
 ### Shared type: `LyricsPayload`
@@ -101,6 +102,10 @@
 | --------- | -------- | ------------------------ |
 | `time_ms` | `u64`    | 行起始时间，单位毫秒     |
 | `text`    | `String` | 当前时间戳对应显示的文本 |
+
+### Shared error type: `CommandError`
+
+歌词命令统一返回结构化错误，字段定义与错误码含义见 [phase-5-error-contract.md](./phase-5-error-contract.md)。
 
 ## Cache semantics
 

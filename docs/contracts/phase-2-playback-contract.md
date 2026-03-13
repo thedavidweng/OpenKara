@@ -26,6 +26,7 @@
 1. UI Agent 的 `Player` 组件依赖本契约驱动 seek bar、play/pause、volume 和 mode toggle 状态
 2. `Phase 4` 歌词高亮将依赖 `playback-position`
 3. `Phase 5` 的延迟与 jitter 验证会以本快照和事件为基线
+4. `Phase 5` 起，播放命令失败值统一为 `CommandError`，详见 [phase-5-error-contract.md](./phase-5-error-contract.md)
 
 ## Inputs / outputs / required dependencies
 
@@ -57,7 +58,7 @@
 1. `song_id` 对应 `songs.hash`
 2. 命令会从 SQLite 读取歌曲路径，并实时解码为 `f32` PCM
 3. 首次播放时会懒启动 `cpal` 输出线程
-4. 如果找不到歌曲或无法解码，命令返回错误字符串
+4. 如果找不到歌曲、无法解码或输出设备不可用，命令返回 `CommandError`
 
 ### Command: `pause`
 
@@ -115,7 +116,7 @@
 
 1. `original` 总是可切换
 2. `karaoke` 会尝试为当前已加载歌曲读取 `stems.accomp_path`
-3. 如果当前歌曲没有已缓存的 accompaniment，命令返回错误字符串
+3. 如果当前歌曲没有已缓存的 accompaniment，命令返回 `CommandError`
 4. 第一次切到 `karaoke` 时会懒加载 accompaniment 音频，之后复用已挂载的轨道
 
 ### Shared type: `PlaybackStateSnapshot`
@@ -145,6 +146,10 @@
 2. 仅在存在已加载轨道时发出
 3. 后端线程约每 `16ms` 检查一次位置，并在位置变化时发出事件
 4. `play`、`pause`、`seek` 命令执行后也会立即补发一次最新位置
+
+### Shared error type: `CommandError`
+
+播放命令统一返回结构化错误，字段定义与错误码含义见 [phase-5-error-contract.md](./phase-5-error-contract.md)。
 
 ### Required dependencies
 

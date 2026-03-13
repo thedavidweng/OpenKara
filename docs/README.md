@@ -11,6 +11,7 @@
 | [contracts/phase-2-playback-contract.md](./contracts/phase-2-playback-contract.md)     | Frozen backend contract for Phase 2 playback work                     |
 | [contracts/phase-3-separation-contract.md](./contracts/phase-3-separation-contract.md) | Frozen backend contract for Phase 3 separation work                   |
 | [contracts/phase-4-lyrics-contract.md](./contracts/phase-4-lyrics-contract.md)         | Frozen backend contract for Phase 4 lyrics work                       |
+| [contracts/phase-5-error-contract.md](./contracts/phase-5-error-contract.md)           | Structured backend error contract for Phase 5 integration work        |
 | [plans/2026-03-13-handoff-master-plan.md](./plans/2026-03-13-handoff-master-plan.md)   | Master handoff plan for continuing `Phase 1-6` work                   |
 | [plans/2026-03-13-ui-agent-plan.md](./plans/2026-03-13-ui-agent-plan.md)               | UI-only execution plan for the specialist UI agent                    |
 | [plans/2026-03-13-code-agent-plan.md](./plans/2026-03-13-code-agent-plan.md)           | Code-only execution plan for backend and integration ownership        |
