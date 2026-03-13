@@ -1,0 +1,253 @@
+use crate::{cache, separator, AppState};
+use serde::Serialize;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+use tauri::{AppHandle, Emitter, State};
+
+pub const SEPARATION_PROGRESS_EVENT: &str = "separation-progress";
+pub const SEPARATION_COMPLETE_EVENT: &str = "separation-complete";
+pub const SEPARATION_ERROR_EVENT: &str = "separation-error";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SeparationState {
+    Idle,
+    Running,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SeparationStatusSnapshot {
+    pub song_id: String,
+    pub state: SeparationState,
+    pub percent: u8,
+    pub cache_hit: bool,
+    pub vocals_path: Option<String>,
+    pub accomp_path: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SeparationProgressEvent {
+    pub song_id: String,
+    pub percent: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SeparationCompleteEvent {
+    pub song_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SeparationErrorEvent {
+    pub song_id: String,
+    pub error: String,
+}
+
+#[tauri::command]
+pub fn separate(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    song_id: String,
+) -> Result<SeparationStatusSnapshot, String> {
+    let initial_status = {
+        let mut statuses = state
+            .separation_statuses
+            .lock()
+            .map_err(|_| "separation status lock was poisoned".to_string())?;
+
+        if let Some(existing) = statuses.get(&song_id) {
+            if existing.state == SeparationState::Running {
+                return Ok(existing.clone());
+            }
+        }
+
+        let status = running_status(&song_id, 0);
+        statuses.insert(song_id.clone(), status.clone());
+        status
+    };
+
+    let database_path = state.database_path.clone();
+    let cache_dir = state.cache_dir.clone();
+    let model_path = state.model_path.clone();
+    let separation_statuses = Arc::clone(&state.separation_statuses);
+    let worker_song_id = song_id.clone();
+    let worker_app_handle = app_handle.clone();
+
+    tauri::async_runtime::spawn(async move {
+        let worker_database_path = database_path.clone();
+        let worker_cache_dir = cache_dir.clone();
+        let worker_model_path = model_path.clone();
+        let worker_statuses = Arc::clone(&separation_statuses);
+        let progress_song_id = worker_song_id.clone();
+        let progress_app_handle = worker_app_handle.clone();
+
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            let connection = cache::open_database(&worker_database_path)?;
+            separator::job::separate_song_into_cache(
+                &connection,
+                &worker_cache_dir,
+                &worker_model_path,
+                &worker_song_id,
+                |percent| {
+                    let snapshot = running_status(&progress_song_id, percent);
+                    if let Ok(mut statuses) = worker_statuses.lock() {
+                        statuses.insert(progress_song_id.clone(), snapshot);
+                    }
+                    let _ = progress_app_handle.emit(
+                        SEPARATION_PROGRESS_EVENT,
+                        SeparationProgressEvent {
+                            song_id: progress_song_id.clone(),
+                            percent,
+                        },
+                    );
+                },
+            )
+        })
+        .await;
+
+        match result {
+            Ok(Ok(artifacts)) => {
+                let completed = completed_status(
+                    &song_id,
+                    artifacts.vocals_path,
+                    artifacts.accomp_path,
+                    artifacts.cache_hit,
+                );
+                if let Ok(mut statuses) = separation_statuses.lock() {
+                    statuses.insert(song_id.clone(), completed);
+                }
+                let _ = app_handle.emit(
+                    SEPARATION_COMPLETE_EVENT,
+                    SeparationCompleteEvent {
+                        song_id: song_id.clone(),
+                    },
+                );
+            }
+            Ok(Err(error)) => {
+                let failed = failed_status(&song_id, error.to_string());
+                if let Ok(mut statuses) = separation_statuses.lock() {
+                    statuses.insert(song_id.clone(), failed);
+                }
+                let _ = app_handle.emit(
+                    SEPARATION_ERROR_EVENT,
+                    SeparationErrorEvent {
+                        song_id: song_id.clone(),
+                        error: error.to_string(),
+                    },
+                );
+            }
+            Err(error) => {
+                let failed = failed_status(&song_id, error.to_string());
+                if let Ok(mut statuses) = separation_statuses.lock() {
+                    statuses.insert(song_id.clone(), failed);
+                }
+                let _ = app_handle.emit(
+                    SEPARATION_ERROR_EVENT,
+                    SeparationErrorEvent {
+                        song_id: song_id.clone(),
+                        error: error.to_string(),
+                    },
+                );
+            }
+        }
+    });
+
+    Ok(initial_status)
+}
+
+#[tauri::command]
+pub fn get_separation_status(
+    state: State<'_, AppState>,
+    song_id: String,
+) -> Result<SeparationStatusSnapshot, String> {
+    get_separation_status_from_map(&state.separation_statuses, &song_id)
+}
+
+pub fn get_separation_status_from_map(
+    statuses: &Arc<Mutex<HashMap<String, SeparationStatusSnapshot>>>,
+    song_id: &str,
+) -> Result<SeparationStatusSnapshot, String> {
+    let statuses = statuses
+        .lock()
+        .map_err(|_| "separation status lock was poisoned".to_string())?;
+
+    Ok(statuses
+        .get(song_id)
+        .cloned()
+        .unwrap_or_else(|| idle_status(song_id)))
+}
+
+pub fn idle_status(song_id: impl Into<String>) -> SeparationStatusSnapshot {
+    SeparationStatusSnapshot {
+        song_id: song_id.into(),
+        state: SeparationState::Idle,
+        percent: 0,
+        cache_hit: false,
+        vocals_path: None,
+        accomp_path: None,
+        error: None,
+    }
+}
+
+pub fn running_status(song_id: impl Into<String>, percent: u8) -> SeparationStatusSnapshot {
+    SeparationStatusSnapshot {
+        song_id: song_id.into(),
+        state: SeparationState::Running,
+        percent: percent.min(100),
+        cache_hit: false,
+        vocals_path: None,
+        accomp_path: None,
+        error: None,
+    }
+}
+
+pub fn completed_status(
+    song_id: impl Into<String>,
+    vocals_path: impl Into<String>,
+    accomp_path: impl Into<String>,
+    cache_hit: bool,
+) -> SeparationStatusSnapshot {
+    SeparationStatusSnapshot {
+        song_id: song_id.into(),
+        state: SeparationState::Completed,
+        percent: 100,
+        cache_hit,
+        vocals_path: Some(vocals_path.into()),
+        accomp_path: Some(accomp_path.into()),
+        error: None,
+    }
+}
+
+pub fn failed_status(
+    song_id: impl Into<String>,
+    error: impl Into<String>,
+) -> SeparationStatusSnapshot {
+    SeparationStatusSnapshot {
+        song_id: song_id.into(),
+        state: SeparationState::Failed,
+        percent: 100,
+        cache_hit: false,
+        vocals_path: None,
+        accomp_path: None,
+        error: Some(error.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_lookup_defaults_to_idle_when_song_has_not_started_separation() {
+        let statuses = Arc::new(Mutex::new(HashMap::new()));
+
+        let status = get_separation_status_from_map(&statuses, "missing-song")
+            .expect("idle lookup should succeed");
+
+        assert_eq!(status, idle_status("missing-song"));
+    }
+}

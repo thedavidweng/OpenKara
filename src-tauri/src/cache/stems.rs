@@ -47,56 +47,13 @@ where
     F: FnOnce() -> Result<SeparationResult>,
 {
     ensure_song_exists(connection, song_hash)?;
-    let stem_directory = stem_directory(base_cache_dir, song_hash);
 
-    if let Some(entry) = get_cached_stem_entry(connection, song_hash)? {
-        if cache_entry_files_exist(&entry) {
-            return Ok(StemCacheResult {
-                entry,
-                cache_hit: true,
-                stem_directory,
-            });
-        }
+    if let Some(existing) = get_valid_cached_stem_entry(connection, base_cache_dir, song_hash)? {
+        return Ok(existing);
     }
 
     let separation = generate().context("failed to generate stems for cache population")?;
-    if stem_directory.exists() {
-        fs::remove_dir_all(&stem_directory).with_context(|| {
-            format!(
-                "failed to clear stale stem cache directory at {}",
-                stem_directory.display()
-            )
-        })?;
-    }
-    fs::create_dir_all(&stem_directory).with_context(|| {
-        format!(
-            "failed to create stem cache directory at {}",
-            stem_directory.display()
-        )
-    })?;
-
-    inference::write_stems_to_directory(&separation, &stem_directory)
-        .context("failed to write stem wav files into cache")?;
-
-    let accompaniment = mix::mix_accompaniment(&separation)
-        .context("failed to mix accompaniment for stem cache")?;
-    let accompaniment_path = stem_directory.join(ACCOMPANIMENT_FILENAME);
-    mix::write_accompaniment_wav(&accompaniment, &accompaniment_path)
-        .context("failed to write accompaniment wav into cache")?;
-
-    let entry = StemCacheEntry {
-        song_hash: song_hash.to_owned(),
-        vocals_path: stem_directory.join(VOCALS_FILENAME).display().to_string(),
-        accomp_path: accompaniment_path.display().to_string(),
-        separated_at: unix_timestamp(),
-    };
-    upsert_stem_cache_entry(connection, &entry).context("failed to persist stem cache entry")?;
-
-    Ok(StemCacheResult {
-        entry,
-        cache_hit: false,
-        stem_directory,
-    })
+    store_generated_stem_cache(connection, base_cache_dir, song_hash, &separation)
 }
 
 pub fn get_cached_stem_entry(
@@ -120,6 +77,74 @@ pub fn get_cached_stem_entry(
         })),
         None => Ok(None),
     }
+}
+
+pub fn get_valid_cached_stem_entry(
+    connection: &Connection,
+    base_cache_dir: &Path,
+    song_hash: &str,
+) -> Result<Option<StemCacheResult>> {
+    let stem_directory = stem_directory(base_cache_dir, song_hash);
+
+    if let Some(entry) = get_cached_stem_entry(connection, song_hash)? {
+        if cache_entry_files_exist(&entry) {
+            return Ok(Some(StemCacheResult {
+                entry,
+                cache_hit: true,
+                stem_directory,
+            }));
+        }
+    }
+
+    Ok(None)
+}
+
+pub fn store_generated_stem_cache(
+    connection: &Connection,
+    base_cache_dir: &Path,
+    song_hash: &str,
+    separation: &SeparationResult,
+) -> Result<StemCacheResult> {
+    ensure_song_exists(connection, song_hash)?;
+    let stem_directory = stem_directory(base_cache_dir, song_hash);
+
+    if stem_directory.exists() {
+        fs::remove_dir_all(&stem_directory).with_context(|| {
+            format!(
+                "failed to clear stale stem cache directory at {}",
+                stem_directory.display()
+            )
+        })?;
+    }
+    fs::create_dir_all(&stem_directory).with_context(|| {
+        format!(
+            "failed to create stem cache directory at {}",
+            stem_directory.display()
+        )
+    })?;
+
+    inference::write_stems_to_directory(separation, &stem_directory)
+        .context("failed to write stem wav files into cache")?;
+
+    let accompaniment =
+        mix::mix_accompaniment(separation).context("failed to mix accompaniment for stem cache")?;
+    let accompaniment_path = stem_directory.join(ACCOMPANIMENT_FILENAME);
+    mix::write_accompaniment_wav(&accompaniment, &accompaniment_path)
+        .context("failed to write accompaniment wav into cache")?;
+
+    let entry = StemCacheEntry {
+        song_hash: song_hash.to_owned(),
+        vocals_path: stem_directory.join(VOCALS_FILENAME).display().to_string(),
+        accomp_path: accompaniment_path.display().to_string(),
+        separated_at: unix_timestamp(),
+    };
+    upsert_stem_cache_entry(connection, &entry).context("failed to persist stem cache entry")?;
+
+    Ok(StemCacheResult {
+        entry,
+        cache_hit: false,
+        stem_directory,
+    })
 }
 
 fn upsert_stem_cache_entry(
