@@ -68,6 +68,7 @@ pub fn run() {
             commands::playback::pause,
             commands::playback::seek,
             commands::playback::set_volume,
+            commands::playback::set_playback_mode,
             commands::playback::get_playback_state,
             commands::separation::separate,
             commands::separation::get_separation_status
