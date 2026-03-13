@@ -1,6 +1,6 @@
 use crate::{
     audio::{
-        decode,
+        decode, output,
         playback::{
             monotonic_now_ms, playback_position_event, PlaybackController, PlaybackStateSnapshot,
             PLAYBACK_POSITION_EVENT,
@@ -27,6 +27,14 @@ pub fn play(
         .map_err(|_| "playback controller lock was poisoned".to_string())?;
     let snapshot = play_song_from_library(&connection, &mut playback, &song_id, monotonic_now_ms())
         .map_err(|error| error.to_string())?;
+    drop(playback);
+
+    output::ensure_output_thread(
+        &state.audio_output_started,
+        &state.audio_output_start_lock,
+        state.playback.clone(),
+    )
+    .map_err(|error| error.to_string())?;
 
     emit_playback_position(&app_handle, &snapshot).map_err(|error| error.to_string())?;
 

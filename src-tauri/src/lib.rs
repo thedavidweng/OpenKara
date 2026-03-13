@@ -6,6 +6,7 @@ pub mod metadata;
 use crate::audio::playback::{monotonic_now_ms, PlaybackController};
 use std::{
     path::PathBuf,
+    sync::atomic::AtomicBool,
     sync::{Arc, Mutex},
     thread,
     time::Duration,
@@ -15,6 +16,8 @@ use tauri::{Emitter, Manager};
 pub struct AppState {
     pub database_path: PathBuf,
     pub playback: Arc<Mutex<PlaybackController>>,
+    pub audio_output_started: Arc<AtomicBool>,
+    pub audio_output_start_lock: Arc<Mutex<()>>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -24,6 +27,8 @@ pub fn run() {
             let database_path = cache::initialize_database(app.handle())
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
             let playback = Arc::new(Mutex::new(PlaybackController::default()));
+            let audio_output_started = Arc::new(AtomicBool::new(false));
+            let audio_output_start_lock = Arc::new(Mutex::new(()));
 
             // Commands open short-lived SQLite connections on demand. This avoids
             // sharing a long-lived connection across Tauri threads before we need
@@ -31,6 +36,8 @@ pub fn run() {
             app.manage(AppState {
                 database_path,
                 playback: Arc::clone(&playback),
+                audio_output_started,
+                audio_output_start_lock,
             });
             spawn_playback_position_emitter(app.handle().clone(), playback);
 
