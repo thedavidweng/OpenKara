@@ -2,6 +2,7 @@ pub mod audio;
 pub mod cache;
 pub mod commands;
 pub mod library;
+pub mod lyrics;
 pub mod metadata;
 pub mod separator;
 use crate::audio::playback::{monotonic_now_ms, PlaybackController};
