@@ -131,9 +131,36 @@ If the product proves unviable, options include:
 - [Technical Roadmap](./docs/roadmap.md) — Tech choices, API contracts, and risk mitigations
 - [Milestones](./docs/milestones.md) — Milestone task table with exit criteria
 
+## Phase 0 Setup
+
+### Prerequisites
+
+- Node.js 20+
+- pnpm 10+
+- Rust stable via `rustup`
+- Tauri CLI v2 via `cargo install tauri-cli --version "^2"`
+
+### Local Bootstrap
+
+```bash
+pnpm install
+./scripts/setup.sh
+pnpm tauri dev
+```
+
+### Local Verification
+
+```bash
+pnpm lint
+pnpm format
+cd src-tauri && cargo test
+cd ..
+pnpm tauri build --debug --no-bundle --ci
+```
+
 ## Current Status
 
-Concept defined, MVP scoped, architecture documented, and launch plus post-launch strategy drafted.
+Concept defined, MVP scoped, architecture documented, and Phase 0 foundations now include a runnable desktop shell, frontend tooling, SQLite migration bootstrap, model setup script, and CI verification.
 
 ## Contributing
 
