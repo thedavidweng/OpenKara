@@ -5,6 +5,10 @@ on:
     branches: ["main", "codex/**"]
   pull_request:
 
+env:
+  MODEL_URL: https://huggingface.co/timcsy/demucs-web-onnx/resolve/main/htdemucs_embedded.onnx?download=true
+  MODEL_SHA256: e5e425c17683f163a472462eb5f5a4ffcd11c31858d57fbd0833b012d8b88077
+
 jobs:
   verify:
     name: Verify (${{ matrix.name }})
@@ -46,6 +50,7 @@ jobs:
             build-essential \
             curl \
             file \
+            patchelf \
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libssl-dev \
@@ -55,6 +60,43 @@ jobs:
 
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Download separation model (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: ./scripts/setup.sh
+
+      - name: Download separation model (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $modelPath = Join-Path $env:GITHUB_WORKSPACE "src-tauri/models/htdemucs_embedded.onnx"
+          $modelDir = Split-Path $modelPath
+          New-Item -ItemType Directory -Force -Path $modelDir | Out-Null
+
+          function Get-ModelSha256([string]$path) {
+            return (Get-FileHash -Algorithm SHA256 $path).Hash.ToLowerInvariant()
+          }
+
+          if (Test-Path $modelPath) {
+            if ((Get-ModelSha256 $modelPath) -eq $env:MODEL_SHA256) {
+              Write-Host "Model already present and verified at $modelPath"
+              exit 0
+            }
+
+            Remove-Item $modelPath -Force
+          }
+
+          $tmpPath = "$modelPath.download"
+          Invoke-WebRequest -Uri $env:MODEL_URL -OutFile $tmpPath
+          $downloadedSha = Get-ModelSha256 $tmpPath
+
+          if ($downloadedSha -ne $env:MODEL_SHA256) {
+            Remove-Item $tmpPath -Force -ErrorAction SilentlyContinue
+            throw "Downloaded model checksum mismatch. Expected $env:MODEL_SHA256 got $downloadedSha"
+          }
+
+          Move-Item -Force $tmpPath $modelPath
 
       - name: Lint frontend
         run: pnpm lint
