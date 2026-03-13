@@ -7,6 +7,7 @@
 | [development-phases.md](./development-phases.md)                                       | Executable development phase checklist with verify steps              |
 | [roadmap.md](./roadmap.md)                                                             | Technical implementation roadmap — tech choices, API contracts, risks |
 | [milestones.md](./milestones.md)                                                       | Milestone task table with exit criteria and ownership tracking        |
+| [phase-5-performance-baseline.md](./phase-5-performance-baseline.md)                   | Current backend benchmark baseline for Phase 5 profiling              |
 | [contracts/phase-1-library-contract.md](./contracts/phase-1-library-contract.md)       | Frozen backend contract for Phase 1 library/import work               |
 | [contracts/phase-2-playback-contract.md](./contracts/phase-2-playback-contract.md)     | Frozen backend contract for Phase 2 playback work                     |
 | [contracts/phase-3-separation-contract.md](./contracts/phase-3-separation-contract.md) | Frozen backend contract for Phase 3 separation work                   |
