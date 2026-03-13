@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use ort::value::TensorElementType;
 use std::path::{Path, PathBuf};
 
 pub const EMBEDDED_MODEL_FILENAME: &str = "htdemucs_embedded.onnx";
@@ -7,6 +8,8 @@ pub struct LoadedModel {
     pub model_path: PathBuf,
     pub inputs: Vec<String>,
     pub outputs: Vec<String>,
+    pub input_shape: Vec<i64>,
+    pub input_tensor_type: TensorElementType,
     _session: ort::session::Session,
 }
 
@@ -16,6 +19,8 @@ impl std::fmt::Debug for LoadedModel {
             .field("model_path", &self.model_path)
             .field("inputs", &self.inputs)
             .field("outputs", &self.outputs)
+            .field("input_shape", &self.input_shape)
+            .field("input_tensor_type", &self.input_tensor_type)
             .finish_non_exhaustive()
     }
 }
@@ -43,11 +48,28 @@ pub fn load_from_path(path: &Path) -> Result<LoadedModel> {
         .iter()
         .map(|output| output.name().to_owned())
         .collect();
+    let input_spec = session
+        .inputs()
+        .first()
+        .context("model did not expose any inputs")?;
+    let input_shape = input_spec
+        .dtype()
+        .tensor_shape()
+        .context("model input is not a tensor")?
+        .iter()
+        .copied()
+        .collect();
+    let input_tensor_type = input_spec
+        .dtype()
+        .tensor_type()
+        .context("model input tensor type is missing")?;
 
     Ok(LoadedModel {
         model_path,
         inputs,
         outputs,
+        input_shape,
+        input_tensor_type,
         _session: session,
     })
 }
