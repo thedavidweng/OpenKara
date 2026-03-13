@@ -1,0 +1,146 @@
+# Phase 1 资料库契约
+
+**Goal:** 固定 `Phase 1` 代码侧已经实现并准备交给 UI Agent 消费的资料库接口、数据结构与语义，减少联调期间的猜测成本。
+
+**Current starting point:** 本契约对应分支 `codex/phase0-m0` 上 `feat: add metadata parsing module`、`feat: add songs sqlite cache`、`feat: add import songs command` 之后的状态。后续如字段或命令语义变更，必须先更新此文档再改 UI。
+
+## Owner
+
+- 代码 Agent：命令、SQLite、元数据解析、错误语义
+- UI Agent：消费本契约，不单方面修改命令名、字段名、排序语义或错误结构
+
+## Phase-by-phase task breakdown
+
+### 已冻结能力
+
+1. `import_songs(paths: Vec<String>) -> ImportSongsResult`
+2. `get_library() -> Vec<Song>`
+3. `search_library(query: String) -> Vec<Song>`
+4. 本地元数据解析支持 MP3、FLAC、M4A
+5. `songs` 表通过 `hash` 去重并执行 upsert
+
+### 后续 Phase 依赖
+
+1. `Phase 2` 播放功能会基于 `Song.hash` 作为稳定歌曲标识
+2. `Phase 3` stems cache 会复用同一个文件 hash
+3. `Phase 4` 歌词缓存也默认以 `song_hash` 建联
+
+## Inputs / outputs / required dependencies
+
+### Command: `import_songs`
+
+**Input**
+
+```json
+{
+  "paths": ["/absolute/or/relative/audio/path.mp3"]
+}
+```
+
+**Output**
+
+```json
+{
+  "imported": [
+    {
+      "hash": "sha256 hex string",
+      "file_path": "/absolute/path/to/file.mp3",
+      "title": "optional string",
+      "artist": "optional string",
+      "album": "optional string",
+      "duration_ms": 123456,
+      "cover_art": [137, 80, 78, 71],
+      "imported_at": 1760000000
+    }
+  ],
+  "failed": [
+    {
+      "path": "/bad/path.mp3",
+      "error": "human-readable backend error"
+    }
+  ]
+}
+```
+
+**Semantics**
+
+1. 单个路径失败不会中断整个批次，结果会落入 `failed`
+2. 成功导入的项目会立即写入 SQLite，并返回写入后的 `Song`
+3. `hash` 基于文件原始字节的 SHA-256，不基于路径
+4. `file_path` 在返回前会被 canonicalize 为绝对路径
+5. 若标签中没有标题，后端会回退到文件名 stem
+
+### Command: `get_library`
+
+**Output:** `Vec<Song>`
+
+**Semantics**
+
+1. 排序为 `imported_at DESC, title COLLATE NOCASE ASC, hash ASC`
+2. 当前不分页
+3. 当前不做软删除过滤，因为还没有删除能力
+
+### Command: `search_library`
+
+**Input**
+
+```json
+{
+  "query": "muse"
+}
+```
+
+**Output:** `Vec<Song>`
+
+**Semantics**
+
+1. 大小写不敏感
+2. 匹配范围：`title`、`artist`、`album`、`file_path`
+3. 排序规则与 `get_library` 相同
+
+### Shared type: `Song`
+
+| Field         | Type              | Notes                                          |
+| ------------- | ----------------- | ---------------------------------------------- |
+| `hash`        | `String`          | 全局稳定主键                                   |
+| `file_path`   | `String`          | canonicalized 绝对路径                         |
+| `title`       | `Option<String>`  | 可能为空                                       |
+| `artist`      | `Option<String>`  | 可能为空                                       |
+| `album`       | `Option<String>`  | 可能为空                                       |
+| `duration_ms` | `i64`             | 当前来自音频元数据                             |
+| `cover_art`   | `Option<Vec<u8>>` | 原始图片字节，前端需自行转 data URL/object URL |
+| `imported_at` | `i64`             | Unix timestamp seconds                         |
+
+### Required dependencies
+
+1. Rust crate `lofty` 负责读标签和时长
+2. Rust crate `rusqlite` 负责持久化
+3. Rust crate `sha2` 负责生成稳定文件 hash
+4. Tauri app setup 必须先完成 `AppState.database_path` 注入
+
+## Verification commands
+
+```bash
+cd src-tauri
+cargo test --test phase1_metadata --test phase1_cache --test phase1_import
+cargo test
+```
+
+**Expected evidence**
+
+1. 三个 Phase 1 integration tests 全部通过
+2. `cache` 的 migration 单元测试通过
+3. 无需运行 UI 也能验证导入、搜索、落库语义
+
+## Pause-and-resume instructions
+
+1. 接手前先读本文件，再读 [../plans/2026-03-13-code-agent-plan.md](../plans/2026-03-13-code-agent-plan.md)
+2. 执行上面的验证命令，确认当前分支状态真实可用
+3. 若后续需要修改字段或命令语义：
+   - 先更新本契约
+   - 再修改 Rust 实现
+   - 最后通知 UI Agent 按新契约调整
+4. 若工作中断，至少在提交信息或交接说明里标出：
+   - 改了哪些命令
+   - 是否改了 `Song` 字段
+   - 哪些测试已跑，哪些没跑
