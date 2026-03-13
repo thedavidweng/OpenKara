@@ -123,13 +123,24 @@ If the product proves unviable, options include:
 - Pivoting the separation pipeline toward musician practice tools
 - Leaving the codebase healthy for community forks
 
+## Documentation
+
+- [Architecture](./docs/architecture.md) — System design, tech stack, data flow, and AI model details
+- [Project Structure](./docs/project-structure.md) — Directory layout and module responsibilities
+
 ## Current Status
 
-Concept defined, MVP scoped, and launch plus post-launch strategy drafted.
+Concept defined, MVP scoped, architecture documented, and launch plus post-launch strategy drafted.
 
 ## Contributing
 
 Contributions are welcome. Open an issue before making major changes.
+
+## Acknowledgments
+
+- [monochrome](https://github.com/monochrome-music/monochrome) — Lyrics sync and LRCLIB integration approach
+- [Demucs](https://github.com/facebookresearch/demucs) — AI stem separation model by Meta Research
+- [LRCLIB](https://lrclib.net) — Open synced lyrics API
 
 ## License
 

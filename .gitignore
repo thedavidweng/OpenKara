@@ -1,16 +1,32 @@
+# OS
 .DS_Store
 Thumbs.db
 
+# Env
 .env
 .env.*
 
+# Editor
 .vscode/
 .idea/
 
+# Node
 node_modules/
+
+# Build output
 dist/
 build/
 out/
 coverage/
 
+# Rust / Cargo
+target/
+
+# Tauri
+src-tauri/target/
+
+# ONNX models (large binaries, downloaded via setup script)
+src-tauri/models/*.onnx
+
+# Cache
 *.log
