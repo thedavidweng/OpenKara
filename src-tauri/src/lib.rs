@@ -3,6 +3,7 @@ pub mod cache;
 pub mod commands;
 pub mod library;
 pub mod metadata;
+pub mod separator;
 use crate::audio::playback::{monotonic_now_ms, PlaybackController};
 use std::{
     path::PathBuf,

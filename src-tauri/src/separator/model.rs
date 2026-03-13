@@ -1,0 +1,53 @@
+use anyhow::{Context, Result};
+use std::path::{Path, PathBuf};
+
+pub const EMBEDDED_MODEL_FILENAME: &str = "htdemucs_embedded.onnx";
+
+pub struct LoadedModel {
+    pub model_path: PathBuf,
+    pub inputs: Vec<String>,
+    pub outputs: Vec<String>,
+    _session: ort::session::Session,
+}
+
+impl std::fmt::Debug for LoadedModel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LoadedModel")
+            .field("model_path", &self.model_path)
+            .field("inputs", &self.inputs)
+            .field("outputs", &self.outputs)
+            .finish_non_exhaustive()
+    }
+}
+
+pub fn default_model_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("models")
+        .join(EMBEDDED_MODEL_FILENAME)
+}
+
+pub fn load_from_path(path: &Path) -> Result<LoadedModel> {
+    let model_path = path.to_path_buf();
+    let session = ort::session::Session::builder()
+        .context("failed to create ONNX session builder")?
+        .commit_from_file(path)
+        .with_context(|| format!("failed to load ONNX model from {}", path.display()))?;
+
+    let inputs = session
+        .inputs()
+        .iter()
+        .map(|input| input.name().to_owned())
+        .collect();
+    let outputs = session
+        .outputs()
+        .iter()
+        .map(|output| output.name().to_owned())
+        .collect();
+
+    Ok(LoadedModel {
+        model_path,
+        inputs,
+        outputs,
+        _session: session,
+    })
+}

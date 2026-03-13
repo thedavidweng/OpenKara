@@ -19,6 +19,7 @@ tauri-build = { version = "2", features = [] }
 anyhow = "1"
 cpal = "0.15"
 lofty = "0.22"
+ort = "2.0.0-rc.10"
 rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
