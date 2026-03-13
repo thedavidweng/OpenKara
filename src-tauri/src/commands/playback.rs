@@ -6,7 +6,11 @@ use crate::{
             PlaybackStateSnapshot, PLAYBACK_POSITION_EVENT,
         },
     },
-    cache, AppState,
+    cache,
+    commands::error::{
+        database_error, internal_error, playback_error, state_lock_error, CommandResult,
+    },
+    AppState,
 };
 use anyhow::{Context, Result};
 use rusqlite::Connection;
@@ -18,15 +22,14 @@ pub fn play(
     state: State<'_, AppState>,
     app_handle: AppHandle,
     song_id: String,
-) -> Result<PlaybackStateSnapshot, String> {
-    let connection =
-        cache::open_database(&state.database_path).map_err(|error| error.to_string())?;
+) -> CommandResult<PlaybackStateSnapshot> {
+    let connection = cache::open_database(&state.database_path).map_err(database_error)?;
     let mut playback = state
         .playback
         .lock()
-        .map_err(|_| "playback controller lock was poisoned".to_string())?;
+        .map_err(|_| state_lock_error("playback controller lock was poisoned"))?;
     let snapshot = play_song_from_library(&connection, &mut playback, &song_id, monotonic_now_ms())
-        .map_err(|error| error.to_string())?;
+        .map_err(playback_error)?;
     drop(playback);
 
     output::ensure_output_thread(
@@ -34,9 +37,10 @@ pub fn play(
         &state.audio_output_start_lock,
         state.playback.clone(),
     )
-    .map_err(|error| error.to_string())?;
+    .map_err(playback_error)?;
 
-    emit_playback_position(&app_handle, &snapshot).map_err(|error| error.to_string())?;
+    emit_playback_position(&app_handle, &snapshot)
+        .map_err(|error| internal_error(error.to_string()))?;
 
     Ok(snapshot)
 }
@@ -45,16 +49,15 @@ pub fn play(
 pub fn pause(
     state: State<'_, AppState>,
     app_handle: AppHandle,
-) -> Result<PlaybackStateSnapshot, String> {
+) -> CommandResult<PlaybackStateSnapshot> {
     let mut playback = state
         .playback
         .lock()
-        .map_err(|_| "playback controller lock was poisoned".to_string())?;
-    let snapshot = playback
-        .pause(monotonic_now_ms())
-        .map_err(|error| error.to_string())?;
+        .map_err(|_| state_lock_error("playback controller lock was poisoned"))?;
+    let snapshot = playback.pause(monotonic_now_ms()).map_err(playback_error)?;
 
-    emit_playback_position(&app_handle, &snapshot).map_err(|error| error.to_string())?;
+    emit_playback_position(&app_handle, &snapshot)
+        .map_err(|error| internal_error(error.to_string()))?;
 
     Ok(snapshot)
 }
@@ -64,54 +67,51 @@ pub fn seek(
     state: State<'_, AppState>,
     app_handle: AppHandle,
     ms: u64,
-) -> Result<PlaybackStateSnapshot, String> {
+) -> CommandResult<PlaybackStateSnapshot> {
     let mut playback = state
         .playback
         .lock()
-        .map_err(|_| "playback controller lock was poisoned".to_string())?;
+        .map_err(|_| state_lock_error("playback controller lock was poisoned"))?;
     let snapshot = playback
         .seek(ms, monotonic_now_ms())
-        .map_err(|error| error.to_string())?;
+        .map_err(playback_error)?;
 
-    emit_playback_position(&app_handle, &snapshot).map_err(|error| error.to_string())?;
+    emit_playback_position(&app_handle, &snapshot)
+        .map_err(|error| internal_error(error.to_string()))?;
 
     Ok(snapshot)
 }
 
 #[tauri::command]
-pub fn set_volume(state: State<'_, AppState>, level: f32) -> Result<PlaybackStateSnapshot, String> {
+pub fn set_volume(state: State<'_, AppState>, level: f32) -> CommandResult<PlaybackStateSnapshot> {
     let mut playback = state
         .playback
         .lock()
-        .map_err(|_| "playback controller lock was poisoned".to_string())?;
+        .map_err(|_| state_lock_error("playback controller lock was poisoned"))?;
 
-    playback
-        .set_volume(level)
-        .map_err(|error| error.to_string())
+    playback.set_volume(level).map_err(playback_error)
 }
 
 #[tauri::command]
 pub fn set_playback_mode(
     state: State<'_, AppState>,
     mode: PlaybackMode,
-) -> Result<PlaybackStateSnapshot, String> {
-    let connection =
-        cache::open_database(&state.database_path).map_err(|error| error.to_string())?;
+) -> CommandResult<PlaybackStateSnapshot> {
+    let connection = cache::open_database(&state.database_path).map_err(database_error)?;
     let mut playback = state
         .playback
         .lock()
-        .map_err(|_| "playback controller lock was poisoned".to_string())?;
+        .map_err(|_| state_lock_error("playback controller lock was poisoned"))?;
 
-    set_playback_mode_from_library(&connection, &mut playback, mode)
-        .map_err(|error| error.to_string())
+    set_playback_mode_from_library(&connection, &mut playback, mode).map_err(playback_error)
 }
 
 #[tauri::command]
-pub fn get_playback_state(state: State<'_, AppState>) -> Result<PlaybackStateSnapshot, String> {
+pub fn get_playback_state(state: State<'_, AppState>) -> CommandResult<PlaybackStateSnapshot> {
     let mut playback = state
         .playback
         .lock()
-        .map_err(|_| "playback controller lock was poisoned".to_string())?;
+        .map_err(|_| state_lock_error("playback controller lock was poisoned"))?;
 
     Ok(playback.snapshot(monotonic_now_ms()))
 }

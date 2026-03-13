@@ -1,4 +1,8 @@
-use crate::{cache, separator, AppState};
+use crate::{
+    cache,
+    commands::error::{separation_error, state_lock_error, CommandError, CommandResult},
+    separator, AppState,
+};
 use serde::Serialize;
 use std::{
     collections::HashMap,
@@ -27,7 +31,7 @@ pub struct SeparationStatusSnapshot {
     pub cache_hit: bool,
     pub vocals_path: Option<String>,
     pub accomp_path: Option<String>,
-    pub error: Option<String>,
+    pub error: Option<CommandError>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -44,7 +48,7 @@ pub struct SeparationCompleteEvent {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SeparationErrorEvent {
     pub song_id: String,
-    pub error: String,
+    pub error: CommandError,
 }
 
 #[tauri::command]
@@ -52,12 +56,12 @@ pub fn separate(
     state: State<'_, AppState>,
     app_handle: AppHandle,
     song_id: String,
-) -> Result<SeparationStatusSnapshot, String> {
+) -> CommandResult<SeparationStatusSnapshot> {
     let initial_status = {
         let mut statuses = state
             .separation_statuses
             .lock()
-            .map_err(|_| "separation status lock was poisoned".to_string())?;
+            .map_err(|_| state_lock_error("separation status lock was poisoned"))?;
 
         if let Some(existing) = statuses.get(&song_id) {
             if existing.state == SeparationState::Running {
@@ -128,7 +132,8 @@ pub fn separate(
                 );
             }
             Ok(Err(error)) => {
-                let failed = failed_status(&song_id, error.to_string());
+                let command_error = separation_error(error.to_string());
+                let failed = failed_status(&song_id, command_error.clone());
                 if let Ok(mut statuses) = separation_statuses.lock() {
                     statuses.insert(song_id.clone(), failed);
                 }
@@ -136,12 +141,13 @@ pub fn separate(
                     SEPARATION_ERROR_EVENT,
                     SeparationErrorEvent {
                         song_id: song_id.clone(),
-                        error: error.to_string(),
+                        error: command_error,
                     },
                 );
             }
             Err(error) => {
-                let failed = failed_status(&song_id, error.to_string());
+                let command_error = separation_error(error.to_string());
+                let failed = failed_status(&song_id, command_error.clone());
                 if let Ok(mut statuses) = separation_statuses.lock() {
                     statuses.insert(song_id.clone(), failed);
                 }
@@ -149,7 +155,7 @@ pub fn separate(
                     SEPARATION_ERROR_EVENT,
                     SeparationErrorEvent {
                         song_id: song_id.clone(),
-                        error: error.to_string(),
+                        error: command_error,
                     },
                 );
             }
@@ -163,17 +169,17 @@ pub fn separate(
 pub fn get_separation_status(
     state: State<'_, AppState>,
     song_id: String,
-) -> Result<SeparationStatusSnapshot, String> {
+) -> CommandResult<SeparationStatusSnapshot> {
     get_separation_status_from_map(&state.separation_statuses, &song_id)
 }
 
 pub fn get_separation_status_from_map(
     statuses: &Arc<Mutex<HashMap<String, SeparationStatusSnapshot>>>,
     song_id: &str,
-) -> Result<SeparationStatusSnapshot, String> {
+) -> CommandResult<SeparationStatusSnapshot> {
     let statuses = statuses
         .lock()
-        .map_err(|_| "separation status lock was poisoned".to_string())?;
+        .map_err(|_| state_lock_error("separation status lock was poisoned"))?;
 
     Ok(statuses
         .get(song_id)
@@ -222,10 +228,7 @@ pub fn completed_status(
     }
 }
 
-pub fn failed_status(
-    song_id: impl Into<String>,
-    error: impl Into<String>,
-) -> SeparationStatusSnapshot {
+pub fn failed_status(song_id: impl Into<String>, error: CommandError) -> SeparationStatusSnapshot {
     SeparationStatusSnapshot {
         song_id: song_id.into(),
         state: SeparationState::Failed,
@@ -233,7 +236,7 @@ pub fn failed_status(
         cache_hit: false,
         vocals_path: None,
         accomp_path: None,
-        error: Some(error.into()),
+        error: Some(error),
     }
 }
 

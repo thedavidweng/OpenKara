@@ -1,6 +1,7 @@
 use crate::{
     cache,
     cache::lyrics::LyricsCacheEntry,
+    commands::error::{database_error, lyrics_error, CommandResult},
     lyrics::{self, fetch::LyricsSource, lrclib::LrcLibClient, parser::LyricLine},
     AppState,
 };
@@ -19,12 +20,17 @@ pub struct LyricsPayload {
 }
 
 #[tauri::command]
-pub fn fetch_lyrics(state: State<'_, AppState>, song_id: String) -> Result<LyricsPayload, String> {
-    let connection =
-        cache::open_database(&state.database_path).map_err(|error| error.to_string())?;
+pub fn fetch_lyrics(state: State<'_, AppState>, song_id: String) -> CommandResult<LyricsPayload> {
+    let connection = cache::open_database(&state.database_path).map_err(database_error)?;
 
-    fetch_lyrics_from_connection(&connection, &LrcLibClient::new_default(), &song_id)
-        .map_err(|error| error.to_string())
+    fetch_lyrics_from_connection(&connection, &LrcLibClient::new_default(), &song_id).map_err(
+        |error| {
+            // Lower-level lyrics modules still return anyhow errors. Classify them
+            // here so UI-facing commands expose stable error codes and fallback hints
+            // before the internal modules are fully migrated to typed domain errors.
+            lyrics_error(error.to_string())
+        },
+    )
 }
 
 #[tauri::command]
@@ -32,11 +38,11 @@ pub fn set_lyrics_offset(
     state: State<'_, AppState>,
     song_id: String,
     ms: i64,
-) -> Result<(), String> {
-    let connection =
-        cache::open_database(&state.database_path).map_err(|error| error.to_string())?;
+) -> CommandResult<()> {
+    let connection = cache::open_database(&state.database_path).map_err(database_error)?;
 
-    set_lyrics_offset_in_connection(&connection, &song_id, ms).map_err(|error| error.to_string())
+    set_lyrics_offset_in_connection(&connection, &song_id, ms)
+        .map_err(|error| lyrics_error(error.to_string()))
 }
 
 pub fn fetch_lyrics_from_connection(

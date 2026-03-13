@@ -1,3 +1,4 @@
+use openkara_lib::commands::error::{separation_error, ErrorCode, FallbackAction};
 use openkara_lib::commands::separation::{
     completed_status, failed_status, idle_status, running_status, SeparationState,
 };
@@ -24,7 +25,12 @@ fn separation_status_helpers_cover_idle_running_completed_and_failed_states() {
         Some("/tmp/accompaniment.wav")
     );
 
-    let failed = failed_status("song-a", "boom");
+    let failed = failed_status("song-a", separation_error("boom"));
     assert_eq!(failed.state, SeparationState::Failed);
-    assert_eq!(failed.error.as_deref(), Some("boom"));
+    let failed_error = failed
+        .error
+        .expect("failed status should carry a structured error");
+    assert_eq!(failed_error.code, ErrorCode::SeparationFailed);
+    assert_eq!(failed_error.fallback, FallbackAction::Retry);
+    assert!(failed_error.retryable);
 }
