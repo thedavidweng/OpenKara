@@ -1,3 +1,5 @@
+pub mod stems;
+
 use crate::library::Song;
 use anyhow::Context;
 use rusqlite::{params, Connection, Row};
@@ -10,7 +12,10 @@ use tauri::Manager;
 const DATABASE_FILENAME: &str = "openkara.sqlite3";
 // Keep the SQL in the migrations directory so tests and runtime initialization
 // execute the exact same schema definition.
-const INITIAL_MIGRATION_SQL: &str = include_str!("../../migrations/001_init.sql");
+const MIGRATIONS: [&str; 2] = [
+    include_str!("../../migrations/001_init.sql"),
+    include_str!("../../migrations/002_stems.sql"),
+];
 
 fn database_path(base_dir: &Path) -> PathBuf {
     base_dir.join(DATABASE_FILENAME)
@@ -47,7 +52,11 @@ pub fn open_database(database_path: &Path) -> anyhow::Result<Connection> {
 }
 
 pub fn apply_migrations(connection: &Connection) -> rusqlite::Result<()> {
-    connection.execute_batch(INITIAL_MIGRATION_SQL)
+    for migration in MIGRATIONS {
+        connection.execute_batch(migration)?;
+    }
+
+    Ok(())
 }
 
 pub fn upsert_song(connection: &Connection, song: &Song) -> rusqlite::Result<()> {
@@ -189,6 +198,16 @@ mod tests {
             .expect("songs table lookup should succeed");
 
         assert_eq!(songs_table_count, 1);
+
+        let stems_table_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'stems'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("stems table lookup should succeed");
+
+        assert_eq!(stems_table_count, 1);
     }
 
     #[test]
