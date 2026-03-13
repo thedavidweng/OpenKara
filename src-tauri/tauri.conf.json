@@ -12,19 +12,19 @@
   "app": {
     "windows": [
       {
-        "title": "tmpopenkara-phase0-scaffold-1773375380",
+        "title": "OpenKara",
         "width": 1280,
         "height": 800,
         "resizable": true
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; connect-src 'self' https://lrclib.net"
     }
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["dmg", "nsis", "appimage"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

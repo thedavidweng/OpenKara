@@ -19,7 +19,7 @@
 
 ```
 src-tauri/tauri.conf.json
-├── identifier: "com.openkara.app"
+├── identifier: "com.openkara.desktop"
 ├── windows[0].title: "OpenKara"
 ├── security.csp: "default-src 'self'; connect-src 'self' https://lrclib.net"
 └── bundle.targets: ["dmg", "nsis", "appimage"]
