@@ -28,14 +28,14 @@ Shell  ─→ Library ─→ Playback ─→ Separation ─→ Lyrics ─→ Pol
 
 ### Task Breakdown
 
-| Task                             | Owner | Status | Notes                    |
-| -------------------------------- | ----- | ------ | ------------------------ |
-| Init Tauri 2 + React + TS + Vite | —     | ☐      | `pnpm create tauri-app`  |
-| Tailwind CSS setup               | —     | ☐      |                          |
-| ESLint + Prettier config         | —     | ☐      |                          |
-| SQLite migration infra           | —     | ☐      | Empty `songs` table      |
-| ONNX model download script       | —     | ☐      | `scripts/setup.sh`       |
-| GitHub Actions CI                | —     | ☐      | lint, build, test matrix |
+| Task                             | Owner | Status | Notes                        |
+| -------------------------------- | ----- | ------ | ---------------------------- |
+| Init Tauri 2 + React + TS + Vite | Code  | ✅     | `pnpm create tauri-app`      |
+| Tailwind CSS setup               | Code  | ✅     |                              |
+| ESLint + Prettier config         | Code  | ✅     |                              |
+| SQLite migration infra           | Code  | ✅     | `songs` / `stems` / `lyrics` |
+| ONNX model download script       | Code  | ✅     | `scripts/setup.sh`           |
+| GitHub Actions CI                | Code  | ✅     | lint, build, test matrix     |
 
 ---
 
@@ -52,12 +52,12 @@ Shell  ─→ Library ─→ Playback ─→ Separation ─→ Lyrics ─→ Pol
 
 | Task                          | Owner | Status | Notes                    |
 | ----------------------------- | ----- | ------ | ------------------------ |
-| Metadata reader (lofty)       | —     | ☐      | ID3v2, Vorbis, FLAC tags |
-| SQLite songs CRUD             | —     | ☐      | insert, query, delete    |
-| `import_songs` Tauri command  | —     | ☐      | Accept file paths        |
-| Library UI — grid + list view | —     | ☐      | Responsive layout        |
-| Drag-and-drop import          | —     | ☐      | + file picker fallback   |
-| Library search + filter       | —     | ☐      | By title, artist         |
+| Metadata reader (lofty)       | Code  | ✅     | ID3v2, Vorbis, FLAC tags |
+| SQLite songs CRUD             | Code  | ✅     | insert, query, delete    |
+| `import_songs` Tauri command  | Code  | ✅     | Accept file paths        |
+| Library UI — grid + list view | UI    | ☐      | Responsive layout        |
+| Drag-and-drop import          | UI    | ☐      | + file picker fallback   |
+| Library search + filter       | UI    | ☐      | By title, artist         |
 
 ---
 
@@ -74,12 +74,12 @@ Shell  ─→ Library ─→ Playback ─→ Separation ─→ Lyrics ─→ Pol
 
 | Task                            | Owner | Status | Notes                        |
 | ------------------------------- | ----- | ------ | ---------------------------- |
-| Audio decode (symphonia)        | —     | ☐      | MP3, FLAC, WAV, OGG, AAC     |
-| Audio output (cpal)             | —     | ☐      | Platform-specific backends   |
-| Playback state machine          | —     | ☐      | play / pause / stop / seek   |
-| Position event emitter (~60 Hz) | —     | ☐      | Tauri events                 |
-| Player UI — controls            | —     | ☐      | Play/pause, seek bar, volume |
-| Zustand playerStore             | —     | ☐      | Global playback state        |
+| Audio decode (symphonia)        | Code  | ✅     | MP3, FLAC, WAV, OGG, AAC     |
+| Audio output (cpal)             | Code  | ✅     | Platform-specific backends   |
+| Playback state machine          | Code  | ✅     | play / pause / stop / seek   |
+| Position event emitter (~60 Hz) | Code  | ✅     | Tauri events                 |
+| Player UI — controls            | UI    | ☐      | Play/pause, seek bar, volume |
+| Zustand playerStore             | UI    | ☐      | Global playback state        |
 
 ---
 
@@ -96,13 +96,13 @@ Shell  ─→ Library ─→ Playback ─→ Separation ─→ Lyrics ─→ Pol
 
 | Task                                | Owner | Status | Notes                      |
 | ----------------------------------- | ----- | ------ | -------------------------- |
-| Load Demucs ONNX model              | —     | ☐      | `ort::Session`             |
-| PCM → model input preprocessing     | —     | ☐      | Chunking, tensor shape     |
-| Inference + overlap-add postprocess | —     | ☐      | 4 stems → 2 outputs        |
-| Stems cache (fs, hash-based)        | —     | ☐      | `~/.openkara/cache/stems/` |
-| Background processing (tokio)       | —     | ☐      | Non-blocking UI            |
-| Progress events                     | —     | ☐      | Percent complete           |
-| Mode toggle UI (original / karaoke) | —     | ☐      | Player component           |
+| Load Demucs ONNX model              | Code  | ✅     | `ort::Session`             |
+| PCM → model input preprocessing     | Code  | ✅     | Chunking, tensor shape     |
+| Inference + overlap-add postprocess | Code  | ✅     | 4 stems → 2 outputs        |
+| Stems cache (fs, hash-based)        | Code  | ✅     | `~/.openkara/cache/stems/` |
+| Background processing (tokio)       | Code  | ✅     | Non-blocking UI            |
+| Progress events                     | Code  | ✅     | Percent complete           |
+| Mode toggle UI (original / karaoke) | UI    | ☐      | Player component           |
 
 ---
 
@@ -119,14 +119,14 @@ Shell  ─→ Library ─→ Playback ─→ Separation ─→ Lyrics ─→ Pol
 
 | Task                         | Owner | Status | Notes                         |
 | ---------------------------- | ----- | ------ | ----------------------------- |
-| LRCLIB API client            | —     | ☐      | HTTP GET with metadata params |
-| LRC parser                   | —     | ☐      | Regex parse → structured data |
-| Fetch priority chain         | —     | ☐      | LRCLIB → embedded → sidecar   |
-| Lyrics SQLite cache          | —     | ☐      | song_hash → lrc               |
-| Lyrics UI component          | —     | ☐      | Scrolling panel, highlight    |
-| rAF + performance.now() sync | —     | ☐      | useLyricsSync hook            |
-| Click-to-seek on lyric line  | —     | ☐      |                               |
-| Timing offset controls       | —     | ☐      | ± 0.5s, persisted             |
+| LRCLIB API client            | Code  | ✅     | HTTP GET with metadata params |
+| LRC parser                   | Code  | ✅     | Regex parse → structured data |
+| Fetch priority chain         | Code  | ✅     | LRCLIB → embedded → sidecar   |
+| Lyrics SQLite cache          | Code  | ✅     | song_hash → lrc               |
+| Lyrics UI component          | UI    | ☐      | Scrolling panel, highlight    |
+| rAF + performance.now() sync | UI    | ☐      | useLyricsSync hook            |
+| Click-to-seek on lyric line  | UI    | ☐      |                               |
+| Timing offset controls       | UI    | ☐      | ± 0.5s, persisted             |
 
 ---
 
@@ -141,15 +141,15 @@ Shell  ─→ Library ─→ Playback ─→ Separation ─→ Lyrics ─→ Pol
 
 ### Task Breakdown
 
-| Task                           | Owner | Status | Notes                         |
-| ------------------------------ | ----- | ------ | ----------------------------- |
-| E2E flow testing (5+ songs)    | —     | ☐      | Different formats & languages |
-| Error handling & user feedback | —     | ☐      | Toasts, fallback states       |
-| Performance profiling          | —     | ☐      | Latency, jitter, memory       |
-| UI polish & transitions        | —     | ☐      | Smooth, responsive            |
-| Keyboard shortcuts             | —     | ☐      | Space, arrows, etc.           |
-| App branding (icon, splash)    | —     | ☐      |                               |
-| Documentation update           | —     | ☐      | Install + usage guide         |
+| Task                           | Owner   | Status | Notes                                               |
+| ------------------------------ | ------- | ------ | --------------------------------------------------- |
+| E2E flow testing (5+ songs)    | Code    | ⏳     | 已有后端 smoke test；真实 5 首歌回归仍待完成        |
+| Error handling & user feedback | Code/UI | ⏳     | 后端结构化错误已完成，展示层待 UI 接入              |
+| Performance profiling          | Code    | ✅     | Latency, jitter, memory                             |
+| UI polish & transitions        | UI      | ☐      | Smooth, responsive                                  |
+| Keyboard shortcuts             | UI/Code | ☐      | Space, arrows, etc.                                 |
+| App branding (icon, splash)    | UI      | ☐      |                                                     |
+| Documentation update           | Code    | ⏳     | README 与交接文档已扩展，用户级安装指南仍可继续细化 |
 
 ---
 
@@ -164,14 +164,14 @@ Shell  ─→ Library ─→ Playback ─→ Separation ─→ Lyrics ─→ Pol
 
 ### Task Breakdown
 
-| Task                     | Owner | Status | Notes                               |
-| ------------------------ | ----- | ------ | ----------------------------------- |
-| Tauri build config       | —     | ☐      | App ID, signing, targets            |
-| CI build matrix          | —     | ☐      | macOS (arm64 + x64), Windows, Linux |
-| Release automation       | —     | ☐      | Tag → Release with artifacts        |
-| First-run model download | —     | ☐      | Progress UI                         |
-| Platform smoke tests     | —     | ☐      | Manual per-platform                 |
-| Homebrew formula         | —     | ☐      | macOS distribution                  |
+| Task                     | Owner   | Status | Notes                                               |
+| ------------------------ | ------- | ------ | --------------------------------------------------- |
+| Tauri build config       | Code    | ✅     | App ID, targets                                     |
+| CI build matrix          | Code    | ⏳     | verify/release workflows 已落地，待首次真实运行结果 |
+| Release automation       | Code    | ⏳     | Tag → draft Release workflow 已落地                 |
+| First-run model download | Code/UI | ⏳     | 后端 bootstrap 已完成，Progress UI 待接入           |
+| Platform smoke tests     | Code    | ☐      | Manual per-platform                                 |
+| Homebrew formula         | Code    | ☐      | macOS distribution                                  |
 
 ---
 

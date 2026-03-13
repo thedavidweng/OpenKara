@@ -13,10 +13,18 @@
 ## 1. 当前起点
 
 - `Phase 0 / M0` 已完成
+- `Phase 1-4` 的后端契约已经就绪，可直接开始真实接线
 - 现有前端基础：
   - `src/App.tsx`
   - `src/styles/globals.css`
   - `src/types/app-shell.ts`
+- 当前可直接消费的契约文档：
+  - [phase-1-library-contract.md](../contracts/phase-1-library-contract.md)
+  - [phase-2-playback-contract.md](../contracts/phase-2-playback-contract.md)
+  - [phase-3-separation-contract.md](../contracts/phase-3-separation-contract.md)
+  - [phase-4-lyrics-contract.md](../contracts/phase-4-lyrics-contract.md)
+  - [phase-5-error-contract.md](../contracts/phase-5-error-contract.md)
+  - [phase-6-model-bootstrap-contract.md](../contracts/phase-6-model-bootstrap-contract.md)
 - 后续 UI 主要落点目录：
   - `src/components/Library/`
   - `src/components/Player/`
@@ -79,7 +87,7 @@
 
 ### 暂停恢复
 
-- 若后端契约未稳定，只做静态组件骨架和假数据占位
+- 当前优先做真实契约接线；仅在明确阻塞时才退回静态骨架
 - 恢复时先确认数据字段是否变化，再继续接线
 
 ## 4. Phase 2 — Playback UI

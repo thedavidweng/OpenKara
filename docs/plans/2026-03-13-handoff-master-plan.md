@@ -21,24 +21,38 @@
 ### 已完成阶段
 
 - `Phase 0 / M0` 已完成
+- `Phase 1 / M1` 代码侧已完成，UI 未开始
+- `Phase 2 / M2` 代码侧已完成，UI 未开始
+- `Phase 3 / M3` 代码侧已完成，UI 未开始
+- `Phase 4 / M4` 代码侧已完成，UI 未开始
+- `Phase 5` 代码侧已完成：
+  - 端到端后端 smoke flow
+  - 结构化错误语义
+  - 后端性能基线
+- `Phase 6` 代码侧部分完成：
+  - Tauri build config
+  - 首次启动模型 bootstrap
+  - CI 模型准备
+  - tag 驱动 release workflow
 - 当前仓库具备：
-  - 可运行的 Tauri 桌面空壳
+  - 可运行的 Tauri 桌面壳
   - React + TypeScript + Vite 前端基础
   - Tailwind CSS 4、ESLint、Prettier
-  - SQLite migration 初始化与 `songs` 表
-  - Demucs ONNX 模型下载脚本
-  - GitHub Actions 基础 CI
+  - SQLite migration、`songs` / `stems` / `lyrics` 缓存
+  - 本地导入、播放、分离、歌词后端主链
+  - Demucs 模型脚本 + 首次启动运行时下载
+  - CI 与 draft release workflow
 
 ### 关键提交
 
-- `fda88bb` `chore: ignore local worktrees`
-- `6fa381d` `chore: bootstrap tauri app shell`
-- `6f573e4` `chore: add frontend foundation tooling`
-- `7db7a3a` `chore: add sqlite migration foundation`
-- `fba6327` `chore: add model setup bootstrap script`
-- `537f66d` `ci: add cross-platform foundation workflow`
-- `30eab58` `docs: add local setup and handoff instructions`
-- `e2eb188` `chore: ignore generated files in prettier`
+- `0e36d11` `perf: add backend performance baseline`
+- `7c6d824` `docs: add phase 5 performance baseline`
+- `c2c71ca` `feat: add first-run model bootstrap`
+- `75bc782` `docs: record model bootstrap contract`
+- `f49d7be` `build: finalize tauri app configuration`
+- `024dec4` `ci: align verification with model setup`
+- `6a241d9` `ci: add release workflow`
+- `d924214` `docs: expand install and release instructions`
 
 ### 接手前必须先读
 
@@ -191,18 +205,21 @@ cd ..
 
 ### 代码 Agent 下一步
 
-1. 进入 `Phase 1`
-2. 完成 `metadata` 模块
-3. 完成 SQLite `songs` CRUD
-4. 完成 `import_songs` Tauri command
-5. 明确导入结果的数据契约，交给 UI Agent 消费
+1. 评估 `Phase 5.5` 键盘快捷键是否仍需 Rust/Tauri 侧支持；若需要，先冻结快捷键契约
+2. 完成 `Phase 6.5` 平台 smoke test 记录
+3. 完成 `Phase 6.6` Homebrew 分发支持
+4. 若 release workflow 首次实际运行暴露问题，以 workflow 与打包配置修复为最高优先级
 
 ### UI Agent 下一步
 
-1. 等待 `Phase 1` 导入契约稳定
-2. 从 `Library` 页面开始
-3. 先做静态组件骨架与状态位
-4. 再接入真实导入数据
+1. 直接从 `Phase 1` `Library` 页面开始
+2. 优先消费已冻结契约：
+   - [phase-1-library-contract.md](../contracts/phase-1-library-contract.md)
+   - [phase-2-playback-contract.md](../contracts/phase-2-playback-contract.md)
+   - [phase-3-separation-contract.md](../contracts/phase-3-separation-contract.md)
+   - [phase-4-lyrics-contract.md](../contracts/phase-4-lyrics-contract.md)
+3. 先做真实数据接线，再补视觉 polish
+4. `Phase 5` 里只负责表面体验，不改后端命令和事件
 
 ## 8. 中断恢复原则
 

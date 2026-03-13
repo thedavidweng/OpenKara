@@ -13,12 +13,29 @@
 ## 1. 当前起点
 
 - `Phase 0 / M0` 已完成
+- `Phase 1-4` 代码侧已完成并已冻结契约
+- `Phase 5` 代码侧已完成：
+  - 后端端到端 smoke flow
+  - 结构化错误语义
+  - 性能基线
+- `Phase 6` 代码侧已部分完成：
+  - Tauri build config
+  - 首次启动模型 bootstrap
+  - CI 模型准备
+  - draft release workflow
 - 已有基础：
   - Tauri app shell
   - SQLite migration runner
-  - `songs` 表
-  - Demucs 模型下载脚本
-  - CI 和本地验证命令
+  - `songs` / `stems` / `lyrics` 表
+  - Demucs 模型下载脚本和运行时 bootstrap
+  - CI、本地验证命令、tag 驱动 release workflow
+
+### 当前仍待完成的代码侧主线
+
+1. 判断 `Phase 5.5` 是否需要 Rust/Tauri 层快捷键支持
+2. 完成 `Phase 6.5` 平台 smoke test 记录
+3. 完成 `Phase 6.6` Homebrew 分发支持
+4. 跟进首次真实 release workflow 执行结果
 
 ### 开始前先读
 
@@ -40,6 +57,8 @@
 ## 3. Phase 1 — Import & Library 契约
 
 **Owner:** 代码 Agent
+
+**Current status:** 已完成
 
 ### 任务
 
@@ -91,6 +110,8 @@ pnpm tauri dev
 
 **Owner:** 代码 Agent
 
+**Current status:** 已完成
+
 ### 任务
 
 1. 实现 `symphonia` 解码
@@ -136,6 +157,8 @@ pnpm tauri dev
 ## 5. Phase 3 — Stem Separation Backend
 
 **Owner:** 代码 Agent
+
+**Current status:** 已完成
 
 ### 任务
 
@@ -187,6 +210,8 @@ pnpm tauri build --debug --no-bundle --ci
 
 **Owner:** 代码 Agent
 
+**Current status:** 已完成
+
 ### 任务
 
 1. 实现 LRCLIB client
@@ -233,6 +258,8 @@ pnpm tauri dev
 
 **Owner:** 代码 Agent
 
+**Current status:** 已完成 `5.1` 后端 smoke、`5.2` 结构化错误、`5.3` 性能基线；`5.5` 是否需要代码侧快捷键仍待确认
+
 ### 任务
 
 1. 组织 `import -> play -> separate -> fetch lyrics -> karaoke` 端到端联调
@@ -272,6 +299,8 @@ pnpm tauri build --debug --no-bundle --ci
 ## 8. Phase 6 — Build, Release, Distribution
 
 **Owner:** 代码 Agent
+
+**Current status:** 已完成 `6.1` build config、`6.2` CI 模型准备、`6.3` release workflow、`6.4` 首次启动模型 bootstrap；`6.5-6.6` 仍待完成
 
 ### 任务
 
