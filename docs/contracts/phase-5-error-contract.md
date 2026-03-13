@@ -15,6 +15,8 @@
 2. `fetch_lyrics / set_lyrics_offset` 失败时返回 `CommandError`
 3. `SeparationStatusSnapshot.error` 变为 `Option<CommandError>`
 4. `separation-error` 事件 payload 的 `error` 字段变为 `CommandError`
+5. `import_songs.failed[].error` 变为 `CommandError`
+6. `get_library / search_library` 顶层命令失败时返回 `CommandError`
 
 ## Shared type: `CommandError`
 
@@ -59,6 +61,15 @@
 
 ## Current mapping semantics
 
+### Library / Import
+
+1. 导入单个文件时无法打开、无法读元数据、无法 canonicalize 路径：
+   - `code = media_read_failed`
+   - `fallback = reimport_song`
+2. 资料库相关的 SQLite 打开或查询失败：
+   - `code = database_unavailable`
+   - `fallback = retry`
+
 ### Playback
 
 1. 找不到歌曲：
@@ -100,15 +111,14 @@
 
 ## Important boundaries
 
-1. 当前 `import_songs` 的 `failed[].error` 仍然是字符串，尚未切到 `CommandError`
-2. 当前错误分类先在 command 边界完成，底层模块仍主要返回 `anyhow::Error`
-3. 如果后续把底层模块也切到 typed domain errors，必须保持这里定义的 `ErrorCode` 和 `FallbackAction` 对外稳定
+1. 当前错误分类先在 command 边界完成，底层模块仍主要返回 `anyhow::Error`
+2. 如果后续把底层模块也切到 typed domain errors，必须保持这里定义的 `ErrorCode` 和 `FallbackAction` 对外稳定
 
 ## Verification commands
 
 ```bash
 cd src-tauri
-cargo test --test phase5_errors --test phase3_status
+cargo test --test phase5_errors --test phase3_status --test phase1_import
 cargo test
 cd ..
 pnpm tauri build --debug --no-bundle --ci
@@ -117,8 +127,9 @@ pnpm tauri build --debug --no-bundle --ci
 **Expected evidence**
 
 1. `phase5_errors` 证明错误分类稳定
-2. `phase3_status` 证明分离状态已携带结构化错误
-3. 全量测试和调试构建通过
+2. `phase1_import` 证明导入失败项已携带结构化错误
+3. `phase3_status` 证明分离状态已携带结构化错误
+4. 全量测试和调试构建通过
 
 ## Pause-and-resume instructions
 

@@ -56,7 +56,12 @@
   "failed": [
     {
       "path": "/bad/path.mp3",
-      "error": "human-readable backend error"
+      "error": {
+        "code": "media_read_failed",
+        "message": "failed to open audio file at /bad/path.mp3",
+        "retryable": false,
+        "fallback": "reimport_song"
+      }
     }
   ]
 }
@@ -69,6 +74,7 @@
 3. `hash` 基于文件原始字节的 SHA-256，不基于路径
 4. `file_path` 在返回前会被 canonicalize 为绝对路径
 5. 若标签中没有标题，后端会回退到文件名 stem
+6. 单个失败项的 `error` 已是结构化 `CommandError`，字段定义见 [phase-5-error-contract.md](./phase-5-error-contract.md)
 
 ### Command: `get_library`
 
@@ -79,6 +85,7 @@
 1. 排序为 `imported_at DESC, title COLLATE NOCASE ASC, hash ASC`
 2. 当前不分页
 3. 当前不做软删除过滤，因为还没有删除能力
+4. 顶层命令失败时返回 `CommandError`，而不是自由文本字符串
 
 ### Command: `search_library`
 
@@ -97,6 +104,7 @@
 1. 大小写不敏感
 2. 匹配范围：`title`、`artist`、`album`、`file_path`
 3. 排序规则与 `get_library` 相同
+4. 顶层命令失败时返回 `CommandError`
 
 ### Shared type: `Song`
 
@@ -110,6 +118,13 @@
 | `duration_ms` | `i64`             | 当前来自音频元数据                             |
 | `cover_art`   | `Option<Vec<u8>>` | 原始图片字节，前端需自行转 data URL/object URL |
 | `imported_at` | `i64`             | Unix timestamp seconds                         |
+
+### Shared type: `ImportFailure`
+
+| Field   | Type           | Notes                                                                           |
+| ------- | -------------- | ------------------------------------------------------------------------------- |
+| `path`  | `String`       | 原始输入路径                                                                    |
+| `error` | `CommandError` | 结构化错误，字段定义见 [phase-5-error-contract.md](./phase-5-error-contract.md) |
 
 ### Required dependencies
 
