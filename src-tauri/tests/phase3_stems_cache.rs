@@ -2,8 +2,9 @@ use std::{
     cell::Cell,
     fs,
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
 };
+
+mod support;
 
 use openkara_lib::{
     audio::decode::DecodedAudio,
@@ -14,12 +15,7 @@ use openkara_lib::{
 use rusqlite::Connection;
 
 fn unique_cache_dir() -> PathBuf {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time should be after unix epoch")
-        .as_nanos();
-
-    std::env::temp_dir().join(format!("openkara-phase3-cache-{timestamp}"))
+    support::unique_temp_path("phase3-cache")
 }
 
 fn cleanup_dir(path: &Path) {
