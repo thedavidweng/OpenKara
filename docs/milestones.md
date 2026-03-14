@@ -171,7 +171,7 @@ Shell  ─→ Library ─→ Playback ─→ Separation ─→ Lyrics ─→ Pol
 | Release automation       | Code    | ⏳     | Tag → draft Release workflow 已落地                                                               |
 | First-run model download | Code/UI | ⏳     | 后端 bootstrap 已完成；目标 UX 为启动检测、可稍后下载、后台进度/重试，以及进入 Karaoke 时二次提示 |
 | Platform smoke tests     | Code    | ⏳     | `scripts/run-local-smoke.sh` 已支持本地语料回归；仍需补 Windows/Linux 启动记录                    |
-| Homebrew formula         | Code    | ☐      | macOS distribution                                                                                |
+| Homebrew distribution    | Code    | ⏳     | 改为 Homebrew Cask 方向；仓库内已补 cask 模板与渲染脚本，tap repo 仍待接入                        |
 
 ---
 
