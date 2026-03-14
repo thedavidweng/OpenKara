@@ -5,8 +5,8 @@ Stem separation backend built around the embedded Demucs ONNX model.
 Current coverage:
 
 - resolve the runtime model from either:
-  - `<app_data_dir>/models/htdemucs_embedded.onnx`
-  - `src-tauri/models/htdemucs_embedded.onnx` as the local development fallback
+  - `<app_data_dir>/models/htdemucs.onnx`
+  - `src-tauri/models/htdemucs.onnx` as the local development fallback
 - verify the model file with a pinned SHA-256 checksum
 - download the model in the background on first launch when neither location is
   ready yet

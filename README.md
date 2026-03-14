@@ -232,7 +232,7 @@ Contributions are welcome! Please open an issue before starting major changes so
 
 ## Acknowledgments
 
-- [Demucs](https://github.com/facebookresearch/demucs) — AI stem separation model by Meta Research
+- [Demucs](https://github.com/adefossez/demucs) — AI stem separation model by Meta Research
 - [LRCLIB](https://lrclib.net) — Open synced lyrics API
 - [monochrome](https://github.com/monochrome-music/monochrome) — Lyrics sync and LRCLIB integration reference
 

@@ -38,8 +38,8 @@ fn remove_dir_if_exists(path: &Path) {
 #[test]
 fn resolve_existing_model_path_prefers_managed_install_over_dev_fallback() {
     let temp_dir = unique_temp_dir();
-    let managed_path = temp_dir.join("managed").join("htdemucs_embedded.onnx");
-    let dev_path = temp_dir.join("dev").join("htdemucs_embedded.onnx");
+    let managed_path = temp_dir.join("managed").join("htdemucs.onnx");
+    let dev_path = temp_dir.join("dev").join("htdemucs.onnx");
     let managed_bytes = b"managed-model";
     let dev_bytes = b"dev-model";
 
@@ -63,8 +63,8 @@ fn resolve_existing_model_path_prefers_managed_install_over_dev_fallback() {
 #[test]
 fn resolve_existing_model_path_falls_back_to_verified_dev_model() {
     let temp_dir = unique_temp_dir();
-    let managed_path = temp_dir.join("managed").join("htdemucs_embedded.onnx");
-    let dev_path = temp_dir.join("dev").join("htdemucs_embedded.onnx");
+    let managed_path = temp_dir.join("managed").join("htdemucs.onnx");
+    let dev_path = temp_dir.join("dev").join("htdemucs.onnx");
     let dev_bytes = b"dev-model";
 
     write_file(&dev_path, dev_bytes);
@@ -86,7 +86,7 @@ fn install_verified_model_bytes_writes_model_to_nested_runtime_directory() {
     let destination = temp_dir
         .join("runtime")
         .join("models")
-        .join("htdemucs_embedded.onnx");
+        .join("htdemucs.onnx");
     let payload = b"fake-model";
 
     bootstrap::install_verified_model_bytes(&destination, payload, &sha256_hex(payload))
@@ -106,7 +106,7 @@ fn install_verified_model_bytes_rejects_checksum_mismatch_without_creating_desti
     let destination = temp_dir
         .join("runtime")
         .join("models")
-        .join("htdemucs_embedded.onnx");
+        .join("htdemucs.onnx");
 
     let error = bootstrap::install_verified_model_bytes(&destination, b"fake-model", "not-a-sha")
         .expect_err("checksum mismatch should fail");

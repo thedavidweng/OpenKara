@@ -12,4 +12,4 @@ Rules:
 - Runtime installs should prefer the app data directory instead of this repo
   path.
 
-The current default model filename is `htdemucs_embedded.onnx`.
+The current default model filename is `htdemucs.onnx`.

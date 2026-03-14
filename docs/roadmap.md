@@ -153,7 +153,7 @@ N segments × 2 channels × T samples
 
 ### Model Distribution Strategy
 
-Current `htdemucs_embedded.onnx` is large enough that it should be treated as a
+Current `htdemucs.onnx` is large enough that it should be treated as a
 runtime asset, not a repository artifact.
 
 Rules:

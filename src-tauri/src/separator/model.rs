@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use ort::value::TensorElementType;
 use std::path::{Path, PathBuf};
 
-pub const EMBEDDED_MODEL_FILENAME: &str = "htdemucs_embedded.onnx";
+pub const EMBEDDED_MODEL_FILENAME: &str = "htdemucs.onnx";
 
 pub struct LoadedModel {
     pub model_path: PathBuf,

@@ -18,7 +18,7 @@ fn preprocesses_stereo_audio_into_channels_first_model_tensor() {
     let loaded_model = model::load_from_path(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("models")
-            .join("htdemucs_embedded.onnx"),
+            .join("htdemucs.onnx"),
     )
     .expect("demucs model should load");
     let decoded = decode::decode_file(&fixture_path("audio", "fixture.wav"))

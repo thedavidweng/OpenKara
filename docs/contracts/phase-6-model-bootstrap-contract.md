@@ -11,8 +11,8 @@
 
 ## 已冻结能力
 
-1. 应用启动时优先检查 `<app_data_dir>/models/htdemucs_embedded.onnx`
-2. 若运行时安装目录缺失模型，则回退检查开发目录 `src-tauri/models/htdemucs_embedded.onnx`
+1. 应用启动时优先检查 `<app_data_dir>/models/htdemucs.onnx`
+2. 若运行时安装目录缺失模型，则回退检查开发目录 `src-tauri/models/htdemucs.onnx`
 3. 若两处都没有可验证的模型，应用启动后会在后台下载模型到 `<app_data_dir>/models/`
 4. `get_model_bootstrap_status() -> ModelBootstrapStatusSnapshot`
 5. `separate(song_id)` 在模型未 ready 时立即返回 `CommandError`
@@ -41,7 +41,7 @@
 ```json
 {
   "state": "downloading",
-  "modelPath": "/Users/example/Library/Application Support/com.openkara.desktop/models/htdemucs_embedded.onnx",
+  "modelPath": "/Users/example/Library/Application Support/com.openkara.desktop/models/htdemucs.onnx",
   "downloadedBytes": 1048576,
   "totalBytes": 52428800,
   "error": null
@@ -86,10 +86,10 @@ payload 为完整的 `ModelBootstrapStatusSnapshot`，其中：
 
 ## Runtime path resolution semantics
 
-1. 优先使用 `<app_data_dir>/models/htdemucs_embedded.onnx`
+1. 优先使用 `<app_data_dir>/models/htdemucs.onnx`
 2. 若运行时安装目录已有模型且 SHA-256 校验通过，直接进入 `ready`
 3. 若运行时安装目录模型存在但校验失败，会先删除损坏文件，再进入后台下载
-4. 若运行时安装目录缺失，但开发目录 `src-tauri/models/htdemucs_embedded.onnx` 存在且校验通过，则直接进入 `ready`
+4. 若运行时安装目录缺失，但开发目录 `src-tauri/models/htdemucs.onnx` 存在且校验通过，则直接进入 `ready`
 5. 只有当两处都没有可用模型时，才会在后台从固定 URL 下载到运行时安装目录
 
 ## Product UX target

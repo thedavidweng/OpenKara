@@ -4,10 +4,11 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODELS_DIR="$ROOT_DIR/src-tauri/models"
-MODEL_FILENAME="htdemucs_embedded.onnx"
+MODEL_FILENAME="htdemucs.onnx"
 MODEL_PATH="$MODELS_DIR/$MODEL_FILENAME"
-MODEL_URL="https://huggingface.co/timcsy/demucs-web-onnx/resolve/main/htdemucs_embedded.onnx?download=true"
-MODEL_SHA256="e5e425c17683f163a472462eb5f5a4ffcd11c31858d57fbd0833b012d8b88077"
+MODEL_URL="https://github.com/thedavidweng/openkara-models/releases/download/model-v1/htdemucs.onnx"
+# TODO: Update SHA-256 after first openkara-models release (push model-v1 tag).
+MODEL_SHA256="PLACEHOLDER_UPDATE_AFTER_MODEL_RELEASE"
 
 require_tool() {
   local tool="$1"

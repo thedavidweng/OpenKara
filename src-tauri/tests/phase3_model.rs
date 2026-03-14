@@ -10,13 +10,13 @@ fn repo_root() -> PathBuf {
 fn resolves_default_demucs_model_path() {
     let model_path = model::default_model_path();
 
-    assert!(model_path.ends_with("src-tauri/models/htdemucs_embedded.onnx"));
+    assert!(model_path.ends_with("src-tauri/models/htdemucs.onnx"));
     assert!(model_path.exists());
 }
 
 #[test]
 fn loads_embedded_demucs_model_session() {
-    let loaded = model::load_from_path(&repo_root().join("models").join("htdemucs_embedded.onnx"))
+    let loaded = model::load_from_path(&repo_root().join("models").join("htdemucs.onnx"))
         .expect("demucs model should load");
 
     assert!(!loaded.inputs.is_empty());

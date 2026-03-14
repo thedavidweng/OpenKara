@@ -230,7 +230,7 @@ pnpm tauri build             # 生产构建，生成平台特定安装包
 
 ## 致谢
 
-- [Demucs](https://github.com/facebookresearch/demucs) — Meta Research 的 AI 音轨分离模型
+- [Demucs](https://github.com/adefossez/demucs) — Meta Research 的 AI 音轨分离模型
 - [LRCLIB](https://lrclib.net) — 开放的同步歌词 API
 - [monochrome](https://github.com/monochrome-music/monochrome) — 歌词同步与 LRCLIB 集成方案参考
 
