@@ -6,9 +6,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODELS_DIR="$ROOT_DIR/src-tauri/models"
 MODEL_FILENAME="htdemucs.onnx"
 MODEL_PATH="$MODELS_DIR/$MODEL_FILENAME"
-MODEL_URL="https://github.com/thedavidweng/openkara-models/releases/download/model-v1/htdemucs.onnx"
-# TODO: Update SHA-256 after first openkara-models release (push model-v1 tag).
-MODEL_SHA256="PLACEHOLDER_UPDATE_AFTER_MODEL_RELEASE"
+MODEL_URL="https://github.com/thedavidweng/openkara-models/releases/download/model-v1.0.0/htdemucs.onnx"
+MODEL_SHA256="66eebc928e4a9f7e5b837605794f4db2b91748f163b0bcbc8f29a526ffe5607e"
 
 require_tool() {
   local tool="$1"

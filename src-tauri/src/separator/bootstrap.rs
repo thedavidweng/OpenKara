@@ -10,9 +10,8 @@ use std::{
 };
 
 pub const MODEL_DOWNLOAD_URL: &str =
-    "https://github.com/thedavidweng/openkara-models/releases/download/model-v1/htdemucs.onnx";
-// TODO: Update SHA-256 after first openkara-models release (push model-v1 tag).
-pub const MODEL_SHA256: &str = "PLACEHOLDER_UPDATE_AFTER_MODEL_RELEASE";
+    "https://github.com/thedavidweng/openkara-models/releases/download/model-v1.0.0/htdemucs.onnx";
+pub const MODEL_SHA256: &str = "66eebc928e4a9f7e5b837605794f4db2b91748f163b0bcbc8f29a526ffe5607e";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ModelSource {
