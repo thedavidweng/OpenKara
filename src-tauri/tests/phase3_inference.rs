@@ -82,3 +82,27 @@ fn separates_fixture_audio_into_named_stems_and_writes_wavs() {
 
     cleanup_dir(&output_dir);
 }
+
+#[test]
+fn separates_audio_longer_than_a_single_demucs_window() {
+    let mut loaded_model = model::load_from_path(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("models")
+            .join("htdemucs_embedded.onnx"),
+    )
+    .expect("demucs model should load");
+    let fixture = decode::decode_file(&fixture_path("audio", "fixture.wav"))
+        .expect("wav fixture should decode");
+
+    let mut long_audio = fixture.clone();
+    long_audio.samples = fixture.samples.repeat(8);
+
+    let separated = inference::separate_audio(&mut loaded_model, &long_audio)
+        .expect("audio longer than one model window should separate");
+
+    assert_eq!(separated.stems.len(), 4);
+    assert!(separated
+        .stems
+        .iter()
+        .all(|stem| stem.audio.samples.len() == long_audio.samples.len()));
+}

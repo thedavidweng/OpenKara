@@ -18,6 +18,8 @@
 5. `separation-error` 事件 payload 为 `{ song_id: String, error: CommandError }`
 6. stem cache 目录固定为 `<app_cache_dir>/stems/{song_hash}/`
 7. `separate(song_id)` 只有在模型 bootstrap 为 `ready` 时才会真正启动后台 worker
+8. 分离前会把输入音频归一化为 Demucs 需要的 `44.1 kHz / stereo`
+9. 超过单个 Demucs window 的长音频会按固定窗口分段推理并拼回完整 stems
 
 ## Inputs / outputs / required dependencies
 
@@ -135,8 +137,9 @@
 
 1. `symphonia` 负责解码输入音频
 2. `ort` 负责 Demucs ONNX 推理
-3. `hound` 负责 stem / accompaniment WAV 写盘
-4. `tauri::async_runtime::spawn_blocking` 负责后台执行推理任务
+3. `rubato` 负责把非 `44.1 kHz` 输入重采样到 Demucs 目标采样率
+4. `hound` 负责 stem / accompaniment WAV 写盘
+5. `tauri::async_runtime::spawn_blocking` 负责后台执行推理任务
 
 ## Verification commands
 

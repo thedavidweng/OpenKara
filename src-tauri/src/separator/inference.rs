@@ -26,8 +26,23 @@ pub fn separate_audio(
     model: &mut LoadedModel,
     decoded_audio: &DecodedAudio,
 ) -> Result<SeparationResult> {
+    let normalized_audio = preprocess::normalize_audio_for_model(decoded_audio)?;
+    let input_frame_count = normalized_audio.samples.len() / normalized_audio.channels;
+    let target_frame_count = preprocess::target_frame_count(model, input_frame_count)?;
+
+    if input_frame_count > target_frame_count {
+        return separate_chunked_audio(model, &normalized_audio, target_frame_count);
+    }
+
+    separate_window_audio(model, &normalized_audio, input_frame_count)
+}
+
+fn separate_window_audio(
+    model: &mut LoadedModel,
+    decoded_audio: &DecodedAudio,
+    trim_frame_count: usize,
+) -> Result<SeparationResult> {
     let prepared_input = preprocess::prepare_model_input(model, decoded_audio)?;
-    let input_frame_count = decoded_audio.samples.len() / decoded_audio.channels;
     let session_inputs = build_session_inputs(model, decoded_audio, prepared_input)
         .context("failed to prepare Demucs inputs")?;
     let outputs = model
@@ -42,7 +57,7 @@ pub fn separate_audio(
     for (_, output_value) in outputs.iter() {
         let dims = tensor_dims(&output_value)?;
         if looks_like_stacked_stem_output(&dims, decoded_audio.channels) {
-            let stems = stems_from_stacked_output(&output_value, decoded_audio, input_frame_count)?;
+            let stems = stems_from_stacked_output(&output_value, decoded_audio, trim_frame_count)?;
             return Ok(SeparationResult { stems });
         }
     }
@@ -66,7 +81,7 @@ pub fn separate_audio(
                     stem_name,
                     &output_value,
                     decoded_audio,
-                    input_frame_count,
+                    trim_frame_count,
                 )?);
             }
             return Ok(SeparationResult { stems });
@@ -86,6 +101,55 @@ pub fn separate_audio(
         "Demucs inference did not expose a final stem output; saw {}",
         output_shapes.join(", ")
     )
+}
+
+fn separate_chunked_audio(
+    model: &mut LoadedModel,
+    decoded_audio: &DecodedAudio,
+    target_frame_count: usize,
+) -> Result<SeparationResult> {
+    let input_frame_count = decoded_audio.samples.len() / decoded_audio.channels;
+    let mut merged_stems = DEMUCS_STEM_NAMES
+        .iter()
+        .map(|stem_name| SeparatedStem {
+            name: (*stem_name).to_string(),
+            audio: DecodedAudio {
+                sample_rate: decoded_audio.sample_rate,
+                channels: decoded_audio.channels,
+                duration_ms: decoded_audio.duration_ms,
+                samples: vec![0.0_f32; decoded_audio.samples.len()],
+            },
+        })
+        .collect::<Vec<_>>();
+
+    // Demucs exposes a fixed input window. For full-length songs we run
+    // sequential windows and stitch the per-window stems back into the
+    // original timeline so later UX smoke tests can cover real songs.
+    for chunk_start_frame in (0..input_frame_count).step_by(target_frame_count) {
+        let chunk_frame_count = (input_frame_count - chunk_start_frame).min(target_frame_count);
+        let chunk_audio = build_chunk_audio(
+            decoded_audio,
+            chunk_start_frame,
+            chunk_frame_count,
+            target_frame_count,
+        );
+        let chunk_result = separate_window_audio(model, &chunk_audio, chunk_frame_count)
+            .with_context(|| {
+                format!("failed to separate chunk starting at frame {chunk_start_frame}")
+            })?;
+
+        for (stem_index, chunk_stem) in chunk_result.stems.iter().enumerate() {
+            let destination = &mut merged_stems[stem_index].audio.samples;
+            let sample_offset = chunk_start_frame * decoded_audio.channels;
+            let chunk_sample_count = chunk_frame_count * decoded_audio.channels;
+            destination[sample_offset..sample_offset + chunk_sample_count]
+                .copy_from_slice(&chunk_stem.audio.samples[..chunk_sample_count]);
+        }
+    }
+
+    Ok(SeparationResult {
+        stems: merged_stems,
+    })
 }
 
 pub fn write_stems_to_directory(
@@ -332,6 +396,28 @@ fn build_stem_from_channels_first(
             samples: interleaved_samples,
         },
     })
+}
+
+fn build_chunk_audio(
+    decoded_audio: &DecodedAudio,
+    chunk_start_frame: usize,
+    chunk_frame_count: usize,
+    target_frame_count: usize,
+) -> DecodedAudio {
+    let channels = decoded_audio.channels;
+    let chunk_start_sample = chunk_start_frame * channels;
+    let chunk_end_sample = chunk_start_sample + chunk_frame_count * channels;
+    let mut padded_samples = vec![0.0_f32; target_frame_count * channels];
+    padded_samples[..chunk_frame_count * channels]
+        .copy_from_slice(&decoded_audio.samples[chunk_start_sample..chunk_end_sample]);
+
+    DecodedAudio {
+        sample_rate: decoded_audio.sample_rate,
+        channels,
+        duration_ms: ((chunk_frame_count as f64 / decoded_audio.sample_rate as f64) * 1000.0)
+            .round() as u64,
+        samples: padded_samples,
+    }
 }
 
 fn write_wav_file(path: &Path, audio: &DecodedAudio) -> Result<()> {

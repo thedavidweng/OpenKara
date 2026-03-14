@@ -40,19 +40,26 @@ fn preprocesses_stereo_audio_into_channels_first_model_tensor() {
 }
 
 #[test]
-fn rejects_audio_with_a_sample_rate_the_model_does_not_support() {
-    let loaded_model = model::load_from_path(
-        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("models")
-            .join("htdemucs_embedded.onnx"),
-    )
-    .expect("demucs model should load");
+fn resamples_audio_with_a_non_demucs_sample_rate() {
     let mut decoded = decode::decode_file(&fixture_path("audio", "fixture.wav"))
         .expect("wav fixture should decode");
+    let input_frame_count = decoded.samples.len() / decoded.channels;
     decoded.sample_rate = 48_000;
+    decoded.duration_ms = ((input_frame_count as f64 / decoded.sample_rate as f64) * 1000.0)
+        .round() as u64;
 
-    let error = preprocess::prepare_model_input(&loaded_model, &decoded)
-        .expect_err("48k audio should fail");
+    let normalized = preprocess::normalize_audio_for_model(&decoded)
+        .expect("48k audio should be resampled for demucs");
 
-    assert!(error.to_string().contains("44.1 kHz"));
+    assert_eq!(normalized.sample_rate, preprocess::DEMUCS_SAMPLE_RATE);
+    assert_eq!(normalized.channels, preprocess::DEMUCS_CHANNELS);
+
+    let expected_frames =
+        ((input_frame_count as f64 * preprocess::DEMUCS_SAMPLE_RATE as f64) / 48_000.0).round()
+            as usize;
+    let actual_frames = normalized.samples.len() / normalized.channels;
+    assert!(
+        actual_frames.abs_diff(expected_frames) <= 2,
+        "expected about {expected_frames} frames after resampling, got {actual_frames}",
+    );
 }
