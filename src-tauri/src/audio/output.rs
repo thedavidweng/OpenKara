@@ -1,3 +1,4 @@
+use crate::audio::decode::DecodedAudio;
 use crate::audio::playback::{monotonic_now_ms, PlaybackController};
 use anyhow::{Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -54,21 +55,65 @@ pub fn render_output_buffer(
         return 0;
     }
 
-    let Some(decoded_audio) = playback.loaded_audio() else {
+    let Some(track) = &playback.current_track else {
         return 0;
     };
 
-    let start_frame = (snapshot.position_ms * decoded_audio.sample_rate as u64 / 1000) as usize;
-    let start_sample = start_frame * decoded_audio.channels;
-    let available_samples = decoded_audio.samples.len().saturating_sub(start_sample);
-    let rendered_samples = available_samples.min(output.len());
-    let volume = snapshot.volume;
+    let master = snapshot.volume;
+    let sv = snapshot.stem_volumes;
 
-    for (index, sample) in output.iter_mut().enumerate().take(rendered_samples) {
-        *sample = decoded_audio.samples[start_sample + index] * volume;
+    if let Some(stems) = &track.stems {
+        // Use any stem for timing (they all have same sample_rate/length)
+        let sample_rate = stems.vocals.sample_rate as u64;
+        let start_frame = (snapshot.position_ms * sample_rate / 1000) as usize;
+
+        let mut rendered = 0;
+        rendered = rendered.max(mix_stem_into(output, &stems.vocals, start_frame, master * sv.vocals));
+        rendered = rendered.max(mix_stem_into(output, &stems.drums, start_frame, master * sv.drums));
+        rendered = rendered.max(mix_stem_into(output, &stems.bass, start_frame, master * sv.bass));
+        rendered = rendered.max(mix_stem_into(output, &stems.other, start_frame, master * sv.other));
+
+        // Clamp to prevent clipping
+        for sample in output.iter_mut() {
+            *sample = sample.clamp(-1.0, 1.0);
+        }
+
+        rendered
+    } else {
+        // Fallback: play original audio with master volume
+        let original = &track.original_audio;
+        let start_frame =
+            (snapshot.position_ms * original.sample_rate as u64 / 1000) as usize;
+        let start_sample = start_frame * original.channels;
+        let available = original.samples.len().saturating_sub(start_sample);
+        let count = available.min(output.len());
+
+        for i in 0..count {
+            output[i] = original.samples[start_sample + i] * master;
+        }
+
+        count
+    }
+}
+
+fn mix_stem_into(
+    output: &mut [f32],
+    audio: &DecodedAudio,
+    start_frame: usize,
+    gain: f32,
+) -> usize {
+    if gain == 0.0 {
+        return 0;
+    }
+    let start_sample = start_frame * audio.channels;
+    let available = audio.samples.len().saturating_sub(start_sample);
+    let count = available.min(output.len());
+
+    for i in 0..count {
+        output[i] += audio.samples[start_sample + i] * gain;
     }
 
-    rendered_samples
+    count
 }
 
 fn build_output_stream<T>(

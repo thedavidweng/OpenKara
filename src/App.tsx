@@ -74,6 +74,8 @@ function useEventListeners() {
     (s) => s.updateSeparationStatus,
   );
   const updateBootstrapStatus = useBootstrapStore((s) => s.updateStatus);
+  const loadStems = usePlayerStore((s) => s.loadStems);
+  const currentSongId = usePlayerStore((s) => s.snapshot?.song_id);
 
   // Stable reference for separation completion handler
   const handleSeparationComplete = useCallback(
@@ -87,8 +89,13 @@ function useEventListeners() {
         accomp_path: null,
         error: null,
       });
+
+      // Auto-load stems into playback if the separated song is currently playing
+      if (event.song_id === currentSongId) {
+        loadStems().catch(console.error);
+      }
     },
-    [updateSeparationStatus],
+    [updateSeparationStatus, loadStems, currentSongId],
   );
 
   useEffect(() => {

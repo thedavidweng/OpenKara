@@ -155,7 +155,8 @@ pub fn run() {
             commands::playback::pause,
             commands::playback::seek,
             commands::playback::set_volume,
-            commands::playback::set_playback_mode,
+            commands::playback::set_stem_volume,
+            commands::playback::load_stems,
             commands::playback::get_playback_state,
             commands::separation::separate,
             commands::separation::get_separation_status

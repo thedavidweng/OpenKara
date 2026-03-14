@@ -3,9 +3,9 @@ import type {
   ImportSongsResult,
   LyricsPayload,
   ModelBootstrapStatusSnapshot,
-  PlaybackMode,
   PlaybackStateSnapshot,
   SeparationStatusSnapshot,
+  StemName,
   Song,
 } from "@/types/ipc";
 
@@ -55,10 +55,15 @@ export function setVolume(level: number): Promise<PlaybackStateSnapshot> {
   return invoke<PlaybackStateSnapshot>("set_volume", { level });
 }
 
-export function setPlaybackMode(
-  mode: PlaybackMode,
+export function setStemVolume(
+  stem: StemName,
+  level: number,
 ): Promise<PlaybackStateSnapshot> {
-  return invoke<PlaybackStateSnapshot>("set_playback_mode", { mode });
+  return invoke<PlaybackStateSnapshot>("set_stem_volume", { stem, level });
+}
+
+export function loadStems(): Promise<PlaybackStateSnapshot> {
+  return invoke<PlaybackStateSnapshot>("load_stems");
 }
 
 export function getPlaybackState(): Promise<PlaybackStateSnapshot> {

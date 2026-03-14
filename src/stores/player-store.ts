@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import * as api from "@/lib/tauri";
-import type { PlaybackMode, PlaybackStateSnapshot } from "@/types/ipc";
+import type { PlaybackStateSnapshot, StemName } from "@/types/ipc";
 
 interface PlayerState {
   snapshot: PlaybackStateSnapshot | null;
@@ -10,7 +10,8 @@ interface PlayerState {
   pause: () => Promise<void>;
   seek: (ms: number) => Promise<void>;
   setVolume: (level: number) => Promise<void>;
-  setMode: (mode: PlaybackMode) => Promise<void>;
+  setStemVolume: (stem: StemName, level: number) => Promise<void>;
+  loadStems: () => Promise<void>;
   updatePosition: (ms: number) => void;
   updateSnapshot: (snapshot: PlaybackStateSnapshot) => void;
   loadState: () => Promise<void>;
@@ -42,8 +43,14 @@ export const usePlayerStore = create<PlayerState>((set) => ({
     set({ snapshot });
   },
 
-  setMode: async (mode) => {
-    const snapshot = await api.setPlaybackMode(mode);
+  setStemVolume: async (stem, level) => {
+    const clamped = Math.max(0, Math.min(1, level));
+    const snapshot = await api.setStemVolume(stem, clamped);
+    set({ snapshot });
+  },
+
+  loadStems: async () => {
+    const snapshot = await api.loadStems();
     set({ snapshot });
   },
 

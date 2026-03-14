@@ -14,6 +14,9 @@ use std::{
 const STEMS_CACHE_DIRECTORY: &str = "stems";
 const ACCOMPANIMENT_FILENAME: &str = "accompaniment.wav";
 const VOCALS_FILENAME: &str = "vocals.wav";
+const DRUMS_FILENAME: &str = "drums.wav";
+const BASS_FILENAME: &str = "bass.wav";
+const OTHER_FILENAME: &str = "other.wav";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StemCacheEntry {
@@ -21,6 +24,15 @@ pub struct StemCacheEntry {
     pub vocals_path: String,
     pub accomp_path: String,
     pub separated_at: i64,
+    pub drums_path: Option<String>,
+    pub bass_path: Option<String>,
+    pub other_path: Option<String>,
+}
+
+impl StemCacheEntry {
+    pub fn has_individual_stems(&self) -> bool {
+        self.drums_path.is_some() && self.bass_path.is_some() && self.other_path.is_some()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -63,7 +75,8 @@ pub fn get_cached_stem_entry(
     song_hash: &str,
 ) -> rusqlite::Result<Option<StemCacheEntry>> {
     let mut statement = connection.prepare(
-        "SELECT song_hash, vocals_path, accomp_path, separated_at
+        "SELECT song_hash, vocals_path, accomp_path, separated_at,
+                drums_path, bass_path, other_path
         FROM stems
         WHERE song_hash = ?1
         LIMIT 1",
@@ -76,6 +89,9 @@ pub fn get_cached_stem_entry(
             vocals_path: row.get(1)?,
             accomp_path: row.get(2)?,
             separated_at: row.get(3)?,
+            drums_path: row.get(4)?,
+            bass_path: row.get(5)?,
+            other_path: row.get(6)?,
         })),
         None => Ok(None),
     }
@@ -139,6 +155,9 @@ pub fn store_generated_stem_cache(
         vocals_path: format!("{STEMS_CACHE_DIRECTORY}/{song_hash}/{VOCALS_FILENAME}"),
         accomp_path: format!("{STEMS_CACHE_DIRECTORY}/{song_hash}/{ACCOMPANIMENT_FILENAME}"),
         separated_at: unix_timestamp(),
+        drums_path: Some(format!("{STEMS_CACHE_DIRECTORY}/{song_hash}/{DRUMS_FILENAME}")),
+        bass_path: Some(format!("{STEMS_CACHE_DIRECTORY}/{song_hash}/{BASS_FILENAME}")),
+        other_path: Some(format!("{STEMS_CACHE_DIRECTORY}/{song_hash}/{OTHER_FILENAME}")),
     };
     upsert_stem_cache_entry(connection, &entry).context("failed to persist stem cache entry")?;
 
@@ -158,17 +177,26 @@ fn upsert_stem_cache_entry(
             song_hash,
             vocals_path,
             accomp_path,
-            separated_at
-        ) VALUES (?1, ?2, ?3, ?4)
+            separated_at,
+            drums_path,
+            bass_path,
+            other_path
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
         ON CONFLICT(song_hash) DO UPDATE SET
             vocals_path = excluded.vocals_path,
             accomp_path = excluded.accomp_path,
-            separated_at = excluded.separated_at",
+            separated_at = excluded.separated_at,
+            drums_path = excluded.drums_path,
+            bass_path = excluded.bass_path,
+            other_path = excluded.other_path",
         params![
             entry.song_hash,
             entry.vocals_path,
             entry.accomp_path,
             entry.separated_at,
+            entry.drums_path,
+            entry.bass_path,
+            entry.other_path,
         ],
     )?;
 
@@ -176,8 +204,21 @@ fn upsert_stem_cache_entry(
 }
 
 fn cache_entry_files_exist(library_root: &LibraryRoot, entry: &StemCacheEntry) -> bool {
-    library_root.resolve(&entry.vocals_path).exists()
-        && library_root.resolve(&entry.accomp_path).exists()
+    let base_ok = library_root.resolve(&entry.vocals_path).exists()
+        && library_root.resolve(&entry.accomp_path).exists();
+
+    if !base_ok {
+        return false;
+    }
+
+    // When individual stem paths are recorded, verify those files exist too.
+    for path in [&entry.drums_path, &entry.bass_path, &entry.other_path].into_iter().flatten() {
+        if !library_root.resolve(path).exists() {
+            return false;
+        }
+    }
+
+    true
 }
 
 fn ensure_song_exists(connection: &Connection, song_hash: &str) -> Result<()> {

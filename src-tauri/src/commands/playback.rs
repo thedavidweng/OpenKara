@@ -2,8 +2,8 @@ use crate::{
     audio::{
         decode, output,
         playback::{
-            monotonic_now_ms, playback_position_event, PlaybackController, PlaybackMode,
-            PlaybackStateSnapshot, PLAYBACK_POSITION_EVENT,
+            monotonic_now_ms, playback_position_event, PlaybackController,
+            PlaybackStateSnapshot, StemName, StemSet, PLAYBACK_POSITION_EVENT,
         },
     },
     cache,
@@ -95,10 +95,23 @@ pub fn set_volume(state: State<'_, AppState>, level: f32) -> CommandResult<Playb
 }
 
 #[tauri::command]
-pub fn set_playback_mode(
+pub fn set_stem_volume(
     state: State<'_, AppState>,
-    mode: PlaybackMode,
+    stem: StemName,
+    level: f32,
 ) -> CommandResult<PlaybackStateSnapshot> {
+    let mut playback = state
+        .playback
+        .lock()
+        .map_err(|_| state_lock_error("playback controller lock was poisoned"))?;
+
+    playback
+        .set_stem_volume(stem, level)
+        .map_err(playback_error)
+}
+
+#[tauri::command]
+pub fn load_stems(state: State<'_, AppState>) -> CommandResult<PlaybackStateSnapshot> {
     let library_root = state.library_root()?;
     let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
     let mut playback = state
@@ -106,8 +119,10 @@ pub fn set_playback_mode(
         .lock()
         .map_err(|_| state_lock_error("playback controller lock was poisoned"))?;
 
-    set_playback_mode_from_library(&connection, &library_root, &mut playback, mode)
-        .map_err(playback_error)
+    load_stems_for_current_track(&connection, &library_root, &mut playback)
+        .map_err(playback_error)?;
+
+    Ok(playback.snapshot(monotonic_now_ms()))
 }
 
 #[tauri::command]
@@ -137,32 +152,42 @@ pub fn play_song_from_library(
     Ok(controller.start_track(song.hash, decoded_audio, now_ms))
 }
 
-pub fn set_playback_mode_from_library(
+pub fn load_stems_for_current_track(
     connection: &Connection,
     library_root: &LibraryRoot,
     controller: &mut PlaybackController,
-    mode: PlaybackMode,
-) -> Result<PlaybackStateSnapshot> {
-    if mode == PlaybackMode::Karaoke && !controller.has_karaoke_track() {
-        let song_id = controller
-            .current_song_id()
-            .context("no track is loaded")?
-            .to_owned();
-        let cached_stems = cache::stems::get_cached_stem_entry(connection, &song_id)
-            .context("failed to load cached stems for playback mode switch")?
-            .with_context(|| format!("song with hash {song_id} does not have cached stems"))?;
-        let absolute_accomp = library_root.resolve(&cached_stems.accomp_path);
-        let accompaniment = decode::decode_file(&absolute_accomp)
-            .with_context(|| {
-                format!(
-                    "failed to decode accompaniment {}",
-                    cached_stems.accomp_path
-                )
-            })?;
-        controller.attach_karaoke_track(&song_id, accompaniment)?;
+) -> Result<()> {
+    let song_id = controller
+        .current_song_id()
+        .context("no track is loaded")?
+        .to_owned();
+
+    if controller.has_stems() {
+        return Ok(());
     }
 
-    controller.set_mode(mode)
+    let cached = cache::stems::get_cached_stem_entry(connection, &song_id)
+        .context("failed to load cached stems")?
+        .with_context(|| format!("no cached stems for song {song_id}"))?;
+
+    let load_stem = |path: &str| -> Result<decode::DecodedAudio> {
+        let abs = library_root.resolve(path);
+        decode::decode_file(&abs)
+            .with_context(|| format!("failed to decode stem {}", path))
+    };
+
+    // Try loading individual stems; fall back to accompaniment-only if unavailable
+    if cached.has_individual_stems() {
+        let stems = StemSet {
+            vocals: load_stem(&cached.vocals_path)?,
+            drums: load_stem(cached.drums_path.as_ref().unwrap())?,
+            bass: load_stem(cached.bass_path.as_ref().unwrap())?,
+            other: load_stem(cached.other_path.as_ref().unwrap())?,
+        };
+        controller.attach_stems(&song_id, stems)?;
+    }
+
+    Ok(())
 }
 
 pub fn emit_playback_position(

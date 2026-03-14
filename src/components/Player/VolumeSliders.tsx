@@ -1,72 +1,162 @@
-import { Mic2, Music } from "lucide-react";
+import { useState, useCallback } from "react";
+import { Mic2, Music, ChevronDown, Drum, Guitar, Piano } from "lucide-react";
 import { usePlayerStore } from "@/stores/player-store";
 import { useLibraryStore } from "@/stores/library-store";
+import type { StemName } from "@/types/ipc";
 
 export function VolumeSliders() {
   const snapshot = usePlayerStore((s) => s.snapshot);
-  const setVolume = usePlayerStore((s) => s.setVolume);
-  const setMode = usePlayerStore((s) => s.setMode);
+  const setStemVolume = usePlayerStore((s) => s.setStemVolume);
   const separationStatuses = useLibraryStore((s) => s.separationStatuses);
 
-  const volume = snapshot?.volume ?? 1;
-  const mode = snapshot?.mode ?? "original";
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const stemVolumes = snapshot?.stem_volumes ?? {
+    vocals: 1,
+    drums: 1,
+    bass: 1,
+    other: 1,
+  };
+  const hasStems = snapshot?.has_stems ?? false;
   const songId = snapshot?.song_id;
   const isSeparated =
     songId != null && separationStatuses[songId]?.state === "completed";
+  const stemsAvailable = hasStems && isSeparated;
 
-  // Vocal slider: 100 in original mode, 0 in karaoke mode
-  const vocalValue = mode === "karaoke" ? 0 : 100;
+  const handleStemChange = useCallback(
+    (stem: StemName, value: number) => {
+      setStemVolume(stem, value);
+    },
+    [setStemVolume],
+  );
 
-  const handleVocalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = Number(e.target.value);
-    if (value === 0 && isSeparated) {
-      setMode("karaoke");
-    } else if (value > 0 && mode === "karaoke") {
-      setMode("original");
-    }
-  };
+  // Accompaniment display value = max of the three sub-stems
+  const accompValue = Math.max(
+    stemVolumes.drums,
+    stemVolumes.bass,
+    stemVolumes.other,
+  );
 
-  const handleInstChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setVolume(Number(e.target.value) / 100);
-  };
+  const handleAccompChange = useCallback(
+    (newValue: number) => {
+      if (accompValue === 0) {
+        // All sub-stems are 0; set them all to the new value
+        setStemVolume("drums", newValue);
+        setStemVolume("bass", newValue);
+        setStemVolume("other", newValue);
+      } else {
+        const ratio = newValue / accompValue;
+        setStemVolume(
+          "drums",
+          Math.min(1, stemVolumes.drums * ratio),
+        );
+        setStemVolume(
+          "bass",
+          Math.min(1, stemVolumes.bass * ratio),
+        );
+        setStemVolume(
+          "other",
+          Math.min(1, stemVolumes.other * ratio),
+        );
+      }
+    },
+    [accompValue, stemVolumes, setStemVolume],
+  );
 
   return (
     <div className="flex items-center gap-5">
-      <div className="flex items-center gap-2" title="Vocals">
-        <Mic2
-          size={14}
-          className={
-            vocalValue > 0
-              ? "text-[#EBEBF5]"
-              : "text-[var(--color-text-dimmer)]"
-          }
+      {/* Vocals slider */}
+      <StemSlider
+        icon={<Mic2 size={14} />}
+        label="Vocals"
+        value={stemVolumes.vocals}
+        onChange={(v) => handleStemChange("vocals", v)}
+        disabled={!stemsAvailable}
+      />
+
+      {/* Accompaniment group */}
+      <div className="flex items-center gap-2">
+        <StemSlider
+          icon={<Music size={14} />}
+          label="Accompaniment"
+          value={accompValue}
+          onChange={handleAccompChange}
+          disabled={!stemsAvailable}
         />
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={vocalValue}
-          onChange={handleVocalChange}
-          className="native-slider w-16"
-          disabled={!isSeparated}
-        />
+        {stemsAvailable && (
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="flex items-center justify-center w-4 h-4 text-[var(--color-text-dimmer)] hover:text-[#EBEBF5] transition-colors"
+            title={isExpanded ? "Collapse stems" : "Expand stems"}
+          >
+            <ChevronDown
+              size={12}
+              className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}
+            />
+          </button>
+        )}
       </div>
-      <div className="flex items-center gap-2" title="Instrumentals">
-        <Music
-          size={14}
-          className={
-            volume > 0 ? "text-[#EBEBF5]" : "text-[var(--color-text-dimmer)]"
-          }
-        />
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={Math.round(volume * 100)}
-          onChange={handleInstChange}
-          className="native-slider w-16"
-        />
-      </div>
+
+      {/* Expanded individual stem sliders */}
+      {isExpanded && stemsAvailable && (
+        <>
+          <StemSlider
+            icon={<Drum size={13} />}
+            label="Drums"
+            value={stemVolumes.drums}
+            onChange={(v) => handleStemChange("drums", v)}
+          />
+          <StemSlider
+            icon={<Guitar size={13} />}
+            label="Bass"
+            value={stemVolumes.bass}
+            onChange={(v) => handleStemChange("bass", v)}
+          />
+          <StemSlider
+            icon={<Piano size={13} />}
+            label="Other"
+            value={stemVolumes.other}
+            onChange={(v) => handleStemChange("other", v)}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+function StemSlider({
+  icon,
+  label,
+  value,
+  onChange,
+  disabled = false,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-2" title={label}>
+      <span
+        className={
+          !disabled && value > 0
+            ? "text-[#EBEBF5]"
+            : "text-[var(--color-text-dimmer)]"
+        }
+      >
+        {icon}
+      </span>
+      <input
+        type="range"
+        min="0"
+        max="100"
+        value={Math.round(value * 100)}
+        onChange={(e) => onChange(Number(e.target.value) / 100)}
+        className="native-slider w-16"
+        disabled={disabled}
+      />
     </div>
   );
 }

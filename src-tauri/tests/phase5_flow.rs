@@ -6,12 +6,12 @@ use std::{
 mod support;
 
 use openkara_lib::{
-    audio::playback::{PlaybackController, PlaybackMode},
+    audio::playback::PlaybackController,
     cache,
     commands::{
         import::import_songs_from_paths,
         lyrics::{fetch_lyrics_from_connection, set_lyrics_offset_in_connection},
-        playback::{play_song_from_library, set_playback_mode_from_library},
+        playback::play_song_from_library,
     },
     library_root::LibraryRoot,
     separator::{job, model},
@@ -73,7 +73,7 @@ fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode
     let started = play_song_from_library(&connection, &library, &mut playback, &song_id, 1_000)
         .expect("song should load into the playback controller");
     assert_eq!(started.song_id.as_deref(), Some(song_id.as_str()));
-    assert_eq!(started.mode, PlaybackMode::Original);
+    assert!(!started.has_stems);
 
     let separation = job::separate_song_into_cache(
         &connection,
@@ -115,11 +115,6 @@ fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode
     )
     .expect("second fetch should read lyrics from cache");
     assert_eq!(cached_lyrics.offset_ms, 500);
-
-    let karaoke = set_playback_mode_from_library(&connection, &library, &mut playback, PlaybackMode::Karaoke)
-        .expect("playback should switch to the cached accompaniment");
-    assert_eq!(karaoke.mode, PlaybackMode::Karaoke);
-    assert!(playback.has_karaoke_track());
 
     mock.assert();
     cleanup_dir(&fixture_dir);

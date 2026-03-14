@@ -59,7 +59,14 @@ export interface ImportSongsResult {
 
 // ─── Playback ────────────────────────────────────────────
 
-export type PlaybackMode = "original" | "karaoke";
+export type StemName = "vocals" | "drums" | "bass" | "other";
+
+export interface StemVolumes {
+  vocals: number;
+  drums: number;
+  bass: number;
+  other: number;
+}
 
 export interface PlaybackStateSnapshot {
   song_id: string | null;
@@ -67,7 +74,8 @@ export interface PlaybackStateSnapshot {
   position_ms: number;
   duration_ms: number | null;
   volume: number;
-  mode: PlaybackMode;
+  stem_volumes: StemVolumes;
+  has_stems: boolean;
 }
 
 export interface PlaybackPositionEvent {

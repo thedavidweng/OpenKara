@@ -7,6 +7,42 @@ use std::time::Instant;
 pub const PLAYBACK_POSITION_EVENT: &str = "playback-position";
 pub const PLAYBACK_POSITION_POLL_INTERVAL_MS: u64 = 16;
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct StemVolumes {
+    pub vocals: f32,
+    pub drums: f32,
+    pub bass: f32,
+    pub other: f32,
+}
+
+impl Default for StemVolumes {
+    fn default() -> Self {
+        Self {
+            vocals: 1.0,
+            drums: 1.0,
+            bass: 1.0,
+            other: 1.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StemName {
+    Vocals,
+    Drums,
+    Bass,
+    Other,
+}
+
+#[derive(Debug)]
+pub struct StemSet {
+    pub vocals: DecodedAudio,
+    pub drums: DecodedAudio,
+    pub bass: DecodedAudio,
+    pub other: DecodedAudio,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PlaybackStateSnapshot {
     pub song_id: Option<String>,
@@ -14,30 +50,24 @@ pub struct PlaybackStateSnapshot {
     pub position_ms: u64,
     pub duration_ms: Option<u64>,
     pub volume: f32,
-    pub mode: PlaybackMode,
+    pub stem_volumes: StemVolumes,
+    pub has_stems: bool,
 }
 
 #[derive(Debug)]
-struct LoadedTrack {
-    song_id: String,
-    original_audio: DecodedAudio,
-    karaoke_audio: Option<DecodedAudio>,
+pub(crate) struct LoadedTrack {
+    pub(crate) song_id: String,
+    pub(crate) original_audio: DecodedAudio,
+    pub(crate) stems: Option<StemSet>,
     base_position_ms: u64,
     started_at_ms: Option<u64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PlaybackMode {
-    Original,
-    Karaoke,
-}
-
 #[derive(Debug)]
 pub struct PlaybackController {
-    current_track: Option<LoadedTrack>,
+    pub(crate) current_track: Option<LoadedTrack>,
     volume: f32,
-    mode: PlaybackMode,
+    stem_volumes: StemVolumes,
 }
 
 impl Default for PlaybackController {
@@ -45,7 +75,7 @@ impl Default for PlaybackController {
         Self {
             current_track: None,
             volume: 1.0,
-            mode: PlaybackMode::Original,
+            stem_volumes: StemVolumes::default(),
         }
     }
 }
@@ -60,11 +90,10 @@ impl PlaybackController {
         self.current_track = Some(LoadedTrack {
             song_id,
             original_audio: decoded_audio,
-            karaoke_audio: None,
+            stems: None,
             base_position_ms: 0,
             started_at_ms: Some(now_ms),
         });
-        self.mode = PlaybackMode::Original;
         self.snapshot(now_ms)
     }
 
@@ -110,39 +139,38 @@ impl PlaybackController {
         Ok(self.snapshot(monotonic_now_ms()))
     }
 
-    pub fn set_mode(&mut self, mode: PlaybackMode) -> Result<PlaybackStateSnapshot> {
-        if self.current_track.is_none() {
-            return Err(anyhow::anyhow!("no track is loaded"));
+    pub fn set_stem_volume(&mut self, stem: StemName, level: f32) -> Result<PlaybackStateSnapshot> {
+        let level = level.clamp(0.0, 1.0);
+        match stem {
+            StemName::Vocals => self.stem_volumes.vocals = level,
+            StemName::Drums => self.stem_volumes.drums = level,
+            StemName::Bass => self.stem_volumes.bass = level,
+            StemName::Other => self.stem_volumes.other = level,
         }
-
-        if mode == PlaybackMode::Karaoke && !self.has_karaoke_track() {
-            bail!("karaoke audio is not loaded for the current track");
-        }
-
-        self.mode = mode;
         Ok(self.snapshot(monotonic_now_ms()))
     }
 
-    pub fn attach_karaoke_track(
-        &mut self,
-        song_id: &str,
-        decoded_audio: DecodedAudio,
-    ) -> Result<()> {
+    pub fn attach_stems(&mut self, song_id: &str, stems: StemSet) -> Result<()> {
         let track = self
             .current_track
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("no track is loaded"))?;
-
         if track.song_id != song_id {
             bail!(
-                "cannot attach karaoke audio for song {} while {} is loaded",
+                "cannot attach stems for song {} while {} is loaded",
                 song_id,
                 track.song_id
             );
         }
-
-        track.karaoke_audio = Some(decoded_audio);
+        track.stems = Some(stems);
         Ok(())
+    }
+
+    pub fn has_stems(&self) -> bool {
+        self.current_track
+            .as_ref()
+            .and_then(|t| t.stems.as_ref())
+            .is_some()
     }
 
     pub fn snapshot(&mut self, now_ms: u64) -> PlaybackStateSnapshot {
@@ -161,7 +189,8 @@ impl PlaybackController {
                 position_ms: track.position_ms(now_ms),
                 duration_ms: Some(duration_ms),
                 volume: self.volume,
-                mode: self.mode,
+                stem_volumes: self.stem_volumes,
+                has_stems: track.stems.is_some(),
             };
         }
 
@@ -171,31 +200,15 @@ impl PlaybackController {
             position_ms: 0,
             duration_ms: None,
             volume: self.volume,
-            mode: self.mode,
+            stem_volumes: self.stem_volumes,
+            has_stems: false,
         }
-    }
-
-    pub fn loaded_audio(&self) -> Option<&DecodedAudio> {
-        self.current_track.as_ref().map(|track| match self.mode {
-            PlaybackMode::Original => &track.original_audio,
-            PlaybackMode::Karaoke => track
-                .karaoke_audio
-                .as_ref()
-                .unwrap_or(&track.original_audio),
-        })
     }
 
     pub fn current_song_id(&self) -> Option<&str> {
         self.current_track
             .as_ref()
             .map(|track| track.song_id.as_str())
-    }
-
-    pub fn has_karaoke_track(&self) -> bool {
-        self.current_track
-            .as_ref()
-            .and_then(|track| track.karaoke_audio.as_ref())
-            .is_some()
     }
 }
 

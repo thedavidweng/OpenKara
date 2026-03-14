@@ -1,0 +1,3 @@
+ALTER TABLE stems ADD COLUMN drums_path TEXT;
+ALTER TABLE stems ADD COLUMN bass_path TEXT;
+ALTER TABLE stems ADD COLUMN other_path TEXT;
