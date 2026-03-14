@@ -1,36 +1,77 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --color-shell-night: #090b10;
-  --color-shell-ink: #10131b;
-  --color-shell-glow: #263452;
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+    "PingFang SC", "Hiragino Sans", "Noto Sans CJK JP", "Noto Sans CJK SC",
+    "Microsoft YaHei", "WenQuanYi Micro Hei", Ubuntu, sans-serif;
+  --color-surface: #121212;
+  --color-sidebar: #1c1c1e;
+  --color-toolbar: #1c1c1e;
+  --color-border: #2c2c2e;
+  --color-border-light: #38383a;
+  --color-hover: #2c2c2e;
+  --color-active: #3a3a3c;
+  --color-text: #d1d1d6;
+  --color-text-dim: #8e8e93;
+  --color-text-dimmer: #48484a;
+  --color-accent: #007aff;
 }
 
 @layer base {
   :root {
-    color: #f5f7fb;
-    background: radial-gradient(
-      circle at top,
-      var(--color-shell-glow) 0%,
-      var(--color-shell-ink) 45%,
-      var(--color-shell-night) 100%
-    );
+    color: var(--color-text);
+    background-color: var(--color-surface);
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     -webkit-text-size-adjust: 100%;
+    font-size: 13px;
   }
 
   html,
   body,
   #root {
-    min-height: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+  }
+}
+
+@layer utilities {
+  /* Custom scrollbar */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: var(--color-border-light);
+    border-radius: 4px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: #5c5c5e;
   }
 
-  body {
-    min-width: 320px;
-    margin: 0;
+  /* Native-style range slider */
+  .native-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--color-border);
+    border-radius: 9999px;
+    height: 4px;
+    cursor: pointer;
+  }
+  .native-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ebebf5;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
   }
 }

@@ -1,0 +1,38 @@
+import { Play, Pause, SkipBack, SkipForward } from "lucide-react";
+import { usePlayerStore } from "@/stores/player-store";
+
+export function PlayControls() {
+  const snapshot = usePlayerStore((s) => s.snapshot);
+  const playSong = usePlayerStore((s) => s.playSong);
+  const pause = usePlayerStore((s) => s.pause);
+  const isPlaying = snapshot?.is_playing ?? false;
+
+  const handleToggle = () => {
+    if (isPlaying) {
+      pause();
+    } else if (snapshot?.song_id) {
+      playSong(snapshot.song_id);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-4 text-[#EBEBF5]">
+      <button className="opacity-80 transition-colors hover:text-white hover:opacity-100">
+        <SkipBack size={20} fill="currentColor" />
+      </button>
+      <button
+        onClick={handleToggle}
+        className="flex h-8 w-8 items-center justify-center rounded-full bg-[#EBEBF5] text-[var(--color-surface)] transition-transform hover:scale-105"
+      >
+        {isPlaying ? (
+          <Pause size={16} fill="currentColor" />
+        ) : (
+          <Play size={16} fill="currentColor" className="ml-0.5" />
+        )}
+      </button>
+      <button className="opacity-80 transition-colors hover:text-white hover:opacity-100">
+        <SkipForward size={20} fill="currentColor" />
+      </button>
+    </div>
+  );
+}

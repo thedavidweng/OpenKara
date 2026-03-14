@@ -1,1 +1,1 @@
-export { appShellCopy } from "./app-shell";
+export * from "./ipc";
