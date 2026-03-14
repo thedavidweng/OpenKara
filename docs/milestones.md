@@ -164,14 +164,14 @@ Shell  ─→ Library ─→ Playback ─→ Separation ─→ Lyrics ─→ Pol
 
 ### Task Breakdown
 
-| Task                     | Owner   | Status | Notes                                               |
-| ------------------------ | ------- | ------ | --------------------------------------------------- |
-| Tauri build config       | Code    | ✅     | App ID, targets                                     |
-| CI build matrix          | Code    | ⏳     | verify/release workflows 已落地，待首次真实运行结果 |
-| Release automation       | Code    | ⏳     | Tag → draft Release workflow 已落地                 |
-| First-run model download | Code/UI | ⏳     | 后端 bootstrap 已完成，Progress UI 待接入           |
-| Platform smoke tests     | Code    | ☐      | Manual per-platform                                 |
-| Homebrew formula         | Code    | ☐      | macOS distribution                                  |
+| Task                     | Owner   | Status | Notes                                                                                             |
+| ------------------------ | ------- | ------ | ------------------------------------------------------------------------------------------------- |
+| Tauri build config       | Code    | ✅     | App ID, targets                                                                                   |
+| CI build matrix          | Code    | ⏳     | verify/release workflows 已落地，待首次真实运行结果                                               |
+| Release automation       | Code    | ⏳     | Tag → draft Release workflow 已落地                                                               |
+| First-run model download | Code/UI | ⏳     | 后端 bootstrap 已完成；目标 UX 为启动检测、可稍后下载、后台进度/重试，以及进入 Karaoke 时二次提示 |
+| Platform smoke tests     | Code    | ☐      | Manual per-platform                                                                               |
+| Homebrew formula         | Code    | ☐      | macOS distribution                                                                                |
 
 ---
 

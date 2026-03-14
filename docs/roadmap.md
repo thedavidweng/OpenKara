@@ -151,6 +151,27 @@ N segments × 2 channels × T samples
 | Model produces artifacts          | Audio glitches             | Use overlap-add with crossfade between chunks. Tune chunk/overlap size.         |
 | Memory spike during inference     | App crash on 8 GB machines | Process in chunks, not entire song at once. Monitor peak RSS.                   |
 
+### Model Distribution Strategy
+
+Current `htdemucs_embedded.onnx` is large enough that it should be treated as a
+runtime asset, not a repository artifact.
+
+Rules:
+
+1. Keep `.onnx` files out of git. The development repo should only retain
+   `src-tauri/models/.gitkeep` and documentation.
+2. Local developers can prewarm `src-tauri/models/` via `scripts/setup.sh` for
+   deterministic tests.
+3. End users should prefer a runtime install under the app data directory.
+4. The product UX should be:
+   - check on startup whether a verified model already exists
+   - if missing, show a clear prompt with size, storage location, and
+     `Download now / Later`
+   - if the user accepts, download in the background with progress and retry
+   - if the user skips, keep library/playback usable but block
+     separation/karaoke until the model is ready
+   - if the user enters karaoke before the model is installed, prompt again
+
 ### Performance Targets
 
 | Metric                       | Target  | Acceptable |

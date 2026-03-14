@@ -21,6 +21,17 @@
    - `model-bootstrap-ready`
    - `model-bootstrap-error`
 
+## 开发仓库与运行时分发规则
+
+1. 开发仓库中的 `src-tauri/models/` 只保留 `.gitkeep` 与说明文档；下载得到的
+   `.onnx` 文件必须保持为本地忽略文件，不进入 git 历史
+2. `scripts/setup.sh` 只用于本地开发、离线验证或需要稳定模型输入的测试
+3. 面向终端用户时，默认安装位置是 `<app_data_dir>/models/`，不是仓库目录
+4. 后续如果调整模型来源或文件名，必须同时更新：
+   - 本契约
+   - `scripts/setup.sh`
+   - `src-tauri/models/README.md`
+
 ## Inputs / outputs / required dependencies
 
 ### Command: `get_model_bootstrap_status`
@@ -80,6 +91,20 @@ payload 为完整的 `ModelBootstrapStatusSnapshot`，其中：
 3. 若运行时安装目录模型存在但校验失败，会先删除损坏文件，再进入后台下载
 4. 若运行时安装目录缺失，但开发目录 `src-tauri/models/htdemucs_embedded.onnx` 存在且校验通过，则直接进入 `ready`
 5. 只有当两处都没有可用模型时，才会在后台从固定 URL 下载到运行时安装目录
+
+## Product UX target
+
+现有后端行为已经支持“启动后自动 bootstrap + 状态事件 + 分离前置 gate”。后续
+UI 与产品行为应以以下目标为准，而不是把后台下载继续当成隐式行为：
+
+1. 启动时检查模型是否存在且校验通过
+2. 若缺失，提示模型大小、安装位置和用途，并提供：
+   - `Download now`
+   - `Later`
+3. 用户选择下载后，后台执行下载并显示真实进度
+4. 用户选择稍后时，资料库和原曲播放仍然可用，但分离与 Karaoke 模式保持禁用
+5. 当用户首次进入 Karaoke 或主动触发分离时，如模型仍未 ready，需要再次提示
+6. 下载失败时，UI 使用现有 `model-bootstrap-error` 状态提供重试入口，而不是要求用户手动找脚本
 
 ## Separation gate semantics
 
