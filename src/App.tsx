@@ -1,48 +1,157 @@
-import { appShellCopy } from "@/types";
+import { useEffect, useCallback } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { AppLayout } from "@/components/Layout/AppLayout";
+import { usePlayerStore } from "@/stores/player-store";
+import { useLibraryStore } from "@/stores/library-store";
+import { useBootstrapStore } from "@/stores/bootstrap-store";
+import { useLyricsSync } from "@/hooks/use-lyrics-sync";
+import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { useFileDrop } from "@/hooks/use-file-drop";
+import type {
+  PlaybackPositionEvent,
+  SeparationProgressEvent,
+  SeparationCompleteEvent,
+  SeparationErrorEvent,
+  ModelBootstrapStatusSnapshot,
+} from "@/types/ipc";
 
 function App() {
-  return (
-    <main className="flex min-h-screen items-center justify-center px-6 py-10">
-      <section className="w-full max-w-3xl rounded-[28px] border border-white/10 bg-slate-950/75 p-8 shadow-[0_32px_96px_rgba(0,0,0,0.38)] backdrop-blur">
-        <p className="text-sm font-semibold uppercase tracking-[0.28em] text-sky-300">
-          Phase 0 / M0
-        </p>
-        <div className="mt-6 space-y-4">
-          <h1 className="text-4xl font-semibold tracking-tight text-white sm:text-6xl">
-            OpenKara
-          </h1>
-          <p className="max-w-2xl text-base leading-7 text-slate-300 sm:text-lg">
-            {appShellCopy.summary}
-          </p>
-          <div className="flex flex-wrap gap-3 pt-2">
-            {appShellCopy.stack.map((item) => (
-              <span
-                key={item}
-                className="rounded-full border border-sky-400/20 bg-sky-400/10 px-4 py-2 text-sm text-sky-100"
-              >
-                {item}
-              </span>
-            ))}
-          </div>
-        </div>
-        <div className="mt-10 grid gap-4 sm:grid-cols-3">
-          {appShellCopy.checkpoints.map((checkpoint) => (
-            <article
-              key={checkpoint.label}
-              className="rounded-2xl border border-white/8 bg-white/4 p-4"
-            >
-              <p className="text-sm font-medium text-slate-200">
-                {checkpoint.label}
-              </p>
-              <p className="mt-2 text-sm leading-6 text-slate-400">
-                {checkpoint.detail}
-              </p>
-            </article>
-          ))}
-        </div>
-      </section>
-    </main>
+  const loadLibrary = useLibraryStore((s) => s.loadLibrary);
+  const loadBootstrapStatus = useBootstrapStore((s) => s.loadStatus);
+
+  // Load initial data on mount
+  useEffect(() => {
+    loadLibrary();
+    loadBootstrapStatus();
+    usePlayerStore.getState().loadState();
+  }, [loadLibrary, loadBootstrapStatus]);
+
+  // Set up all Tauri event listeners
+  useEventListeners();
+
+  // Activate lyrics sync rAF loop
+  useLyricsSync();
+
+  // Global keyboard shortcuts
+  useKeyboardShortcuts();
+
+  // File drop import
+  useFileDrop();
+
+  return <AppLayout />;
+}
+
+function useEventListeners() {
+  const updatePosition = usePlayerStore((s) => s.updatePosition);
+  const updateSeparationStatus = useLibraryStore(
+    (s) => s.updateSeparationStatus,
   );
+  const updateBootstrapStatus = useBootstrapStore((s) => s.updateStatus);
+
+  // Stable reference for separation completion handler
+  const handleSeparationComplete = useCallback(
+    (event: SeparationCompleteEvent) => {
+      updateSeparationStatus({
+        song_id: event.song_id,
+        state: "completed",
+        percent: 100,
+        cache_hit: false,
+        vocals_path: null,
+        accomp_path: null,
+        error: null,
+      });
+    },
+    [updateSeparationStatus],
+  );
+
+  useEffect(() => {
+    const unlisteners: (() => void)[] = [];
+    let cancelled = false;
+
+    const setup = async () => {
+      const u1 = await listen<PlaybackPositionEvent>(
+        "playback-position",
+        (e) => {
+          if (!cancelled) updatePosition(e.payload.ms);
+        },
+      );
+
+      const u2 = await listen<SeparationProgressEvent>(
+        "separation-progress",
+        (e) => {
+          if (!cancelled)
+            updateSeparationStatus({
+              song_id: e.payload.song_id,
+              state: "running",
+              percent: e.payload.percent,
+              cache_hit: false,
+              vocals_path: null,
+              accomp_path: null,
+              error: null,
+            });
+        },
+      );
+
+      const u3 = await listen<SeparationCompleteEvent>(
+        "separation-complete",
+        (e) => {
+          if (!cancelled) handleSeparationComplete(e.payload);
+        },
+      );
+
+      const u4 = await listen<SeparationErrorEvent>("separation-error", (e) => {
+        if (!cancelled)
+          updateSeparationStatus({
+            song_id: e.payload.song_id,
+            state: "failed",
+            percent: 0,
+            cache_hit: false,
+            vocals_path: null,
+            accomp_path: null,
+            error: e.payload.error,
+          });
+      });
+
+      const u5 = await listen<ModelBootstrapStatusSnapshot>(
+        "model-bootstrap-progress",
+        (e) => {
+          if (!cancelled) updateBootstrapStatus(e.payload);
+        },
+      );
+
+      const u6 = await listen<ModelBootstrapStatusSnapshot>(
+        "model-bootstrap-ready",
+        (e) => {
+          if (!cancelled) updateBootstrapStatus(e.payload);
+        },
+      );
+
+      const u7 = await listen<ModelBootstrapStatusSnapshot>(
+        "model-bootstrap-error",
+        (e) => {
+          if (!cancelled) updateBootstrapStatus(e.payload);
+        },
+      );
+
+      if (cancelled) {
+        [u1, u2, u3, u4, u5, u6, u7].forEach((fn) => fn());
+      } else {
+        unlisteners.push(u1, u2, u3, u4, u5, u6, u7);
+      }
+    };
+
+    setup();
+
+    return () => {
+      cancelled = true;
+      unlisteners.forEach((fn) => fn());
+    };
+  }, [
+    updatePosition,
+    updateSeparationStatus,
+    handleSeparationComplete,
+    updateBootstrapStatus,
+  ]);
 }
 
 export default App;

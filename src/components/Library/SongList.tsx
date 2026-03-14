@@ -1,0 +1,26 @@
+import { SongListItem } from "./SongListItem";
+import { EmptyLibrary } from "./EmptyLibrary";
+import { useLibraryStore } from "@/stores/library-store";
+
+export function SongList() {
+  const songs = useLibraryStore((s) => s.songs);
+  const filter = useLibraryStore((s) => s.filter);
+  const separationStatuses = useLibraryStore((s) => s.separationStatuses);
+
+  const filteredSongs =
+    filter === "separated"
+      ? songs.filter((s) => separationStatuses[s.hash]?.state === "completed")
+      : songs;
+
+  if (filteredSongs.length === 0) {
+    return <EmptyLibrary />;
+  }
+
+  return (
+    <div className="custom-scrollbar flex-1 space-y-0.5 overflow-y-auto">
+      {filteredSongs.map((song) => (
+        <SongListItem key={song.hash} song={song} />
+      ))}
+    </div>
+  );
+}
