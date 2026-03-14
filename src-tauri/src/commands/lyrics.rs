@@ -2,6 +2,7 @@ use crate::{
     cache,
     cache::lyrics::LyricsCacheEntry,
     commands::error::{database_error, lyrics_error, CommandResult},
+    library_root::LibraryRoot,
     lyrics::{self, fetch::LyricsSource, lrclib::LrcLibClient, parser::LyricLine},
     AppState,
 };
@@ -21,9 +22,10 @@ pub struct LyricsPayload {
 
 #[tauri::command]
 pub fn fetch_lyrics(state: State<'_, AppState>, song_id: String) -> CommandResult<LyricsPayload> {
-    let connection = cache::open_database(&state.database_path).map_err(database_error)?;
+    let library_root = state.library_root()?;
+    let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
 
-    fetch_lyrics_from_connection(&connection, &LrcLibClient::new_default(), &song_id).map_err(
+    fetch_lyrics_from_connection(&connection, &library_root, &LrcLibClient::new_default(), &song_id).map_err(
         |error| {
             // Lower-level lyrics modules still return anyhow errors. Classify them
             // here so UI-facing commands expose stable error codes and fallback hints
@@ -39,7 +41,8 @@ pub fn set_lyrics_offset(
     song_id: String,
     ms: i64,
 ) -> CommandResult<()> {
-    let connection = cache::open_database(&state.database_path).map_err(database_error)?;
+    let library = state.library_root()?;
+    let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
 
     set_lyrics_offset_in_connection(&connection, &song_id, ms)
         .map_err(|error| lyrics_error(error.to_string()))
@@ -47,6 +50,7 @@ pub fn set_lyrics_offset(
 
 pub fn fetch_lyrics_from_connection(
     connection: &Connection,
+    library_root: &LibraryRoot,
     client: &LrcLibClient,
     song_id: &str,
 ) -> Result<LyricsPayload> {
@@ -60,7 +64,8 @@ pub fn fetch_lyrics_from_connection(
         return payload_from_cached_entry(song.hash, cached);
     }
 
-    let Some(fetched) = lyrics::fetch::fetch_lyrics_for_song(client, &song)? else {
+    let resolved_path = library_root.resolve(&song.file_path);
+    let Some(fetched) = lyrics::fetch::fetch_lyrics_for_song(client, &song, &resolved_path)? else {
         return Ok(LyricsPayload {
             song_id: song.hash,
             lines: Vec::new(),

@@ -6,6 +6,7 @@ use openkara_lib::{
         error::{ErrorCode, FallbackAction},
         import::{get_library_from_connection, import_songs_from_paths},
     },
+    library_root::LibraryRoot,
 };
 use rusqlite::Connection;
 
@@ -19,13 +20,22 @@ fn fixture_path(filename: &str) -> String {
         .to_string()
 }
 
+fn temp_library() -> (tempfile::TempDir, LibraryRoot) {
+    let tmp = tempfile::tempdir().expect("temp dir should create");
+    let lib = LibraryRoot::create(tmp.path().join("lib").as_path())
+        .expect("library should create");
+    (tmp, lib)
+}
+
 #[test]
 fn imports_fixture_audio_and_persists_library_rows() {
     let connection = Connection::open_in_memory().expect("in-memory database should open");
     cache::apply_migrations(&connection).expect("migrations should succeed");
+    let (_tmp, library) = temp_library();
 
     let result = import_songs_from_paths(
         &connection,
+        &library,
         &[fixture_path("fixture.mp3"), fixture_path("fixture.flac")],
     );
 
@@ -49,10 +59,12 @@ fn imports_fixture_audio_and_persists_library_rows() {
 fn reports_failures_without_aborting_other_imports() {
     let connection = Connection::open_in_memory().expect("in-memory database should open");
     cache::apply_migrations(&connection).expect("migrations should succeed");
+    let (_tmp, library) = temp_library();
 
     let missing_path = fixture_path("missing.mp3");
     let result = import_songs_from_paths(
         &connection,
+        &library,
         &[fixture_path("fixture.m4a"), missing_path.clone()],
     );
 
@@ -66,7 +78,7 @@ fn reports_failures_without_aborting_other_imports() {
     );
     assert!(!result.failed[0].error.retryable);
 
-    let library = get_library_from_connection(&connection).expect("library listing should succeed");
-    assert_eq!(library.len(), 1);
-    assert_eq!(library[0].title.as_deref(), Some("Fixture Song M4A"));
+    let library_songs = get_library_from_connection(&connection).expect("library listing should succeed");
+    assert_eq!(library_songs.len(), 1);
+    assert_eq!(library_songs[0].title.as_deref(), Some("Fixture Song M4A"));
 }

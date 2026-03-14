@@ -9,6 +9,20 @@ import type {
   Song,
 } from "@/types/ipc";
 
+// ─── Library Setup ───────────────────────────────────────
+
+export function getLibraryPath(): Promise<string | null> {
+  return invoke<string | null>("get_library_path");
+}
+
+export function createLibrary(path: string): Promise<void> {
+  return invoke<void>("create_library", { path });
+}
+
+export function openLibrary(path: string): Promise<void> {
+  return invoke<void>("open_library", { path });
+}
+
 // ─── Library ─────────────────────────────────────────────
 
 export function importSongs(paths: string[]): Promise<ImportSongsResult> {

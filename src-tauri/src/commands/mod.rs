@@ -1,6 +1,7 @@
 pub mod bootstrap;
 pub mod error;
 pub mod import;
+pub mod library_setup;
 pub mod lyrics;
 pub mod playback;
 pub mod separation;

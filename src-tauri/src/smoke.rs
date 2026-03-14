@@ -122,12 +122,29 @@ pub fn run_local_audio_smoke(config: LocalAudioSmokeConfig) -> Result<LocalAudio
         .iter()
         .map(|path| path.display().to_string())
         .collect();
-    let import_result = import_songs_from_paths(&connection, &import_paths);
-    let imported_by_path = import_result
-        .imported
+    let library = crate::library_root::LibraryRoot::create(
+        &config.output_dir.join("smoke-library"),
+    )
+    .or_else(|_| {
+        crate::library_root::LibraryRoot::open(&config.output_dir.join("smoke-library"))
+    })
+    .context("failed to set up smoke library root")?;
+    let import_result = import_songs_from_paths(&connection, &library, &import_paths);
+    // `song.file_path` is now a library-relative path (`media/{hash}.{ext}`),
+    // so we reconstruct a source-path-to-Song map.  `import_songs_from_paths`
+    // processes paths in order: each goes into either `imported` or `failed`,
+    // preserving the original order within each bucket.
+    let failed_paths: std::collections::HashSet<&str> = import_result
+        .failed
         .iter()
-        .map(|song| (song.file_path.clone(), song.clone()))
-        .collect::<HashMap<_, _>>();
+        .map(|f| f.path.as_str())
+        .collect();
+    let imported_by_path: HashMap<String, crate::library::Song> = import_paths
+        .iter()
+        .filter(|p| !failed_paths.contains(p.as_str()))
+        .zip(import_result.imported.iter())
+        .map(|(path, song)| (path.clone(), song.clone()))
+        .collect();
     let failed_by_path = import_result
         .failed
         .iter()
@@ -135,7 +152,6 @@ pub fn run_local_audio_smoke(config: LocalAudioSmokeConfig) -> Result<LocalAudio
         .collect::<HashMap<_, _>>();
 
     let model = resolve_model_status(&config)?;
-    let cache_dir = config.output_dir.join("cache");
     let mut songs = Vec::with_capacity(audio_files.len());
 
     for path in &audio_files {
@@ -144,6 +160,7 @@ pub fn run_local_audio_smoke(config: LocalAudioSmokeConfig) -> Result<LocalAudio
         if let Some(song) = imported_by_path.get(&source_path) {
             let playback = build_backend_performance_report(
                 &connection,
+                &library,
                 &song.hash,
                 config.seek_iterations.max(1),
             );
@@ -171,7 +188,7 @@ pub fn run_local_audio_smoke(config: LocalAudioSmokeConfig) -> Result<LocalAudio
                     (SeparationSmokeMode::Auto, SmokeModelStatus { status: SmokeStepStatus::Passed, path: Some(model_path), .. }) => {
                         match job::separate_song_into_cache(
                             &connection,
-                            &cache_dir,
+                            &library,
                             Path::new(model_path),
                             &song.hash,
                             |_| {},

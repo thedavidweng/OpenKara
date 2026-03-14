@@ -1,12 +1,14 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { AppLayout } from "@/components/Layout/AppLayout";
+import { LibrarySetup } from "@/components/Settings/LibrarySetup";
 import { usePlayerStore } from "@/stores/player-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useBootstrapStore } from "@/stores/bootstrap-store";
 import { useLyricsSync } from "@/hooks/use-lyrics-sync";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { useFileDrop } from "@/hooks/use-file-drop";
+import * as api from "@/lib/tauri";
 import type {
   PlaybackPositionEvent,
   SeparationProgressEvent,
@@ -16,15 +18,26 @@ import type {
 } from "@/types/ipc";
 
 function App() {
+  const [libraryReady, setLibraryReady] = useState<boolean | null>(null);
   const loadLibrary = useLibraryStore((s) => s.loadLibrary);
   const loadBootstrapStatus = useBootstrapStore((s) => s.loadStatus);
 
-  // Load initial data on mount
+  // Check if a library is configured on mount
   useEffect(() => {
-    loadLibrary();
-    loadBootstrapStatus();
-    usePlayerStore.getState().loadState();
-  }, [loadLibrary, loadBootstrapStatus]);
+    api
+      .getLibraryPath()
+      .then((path) => setLibraryReady(path !== null))
+      .catch(() => setLibraryReady(false));
+  }, []);
+
+  // Load initial data once library is ready
+  useEffect(() => {
+    if (libraryReady) {
+      loadLibrary();
+      loadBootstrapStatus();
+      usePlayerStore.getState().loadState();
+    }
+  }, [libraryReady, loadLibrary, loadBootstrapStatus]);
 
   // Set up all Tauri event listeners
   useEventListeners();
@@ -37,6 +50,20 @@ function App() {
 
   // File drop import
   useFileDrop();
+
+  const handleLibrarySetupComplete = useCallback(() => {
+    setLibraryReady(true);
+  }, []);
+
+  // Show nothing while checking library state
+  if (libraryReady === null) {
+    return null;
+  }
+
+  // Show setup wizard if no library is configured
+  if (!libraryReady) {
+    return <LibrarySetup onComplete={handleLibrarySetupComplete} />;
+  }
 
   return <AppLayout />;
 }

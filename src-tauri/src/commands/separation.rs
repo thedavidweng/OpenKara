@@ -76,26 +76,24 @@ pub fn separate(
         status
     };
 
-    let database_path = state.database_path.clone();
-    let cache_dir = state.cache_dir.clone();
+    let library_root = state.library_root()?;
     let model_path = state.model_path.clone();
     let separation_statuses = Arc::clone(&state.separation_statuses);
     let worker_song_id = song_id.clone();
     let worker_app_handle = app_handle.clone();
 
     tauri::async_runtime::spawn(async move {
-        let worker_database_path = database_path.clone();
-        let worker_cache_dir = cache_dir.clone();
+        let worker_library_root = library_root.clone();
         let worker_model_path = model_path.clone();
         let worker_statuses = Arc::clone(&separation_statuses);
         let progress_song_id = worker_song_id.clone();
         let progress_app_handle = worker_app_handle.clone();
 
         let result = tauri::async_runtime::spawn_blocking(move || {
-            let connection = cache::open_database(&worker_database_path)?;
+            let connection = cache::open_database(&worker_library_root.database_path())?;
             separator::job::separate_song_into_cache(
                 &connection,
-                &worker_cache_dir,
+                &worker_library_root,
                 &worker_model_path,
                 &worker_song_id,
                 |percent| {

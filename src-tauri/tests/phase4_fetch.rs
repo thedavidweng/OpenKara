@@ -41,6 +41,7 @@ fn fixture_song(file_path: &Path) -> Song {
         duration_ms: 267_000,
         cover_art: None,
         imported_at: 1,
+        original_ext: None,
     }
 }
 
@@ -75,7 +76,7 @@ fn fetch_chain_prefers_lrclib_synced_lyrics_over_sidecar() {
         .create();
 
     let fetched =
-        fetch_lyrics_for_song(&LrcLibClient::new(server.url()), &fixture_song(&audio_path))
+        fetch_lyrics_for_song(&LrcLibClient::new(server.url()), &fixture_song(&audio_path), &audio_path)
             .expect("fetch chain should succeed")
             .expect("lyrics should be returned");
 
@@ -110,7 +111,7 @@ fn fetch_chain_falls_back_to_sidecar_when_lrclib_misses() {
         .create();
 
     let fetched =
-        fetch_lyrics_for_song(&LrcLibClient::new(server.url()), &fixture_song(&audio_path))
+        fetch_lyrics_for_song(&LrcLibClient::new(server.url()), &fixture_song(&audio_path), &audio_path)
             .expect("fetch chain should succeed")
             .expect("sidecar lyrics should be returned");
 

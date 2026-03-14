@@ -8,6 +8,7 @@ mod support;
 use openkara_lib::{
     cache,
     commands::import::import_songs_from_paths,
+    library_root::LibraryRoot,
     perf::{
         build_backend_performance_report, write_report_json, LYRICS_JITTER_THRESHOLD_MS,
         PLAYBACK_LOAD_LATENCY_THRESHOLD_MS, SEEK_LATENCY_THRESHOLD_MS,
@@ -34,13 +35,16 @@ fn unique_report_path() -> PathBuf {
 fn backend_performance_report_stays_within_phase5_thresholds() {
     let connection = Connection::open_in_memory().expect("in-memory database should open");
     cache::apply_migrations(&connection).expect("migrations should succeed");
+    let tmp = tempfile::tempdir().expect("temp dir should create");
+    let library = LibraryRoot::create(tmp.path().join("lib").as_path())
+        .expect("library should create");
 
     let import_result =
-        import_songs_from_paths(&connection, &[fixture_path("metadata", "fixture.mp3")]);
+        import_songs_from_paths(&connection, &library, &[fixture_path("metadata", "fixture.mp3")]);
     assert_eq!(import_result.imported.len(), 1);
     let song_id = import_result.imported[0].hash.clone();
 
-    let report = build_backend_performance_report(&connection, &song_id, 128)
+    let report = build_backend_performance_report(&connection, &library, &song_id, 128)
         .expect("performance report should generate");
     println!(
         "{}",

@@ -1,7 +1,7 @@
 use std::{
     cell::Cell,
     fs,
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 mod support;
@@ -10,12 +10,16 @@ use openkara_lib::{
     audio::decode::DecodedAudio,
     cache::{self, stems},
     library::Song,
+    library_root::LibraryRoot,
     separator::inference::{SeparatedStem, SeparationResult},
 };
 use rusqlite::Connection;
 
-fn unique_cache_dir() -> PathBuf {
-    support::unique_temp_path("phase3-cache")
+fn unique_library_root() -> LibraryRoot {
+    let path = support::unique_temp_path("phase3-cache");
+    LibraryRoot::create(&path)
+        .or_else(|_| LibraryRoot::open(&path))
+        .expect("library root should be creatable")
 }
 
 fn cleanup_dir(path: &Path) {
@@ -55,6 +59,7 @@ fn sample_song(hash: &str) -> Song {
         duration_ms: 1,
         cover_art: None,
         imported_at: 1,
+        original_ext: None,
     }
 }
 
@@ -64,33 +69,45 @@ fn caches_stems_under_hash_directory_and_hits_cache_on_second_request() {
     cache::apply_migrations(&connection).expect("migrations should succeed");
     cache::upsert_song(&connection, &sample_song("song-hash")).expect("song insert should succeed");
 
-    let cache_dir = unique_cache_dir();
-    cleanup_dir(&cache_dir);
+    let library = unique_library_root();
+    let library_root_path = library.root().to_owned();
     let generation_count = Cell::new(0_usize);
 
-    let first = stems::get_or_create_stem_cache(&connection, &cache_dir, "song-hash", || {
-        generation_count.set(generation_count.get() + 1);
-        Ok(sample_separation())
-    })
+    let first = stems::get_or_create_stem_cache(
+        &connection,
+        &library.stems_dir(),
+        &library,
+        "song-hash",
+        || {
+            generation_count.set(generation_count.get() + 1);
+            Ok(sample_separation())
+        },
+    )
     .expect("first separation should populate cache");
 
     assert!(!first.cache_hit);
     assert_eq!(generation_count.get(), 1);
-    assert!(cache_dir
-        .join("stems")
+    assert!(library
+        .stems_dir()
         .join("song-hash")
         .join("vocals.wav")
         .exists());
-    assert!(cache_dir
-        .join("stems")
+    assert!(library
+        .stems_dir()
         .join("song-hash")
         .join("accompaniment.wav")
         .exists());
 
-    let second = stems::get_or_create_stem_cache(&connection, &cache_dir, "song-hash", || {
-        generation_count.set(generation_count.get() + 1);
-        Ok(sample_separation())
-    })
+    let second = stems::get_or_create_stem_cache(
+        &connection,
+        &library.stems_dir(),
+        &library,
+        "song-hash",
+        || {
+            generation_count.set(generation_count.get() + 1);
+            Ok(sample_separation())
+        },
+    )
     .expect("second separation should hit cache");
 
     assert!(second.cache_hit);
@@ -99,8 +116,8 @@ fn caches_stems_under_hash_directory_and_hits_cache_on_second_request() {
     let cached_entry = stems::get_cached_stem_entry(&connection, "song-hash")
         .expect("cache lookup should succeed")
         .expect("cache entry should exist");
-    assert!(Path::new(&cached_entry.vocals_path).exists());
-    assert!(Path::new(&cached_entry.accomp_path).exists());
+    assert!(library.resolve(&cached_entry.vocals_path).exists());
+    assert!(library.resolve(&cached_entry.accomp_path).exists());
 
-    cleanup_dir(&cache_dir);
+    cleanup_dir(&library_root_path);
 }

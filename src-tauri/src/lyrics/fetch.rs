@@ -24,6 +24,7 @@ pub struct LyricsFetchResult {
 pub fn fetch_lyrics_for_song(
     client: &LrcLibClient,
     song: &Song,
+    resolved_audio_path: &Path,
 ) -> Result<Option<LyricsFetchResult>> {
     if let Some(query) = lookup_query_from_song(song) {
         if let Some(lyrics) = client.fetch_by_track(&query)? {
@@ -39,14 +40,14 @@ pub fn fetch_lyrics_for_song(
         }
     }
 
-    if let Some(embedded_lyrics) = read_embedded_lyrics(Path::new(&song.file_path))? {
+    if let Some(embedded_lyrics) = read_embedded_lyrics(resolved_audio_path)? {
         return Ok(Some(LyricsFetchResult {
             source: LyricsSource::Embedded,
             raw_lrc: embedded_lyrics,
         }));
     }
 
-    if let Some(sidecar_lyrics) = read_sidecar_lrc(Path::new(&song.file_path))? {
+    if let Some(sidecar_lyrics) = read_sidecar_lrc(resolved_audio_path)? {
         return Ok(Some(LyricsFetchResult {
             source: LyricsSource::Sidecar,
             raw_lrc: sidecar_lyrics,

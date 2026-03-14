@@ -1,6 +1,7 @@
 use crate::{
     audio::playback::{PlaybackController, PLAYBACK_POSITION_POLL_INTERVAL_MS},
     commands::playback::play_song_from_library,
+    library_root::LibraryRoot,
 };
 use anyhow::{Context, Result};
 use rusqlite::Connection;
@@ -34,12 +35,13 @@ pub struct LyricsSyncPerformanceReport {
 
 pub fn build_backend_performance_report(
     connection: &Connection,
+    library_root: &LibraryRoot,
     song_id: &str,
     seek_iterations: usize,
 ) -> Result<PerformanceReport> {
     let mut playback = PlaybackController::default();
     let load_start = Instant::now();
-    let snapshot = play_song_from_library(connection, &mut playback, song_id, 1_000)
+    let snapshot = play_song_from_library(connection, library_root, &mut playback, song_id, 1_000)
         .with_context(|| format!("failed to load playback fixture for song {song_id}"))?;
     let track_load_latency_ms = elapsed_ms(load_start.elapsed());
     let duration_ms = snapshot

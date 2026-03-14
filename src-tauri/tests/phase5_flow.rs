@@ -13,6 +13,7 @@ use openkara_lib::{
         lyrics::{fetch_lyrics_from_connection, set_lyrics_offset_in_connection},
         playback::{play_song_from_library, set_playback_mode_from_library},
     },
+    library_root::LibraryRoot,
     separator::{job, model},
 };
 use rusqlite::Connection;
@@ -41,11 +42,8 @@ fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode
     cache::apply_migrations(&connection).expect("migrations should succeed");
 
     let fixture_dir = unique_temp_dir("phase5-fixture");
-    let cache_dir = unique_temp_dir("phase5-cache");
     cleanup_dir(&fixture_dir);
-    cleanup_dir(&cache_dir);
     fs::create_dir_all(&fixture_dir).expect("fixture directory should create");
-    fs::create_dir_all(&cache_dir).expect("cache directory should create");
 
     let audio_path = fixture_dir.join("yellow.mp3");
     fs::copy(metadata_fixture_path("fixture.mp3"), &audio_path).expect("fixture audio should copy");
@@ -55,26 +53,37 @@ fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode
     )
     .expect("sidecar lyrics should write");
 
-    let import_result = import_songs_from_paths(&connection, &[audio_path.display().to_string()]);
+    let lib_dir = unique_temp_dir("phase5-library");
+    cleanup_dir(&lib_dir);
+    let library = LibraryRoot::create(&lib_dir).expect("library should create");
+    let import_result = import_songs_from_paths(&connection, &library, &[audio_path.display().to_string()]);
     assert_eq!(import_result.imported.len(), 1);
     assert!(import_result.failed.is_empty());
     let song_id = import_result.imported[0].hash.clone();
 
+    // Write sidecar .lrc next to the imported media file inside the library
+    let imported_media = library.resolve(&import_result.imported[0].file_path);
+    fs::write(
+        imported_media.with_extension("lrc"),
+        "[00:10.00] Look at the stars\n[00:20.00] Look how they shine for you",
+    )
+    .expect("sidecar lyrics should write into library");
+
     let mut playback = PlaybackController::default();
-    let started = play_song_from_library(&connection, &mut playback, &song_id, 1_000)
+    let started = play_song_from_library(&connection, &library, &mut playback, &song_id, 1_000)
         .expect("song should load into the playback controller");
     assert_eq!(started.song_id.as_deref(), Some(song_id.as_str()));
     assert_eq!(started.mode, PlaybackMode::Original);
 
     let separation = job::separate_song_into_cache(
         &connection,
-        &cache_dir,
+        &library,
         &model::default_model_path(),
         &song_id,
         |_| {},
     )
     .expect("separation should succeed for the imported fixture");
-    assert!(Path::new(&separation.accomp_path).exists());
+    assert!(library.resolve(&separation.accomp_path).exists());
 
     let mut server = mockito::Server::new();
     let mock = server
@@ -85,6 +94,7 @@ fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode
 
     let lyrics = fetch_lyrics_from_connection(
         &connection,
+        &library,
         &openkara_lib::lyrics::lrclib::LrcLibClient::new(server.url()),
         &song_id,
     )
@@ -99,18 +109,19 @@ fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode
         .expect("offset should persist for fetched lyrics");
     let cached_lyrics = fetch_lyrics_from_connection(
         &connection,
+        &library,
         &openkara_lib::lyrics::lrclib::LrcLibClient::new("http://127.0.0.1:9"),
         &song_id,
     )
     .expect("second fetch should read lyrics from cache");
     assert_eq!(cached_lyrics.offset_ms, 500);
 
-    let karaoke = set_playback_mode_from_library(&connection, &mut playback, PlaybackMode::Karaoke)
+    let karaoke = set_playback_mode_from_library(&connection, &library, &mut playback, PlaybackMode::Karaoke)
         .expect("playback should switch to the cached accompaniment");
     assert_eq!(karaoke.mode, PlaybackMode::Karaoke);
     assert!(playback.has_karaoke_track());
 
     mock.assert();
     cleanup_dir(&fixture_dir);
-    cleanup_dir(&cache_dir);
+    cleanup_dir(&lib_dir);
 }

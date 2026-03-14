@@ -1,6 +1,7 @@
 use crate::{
     audio::decode,
     cache,
+    library_root::LibraryRoot,
     separator::{inference, model},
 };
 use anyhow::{Context, Result};
@@ -24,13 +25,13 @@ pub struct SeparationArtifacts {
 
 pub fn separate_song_into_cache(
     connection: &Connection,
-    base_cache_dir: &Path,
+    library_root: &LibraryRoot,
     model_path: &Path,
     song_hash: &str,
     mut report_progress: impl FnMut(u8),
 ) -> Result<SeparationArtifacts> {
     if let Some(cached) =
-        cache::stems::get_valid_cached_stem_entry(connection, base_cache_dir, song_hash)?
+        cache::stems::get_valid_cached_stem_entry(connection, library_root, song_hash)?
     {
         report_progress(CACHE_HIT_PROGRESS);
         return Ok(artifacts_from_cache_entry(cached.entry, true));
@@ -42,7 +43,8 @@ pub fn separate_song_into_cache(
         .with_context(|| format!("song with hash {song_hash} was not found in the library"))?;
 
     report_progress(DECODE_PROGRESS);
-    let decoded_audio = decode::decode_file(Path::new(&song.file_path))
+    let absolute_path = library_root.resolve(&song.file_path);
+    let decoded_audio = decode::decode_file(&absolute_path)
         .with_context(|| format!("failed to decode audio for {}", song.file_path))?;
 
     report_progress(MODEL_LOAD_PROGRESS);
@@ -54,9 +56,10 @@ pub fn separate_song_into_cache(
         .with_context(|| format!("failed to separate stems for song {song_hash}"))?;
 
     report_progress(CACHE_WRITE_PROGRESS);
+    let stems_base = library_root.stems_dir();
     let cached = cache::stems::store_generated_stem_cache(
         connection,
-        base_cache_dir,
+        &stems_base,
         song_hash,
         &separation,
     )

@@ -10,11 +10,11 @@ use crate::{
     commands::error::{
         database_error, internal_error, playback_error, state_lock_error, CommandResult,
     },
+    library_root::LibraryRoot,
     AppState,
 };
 use anyhow::{Context, Result};
 use rusqlite::Connection;
-use std::path::Path;
 use tauri::{AppHandle, Emitter, State};
 
 #[tauri::command]
@@ -23,13 +23,15 @@ pub fn play(
     app_handle: AppHandle,
     song_id: String,
 ) -> CommandResult<PlaybackStateSnapshot> {
-    let connection = cache::open_database(&state.database_path).map_err(database_error)?;
+    let library_root = state.library_root()?;
+    let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
     let mut playback = state
         .playback
         .lock()
         .map_err(|_| state_lock_error("playback controller lock was poisoned"))?;
-    let snapshot = play_song_from_library(&connection, &mut playback, &song_id, monotonic_now_ms())
-        .map_err(playback_error)?;
+    let snapshot =
+        play_song_from_library(&connection, &library_root, &mut playback, &song_id, monotonic_now_ms())
+            .map_err(playback_error)?;
     drop(playback);
 
     output::ensure_output_thread(
@@ -97,13 +99,15 @@ pub fn set_playback_mode(
     state: State<'_, AppState>,
     mode: PlaybackMode,
 ) -> CommandResult<PlaybackStateSnapshot> {
-    let connection = cache::open_database(&state.database_path).map_err(database_error)?;
+    let library_root = state.library_root()?;
+    let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
     let mut playback = state
         .playback
         .lock()
         .map_err(|_| state_lock_error("playback controller lock was poisoned"))?;
 
-    set_playback_mode_from_library(&connection, &mut playback, mode).map_err(playback_error)
+    set_playback_mode_from_library(&connection, &library_root, &mut playback, mode)
+        .map_err(playback_error)
 }
 
 #[tauri::command]
@@ -118,6 +122,7 @@ pub fn get_playback_state(state: State<'_, AppState>) -> CommandResult<PlaybackS
 
 pub fn play_song_from_library(
     connection: &Connection,
+    library_root: &LibraryRoot,
     controller: &mut PlaybackController,
     song_id: &str,
     now_ms: u64,
@@ -125,7 +130,8 @@ pub fn play_song_from_library(
     let song = cache::get_song_by_hash(connection, song_id)
         .context("failed to load song from library")?
         .with_context(|| format!("song with hash {song_id} was not found in the library"))?;
-    let decoded_audio = decode::decode_file(Path::new(&song.file_path))
+    let absolute_path = library_root.resolve(&song.file_path);
+    let decoded_audio = decode::decode_file(&absolute_path)
         .with_context(|| format!("failed to decode audio for {}", song.file_path))?;
 
     Ok(controller.start_track(song.hash, decoded_audio, now_ms))
@@ -133,6 +139,7 @@ pub fn play_song_from_library(
 
 pub fn set_playback_mode_from_library(
     connection: &Connection,
+    library_root: &LibraryRoot,
     controller: &mut PlaybackController,
     mode: PlaybackMode,
 ) -> Result<PlaybackStateSnapshot> {
@@ -144,7 +151,8 @@ pub fn set_playback_mode_from_library(
         let cached_stems = cache::stems::get_cached_stem_entry(connection, &song_id)
             .context("failed to load cached stems for playback mode switch")?
             .with_context(|| format!("song with hash {song_id} does not have cached stems"))?;
-        let accompaniment = decode::decode_file(Path::new(&cached_stems.accomp_path))
+        let absolute_accomp = library_root.resolve(&cached_stems.accomp_path);
+        let accompaniment = decode::decode_file(&absolute_accomp)
             .with_context(|| {
                 format!(
                     "failed to decode accompaniment {}",

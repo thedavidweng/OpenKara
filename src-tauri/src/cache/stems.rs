@@ -1,3 +1,4 @@
+use crate::library_root::LibraryRoot;
 use crate::separator::{
     inference::{self, SeparationResult},
     mix,
@@ -29,17 +30,18 @@ pub struct StemCacheResult {
     pub stem_directory: PathBuf,
 }
 
-pub fn stem_cache_root(base_cache_dir: &Path) -> PathBuf {
-    base_cache_dir.join(STEMS_CACHE_DIRECTORY)
+pub fn stem_cache_root(stems_base: &Path) -> PathBuf {
+    stems_base.to_path_buf()
 }
 
-pub fn stem_directory(base_cache_dir: &Path, song_hash: &str) -> PathBuf {
-    stem_cache_root(base_cache_dir).join(song_hash)
+pub fn stem_directory(stems_base: &Path, song_hash: &str) -> PathBuf {
+    stems_base.join(song_hash)
 }
 
 pub fn get_or_create_stem_cache<F>(
     connection: &Connection,
-    base_cache_dir: &Path,
+    stems_base: &Path,
+    library_root: &LibraryRoot,
     song_hash: &str,
     generate: F,
 ) -> Result<StemCacheResult>
@@ -48,12 +50,12 @@ where
 {
     ensure_song_exists(connection, song_hash)?;
 
-    if let Some(existing) = get_valid_cached_stem_entry(connection, base_cache_dir, song_hash)? {
+    if let Some(existing) = get_valid_cached_stem_entry(connection, library_root, song_hash)? {
         return Ok(existing);
     }
 
     let separation = generate().context("failed to generate stems for cache population")?;
-    store_generated_stem_cache(connection, base_cache_dir, song_hash, &separation)
+    store_generated_stem_cache(connection, stems_base, song_hash, &separation)
 }
 
 pub fn get_cached_stem_entry(
@@ -81,13 +83,13 @@ pub fn get_cached_stem_entry(
 
 pub fn get_valid_cached_stem_entry(
     connection: &Connection,
-    base_cache_dir: &Path,
+    library_root: &LibraryRoot,
     song_hash: &str,
 ) -> Result<Option<StemCacheResult>> {
-    let stem_directory = stem_directory(base_cache_dir, song_hash);
+    let stem_directory = stem_directory(&library_root.stems_dir(), song_hash);
 
     if let Some(entry) = get_cached_stem_entry(connection, song_hash)? {
-        if cache_entry_files_exist(&entry) {
+        if cache_entry_files_exist(library_root, &entry) {
             return Ok(Some(StemCacheResult {
                 entry,
                 cache_hit: true,
@@ -101,12 +103,12 @@ pub fn get_valid_cached_stem_entry(
 
 pub fn store_generated_stem_cache(
     connection: &Connection,
-    base_cache_dir: &Path,
+    stems_base: &Path,
     song_hash: &str,
     separation: &SeparationResult,
 ) -> Result<StemCacheResult> {
     ensure_song_exists(connection, song_hash)?;
-    let stem_directory = stem_directory(base_cache_dir, song_hash);
+    let stem_directory = stem_directory(stems_base, song_hash);
 
     if stem_directory.exists() {
         fs::remove_dir_all(&stem_directory).with_context(|| {
@@ -134,8 +136,8 @@ pub fn store_generated_stem_cache(
 
     let entry = StemCacheEntry {
         song_hash: song_hash.to_owned(),
-        vocals_path: stem_directory.join(VOCALS_FILENAME).display().to_string(),
-        accomp_path: accompaniment_path.display().to_string(),
+        vocals_path: format!("{STEMS_CACHE_DIRECTORY}/{song_hash}/{VOCALS_FILENAME}"),
+        accomp_path: format!("{STEMS_CACHE_DIRECTORY}/{song_hash}/{ACCOMPANIMENT_FILENAME}"),
         separated_at: unix_timestamp(),
     };
     upsert_stem_cache_entry(connection, &entry).context("failed to persist stem cache entry")?;
@@ -173,8 +175,9 @@ fn upsert_stem_cache_entry(
     Ok(())
 }
 
-fn cache_entry_files_exist(entry: &StemCacheEntry) -> bool {
-    Path::new(&entry.vocals_path).exists() && Path::new(&entry.accomp_path).exists()
+fn cache_entry_files_exist(library_root: &LibraryRoot, entry: &StemCacheEntry) -> bool {
+    library_root.resolve(&entry.vocals_path).exists()
+        && library_root.resolve(&entry.accomp_path).exists()
 }
 
 fn ensure_song_exists(connection: &Connection, song_hash: &str) -> Result<()> {

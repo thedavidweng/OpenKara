@@ -13,10 +13,11 @@ use tauri::Manager;
 const DATABASE_FILENAME: &str = "openkara.sqlite3";
 // Keep the SQL in the migrations directory so tests and runtime initialization
 // execute the exact same schema definition.
-const MIGRATIONS: [&str; 3] = [
+const MIGRATIONS: [&str; 4] = [
     include_str!("../../migrations/001_init.sql"),
     include_str!("../../migrations/002_stems.sql"),
     include_str!("../../migrations/003_lyrics.sql"),
+    include_str!("../../migrations/004_portable_paths.sql"),
 ];
 
 fn database_path(base_dir: &Path) -> PathBuf {
@@ -58,6 +59,31 @@ pub fn apply_migrations(connection: &Connection) -> rusqlite::Result<()> {
         connection.execute_batch(migration)?;
     }
 
+    // ALTER TABLE lacks IF NOT EXISTS in SQLite, so we check manually.
+    if !column_exists(connection, "songs", "original_ext")? {
+        connection.execute_batch("ALTER TABLE songs ADD COLUMN original_ext TEXT;")?;
+    }
+
+    Ok(())
+}
+
+fn column_exists(
+    connection: &Connection,
+    table: &str,
+    column: &str,
+) -> rusqlite::Result<bool> {
+    let sql = format!("PRAGMA table_info({})", table);
+    let mut stmt = connection.prepare(&sql)?;
+    let names: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(names.iter().any(|name| name == column))
+}
+
+/// Initialize a database at an explicit path (for use inside a LibraryRoot).
+pub fn initialize_library_database(database_path: &Path) -> anyhow::Result<()> {
+    let connection = open_database(database_path)?;
+    apply_migrations(&connection).context("failed to apply SQLite migrations")?;
     Ok(())
 }
 
@@ -71,8 +97,9 @@ pub fn upsert_song(connection: &Connection, song: &Song) -> rusqlite::Result<()>
             album,
             duration_ms,
             cover_art,
-            imported_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            imported_at,
+            original_ext
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(hash) DO UPDATE SET
             file_path = excluded.file_path,
             title = excluded.title,
@@ -80,7 +107,8 @@ pub fn upsert_song(connection: &Connection, song: &Song) -> rusqlite::Result<()>
             album = excluded.album,
             duration_ms = excluded.duration_ms,
             cover_art = excluded.cover_art,
-            imported_at = excluded.imported_at",
+            imported_at = excluded.imported_at,
+            original_ext = excluded.original_ext",
         params![
             song.hash,
             song.file_path,
@@ -90,6 +118,7 @@ pub fn upsert_song(connection: &Connection, song: &Song) -> rusqlite::Result<()>
             song.duration_ms,
             song.cover_art,
             song.imported_at,
+            song.original_ext,
         ],
     )?;
 
@@ -106,7 +135,8 @@ pub fn list_songs(connection: &Connection) -> rusqlite::Result<Vec<Song>> {
             album,
             duration_ms,
             cover_art,
-            imported_at
+            imported_at,
+            original_ext
         FROM songs
         ORDER BY imported_at DESC, title COLLATE NOCASE ASC, hash ASC",
     )?;
@@ -129,7 +159,8 @@ pub fn search_songs(connection: &Connection, query: &str) -> rusqlite::Result<Ve
             album,
             duration_ms,
             cover_art,
-            imported_at
+            imported_at,
+            original_ext
         FROM songs
         WHERE lower(coalesce(title, '')) LIKE ?1
            OR lower(coalesce(artist, '')) LIKE ?1
@@ -155,7 +186,8 @@ pub fn get_song_by_hash(connection: &Connection, hash: &str) -> rusqlite::Result
             album,
             duration_ms,
             cover_art,
-            imported_at
+            imported_at,
+            original_ext
         FROM songs
         WHERE hash = ?1
         LIMIT 1",
@@ -178,6 +210,7 @@ fn map_song_row(row: &Row<'_>) -> rusqlite::Result<Song> {
         duration_ms: row.get(5)?,
         cover_art: row.get(6)?,
         imported_at: row.get(7)?,
+        original_ext: row.get(8)?,
     })
 }
 

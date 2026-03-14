@@ -11,6 +11,7 @@ pub struct Song {
     pub duration_ms: i64,
     pub cover_art: Option<Vec<u8>>,
     pub imported_at: i64,
+    pub original_ext: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

@@ -1,7 +1,9 @@
 pub mod audio;
 pub mod cache;
 pub mod commands;
+pub mod config;
 pub mod library;
+pub mod library_root;
 pub mod lyrics;
 pub mod metadata;
 pub mod perf;
@@ -10,6 +12,7 @@ pub mod smoke;
 use crate::audio::playback::{
     monotonic_now_ms, PlaybackController, PLAYBACK_POSITION_POLL_INTERVAL_MS,
 };
+use crate::library_root::LibraryRoot;
 use std::{
     collections::HashMap,
     fs,
@@ -22,8 +25,11 @@ use std::{
 use tauri::{Emitter, Manager};
 
 pub struct AppState {
-    pub database_path: PathBuf,
-    pub cache_dir: PathBuf,
+    /// The active karaoke library. `None` if no library has been configured yet
+    /// (first-run state).
+    pub library: Arc<Mutex<Option<LibraryRoot>>>,
+    /// Per-machine app data directory (stores config.json and AI model).
+    pub app_data_dir: PathBuf,
     pub model_path: PathBuf,
     pub playback: Arc<Mutex<PlaybackController>>,
     pub audio_output_started: Arc<AtomicBool>,
@@ -33,25 +39,62 @@ pub struct AppState {
         Arc<Mutex<HashMap<String, commands::separation::SeparationStatusSnapshot>>>,
 }
 
+impl AppState {
+    /// Convenience: get a clone of the LibraryRoot (if configured).
+    pub fn library_root(&self) -> Result<LibraryRoot, commands::error::CommandError> {
+        let guard = self
+            .library
+            .lock()
+            .map_err(|_| commands::error::state_lock_error("library lock was poisoned"))?;
+        guard
+            .clone()
+            .ok_or_else(|| commands::error::library_error("no library configured".to_owned()))
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let database_path = cache::initialize_database(app.handle())
-                .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
-            let cache_dir = app
-                .path()
-                .app_cache_dir()
-                .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
-            fs::create_dir_all(&cache_dir)
-                .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
             let app_data_dir = app
                 .path()
                 .app_data_dir()
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
             fs::create_dir_all(&app_data_dir)
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
+
+            // Load per-machine config to find the library path.
+            let app_config = config::load_config(&app_data_dir)
+                .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
+
+            let library = match app_config.and_then(|c| c.library_path) {
+                Some(path) => {
+                    let lib_path = PathBuf::from(&path);
+                    match LibraryRoot::open(&lib_path) {
+                        Ok(lib) => {
+                            // Run migrations on the library database.
+                            let db_path = lib.database_path();
+                            if let Err(err) = cache::initialize_library_database(&db_path) {
+                                eprintln!(
+                                    "warning: failed to apply migrations on library at {}: {}",
+                                    path, err
+                                );
+                            }
+                            Some(lib)
+                        }
+                        Err(err) => {
+                            eprintln!(
+                                "warning: could not open library at {}: {}",
+                                path, err
+                            );
+                            None
+                        }
+                    }
+                }
+                None => None,
+            };
+
             let playback = Arc::new(Mutex::new(PlaybackController::default()));
             let audio_output_started = Arc::new(AtomicBool::new(false));
             let audio_output_start_lock = Arc::new(Mutex::new(()));
@@ -77,12 +120,9 @@ pub fn run() {
             }));
             let separation_statuses = Arc::new(Mutex::new(HashMap::new()));
 
-            // Commands open short-lived SQLite connections on demand. This avoids
-            // sharing a long-lived connection across Tauri threads before we need
-            // more advanced pooling behavior.
             app.manage(AppState {
-                database_path,
-                cache_dir,
+                library: Arc::new(Mutex::new(library)),
+                app_data_dir,
                 model_path: model_path.clone(),
                 playback: Arc::clone(&playback),
                 audio_output_started,
@@ -106,6 +146,9 @@ pub fn run() {
             commands::import::import_songs,
             commands::import::get_library,
             commands::import::search_library,
+            commands::library_setup::create_library,
+            commands::library_setup::open_library,
+            commands::library_setup::get_library_path,
             commands::lyrics::fetch_lyrics,
             commands::lyrics::set_lyrics_offset,
             commands::playback::play,

@@ -3,6 +3,7 @@ name = "openkara"
 version = "0.1.0"
 description = "OpenKara desktop shell"
 authors = ["OpenKara contributors"]
+license = "MIT"
 edition = "2021"
 default-run = "openkara"
 
@@ -39,3 +40,4 @@ tauri-plugin-dialog = "2.6.0"
 
 [dev-dependencies]
 mockito = "1.7"
+tempfile = "3.27.0"

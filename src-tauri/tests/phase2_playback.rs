@@ -7,6 +7,7 @@ use openkara_lib::{
     },
     cache,
     commands::{import::import_songs_from_paths, playback::play_song_from_library},
+    library_root::LibraryRoot,
 };
 use rusqlite::Connection;
 
@@ -86,14 +87,17 @@ fn play_song_from_library_loads_track_by_hash() {
     let connection = Connection::open_in_memory().expect("in-memory database should open");
     cache::apply_migrations(&connection).expect("migrations should succeed");
 
+    let tmp = tempfile::tempdir().expect("temp dir should create");
+    let library = LibraryRoot::create(tmp.path().join("lib").as_path())
+        .expect("library should create");
     let import_result =
-        import_songs_from_paths(&connection, &[fixture_path("metadata", "fixture.mp3")]);
+        import_songs_from_paths(&connection, &library, &[fixture_path("metadata", "fixture.mp3")]);
     assert_eq!(import_result.imported.len(), 1);
 
     let song_hash = import_result.imported[0].hash.clone();
     let mut controller = PlaybackController::default();
 
-    let snapshot = play_song_from_library(&connection, &mut controller, &song_hash, 10_000)
+    let snapshot = play_song_from_library(&connection, &library, &mut controller, &song_hash, 10_000)
         .expect("play helper should load and start track");
 
     assert_snapshot(&snapshot, Some(song_hash.as_str()), true, 0);

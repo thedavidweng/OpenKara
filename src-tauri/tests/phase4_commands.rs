@@ -9,6 +9,7 @@ use openkara_lib::{
     cache::{self, lyrics},
     commands::lyrics::{fetch_lyrics_from_connection, set_lyrics_offset_in_connection},
     library::Song,
+    library_root::LibraryRoot,
     lyrics::{fetch::LyricsSource, lrclib::LrcLibClient},
 };
 use rusqlite::Connection;
@@ -41,13 +42,23 @@ fn fixture_song(hash: &str, file_path: &Path) -> Song {
         duration_ms: 267_000,
         cover_art: None,
         imported_at: 1,
+        original_ext: None,
     }
+}
+
+fn unique_library() -> LibraryRoot {
+    let path = support::unique_temp_path("phase4-lib");
+    if path.exists() {
+        fs::remove_dir_all(&path).ok();
+    }
+    LibraryRoot::create(&path).expect("library should create")
 }
 
 #[test]
 fn fetch_lyrics_reads_cached_lrc_before_attempting_remote_fetch() {
     let connection = Connection::open_in_memory().expect("in-memory database should open");
     cache::apply_migrations(&connection).expect("migrations should succeed");
+    let library = unique_library();
 
     let song = fixture_song("song-a", &metadata_fixture_path("fixture.mp3"));
     cache::upsert_song(&connection, &song).expect("song insert should succeed");
@@ -65,6 +76,7 @@ fn fetch_lyrics_reads_cached_lrc_before_attempting_remote_fetch() {
 
     let payload = fetch_lyrics_from_connection(
         &connection,
+        &library,
         &LrcLibClient::new("http://127.0.0.1:9"),
         &song.hash,
     )
@@ -90,7 +102,12 @@ fn fetch_lyrics_fetches_remote_lrc_and_persists_it_in_cache() {
     let audio_path = fixture_dir.join("yellow.mp3");
     fs::copy(metadata_fixture_path("fixture.mp3"), &audio_path).expect("fixture audio should copy");
 
-    let song = fixture_song("song-b", &audio_path);
+    // Create a library and copy the fixture into it so the resolved path works
+    let library = unique_library();
+    let dest = library.media_path("song-b", "mp3");
+    fs::copy(&audio_path, &dest).expect("copy to library media");
+
+    let song = fixture_song("song-b", Path::new("media/song-b.mp3"));
     cache::upsert_song(&connection, &song).expect("song insert should succeed");
 
     let mut server = mockito::Server::new();
@@ -113,7 +130,7 @@ fn fetch_lyrics_fetches_remote_lrc_and_persists_it_in_cache() {
         .create();
 
     let payload =
-        fetch_lyrics_from_connection(&connection, &LrcLibClient::new(server.url()), &song.hash)
+        fetch_lyrics_from_connection(&connection, &library, &LrcLibClient::new(server.url()), &song.hash)
             .expect("remote lyrics fetch should succeed");
 
     assert_eq!(payload.song_id, "song-b");
@@ -144,7 +161,12 @@ fn fetch_lyrics_returns_empty_payload_when_no_synced_source_exists() {
     let audio_path = fixture_dir.join("yellow.mp3");
     fs::copy(metadata_fixture_path("fixture.mp3"), &audio_path).expect("fixture audio should copy");
 
-    let song = fixture_song("song-c", &audio_path);
+    // Create a library and copy the fixture into it
+    let library = unique_library();
+    let dest = library.media_path("song-c", "mp3");
+    fs::copy(&audio_path, &dest).expect("copy to library media");
+
+    let song = fixture_song("song-c", Path::new("media/song-c.mp3"));
     cache::upsert_song(&connection, &song).expect("song insert should succeed");
 
     let mut server = mockito::Server::new();
@@ -155,7 +177,7 @@ fn fetch_lyrics_returns_empty_payload_when_no_synced_source_exists() {
         .create();
 
     let payload =
-        fetch_lyrics_from_connection(&connection, &LrcLibClient::new(server.url()), &song.hash)
+        fetch_lyrics_from_connection(&connection, &library, &LrcLibClient::new(server.url()), &song.hash)
             .expect("lyrics miss should still succeed");
 
     assert_eq!(payload.song_id, "song-c");
