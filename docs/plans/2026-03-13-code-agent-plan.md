@@ -23,6 +23,7 @@
   - 首次启动模型 bootstrap
   - CI 模型准备
   - draft release workflow
+  - 本地真实语料 smoke harness（`scripts/run-local-smoke.sh`）
 - 已有基础：
   - Tauri app shell
   - SQLite migration runner
@@ -33,7 +34,7 @@
 ### 当前仍待完成的代码侧主线
 
 1. 判断 `Phase 5.5` 是否需要 Rust/Tauri 层快捷键支持
-2. 完成 `Phase 6.5` 平台 smoke test 记录
+2. 完成 `Phase 6.5` 的跨平台 smoke test 记录（本地语料脚本已就绪）
 3. 完成 `Phase 6.6` Homebrew 分发支持
 4. 跟进首次真实 release workflow 执行结果
 
@@ -300,7 +301,7 @@ pnpm tauri build --debug --no-bundle --ci
 
 **Owner:** 代码 Agent
 
-**Current status:** 已完成 `6.1` build config、`6.2` CI 模型准备、`6.3` release workflow、`6.4` 首次启动模型 bootstrap；`6.5-6.6` 仍待完成
+**Current status:** 已完成 `6.1` build config、`6.2` CI 模型准备、`6.3` release workflow、`6.4` 首次启动模型 bootstrap，以及本地真实语料 smoke harness；`6.5` 的平台记录与 `6.6` Homebrew 仍待完成
 
 ### 任务
 
@@ -325,6 +326,7 @@ pnpm format
 cd src-tauri && cargo test
 cd ..
 pnpm tauri build --debug --no-bundle --ci
+./scripts/run-local-smoke.sh
 ```
 
 ### 建议提交边界

@@ -6,6 +6,7 @@ pub mod lyrics;
 pub mod metadata;
 pub mod perf;
 pub mod separator;
+pub mod smoke;
 use crate::audio::playback::{
     monotonic_now_ms, PlaybackController, PLAYBACK_POSITION_POLL_INTERVAL_MS,
 };

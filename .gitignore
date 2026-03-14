@@ -17,6 +17,7 @@ node_modules/
 dist/
 build/
 out/
+output/
 coverage/
 
 # Rust / Cargo
