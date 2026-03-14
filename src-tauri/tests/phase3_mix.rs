@@ -1,8 +1,9 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
 };
+
+mod support;
 
 use openkara_lib::{
     audio::decode::DecodedAudio,
@@ -13,12 +14,7 @@ use openkara_lib::{
 };
 
 fn unique_output_dir() -> PathBuf {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time should be after unix epoch")
-        .as_nanos();
-
-    std::env::temp_dir().join(format!("openkara-phase3-mix-{timestamp}"))
+    support::unique_temp_path("phase3-mix")
 }
 
 fn cleanup_dir(path: &Path) {

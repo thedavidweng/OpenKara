@@ -1,8 +1,9 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
 };
+
+mod support;
 
 use openkara_lib::{
     library::Song,
@@ -21,12 +22,7 @@ fn metadata_fixture_path(filename: &str) -> PathBuf {
 }
 
 fn unique_fixture_dir() -> PathBuf {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time should be after unix epoch")
-        .as_nanos();
-
-    std::env::temp_dir().join(format!("openkara-phase4-fetch-{timestamp}"))
+    support::unique_temp_path("phase4-fetch")
 }
 
 fn cleanup_dir(path: &Path) {

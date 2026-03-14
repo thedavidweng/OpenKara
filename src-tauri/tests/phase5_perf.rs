@@ -1,8 +1,9 @@
 use std::{
     fs,
     path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
 };
+
+mod support;
 
 use openkara_lib::{
     cache,
@@ -26,12 +27,7 @@ fn fixture_path(directory: &str, filename: &str) -> String {
 }
 
 fn unique_report_path() -> PathBuf {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time should be after unix epoch")
-        .as_nanos();
-
-    std::env::temp_dir().join(format!("openkara-phase5-perf-{timestamp}.json"))
+    support::unique_temp_path("phase5-perf").with_extension("json")
 }
 
 #[test]

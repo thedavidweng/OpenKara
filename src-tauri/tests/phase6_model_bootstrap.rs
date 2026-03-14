@@ -2,8 +2,9 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
 };
+
+mod support;
 
 use openkara_lib::{
     commands::{self, error::ErrorCode},
@@ -12,12 +13,7 @@ use openkara_lib::{
 use sha2::{Digest, Sha256};
 
 fn unique_temp_dir() -> PathBuf {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time should be after unix epoch")
-        .as_nanos();
-
-    std::env::temp_dir().join(format!("openkara-phase6-model-bootstrap-{timestamp}"))
+    support::unique_temp_path("phase6-model-bootstrap")
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {

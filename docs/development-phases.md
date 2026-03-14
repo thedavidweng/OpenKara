@@ -164,7 +164,7 @@
 | 6.3 | GitHub Release automation — tag push triggers release with binaries    | Release workflow           | `git tag v0.1.0 && git push --tags` → Release created                                               |
 | 6.4 | Model bootstrap UX — startup check, prompt, background download, retry | Setup logic + UX contract  | Fresh install → user can download now/later, karaoke blocked until ready                            |
 | 6.5 | Smoke test on each platform                                            | Test report                | `./scripts/run-local-smoke.sh` on local corpus + app launch/playback smoke on macOS, Windows, Linux |
-| 6.6 | Homebrew formula (macOS)                                               | `homebrew-openkara` repo   | `brew install openkara` works                                                                       |
+| 6.6 | Homebrew Cask distribution (macOS)                                     | Tap repo + cask file       | `brew install --cask openkara` works                                                                |
 
 ---
 
