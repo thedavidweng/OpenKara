@@ -1,225 +1,241 @@
 [简体中文](./README_CN.md)
 
+<div align="center">
+
 # OpenKara
 
-OpenKara is an open-source desktop application that turns a local music library into an instant karaoke experience.
+**Turn your music library into a karaoke stage.**
 
-It uses on-device AI to separate vocals and instrumentals, then fetches synced lyrics from the Internet so users can sing with the music they already own.
+An open-source desktop karaoke app powered by on-device AI stem separation and synced lyrics.
 
-## Vision
+[![CI](https://github.com/thedavidweng/OpenKara/actions/workflows/ci.yml/badge.svg)](https://github.com/thedavidweng/OpenKara/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 
-Make karaoke affordable and open by letting users reuse the music they already own.
+</div>
 
-## Problem
+---
 
-Existing karaoke software usually has one or more of these limits:
+## Features
 
-- Limited song catalogs
-- Expensive subscriptions
-- Repurchase requirements for songs users already own
+- **Local Audio Import** — Use music you already own. No subscriptions, no repurchases.
+- **AI Stem Separation** — On-device Demucs v4 model strips vocals from any track in seconds.
+- **Synced Lyrics** — Fetches time-synced lyrics from LRCLIB, embedded tags, or sidecar `.lrc` files.
+- **Portable Library** — Self-contained library directory that works on NAS, USB drives, and across machines.
+- **Cross-Platform** — Native performance on macOS (Apple Silicon & Intel), Windows, and Linux via Tauri 2.
 
-OpenKara solves this by combining local music playback, AI stem separation, and synced lyrics.
+## Screenshots
 
-## Target Users
+> Coming soon — the UI is functional but still being polished.
 
-- Budget-conscious university students
-- Dorm party organizers
-- People with private local music collections (MP3, FLAC, and similar formats)
+## Quick Start
 
-## Core Feature List
+### Install from Release
 
-- Local Audio Import
-- AI Stem Separation
-- Synced Lyrics Fetch
-- Karaoke UI
-- Playback Controls
-- Mic Input and Vocal Effects
-- Playlist and Multi-user Queue
-- Pitch and Key Shift
-- Session Recording
-- Multi-screen Support
+Download the latest build for your platform from [GitHub Releases](https://github.com/thedavidweng/OpenKara/releases):
 
-## MVP Scope
+| Platform | Format |
+|----------|--------|
+| macOS (Apple Silicon) | `.dmg` |
+| macOS (Intel) | `.dmg` |
+| Windows | `.exe` (NSIS installer) |
+| Linux | `.AppImage` |
 
-- Local Audio Import
-- AI Stem Separation
-- Synced Lyrics Fetch
-- Karaoke UI
-- Playback Controls
+On first launch, OpenKara will prompt you to create a Karaoke Library and download the AI model (~80 MB).
 
-## Why This MVP
+### Build from Source
 
-OpenKara's core value is turning an existing music library into a karaoke library. Stem separation and lyric sync are the unique differentiators. Local import and playback controls are the minimum product foundation required to make the experience usable.
+**Prerequisites:**
 
-## Nice-to-Have Features
+- [Node.js](https://nodejs.org/) 20+
+- [pnpm](https://pnpm.io/) 10+
+- [Rust](https://rustup.rs/) stable toolchain
+- Platform dependencies for [Tauri 2](https://v2.tauri.app/start/prerequisites/)
 
-- Mic Input and Vocal Effects
-- Playlist and Multi-user Queue
-- Pitch and Key Shift
-- Session Recording
-- Multi-screen Support
+```bash
+git clone https://github.com/thedavidweng/OpenKara.git
+cd OpenKara
+pnpm install
+./scripts/setup.sh      # downloads Demucs ONNX model for local dev
+pnpm tauri dev
+```
 
-These features are intentionally deferred to reduce product risk and validate the core experience first.
+## Tech Stack
 
-## Launch Strategy
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| Desktop framework | [Tauri 2](https://v2.tauri.app/) | Rust backend + system WebView |
+| Frontend | React 19 + TypeScript 5 | UI components |
+| Bundler | Vite 7 | Dev server and build |
+| Styling | Tailwind CSS 4 | Utility-first CSS |
+| State | Zustand | Lightweight global state |
+| Audio decode | [symphonia](https://github.com/pdeljanov/Symphonia) | Pure-Rust codec support |
+| Audio output | [cpal](https://github.com/RustAudio/cpal) | Cross-platform audio playback |
+| AI inference | [ONNX Runtime](https://onnxruntime.ai/) via [ort](https://github.com/pykeio/ort) | Demucs v4 stem separation |
+| Lyrics | [LRCLIB](https://lrclib.net/) | Open synced lyrics API |
+| Metadata | [lofty](https://github.com/Serial-ATA/lofty-rs) | ID3v2, Vorbis, FLAC tag reading |
+| Database | SQLite via [rusqlite](https://github.com/rusqlite/rusqlite) | Song, lyrics, and stems cache |
 
-### Soft Launch
+## Architecture
 
-Start with a small group of early users, such as university clubs, to validate:
+```
+┌──────────────────────────────────────────────┐
+│           Tauri Frontend (React)             │
+│  ┌────────────┐  ┌─────────────────────────┐ │
+│  │ File Import │  │   Karaoke Player UI     │ │
+│  │ & Library   │  │  (lyrics sync/highlight)│ │
+│  ├────────────┤  ├─────────────────────────┤ │
+│  │  Playback   │  │   Progress & Volume     │ │
+│  │  Controls   │  │   Controls              │ │
+│  └────────────┘  └─────────────────────────┘ │
+├──────────────────────────────────────────────┤
+│           Tauri Rust Backend                 │
+│  ┌────────────┐  ┌─────────────────────────┐ │
+│  │   Audio     │  │  AI Stem Separation     │ │
+│  │   Decode &  │  │  (Demucs v4 / ONNX)    │ │
+│  │   Playback  │  │                         │ │
+│  ├────────────┤  ├─────────────────────────┤ │
+│  │  Metadata   │  │  Lyrics Fetcher         │ │
+│  │  Reader     │  │  (LRCLIB + embedded)    │ │
+│  └────────────┘  └─────────────────────────┘ │
+│  ┌──────────────────────────────────────────┐ │
+│  │  Portable Library (SQLite + media files) │ │
+│  └──────────────────────────────────────────┘ │
+└──────────────────────────────────────────────┘
+```
 
-- Hardware performance on real user devices
-- Stem separation quality
-- Lyric sync quality
-- Baseline usability and stability
+## Supported Formats
 
-### Incremental Releases
+| Format | Import | Stem Separation |
+|--------|--------|----------------|
+| MP3 | ✅ | ✅ |
+| FLAC | ✅ | ✅ |
+| WAV | ✅ | ✅ |
+| OGG / Vorbis | ✅ | ✅ |
+| AAC / M4A | ✅ | ✅ |
 
-After the soft launch, ship regular updates based on user feedback and usage signals.
+All audio is resampled to 44.1 kHz stereo for the Demucs model.
 
-### Distribution
+## Portable Library
 
-- GitHub Releases
-- Homebrew
+OpenKara stores all data in a self-contained library directory:
 
-### Marketing Channels
+```
+MyKaraokeLibrary/
+├── .openkara-library       # marker file
+├── openkara.db             # SQLite database
+├── media/                  # imported audio copies
+│   └── {hash}.mp3
+└── stems/                  # separated tracks
+    └── {hash}/
+        ├── vocals.wav
+        └── accompaniment.wav
+```
 
-- Reddit communities
-- Discord communities
-- Facebook groups
+All paths in the database are relative — the library can be moved to a NAS, USB drive, or network share and opened by any OpenKara instance on any OS. Per-machine configuration (library location) is stored separately in the app data directory.
 
-### Early Feedback Loop
+## Roadmap
 
-- User surveys
-- Selected user interviews for qualitative feedback
+### ✅ v0.1 — MVP
 
-## Post-Launch Strategy
+- [x] Project scaffolding (Tauri 2 + React + TypeScript + Vite)
+- [x] SQLite database with migration system
+- [x] Audio import with metadata extraction (ID3v2, Vorbis, FLAC)
+- [x] Library search and browsing
+- [x] Audio decode and playback (symphonia + cpal)
+- [x] Playback state machine (play / pause / seek / volume)
+- [x] Demucs v4 ONNX stem separation with progress tracking
+- [x] Stems caching (hash-based, no re-inference on replay)
+- [x] Karaoke mode toggle (original / instrumental)
+- [x] Synced lyrics fetch (LRCLIB → embedded → sidecar .lrc)
+- [x] Lyrics display with rAF-based sync and click-to-seek
+- [x] Per-song lyrics timing offset
+- [x] First-launch AI model bootstrap with background download
+- [x] Portable library system with relative paths
+- [x] Full frontend UI (sidebar, player, lyrics panel, settings)
+- [x] Keyboard shortcuts (space, arrows)
+- [x] Drag-and-drop file import
+- [x] CI/CD pipeline (macOS, Windows, Linux)
+- [x] Release automation (tag → GitHub Release with binaries)
 
-### Customer Support
+### 🚧 v0.2 — Polish & Distribution
 
-Because OpenKara is open source, support should be scalable:
+- [ ] UI polish and transitions
+- [ ] Error toasts and user-facing error messages
+- [ ] App icon and branding
+- [ ] Homebrew Cask distribution
+- [ ] End-to-end testing on all platforms
 
-- FAQ and troubleshooting knowledge base
-- GitHub Issues for bug reports and feature requests
+### 📋 Future
 
-### Community Management
+- **Mic Input & Vocal Effects** — Microphone capture, reverb, echo, volume mix
+- **Playlist & Queue** — Multi-song queue, multi-user turn-based singing
+- **Pitch & Key Shift** — Real-time pitch shifting of the accompaniment track
+- **Session Recording** — Record vocal performances, export as audio
+- **Multi-screen Support** — Second display for audience lyrics view
+- **CJK Transliteration** — Romaji / Pinyin display alongside original lyrics
 
-- Run an official Discord server for peer support and sharing
-- Participate in relevant Reddit communities such as karaoke-related subreddits
-
-### Continuous Improvement
-
-- Monitor GitHub issues and community discussions
-- Turn feedback from Discord and Reddit into roadmap priorities
-- Prioritize improvements that increase retention and repeat usage
-
-## Viability Reflection
-
-Primary health signal:
-
-- Churn and retention trend
-
-If the product proves unviable, options include:
-
-- Pivoting the separation pipeline toward musician practice tools
-- Leaving the codebase healthy for community forks
-
-## Documentation
-
-- [Architecture](./docs/architecture.md) — System design, tech stack, data flow, and AI model details
-- [Project Structure](./docs/project-structure.md) — Directory layout and module responsibilities
-- [Development Phases](./docs/development-phases.md) — Executable phase checklist with verify steps
-- [Technical Roadmap](./docs/roadmap.md) — Tech choices, API contracts, and risk mitigations
-- [Milestones](./docs/milestones.md) — Milestone task table with exit criteria
-
-## Phase 0 Setup
+## Development
 
 ### Prerequisites
 
 - Node.js 20+
 - pnpm 10+
-- Rust stable via `rustup`
-- Tauri CLI v2 via `cargo install tauri-cli --version "^2"`
+- Rust stable via [rustup](https://rustup.rs/)
+- [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your platform
 
-### Local Bootstrap
+### Setup
 
 ```bash
 pnpm install
-./scripts/setup.sh
-pnpm tauri dev
+./scripts/setup.sh          # download Demucs ONNX model to src-tauri/models/
+pnpm tauri dev               # start dev server with hot reload
 ```
 
-`./scripts/setup.sh` is still the recommended local-dev prewarm step because it
-places the Demucs model in `src-tauri/models/` for deterministic testing.
-Starting from Phase 6, the desktop app also auto-downloads the model into the
-app data directory on first launch when no verified local copy exists.
+`scripts/setup.sh` places the model in `src-tauri/models/` for deterministic testing. The desktop app also auto-downloads the model on first launch when no local copy exists.
 
-## Supported Media Pipeline
-
-The current backend supports local import and decode for:
-
-- MP3
-- FLAC
-- WAV
-- OGG / Vorbis
-- AAC / M4A
-
-Stem separation currently targets the pinned Demucs ONNX model at `44.1 kHz`
-stereo input.
-
-### Local Verification
+### Running Tests
 
 ```bash
-pnpm lint
-pnpm format
-cd src-tauri && cargo test
-cd ..
-pnpm tauri build --debug --no-bundle --ci
+cd src-tauri && cargo test   # backend tests (60+ tests across 27 files)
+pnpm lint                    # ESLint
+pnpm format                  # Prettier check
 ```
 
-## Release Automation
+### Building
 
-- Pushes to `main` and `codex/**` run the verification workflow in
-  [`.github/workflows/ci.yml`](./.github/workflows/ci.yml).
-- Pushing a tag such as `v0.1.0` triggers the draft release workflow in
-  [`.github/workflows/release.yml`](./.github/workflows/release.yml).
-- The release workflow currently builds:
-  - macOS arm64
-  - macOS x64
-  - Windows
-  - Linux
+```bash
+pnpm tauri build             # production build with platform-specific bundle
+```
 
-## Current Implementation Surface
+### CI/CD
 
-The current branch has backend-complete coverage for the MVP foundations:
+- Pushes to `main` trigger the CI workflow ([`.github/workflows/ci.yml`](./.github/workflows/ci.yml)) — lint, build, and test on macOS, Windows, and Linux.
+- Pushing a version tag (e.g. `v0.1.0`) triggers the release workflow ([`.github/workflows/release.yml`](./.github/workflows/release.yml)) — builds and attaches binaries to a GitHub Release.
 
-- library import and search
-- playback decode/output/state
-- Demucs stem separation and karaoke mode
-- synced lyrics fetch, parse, cache, and offset persistence
-- structured command errors
-- backend performance baseline
-- first-launch model bootstrap
+## Documentation
 
-The remaining major work is primarily user-facing UI assembly and distribution
-polish.
-
-## Current Status
-
-Concept defined, MVP scoped, architecture documented, and the current branch now
-includes import/playback/separation/lyrics backend foundations, structured
-errors, backend performance baselines, and runtime model bootstrap for
-first-launch installs.
+- [Architecture](./docs/architecture.md) — System design, tech stack, data flow, and AI model details
+- [Project Structure](./docs/project-structure.md) — Directory layout and module responsibilities
+- [Development Phases](./docs/development-phases.md) — Phase checklist with verification steps
+- [Technical Roadmap](./docs/roadmap.md) — Technology choices, API contracts, and risk mitigations
+- [Milestones](./docs/milestones.md) — Milestone task table with exit criteria
 
 ## Contributing
 
-Contributions are welcome. Open an issue before making major changes.
+Contributions are welcome! Please open an issue before starting major changes so we can discuss the approach.
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/my-feature`)
+3. Make your changes and ensure tests pass (`cargo test`)
+4. Submit a pull request
 
 ## Acknowledgments
 
-- [monochrome](https://github.com/monochrome-music/monochrome) — Lyrics sync and LRCLIB integration approach
 - [Demucs](https://github.com/facebookresearch/demucs) — AI stem separation model by Meta Research
 - [LRCLIB](https://lrclib.net) — Open synced lyrics API
+- [monochrome](https://github.com/monochrome-music/monochrome) — Lyrics sync and LRCLIB integration reference
 
 ## License
 
-TBD. MIT is a reasonable default if the goal is broad open-source adoption.
+[MIT](./LICENSE) — Copyright (c) 2025 David Weng

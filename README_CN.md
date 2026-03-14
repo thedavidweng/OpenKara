@@ -1,223 +1,239 @@
 [English](./README.md)
 
+<div align="center">
+
 # OpenKara
 
-OpenKara 是一个开源桌面应用，目标是把用户的本地音乐库直接变成可用的 Karaoke 体验。
+**把你的音乐库变成 Karaoke 舞台。**
 
-它使用端侧 AI 分离人声与伴奏，并从互联网获取同步歌词，让用户可以直接使用自己已经拥有的本地音乐来唱歌。
+基于端侧 AI 人声分离和同步歌词的开源桌面 Karaoke 应用。
 
-## 愿景
+[![CI](https://github.com/thedavidweng/OpenKara/actions/workflows/ci.yml/badge.svg)](https://github.com/thedavidweng/OpenKara/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 
-通过让用户复用自己已经拥有的音乐，让 Karaoke 更便宜、更开放。
+</div>
 
-## 问题
+---
 
-现有 Karaoke 软件通常至少存在以下一个问题：
+## 功能亮点
 
-- 歌曲库有限
-- 订阅费用高
-- 用户已经买过的歌曲还需要重新购买
+- **本地音频导入** — 直接使用你已有的音乐，无需订阅，无需重复购买。
+- **AI 人声分离** — 端侧 Demucs v4 模型，数秒内从任意曲目中分离人声。
+- **同步歌词** — 自动从 LRCLIB、内嵌标签或 `.lrc` 伴随文件获取时间同步歌词。
+- **可移植曲库** — 自包含的曲库目录，可放置在 NAS、USB 硬盘上，跨设备共享。
+- **跨平台原生** — 通过 Tauri 2 在 macOS（Apple Silicon 与 Intel）、Windows、Linux 上获得原生性能。
 
-OpenKara 的解决方案是把本地音乐、AI 音轨分离和同步歌词结合起来。
+## 截图
 
-## 目标用户
+> 即将发布 — UI 已可使用，仍在打磨中。
 
-- 预算有限的大学生
-- 宿舍聚会组织者
-- 拥有私人本地音乐收藏的用户（如 MP3、FLAC 等格式）
+## 快速开始
 
-## 功能清单
+### 从 Release 安装
 
-- 本地音频导入
-- AI 人声分离
-- 同步歌词抓取
-- Karaoke 演唱界面
-- 播放控制
-- 麦克风输入与人声效果
-- 播放列表与多人点歌队列
-- 音高与调性调整
-- 会话录音
-- 多屏支持
+从 [GitHub Releases](https://github.com/thedavidweng/OpenKara/releases) 下载对应平台的构建：
 
-## MVP 范围
+| 平台 | 格式 |
+|------|------|
+| macOS (Apple Silicon) | `.dmg` |
+| macOS (Intel) | `.dmg` |
+| Windows | `.exe` (NSIS 安装包) |
+| Linux | `.AppImage` |
 
-- 本地音频导入
-- AI 人声分离
-- 同步歌词抓取
-- Karaoke 演唱界面
-- 播放控制
+首次启动时，OpenKara 会引导你创建 Karaoke 曲库并下载 AI 模型（约 80 MB）。
 
-## 为什么这样定义 MVP
+### 从源码构建
 
-OpenKara 的核心价值是把现有音乐库转化为 Karaoke 曲库。人声分离和歌词同步是产品最核心的差异化能力，而本地导入与播放控制则是让产品可用的最低基础能力。
+**前置条件：**
 
-## 后续增强功能
+- [Node.js](https://nodejs.org/) 20+
+- [pnpm](https://pnpm.io/) 10+
+- [Rust](https://rustup.rs/) stable 工具链
+- [Tauri 2](https://v2.tauri.app/start/prerequisites/) 平台依赖
 
-- 麦克风输入与人声效果
-- 播放列表与多人点歌队列
-- 音高与调性调整
-- 会话录音
-- 多屏支持
+```bash
+git clone https://github.com/thedavidweng/OpenKara.git
+cd OpenKara
+pnpm install
+./scripts/setup.sh      # 下载 Demucs ONNX 模型用于本地开发
+pnpm tauri dev
+```
 
-这些功能被刻意后置，以降低前期探索阶段的风险，优先验证核心体验是否成立。
+## 技术栈
 
-## 上线策略
+| 层级 | 技术 | 用途 |
+|------|------|------|
+| 桌面框架 | [Tauri 2](https://v2.tauri.app/) | Rust 后端 + 系统 WebView |
+| 前端 | React 19 + TypeScript 5 | UI 组件 |
+| 构建工具 | Vite 7 | 开发服务器与生产构建 |
+| 样式 | Tailwind CSS 4 | 原子化 CSS |
+| 状态管理 | Zustand | 轻量全局状态 |
+| 音频解码 | [symphonia](https://github.com/pdeljanov/Symphonia) | 纯 Rust 解码器 |
+| 音频输出 | [cpal](https://github.com/RustAudio/cpal) | 跨平台音频播放 |
+| AI 推理 | [ONNX Runtime](https://onnxruntime.ai/) via [ort](https://github.com/pykeio/ort) | Demucs v4 音轨分离 |
+| 歌词 | [LRCLIB](https://lrclib.net/) | 开放同步歌词 API |
+| 元数据 | [lofty](https://github.com/Serial-ATA/lofty-rs) | ID3v2、Vorbis、FLAC 标签读取 |
+| 数据库 | SQLite via [rusqlite](https://github.com/rusqlite/rusqlite) | 歌曲、歌词与 stems 缓存 |
 
-### 小范围软发布
+## 系统架构
 
-先向一小批早期用户开放，例如大学社团，用来验证：
+```
+┌──────────────────────────────────────────────┐
+│           Tauri 前端 (React)                 │
+│  ┌────────────┐  ┌─────────────────────────┐ │
+│  │ 文件导入    │  │   Karaoke 播放器 UI     │ │
+│  │ & 曲库浏览  │  │  (歌词同步/高亮)        │ │
+│  ├────────────┤  ├─────────────────────────┤ │
+│  │  播放控制   │  │   进度与音量控制         │ │
+│  └────────────┘  └─────────────────────────┘ │
+├──────────────────────────────────────────────┤
+│           Tauri Rust 后端                    │
+│  ┌────────────┐  ┌─────────────────────────┐ │
+│  │  音频解码    │  │  AI 人声分离            │ │
+│  │  & 播放     │  │  (Demucs v4 / ONNX)    │ │
+│  ├────────────┤  ├─────────────────────────┤ │
+│  │  元数据读取  │  │  歌词抓取              │ │
+│  │            │  │  (LRCLIB + 内嵌标签)    │ │
+│  └────────────┘  └─────────────────────────┘ │
+│  ┌──────────────────────────────────────────┐ │
+│  │  可移植曲库 (SQLite + 媒体文件)           │ │
+│  └──────────────────────────────────────────┘ │
+└──────────────────────────────────────────────┘
+```
 
-- 不同设备上的真实硬件性能
-- 人声分离质量
-- 歌词同步质量
-- 基本可用性与稳定性
+## 支持的格式
 
-### 增量发布
+| 格式 | 导入 | 人声分离 |
+|------|------|---------|
+| MP3 | ✅ | ✅ |
+| FLAC | ✅ | ✅ |
+| WAV | ✅ | ✅ |
+| OGG / Vorbis | ✅ | ✅ |
+| AAC / M4A | ✅ | ✅ |
 
-在软发布之后，根据用户反馈和使用数据持续迭代发布。
+所有音频在送入 Demucs 模型前会重采样为 44.1 kHz 立体声。
 
-### 分发渠道
+## 可移植曲库
 
-- GitHub Releases
-- Homebrew
+OpenKara 将所有数据存储在一个自包含的曲库目录中：
 
-### 面向学生的传播渠道
+```
+MyKaraokeLibrary/
+├── .openkara-library       # 标记文件
+├── openkara.db             # SQLite 数据库
+├── media/                  # 导入的音频副本
+│   └── {hash}.mp3
+└── stems/                  # 分离后的音轨
+    └── {hash}/
+        ├── vocals.wav
+        └── accompaniment.wav
+```
 
-- Reddit 社区
-- Discord 社区
-- Facebook 群组
+数据库中的所有路径均为相对路径 — 曲库可以移动到 NAS、USB 硬盘或网络共享目录，任何操作系统上的 OpenKara 实例都可以直接打开使用。每台设备的配置（曲库位置）单独存储在应用数据目录中。
 
-### 早期反馈机制
+## 路线图
 
-- 用户问卷
-- 选择性用户访谈，收集更深入的定性反馈
+### ✅ v0.1 — MVP
 
-## 上线后的策略
+- [x] 项目脚手架（Tauri 2 + React + TypeScript + Vite）
+- [x] SQLite 数据库与迁移系统
+- [x] 音频导入与元数据提取（ID3v2、Vorbis、FLAC）
+- [x] 曲库搜索与浏览
+- [x] 音频解码与播放（symphonia + cpal）
+- [x] 播放状态机（播放 / 暂停 / 跳转 / 音量）
+- [x] Demucs v4 ONNX 人声分离（含进度追踪）
+- [x] Stems 缓存（基于 hash，重放无需重新推理）
+- [x] Karaoke 模式切换（原声 / 伴奏）
+- [x] 同步歌词抓取（LRCLIB → 内嵌标签 → sidecar .lrc）
+- [x] 歌词展示（rAF 同步、点击跳转）
+- [x] 逐曲歌词时间偏移调整
+- [x] 首次启动 AI 模型自动下载
+- [x] 可移植曲库系统（相对路径）
+- [x] 完整前端 UI（侧边栏、播放器、歌词面板、设置）
+- [x] 键盘快捷键（空格、方向键）
+- [x] 拖放导入
+- [x] CI/CD 流水线（macOS、Windows、Linux）
+- [x] 发布自动化（tag → GitHub Release）
 
-### 客户支持
+### 🚧 v0.2 — 打磨与分发
 
-由于 OpenKara 是开源产品，支持方式应以可扩展为前提：
+- [ ] UI 打磨与过渡动画
+- [ ] 错误提示与用户级错误信息
+- [ ] 应用图标与品牌设计
+- [ ] Homebrew Cask 分发
+- [ ] 全平台端到端测试
 
-- FAQ 与故障排查知识库
-- 使用 GitHub Issues 收集 Bug 和功能请求
+### 📋 未来计划
 
-### 社区运营
+- **麦克风输入与人声效果** — 麦克风采集、混响、回声、音量混合
+- **播放列表与排队** — 多歌曲队列、多人轮流演唱
+- **音高与调性调整** — 实时调整伴奏音高
+- **演唱录制** — 录制人声表演，导出为音频文件
+- **多屏支持** — 第二屏幕显示观众歌词视图
+- **CJK 注音** — 在原文歌词旁显示罗马字 / 拼音
 
-- 建立官方 Discord 服务器，方便用户交流、互助和分享
-- 参与相关 Reddit 社区，例如与 Karaoke 相关的子版块
-
-### 持续改进
-
-- 持续关注 GitHub Issues 和社区讨论
-- 将 Discord 与 Reddit 的反馈整理进产品路线图
-- 优先处理能提升留存和复用率的问题
-
-## 可行性反思
-
-核心健康指标：
-
-- 流失率和留存率趋势
-
-如果产品最终不可行，可以考虑：
-
-- 将现有分离能力转向乐手练习工具等新场景
-- 保持代码库健康，交由开源社区继续 Fork 和演进
-
-## 文档
-
-- [系统架构](./docs/architecture.md) — 系统设计、技术栈、数据流与 AI 模型细节
-- [项目结构](./docs/project-structure.md) — 目录布局与模块职责
-- [开发阶段](./docs/development-phases.md) — 可执行的阶段清单，含验证步骤
-- [技术路线图](./docs/roadmap.md) — 技术选型、API 契约与风险应对
-- [里程碑](./docs/milestones.md) — 里程碑任务表与交付标准
-
-## Phase 0 环境准备
+## 开发指南
 
 ### 前置条件
 
 - Node.js 20+
 - pnpm 10+
-- 通过 `rustup` 安装的 Rust stable
-- 通过 `cargo install tauri-cli --version "^2"` 安装的 Tauri CLI v2
+- 通过 [rustup](https://rustup.rs/) 安装的 Rust stable
+- 对应平台的 [Tauri 2 依赖](https://v2.tauri.app/start/prerequisites/)
 
-### 本地启动
+### 环境搭建
 
 ```bash
 pnpm install
-./scripts/setup.sh
-pnpm tauri dev
+./scripts/setup.sh          # 下载 Demucs ONNX 模型到 src-tauri/models/
+pnpm tauri dev               # 启动开发服务器（支持热更新）
 ```
 
-`./scripts/setup.sh` 仍然建议保留在本地开发流程里，因为它会把
-Demucs 模型预热到 `src-tauri/models/`，让测试和开发环境更稳定。从
-Phase 6 开始，如果本地没有可验证的模型副本，桌面应用也会在首次启动
-时自动把模型下载到应用数据目录。
+`scripts/setup.sh` 将模型放置在 `src-tauri/models/` 目录，确保测试环境确定性。桌面应用在首次启动时如果没有本地模型副本，也会自动下载。
 
-## 当前支持的媒体链路
-
-当前后端已经支持以下本地音频格式的导入与解码：
-
-- MP3
-- FLAC
-- WAV
-- OGG / Vorbis
-- AAC / M4A
-
-当前的人声分离固定基于 pinned 的 Demucs ONNX 模型，输入要求为
-`44.1 kHz` 双声道。
-
-### 本地验证
+### 运行测试
 
 ```bash
-pnpm lint
-pnpm format
-cd src-tauri && cargo test
-cd ..
-pnpm tauri build --debug --no-bundle --ci
+cd src-tauri && cargo test   # 后端测试（60+ 测试用例，27 个测试文件）
+pnpm lint                    # ESLint 检查
+pnpm format                  # Prettier 格式检查
 ```
 
-## 发布自动化
+### 构建
 
-- 推送到 `main` 和 `codex/**` 会触发
-  [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) 校验流程。
-- 推送类似 `v0.1.0` 的 tag 会触发
-  [`.github/workflows/release.yml`](./.github/workflows/release.yml) 草稿发布流程。
-- 当前 release workflow 会构建：
-  - macOS arm64
-  - macOS x64
-  - Windows
-  - Linux
+```bash
+pnpm tauri build             # 生产构建，生成平台特定安装包
+```
 
-## 当前已实现范围
+### CI/CD
 
-当前分支已经完成 MVP 基础能力的后端主线：
+- 推送到 `main` 会触发 CI 流程（[`.github/workflows/ci.yml`](./.github/workflows/ci.yml)）— 在 macOS、Windows、Linux 上运行 lint、构建和测试。
+- 推送版本标签（如 `v0.1.0`）会触发发布流程（[`.github/workflows/release.yml`](./.github/workflows/release.yml)）— 构建并上传二进制文件到 GitHub Release。
 
-- 资料库导入与搜索
-- 播放解码、设备输出与状态机
-- Demucs 音轨分离与 Karaoke 模式
-- 同步歌词抓取、解析、缓存与 offset 持久化
-- 结构化命令错误
-- 后端性能基线
-- 首次启动模型 bootstrap
+## 文档
 
-剩余的大头工作主要是用户界面组装和分发层打磨。
+- [系统架构](./docs/architecture.md) — 系统设计、技术栈、数据流与 AI 模型细节
+- [项目结构](./docs/project-structure.md) — 目录布局与模块职责
+- [开发阶段](./docs/development-phases.md) — 阶段清单与验证步骤
+- [技术路线图](./docs/roadmap.md) — 技术选型、API 契约与风险应对
+- [里程碑](./docs/milestones.md) — 里程碑任务表与交付标准
 
-## 当前状态
+## 参与贡献
 
-产品概念已明确，MVP 已定义，系统架构已文档化；当前分支已经落地导入、
-播放、分离、歌词后端基础、结构化错误、后端性能基线，以及首次启动模型
-bootstrap。
+欢迎贡献！涉及较大改动时，请先提交 Issue 讨论方案。
 
-## 贡献方式
-
-欢迎贡献。涉及较大改动时，建议先提交 Issue 讨论。
+1. Fork 本仓库
+2. 创建功能分支（`git checkout -b feature/my-feature`）
+3. 确保测试通过（`cargo test`）
+4. 提交 Pull Request
 
 ## 致谢
 
-- [monochrome](https://github.com/monochrome-music/monochrome) — 歌词同步与 LRCLIB 集成方案参考
 - [Demucs](https://github.com/facebookresearch/demucs) — Meta Research 的 AI 音轨分离模型
 - [LRCLIB](https://lrclib.net) — 开放的同步歌词 API
+- [monochrome](https://github.com/monochrome-music/monochrome) — 歌词同步与 LRCLIB 集成方案参考
 
 ## 许可证
 
-暂未确定。如果目标是最大化开源传播，MIT 是一个合理的默认选择。
+[MIT](./LICENSE) — Copyright (c) 2025 David Weng
