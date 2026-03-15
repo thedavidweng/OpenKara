@@ -27,7 +27,7 @@ pub fn mix_accompaniment(separation: &SeparationResult) -> Result<DecodedAudio> 
         .map(|sample| sample.abs())
         .fold(0.0_f32, f32::max);
 
-    // Summing three stems can exceed the unit range expected by later WAV output.
+    // Summing three stems can exceed the unit range expected by later encoding.
     if peak > 1.0 {
         for sample in &mut mixed_samples {
             *sample /= peak;
@@ -42,36 +42,8 @@ pub fn mix_accompaniment(separation: &SeparationResult) -> Result<DecodedAudio> 
     })
 }
 
-pub fn write_accompaniment_wav(audio: &DecodedAudio, path: &Path) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).with_context(|| {
-            format!(
-                "failed to create accompaniment output directory at {}",
-                parent.display()
-            )
-        })?;
-    }
-
-    let spec = hound::WavSpec {
-        channels: audio.channels as u16,
-        sample_rate: audio.sample_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-    let mut writer = hound::WavWriter::create(path, spec)
-        .with_context(|| format!("failed to create accompaniment wav at {}", path.display()))?;
-
-    for sample in &audio.samples {
-        writer
-            .write_sample(sample_to_i16(*sample))
-            .with_context(|| format!("failed to write accompaniment wav at {}", path.display()))?;
-    }
-
-    writer
-        .finalize()
-        .with_context(|| format!("failed to finalize accompaniment wav at {}", path.display()))?;
-
-    Ok(())
+pub fn write_accompaniment_ogg(audio: &DecodedAudio, path: &Path) -> Result<()> {
+    crate::audio::encode::write_ogg_file(path, audio)
 }
 
 fn find_stem<'a>(stems: &'a [SeparatedStem], name: &str) -> Result<&'a SeparatedStem> {
@@ -115,6 +87,3 @@ fn validate_consistent_audio_shape(
     Ok(())
 }
 
-fn sample_to_i16(sample: f32) -> i16 {
-    (sample.clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16
-}

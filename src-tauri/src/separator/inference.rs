@@ -1,10 +1,11 @@
 use crate::{
     audio::decode::DecodedAudio,
-    separator::{model::LoadedModel, preprocess},
+    separator::{checkpoint, model::LoadedModel, preprocess},
 };
 use anyhow::{bail, Context, Result};
 use ort::value::Tensor;
 use std::{
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -25,16 +26,26 @@ pub struct SeparationResult {
 pub fn separate_audio(
     model: &mut LoadedModel,
     decoded_audio: &DecodedAudio,
+    mut on_chunk_complete: impl FnMut(usize, usize),
+    checkpoint_dir: Option<&Path>,
 ) -> Result<SeparationResult> {
     let normalized_audio = preprocess::normalize_audio_for_model(decoded_audio)?;
     let input_frame_count = normalized_audio.samples.len() / normalized_audio.channels;
     let target_frame_count = preprocess::target_frame_count(model, input_frame_count)?;
 
     if input_frame_count > target_frame_count {
-        return separate_chunked_audio(model, &normalized_audio, target_frame_count);
+        return separate_chunked_audio(
+            model,
+            &normalized_audio,
+            target_frame_count,
+            &mut on_chunk_complete,
+            checkpoint_dir,
+        );
     }
 
-    separate_window_audio(model, &normalized_audio, input_frame_count)
+    let result = separate_window_audio(model, &normalized_audio, input_frame_count)?;
+    on_chunk_complete(1, 1);
+    Ok(result)
 }
 
 fn separate_window_audio(
@@ -107,8 +118,32 @@ fn separate_chunked_audio(
     model: &mut LoadedModel,
     decoded_audio: &DecodedAudio,
     target_frame_count: usize,
+    on_chunk_complete: &mut impl FnMut(usize, usize),
+    checkpoint_dir: Option<&Path>,
 ) -> Result<SeparationResult> {
     let input_frame_count = decoded_audio.samples.len() / decoded_audio.channels;
+    let total_chunks =
+        (input_frame_count + target_frame_count - 1) / target_frame_count;
+
+    // Write checkpoint manifest and discover already-completed chunks.
+    let completed_set: HashSet<usize> = if let Some(dir) = checkpoint_dir {
+        let manifest = checkpoint::CheckpointManifest {
+            song_hash: String::new(),
+            total_chunks,
+            target_frame_count,
+            input_frame_count,
+            channels: decoded_audio.channels,
+            sample_rate: decoded_audio.sample_rate,
+            stem_count: DEMUCS_STEM_NAMES.len(),
+        };
+        checkpoint::write_manifest(dir, &manifest)?;
+        checkpoint::list_completed_chunks(dir)?
+            .into_iter()
+            .collect()
+    } else {
+        HashSet::new()
+    };
+
     let mut merged_stems = DEMUCS_STEM_NAMES
         .iter()
         .map(|stem_name| SeparatedStem {
@@ -122,11 +157,40 @@ fn separate_chunked_audio(
         })
         .collect::<Vec<_>>();
 
+    // Restore already-completed chunks from checkpoint.
+    if let Some(dir) = checkpoint_dir {
+        for &completed_idx in &completed_set {
+            let chunk_start_frame = completed_idx * target_frame_count;
+            if chunk_start_frame >= input_frame_count {
+                continue;
+            }
+            let chunk_frame_count =
+                (input_frame_count - chunk_start_frame).min(target_frame_count);
+            let chunk_data = checkpoint::read_chunk(dir, completed_idx)?;
+            let samples_per_stem = chunk_frame_count * decoded_audio.channels;
+            for (stem_idx, stem) in merged_stems.iter_mut().enumerate() {
+                let src_offset = stem_idx * samples_per_stem;
+                let dst_offset = chunk_start_frame * decoded_audio.channels;
+                stem.audio.samples[dst_offset..dst_offset + samples_per_stem]
+                    .copy_from_slice(&chunk_data[src_offset..src_offset + samples_per_stem]);
+            }
+        }
+    }
+
     // Demucs exposes a fixed input window. For full-length songs we run
     // sequential windows and stitch the per-window stems back into the
     // original timeline so later UX smoke tests can cover real songs.
+    let mut chunk_index = 0_usize;
     for chunk_start_frame in (0..input_frame_count).step_by(target_frame_count) {
         let chunk_frame_count = (input_frame_count - chunk_start_frame).min(target_frame_count);
+
+        // Skip chunks that were already completed in a previous run.
+        if completed_set.contains(&chunk_index) {
+            chunk_index += 1;
+            on_chunk_complete(chunk_index, total_chunks);
+            continue;
+        }
+
         let chunk_audio = build_chunk_audio(
             decoded_audio,
             chunk_start_frame,
@@ -145,6 +209,19 @@ fn separate_chunked_audio(
             destination[sample_offset..sample_offset + chunk_sample_count]
                 .copy_from_slice(&chunk_stem.audio.samples[..chunk_sample_count]);
         }
+
+        // Persist the chunk to disk for crash recovery.
+        if let Some(dir) = checkpoint_dir {
+            let chunk_sample_count = chunk_frame_count * decoded_audio.channels;
+            let mut chunk_data = Vec::with_capacity(chunk_sample_count * DEMUCS_STEM_NAMES.len());
+            for stem in &chunk_result.stems {
+                chunk_data.extend_from_slice(&stem.audio.samples[..chunk_sample_count]);
+            }
+            checkpoint::write_chunk(dir, chunk_index, &chunk_data)?;
+        }
+
+        chunk_index += 1;
+        on_chunk_complete(chunk_index, total_chunks);
     }
 
     Ok(SeparationResult {
@@ -165,8 +242,8 @@ pub fn write_stems_to_directory(
 
     let mut written_paths = Vec::with_capacity(separation.stems.len());
     for stem in &separation.stems {
-        let output_path = output_directory.join(format!("{}.wav", stem.name));
-        write_wav_file(&output_path, &stem.audio)?;
+        let output_path = output_directory.join(format!("{}.ogg", stem.name));
+        crate::audio::encode::write_ogg_file(&output_path, &stem.audio)?;
         written_paths.push(output_path);
     }
 
@@ -418,32 +495,6 @@ fn build_chunk_audio(
             .round() as u64,
         samples: padded_samples,
     }
-}
-
-fn write_wav_file(path: &Path, audio: &DecodedAudio) -> Result<()> {
-    let spec = hound::WavSpec {
-        channels: audio.channels as u16,
-        sample_rate: audio.sample_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-    let mut writer = hound::WavWriter::create(path, spec)
-        .with_context(|| format!("failed to create wav writer at {}", path.display()))?;
-
-    for sample in &audio.samples {
-        writer
-            .write_sample(sample_to_i16(*sample))
-            .with_context(|| format!("failed to write wav sample to {}", path.display()))?;
-    }
-
-    writer
-        .finalize()
-        .with_context(|| format!("failed to finalize wav writer at {}", path.display()))?;
-    Ok(())
-}
-
-fn sample_to_i16(sample: f32) -> i16 {
-    (sample.clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16
 }
 
 fn usize_from_dim(value: i64, label: &str) -> Result<usize> {

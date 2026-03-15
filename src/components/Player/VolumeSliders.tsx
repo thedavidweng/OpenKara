@@ -18,10 +18,13 @@ export function VolumeSliders() {
     other: 1,
   };
   const hasStems = snapshot?.has_stems ?? false;
+  const stemMode = snapshot?.stem_mode ?? null;
   const songId = snapshot?.song_id;
   const isSeparated =
     songId != null && separationStatuses[songId]?.state === "completed";
   const stemsAvailable = hasStems && isSeparated;
+  const isTwoStem = stemMode === "two_stem";
+  const isFourStem = stemMode === "four_stem";
 
   const handleStemChange = useCallback(
     (stem: StemName, value: number) => {
@@ -39,7 +42,13 @@ export function VolumeSliders() {
 
   const handleAccompChange = useCallback(
     (newValue: number) => {
-      if (accompValue === 0) {
+      if (isTwoStem) {
+        // In 2-stem mode, set all three sub-stems to the same value;
+        // the backend uses drums gain as the accompaniment gain.
+        setStemVolume("drums", newValue);
+        setStemVolume("bass", newValue);
+        setStemVolume("other", newValue);
+      } else if (accompValue === 0) {
         // All sub-stems are 0; set them all to the new value
         setStemVolume("drums", newValue);
         setStemVolume("bass", newValue);
@@ -60,7 +69,7 @@ export function VolumeSliders() {
         );
       }
     },
-    [accompValue, stemVolumes, setStemVolume],
+    [isTwoStem, accompValue, stemVolumes, setStemVolume],
   );
 
   return (
@@ -83,7 +92,7 @@ export function VolumeSliders() {
           onChange={handleAccompChange}
           disabled={!stemsAvailable}
         />
-        {stemsAvailable && (
+        {stemsAvailable && isFourStem && (
           <button
             onClick={() => setIsExpanded(!isExpanded)}
             className="flex items-center justify-center w-4 h-4 text-[var(--color-text-dimmer)] hover:text-[#EBEBF5] transition-colors"
@@ -97,8 +106,8 @@ export function VolumeSliders() {
         )}
       </div>
 
-      {/* Expanded individual stem sliders */}
-      {isExpanded && stemsAvailable && (
+      {/* Expanded individual stem sliders (4-stem mode only) */}
+      {isExpanded && stemsAvailable && isFourStem && (
         <>
           <StemSlider
             icon={<Drum size={13} />}

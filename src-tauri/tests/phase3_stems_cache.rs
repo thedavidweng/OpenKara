@@ -9,6 +9,7 @@ mod support;
 use openkara_lib::{
     audio::decode::DecodedAudio,
     cache::{self, stems},
+    config::StemMode,
     library::Song,
     library_root::LibraryRoot,
     separator::inference::{SeparatedStem, SeparationResult},
@@ -78,6 +79,7 @@ fn caches_stems_under_hash_directory_and_hits_cache_on_second_request() {
         &library.stems_dir(),
         &library,
         "song-hash",
+        StemMode::TwoStem,
         || {
             generation_count.set(generation_count.get() + 1);
             Ok(sample_separation())
@@ -90,12 +92,12 @@ fn caches_stems_under_hash_directory_and_hits_cache_on_second_request() {
     assert!(library
         .stems_dir()
         .join("song-hash")
-        .join("vocals.wav")
+        .join("vocals.ogg")
         .exists());
     assert!(library
         .stems_dir()
         .join("song-hash")
-        .join("accompaniment.wav")
+        .join("accompaniment.ogg")
         .exists());
 
     let second = stems::get_or_create_stem_cache(
@@ -103,6 +105,7 @@ fn caches_stems_under_hash_directory_and_hits_cache_on_second_request() {
         &library.stems_dir(),
         &library,
         "song-hash",
+        StemMode::TwoStem,
         || {
             generation_count.set(generation_count.get() + 1);
             Ok(sample_separation())

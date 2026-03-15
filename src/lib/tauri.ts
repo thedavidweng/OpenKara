@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  AppSettings,
   ImportSongsResult,
   LyricsPayload,
   ModelBootstrapStatusSnapshot,
@@ -96,4 +97,18 @@ export function setLyricsOffset(songId: string, ms: number): Promise<void> {
 
 export function getModelBootstrapStatus(): Promise<ModelBootstrapStatusSnapshot> {
   return invoke<ModelBootstrapStatusSnapshot>("get_model_bootstrap_status");
+}
+
+// ─── Settings ───────────────────────────────────────────
+
+export function getSettings(): Promise<AppSettings> {
+  return invoke<AppSettings>("get_settings");
+}
+
+export function setStemMode(mode: string): Promise<AppSettings> {
+  return invoke<AppSettings>("set_stem_mode", { mode });
+}
+
+export function upgradeToFourStem(songId: string): Promise<SeparationStatusSnapshot> {
+  return invoke<SeparationStatusSnapshot>("upgrade_to_four_stem", { songId });
 }

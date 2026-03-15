@@ -33,8 +33,14 @@ pub fn default_model_path() -> PathBuf {
 
 pub fn load_from_path(path: &Path) -> Result<LoadedModel> {
     let model_path = path.to_path_buf();
+    let num_threads = std::thread::available_parallelism()
+        .map(|n| n.get().min(8))
+        .unwrap_or(4);
+
     let session = ort::session::Session::builder()
         .context("failed to create ONNX session builder")?
+        .with_intra_threads(num_threads)
+        .map_err(|e| anyhow::anyhow!("failed to set intra-op thread count: {e}"))?
         .commit_from_file(path)
         .with_context(|| format!("failed to load ONNX model from {}", path.display()))?;
 

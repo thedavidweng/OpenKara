@@ -57,6 +57,14 @@ export interface ImportSongsResult {
   failed: ImportFailure[];
 }
 
+// ─── Settings ───────────────────────────────────────────
+
+export type StemMode = "two_stem" | "four_stem";
+
+export interface AppSettings {
+  stem_mode: StemMode;
+}
+
 // ─── Playback ────────────────────────────────────────────
 
 export type StemName = "vocals" | "drums" | "bass" | "other";
@@ -76,6 +84,7 @@ export interface PlaybackStateSnapshot {
   volume: number;
   stem_volumes: StemVolumes;
   has_stems: boolean;
+  stem_mode: StemMode | null;
 }
 
 export interface PlaybackPositionEvent {

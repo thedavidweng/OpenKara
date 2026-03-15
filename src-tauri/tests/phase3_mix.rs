@@ -36,7 +36,7 @@ fn test_stem(name: &str, samples: Vec<f32>) -> SeparatedStem {
 }
 
 #[test]
-fn mixes_non_vocal_stems_into_normalized_accompaniment_and_writes_wav() {
+fn mixes_non_vocal_stems_into_normalized_accompaniment_and_writes_ogg() {
     let separation = SeparationResult {
         stems: vec![
             test_stem("drums", vec![0.5, 0.25, -0.5, -0.25]),
@@ -55,16 +55,14 @@ fn mixes_non_vocal_stems_into_normalized_accompaniment_and_writes_wav() {
 
     let output_dir = unique_output_dir();
     cleanup_dir(&output_dir);
-    let output_path = output_dir.join("accompaniment.wav");
+    let output_path = output_dir.join("accompaniment.ogg");
 
-    mix::write_accompaniment_wav(&accompaniment, &output_path)
-        .expect("accompaniment wav should write");
+    mix::write_accompaniment_ogg(&accompaniment, &output_path)
+        .expect("accompaniment ogg should write");
 
-    let mut reader = hound::WavReader::open(&output_path).expect("wav should open");
-    assert_eq!(reader.spec().channels, 2);
-    assert_eq!(reader.spec().sample_rate, 44_100);
-    assert_eq!(reader.duration(), 2);
-    assert_eq!(reader.samples::<i16>().count(), 4);
+    assert!(output_path.exists(), "ogg file should be created on disk");
+    let metadata = fs::metadata(&output_path).expect("ogg file metadata should be readable");
+    assert!(metadata.len() > 0, "ogg file should not be empty");
 
     cleanup_dir(&output_dir);
 }

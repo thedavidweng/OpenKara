@@ -1,7 +1,7 @@
 use openkara_lib::audio::{
     decode::DecodedAudio,
     output::render_output_buffer,
-    playback::{PlaybackController, StemName, StemSet},
+    playback::{LoadedStems, PlaybackController, StemName, StemSet},
 };
 
 fn decoded_audio(samples: Vec<f32>) -> DecodedAudio {
@@ -22,12 +22,12 @@ fn render_output_mixes_stems_with_individual_volumes() {
         0,
     );
 
-    let stems = StemSet {
+    let stems = LoadedStems::FourStem(StemSet {
         vocals: decoded_audio(vec![0.4, 0.3, -0.4, -0.3]),
         drums: decoded_audio(vec![0.2, 0.1, -0.2, -0.1]),
         bass: decoded_audio(vec![0.1, 0.1, -0.1, -0.1]),
         other: decoded_audio(vec![0.1, 0.1, -0.1, -0.1]),
-    };
+    });
     controller
         .attach_stems("song-a", stems)
         .expect("stems should attach to the current song");

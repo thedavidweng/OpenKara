@@ -1,5 +1,5 @@
 use crate::audio::decode::DecodedAudio;
-use crate::audio::playback::{monotonic_now_ms, PlaybackController};
+use crate::audio::playback::{monotonic_now_ms, LoadedStems, PlaybackController};
 use anyhow::{Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Sample, SampleFormat, SizedSample, Stream};
@@ -62,16 +62,30 @@ pub fn render_output_buffer(
     let master = snapshot.volume;
     let sv = snapshot.stem_volumes;
 
-    if let Some(stems) = &track.stems {
-        // Use any stem for timing (they all have same sample_rate/length)
-        let sample_rate = stems.vocals.sample_rate as u64;
-        let start_frame = (snapshot.position_ms * sample_rate / 1000) as usize;
-
-        let mut rendered = 0;
-        rendered = rendered.max(mix_stem_into(output, &stems.vocals, start_frame, master * sv.vocals));
-        rendered = rendered.max(mix_stem_into(output, &stems.drums, start_frame, master * sv.drums));
-        rendered = rendered.max(mix_stem_into(output, &stems.bass, start_frame, master * sv.bass));
-        rendered = rendered.max(mix_stem_into(output, &stems.other, start_frame, master * sv.other));
+    if let Some(loaded_stems) = &track.stems {
+        let rendered = match loaded_stems {
+            LoadedStems::TwoStem { vocals, accompaniment } => {
+                let sample_rate = vocals.sample_rate as u64;
+                let start_frame = (snapshot.position_ms * sample_rate / 1000) as usize;
+                // In 2-stem mode, use drums volume as the accompaniment volume
+                // (the frontend sets drums/bass/other to the same value when collapsed)
+                let accomp_gain = sv.drums;
+                let mut rendered = 0;
+                rendered = rendered.max(mix_stem_into(output, vocals, start_frame, master * sv.vocals));
+                rendered = rendered.max(mix_stem_into(output, accompaniment, start_frame, master * accomp_gain));
+                rendered
+            }
+            LoadedStems::FourStem(stems) => {
+                let sample_rate = stems.vocals.sample_rate as u64;
+                let start_frame = (snapshot.position_ms * sample_rate / 1000) as usize;
+                let mut rendered = 0;
+                rendered = rendered.max(mix_stem_into(output, &stems.vocals, start_frame, master * sv.vocals));
+                rendered = rendered.max(mix_stem_into(output, &stems.drums, start_frame, master * sv.drums));
+                rendered = rendered.max(mix_stem_into(output, &stems.bass, start_frame, master * sv.bass));
+                rendered = rendered.max(mix_stem_into(output, &stems.other, start_frame, master * sv.other));
+                rendered
+            }
+        };
 
         // Clamp to prevent clipping
         for sample in output.iter_mut() {

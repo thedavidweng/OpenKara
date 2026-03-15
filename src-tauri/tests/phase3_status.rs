@@ -15,14 +15,14 @@ fn separation_status_helpers_cover_idle_running_completed_and_failed_states() {
     assert_eq!(running.state, SeparationState::Running);
     assert_eq!(running.percent, 45);
 
-    let completed = completed_status("song-a", "/tmp/vocals.wav", "/tmp/accompaniment.wav", true);
+    let completed = completed_status("song-a", "/tmp/vocals.ogg", "/tmp/accompaniment.ogg", true, None, None, None);
     assert_eq!(completed.state, SeparationState::Completed);
     assert_eq!(completed.percent, 100);
     assert!(completed.cache_hit);
-    assert_eq!(completed.vocals_path.as_deref(), Some("/tmp/vocals.wav"));
+    assert_eq!(completed.vocals_path.as_deref(), Some("/tmp/vocals.ogg"));
     assert_eq!(
         completed.accomp_path.as_deref(),
-        Some("/tmp/accompaniment.wav")
+        Some("/tmp/accompaniment.ogg")
     );
 
     let failed = failed_status("song-a", separation_error("boom"));

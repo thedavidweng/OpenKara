@@ -7,6 +7,14 @@ use std::{
 
 const CONFIG_FILENAME: &str = "config.json";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum StemMode {
+    #[default]
+    TwoStem,
+    FourStem,
+}
+
 /// Per-machine configuration stored in `{app_data_dir}/config.json`.
 ///
 /// This is the only file that stays outside the portable library directory.
@@ -16,6 +24,14 @@ pub struct AppConfig {
     /// Absolute path to the library root directory.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub library_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stem_mode: Option<StemMode>,
+}
+
+impl AppConfig {
+    pub fn effective_stem_mode(&self) -> StemMode {
+        self.stem_mode.unwrap_or_default()
+    }
 }
 
 /// Load the per-machine config. Returns `Ok(None)` if the file does not exist.
@@ -66,10 +82,28 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let config = AppConfig {
             library_path: Some("/Users/test/Music/MyLibrary".to_owned()),
+            stem_mode: Some(StemMode::FourStem),
         };
 
         save_config(tmp.path(), &config).unwrap();
         let loaded = load_config(tmp.path()).unwrap().unwrap();
         assert_eq!(loaded.library_path, config.library_path);
+        assert_eq!(loaded.stem_mode, Some(StemMode::FourStem));
+    }
+
+    #[test]
+    fn effective_stem_mode_defaults_to_two_stem() {
+        let config = AppConfig::default();
+        assert_eq!(config.effective_stem_mode(), StemMode::TwoStem);
+    }
+
+    #[test]
+    fn stem_mode_none_is_omitted_from_json() {
+        let config = AppConfig {
+            library_path: None,
+            stem_mode: None,
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(!json.contains("stem_mode"));
     }
 }
