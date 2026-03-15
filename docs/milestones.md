@@ -55,9 +55,9 @@ Shell  ─→ Library ─→ Playback ─→ Separation ─→ Lyrics ─→ Pol
 | Metadata reader (lofty)       | Code  | ✅     | ID3v2, Vorbis, FLAC tags |
 | SQLite songs CRUD             | Code  | ✅     | insert, query, delete    |
 | `import_songs` Tauri command  | Code  | ✅     | Accept file paths        |
-| Library UI — grid + list view | UI    | ☐      | Responsive layout        |
-| Drag-and-drop import          | UI    | ☐      | + file picker fallback   |
-| Library search + filter       | UI    | ☐      | By title, artist         |
+| Library UI — grid + list view | UI    | ✅     | Responsive layout        |
+| Drag-and-drop import          | UI    | ✅     | + file picker fallback   |
+| Library search + filter       | UI    | ✅     | By title, artist         |
 
 ---
 
@@ -78,8 +78,8 @@ Shell  ─→ Library ─→ Playback ─→ Separation ─→ Lyrics ─→ Pol
 | Audio output (cpal)             | Code  | ✅     | Platform-specific backends   |
 | Playback state machine          | Code  | ✅     | play / pause / stop / seek   |
 | Position event emitter (~60 Hz) | Code  | ✅     | Tauri events                 |
-| Player UI — controls            | UI    | ☐      | Play/pause, seek bar, volume |
-| Zustand playerStore             | UI    | ☐      | Global playback state        |
+| Player UI — controls            | UI    | ✅     | Play/pause, seek bar, volume |
+| Zustand playerStore             | UI    | ✅     | Global playback state        |
 
 ---
 
@@ -87,7 +87,7 @@ Shell  ─→ Library ─→ Playback ─→ Separation ─→ Lyrics ─→ Pol
 
 | Item              | Detail                                                                                                     |
 | ----------------- | ---------------------------------------------------------------------------------------------------------- |
-| **Goal**          | Any song can be separated into vocals + instrumental. Cached for instant replay.                           |
+| **Goal**          | Any song can be separated into vocals + accompaniment (2-stem) or into individual instruments (4-stem). Cached for instant replay. |
 | **Phases**        | Phase 3                                                                                                    |
 | **Demo**          | Click "Karaoke Mode" → progress bar → instrumental plays without vocals. Second play is instant.           |
 | **Exit Criteria** | Separation completes for a 4-min song in < 90s on M1 Mac. Cache hit → < 500ms to play. Peak memory < 3 GB. |
@@ -98,11 +98,11 @@ Shell  ─→ Library ─→ Playback ─→ Separation ─→ Lyrics ─→ Pol
 | ----------------------------------- | ----- | ------ | -------------------------- |
 | Load Demucs ONNX model              | Code  | ✅     | `ort::Session`             |
 | PCM → model input preprocessing     | Code  | ✅     | Chunking, tensor shape     |
-| Inference + overlap-add postprocess | Code  | ✅     | 4 stems → 2 outputs        |
+| Inference + overlap-add postprocess | Code  | ✅     | 4 stems → 2 or 4 outputs (configurable) |
 | Stems cache (fs, hash-based)        | Code  | ✅     | `~/.openkara/cache/stems/` |
 | Background processing (tokio)       | Code  | ✅     | Non-blocking UI            |
 | Progress events                     | Code  | ✅     | Percent complete           |
-| Mode toggle UI (original / karaoke) | UI    | ☐      | Player component           |
+| Mode toggle UI (original / karaoke) | UI    | ✅     | Player component           |
 
 ---
 
@@ -123,10 +123,10 @@ Shell  ─→ Library ─→ Playback ─→ Separation ─→ Lyrics ─→ Pol
 | LRC parser                   | Code  | ✅     | Regex parse → structured data |
 | Fetch priority chain         | Code  | ✅     | LRCLIB → embedded → sidecar   |
 | Lyrics SQLite cache          | Code  | ✅     | song_hash → lrc               |
-| Lyrics UI component          | UI    | ☐      | Scrolling panel, highlight    |
-| rAF + performance.now() sync | UI    | ☐      | useLyricsSync hook            |
-| Click-to-seek on lyric line  | UI    | ☐      |                               |
-| Timing offset controls       | UI    | ☐      | ± 0.5s, persisted             |
+| Lyrics UI component          | UI    | ✅     | Scrolling panel, highlight    |
+| rAF + performance.now() sync | UI    | ✅     | useLyricsSync hook            |
+| Click-to-seek on lyric line  | UI    | ✅     |                               |
+| Timing offset controls       | UI    | ✅     | ± 0.5s, persisted             |
 
 ---
 
@@ -147,9 +147,10 @@ Shell  ─→ Library ─→ Playback ─→ Separation ─→ Lyrics ─→ Pol
 | Error handling & user feedback | Code/UI | ⏳     | 后端结构化错误已完成，展示层待 UI 接入              |
 | Performance profiling          | Code    | ✅     | Latency, jitter, memory                             |
 | UI polish & transitions        | UI      | ☐      | Smooth, responsive                                  |
-| Keyboard shortcuts             | UI/Code | ☐      | Space, arrows, etc.                                 |
+| Keyboard shortcuts             | UI/Code | ✅     | Space, arrows, etc.                                 |
 | App branding (icon, splash)    | UI      | ☐      |                                                     |
 | Documentation update           | Code    | ⏳     | README 与交接文档已扩展，用户级安装指南仍可继续细化 |
+| 4-stem mixer + dual modes + OGG compression | Code/UI | ✅ | Checkpoint resumability, stem mode settings, compressed output |
 
 ---
 
@@ -167,9 +168,9 @@ Shell  ─→ Library ─→ Playback ─→ Separation ─→ Lyrics ─→ Pol
 | Task                     | Owner   | Status | Notes                                                                                             |
 | ------------------------ | ------- | ------ | ------------------------------------------------------------------------------------------------- |
 | Tauri build config       | Code    | ✅     | App ID, targets                                                                                   |
-| CI build matrix          | Code    | ⏳     | verify/release workflows 已落地，待首次真实运行结果                                               |
-| Release automation       | Code    | ⏳     | Tag → draft Release workflow 已落地                                                               |
-| First-run model download | Code/UI | ⏳     | 后端 bootstrap 已完成；目标 UX 为启动检测、可稍后下载、后台进度/重试，以及进入 Karaoke 时二次提示 |
+| CI build matrix          | Code    | ✅     | CI workflows run on macOS, Windows, Linux                                                         |
+| Release automation       | Code    | ✅     | Tag → GitHub Release with binaries                                                                |
+| First-run model download | Code/UI | ✅     | Bootstrap with background download, progress, and retry                                           |
 | Platform smoke tests     | Code    | ⏳     | `scripts/run-local-smoke.sh` 已支持本地语料回归；仍需补 Windows/Linux 启动记录                    |
 | Homebrew distribution    | Code    | ⏳     | 改为 Homebrew Cask 方向；仓库内已补 cask 模板与渲染脚本，tap repo 仍待接入                        |
 
