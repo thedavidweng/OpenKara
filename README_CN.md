@@ -23,6 +23,10 @@
 - **同步歌词** — 自动从 LRCLIB、内嵌标签或 `.lrc` 伴随文件获取时间同步歌词。
 - **可移植曲库** — 自包含的曲库目录，可放置在 NAS、USB 硬盘上，跨设备共享。
 - **跨平台原生** — 通过 Tauri 2 在 macOS（Apple Silicon 与 Intel）、Windows、Linux 上获得原生性能。
+- **四轨混音器** — 人声、鼓、贝斯、其他乐器独立音量控制。可折叠的伴奏滑块，展开查看各轨详情。
+- **双分离模式** — 可选择双轨（人声 + 伴奏）或四轨（人声 + 鼓 + 贝斯 + 其他）模式。支持将已分离的双轨曲目按需升级为四轨。
+- **压缩音轨存储** — 分离后的音轨以 OGG/Vorbis 格式存储（比 WAV 小约 85%）。一首 3 分钟歌曲的音轨仅占用约 22 MB，而非 ~150 MB。
+- **断点续传分离** — 逐块检查点机制，中途关闭应用后重启会自动从上次进度继续。
 
 ## 截图
 
@@ -41,7 +45,7 @@
 | Windows | `.exe` (NSIS 安装包) |
 | Linux | `.AppImage` |
 
-首次启动时，OpenKara 会引导你创建 Karaoke 曲库并下载 AI 模型（约 80 MB）。
+首次启动时，OpenKara 会引导你创建 Karaoke 曲库并下载 AI 模型（约 289 MB）。
 
 ### 从源码构建
 
@@ -74,6 +78,7 @@ pnpm tauri dev
 | AI 推理 | [ONNX Runtime](https://onnxruntime.ai/) via [ort](https://github.com/pykeio/ort) | Demucs v4 音轨分离 |
 | 歌词 | [LRCLIB](https://lrclib.net/) | 开放同步歌词 API |
 | 元数据 | [lofty](https://github.com/Serial-ATA/lofty-rs) | ID3v2、Vorbis、FLAC 标签读取 |
+| 音频编码 | [vorbis_rs](https://crates.io/crates/vorbis_rs) | OGG/Vorbis 音轨压缩 |
 | 数据库 | SQLite via [rusqlite](https://github.com/rusqlite/rusqlite) | 歌曲、歌词与 stems 缓存 |
 
 ## 系统架构
@@ -82,7 +87,7 @@ pnpm tauri dev
 ┌──────────────────────────────────────────────┐
 │           Tauri 前端 (React)                 │
 │  ┌────────────┐  ┌─────────────────────────┐ │
-│  │ 文件导入    │  │   Karaoke 播放器 UI     │ │
+│  │ 文件导入    │  │  Karaoke 播放器 / 混音器│ │
 │  │ & 曲库浏览  │  │  (歌词同步/高亮)        │ │
 │  ├────────────┤  ├─────────────────────────┤ │
 │  │  播放控制   │  │   进度与音量控制         │ │
@@ -126,8 +131,11 @@ MyKaraokeLibrary/
 │   └── {hash}.mp3
 └── stems/                  # 分离后的音轨
     └── {hash}/
-        ├── vocals.wav
-        └── accompaniment.wav
+        ├── vocals.ogg
+        ├── accompaniment.ogg   # 双轨模式
+        ├── drums.ogg           # 四轨模式
+        ├── bass.ogg            # 四轨模式
+        └── other.ogg           # 四轨模式
 ```
 
 数据库中的所有路径均为相对路径 — 曲库可以移动到 NAS、USB 硬盘或网络共享目录，任何操作系统上的 OpenKara 实例都可以直接打开使用。每台设备的配置（曲库位置）单独存储在应用数据目录中。
@@ -158,6 +166,12 @@ MyKaraokeLibrary/
 
 ### 🚧 v0.2 — 打磨与分发
 
+- [x] 四轨音量混音器（可折叠 UI）
+- [x] 双分离模式（双轨 / 四轨）及设置持久化
+- [x] OGG/Vorbis 压缩音轨存储（磁盘节省约 85%）
+- [x] 断点续传分离（逐块检查点）
+- [x] 多线程 ONNX 推理优化
+- [x] 设置系统（音轨模式配置）
 - [ ] UI 打磨与过渡动画
 - [ ] 错误提示与用户级错误信息
 - [ ] 应用图标与品牌设计
@@ -195,7 +209,7 @@ pnpm tauri dev               # 启动开发服务器（支持热更新）
 ### 运行测试
 
 ```bash
-cd src-tauri && cargo test   # 后端测试（60+ 测试用例，27 个测试文件）
+cd src-tauri && cargo test   # 后端测试（70+ 测试用例）
 pnpm lint                    # ESLint 检查
 pnpm format                  # Prettier 格式检查
 ```

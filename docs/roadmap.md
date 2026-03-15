@@ -46,6 +46,11 @@ Commands (src-tauri/src/commands/):
 │ fetch_lyrics              │ (song_id: String) → Lyrics       │
 │ set_lyrics_offset         │ (song_id: String, ms: i64) → ()  │
 │ set_playback_mode         │ (mode: "original"|"karaoke") → ()│
+│ set_stem_volume           │ (stem: StemName, level: f32) → Snapshot │
+│ load_stems                │ () → Snapshot                           │
+│ get_settings              │ () → AppSettings                        │
+│ set_stem_mode             │ (mode: String) → AppSettings            │
+│ upgrade_to_four_stem      │ (song_id: String) → Status              │
 └───────────────────────────┴──────────────────────────────────┘
 
 Events (Backend → Frontend):
@@ -56,6 +61,9 @@ Events (Backend → Frontend):
 │ separation-progress       │ { song_id: String, percent: u8 } │
 │ separation-complete       │ { song_id: String }              │
 │ separation-error          │ { song_id: String, error: String}│
+│ model-bootstrap-progress  │ { state, model_path, bytes... }  │
+│ model-bootstrap-ready     │ { state, model_path }            │
+│ model-bootstrap-error     │ { state, model_path, error }     │
 └───────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -112,6 +120,7 @@ cpal::Stream (platform-specific backend)
 | `sha2`      | 0.10+   | File hashing for cache keys        |
 | `serde`     | 1.x     | Serialization                      |
 | `rubato`    | 0.15+   | Sample rate conversion (if needed) |
+| `vorbis_rs` | 0.5     | OGG/Vorbis encoding for stem output |
 
 ---
 
@@ -135,10 +144,11 @@ N segments × 2 channels × T samples
 4 full-length stem arrays
     │
     ▼ mix drums + bass + other
-2 outputs: vocals.wav, accompaniment.wav
+2-stem mode: vocals.ogg, accompaniment.ogg
+4-stem mode: vocals.ogg, drums.ogg, bass.ogg, other.ogg
     │
-    ▼ write to cache
-~/.openkara/cache/stems/{sha256_hash}/
+    ▼ write to cache (OGG/Vorbis compressed)
+{library}/stems/{sha256_hash}/
 ```
 
 ### Technical Risks & Mitigations
@@ -317,9 +327,12 @@ CREATE TABLE lyrics (
 
 CREATE TABLE stems (
     song_hash       TEXT PRIMARY KEY REFERENCES songs(hash),
-    vocals_path     TEXT,
-    accomp_path     TEXT,
-    separated_at    INTEGER NOT NULL
+    vocals_path     TEXT NOT NULL,
+    accomp_path     TEXT NOT NULL,
+    separated_at    INTEGER NOT NULL,
+    drums_path      TEXT,
+    bass_path       TEXT,
+    other_path      TEXT
 );
 ```
 
@@ -351,7 +364,7 @@ Jobs:
 
 ### Model Distribution
 
-The ONNX model (~80 MB) is not in the repo. Options:
+The ONNX model (~289 MB) is not in the repo. Options:
 
 | Strategy             | Pros                  | Cons                        |
 | -------------------- | --------------------- | --------------------------- |

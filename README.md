@@ -23,6 +23,10 @@ An open-source desktop karaoke app powered by on-device AI stem separation and s
 - **Synced Lyrics** — Fetches time-synced lyrics from LRCLIB, embedded tags, or sidecar `.lrc` files.
 - **Portable Library** — Self-contained library directory that works on NAS, USB drives, and across machines.
 - **Cross-Platform** — Native performance on macOS (Apple Silicon & Intel), Windows, and Linux via Tauri 2.
+- **4-Stem Mixer** — Individual volume control for vocals, drums, bass, and other instruments. Collapsible accompaniment slider with per-stem breakdown.
+- **Dual Separation Modes** — Choose between 2-stem (vocals + accompaniment) or 4-stem (vocals + drums + bass + other). Upgrade individual songs from 2-stem to 4-stem on demand.
+- **Compressed Stem Storage** — Separated stems stored as OGG/Vorbis (~85% smaller than WAV). A 3-minute song's stems use ~22 MB instead of ~150 MB.
+- **Resumable Separation** — Per-chunk checkpointing means separation resumes from where it left off if the app is closed mid-process.
 
 ## Screenshots
 
@@ -41,7 +45,7 @@ Download the latest build for your platform from [GitHub Releases](https://githu
 | Windows | `.exe` (NSIS installer) |
 | Linux | `.AppImage` |
 
-On first launch, OpenKara will prompt you to create a Karaoke Library and download the AI model (~80 MB).
+On first launch, OpenKara will prompt you to create a Karaoke Library and download the AI model (~289 MB).
 
 ### Build from Source
 
@@ -74,6 +78,7 @@ pnpm tauri dev
 | AI inference | [ONNX Runtime](https://onnxruntime.ai/) via [ort](https://github.com/pykeio/ort) | Demucs v4 stem separation |
 | Lyrics | [LRCLIB](https://lrclib.net/) | Open synced lyrics API |
 | Metadata | [lofty](https://github.com/Serial-ATA/lofty-rs) | ID3v2, Vorbis, FLAC tag reading |
+| Audio encode | [vorbis_rs](https://crates.io/crates/vorbis_rs) | OGG/Vorbis stem compression |
 | Database | SQLite via [rusqlite](https://github.com/rusqlite/rusqlite) | Song, lyrics, and stems cache |
 
 ## Architecture
@@ -82,7 +87,7 @@ pnpm tauri dev
 ┌──────────────────────────────────────────────┐
 │           Tauri Frontend (React)             │
 │  ┌────────────┐  ┌─────────────────────────┐ │
-│  │ File Import │  │   Karaoke Player UI     │ │
+│  │ File Import │  │  Karaoke Player / Mixer │ │
 │  │ & Library   │  │  (lyrics sync/highlight)│ │
 │  ├────────────┤  ├─────────────────────────┤ │
 │  │  Playback   │  │   Progress & Volume     │ │
@@ -128,8 +133,11 @@ MyKaraokeLibrary/
 │   └── {hash}.mp3
 └── stems/                  # separated tracks
     └── {hash}/
-        ├── vocals.wav
-        └── accompaniment.wav
+        ├── vocals.ogg
+        ├── accompaniment.ogg   # 2-stem mode
+        ├── drums.ogg           # 4-stem mode
+        ├── bass.ogg            # 4-stem mode
+        └── other.ogg           # 4-stem mode
 ```
 
 All paths in the database are relative — the library can be moved to a NAS, USB drive, or network share and opened by any OpenKara instance on any OS. Per-machine configuration (library location) is stored separately in the app data directory.
@@ -160,6 +168,12 @@ All paths in the database are relative — the library can be moved to a NAS, US
 
 ### 🚧 v0.2 — Polish & Distribution
 
+- [x] 4-stem volume mixer with collapsible UI
+- [x] Dual separation modes (2-stem / 4-stem) with settings persistence
+- [x] OGG/Vorbis compressed stem storage (~85% disk savings)
+- [x] Resumable separation with per-chunk checkpointing
+- [x] Multi-threaded ONNX inference optimization
+- [x] Settings system (stem mode configuration)
 - [ ] UI polish and transitions
 - [ ] Error toasts and user-facing error messages
 - [ ] App icon and branding
@@ -197,7 +211,7 @@ pnpm tauri dev               # start dev server with hot reload
 ### Running Tests
 
 ```bash
-cd src-tauri && cargo test   # backend tests (60+ tests across 27 files)
+cd src-tauri && cargo test   # backend tests (70+ tests)
 pnpm lint                    # ESLint
 pnpm format                  # Prettier check
 ```
