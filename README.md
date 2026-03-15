@@ -2,6 +2,8 @@
 
 <div align="center">
 
+<img src="./src-tauri/icons/app-icon.png" alt="OpenKara app icon" width="160" height="160" />
+
 # OpenKara
 
 **Turn your music library into a karaoke stage.**
@@ -19,13 +21,13 @@ An open-source desktop karaoke app powered by on-device AI stem separation and s
 ## Features
 
 - **Local Audio Import** — Use music you already own. No subscriptions, no repurchases.
-- **AI Stem Separation** — On-device Demucs v4 model strips vocals from any track in seconds.
-- **Synced Lyrics** — Fetches time-synced lyrics from LRCLIB, embedded tags, or sidecar `.lrc` files.
+- **AI Stem Separation** — Separate vocals and accompaniment on-device.
+- **Synced Lyrics** — Load timed lyrics from online sources, embedded tags, or sidecar `.lrc` files.
 - **Portable Library** — Self-contained library directory that works on NAS, USB drives, and across machines.
-- **Cross-Platform** — Native performance on macOS (Apple Silicon & Intel), Windows, and Linux via Tauri 2.
+- **Cross-Platform** — Available on macOS, Windows, and Linux.
 - **4-Stem Mixer** — Individual volume control for vocals, drums, bass, and other instruments. Collapsible accompaniment slider with per-stem breakdown.
 - **Dual Separation Modes** — Choose between 2-stem (vocals + accompaniment) or 4-stem (vocals + drums + bass + other). Upgrade individual songs from 2-stem to 4-stem on demand.
-- **Compressed Stem Storage** — Separated stems stored as OGG/Vorbis (~85% smaller than WAV). A 3-minute song's stems use ~22 MB instead of ~150 MB.
+- **Efficient Stem Storage** — Separated stems are cached compactly to keep library storage practical.
 - **Resumable Separation** — Per-chunk checkpointing means separation resumes from where it left off if the app is closed mid-process.
 
 ## Screenshots
@@ -38,14 +40,14 @@ An open-source desktop karaoke app powered by on-device AI stem separation and s
 
 Download the latest build for your platform from [GitHub Releases](https://github.com/thedavidweng/OpenKara/releases):
 
-| Platform | Format |
-|----------|--------|
-| macOS (Apple Silicon) | `.dmg` |
-| macOS (Intel) | `.dmg` |
-| Windows | `.exe` (NSIS installer) |
-| Linux | `.AppImage` |
+| Platform              | Format                  |
+| --------------------- | ----------------------- |
+| macOS (Apple Silicon) | `.dmg`                  |
+| macOS (Intel)         | `.dmg`                  |
+| Windows               | `.exe` (NSIS installer) |
+| Linux                 | `.AppImage`             |
 
-On first launch, OpenKara will prompt you to create a Karaoke Library and download the AI model (~289 MB).
+On first launch, OpenKara will prompt you to create a Karaoke Library and download the AI model.
 
 ### Build from Source
 
@@ -64,22 +66,28 @@ pnpm install
 pnpm tauri dev
 ```
 
+### App Icon
+
+- Source icon: `src-tauri/icons/app-icon.png` (`1024x1024` master asset)
+- Regenerate all platform icons with `pnpm icons:generate`
+- Generated assets are written to `src-tauri/icons/` for Tauri desktop and future mobile targets
+
 ## Tech Stack
 
-| Layer | Technology | Purpose |
-|-------|-----------|---------|
-| Desktop framework | [Tauri 2](https://v2.tauri.app/) | Rust backend + system WebView |
-| Frontend | React 19 + TypeScript 5 | UI components |
-| Bundler | Vite 7 | Dev server and build |
-| Styling | Tailwind CSS 4 | Utility-first CSS |
-| State | Zustand | Lightweight global state |
-| Audio decode | [symphonia](https://github.com/pdeljanov/Symphonia) | Pure-Rust codec support |
-| Audio output | [cpal](https://github.com/RustAudio/cpal) | Cross-platform audio playback |
-| AI inference | [ONNX Runtime](https://onnxruntime.ai/) via [ort](https://github.com/pykeio/ort) | Demucs v4 stem separation |
-| Lyrics | [LRCLIB](https://lrclib.net/) | Open synced lyrics API |
-| Metadata | [lofty](https://github.com/Serial-ATA/lofty-rs) | ID3v2, Vorbis, FLAC tag reading |
-| Audio encode | [vorbis_rs](https://crates.io/crates/vorbis_rs) | OGG/Vorbis stem compression |
-| Database | SQLite via [rusqlite](https://github.com/rusqlite/rusqlite) | Song, lyrics, and stems cache |
+| Layer             | Technology                                                                       | Purpose                         |
+| ----------------- | -------------------------------------------------------------------------------- | ------------------------------- |
+| Desktop framework | [Tauri 2](https://v2.tauri.app/)                                                 | Rust backend + system WebView   |
+| Frontend          | React 19 + TypeScript 5                                                          | UI components                   |
+| Bundler           | Vite 7                                                                           | Dev server and build            |
+| Styling           | Tailwind CSS 4                                                                   | Utility-first CSS               |
+| State             | Zustand                                                                          | Lightweight global state        |
+| Audio decode      | [symphonia](https://github.com/pdeljanov/Symphonia)                              | Pure-Rust codec support         |
+| Audio output      | [cpal](https://github.com/RustAudio/cpal)                                        | Cross-platform audio playback   |
+| AI inference      | [ONNX Runtime](https://onnxruntime.ai/) via [ort](https://github.com/pykeio/ort) | Demucs v4 stem separation       |
+| Lyrics            | [LRCLIB](https://lrclib.net/)                                                    | Open synced lyrics API          |
+| Metadata          | [lofty](https://github.com/Serial-ATA/lofty-rs)                                  | ID3v2, Vorbis, FLAC tag reading |
+| Audio encode      | [vorbis_rs](https://crates.io/crates/vorbis_rs)                                  | OGG/Vorbis stem compression     |
+| Database          | SQLite via [rusqlite](https://github.com/rusqlite/rusqlite)                      | Song, lyrics, and stems cache   |
 
 ## Architecture
 
@@ -111,13 +119,13 @@ pnpm tauri dev
 
 ## Supported Formats
 
-| Format | Import | Stem Separation |
-|--------|--------|----------------|
-| MP3 | ✅ | ✅ |
-| FLAC | ✅ | ✅ |
-| WAV | ✅ | ✅ |
-| OGG / Vorbis | ✅ | ✅ |
-| AAC / M4A | ✅ | ✅ |
+| Format       | Import | Stem Separation |
+| ------------ | ------ | --------------- |
+| MP3          | ✅     | ✅              |
+| FLAC         | ✅     | ✅              |
+| WAV          | ✅     | ✅              |
+| OGG / Vorbis | ✅     | ✅              |
+| AAC / M4A    | ✅     | ✅              |
 
 All audio is resampled to 44.1 kHz stereo for the Demucs model.
 
@@ -170,7 +178,7 @@ All paths in the database are relative — the library can be moved to a NAS, US
 
 - [x] 4-stem volume mixer with collapsible UI
 - [x] Dual separation modes (2-stem / 4-stem) with settings persistence
-- [x] OGG/Vorbis compressed stem storage (~85% disk savings)
+- [x] Efficient compressed stem storage
 - [x] Resumable separation with per-chunk checkpointing
 - [x] Multi-threaded ONNX inference optimization
 - [x] Settings system (stem mode configuration)

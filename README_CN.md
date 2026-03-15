@@ -2,6 +2,8 @@
 
 <div align="center">
 
+<img src="./src-tauri/icons/app-icon.png" alt="OpenKara 应用图标" width="160" height="160" />
+
 # OpenKara
 
 **把你的音乐库变成 Karaoke 舞台。**
@@ -19,13 +21,13 @@
 ## 功能亮点
 
 - **本地音频导入** — 直接使用你已有的音乐，无需订阅，无需重复购买。
-- **AI 人声分离** — 端侧 Demucs v4 模型，数秒内从任意曲目中分离人声。
-- **同步歌词** — 自动从 LRCLIB、内嵌标签或 `.lrc` 伴随文件获取时间同步歌词。
+- **AI 人声分离** — 在本地完成歌曲的人声与伴奏分离。
+- **同步歌词** — 可从在线来源、内嵌标签或 `.lrc` 伴随文件加载时间同步歌词。
 - **可移植曲库** — 自包含的曲库目录，可放置在 NAS、USB 硬盘上，跨设备共享。
-- **跨平台原生** — 通过 Tauri 2 在 macOS（Apple Silicon 与 Intel）、Windows、Linux 上获得原生性能。
+- **跨平台** — 支持 macOS、Windows 和 Linux。
 - **四轨混音器** — 人声、鼓、贝斯、其他乐器独立音量控制。可折叠的伴奏滑块，展开查看各轨详情。
 - **双分离模式** — 可选择双轨（人声 + 伴奏）或四轨（人声 + 鼓 + 贝斯 + 其他）模式。支持将已分离的双轨曲目按需升级为四轨。
-- **压缩音轨存储** — 分离后的音轨以 OGG/Vorbis 格式存储（比 WAV 小约 85%）。一首 3 分钟歌曲的音轨仅占用约 22 MB，而非 ~150 MB。
+- **高效音轨存储** — 分离后的音轨会以紧凑方式缓存，保持曲库占用可控。
 - **断点续传分离** — 逐块检查点机制，中途关闭应用后重启会自动从上次进度继续。
 
 ## 截图
@@ -38,14 +40,14 @@
 
 从 [GitHub Releases](https://github.com/thedavidweng/OpenKara/releases) 下载对应平台的构建：
 
-| 平台 | 格式 |
-|------|------|
-| macOS (Apple Silicon) | `.dmg` |
-| macOS (Intel) | `.dmg` |
-| Windows | `.exe` (NSIS 安装包) |
-| Linux | `.AppImage` |
+| 平台                  | 格式                 |
+| --------------------- | -------------------- |
+| macOS (Apple Silicon) | `.dmg`               |
+| macOS (Intel)         | `.dmg`               |
+| Windows               | `.exe` (NSIS 安装包) |
+| Linux                 | `.AppImage`          |
 
-首次启动时，OpenKara 会引导你创建 Karaoke 曲库并下载 AI 模型（约 289 MB）。
+首次启动时，OpenKara 会引导你创建 Karaoke 曲库并下载 AI 模型。
 
 ### 从源码构建
 
@@ -64,22 +66,28 @@ pnpm install
 pnpm tauri dev
 ```
 
+### 应用图标
+
+- 源图标：`src-tauri/icons/app-icon.png`（`1024x1024` 主母版）
+- 重新生成全平台图标：`pnpm icons:generate`
+- 生成产物会写入 `src-tauri/icons/`，用于 Tauri 桌面端以及未来可能的移动端目标
+
 ## 技术栈
 
-| 层级 | 技术 | 用途 |
-|------|------|------|
-| 桌面框架 | [Tauri 2](https://v2.tauri.app/) | Rust 后端 + 系统 WebView |
-| 前端 | React 19 + TypeScript 5 | UI 组件 |
-| 构建工具 | Vite 7 | 开发服务器与生产构建 |
-| 样式 | Tailwind CSS 4 | 原子化 CSS |
-| 状态管理 | Zustand | 轻量全局状态 |
-| 音频解码 | [symphonia](https://github.com/pdeljanov/Symphonia) | 纯 Rust 解码器 |
-| 音频输出 | [cpal](https://github.com/RustAudio/cpal) | 跨平台音频播放 |
-| AI 推理 | [ONNX Runtime](https://onnxruntime.ai/) via [ort](https://github.com/pykeio/ort) | Demucs v4 音轨分离 |
-| 歌词 | [LRCLIB](https://lrclib.net/) | 开放同步歌词 API |
-| 元数据 | [lofty](https://github.com/Serial-ATA/lofty-rs) | ID3v2、Vorbis、FLAC 标签读取 |
-| 音频编码 | [vorbis_rs](https://crates.io/crates/vorbis_rs) | OGG/Vorbis 音轨压缩 |
-| 数据库 | SQLite via [rusqlite](https://github.com/rusqlite/rusqlite) | 歌曲、歌词与 stems 缓存 |
+| 层级     | 技术                                                                             | 用途                         |
+| -------- | -------------------------------------------------------------------------------- | ---------------------------- |
+| 桌面框架 | [Tauri 2](https://v2.tauri.app/)                                                 | Rust 后端 + 系统 WebView     |
+| 前端     | React 19 + TypeScript 5                                                          | UI 组件                      |
+| 构建工具 | Vite 7                                                                           | 开发服务器与生产构建         |
+| 样式     | Tailwind CSS 4                                                                   | 原子化 CSS                   |
+| 状态管理 | Zustand                                                                          | 轻量全局状态                 |
+| 音频解码 | [symphonia](https://github.com/pdeljanov/Symphonia)                              | 纯 Rust 解码器               |
+| 音频输出 | [cpal](https://github.com/RustAudio/cpal)                                        | 跨平台音频播放               |
+| AI 推理  | [ONNX Runtime](https://onnxruntime.ai/) via [ort](https://github.com/pykeio/ort) | Demucs v4 音轨分离           |
+| 歌词     | [LRCLIB](https://lrclib.net/)                                                    | 开放同步歌词 API             |
+| 元数据   | [lofty](https://github.com/Serial-ATA/lofty-rs)                                  | ID3v2、Vorbis、FLAC 标签读取 |
+| 音频编码 | [vorbis_rs](https://crates.io/crates/vorbis_rs)                                  | OGG/Vorbis 音轨压缩          |
+| 数据库   | SQLite via [rusqlite](https://github.com/rusqlite/rusqlite)                      | 歌曲、歌词与 stems 缓存      |
 
 ## 系统架构
 
@@ -109,13 +117,13 @@ pnpm tauri dev
 
 ## 支持的格式
 
-| 格式 | 导入 | 人声分离 |
-|------|------|---------|
-| MP3 | ✅ | ✅ |
-| FLAC | ✅ | ✅ |
-| WAV | ✅ | ✅ |
-| OGG / Vorbis | ✅ | ✅ |
-| AAC / M4A | ✅ | ✅ |
+| 格式         | 导入 | 人声分离 |
+| ------------ | ---- | -------- |
+| MP3          | ✅   | ✅       |
+| FLAC         | ✅   | ✅       |
+| WAV          | ✅   | ✅       |
+| OGG / Vorbis | ✅   | ✅       |
+| AAC / M4A    | ✅   | ✅       |
 
 所有音频在送入 Demucs 模型前会重采样为 44.1 kHz 立体声。
 
@@ -168,7 +176,7 @@ MyKaraokeLibrary/
 
 - [x] 四轨音量混音器（可折叠 UI）
 - [x] 双分离模式（双轨 / 四轨）及设置持久化
-- [x] OGG/Vorbis 压缩音轨存储（磁盘节省约 85%）
+- [x] 高效压缩音轨存储
 - [x] 断点续传分离（逐块检查点）
 - [x] 多线程 ONNX 推理优化
 - [x] 设置系统（音轨模式配置）
