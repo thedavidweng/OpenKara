@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "lint": "eslint . --max-warnings 0",
+    "icons:generate": "tauri icon src-tauri/icons/app-icon.png",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "preview": "vite preview",
