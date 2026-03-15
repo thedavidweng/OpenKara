@@ -43,6 +43,17 @@ pub struct StemSet {
     pub other: DecodedAudio,
 }
 
+#[derive(Debug)]
+pub enum LoadedStems {
+    /// Vocals + mixed accompaniment (2-stem mode)
+    TwoStem {
+        vocals: DecodedAudio,
+        accompaniment: DecodedAudio,
+    },
+    /// Individual stems (4-stem mode)
+    FourStem(StemSet),
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PlaybackStateSnapshot {
     pub song_id: Option<String>,
@@ -52,13 +63,14 @@ pub struct PlaybackStateSnapshot {
     pub volume: f32,
     pub stem_volumes: StemVolumes,
     pub has_stems: bool,
+    pub stem_mode: Option<String>,
 }
 
 #[derive(Debug)]
 pub(crate) struct LoadedTrack {
     pub(crate) song_id: String,
     pub(crate) original_audio: DecodedAudio,
-    pub(crate) stems: Option<StemSet>,
+    pub(crate) stems: Option<LoadedStems>,
     base_position_ms: u64,
     started_at_ms: Option<u64>,
 }
@@ -150,7 +162,7 @@ impl PlaybackController {
         Ok(self.snapshot(monotonic_now_ms()))
     }
 
-    pub fn attach_stems(&mut self, song_id: &str, stems: StemSet) -> Result<()> {
+    pub fn attach_stems(&mut self, song_id: &str, stems: LoadedStems) -> Result<()> {
         let track = self
             .current_track
             .as_mut()
@@ -173,6 +185,17 @@ impl PlaybackController {
             .is_some()
     }
 
+    /// Returns the stem mode string if stems are loaded: "two_stem" or "four_stem".
+    pub fn stem_variant(&self) -> Option<&str> {
+        self.current_track
+            .as_ref()
+            .and_then(|t| t.stems.as_ref())
+            .map(|s| match s {
+                LoadedStems::TwoStem { .. } => "two_stem",
+                LoadedStems::FourStem(_) => "four_stem",
+            })
+    }
+
     pub fn snapshot(&mut self, now_ms: u64) -> PlaybackStateSnapshot {
         if let Some(track) = self.current_track.as_mut() {
             let position_ms = track.position_ms(now_ms);
@@ -183,6 +206,11 @@ impl PlaybackController {
                 track.started_at_ms = None;
             }
 
+            let stem_mode = track.stems.as_ref().map(|s| match s {
+                LoadedStems::TwoStem { .. } => "two_stem".to_owned(),
+                LoadedStems::FourStem(_) => "four_stem".to_owned(),
+            });
+
             return PlaybackStateSnapshot {
                 song_id: Some(track.song_id.clone()),
                 is_playing: track.started_at_ms.is_some(),
@@ -191,6 +219,7 @@ impl PlaybackController {
                 volume: self.volume,
                 stem_volumes: self.stem_volumes,
                 has_stems: track.stems.is_some(),
+                stem_mode,
             };
         }
 
@@ -202,6 +231,7 @@ impl PlaybackController {
             volume: self.volume,
             stem_volumes: self.stem_volumes,
             has_stems: false,
+            stem_mode: None,
         }
     }
 

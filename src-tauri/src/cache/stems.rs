@@ -1,3 +1,4 @@
+use crate::config::StemMode;
 use crate::library_root::LibraryRoot;
 use crate::separator::{
     inference::{self, SeparationResult},
@@ -12,11 +13,11 @@ use std::{
 };
 
 const STEMS_CACHE_DIRECTORY: &str = "stems";
-const ACCOMPANIMENT_FILENAME: &str = "accompaniment.wav";
-const VOCALS_FILENAME: &str = "vocals.wav";
-const DRUMS_FILENAME: &str = "drums.wav";
-const BASS_FILENAME: &str = "bass.wav";
-const OTHER_FILENAME: &str = "other.wav";
+const ACCOMPANIMENT_FILENAME: &str = "accompaniment.ogg";
+const VOCALS_FILENAME: &str = "vocals.ogg";
+const DRUMS_FILENAME: &str = "drums.ogg";
+const BASS_FILENAME: &str = "bass.ogg";
+const OTHER_FILENAME: &str = "other.ogg";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StemCacheEntry {
@@ -55,6 +56,7 @@ pub fn get_or_create_stem_cache<F>(
     stems_base: &Path,
     library_root: &LibraryRoot,
     song_hash: &str,
+    stem_mode: StemMode,
     generate: F,
 ) -> Result<StemCacheResult>
 where
@@ -67,7 +69,7 @@ where
     }
 
     let separation = generate().context("failed to generate stems for cache population")?;
-    store_generated_stem_cache(connection, stems_base, song_hash, &separation)
+    store_generated_stem_cache(connection, stems_base, song_hash, &separation, stem_mode)
 }
 
 pub fn get_cached_stem_entry(
@@ -122,6 +124,7 @@ pub fn store_generated_stem_cache(
     stems_base: &Path,
     song_hash: &str,
     separation: &SeparationResult,
+    stem_mode: StemMode,
 ) -> Result<StemCacheResult> {
     ensure_song_exists(connection, song_hash)?;
     let stem_directory = stem_directory(stems_base, song_hash);
@@ -141,24 +144,60 @@ pub fn store_generated_stem_cache(
         )
     })?;
 
-    inference::write_stems_to_directory(separation, &stem_directory)
-        .context("failed to write stem wav files into cache")?;
+    let entry = match stem_mode {
+        StemMode::TwoStem => {
+            // Write only vocals.ogg and accompaniment.ogg
+            let vocals_stem = separation
+                .stems
+                .iter()
+                .find(|s| s.name == "vocals")
+                .context("separation result missing vocals stem")?;
+            let vocals_path = stem_directory.join(VOCALS_FILENAME);
+            crate::audio::encode::write_ogg_file(&vocals_path, &vocals_stem.audio)
+                .context("failed to write vocals ogg into cache")?;
 
-    let accompaniment =
-        mix::mix_accompaniment(separation).context("failed to mix accompaniment for stem cache")?;
-    let accompaniment_path = stem_directory.join(ACCOMPANIMENT_FILENAME);
-    mix::write_accompaniment_wav(&accompaniment, &accompaniment_path)
-        .context("failed to write accompaniment wav into cache")?;
+            let accompaniment = mix::mix_accompaniment(separation)
+                .context("failed to mix accompaniment for stem cache")?;
+            let accompaniment_path = stem_directory.join(ACCOMPANIMENT_FILENAME);
+            mix::write_accompaniment_ogg(&accompaniment, &accompaniment_path)
+                .context("failed to write accompaniment ogg into cache")?;
 
-    let entry = StemCacheEntry {
-        song_hash: song_hash.to_owned(),
-        vocals_path: format!("{STEMS_CACHE_DIRECTORY}/{song_hash}/{VOCALS_FILENAME}"),
-        accomp_path: format!("{STEMS_CACHE_DIRECTORY}/{song_hash}/{ACCOMPANIMENT_FILENAME}"),
-        separated_at: unix_timestamp(),
-        drums_path: Some(format!("{STEMS_CACHE_DIRECTORY}/{song_hash}/{DRUMS_FILENAME}")),
-        bass_path: Some(format!("{STEMS_CACHE_DIRECTORY}/{song_hash}/{BASS_FILENAME}")),
-        other_path: Some(format!("{STEMS_CACHE_DIRECTORY}/{song_hash}/{OTHER_FILENAME}")),
+            StemCacheEntry {
+                song_hash: song_hash.to_owned(),
+                vocals_path: format!("{STEMS_CACHE_DIRECTORY}/{song_hash}/{VOCALS_FILENAME}"),
+                accomp_path: format!(
+                    "{STEMS_CACHE_DIRECTORY}/{song_hash}/{ACCOMPANIMENT_FILENAME}"
+                ),
+                separated_at: unix_timestamp(),
+                drums_path: None,
+                bass_path: None,
+                other_path: None,
+            }
+        }
+        StemMode::FourStem => {
+            // Write all 4 individual stems (vocals, drums, bass, other)
+            inference::write_stems_to_directory(separation, &stem_directory)
+                .context("failed to write stem ogg files into cache")?;
+
+            StemCacheEntry {
+                song_hash: song_hash.to_owned(),
+                vocals_path: format!("{STEMS_CACHE_DIRECTORY}/{song_hash}/{VOCALS_FILENAME}"),
+                // accomp_path is NOT NULL in the DB schema; store empty string for FourStem mode
+                accomp_path: String::new(),
+                separated_at: unix_timestamp(),
+                drums_path: Some(format!(
+                    "{STEMS_CACHE_DIRECTORY}/{song_hash}/{DRUMS_FILENAME}"
+                )),
+                bass_path: Some(format!(
+                    "{STEMS_CACHE_DIRECTORY}/{song_hash}/{BASS_FILENAME}"
+                )),
+                other_path: Some(format!(
+                    "{STEMS_CACHE_DIRECTORY}/{song_hash}/{OTHER_FILENAME}"
+                )),
+            }
+        }
     };
+
     upsert_stem_cache_entry(connection, &entry).context("failed to persist stem cache entry")?;
 
     Ok(StemCacheResult {
@@ -204,10 +243,12 @@ fn upsert_stem_cache_entry(
 }
 
 fn cache_entry_files_exist(library_root: &LibraryRoot, entry: &StemCacheEntry) -> bool {
-    let base_ok = library_root.resolve(&entry.vocals_path).exists()
-        && library_root.resolve(&entry.accomp_path).exists();
+    if !library_root.resolve(&entry.vocals_path).exists() {
+        return false;
+    }
 
-    if !base_ok {
+    // An empty accomp_path means FourStem mode where no accompaniment file is written.
+    if !entry.accomp_path.is_empty() && !library_root.resolve(&entry.accomp_path).exists() {
         return false;
     }
 

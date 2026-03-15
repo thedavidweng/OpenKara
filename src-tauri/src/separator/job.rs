@@ -1,8 +1,9 @@
 use crate::{
     audio::decode,
     cache,
+    config::StemMode,
     library_root::LibraryRoot,
-    separator::{inference, model},
+    separator::{checkpoint, inference, model},
 };
 use anyhow::{Context, Result};
 use rusqlite::Connection;
@@ -12,7 +13,6 @@ const CACHE_HIT_PROGRESS: u8 = 100;
 const LOOKUP_PROGRESS: u8 = 10;
 const DECODE_PROGRESS: u8 = 25;
 const MODEL_LOAD_PROGRESS: u8 = 45;
-const INFERENCE_PROGRESS: u8 = 70;
 const CACHE_WRITE_PROGRESS: u8 = 90;
 const COMPLETE_PROGRESS: u8 = 100;
 
@@ -21,6 +21,9 @@ pub struct SeparationArtifacts {
     pub vocals_path: String,
     pub accomp_path: String,
     pub cache_hit: bool,
+    pub drums_path: Option<String>,
+    pub bass_path: Option<String>,
+    pub other_path: Option<String>,
 }
 
 pub fn separate_song_into_cache(
@@ -28,6 +31,7 @@ pub fn separate_song_into_cache(
     library_root: &LibraryRoot,
     model_path: &Path,
     song_hash: &str,
+    stem_mode: StemMode,
     mut report_progress: impl FnMut(u8),
 ) -> Result<SeparationArtifacts> {
     if let Some(cached) =
@@ -51,9 +55,22 @@ pub fn separate_song_into_cache(
     let mut loaded_model = model::load_from_path(model_path)
         .with_context(|| format!("failed to load Demucs model from {}", model_path.display()))?;
 
-    report_progress(INFERENCE_PROGRESS);
-    let separation = inference::separate_audio(&mut loaded_model, &decoded_audio)
-        .with_context(|| format!("failed to separate stems for song {song_hash}"))?;
+    let checkpoint_dir = checkpoint::checkpoint_dir(&library_root.stems_dir(), song_hash);
+    let inference_progress = |completed: usize, total: usize| {
+        if total > 0 {
+            let fraction = completed as f64 / total as f64;
+            let percent = MODEL_LOAD_PROGRESS as f64
+                + fraction * (CACHE_WRITE_PROGRESS as f64 - MODEL_LOAD_PROGRESS as f64);
+            report_progress(percent.round() as u8);
+        }
+    };
+    let separation = inference::separate_audio(
+        &mut loaded_model,
+        &decoded_audio,
+        inference_progress,
+        Some(checkpoint_dir.as_path()),
+    )
+    .with_context(|| format!("failed to separate stems for song {song_hash}"))?;
 
     report_progress(CACHE_WRITE_PROGRESS);
     let stems_base = library_root.stems_dir();
@@ -62,8 +79,11 @@ pub fn separate_song_into_cache(
         &stems_base,
         song_hash,
         &separation,
+        stem_mode,
     )
     .with_context(|| format!("failed to cache generated stems for song {song_hash}"))?;
+
+    let _ = checkpoint::cleanup(&checkpoint_dir);
 
     report_progress(COMPLETE_PROGRESS);
     Ok(artifacts_from_cache_entry(cached.entry, false))
@@ -77,5 +97,8 @@ fn artifacts_from_cache_entry(
         vocals_path: entry.vocals_path,
         accomp_path: entry.accomp_path,
         cache_hit,
+        drums_path: entry.drums_path,
+        bass_path: entry.bass_path,
+        other_path: entry.other_path,
     }
 }

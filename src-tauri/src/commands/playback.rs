@@ -2,7 +2,7 @@ use crate::{
     audio::{
         decode, output,
         playback::{
-            monotonic_now_ms, playback_position_event, PlaybackController,
+            monotonic_now_ms, playback_position_event, LoadedStems, PlaybackController,
             PlaybackStateSnapshot, StemName, StemSet, PLAYBACK_POSITION_EVENT,
         },
     },
@@ -176,16 +176,22 @@ pub fn load_stems_for_current_track(
             .with_context(|| format!("failed to decode stem {}", path))
     };
 
-    // Try loading individual stems; fall back to accompaniment-only if unavailable
-    if cached.has_individual_stems() {
-        let stems = StemSet {
+    // Load as 4-stem if individual stems are available, otherwise 2-stem
+    let loaded = if cached.has_individual_stems() {
+        LoadedStems::FourStem(StemSet {
             vocals: load_stem(&cached.vocals_path)?,
             drums: load_stem(cached.drums_path.as_ref().unwrap())?,
             bass: load_stem(cached.bass_path.as_ref().unwrap())?,
             other: load_stem(cached.other_path.as_ref().unwrap())?,
-        };
-        controller.attach_stems(&song_id, stems)?;
-    }
+        })
+    } else {
+        LoadedStems::TwoStem {
+            vocals: load_stem(&cached.vocals_path)?,
+            accompaniment: load_stem(&cached.accomp_path)?,
+        }
+    };
+
+    controller.attach_stems(&song_id, loaded)?;
 
     Ok(())
 }

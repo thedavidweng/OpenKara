@@ -1,5 +1,6 @@
 use crate::{
     commands::import::import_songs_from_paths,
+    config::StemMode,
     perf::build_backend_performance_report,
     separator::{bootstrap, job, model},
 };
@@ -191,6 +192,7 @@ pub fn run_local_audio_smoke(config: LocalAudioSmokeConfig) -> Result<LocalAudio
                             &library,
                             Path::new(model_path),
                             &song.hash,
+                            StemMode::default(),
                             |_| {},
                         ) {
                             Ok(artifacts) => (
