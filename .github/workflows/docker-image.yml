@@ -1,0 +1,19 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: ["main", "codex/**"]
+  pull_request:
+
+jobs:
+  docker_build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Build the Docker image
+        run: docker build . --file Dockerfile --tag openkara-build:latest
