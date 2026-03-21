@@ -136,8 +136,28 @@ jobs:
           }
 
           $dlls = foreach ($nativeSearchDir in $nativeSearchDirs) {
-            if (Test-Path $nativeSearchDir) {
-              Get-ChildItem -Path $nativeSearchDir -Filter "onnxruntime*.dll" -File -Recurse -ErrorAction SilentlyContinue
+            if (-not (Test-Path $nativeSearchDir)) {
+              continue
+            }
+
+            $candidateDirs = @(
+              $nativeSearchDir
+              (Join-Path $nativeSearchDir "bin")
+              (Split-Path $nativeSearchDir -Parent)
+              (Join-Path (Split-Path $nativeSearchDir -Parent) "bin")
+            ) | Select-Object -Unique
+
+            foreach ($candidateDir in $candidateDirs) {
+              if (Test-Path $candidateDir) {
+                Get-ChildItem -Path $candidateDir -Filter "onnxruntime*.dll" -File -Recurse -ErrorAction SilentlyContinue
+              }
+            }
+          }
+
+          if (-not $dlls) {
+            $ortCacheDir = Join-Path $env:LOCALAPPDATA "ort.pyke.io/dfbin"
+            if (Test-Path $ortCacheDir) {
+              $dlls = Get-ChildItem -Path $ortCacheDir -Filter "onnxruntime*.dll" -File -Recurse -ErrorAction SilentlyContinue
             }
           }
 
