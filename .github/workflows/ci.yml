@@ -142,45 +142,44 @@ jobs:
           }
 
           if (-not $dlls) {
-            Write-Warning "No onnxruntime DLLs were found in ort-sys native link-search directories: $($nativeSearchDirs -join ', ')"
-            $dlls = @()
-          }
+            Write-Warning "No onnxruntime DLLs were found in ort-sys native link-search directories: $($nativeSearchDirs -join ', '). Continuing without ONNX runtime DLL copy."
+          } else {
+            $resolvedDepsDir = [System.IO.Path]::GetFullPath($depsDir)
+            $copyPairs = @()
+            $plannedTargets = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+            foreach ($dll in $dlls | Sort-Object FullName -Unique) {
+              $sourcePath = [System.IO.Path]::GetFullPath($dll.FullName)
+              $targetPath = [System.IO.Path]::GetFullPath((Join-Path $depsDir $dll.Name))
 
-          $resolvedDepsDir = [System.IO.Path]::GetFullPath($depsDir)
-          $copyPairs = @()
-          $plannedTargets = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-          foreach ($dll in $dlls | Sort-Object FullName -Unique) {
-            $sourcePath = [System.IO.Path]::GetFullPath($dll.FullName)
-            $targetPath = [System.IO.Path]::GetFullPath((Join-Path $depsDir $dll.Name))
+              if ($sourcePath -ieq $targetPath) {
+                continue
+              }
 
-            if ($sourcePath -ieq $targetPath) {
-              continue
+              if ($sourcePath.StartsWith($resolvedDepsDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+                continue
+              }
+
+              if (-not $plannedTargets.Add($targetPath)) {
+                continue
+              }
+
+              $copyPairs += @{
+                Source = $sourcePath
+                Target = $targetPath
+              }
             }
 
-            if ($sourcePath.StartsWith($resolvedDepsDir, [System.StringComparison]::OrdinalIgnoreCase)) {
-              continue
-            }
-
-            if (-not $plannedTargets.Add($targetPath)) {
-              continue
-            }
-
-            $copyPairs += @{
-              Source = $sourcePath
-              Target = $targetPath
-            }
-          }
-
-          if ($copyPairs.Count -gt 0) {
-            # cargo:rustc-link-search gets tests linked, but Windows still needs the DLLs beside the test exe at runtime.
-            foreach ($copyPair in $copyPairs) {
-              try {
-                Copy-Item -Force $copyPair.Source $copyPair.Target
-              } catch {
-                # ORT may hardlink DLLs from its dfbin cache into the deps directory, so source
-                # and target can be different paths to the same underlying file.  Ignore that
-                # specific failure and rethrow everything else.
-                if ($_.Exception.Message -notlike '*with itself*') { throw }
+            if ($copyPairs.Count -gt 0) {
+              # cargo:rustc-link-search gets tests linked, but Windows still needs the DLLs beside the test exe at runtime.
+              foreach ($copyPair in $copyPairs) {
+                try {
+                  Copy-Item -Force $copyPair.Source $copyPair.Target
+                } catch {
+                  # ORT may hardlink DLLs from its dfbin cache into the deps directory, so source
+                  # and target can be different paths to the same underlying file.  Ignore that
+                  # specific failure and rethrow everything else.
+                  if ($_.Exception.Message -notlike '*with itself*') { throw }
+                }
               }
             }
           }
