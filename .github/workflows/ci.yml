@@ -122,15 +122,22 @@ jobs:
           }
 
           $nativeSearchDirs = @()
+          $ortRuntimeDirs = @()
           foreach ($buildOutputFile in $buildOutputFiles) {
             foreach ($line in Get-Content $buildOutputFile.FullName) {
               if ($line -match "^cargo:rustc-link-search=native=(.+)$") {
                 $nativeSearchDirs += $Matches[1]
               }
+
+              if ($line -match "^cargo:rustc-env=ORT_DYLIB_PATH=(.+)$") {
+                $ortRuntimeDirs += $Matches[1]
+              }
             }
           }
 
           $nativeSearchDirs = $nativeSearchDirs | Select-Object -Unique
+          $ortRuntimeDirs = $ortRuntimeDirs | Select-Object -Unique
+
           if (-not $nativeSearchDirs) {
             throw "ort-sys did not emit any native link-search directories"
           }
@@ -150,6 +157,14 @@ jobs:
             foreach ($candidateDir in $candidateDirs) {
               if (Test-Path $candidateDir) {
                 Get-ChildItem -Path $candidateDir -Filter "onnxruntime*.dll" -File -Recurse -ErrorAction SilentlyContinue
+              }
+            }
+          }
+
+          if (-not $dlls) {
+            $dlls = foreach ($ortRuntimeDir in $ortRuntimeDirs) {
+              if (Test-Path $ortRuntimeDir) {
+                Get-ChildItem -Path $ortRuntimeDir -Filter "onnxruntime*.dll" -File -Recurse -ErrorAction SilentlyContinue
               }
             }
           }
