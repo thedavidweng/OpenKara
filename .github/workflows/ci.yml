@@ -137,12 +137,12 @@ jobs:
 
           $dlls = foreach ($nativeSearchDir in $nativeSearchDirs) {
             if (Test-Path $nativeSearchDir) {
-              Get-ChildItem -Path $nativeSearchDir -Filter "*.dll" -File -Recurse -ErrorAction SilentlyContinue
+              Get-ChildItem -Path $nativeSearchDir -Filter "onnxruntime*.dll" -File -Recurse -ErrorAction SilentlyContinue
             }
           }
 
           if (-not $dlls) {
-            throw "No DLLs were found in ort-sys native link-search directories: $($nativeSearchDirs -join ', ')"
+            throw "No onnxruntime DLLs were found in ort-sys native link-search directories: $($nativeSearchDirs -join ', ')"
           }
 
           $resolvedDepsDir = [System.IO.Path]::GetFullPath($depsDir)
