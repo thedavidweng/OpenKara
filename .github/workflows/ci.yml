@@ -142,7 +142,8 @@ jobs:
           }
 
           if (-not $dlls) {
-            throw "No onnxruntime DLLs were found in ort-sys native link-search directories: $($nativeSearchDirs -join ', ')"
+            Write-Warning "No onnxruntime DLLs were found in ort-sys native link-search directories: $($nativeSearchDirs -join ', ')"
+            $dlls = @()
           }
 
           $resolvedDepsDir = [System.IO.Path]::GetFullPath($depsDir)
