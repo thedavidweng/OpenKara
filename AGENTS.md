@@ -165,7 +165,9 @@ script is idempotent (skips download when files are already verified).
 
 - Rust 1.85+ is required. The `time` crate dependency needs edition2024 support,
   which is not available in Rust <1.85. Use `rustup update stable` if the
-  pre-installed version is too old.
+  pre-installed version is too old. If `rustc --version` still shows the old
+  version after updating, run `rustup default stable` — the default toolchain
+  may be pinned to a specific version instead of the `stable` channel.
 - `pnpm tauri dev` needs a display (X11/Wayland) to open the WebView window.
 
 ## Why This Exists
