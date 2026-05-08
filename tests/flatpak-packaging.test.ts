@@ -14,9 +14,6 @@ describe("Flatpak packaging", () => {
     const manifestTemplate = readProjectFile(
       "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
     );
-    const onnxRuntimeScript = readProjectFile(
-      "scripts/prepare-onnx-runtime.mjs",
-    );
 
     expect(manifestTemplate).toContain('runtime-version: "50"');
     expect(manifestTemplate).toContain("org.freedesktop.Sdk.Extension.node24");
@@ -25,8 +22,20 @@ describe("Flatpak packaging", () => {
       existsSync(join(projectRoot, "packaging/flatpak/flathub.json")),
     ).toBe(false);
 
-    expect(onnxRuntimeScript).toContain('"aarch64-unknown-linux-gnu"');
-    expect(onnxRuntimeScript).toContain("onnxruntime-linux-aarch64");
+    expect(manifestTemplate).toContain("x86_64");
+    expect(manifestTemplate).toContain("aarch64");
+  });
+
+  test("uses pre-built ONNX Runtime binaries with architecture-specific sources for the Flathub submission", () => {
+    const manifestTemplate = readProjectFile(
+      "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
+    );
+
+    expect(manifestTemplate).toContain("onnxruntime-source");
+    expect(manifestTemplate).toContain("onnxruntime-linux-x64");
+    expect(manifestTemplate).toContain("onnxruntime-linux-aarch64");
+    expect(manifestTemplate).toContain("${FLATPAK_DEST}/share/licenses");
+    expect(manifestTemplate).not.toContain("build_shared_lib");
   });
 
   test("includes generated dependency manifests instead of copying them as files", () => {
@@ -48,6 +57,9 @@ describe("Flatpak packaging", () => {
 
   test("keeps app metadata and Flatpak-only Tauri config in the upstream source archive", () => {
     const renderScript = readProjectFile("scripts/render-flatpak-manifest.mjs");
+    const metainfo = readProjectFile(
+      "packaging/flatpak/io.github.thedavidweng.OpenKara.metainfo.xml",
+    );
 
     expect(
       existsSync(
@@ -74,6 +86,8 @@ describe("Flatpak packaging", () => {
     );
     expect(renderScript).not.toContain("tauri.flatpak.conf.json");
     expect(renderScript).not.toContain("flathub.json");
+    expect(metainfo).not.toContain("/main/packaging/flatpak/screenshots/");
+    expect(metainfo).toContain("/v0.8.1/packaging/flatpak/screenshots/");
   });
 
   test("keeps pnpm dependency sources in sync with the lockfile versions used by the app", () => {
@@ -88,7 +102,7 @@ describe("Flatpak packaging", () => {
     expect(nodeSources).not.toContain("vite-7.3.1.tgz");
   });
 
-  test("release automation opens distribution PRs directly", () => {
+  test("release automation never opens initial Flathub submission PRs automatically", () => {
     const releaseWorkflow = readProjectFile(".github/workflows/release.yml");
 
     expect(releaseWorkflow).toContain("GITHUB_TOKEN: ${{ github.token }}");
@@ -101,8 +115,11 @@ describe("Flatpak packaging", () => {
       "WinGet PR could not be created automatically.",
     );
     expect(releaseWorkflow).not.toContain("skipping WinGet PR automation");
-    expect(releaseWorkflow).toContain("--draft");
-    expect(releaseWorkflow).toContain('--title "${pr_title}"');
+    expect(releaseWorkflow).toContain("manual_submission_url=");
+    expect(releaseWorkflow).toContain(
+      "Initial Flathub submissions must be opened or updated manually",
+    );
+    expect(releaseWorkflow).not.toContain("--draft");
     expect(releaseWorkflow).not.toContain(
       "Open this prefilled GitHub URL to create the Flathub submission PR",
     );

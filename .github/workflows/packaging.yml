@@ -108,8 +108,9 @@ jobs:
       - name: Install Flatpak validators
         run: |
           sudo apt-get update
-          sudo apt-get install -y appstream flatpak flatpak-builder
+          sudo apt-get install -y appstream flatpak flatpak-builder xvfb
           flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak --user install -y flathub org.flatpak.Builder
 
       - name: Validate Flatpak packaging invariants
         run: pnpm test tests/flatpak-packaging.test.ts
@@ -135,4 +136,29 @@ jobs:
 
       - name: Validate Flatpak dependency source downloads
         run: |
-          flatpak-builder --user --force-clean --install-deps-from=flathub --download-only "${{ github.workspace }}/flatpak-build" "${{ github.workspace }}/dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml"
+          manifest="${{ github.workspace }}/dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml"
+          flatpak-builder --user --arch=x86_64 --force-clean --install-deps-from=flathub --download-only "${{ github.workspace }}/flatpak-build-x86_64" "${manifest}"
+          flatpak-builder --user --arch=aarch64 --force-clean --install-deps-from=flathub --download-only "${{ github.workspace }}/flatpak-build-aarch64" "${manifest}"
+
+      - name: Build Flatpak on x86_64
+        run: |
+          manifest="${{ github.workspace }}/dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml"
+          flatpak-builder --user --arch=x86_64 --force-clean --install-deps-from=flathub --repo "${{ github.workspace }}/flatpak-repo" "${{ github.workspace }}/flatpak-build-x86_64" "${manifest}"
+
+      - name: Run Flatpak builder lint
+        run: |
+          manifest="${{ github.workspace }}/dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml"
+          flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest "${manifest}"
+          flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo "${{ github.workspace }}/flatpak-repo"
+
+      - name: Install and smoke launch Flatpak
+        run: |
+          flatpak --user remote-add --if-not-exists --no-gpg-verify openkara-local "${{ github.workspace }}/flatpak-repo"
+          flatpak --user install -y openkara-local io.github.thedavidweng.OpenKara
+          set +e
+          xvfb-run -a timeout 20s flatpak run io.github.thedavidweng.OpenKara
+          status="$?"
+          set -e
+          if [ "${status}" -ne 0 ] && [ "${status}" -ne 124 ]; then
+            exit "${status}"
+          fi

@@ -31,6 +31,7 @@ modules:
       - PATH="/run/build/openkara/pnpm-install/bin:$PATH" pnpm tauri build --config packaging/flatpak/tauri.flatpak.conf.json --bundles none
       - install -Dm0755 src-tauri/target/release/openkara ${FLATPAK_DEST}/bin/openkara
       - install -Dm0644 src-tauri/generated/onnxruntime/libonnxruntime.so ${FLATPAK_DEST}/lib/openkara/onnxruntime/libonnxruntime.so
+      - install -Dm0644 src-tauri/generated/onnxruntime-source/LICENSE ${FLATPAK_DEST}/share/licenses/io.github.thedavidweng.OpenKara/onnxruntime/LICENSE
       - install -Dm0644 packaging/flatpak/io.github.thedavidweng.OpenKara.desktop ${FLATPAK_DEST}/share/applications/io.github.thedavidweng.OpenKara.desktop
       - install -Dm0644 packaging/flatpak/io.github.thedavidweng.OpenKara.metainfo.xml ${FLATPAK_DEST}/share/metainfo/io.github.thedavidweng.OpenKara.metainfo.xml
       - install -Dm0644 src-tauri/icons/128x128.png ${FLATPAK_DEST}/share/icons/hicolor/128x128/apps/io.github.thedavidweng.OpenKara.png

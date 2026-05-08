@@ -288,7 +288,7 @@ jobs:
           name: flatpak-manifests
           path: dist/flatpak
 
-      - name: Prepare or create Flathub PR
+      - name: Prepare Flathub submission branch or update PR
         if: ${{ steps.bootstrap.outputs.ready == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.FLATHUB_PR_TOKEN }}
@@ -341,38 +341,14 @@ jobs:
           fi
 
           if [ "${submission_mode}" = "true" ]; then
-            pr_body="$(cat <<'EOF'
-          ### Please confirm your submission meets all the criteria
-
-          - [X] Please describe the application briefly. OpenKara is an open-source desktop karaoke app for Linux, macOS, and Windows that turns songs users already own into karaoke tracks with on-device vocal separation, synced lyrics or CD+G graphics, and a portable local library.
-          - [X] Please attach a video showcasing the application on Linux using the Flatpak.
-
-          https://github.com/user-attachments/assets/2cfc6726-a46b-4563-ab56-2c2726a7944b
-
-          - [X] The Flatpak ID follows all the rules listed in the [Application ID requirements][appid].
-          - [X] I have read and followed all the [Submission requirements][reqs] and the [Submission guide][reqs2] and I agree to them.
-          - [X] I am an author/developer/upstream contributor to the project.
-                If not, I contacted upstream developers about this submission. **Link:** N/A
-
-          Additional maintainers: N/A
-
-          [appid]: https://docs.flathub.org/docs/for-app-authors/requirements#application-id
-          [reqs]: https://docs.flathub.org/docs/for-app-authors/requirements
-          [reqs2]: https://docs.flathub.org/docs/for-app-authors/submission
-          EOF
-          )"
-            gh pr create \
-              --draft \
-              --repo "${target_repo}" \
-              --base "${base_branch}" \
-              --head "${fork_owner}:${branch}" \
-              --title "${pr_title}" \
-              --body "${pr_body}"
-          else
-            gh pr create \
-              --repo "${target_repo}" \
-              --base "${base_branch}" \
-              --head "${fork_owner}:${branch}" \
-              --title "${pr_title}" \
-              --body "Flatpak manifest update for OpenKara ${VERSION}."
+            manual_submission_url="https://github.com/${target_repo}/compare/${base_branch}...${fork_owner}:${branch}?expand=1"
+            echo "Initial Flathub submissions must be opened or updated manually: ${manual_submission_url}"
+            exit 0
           fi
+
+          gh pr create \
+            --repo "${target_repo}" \
+            --base "${base_branch}" \
+            --head "${fork_owner}:${branch}" \
+            --title "${pr_title}" \
+            --body "Flatpak manifest update for OpenKara ${VERSION}."
