@@ -116,6 +116,15 @@ jobs:
           sudo apt-get install -y appstream dbus flatpak flatpak-builder xvfb
           flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
           flatpak --user install -y flathub org.flatpak.Builder
+          # The org.flatpak.Builder sandbox resolves `flatpak --user install` against
+          # its own per-app data dir ($HOME/.var/app/org.flatpak.Builder/data/flatpak),
+          # not the host's ~/.local/share/flatpak. We must register the flathub remote
+          # there as well, or --install-deps-from=flathub fails with
+          # "No remote refs found similar to 'flathub'" inside the sandbox.
+          sandbox_flatpak_dir="$HOME/.var/app/org.flatpak.Builder/data/flatpak"
+          mkdir -p "$sandbox_flatpak_dir"
+          FLATPAK_USER_DIR="$sandbox_flatpak_dir" \
+            flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 
       - name: Validate Flatpak packaging invariants
         run: pnpm test tests/flatpak-packaging.test.ts

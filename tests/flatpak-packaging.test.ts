@@ -63,6 +63,13 @@ describe("Flatpak packaging", () => {
     expect(packagingWorkflow).toContain(
       "dbus-run-session -- flatpak run --filesystem=",
     );
+    // The org.flatpak.Builder sandbox uses its own per-app data dir for the
+    // user flatpak install. The flathub remote must be configured there,
+    // otherwise --install-deps-from=flathub fails with
+    // "No remote refs found similar to 'flathub'" inside the sandbox.
+    expect(packagingWorkflow).toContain(
+      ".var/app/org.flatpak.Builder/data/flatpak",
+    );
   });
 
   test("includes generated dependency manifests instead of copying them as files", () => {
