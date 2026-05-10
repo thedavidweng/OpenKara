@@ -184,6 +184,18 @@ jobs:
           cache-key: flatpak-builder-x86_64-${{ github.sha }}
           arch: x86_64
           verbose: true
+          # Required for `flatpak-builder-lint builddir/repo` to pass
+          # `appstream-external-screenshot-url`. The action internally passes
+          # `--mirror-screenshots-url=<value> --compose-url-policy=full` to
+          # flatpak-builder, which rewrites the <screenshot> URLs in the
+          # composed appstream XML to dl.flathub.org/media/* and commits a
+          # `screenshots/<arch>` OSTree ref into the repo. The actual static
+          # files are served by dl.flathub.org only after a Flathub submission,
+          # but the rewriting is what the linter requires at build time.
+          # Omitting this input makes the lint step fail with
+          # "appstream-external-screenshot-url: Screenshots are not mirrored to
+          # https://dl.flathub.org/media".
+          mirror-screenshots-url: https://dl.flathub.org/media
 
       - name: Run Flatpak builder lint
         run: |

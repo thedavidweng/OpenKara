@@ -73,6 +73,15 @@ describe("Flatpak packaging", () => {
     expect(packagingWorkflow).toContain(
       "uses: flatpak/flatpak-github-actions/flatpak-builder@v6",
     );
+    // Without this, `flatpak-builder-lint builddir/repo` fails with
+    // "appstream-external-screenshot-url: Screenshots are not mirrored to
+    // https://dl.flathub.org/media". The action forwards it as
+    // --mirror-screenshots-url=<value> --compose-url-policy=full to
+    // flatpak-builder and also commits the screenshots/<arch> OSTree ref,
+    // which is what the linter's check_repo() looks for.
+    expect(packagingWorkflow).toContain(
+      "mirror-screenshots-url: https://dl.flathub.org/media",
+    );
   });
 
   test("includes generated dependency manifests instead of copying them as files", () => {
