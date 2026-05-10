@@ -168,6 +168,27 @@ script is idempotent (skips download when files are already verified).
   pre-installed version is too old.
 - `pnpm tauri dev` needs a display (X11/Wayland) to open the WebView window.
 
+## CodeQL / Code Scanning
+
+GitHub's default CodeQL setup scans `actions`, `javascript-typescript`, and
+`rust`. Recurring patterns that trigger alerts:
+
+- **Workflow permissions:** Every workflow file must have an explicit top-level
+  `permissions:` block (typically `contents: read`). Omitting it triggers
+  `actions/missing-workflow-permissions`.
+- **Cleartext logging (Rust):** When formatting a `reqwest::Error` into a
+  user-visible error string, use `error.without_url()` instead of `{error}`.
+  CodeQL traces OAuth tokens through `authorized_request` helpers and flags any
+  error path that could expose the URL (which may contain query-param tokens).
+- **Unsafe pointer access (Rust):** Prefer `ptr::NonNull::new(p)` +
+  `.as_ref()` over raw `&*p` when traversing FFI-returned linked lists.
+  CodeQL cannot model FFI contracts and flags raw dereferences even after null
+  checks.
+- **Tauri `generate_handler!` false positives:** CodeQL cannot model Tauri's
+  macro-generated IPC dispatch. If it flags a "hard-coded cryptographic value"
+  inside `generate_handler!`, dismiss it as a false positive via the GitHub API
+  with a clear explanation.
+
 ## Why This Exists
 
 This repository has repeatedly seen CI failures caused by agents skipping local

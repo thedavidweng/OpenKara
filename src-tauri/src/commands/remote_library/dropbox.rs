@@ -197,7 +197,7 @@ fn dropbox_refresh_access_token(
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(body)
         .send()
-        .map_err(|error| library_error(format!("failed to refresh Dropbox access token: {error}")))?;
+        .map_err(|e| library_error(format!("failed to refresh Dropbox access token: {}", e.without_url())))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Dropbox token refresh failed with status {}",
@@ -448,7 +448,7 @@ pub(crate) fn dropbox_get_metadata(
     let response = dropbox_authorized_request(app_data_dir, secret, Method::POST, url)?
         .json(&serde_json::json!({ "path": path }))
         .send()
-        .map_err(|error| library_error(format!("Dropbox metadata lookup failed: {error}")))?;
+        .map_err(|e| library_error(format!("Dropbox metadata lookup failed: {}", e.without_url())))?;
     match response.status() {
         StatusCode::OK => response
             .json()
@@ -470,7 +470,7 @@ fn dropbox_get_metadata_with_token(
     let response = dropbox_request_with_access_token(access_token, Method::POST, url)
         .json(&serde_json::json!({ "path": path }))
         .send()
-        .map_err(|error| library_error(format!("Dropbox metadata lookup failed: {error}")))?;
+        .map_err(|e| library_error(format!("Dropbox metadata lookup failed: {}", e.without_url())))?;
     match response.status() {
         StatusCode::OK => response
             .json()
@@ -493,7 +493,7 @@ fn dropbox_create_folder(
     let response = dropbox_authorized_request(app_data_dir, secret, Method::POST, url)?
         .json(&serde_json::json!({ "path": path, "autorename": false }))
         .send()
-        .map_err(|error| library_error(format!("failed to create Dropbox folder: {error}")))?;
+        .map_err(|e| library_error(format!("failed to create Dropbox folder: {}", e.without_url())))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Dropbox folder creation failed with status {}",
@@ -514,7 +514,7 @@ fn dropbox_create_folder_with_token(
     let response = dropbox_request_with_access_token(access_token, Method::POST, url)
         .json(&serde_json::json!({ "path": path, "autorename": false }))
         .send()
-        .map_err(|error| library_error(format!("failed to create Dropbox folder: {error}")))?;
+        .map_err(|e| library_error(format!("failed to create Dropbox folder: {}", e.without_url())))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Dropbox folder creation failed with status {}",
@@ -580,7 +580,7 @@ fn dropbox_upload_file_bytes(
         .header("Content-Type", "application/octet-stream")
         .body(bytes)
         .send()
-        .map_err(|error| library_error(format!("failed to upload Dropbox file bytes: {error}")))?;
+        .map_err(|e| library_error(format!("failed to upload Dropbox file bytes: {}", e.without_url())))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Dropbox file upload failed with status {}",
@@ -602,7 +602,7 @@ pub(crate) fn dropbox_download_file(
     let response = dropbox_authorized_request(app_data_dir, secret, Method::POST, url)?
         .header("Dropbox-API-Arg", serde_json::json!({ "path": path }).to_string())
         .send()
-        .map_err(|error| library_error(format!("failed to download Dropbox file: {error}")))?;
+        .map_err(|e| library_error(format!("failed to download Dropbox file: {}", e.without_url())))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Dropbox download failed with status {}",
@@ -812,7 +812,7 @@ fn dropbox_delete_path(
     let response = dropbox_authorized_request(app_data_dir, secret, Method::POST, url)?
         .json(&serde_json::json!({ "path": path }))
         .send()
-        .map_err(|error| library_error(format!("failed to delete Dropbox path: {error}")))?;
+        .map_err(|e| library_error(format!("failed to delete Dropbox path: {}", e.without_url())))?;
     match response.status() {
         StatusCode::OK | StatusCode::CONFLICT => Ok(()),
         status => Err(library_error(format!(
