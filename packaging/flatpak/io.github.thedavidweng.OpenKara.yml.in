@@ -28,7 +28,7 @@ modules:
       - sh -c 'mkdir -p src-tauri/generated/onnxruntime && runtime_path="$(find src-tauri/generated/onnxruntime-source -name "libonnxruntime.so*" ! -name "*providers*" ! -name "*.a" | sort | head -n 1)" && test -n "$runtime_path" && cp -f "$runtime_path" src-tauri/generated/onnxruntime/libonnxruntime.so && printf "{\"version\":\"1.23.2\",\"target\":\"flatpak-linux\",\"sourceArchive\":\"flatpak-builder-source\"}\n" > src-tauri/generated/onnxruntime/manifest.json'
       - npm install -g --prefix /run/build/openkara/pnpm-install ./pnpm-package
       - PATH="/run/build/openkara/pnpm-install/bin:$PATH" pnpm install --offline --frozen-lockfile
-      - PATH="/run/build/openkara/pnpm-install/bin:$PATH" pnpm tauri build --config packaging/flatpak/tauri.flatpak.conf.json --bundles none
+      - PATH="/run/build/openkara/pnpm-install/bin:$PATH" pnpm tauri build --config packaging/flatpak/tauri.flatpak.conf.json --no-bundle
       - install -Dm0755 src-tauri/target/release/openkara ${FLATPAK_DEST}/bin/openkara
       - install -Dm0644 src-tauri/generated/onnxruntime/libonnxruntime.so ${FLATPAK_DEST}/lib/openkara/onnxruntime/libonnxruntime.so
       - install -Dm0644 src-tauri/generated/onnxruntime-source/LICENSE ${FLATPAK_DEST}/share/licenses/io.github.thedavidweng.OpenKara/onnxruntime/LICENSE
