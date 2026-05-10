@@ -56,6 +56,13 @@ describe("Flatpak packaging", () => {
     expect(packagingWorkflow).toContain(
       "--command=flatpak-builder org.flatpak.Builder",
     );
+    // dbus-run-session is required so flatpak install calls spawned by
+    // flatpak-builder inside the org.flatpak.Builder sandbox can reach a
+    // session bus. Without it, dependency installs abort with
+    // "Cannot autolaunch D-Bus without X11 $DISPLAY" on CI runners.
+    expect(packagingWorkflow).toContain(
+      "dbus-run-session -- flatpak run --filesystem=",
+    );
   });
 
   test("includes generated dependency manifests instead of copying them as files", () => {
