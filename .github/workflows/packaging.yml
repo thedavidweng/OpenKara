@@ -108,8 +108,7 @@ jobs:
       - name: Install Flatpak validators
         run: |
           sudo apt-get update
-          # flatpak-builder runs appstream-compose during cleanup after a successful build.
-          sudo apt-get install -y appstream appstream-compose flatpak flatpak-builder xvfb
+          sudo apt-get install -y appstream flatpak flatpak-builder xvfb
           flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
           flatpak --user install -y flathub org.flatpak.Builder
 
@@ -138,13 +137,20 @@ jobs:
       - name: Validate Flatpak dependency source downloads
         run: |
           manifest="${{ github.workspace }}/dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml"
-          flatpak-builder --user --arch=x86_64 --force-clean --install-deps-from=flathub --download-only "${{ github.workspace }}/flatpak-build-x86_64" "${manifest}"
-          flatpak-builder --user --arch=aarch64 --force-clean --install-deps-from=flathub --download-only "${{ github.workspace }}/flatpak-build-aarch64" "${manifest}"
+          flatpak run --filesystem="${{ github.workspace }}" --command=flatpak-builder org.flatpak.Builder \
+            --user --arch=x86_64 --force-clean --install-deps-from=flathub --download-only \
+            "${{ github.workspace }}/flatpak-build-x86_64" "${manifest}"
+          flatpak run --filesystem="${{ github.workspace }}" --command=flatpak-builder org.flatpak.Builder \
+            --user --arch=aarch64 --force-clean --install-deps-from=flathub --download-only \
+            "${{ github.workspace }}/flatpak-build-aarch64" "${manifest}"
 
       - name: Build Flatpak on x86_64
         run: |
           manifest="${{ github.workspace }}/dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml"
-          flatpak-builder --user --arch=x86_64 --force-clean --install-deps-from=flathub --repo "${{ github.workspace }}/flatpak-repo" "${{ github.workspace }}/flatpak-build-x86_64" "${manifest}"
+          flatpak run --filesystem="${{ github.workspace }}" --command=flatpak-builder org.flatpak.Builder \
+            --user --arch=x86_64 --force-clean --install-deps-from=flathub \
+            --repo "${{ github.workspace }}/flatpak-repo" \
+            "${{ github.workspace }}/flatpak-build-x86_64" "${manifest}"
 
       - name: Run Flatpak builder lint
         run: |
