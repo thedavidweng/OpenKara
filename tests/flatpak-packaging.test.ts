@@ -48,6 +48,17 @@ describe("Flatpak packaging", () => {
     expect(manifestTemplate).not.toContain("--bundles none");
   });
 
+  test("installs host AppStream compose support for flatpak-builder cleanup", () => {
+    const packagingWorkflow = readProjectFile(
+      ".github/workflows/packaging.yml",
+    );
+
+    expect(packagingWorkflow).toContain("appstream-compose");
+    expect(packagingWorkflow).toContain(
+      "flatpak-builder runs appstream-compose during cleanup",
+    );
+  });
+
   test("includes generated dependency manifests instead of copying them as files", () => {
     const manifestTemplate = readProjectFile(
       "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",

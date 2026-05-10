@@ -108,7 +108,8 @@ jobs:
       - name: Install Flatpak validators
         run: |
           sudo apt-get update
-          sudo apt-get install -y appstream flatpak flatpak-builder xvfb
+          # flatpak-builder runs appstream-compose during cleanup after a successful build.
+          sudo apt-get install -y appstream appstream-compose flatpak flatpak-builder xvfb
           flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
           flatpak --user install -y flathub org.flatpak.Builder
 
