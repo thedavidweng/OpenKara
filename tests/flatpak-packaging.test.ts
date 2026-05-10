@@ -48,14 +48,13 @@ describe("Flatpak packaging", () => {
     expect(manifestTemplate).not.toContain("--bundles none");
   });
 
-  test("installs host AppStream compose support for flatpak-builder cleanup", () => {
+  test("uses org.flatpak.Builder for the Flatpak build step", () => {
     const packagingWorkflow = readProjectFile(
       ".github/workflows/packaging.yml",
     );
 
-    expect(packagingWorkflow).toContain("appstream-compose");
     expect(packagingWorkflow).toContain(
-      "flatpak-builder runs appstream-compose during cleanup",
+      "--command=flatpak-builder org.flatpak.Builder",
     );
   });
 
