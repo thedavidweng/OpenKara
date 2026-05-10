@@ -201,7 +201,7 @@ fn google_drive_refresh_access_token(
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(body)
         .send()
-        .map_err(|error| library_error(format!("failed to refresh Google Drive access token: {error}")))?;
+        .map_err(|e| library_error(format!("failed to refresh Google Drive access token: {}", e.without_url())))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Google Drive token refresh failed with status {}",
@@ -270,7 +270,7 @@ fn google_drive_find_child(
 
     let response = google_drive_authorized_request(app_data_dir, secret, Method::GET, url)?
         .send()
-        .map_err(|error| library_error(format!("Google Drive lookup failed: {error}")))?;
+        .map_err(|e| library_error(format!("Google Drive lookup failed: {}", e.without_url())))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Google Drive lookup failed with status {}",
@@ -338,7 +338,7 @@ fn google_drive_create_folder(
             "parents": [parent_id],
         }))
         .send()
-        .map_err(|error| library_error(format!("failed to create Google Drive folder: {error}")))?;
+        .map_err(|e| library_error(format!("failed to create Google Drive folder: {}", e.without_url())))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Google Drive folder creation failed with status {}",
@@ -381,7 +381,7 @@ fn google_drive_create_folder_with_token(
             "parents": [parent_id],
         }))
         .send()
-        .map_err(|error| library_error(format!("failed to create Google Drive folder: {error}")))?;
+        .map_err(|e| library_error(format!("failed to create Google Drive folder: {}", e.without_url())))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Google Drive folder creation failed with status {}",
@@ -424,7 +424,7 @@ fn google_drive_create_empty_file(
             "parents": [parent_id],
         }))
         .send()
-        .map_err(|error| library_error(format!("failed to create Google Drive file metadata: {error}")))?;
+        .map_err(|e| library_error(format!("failed to create Google Drive file metadata: {}", e.without_url())))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Google Drive file metadata creation failed with status {}",
@@ -449,7 +449,7 @@ fn google_drive_upload_file_bytes(
         .header("Content-Type", "application/octet-stream")
         .body(bytes)
         .send()
-        .map_err(|error| library_error(format!("failed to upload Google Drive file bytes: {error}")))?;
+        .map_err(|e| library_error(format!("failed to upload Google Drive file bytes: {}", e.without_url())))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Google Drive file upload failed with status {}",
@@ -470,7 +470,7 @@ pub(crate) fn google_drive_download_file(
     let url = google_drive_api_url(&format!("/drive/v3/files/{file_id}?alt=media"))?;
     let response = google_drive_authorized_request(app_data_dir, secret, Method::GET, url)?
         .send()
-        .map_err(|error| library_error(format!("failed to download Google Drive file: {error}")))?;
+        .map_err(|e| library_error(format!("failed to download Google Drive file: {}", e.without_url())))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Google Drive download failed with status {}",
@@ -942,7 +942,7 @@ fn google_drive_delete_entry(
     let url = google_drive_api_url(&format!("/drive/v3/files/{file_id}"))?;
     let response = google_drive_authorized_request(app_data_dir, secret, Method::DELETE, url)?
         .send()
-        .map_err(|error| library_error(format!("failed to delete Google Drive entry: {error}")))?;
+        .map_err(|e| library_error(format!("failed to delete Google Drive entry: {}", e.without_url())))?;
     match response.status() {
         reqwest::StatusCode::NO_CONTENT | reqwest::StatusCode::NOT_FOUND => Ok(()),
         status => Err(library_error(format!(

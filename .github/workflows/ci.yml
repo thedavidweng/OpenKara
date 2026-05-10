@@ -5,6 +5,9 @@ on:
     branches: ["main", "codex/**"]
   pull_request:
 
+permissions:
+  contents: read
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   MODEL_URL: https://github.com/thedavidweng/openkara-models/releases/download/model-v2.0.1/htdemucs.onnx

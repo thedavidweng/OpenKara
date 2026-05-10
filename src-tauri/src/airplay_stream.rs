@@ -453,19 +453,28 @@ fn collect_publish_ip_candidates() -> Result<Vec<PublishIpCandidate>> {
         ));
     }
 
+    // SAFETY: getifaddrs succeeded (result == 0), so `addresses` is a valid
+    // linked-list head (or null for an empty list). Each node's `ifa_next`
+    // is either a valid next node or null. The list remains valid until
+    // freeifaddrs is called at the end of this function.
+    struct IfAddrsGuard(*mut libc::ifaddrs);
+    impl Drop for IfAddrsGuard {
+        fn drop(&mut self) {
+            unsafe { libc::freeifaddrs(self.0) };
+        }
+    }
+    let _guard = IfAddrsGuard(addresses);
+
     let mut candidates = Vec::new();
     let mut cursor = addresses;
 
-    while !cursor.is_null() {
-        // SAFETY: cursor walks the linked list returned by getifaddrs until null.
-        let entry = unsafe { &*cursor };
+    while let Some(entry) = ptr::NonNull::new(cursor) {
+        let entry = unsafe { entry.as_ref() };
         let addr = entry.ifa_addr;
         if !addr.is_null() {
-            // SAFETY: ifa_name is a valid C string for the lifetime of the list.
             let name = unsafe { CStr::from_ptr(entry.ifa_name) }
                 .to_string_lossy()
                 .into_owned();
-            // SAFETY: ifa_addr points to a valid sockaddr tagged by sa_family.
             let family = unsafe { (*addr).sa_family as i32 };
             let flags = entry.ifa_flags as i32;
             let is_up = flags & libc::IFF_UP != 0;
@@ -475,7 +484,6 @@ fn collect_publish_ip_candidates() -> Result<Vec<PublishIpCandidate>> {
 
             if family == libc::AF_INET && is_up && is_running && !is_loopback && !is_point_to_point
             {
-                // SAFETY: AF_INET entries are sockaddr_in instances.
                 let socket_addr = unsafe { &*(addr as *const libc::sockaddr_in) };
                 let ip = Ipv4Addr::from(u32::from_be(socket_addr.sin_addr.s_addr));
 
@@ -487,9 +495,6 @@ fn collect_publish_ip_candidates() -> Result<Vec<PublishIpCandidate>> {
 
         cursor = entry.ifa_next;
     }
-
-    // SAFETY: addresses came from getifaddrs above and must be freed once iteration completes.
-    unsafe { libc::freeifaddrs(addresses) };
 
     Ok(candidates)
 }
