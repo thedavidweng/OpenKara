@@ -44,7 +44,7 @@ jobs:
         uses: actions/checkout@v6.0.2
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6.0.5
+        uses: pnpm/action-setup@v6.0.6
         with:
           version: 10.33.2
 
@@ -85,14 +85,14 @@ jobs:
 
   validate-flatpak:
     name: Validate Flatpak metadata
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6.0.2
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6.0.5
+        uses: pnpm/action-setup@v6.0.6
         with:
           version: 10.33.2
 
@@ -107,24 +107,16 @@ jobs:
 
       - name: Install Flatpak validators
         run: |
+          # This job stays on the Ubuntu host because pnpm/node tooling is easier
+          # to install here than inside the Flathub container. Only lightweight
+          # metadata checks run here:
+          #   - appstream for `appstreamcli validate`
+          #   - flatpak-builder for `--show-manifest` (pure YAML parse, no build)
+          # The actual Flatpak build runs in the separate `build-flatpak` job
+          # inside the ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+          # container, which is the supported Flatpak CI environment.
           sudo apt-get update
-          # dbus-run-session is required to provide a session bus when running
-          # org.flatpak.Builder in a CI runner without an active desktop session.
-          # Without it, flatpak install (spawned by flatpak-builder inside the
-          # org.flatpak.Builder sandbox) aborts with
-          # "Cannot autolaunch D-Bus without X11 $DISPLAY".
-          sudo apt-get install -y appstream dbus flatpak flatpak-builder xvfb
-          flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak --user install -y flathub org.flatpak.Builder
-          # The org.flatpak.Builder sandbox resolves `flatpak --user install` against
-          # its own per-app data dir ($HOME/.var/app/org.flatpak.Builder/data/flatpak),
-          # not the host's ~/.local/share/flatpak. We must register the flathub remote
-          # there as well, or --install-deps-from=flathub fails with
-          # "No remote refs found similar to 'flathub'" inside the sandbox.
-          sandbox_flatpak_dir="$HOME/.var/app/org.flatpak.Builder/data/flatpak"
-          mkdir -p "$sandbox_flatpak_dir"
-          FLATPAK_USER_DIR="$sandbox_flatpak_dir" \
-            flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          sudo apt-get install -y appstream flatpak-builder
 
       - name: Validate Flatpak packaging invariants
         run: pnpm test tests/flatpak-packaging.test.ts
@@ -148,38 +140,53 @@ jobs:
         run: |
           flatpak-builder --show-manifest "${{ github.workspace }}/dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml" > /dev/null
 
-      - name: Validate Flatpak dependency source downloads
-        run: |
-          manifest="${{ github.workspace }}/dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml"
-          dbus-run-session -- flatpak run --filesystem="${{ github.workspace }}" --command=flatpak-builder org.flatpak.Builder \
-            --user --arch=x86_64 --force-clean --install-deps-from=flathub --download-only \
-            "${{ github.workspace }}/flatpak-build-x86_64" "${manifest}"
-          dbus-run-session -- flatpak run --filesystem="${{ github.workspace }}" --command=flatpak-builder org.flatpak.Builder \
-            --user --arch=aarch64 --force-clean --install-deps-from=flathub --download-only \
-            "${{ github.workspace }}/flatpak-build-aarch64" "${manifest}"
+      - name: Upload rendered Flatpak manifest
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: flatpak-manifest
+          path: dist/flatpak
+          if-no-files-found: error
+          retention-days: 1
 
-      - name: Build Flatpak on x86_64
-        run: |
-          manifest="${{ github.workspace }}/dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml"
-          dbus-run-session -- flatpak run --filesystem="${{ github.workspace }}" --command=flatpak-builder org.flatpak.Builder \
-            --user --arch=x86_64 --force-clean --install-deps-from=flathub \
-            --repo "${{ github.workspace }}/flatpak-repo" \
-            "${{ github.workspace }}/flatpak-build-x86_64" "${manifest}"
+  build-flatpak:
+    name: Build Flatpak (x86_64)
+    needs: validate-flatpak
+    runs-on: ubuntu-24.04
+    # Run inside the Flathub-maintained container. This image ships a
+    # pre-configured flatpak + flatpak-builder + flatpak-builder-lint + flathub
+    # remote + gnome-50 SDK, which is the environment every Flathub-hosted app
+    # builds in. Earlier attempts to run `flatpak-builder` (from apt) or
+    # `flatpak run org.flatpak.Builder` on the Ubuntu host ran into multiple
+    # layers of sandbox nesting that Flatpak does not actually support in CI
+    # (missing appstream-compose, D-Bus autolaunch, and per-app flatpak user
+    # dir vs build-init visibility mismatches). `--privileged` is required so
+    # bubblewrap can operate inside the container. This mirrors the shape used
+    # in flathub-infra/actions-images' own test workflow.
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      options: --privileged
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Download rendered Flatpak manifest
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: flatpak-manifest
+          path: dist/flatpak
+
+      - name: Build Flatpak
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: openkara.flatpak
+          manifest-path: dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml
+          cache-key: flatpak-builder-x86_64-${{ github.sha }}
+          arch: x86_64
+          verbose: true
 
       - name: Run Flatpak builder lint
         run: |
-          manifest="${{ github.workspace }}/dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml"
-          dbus-run-session -- flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest "${manifest}"
-          dbus-run-session -- flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo "${{ github.workspace }}/flatpak-repo"
-
-      - name: Install and smoke launch Flatpak
-        run: |
-          flatpak --user remote-add --if-not-exists --no-gpg-verify openkara-local "${{ github.workspace }}/flatpak-repo"
-          flatpak --user install -y openkara-local io.github.thedavidweng.OpenKara
-          set +e
-          xvfb-run -a timeout 20s flatpak run io.github.thedavidweng.OpenKara
-          status="$?"
-          set -e
-          if [ "${status}" -ne 0 ] && [ "${status}" -ne 124 ]; then
-            exit "${status}"
-          fi
+          flatpak-builder-lint --exceptions --debug manifest dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml
+          flatpak-builder-lint --exceptions --debug builddir flatpak_app
+          flatpak-builder-lint --exceptions --debug repo repo

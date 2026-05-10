@@ -48,27 +48,30 @@ describe("Flatpak packaging", () => {
     expect(manifestTemplate).not.toContain("--bundles none");
   });
 
-  test("uses org.flatpak.Builder for the Flatpak build step", () => {
+  test("uses the Flathub container image and official flatpak-builder action for Flatpak builds", () => {
     const packagingWorkflow = readProjectFile(
       ".github/workflows/packaging.yml",
     );
 
+    // The build job must run inside the Flathub-maintained container image.
+    // Running flatpak-builder directly on a GitHub hosted runner, or wrapping
+    // `org.flatpak.Builder` manually, led to successive failures:
+    //   1. bwrap could not find appstream-compose (missing from GNOME SDK 50).
+    //   2. flatpak install aborted with "Cannot autolaunch D-Bus without X11
+    //      $DISPLAY" on the session-bus-less runner.
+    //   3. --install-deps-from=flathub failed because the sandbox's per-app
+    //      flatpak dir did not have the flathub remote.
+    //   4. Dependencies resolved for the Update phase were then reported as
+    //      "not installed" during build-init due to nested sandbox visibility.
+    // The supported Flatpak CI pattern is to run in the Flathub container and
+    // use the official flatpak-builder action. Do not revert without reading
+    // the history in commits touching this file.
     expect(packagingWorkflow).toContain(
-      "--command=flatpak-builder org.flatpak.Builder",
+      "image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50",
     );
-    // dbus-run-session is required so flatpak install calls spawned by
-    // flatpak-builder inside the org.flatpak.Builder sandbox can reach a
-    // session bus. Without it, dependency installs abort with
-    // "Cannot autolaunch D-Bus without X11 $DISPLAY" on CI runners.
+    expect(packagingWorkflow).toContain("options: --privileged");
     expect(packagingWorkflow).toContain(
-      "dbus-run-session -- flatpak run --filesystem=",
-    );
-    // The org.flatpak.Builder sandbox uses its own per-app data dir for the
-    // user flatpak install. The flathub remote must be configured there,
-    // otherwise --install-deps-from=flathub fails with
-    // "No remote refs found similar to 'flathub'" inside the sandbox.
-    expect(packagingWorkflow).toContain(
-      ".var/app/org.flatpak.Builder/data/flatpak",
+      "uses: flatpak/flatpak-github-actions/flatpak-builder@v6",
     );
   });
 
