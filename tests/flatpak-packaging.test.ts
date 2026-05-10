@@ -38,6 +38,16 @@ describe("Flatpak packaging", () => {
     expect(manifestTemplate).not.toContain("build_shared_lib");
   });
 
+  test("builds the Flatpak app binary without asking Tauri to create Linux bundles", () => {
+    const manifestTemplate = readProjectFile(
+      "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
+    );
+
+    expect(manifestTemplate).toContain("pnpm tauri build");
+    expect(manifestTemplate).toContain("--no-bundle");
+    expect(manifestTemplate).not.toContain("--bundles none");
+  });
+
   test("includes generated dependency manifests instead of copying them as files", () => {
     const manifestTemplate = readProjectFile(
       "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
