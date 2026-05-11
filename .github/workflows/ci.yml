@@ -135,10 +135,9 @@ jobs:
         run: pnpm test
 
   # Windows uses the DirectML NuGet runtime here because the official CPU
-  # onnxruntime.dll imports DXGI at load time on hosted Windows runners. The
-  # DirectML package still depends on the MSVC runtime; install the official
-  # redistributable before running tests so the loader sees the same supported
-  # VC++ runtime contract a Windows install must provide.
+  # onnxruntime.dll imports DXGI at load time on hosted Windows runners. Cargo
+  # test binaries start from target/debug/deps, so copy ORT's staged DLLs beside
+  # the test executables before running them.
   rust-test:
     name: Rust tests (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
@@ -224,6 +223,20 @@ jobs:
         run: |
           Get-ChildItem src-tauri/generated/onnxruntime | Format-Table Name, Length
           Get-Content src-tauri/generated/onnxruntime/manifest.json
+
+      - name: Build Windows Rust tests
+        if: runner.os == 'Windows'
+        working-directory: src-tauri
+        run: cargo test -q --no-run
+
+      - name: Stage Windows ONNX Runtime DLLs for tests
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $destination = 'src-tauri/target/debug/deps'
+          New-Item -ItemType Directory -Force -Path $destination | Out-Null
+          Copy-Item src-tauri/generated/onnxruntime/*.dll $destination -Force
+          Get-ChildItem $destination -Filter '*.dll' | Format-Table Name, Length
 
       - name: Run Rust tests
         working-directory: src-tauri
