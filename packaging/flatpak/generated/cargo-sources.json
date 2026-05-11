@@ -3525,27 +3525,27 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/ort/ort-2.0.0-rc.11.crate",
-    "sha256": "4a5df903c0d2c07b56950f1058104ab0c8557159f2741782223704de9be73c3c",
-    "dest": "cargo/vendor/ort-2.0.0-rc.11"
+    "url": "https://static.crates.io/crates/ort/ort-2.0.0-rc.12.crate",
+    "sha256": "d7de3af33d24a745ffb8fab904b13478438d1cd52868e6f17735ef6e1f8bf133",
+    "dest": "cargo/vendor/ort-2.0.0-rc.12"
   },
   {
     "type": "inline",
-    "contents": "{\"package\": \"4a5df903c0d2c07b56950f1058104ab0c8557159f2741782223704de9be73c3c\", \"files\": {}}",
-    "dest": "cargo/vendor/ort-2.0.0-rc.11",
+    "contents": "{\"package\": \"d7de3af33d24a745ffb8fab904b13478438d1cd52868e6f17735ef6e1f8bf133\", \"files\": {}}",
+    "dest": "cargo/vendor/ort-2.0.0-rc.12",
     "dest-filename": ".cargo-checksum.json"
   },
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/ort-sys/ort-sys-2.0.0-rc.11.crate",
-    "sha256": "06503bb33f294c5f1ba484011e053bfa6ae227074bdb841e9863492dc5960d4b",
-    "dest": "cargo/vendor/ort-sys-2.0.0-rc.11"
+    "url": "https://static.crates.io/crates/ort-sys/ort-sys-2.0.0-rc.12.crate",
+    "sha256": "d7b497d21a8b6fbb4b5a544f8fadb77e801a09ae0add9e411d31c6f89e3c1e90",
+    "dest": "cargo/vendor/ort-sys-2.0.0-rc.12"
   },
   {
     "type": "inline",
-    "contents": "{\"package\": \"06503bb33f294c5f1ba484011e053bfa6ae227074bdb841e9863492dc5960d4b\", \"files\": {}}",
-    "dest": "cargo/vendor/ort-sys-2.0.0-rc.11",
+    "contents": "{\"package\": \"d7b497d21a8b6fbb4b5a544f8fadb77e801a09ae0add9e411d31c6f89e3c1e90\", \"files\": {}}",
+    "dest": "cargo/vendor/ort-sys-2.0.0-rc.12",
     "dest-filename": ".cargo-checksum.json"
   },
   {
@@ -7725,6 +7725,6 @@
     "type": "inline",
     "contents": "[source.vendored-sources]\ndirectory = \"cargo/vendor\"\n\n[source.crates-io]\nreplace-with = \"vendored-sources\"\n",
     "dest": "cargo",
-    "dest-filename": "config"
+    "dest-filename": "config.toml"
   }
 ]

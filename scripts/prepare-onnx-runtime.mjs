@@ -17,6 +17,8 @@ import { fileURLToPath } from "node:url";
 const ORT_VERSION = "1.24.4";
 const WINDOWS_ORT_PACKAGE_NAME = "Microsoft.ML.OnnxRuntime.DirectML";
 const WINDOWS_ORT_PACKAGE_VERSION = ORT_VERSION;
+const WINDOWS_DIRECTML_PACKAGE_NAME = "Microsoft.AI.DirectML";
+const WINDOWS_DIRECTML_PACKAGE_VERSION = "1.15.4";
 const ROOT_DIR = fileURLToPath(new URL("..", import.meta.url));
 const STAGING_DIR = join(ROOT_DIR, "src-tauri", "generated", "onnxruntime");
 const MANIFEST_PATH = join(STAGING_DIR, "manifest.json");
@@ -53,9 +55,18 @@ const TARGET_CONFIG = {
   "x86_64-pc-windows-msvc": {
     archiveName: `${WINDOWS_ORT_PACKAGE_NAME}.${WINDOWS_ORT_PACKAGE_VERSION}.nupkg`,
     outputName: "onnxruntime.dll",
+    companionFiles: ["onnxruntime_providers_shared.dll", "DirectML.dll"],
     manifestTarget: "x86_64-pc-windows-msvc",
     packageName: WINDOWS_ORT_PACKAGE_NAME,
     runtimeVersion: WINDOWS_ORT_PACKAGE_VERSION,
+    dependencyPackages: [
+      {
+        archiveName: `${WINDOWS_DIRECTML_PACKAGE_NAME}.${WINDOWS_DIRECTML_PACKAGE_VERSION}.nupkg`,
+        fileName: "DirectML.dll",
+        packageName: WINDOWS_DIRECTML_PACKAGE_NAME,
+        version: WINDOWS_DIRECTML_PACKAGE_VERSION,
+      },
+    ],
     sourceKind: "nuget-package",
   },
 };
@@ -144,9 +155,13 @@ function ensureSystemTool(toolName) {
   }
 }
 
+function archiveUrlForPackage(packageName, version) {
+  return `https://www.nuget.org/api/v2/package/${packageName}/${version}`;
+}
+
 function archiveUrlFor(config) {
   if (config.sourceKind === "nuget-package") {
-    return `https://www.nuget.org/api/v2/package/${config.packageName}/${config.runtimeVersion}`;
+    return archiveUrlForPackage(config.packageName, config.runtimeVersion);
   }
 
   return `https://github.com/microsoft/onnxruntime/releases/download/v${config.runtimeVersion}/${config.archiveName}`;
@@ -163,10 +178,14 @@ if (!config) {
 
 const manifest = readManifest();
 const stagedRuntimePath = join(STAGING_DIR, config.outputName);
+const stagedCompanionPaths = (config.companionFiles ?? []).map((fileName) =>
+  join(STAGING_DIR, fileName),
+);
 if (
   manifest?.version === config.runtimeVersion &&
   manifest?.target === config.manifestTarget &&
-  existsSync(stagedRuntimePath)
+  existsSync(stagedRuntimePath) &&
+  stagedCompanionPaths.every((filePath) => existsSync(filePath))
 ) {
   console.log(`ONNX Runtime already prepared at ${stagedRuntimePath}`);
   process.exit(0);
@@ -196,6 +215,30 @@ try {
     stdio: "inherit",
   });
 
+  for (const dependencyPackage of config.dependencyPackages ?? []) {
+    const dependencyUrl = archiveUrlForPackage(
+      dependencyPackage.packageName,
+      dependencyPackage.version,
+    );
+    const dependencyArchivePath = join(tempRoot, dependencyPackage.archiveName);
+
+    console.log(`Downloading ${dependencyUrl}`);
+    const dependencyResponse = await fetch(dependencyUrl);
+    if (!dependencyResponse.ok) {
+      throw new Error(
+        `failed to download ${dependencyUrl}: ${dependencyResponse.status} ${dependencyResponse.statusText}`,
+      );
+    }
+
+    writeFileSync(
+      dependencyArchivePath,
+      Buffer.from(await dependencyResponse.arrayBuffer()),
+    );
+    execFileSync("tar", ["-xf", dependencyArchivePath, "-C", extractedDir], {
+      stdio: "inherit",
+    });
+  }
+
   const runtimeCandidate = walkFiles(extractedDir).find((filePath) =>
     runtimeMatcher(config.outputName)(filePath.split(/[\\/]/).pop() ?? ""),
   );
@@ -208,6 +251,20 @@ try {
   rmSync(STAGING_DIR, { force: true, recursive: true });
   mkdirSync(STAGING_DIR, { recursive: true });
   cpSync(realpathSync(runtimeCandidate), stagedRuntimePath);
+
+  for (const companionFile of config.companionFiles ?? []) {
+    const companionCandidate = walkFiles(extractedDir).find(
+      (filePath) => (filePath.split(/[\\/]/).pop() ?? "") === companionFile,
+    );
+    if (!companionCandidate) {
+      throw new Error(
+        `failed to locate ${companionFile} inside ${config.archiveName}`,
+      );
+    }
+
+    cpSync(realpathSync(companionCandidate), join(STAGING_DIR, companionFile));
+  }
+
   writeFileSync(
     MANIFEST_PATH,
     JSON.stringify(
@@ -216,6 +273,7 @@ try {
         target: config.manifestTarget,
         sourceArchive: config.archiveName,
         sourceKind: config.sourceKind,
+        files: [config.outputName, ...(config.companionFiles ?? [])],
       },
       null,
       2,
