@@ -135,9 +135,10 @@ jobs:
         run: pnpm test
 
   # Windows uses the DirectML NuGet runtime here because the official CPU
-  # onnxruntime.dll imports DXGI at load time on hosted Windows runners. Do not
-  # replace this with DLL staging or PATH manipulation; earlier CI attempts
-  # showed the failure was a runtime choice issue, not a search-path issue.
+  # onnxruntime.dll imports DXGI at load time on hosted Windows runners. The
+  # DirectML package still depends on the MSVC runtime; install the official
+  # redistributable before running tests so the loader sees the same supported
+  # VC++ runtime contract a Windows install must provide.
   rust-test:
     name: Rust tests (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
@@ -168,6 +169,17 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Windows VC++ runtime
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'vc_redist.x64.exe'
+          Invoke-WebRequest -Uri 'https://aka.ms/vc14/vc_redist.x64.exe' -OutFile $installer
+          Start-Process -FilePath $installer -ArgumentList '/install', '/quiet', '/norestart' -Wait
+          $runtimeKey = 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64'
+          $runtime = Get-ItemProperty -Path $runtimeKey
+          Write-Host "Installed VC++ runtime version: $($runtime.Version)"
 
       - name: Restore Rust cache
         uses: swatinem/rust-cache@v2.9.1
@@ -205,6 +217,13 @@ jobs:
 
       - name: Prepare ONNX Runtime
         run: node scripts/prepare-onnx-runtime.mjs --target "${{ matrix.ort_target }}"
+
+      - name: Inspect Windows ONNX Runtime staging
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-ChildItem src-tauri/generated/onnxruntime | Format-Table Name, Length
+          Get-Content src-tauri/generated/onnxruntime/manifest.json
 
       - name: Run Rust tests
         working-directory: src-tauri
