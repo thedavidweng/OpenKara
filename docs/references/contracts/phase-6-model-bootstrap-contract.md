@@ -15,7 +15,7 @@
 2. 若运行时安装目录缺失模型，则回退检查开发目录 `src-tauri/models/htdemucs.onnx`
 3. 若两处都没有可验证的模型，应用启动后会在后台下载模型到 `<app_data_dir>/models/`
 4. 应用启动时会先显式加载 `src-tauri/generated/onnxruntime/` 或已打包资源中的
-   ONNX Runtime 1.23.2 动态库
+   ONNX Runtime 动态库
 5. 分离会复用同一份动态库初始化，不再依赖 `ort`/pyke 自动下载预编译运行时
 6. `get_model_bootstrap_status() -> ModelBootstrapStatusSnapshot`
 7. `separate(song_id)` 在模型未 ready 时立即返回 `CommandError`
@@ -29,7 +29,7 @@
 1. 开发仓库中的 `src-tauri/models/` 只保留 `.gitkeep` 与说明文档；下载得到的
    `.onnx` 文件必须保持为本地忽略文件，不进入 git 历史
 2. `scripts/setup.sh` 只用于本地开发、离线验证或需要稳定模型输入的测试
-3. `scripts/prepare-onnx-runtime.mjs` 负责把官方 ONNX Runtime CPU 1.23.2
+3. `scripts/prepare-onnx-runtime.mjs` 负责把目标平台对应的 ONNX Runtime
    动态库下载并规整到 `src-tauri/generated/onnxruntime/`
 4. 面向终端用户时，默认安装位置是 `<app_data_dir>/models/`，不是仓库目录；
    但打包产物会随应用一起分发 ONNX Runtime 动态库
@@ -113,11 +113,16 @@ payload 为完整的 `ModelBootstrapStatusSnapshot`，其中：
 3. 若未打包运行时，则回退到开发目录 `src-tauri/generated/onnxruntime/<platform-lib>`
 4. 若三处都找不到运行时动态库，应用启动立即失败并提示执行
    `./scripts/setup.sh` 或 `node scripts/prepare-onnx-runtime.mjs`
-5. Rust 侧固定使用 `ort 2.0.0-rc.11`，对应官方 ONNX Runtime CPU 1.23.2
-   动态库；不允许重新打开 `download-binaries` 或 `copy-dylibs`
-6. macOS 发布产物必须按目标架构分别准备 `arm64` / `x86_64` 动态库，不允许再把
+5. Rust 侧固定使用 `ort 2.0.0-rc.12` 的 `load-dynamic` + `api-24` 模式；
+   不允许重新打开 `download-binaries` 或 `copy-dylibs`
+6. macOS / Linux 使用官方 ONNX Runtime 1.24.4 release 动态库；Windows 使用
+   `Microsoft.ML.OnnxRuntime.DirectML` 1.24.4 NuGet runtime。Windows 官方 CPU
+   runtime 会在加载时 import `dxgi.dll`，会让 hosted Windows runner 的 Rust
+   test harness 在测试代码执行前失败；DirectML NuGet runtime 提供 DML
+   provider API，且不会在 DLL load 阶段静态 import DXGI。
+7. macOS 发布产物必须按目标架构分别准备 `arm64` / `x86_64` 动态库，不允许再把
    universal2 ORT 放进两个安装包里浪费体积
-7. macOS 发布包启用 hardened runtime 时必须携带
+8. macOS 发布包启用 hardened runtime 时必须携带
    `com.apple.security.cs.disable-library-validation` entitlement；官方 ORT dylib
    由 Microsoft Developer ID 签名，应用需要该最小豁免才能在启动阶段加载它。
 
@@ -157,7 +162,8 @@ UI 与产品行为应以以下目标为准，而不是把后台下载继续当�
 1. `reqwest` 负责运行时模型下载
 2. `sha2` 负责 SHA-256 完整性校验
 3. `tauri::async_runtime::spawn_blocking` 负责后台下载，避免阻塞 app setup
-4. `ort 2.0.0-rc.11` 仅以 `load-dynamic` 模式加载官方 ONNX Runtime 1.23.2
+4. `ort 2.0.0-rc.12` 仅以 `load-dynamic` + `api-24` 模式加载预先规整的
+   ONNX Runtime 动态库
 
 ## Verification commands
 
