@@ -97,17 +97,17 @@ GitHub Actions and Linux build constraints:
 - If all Verify jobs fail quickly on every OS, check whether they all failed at the same step before debugging platform-specific causes.
 - If the shared failure step is formatting, assume a repo-wide Prettier issue first.
 
-Windows `cargo test` constraint:
+Windows ONNX Runtime CI constraint:
 
-- `cargo test` is intentionally skipped on Windows CI. See the detailed comment
-  block in `.github/workflows/ci.yml` above the "Run Rust tests" step.
-- We now use `ort` with `load-dynamic` plus the official ONNX Runtime CPU
-  download, but the hosted Windows runner still fails to start the Rust test
-  harness with `STATUS_ENTRYPOINT_NOT_FOUND` (0xc0000139).
-- The current official CPU `onnxruntime.dll` still imports `dxgi.dll`, so the
-  Windows failure remains a runtime-loader issue, not a compile or link issue.
-- Windows CI still validates the desktop stack via `pnpm tauri build`, which
-  exercises compile, link, and Tauri packaging on the hosted runner.
+- Windows CI uses `Microsoft.ML.OnnxRuntime.DirectML` for the staged runtime.
+  Do not replace this with the official CPU release zip without checking DLL
+  imports first.
+- Historical attempts to fix Windows `cargo test` by staging ORT/DirectML/D3D12
+  DLLs, pinning runner versions, or changing `PATH` did not solve the loader
+  failure. The issue was runtime choice: the official CPU `onnxruntime.dll`
+  imports `dxgi.dll` at load time on hosted Windows runners.
+- If Windows Rust tests regress with `STATUS_ENTRYPOINT_NOT_FOUND` (0xc0000139),
+  inspect the staged `onnxruntime.dll` import table before debugging Rust code.
 
 ## Completion Gate
 

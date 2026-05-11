@@ -14,7 +14,9 @@ import os from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const ORT_VERSION = "1.23.2";
+const ORT_VERSION = "1.24.4";
+const WINDOWS_ORT_PACKAGE_NAME = "Microsoft.ML.OnnxRuntime.DirectML";
+const WINDOWS_ORT_PACKAGE_VERSION = ORT_VERSION;
 const ROOT_DIR = fileURLToPath(new URL("..", import.meta.url));
 const STAGING_DIR = join(ROOT_DIR, "src-tauri", "generated", "onnxruntime");
 const MANIFEST_PATH = join(STAGING_DIR, "manifest.json");
@@ -24,26 +26,37 @@ const TARGET_CONFIG = {
     archiveName: `onnxruntime-osx-arm64-${ORT_VERSION}.tgz`,
     outputName: "libonnxruntime.dylib",
     manifestTarget: "aarch64-apple-darwin",
+    runtimeVersion: ORT_VERSION,
+    sourceKind: "github-release",
   },
   "x86_64-apple-darwin": {
     archiveName: `onnxruntime-osx-x86_64-${ORT_VERSION}.tgz`,
     outputName: "libonnxruntime.dylib",
     manifestTarget: "x86_64-apple-darwin",
+    runtimeVersion: ORT_VERSION,
+    sourceKind: "github-release",
   },
   "x86_64-unknown-linux-gnu": {
     archiveName: `onnxruntime-linux-x64-${ORT_VERSION}.tgz`,
     outputName: "libonnxruntime.so",
     manifestTarget: "x86_64-unknown-linux-gnu",
+    runtimeVersion: ORT_VERSION,
+    sourceKind: "github-release",
   },
   "aarch64-unknown-linux-gnu": {
     archiveName: `onnxruntime-linux-aarch64-${ORT_VERSION}.tgz`,
     outputName: "libonnxruntime.so",
     manifestTarget: "aarch64-unknown-linux-gnu",
+    runtimeVersion: ORT_VERSION,
+    sourceKind: "github-release",
   },
   "x86_64-pc-windows-msvc": {
-    archiveName: `onnxruntime-win-x64-${ORT_VERSION}.zip`,
+    archiveName: `${WINDOWS_ORT_PACKAGE_NAME}.${WINDOWS_ORT_PACKAGE_VERSION}.nupkg`,
     outputName: "onnxruntime.dll",
     manifestTarget: "x86_64-pc-windows-msvc",
+    packageName: WINDOWS_ORT_PACKAGE_NAME,
+    runtimeVersion: WINDOWS_ORT_PACKAGE_VERSION,
+    sourceKind: "nuget-package",
   },
 };
 
@@ -131,6 +144,14 @@ function ensureSystemTool(toolName) {
   }
 }
 
+function archiveUrlFor(config) {
+  if (config.sourceKind === "nuget-package") {
+    return `https://www.nuget.org/api/v2/package/${config.packageName}/${config.runtimeVersion}`;
+  }
+
+  return `https://github.com/microsoft/onnxruntime/releases/download/v${config.runtimeVersion}/${config.archiveName}`;
+}
+
 const args = parseArgs(process.argv.slice(2));
 const targetTriple =
   args.target ?? process.env.OPENKARA_ORT_TARGET ?? defaultTargetForHost();
@@ -143,7 +164,7 @@ if (!config) {
 const manifest = readManifest();
 const stagedRuntimePath = join(STAGING_DIR, config.outputName);
 if (
-  manifest?.version === ORT_VERSION &&
+  manifest?.version === config.runtimeVersion &&
   manifest?.target === config.manifestTarget &&
   existsSync(stagedRuntimePath)
 ) {
@@ -159,7 +180,7 @@ const extractedDir = join(tempRoot, "extracted");
 mkdirSync(extractedDir, { recursive: true });
 
 try {
-  const archiveUrl = `https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/${config.archiveName}`;
+  const archiveUrl = archiveUrlFor(config);
   console.log(`Downloading ${archiveUrl}`);
 
   const response = await fetch(archiveUrl);
@@ -191,9 +212,10 @@ try {
     MANIFEST_PATH,
     JSON.stringify(
       {
-        version: ORT_VERSION,
+        version: config.runtimeVersion,
         target: config.manifestTarget,
         sourceArchive: config.archiveName,
+        sourceKind: config.sourceKind,
       },
       null,
       2,

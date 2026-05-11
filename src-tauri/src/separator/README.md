@@ -15,8 +15,8 @@ Current coverage:
 - verify the model file with a pinned SHA-256 checksum
 - download the model in the background on first launch when neither location is
   ready yet
-- explicitly initialize `ort` against the staged ONNX Runtime 1.23.2 shared
-  library before any session builder is used
+- explicitly initialize `ort` against the staged platform runtime before any
+  session builder is used
 - read `openkara.model_cache_key` / `openkara.optimized_by` from ONNX
   `metadata_props` so session reuse, session cache key invalidation, and
   runtime graph optimization stay aligned with the shipped model bytes

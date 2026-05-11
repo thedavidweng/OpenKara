@@ -1,6 +1,6 @@
 use crate::config::ExecutionProviderPreference;
 use anyhow::{Context, Result};
-use ort::{session::builder::GraphOptimizationLevel, tensor::TensorElementType};
+use ort::{session::builder::GraphOptimizationLevel, value::TensorElementType};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -9,7 +9,7 @@ use std::{
 };
 
 pub const EMBEDDED_MODEL_FILENAME: &str = "htdemucs.onnx";
-pub const ORT_RUNTIME_VERSION: &str = "1.23.2";
+pub const ORT_RUNTIME_VERSION: &str = "1.24.4";
 pub const ORT_RUNTIME_STAGING_DIR: &str = "generated/onnxruntime";
 
 #[cfg(target_os = "windows")]

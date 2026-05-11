@@ -134,11 +134,10 @@ jobs:
       - name: Run frontend tests
         run: pnpm test
 
-  # Windows hosted runners still fail to start the `cargo test` harness with
-  # `STATUS_ENTRYPOINT_NOT_FOUND` even after moving ORT to `load-dynamic` and
-  # bundling the official CPU runtime. The current runtime still imports DXGI,
-  # so Windows CI validates the Rust desktop stack by compiling and linking
-  # through `pnpm tauri build` instead of running the Rust test harness there.
+  # Windows uses the DirectML NuGet runtime here because the official CPU
+  # onnxruntime.dll imports DXGI at load time on hosted Windows runners. Do not
+  # replace this with DLL staging or PATH manipulation; earlier CI attempts
+  # showed the failure was a runtime choice issue, not a search-path issue.
   rust-test:
     name: Rust tests (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
@@ -150,6 +149,9 @@ jobs:
           - name: macOS
             os: macos-14
             ort_target: aarch64-apple-darwin
+          - name: Windows
+            os: windows-latest
+            ort_target: x86_64-pc-windows-msvc
           - name: Linux
             os: ubuntu-22.04
             ort_target: x86_64-unknown-linux-gnu
