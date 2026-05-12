@@ -14,6 +14,27 @@ use crate::{
 };
 use tauri::{AppHandle, Manager, State};
 
+/// Extension trait for `reqwest::RequestBuilder` that wraps `.send()` with
+/// safe error handling: error details are logged at trace level for debugging,
+/// while the user-facing error message is static and contains no sensitive data.
+pub(crate) trait RequestSendExt {
+    type Response;
+    fn send_network(self, op: &'static str) -> std::result::Result<Self::Response, crate::commands::error::CommandError>;
+}
+
+impl RequestSendExt for reqwest::blocking::RequestBuilder {
+    type Response = reqwest::blocking::Response;
+    fn send_network(
+        self,
+        op: &'static str,
+    ) -> std::result::Result<reqwest::blocking::Response, crate::commands::error::CommandError> {
+        self.send().map_err(|error| {
+            tracing::trace!("{op} request failed: {error:?}");
+            crate::commands::error::library_error(format!("{op} could not be completed"))
+        })
+    }
+}
+
 pub(crate) use registry::remove_remote_library_credentials;
 pub(crate) use mutation::{
     publish_song_to_active_remote_if_ready,
