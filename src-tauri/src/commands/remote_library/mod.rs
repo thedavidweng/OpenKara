@@ -19,7 +19,10 @@ use tauri::{AppHandle, Manager, State};
 /// while the user-facing error message is static and contains no sensitive data.
 pub(crate) trait RequestSendExt {
     type Response;
-    fn send_network(self, op: &'static str) -> std::result::Result<Self::Response, crate::commands::error::CommandError>;
+    fn send_network(
+        self,
+        op: &'static str,
+    ) -> std::result::Result<Self::Response, crate::commands::error::CommandError>;
 }
 
 impl RequestSendExt for reqwest::blocking::RequestBuilder {
@@ -27,7 +30,8 @@ impl RequestSendExt for reqwest::blocking::RequestBuilder {
     fn send_network(
         self,
         op: &'static str,
-    ) -> std::result::Result<reqwest::blocking::Response, crate::commands::error::CommandError> {
+    ) -> std::result::Result<reqwest::blocking::Response, crate::commands::error::CommandError>
+    {
         self.send().map_err(|error| {
             tracing::trace!("{op} request failed: {error:?}");
             crate::commands::error::library_error(format!("{op} could not be completed"))
@@ -35,18 +39,17 @@ impl RequestSendExt for reqwest::blocking::RequestBuilder {
     }
 }
 
-pub(crate) use registry::remove_remote_library_credentials;
 pub(crate) use mutation::{
-    publish_song_to_active_remote_if_ready,
-    run_active_library_mirror_mutation, run_database_then_library_mirror_mutation,
-    run_imported_songs_mutation, run_song_database_mutation,
-    run_song_database_mutation_with_result, run_songs_database_mutation, run_updated_songs_mutation,
-    song_ids_from_songs,
+    publish_song_to_active_remote_if_ready, run_active_library_mirror_mutation,
+    run_database_then_library_mirror_mutation, run_imported_songs_mutation,
+    run_song_database_mutation, run_song_database_mutation_with_result,
+    run_songs_database_mutation, run_updated_songs_mutation, song_ids_from_songs,
 };
+pub(crate) use registry::remove_remote_library_credentials;
 pub(crate) use sync::ensure_remote_file_cached;
 pub use types::{
-    RemoteAuthSession, RemoteAuthStart, RemoteAuthState, RemoteAuthStatus,
-    RemoteLibraryCandidate, UploadState, UploadStatusSnapshot,
+    RemoteAuthSession, RemoteAuthStart, RemoteAuthState, RemoteAuthStatus, RemoteLibraryCandidate,
+    UploadState, UploadStatusSnapshot,
 };
 
 #[tauri::command]
