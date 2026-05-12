@@ -202,7 +202,7 @@ fn spawn_playback_position_emitter<R: Runtime>(
                 && !snapshot.is_playing
                 && snapshot
                     .duration_ms
-                    .map_or(false, |d| snapshot.position_ms >= d)
+                    .is_some_and(|d| snapshot.position_ms >= d)
                 && last_song_id.is_some()
                 && last_song_id == snapshot.song_id
             {

@@ -184,18 +184,15 @@ fn update_remote_revision_in_config(
     remote_revision: Option<String>,
 ) -> CommandResult<()> {
     let mut config = load_app_config(app_data_dir)?;
-    if let Some(library) = config
+    if let Some(RegisteredLibrary::Remote {
+        remote_revision: revision,
+        ..
+    }) = config
         .libraries
         .iter_mut()
         .find(|entry| entry.id() == library_id)
     {
-        if let RegisteredLibrary::Remote {
-            remote_revision: revision,
-            ..
-        } = library
-        {
-            *revision = remote_revision.or_else(|| Some(current_unix_time_ms().to_string()));
-        }
+        *revision = remote_revision.or(Some(current_unix_time_ms().to_string()));
     }
     persist_app_config(app_data_dir, &config)
 }

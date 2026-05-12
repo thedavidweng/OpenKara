@@ -159,7 +159,7 @@ pub fn run_local_audio_smoke(config: LocalAudioSmokeConfig) -> Result<LocalAudio
     let ep_preference = env::var("OPENKARA_SMOKE_EP")
         .ok()
         .as_deref()
-        .and_then(crate::config::ExecutionProviderPreference::from_str)
+        .and_then(crate::config::ExecutionProviderPreference::parse)
         .unwrap_or_default();
     let separator_model_cache = Arc::new(Mutex::new(ModelCache::<model::LoadedModel>::default()));
     let mut songs = Vec::with_capacity(audio_files.len());

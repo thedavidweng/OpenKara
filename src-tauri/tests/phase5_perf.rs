@@ -13,8 +13,6 @@ use openkara_lib::{
     },
 };
 use rusqlite::Connection;
-use serde_json;
-
 fn fixture_path(directory: &str, filename: &str) -> String {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")

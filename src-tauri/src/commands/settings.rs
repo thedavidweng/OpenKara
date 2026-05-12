@@ -95,7 +95,7 @@ pub fn set_model_variant(
     state: State<'_, AppState>,
     variant: String,
 ) -> CommandResult<AppSettings> {
-    let model_variant = ModelVariant::from_str(&variant)
+    let model_variant = ModelVariant::parse(&variant)
         .ok_or_else(|| internal_error(format!("invalid model variant: {variant}")))?;
     let app_data_dir = app_handle
         .path()
@@ -178,7 +178,7 @@ pub fn set_execution_provider(
     app_handle: AppHandle,
     provider: String,
 ) -> CommandResult<AppSettings> {
-    let ep = ExecutionProviderPreference::from_str(&provider)
+    let ep = ExecutionProviderPreference::parse(&provider)
         .ok_or_else(|| internal_error(format!("invalid execution provider: {provider}")))?;
     let app_data_dir = app_handle
         .path()

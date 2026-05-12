@@ -136,7 +136,7 @@ pub(super) fn build_and_store_media_g_zip(source: &Path, library: &LibraryRoot) 
     let dest = library.media_g_zip_path(&hash);
     copy_if_missing(source, &dest)?;
 
-    let title = metadata.title.or_else(|| Some(asset.display_stem));
+    let title = metadata.title.or(Some(asset.display_stem));
 
     Ok(Song {
         hash: hash.clone(),

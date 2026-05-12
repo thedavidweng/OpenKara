@@ -521,17 +521,7 @@ fn remember_runtime_handles(app_handle: &AppHandle, local_audio_suppressed: &Arc
 }
 
 #[cfg(target_os = "macos")]
-fn emit_airplay_state(
-    active: bool,
-    audio_active: bool,
-    route_name: Option<String>,
-    mode: AirPlayAudienceMode,
-    phase: AirPlayOutputPhase,
-    detail: Option<String>,
-    displayed_position_ms: Option<u64>,
-    stream_generation: u64,
-    latency_ms: Option<u64>,
-) {
+fn emit_airplay_state(event: &AirPlayOutputStateEvent) {
     let (handle, local_audio_suppressed) = airplay_runtime_state()
         .lock()
         .ok()
@@ -546,24 +536,11 @@ fn emit_airplay_state(
     if let Some(local_audio_suppressed) = local_audio_suppressed {
         // Local speaker suppression must follow actual remote audio routing,
         // not just whether the audience/video surface is active.
-        local_audio_suppressed.store(audio_active, Ordering::SeqCst);
+        local_audio_suppressed.store(event.audio_active, Ordering::SeqCst);
     }
 
     if let Some(handle) = handle {
-        let _ = handle.emit(
-            AIRPLAY_OUTPUT_STATE_EVENT,
-            AirPlayOutputStateEvent {
-                active,
-                audio_active,
-                route_name,
-                mode,
-                phase,
-                detail,
-                displayed_position_ms,
-                stream_generation,
-                latency_ms,
-            },
-        );
+        let _ = handle.emit(AIRPLAY_OUTPUT_STATE_EVENT, event.clone());
     }
 }
 
@@ -664,17 +641,19 @@ mod native {
             )
         };
 
-        emit_airplay_state(
+        let event = AirPlayOutputStateEvent {
             active,
             audio_active,
             route_name,
-            mode_from_tag(mode),
-            phase_from_tag(phase),
+            mode: mode_from_tag(mode),
+            phase: phase_from_tag(phase),
             detail,
-            (displayed_position_ms >= 0).then_some(displayed_position_ms as u64),
+            displayed_position_ms: (displayed_position_ms >= 0)
+                .then_some(displayed_position_ms as u64),
             stream_generation,
-            (latency_ms >= 0).then_some(latency_ms as u64),
-        );
+            latency_ms: (latency_ms >= 0).then_some(latency_ms as u64),
+        };
+        emit_airplay_state(&event);
     }
 
     pub(super) fn ensure_callback_registered() {
@@ -687,7 +666,7 @@ mod native {
 
     pub(super) fn sync_route_picker(
         webview: &Webview,
-        stream_root: &PathBuf,
+        stream_root: &std::path::Path,
         playlist_url: &str,
         bounds: Option<AirPlayRoutePickerBounds>,
     ) -> CommandResult<()> {
@@ -794,7 +773,7 @@ mod native {
 
     pub(super) fn sync_route_picker(
         _webview: &Webview,
-        _stream_root: &PathBuf,
+        _stream_root: &std::path::Path,
         _playlist_url: &str,
         _bounds: Option<AirPlayRoutePickerBounds>,
     ) -> CommandResult<()> {

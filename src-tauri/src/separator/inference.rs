@@ -125,7 +125,7 @@ fn separate_chunked_audio(
     song_hash: &str,
 ) -> Result<SeparationResult> {
     let input_frame_count = decoded_audio.samples.len() / decoded_audio.channels;
-    let total_chunks = (input_frame_count + target_frame_count - 1) / target_frame_count;
+    let total_chunks = input_frame_count.div_ceil(target_frame_count);
 
     // Write checkpoint manifest and discover already-completed chunks.
     let completed_set: HashSet<usize> = if let Some(dir) = checkpoint_dir {
