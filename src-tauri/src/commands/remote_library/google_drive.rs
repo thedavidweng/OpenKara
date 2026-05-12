@@ -27,8 +27,8 @@ use super::{
         stored_google_drive_client_id, BundledGoogleDriveOAuthClientFile,
         GoogleDriveFileListResponse, GoogleDriveFileMetadata, GoogleDriveProviderCredentials,
         GoogleDriveSecret, GoogleDriveSessionData, GoogleDriveTokenResponse,
-        GoogleDriveUserInfoResponse, RemoteAuthSession, RemoteAuthState,
-        StoredGoogleDriveSecret, GOOGLE_DRIVE_CLIENT_ID_ENV, GOOGLE_DRIVE_CLIENT_SECRET_ENV,
+        GoogleDriveUserInfoResponse, RemoteAuthSession, RemoteAuthState, StoredGoogleDriveSecret,
+        GOOGLE_DRIVE_CLIENT_ID_ENV, GOOGLE_DRIVE_CLIENT_SECRET_ENV,
         GOOGLE_DRIVE_OAUTH_CLIENT_RESOURCE_PATH, GOOGLE_DRIVE_OAUTH_SCOPE,
     },
 };
@@ -48,7 +48,10 @@ pub(crate) fn build_google_drive_authorization_url(
         .append_pair("scope", GOOGLE_DRIVE_OAUTH_SCOPE)
         .append_pair("access_type", "offline")
         .append_pair("prompt", "consent")
-        .append_pair("code_challenge", &oauth_pkce_code_challenge(&session.code_verifier))
+        .append_pair(
+            "code_challenge",
+            &oauth_pkce_code_challenge(&session.code_verifier),
+        )
         .append_pair("code_challenge_method", "S256")
         .append_pair("state", &session.state_token);
     Ok(url.to_string())
@@ -101,7 +104,8 @@ fn load_google_drive_provider_credentials_from_resource_dir(
 fn resolve_google_drive_provider_credentials(
     resource_dir: &Path,
 ) -> CommandResult<GoogleDriveProviderCredentials> {
-    if let Some(credentials) = load_google_drive_provider_credentials_from_resource_dir(resource_dir)?
+    if let Some(credentials) =
+        load_google_drive_provider_credentials_from_resource_dir(resource_dir)?
     {
         return Ok(credentials);
     }
@@ -202,16 +206,23 @@ fn google_drive_refresh_access_token(
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(body)
         .send()
-        .map_err(|e| library_error(format!("failed to refresh Google Drive access token: {}", e.without_url())))?;
+        .map_err(|e| {
+            library_error(format!(
+                "failed to refresh Google Drive access token: {}",
+                e.without_url()
+            ))
+        })?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Google Drive token refresh failed with status {}",
             response.status()
         )));
     }
-    let body: GoogleDriveTokenResponse = response
-        .json()
-        .map_err(|error| library_error(format!("failed to parse Google Drive token response: {error}")))?;
+    let body: GoogleDriveTokenResponse = response.json().map_err(|error| {
+        library_error(format!(
+            "failed to parse Google Drive token response: {error}"
+        ))
+    })?;
     secret.access_token = body.access_token.clone();
     secret.access_token_expires_at_ms = body
         .expires_in
@@ -277,9 +288,9 @@ fn google_drive_find_child(
             response.status()
         )));
     }
-    let body: GoogleDriveFileListResponse = response
-        .json()
-        .map_err(|error| library_error(format!("failed to parse Google Drive file list: {error}")))?;
+    let body: GoogleDriveFileListResponse = response.json().map_err(|error| {
+        library_error(format!("failed to parse Google Drive file list: {error}"))
+    })?;
     Ok(body.files.into_iter().next())
 }
 
@@ -317,9 +328,9 @@ fn google_drive_find_child_with_token(
             response.status()
         )));
     }
-    let body: GoogleDriveFileListResponse = response
-        .json()
-        .map_err(|error| library_error(format!("failed to parse Google Drive file list: {error}")))?;
+    let body: GoogleDriveFileListResponse = response.json().map_err(|error| {
+        library_error(format!("failed to parse Google Drive file list: {error}"))
+    })?;
     Ok(body.files.into_iter().next())
 }
 
@@ -343,9 +354,9 @@ fn google_drive_create_folder(
             response.status()
         )));
     }
-    response
-        .json()
-        .map_err(|error| library_error(format!("failed to parse folder creation response: {error}")))
+    response.json().map_err(|error| {
+        library_error(format!("failed to parse folder creation response: {error}"))
+    })
 }
 
 fn google_drive_get_or_create_folder(
@@ -385,9 +396,9 @@ fn google_drive_create_folder_with_token(
             response.status()
         )));
     }
-    response
-        .json()
-        .map_err(|error| library_error(format!("failed to parse folder creation response: {error}")))
+    response.json().map_err(|error| {
+        library_error(format!("failed to parse folder creation response: {error}"))
+    })
 }
 
 pub(crate) fn google_drive_get_or_create_folder_with_token(
@@ -480,10 +491,16 @@ pub(crate) fn google_drive_download_file(
         .bytes()
         .map_err(|error| library_error(format!("failed to read Google Drive response: {error}")))?;
     let mut file = fs::File::create(destination).map_err(|error| {
-        library_error(format!("failed to create {}: {error}", destination.display()))
+        library_error(format!(
+            "failed to create {}: {error}",
+            destination.display()
+        ))
     })?;
     file.write_all(bytes.as_ref()).map_err(|error| {
-        library_error(format!("failed to write {}: {error}", destination.display()))
+        library_error(format!(
+            "failed to write {}: {error}",
+            destination.display()
+        ))
     })?;
     Ok(())
 }
@@ -533,16 +550,22 @@ fn google_drive_fetch_account_id(access_token: &str) -> CommandResult<String> {
         .get(url)
         .bearer_auth(access_token)
         .send()
-        .map_err(|error| library_error(format!("failed to fetch Google Drive account info: {error}")))?;
+        .map_err(|error| {
+            library_error(format!(
+                "failed to fetch Google Drive account info: {error}"
+            ))
+        })?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Google Drive account lookup failed with status {}",
             response.status()
         )));
     }
-    let body: GoogleDriveUserInfoResponse = response
-        .json()
-        .map_err(|error| library_error(format!("failed to parse Google Drive account info: {error}")))?;
+    let body: GoogleDriveUserInfoResponse = response.json().map_err(|error| {
+        library_error(format!(
+            "failed to parse Google Drive account info: {error}"
+        ))
+    })?;
     Ok(body.email.unwrap_or(body.sub))
 }
 
@@ -551,16 +574,23 @@ pub(crate) fn spawn_google_drive_auth_worker(
     session_id: String,
     session: GoogleDriveSessionData,
 ) -> CommandResult<GoogleDriveSessionData> {
-    let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
-        .map_err(|error| {
-            library_error(format!("failed to bind Google OAuth loopback listener: {error}"))
+    let listener =
+        TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)).map_err(|error| {
+            library_error(format!(
+                "failed to bind Google OAuth loopback listener: {error}"
+            ))
         })?;
     let port = listener
         .local_addr()
-        .map_err(|error| library_error(format!("failed to read Google OAuth listener address: {error}")))?
+        .map_err(|error| {
+            library_error(format!(
+                "failed to read Google OAuth listener address: {error}"
+            ))
+        })?
         .port();
-    let server = Server::from_listener(listener, None)
-        .map_err(|error| library_error(format!("failed to start Google OAuth listener: {error}")))?;
+    let server = Server::from_listener(listener, None).map_err(|error| {
+        library_error(format!("failed to start Google OAuth listener: {error}"))
+    })?;
 
     let mut session = session;
     session.redirect_uri = format!("http://127.0.0.1:{port}/oauth2/callback");
@@ -620,8 +650,7 @@ pub(crate) fn spawn_google_drive_auth_worker(
             update_remote_auth_session(&sessions, &session_id, |state| {
                 state.state = RemoteAuthState::Failed;
                 state.error = Some(library_error(
-                    "Google sign-in failed because the OAuth state token did not match."
-                        .to_owned(),
+                    "Google sign-in failed because the OAuth state token did not match.".to_owned(),
                 ));
             });
             return;
@@ -639,7 +668,9 @@ pub(crate) fn spawn_google_drive_auth_worker(
         }
 
         let Some(code) = query.get("code") else {
-            let _ = request.respond(oauth_callback_response("Missing Google authorization code."));
+            let _ = request.respond(oauth_callback_response(
+                "Missing Google authorization code.",
+            ));
             update_remote_auth_session(&sessions, &session_id, |state| {
                 state.state = RemoteAuthState::Failed;
                 state.error = Some(library_error(
@@ -752,15 +783,18 @@ pub(crate) fn google_drive_upload_relative_file_to_remote(
     let file_name = segments.last().copied().unwrap_or_default();
     let mut parent_id = root_folder_id.to_owned();
     for segment in &segments[..segments.len() - 1] {
-        let folder = google_drive_get_or_create_folder(app_data_dir, &mut secret, &parent_id, segment)?;
+        let folder =
+            google_drive_get_or_create_folder(app_data_dir, &mut secret, &parent_id, segment)?;
         parent_id = folder.id;
     }
 
-    let file = match google_drive_find_child(app_data_dir, &mut secret, &parent_id, file_name, None)?
-    {
-        Some(file) => file,
-        None => google_drive_create_empty_file(app_data_dir, &mut secret, &parent_id, file_name)?,
-    };
+    let file =
+        match google_drive_find_child(app_data_dir, &mut secret, &parent_id, file_name, None)? {
+            Some(file) => file,
+            None => {
+                google_drive_create_empty_file(app_data_dir, &mut secret, &parent_id, file_name)?
+            }
+        };
     let _ = google_drive_upload_file_bytes(app_data_dir, &mut secret, &file.id, bytes)?;
     Ok(())
 }
@@ -830,15 +864,28 @@ pub(crate) fn initialize_or_sync_google_drive_library(
         .ok_or_else(|| library_error("remote repository is missing a remote locator".to_owned()))?;
     let mut secret = secret.clone();
     for directory in ["media", "media-g", "stems"] {
-        let _ = google_drive_get_or_create_folder(app_data_dir, &mut secret, root_folder_id, directory)?;
+        let _ = google_drive_get_or_create_folder(
+            app_data_dir,
+            &mut secret,
+            root_folder_id,
+            directory,
+        )?;
     }
 
-    if google_drive_find_relative_entry(app_data_dir, &mut secret, root_folder_id, ".openkara-library")?
-        .is_none()
+    if google_drive_find_relative_entry(
+        app_data_dir,
+        &mut secret,
+        root_folder_id,
+        ".openkara-library",
+    )?
+    .is_none()
     {
         let marker_path = root.resolve(".openkara-library");
         fs::write(&marker_path, b"openkara remote repository\n").map_err(|error| {
-            library_error(format!("failed to write {}: {error}", marker_path.display()))
+            library_error(format!(
+                "failed to write {}: {error}",
+                marker_path.display()
+            ))
         })?;
         google_drive_upload_relative_file_to_remote(
             app_data_dir,
@@ -858,7 +905,9 @@ pub(crate) fn initialize_or_sync_google_drive_library(
             &database_entry.id,
             &root.database_path(),
         )?;
-        database_entry.head_revision_id.or(database_entry.modified_time)
+        database_entry
+            .head_revision_id
+            .or(database_entry.modified_time)
     } else {
         google_drive_upload_relative_file_to_remote(
             app_data_dir,
@@ -904,20 +953,22 @@ pub(crate) fn refresh_existing_google_drive_library(
         .remote_root_locator()
         .ok_or_else(|| library_error("remote repository is missing a remote locator".to_owned()))?;
     let mut secret = secret.clone();
-    if google_drive_find_relative_entry(app_data_dir, &mut secret, root_folder_id, ".openkara-library")?
-        .is_none()
+    if google_drive_find_relative_entry(
+        app_data_dir,
+        &mut secret,
+        root_folder_id,
+        ".openkara-library",
+    )?
+    .is_none()
     {
         return Err(library_error(
-            "The selected Google Drive folder is not an OpenKara remote repository."
-                .to_owned(),
+            "The selected Google Drive folder is not an OpenKara remote repository.".to_owned(),
         ));
     }
     let database_entry =
         google_drive_find_relative_entry(app_data_dir, &mut secret, root_folder_id, "openkara.db")?
             .ok_or_else(|| {
-                library_error(
-                    "The selected Google Drive folder is missing openkara.db.".to_owned(),
-                )
+                library_error("The selected Google Drive folder is missing openkara.db.".to_owned())
             })?;
     google_drive_download_file(
         app_data_dir,
@@ -925,7 +976,9 @@ pub(crate) fn refresh_existing_google_drive_library(
         &database_entry.id,
         &root.database_path(),
     )?;
-    Ok(database_entry.head_revision_id.or(database_entry.modified_time))
+    Ok(database_entry
+        .head_revision_id
+        .or(database_entry.modified_time))
 }
 
 fn google_drive_delete_entry(
@@ -985,7 +1038,10 @@ mod tests {
             Some("secret-456".to_owned()),
         )
         .expect("credentials should resolve");
-        assert_eq!(credentials.client_id, "client-123.apps.googleusercontent.com");
+        assert_eq!(
+            credentials.client_id,
+            "client-123.apps.googleusercontent.com"
+        );
         assert_eq!(credentials.client_secret.as_deref(), Some("secret-456"));
     }
 
@@ -1008,7 +1064,10 @@ mod tests {
 
         let credentials = resolve_google_drive_provider_credentials(temp_dir.path())
             .expect("credentials should resolve");
-        assert_eq!(credentials.client_id, "stored-client.apps.googleusercontent.com");
+        assert_eq!(
+            credentials.client_id,
+            "stored-client.apps.googleusercontent.com"
+        );
         assert_eq!(credentials.client_secret.as_deref(), Some("stored-secret"));
     }
 
@@ -1041,7 +1100,10 @@ mod tests {
         assert_eq!(query.get("client_id"), Some(&session.client_id));
         assert_eq!(query.get("response_type"), Some(&"code".to_owned()));
         assert_eq!(query.get("redirect_uri"), Some(&session.redirect_uri));
-        assert_eq!(query.get("scope"), Some(&GOOGLE_DRIVE_OAUTH_SCOPE.to_owned()));
+        assert_eq!(
+            query.get("scope"),
+            Some(&GOOGLE_DRIVE_OAUTH_SCOPE.to_owned())
+        );
         assert_eq!(query.get("access_type"), Some(&"offline".to_owned()));
         assert_eq!(query.get("prompt"), Some(&"consent".to_owned()));
         assert_eq!(query.get("code_challenge_method"), Some(&"S256".to_owned()));
