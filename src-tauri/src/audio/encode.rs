@@ -64,8 +64,8 @@ pub fn write_ogg_file_with_quality(path: &Path, audio: &DecodedAudio, quality: f
         }
         for frame in 0..chunk_frames {
             let frame_offset = (offset + frame) * channels;
-            for channel_index in 0..channels {
-                planar[channel_index].push(audio.samples[frame_offset + channel_index]);
+            for (channel_index, channel_samples) in planar.iter_mut().enumerate().take(channels) {
+                channel_samples.push(audio.samples[frame_offset + channel_index]);
             }
         }
 

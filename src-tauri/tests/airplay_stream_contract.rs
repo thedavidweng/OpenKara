@@ -54,7 +54,7 @@ fn audience_payload_deserializes_viewport() {
             bottom_inset_px: 0,
         }
     );
-    assert_eq!(payload.is_loading, false);
+    assert!(!payload.is_loading);
     assert_eq!(
         payload.presentation_spec,
         AudiencePresentationSpec {

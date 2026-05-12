@@ -52,13 +52,12 @@ impl CdgRenderer {
     pub fn process_range(&mut self, packets: &[CdgPacket], start: usize, end: usize) -> bool {
         let mut changed = false;
         let end = end.min(packets.len());
-        for i in start..end {
-            let pkt = &packets[i];
-            if pkt.is_cdg() {
-                if self.apply_instruction(pkt) {
-                    changed = true;
-                }
+        for pkt in packets.iter().take(end).skip(start) {
+            if pkt.is_cdg() && self.apply_instruction(pkt) {
+                changed = true;
             }
+            self.last_was_memory_preset =
+                pkt.is_cdg() && (pkt.instruction & 0x3F) == CMD_MEMORY_PRESET;
             self.last_was_memory_preset =
                 pkt.is_cdg() && (pkt.instruction & 0x3F) == CMD_MEMORY_PRESET;
         }
@@ -146,7 +145,7 @@ impl CdgRenderer {
             return false;
         }
         for y in 0..FULL_HEIGHT {
-            if y < BORDER_Y || y >= FULL_HEIGHT - BORDER_Y {
+            if !(BORDER_Y..FULL_HEIGHT - BORDER_Y).contains(&y) {
                 // Full row is border
                 for x in 0..FULL_WIDTH {
                     self.pixels[y * FULL_WIDTH + x] = color;
@@ -305,9 +304,9 @@ impl CdgRenderer {
             let low = data[idx];
             let high = data[idx + 1];
 
-            let red = ((low >> 2) & 0x0F) as u8;
-            let green = (((low & 0x03) << 2) | ((high >> 4) & 0x03)) as u8;
-            let blue = (high & 0x0F) as u8;
+            let red = (low >> 2) & 0x0F;
+            let green = ((low & 0x03) << 2) | ((high >> 4) & 0x03);
+            let blue = high & 0x0F;
 
             let color = [red * 17, green * 17, blue * 17, 255];
             let color_idx = offset + i;
@@ -404,7 +403,7 @@ mod tests {
         let mut preset_data = [0u8; 16];
         preset_data[0] = 5;
         let pkt = cdg_packet(CMD_MEMORY_PRESET, preset_data);
-        r.process_range(&[pkt.clone()], 0, 1);
+        r.process_range(std::slice::from_ref(&pkt), 0, 1);
 
         // Pixels should be color 5
         assert_eq!(r.pixels[0], 5);

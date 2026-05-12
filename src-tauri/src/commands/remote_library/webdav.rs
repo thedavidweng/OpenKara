@@ -633,8 +633,8 @@ mod tests {
         files: &Arc<Mutex<HashMap<String, Vec<u8>>>>,
     ) {
         let path = request.url().split('?').next().unwrap_or("/").to_owned();
-        match request.method() {
-            &HttpMethod::Head => {
+        match *request.method() {
+            HttpMethod::Head => {
                 let exists = if path.ends_with('/') {
                     directories.lock().unwrap().contains(&path)
                 } else {
@@ -643,7 +643,7 @@ mod tests {
                 let status = if exists { 204 } else { 404 };
                 let _ = request.respond(Response::empty(HttpStatusCode(status)));
             }
-            &HttpMethod::Put => {
+            HttpMethod::Put => {
                 let mut body = Vec::new();
                 request.as_reader().read_to_end(&mut body).unwrap();
                 files.lock().unwrap().insert(path, body);
@@ -651,7 +651,7 @@ mod tests {
                 response.add_header(Header::from_bytes("ETag", b"test-etag").unwrap());
                 let _ = request.respond(response);
             }
-            &HttpMethod::Get => {
+            HttpMethod::Get => {
                 let body = files.lock().unwrap().get(&path).cloned();
                 match body {
                     Some(body) => {
@@ -665,7 +665,7 @@ mod tests {
                     }
                 }
             }
-            &HttpMethod::NonStandard(ref method) if method.as_str() == "MKCOL" => {
+            HttpMethod::NonStandard(ref method) if method.as_str() == "MKCOL" => {
                 directories.lock().unwrap().insert(path);
                 let _ = request.respond(Response::empty(HttpStatusCode(201)));
             }

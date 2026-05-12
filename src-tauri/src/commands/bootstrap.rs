@@ -200,7 +200,7 @@ pub fn get_model_status(
     app_handle: AppHandle,
     variant: String,
 ) -> CommandResult<ModelStatusSnapshot> {
-    let model_variant = ModelVariant::from_str(&variant)
+    let model_variant = ModelVariant::parse(&variant)
         .ok_or_else(|| internal_error(format!("invalid model variant: {variant}")))?;
     let app_data_dir = app_handle
         .path()
@@ -234,7 +234,7 @@ pub fn download_model(
     app_handle: AppHandle,
     variant: String,
 ) -> CommandResult<ModelBootstrapStatusSnapshot> {
-    let model_variant = ModelVariant::from_str(&variant)
+    let model_variant = ModelVariant::parse(&variant)
         .ok_or_else(|| internal_error(format!("invalid model variant: {variant}")))?;
     let descriptor = separator::bootstrap::descriptor_for(model_variant);
     let model_path = separator::bootstrap::managed_model_path_for(&state.app_data_dir, descriptor);
@@ -343,7 +343,7 @@ pub fn delete_model(
     state: State<'_, AppState>,
     variant: String,
 ) -> CommandResult<()> {
-    let model_variant = ModelVariant::from_str(&variant)
+    let model_variant = ModelVariant::parse(&variant)
         .ok_or_else(|| internal_error(format!("invalid model variant: {variant}")))?;
     let app_data_dir = app_handle
         .path()

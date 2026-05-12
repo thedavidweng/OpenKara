@@ -27,11 +27,10 @@ anyhow = "1.0.102"
 audioadapter-buffers = "3.0.0"
 base64 = "0.22.1"
 cpal = "0.17.3"
-hound = "3.5.1"
 libc = "0.2.186"
 lofty = "0.24.0"
 open = "5.3.4"
-ort = { version = "=2.0.0-rc.12", default-features = false, features = ["std", "ndarray", "tracing", "load-dynamic", "xnnpack", "directml", "api-24"] }
+ort = { version = "=2.0.0-rc.12", default-features = false, features = ["std", "ndarray", "tracing", "load-dynamic", "api-24", "directml", "xnnpack"] }
 rand = "0.10.1"
 reqwest = { version = "0.13.3", default-features = false, features = ["blocking", "json", "query", "rustls"] }
 rubato = "2.0.0"
@@ -44,11 +43,11 @@ tauri = { version = "2.11.1", features = ["unstable"] }
 tauri-plugin-dialog = "2.7.1"
 tiny_http = "0.12.0"
 tracing = "0.1"
-uuid = { version = "1", features = ["v4", "serde"] }
 vorbis_rs = "0.5.5"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
+hound = "3.5.1"
 mockito = "1.7.2"
 tauri = { version = "2.11.1", features = ["test", "unstable"] }
 tempfile = "3.27.0"

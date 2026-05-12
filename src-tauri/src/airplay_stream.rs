@@ -192,7 +192,7 @@ impl AirPlayHttpServer {
                 .headers()
                 .iter()
                 .find(|header| header.field.equiv("Range"))
-                .and_then(|header| Some(header.value.as_str().to_owned()));
+                .map(|header| header.value.as_str().to_owned());
 
             match build_file_response(
                 request.method() == &Method::Head,
@@ -469,6 +469,7 @@ fn collect_publish_ip_candidates() -> Result<Vec<PublishIpCandidate>> {
     let mut cursor = addresses;
 
     while let Some(entry) = ptr::NonNull::new(cursor) {
+        // SAFETY: NonNull::new returned Some, so entry is non-null and valid.
         let entry = unsafe { entry.as_ref() };
         let addr = entry.ifa_addr;
         if !addr.is_null() {

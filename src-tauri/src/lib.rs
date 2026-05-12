@@ -327,7 +327,7 @@ pub fn run() {
 
     #[cfg(target_os = "macos")]
     let builder = builder
-        .menu(|app| app_menu::build_app_menu(app))
+        .menu(app_menu::build_app_menu)
         .on_menu_event(app_menu::handle_menu_event);
 
     builder

@@ -309,7 +309,7 @@ fn set_lyrics_offset_updates_existing_cached_lyrics() {
 
 #[test]
 fn set_songs_instrumental_updates_every_requested_song() {
-    let mut connection = Connection::open_in_memory().expect("in-memory database should open");
+    let connection = Connection::open_in_memory().expect("in-memory database should open");
     cache::apply_migrations(&connection).expect("migrations should succeed");
 
     let song_a = fixture_song("song-a", &metadata_fixture_path("fixture.mp3"));
@@ -318,7 +318,7 @@ fn set_songs_instrumental_updates_every_requested_song() {
     cache::upsert_song(&connection, &song_b).expect("second song insert should succeed");
 
     let updated = set_songs_instrumental_in_connection(
-        &mut connection,
+        &connection,
         &[song_a.hash.clone(), song_b.hash.clone()],
         true,
     )
@@ -368,8 +368,11 @@ fn extract_embedded_cover_art_updates_a_regular_song_and_persists_it() {
     };
     cache::upsert_song(&connection, &song).expect("song insert should succeed");
 
-    let result =
-        extract_embedded_cover_art_from_connection(&connection, &library, &[song.hash.clone()]);
+    let result = extract_embedded_cover_art_from_connection(
+        &connection,
+        &library,
+        std::slice::from_ref(&song.hash),
+    );
 
     assert_eq!(result.failed.len(), 0);
     assert_eq!(result.updated_songs.len(), 1);
@@ -428,8 +431,11 @@ fn extract_embedded_cover_art_reads_cover_art_from_media_g_zip_audio_bytes() {
     };
     cache::upsert_song(&connection, &song).expect("song insert should succeed");
 
-    let result =
-        extract_embedded_cover_art_from_connection(&connection, &library, &[song.hash.clone()]);
+    let result = extract_embedded_cover_art_from_connection(
+        &connection,
+        &library,
+        std::slice::from_ref(&song.hash),
+    );
 
     assert!(result.failed.is_empty());
     assert_eq!(result.updated_songs.len(), 1);
@@ -467,8 +473,11 @@ fn extract_embedded_cover_art_keeps_existing_cover_when_a_song_has_no_embedded_a
     };
     cache::upsert_song(&connection, &song).expect("song insert should succeed");
 
-    let result =
-        extract_embedded_cover_art_from_connection(&connection, &library, &[song.hash.clone()]);
+    let result = extract_embedded_cover_art_from_connection(
+        &connection,
+        &library,
+        std::slice::from_ref(&song.hash),
+    );
 
     assert!(result.updated_songs.is_empty());
     assert_eq!(result.failed.len(), 1);

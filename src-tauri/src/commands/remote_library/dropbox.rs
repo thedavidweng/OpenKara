@@ -1,6 +1,6 @@
 use crate::{
     cache,
-    commands::error::{library_error, CommandError, CommandResult},
+    commands::error::{library_error, CommandResult},
     config::RegisteredLibrary,
     library_root::LibraryRoot,
 };

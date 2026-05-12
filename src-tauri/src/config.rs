@@ -33,7 +33,7 @@ impl ModelVariant {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<ModelVariant> {
+    pub fn parse(s: &str) -> Option<ModelVariant> {
         match s {
             "htdemucs" => Some(ModelVariant::Htdemucs),
             "htdemucs_ft" => Some(ModelVariant::HtdemucsFt),
@@ -73,7 +73,7 @@ impl ExecutionProviderPreference {
 
         #[cfg(not(target_os = "windows"))]
         {
-            return Self::Xnnpack;
+            Self::Xnnpack
         }
     }
 
@@ -85,7 +85,7 @@ impl ExecutionProviderPreference {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "cpu" => Some(Self::Cpu),
             "xnnpack" => Some(Self::Xnnpack),
@@ -130,7 +130,7 @@ impl RemoteLibraryProvider {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "google_drive" => Some(Self::GoogleDrive),
             "dropbox" => Some(Self::Dropbox),

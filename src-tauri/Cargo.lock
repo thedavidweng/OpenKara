@@ -2750,7 +2750,6 @@ dependencies = [
  "tempfile",
  "tiny_http",
  "tracing",
- "uuid",
  "vorbis_rs",
  "zip",
 ]

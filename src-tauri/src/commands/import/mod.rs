@@ -121,7 +121,7 @@ pub fn pick_import_paths(default_path: Option<String>) -> CommandResult<Vec<Stri
             openkara_free_import_paths(raw_paths, count);
         }
 
-        return Ok(collected_paths);
+        Ok(collected_paths)
     }
 
     #[cfg(not(target_os = "macos"))]
