@@ -32,8 +32,17 @@ fn serializes_local_and_remote_libraries_with_distinct_shapes() {
     let decoded: AppConfig = serde_json::from_str(&json).expect("config should deserialize");
 
     assert_eq!(decoded.libraries.len(), 2);
-    assert!(matches!(decoded.libraries[0], RegisteredLibrary::Local { .. }));
-    assert!(matches!(decoded.libraries[1], RegisteredLibrary::Remote { .. }));
+    assert!(matches!(
+        decoded.libraries[0],
+        RegisteredLibrary::Local { .. }
+    ));
+    assert!(matches!(
+        decoded.libraries[1],
+        RegisteredLibrary::Remote { .. }
+    ));
     assert_eq!(decoded.active_library_id.as_deref(), Some(remote.id()));
-    assert_eq!(decoded.active_library().map(|library| library.id()), Some(remote.id()));
+    assert_eq!(
+        decoded.active_library().map(|library| library.id()),
+        Some(remote.id())
+    );
 }

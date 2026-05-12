@@ -1,5 +1,5 @@
 use crate::audio::decode::DecodedAudio;
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 use std::time::Instant;
@@ -363,8 +363,8 @@ pub fn playback_position_event(snapshot: &PlaybackStateSnapshot) -> PlaybackPosi
 #[cfg(test)]
 mod tests {
     use super::{
-        PLAYBACK_POSITION_POLL_INTERVAL_MS, PlaybackStateSnapshot, StemVolumes,
-        playback_position_event,
+        playback_position_event, PlaybackStateSnapshot, StemVolumes,
+        PLAYBACK_POSITION_POLL_INTERVAL_MS,
     };
 
     #[test]

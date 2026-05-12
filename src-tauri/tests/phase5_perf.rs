@@ -9,8 +9,7 @@ use openkara_lib::{
     perf::{
         build_backend_performance_report, write_report_json, LYRICS_JITTER_THRESHOLD_MS,
         PLAYBACK_DB_LOOKUP_LATENCY_THRESHOLD_MS, PLAYBACK_FULL_DECODE_LATENCY_THRESHOLD_MS,
-        PLAYBACK_METADATA_PROBE_LATENCY_THRESHOLD_MS,
-        SEEK_LATENCY_THRESHOLD_MS,
+        PLAYBACK_METADATA_PROBE_LATENCY_THRESHOLD_MS, SEEK_LATENCY_THRESHOLD_MS,
     },
 };
 use rusqlite::Connection;
@@ -53,9 +52,7 @@ fn backend_performance_report_stays_within_phase5_thresholds() {
         serde_json::to_string_pretty(&report).expect("perf report should serialize")
     );
 
-    assert!(
-        report.playback.track_db_lookup_latency_ms < PLAYBACK_DB_LOOKUP_LATENCY_THRESHOLD_MS
-    );
+    assert!(report.playback.track_db_lookup_latency_ms < PLAYBACK_DB_LOOKUP_LATENCY_THRESHOLD_MS);
     assert!(
         report.playback.track_metadata_probe_latency_ms
             < PLAYBACK_METADATA_PROBE_LATENCY_THRESHOLD_MS

@@ -1,18 +1,18 @@
 use crate::{
-    AppState,
     airplay_stream::stream_tick_interval,
-    airplay_stream::{AirPlayHttpServer, default_stream_root},
-    audio::playback::{PlaybackController, PlaybackStateSnapshot, monotonic_now_ms},
-    commands::cdg::{CdgPlaybackState, render_cdg_frame_bytes},
-    commands::error::{CommandResult, internal_error},
+    airplay_stream::{default_stream_root, AirPlayHttpServer},
+    audio::playback::{monotonic_now_ms, PlaybackController, PlaybackStateSnapshot},
+    commands::cdg::{render_cdg_frame_bytes, CdgPlaybackState},
+    commands::error::{internal_error, CommandResult},
     lyrics::parser::LyricLine,
+    AppState,
 };
 use serde::{Deserialize, Serialize};
 use std::{
     path::PathBuf,
     sync::{
-        Arc, Mutex, OnceLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Mutex, OnceLock,
     },
     thread,
 };
@@ -22,7 +22,7 @@ use tauri::{AppHandle, State, Webview};
 
 #[cfg(target_os = "macos")]
 use std::{
-    ffi::{CStr, CString, c_char, c_void},
+    ffi::{c_char, c_void, CStr, CString},
     ptr::null,
 };
 

@@ -12,9 +12,8 @@ use std::{fs, path::Path};
 
 use super::{
     dropbox::{
-        dropbox_ensure_folder_with_token, initialize_or_sync_dropbox_library,
-        load_dropbox_secret, normalize_dropbox_root_path, refresh_existing_dropbox_library,
-        store_dropbox_secret,
+        dropbox_ensure_folder_with_token, initialize_or_sync_dropbox_library, load_dropbox_secret,
+        normalize_dropbox_root_path, refresh_existing_dropbox_library, store_dropbox_secret,
     },
     google_drive::{
         google_drive_get_or_create_folder_with_token, google_drive_root_display_name,
@@ -24,11 +23,13 @@ use super::{
     types::{
         current_unix_time_ms, delete_remote_credential, load_app_config, persist_app_config,
         remote_libraries_dir, remote_library_id, remote_library_root, DropboxSecret,
-        GoogleDriveSecret, RemoteAuthSession, RemoteAuthState, RemoteLibraryCandidate, WebDavSecret,
+        GoogleDriveSecret, RemoteAuthSession, RemoteAuthState, RemoteLibraryCandidate,
+        WebDavSecret,
     },
     webdav::{
-        initialize_or_sync_webdav_library, join_url, load_webdav_secret, normalize_webdav_root_path,
-        refresh_existing_webdav_library, remote_path_display_from_url, store_webdav_secret,
+        initialize_or_sync_webdav_library, join_url, load_webdav_secret,
+        normalize_webdav_root_path, refresh_existing_webdav_library, remote_path_display_from_url,
+        store_webdav_secret,
     },
 };
 
@@ -75,9 +76,7 @@ pub(crate) fn list_remote_library_roots(
             remote_root_locator: remote_root_locator.clone(),
             remote_path_display: match session.provider {
                 RemoteLibraryProvider::WebDav => remote_path_display_from_url(&remote_root_locator),
-                RemoteLibraryProvider::GoogleDrive => {
-                    google_drive_root_display_name(&display_name)
-                }
+                RemoteLibraryProvider::GoogleDrive => google_drive_root_display_name(&display_name),
                 RemoteLibraryProvider::Dropbox => remote_root_locator,
             },
             display_name,
@@ -141,8 +140,7 @@ pub(crate) fn create_remote_library(
                 .webdav
                 .as_ref()
                 .ok_or_else(|| library_error("missing WebDAV session details".to_owned()))?;
-            let root_path =
-                normalize_webdav_root_path(webdav.root_path.as_deref(), &display_name);
+            let root_path = normalize_webdav_root_path(webdav.root_path.as_deref(), &display_name);
             join_url(&webdav.server_url, &format!("{root_path}/"))?
         }
     };
@@ -211,9 +209,9 @@ pub(crate) fn register_remote_library(
         .lock()
         .map_err(|_| state_lock_error("remote auth session lock was poisoned"))?;
     let (default_display_name, account_id, provider, webdav, google_drive, dropbox) = {
-        let session = sessions
-            .get(&session_id)
-            .ok_or_else(|| library_error(format!("remote auth session {session_id} was not found")))?;
+        let session = sessions.get(&session_id).ok_or_else(|| {
+            library_error(format!("remote auth session {session_id} was not found"))
+        })?;
         (
             session.display_name.clone(),
             session.account_id.clone(),
@@ -437,9 +435,9 @@ pub(crate) fn reauthorize_remote_library(
         .lock()
         .map_err(|_| state_lock_error("remote auth session lock was poisoned"))?;
     let (account_id, provider, webdav, google_drive, dropbox) = {
-        let session = sessions
-            .get(&session_id)
-            .ok_or_else(|| library_error(format!("remote auth session {session_id} was not found")))?;
+        let session = sessions.get(&session_id).ok_or_else(|| {
+            library_error(format!("remote auth session {session_id} was not found"))
+        })?;
         (
             session.account_id.clone(),
             session.provider,
@@ -454,7 +452,9 @@ pub(crate) fn reauthorize_remote_library(
             "reauthorization provider does not match the remote repository".to_owned(),
         ));
     }
-    if provider != RemoteLibraryProvider::WebDav && existing.account_id() != Some(account_id.as_str()) {
+    if provider != RemoteLibraryProvider::WebDav
+        && existing.account_id() != Some(account_id.as_str())
+    {
         return Err(library_error(
             "reauthorization account does not match the remote repository".to_owned(),
         ));
@@ -500,7 +500,9 @@ pub(crate) fn reauthorize_remote_library(
                 .as_ref()
                 .map(|session| session.app_key.clone())
                 .ok_or_else(|| {
-                    library_error("missing Dropbox session details during reauthorization".to_owned())
+                    library_error(
+                        "missing Dropbox session details during reauthorization".to_owned(),
+                    )
                 })?,
         }),
         RemoteLibraryProvider::WebDav => Some(RemoteLibraryConnectionConfig::WebDav {
@@ -508,7 +510,9 @@ pub(crate) fn reauthorize_remote_library(
                 .as_ref()
                 .map(|session| session.server_url.clone())
                 .ok_or_else(|| {
-                    library_error("missing WebDAV session details during reauthorization".to_owned())
+                    library_error(
+                        "missing WebDAV session details during reauthorization".to_owned(),
+                    )
                 })?,
         }),
     };
@@ -528,7 +532,9 @@ pub(crate) fn reauthorize_remote_library(
     let remote_revision = match provider {
         RemoteLibraryProvider::GoogleDrive => {
             let google = google_drive.clone().ok_or_else(|| {
-                library_error("missing Google Drive session details during reauthorization".to_owned())
+                library_error(
+                    "missing Google Drive session details during reauthorization".to_owned(),
+                )
             })?;
             let access_token = google.access_token.clone().ok_or_else(|| {
                 library_error(
@@ -594,7 +600,9 @@ pub(crate) fn reauthorize_remote_library(
     match provider {
         RemoteLibraryProvider::GoogleDrive => {
             let secret = google_drive.ok_or_else(|| {
-                library_error("missing Google Drive session details during reauthorization".to_owned())
+                library_error(
+                    "missing Google Drive session details during reauthorization".to_owned(),
+                )
             })?;
             let access_token = secret.access_token.ok_or_else(|| {
                 library_error(

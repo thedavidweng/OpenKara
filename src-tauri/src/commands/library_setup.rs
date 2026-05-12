@@ -46,14 +46,16 @@ fn update_library_display_name(
         .iter_mut()
         .find(|entry| entry.id() == library_id)
     else {
-        return Err(library_error(format!(
-            "library {library_id} was not found"
-        )));
+        return Err(library_error(format!("library {library_id} was not found")));
     };
 
     match library {
-        RegisteredLibrary::Local { display_name: name, .. }
-        | RegisteredLibrary::Remote { display_name: name, .. } => {
+        RegisteredLibrary::Local {
+            display_name: name, ..
+        }
+        | RegisteredLibrary::Remote {
+            display_name: name, ..
+        } => {
             *name = display_name.to_owned();
         }
     }
@@ -300,7 +302,9 @@ pub fn remove_library(
         .filter(|library| library.id() == library_id)
         .cloned()
         .collect();
-    config.libraries.retain(|library| library.id() != library_id);
+    config
+        .libraries
+        .retain(|library| library.id() != library_id);
 
     for library in &removed_libraries {
         crate::commands::remote_library::remove_remote_library_credentials(&app_data_dir, library)?;
@@ -386,9 +390,7 @@ pub fn delete_library(
         .find(|entry| entry.id() == library_id)
         .cloned()
     else {
-        return Err(library_error(format!(
-            "library {library_id} was not found"
-        )));
+        return Err(library_error(format!("library {library_id} was not found")));
     };
 
     delete_library_data(&app_data_dir, &library)?;

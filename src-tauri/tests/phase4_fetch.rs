@@ -46,7 +46,7 @@ fn fixture_song(file_path: &Path) -> Song {
         cdg_path: None,
         media_g_container: None,
         instrumental: false,
-            language: None,
+        language: None,
         audio_source_kind: "original".to_owned(),
         title: Some("Yellow".to_owned()),
         artist: Some("Coldplay".to_owned()),
@@ -95,13 +95,9 @@ fn fetch_chain_prefers_lrclib_synced_lyrics_over_sidecar() {
         TimedLyricsProvider::LrcApi(&lrcapi),
     ];
 
-    let fetched = fetch_lyrics_for_song(
-        &providers,
-        &fixture_song(&audio_path),
-        &audio_path,
-    )
-    .expect("fetch chain should succeed")
-    .expect("lyrics should be returned");
+    let fetched = fetch_lyrics_for_song(&providers, &fixture_song(&audio_path), &audio_path)
+        .expect("fetch chain should succeed")
+        .expect("lyrics should be returned");
 
     assert_eq!(
         fetched,
@@ -166,13 +162,9 @@ fn fetch_chain_prefers_lrcapi_over_sidecar_when_lrclib_misses() {
         TimedLyricsProvider::LrcApi(&lrcapi),
     ];
 
-    let fetched = fetch_lyrics_for_song(
-        &providers,
-        &fixture_song(&audio_path),
-        &audio_path,
-    )
-    .expect("fetch chain should succeed")
-    .expect("LrcApi lyrics should be returned");
+    let fetched = fetch_lyrics_for_song(&providers, &fixture_song(&audio_path), &audio_path)
+        .expect("fetch chain should succeed")
+        .expect("LrcApi lyrics should be returned");
 
     assert_eq!(
         fetched,
@@ -221,13 +213,9 @@ fn fetch_chain_falls_back_to_sidecar_when_online_sources_miss() {
         TimedLyricsProvider::LrcApi(&lrcapi),
     ];
 
-    let fetched = fetch_lyrics_for_song(
-        &providers,
-        &fixture_song(&audio_path),
-        &audio_path,
-    )
-    .expect("fetch chain should succeed")
-    .expect("sidecar lyrics should be returned");
+    let fetched = fetch_lyrics_for_song(&providers, &fixture_song(&audio_path), &audio_path)
+        .expect("fetch chain should succeed")
+        .expect("sidecar lyrics should be returned");
 
     assert_eq!(
         fetched,

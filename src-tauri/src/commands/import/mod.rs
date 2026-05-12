@@ -213,7 +213,13 @@ pub fn extract_embedded_cover_art(
     remote_library::run_updated_songs_mutation(
         &state,
         &app_handle,
-        || Ok(extract_embedded_cover_art_from_connection(&connection, &library, &song_ids)),
+        || {
+            Ok(extract_embedded_cover_art_from_connection(
+                &connection,
+                &library,
+                &song_ids,
+            ))
+        },
         |result| remote_library::song_ids_from_songs(&result.updated_songs),
     )
 }

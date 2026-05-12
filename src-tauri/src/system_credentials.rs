@@ -3,8 +3,7 @@ use anyhow::{bail, Context, Result};
 use serde::{de::DeserializeOwned, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    env,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
 };
 
@@ -38,11 +37,9 @@ pub fn delete(_app_data_dir: &Path, library_id: &str) -> Result<()> {
 
 fn store_string(app_data_dir: &Path, library_id: &str, payload: &str) -> Result<()> {
     if let Some(dir) = test_store_dir() {
-        fs::create_dir_all(&dir)
-            .with_context(|| format!("failed to create {}", dir.display()))?;
+        fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
         let path = test_store_path(&dir, library_id);
-        fs::write(&path, payload)
-            .with_context(|| format!("failed to write {}", path.display()))?;
+        fs::write(&path, payload).with_context(|| format!("failed to write {}", path.display()))?;
         let _ = app_data_dir;
         return Ok(());
     }
@@ -120,7 +117,9 @@ mod platform {
             .output()
             .context("failed to launch macOS security CLI")?;
         if output.status.success() {
-            return Ok(Some(String::from_utf8(output.stdout)?.trim_end().to_owned()));
+            return Ok(Some(
+                String::from_utf8(output.stdout)?.trim_end().to_owned(),
+            ));
         }
 
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -136,13 +135,7 @@ mod platform {
 
     pub fn delete(target: String) -> Result<()> {
         let output = Command::new("security")
-            .args([
-                "delete-generic-password",
-                "-s",
-                SERVICE_NAME,
-                "-a",
-                &target,
-            ])
+            .args(["delete-generic-password", "-s", SERVICE_NAME, "-a", &target])
             .output()
             .context("failed to launch macOS security CLI")?;
         if output.status.success() {
@@ -206,13 +199,7 @@ mod platform {
 
     pub fn load(target: String) -> Result<Option<String>> {
         let output = Command::new("secret-tool")
-            .args([
-                "lookup",
-                ATTR_SCOPE,
-                SERVICE_NAME,
-                ATTR_LIBRARY_ID,
-                &target,
-            ])
+            .args(["lookup", ATTR_SCOPE, SERVICE_NAME, ATTR_LIBRARY_ID, &target])
             .output()
             .context(linux_unavailable_message())?;
         if output.status.success() {
@@ -237,13 +224,7 @@ mod platform {
 
     pub fn delete(target: String) -> Result<()> {
         let output = Command::new("secret-tool")
-            .args([
-                "clear",
-                ATTR_SCOPE,
-                SERVICE_NAME,
-                ATTR_LIBRARY_ID,
-                &target,
-            ])
+            .args(["clear", ATTR_SCOPE, SERVICE_NAME, ATTR_LIBRARY_ID, &target])
             .output()
             .context(linux_unavailable_message())?;
         if output.status.success() || String::from_utf8_lossy(&output.stderr).trim().is_empty() {
@@ -355,7 +336,14 @@ mod platform {
     pub fn load(target: String) -> Result<Option<String>> {
         let mut credential_ptr: *mut CredentialW = ptr::null_mut();
         let target_utf16 = to_utf16(&target);
-        let ok = unsafe { CredReadW(target_utf16.as_ptr(), CRED_TYPE_GENERIC, 0, &mut credential_ptr) };
+        let ok = unsafe {
+            CredReadW(
+                target_utf16.as_ptr(),
+                CRED_TYPE_GENERIC,
+                0,
+                &mut credential_ptr,
+            )
+        };
         if ok == 0 {
             let error = unsafe { GetLastError() };
             if error == ERROR_NOT_FOUND {
@@ -374,8 +362,9 @@ mod platform {
                 credential.credential_blob_size as usize,
             )
         };
-        let value = String::from_utf8(bytes.to_vec())
-            .map_err(|error| anyhow::anyhow!("failed to decode Windows credential payload: {error}"));
+        let value = String::from_utf8(bytes.to_vec()).map_err(|error| {
+            anyhow::anyhow!("failed to decode Windows credential payload: {error}")
+        });
         unsafe { CredFree(credential_ptr.cast()) };
         let value = value?;
         Ok(Some(value))
