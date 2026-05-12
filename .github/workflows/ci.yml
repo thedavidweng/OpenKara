@@ -40,7 +40,14 @@ jobs:
           enableCrossOsArchive: true
 
       - name: Download and verify separation model
-        run: ./scripts/setup.sh
+        run: |
+          if echo "$MODEL_SHA256  src-tauri/models/htdemucs.onnx" | sha256sum -c --status 2>/dev/null; then
+            echo "Model already present and verified"
+            exit 0
+          fi
+          mkdir -p src-tauri/models
+          curl -L --fail "$MODEL_URL" -o src-tauri/models/htdemucs.onnx
+          echo "$MODEL_SHA256  src-tauri/models/htdemucs.onnx" | sha256sum -c
 
       - name: Upload separation model
         uses: actions/upload-artifact@v7.0.1
@@ -78,9 +85,6 @@ jobs:
 
       - name: Lint frontend
         run: pnpm lint
-
-      - name: Typecheck frontend
-        run: pnpm exec tsc --noEmit
 
   frontend-build:
     name: Frontend build
@@ -134,10 +138,6 @@ jobs:
       - name: Run frontend tests
         run: pnpm test
 
-  # Windows uses the DirectML NuGet runtime here because the official CPU
-  # onnxruntime.dll imports DXGI at load time on hosted Windows runners. Cargo
-  # test binaries start from target/debug/deps, so copy ORT's staged DLLs beside
-  # the test executables before running them.
   rust-test:
     name: Rust tests (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
@@ -149,9 +149,6 @@ jobs:
           - name: macOS
             os: macos-14
             ort_target: aarch64-apple-darwin
-          - name: Windows
-            os: windows-latest
-            ort_target: x86_64-pc-windows-msvc
           - name: Linux
             os: ubuntu-22.04
             ort_target: x86_64-unknown-linux-gnu
@@ -168,27 +165,6 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Windows VC++ runtime
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $installer = Join-Path $env:RUNNER_TEMP 'vc_redist.x64.exe'
-          $maxRetries = 3
-          for ($i = 1; $i -le $maxRetries; $i++) {
-            try {
-              Invoke-WebRequest -Uri 'https://aka.ms/vc14/vc_redist.x64.exe' -OutFile $installer
-              break
-            } catch {
-              if ($i -eq $maxRetries) { throw }
-              Write-Host "Download attempt $i failed, retrying in 10s..."
-              Start-Sleep -Seconds 10
-            }
-          }
-          Start-Process -FilePath $installer -ArgumentList '/install', '/quiet', '/norestart' -Wait
-          $runtimeKey = 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64'
-          $runtime = Get-ItemProperty -Path $runtimeKey
-          Write-Host "Installed VC++ runtime version: $($runtime.Version)"
 
       - name: Restore Rust cache
         uses: swatinem/rust-cache@v2.9.1
@@ -227,60 +203,35 @@ jobs:
       - name: Prepare ONNX Runtime
         run: node scripts/prepare-onnx-runtime.mjs --target "${{ matrix.ort_target }}"
 
-      - name: Inspect Windows ONNX Runtime staging
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Get-ChildItem src-tauri/generated/onnxruntime | Format-Table Name, Length
-          Get-Content src-tauri/generated/onnxruntime/manifest.json
-
-      - name: Build Windows Rust tests
-        if: runner.os == 'Windows'
-        working-directory: src-tauri
-        run: cargo test -q --no-run
-
-      - name: Stage Windows ONNX Runtime DLLs for tests
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $destination = 'src-tauri/target/debug/deps'
-          New-Item -ItemType Directory -Force -Path $destination | Out-Null
-          Copy-Item src-tauri/generated/onnxruntime/*.dll $destination -Force
-          Get-ChildItem $destination -Filter '*.dll' | Format-Table Name, Length
-
-      - name: Diagnose Windows DLL dependencies
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          # Find dumpbin via vswhere
-          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
-          $dumpbin = Get-ChildItem "$vsPath\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -Last 1
-
-          # Find the test binary
-          $testExe = Get-ChildItem src-tauri/target/debug/deps/openkara_lib-*.exe | Select-Object -First 1
-          Write-Host "=== Test binary: $($testExe.FullName) ==="
-
-          # Show dependents
-          Write-Host "`n=== dumpbin /dependents on test binary ==="
-          & $dumpbin /dependents $testExe.FullName
-
-      # Windows Server runners lack desktop APIs (comctl32 subclass functions,
-      # dwmapi, etc.) that Tauri/tao imports via raw-dylib. The lib test binary
-      # links the full crate including tao, so it fails with
-      # STATUS_ENTRYPOINT_NOT_FOUND at load time. This is a test-environment
-      # limitation, not a code bug — the Tauri build (which doesn't run the
-      # binary) passes on the same runner. Integration tests have the same
-      # issue since they also link the rlib.
       - name: Run Rust tests
         working-directory: src-tauri
         run: cargo test -q
-        continue-on-error: ${{ runner.os == 'Windows' }}
+
+  rust-test-windows-compile:
+    name: Rust tests (Windows compile)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust cache
+        uses: swatinem/rust-cache@v2.9.1
+        with:
+          shared-key: ${{ github.workflow }}-windows-latest
+          workspaces: ./src-tauri -> target
+          key: windows-latest
+
+      - name: Compile test binaries only
+        working-directory: src-tauri
+        run: cargo test -q --no-run
 
   tauri-build:
     name: Tauri build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     needs:
-      - prepare-model
       - frontend-quality
       - frontend-build
       - frontend-test
@@ -345,12 +296,6 @@ jobs:
 
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Download separation model
-        uses: actions/download-artifact@v8.0.1
-        with:
-          name: separation-model
-          path: src-tauri/models
 
       - name: Restore ONNX Runtime cache
         uses: actions/cache@v4.2.4

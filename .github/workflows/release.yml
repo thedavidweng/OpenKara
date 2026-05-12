@@ -128,16 +128,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6.0.2
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6.0.5
-        with:
-          version: 10.33.2
-
       - name: Setup Node.js
         uses: actions/setup-node@v6.4.0
         with:
           node-version: 24
-          package-manager-cache: false
 
       - name: Ensure release source tag exists
         run: |
