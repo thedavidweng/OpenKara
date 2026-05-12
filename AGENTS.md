@@ -97,21 +97,13 @@ GitHub Actions and Linux build constraints:
 - If all Verify jobs fail quickly on every OS, check whether they all failed at the same step before debugging platform-specific causes.
 - If the shared failure step is formatting, assume a repo-wide Prettier issue first.
 
-Windows Rust tests environment constraint:
+Windows Rust tests and CI environment constraints:
 
-- Windows Rust integration tests cannot run on GitHub Actions Windows Server
-  runners because the test binary links Tauri/tao, which imports desktop-only
-  DLL APIs (comctl32, dwmapi, user32, gdi32) via raw-dylib. These APIs are not
-  available on headless Server 2025, causing `STATUS_ENTRYPOINT_NOT_FOUND`
-  (0xc0000139) at process load time.
-- This is a test-environment limitation, not a code bug. Compilation succeeds
-  (`cargo test --no-run`), and the Tauri build (links + bundles without running
-  the binary) passes on the same runner.
-- macOS and Linux Rust tests provide full test coverage. Windows is limited to
-  compile-time checking via `cargo test --no-run`.
-- If Windows Rust tests regress, check whether newly added dependencies pull in
-  additional raw-dylib imports from desktop DLLs before debugging application
-  code.
+- Windows job MUST include ONNX Runtime preparation steps (Restore ONNX Runtime cache + Prepare ONNX Runtime) even though only `cargo test --no-run` runs. Reason: Tauri's build script (`tauri_build::build()`) is invoked during compilation and validates that all `bundle.resources` paths in `tauri.conf.json` exist before proceeding. The `generated/onnxruntime` directory is in `.gitignore`, so CI checkout won't have it unless the prepare step runs. Without it, compilation fails with `resource path generated\onnxruntime doesn't exist`. Do not skip this step because "we only compile, not run" — the Tauri build validation runs at compile time, not runtime.
+- Windows Rust integration tests cannot run on GitHub Actions Windows Server runners because the test binary links Tauri/tao, which imports desktop-only DLL APIs (comctl32, dwmapi, user32, gdi32) via raw-dylib. These APIs are not available on headless Server 2025, causing `STATUS_ENTRYPOINT_NOT_FOUND` (0xc0000139) at process load time.
+- This is a test-environment limitation, not a code bug. Compilation succeeds (`cargo test --no-run`), and the Tauri build (links + bundles without running the binary) passes on the same runner.
+- macOS and Linux Rust tests provide full test coverage. Windows is limited to compile-time checking via `cargo test --no-run`.
+- If Windows Rust tests regress, check whether newly added dependencies pull in additional raw-dylib imports from desktop DLLs before debugging application code.
 
 ## Completion Gate
 
