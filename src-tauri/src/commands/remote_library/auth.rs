@@ -33,7 +33,8 @@ pub(crate) fn begin_remote_auth(
     let mut dropbox_session = None;
     let webdav_session = match provider {
         RemoteLibraryProvider::GoogleDrive => {
-            let google = google_drive::parse_google_drive_payload(&state.app_resource_dir, payload)?;
+            let google =
+                google_drive::parse_google_drive_payload(&state.app_resource_dir, payload)?;
             google_drive_session = Some(google_drive::spawn_google_drive_auth_worker(
                 Arc::clone(&state.remote_auth_sessions),
                 session_id.clone(),
@@ -235,9 +236,7 @@ pub(crate) fn form_urlencoded_body(params: &[(&str, String)]) -> CommandResult<S
     Ok(encoded.query().unwrap_or_default().to_owned())
 }
 
-pub(crate) fn oauth_callback_response(
-    body: &str,
-) -> TinyHttpResponse<std::io::Cursor<Vec<u8>>> {
+pub(crate) fn oauth_callback_response(body: &str) -> TinyHttpResponse<std::io::Cursor<Vec<u8>>> {
     TinyHttpResponse::from_string(body.to_owned())
 }
 

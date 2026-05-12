@@ -1,8 +1,4 @@
-use crate::{
-    commands::error::CommandResult,
-    library::Song,
-    AppState,
-};
+use crate::{commands::error::CommandResult, library::Song, AppState};
 use tauri::AppHandle;
 
 use super::sync;
@@ -18,8 +14,11 @@ where
 {
     sync::prepare_active_remote_database_for_mutation(&state.app_data_dir)?;
     let result = mutation();
-    let imported_song_ids: Vec<String> =
-        result.imported.iter().map(|song| song.hash.clone()).collect();
+    let imported_song_ids: Vec<String> = result
+        .imported
+        .iter()
+        .map(|song| song.hash.clone())
+        .collect();
     sync::maybe_publish_songs_to_bound_remote(state, app_handle, &imported_song_ids)?;
     Ok(result)
 }

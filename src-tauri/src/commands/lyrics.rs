@@ -336,7 +336,13 @@ pub fn import_lyrics_files(
 
             Ok(ImportLyricsResult { matched, unmatched })
         },
-        |result| result.matched.iter().map(|entry| entry.song_id.clone()).collect(),
+        |result| {
+            result
+                .matched
+                .iter()
+                .map(|entry| entry.song_id.clone())
+                .collect()
+        },
     )
 }
 

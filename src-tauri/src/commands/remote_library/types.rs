@@ -14,8 +14,7 @@ use std::{
 pub(crate) const REMOTE_LIBRARIES_DIR: &str = "remote-libraries";
 pub(crate) const GOOGLE_DRIVE_CLIENT_ID_ENV: &str = "OPENKARA_GOOGLE_DRIVE_CLIENT_ID";
 pub(crate) const GOOGLE_DRIVE_CLIENT_SECRET_ENV: &str = "OPENKARA_GOOGLE_DRIVE_CLIENT_SECRET";
-pub(crate) const GOOGLE_DRIVE_OAUTH_CLIENT_RESOURCE_PATH: &str =
-    "oauth/google-drive-client.json";
+pub(crate) const GOOGLE_DRIVE_OAUTH_CLIENT_RESOURCE_PATH: &str = "oauth/google-drive-client.json";
 pub(crate) const DROPBOX_APP_KEY_ENV: &str = "OPENKARA_DROPBOX_APP_KEY";
 pub(crate) const DROPBOX_APP_SECRET_ENV: &str = "OPENKARA_DROPBOX_APP_SECRET";
 pub(crate) const DROPBOX_OAUTH_CLIENT_RESOURCE_PATH: &str = "oauth/dropbox-client.json";
@@ -371,9 +370,12 @@ pub(crate) fn stored_dropbox_app_key(library: &RegisteredLibrary) -> CommandResu
 }
 
 pub(crate) fn stored_webdav_server_url(library: &RegisteredLibrary) -> CommandResult<String> {
-    library.webdav_server_url().map(str::to_owned).ok_or_else(|| {
-        library_error("remote repository is missing the WebDAV server URL metadata".to_owned())
-    })
+    library
+        .webdav_server_url()
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            library_error("remote repository is missing the WebDAV server URL metadata".to_owned())
+        })
 }
 
 pub(crate) fn load_app_config(app_data_dir: &Path) -> CommandResult<AppConfig> {

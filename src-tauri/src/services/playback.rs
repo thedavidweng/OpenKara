@@ -1,25 +1,25 @@
 use crate::{
-    AppState,
     audio::{
         decode, output,
         playback::{
-            LoadedStems, PLAYBACK_POSITION_EVENT, PlaybackController, PlaybackStateSnapshot,
-            StemName, monotonic_now_ms, playback_position_event,
+            monotonic_now_ms, playback_position_event, LoadedStems, PlaybackController,
+            PlaybackStateSnapshot, StemName, PLAYBACK_POSITION_EVENT,
         },
     },
     cache, library,
     library_root::LibraryRoot,
     services::{
         cdg::{load_cdg_state_for_song, mark_cdg_reset_for_seek},
-        playback_source::{PlaybackSourceLoad, load_cached_stems_for_song, load_playback_source},
+        playback_source::{load_cached_stems_for_song, load_playback_source, PlaybackSourceLoad},
     },
+    AppState,
 };
 use anyhow::{Context, Result};
 use rusqlite::Connection;
 use std::path::Path;
 use std::sync::{
-    Arc, Mutex,
     atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc, Mutex,
 };
 use std::{
     thread,
@@ -451,26 +451,22 @@ pub fn emit_playback_position<R: Runtime>(
         return Ok(());
     }
 
-    app_handle.emit(
-        PLAYBACK_POSITION_EVENT,
-        playback_position_event(snapshot),
-    )
+    app_handle.emit(PLAYBACK_POSITION_EVENT, playback_position_event(snapshot))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
-        AppState, airplay_stream::AirPlayAudioTap, commands::bootstrap,
-        separator::model_cache::ModelCache,
+        airplay_stream::AirPlayAudioTap, commands::bootstrap, separator::model_cache::ModelCache,
+        AppState,
     };
     use std::{
         collections::HashMap,
         path::PathBuf,
         sync::{
-            Arc, Mutex,
             atomic::{AtomicBool, AtomicU64, Ordering},
-            mpsc,
+            mpsc, Arc, Mutex,
         },
         time::Duration,
     };

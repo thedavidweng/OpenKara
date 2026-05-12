@@ -1,12 +1,9 @@
 use openkara_lib::{
-    audio::playback::PlaybackController,
-    cache,
-    library::Song,
-    library_root::LibraryRoot,
+    audio::playback::PlaybackController, cache, library::Song, library_root::LibraryRoot,
     services::playback::play_song_from_library,
 };
-use std::fs;
 use rusqlite::Connection;
+use std::fs;
 
 #[test]
 fn cache_round_trip_preserves_nullable_file_path_and_audio_source_kind() {
@@ -19,7 +16,7 @@ fn cache_round_trip_preserves_nullable_file_path_and_audio_source_kind() {
         cdg_path: None,
         media_g_container: None,
         instrumental: false,
-            language: None,
+        language: None,
         title: Some("Remote Song".to_owned()),
         artist: Some("Remote Artist".to_owned()),
         album: Some("Remote Album".to_owned()),
@@ -55,7 +52,7 @@ fn remote_stems_song_plays_from_cached_stems_without_a_local_file_path() {
         cdg_path: None,
         media_g_container: None,
         instrumental: false,
-            language: None,
+        language: None,
         audio_source_kind: "stems_remote".to_owned(),
         title: Some("Remote Stems".to_owned()),
         artist: Some("Remote Artist".to_owned()),

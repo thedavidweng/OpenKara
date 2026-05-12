@@ -1,8 +1,8 @@
 use crate::library_root::LibraryRoot;
 use crate::{
-    AppState, airplay_stream, audio,
-    audio::playback::{PLAYBACK_POSITION_POLL_INTERVAL_MS, PlaybackController, monotonic_now_ms},
-    cache, commands, config, derive_startup_model_bootstrap, separator,
+    airplay_stream, audio,
+    audio::playback::{monotonic_now_ms, PlaybackController, PLAYBACK_POSITION_POLL_INTERVAL_MS},
+    cache, commands, config, derive_startup_model_bootstrap, separator, AppState,
 };
 use anyhow::Context;
 use std::{
@@ -10,8 +10,8 @@ use std::{
     fs,
     path::PathBuf,
     sync::{
-        Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Mutex,
     },
     thread,
     time::Duration,

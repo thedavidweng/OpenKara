@@ -9,8 +9,7 @@ mod support;
 use openkara_lib::{
     commands::{self, error::ErrorCode},
     config::ModelVariant,
-    derive_startup_model_bootstrap,
-    hash,
+    derive_startup_model_bootstrap, hash,
     separator::bootstrap::{self, ModelSource},
 };
 use sha2::{Digest, Sha256};
@@ -234,7 +233,10 @@ fn startup_bootstrap_detects_legacy_managed_model_without_spawning_worker() {
         commands::bootstrap::ModelBootstrapState::Outdated
     );
     assert!(!startup.should_spawn_bootstrap_worker);
-    assert!(managed_path.exists(), "legacy file should remain for user deletion");
+    assert!(
+        managed_path.exists(),
+        "legacy file should remain for user deletion"
+    );
 
     remove_dir_if_exists(&temp_dir);
 }

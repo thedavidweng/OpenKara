@@ -27,10 +27,8 @@ pub fn delete_all_stems(
     let connection = cache::open_database(&library_root.database_path())
         .map_err(|e| database_error(e.to_string()))?;
 
-    let deleted_count = remote_library::run_active_library_mirror_mutation(
-        &state,
-        &app_handle,
-        || {
+    let deleted_count =
+        remote_library::run_active_library_mirror_mutation(&state, &app_handle, || {
             let deleted_count =
                 cache::stems::delete_all_stem_cache_entries(&connection, &library_root)
                     .map_err(|e| internal_error(format!("failed to delete all stems: {e}")))?;
@@ -41,8 +39,7 @@ pub fn delete_all_stems(
             }
 
             Ok(deleted_count)
-        },
-    )?;
+        })?;
 
     Ok(DeleteStemsResult {
         deleted_count,
@@ -72,10 +69,8 @@ pub fn downgrade_all_to_two_stem(
     let connection = cache::open_database(&library_root.database_path())
         .map_err(|e| database_error(e.to_string()))?;
 
-    let (downgraded_count, freed_bytes) = remote_library::run_active_library_mirror_mutation(
-        &state,
-        &app_handle,
-        || {
+    let (downgraded_count, freed_bytes) =
+        remote_library::run_active_library_mirror_mutation(&state, &app_handle, || {
             let (downgraded_count, freed_bytes) =
                 cache::stems::batch_downgrade_to_two_stem(&connection, &library_root)
                     .map_err(|e| internal_error(format!("failed to downgrade stems: {e}")))?;
@@ -93,8 +88,7 @@ pub fn downgrade_all_to_two_stem(
                 }
             }
             Ok((downgraded_count, freed_bytes))
-        },
-    )?;
+        })?;
 
     Ok(DowngradeResult {
         downgraded_count,

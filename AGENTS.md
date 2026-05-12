@@ -27,7 +27,7 @@ Choose verification by the highest-risk area touched.
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | Docs/config only                         | `pnpm format`                                                                                                   |
 | Frontend/UI                              | `pnpm format` → `pnpm lint` → `pnpm build` → `pnpm test`                                                        |
-| Rust/backend under `src-tauri/`          | `pnpm format` → `cargo fmt` → `cd src-tauri && cargo test -q`                                                                 |
+| Rust/backend under `src-tauri/`          | `pnpm format` → `cargo fmt` → `cd src-tauri && cargo test -q`                                                   |
 | Release-sensitive or cross-stack changes | `pnpm format` → `pnpm lint` → `pnpm build` → `pnpm test` → `cd src-tauri && cargo test -q` → `pnpm tauri build` |
 
 Always escalate to full verification for any of the following:
@@ -112,9 +112,9 @@ This gate applies before claiming completion, creating a commit, or pushing.
 1. Run `pnpm format` from the repo root.
 2. For Rust changes, run `cargo fmt` from `src-tauri/`.
 3. Run the required verification for the highest-risk area touched.
-3. If multiple subsystems changed, use the stricter command set.
-4. Re-check that any touched docs/config/contracts still match the code.
-5. Only then report completion or prepare the change for submission.
+4. If multiple subsystems changed, use the stricter command set.
+5. Re-check that any touched docs/config/contracts still match the code.
+6. Only then report completion or prepare the change for submission.
 
 Completion is not valid unless the final report includes:
 

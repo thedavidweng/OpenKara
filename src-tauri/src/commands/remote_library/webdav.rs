@@ -9,15 +9,12 @@ use reqwest::{
     header::ETAG,
     Method, StatusCode, Url,
 };
-use std::{
-    fs,
-    io::Write,
-    path::Path,
-};
+use std::{fs, io::Write, path::Path};
 
 use super::types::{
-    load_remote_credential, slugify_display_name, store_remote_credential, stored_webdav_server_url,
-    RemoteAuthPayloadInput, StoredWebDavSecret, WebDavSecret, WebDavSessionData,
+    load_remote_credential, slugify_display_name, store_remote_credential,
+    stored_webdav_server_url, RemoteAuthPayloadInput, StoredWebDavSecret, WebDavSecret,
+    WebDavSessionData,
 };
 
 pub(crate) fn normalize_server_url(raw: &str) -> CommandResult<String> {
@@ -73,7 +70,9 @@ pub(crate) fn webdav_send(
     if_match: Option<&str>,
     body: Option<Vec<u8>>,
 ) -> CommandResult<Response> {
-    let mut request = client.request(method, url).basic_auth(username, Some(password));
+    let mut request = client
+        .request(method, url)
+        .basic_auth(username, Some(password));
     if let Some(tag) = if_match {
         request = request.header("If-Match", tag);
     }
@@ -91,8 +90,10 @@ pub(crate) fn webdav_exists(
     username: &str,
     password: &str,
 ) -> CommandResult<bool> {
-    Ok(webdav_send(client, Method::HEAD, url, username, password, None, None)?.status()
-        != StatusCode::NOT_FOUND)
+    Ok(
+        webdav_send(client, Method::HEAD, url, username, password, None, None)?.status()
+            != StatusCode::NOT_FOUND,
+    )
 }
 
 pub(crate) fn webdav_get_etag(
@@ -212,10 +213,16 @@ pub(crate) fn download_webdav_file(
         .bytes()
         .map_err(|error| library_error(format!("failed to read WebDAV response: {error}")))?;
     let mut file = fs::File::create(destination).map_err(|error| {
-        library_error(format!("failed to create {}: {error}", destination.display()))
+        library_error(format!(
+            "failed to create {}: {error}",
+            destination.display()
+        ))
     })?;
     file.write_all(bytes.as_ref()).map_err(|error| {
-        library_error(format!("failed to write {}: {error}", destination.display()))
+        library_error(format!(
+            "failed to write {}: {error}",
+            destination.display()
+        ))
     })?;
     Ok(etag)
 }
@@ -239,7 +246,15 @@ pub(crate) fn upload_webdav_bytes(
     username: &str,
     password: &str,
 ) -> CommandResult<Option<String>> {
-    let response = webdav_send(client, Method::PUT, url, username, password, None, Some(bytes))?;
+    let response = webdav_send(
+        client,
+        Method::PUT,
+        url,
+        username,
+        password,
+        None,
+        Some(bytes),
+    )?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "failed to upload {url}: {}",
@@ -270,7 +285,9 @@ pub(crate) fn parse_webdav_payload(
             root_path,
         } => {
             if server_url.trim().is_empty() {
-                return Err(library_error("WebDAV server URL cannot be empty".to_owned()));
+                return Err(library_error(
+                    "WebDAV server URL cannot be empty".to_owned(),
+                ));
             }
             if username.trim().is_empty() {
                 return Err(library_error("WebDAV username cannot be empty".to_owned()));
@@ -465,7 +482,13 @@ pub(crate) fn upload_relative_file_to_remote(
         }
     }
     let file_url = join_url(&secret.root_url, relative_path)?;
-    upload_webdav_file(&client, &file_url, &source, &secret.username, &secret.password)?;
+    upload_webdav_file(
+        &client,
+        &file_url,
+        &source,
+        &secret.username,
+        &secret.password,
+    )?;
     Ok(())
 }
 
@@ -519,10 +542,9 @@ pub(crate) fn delete_relative_path_from_remote(
         None,
     )?;
     match response.status() {
-        StatusCode::OK
-        | StatusCode::NO_CONTENT
-        | StatusCode::ACCEPTED
-        | StatusCode::NOT_FOUND => Ok(()),
+        StatusCode::OK | StatusCode::NO_CONTENT | StatusCode::ACCEPTED | StatusCode::NOT_FOUND => {
+            Ok(())
+        }
         status => Err(library_error(format!("failed to delete {url}: {status}"))),
     }
 }
@@ -562,8 +584,7 @@ mod tests {
 
     impl TestWebDavServer {
         fn start() -> Self {
-            let listener =
-                TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)).unwrap();
+            let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)).unwrap();
             let address = listener.local_addr().unwrap();
             let server = Arc::new(Server::from_listener(listener, None).unwrap());
             let directories = Arc::new(Mutex::new(HashSet::from(["/".to_owned()])));
@@ -654,7 +675,11 @@ mod tests {
         }
     }
 
-    fn test_remote_library(root_path: &Path, server_url: &str, root_url: &str) -> RegisteredLibrary {
+    fn test_remote_library(
+        root_path: &Path,
+        server_url: &str,
+        root_url: &str,
+    ) -> RegisteredLibrary {
         RegisteredLibrary::remote(
             "remote-webdav-test".to_owned(),
             "Remote WebDAV Test".to_owned(),
@@ -756,9 +781,7 @@ mod tests {
         let error = refresh_existing_webdav_library(app_data_dir.path(), &library, &secret)
             .expect_err("empty WebDAV path should not be initialized during relocation");
 
-        assert!(error
-            .message
-            .contains("not an OpenKara remote repository"));
+        assert!(error.message.contains("not an OpenKara remote repository"));
         assert!(!server.directory_exists("/MovedOpenKara/"));
         assert!(server.file("/MovedOpenKara/openkara.db").is_none());
     }

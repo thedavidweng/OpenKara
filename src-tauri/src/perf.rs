@@ -53,7 +53,7 @@ pub fn build_backend_performance_report(
         track_load.duration_ms,
         seek_iterations,
     )
-        .context("failed to profile playback seek latency")?;
+    .context("failed to profile playback seek latency")?;
 
     Ok(PerformanceReport {
         playback: PlaybackPerformanceReport {

@@ -1,7 +1,4 @@
-use openkara_lib::lyrics::{
-    lrcapi::LrcApiClient,
-    lrclib::LyricsLookupQuery,
-};
+use openkara_lib::lyrics::{lrcapi::LrcApiClient, lrclib::LyricsLookupQuery};
 
 #[test]
 fn fetches_highest_scoring_candidate_from_jsonapi() {
