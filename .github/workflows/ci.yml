@@ -245,54 +245,65 @@ jobs:
           # Find dumpbin via vswhere
           $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
           $dumpbin = Get-ChildItem "$vsPath\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -Last 1
-          Write-Host "dumpbin: $($dumpbin.FullName)"
 
           # Find the test binary
           $testExe = Get-ChildItem src-tauri/target/debug/deps/openkara_lib-*.exe | Select-Object -First 1
-          Write-Host "`n=== Test binary: $($testExe.FullName) ==="
+          Write-Host "=== Test binary: $($testExe.FullName) ==="
 
-          # Show test binary's DLL dependencies
+          # Show dependents
           Write-Host "`n=== dumpbin /dependents on test binary ==="
           & $dumpbin /dependents $testExe.FullName
 
-          # Show onnxruntime.dll's dependencies
-          $ortDll = 'src-tauri/target/debug/deps/onnxruntime.dll'
-          Write-Host "`n=== dumpbin /dependents on onnxruntime.dll ==="
-          & $dumpbin /dependents $ortDll
-
-          # Show DirectML.dll's dependencies
-          $dmlDll = 'src-tauri/target/debug/deps/DirectML.dll'
-          if (Test-Path $dmlDll) {
-            Write-Host "`n=== dumpbin /dependents on DirectML.dll ==="
-            & $dumpbin /dependents $dmlDll
+          # Check openkara_lib.dll dependents (the cdylib loaded by the test exe)
+          $libDll = 'src-tauri/target/debug/deps/openkara_lib.dll'
+          if (Test-Path $libDll) {
+            Write-Host "`n=== dumpbin /dependents on openkara_lib.dll ==="
+            & $dumpbin /dependents $libDll
           }
 
-          # Check which DLLs from the dependency list are NOT findable
-          Write-Host "`n=== Checking DLL availability via where.exe ==="
-          $dllsToCheck = @(
-            'onnxruntime.dll', 'DirectML.dll', 'onnxruntime_providers_shared.dll',
-            'VCRUNTIME140.dll', 'VCRUNTIME140_1.dll', 'MSVCP140.dll',
-            'KERNEL32.dll', 'ole32.dll', 'dxgi.dll', 'd3d12.dll',
-            'dxcore.dll', 'api-ms-win-core-winrt-l1-1-0.dll'
-          )
-          foreach ($dll in $dllsToCheck) {
-            $found = & where.exe $dll 2>$null
-            if ($found) {
-              Write-Host "  FOUND: $dll -> $found"
-            } else {
-              $inDeps = Test-Path "src-tauri/target/debug/deps/$dll"
-              if ($inDeps) {
-                Write-Host "  FOUND (in deps): $dll"
-              } else {
-                Write-Host "  MISSING: $dll"
-              }
-            }
+          # Show imports from comctl32.dll in the test binary
+          Write-Host "`n=== Imports from comctl32.dll in test binary ==="
+          & $dumpbin /imports $testExe.FullName | Select-String -Pattern "comctl32" -Context 0,30
+
+          # Show imports from comctl32.dll in openkara_lib.dll
+          if (Test-Path $libDll) {
+            Write-Host "`n=== Imports from comctl32.dll in openkara_lib.dll ==="
+            & $dumpbin /imports $libDll | Select-String -Pattern "comctl32" -Context 0,30
           }
 
-          # Show imports of onnxruntime.dll to find the exact missing symbol
-          Write-Host "`n=== dumpbin /imports on onnxruntime.dll (first 200 lines) ==="
-          $imports = & $dumpbin /imports $ortDll
-          $imports | Select-Object -First 200
+          # Enable loader snaps and try to run the binary to get detailed error
+          Write-Host "`n=== Trying to load test binary with LoadLibraryEx ==="
+          Add-Type @"
+          using System;
+          using System.Runtime.InteropServices;
+          public class NativeLoader {
+            [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+            public static extern IntPtr LoadLibraryEx(string lpFileName, IntPtr hFile, uint dwFlags);
+
+            [DllImport("kernel32.dll")]
+            public static extern uint GetLastError();
+
+            [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+            public static extern uint FormatMessage(uint dwFlags, IntPtr lpSource, uint dwMessageId, uint dwLanguageId, [Out] System.Text.StringBuilder lpBuffer, uint nSize, IntPtr Arguments);
+          }
+          "@
+
+          $depsDir = (Resolve-Path 'src-tauri/target/debug/deps').Path
+          $env:PATH = "$depsDir;$env:PATH"
+          $handle = [NativeLoader]::LoadLibraryEx("$depsDir\openkara_lib.dll", [IntPtr]::Zero, 0)
+          if ($handle -eq [IntPtr]::Zero) {
+            $err = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+            $sb = New-Object System.Text.StringBuilder 1024
+            [NativeLoader]::FormatMessage(0x1000, [IntPtr]::Zero, [uint32]$err, 0, $sb, 1024, [IntPtr]::Zero) | Out-Null
+            Write-Host "LoadLibraryEx failed with error $err : $($sb.ToString())"
+          } else {
+            Write-Host "LoadLibraryEx succeeded (unexpected)"
+          }
+
+          # OS info
+          Write-Host "`n=== OS ==="
+          (Get-CimInstance Win32_OperatingSystem).Caption
+          Write-Host "Build: $((Get-CimInstance Win32_OperatingSystem).BuildNumber)"
 
       - name: Run Rust tests
         working-directory: src-tauri
