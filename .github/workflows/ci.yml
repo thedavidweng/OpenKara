@@ -238,6 +238,58 @@ jobs:
           Copy-Item src-tauri/generated/onnxruntime/*.dll $destination -Force
           Get-ChildItem $destination -Filter '*.dll' | Format-Table Name, Length
 
+      - name: Diagnose Windows DLL dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Find the test binary
+          $testExe = Get-ChildItem src-tauri/target/debug/deps/openkara_lib-*.exe | Select-Object -First 1
+          Write-Host "=== Test binary: $($testExe.FullName) ==="
+
+          # Show test binary's DLL dependencies
+          Write-Host "`n=== dumpbin /dependents on test binary ==="
+          & dumpbin /dependents $testExe.FullName
+
+          # Show onnxruntime.dll's dependencies
+          $ortDll = 'src-tauri/target/debug/deps/onnxruntime.dll'
+          Write-Host "`n=== dumpbin /dependents on onnxruntime.dll ==="
+          & dumpbin /dependents $ortDll
+
+          # Show DirectML.dll's dependencies
+          $dmlDll = 'src-tauri/target/debug/deps/DirectML.dll'
+          if (Test-Path $dmlDll) {
+            Write-Host "`n=== dumpbin /dependents on DirectML.dll ==="
+            & dumpbin /dependents $dmlDll
+          }
+
+          # Check which DLLs from the dependency list are NOT findable
+          Write-Host "`n=== Checking DLL availability via where.exe ==="
+          $dllsToCheck = @(
+            'onnxruntime.dll', 'DirectML.dll', 'onnxruntime_providers_shared.dll',
+            'VCRUNTIME140.dll', 'VCRUNTIME140_1.dll', 'MSVCP140.dll',
+            'KERNEL32.dll', 'ole32.dll', 'dxgi.dll', 'd3d12.dll',
+            'dxcore.dll', 'api-ms-win-core-winrt-l1-1-0.dll'
+          )
+          foreach ($dll in $dllsToCheck) {
+            $found = & where.exe $dll 2>$null
+            if ($found) {
+              Write-Host "  FOUND: $dll -> $found"
+            } else {
+              # Also check in the deps directory
+              $inDeps = Test-Path "src-tauri/target/debug/deps/$dll"
+              if ($inDeps) {
+                Write-Host "  FOUND (in deps): $dll"
+              } else {
+                Write-Host "  MISSING: $dll"
+              }
+            }
+          }
+
+          # Show imports of onnxruntime.dll to find the exact missing symbol
+          Write-Host "`n=== dumpbin /imports on onnxruntime.dll (first 200 lines) ==="
+          $imports = & dumpbin /imports $ortDll
+          $imports | Select-Object -First 200
+
       - name: Run Rust tests
         working-directory: src-tauri
         run: cargo test -q
