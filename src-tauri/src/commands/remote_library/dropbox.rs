@@ -1,6 +1,6 @@
 use crate::{
     cache,
-    commands::error::{library_error, CommandResult},
+    commands::error::{library_error, CommandError, CommandResult},
     config::RegisteredLibrary,
     library_root::LibraryRoot,
 };
@@ -31,6 +31,12 @@ use super::{
         DROPBOX_OAUTH_CLIENT_RESOURCE_PATH,
     },
 };
+
+fn safe_request_error(op: &str, _error: reqwest::Error) -> CommandError {
+    library_error(format!(
+        "{op} failed because the network request could not be completed."
+    ))
+}
 
 const DROPBOX_REMOTE_LIBRARY_OAUTH_SCOPE: &str =
     "files.metadata.read files.content.read files.content.write";
@@ -448,7 +454,7 @@ pub(crate) fn dropbox_get_metadata(
     let response = dropbox_authorized_request(app_data_dir, secret, Method::POST, url)?
         .json(&serde_json::json!({ "path": path }))
         .send()
-        .map_err(|e| library_error(format!("Dropbox metadata lookup failed: {}", e.without_url())))?;
+        .map_err(|e| safe_request_error("Dropbox metadata lookup", e))?;
     match response.status() {
         StatusCode::OK => response
             .json()
@@ -470,7 +476,7 @@ fn dropbox_get_metadata_with_token(
     let response = dropbox_request_with_access_token(access_token, Method::POST, url)
         .json(&serde_json::json!({ "path": path }))
         .send()
-        .map_err(|e| library_error(format!("Dropbox metadata lookup failed: {}", e.without_url())))?;
+        .map_err(|e| safe_request_error("Dropbox metadata lookup", e))?;
     match response.status() {
         StatusCode::OK => response
             .json()
@@ -493,7 +499,7 @@ fn dropbox_create_folder(
     let response = dropbox_authorized_request(app_data_dir, secret, Method::POST, url)?
         .json(&serde_json::json!({ "path": path, "autorename": false }))
         .send()
-        .map_err(|e| library_error(format!("failed to create Dropbox folder: {}", e.without_url())))?;
+        .map_err(|e| safe_request_error("create Dropbox folder", e))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Dropbox folder creation failed with status {}",
@@ -514,7 +520,7 @@ fn dropbox_create_folder_with_token(
     let response = dropbox_request_with_access_token(access_token, Method::POST, url)
         .json(&serde_json::json!({ "path": path, "autorename": false }))
         .send()
-        .map_err(|e| library_error(format!("failed to create Dropbox folder: {}", e.without_url())))?;
+        .map_err(|e| safe_request_error("create Dropbox folder", e))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Dropbox folder creation failed with status {}",
@@ -580,7 +586,7 @@ fn dropbox_upload_file_bytes(
         .header("Content-Type", "application/octet-stream")
         .body(bytes)
         .send()
-        .map_err(|e| library_error(format!("failed to upload Dropbox file bytes: {}", e.without_url())))?;
+        .map_err(|e| safe_request_error("upload Dropbox file bytes", e))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Dropbox file upload failed with status {}",
@@ -602,7 +608,7 @@ pub(crate) fn dropbox_download_file(
     let response = dropbox_authorized_request(app_data_dir, secret, Method::POST, url)?
         .header("Dropbox-API-Arg", serde_json::json!({ "path": path }).to_string())
         .send()
-        .map_err(|e| library_error(format!("failed to download Dropbox file: {}", e.without_url())))?;
+        .map_err(|e| safe_request_error("download Dropbox file", e))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Dropbox download failed with status {}",
@@ -812,7 +818,7 @@ fn dropbox_delete_path(
     let response = dropbox_authorized_request(app_data_dir, secret, Method::POST, url)?
         .json(&serde_json::json!({ "path": path }))
         .send()
-        .map_err(|e| library_error(format!("failed to delete Dropbox path: {}", e.without_url())))?;
+        .map_err(|e| safe_request_error("delete Dropbox path", e))?;
     match response.status() {
         StatusCode::OK | StatusCode::CONFLICT => Ok(()),
         status => Err(library_error(format!(

@@ -1,6 +1,6 @@
 use crate::{
     cache,
-    commands::error::{library_error, CommandResult},
+    commands::error::{library_error, CommandError, CommandResult},
     config::RegisteredLibrary,
     library_root::LibraryRoot,
 };
@@ -31,6 +31,12 @@ use super::{
         GOOGLE_DRIVE_OAUTH_CLIENT_RESOURCE_PATH, GOOGLE_DRIVE_OAUTH_SCOPE,
     },
 };
+
+fn safe_request_error(op: &str, _error: reqwest::Error) -> CommandError {
+    library_error(format!(
+        "{op} failed because the network request could not be completed."
+    ))
+}
 
 const GOOGLE_DRIVE_FOLDER_MIME_TYPE: &str = "application/vnd.google-apps.folder";
 pub(crate) const GOOGLE_DRIVE_ROOT_ID: &str = "root";
@@ -270,7 +276,7 @@ fn google_drive_find_child(
 
     let response = google_drive_authorized_request(app_data_dir, secret, Method::GET, url)?
         .send()
-        .map_err(|e| library_error(format!("Google Drive lookup failed: {}", e.without_url())))?;
+        .map_err(|e| safe_request_error("Google Drive lookup", e))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Google Drive lookup failed with status {}",
@@ -311,7 +317,7 @@ fn google_drive_find_child_with_token(
 
     let response = google_drive_request_with_access_token(access_token, Method::GET, url)
         .send()
-        .map_err(|error| library_error(format!("Google Drive lookup failed: {error}")))?;
+        .map_err(|e| safe_request_error("Google Drive lookup", e))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Google Drive lookup failed with status {}",
@@ -338,7 +344,7 @@ fn google_drive_create_folder(
             "parents": [parent_id],
         }))
         .send()
-        .map_err(|e| library_error(format!("failed to create Google Drive folder: {}", e.without_url())))?;
+        .map_err(|e| safe_request_error("create Google Drive folder", e))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Google Drive folder creation failed with status {}",
@@ -381,7 +387,7 @@ fn google_drive_create_folder_with_token(
             "parents": [parent_id],
         }))
         .send()
-        .map_err(|e| library_error(format!("failed to create Google Drive folder: {}", e.without_url())))?;
+        .map_err(|e| safe_request_error("create Google Drive folder", e))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Google Drive folder creation failed with status {}",
@@ -424,7 +430,7 @@ fn google_drive_create_empty_file(
             "parents": [parent_id],
         }))
         .send()
-        .map_err(|e| library_error(format!("failed to create Google Drive file metadata: {}", e.without_url())))?;
+        .map_err(|e| safe_request_error("create Google Drive file metadata", e))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Google Drive file metadata creation failed with status {}",
@@ -449,7 +455,7 @@ fn google_drive_upload_file_bytes(
         .header("Content-Type", "application/octet-stream")
         .body(bytes)
         .send()
-        .map_err(|e| library_error(format!("failed to upload Google Drive file bytes: {}", e.without_url())))?;
+        .map_err(|e| safe_request_error("upload Google Drive file bytes", e))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Google Drive file upload failed with status {}",
@@ -470,7 +476,7 @@ pub(crate) fn google_drive_download_file(
     let url = google_drive_api_url(&format!("/drive/v3/files/{file_id}?alt=media"))?;
     let response = google_drive_authorized_request(app_data_dir, secret, Method::GET, url)?
         .send()
-        .map_err(|e| library_error(format!("failed to download Google Drive file: {}", e.without_url())))?;
+        .map_err(|e| safe_request_error("download Google Drive file", e))?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Google Drive download failed with status {}",
@@ -942,7 +948,7 @@ fn google_drive_delete_entry(
     let url = google_drive_api_url(&format!("/drive/v3/files/{file_id}"))?;
     let response = google_drive_authorized_request(app_data_dir, secret, Method::DELETE, url)?
         .send()
-        .map_err(|e| library_error(format!("failed to delete Google Drive entry: {}", e.without_url())))?;
+        .map_err(|e| safe_request_error("delete Google Drive entry", e))?;
     match response.status() {
         reqwest::StatusCode::NO_CONTENT | reqwest::StatusCode::NOT_FOUND => Ok(()),
         status => Err(library_error(format!(
