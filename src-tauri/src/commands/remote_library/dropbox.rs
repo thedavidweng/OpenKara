@@ -16,6 +16,7 @@ use std::{
 };
 use tiny_http::Server;
 
+use super::RequestSendExt;
 use super::{
     auth::{
         env_optional, form_urlencoded_body, oauth_callback_response, oauth_pkce_code_challenge,
@@ -31,12 +32,6 @@ use super::{
         DROPBOX_OAUTH_CLIENT_RESOURCE_PATH,
     },
 };
-
-fn safe_request_error(op: &str, _error: reqwest::Error) -> CommandError {
-    library_error(format!(
-        "{op} failed because the network request could not be completed."
-    ))
-}
 
 const DROPBOX_REMOTE_LIBRARY_OAUTH_SCOPE: &str =
     "files.metadata.read files.content.read files.content.write";
@@ -453,8 +448,7 @@ pub(crate) fn dropbox_get_metadata(
     let url = dropbox_api_url("/2/files/get_metadata")?;
     let response = dropbox_authorized_request(app_data_dir, secret, Method::POST, url)?
         .json(&serde_json::json!({ "path": path }))
-        .send()
-        .map_err(|e| safe_request_error("Dropbox metadata lookup", e))?;
+        .send_network("Dropbox metadata lookup")?;
     match response.status() {
         StatusCode::OK => response
             .json()
@@ -475,8 +469,7 @@ fn dropbox_get_metadata_with_token(
     let url = dropbox_api_url("/2/files/get_metadata")?;
     let response = dropbox_request_with_access_token(access_token, Method::POST, url)
         .json(&serde_json::json!({ "path": path }))
-        .send()
-        .map_err(|e| safe_request_error("Dropbox metadata lookup", e))?;
+        .send_network("Dropbox metadata lookup")?;
     match response.status() {
         StatusCode::OK => response
             .json()
@@ -498,8 +491,7 @@ fn dropbox_create_folder(
     let url = dropbox_api_url("/2/files/create_folder_v2")?;
     let response = dropbox_authorized_request(app_data_dir, secret, Method::POST, url)?
         .json(&serde_json::json!({ "path": path, "autorename": false }))
-        .send()
-        .map_err(|e| safe_request_error("create Dropbox folder", e))?;
+        .send_network("create Dropbox folder")?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Dropbox folder creation failed with status {}",
@@ -519,8 +511,7 @@ fn dropbox_create_folder_with_token(
     let url = dropbox_api_url("/2/files/create_folder_v2")?;
     let response = dropbox_request_with_access_token(access_token, Method::POST, url)
         .json(&serde_json::json!({ "path": path, "autorename": false }))
-        .send()
-        .map_err(|e| safe_request_error("create Dropbox folder", e))?;
+        .send_network("create Dropbox folder")?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Dropbox folder creation failed with status {}",
@@ -585,8 +576,7 @@ fn dropbox_upload_file_bytes(
         )
         .header("Content-Type", "application/octet-stream")
         .body(bytes)
-        .send()
-        .map_err(|e| safe_request_error("upload Dropbox file bytes", e))?;
+        .send_network("upload Dropbox file bytes")?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Dropbox file upload failed with status {}",
@@ -607,8 +597,7 @@ pub(crate) fn dropbox_download_file(
     let url = dropbox_content_url("/2/files/download")?;
     let response = dropbox_authorized_request(app_data_dir, secret, Method::POST, url)?
         .header("Dropbox-API-Arg", serde_json::json!({ "path": path }).to_string())
-        .send()
-        .map_err(|e| safe_request_error("download Dropbox file", e))?;
+        .send_network("download Dropbox file")?;
     if !response.status().is_success() {
         return Err(library_error(format!(
             "Dropbox download failed with status {}",
@@ -817,8 +806,7 @@ fn dropbox_delete_path(
     let url = dropbox_api_url("/2/files/delete_v2")?;
     let response = dropbox_authorized_request(app_data_dir, secret, Method::POST, url)?
         .json(&serde_json::json!({ "path": path }))
-        .send()
-        .map_err(|e| safe_request_error("delete Dropbox path", e))?;
+        .send_network("delete Dropbox path")?;
     match response.status() {
         StatusCode::OK | StatusCode::CONFLICT => Ok(()),
         status => Err(library_error(format!(
