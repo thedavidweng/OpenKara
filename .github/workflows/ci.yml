@@ -224,6 +224,15 @@ jobs:
           workspaces: ./src-tauri -> target
           key: windows-latest
 
+      - name: Restore ONNX Runtime cache
+        uses: actions/cache@v4.2.4
+        with:
+          path: src-tauri/generated/onnxruntime
+          key: onnxruntime-x86_64-pc-windows-msvc-${{ hashFiles('scripts/prepare-onnx-runtime.mjs') }}
+
+      - name: Prepare ONNX Runtime
+        run: node scripts/prepare-onnx-runtime.mjs --target x86_64-pc-windows-msvc
+
       - name: Compile test binaries only
         working-directory: src-tauri
         run: cargo test -q --no-run
