@@ -242,24 +242,29 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          # Find dumpbin via vswhere
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $dumpbin = Get-ChildItem "$vsPath\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -Last 1
+          Write-Host "dumpbin: $($dumpbin.FullName)"
+
           # Find the test binary
           $testExe = Get-ChildItem src-tauri/target/debug/deps/openkara_lib-*.exe | Select-Object -First 1
-          Write-Host "=== Test binary: $($testExe.FullName) ==="
+          Write-Host "`n=== Test binary: $($testExe.FullName) ==="
 
           # Show test binary's DLL dependencies
           Write-Host "`n=== dumpbin /dependents on test binary ==="
-          & dumpbin /dependents $testExe.FullName
+          & $dumpbin /dependents $testExe.FullName
 
           # Show onnxruntime.dll's dependencies
           $ortDll = 'src-tauri/target/debug/deps/onnxruntime.dll'
           Write-Host "`n=== dumpbin /dependents on onnxruntime.dll ==="
-          & dumpbin /dependents $ortDll
+          & $dumpbin /dependents $ortDll
 
           # Show DirectML.dll's dependencies
           $dmlDll = 'src-tauri/target/debug/deps/DirectML.dll'
           if (Test-Path $dmlDll) {
             Write-Host "`n=== dumpbin /dependents on DirectML.dll ==="
-            & dumpbin /dependents $dmlDll
+            & $dumpbin /dependents $dmlDll
           }
 
           # Check which DLLs from the dependency list are NOT findable
@@ -275,7 +280,6 @@ jobs:
             if ($found) {
               Write-Host "  FOUND: $dll -> $found"
             } else {
-              # Also check in the deps directory
               $inDeps = Test-Path "src-tauri/target/debug/deps/$dll"
               if ($inDeps) {
                 Write-Host "  FOUND (in deps): $dll"
@@ -287,7 +291,7 @@ jobs:
 
           # Show imports of onnxruntime.dll to find the exact missing symbol
           Write-Host "`n=== dumpbin /imports on onnxruntime.dll (first 200 lines) ==="
-          $imports = & dumpbin /imports $ortDll
+          $imports = & $dumpbin /imports $ortDll
           $imports | Select-Object -First 200
 
       - name: Run Rust tests
