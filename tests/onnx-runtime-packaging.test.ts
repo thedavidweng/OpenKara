@@ -100,13 +100,13 @@ describe("ONNX Runtime packaging", () => {
     expect(cargoSources).toContainEqual(
       expect.objectContaining({
         dest: "cargo",
-        "dest-filename": "config.toml",
+        "dest-filename": "config",
       }),
     );
     expect(cargoSources).not.toContainEqual(
       expect.objectContaining({
         dest: "cargo",
-        "dest-filename": "config",
+        "dest-filename": "config.toml",
       }),
     );
   });

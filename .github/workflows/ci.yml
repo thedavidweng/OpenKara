@@ -80,6 +80,9 @@ jobs:
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Audit dependencies
+        run: pnpm audit --audit-level=high --ignore-registry-errors
+
       - name: Verify formatting
         run: pnpm format
 
@@ -109,6 +112,9 @@ jobs:
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Audit dependencies
+        run: pnpm audit --audit-level=high --ignore-registry-errors
+
       - name: Build frontend
         run: pnpm build
 
@@ -134,6 +140,9 @@ jobs:
 
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Audit dependencies
+        run: pnpm audit --audit-level=high --ignore-registry-errors
 
       - name: Run frontend tests
         run: pnpm test
@@ -305,6 +314,9 @@ jobs:
 
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Audit dependencies
+        run: pnpm audit --audit-level=high --ignore-registry-errors
 
       - name: Restore ONNX Runtime cache
         uses: actions/cache@v4.2.4
