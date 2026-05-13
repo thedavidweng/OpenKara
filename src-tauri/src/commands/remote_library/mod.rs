@@ -32,8 +32,8 @@ impl RequestSendExt for reqwest::blocking::RequestBuilder {
         op: &'static str,
     ) -> std::result::Result<reqwest::blocking::Response, crate::commands::error::CommandError>
     {
-        self.send().map_err(|error| {
-            tracing::trace!("{op} request failed: {error:?}");
+        self.send().map_err(|_error| {
+            tracing::trace!("{op} request failed");
             crate::commands::error::library_error(format!("{op} could not be completed"))
         })
     }
