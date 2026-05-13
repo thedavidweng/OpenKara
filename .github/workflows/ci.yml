@@ -172,8 +172,22 @@ jobs:
           node-version: 24
           package-manager-cache: false
 
+      - name: Verify Cargo is not broken
+        if: runner.os == 'macOS'
+        run: |
+          if cargo --version 2>&1 | grep -qi "rustup-init"; then
+            echo "Broken cargo detected, reinstalling toolchain..."
+            rm -rf "$HOME/.cargo"
+          fi
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify Rust toolchain (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cargo --version
+          rustc --version
 
       - name: Restore Rust cache
         uses: swatinem/rust-cache@v2.9.1
@@ -283,8 +297,29 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Verify Cargo is not broken
+        if: runner.os == 'macOS'
+        run: |
+          # Some macOS runner images ship with a broken toolchain where
+          # $HOME/.cargo/bin/cargo dispatches to rustup-init. Detect and
+          # repair without a full reinstall every time.
+          if cargo --version 2>&1 | grep -qi "rustup-init"; then
+            echo "Broken cargo detected, reinstalling toolchain..."
+            rm -rf "$HOME/.cargo"
+          fi
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Repair toolchain if still broken
+        if: runner.os == 'macOS'
+        run: |
+          # rustup can leave cargo pointing to rustup-init if the
+          # proxy links got clobbered. Re-run the toolchain installer
+          # so it repairs the bin symlinks.
+          if cargo --version 2>&1 | grep -qi "rustup-init"; then
+            rustup update stable --force
+          fi
 
       - name: Restore Rust cache
         uses: swatinem/rust-cache@v2.9.1
