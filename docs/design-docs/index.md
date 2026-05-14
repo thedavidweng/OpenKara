@@ -8,6 +8,6 @@ These documents explain how OpenKara is structured, why major technical choices 
 | [core-beliefs.md](./core-beliefs.md)                                 | Core product and engineering principles                           |
 | [project-structure.md](./project-structure.md)                       | Directory layout and module responsibilities                      |
 | [roadmap.md](./roadmap.md)                                           | Technical implementation roadmap, contracts, and risks            |
-| [../plan/next-execution-plan.md](../plan/next-execution-plan.md)     | Single active execution plan (hardening + capability 1)           |
+| [../planning/plan.md](../planning/plan.md)                           | Single active execution plan (hardening + capability 1)           |
 | [releasing.md](./releasing.md)                                       | Release workflow, Homebrew distribution, and future channel notes |
 | [performance/phase-5-baseline.md](./performance/phase-5-baseline.md) | Current backend benchmark baseline for profiling work             |

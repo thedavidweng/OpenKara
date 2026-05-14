@@ -9,9 +9,9 @@ Use these docs when the question is about what the product should do for a user,
 | -------------------------------------------------- | ----------------------------------------------- |
 | [new-user-onboarding.md](./new-user-onboarding.md) | First-run setup and initial import expectations |
 
-## Engineering plan (single active slice)
+## Planning (where the active plan lives)
 
-The repo keeps **one** execution plan under [`../plan/`](../plan/) (see [`../plan/next-execution-plan.md`](../plan/next-execution-plan.md)). Agreed priority-only history lives in [`../archive/plans/future-work-and-hardening-priorities-2026-05.md`](../archive/plans/future-work-and-hardening-priorities-2026-05.md).
+The repo keeps **one** active plan in [`../planning/plan.md`](../planning/plan.md). Agreed priority-only history lives in [`../archive/plans/future-work-and-hardening-priorities-2026-05.md`](../archive/plans/future-work-and-hardening-priorities-2026-05.md).
 
 ## What Belongs Here
 

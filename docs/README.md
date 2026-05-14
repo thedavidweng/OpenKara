@@ -4,7 +4,7 @@ The public website source lives at [`../website/`](../website/) so this folder
 can stay focused on engineering docs, product specs, references, generated
 summaries, and historical records.
 
-## Design Docs
+## Design docs
 
 | Document                                                                                     | Description                                                       |
 | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
@@ -16,31 +16,23 @@ summaries, and historical records.
 | [design-docs/releasing.md](./design-docs/releasing.md)                                       | Release workflow, Homebrew distribution, and future channels      |
 | [design-docs/performance/phase-5-baseline.md](./design-docs/performance/phase-5-baseline.md) | Backend benchmark baseline for profiling work                     |
 
-## Plan (next execution slice)
+## Planning
 
-| Document                                                     | Description                                                                                      |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| [plan/README.md](./plan/README.md)                           | Folder policy: exactly one active plan                                                           |
-| [plan/next-execution-plan.md](./plan/next-execution-plan.md) | Current plan — all agreed hardening streams + playlists / singer rotation (new capability **1**) |
+| Document                                         | Description                                                                                      |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| [planning/README.md](./planning/README.md)       | What lives in this folder and how plans age out                                                  |
+| [planning/plan.md](./planning/plan.md)           | **Active plan** — hardening H1–H7 + capability F1 (playlists / singer rotation) until superseded |
+| [planning/tech-debt.md](./planning/tech-debt.md) | Cross-cutting debt and housekeeping                                                              |
 
-## Execution Plans
+Older point-in-time plans live under [archive/plans/](archive/README.md).
 
-| Document                                                             | Description                                                |
-| -------------------------------------------------------------------- | ---------------------------------------------------------- |
-| [exec-plans/active/index.md](./exec-plans/active/index.md)           | Pointer to the active plan under `docs/plan/`              |
-| [exec-plans/tech-debt-tracker.md](./exec-plans/tech-debt-tracker.md) | Cross-cutting debt items that do not belong to one feature |
-
-Point-in-time plans that no longer drive active work live under
-[archive/](./archive/README.md). **The single actionable plan** lives under
-[`docs/plan/`](./plan/README.md); `exec-plans/active/` only indexes it.
-
-## Generated Docs
+## Generated docs
 
 | Document                                           | Description                                           |
 | -------------------------------------------------- | ----------------------------------------------------- |
 | [generated/db-schema.md](./generated/db-schema.md) | Current SQLite schema summary derived from migrations |
 
-## Product Specs
+## Product specs
 
 | Document                                                                       | Description                                     |
 | ------------------------------------------------------------------------------ | ----------------------------------------------- |
@@ -57,9 +49,9 @@ Point-in-time plans that no longer drive active work live under
 
 ## Archive
 
-| Document                                                                                                                         | Description                                                                   |
-| -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| [archive/README.md](./archive/README.md)                                                                                         | Historical plans and docs kept for traceability, not active implementation    |
-| [archive/plans/playback-optimization.md](./archive/plans/playback-optimization.md)                                               | Archived playback optimization review and implementation outcome              |
-| [archive/plans/remote-library-hardening.md](./archive/plans/remote-library-hardening.md)                                         | Completed remote-library conflict, recovery, and verification plan            |
-| [archive/plans/future-work-and-hardening-priorities-2026-05.md](./archive/plans/future-work-and-hardening-priorities-2026-05.md) | Archived agreed priority tables (superseded by `plan/next-execution-plan.md`) |
+| Document                                                                                                                         | Description                                                                |
+| -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| [archive/README.md](./archive/README.md)                                                                                         | Historical plans and docs kept for traceability, not active implementation |
+| [archive/plans/playback-optimization.md](./archive/plans/playback-optimization.md)                                               | Archived playback optimization review and implementation outcome           |
+| [archive/plans/remote-library-hardening.md](./archive/plans/remote-library-hardening.md)                                         | Completed remote-library conflict, recovery, and verification plan         |
+| [archive/plans/future-work-and-hardening-priorities-2026-05.md](./archive/plans/future-work-and-hardening-priorities-2026-05.md) | Archived agreed priority tables (superseded by `planning/plan.md`)         |

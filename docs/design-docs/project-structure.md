@@ -12,10 +12,10 @@ OpenKara/
 │   │   ├── core-beliefs.md
 │   │   ├── project-structure.md
 │   │   └── performance/
-│   ├── exec-plans/            # Actionable and historical implementation plans
-│   │   ├── active/
-│   │   ├── completed/
-│   │   └── tech-debt-tracker.md
+│   ├── planning/              # Active plan + tech debt (one folder)
+│   │   ├── README.md
+│   │   ├── plan.md
+│   │   └── tech-debt.md
 │   ├── generated/             # Generated or migration-derived reference docs
 │   │   └── db-schema.md
 │   ├── product-specs/         # Product-facing behavior and experience specs
@@ -62,7 +62,7 @@ OpenKara/
 
 ### `docs/`
 
-The documentation tree is split by purpose: design docs explain the system, execution plans track work, generated docs summarize machine-derived state, product specs describe user-facing behavior, and references hold frozen contracts.
+The documentation tree is split by purpose: design docs explain the system, [`planning/`](../planning/README.md) holds the active plan and tech-debt tracker, generated docs summarize machine-derived state, product specs describe user-facing behavior, and references hold frozen contracts.
 
 ### `src/`
 

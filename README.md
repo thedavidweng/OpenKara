@@ -241,7 +241,7 @@ All paths in the database are relative — including CD+G sidecars and MP3+G ZIP
 For the detailed, up-to-date implementation status and future plans, see:
 
 - **[Implementation Status](./docs/implementation-status.md)** — Completed milestones, released versions, and planned features
-- **[Next execution plan](./docs/plan/next-execution-plan.md)** — Single active plan: hardening + playlists / singer rotation
+- **[Active plan](./docs/planning/plan.md)** — Single plan: hardening + playlists / singer rotation
 - **[Technical Roadmap](./docs/design-docs/roadmap.md)** — Architecture phases, technical decisions, and risk mitigations
 
 ---
@@ -286,9 +286,10 @@ pnpm tauri build             # production build with platform-specific bundle
 
 ## Documentation
 
-- [Docs Hub](./docs/README.md) — Canonical index for design docs, plans, specs, references, and archive
+- [Docs Hub](./docs/README.md) — Canonical index for design docs, planning, specs, references, and archive
+- [Planning](./docs/planning/README.md) — Active plan (`plan.md`) and tech-debt tracker
 - [Implementation Status](./docs/implementation-status.md) — Shipped milestones and version notes
-- [Next execution plan](./docs/plan/next-execution-plan.md) — Active hardening + capability 1 backlog
+- [Active plan](./docs/planning/plan.md) — Hardening + capability 1 backlog
 - [Architecture](./docs/design-docs/architecture.md) — System design, tech stack, data flow, and runtime details
 - [Project Structure](./docs/design-docs/project-structure.md) — Current directory layout and module responsibilities
 - [Technical Roadmap](./docs/design-docs/roadmap.md) — Technology choices, API contracts, and risk mitigations
