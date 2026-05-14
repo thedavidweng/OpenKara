@@ -16,13 +16,13 @@ summaries, and historical records.
 | [design-docs/releasing.md](./design-docs/releasing.md)                                       | Release workflow, Homebrew distribution, and future channels      |
 | [design-docs/performance/phase-5-baseline.md](./design-docs/performance/phase-5-baseline.md) | Backend benchmark baseline for profiling work                     |
 
-## Planning
+## Plan
 
-| Document                                         | Description                                                                                      |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| [planning/README.md](./planning/README.md)       | What lives in this folder and how plans age out                                                  |
-| [planning/plan.md](./planning/plan.md)           | **Active plan** — hardening H1–H7 + capability F1 (playlists / singer rotation) until superseded |
-| [planning/tech-debt.md](./planning/tech-debt.md) | Cross-cutting debt and housekeeping                                                              |
+| Document                                 | Description                                                                                      |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| [plan/README.md](./plan/README.md)       | What lives in `docs/plan/` and how files age out                                                 |
+| [plan/plan.md](./plan/plan.md)           | **Active plan** — hardening H1–H7 + capability F1 (playlists / singer rotation) until superseded |
+| [plan/tech-debt.md](./plan/tech-debt.md) | Cross-cutting debt and housekeeping                                                              |
 
 Older point-in-time plans live under [archive/plans/](archive/README.md).
 
@@ -49,9 +49,6 @@ Older point-in-time plans live under [archive/plans/](archive/README.md).
 
 ## Archive
 
-| Document                                                                                                                         | Description                                                                |
-| -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| [archive/README.md](./archive/README.md)                                                                                         | Historical plans and docs kept for traceability, not active implementation |
-| [archive/plans/playback-optimization.md](./archive/plans/playback-optimization.md)                                               | Archived playback optimization review and implementation outcome           |
-| [archive/plans/remote-library-hardening.md](./archive/plans/remote-library-hardening.md)                                         | Completed remote-library conflict, recovery, and verification plan         |
-| [archive/plans/future-work-and-hardening-priorities-2026-05.md](./archive/plans/future-work-and-hardening-priorities-2026-05.md) | Archived agreed priority tables (superseded by `planning/plan.md`)         |
+| Document                                 | Description                                                                                      |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| [archive/README.md](./archive/README.md) | Historical plans and snapshots; browse [`archive/plans/`](./archive/plans/) for individual files |

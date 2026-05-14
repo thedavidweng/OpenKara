@@ -19,4 +19,4 @@ Current archive split:
 - `archive/plans/playback-optimization.md` — archived playback optimization
   review with implemented items and rejected outdated items
 - `archive/plans/future-work-and-hardening-priorities-2026-05.md` — archived
-  agreed-priority tables (superseded by `docs/planning/plan.md`)
+  agreed-priority tables (superseded by `docs/plan/plan.md`)

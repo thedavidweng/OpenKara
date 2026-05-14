@@ -205,7 +205,7 @@ MyKaraokeLibrary/
 当前**已发布版本**与按里程碑整理的完整清单见 **[实现状态（英文主文档）](./docs/implementation-status.md)**。以下为与英文 README 对齐的索引；避免在本文件重复维护长列表以免与源码版本漂移。
 
 - **[实现状态](./docs/implementation-status.md)** — 已交付里程碑、v0.8.x 说明与「v0.9+」意向功能
-- **[当前实施计划](./docs/planning/plan.md)** — 唯一活跃计划：全部加固项 + 新功能 1（歌单 / 轮唱）
+- **[当前实施计划](./docs/plan/plan.md)** — 唯一活跃计划：全部加固项 + 新功能 1（歌单 / 轮唱）
 - **[技术路线图](./docs/design-docs/roadmap.md)** — 技术选型、契约与风险
 
 **当前应用版本（源码）：** 与 `package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json` 一致，截至文档更新为 **v0.8.1**。
@@ -251,9 +251,9 @@ pnpm tauri build             # 生产构建，生成平台特定安装包
 ## 文档
 
 - [文档总览](./docs/README.md) — 设计文档、规划、产品规范、参考资料与归档总入口
-- [规划说明](./docs/planning/README.md) — 当前计划与技术债目录说明
+- [计划目录说明](./docs/plan/README.md) — `docs/plan` 约定与入口
 - [实现状态](./docs/implementation-status.md) — 已发布功能与版本说明（主清单）
-- [当前实施计划](./docs/planning/plan.md) — 加固 + 新功能 1 的执行清单
+- [当前实施计划](./docs/plan/plan.md) — 加固 + 新功能 1 的执行清单
 - [系统架构](./docs/design-docs/architecture.md) — 系统设计、技术栈、数据流与运行时细节
 - [项目结构](./docs/design-docs/project-structure.md) — 当前目录布局与模块职责
 - [技术路线图](./docs/design-docs/roadmap.md) — 技术选型、API 契约与风险应对
