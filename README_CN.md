@@ -202,67 +202,13 @@ MyKaraokeLibrary/
 
 ## 路线图
 
-### ✅ v0.1 — MVP
+当前**已发布版本**与按里程碑整理的完整清单见 **[实现状态（英文主文档）](./docs/implementation-status.md)**。以下为与英文 README 对齐的索引；避免在本文件重复维护长列表以免与源码版本漂移。
 
-- [x] 项目脚手架（Tauri 2 + React + TypeScript + Vite）
-- [x] SQLite 数据库与迁移系统
-- [x] 音频导入与元数据提取（ID3v2、Vorbis、FLAC）
-- [x] 曲库搜索与浏览
-- [x] 音频解码与播放（symphonia + cpal）
-- [x] 播放状态机（播放 / 暂停 / 跳转 / 音量）
-- [x] Demucs v4 ONNX 人声分离（含进度追踪）
-- [x] Stems 缓存（基于 hash，重放无需重新推理）
-- [x] Karaoke 模式切换（原声 / 伴奏）
-- [x] 同步歌词抓取（LRCLIB → 内嵌标签 → sidecar .lrc）
-- [x] 歌词展示（rAF 同步、点击跳转）
-- [x] 逐曲歌词时间偏移调整
-- [x] 首次启动 AI 模型自动下载
-- [x] 可移植曲库系统（相对路径）
-- [x] 完整前端 UI（侧边栏、播放器、歌词面板、设置）
-- [x] 键盘快捷键（空格、方向键）
-- [x] 拖放导入
-- [x] CI/CD 流水线（macOS、Windows、Linux）
-- [x] 发布自动化（tag → GitHub Release）
+- **[实现状态](./docs/implementation-status.md)** — 已交付里程碑、v0.8.x 说明与「v0.9+」意向功能
+- **[后续工作与加固](./docs/product-specs/future-work-and-hardening.md)** — 新能力 vs 可靠性/优化类工作的滚动清单与**优先级决策表**（待团队填写）
+- **[技术路线图](./docs/design-docs/roadmap.md)** — 技术选型、契约与风险
 
-### v0.2.0 — 已发布
-
-OpenKara v0.2.0 是确立当前核心应用流程的版本。
-
-- [x] 四轨音量混音器（可折叠 UI）
-- [x] 双分离模式（双轨 / 四轨）及设置持久化
-- [x] 高效压缩音轨存储
-- [x] 断点续传分离（逐块检查点）
-- [x] 多线程 ONNX 推理优化
-- [x] 设置系统（音轨模式配置）
-- [x] UI 打磨与过渡动画
-- [x] 错误提示与用户级错误信息
-- [x] 应用图标与品牌设计
-
-### v0.4.0 — 已发布
-
-OpenKara v0.4.0 本次更新包含：
-
-- 支持 AirPlay 投放播放内容到兼容设备
-- 改进了窄窗口宽度下的播放器行为与布局
-- 优化了 Windows 应用外观细节
-- 导入时更好地保留原始音轨元数据
-- 支持在 Windows 上通过 WinGet 安装
-
-### v0.7.0 — 当前应用版本
-
-OpenKara v0.7.0 是当前源码和应用版本。本次更新包含：
-
-- 版本元数据同步到前端包、Cargo、Tauri 配置和发布打包校验流程
-- 在线歌词客户端的 User-Agent 跟随编译时应用版本
-
-### 📋 未来计划
-
-- **麦克风输入与人声效果** — 麦克风采集、混响、回声、音量混合
-- **播放列表与排队** — 多歌曲队列、多人轮流演唱
-- **音高与调性调整** — 实时调整伴奏音高
-- **演唱录制** — 录制人声表演，导出为音频文件
-- **多屏支持** — 第二屏幕显示观众歌词视图
-- **CJK 注音** — 在原文歌词旁显示罗马字 / 拼音
+**当前应用版本（源码）：** 与 `package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json` 一致，截至文档更新为 **v0.8.1**。
 
 ## 开发指南
 
@@ -286,7 +232,7 @@ pnpm tauri dev               # 启动开发服务器（支持热更新）
 ### 运行测试
 
 ```bash
-cd src-tauri && cargo test   # 后端测试（70+ 测试用例）
+cd src-tauri && cargo test -q   # 后端测试（175+；CI 行为见 AGENTS.md）
 pnpm lint                    # ESLint 检查
 pnpm format                  # Prettier 格式检查
 ```
@@ -300,11 +246,13 @@ pnpm tauri build             # 生产构建，生成平台特定安装包
 ### CI/CD
 
 - 推送到 `main` 会触发 CI 流程（[`.github/workflows/ci.yml`](./.github/workflows/ci.yml)）— 在 macOS、Windows、Linux 上运行 lint、构建和测试。
-- 推送版本标签（如 `v0.7.0`）会触发发布流程（[`.github/workflows/release.yml`](./.github/workflows/release.yml)）— 构建并上传二进制文件到 GitHub Release。
+- 推送版本标签（如 `v0.8.1`）会触发发布流程（[`.github/workflows/release.yml`](./.github/workflows/release.yml)）— 构建并上传二进制文件到 GitHub Release。
 
 ## 文档
 
 - [文档总览](./docs/README.md) — 设计文档、执行计划、产品规范、参考资料与归档总入口
+- [实现状态](./docs/implementation-status.md) — 已发布功能与版本说明（主清单）
+- [后续工作与加固](./docs/product-specs/future-work-and-hardening.md) — 新功能 vs 加固优化的滚动清单
 - [系统架构](./docs/design-docs/architecture.md) — 系统设计、技术栈、数据流与运行时细节
 - [项目结构](./docs/design-docs/project-structure.md) — 当前目录布局与模块职责
 - [技术路线图](./docs/design-docs/roadmap.md) — 技术选型、API 契约与风险应对

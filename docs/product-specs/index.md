@@ -5,9 +5,10 @@ Use these docs when the question is about what the product should do for a user,
 
 ## Current Specs
 
-| Document                                           | Description                                     |
-| -------------------------------------------------- | ----------------------------------------------- |
-| [new-user-onboarding.md](./new-user-onboarding.md) | First-run setup and initial import expectations |
+| Document                                                       | Description                                                        |
+| -------------------------------------------------------------- | ------------------------------------------------------------------ |
+| [new-user-onboarding.md](./new-user-onboarding.md)             | First-run setup and initial import expectations                    |
+| [future-work-and-hardening.md](./future-work-and-hardening.md) | Rolling backlog: proposed new features vs hardening (priority TBD) |
 
 ## What Belongs Here
 

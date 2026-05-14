@@ -35,10 +35,11 @@ Point-in-time plans that no longer drive active work live under
 
 ## Product Specs
 
-| Document                                                                       | Description                                     |
-| ------------------------------------------------------------------------------ | ----------------------------------------------- |
-| [product-specs/index.md](./product-specs/index.md)                             | Product-spec index and ownership guidance       |
-| [product-specs/new-user-onboarding.md](./product-specs/new-user-onboarding.md) | First-run and first-import experience reference |
+| Document                                                                                   | Description                                           |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
+| [product-specs/index.md](./product-specs/index.md)                                         | Product-spec index and ownership guidance             |
+| [product-specs/new-user-onboarding.md](./product-specs/new-user-onboarding.md)             | First-run and first-import experience reference       |
+| [product-specs/future-work-and-hardening.md](./product-specs/future-work-and-hardening.md) | Rolling backlog for next features vs reliability work |
 
 ## References
 

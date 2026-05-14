@@ -177,15 +177,13 @@ Users can adjust lyrics timing per song (e.g., lyrics arrive 0.5s early):
 - Positive offset = lyrics delayed, negative = lyrics advanced
 - UI: +/- buttons with 0.5s increments and a reset button
 
-### CJK Language Support (Future)
+### Lyrics romanization & CJK display
 
-monochrome supports Japanese → Romaji conversion via kuroshiro/kuromoji. For OpenKara, CJK considerations include:
+OpenKara ships optional **romanization** for non-Latin lyrics (`lyric-romanizer`), with per-song **language** metadata and overrides so transliteration can track the singer’s intent. The **kuromoji** dictionary used for Japanese segmentation is bundled/served locally (no public CDN dependency for that payload).
 
-- Detect CJK characters in lyrics text (Unicode ranges: `\u3040-\u309F`, `\u30A0-\u30FF`, `\u4E00-\u9FFF`, `\uAC00-\uD7AF`)
-- Optional Romaji/Pinyin transliteration display
-- Font fallback chain for CJK glyphs
+Remaining polish items tend to be **font fallback** quality and **detection heuristics** when metadata is wrong — treat those as UX hardening rather than a single “future feature” gate.
 
-OpenKara includes optional lyrics romanization support in the frontend and can display transliterated lyrics alongside the original text.
+monochrome’s historical approach (kuroshiro/kuromoji over the web) informed the design; OpenKara’s implementation is frontend-local with explicit language control.
 
 ## AI Model Details
 

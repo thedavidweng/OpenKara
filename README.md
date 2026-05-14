@@ -241,6 +241,7 @@ All paths in the database are relative — including CD+G sidecars and MP3+G ZIP
 For the detailed, up-to-date implementation status and future plans, see:
 
 - **[Implementation Status](./docs/implementation-status.md)** — Completed milestones, released versions, and planned features
+- **[Future work & hardening](./docs/product-specs/future-work-and-hardening.md)** — Proposed next capabilities vs reliability work (priority decision log)
 - **[Technical Roadmap](./docs/design-docs/roadmap.md)** — Architecture phases, technical decisions, and risk mitigations
 
 ---
@@ -267,7 +268,7 @@ pnpm tauri dev               # start dev server with hot reload
 ### Running Tests
 
 ```bash
-cd src-tauri && cargo test   # backend tests (70+ tests)
+cd src-tauri && cargo test -q   # backend tests (175+; see AGENTS.md for CI notes)
 pnpm lint                    # ESLint
 pnpm format                  # Prettier check
 ```
@@ -281,11 +282,13 @@ pnpm tauri build             # production build with platform-specific bundle
 ### CI/CD
 
 - Pushes to `main` trigger the CI workflow ([`.github/workflows/ci.yml`](./.github/workflows/ci.yml)) — lint, build, and test on macOS, Windows, and Linux.
-- Pushing a version tag (e.g. `v0.7.0`) triggers the release workflow ([`.github/workflows/release.yml`](./.github/workflows/release.yml)) — builds and attaches binaries to a GitHub Release.
+- Pushing a version tag (e.g. `v0.8.1`) triggers the release workflow ([`.github/workflows/release.yml`](./.github/workflows/release.yml)) — builds and attaches binaries to a GitHub Release.
 
 ## Documentation
 
 - [Docs Hub](./docs/README.md) — Canonical index for design docs, plans, specs, references, and archive
+- [Implementation Status](./docs/implementation-status.md) — Shipped milestones and version notes
+- [Future work & hardening](./docs/product-specs/future-work-and-hardening.md) — Next capabilities vs reliability backlog
 - [Architecture](./docs/design-docs/architecture.md) — System design, tech stack, data flow, and runtime details
 - [Project Structure](./docs/design-docs/project-structure.md) — Current directory layout and module responsibilities
 - [Technical Roadmap](./docs/design-docs/roadmap.md) — Technology choices, API contracts, and risk mitigations
