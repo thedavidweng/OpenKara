@@ -15,6 +15,8 @@
     "preview": "vite preview",
     "render:flatpak": "node scripts/render-flatpak-manifest.mjs",
     "render:winget": "node scripts/render-winget-manifests.mjs",
+    "generate:db-schema": "node scripts/generate-db-schema.mjs",
+    "check:i18n": "node scripts/check-i18n.mjs",
     "test": "vitest run",
     "tauri": "pnpm version:sync && tauri"
   },

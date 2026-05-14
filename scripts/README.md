@@ -1,5 +1,15 @@
 # Scripts
 
+## `generate-db-schema.mjs`
+
+Regenerates `docs/generated/db-schema.md` from `src-tauri/migrations/*.sql`.
+
+- **Input:** none (reads migration files directly)
+- **Output:** `docs/generated/db-schema.md`
+- **Run:** `node scripts/generate-db-schema.mjs` or `pnpm generate:db-schema`
+- **When to run:** after any migration PR or manual schema change
+- **Idempotent:** two consecutive runs produce zero diff in the output file
+
 ## `setup.sh`
 
 Bootstraps the local Demucs ONNX model required by later separation work.

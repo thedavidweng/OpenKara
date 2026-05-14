@@ -109,7 +109,8 @@
     "delete": "删除",
     "deleteConfirm": "删除",
     "deleteSelected": "删除所选项目 ({{count}})",
-    "confirmDeleteTitle": "删除 {{count}} 首歌曲",
+    "confirmDeleteTitle_one": "删除 {{count}} 首歌曲",
+    "confirmDeleteTitle_other": "删除 {{count}} 首歌曲",
     "confirmDeleteMessage": "这将把所选歌曲从曲库中移除，并删除 OpenKara 管理的相关文件。",
     "playNow": "立即播放",
     "playNext": "下一首播放",
@@ -414,6 +415,30 @@
     "downloadFailed": "模型下载失败：{{error}}",
     "unknownError": "未知错误",
     "separationUnavailable": "分离不可用"
+  },
+  "playlist": {
+    "create": "新建播放列表",
+    "name": "播放列表名称",
+    "rename": "重命名",
+    "delete": "删除播放列表",
+    "deleteConfirm": "删除\"{{name}}\"?",
+    "deleteMessage": "播放列表中的歌曲不会从曲库中删除。",
+    "empty": "这个播放列表是空的。请从曲库中添加歌曲。",
+    "addTo": "添加到播放列表…",
+    "removedToast": "已从 {{playlistCount}} 个播放列表中移除了 {{count}} 首歌曲。",
+    "section": "播放列表",
+    "newPlaylist": "[+ 新建播放列表]",
+    "confirmDeleteTitle": "删除播放列表",
+    "editSong": "编辑歌曲"
+  },
+  "rotation": {
+    "assignSinger": "指定歌手",
+    "singer": "歌手",
+    "nextSinger": "下一位歌手",
+    "roundRobin": "轮唱",
+    "singleSinger": "单人演唱",
+    "noSinger": "未指定歌手",
+    "singerName": "歌手姓名"
   },
   "errors": {
     "database_unavailable": "数据库错误",

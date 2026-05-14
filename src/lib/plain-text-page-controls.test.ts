@@ -105,4 +105,24 @@ describe("plain-text page controls", () => {
     expect(getAirPlayPlainTextPageLockMs(400)).toBe(900);
     expect(getAirPlayPlainTextPageLockMs(2400)).toBe(2500);
   });
+
+  test("returns null target when fullscreen player is closed and AirPlay is idle", () => {
+    expect(
+      resolvePlainTextRemoteTarget({ active: false, phase: "idle" }, false),
+    ).toBeNull();
+  });
+
+  test("routes to AirPlay even during buffering phase", async () => {
+    await stepPlainTextRemotePage(
+      { active: true, phase: "buffering", latencyMs: 1200 },
+      true,
+      "next",
+    );
+
+    expect(mockStepAirPlayPlainTextPage).toHaveBeenCalledWith("next");
+    expect(mockStartAirPlayPlainTextPagePending).toHaveBeenCalledWith(
+      "next",
+      1450,
+    );
+  });
 });

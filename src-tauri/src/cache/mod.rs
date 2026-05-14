@@ -100,6 +100,11 @@ pub fn apply_migrations(connection: &Connection) -> rusqlite::Result<()> {
 
     migrate_legacy_song_schema(connection)?;
 
+    // 008_playlists – playlist management tables.
+    connection.execute_batch(include_str!("../../migrations/008_playlists.sql"))?;
+    // 009_singer_rotation – singer rotation state for turn-based queue workflows.
+    connection.execute_batch(include_str!("../../migrations/009_singer_rotation.sql"))?;
+
     Ok(())
 }
 

@@ -1,5 +1,7 @@
 # Phase 1 资料库契约
 
+> **Updated:** 2026-05-13 — Added playlist & singer rotation commands (F1).
+
 **Goal:** 固定 `Phase 1` 代码侧已经实现并准备交给 UI Agent 消费的资料库接口、数据结构与语义，减少联调期间的猜测成本。
 
 **Current starting point:** 本契约对应分支 `codex/phase0-m0` 上 `feat: add metadata parsing module`、`feat: add songs sqlite cache`、`feat: add import songs command` 之后的状态。后续如字段或命令语义变更，必须先更新此文档再改 UI。
@@ -22,6 +24,21 @@
 7. `extract_embedded_cover_art(song_ids: Vec<String>) -> ExtractEmbeddedCoverArtResult`
 8. 本地元数据解析支持 MP3、FLAC、M4A
 9. `songs` 表通过 `hash` 去重并执行 upsert
+
+**F1 播放列表与歌手轮唱 (2026-05-13 新增):**
+
+10. `list_playlists() -> Vec<Playlist>` — 返回所有播放列表及歌曲计数
+11. `create_playlist(name: String) -> Playlist` — 创建新播放列表
+12. `rename_playlist(playlist_id: String, name: String) -> ()` — 重命名播放列表
+13. `delete_playlist(playlist_id: String) -> ()` — 删除播放列表及其关联歌曲
+14. `add_songs_to_playlist(playlist_id: String, song_hashes: Vec<String>) -> ()` — 向播放列表添加歌曲
+15. `remove_songs_from_playlist(playlist_id: String, song_hashes: Vec<String>) -> ()` — 从播放列表移除歌曲
+16. `get_playlist_songs(playlist_id: String) -> Vec<PlaylistSong>` — 返回播放列表内歌曲
+17. `set_rotation_state(rotation: RotationState) -> ()` — 设置轮唱状态
+18. `get_rotation_state() -> RotationState` — 读取当前轮唱状态
+19. `advance_rotation() -> RotationState` — 推进轮唱指针
+20. `set_queue_entry_singer(playlist_id: String, song_hash: String, singer: Option<String>) -> ()` — 设置队列条目歌手
+21. `playlists` 表和 `playlist_songs` 表通过 `ON DELETE CASCADE` 与 `songs` 表联动；删除歌曲时自动清理关联
 
 ### 后续 Phase 依赖
 
