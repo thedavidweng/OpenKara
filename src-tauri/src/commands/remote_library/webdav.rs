@@ -79,7 +79,7 @@ pub(crate) fn webdav_send(
     if let Some(bytes) = body {
         request = request.body(bytes);
     }
-    request.send().map_err(|error| {
+    request.send().map_err(|_error| {
         tracing::trace!("WebDAV request to {url} failed");
         library_error("WebDAV request failed. Check the server URL and try again.".to_owned())
     })
