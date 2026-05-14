@@ -134,10 +134,13 @@ pub fn add_songs_to_playlist(
     playlist_id: String,
     song_hashes: Vec<String>,
 ) -> CommandResult<()> {
-    let conn = get_connection(&state)?;
+    let mut conn = get_connection(&state)?;
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(database_error)?;
     // Start sort_order after the highest existing value so multi-batch
     // inserts append rather than interleave.
-    let max_sort: i64 = conn
+    let max_sort: i64 = tx
         .query_row(
             "SELECT COALESCE(MAX(sort_order), -1) FROM playlist_songs WHERE playlist_id = ?1",
             rusqlite::params![playlist_id],
@@ -146,18 +149,19 @@ pub fn add_songs_to_playlist(
         .map_err(database_error)?;
     let ts = now();
     for (i, hash) in song_hashes.iter().enumerate() {
-        conn.execute(
+        tx.execute(
             "INSERT OR IGNORE INTO playlist_songs (playlist_id, song_hash, added_at, sort_order) \
              VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![playlist_id, hash, ts, max_sort + 1 + i as i64],
         )
         .map_err(database_error)?;
     }
-    conn.execute(
+    tx.execute(
         "UPDATE playlists SET updated_at = ?1 WHERE id = ?2",
         rusqlite::params![ts, playlist_id],
     )
     .map_err(database_error)?;
+    tx.commit().map_err(database_error)?;
     Ok(())
 }
 
@@ -167,19 +171,23 @@ pub fn remove_songs_from_playlist(
     playlist_id: String,
     song_hashes: Vec<String>,
 ) -> CommandResult<()> {
-    let conn = get_connection(&state)?;
+    let mut conn = get_connection(&state)?;
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(database_error)?;
     for hash in &song_hashes {
-        conn.execute(
+        tx.execute(
             "DELETE FROM playlist_songs WHERE playlist_id = ?1 AND song_hash = ?2",
             rusqlite::params![playlist_id, hash],
         )
         .map_err(database_error)?;
     }
-    conn.execute(
+    tx.execute(
         "UPDATE playlists SET updated_at = ?1 WHERE id = ?2",
         rusqlite::params![now(), playlist_id],
     )
     .map_err(database_error)?;
+    tx.commit().map_err(database_error)?;
     Ok(())
 }
 
