@@ -46,12 +46,18 @@ pub fn initialize_database(app_handle: &tauri::AppHandle) -> anyhow::Result<Path
 }
 
 pub fn open_database(database_path: &Path) -> anyhow::Result<Connection> {
-    Connection::open(database_path).with_context(|| {
+    let conn = Connection::open(database_path).with_context(|| {
         format!(
             "failed to open SQLite database at {}",
             database_path.display()
         )
-    })
+    })?;
+    // Enable foreign key enforcement for all production connections so ON DELETE
+    // CASCADE and other FK constraints are honored (they are off by default in
+    // SQLite). Tests that need to verify FK behavior already enable it explicitly.
+    conn.execute_batch("PRAGMA foreign_keys = ON;")
+        .context("failed to enable foreign key enforcement")?;
+    Ok(conn)
 }
 
 pub fn apply_migrations(connection: &Connection) -> rusqlite::Result<()> {
@@ -99,6 +105,11 @@ pub fn apply_migrations(connection: &Connection) -> rusqlite::Result<()> {
     }
 
     migrate_legacy_song_schema(connection)?;
+
+    // 008_playlists – playlist management tables.
+    connection.execute_batch(include_str!("../../migrations/008_playlists.sql"))?;
+    // 009_singer_rotation – singer rotation state for turn-based queue workflows.
+    connection.execute_batch(include_str!("../../migrations/009_singer_rotation.sql"))?;
 
     Ok(())
 }

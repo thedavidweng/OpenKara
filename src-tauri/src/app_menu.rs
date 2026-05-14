@@ -13,6 +13,7 @@ pub const MENU_ACTION_OPEN_SETTINGS: &str = "open-settings";
 pub const MENU_ACTION_SWITCH_LIBRARY: &str = "switch-library";
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub const MENU_ACTION_TOGGLE_SIDEBAR: &str = "toggle-sidebar";
+pub const MENU_ACTION_COPY_DEBUG_INFO: &str = "copy-debug-info";
 
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const MENU_ITEM_IMPORT_FILES: &str = "file.import";
@@ -33,10 +34,12 @@ const ABOUT_REPOSITORY_LABEL: &str = "Official Repository";
 fn build_about_metadata<R: Runtime>(app_handle: &AppHandle<R>) -> AboutMetadata<'static> {
     let pkg_info = app_handle.package_info();
     let config = app_handle.config();
+    let build_hash = option_env!("GIT_BUILD_HASH").unwrap_or("unknown");
+    let version_with_build = format!("{} (build {})", pkg_info.version, build_hash);
 
     AboutMetadata {
         name: Some(pkg_info.name.clone()),
-        version: Some(pkg_info.version.to_string()),
+        version: Some(version_with_build),
         copyright: config.bundle.copyright.clone(),
         authors: Some(vec!["@David Weng".to_owned()]),
         credits: Some(ABOUT_AUTHOR_CREDIT.to_owned()),
@@ -72,6 +75,14 @@ pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Me
         ],
     )?;
 
+    let copy_debug_info_item = MenuItem::with_id(
+        app_handle,
+        "help.copy-debug-info",
+        "Copy Debug Info",
+        true,
+        None::<&str>,
+    )?;
+
     let help_menu = Submenu::with_items(
         app_handle,
         "Help",
@@ -79,6 +90,11 @@ pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Me
         &[
             #[cfg(not(target_os = "macos"))]
             &PredefinedMenuItem::about(app_handle, None, Some(about_metadata.clone()))?,
+            #[cfg(not(target_os = "macos"))]
+            &PredefinedMenuItem::separator(app_handle)?,
+            &copy_debug_info_item,
+            #[cfg(target_os = "macos")]
+            &PredefinedMenuItem::separator(app_handle)?,
         ],
     )?;
 
@@ -191,6 +207,9 @@ pub fn handle_menu_event<R: Runtime>(app_handle: &AppHandle<R>, event: MenuEvent
         }
         MENU_ITEM_TOGGLE_SIDEBAR => {
             let _ = app_handle.emit_to("main", MENU_ACTION_EVENT, MENU_ACTION_TOGGLE_SIDEBAR);
+        }
+        "help.copy-debug-info" => {
+            let _ = app_handle.emit_to("main", MENU_ACTION_EVENT, MENU_ACTION_COPY_DEBUG_INFO);
         }
         _ => {}
     }

@@ -152,4 +152,35 @@ describe("syncLyricsToPlayback active-line behaviour", () => {
 
     expect(setActiveLineIndex).not.toHaveBeenCalled();
   });
+
+  test("adjusts the active line by offsetMs when a timing offset is set", () => {
+    // With offsetMs = +2000, a position of 500 ms maps to adjustedMs = -1500
+    // which hits no line → index -1.
+    const setActiveLineIndex = vi.fn();
+    vi.mocked(useLyricsStore.getState).mockReturnValue({
+      lines: SAMPLE_LINES,
+      offsetMs: 2000,
+      setActiveLineIndex,
+    } as unknown as ReturnType<(typeof useLyricsStore)["getState"]>);
+    setupPlayerMock("song-1", true, 500);
+
+    // Start with ref at 2 so the change to -1 is detected.
+    const ref = { current: 2 };
+    syncLyricsToPlayback(ref);
+
+    expect(setActiveLineIndex).toHaveBeenCalledWith(-1);
+
+    // With offsetMs = -1000, position 3500 ms maps to adjustedMs = 4500 ms,
+    // which is past the last line (3000 ms) → index 3.
+    vi.mocked(useLyricsStore.getState).mockReturnValue({
+      lines: SAMPLE_LINES,
+      offsetMs: -1000,
+      setActiveLineIndex,
+    } as unknown as ReturnType<(typeof useLyricsStore)["getState"]>);
+    setupPlayerMock("song-1", true, 3500);
+
+    syncLyricsToPlayback(ref);
+
+    expect(setActiveLineIndex).toHaveBeenCalledWith(3);
+  });
 });

@@ -2,10 +2,10 @@
 
 This folder holds the **active engineering plan** and **tech-debt tracker** only. Everything else under `docs/` is either design reference, product behavior specs, frozen contracts, generated summaries, or **historical** material under `docs/archive/`.
 
-| File                           | Purpose                                                                                         |
-| ------------------------------ | ----------------------------------------------------------------------------------------------- |
-| [plan.md](./plan.md)           | **Single active plan** — agreed hardening (H1–H7) + next capability (F1) until done or replaced |
-| [tech-debt.md](./tech-debt.md) | Cross-cutting debt that does not belong to one feature line                                     |
+| File                           | Purpose                                                                                        |
+| ------------------------------ | ---------------------------------------------------------------------------------------------- |
+| [plan.md](./plan.md)           | **Single active plan** — H1–H8 + F1 with per-stream acceptance, executor rules, descope policy |
+| [tech-debt.md](./tech-debt.md) | Cross-cutting debt that does not belong to one feature line                                    |
 
 **Rules**
 

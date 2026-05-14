@@ -50,6 +50,13 @@ function kuromojiDictPlugin() {
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
+  define: {
+    // Make package.json version available at runtime for About dialog and
+    // diagnostic export. Vite replaces this at build time.
+    "import.meta.env.PACKAGE_VERSION": JSON.stringify(
+      process.env.npm_package_version || "unknown",
+    ),
+  },
   plugins: [react(), tailwindcss(), kuromojiDictPlugin()],
   test: {
     // Nested git worktrees under `.worktrees/` duplicate `src/**` and must not

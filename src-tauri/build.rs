@@ -1,4 +1,16 @@
 fn main() {
+    // Embed git short SHA as build identifier for About dialog (H8.5).
+    // Falls back to "unknown" if git is unavailable or not in a git repo.
+    let git_hash = std::process::Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .and_then(|out| String::from_utf8(out.stdout).ok())
+        .map(|s| s.trim().to_owned())
+        .unwrap_or_else(|| "unknown".to_owned());
+    println!("cargo:rustc-env=GIT_BUILD_HASH={git_hash}");
+
     #[cfg(target_os = "macos")]
     {
         // The AirPlay bridge is compiled by the build script, so Cargo must rerun it
