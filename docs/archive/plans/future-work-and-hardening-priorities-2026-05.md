@@ -1,6 +1,6 @@
 # Future work & hardening (archived snapshot)
 
-> **Archived:** 2026-05-14 — Superseded by the single active execution plan in [`../../planning/plan.md`](../../planning/plan.md).  
+> **Archived:** 2026-05-14 — Superseded by the single active execution plan in [`../../plan/plan.md`](../../plan/plan.md).  
 > This file preserves the agreed **priority ordering** as of 2026-05-14; do not edit here.
 
 ## How to use this doc
@@ -32,7 +32,7 @@ These areas already ship to users; **1** is the highest leverage before stacking
 | **Separation runtime**            | Long CPU jobs, platform-specific EPs | ONNX provider selection, fallbacks, and user-visible errors already iterated in v0.5+ — watch for regressions on Windows/Linux | **3**    |
 | **AirPlay / presentation output** | Platform-specific AV behavior        | CI has historically treated some playback tests as environment-sensitive (e.g. Linux)                                          | **4**    |
 | **Packaging & supply chain**      | Release friction affects trust       | Flatpak/WinGet paths improved through v0.8.1; keep manifest generators and CI in sync                                          | **5**    |
-| **Documentation ownership**       | Prevents spec drift                  | See [`../../planning/tech-debt.md`](../../planning/tech-debt.md)                                                               | **6**    |
+| **Documentation ownership**       | Prevents spec drift                  | See [`../../plan/tech-debt.md`](../../plan/tech-debt.md)                                                                       | **6**    |
 | **Generated schema doc**          | Onboarding for DB changes            | `docs/generated/db-schema.md` is manual today                                                                                  | **7**    |
 
 ## Priority decision log
@@ -46,4 +46,4 @@ These areas already ship to users; **1** is the highest leverage before stacking
 
 - [`../../implementation-status.md`](../../implementation-status.md) — released milestones
 - [`../../design-docs/roadmap.md`](../../design-docs/roadmap.md) — technical contracts and stack risks
-- [`../../planning/tech-debt.md`](../../planning/tech-debt.md) — cross-cutting debt items
+- [`../../plan/tech-debt.md`](../../plan/tech-debt.md) — cross-cutting debt items

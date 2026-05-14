@@ -1,6 +1,6 @@
-# Planning
+# Plan
 
-This folder holds **current engineering planning** only:
+This folder holds the **active engineering plan** and **tech-debt tracker** only. Everything else under `docs/` is either design reference, product behavior specs, frozen contracts, generated summaries, or **historical** material under `docs/archive/`.
 
 | File                           | Purpose                                                                                         |
 | ------------------------------ | ----------------------------------------------------------------------------------------------- |
