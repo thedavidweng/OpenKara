@@ -134,12 +134,21 @@ pub fn add_songs_to_playlist(
     song_hashes: Vec<String>,
 ) -> CommandResult<()> {
     let conn = get_connection(&state)?;
+    // Start sort_order after the highest existing value so multi-batch
+    // inserts append rather than interleave.
+    let max_sort: i64 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(sort_order), -1) FROM playlist_songs WHERE playlist_id = ?1",
+            rusqlite::params![playlist_id],
+            |row| row.get(0),
+        )
+        .map_err(database_error)?;
     let ts = now();
     for (i, hash) in song_hashes.iter().enumerate() {
         conn.execute(
             "INSERT OR IGNORE INTO playlist_songs (playlist_id, song_hash, added_at, sort_order) \
              VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![playlist_id, hash, ts, i as i64],
+            rusqlite::params![playlist_id, hash, ts, max_sort + 1 + i as i64],
         )
         .map_err(database_error)?;
     }
@@ -313,10 +322,16 @@ pub fn set_queue_entry_singer(
     singer: Option<String>,
 ) -> CommandResult<()> {
     let conn = get_connection(&state)?;
-    conn.execute(
-        "UPDATE playlist_songs SET singer = ?1 WHERE playlist_id = ?2 AND song_hash = ?3",
-        rusqlite::params![singer, playlist_id, song_hash],
-    )
-    .map_err(database_error)?;
+    let rows = conn
+        .execute(
+            "UPDATE playlist_songs SET singer = ?1 WHERE playlist_id = ?2 AND song_hash = ?3",
+            rusqlite::params![singer, playlist_id, song_hash],
+        )
+        .map_err(database_error)?;
+    if rows == 0 {
+        return Err(database_error(format!(
+            "playlist entry ({playlist_id}, {song_hash}) not found",
+        )));
+    }
     Ok(())
 }
