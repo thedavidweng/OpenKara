@@ -208,6 +208,8 @@ Song metadata (title, artist, album, duration)
     ├──→ [1] LRCLIB API (GET https://lrclib.net/api/get?...)
     │        └─ Returns: { syncedLyrics: "[00:12.34] ...", plainLyrics: "..." }
     │
+    ├──→ [1b] LrcApi (`api.lrc.cx`) — secondary timed lyrics provider (metadata match)
+    │
     ├──→ [2] Embedded tags (ID3v2 SYLT/USLT, Vorbis LYRICS)
     │        └─ Read via lofty crate
     │
@@ -224,7 +226,7 @@ Song metadata (title, artist, album, duration)
     │
     ▼ cache in SQLite
     lyrics table: (song_hash TEXT PK, lrc TEXT, source TEXT, fetched_at INTEGER)
-    source: "lrclib" | "embedded" | "sidecar" | "file_import" | "manual"
+    source: "lrclib" | "lrc_api" | "embedded" | "sidecar" | "file_import" | "manual"
 ```
 
 ### Frontend Sync Architecture
