@@ -1,6 +1,7 @@
 use crate::cache;
 use crate::commands::error::{database_error, CommandResult};
 use crate::AppState;
+use rusqlite::TransactionBehavior;
 use tauri::State;
 
 // --- Data types ---
@@ -270,30 +271,37 @@ pub fn get_rotation_state(state: State<'_, AppState>) -> CommandResult<RotationS
 
 #[tauri::command]
 pub fn advance_rotation(state: State<'_, AppState>) -> CommandResult<RotationState> {
-    let conn = get_connection(&state)?;
-    let mut stmt = conn
-        .prepare(
-            "SELECT singer_names, current_index, mode, active FROM rotation_state WHERE id = 1",
-        )
+    let mut conn = get_connection(&state)?;
+    // Use an immediate transaction so two concurrent calls cannot both
+    // read the same current_index and produce a lost advance.
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(database_error)?;
-    let mut rows = stmt.query([]).map_err(database_error)?;
-    let (singer_names, current_index, mode, active) = match rows.next().map_err(database_error)? {
-        Some(row) => {
-            let singer_names_json: String = row.get(0).map_err(database_error)?;
-            let current_index: i64 = row.get(1).map_err(database_error)?;
-            let mode: String = row.get(2).map_err(database_error)?;
-            let active: i64 = row.get(3).map_err(database_error)?;
-            let singer_names: Vec<String> = serde_json::from_str(&singer_names_json)
-                .map_err(|e| database_error(format!("JSON deserialization failed: {e}")))?;
-            (singer_names, current_index as usize, mode, active != 0)
-        }
-        None => {
-            return Ok(RotationState {
-                singer_names: Vec::new(),
-                current_index: 0,
-                mode: "round_robin".to_string(),
-                active: false,
-            });
+    let (singer_names, current_index, mode, active) = {
+        let mut stmt = tx
+            .prepare(
+                "SELECT singer_names, current_index, mode, active FROM rotation_state WHERE id = 1",
+            )
+            .map_err(database_error)?;
+        let mut rows = stmt.query([]).map_err(database_error)?;
+        match rows.next().map_err(database_error)? {
+            Some(row) => {
+                let singer_names_json: String = row.get(0).map_err(database_error)?;
+                let current_index: i64 = row.get(1).map_err(database_error)?;
+                let mode: String = row.get(2).map_err(database_error)?;
+                let active: i64 = row.get(3).map_err(database_error)?;
+                let singer_names: Vec<String> = serde_json::from_str(&singer_names_json)
+                    .map_err(|e| database_error(format!("JSON deserialization failed: {e}")))?;
+                (singer_names, current_index as usize, mode, active != 0)
+            }
+            None => {
+                return Ok(RotationState {
+                    singer_names: Vec::new(),
+                    current_index: 0,
+                    mode: "round_robin".to_string(),
+                    active: false,
+                });
+            }
         }
     };
     let new_index = if singer_names.is_empty() {
@@ -301,11 +309,12 @@ pub fn advance_rotation(state: State<'_, AppState>) -> CommandResult<RotationSta
     } else {
         (current_index + 1) % singer_names.len()
     };
-    conn.execute(
+    tx.execute(
         "UPDATE rotation_state SET current_index = ?1 WHERE id = 1",
         rusqlite::params![new_index as i64],
     )
     .map_err(database_error)?;
+    tx.commit().map_err(database_error)?;
     Ok(RotationState {
         singer_names,
         current_index: new_index,
