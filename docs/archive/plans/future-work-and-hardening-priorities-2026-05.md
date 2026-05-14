@@ -1,12 +1,12 @@
-# Future work & hardening
+# Future work & hardening (archived snapshot)
 
-> **Last updated:** 2026-05-14  
-> **Purpose:** Single place to align on **what to build next** (new capabilities) versus **what to harden** (reliability, performance, maintainability). This doc is meant to change often; [`implementation-status.md`](../implementation-status.md) remains the canonical shipped-milestone list.
+> **Archived:** 2026-05-14 — Superseded by the single active execution plan in [`../../plan/next-execution-plan.md`](../../plan/next-execution-plan.md).  
+> This file preserves the agreed **priority ordering** as of 2026-05-14; do not edit here.
 
 ## How to use this doc
 
-1. **Shipped facts** live in [`implementation-status.md`](../implementation-status.md) and version-tagged releases — not here.
-2. **Priority** below is **agreed** as of 2026-05-14 (maintainer confirmation). Change it only via an explicit decision — append a row to [Priority decision log](#priority-decision-log).
+1. **Shipped facts** live in [`../../implementation-status.md`](../../implementation-status.md) and version-tagged releases — not here.
+2. **Priority** below was **agreed** as of 2026-05-14 (maintainer confirmation).
 3. **Hardening** items may ship in any patch/minor release; they do not need their own marketing version.
 
 ## New capabilities (v0.9+)
@@ -32,7 +32,7 @@ These areas already ship to users; **1** is the highest leverage before stacking
 | **Separation runtime**            | Long CPU jobs, platform-specific EPs | ONNX provider selection, fallbacks, and user-visible errors already iterated in v0.5+ — watch for regressions on Windows/Linux | **3**    |
 | **AirPlay / presentation output** | Platform-specific AV behavior        | CI has historically treated some playback tests as environment-sensitive (e.g. Linux)                                          | **4**    |
 | **Packaging & supply chain**      | Release friction affects trust       | Flatpak/WinGet paths improved through v0.8.1; keep manifest generators and CI in sync                                          | **5**    |
-| **Documentation ownership**       | Prevents spec drift                  | See [`tech-debt-tracker.md`](../exec-plans/tech-debt-tracker.md)                                                               | **6**    |
+| **Documentation ownership**       | Prevents spec drift                  | See [`../../exec-plans/tech-debt-tracker.md`](../../exec-plans/tech-debt-tracker.md)                                           | **6**    |
 | **Generated schema doc**          | Onboarding for DB changes            | `docs/generated/db-schema.md` is manual today                                                                                  | **7**    |
 
 ## Priority decision log
@@ -44,7 +44,6 @@ These areas already ship to users; **1** is the highest leverage before stacking
 
 ## Related links
 
-- [`../implementation-status.md`](../implementation-status.md) — released milestones
-- [`../design-docs/roadmap.md`](../design-docs/roadmap.md) — technical contracts and stack risks
-- [`../exec-plans/tech-debt-tracker.md`](../exec-plans/tech-debt-tracker.md) — cross-cutting debt items
-- [`../exec-plans/active/index.md`](../exec-plans/active/index.md) — in-flight execution plans (empty when nothing is active)
+- [`../../implementation-status.md`](../../implementation-status.md) — released milestones
+- [`../../design-docs/roadmap.md`](../../design-docs/roadmap.md) — technical contracts and stack risks
+- [`../../exec-plans/tech-debt-tracker.md`](../../exec-plans/tech-debt-tracker.md) — cross-cutting debt items

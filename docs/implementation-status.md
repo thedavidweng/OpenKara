@@ -113,7 +113,7 @@ Work **after** the `v0.8.1` tag on `main` (CI hardening, CodeQL-driven logging f
 
 ### 🎯 v0.9 and Beyond
 
-Prioritization and hardening themes are tracked in **[Future work & hardening](./product-specs/future-work-and-hardening.md)** so product and engineering can adjust order without duplicating long lists here.
+The **current execution plan** (hardening + new capability 1) lives in **[`docs/plan/next-execution-plan.md`](./plan/next-execution-plan.md)**. Historical priority-only snapshot: [`archive/plans/future-work-and-hardening-priorities-2026-05.md`](./archive/plans/future-work-and-hardening-priorities-2026-05.md).
 
 High-level backlog (unchanged intent, version bucket renamed from “v0.8+” now that v0.8 has shipped):
 

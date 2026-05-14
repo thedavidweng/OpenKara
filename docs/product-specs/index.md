@@ -5,10 +5,13 @@ Use these docs when the question is about what the product should do for a user,
 
 ## Current Specs
 
-| Document                                                       | Description                                                        |
-| -------------------------------------------------------------- | ------------------------------------------------------------------ |
-| [new-user-onboarding.md](./new-user-onboarding.md)             | First-run setup and initial import expectations                    |
-| [future-work-and-hardening.md](./future-work-and-hardening.md) | Rolling backlog: proposed new features vs hardening (priority TBD) |
+| Document                                           | Description                                     |
+| -------------------------------------------------- | ----------------------------------------------- |
+| [new-user-onboarding.md](./new-user-onboarding.md) | First-run setup and initial import expectations |
+
+## Engineering plan (single active slice)
+
+The repo keeps **one** execution plan under [`../plan/`](../plan/) (see [`../plan/next-execution-plan.md`](../plan/next-execution-plan.md)). Agreed priority-only history lives in [`../archive/plans/future-work-and-hardening-priorities-2026-05.md`](../archive/plans/future-work-and-hardening-priorities-2026-05.md).
 
 ## What Belongs Here
 
