@@ -21,7 +21,7 @@ summaries, and historical records.
 | Document                                 | Description                                                                                      |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | [plan/README.md](./plan/README.md)       | What lives in `docs/plan/` and how files age out                                                 |
-| [plan/plan.md](./plan/plan.md)           | **Active plan** — hardening H1–H7 + capability F1 (playlists / singer rotation) until superseded |
+| [plan/plan.md](./plan/plan.md)           | **Active plan** — hardening H1–H8 + capability F1 (playlists / singer rotation) until superseded |
 | [plan/tech-debt.md](./plan/tech-debt.md) | Cross-cutting debt and housekeeping                                                              |
 
 Older point-in-time plans live under [archive/plans/](archive/README.md).

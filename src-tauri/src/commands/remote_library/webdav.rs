@@ -79,9 +79,10 @@ pub(crate) fn webdav_send(
     if let Some(bytes) = body {
         request = request.body(bytes);
     }
-    request
-        .send()
-        .map_err(|error| library_error(format!("WebDAV request to {url} failed: {error}")))
+    request.send().map_err(|error| {
+        tracing::trace!("WebDAV request to {url} failed: {error}");
+        library_error("WebDAV request failed. Check the server URL and try again.".to_owned())
+    })
 }
 
 pub(crate) fn webdav_exists(
@@ -545,7 +546,12 @@ pub(crate) fn delete_relative_path_from_remote(
         StatusCode::OK | StatusCode::NO_CONTENT | StatusCode::ACCEPTED | StatusCode::NOT_FOUND => {
             Ok(())
         }
-        status => Err(library_error(format!("failed to delete {url}: {status}"))),
+        status => {
+            tracing::trace!("WebDAV delete at {url} returned {status}");
+            Err(library_error(
+                "WebDAV delete failed. Check permissions and try again.".to_owned(),
+            ))
+        }
     }
 }
 
@@ -573,6 +579,92 @@ mod tests {
     };
     use tempfile::tempdir;
     use tiny_http::{Header, Method as HttpMethod, Response, Server, StatusCode as HttpStatusCode};
+
+    // -----------------------------------------------------------------------
+    // Pure URL/path normalization tests (no network, deterministic)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn normalize_server_url_adds_trailing_slash() {
+        let result =
+            normalize_server_url("https://webdav.example.com/path").expect("URL should normalize");
+        assert_eq!(result, "https://webdav.example.com/path/");
+    }
+
+    #[test]
+    fn normalize_server_url_preserves_existing_trailing_slash() {
+        let result =
+            normalize_server_url("https://webdav.example.com/").expect("URL should normalize");
+        assert_eq!(result, "https://webdav.example.com/");
+    }
+
+    #[test]
+    fn normalize_server_url_preserves_subdirectory_with_slash() {
+        let result = normalize_server_url("https://server.com/dav/").expect("URL should normalize");
+        assert_eq!(result, "https://server.com/dav/");
+    }
+
+    #[test]
+    fn normalize_server_url_rejects_invalid_url() {
+        let result = normalize_server_url("not a url");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn normalize_webdav_root_path_defaults_to_slugified_display_name() {
+        let result = normalize_webdav_root_path(None, "My Karaoke");
+        assert!(result.starts_with("/my-") || result.starts_with("/My-"));
+    }
+
+    #[test]
+    fn normalize_webdav_root_path_strips_leading_trailing_slashes() {
+        assert_eq!(
+            normalize_webdav_root_path(Some("///my/path///"), "fallback"),
+            "/my/path"
+        );
+    }
+
+    #[test]
+    fn normalize_webdav_root_path_adds_leading_slash() {
+        assert_eq!(
+            normalize_webdav_root_path(Some("music/karaoke"), "fallback"),
+            "/music/karaoke"
+        );
+    }
+
+    #[test]
+    fn join_url_combines_base_and_relative_segments() {
+        let result = join_url("https://server.com/dav/", "library/songs").expect("URL should join");
+        assert_eq!(result, "https://server.com/dav/library/songs");
+    }
+
+    #[test]
+    fn remote_path_display_renders_host_and_path() {
+        let display = remote_path_display_from_url("https://dav.example.com/share/OpenKara/");
+        assert_eq!(display, "dav.example.com/share/OpenKara");
+    }
+
+    #[test]
+    fn remote_path_display_falls_back_to_raw_string_on_parse_failure() {
+        let display = remote_path_display_from_url("not-a-valid-url");
+        assert_eq!(display, "not-a-valid-url");
+    }
+
+    #[test]
+    fn webdav_marker_url_produces_predicable_path() {
+        let result =
+            webdav_marker_url("https://server.com/dav/OpenKara/").expect("marker URL should build");
+        assert!(result.contains("/dav/OpenKara/"));
+        assert!(result.ends_with(".openkara-library") || result.ends_with("openkara.library"));
+    }
+
+    #[test]
+    fn webdav_database_url_produces_predicable_path() {
+        let result = webdav_database_url("https://server.com/dav/OpenKara/")
+            .expect("database URL should build");
+        assert!(result.contains("/dav/OpenKara/"));
+        assert!(result.ends_with(".db"));
+    }
 
     struct TestWebDavServer {
         base_url: String,

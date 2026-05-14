@@ -1,69 +1,90 @@
 # Database Schema
 
-This document summarizes the current SQLite schema as defined by `src-tauri/migrations/001_init.sql` through `src-tauri/migrations/007_song_instrumental.sql`.
+This document is **auto-generated** from `src-tauri/migrations/*.sql` by `scripts/generate-db-schema.mjs`.
+Do **not** edit it by hand. Regenerate after any migration change:
 
-## Tables
+```bash
+node scripts/generate-db-schema.mjs
+```
 
-### `songs`
+Source migrations: `001_init.sql`, `002_stems.sql`, `003_lyrics.sql`, `004_portable_paths.sql`, `005_audio_source_kind.sql`, `005_individual_stem_paths.sql`, `006_stem_model_variant.sql`, `007_song_instrumental.sql`, `008_playlists.sql`, `009_singer_rotation.sql`.
+
+## `songs`
 
 Created by `001_init.sql`.
 
-| Column              | Type      | Notes                                                  |
-| ------------------- | --------- | ------------------------------------------------------ |
-| `hash`              | `TEXT`    | Primary key for the imported song                      |
-| `file_path`         | `TEXT`    | Normalized path stored relative to the library root    |
-| `audio_source_kind` | `TEXT`    | Original, remote original, or remote stems source kind |
-| `instrumental`      | `INTEGER` | Whether the song is marked as an official instrumental |
-| `title`             | `TEXT`    | Extracted track title                                  |
-| `artist`            | `TEXT`    | Extracted artist                                       |
-| `album`             | `TEXT`    | Extracted album                                        |
-| `duration_ms`       | `INTEGER` | Track duration in milliseconds                         |
-| `cover_art`         | `BLOB`    | Embedded artwork bytes when available                  |
-| `imported_at`       | `INTEGER` | Import timestamp                                       |
+| Column              | Type      | Notes       |
+| ------------------- | --------- | ----------- |
+| `hash`              | `TEXT`    | Primary key |
+| `file_path`         | `TEXT`    |             |
+| `title`             | `TEXT`    |             |
+| `artist`            | `TEXT`    |             |
+| `album`             | `TEXT`    |             |
+| `duration_ms`       | `INTEGER` |             |
+| `cover_art`         | `BLOB`    |             |
+| `imported_at`       | `INTEGER` | NOT NULL    |
+| `audio_source_kind` | `TEXT`    |             |
+| `instrumental`      | `INTEGER` |             |
 
-### `stems`
+## `stems`
 
-Created by `002_stems.sql`, expanded by `005_individual_stem_paths.sql` and `006_stem_model_variant.sql`.
+Created by `002_stems.sql`.
 
-| Column          | Type      | Notes                                                 |
-| --------------- | --------- | ----------------------------------------------------- |
-| `song_hash`     | `TEXT`    | Primary key and foreign key to `songs(hash)`          |
-| `vocals_path`   | `TEXT`    | Cached vocals stem path                               |
-| `accomp_path`   | `TEXT`    | Cached accompaniment stem path                        |
-| `separated_at`  | `INTEGER` | Separation timestamp                                  |
-| `drums_path`    | `TEXT`    | Optional individual drums stem path                   |
-| `bass_path`     | `TEXT`    | Optional individual bass stem path                    |
-| `other_path`    | `TEXT`    | Optional individual other stem path                   |
-| `model_variant` | `TEXT`    | Model variant used for separation, default `htdemucs` |
+| Column          | Type      | Notes               |
+| --------------- | --------- | ------------------- |
+| `song_hash`     | `TEXT`    | FK → songs(hash)    |
+| `vocals_path`   | `TEXT`    | NOT NULL            |
+| `accomp_path`   | `TEXT`    | NOT NULL            |
+| `separated_at`  | `INTEGER` | NOT NULL            |
+| `drums_path`    | `TEXT`    |                     |
+| `bass_path`     | `TEXT`    |                     |
+| `other_path`    | `TEXT`    |                     |
+| `model_variant` | `TEXT`    | default 'htdemucs'; |
 
-### `lyrics`
+## `lyrics`
 
 Created by `003_lyrics.sql`.
 
-| Column       | Type      | Notes                                        |
-| ------------ | --------- | -------------------------------------------- |
-| `song_hash`  | `TEXT`    | Primary key and foreign key to `songs(hash)` |
-| `lrc`        | `TEXT`    | Cached lyrics payload                        |
-| `source`     | `TEXT`    | Source enum serialized as text               |
-| `offset_ms`  | `INTEGER` | Per-song timing offset                       |
-| `fetched_at` | `INTEGER` | Fetch timestamp                              |
+| Column       | Type      | Notes               |
+| ------------ | --------- | ------------------- |
+| `song_hash`  | `TEXT`    | FK → songs(hash)    |
+| `lrc`        | `TEXT`    | NOT NULL            |
+| `source`     | `TEXT`    | NOT NULL            |
+| `offset_ms`  | `INTEGER` | NOT NULL, default 0 |
+| `fetched_at` | `INTEGER` | NOT NULL            |
 
-### `library_meta`
+## `library_meta`
 
 Created by `004_portable_paths.sql`.
 
-| Column  | Type   | Notes                            |
-| ------- | ------ | -------------------------------- |
-| `key`   | `TEXT` | Primary key for library metadata |
-| `value` | `TEXT` | Stored metadata value            |
+| Column      | Type      | Notes |
+| ----------- | --------- | ----- |
+| `e.g.`      | `SCHEMA`  |       |
+| `migration` | `MARKERS` |       |
+
+## `playlists`
+
+Created by `008_playlists.sql`.
+
+| Column | Type | Notes |
+| ------ | ---- | ----- |
+
+## `rotation_state`
+
+Created by `009_singer_rotation.sql`.
+
+| Column | Type | Notes |
+| ------ | ---- | ----- |
 
 ## Migration History
 
-1. `001_init.sql` - creates the `songs` table.
-2. `002_stems.sql` - creates the `stems` table for separated output paths.
-3. `003_lyrics.sql` - creates the `lyrics` table for cached LRC and offsets.
-4. `004_portable_paths.sql` - creates `library_meta` for library-level metadata and portability markers.
-5. `005_audio_source_kind.sql` - adds `audio_source_kind` to `songs` so remote source types are explicit.
-6. `005_individual_stem_paths.sql` - adds `drums_path`, `bass_path`, and `other_path` to `stems`.
-7. `006_stem_model_variant.sql` - adds `model_variant` to `stems` so cache entries remain variant-aware.
-8. `007_song_instrumental.sql` - adds `instrumental` to `songs` so official accompaniment tracks can be excluded from separation.
+1. `001_init.sql` — CREATE TABLE IF NOT EXISTS songs (
+2. `002_stems.sql` — CREATE TABLE IF NOT EXISTS stems (
+3. `003_lyrics.sql` — CREATE TABLE IF NOT EXISTS lyrics (
+4. `004_portable_paths.sql` — Library-level key-value metadata (e.g. schema version, migration markers).
+5. `005_audio_source_kind.sql` — ALTER TABLE songs ADD COLUMN audio_source_kind TEXT NOT NULL DEFAULT 'original';
+6. `005_individual_stem_paths.sql` — ALTER TABLE stems ADD COLUMN drums_path TEXT;
+7. `006_stem_model_variant.sql` — ALTER TABLE stems ADD COLUMN model_variant TEXT DEFAULT 'htdemucs';
+8. `007_song_instrumental.sql` — ALTER TABLE songs ADD COLUMN instrumental INTEGER NOT NULL DEFAULT 0;
+9. `008_playlists.sql` — Playlist management tables for saved playlists (F1).
+10. `009_singer_rotation.sql` — Singer rotation state for turn-based queue workflows (F1).

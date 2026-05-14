@@ -1,11 +1,12 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Folder, CheckCircle2, Layers } from "lucide-react";
+import { Folder, CheckCircle2, Layers, ListMusic } from "lucide-react";
 import { ConfirmationDialog } from "@/components/Settings/ConfirmationDialog";
 import { SearchBox } from "@/components/Library/SearchBox";
 import { SongList } from "@/components/Library/SongList";
 import { songCanBeSeparated } from "@/lib/song-media";
 import { useLibraryStore } from "@/stores/library-store";
+import { usePlaylistStore } from "@/stores/playlist-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import * as api from "@/lib/tauri";
 import { notifyError } from "@/lib/errors";
@@ -28,6 +29,27 @@ export function Sidebar({ header }: SidebarProps = {}) {
   const hideBatchSeparate = useSettingsStore((s) => s.hideBatchSeparate);
   const stemMode = useSettingsStore((s) => s.stemMode);
   const [showUpgradeConfirm, setShowUpgradeConfirm] = useState(false);
+
+  const playlists = usePlaylistStore((s) => s.playlists);
+  const activePlaylistId = usePlaylistStore((s) => s.activePlaylistId);
+  const loadPlaylists = usePlaylistStore((s) => s.loadPlaylists);
+  const createPlaylist = usePlaylistStore((s) => s.createPlaylist);
+  const setActivePlaylist = usePlaylistStore((s) => s.setActivePlaylist);
+
+  useEffect(() => {
+    loadPlaylists();
+  }, [loadPlaylists]);
+
+  const handleCreatePlaylist = async () => {
+    const name = window.prompt(t("playlist.newPlaylist"));
+    if (name && name.trim()) {
+      try {
+        await createPlaylist(name.trim());
+      } catch {
+        notifyError(new Error("Failed to create playlist"));
+      }
+    }
+  };
   const separableSongs = songs.filter(songCanBeSeparated);
 
   const separatedCount = songs.filter(
@@ -124,6 +146,52 @@ export function Sidebar({ header }: SidebarProps = {}) {
             {separatedCount}
           </span>
         </button>
+      </div>
+
+      {/* PLAYLISTS section */}
+      <div className="shrink-0 space-y-0.5 px-2 mt-4">
+        <div className="flex items-center justify-between px-2 pb-1">
+          <span className="text-[11px] font-semibold tracking-wide text-[var(--color-text-dim)]">
+            {t("playlist.section")}
+          </span>
+          <button
+            onClick={handleCreatePlaylist}
+            className="text-[11px] text-[var(--color-accent)] hover:text-white transition-colors"
+            title={t("playlist.create")}
+          >
+            + {t("playlist.create")}
+          </button>
+        </div>
+        {playlists.length === 0 ? (
+          <div className="px-2 py-1 text-[11px] text-[var(--color-text-dim)]">
+            {t("playlist.empty")}
+          </div>
+        ) : (
+          <div className="space-y-0.5">
+            {playlists.map((playlist) => (
+              <button
+                key={playlist.id}
+                onClick={() => setActivePlaylist(playlist.id)}
+                className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-[13px] ${
+                  activePlaylistId === playlist.id
+                    ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)]"
+                    : "border border-transparent text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
+                }`}
+              >
+                <span className="flex items-center gap-2 truncate">
+                  <ListMusic
+                    size={14}
+                    className="text-[var(--color-text-dim)] shrink-0"
+                  />
+                  <span className="truncate">{playlist.name}</span>
+                </span>
+                <span className="text-[11px] text-[var(--color-text-dim)] shrink-0 ml-2">
+                  {playlist.song_count}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Song list */}

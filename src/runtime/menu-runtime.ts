@@ -16,7 +16,8 @@ export type AppMenuAction =
   | "import-files"
   | "open-settings"
   | "switch-library"
-  | "toggle-sidebar";
+  | "toggle-sidebar"
+  | "copy-debug-info";
 
 export interface ExpandedImportPaths {
   paths: string[];
@@ -165,6 +166,18 @@ export async function handleAppMenuAction(
     case "import-files":
       await importFromDialog();
       return;
+    case "copy-debug-info": {
+      // Build a minimal diagnostic string without secrets.
+      // The native About dialog shows the authoritative version + build SHA;
+      // this clipboard export is a quick triage aid.
+      const lines = [
+        `OpenKara (version info in About dialog)`,
+        `Platform: ${navigator.platform}`,
+      ];
+      const text = lines.join("\n");
+      await navigator.clipboard.writeText(text);
+      return;
+    }
     default:
       return;
   }
