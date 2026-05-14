@@ -1,45 +1,46 @@
 # Future work & hardening
 
-> **Last updated:** 2026-05-13  
+> **Last updated:** 2026-05-14  
 > **Purpose:** Single place to align on **what to build next** (new capabilities) versus **what to harden** (reliability, performance, maintainability). This doc is meant to change often; [`implementation-status.md`](../implementation-status.md) remains the canonical shipped-milestone list.
 
 ## How to use this doc
 
 1. **Shipped facts** live in [`implementation-status.md`](../implementation-status.md) and version-tagged releases — not here.
-2. **Priority** is expressed as _proposed_ until maintainers tick a decision row in [Priority decision log](#priority-decision-log) (or replace that section with dated ADRs).
+2. **Priority** below is **agreed** as of 2026-05-14 (maintainer confirmation). Change it only via an explicit decision — append a row to [Priority decision log](#priority-decision-log).
 3. **Hardening** items may ship in any patch/minor release; they do not need their own marketing version.
 
-## Proposed new capabilities (v0.9+)
+## New capabilities (v0.9+)
 
-| Theme                             | User outcome                                          | Dependencies / risk                                       | Proposed priority |
-| --------------------------------- | ----------------------------------------------------- | --------------------------------------------------------- | ----------------- |
-| Mic input & vocal effects         | Sing along with monitoring, simple FX                 | Audio I/O latency, feedback control, cross-platform QA    | TBD               |
-| Saved playlists & singer rotation | Host multi-singer sessions without ad-hoc queue hacks | UX design, persistence model                              | TBD               |
-| Pitch & key shift                 | Match singer range on the fly                         | Real-time DSP quality vs CPU; integration with stem mixer | TBD               |
-| Session recording                 | Capture performance to file                           | Legal/UX copy, storage paths, sync with stems             | TBD               |
-| Mobile companion                  | Remote control / lyrics on a second device            | Transport security, discovery, scope                      | TBD               |
+| Theme                             | User outcome                                          | Dependencies / risk                                       | Priority |
+| --------------------------------- | ----------------------------------------------------- | --------------------------------------------------------- | -------- |
+| Saved playlists & singer rotation | Host multi-singer sessions without ad-hoc queue hacks | UX design, persistence model                              | **1**    |
+| Mic input & vocal effects         | Sing along with monitoring, simple FX                 | Audio I/O latency, feedback control, cross-platform QA    | **2**    |
+| Pitch & key shift                 | Match singer range on the fly                         | Real-time DSP quality vs CPU; integration with stem mixer | **3**    |
+| Session recording                 | Capture performance to file                           | Legal/UX copy, storage paths, sync with stems             | **4**    |
+| Mobile companion                  | Remote control / lyrics on a second device            | Transport security, discovery, scope                      | **5**    |
 
-## Proposed hardening & optimization (existing product)
+Lower **Priority** number = ship first. **1** is intentionally closest to existing queue/library work before taking on heavy DSP or a second client.
 
-These areas already ship to users; investment here reduces incidents and support load before stacking new features.
+## Hardening & optimization (existing product)
 
-| Area                              | Why it matters                       | Evidence / notes                                                                                                               | Proposed priority |
-| --------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | ----------------- |
-| **Lyrics pipeline**               | Core karaoke UX                      | Recent fixes: sync stall, plain-text layout, romanization language overrides — still high churn surface                        | TBD               |
-| **Remote libraries**              | Complex OAuth/WebDAV edge cases      | Reauthorization unified in v0.8.0; residual provider quirks and offline behavior                                               | TBD               |
-| **Separation runtime**            | Long CPU jobs, platform-specific EPs | ONNX provider selection, fallbacks, and user-visible errors already iterated in v0.5+ — watch for regressions on Windows/Linux | TBD               |
-| **AirPlay / presentation output** | Platform-specific AV behavior        | CI has historically treated some playback tests as environment-sensitive (e.g. Linux)                                          | TBD               |
-| **Packaging & supply chain**      | Release friction affects trust       | Flatpak/WinGet paths improved through v0.8.1; keep manifest generators and CI in sync                                          | TBD               |
-| **Documentation ownership**       | Prevents spec drift                  | See [`tech-debt-tracker.md`](../exec-plans/tech-debt-tracker.md)                                                               | TBD               |
-| **Generated schema doc**          | Onboarding for DB changes            | `docs/generated/db-schema.md` is manual today                                                                                  | TBD               |
+These areas already ship to users; **1** is the highest leverage before stacking major new features.
+
+| Area                              | Why it matters                       | Evidence / notes                                                                                                               | Priority |
+| --------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | -------- |
+| **Lyrics pipeline**               | Core karaoke UX                      | Recent fixes: sync stall, plain-text layout, romanization language overrides — still high churn surface                        | **1**    |
+| **Remote libraries**              | Complex OAuth/WebDAV edge cases      | Reauthorization unified in v0.8.0; residual provider quirks and offline behavior                                               | **2**    |
+| **Separation runtime**            | Long CPU jobs, platform-specific EPs | ONNX provider selection, fallbacks, and user-visible errors already iterated in v0.5+ — watch for regressions on Windows/Linux | **3**    |
+| **AirPlay / presentation output** | Platform-specific AV behavior        | CI has historically treated some playback tests as environment-sensitive (e.g. Linux)                                          | **4**    |
+| **Packaging & supply chain**      | Release friction affects trust       | Flatpak/WinGet paths improved through v0.8.1; keep manifest generators and CI in sync                                          | **5**    |
+| **Documentation ownership**       | Prevents spec drift                  | See [`tech-debt-tracker.md`](../exec-plans/tech-debt-tracker.md)                                                               | **6**    |
+| **Generated schema doc**          | Onboarding for DB changes            | `docs/generated/db-schema.md` is manual today                                                                                  | **7**    |
 
 ## Priority decision log
 
-_Use this table to record agreed ordering. Edit in place; prefer dated rows over rewriting history._
-
-| Date       | Decision                                                                                                  | Outcome                                                  |
-| ---------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| 2026-05-13 | Initial backlog seeded from `implementation-status.md` + `tech-debt-tracker.md` + post–v0.7.0 git history | All priorities **TBD** pending maintainer/product review |
+| Date       | Decision                                                                                                  | Outcome                                                                                                                                                                                                     |
+| ---------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-05-13 | Initial backlog seeded from `implementation-status.md` + `tech-debt-tracker.md` + post–v0.7.0 git history | All priorities **TBD** pending maintainer/product review                                                                                                                                                    |
+| 2026-05-14 | Agreed ordering (maintainer)                                                                              | **Hardening:** lyrics → remote → separation → AirPlay/presentation → packaging → docs ownership → `db-schema` automation. **v0.9+ features:** playlists/singer rotation → mic → pitch → recording → mobile. |
 
 ## Related links
 
