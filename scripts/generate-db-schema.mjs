@@ -107,59 +107,6 @@ function parseCreateTableStatements(sql) {
   return results;
 }
 
-/** Parse column definitions from the parens body of a CREATE TABLE. */
-function extractColumnsFromCreate(sql) {
-  const lines = [];
-  // Capture content between outer parens, handling nested parens minimally.
-  const start = sql.indexOf("(");
-  if (start === -1) return lines;
-  let depth = 0;
-  let buf = "";
-  for (let i = start + 1; i < sql.length; i++) {
-    const ch = sql[i];
-    if (ch === "(") depth++;
-    else if (ch === ")") {
-      if (depth === 0) break;
-      depth--;
-    }
-    if (ch === "\n") continue;
-    buf += ch;
-  }
-
-  for (let raw of buf.split(",")) {
-    raw = raw.trim();
-    if (!raw) continue;
-    // Skip constraints, primary key, foreign key, unique etc.
-    if (/^(PRIMARY\s+KEY|FOREIGN\s+KEY|UNIQUE|CHECK|CONSTRAINT)\b/i.test(raw))
-      continue;
-    const parts = raw.split(/\s+/);
-    if (parts.length < 2) continue;
-    const colName = parts[0].replace(/`|"/g, "");
-    const colType = parts[1].replace(/\(.*/, "").toUpperCase(); // strip length
-    let notes = "";
-    if (/\bPRIMARY\s+KEY\b/i.test(raw)) notes = "Primary key";
-    else if (/\bNOT\s+NULL\b/i.test(raw)) {
-      notes = "NOT NULL";
-      if (/\bDEFAULT\b/i.test(raw)) {
-        const def = raw.match(/DEFAULT\s+(\S+)/i);
-        if (def) notes += `, default ${def[1]}`;
-      }
-    }
-    const rest = raw
-      .replace(colName, "")
-      .replace(parts[1], "")
-      .replace(/\s+/g, " ")
-      .trim();
-    // Try to extract REFERENCES hint for notes
-    const ref = rest.match(/REFERENCES\s+(\w+)\s*\((\w+)\)/i);
-    if (ref) {
-      notes = `FK → ${ref[1]}(${ref[2]})`;
-    }
-    lines.push({ name: colName, type: colType, notes });
-  }
-  return lines;
-}
-
 /** Parse ALTER TABLE … ADD COLUMN statements. */
 function extractAlterAdds(sql) {
   const results = [];
