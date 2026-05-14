@@ -1,4 +1,4 @@
-# Next execution plan
+# Active plan
 
 > **Status:** Active · **Last updated:** 2026-05-14  
 > **Supersedes:** Priority snapshot in [`../archive/plans/future-work-and-hardening-priorities-2026-05.md`](../archive/plans/future-work-and-hardening-priorities-2026-05.md) (tables kept for history only).
@@ -7,7 +7,7 @@
 
 Deliver **all agreed hardening streams** (lyrics → remote → separation → AirPlay/presentation → packaging → documentation ownership → generated DB schema doc) and **new capability 1 — saved playlists & singer rotation**, in the order below. Each stream may ship across one or more releases; the sequence defines **dependency and attention order**, not a single release gate.
 
-References: [`../implementation-status.md`](../implementation-status.md), [`../design-docs/roadmap.md`](../design-docs/roadmap.md), [`../references/contracts/README.md`](../references/contracts/README.md), [`../exec-plans/tech-debt-tracker.md`](../exec-plans/tech-debt-tracker.md).
+References: [`../implementation-status.md`](../implementation-status.md), [`../design-docs/roadmap.md`](../design-docs/roadmap.md), [`../references/contracts/README.md`](../references/contracts/README.md), [`./tech-debt.md`](./tech-debt.md).
 
 ---
 
@@ -86,7 +86,7 @@ References: [`../implementation-status.md`](../implementation-status.md), [`../d
 **Work items:**
 
 - Extend [`../product-specs/`](../product-specs/) for high-churn areas touched in H1–H5 (incremental).
-- Update [`../exec-plans/tech-debt-tracker.md`](../exec-plans/tech-debt-tracker.md) when items close.
+- Update [`./tech-debt.md`](./tech-debt.md) when items close.
 
 **Verification:** `pnpm format`; spot-check links from [`../README.md`](../README.md).
 
@@ -126,4 +126,4 @@ References: [`../implementation-status.md`](../implementation-status.md), [`../d
 When H1–H7 and F1 are satisfactorily delivered:
 
 1. Archive this file under `docs/archive/plans/` with a dated filename (or add an “Outcome” appendix and move).
-2. Replace `next-execution-plan.md` with the **next** single plan (e.g. capability 2 — mic — plus any new hardening discovered during execution).
+2. Replace **`plan.md`** with the **next** single plan (e.g. capability 2 — mic — plus any new hardening discovered during execution).
