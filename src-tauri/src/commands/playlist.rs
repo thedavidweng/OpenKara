@@ -100,22 +100,30 @@ pub fn rename_playlist(
     name: String,
 ) -> CommandResult<()> {
     let conn = get_connection(&state)?;
-    conn.execute(
-        "UPDATE playlists SET name = ?1, updated_at = ?2 WHERE id = ?3",
-        rusqlite::params![name, now(), playlist_id],
-    )
-    .map_err(database_error)?;
+    let rows = conn
+        .execute(
+            "UPDATE playlists SET name = ?1, updated_at = ?2 WHERE id = ?3",
+            rusqlite::params![name, now(), playlist_id],
+        )
+        .map_err(database_error)?;
+    if rows == 0 {
+        return Err(database_error(format!("playlist {playlist_id} not found")));
+    }
     Ok(())
 }
 
 #[tauri::command]
 pub fn delete_playlist(state: State<'_, AppState>, playlist_id: String) -> CommandResult<()> {
     let conn = get_connection(&state)?;
-    conn.execute(
-        "DELETE FROM playlists WHERE id = ?1",
-        rusqlite::params![playlist_id],
-    )
-    .map_err(database_error)?;
+    let rows = conn
+        .execute(
+            "DELETE FROM playlists WHERE id = ?1",
+            rusqlite::params![playlist_id],
+        )
+        .map_err(database_error)?;
+    if rows == 0 {
+        return Err(database_error(format!("playlist {playlist_id} not found")));
+    }
     Ok(())
 }
 
