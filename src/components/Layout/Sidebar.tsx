@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Folder, CheckCircle2, Layers, ListMusic } from "lucide-react";
 import { ConfirmationDialog } from "@/components/Settings/ConfirmationDialog";
+import { InputDialog } from "@/components/Settings/InputDialog";
 import { SearchBox } from "@/components/Library/SearchBox";
 import { SongList } from "@/components/Library/SongList";
 import { songCanBeSeparated } from "@/lib/song-media";
@@ -29,6 +30,7 @@ export function Sidebar({ header }: SidebarProps = {}) {
   const hideBatchSeparate = useSettingsStore((s) => s.hideBatchSeparate);
   const stemMode = useSettingsStore((s) => s.stemMode);
   const [showUpgradeConfirm, setShowUpgradeConfirm] = useState(false);
+  const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
 
   const playlists = usePlaylistStore((s) => s.playlists);
   const activePlaylistId = usePlaylistStore((s) => s.activePlaylistId);
@@ -40,14 +42,11 @@ export function Sidebar({ header }: SidebarProps = {}) {
     loadPlaylists();
   }, [loadPlaylists]);
 
-  const handleCreatePlaylist = async () => {
-    const name = window.prompt(t("playlist.newPlaylist"));
-    if (name && name.trim()) {
-      try {
-        await createPlaylist(name.trim());
-      } catch {
-        notifyError(new Error("Failed to create playlist"));
-      }
+  const handleCreatePlaylist = async (name: string) => {
+    try {
+      await createPlaylist(name.trim());
+    } catch {
+      notifyError(new Error("Failed to create playlist"));
     }
   };
   const separableSongs = songs.filter(songCanBeSeparated);
@@ -155,7 +154,7 @@ export function Sidebar({ header }: SidebarProps = {}) {
             {t("playlist.section")}
           </span>
           <button
-            onClick={handleCreatePlaylist}
+            onClick={() => setShowCreatePlaylist(true)}
             className="text-[11px] text-[var(--color-accent)] hover:text-white transition-colors"
             title={t("playlist.create")}
           >
@@ -252,6 +251,19 @@ export function Sidebar({ header }: SidebarProps = {}) {
             </button>
           )}
         </div>
+      )}
+
+      {showCreatePlaylist && (
+        <InputDialog
+          title={t("playlist.create")}
+          placeholder={t("playlist.name")}
+          confirmLabel={t("common.save")}
+          onConfirm={(name) => {
+            setShowCreatePlaylist(false);
+            handleCreatePlaylist(name);
+          }}
+          onCancel={() => setShowCreatePlaylist(false)}
+        />
       )}
 
       {showUpgradeConfirm && (
