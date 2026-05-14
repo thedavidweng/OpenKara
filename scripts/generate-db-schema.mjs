@@ -32,10 +32,79 @@ const OUTPUT_FILE = join(REPO_ROOT, "docs", "generated", "db-schema.md");
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Parse a table name from `CREATE TABLE IF NOT EXISTS name (` */
-function extractCreateTableName(sql) {
-  const m = sql.match(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s*\(/i);
-  return m ? m[1] : null;
+/**
+ * Parse all CREATE TABLE statements from a migration file, returning
+ * { tableName, columnDefs } pairs. Handles:
+ *   - Multiple CREATE TABLEs per file
+ *   - Comments containing `(` before the actual CREATE TABLE body
+ *   - Column defs split across lines
+ */
+function parseCreateTableStatements(sql) {
+  const results = [];
+  // Match each CREATE TABLE … ( … ) group, with a simplified outer-paren matcher.
+  const tableRe = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s*\(/gi;
+  let tableMatch;
+  while ((tableMatch = tableRe.exec(sql)) !== null) {
+    const tableName = tableMatch[1];
+    const startPos = tableMatch.index + tableMatch[0].length;
+
+    // Skip past inline comments and string content before the real `)`.
+    let depth = 0;
+    let i;
+    for (i = startPos; i < sql.length; i++) {
+      const ch = sql[i];
+      if (ch === "(") depth++;
+      else if (ch === ")") {
+        if (depth === 0) break;
+        depth--;
+      }
+      // Skip single-line SQL comments (-- ...) so `(` inside comments
+      // does not confuse the depth tracker.
+      if (ch === "-" && sql[i + 1] === "-") {
+        while (i < sql.length && sql[i] !== "\n") i++;
+        continue;
+      }
+    }
+
+    // The body is between the opening `(` and the closing `)`
+    const body = sql.slice(startPos, i);
+
+    // Parse column definitions from the body
+    const columns = [];
+    for (let raw of body.split(",")) {
+      raw = raw.trim();
+      if (!raw) continue;
+      // Skip constraints, primary key, foreign key, unique etc.
+      if (/^(PRIMARY\s+KEY|FOREIGN\s+KEY|UNIQUE|CHECK|CONSTRAINT)\b/i.test(raw))
+        continue;
+      const parts = raw.split(/\s+/);
+      if (parts.length < 2) continue;
+      const colName = parts[0].replace(/`|"/g, "");
+      const colType = parts[1].replace(/\(.*/, "").toUpperCase();
+      let notes = "";
+      if (/\bPRIMARY\s+KEY\b/i.test(raw)) notes = "Primary key";
+      else if (/\bNOT\s+NULL\b/i.test(raw)) {
+        notes = "NOT NULL";
+        if (/\bDEFAULT\b/i.test(raw)) {
+          const def = raw.match(/DEFAULT\s+(\S+)/i);
+          if (def) notes += `, default ${def[1]}`;
+        }
+      }
+      const rest = raw
+        .replace(colName, "")
+        .replace(parts[1], "")
+        .replace(/\s+/g, " ")
+        .trim();
+      const ref = rest.match(/REFERENCES\s+(\w+)\s*\((\w+)\)/i);
+      if (ref) {
+        notes = `FK → ${ref[1]}(${ref[2]})`;
+      }
+      columns.push({ name: colName, type: colType, notes });
+    }
+
+    results.push({ tableName, columns });
+  }
+  return results;
 }
 
 /** Parse column definitions from the parens body of a CREATE TABLE. */
@@ -129,11 +198,9 @@ for (const file of files) {
   const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf-8");
   const fileLabel = file.replace(".sql", "");
 
-  // CREATE TABLE
-  const createTableName = extractCreateTableName(sql);
-  if (createTableName) {
-    const cols = extractColumnsFromCreate(sql);
-    tables.set(createTableName, { createdBy: fileLabel, columns: cols });
+  // CREATE TABLE (supports multiple tables per file)
+  for (const { tableName, columns } of parseCreateTableStatements(sql)) {
+    tables.set(tableName, { createdBy: fileLabel, columns });
   }
 
   // ALTER TABLE … ADD COLUMN

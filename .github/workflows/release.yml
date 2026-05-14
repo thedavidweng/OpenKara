@@ -138,7 +138,13 @@ jobs:
       - name: Generate SHA256SUMS file
         run: |
           cd artifacts
-          sha256sum * > SHA256SUMS
+          shopt -s nullglob
+          files=(*)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No artifacts found to checksum" >&2
+            exit 1
+          fi
+          sha256sum "${files[@]}" > SHA256SUMS
           cat SHA256SUMS
 
       - name: Attach SHA256SUMS to release
