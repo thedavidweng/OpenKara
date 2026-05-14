@@ -16,16 +16,23 @@ summaries, and historical records.
 | [design-docs/releasing.md](./design-docs/releasing.md)                                       | Release workflow, Homebrew distribution, and future channels      |
 | [design-docs/performance/phase-5-baseline.md](./design-docs/performance/phase-5-baseline.md) | Backend benchmark baseline for profiling work                     |
 
+## Plan (next execution slice)
+
+| Document                                                     | Description                                                                                      |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| [plan/README.md](./plan/README.md)                           | Folder policy: exactly one active plan                                                           |
+| [plan/next-execution-plan.md](./plan/next-execution-plan.md) | Current plan — all agreed hardening streams + playlists / singer rotation (new capability **1**) |
+
 ## Execution Plans
 
 | Document                                                             | Description                                                |
 | -------------------------------------------------------------------- | ---------------------------------------------------------- |
-| [exec-plans/active/index.md](./exec-plans/active/index.md)           | In-progress or still-actionable implementation plans       |
+| [exec-plans/active/index.md](./exec-plans/active/index.md)           | Pointer to the active plan under `docs/plan/`              |
 | [exec-plans/tech-debt-tracker.md](./exec-plans/tech-debt-tracker.md) | Cross-cutting debt items that do not belong to one feature |
 
 Point-in-time plans that no longer drive active work live under
-[archive/](./archive/README.md). Active plans live under
-`docs/exec-plans/active/`.
+[archive/](./archive/README.md). **The single actionable plan** lives under
+[`docs/plan/`](./plan/README.md); `exec-plans/active/` only indexes it.
 
 ## Generated Docs
 
@@ -35,11 +42,10 @@ Point-in-time plans that no longer drive active work live under
 
 ## Product Specs
 
-| Document                                                                                   | Description                                           |
-| ------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
-| [product-specs/index.md](./product-specs/index.md)                                         | Product-spec index and ownership guidance             |
-| [product-specs/new-user-onboarding.md](./product-specs/new-user-onboarding.md)             | First-run and first-import experience reference       |
-| [product-specs/future-work-and-hardening.md](./product-specs/future-work-and-hardening.md) | Rolling backlog for next features vs reliability work |
+| Document                                                                       | Description                                     |
+| ------------------------------------------------------------------------------ | ----------------------------------------------- |
+| [product-specs/index.md](./product-specs/index.md)                             | Product-spec index and ownership guidance       |
+| [product-specs/new-user-onboarding.md](./product-specs/new-user-onboarding.md) | First-run and first-import experience reference |
 
 ## References
 
@@ -51,8 +57,9 @@ Point-in-time plans that no longer drive active work live under
 
 ## Archive
 
-| Document                                                                                 | Description                                                                |
-| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| [archive/README.md](./archive/README.md)                                                 | Historical plans and docs kept for traceability, not active implementation |
-| [archive/plans/playback-optimization.md](./archive/plans/playback-optimization.md)       | Archived playback optimization review and implementation outcome           |
-| [archive/plans/remote-library-hardening.md](./archive/plans/remote-library-hardening.md) | Completed remote-library conflict, recovery, and verification plan         |
+| Document                                                                                                                         | Description                                                                   |
+| -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| [archive/README.md](./archive/README.md)                                                                                         | Historical plans and docs kept for traceability, not active implementation    |
+| [archive/plans/playback-optimization.md](./archive/plans/playback-optimization.md)                                               | Archived playback optimization review and implementation outcome              |
+| [archive/plans/remote-library-hardening.md](./archive/plans/remote-library-hardening.md)                                         | Completed remote-library conflict, recovery, and verification plan            |
+| [archive/plans/future-work-and-hardening-priorities-2026-05.md](./archive/plans/future-work-and-hardening-priorities-2026-05.md) | Archived agreed priority tables (superseded by `plan/next-execution-plan.md`) |

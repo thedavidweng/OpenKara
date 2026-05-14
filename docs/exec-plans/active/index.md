@@ -1,7 +1,13 @@
 # Active Execution Plans
 
-Use this folder for plans that are still actionable, still referenced by downstream work, or currently in flight.
+The repo maintains **one** actionable engineering plan at a time.
 
-There are currently no active execution plans.
+## Active plan
 
-If a plan is not listed here, it should not be treated as active execution guidance.
+| Document                                                                 | Description                                                                                    |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| [`../../plan/next-execution-plan.md`](../../plan/next-execution-plan.md) | Hardening streams H1–H7 + new capability **F1** (saved playlists & singer rotation) until done |
+
+When that plan is completed or replaced, archive it under [`../../archive/plans/`](../../archive/plans/) and update this index.
+
+Historical agreed priorities (tables only): [`../../archive/plans/future-work-and-hardening-priorities-2026-05.md`](../../archive/plans/future-work-and-hardening-priorities-2026-05.md).
