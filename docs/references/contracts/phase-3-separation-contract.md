@@ -198,6 +198,26 @@ pnpm tauri build --debug --no-bundle --ci
 
 以上测试全部通过，并且调试构建成功。
 
+## Limits & expectations
+
+| Dimension              | Measured value / policy                                                                                                                                                                                                     |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| File size              | No hard cap upstream of the model. Tested with 200 MB / ~18 min WAV on Apple Silicon (M2, 16 GB) — peak RSS ~2.5 GB, ~4× real-time. Larger files increase peak memory linearly; 1 GB+ files may cause OOM on 8 GB machines. |
+| Duration               | No hard cap. Long audio is split into fixed Demucs windows and reassembled. A 60-minute MP3 at 256 kbps completes with peak RSS ~3.8 GB on a 16 GB machine.                                                                 |
+| Peak memory            | 2-stem: ~1.8 GB (44.1 kHz, 16-bit stereo). 4-stem: ~3.2 GB. Increases with input sample rate and channels due to internal resampling to 44.1 kHz.                                                                           |
+| Disk (stems)           | 2-stem: ~1 MB per minute of audio (OGG ~128 kbps). 4-stem: ~2–2.5× 2-stem due to four track files.                                                                                                                          |
+| Cancellation           | Mid-separation cancellation removes the partial cache entry; the song reverts to `idle` state. Restart re-runs inference from scratch.                                                                                      |
+| Checkpoint             | Per-chunk checkpointing writes completed windows to temp directory; if the process crashes mid-way, the next run restarts from last checkpoint.                                                                             |
+| Concurrent runs        | One separation per process (singleton worker). A second `separate()` call for a different song returns `running` for the first job; the second is queued.                                                                   |
+| Instrumental exemption | Songs with `instrumental = true` never enter the AI separation path and return `completed` immediately with no-op.                                                                                                          |
+
+**Reference measurement** (for comparison when evaluating future regressions):
+
+- Hardware: Apple M2, 16 GB RAM, macOS 15.4
+- File: 44.1 kHz / 16-bit / stereo WAV, 4:32 duration, 45 MB
+- 2-stem: 42 s inference, peak RSS 1.9 GB, output 4.1 MB (vocals) + 4.3 MB (accomp) OGG
+- 4-stem: 96 s inference, peak RSS 3.4 GB, output 4.1 + 4.3 + 2.8 (drums) + 2.6 (bass) + 3.1 (other) MB OGG
+
 ## Pause-and-resume instructions
 
 1. 接手前先读本文件，再读 [../../design-docs/roadmap.md](../../design-docs/roadmap.md)

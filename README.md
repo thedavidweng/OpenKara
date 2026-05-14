@@ -241,7 +241,7 @@ All paths in the database are relative — including CD+G sidecars and MP3+G ZIP
 For the detailed, up-to-date implementation status and future plans, see:
 
 - **[Implementation Status](./docs/implementation-status.md)** — Completed milestones, released versions, and planned features
-- **[Active plan](./docs/plan/plan.md)** — Single plan: hardening + playlists / singer rotation
+- **[Active plan](./docs/plan/plan.md)** — Hardening H1–H8 (incl. release readiness without paid Apple signing) + playlists / singer rotation (F1)
 - **[Technical Roadmap](./docs/design-docs/roadmap.md)** — Architecture phases, technical decisions, and risk mitigations
 
 ---
@@ -289,7 +289,7 @@ pnpm tauri build             # production build with platform-specific bundle
 - [Docs Hub](./docs/README.md) — Canonical index for design docs, plan, product specs, references, and archive
 - [Plan folder](./docs/plan/README.md) — Active plan (`plan.md`) and tech-debt tracker
 - [Implementation Status](./docs/implementation-status.md) — Shipped milestones and version notes
-- [Active plan](./docs/plan/plan.md) — Hardening + capability 1 backlog
+- [Active plan](./docs/plan/plan.md) — H1–H8 + F1 backlog
 - [Architecture](./docs/design-docs/architecture.md) — System design, tech stack, data flow, and runtime details
 - [Project Structure](./docs/design-docs/project-structure.md) — Current directory layout and module responsibilities
 - [Technical Roadmap](./docs/design-docs/roadmap.md) — Technology choices, API contracts, and risk mitigations

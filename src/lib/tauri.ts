@@ -7,3 +7,4 @@ export * from "./tauri/lyrics";
 export * from "./tauri/settings";
 export * from "./tauri/maintenance";
 export * from "./tauri/cdg";
+export * from "./tauri/playlist";
