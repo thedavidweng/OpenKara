@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { Sidebar } from "./Sidebar";
 import { SidebarRail } from "./SidebarRail";
 import { WindowChrome } from "./WindowChrome";
@@ -15,6 +15,7 @@ import { promptImportFiles } from "@/runtime/menu-runtime";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useRotationStore } from "@/stores/rotation-store";
 
 interface AppLayoutProps {
   initialWindowShellState?: WindowShellState;
@@ -39,9 +40,16 @@ export function AppLayout({ initialWindowShellState }: AppLayoutProps) {
     return promptImportFiles({ importFiles });
   }, [importFiles]);
 
+  const loadRotation = useRotationStore((s) => s.loadRotation);
+
+  useEffect(() => {
+    void loadRotation();
+  }, [loadRotation]);
+
   return (
     <div
       className="flex h-screen w-full flex-col overflow-hidden font-sans"
+      onContextMenu={(e) => e.preventDefault()}
       data-window-chrome-platform={windowShellState.chromeVariant}
       data-window-shell-tier={windowShellState.tier}
       style={createWindowShellStyle({

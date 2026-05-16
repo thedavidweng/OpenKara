@@ -7,9 +7,11 @@ Active engineering execution (plan + tech debt) lives in [`../plan/`](../plan/RE
 
 ## Current Specs
 
-| Document                                           | Description                                     |
-| -------------------------------------------------- | ----------------------------------------------- |
-| [new-user-onboarding.md](./new-user-onboarding.md) | First-run setup and initial import expectations |
+| Document                                                                     | Description                                     |
+| ---------------------------------------------------------------------------- | ----------------------------------------------- |
+| [new-user-onboarding.md](./new-user-onboarding.md)                           | First-run setup and initial import expectations |
+| [queue-management.md](./queue-management.md)                                 | Queue panel, up-next, reorder, auto-advance     |
+| [F1-playlists-and-singer-rotation.md](./F1-playlists-and-singer-rotation.md) | Playlist CRUD, singer assignment, round-robin   |
 
 ## What Belongs Here
 

@@ -1,19 +1,34 @@
 # OS
 .DS_Store
+.DS_Store?
 Thumbs.db
+Desktop.ini
 
 # Env
 .env
+.env.local
+.env.development
+.env.production
 .env.*
+!.env.example
+!.env.template
 
-# Editor
+# Editor / IDE
 .vscode/
 .idea/
 .cursor/
 .claude/
+*.swp
+*.swo
+*~
 
 # Node
 node_modules/
+.pnpm-debug.log
+
+# Lock files (pnpm-lock.yaml is intentionally tracked)
+# package-lock.json
+# yarn.lock
 
 # Build output
 dist/
@@ -40,13 +55,31 @@ src-tauri/generated/oauth/dropbox-client.json
 # Kuromoji dictionary (copied from node_modules at build time)
 public/dict/
 
-# Taste (auto-managed by CommandCode)
+# CommandCode / Taste (auto-managed by CommandCode)
 .commandcode/
 
-# Cache
+# Logs and temp files
 *.log
+*.tmp
+*.temp
+*.orig
+*.rej
+*.pid
+*.seed
+*.tgz
 
-# Local worktrees
+# TypeScript
+*.tsbuildinfo
+
+# Cache
+.cache/
+.turbo/
+.eslintcache
+.stylelintcache
+.prettier.cache
+
+# Local worktrees / ephemeral tooling
 .worktrees/
 .sisyphus/
 .omx/
+.pnpm-store/

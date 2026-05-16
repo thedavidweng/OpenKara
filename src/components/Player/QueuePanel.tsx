@@ -29,6 +29,9 @@ import {
 import { Tooltip } from "@/components/Overlay/Tooltip";
 import { useLibraryStore } from "@/stores/library-store";
 import { useQueueStore } from "@/stores/queue-store";
+import { useRotationStore } from "@/stores/rotation-store";
+import { RotationControls } from "./RotationControls";
+import { InputDialog } from "@/components/Settings/InputDialog";
 import {
   getDropAnnouncementPosition,
   getDropIndicatorPosition,
@@ -39,6 +42,9 @@ import {
 interface QueueItemCardProps {
   title: string;
   artist: string;
+  singer?: string | null;
+  singerLabel?: string;
+  onSingerClick?: () => void;
   handle: ReactNode;
   controls?: ReactNode;
   removeAction?: ReactNode;
@@ -54,6 +60,9 @@ interface SortableQueueItemProps {
   queueLength: number;
   title: string;
   artist: string;
+  singer?: string | null;
+  singerLabel?: string;
+  onSingerClick?: () => void;
   moveUpLabel: string;
   moveDownLabel: string;
   dragLabel: string;
@@ -67,6 +76,9 @@ interface SortableQueueItemProps {
 function QueueItemCard({
   title,
   artist,
+  singer,
+  singerLabel,
+  onSingerClick,
   handle,
   controls,
   removeAction,
@@ -108,6 +120,16 @@ function QueueItemCard({
         </span>
       </div>
 
+      {singer !== undefined && (
+        <button
+          type="button"
+          onClick={onSingerClick}
+          className="shrink-0 rounded-md border border-[var(--color-border)] px-2 py-0.5 text-[10px] text-[var(--color-text-dim)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+        >
+          {singer || singerLabel}
+        </button>
+      )}
+
       {removeAction}
     </div>
   );
@@ -119,6 +141,9 @@ function SortableQueueItem({
   queueLength,
   title,
   artist,
+  singer,
+  singerLabel,
+  onSingerClick,
   moveUpLabel,
   moveDownLabel,
   dragLabel,
@@ -150,6 +175,9 @@ function SortableQueueItem({
       <QueueItemCard
         title={title}
         artist={artist}
+        singer={singer}
+        singerLabel={singerLabel}
+        onSingerClick={onSingerClick}
         dropIndicator={dropIndicator}
         isDraggingSource={isDragging}
         handle={
@@ -244,8 +272,41 @@ export function QueuePanel() {
   const reorderBySongId = useQueueStore((s) => s.reorderBySongId);
   const clearQueue = useQueueStore((s) => s.clearQueue);
   const songs = useLibraryStore((s) => s.songs);
+  const active = useRotationStore((s) => s.active);
+  const queueSingers = useRotationStore((s) => s.queueSingers);
+  const assignSingerToQueueEntry = useRotationStore(
+    (s) => s.assignSingerToQueueEntry,
+  );
+  const assignSingerLabel = t("rotation.assignSinger");
   const [activeSongId, setActiveSongId] = useState<string | null>(null);
   const [overSongId, setOverSongId] = useState<string | null>(null);
+  const [singerDialog, setSingerDialog] = useState<{
+    open: boolean;
+    songId: string | null;
+    currentSinger: string;
+  }>({ open: false, songId: null, currentSinger: "" });
+
+  const handleSingerClick = useCallback(
+    (songId: string) => {
+      const current = queueSingers.get(songId) ?? "";
+      setSingerDialog({ open: true, songId, currentSinger: current });
+    },
+    [queueSingers],
+  );
+
+  const handleAssignSinger = useCallback(
+    (next: string) => {
+      if (singerDialog.songId !== null) {
+        assignSingerToQueueEntry(singerDialog.songId, next.trim() || null);
+      }
+      setSingerDialog({ open: false, songId: null, currentSinger: "" });
+    },
+    [singerDialog.songId, assignSingerToQueueEntry],
+  );
+
+  const handleCancelAssignSinger = useCallback(() => {
+    setSingerDialog({ open: false, songId: null, currentSinger: "" });
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -404,6 +465,8 @@ export function QueuePanel() {
         )}
       </div>
 
+      <RotationControls />
+
       <div className="custom-scrollbar flex-1 overflow-y-auto px-1.5 py-1">
         {queue.length === 0 ? (
           <div className="flex items-center justify-center py-8">
@@ -442,6 +505,13 @@ export function QueuePanel() {
                       queueLength={queue.length}
                       title={title}
                       artist={song?.artist || t("common.unknownArtist")}
+                      singer={
+                        active ? (queueSingers.get(songId) ?? null) : undefined
+                      }
+                      singerLabel={assignSingerLabel}
+                      onSingerClick={
+                        active ? () => handleSingerClick(songId) : undefined
+                      }
                       moveUpLabel={t("queue.moveUp")}
                       moveDownLabel={t("queue.moveDown")}
                       dragLabel={String(t("queue.reorder", { title }))}
@@ -472,6 +542,16 @@ export function QueuePanel() {
           </DndContext>
         )}
       </div>
+
+      {singerDialog.open && (
+        <InputDialog
+          title={t("rotation.assignSinger")}
+          initialValue={singerDialog.currentSinger}
+          confirmLabel={t("common.save")}
+          onConfirm={handleAssignSinger}
+          onCancel={handleCancelAssignSinger}
+        />
+      )}
     </div>
   );
 }

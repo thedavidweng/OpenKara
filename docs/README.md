@@ -16,13 +16,14 @@ summaries, and historical records.
 | [design-docs/releasing.md](./design-docs/releasing.md)                                       | Release workflow, Homebrew distribution, and future channels      |
 | [design-docs/performance/phase-5-baseline.md](./design-docs/performance/phase-5-baseline.md) | Backend benchmark baseline for profiling work                     |
 
-## Plan
+## Plans
 
-| Document                                 | Description                                                                                      |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| [plan/README.md](./plan/README.md)       | What lives in `docs/plan/` and how files age out                                                 |
-| [plan/plan.md](./plan/plan.md)           | **Active plan** — hardening H1–H8 + capability F1 (playlists / singer rotation) until superseded |
-| [plan/tech-debt.md](./plan/tech-debt.md) | Cross-cutting debt and housekeeping                                                              |
+| Document                                                                 | Description                                                                                      |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| [plans/README.md](./plans/README.md)                                     | What lives in `docs/plans/` and how files age out                                                |
+| [plans/plan.md](./plans/plan.md)                                         | **Active plan** — hardening H1–H8 + capability F1 (playlists / singer rotation) until superseded |
+| [plans/native-feel-optimization.md](./plans/native-feel-optimization.md) | Native feel optimization — cursor, startup flicker, popover edge handling, window resize         |
+| [plans/tech-debt.md](./plans/tech-debt.md)                               | Cross-cutting debt and housekeeping                                                              |
 
 Older point-in-time plans live under [archive/plans/](archive/README.md).
 

@@ -61,6 +61,13 @@ interface BuildSongListContextMenuItemsArgs {
   editInfo: () => void;
   openProperties: () => void;
   deleteSong: () => void;
+  playlists: Array<{ id: string; name: string }>;
+  songPlaylistMembership: Map<string, "checked" | "mixed" | null>;
+  onAddToPlaylist: (playlistId: string) => void;
+  onRemoveFromPlaylist: (playlistId: string) => void;
+  onCreatePlaylistAndAdd: () => void;
+  activePlaylistId: string | null;
+  onRemoveFromActivePlaylist: () => void;
 }
 
 export function buildSongListContextMenuItems({
@@ -88,7 +95,47 @@ export function buildSongListContextMenuItems({
   editInfo,
   openProperties,
   deleteSong,
+  playlists,
+  songPlaylistMembership,
+  onAddToPlaylist,
+  onRemoveFromPlaylist,
+  onCreatePlaylistAndAdd,
+  activePlaylistId,
+  onRemoveFromActivePlaylist,
 }: BuildSongListContextMenuItemsArgs): ContextMenuItem[] {
+  const addToPlaylistChildren: ContextMenuItem[] = [
+    ...playlists.map((p) => {
+      const membership = songPlaylistMembership.get(p.id) ?? null;
+      return {
+        label: p.name,
+        indicator: membership,
+        onClick: () => {
+          if (membership === "checked") {
+            onRemoveFromPlaylist(p.id);
+          } else {
+            onAddToPlaylist(p.id);
+          }
+        },
+      };
+    }),
+    {
+      label: t("playlist.newPlaylist"),
+      onClick: onCreatePlaylistAndAdd,
+    },
+  ];
+
+  const addToPlaylistItem: ContextMenuItem = {
+    label: t("playlist.addTo"),
+    children: addToPlaylistChildren,
+  };
+
+  const removeFromPlaylistItem: ContextMenuItem | null = activePlaylistId
+    ? {
+        label: t("playlist.removeFromPlaylist"),
+        onClick: onRemoveFromActivePlaylist,
+      }
+    : null;
+
   if (isMultiSelected) {
     const instrumentalIndicator: ContextMenuItem["indicator"] =
       selectedInstrumentalState === "checked"
@@ -119,6 +166,7 @@ export function buildSongListContextMenuItems({
         }),
         onClick: queueAllSelected,
       },
+      addToPlaylistItem,
       ...(selectedCanToggleInstrumentalSongs
         ? [
             {
@@ -150,6 +198,7 @@ export function buildSongListContextMenuItems({
         }),
         onClick: extractSelectedEmbeddedCoverArt,
       },
+      ...(removeFromPlaylistItem ? [removeFromPlaylistItem] : []),
       {
         label: t("library.deleteSelected", {
           count: selectedCount || selectedSongIds.length,
@@ -174,7 +223,7 @@ export function buildSongListContextMenuItems({
     })),
   ];
 
-  return [
+  const baseItems: ContextMenuItem[] = [
     {
       label: t("library.playNow"),
       onClick: playNow,
@@ -187,6 +236,7 @@ export function buildSongListContextMenuItems({
       label: t("library.addToQueue"),
       onClick: addToQueue,
     },
+    addToPlaylistItem,
     {
       label: t("library.extractEmbeddedCoverArt"),
       onClick: extractEmbeddedCoverArt,
@@ -215,9 +265,12 @@ export function buildSongListContextMenuItems({
       label: t("library.properties"),
       onClick: openProperties,
     },
+    ...(removeFromPlaylistItem ? [removeFromPlaylistItem] : []),
     {
       label: t("library.delete"),
       onClick: deleteSong,
     },
   ];
+
+  return baseItems;
 }
