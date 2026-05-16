@@ -1,6 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Folder, CheckCircle2, Layers, ListMusic } from "lucide-react";
+import {
+  ArrowLeft,
+  Folder,
+  CheckCircle2,
+  Layers,
+  ListMusic,
+} from "lucide-react";
 import { ConfirmationDialog } from "@/components/Settings/ConfirmationDialog";
 import { InputDialog } from "@/components/Settings/InputDialog";
 import { SearchBox } from "@/components/Library/SearchBox";
@@ -34,6 +40,7 @@ export function Sidebar({ header }: SidebarProps = {}) {
 
   const playlists = usePlaylistStore((s) => s.playlists);
   const activePlaylistId = usePlaylistStore((s) => s.activePlaylistId);
+  const activePlaylist = playlists.find((p) => p.id === activePlaylistId);
   const loadPlaylists = usePlaylistStore((s) => s.loadPlaylists);
   const createPlaylist = usePlaylistStore((s) => s.createPlaylist);
   const setActivePlaylist = usePlaylistStore((s) => s.setActivePlaylist);
@@ -104,48 +111,73 @@ export function Sidebar({ header }: SidebarProps = {}) {
       </div>
 
       {/* Filter tabs */}
-      <div className="shrink-0 space-y-0.5 px-2">
-        <div className="px-2 pb-1 text-[11px] font-semibold tracking-wide text-[var(--color-text-dim)]">
-          {t("sidebar.library")}
+      {activePlaylistId && (
+        <div className="shrink-0 flex items-center gap-2 border-b border-[color-mix(in_srgb,var(--color-border)_86%,transparent)] px-4 py-2">
+          <button
+            onClick={() => setActivePlaylist(null)}
+            className="shrink-0 text-[var(--color-text-dim)] hover:text-[var(--color-control-primary)] transition-colors"
+            aria-label="Back"
+          >
+            <ArrowLeft size={14} />
+          </button>
+          <span className="text-[13px] font-medium truncate text-[var(--color-control-primary)]">
+            {activePlaylist?.name}
+          </span>
         </div>
-        <button
-          onClick={() => setFilter("all")}
-          className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between px-2 py-1.5 ${
-            filter === "all"
-              ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)]"
-              : "border border-transparent text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
-          }`}
-        >
-          <span className="flex items-center gap-2">
-            <Folder
-              size={14}
-              className="text-[var(--color-accent)]"
-              fill="currentColor"
-              fillOpacity={0.2}
-            />
-            <span>{t("sidebar.allTracks")}</span>
-          </span>
-          <span className="text-[11px] text-[var(--color-text-dim)]">
-            {songs.length}
-          </span>
-        </button>
-        <button
-          onClick={() => setFilter("separated")}
-          className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between px-2 py-1.5 ${
-            filter === "separated"
-              ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)]"
-              : "border border-transparent text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
-          }`}
-        >
-          <span className="flex items-center gap-2">
-            <CheckCircle2 size={14} className="text-[var(--color-text-dim)]" />
-            <span>{t("sidebar.separated")}</span>
-          </span>
-          <span className="text-[11px] text-[var(--color-text-dim)]">
-            {separatedCount}
-          </span>
-        </button>
-      </div>
+      )}
+      {!activePlaylistId && (
+        <div className="shrink-0 space-y-0.5 px-2">
+          <div className="px-2 pb-1 text-[11px] font-semibold tracking-wide text-[var(--color-text-dim)]">
+            {t("sidebar.library")}
+          </div>
+          <button
+            onClick={() => {
+              setFilter("all");
+              setActivePlaylist(null);
+            }}
+            className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between px-2 py-1.5 ${
+              filter === "all" && !activePlaylistId
+                ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)]"
+                : "border border-transparent text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <Folder
+                size={14}
+                className="text-[var(--color-accent)]"
+                fill="currentColor"
+                fillOpacity={0.2}
+              />
+              <span>{t("sidebar.allTracks")}</span>
+            </span>
+            <span className="text-[11px] text-[var(--color-text-dim)]">
+              {songs.length}
+            </span>
+          </button>
+          <button
+            onClick={() => {
+              setFilter("separated");
+              setActivePlaylist(null);
+            }}
+            className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between px-2 py-1.5 ${
+              filter === "separated" && !activePlaylistId
+                ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)]"
+                : "border border-transparent text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <CheckCircle2
+                size={14}
+                className="text-[var(--color-text-dim)]"
+              />
+              <span>{t("sidebar.separated")}</span>
+            </span>
+            <span className="text-[11px] text-[var(--color-text-dim)]">
+              {separatedCount}
+            </span>
+          </button>
+        </div>
+      )}
 
       {/* PLAYLISTS section */}
       <div className="shrink-0 space-y-0.5 px-2 mt-4">
@@ -194,12 +226,19 @@ export function Sidebar({ header }: SidebarProps = {}) {
       </div>
 
       {/* Song list */}
-      <div className="mt-4 flex flex-1 flex-col overflow-hidden px-2">
-        <div className="px-2 pb-1 text-[11px] font-semibold tracking-wide text-[var(--color-text-dim)]">
-          {t("sidebar.localMusic")}
+      {!activePlaylistId && (
+        <div className="mt-4 flex flex-1 flex-col overflow-hidden px-2">
+          <div className="px-2 pb-1 text-[11px] font-semibold tracking-wide text-[var(--color-text-dim)]">
+            {t("sidebar.localMusic")}
+          </div>
+          <SongList />
         </div>
-        <SongList />
-      </div>
+      )}
+      {activePlaylistId && (
+        <div className="mt-4 flex flex-1 flex-col overflow-hidden px-2">
+          <SongList />
+        </div>
+      )}
 
       {/* Batch separation controls */}
       {!(shouldHideButton && !isBatchRunning && batchSeparation == null) && (

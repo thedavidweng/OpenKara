@@ -116,7 +116,7 @@ Use the "Copy debug info" option in the Help menu (or equivalent surface) to cop
 
 ## Pre-release checklist (H8)
 
-Before running the **Release** workflow for a version tag, use this list in addition to **[`docs/plan/plan.md`](../plan/plan.md)** stream **H8**:
+Before running the **Release** workflow for a version tag, use this list in addition to **[`docs/plans/plan.md`](../plans/plan.md)** stream **H8**:
 
 - [ ] `pnpm format` and the `AGENTS.md` verification matrix for the **highest-risk area** touched since the last release.
 - [ ] `pnpm lint` → `pnpm build` → `pnpm test` → `cd src-tauri && cargo test -q` when frontend or Rust changed.

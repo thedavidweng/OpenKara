@@ -1,6 +1,6 @@
 # Active plan
 
-> **Status:** Active · **Last updated:** 2026-05-13  
+> **Status:** Active · **Last updated:** 2026-05-14  
 > **Supersedes:** [`../archive/plans/2026-05-13-v0.9-hardening-and-playlists-plan.md`](../archive/plans/2026-05-13-v0.9-hardening-and-playlists-plan.md) (previous cycle — H1–H8 + F1 completed).
 
 ## Release target

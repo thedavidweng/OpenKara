@@ -45,9 +45,10 @@
 
 Singer assignment is available from:
 
-1. **Queue panel** — each queued entry shows a singer name field (if rotation is active)
-2. **Playlist view** — "Assign Singer" per song in the playlist context menu
-3. **Now playing** — click the singer name/badge to change
+1. **Queue panel** — each queued entry shows an "Assign Singer" button when rotation is active
+2. **Queue panel header** — singer chips select the current singer, and "Next Singer" advances the rotation pointer
+3. **Playlist view** — "Assign Singer" per song in the playlist context menu
+4. **Now playing** — click the singer name/badge to change
 
 Singer names are free-form text (no registration required). The app remembers the last N singer names for autocomplete (capped at 50, stored in `library_meta` as JSON array).
 

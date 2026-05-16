@@ -3,35 +3,50 @@ import { describe, expect, test, vi } from "vitest";
 import { Sidebar } from "./Sidebar";
 import type { Song } from "@/types/ipc";
 
-const { mockLibraryState, mockSettingsState } = vi.hoisted(() => ({
-  mockLibraryState: {
-    songs: [
-      {
-        hash: "song-1",
-        file_path: "media-g/song-1.mp3",
-        audio_source_kind: "original",
-        cdg_path: "media-g/song-1.cdg",
-        media_g_container: "paired" as const,
-        instrumental: false,
-        title: "Song",
-        artist: null,
-        album: null,
-        duration_ms: 1000,
-        cover_art: null,
-        imported_at: 0,
-        original_ext: "mp3",
-      },
-    ] as Song[],
-    filter: "all" as const,
-    setFilter: vi.fn(),
-    separationStatuses: {},
-    batchSeparation: null,
-  },
-  mockSettingsState: {
-    hideBatchSeparate: false,
-    stemMode: "two_stem",
-  },
-}));
+const { mockLibraryState, mockSettingsState, mockPlaylistState } = vi.hoisted(
+  () => ({
+    mockLibraryState: {
+      songs: [
+        {
+          hash: "song-1",
+          file_path: "media-g/song-1.mp3",
+          audio_source_kind: "original",
+          cdg_path: "media-g/song-1.cdg",
+          media_g_container: "paired" as const,
+          instrumental: false,
+          title: "Song",
+          artist: null,
+          album: null,
+          duration_ms: 1000,
+          cover_art: null,
+          imported_at: 0,
+          original_ext: "mp3",
+        },
+      ] as Song[],
+      filter: "all" as const,
+      setFilter: vi.fn(),
+      separationStatuses: {},
+      batchSeparation: null,
+    },
+    mockSettingsState: {
+      hideBatchSeparate: false,
+      stemMode: "two_stem",
+    },
+    mockPlaylistState: {
+      playlists: [
+        {
+          id: "playlist-1",
+          name: "中文",
+          song_count: 5,
+          created_at: 0,
+          updated_at: 0,
+        },
+      ],
+      activePlaylistId: null as string | null,
+      isLoading: false,
+    },
+  }),
+);
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -47,6 +62,11 @@ vi.mock("@/stores/library-store", () => ({
 vi.mock("@/stores/settings-store", () => ({
   useSettingsStore: (selector: (state: typeof mockSettingsState) => unknown) =>
     selector(mockSettingsState),
+}));
+
+vi.mock("@/stores/playlist-store", () => ({
+  usePlaylistStore: (selector: (state: typeof mockPlaylistState) => unknown) =>
+    selector(mockPlaylistState),
 }));
 
 vi.mock("@/components/Library/SearchBox", () => ({
@@ -127,6 +147,26 @@ describe("Sidebar", () => {
     expect(markup).toContain('data-sidebar-visual-variant="unified"');
     expect(markup).toContain('data-search-visual-variant="mock"');
     expect(markup).toContain('data-song-list-visual-variant="mock"');
+  });
+
+  test("hides the library section while a playlist is active", () => {
+    mockPlaylistState.activePlaylistId = "playlist-1";
+
+    const markup = renderToStaticMarkup(<Sidebar />);
+
+    expect(markup).not.toContain("sidebar.library");
+    expect(markup).not.toContain("sidebar.allTracks");
+    expect(markup).not.toContain("sidebar.separated");
+    expect(markup).toContain("中文");
+    expect(markup).toContain("song-list-visual-variant");
+
+    mockPlaylistState.activePlaylistId = null;
+  });
+
+  test("renders playlist counts from store state", () => {
+    const markup = renderToStaticMarkup(<Sidebar />);
+
+    expect(markup).toContain(">5<");
   });
 
   test("renders batch actions with shared sidebar control tokens", () => {

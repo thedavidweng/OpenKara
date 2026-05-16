@@ -7,6 +7,8 @@ import { usePlayerStore } from "@/stores/player-store";
 import { useLyricsStore } from "@/stores/lyrics-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useQueueStore } from "@/stores/queue-store";
+import { usePlaylistStore } from "@/stores/playlist-store";
+import { useRotationStore } from "@/stores/rotation-store";
 import { formatDuration } from "@/lib/format";
 import { TaskProgressBar } from "@/components/Layout/GlobalProgressBar";
 import {
@@ -14,9 +16,10 @@ import {
   songSupportsInstrumentalFlag,
 } from "@/lib/song-media";
 import * as api from "@/lib/tauri";
-import { notifyError } from "@/lib/errors";
+import { notifyError, notifySuccess } from "@/lib/errors";
 import { ContextMenu } from "./ContextMenu";
 import { ConfirmationDialog } from "../Settings/ConfirmationDialog";
+import { InputDialog } from "../Settings/InputDialog";
 import { SongEditDialog } from "./SongEditDialog";
 import { SongPropertiesDialog } from "./SongPropertiesDialog";
 import { buildSongListContextMenuItems } from "./song-list-item-menu";
@@ -58,15 +61,45 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
   const [propertiesDialogOpen, setPropertiesDialogOpen] = useState(false);
   const [deleteSongIds, setDeleteSongIds] = useState<string[] | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [playlistDialogOpen, setPlaylistDialogOpen] = useState(false);
 
   const isSelected = selectedSongIds.has(song.hash);
+  const contextSongIds = isSelected ? [...selectedSongIds] : [song.hash];
+  const contextSongIdSet = new Set(contextSongIds);
   const isCurrentPlaying =
     snapshot?.song_id === song.hash && snapshot?.is_playing;
   const sepState = separationStatus?.state ?? "idle";
   const isMediaG = song.media_g_container != null;
   const selectedSongs = songs.filter((candidate) =>
-    selectedSongIds.has(candidate.hash),
+    contextSongIdSet.has(candidate.hash),
   );
+  const playlists = usePlaylistStore((s) => s.playlists);
+  const playlistSongSets = usePlaylistStore((s) => s.playlistSongSets);
+  const activePlaylistId = usePlaylistStore((s) => s.activePlaylistId);
+  const addSongsToPlaylist = usePlaylistStore((s) => s.addSongsToPlaylist);
+  const removeSongsFromPlaylist = usePlaylistStore(
+    (s) => s.removeSongsFromPlaylist,
+  );
+  const createPlaylist = usePlaylistStore((s) => s.createPlaylist);
+
+  const songPlaylistMembership = new Map<string, "checked" | "mixed" | null>();
+  for (const p of playlists) {
+    const set = playlistSongSets.get(p.id);
+    if (!set) {
+      songPlaylistMembership.set(p.id, null);
+      continue;
+    }
+    const intersectionSize = contextSongIds.filter((id) => set.has(id)).length;
+    if (intersectionSize === 0) {
+      songPlaylistMembership.set(p.id, null);
+    } else if (intersectionSize === contextSongIds.length) {
+      songPlaylistMembership.set(p.id, "checked");
+    } else {
+      songPlaylistMembership.set(p.id, "mixed");
+    }
+  }
+
+  const rotation = useRotationStore();
   const selectedHasSeparableSongs = selectedSongs.some(songCanBeSeparated);
   const selectedInstrumentalSongs = selectedSongs.filter(
     songSupportsInstrumentalFlag,
@@ -360,7 +393,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
               t(key as never, options as never) as unknown as string,
             isMultiSelected,
             selectedCount: selectedSongIds.size,
-            selectedSongIds: [...selectedSongIds],
+            selectedSongIds: contextSongIds,
             selectedHasSeparableSongs,
             selectedCanToggleInstrumentalSongs,
             selectedInstrumentalState,
@@ -371,7 +404,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
             supportsEmbeddedLyrics,
             queueAllSelected: () => {
               const queue = useQueueStore.getState();
-              for (const id of selectedSongIds) {
+              for (const id of contextSongIds) {
                 queue.addToQueue(id);
               }
             },
@@ -388,10 +421,24 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
             extractSelectedEmbeddedCoverArt: () => {
               void extractEmbeddedCoverArt([...selectedSongIds]);
             },
-            deleteSelected: () => setDeleteSongIds([...selectedSongIds]),
+            deleteSelected: () => setDeleteSongIds(contextSongIds),
             playNow: () => usePlayerStore.getState().playNow(song.hash),
-            playNext: () => useQueueStore.getState().playNext(song.hash),
-            addToQueue: () => useQueueStore.getState().addToQueue(song.hash),
+            playNext: () => {
+              useQueueStore.getState().playNext(song.hash);
+              if (rotation.active && rotation.singerNames.length > 0) {
+                const singer = rotation.getNextSinger();
+                rotation.assignSingerToQueueEntry(song.hash, singer);
+                void rotation.advanceRotation();
+              }
+            },
+            addToQueue: () => {
+              useQueueStore.getState().addToQueue(song.hash);
+              if (rotation.active && rotation.singerNames.length > 0) {
+                const singer = rotation.getNextSinger();
+                rotation.assignSingerToQueueEntry(song.hash, singer);
+                void rotation.advanceRotation();
+              }
+            },
             extractEmbeddedCoverArt: () => {
               void extractEmbeddedCoverArt([song.hash]);
             },
@@ -416,6 +463,46 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
             editInfo: () => setEditDialogOpen(true),
             openProperties: () => setPropertiesDialogOpen(true),
             deleteSong: () => setDeleteSongIds([song.hash]),
+            playlists,
+            songPlaylistMembership,
+            onAddToPlaylist: async (playlistId) => {
+              try {
+                await addSongsToPlaylist(playlistId, contextSongIds);
+                notifySuccess(
+                  t("playlist.addedToast", { count: contextSongIds.length }),
+                );
+              } catch (error) {
+                notifyError(error);
+              }
+            },
+            onRemoveFromPlaylist: async (playlistId) => {
+              try {
+                await removeSongsFromPlaylist(playlistId, contextSongIds);
+                notifySuccess(
+                  t("playlist.removedFromPlaylistToast", {
+                    count: contextSongIds.length,
+                  }),
+                );
+              } catch (error) {
+                notifyError(error);
+              }
+            },
+            onCreatePlaylistAndAdd: () => {
+              setPlaylistDialogOpen(true);
+            },
+            activePlaylistId,
+            onRemoveFromActivePlaylist: async () => {
+              if (activePlaylistId) {
+                try {
+                  await removeSongsFromPlaylist(activePlaylistId, [song.hash]);
+                  notifySuccess(
+                    t("playlist.removedFromPlaylistToast", { count: 1 }),
+                  );
+                } catch (error) {
+                  notifyError(error);
+                }
+              }
+            },
           })}
           onClose={() => setContextMenu(null)}
         />
@@ -429,6 +516,29 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
         <SongPropertiesDialog
           song={song}
           onClose={() => setPropertiesDialogOpen(false)}
+        />
+      )}
+
+      {playlistDialogOpen && (
+        <InputDialog
+          title={t("playlist.create")}
+          placeholder={t("playlist.name")}
+          confirmLabel={t("common.save")}
+          onConfirm={async (name) => {
+            setPlaylistDialogOpen(false);
+            try {
+              const playlist = await createPlaylist(name.trim());
+              await addSongsToPlaylist(playlist.id, contextSongIds);
+              notifySuccess(
+                t("playlist.createdAndAddedToast", {
+                  count: contextSongIds.length,
+                }),
+              );
+            } catch (error) {
+              notifyError(error);
+            }
+          }}
+          onCancel={() => setPlaylistDialogOpen(false)}
         />
       )}
 

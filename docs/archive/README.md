@@ -11,6 +11,9 @@ Rules:
 Current archive split:
 
 - `archive/plans/` — superseded point-in-time implementation plans
+- `archive/plans/2026-05-13-v0.9-hardening-and-playlists-plan.md` — completed
+  hardening cycle H1–H8 + F1 playlists/singer-rotation. Superseded by current
+  `docs/plans/plan.md` skeleton for next slice.
 - `archive/plans/development-phases.md` and `archive/plans/milestones.md` —
   historical delivery plans retained for context, not current execution
   guidance
@@ -19,4 +22,4 @@ Current archive split:
 - `archive/plans/playback-optimization.md` — archived playback optimization
   review with implemented items and rejected outdated items
 - `archive/plans/future-work-and-hardening-priorities-2026-05.md` — archived
-  agreed-priority tables (superseded by `docs/plan/plan.md`)
+  agreed-priority tables (superseded by `docs/plans/plan.md`)

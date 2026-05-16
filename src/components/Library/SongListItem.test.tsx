@@ -91,6 +91,7 @@ vi.mock("@/lib/tauri", () => ({
 
 vi.mock("@/lib/errors", () => ({
   notifyError: vi.fn(),
+  notifySuccess: vi.fn(),
 }));
 
 vi.mock("./ContextMenu", () => ({
@@ -400,6 +401,13 @@ describe("SongListItem", () => {
       editInfo: vi.fn(),
       openProperties: vi.fn(),
       deleteSong: vi.fn(),
+      playlists: [],
+      songPlaylistMembership: new Map(),
+      onAddToPlaylist: vi.fn(),
+      onRemoveFromPlaylist: vi.fn(),
+      onCreatePlaylistAndAdd: vi.fn(),
+      activePlaylistId: null,
+      onRemoveFromActivePlaylist: vi.fn(),
     }).map((item) => item.label);
 
     expect(labels).toContain("library.extractEmbeddedCoverArt");
@@ -433,6 +441,13 @@ describe("SongListItem", () => {
       editInfo: vi.fn(),
       openProperties: vi.fn(),
       deleteSong: vi.fn(),
+      playlists: [],
+      songPlaylistMembership: new Map(),
+      onAddToPlaylist: vi.fn(),
+      onRemoveFromPlaylist: vi.fn(),
+      onCreatePlaylistAndAdd: vi.fn(),
+      activePlaylistId: null,
+      onRemoveFromActivePlaylist: vi.fn(),
     });
 
     const labels = items.map((item) => item.label);
@@ -444,6 +459,113 @@ describe("SongListItem", () => {
       items.find((item) => item.label === "library.markInstrumentalSelected:2")
         ?.indicator,
     ).toBe("mixed");
+  });
+
+  test("shows playlist submenu with membership indicators", () => {
+    const addToPlaylist = vi.fn();
+    const removeFromPlaylist = vi.fn();
+    const createPlaylistAndAdd = vi.fn();
+    const items = buildSongListContextMenuItems({
+      t: (key: string) => key,
+      isMultiSelected: false,
+      selectedCount: 1,
+      selectedSongIds: ["song-1"],
+      selectedHasSeparableSongs: false,
+      selectedCanToggleInstrumentalSongs: false,
+      selectedInstrumentalState: "unchecked",
+      selectedLanguage: null,
+      setSelectedLanguage: vi.fn(),
+      supportsEmbeddedLyrics: false,
+      queueAllSelected: vi.fn(),
+      separateAllSelected: vi.fn(),
+      toggleSelectedInstrumental: vi.fn(),
+      extractSelectedEmbeddedCoverArt: vi.fn(),
+      deleteSelected: vi.fn(),
+      playNow: vi.fn(),
+      playNext: vi.fn(),
+      addToQueue: vi.fn(),
+      extractEmbeddedCoverArt: vi.fn(),
+      extractEmbeddedLyrics: vi.fn(),
+      fetchLyricsOnline: vi.fn(),
+      editInfo: vi.fn(),
+      openProperties: vi.fn(),
+      deleteSong: vi.fn(),
+      playlists: [
+        { id: "playlist-1", name: "Favorites" },
+        { id: "playlist-2", name: "Duets" },
+      ],
+      songPlaylistMembership: new Map([
+        ["playlist-1", "checked"],
+        ["playlist-2", "mixed"],
+      ]),
+      onAddToPlaylist: addToPlaylist,
+      onRemoveFromPlaylist: removeFromPlaylist,
+      onCreatePlaylistAndAdd: createPlaylistAndAdd,
+      activePlaylistId: null,
+      onRemoveFromActivePlaylist: vi.fn(),
+    });
+
+    const playlistItem = items.find((item) => item.label === "playlist.addTo");
+
+    expect(playlistItem?.children?.[0]).toMatchObject({
+      label: "Favorites",
+      indicator: "checked",
+    });
+    expect(playlistItem?.children?.[1]).toMatchObject({
+      label: "Duets",
+      indicator: "mixed",
+    });
+
+    playlistItem?.children?.[0]?.onClick?.();
+    playlistItem?.children?.[1]?.onClick?.();
+    playlistItem?.children?.[2]?.onClick?.();
+
+    expect(removeFromPlaylist).toHaveBeenCalledWith("playlist-1");
+    expect(addToPlaylist).toHaveBeenCalledWith("playlist-2");
+    expect(createPlaylistAndAdd).toHaveBeenCalledOnce();
+  });
+
+  test("shows remove action inside an active playlist", () => {
+    const removeFromActivePlaylist = vi.fn();
+    const items = buildSongListContextMenuItems({
+      t: (key: string) => key,
+      isMultiSelected: false,
+      selectedCount: 1,
+      selectedSongIds: ["song-1"],
+      selectedHasSeparableSongs: false,
+      selectedCanToggleInstrumentalSongs: false,
+      selectedInstrumentalState: "unchecked",
+      selectedLanguage: null,
+      setSelectedLanguage: vi.fn(),
+      supportsEmbeddedLyrics: false,
+      queueAllSelected: vi.fn(),
+      separateAllSelected: vi.fn(),
+      toggleSelectedInstrumental: vi.fn(),
+      extractSelectedEmbeddedCoverArt: vi.fn(),
+      deleteSelected: vi.fn(),
+      playNow: vi.fn(),
+      playNext: vi.fn(),
+      addToQueue: vi.fn(),
+      extractEmbeddedCoverArt: vi.fn(),
+      extractEmbeddedLyrics: vi.fn(),
+      fetchLyricsOnline: vi.fn(),
+      editInfo: vi.fn(),
+      openProperties: vi.fn(),
+      deleteSong: vi.fn(),
+      playlists: [],
+      songPlaylistMembership: new Map(),
+      onAddToPlaylist: vi.fn(),
+      onRemoveFromPlaylist: vi.fn(),
+      onCreatePlaylistAndAdd: vi.fn(),
+      activePlaylistId: "playlist-1",
+      onRemoveFromActivePlaylist: removeFromActivePlaylist,
+    });
+
+    items
+      .find((item) => item.label === "playlist.removeFromPlaylist")
+      ?.onClick?.();
+
+    expect(removeFromActivePlaylist).toHaveBeenCalledOnce();
   });
 
   test("shows a checked instrumental toggle when every selected song is instrumental", () => {
@@ -473,6 +595,13 @@ describe("SongListItem", () => {
       editInfo: vi.fn(),
       openProperties: vi.fn(),
       deleteSong: vi.fn(),
+      playlists: [],
+      songPlaylistMembership: new Map(),
+      onAddToPlaylist: vi.fn(),
+      onRemoveFromPlaylist: vi.fn(),
+      onCreatePlaylistAndAdd: vi.fn(),
+      activePlaylistId: null,
+      onRemoveFromActivePlaylist: vi.fn(),
     });
 
     expect(

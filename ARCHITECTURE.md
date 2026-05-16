@@ -9,5 +9,5 @@ layout and contributors have a stable root entry point.
 - [Canonical architecture doc](./docs/design-docs/architecture.md)
 - [Project structure](./docs/design-docs/project-structure.md)
 - [Design docs index](./docs/design-docs/index.md)
-- [Active engineering plan](./docs/plan/plan.md)
+- [Active engineering plan](./docs/plans/plan.md)
 - [Generated database schema](./docs/generated/db-schema.md)
