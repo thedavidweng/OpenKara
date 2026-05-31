@@ -262,8 +262,10 @@ fn upload_remote_database(app_data_dir: &Path, library: &RegisteredLibrary) -> C
 
     let provider = create_provider(app_data_dir, library)?;
     provider.upload_file("openkara.db")?;
-    let new_revision = provider.get_revision("openkara.db")?;
-    update_remote_revision_in_config(app_data_dir, library.id(), new_revision)
+    let new_revision = provider
+        .get_revision("openkara.db")?
+        .ok_or_else(|| library_error("database file is missing after upload"))?;
+    update_remote_revision_in_config(app_data_dir, library.id(), Some(new_revision))
 }
 
 fn active_remote_library(app_data_dir: &Path) -> CommandResult<Option<RegisteredLibrary>> {
