@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { useEventSubscriptions } from "./use-event-subscription";
 import { usePlayerStore } from "@/stores/player-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useLyricsStore } from "@/stores/lyrics-store";
@@ -165,199 +166,136 @@ function useSeparationEvents(enabled: boolean) {
 function useBootstrapEvents(enabled: boolean) {
   const updateBootstrapStatus = useBootstrapStore((s) => s.updateStatus);
 
-  useEffect(() => {
-    if (!enabled) {
-      return;
-    }
-
-    const unlisteners: (() => void)[] = [];
-    let cancelled = false;
-
-    const setup = async () => {
-      const progressUnlisten = await listen<ModelBootstrapStatusSnapshot>(
-        "model-bootstrap-progress",
-        (e) => {
-          if (!cancelled) updateBootstrapStatus(e.payload);
-        },
-      );
-      const readyUnlisten = await listen<ModelBootstrapStatusSnapshot>(
-        "model-bootstrap-ready",
-        (e) => {
-          if (!cancelled) updateBootstrapStatus(e.payload);
-        },
-      );
-      const errorUnlisten = await listen<ModelBootstrapStatusSnapshot>(
-        "model-bootstrap-error",
-        (e) => {
-          if (!cancelled) updateBootstrapStatus(e.payload);
-        },
-      );
-
-      if (cancelled) {
-        progressUnlisten();
-        readyUnlisten();
-        errorUnlisten();
-      } else {
-        unlisteners.push(progressUnlisten, readyUnlisten, errorUnlisten);
-      }
-    };
-
-    void setup();
-
-    return () => {
-      cancelled = true;
-      unlisteners.forEach((fn) => fn());
-    };
-  }, [enabled, updateBootstrapStatus]);
+  useEventSubscriptions(
+    [
+      {
+        event: "model-bootstrap-progress",
+        handler: (payload) =>
+          updateBootstrapStatus(payload as ModelBootstrapStatusSnapshot),
+      },
+      {
+        event: "model-bootstrap-ready",
+        handler: (payload) =>
+          updateBootstrapStatus(payload as ModelBootstrapStatusSnapshot),
+      },
+      {
+        event: "model-bootstrap-error",
+        handler: (payload) =>
+          updateBootstrapStatus(payload as ModelBootstrapStatusSnapshot),
+      },
+    ],
+    enabled,
+    undefined,
+    [updateBootstrapStatus],
+  );
 }
 
 function usePlaybackEndedQueueAdvance(enabled: boolean) {
-  useEffect(() => {
-    if (!enabled) {
-      return;
-    }
-
-    let cancelled = false;
-    let unlisten: (() => void) | null = null;
-
-    const setup = async () => {
-      unlisten = await listen<PlaybackEndedEvent>("playback-ended", (e) => {
-        if (!cancelled) {
-          usePlayerStore.getState().playNextFromQueue(e.payload.song_id);
-        }
-      });
-    };
-
-    void setup();
-
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, [enabled]);
+  useEventSubscriptions(
+    [
+      {
+        event: "playback-ended",
+        handler: (payload) => {
+          usePlayerStore
+            .getState()
+            .playNextFromQueue((payload as PlaybackEndedEvent).song_id);
+        },
+      },
+    ],
+    enabled,
+  );
 }
 
 function useBatchSeparationEvents(enabled: boolean) {
   const updateBatchProgress = useLibraryStore((s) => s.updateBatchProgress);
   const clearBatchSeparation = useLibraryStore((s) => s.clearBatchSeparation);
+  const clearSchedulerRef = useRef(
+    createBatchSeparationClearScheduler(clearBatchSeparation),
+  );
 
+  // Recreate scheduler if the clear function changes — drain the old one first
+  // so any pending timer invokes the stale closure.
   useEffect(() => {
-    if (!enabled) {
-      return;
-    }
-
-    const unlisteners: (() => void)[] = [];
-    let cancelled = false;
-    const clearScheduler =
+    clearSchedulerRef.current.clearAll();
+    clearSchedulerRef.current =
       createBatchSeparationClearScheduler(clearBatchSeparation);
+  }, [clearBatchSeparation]);
 
-    const setup = async () => {
-      const progressUnlisten = await listen<BatchSeparationProgress>(
-        "batch-separation-progress",
-        (e) => {
-          if (!cancelled) updateBatchProgress(e.payload);
+  useEventSubscriptions(
+    [
+      {
+        event: "batch-separation-progress",
+        handler: (payload) =>
+          updateBatchProgress(payload as BatchSeparationProgress),
+      },
+      {
+        event: "batch-separation-complete",
+        handler: (payload) => {
+          updateBatchProgress(payload as BatchSeparationProgress);
+          clearSchedulerRef.current.scheduleAfterTerminalProgress();
         },
-      );
-      const completeUnlisten = await listen<BatchSeparationProgress>(
-        "batch-separation-complete",
-        (e) => {
-          if (!cancelled) {
-            updateBatchProgress(e.payload);
-            clearScheduler.scheduleAfterTerminalProgress();
-          }
+      },
+      {
+        event: "batch-separation-cancelled",
+        handler: (payload) => {
+          updateBatchProgress(payload as BatchSeparationProgress);
+          clearSchedulerRef.current.scheduleAfterTerminalProgress();
         },
-      );
-      const cancelledUnlisten = await listen<BatchSeparationProgress>(
-        "batch-separation-cancelled",
-        (e) => {
-          if (!cancelled) {
-            updateBatchProgress(e.payload);
-            clearScheduler.scheduleAfterTerminalProgress();
-          }
-        },
-      );
-
-      if (cancelled) {
-        progressUnlisten();
-        completeUnlisten();
-        cancelledUnlisten();
-      } else {
-        unlisteners.push(progressUnlisten, completeUnlisten, cancelledUnlisten);
-      }
-    };
-
-    void setup();
-
-    return () => {
-      cancelled = true;
-      clearScheduler.clearAll();
-      unlisteners.forEach((fn) => fn());
-    };
-  }, [enabled, clearBatchSeparation, updateBatchProgress]);
+      },
+    ],
+    enabled,
+    () => clearSchedulerRef.current.clearAll(),
+    [updateBatchProgress],
+  );
 }
 
 function useUploadEvents(enabled: boolean) {
   const updateUploadStatus = useLibraryStore((s) => s.updateUploadStatus);
   const clearUploadStatus = useLibraryStore((s) => s.clearUploadStatus);
+  const clearSchedulerRef = useRef(
+    createStatusClearScheduler<string>(clearUploadStatus),
+  );
 
+  // Recreate scheduler if the clear function changes — drain the old one first
+  // so any pending timer invokes the stale closure.
   useEffect(() => {
-    if (!enabled) {
-      return;
-    }
-
-    const unlisteners: (() => void)[] = [];
-    let cancelled = false;
-    const clearScheduler =
+    clearSchedulerRef.current.clearAll();
+    clearSchedulerRef.current =
       createStatusClearScheduler<string>(clearUploadStatus);
+  }, [clearUploadStatus]);
 
-    const setup = async () => {
-      const progressUnlisten = await listen<UploadProgressEvent>(
-        "upload-progress",
-        (e) => {
-          if (cancelled) return;
-          const songId = e.payload.song_id;
-          clearScheduler.cancel(songId);
-          updateUploadStatus(uploadProgressStatus(e.payload));
+  useEventSubscriptions(
+    [
+      {
+        event: "upload-progress",
+        handler: (payload) => {
+          const event = payload as UploadProgressEvent;
+          clearSchedulerRef.current.cancel(event.song_id);
+          updateUploadStatus(uploadProgressStatus(event));
         },
-      );
-
-      const completeUnlisten = await listen<UploadCompleteEvent>(
-        "upload-complete",
-        (e) => {
-          if (cancelled) return;
-          const songId = e.payload.song_id;
-          updateUploadStatus(uploadCompleteStatus(e.payload));
-          clearScheduler.schedule(songId);
+      },
+      {
+        event: "upload-complete",
+        handler: (payload) => {
+          const event = payload as UploadCompleteEvent;
+          updateUploadStatus(uploadCompleteStatus(event));
+          clearSchedulerRef.current.schedule(event.song_id);
         },
-      );
-
-      const errorUnlisten = await listen<UploadErrorEvent>(
-        "upload-error",
-        (e) => {
-          if (cancelled) return;
-          clearScheduler.cancel(e.payload.song_id);
-          updateUploadStatus(uploadErrorStatus(e.payload));
-          notifyError(e.payload.error);
+      },
+      {
+        event: "upload-error",
+        handler: (payload) => {
+          const event = payload as UploadErrorEvent;
+          clearSchedulerRef.current.cancel(event.song_id);
+          updateUploadStatus(uploadErrorStatus(event));
+          notifyError(event.error);
         },
-      );
-
-      if (cancelled) {
-        progressUnlisten();
-        completeUnlisten();
-        errorUnlisten();
-      } else {
-        unlisteners.push(progressUnlisten, completeUnlisten, errorUnlisten);
-      }
-    };
-
-    void setup();
-
-    return () => {
-      cancelled = true;
-      clearScheduler.clearAll();
-      unlisteners.forEach((fn) => fn());
-    };
-  }, [clearUploadStatus, enabled, updateUploadStatus]);
+      },
+    ],
+    enabled,
+    () => clearSchedulerRef.current.clearAll(),
+    [updateUploadStatus],
+  );
 }
 
 export function useEventListeners(enabled = true) {
