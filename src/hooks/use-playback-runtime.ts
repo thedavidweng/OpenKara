@@ -213,8 +213,10 @@ function useBatchSeparationEvents(enabled: boolean) {
     createBatchSeparationClearScheduler(clearBatchSeparation),
   );
 
-  // Recreate scheduler if the clear function changes
+  // Recreate scheduler if the clear function changes — drain the old one first
+  // so any pending timer invokes the stale closure.
   useEffect(() => {
+    clearSchedulerRef.current.clearAll();
     clearSchedulerRef.current =
       createBatchSeparationClearScheduler(clearBatchSeparation);
   }, [clearBatchSeparation]);
@@ -254,8 +256,10 @@ function useUploadEvents(enabled: boolean) {
     createStatusClearScheduler<string>(clearUploadStatus),
   );
 
-  // Recreate scheduler if the clear function changes
+  // Recreate scheduler if the clear function changes — drain the old one first
+  // so any pending timer invokes the stale closure.
   useEffect(() => {
+    clearSchedulerRef.current.clearAll();
     clearSchedulerRef.current =
       createStatusClearScheduler<string>(clearUploadStatus);
   }, [clearUploadStatus]);
