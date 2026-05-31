@@ -42,7 +42,11 @@ pub(crate) fn create_provider<'a>(
     match library.provider() {
         Some(RemoteLibraryProvider::WebDav) => {
             let secret = webdav::load_webdav_secret(app_data_dir, library)?;
-            Ok(Box::new(webdav::WebDAVProvider::new(secret, library)))
+            Ok(Box::new(webdav::WebDAVProvider::new(
+                app_data_dir,
+                secret,
+                library,
+            )))
         }
         Some(RemoteLibraryProvider::GoogleDrive) => {
             let secret = google_drive::load_google_drive_secret(app_data_dir, library)?;

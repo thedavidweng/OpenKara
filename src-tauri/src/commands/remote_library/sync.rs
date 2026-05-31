@@ -273,7 +273,14 @@ fn upload_remote_database(app_data_dir: &Path, library: &RegisteredLibrary) -> C
                 | Some(crate::config::RemoteLibraryProvider::Dropbox)
         )
     {
-        return Err(library_error("database file is missing after upload"));
+        return Err(library_error(format!(
+            "{} database file is missing after upload",
+            match library.provider() {
+                Some(crate::config::RemoteLibraryProvider::GoogleDrive) => "Google Drive",
+                Some(crate::config::RemoteLibraryProvider::Dropbox) => "Dropbox",
+                _ => "Remote",
+            }
+        )));
     }
     update_remote_revision_in_config(app_data_dir, library.id(), new_revision)
 }
