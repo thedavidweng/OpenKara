@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use crate::lyrics::error::LyricsError;
 use serde::Deserialize;
 
 const DEFAULT_BASE_URL: &str = "https://lrclib.net";
@@ -47,7 +47,10 @@ impl LrcLibClient {
         Self::new(DEFAULT_BASE_URL)
     }
 
-    pub fn fetch_by_track(&self, query: &LyricsLookupQuery) -> Result<Option<LrcLibLyrics>> {
+    pub fn fetch_by_track(
+        &self,
+        query: &LyricsLookupQuery,
+    ) -> Result<Option<LrcLibLyrics>, LyricsError> {
         let url = format!("{}/api/get", self.base_url);
         let mut request = self.http.get(url).query(&[
             ("track_name", query.track_name.as_str()),
@@ -62,17 +65,19 @@ impl LrcLibClient {
             request = request.query(&[("duration", duration_seconds)]);
         }
 
-        let response = request.send().context("failed to request timed lyrics")?;
+        let response = request
+            .send()
+            .map_err(|e| LyricsError::NetworkUnavailable(format!("failed to request lyrics from LRCLIB: {e}")))?;
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(None);
         }
 
         let response = response
             .error_for_status()
-            .context("timed lyrics provider returned a non-success response")?;
+            .map_err(|e| LyricsError::NetworkUnavailable(format!("LRCLIB returned a non-success response: {e}")))?;
         let lyrics = response
             .json::<LrcLibLyrics>()
-            .context("failed to deserialize timed lyrics response")?;
+            .map_err(|e| LyricsError::NetworkUnavailable(format!("failed to deserialize LRCLIB lyrics response: {e}")))?;
 
         Ok(Some(lyrics))
     }

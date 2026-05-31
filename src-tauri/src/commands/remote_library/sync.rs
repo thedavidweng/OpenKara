@@ -1,10 +1,10 @@
 use crate::{
     cache,
     commands::error::{
-        database_error, library_error, state_lock_error, CommandError, CommandResult,
+        database_error, state_lock_error, CommandError, CommandResult,
     },
-    config::{AppConfig, RegisteredLibrary},
-    library::Song,
+    config::{AppConfig, RegisteredLibrary, RemoteLibraryProvider},
+    library::{error::LibraryError, Song},
     library_root::LibraryRoot,
     AppState,
 };
@@ -90,50 +90,50 @@ fn copy_file_if_present(source: Option<&Path>, destination: &Path) -> CommandRes
 
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(|error| {
-            library_error(format!("failed to create {}: {error}", parent.display()))
+            CommandError::from(LibraryError::Internal(format!("failed to create {}: {error}", parent.display())))
         })?;
     }
 
     fs::copy(source, destination).map_err(|error| {
-        library_error(format!(
+        CommandError::from(LibraryError::Internal(format!(
             "failed to copy {} to {}: {error}",
             source.display(),
             destination.display()
-        ))
+        )))
     })?;
     Ok(())
 }
 
 fn copy_directory_recursive(source: &Path, destination: &Path) -> CommandResult<()> {
     if !source.exists() {
-        return Err(library_error(format!(
+        return Err(CommandError::from(LibraryError::Internal(format!(
             "source directory {} does not exist",
             source.display()
-        )));
+        ))));
     }
 
     if destination.exists() {
         fs::remove_dir_all(destination).map_err(|error| {
-            library_error(format!(
+            CommandError::from(LibraryError::Internal(format!(
                 "failed to clear destination directory {}: {error}",
                 destination.display()
-            ))
+            )))
         })?;
     }
     fs::create_dir_all(destination).map_err(|error| {
-        library_error(format!(
+        CommandError::from(LibraryError::Internal(format!(
             "failed to create destination directory {}: {error}",
             destination.display()
-        ))
+        )))
     })?;
 
     for entry in fs::read_dir(source).map_err(|error| {
-        library_error(format!(
+        CommandError::from(LibraryError::Internal(format!(
             "failed to read directory {}: {error}",
             source.display()
-        ))
+        )))
     })? {
-        let entry = entry.map_err(|error| library_error(error.to_string()))?;
+        let entry = entry.map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
         let source_path = entry.path();
         let destination_path = destination.join(entry.file_name());
 
@@ -142,18 +142,18 @@ fn copy_directory_recursive(source: &Path, destination: &Path) -> CommandResult<
         } else {
             if let Some(parent) = destination_path.parent() {
                 fs::create_dir_all(parent).map_err(|error| {
-                    library_error(format!(
+                    CommandError::from(LibraryError::Internal(format!(
                         "failed to create destination directory {}: {error}",
                         parent.display()
-                    ))
+                    )))
                 })?;
             }
             fs::copy(&source_path, &destination_path).map_err(|error| {
-                library_error(format!(
+                CommandError::from(LibraryError::Internal(format!(
                     "failed to copy {} to {}: {error}",
                     source_path.display(),
                     destination_path.display()
-                ))
+                )))
             })?;
         }
     }
@@ -189,11 +189,11 @@ fn load_registered_remote_library(
         .libraries
         .iter()
         .find(|entry| entry.id() == library_id)
-        .ok_or_else(|| library_error(format!("remote repository {library_id} was not found")))?;
+        .ok_or_else(|| CommandError::from(LibraryError::Internal(format!("remote repository {library_id} was not found"))))?;
     if !matches!(library, RegisteredLibrary::Remote { .. }) {
-        return Err(library_error(format!(
+        return Err(CommandError::from(LibraryError::Internal(format!(
             "library {library_id} is not a remote repository"
-        )));
+        ))));
     }
     Ok(library.clone())
 }
@@ -217,12 +217,12 @@ fn remote_database_conflict_error(provider_revision: Option<&str>) -> CommandErr
     let revision_detail = provider_revision
         .map(|revision| format!(" Remote revision: {revision}."))
         .unwrap_or_default();
-    library_error(format!(
+    CommandError::from(LibraryError::Internal(format!(
         "Remote repository database changed on another device before this publish. \
          OpenKara stopped before overwriting it. Use Settings > Karaoke Library > \
          Refresh remote repository, then retry this edit. If refresh fails because authentication \
          or the server changed, use Reauthorize remote repository first.{revision_detail}"
-    ))
+    )))
 }
 
 fn sync_remote_database_from_provider(
@@ -269,18 +269,18 @@ fn upload_remote_database(app_data_dir: &Path, library: &RegisteredLibrary) -> C
     if new_revision.is_none()
         && matches!(
             library.provider(),
-            Some(crate::config::RemoteLibraryProvider::GoogleDrive)
-                | Some(crate::config::RemoteLibraryProvider::Dropbox)
+            Some(RemoteLibraryProvider::GoogleDrive)
+                | Some(RemoteLibraryProvider::Dropbox)
         )
     {
-        return Err(library_error(format!(
+        return Err(CommandError::from(LibraryError::Internal(format!(
             "{} database file is missing after upload",
             match library.provider() {
-                Some(crate::config::RemoteLibraryProvider::GoogleDrive) => "Google Drive",
-                Some(crate::config::RemoteLibraryProvider::Dropbox) => "Dropbox",
+                Some(RemoteLibraryProvider::GoogleDrive) => "Google Drive",
+                Some(RemoteLibraryProvider::Dropbox) => "Dropbox",
                 _ => "Remote",
             }
-        )));
+        ))));
     }
     update_remote_revision_in_config(app_data_dir, library.id(), new_revision)
 }
@@ -437,7 +437,7 @@ fn delete_remote_song_from_mirror(
         remote_root,
         &song.hash,
     )
-    .map_err(|error| library_error(error.to_string()))?;
+    .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
     Ok(())
 }
 
@@ -569,14 +569,12 @@ pub(crate) fn mirror_local_library_to_remote<R: tauri::Runtime>(
         .iter()
         .find(|entry| entry.id() == local_library_id)
     else {
-        return Err(library_error(format!(
+        return Err(CommandError::from(LibraryError::Internal(format!(
             "local library {local_library_id} was not found"
-        )));
+        ))));
     };
     if !matches!(local_library, RegisteredLibrary::Local { .. }) {
-        return Err(library_error(
-            "the source library must be a local library".to_owned(),
-        ));
+        return Err(CommandError::from(LibraryError::Internal("the source library must be a local library".to_owned(),)));
     }
 
     let Some(remote_library) = config
@@ -584,14 +582,12 @@ pub(crate) fn mirror_local_library_to_remote<R: tauri::Runtime>(
         .iter()
         .find(|entry| entry.id() == remote_library_id)
     else {
-        return Err(library_error(format!(
+        return Err(CommandError::from(LibraryError::Internal(format!(
             "remote repository {remote_library_id} was not found"
-        )));
+        ))));
     };
     if !matches!(remote_library, RegisteredLibrary::Remote { .. }) {
-        return Err(library_error(
-            "the target library must be a remote repository".to_owned(),
-        ));
+        return Err(CommandError::from(LibraryError::Internal("the target library must be a remote repository".to_owned(),)));
     }
 
     let original_active_library_id = config.active_library_id.clone();
@@ -614,7 +610,7 @@ fn publish_song_internal<R: tauri::Runtime>(
 ) -> CommandResult<UploadStatusSnapshot> {
     let config = load_app_config(&state.shell.app_data_dir)?;
     let remote_library = resolve_active_remote(&config)
-        .ok_or_else(|| library_error("no bound remote repository is available for publishing"))?;
+        .ok_or_else(|| CommandError::from(LibraryError::Internal("no bound remote repository is available for publishing".to_string())))?;
     let remote_library =
         prepare_remote_database_for_mutation(&state.shell.app_data_dir, &remote_library)?;
 
@@ -638,7 +634,7 @@ fn publish_song_internal<R: tauri::Runtime>(
 
     let song = cache::get_song_by_hash(&local_connection, song_id)
         .map_err(|error| database_error(error.to_string()))?
-        .ok_or_else(|| library_error(format!("song {song_id} was not found")))?;
+        .ok_or_else(|| CommandError::from(LibraryError::Internal(format!("song {song_id} was not found"))))?;
 
     let running = mark_upload_status(
         state,
@@ -657,9 +653,9 @@ fn publish_song_internal<R: tauri::Runtime>(
         let stem_entry = cache::stems::get_cached_stem_entry(&local_connection, song_id)
             .map_err(|error| database_error(error.to_string()))?
             .ok_or_else(|| {
-                library_error(format!(
+                CommandError::from(LibraryError::Internal(format!(
                     "song {song_id} must have cached stems before publishing to a remote repository"
-                ))
+                )))
             })?;
         if !same_root {
             let source_stems_dir = local_root.resolve(&format!("stems/{song_id}"));
@@ -726,7 +722,7 @@ fn publish_song_internal<R: tauri::Runtime>(
 pub(crate) fn sync_active_remote_library(state: &AppState) -> CommandResult<()> {
     let config = load_app_config(&state.shell.app_data_dir)?;
     let Some(active_library) = config.active_library() else {
-        return Err(library_error("no library is currently active"));
+        return Err(CommandError::from(LibraryError::Internal("no library is currently active".to_string())));
     };
 
     if matches!(active_library, RegisteredLibrary::Remote { .. }) {

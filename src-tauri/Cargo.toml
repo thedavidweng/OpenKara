@@ -24,6 +24,7 @@ tauri-build = { version = "2.6.0", features = [] }
 
 [dependencies]
 anyhow = "1.0.102"
+thiserror = "2"
 audioadapter-buffers = "3.0.0"
 base64 = "0.22.1"
 cpal = "0.17.3"

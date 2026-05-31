@@ -15,10 +15,10 @@ use crate::{
     audio::decode,
     cache,
     commands::error::{
-        database_error, internal_error, library_error, state_lock_error, CommandResult,
+        database_error, internal_error, state_lock_error, CommandError, CommandResult,
     },
     commands::remote_library,
-    library::{ImportFailure, ImportSongsResult, Song},
+    library::{error::LibraryError, ImportFailure, ImportSongsResult, Song},
     library_root::LibraryRoot,
     media_g::{self, MEDIA_G_PAIRED, MEDIA_G_ZIP},
     AppState,
@@ -62,7 +62,7 @@ pub fn get_import_candidate_details(
     paths
         .into_iter()
         .map(|raw_path| {
-            inspect_import_candidate(&raw_path).map_err(|error| library_error(error.to_string()))
+            inspect_import_candidate(&raw_path).map_err(|error| CommandError::from(LibraryError::MediaReadFailed(error.to_string())))
         })
         .collect()
 }
@@ -89,7 +89,7 @@ pub fn pick_import_paths(default_path: Option<String>) -> CommandResult<Vec<Stri
             .as_deref()
             .map(CString::new)
             .transpose()
-            .map_err(|error| library_error(error.to_string()))?;
+            .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
         let mut count = 0usize;
         let raw_paths = unsafe {
             openkara_pick_import_paths(
@@ -127,9 +127,7 @@ pub fn pick_import_paths(default_path: Option<String>) -> CommandResult<Vec<Stri
     #[cfg(not(target_os = "macos"))]
     {
         let _ = default_path;
-        Err(library_error(
-            "mixed file and folder selection is only available on macOS".to_string(),
-        ))
+        Err(CommandError::from(LibraryError::Internal("mixed file and folder selection is only available on macOS".to_string(),)))
     }
 }
 
@@ -172,7 +170,7 @@ pub fn delete_songs(
             Ok(()) => deleted_song_ids.push(song_id),
             Err(error) => failed.push(DeleteSongsFailure {
                 song_id,
-                error: library_error(error.to_string()),
+                error: CommandError::from(LibraryError::Internal(error.to_string())),
             }),
         }
     }
@@ -265,7 +263,7 @@ pub fn import_songs_from_paths_with_options(
             },
             Err(error) => failed.push(ImportFailure {
                 path: audio_path.display().to_string(),
-                error: library_error(error.to_string()),
+                error: CommandError::from(LibraryError::MediaReadFailed(error.to_string())),
             }),
         }
     }
@@ -281,7 +279,7 @@ pub fn import_songs_from_paths_with_options(
             },
             Err(error) => failed.push(ImportFailure {
                 path: zip_path.display().to_string(),
-                error: library_error(error.to_string()),
+                error: CommandError::from(LibraryError::MediaReadFailed(error.to_string())),
             }),
         }
     }
@@ -293,10 +291,10 @@ pub fn import_songs_from_paths_with_options(
 
         failed.push(ImportFailure {
             path: cdg_path.display().to_string(),
-            error: library_error(format!(
+            error: CommandError::from(LibraryError::Internal(format!(
                 "standalone .cdg file {} does not have a matching audio track",
                 cdg_path.display()
-            )),
+            ))),
         });
     }
 
@@ -421,10 +419,10 @@ pub fn get_song_properties(
         .ok_or_else(|| database_error(format!("song with hash {song_id} not found")))?;
 
     let Some(song_path) = song.file_path.as_deref() else {
-        return Err(library_error(format!(
+        return Err(CommandError::from(LibraryError::Internal(format!(
             "song {} does not have a local file path",
             song_id
-        )));
+        ))));
     };
     if song.is_remote() {
         remote_library::ensure_remote_file_cached(&state.shell.app_data_dir, song_path)?;
@@ -441,17 +439,17 @@ pub fn get_song_properties(
 
     let (decoded, file_size, format) = if song.media_g_container.as_deref() == Some(MEDIA_G_ZIP) {
         let asset = media_g::inspect_zip_for_media_g(&file_path)
-            .map_err(|error| library_error(error.to_string()))?;
+            .map_err(|error| CommandError::from(LibraryError::MediaReadFailed(error.to_string())))?;
         let decoded = decode::decode_bytes(asset.audio_bytes, ext).map_err(|e| {
             internal_error(format!("failed to decode audio for {}: {}", song_id, e))
         })?;
         let file_size = std::fs::metadata(&file_path)
             .map_err(|e| {
-                library_error(format!(
+                CommandError::from(LibraryError::MediaReadFailed(format!(
                     "failed to open Media+G ZIP at {}: {}",
                     file_path.display(),
                     e
-                ))
+                )))
             })?
             .len();
         (
@@ -469,11 +467,11 @@ pub fn get_song_properties(
         })?;
         let file_size = std::fs::metadata(&file_path)
             .map_err(|e| {
-                library_error(format!(
+                CommandError::from(LibraryError::MediaReadFailed(format!(
                     "failed to open audio file at {}: {}",
                     file_path.display(),
                     e
-                ))
+                )))
             })?
             .len();
         let format = if song.media_g_container.as_deref() == Some(MEDIA_G_PAIRED) {

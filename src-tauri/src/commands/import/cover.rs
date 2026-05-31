@@ -1,7 +1,7 @@
 use crate::{
     cache,
     commands::error::{database_error, CommandError, ErrorCode, FallbackAction},
-    library::Song,
+    library::{error::LibraryError, Song},
     library_root::LibraryRoot,
     media_g::{self, MEDIA_G_ZIP},
     metadata,
@@ -38,7 +38,7 @@ pub(super) fn extract_embedded_cover_art_for_song(
             );
         }
 
-        crate::commands::error::library_error(message)
+        CommandError::from(LibraryError::Internal(message))
     })?;
 
     cache::update_song_cover_art(connection, &song.hash, Some(&cover_art))
