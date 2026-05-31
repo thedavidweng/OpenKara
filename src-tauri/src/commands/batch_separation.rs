@@ -1,6 +1,6 @@
 use crate::{
     cache,
-    commands::error::{database_error, separation_error, CommandResult},
+    commands::error::{database_error, CommandError, CommandResult},
     commands::remote_library,
     commands::separation::{
         completed_status, failed_status, running_status, SeparationCompleteEvent,
@@ -8,7 +8,7 @@ use crate::{
         SEPARATION_ERROR_EVENT, SEPARATION_PROGRESS_EVENT,
     },
     config::{self, StemMode},
-    separator::{self, model::LoadedModel, model_cache::ModelCache},
+    separator::{self, error::SeparationError, model::LoadedModel, model_cache::ModelCache},
     AppState,
 };
 use serde::Serialize;
@@ -41,9 +41,9 @@ pub fn batch_separate(
 
     // Prevent concurrent batch operations.
     if state.separation.batch_running.load(Ordering::Relaxed) {
-        return Err(separation_error(
+        return Err(SeparationError::Failed(
             "A batch separation is already running".to_owned(),
-        ));
+        ).into());
     }
 
     let library_root = state.library_root()?;
@@ -257,7 +257,7 @@ pub fn batch_separate(
                     completed += 1;
                 }
                 Ok(Err(error)) => {
-                    let cmd_error = separation_error(error.to_string());
+                    let cmd_error: CommandError = SeparationError::Failed(error.to_string()).into();
                     let status = failed_status(song_id, cmd_error.clone());
                     if let Ok(mut statuses) = separation_statuses.lock() {
                         statuses.insert(song_id.clone(), status);
@@ -272,7 +272,7 @@ pub fn batch_separate(
                     failed_count += 1;
                 }
                 Err(error) => {
-                    let cmd_error = separation_error(error.to_string());
+                    let cmd_error: CommandError = SeparationError::Failed(error.to_string()).into();
                     let status = failed_status(song_id, cmd_error.clone());
                     if let Ok(mut statuses) = separation_statuses.lock() {
                         statuses.insert(song_id.clone(), status);
@@ -310,9 +310,9 @@ pub fn batch_separate(
 #[tauri::command]
 pub fn cancel_batch_separation(state: State<'_, AppState>) -> CommandResult<()> {
     if !state.separation.batch_running.load(Ordering::Relaxed) {
-        return Err(separation_error(
+        return Err(SeparationError::Failed(
             "No batch separation is currently running".to_owned(),
-        ));
+        ).into());
     }
     state.separation.batch_cancel.store(true, Ordering::Relaxed);
     Ok(())

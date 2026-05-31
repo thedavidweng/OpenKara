@@ -1,4 +1,3 @@
-use anyhow::{anyhow, bail, Context, Result};
 use std::{
     fs::File,
     io::{Cursor, Read, Seek},
@@ -13,6 +12,7 @@ use symphonia::core::{
     meta::MetadataOptions,
     probe::Hint,
 };
+use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DecodedAudio {
@@ -22,9 +22,45 @@ pub struct DecodedAudio {
     pub samples: Vec<f32>,
 }
 
-pub fn decode_file(path: &Path) -> Result<DecodedAudio> {
+#[derive(Error, Debug)]
+pub enum DecodeError {
+    #[error("failed to open audio file: {0}")]
+    FileOpenFailed(String),
+
+    #[error("failed to probe audio format: {0}")]
+    ProbeFailed(String),
+
+    #[error("audio container does not expose a default track")]
+    NoDefaultTrack,
+
+    #[error("failed to create audio decoder: {0}")]
+    DecoderCreationFailed(String),
+
+    #[error("failed while reading audio packets: {0}")]
+    PacketReadFailed(String),
+
+    #[error("failed to decode audio: {0}")]
+    DecodeFailed(String),
+
+    #[error("decoded audio contained no PCM samples")]
+    NoSamples,
+
+    #[error("audio track is missing sample rate metadata")]
+    MissingSampleRate,
+
+    #[error("audio track is missing channel metadata")]
+    MissingChannels,
+
+    #[error("decoder reset is not supported")]
+    ResetNotSupported,
+
+    #[error("internal decode error: {0}")]
+    Internal(String),
+}
+
+pub fn decode_file(path: &Path) -> Result<DecodedAudio, DecodeError> {
     let file = File::open(path)
-        .with_context(|| format!("failed to open audio file at {}", path.display()))?;
+        .map_err(|e| DecodeError::FileOpenFailed(format!("{}: {}", path.display(), e)))?;
     decode_source(
         file,
         path.extension().and_then(|value| value.to_str()),
@@ -32,7 +68,7 @@ pub fn decode_file(path: &Path) -> Result<DecodedAudio> {
     )
 }
 
-pub fn decode_bytes(bytes: Vec<u8>, extension: &str) -> Result<DecodedAudio> {
+pub fn decode_bytes(bytes: Vec<u8>, extension: &str) -> Result<DecodedAudio, DecodeError> {
     decode_source(
         Cursor::new(bytes),
         Some(extension),
@@ -40,9 +76,9 @@ pub fn decode_bytes(bytes: Vec<u8>, extension: &str) -> Result<DecodedAudio> {
     )
 }
 
-pub fn probe_file(path: &Path) -> Result<()> {
+pub fn probe_file(path: &Path) -> Result<(), DecodeError> {
     let file = File::open(path)
-        .with_context(|| format!("failed to open audio file at {}", path.display()))?;
+        .map_err(|e| DecodeError::FileOpenFailed(format!("{}: {}", path.display(), e)))?;
     probe_source(
         file,
         path.extension().and_then(|value| value.to_str()),
@@ -50,7 +86,7 @@ pub fn probe_file(path: &Path) -> Result<()> {
     )
 }
 
-pub fn probe_bytes(bytes: Vec<u8>, extension: &str) -> Result<()> {
+pub fn probe_bytes(bytes: Vec<u8>, extension: &str) -> Result<(), DecodeError> {
     probe_source(
         Cursor::new(bytes),
         Some(extension),
@@ -64,7 +100,7 @@ fn extend_interleaved_samples(samples: &mut Vec<f32>, decoded: AudioBufferRef<'_
     samples.extend_from_slice(sample_buffer.samples());
 }
 
-fn probe_source<R>(source: R, extension: Option<&str>, source_label: &str) -> Result<()>
+fn probe_source<R>(source: R, extension: Option<&str>, source_label: &str) -> Result<(), DecodeError>
 where
     R: Read + Seek + MediaSource + Send + Sync + 'static,
 {
@@ -82,17 +118,17 @@ where
             &FormatOptions::default(),
             &MetadataOptions::default(),
         )
-        .with_context(|| format!("failed to probe audio format for {source_label}"))?;
+        .map_err(|e| DecodeError::ProbeFailed(format!("for {source_label}: {e}")))?;
 
     probed
         .format
         .default_track()
-        .context("audio container does not expose a default track")?;
+        .ok_or(DecodeError::NoDefaultTrack)?;
 
     Ok(())
 }
 
-fn decode_source<R>(source: R, extension: Option<&str>, source_label: &str) -> Result<DecodedAudio>
+fn decode_source<R>(source: R, extension: Option<&str>, source_label: &str) -> Result<DecodedAudio, DecodeError>
 where
     R: Read + Seek + MediaSource + Send + Sync + 'static,
 {
@@ -110,19 +146,19 @@ where
             &FormatOptions::default(),
             &MetadataOptions::default(),
         )
-        .with_context(|| format!("failed to probe audio format for {source_label}"))?;
+        .map_err(|e| DecodeError::ProbeFailed(format!("for {source_label}: {e}")))?;
     let mut format = probed.format;
 
     let track = format
         .default_track()
-        .context("audio container does not expose a default track")?;
+        .ok_or(DecodeError::NoDefaultTrack)?;
     let codec_params = &track.codec_params;
     let mut sample_rate = codec_params.sample_rate;
     let mut channels = codec_params.channels.map(|layout| layout.count());
 
     let mut decoder = symphonia::default::get_codecs()
         .make(codec_params, &DecoderOptions::default())
-        .context("failed to create audio decoder")?;
+        .map_err(|e| DecodeError::DecoderCreationFailed(e.to_string()))?;
     let track_id = track.id;
     let mut samples = Vec::new();
 
@@ -135,9 +171,9 @@ where
                 break;
             }
             Err(SymphoniaError::ResetRequired) => {
-                bail!("decoder reset is not supported by the Phase 2 decode pipeline");
+                return Err(DecodeError::ResetNotSupported);
             }
-            Err(error) => return Err(error).context("failed while reading audio packets"),
+            Err(error) => return Err(DecodeError::PacketReadFailed(error.to_string())),
         };
 
         if packet.track_id() != track_id {
@@ -146,7 +182,7 @@ where
 
         let decoded = decoder
             .decode(&packet)
-            .with_context(|| format!("failed to decode audio packet from {source_label}"))?;
+            .map_err(|e| DecodeError::DecodeFailed(format!("from {source_label}: {e}")))?;
 
         let spec = *decoded.spec();
         sample_rate.get_or_insert(spec.rate);
@@ -155,11 +191,11 @@ where
     }
 
     if samples.is_empty() {
-        return Err(anyhow!("decoded audio contained no PCM samples"));
+        return Err(DecodeError::NoSamples);
     }
 
-    let sample_rate = sample_rate.context("audio track is missing sample rate metadata")?;
-    let channels = channels.context("audio track is missing channel metadata")?;
+    let sample_rate = sample_rate.ok_or(DecodeError::MissingSampleRate)?;
+    let channels = channels.ok_or(DecodeError::MissingChannels)?;
     let frame_count = samples.len() / channels;
     let duration_ms = ((frame_count as f64 / sample_rate as f64) * 1000.0).round() as u64;
 

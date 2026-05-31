@@ -1,6 +1,7 @@
 use crate::{
     cache,
-    commands::error::{database_error, library_error, CommandError, CommandResult},
+    commands::error::{database_error, CommandError, CommandResult},
+    library::error::LibraryError,
     config::{self, AppConfig, RegisteredLibrary, RemoteLibraryProvider},
     library_root::LibraryRoot,
     system_credentials,
@@ -327,9 +328,9 @@ pub(crate) fn store_remote_credential<T: Serialize>(
     secret: &T,
 ) -> CommandResult<()> {
     system_credentials::store_json(app_data_dir, library_id, secret).map_err(|error| {
-        library_error(format!(
+        CommandError::from(LibraryError::Internal(format!(
             "failed to store remote credentials in the system credential store: {error}"
-        ))
+        )))
     })
 }
 
@@ -338,17 +339,17 @@ pub(crate) fn load_remote_credential<T: serde::de::DeserializeOwned>(
     library_id: &str,
 ) -> CommandResult<Option<T>> {
     system_credentials::load_json(app_data_dir, library_id).map_err(|error| {
-        library_error(format!(
+        CommandError::from(LibraryError::Internal(format!(
             "failed to load remote credentials from the system credential store: {error}"
-        ))
+        )))
     })
 }
 
 pub(crate) fn delete_remote_credential(app_data_dir: &Path, library_id: &str) -> CommandResult<()> {
     system_credentials::delete(app_data_dir, library_id).map_err(|error| {
-        library_error(format!(
+        CommandError::from(LibraryError::Internal(format!(
             "failed to remove remote credentials from the system credential store: {error}"
-        ))
+        )))
     })
 }
 
@@ -357,15 +358,13 @@ pub(crate) fn stored_google_drive_client_id(library: &RegisteredLibrary) -> Comm
         .google_drive_client_id()
         .map(str::to_owned)
         .ok_or_else(|| {
-            library_error(
-                "remote repository is missing the Google Drive OAuth client ID metadata".to_owned(),
-            )
+            CommandError::from(LibraryError::Internal("remote repository is missing the Google Drive OAuth client ID metadata".to_owned(),))
         })
 }
 
 pub(crate) fn stored_dropbox_app_key(library: &RegisteredLibrary) -> CommandResult<String> {
     library.dropbox_app_key().map(str::to_owned).ok_or_else(|| {
-        library_error("remote repository is missing the Dropbox app key metadata".to_owned())
+        CommandError::from(LibraryError::Internal("remote repository is missing the Dropbox app key metadata".to_owned()))
     })
 }
 
@@ -374,18 +373,18 @@ pub(crate) fn stored_webdav_server_url(library: &RegisteredLibrary) -> CommandRe
         .webdav_server_url()
         .map(str::to_owned)
         .ok_or_else(|| {
-            library_error("remote repository is missing the WebDAV server URL metadata".to_owned())
+            CommandError::from(LibraryError::Internal("remote repository is missing the WebDAV server URL metadata".to_owned()))
         })
 }
 
 pub(crate) fn load_app_config(app_data_dir: &Path) -> CommandResult<AppConfig> {
     Ok(config::load_config(app_data_dir)
-        .map_err(library_error)?
+        .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
         .unwrap_or_default())
 }
 
 pub(crate) fn persist_app_config(app_data_dir: &Path, config: &AppConfig) -> CommandResult<()> {
-    config::save_config(app_data_dir, config).map_err(library_error)
+    config::save_config(app_data_dir, config).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))
 }
 
 pub(crate) fn load_remote_root(
@@ -394,13 +393,13 @@ pub(crate) fn load_remote_root(
 ) -> CommandResult<LibraryRoot> {
     let root_path = library
         .working_copy_root()
-        .ok_or_else(|| library_error("remote repository is missing a cached working copy"))?;
+        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a cached working copy".to_string())))?;
     let root = if root_path.join(".openkara-library").exists() {
-        LibraryRoot::open(&root_path).map_err(library_error)?
+        LibraryRoot::open(&root_path).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
     } else {
-        LibraryRoot::create(&root_path).map_err(library_error)?
+        LibraryRoot::create(&root_path).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
     };
-    cache::initialize_library_database(&root.database_path()).map_err(library_error)?;
+    cache::initialize_library_database(&root.database_path()).map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
 
     // Ensure the directory structure exists even if the cached copy was created
     // before the remote repository folder layout stabilized.
