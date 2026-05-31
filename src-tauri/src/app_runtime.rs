@@ -1,4 +1,5 @@
 use crate::library_root::LibraryRoot;
+use crate::state::{AirPlayState, PlaybackState, RemoteState, SeparationState, AppShell};
 use crate::{
     airplay_stream, audio,
     audio::playback::{monotonic_now_ms, PlaybackController, PLAYBACK_POSITION_POLL_INTERVAL_MS},
@@ -6,7 +7,6 @@ use crate::{
 };
 use anyhow::Context;
 use std::{
-    collections::HashMap,
     fs,
     path::PathBuf,
     sync::{
@@ -61,35 +61,62 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
     app.manage(window_shell_state);
     let shutdown = Arc::new(AtomicBool::new(false));
 
-    app.manage(AppState {
-        library: Arc::new(Mutex::new(load_library(app_config.as_ref()))),
-        app_data_dir,
-        app_resource_dir,
-        model_path: model_bootstrap.model_path.clone(),
+    // Construct domain states first — they are the source of truth for shared Arc references.
+    let library = Arc::new(Mutex::new(load_library(app_config.as_ref())));
+    let playback_state = PlaybackState {
         playback: Arc::clone(&playback),
         cdg_state: Arc::clone(&cdg_state),
+        playback_request_id: Arc::new(AtomicU64::new(0)),
+        audio_output_started: Arc::new(AtomicBool::new(false)),
+        audio_output_start_lock: Arc::new(Mutex::new(())),
+    };
+    let airplay_state = AirPlayState {
         airplay_audio_tap: Arc::clone(&airplay_audio_tap),
         airplay_stream_generation: Arc::clone(&airplay_stream_generation),
         airplay_audience_active: Arc::clone(&airplay_audience_active),
         airplay_control_refresh_token: Arc::clone(&airplay_control_refresh_token),
         airplay_http_server: Arc::new(Mutex::new(None)),
         airplay_local_output_suppressed: Arc::clone(&airplay_local_output_suppressed),
-        playback_request_id: Arc::new(AtomicU64::new(0)),
-        audio_output_started: Arc::new(AtomicBool::new(false)),
-        audio_output_start_lock: Arc::new(Mutex::new(())),
-        model_bootstrap_status: Arc::clone(&model_bootstrap_status),
-        separation_statuses: Arc::new(Mutex::new(HashMap::new())),
-        remote_auth_sessions: Arc::new(Mutex::new(HashMap::new())),
-        remote_upload_statuses: Arc::new(Mutex::new(HashMap::new())),
-        separator_model_cache: Arc::new(Mutex::new(separator::model_cache::ModelCache::default())),
-        batch_running: Arc::new(AtomicBool::new(false)),
-        batch_cancel: Arc::new(AtomicBool::new(false)),
-        shutdown: Arc::clone(&shutdown),
-    });
+    };
+    let separation_state = SeparationState::new();
+    let remote_state = RemoteState::new();
+    let shell_state = AppShell::new(
+        Arc::clone(&library),
+        app_data_dir.clone(),
+        app_resource_dir.clone(),
+        model_bootstrap.model_path.clone(),
+        Arc::clone(&model_bootstrap_status),
+    );
 
-    if let Err(err) =
-        crate::services::playback::ensure_output_thread(app.state::<AppState>().inner())
-    {
+    // Register domain states — commands can extract State<'_, PlaybackState> etc.
+    // Clone before manage() since ensure_output_thread needs refs below.
+    let playback_state_for_output = playback_state.clone();
+    let airplay_state_for_output = airplay_state.clone();
+
+    // Build the composition AppState from domain states.
+    let app_state = AppState {
+        playback: playback_state.clone(),
+        airplay: airplay_state.clone(),
+        separation: separation_state.clone(),
+        remote: remote_state.clone(),
+        shell: shell_state.clone(),
+    };
+
+    app.manage(playback_state);
+    app.manage(airplay_state);
+    app.manage(separation_state);
+    app.manage(remote_state);
+    app.manage(shell_state);
+    app.manage(app_state);
+
+    if let Err(err) = crate::services::playback::ensure_output_thread_inner(
+        &playback_state_for_output.audio_output_started,
+        &playback_state_for_output.audio_output_start_lock,
+        playback_state_for_output.playback.clone(),
+        airplay_state_for_output.airplay_audio_tap.clone(),
+        airplay_state_for_output.airplay_local_output_suppressed.clone(),
+        Arc::clone(&shutdown),
+    ) {
         eprintln!("warning: failed to pre-warm audio output: {err:#}");
     }
 

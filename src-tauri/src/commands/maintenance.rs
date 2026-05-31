@@ -34,7 +34,7 @@ pub fn delete_all_stems(
                     .map_err(|e| internal_error(format!("failed to delete all stems: {e}")))?;
 
             // Clear in-memory separation statuses so the frontend reflects the change.
-            if let Ok(mut statuses) = state.separation_statuses.lock() {
+            if let Ok(mut statuses) = state.separation.separation_statuses.lock() {
                 statuses.clear();
             }
 
@@ -76,7 +76,7 @@ pub fn downgrade_all_to_two_stem(
                     .map_err(|e| internal_error(format!("failed to downgrade stems: {e}")))?;
 
             // Update in-memory separation statuses: clear individual stem paths for downgraded songs.
-            if let Ok(mut statuses) = state.separation_statuses.lock() {
+            if let Ok(mut statuses) = state.separation.separation_statuses.lock() {
                 for status in statuses.values_mut() {
                     if status.drums_path.is_some() {
                         let accomp_path = format!("stems/{}/accompaniment.ogg", status.song_id);

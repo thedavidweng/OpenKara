@@ -12,7 +12,7 @@ use crate::{
         cdg::{load_cdg_state_for_song, mark_cdg_reset_for_seek},
         playback_source::{load_cached_stems_for_song, load_playback_source, PlaybackSourceLoad},
     },
-    AppState,
+    state::{AppState, AirPlayState},
 };
 use anyhow::{Context, Result};
 use rusqlite::Connection;
@@ -27,8 +27,8 @@ use std::{
 };
 use tauri::{AppHandle, Emitter, Runtime};
 
-fn bump_airplay_stream_generation(state: &AppState) {
-    state
+fn bump_airplay_stream_generation(airplay: &AirPlayState) {
+    airplay
         .airplay_stream_generation
         .fetch_add(1, Ordering::SeqCst);
 }
@@ -97,14 +97,15 @@ pub fn play<R: Runtime>(
     app_handle: &AppHandle<R>,
     song_id: &str,
 ) -> Result<PlaybackStateSnapshot> {
-    state.airplay_audio_tap.bump_epoch();
-    crate::airplay_stream::notify_audio_epoch(state.airplay_audio_tap.current_epoch());
-    bump_airplay_stream_generation(state);
+    state.airplay.airplay_audio_tap.bump_epoch();
+    crate::airplay_stream::notify_audio_epoch(state.airplay.airplay_audio_tap.current_epoch());
+    bump_airplay_stream_generation(&state.airplay);
     let library_root = state
+        .shell
         .library_root()
         .map_err(|error| anyhow::anyhow!(error.message.clone()))?;
     let connection = cache::open_database(&library_root.database_path())?;
-    let request_id = state.playback_request_id.fetch_add(1, Ordering::SeqCst) + 1;
+    let request_id = state.playback.playback_request_id.fetch_add(1, Ordering::SeqCst) + 1;
     let song = cache::get_song_by_hash(&connection, song_id)?
         .with_context(|| format!("song with hash {song_id} was not found in the library"))?;
     let active_song_id = song.hash.clone();
@@ -114,18 +115,19 @@ pub fn play<R: Runtime>(
         let snapshot = {
             let mut playback = state
                 .playback
+                .playback
                 .lock()
                 .map_err(|_| anyhow::anyhow!("playback controller lock was poisoned"))?;
             playback.start_track_loading(&active_song_id)
         };
         emit_playback_position(app_handle, &snapshot)?;
 
-        let background_state = state.clone_for_background();
+        let background_state = state.clone();
         let background_handle = app_handle.clone();
-        let app_data_dir = state.app_data_dir.clone();
+        let app_data_dir = state.shell.app_data_dir.clone();
         let library_root = library_root.clone();
-        let playback_arc = state.playback.clone();
-        let latest_request_id = state.playback_request_id.clone();
+        let playback_arc = state.playback.playback.clone();
+        let latest_request_id = state.playback.playback_request_id.clone();
         let song = song.clone();
         std::thread::spawn(move || {
             let _ = play_remote_background(
@@ -146,16 +148,16 @@ pub fn play<R: Runtime>(
     let PlaybackSourceLoad {
         decoded_audio,
         stems,
-    } = load_playback_source(Some(&state.app_data_dir), &connection, &library_root, &song)?;
+    } = load_playback_source(Some(&state.shell.app_data_dir), &connection, &library_root, &song)?;
     let snapshot = decode_then_start_track_if_latest(
-        &state.playback,
-        &state.playback_request_id,
+        &state.playback.playback,
+        &state.playback.playback_request_id,
         request_id,
         active_song_id.clone(),
         move || Ok(decoded_audio),
     )?;
     let snapshot = if let Some(stems) = stems {
-        decode_then_attach_stems_if_current_song(&state.playback, &active_song_id, move || {
+        decode_then_attach_stems_if_current_song(&state.playback.playback, &active_song_id, move || {
             Ok(stems)
         })?
     } else {
@@ -165,6 +167,7 @@ pub fn play<R: Runtime>(
     if snapshot.song_id.as_deref() == Some(active_song_id.as_str()) {
         let next_cdg_state = load_cdg_state_for_song(&library_root, &song);
         let mut cdg_state = state
+            .playback
             .cdg_state
             .lock()
             .map_err(|_| anyhow::anyhow!("CDG state lock was poisoned"))?;
@@ -181,10 +184,11 @@ pub fn resume<R: Runtime>(
     state: &AppState,
     app_handle: &AppHandle<R>,
 ) -> Result<PlaybackStateSnapshot> {
-    state.airplay_audio_tap.bump_epoch();
-    crate::airplay_stream::notify_audio_epoch(state.airplay_audio_tap.current_epoch());
-    bump_airplay_stream_generation(state);
+    state.airplay.airplay_audio_tap.bump_epoch();
+    crate::airplay_stream::notify_audio_epoch(state.airplay.airplay_audio_tap.current_epoch());
+    bump_airplay_stream_generation(&state.airplay);
     let mut playback = state
+        .playback
         .playback
         .lock()
         .map_err(|_| anyhow::anyhow!("playback controller lock was poisoned"))?;
@@ -201,10 +205,11 @@ pub fn pause<R: Runtime>(
     state: &AppState,
     app_handle: &AppHandle<R>,
 ) -> Result<PlaybackStateSnapshot> {
-    state.airplay_audio_tap.bump_epoch();
-    crate::airplay_stream::notify_audio_epoch(state.airplay_audio_tap.current_epoch());
-    bump_airplay_stream_generation(state);
+    state.airplay.airplay_audio_tap.bump_epoch();
+    crate::airplay_stream::notify_audio_epoch(state.airplay.airplay_audio_tap.current_epoch());
+    bump_airplay_stream_generation(&state.airplay);
     let mut playback = state
+        .playback
         .playback
         .lock()
         .map_err(|_| anyhow::anyhow!("playback controller lock was poisoned"))?;
@@ -218,10 +223,11 @@ pub fn seek<R: Runtime>(
     app_handle: &AppHandle<R>,
     ms: u64,
 ) -> Result<PlaybackStateSnapshot> {
-    state.airplay_audio_tap.bump_epoch();
-    crate::airplay_stream::notify_audio_epoch(state.airplay_audio_tap.current_epoch());
-    bump_airplay_stream_generation(state);
+    state.airplay.airplay_audio_tap.bump_epoch();
+    crate::airplay_stream::notify_audio_epoch(state.airplay.airplay_audio_tap.current_epoch());
+    bump_airplay_stream_generation(&state.airplay);
     let mut playback = state
+        .playback
         .playback
         .lock()
         .map_err(|_| anyhow::anyhow!("playback controller lock was poisoned"))?;
@@ -230,6 +236,7 @@ pub fn seek<R: Runtime>(
     drop(playback);
 
     let mut cdg_state = state
+        .playback
         .cdg_state
         .lock()
         .map_err(|_| anyhow::anyhow!("CDG state lock was poisoned"))?;
@@ -243,12 +250,14 @@ pub fn seek<R: Runtime>(
 pub fn set_volume(state: &AppState, level: f32) -> Result<PlaybackStateSnapshot> {
     let mut playback = state
         .playback
+        .playback
         .lock()
         .map_err(|_| anyhow::anyhow!("playback controller lock was poisoned"))?;
     let snapshot = playback.set_volume(level)?;
     drop(playback);
-    if state.airplay_audience_active.load(Ordering::SeqCst) {
+    if state.airplay.airplay_audience_active.load(Ordering::SeqCst) {
         state
+            .airplay
             .airplay_control_refresh_token
             .fetch_add(1, Ordering::SeqCst);
     }
@@ -262,12 +271,14 @@ pub fn set_stem_volume(
 ) -> Result<PlaybackStateSnapshot> {
     let mut playback = state
         .playback
+        .playback
         .lock()
         .map_err(|_| anyhow::anyhow!("playback controller lock was poisoned"))?;
     let snapshot = playback.set_stem_volume(stem, level)?;
     drop(playback);
-    if state.airplay_audience_active.load(Ordering::SeqCst) {
+    if state.airplay.airplay_audience_active.load(Ordering::SeqCst) {
         state
+            .airplay
             .airplay_control_refresh_token
             .fetch_add(1, Ordering::SeqCst);
     }
@@ -276,10 +287,12 @@ pub fn set_stem_volume(
 
 pub fn load_stems(state: &AppState) -> Result<PlaybackStateSnapshot> {
     let library_root = state
+        .shell
         .library_root()
         .map_err(|error| anyhow::anyhow!(error.message.clone()))?;
     let connection = cache::open_database(&library_root.database_path())?;
     let mut playback = state
+        .playback
         .playback
         .lock()
         .map_err(|_| anyhow::anyhow!("playback controller lock was poisoned"))?;
@@ -298,13 +311,14 @@ pub fn load_stems(state: &AppState) -> Result<PlaybackStateSnapshot> {
         .with_context(|| format!("song with hash {song_id} was not found in the library"))?;
     drop(playback);
 
-    decode_then_attach_stems_if_current_song(&state.playback, &song_id, || {
-        load_cached_stems_for_song(Some(&state.app_data_dir), &connection, &library_root, &song)
+    decode_then_attach_stems_if_current_song(&state.playback.playback, &song_id, || {
+        load_cached_stems_for_song(Some(&state.shell.app_data_dir), &connection, &library_root, &song)
     })
 }
 
 pub fn get_state(state: &AppState) -> Result<PlaybackStateSnapshot> {
     let mut playback = state
+        .playback
         .playback
         .lock()
         .map_err(|_| anyhow::anyhow!("playback controller lock was poisoned"))?;
@@ -353,6 +367,7 @@ fn play_remote_background<R: Runtime>(
     if snapshot.song_id.as_deref() == Some(song.hash.as_str()) {
         let next_cdg_state = load_cdg_state_for_song(library_root, song);
         let mut cdg_state = state
+            .playback
             .cdg_state
             .lock()
             .map_err(|_| anyhow::anyhow!("CDG state lock was poisoned"))?;
@@ -387,13 +402,31 @@ pub fn play_song_from_library(
 }
 
 pub(crate) fn ensure_output_thread(state: &AppState) -> Result<()> {
+    ensure_output_thread_inner(
+        &state.playback.audio_output_started,
+        &state.playback.audio_output_start_lock,
+        state.playback.playback.clone(),
+        state.airplay.airplay_audio_tap.clone(),
+        state.airplay.airplay_local_output_suppressed.clone(),
+        state.shell.shutdown.clone(),
+    )
+}
+
+pub(crate) fn ensure_output_thread_inner(
+    audio_output_started: &Arc<AtomicBool>,
+    audio_output_start_lock: &Arc<Mutex<()>>,
+    playback: Arc<Mutex<PlaybackController>>,
+    airplay_audio_tap: Arc<crate::airplay_stream::AirPlayAudioTap>,
+    airplay_local_output_suppressed: Arc<AtomicBool>,
+    shutdown: Arc<AtomicBool>,
+) -> Result<()> {
     output::ensure_output_thread(
-        &state.audio_output_started,
-        &state.audio_output_start_lock,
-        state.playback.clone(),
-        state.airplay_audio_tap.clone(),
-        state.airplay_local_output_suppressed.clone(),
-        state.shutdown.clone(),
+        audio_output_started,
+        audio_output_start_lock,
+        playback,
+        airplay_audio_tap,
+        airplay_local_output_suppressed,
+        shutdown,
     )?;
     Ok(())
 }
@@ -459,7 +492,7 @@ mod tests {
     use super::*;
     use crate::{
         airplay_stream::AirPlayAudioTap, commands::bootstrap, separator::model_cache::ModelCache,
-        AppState,
+        state::{AppState, AirPlayState, PlaybackState, SeparationState, RemoteState, AppShell},
     };
     use std::{
         collections::HashMap,
@@ -498,37 +531,38 @@ mod tests {
     fn airplay_state() -> AppState {
         let decoded = decode::decode_file(&fixture_path("audio", "fixture.wav"))
             .expect("fixture audio should decode");
-        let mut playback = PlaybackController::default();
-        playback.start_track("song-a".to_owned(), decoded, 0);
+        let mut controller = PlaybackController::default();
+        controller.start_track("song-a".to_owned(), decoded, 0);
 
         AppState {
-            library: Arc::new(Mutex::new(None)),
-            app_data_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("tests")
-                .join("tmp"),
-            app_resource_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("tests")
-                .join("fixtures"),
-            model_path: PathBuf::from("model.bin"),
-            playback: Arc::new(Mutex::new(playback)),
-            cdg_state: Arc::new(Mutex::new(None)),
-            airplay_audio_tap: Arc::new(AirPlayAudioTap::new(4)),
-            airplay_stream_generation: Arc::new(AtomicU64::new(7)),
-            airplay_audience_active: Arc::new(AtomicBool::new(false)),
-            airplay_control_refresh_token: Arc::new(AtomicU64::new(0)),
-            airplay_http_server: Arc::new(Mutex::new(None)),
-            airplay_local_output_suppressed: Arc::new(AtomicBool::new(false)),
-            playback_request_id: Arc::new(AtomicU64::new(0)),
-            audio_output_started: Arc::new(AtomicBool::new(true)),
-            audio_output_start_lock: Arc::new(Mutex::new(())),
-            model_bootstrap_status: Arc::new(Mutex::new(bootstrap::pending_status("model.bin"))),
-            separation_statuses: Arc::new(Mutex::new(HashMap::new())),
-            remote_auth_sessions: Arc::new(Mutex::new(HashMap::new())),
-            remote_upload_statuses: Arc::new(Mutex::new(HashMap::new())),
-            separator_model_cache: Arc::new(Mutex::new(ModelCache::default())),
-            batch_running: Arc::new(AtomicBool::new(false)),
-            batch_cancel: Arc::new(AtomicBool::new(false)),
-            shutdown: Arc::new(AtomicBool::new(false)),
+            playback: PlaybackState {
+                playback: Arc::new(Mutex::new(controller)),
+                cdg_state: Arc::new(Mutex::new(None)),
+                playback_request_id: Arc::new(AtomicU64::new(0)),
+                audio_output_started: Arc::new(AtomicBool::new(true)),
+                audio_output_start_lock: Arc::new(Mutex::new(())),
+            },
+            airplay: AirPlayState {
+                airplay_audio_tap: Arc::new(AirPlayAudioTap::new(4)),
+                airplay_stream_generation: Arc::new(AtomicU64::new(7)),
+                airplay_audience_active: Arc::new(AtomicBool::new(false)),
+                airplay_control_refresh_token: Arc::new(AtomicU64::new(0)),
+                airplay_http_server: Arc::new(Mutex::new(None)),
+                airplay_local_output_suppressed: Arc::new(AtomicBool::new(false)),
+            },
+            separation: SeparationState::new(),
+            remote: RemoteState::new(),
+            shell: AppShell::new(
+                Arc::new(Mutex::new(None)),
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests")
+                    .join("tmp"),
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests")
+                    .join("fixtures"),
+                PathBuf::from("model.bin"),
+                Arc::new(Mutex::new(bootstrap::pending_status("model.bin"))),
+            ),
         }
     }
 
@@ -700,19 +734,19 @@ mod tests {
         let app_handle = app.handle().clone();
         let state = airplay_state();
 
-        let initial_generation = state.airplay_stream_generation.load(Ordering::SeqCst);
+        let initial_generation = state.airplay.airplay_stream_generation.load(Ordering::SeqCst);
 
         let paused = pause(&state, &app_handle).expect("pause should succeed");
         assert!(!paused.is_playing);
         assert_eq!(
-            state.airplay_stream_generation.load(Ordering::SeqCst),
+            state.airplay.airplay_stream_generation.load(Ordering::SeqCst),
             initial_generation + 1
         );
 
         let resumed = resume(&state, &app_handle).expect("resume should succeed");
         assert!(resumed.is_playing);
         assert_eq!(
-            state.airplay_stream_generation.load(Ordering::SeqCst),
+            state.airplay.airplay_stream_generation.load(Ordering::SeqCst),
             initial_generation + 2
         );
     }
@@ -723,12 +757,12 @@ mod tests {
         let app_handle = app.handle().clone();
         let state = airplay_state();
 
-        let initial_generation = state.airplay_stream_generation.load(Ordering::SeqCst);
+        let initial_generation = state.airplay.airplay_stream_generation.load(Ordering::SeqCst);
         let snapshot = seek(&state, &app_handle, 500).expect("seek should succeed");
 
         assert_eq!(snapshot.position_ms, 500);
         assert_eq!(
-            state.airplay_stream_generation.load(Ordering::SeqCst),
+            state.airplay.airplay_stream_generation.load(Ordering::SeqCst),
             initial_generation + 1
         );
     }
@@ -736,110 +770,110 @@ mod tests {
     #[test]
     fn airplay_control_refresh_debounces_multiple_stem_updates() {
         let state = airplay_state();
-        state.airplay_audience_active.store(true, Ordering::SeqCst);
+        state.airplay.airplay_audience_active.store(true, Ordering::SeqCst);
 
-        let initial_generation = state.airplay_stream_generation.load(Ordering::SeqCst);
-        let initial_epoch = state.airplay_audio_tap.current_epoch();
+        let initial_generation = state.airplay.airplay_stream_generation.load(Ordering::SeqCst);
+        let initial_epoch = state.airplay.airplay_audio_tap.current_epoch();
 
         spawn_airplay_control_refresh_worker_with_timing(
-            Arc::clone(&state.airplay_audience_active),
-            Arc::clone(&state.airplay_control_refresh_token),
-            Arc::clone(&state.airplay_audio_tap),
-            Arc::clone(&state.airplay_stream_generation),
+            Arc::clone(&state.airplay.airplay_audience_active),
+            Arc::clone(&state.airplay.airplay_control_refresh_token),
+            Arc::clone(&state.airplay.airplay_audio_tap),
+            Arc::clone(&state.airplay.airplay_stream_generation),
             Duration::from_millis(300),
             Duration::from_millis(5),
-            Arc::clone(&state.shutdown),
+            Arc::clone(&state.shell.shutdown),
         );
 
         set_stem_volume(&state, StemName::Vocals, 0.9).expect("stem update should succeed");
         set_stem_volume(&state, StemName::Drums, 0.8).expect("stem update should succeed");
         set_stem_volume(&state, StemName::Bass, 0.7).expect("stem update should succeed");
         assert_eq!(
-            state.airplay_control_refresh_token.load(Ordering::SeqCst),
+            state.airplay.airplay_control_refresh_token.load(Ordering::SeqCst),
             3
         );
 
         std::thread::sleep(Duration::from_millis(100));
         assert_eq!(
-            state.airplay_stream_generation.load(Ordering::SeqCst),
+            state.airplay.airplay_stream_generation.load(Ordering::SeqCst),
             initial_generation
         );
 
         assert!(wait_for_generation(
-            &state.airplay_stream_generation,
+            &state.airplay.airplay_stream_generation,
             initial_generation + 1,
             Duration::from_millis(1_500),
         ));
-        assert_eq!(state.airplay_audio_tap.current_epoch(), initial_epoch + 1);
-        state.shutdown.store(true, Ordering::Relaxed);
+        assert_eq!(state.airplay.airplay_audio_tap.current_epoch(), initial_epoch + 1);
+        state.shell.shutdown.store(true, Ordering::Relaxed);
     }
 
     #[test]
     fn airplay_control_refresh_debounces_volume_updates_until_user_stops_dragging() {
         let state = airplay_state();
-        state.airplay_audience_active.store(true, Ordering::SeqCst);
+        state.airplay.airplay_audience_active.store(true, Ordering::SeqCst);
 
-        let initial_generation = state.airplay_stream_generation.load(Ordering::SeqCst);
-        let initial_epoch = state.airplay_audio_tap.current_epoch();
+        let initial_generation = state.airplay.airplay_stream_generation.load(Ordering::SeqCst);
+        let initial_epoch = state.airplay.airplay_audio_tap.current_epoch();
 
         spawn_airplay_control_refresh_worker_with_timing(
-            Arc::clone(&state.airplay_audience_active),
-            Arc::clone(&state.airplay_control_refresh_token),
-            Arc::clone(&state.airplay_audio_tap),
-            Arc::clone(&state.airplay_stream_generation),
+            Arc::clone(&state.airplay.airplay_audience_active),
+            Arc::clone(&state.airplay.airplay_control_refresh_token),
+            Arc::clone(&state.airplay.airplay_audio_tap),
+            Arc::clone(&state.airplay.airplay_stream_generation),
             Duration::from_millis(300),
             Duration::from_millis(5),
-            Arc::clone(&state.shutdown),
+            Arc::clone(&state.shell.shutdown),
         );
 
         set_volume(&state, 0.9).expect("volume update should succeed");
         set_volume(&state, 0.7).expect("volume update should succeed");
         assert_eq!(
-            state.airplay_control_refresh_token.load(Ordering::SeqCst),
+            state.airplay.airplay_control_refresh_token.load(Ordering::SeqCst),
             2
         );
 
         std::thread::sleep(Duration::from_millis(100));
         assert_eq!(
-            state.airplay_stream_generation.load(Ordering::SeqCst),
+            state.airplay.airplay_stream_generation.load(Ordering::SeqCst),
             initial_generation
         );
 
         assert!(wait_for_generation(
-            &state.airplay_stream_generation,
+            &state.airplay.airplay_stream_generation,
             initial_generation + 1,
             Duration::from_millis(1_500),
         ));
-        assert_eq!(state.airplay_audio_tap.current_epoch(), initial_epoch + 1);
-        state.shutdown.store(true, Ordering::Relaxed);
+        assert_eq!(state.airplay.airplay_audio_tap.current_epoch(), initial_epoch + 1);
+        state.shell.shutdown.store(true, Ordering::Relaxed);
     }
 
     #[test]
     fn airplay_control_refresh_does_not_fire_while_idle() {
         let state = airplay_state();
-        state.airplay_audience_active.store(false, Ordering::SeqCst);
+        state.airplay.airplay_audience_active.store(false, Ordering::SeqCst);
 
-        let initial_generation = state.airplay_stream_generation.load(Ordering::SeqCst);
-        let initial_epoch = state.airplay_audio_tap.current_epoch();
+        let initial_generation = state.airplay.airplay_stream_generation.load(Ordering::SeqCst);
+        let initial_epoch = state.airplay.airplay_audio_tap.current_epoch();
 
         spawn_airplay_control_refresh_worker_with_timing(
-            Arc::clone(&state.airplay_audience_active),
-            Arc::clone(&state.airplay_control_refresh_token),
-            Arc::clone(&state.airplay_audio_tap),
-            Arc::clone(&state.airplay_stream_generation),
+            Arc::clone(&state.airplay.airplay_audience_active),
+            Arc::clone(&state.airplay.airplay_control_refresh_token),
+            Arc::clone(&state.airplay.airplay_audio_tap),
+            Arc::clone(&state.airplay.airplay_stream_generation),
             Duration::from_millis(300),
             Duration::from_millis(5),
-            Arc::clone(&state.shutdown),
+            Arc::clone(&state.shell.shutdown),
         );
 
         set_volume(&state, 0.6).expect("volume update should succeed");
 
         std::thread::sleep(Duration::from_millis(250));
         assert_eq!(
-            state.airplay_stream_generation.load(Ordering::SeqCst),
+            state.airplay.airplay_stream_generation.load(Ordering::SeqCst),
             initial_generation
         );
-        assert_eq!(state.airplay_audio_tap.current_epoch(), initial_epoch);
-        state.shutdown.store(true, Ordering::Relaxed);
+        assert_eq!(state.airplay.airplay_audio_tap.current_epoch(), initial_epoch);
+        state.shell.shutdown.store(true, Ordering::Relaxed);
     }
 }

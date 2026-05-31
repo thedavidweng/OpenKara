@@ -75,11 +75,11 @@ pub fn separate(
     app_handle: AppHandle,
     song_id: String,
 ) -> CommandResult<SeparationStatusSnapshot> {
-    crate::commands::bootstrap::ensure_model_ready(&state.model_bootstrap_status)?;
+    crate::commands::bootstrap::ensure_model_ready(&state.shell.model_bootstrap_status)?;
     ensure_song_can_be_separated(&state, &song_id)?;
 
-    let initial_status = reserve_running_status(&state.separation_statuses, &song_id, true)?;
-    let app_config = config::load_config(&state.app_data_dir).ok().flatten();
+    let initial_status = reserve_running_status(&state.separation.separation_statuses, &song_id, true)?;
+    let app_config = config::load_config(&state.shell.app_data_dir).ok().flatten();
     let stem_mode = app_config
         .as_ref()
         .map(|c| c.effective_stem_mode())
@@ -97,7 +97,7 @@ pub fn upgrade_to_four_stem(
     app_handle: AppHandle,
     song_id: String,
 ) -> CommandResult<SeparationStatusSnapshot> {
-    crate::commands::bootstrap::ensure_model_ready(&state.model_bootstrap_status)?;
+    crate::commands::bootstrap::ensure_model_ready(&state.shell.model_bootstrap_status)?;
     ensure_song_can_be_separated(&state, &song_id)?;
 
     // Check if song already has 4-stem separation cached.
@@ -120,7 +120,7 @@ pub fn upgrade_to_four_stem(
         }
     }
 
-    let initial_status = reserve_running_status(&state.separation_statuses, &song_id, true)?;
+    let initial_status = reserve_running_status(&state.separation.separation_statuses, &song_id, true)?;
     let execution_context = build_execution_context(&state)?;
 
     spawn_separation_job(
@@ -140,7 +140,7 @@ pub fn re_separate(
     song_id: String,
     stem_mode: StemMode,
 ) -> CommandResult<SeparationStatusSnapshot> {
-    crate::commands::bootstrap::ensure_model_ready(&state.model_bootstrap_status)?;
+    crate::commands::bootstrap::ensure_model_ready(&state.shell.model_bootstrap_status)?;
     ensure_song_can_be_separated(&state, &song_id)?;
 
     // Clear existing cache entry and stem files before relaunching separation.
@@ -153,13 +153,13 @@ pub fn re_separate(
 
     {
         let mut statuses = state
-            .separation_statuses
+            .separation.separation_statuses
             .lock()
             .map_err(|_| state_lock_error("separation status lock was poisoned"))?;
         statuses.remove(&song_id);
     }
 
-    let initial_status = reserve_running_status(&state.separation_statuses, &song_id, false)?;
+    let initial_status = reserve_running_status(&state.separation.separation_statuses, &song_id, false)?;
     let execution_context = build_execution_context(&state)?;
 
     spawn_separation_job(app_handle, execution_context, song_id.clone(), stem_mode);
@@ -272,7 +272,7 @@ fn emit_terminal_status(
 fn build_execution_context(
     state: &State<'_, AppState>,
 ) -> CommandResult<SeparationExecutionContext> {
-    let app_config = config::load_config(&state.app_data_dir).ok().flatten();
+    let app_config = config::load_config(&state.shell.app_data_dir).ok().flatten();
     let model_variant = app_config
         .as_ref()
         .map(|c| c.effective_model_variant())
@@ -289,8 +289,8 @@ fn build_execution_context(
         model_path: state.resolve_model_path()?,
         model_variant,
         ep_preference,
-        statuses: Arc::clone(&state.separation_statuses),
-        model_cache: Arc::clone(&state.separator_model_cache),
+        statuses: Arc::clone(&state.separation.separation_statuses),
+        model_cache: Arc::clone(&state.separation.separator_model_cache),
     })
 }
 
@@ -369,7 +369,7 @@ pub fn downgrade_single_to_two_stem(
     // Update in-memory separation statuses.
     {
         let mut statuses = state
-            .separation_statuses
+            .separation.separation_statuses
             .lock()
             .map_err(|_| state_lock_error("separation status lock was poisoned"))?;
         statuses.insert(song_id.clone(), completed.clone());
@@ -393,7 +393,7 @@ pub fn get_separation_status(
     state: State<'_, AppState>,
     song_id: String,
 ) -> CommandResult<SeparationStatusSnapshot> {
-    get_separation_status_from_map(&state.separation_statuses, &song_id)
+    get_separation_status_from_map(&state.separation.separation_statuses, &song_id)
 }
 
 /// Returns separation statuses for all songs that have cached stems in the database.
@@ -413,7 +413,7 @@ pub fn get_all_separation_statuses(
     // Also populate the in-memory separation_statuses map so that
     // subsequent get_separation_status calls return the correct state.
     let mut statuses_lock = state
-        .separation_statuses
+        .separation.separation_statuses
         .lock()
         .map_err(|_| state_lock_error("separation status lock was poisoned"))?;
 

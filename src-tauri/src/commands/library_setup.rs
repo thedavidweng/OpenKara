@@ -118,7 +118,7 @@ fn store_active_library(
     library: LibraryRoot,
 ) -> CommandResult<()> {
     let mut guard = state
-        .library
+        .shell.library
         .lock()
         .map_err(|_| state_lock_error("library lock was poisoned"))?;
     *guard = Some(library);
@@ -143,7 +143,7 @@ fn register_library(
     store_active_library(state, &mut config, root)?;
     {
         let mut upload_statuses = state
-            .remote_upload_statuses
+            .remote.remote_upload_statuses
             .lock()
             .map_err(|_| state_lock_error("remote upload status lock was poisoned"))?;
         upload_statuses.clear();
@@ -177,21 +177,21 @@ fn activate_library(
 
     {
         let mut playback = state
-            .playback
+            .playback.playback
             .lock()
             .map_err(|_| state_lock_error("playback controller lock was poisoned"))?;
         playback.clear_track();
     }
     {
         let mut cdg_state = state
-            .cdg_state
+            .playback.cdg_state
             .lock()
             .map_err(|_| state_lock_error("CDG state lock was poisoned"))?;
         *cdg_state = None;
     }
     {
         let mut upload_statuses = state
-            .remote_upload_statuses
+            .remote.remote_upload_statuses
             .lock()
             .map_err(|_| state_lock_error("remote upload status lock was poisoned"))?;
         upload_statuses.clear();
@@ -221,7 +221,7 @@ pub fn create_library(
         config::library_display_name(&canonical_root),
     );
 
-    register_library(&state, &state.app_data_dir, library, lib)
+    register_library(&state, &state.shell.app_data_dir, library, lib)
 }
 
 #[tauri::command]
@@ -238,7 +238,7 @@ pub fn open_library(
         config::library_display_name(&canonical_root),
     );
 
-    register_library(&state, &state.app_data_dir, library, lib)
+    register_library(&state, &state.shell.app_data_dir, library, lib)
 }
 
 #[tauri::command]
@@ -246,17 +246,17 @@ pub fn switch_library(
     state: State<'_, AppState>,
     library_id: String,
 ) -> CommandResult<LibraryRegistrySnapshot> {
-    activate_library(&state, &state.app_data_dir, &library_id)
+    activate_library(&state, &state.shell.app_data_dir, &library_id)
 }
 
 #[tauri::command]
 pub fn get_library_path(state: State<'_, AppState>) -> CommandResult<Option<String>> {
     let guard = state
-        .library
+        .shell.library
         .lock()
         .map_err(|_| state_lock_error("library lock was poisoned"))?;
 
-    Ok(guard.as_ref().map(|lib| canonical_path_string(lib.root())))
+    Ok(guard.as_ref().map(|lib: &LibraryRoot| canonical_path_string(lib.root())))
 }
 
 #[tauri::command]
@@ -321,27 +321,27 @@ pub fn remove_library(
 
     if config.active_library_id.is_none() {
         let mut guard = state
-            .library
+            .shell.library
             .lock()
             .map_err(|_| state_lock_error("library lock was poisoned"))?;
         *guard = None;
         {
             let mut playback = state
-                .playback
+                .playback.playback
                 .lock()
                 .map_err(|_| state_lock_error("playback controller lock was poisoned"))?;
             playback.clear_track();
         }
         {
             let mut cdg_state = state
-                .cdg_state
+                .playback.cdg_state
                 .lock()
                 .map_err(|_| state_lock_error("CDG state lock was poisoned"))?;
             *cdg_state = None;
         }
         {
             let mut upload_statuses = state
-                .remote_upload_statuses
+                .remote.remote_upload_statuses
                 .lock()
                 .map_err(|_| state_lock_error("remote upload status lock was poisoned"))?;
             upload_statuses.clear();

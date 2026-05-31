@@ -12,7 +12,7 @@ where
     R: tauri::Runtime,
     F: FnOnce() -> crate::library::ImportSongsResult,
 {
-    sync::prepare_active_remote_database_for_mutation(&state.app_data_dir)?;
+    sync::prepare_active_remote_database_for_mutation(&state.shell.app_data_dir)?;
     let result = mutation();
     let imported_song_ids: Vec<String> = result
         .imported
@@ -34,7 +34,7 @@ where
     F: FnOnce() -> CommandResult<T>,
     S: FnOnce(&T) -> Vec<String>,
 {
-    sync::prepare_active_remote_database_for_mutation(&state.app_data_dir)?;
+    sync::prepare_active_remote_database_for_mutation(&state.shell.app_data_dir)?;
     let result = mutation()?;
     let song_ids = updated_song_ids(&result);
     sync::maybe_publish_songs_to_bound_remote(state, app_handle, &song_ids)?;
@@ -59,9 +59,9 @@ where
     R: tauri::Runtime,
     F: FnOnce() -> CommandResult<T>,
 {
-    sync::prepare_active_remote_database_for_mutation(&state.app_data_dir)?;
+    sync::prepare_active_remote_database_for_mutation(&state.shell.app_data_dir)?;
     let result = mutation()?;
-    sync::sync_active_remote_database_if_needed(&state.app_data_dir)?;
+    sync::sync_active_remote_database_if_needed(&state.shell.app_data_dir)?;
     sync::maybe_publish_song_to_bound_remote(state, app_handle, song_id)?;
     Ok(result)
 }
@@ -77,10 +77,10 @@ where
     F: FnOnce() -> CommandResult<T>,
     S: FnOnce(&T) -> Option<String>,
 {
-    sync::prepare_active_remote_database_for_mutation(&state.app_data_dir)?;
+    sync::prepare_active_remote_database_for_mutation(&state.shell.app_data_dir)?;
     let result = mutation()?;
     if let Some(song_id) = song_id(&result) {
-        sync::sync_active_remote_database_if_needed(&state.app_data_dir)?;
+        sync::sync_active_remote_database_if_needed(&state.shell.app_data_dir)?;
         sync::maybe_publish_song_to_bound_remote(state, app_handle, &song_id)?;
     }
     Ok(result)
@@ -97,11 +97,11 @@ where
     F: FnOnce() -> CommandResult<T>,
     S: FnOnce(&T) -> Vec<String>,
 {
-    sync::prepare_active_remote_database_for_mutation(&state.app_data_dir)?;
+    sync::prepare_active_remote_database_for_mutation(&state.shell.app_data_dir)?;
     let result = mutation()?;
     let song_ids = song_ids(&result);
     if !song_ids.is_empty() {
-        sync::sync_active_remote_database_if_needed(&state.app_data_dir)?;
+        sync::sync_active_remote_database_if_needed(&state.shell.app_data_dir)?;
         sync::maybe_publish_songs_to_bound_remote(state, app_handle, &song_ids)?;
     }
     Ok(result)
@@ -130,9 +130,9 @@ where
     R: tauri::Runtime,
     F: FnOnce() -> CommandResult<T>,
 {
-    sync::prepare_active_remote_database_for_mutation(&state.app_data_dir)?;
+    sync::prepare_active_remote_database_for_mutation(&state.shell.app_data_dir)?;
     let result = mutation()?;
-    sync::sync_active_remote_database_if_needed(&state.app_data_dir)?;
+    sync::sync_active_remote_database_if_needed(&state.shell.app_data_dir)?;
     sync::sync_bound_remote_for_active_local_library(state, app_handle)?;
     Ok(result)
 }

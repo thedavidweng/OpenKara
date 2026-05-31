@@ -37,10 +37,10 @@ pub fn batch_separate(
     app_handle: AppHandle,
     song_ids: Vec<String>,
 ) -> CommandResult<()> {
-    crate::commands::bootstrap::ensure_model_ready(&state.model_bootstrap_status)?;
+    crate::commands::bootstrap::ensure_model_ready(&state.shell.model_bootstrap_status)?;
 
     // Prevent concurrent batch operations.
-    if state.batch_running.load(Ordering::Relaxed) {
+    if state.separation.batch_running.load(Ordering::Relaxed) {
         return Err(separation_error(
             "A batch separation is already running".to_owned(),
         ));
@@ -48,12 +48,12 @@ pub fn batch_separate(
 
     let library_root = state.library_root()?;
     let model_path = state.resolve_model_path()?;
-    let separation_statuses = Arc::clone(&state.separation_statuses);
-    let model_cache: Arc<Mutex<ModelCache<LoadedModel>>> = Arc::clone(&state.separator_model_cache);
-    let batch_running = Arc::clone(&state.batch_running);
-    let batch_cancel = Arc::clone(&state.batch_cancel);
+    let separation_statuses = Arc::clone(&state.separation.separation_statuses);
+    let model_cache: Arc<Mutex<ModelCache<LoadedModel>>> = Arc::clone(&state.separation.separator_model_cache);
+    let batch_running = Arc::clone(&state.separation.batch_running);
+    let batch_cancel = Arc::clone(&state.separation.batch_cancel);
 
-    let app_config = config::load_config(&state.app_data_dir).ok().flatten();
+    let app_config = config::load_config(&state.shell.app_data_dir).ok().flatten();
     let stem_mode = app_config
         .as_ref()
         .map(|c| c.effective_stem_mode())
@@ -309,11 +309,11 @@ pub fn batch_separate(
 
 #[tauri::command]
 pub fn cancel_batch_separation(state: State<'_, AppState>) -> CommandResult<()> {
-    if !state.batch_running.load(Ordering::Relaxed) {
+    if !state.separation.batch_running.load(Ordering::Relaxed) {
         return Err(separation_error(
             "No batch separation is currently running".to_owned(),
         ));
     }
-    state.batch_cancel.store(true, Ordering::Relaxed);
+    state.separation.batch_cancel.store(true, Ordering::Relaxed);
     Ok(())
 }

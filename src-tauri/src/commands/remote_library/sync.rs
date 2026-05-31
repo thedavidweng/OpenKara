@@ -56,7 +56,7 @@ fn mark_upload_status(
     };
 
     let mut guard = state
-        .remote_upload_statuses
+        .remote.remote_upload_statuses
         .lock()
         .map_err(|_| state_lock_error("remote upload status lock was poisoned"))?;
     guard.insert(song_id.to_owned(), snapshot.clone());
@@ -649,7 +649,7 @@ pub(crate) fn maybe_publish_song_to_bound_remote<R: tauri::Runtime>(
     app_handle: &AppHandle<R>,
     song_id: &str,
 ) -> CommandResult<()> {
-    let config = load_app_config(&state.app_data_dir)?;
+    let config = load_app_config(&state.shell.app_data_dir)?;
     if resolve_active_remote(&config).is_none() {
         return Ok(());
     }
@@ -685,17 +685,17 @@ pub(crate) fn sync_bound_remote_for_active_local_library<R: tauri::Runtime>(
     state: &AppState,
     app_handle: &AppHandle<R>,
 ) -> CommandResult<()> {
-    let config = load_app_config(&state.app_data_dir)?;
+    let config = load_app_config(&state.shell.app_data_dir)?;
     let Some(remote_library) = resolve_active_remote(&config) else {
         return Ok(());
     };
     let remote_library =
-        prepare_remote_database_for_mutation(&state.app_data_dir, &remote_library)?;
+        prepare_remote_database_for_mutation(&state.shell.app_data_dir, &remote_library)?;
 
     let local_root = state.library_root()?;
     let local_connection = cache::open_database(&local_root.database_path())
         .map_err(|error| database_error(error.to_string()))?;
-    let remote_root = load_remote_root(&state.app_data_dir, &remote_library)?;
+    let remote_root = load_remote_root(&state.shell.app_data_dir, &remote_library)?;
     let remote_connection = cache::open_database(&remote_root.database_path())
         .map_err(|error| database_error(error.to_string()))?;
     let local_songs =
@@ -716,7 +716,7 @@ pub(crate) fn sync_bound_remote_for_active_local_library<R: tauri::Runtime>(
             Some(kind) if remote_song.audio_source_kind == *kind => {}
             Some(_) | None => {
                 delete_remote_song_from_mirror(
-                    &state.app_data_dir,
+                    &state.shell.app_data_dir,
                     &remote_library,
                     &remote_root,
                     &remote_connection,
@@ -731,8 +731,8 @@ pub(crate) fn sync_bound_remote_for_active_local_library<R: tauri::Runtime>(
         .filter_map(|song| desired_kinds.contains_key(&song.hash).then_some(song.hash))
         .collect();
     maybe_publish_songs_to_bound_remote(state, app_handle, &desired_song_ids)?;
-    let remote_library = load_registered_remote_library(&state.app_data_dir, remote_library.id())?;
-    upload_remote_database(&state.app_data_dir, &remote_library)?;
+    let remote_library = load_registered_remote_library(&state.shell.app_data_dir, remote_library.id())?;
+    upload_remote_database(&state.shell.app_data_dir, &remote_library)?;
     Ok(())
 }
 
@@ -742,7 +742,7 @@ pub(crate) fn mirror_local_library_to_remote<R: tauri::Runtime>(
     local_library_id: &str,
     remote_library_id: &str,
 ) -> CommandResult<()> {
-    let mut config = load_app_config(&state.app_data_dir)?;
+    let mut config = load_app_config(&state.shell.app_data_dir)?;
     let Some(local_library) = config
         .libraries
         .iter()
@@ -775,13 +775,13 @@ pub(crate) fn mirror_local_library_to_remote<R: tauri::Runtime>(
 
     let original_active_library_id = config.active_library_id.clone();
     config.active_library_id = Some(remote_library_id.to_owned());
-    persist_app_config(&state.app_data_dir, &config)?;
+    persist_app_config(&state.shell.app_data_dir, &config)?;
 
     let sync_result = sync_bound_remote_for_active_local_library(state, app_handle);
 
-    let mut restore_config = load_app_config(&state.app_data_dir)?;
+    let mut restore_config = load_app_config(&state.shell.app_data_dir)?;
     restore_config.active_library_id = original_active_library_id;
-    persist_app_config(&state.app_data_dir, &restore_config)?;
+    persist_app_config(&state.shell.app_data_dir, &restore_config)?;
 
     sync_result
 }
@@ -791,15 +791,15 @@ fn publish_song_internal<R: tauri::Runtime>(
     app_handle: &AppHandle<R>,
     song_id: &str,
 ) -> CommandResult<UploadStatusSnapshot> {
-    let config = load_app_config(&state.app_data_dir)?;
+    let config = load_app_config(&state.shell.app_data_dir)?;
     let remote_library = resolve_active_remote(&config)
         .ok_or_else(|| library_error("no bound remote repository is available for publishing"))?;
     let remote_library =
-        prepare_remote_database_for_mutation(&state.app_data_dir, &remote_library)?;
+        prepare_remote_database_for_mutation(&state.shell.app_data_dir, &remote_library)?;
 
     let local_root = state.library_root()?;
     let remote_library_id = remote_library.id().to_owned();
-    let remote_root = load_remote_root(&state.app_data_dir, &remote_library)?;
+    let remote_root = load_remote_root(&state.shell.app_data_dir, &remote_library)?;
 
     // When the active library IS the remote repository (user is directly working
     // in a remote repository), local_root and remote_root point to the same
@@ -848,7 +848,7 @@ fn publish_song_internal<R: tauri::Runtime>(
         update_remote_song(&remote_connection, song.clone(), "stems_remote")?;
         match remote_library.provider() {
             Some(RemoteLibraryProvider::WebDav) => {
-                let remote_secret = load_webdav_secret(&state.app_data_dir, &remote_library)?;
+                let remote_secret = load_webdav_secret(&state.shell.app_data_dir, &remote_library)?;
                 upload_directory_to_remote(
                     &remote_library,
                     &remote_secret,
@@ -856,12 +856,12 @@ fn publish_song_internal<R: tauri::Runtime>(
                 )?;
             }
             Some(RemoteLibraryProvider::GoogleDrive) => {
-                let remote_secret = load_google_drive_secret(&state.app_data_dir, &remote_library)?;
+                let remote_secret = load_google_drive_secret(&state.shell.app_data_dir, &remote_library)?;
                 let root_folder_id = remote_library.remote_root_locator().ok_or_else(|| {
                     library_error("remote repository is missing a remote locator".to_owned())
                 })?;
                 google_drive_upload_directory_to_remote(
-                    &state.app_data_dir,
+                    &state.shell.app_data_dir,
                     &remote_library,
                     &remote_secret,
                     &format!("stems/{song_id}"),
@@ -869,12 +869,12 @@ fn publish_song_internal<R: tauri::Runtime>(
                 )?;
             }
             Some(RemoteLibraryProvider::Dropbox) => {
-                let remote_secret = load_dropbox_secret(&state.app_data_dir, &remote_library)?;
+                let remote_secret = load_dropbox_secret(&state.shell.app_data_dir, &remote_library)?;
                 let root_path = remote_library.remote_root_locator().ok_or_else(|| {
                     library_error("remote repository is missing a remote locator".to_owned())
                 })?;
                 dropbox_upload_directory_to_remote(
-                    &state.app_data_dir,
+                    &state.shell.app_data_dir,
                     &remote_library,
                     &remote_secret,
                     &format!("stems/{song_id}"),
@@ -896,17 +896,17 @@ fn publish_song_internal<R: tauri::Runtime>(
             }
             match remote_library.provider() {
                 Some(RemoteLibraryProvider::WebDav) => {
-                    let remote_secret = load_webdav_secret(&state.app_data_dir, &remote_library)?;
+                    let remote_secret = load_webdav_secret(&state.shell.app_data_dir, &remote_library)?;
                     upload_relative_file_to_remote(&remote_library, &remote_secret, file_path)?;
                 }
                 Some(RemoteLibraryProvider::GoogleDrive) => {
                     let remote_secret =
-                        load_google_drive_secret(&state.app_data_dir, &remote_library)?;
+                        load_google_drive_secret(&state.shell.app_data_dir, &remote_library)?;
                     let root_folder_id = remote_library.remote_root_locator().ok_or_else(|| {
                         library_error("remote repository is missing a remote locator".to_owned())
                     })?;
                     google_drive_upload_relative_file_to_remote(
-                        &state.app_data_dir,
+                        &state.shell.app_data_dir,
                         &remote_library,
                         &remote_secret,
                         file_path,
@@ -914,12 +914,12 @@ fn publish_song_internal<R: tauri::Runtime>(
                     )?;
                 }
                 Some(RemoteLibraryProvider::Dropbox) => {
-                    let remote_secret = load_dropbox_secret(&state.app_data_dir, &remote_library)?;
+                    let remote_secret = load_dropbox_secret(&state.shell.app_data_dir, &remote_library)?;
                     let root_path = remote_library.remote_root_locator().ok_or_else(|| {
                         library_error("remote repository is missing a remote locator".to_owned())
                     })?;
                     dropbox_upload_relative_file_to_remote(
-                        &state.app_data_dir,
+                        &state.shell.app_data_dir,
                         &remote_library,
                         &remote_secret,
                         file_path,
@@ -939,17 +939,17 @@ fn publish_song_internal<R: tauri::Runtime>(
             }
             match remote_library.provider() {
                 Some(RemoteLibraryProvider::WebDav) => {
-                    let remote_secret = load_webdav_secret(&state.app_data_dir, &remote_library)?;
+                    let remote_secret = load_webdav_secret(&state.shell.app_data_dir, &remote_library)?;
                     upload_relative_file_to_remote(&remote_library, &remote_secret, cdg_path)?;
                 }
                 Some(RemoteLibraryProvider::GoogleDrive) => {
                     let remote_secret =
-                        load_google_drive_secret(&state.app_data_dir, &remote_library)?;
+                        load_google_drive_secret(&state.shell.app_data_dir, &remote_library)?;
                     let root_folder_id = remote_library.remote_root_locator().ok_or_else(|| {
                         library_error("remote repository is missing a remote locator".to_owned())
                     })?;
                     google_drive_upload_relative_file_to_remote(
-                        &state.app_data_dir,
+                        &state.shell.app_data_dir,
                         &remote_library,
                         &remote_secret,
                         cdg_path,
@@ -957,12 +957,12 @@ fn publish_song_internal<R: tauri::Runtime>(
                     )?;
                 }
                 Some(RemoteLibraryProvider::Dropbox) => {
-                    let remote_secret = load_dropbox_secret(&state.app_data_dir, &remote_library)?;
+                    let remote_secret = load_dropbox_secret(&state.shell.app_data_dir, &remote_library)?;
                     let root_path = remote_library.remote_root_locator().ok_or_else(|| {
                         library_error("remote repository is missing a remote locator".to_owned())
                     })?;
                     dropbox_upload_relative_file_to_remote(
-                        &state.app_data_dir,
+                        &state.shell.app_data_dir,
                         &remote_library,
                         &remote_secret,
                         cdg_path,
@@ -1009,19 +1009,19 @@ fn publish_song_internal<R: tauri::Runtime>(
     )?;
     emit_upload_complete(app_handle, &completed);
 
-    upload_remote_database(&state.app_data_dir, &remote_library)?;
+    upload_remote_database(&state.shell.app_data_dir, &remote_library)?;
 
     Ok(completed)
 }
 
 pub(crate) fn sync_active_remote_library(state: &AppState) -> CommandResult<()> {
-    let config = load_app_config(&state.app_data_dir)?;
+    let config = load_app_config(&state.shell.app_data_dir)?;
     let Some(active_library) = config.active_library() else {
         return Err(library_error("no library is currently active"));
     };
 
     if matches!(active_library, RegisteredLibrary::Remote { .. }) {
-        let _ = sync_remote_database_from_provider(&state.app_data_dir, active_library)?;
+        let _ = sync_remote_database_from_provider(&state.shell.app_data_dir, active_library)?;
     }
 
     Ok(())
@@ -1089,7 +1089,7 @@ pub(crate) fn get_all_upload_statuses(
     state: &AppState,
 ) -> CommandResult<Vec<UploadStatusSnapshot>> {
     let guard = state
-        .remote_upload_statuses
+        .remote.remote_upload_statuses
         .lock()
         .map_err(|_| state_lock_error("remote upload status lock was poisoned"))?;
     Ok(guard.values().cloned().collect())

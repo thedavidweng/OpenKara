@@ -158,7 +158,7 @@ pub fn delete_songs(
     let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
     let current_song_id = {
         let playback = state
-            .playback
+            .playback.playback
             .lock()
             .map_err(|_| state_lock_error("playback controller lock was poisoned"))?;
         playback.current_song_id().map(|value| value.to_owned())
@@ -183,13 +183,13 @@ pub fn delete_songs(
     {
         {
             let mut playback = state
-                .playback
+                .playback.playback
                 .lock()
                 .map_err(|_| state_lock_error("playback controller lock was poisoned"))?;
             playback.clear_track();
         }
         let mut cdg_state = state
-            .cdg_state
+            .playback.cdg_state
             .lock()
             .map_err(|_| state_lock_error("CDG state lock was poisoned"))?;
         *cdg_state = None;
@@ -427,9 +427,9 @@ pub fn get_song_properties(
         )));
     };
     if song.is_remote() {
-        remote_library::ensure_remote_file_cached(&state.app_data_dir, song_path)?;
+        remote_library::ensure_remote_file_cached(&state.shell.app_data_dir, song_path)?;
         if let Some(cdg_path) = song.cdg_path.as_deref() {
-            remote_library::ensure_remote_file_cached(&state.app_data_dir, cdg_path)?;
+            remote_library::ensure_remote_file_cached(&state.shell.app_data_dir, cdg_path)?;
         }
     }
     let file_path = library.resolve(song_path);

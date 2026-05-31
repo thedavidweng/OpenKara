@@ -60,7 +60,7 @@ pub(crate) fn list_remote_library_roots(
     session_id: String,
 ) -> CommandResult<Vec<RemoteLibraryCandidate>> {
     let sessions = state
-        .remote_auth_sessions
+        .remote.remote_auth_sessions
         .lock()
         .map_err(|_| state_lock_error("remote auth session lock was poisoned"))?;
     let session = sessions
@@ -93,7 +93,7 @@ pub(crate) fn create_remote_library(
     display_name: String,
 ) -> CommandResult<RemoteLibraryCandidate> {
     let mut sessions = state
-        .remote_auth_sessions
+        .remote.remote_auth_sessions
         .lock()
         .map_err(|_| state_lock_error("remote auth session lock was poisoned"))?;
     let session = sessions
@@ -157,7 +157,7 @@ pub(crate) fn resolve_remote_library_candidate(
     display_name: String,
 ) -> CommandResult<RemoteLibraryCandidate> {
     let mut sessions = state
-        .remote_auth_sessions
+        .remote.remote_auth_sessions
         .lock()
         .map_err(|_| state_lock_error("remote auth session lock was poisoned"))?;
     let session = sessions
@@ -205,7 +205,7 @@ pub(crate) fn register_remote_library(
     display_name: Option<String>,
 ) -> CommandResult<LibraryRegistrySnapshot> {
     let mut sessions = state
-        .remote_auth_sessions
+        .remote.remote_auth_sessions
         .lock()
         .map_err(|_| state_lock_error("remote auth session lock was poisoned"))?;
     let (default_display_name, account_id, provider, webdav, google_drive, dropbox) = {
@@ -390,13 +390,13 @@ pub(crate) fn register_remote_library(
     persist_app_config(app_data_dir, &config)?;
 
     let mut guard = state
-        .library
+        .shell.library
         .lock()
         .map_err(|_| state_lock_error("library lock was poisoned"))?;
     *guard = Some(library_root);
     {
         let mut upload_statuses = state
-            .remote_upload_statuses
+            .remote.remote_upload_statuses
             .lock()
             .map_err(|_| state_lock_error("remote upload status lock was poisoned"))?;
         upload_statuses.clear();
@@ -431,7 +431,7 @@ pub(crate) fn reauthorize_remote_library(
     }
 
     let mut sessions = state
-        .remote_auth_sessions
+        .remote.remote_auth_sessions
         .lock()
         .map_err(|_| state_lock_error("remote auth session lock was poisoned"))?;
     let (account_id, provider, webdav, google_drive, dropbox) = {
@@ -687,7 +687,7 @@ pub(crate) fn reauthorize_remote_library(
     persist_app_config(app_data_dir, &config)?;
 
     let mut guard = state
-        .library
+        .shell.library
         .lock()
         .map_err(|_| state_lock_error("library lock was poisoned"))?;
     *guard = Some(LibraryRoot::open(&root_path).map_err(library_error)?);

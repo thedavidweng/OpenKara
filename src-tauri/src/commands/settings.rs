@@ -110,7 +110,7 @@ pub fn set_model_variant(
 
     let snapshot = crate::commands::bootstrap::sync_active_model_bootstrap_status(
         &app_data_dir,
-        &state.model_bootstrap_status,
+        &state.shell.model_bootstrap_status,
     )?;
 
     crate::commands::bootstrap::emit_model_bootstrap_snapshot(&app_handle, &snapshot);

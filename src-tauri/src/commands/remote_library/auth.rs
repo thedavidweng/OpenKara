@@ -34,18 +34,18 @@ pub(crate) fn begin_remote_auth(
     let webdav_session = match provider {
         RemoteLibraryProvider::GoogleDrive => {
             let google =
-                google_drive::parse_google_drive_payload(&state.app_resource_dir, payload)?;
+                google_drive::parse_google_drive_payload(&state.shell.app_resource_dir, payload)?;
             google_drive_session = Some(google_drive::spawn_google_drive_auth_worker(
-                Arc::clone(&state.remote_auth_sessions),
+                Arc::clone(&state.remote.remote_auth_sessions),
                 session_id.clone(),
                 google,
             )?);
             None
         }
         RemoteLibraryProvider::Dropbox => {
-            let dropbox = dropbox::parse_dropbox_payload(&state.app_resource_dir, payload)?;
+            let dropbox = dropbox::parse_dropbox_payload(&state.shell.app_resource_dir, payload)?;
             dropbox_session = Some(dropbox::spawn_dropbox_auth_worker(
-                Arc::clone(&state.remote_auth_sessions),
+                Arc::clone(&state.remote.remote_auth_sessions),
                 session_id.clone(),
                 dropbox,
             )?);
@@ -100,7 +100,7 @@ pub(crate) fn begin_remote_auth(
             webdav: None,
         };
         state
-            .remote_auth_sessions
+            .remote.remote_auth_sessions
             .lock()
             .map_err(|_| state_lock_error("remote auth session lock was poisoned"))?
             .insert(session_id.clone(), session);
@@ -129,7 +129,7 @@ pub(crate) fn begin_remote_auth(
             webdav: None,
         };
         state
-            .remote_auth_sessions
+            .remote.remote_auth_sessions
             .lock()
             .map_err(|_| state_lock_error("remote auth session lock was poisoned"))?
             .insert(session_id.clone(), session);
@@ -166,7 +166,7 @@ pub(crate) fn begin_remote_auth(
     };
 
     state
-        .remote_auth_sessions
+        .remote.remote_auth_sessions
         .lock()
         .map_err(|_| state_lock_error("remote auth session lock was poisoned"))?
         .insert(session_id.clone(), session);
@@ -184,7 +184,7 @@ pub(crate) fn poll_remote_auth(
     session_id: String,
 ) -> CommandResult<RemoteAuthStatus> {
     let sessions = state
-        .remote_auth_sessions
+        .remote.remote_auth_sessions
         .lock()
         .map_err(|_| state_lock_error("remote auth session lock was poisoned"))?;
     let session = sessions
@@ -203,7 +203,7 @@ pub(crate) fn poll_remote_auth(
 
 pub(crate) fn cancel_remote_auth(state: &AppState, session_id: String) -> CommandResult<()> {
     state
-        .remote_auth_sessions
+        .remote.remote_auth_sessions
         .lock()
         .map_err(|_| state_lock_error("remote auth session lock was poisoned"))?
         .remove(&session_id);
