@@ -30,12 +30,14 @@ Split `AppState` into 5 domain-scoped modules. Commands declare only the modules
 ### Domain Modules
 
 **PlaybackState** (`src-tauri/src/state/playback.rs`):
+
 - `playback: Arc<Mutex<PlaybackController>>`
 - `playback_request_id: Arc<AtomicU64>`
 - `audio_output_started: Arc<AtomicBool>`
 - `audio_output_start_lock: Arc<Mutex<()>>`
 
 **AirPlayState** (`src-tauri/src/state/airplay.rs`):
+
 - `airplay_audio_tap: Arc<AirPlayAudioTap>`
 - `airplay_stream_generation: Arc<AtomicU64>`
 - `airplay_audience_active: Arc<AtomicBool>`
@@ -44,16 +46,19 @@ Split `AppState` into 5 domain-scoped modules. Commands declare only the modules
 - `airplay_local_output_suppressed: Arc<AtomicBool>`
 
 **SeparationState** (`src-tauri/src/state/separation.rs`):
+
 - `separation_statuses: Arc<Mutex<HashMap<String, SeparationStatusSnapshot>>>`
 - `separator_model_cache: Arc<Mutex<ModelCache<LoadedModel>>>`
 - `batch_running: Arc<AtomicBool>`
 - `batch_cancel: Arc<AtomicBool>`
 
 **RemoteState** (`src-tauri/src/state/remote.rs`):
+
 - `remote_auth_sessions: Arc<Mutex<HashMap<String, RemoteAuthSession>>>`
 - `remote_upload_statuses: Arc<Mutex<HashMap<String, UploadStatusSnapshot>>>`
 
 **AppShell** (`src-tauri/src/state/shell.rs`):
+
 - `library: Arc<Mutex<Option<LibraryRoot>>>`
 - `app_data_dir: PathBuf`
 - `app_resource_dir: PathBuf`
@@ -198,6 +203,7 @@ impl From<PlaybackError> for CommandError {
 ### Migration
 
 One domain at a time:
+
 1. Define the error enum
 2. Change service return types from `Result<T, String>` to `Result<T, DomainError>`
 3. Update command handlers to use `From` impl
@@ -295,11 +301,21 @@ export interface PlaybackWorkflowDeps {
 
 export function createPlaybackWorkflow(deps: PlaybackWorkflowDeps) {
   return {
-    playSong: async (songId: string) => { /* ... */ },
-    playNow: async (songId: string) => { /* ... */ },
-    skipForward: async () => { /* ... */ },
-    skipBack: async () => { /* ... */ },
-    playNextFromQueue: async (endedSongId: string) => { /* ... */ },
+    playSong: async (songId: string) => {
+      /* ... */
+    },
+    playNow: async (songId: string) => {
+      /* ... */
+    },
+    skipForward: async () => {
+      /* ... */
+    },
+    skipBack: async () => {
+      /* ... */
+    },
+    playNextFromQueue: async (endedSongId: string) => {
+      /* ... */
+    },
   };
 }
 ```
@@ -380,8 +396,11 @@ function useEventSubscriptions<T>(
     };
 
     void setup();
-    return () => { cancelled = true; unlisteners.forEach(fn => fn()); };
-  }, [enabled, ...subscriptions.flatMap(s => [s.event, s.handler])]);
+    return () => {
+      cancelled = true;
+      unlisteners.forEach((fn) => fn());
+    };
+  }, [enabled, ...subscriptions.flatMap((s) => [s.event, s.handler])]);
 }
 ```
 
@@ -391,14 +410,34 @@ Each hook becomes a one-liner:
 
 ```typescript
 function useSeparationEvents(enabled: boolean) {
-  const updateSeparationStatus = useLibraryStore(s => s.updateSeparationStatus);
-  const loadStems = usePlayerStore(s => s.loadStems);
+  const updateSeparationStatus = useLibraryStore(
+    (s) => s.updateSeparationStatus,
+  );
+  const loadStems = usePlayerStore((s) => s.loadStems);
 
-  useEventSubscriptions([
-    { event: "separation-progress", handler: (e) => updateSeparationStatus(separationProgressStatus(e)) },
-    { event: "separation-complete", handler: (e) => { updateSeparationStatus(e.status); if (e.song_id === currentSongId) loadStems(); } },
-    { event: "separation-error", handler: (e) => { updateSeparationStatus(separationErrorStatus(e)); notifyError(e.error); } },
-  ], enabled);
+  useEventSubscriptions(
+    [
+      {
+        event: "separation-progress",
+        handler: (e) => updateSeparationStatus(separationProgressStatus(e)),
+      },
+      {
+        event: "separation-complete",
+        handler: (e) => {
+          updateSeparationStatus(e.status);
+          if (e.song_id === currentSongId) loadStems();
+        },
+      },
+      {
+        event: "separation-error",
+        handler: (e) => {
+          updateSeparationStatus(separationErrorStatus(e));
+          notifyError(e.error);
+        },
+      },
+    ],
+    enabled,
+  );
 }
 ```
 
