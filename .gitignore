@@ -18,6 +18,8 @@ Desktop.ini
 .idea/
 .cursor/
 .claude/
+.agents/*
+!.agents/skills/
 *.swp
 *.swo
 *~
