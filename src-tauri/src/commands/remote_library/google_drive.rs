@@ -1085,6 +1085,9 @@ impl RemoteProvider for GoogleDriveProvider<'_> {
             .library
             .remote_root_locator()
             .ok_or_else(|| library_error("remote repository is missing a remote locator".to_owned()))?;
+        if relative_path.is_empty() {
+            return google_drive_delete_entry(self.app_data_dir, &mut secret, root_folder_id);
+        }
         let Some(entry) =
             google_drive_find_relative_entry(self.app_data_dir, &mut secret, root_folder_id, relative_path)?
         else {
