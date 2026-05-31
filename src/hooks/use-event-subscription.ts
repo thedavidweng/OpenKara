@@ -21,7 +21,7 @@ export function useEventSubscriptions(
   subscriptions: EventSubscription[],
   enabled: boolean,
   onCleanup?: () => void,
-  deps: unknown[] = [],
+  deps: React.DependencyList = [],
 ): void {
   useEffect(() => {
     if (!enabled) return;
@@ -50,8 +50,9 @@ export function useEventSubscriptions(
       unlisteners.forEach((fn) => fn());
     };
     // subscriptions and onCleanup are intentionally excluded — subscriptions is
-    // a new array each render and onCleanup should be stable. The deps parameter
-    // gives callers explicit control over when to re-subscribe.
+    // a new array each render and onCleanup identity may change without requiring
+    // re-subscription (callers reach side-effects through stable refs). The deps
+    // parameter gives callers explicit control over when to re-subscribe.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, ...deps]);
 }

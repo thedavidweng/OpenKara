@@ -213,6 +213,12 @@ function useBatchSeparationEvents(enabled: boolean) {
     createBatchSeparationClearScheduler(clearBatchSeparation),
   );
 
+  // Recreate scheduler if the clear function changes
+  useEffect(() => {
+    clearSchedulerRef.current =
+      createBatchSeparationClearScheduler(clearBatchSeparation);
+  }, [clearBatchSeparation]);
+
   useEventSubscriptions(
     [
       {
@@ -247,6 +253,12 @@ function useUploadEvents(enabled: boolean) {
   const clearSchedulerRef = useRef(
     createStatusClearScheduler<string>(clearUploadStatus),
   );
+
+  // Recreate scheduler if the clear function changes
+  useEffect(() => {
+    clearSchedulerRef.current =
+      createStatusClearScheduler<string>(clearUploadStatus);
+  }, [clearUploadStatus]);
 
   useEventSubscriptions(
     [
