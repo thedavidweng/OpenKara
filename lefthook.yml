@@ -1,0 +1,11 @@
+pre-commit:
+  parallel: true
+  commands:
+    prettier:
+      glob: "*.{ts,tsx,js,jsx,json,css,md,html,yml,yaml}"
+      run: pnpm exec prettier --write {staged_files}
+      stage_fixed: true
+    cargo-fmt:
+      glob: "*.rs"
+      run: cd src-tauri && cargo fmt
+      stage_fixed: true
