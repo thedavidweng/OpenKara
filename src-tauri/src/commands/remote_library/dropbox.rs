@@ -6,6 +6,7 @@ use crate::{
 };
 use reqwest::{Method, StatusCode, Url};
 use std::{
+    cell::RefCell,
     collections::HashMap,
     fs,
     io::Write,
@@ -856,7 +857,7 @@ pub(crate) fn refresh_existing_dropbox_library(
     Ok(dropbox_metadata_revision(&metadata))
 }
 
-fn dropbox_delete_path(
+pub(crate) fn dropbox_delete_path(
     app_data_dir: &Path,
     secret: &mut DropboxSecret,
     path: &str,
@@ -873,28 +874,106 @@ fn dropbox_delete_path(
     }
 }
 
-pub(crate) fn delete_relative_path_from_remote(
-    app_data_dir: &Path,
-    library: &RegisteredLibrary,
-    relative_path: &str,
-) -> CommandResult<()> {
-    let mut secret = load_dropbox_secret(app_data_dir, library)?;
-    let root_path = library
-        .remote_root_locator()
-        .ok_or_else(|| library_error("remote repository is missing a remote locator".to_owned()))?;
-    dropbox_delete_path(
-        app_data_dir,
-        &mut secret,
-        &dropbox_join_path(root_path, relative_path),
-    )
+// --- RemoteProvider implementation ---
+
+pub(crate) struct DropboxProvider<'a> {
+    app_data_dir: &'a Path,
+    secret: RefCell<DropboxSecret>,
+    library: &'a RegisteredLibrary,
 }
 
-pub(crate) fn delete_remote_root(
-    app_data_dir: &Path,
-    library: &RegisteredLibrary,
-) -> CommandResult<()> {
-    delete_relative_path_from_remote(app_data_dir, library, "")
+impl<'a> DropboxProvider<'a> {
+    pub(crate) fn new(
+        app_data_dir: &'a Path,
+        secret: DropboxSecret,
+        library: &'a RegisteredLibrary,
+    ) -> Self {
+        Self {
+            app_data_dir,
+            secret: RefCell::new(secret),
+            library,
+        }
+    }
 }
+
+impl RemoteProvider for DropboxProvider<'_> {
+    fn get_revision(&self, relative_path: &str) -> CommandResult<Option<String>> {
+        let mut secret = self.secret.borrow_mut();
+        let root_path = self
+            .library
+            .remote_root_locator()
+            .ok_or_else(|| library_error("remote repository is missing a remote locator".to_owned()))?;
+        let remote_path = dropbox_join_path(root_path, relative_path);
+        Ok(dropbox_get_metadata(self.app_data_dir, &mut secret, &remote_path)?
+            .as_ref()
+            .and_then(dropbox_metadata_revision))
+    }
+
+    fn download_file(&self, relative_path: &str, destination: &Path) -> CommandResult<()> {
+        let mut secret = self.secret.borrow_mut();
+        let root_path = self
+            .library
+            .remote_root_locator()
+            .ok_or_else(|| library_error("remote repository is missing a remote locator".to_owned()))?;
+        let remote_path = dropbox_join_path(root_path, relative_path);
+        if dropbox_get_metadata(self.app_data_dir, &mut secret, &remote_path)?.is_none() {
+            return Err(library_error(format!(
+                "remote file {relative_path} was not found"
+            )));
+        }
+        dropbox_download_file(self.app_data_dir, &mut secret, &remote_path, destination)
+    }
+
+    fn upload_file(&self, relative_path: &str) -> CommandResult<()> {
+        let secret = self.secret.borrow();
+        let root_path = self
+            .library
+            .remote_root_locator()
+            .ok_or_else(|| library_error("remote repository is missing a remote locator".to_owned()))?;
+        dropbox_upload_relative_file_to_remote(
+            self.app_data_dir,
+            self.library,
+            &secret,
+            relative_path,
+            root_path,
+        )
+    }
+
+    fn upload_directory(&self, relative_path: &str) -> CommandResult<()> {
+        let secret = self.secret.borrow();
+        let root_path = self
+            .library
+            .remote_root_locator()
+            .ok_or_else(|| library_error("remote repository is missing a remote locator".to_owned()))?;
+        dropbox_upload_directory_to_remote(
+            self.app_data_dir,
+            self.library,
+            &secret,
+            relative_path,
+            root_path,
+        )
+    }
+
+    fn delete_path(&self, relative_path: &str) -> CommandResult<()> {
+        let mut secret = self.secret.borrow_mut();
+        let root_path = self
+            .library
+            .remote_root_locator()
+            .ok_or_else(|| library_error("remote repository is missing a remote locator".to_owned()))?;
+        dropbox_delete_path(
+            self.app_data_dir,
+            &mut secret,
+            &dropbox_join_path(root_path, relative_path),
+        )
+    }
+
+    fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
+        let secret = self.secret.borrow();
+        initialize_or_sync_dropbox_library(self.app_data_dir, self.library, &secret)
+    }
+}
+
+use super::provider::RemoteProvider;
 
 #[cfg(test)]
 mod tests {

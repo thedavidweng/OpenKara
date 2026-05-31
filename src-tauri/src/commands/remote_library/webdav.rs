@@ -555,13 +555,51 @@ pub(crate) fn delete_relative_path_from_remote(
     }
 }
 
-pub(crate) fn delete_remote_root(
-    app_data_dir: &Path,
-    library: &RegisteredLibrary,
-) -> CommandResult<()> {
-    let secret = load_webdav_secret(app_data_dir, library)?;
-    delete_relative_path_from_remote(&secret, "")
+// --- RemoteProvider implementation ---
+
+pub(crate) struct WebDAVProvider<'a> {
+    secret: WebDavSecret,
+    library: &'a RegisteredLibrary,
 }
+
+impl<'a> WebDAVProvider<'a> {
+    pub(crate) fn new(secret: WebDavSecret, library: &'a RegisteredLibrary) -> Self {
+        Self { secret, library }
+    }
+}
+
+impl RemoteProvider for WebDAVProvider<'_> {
+    fn get_revision(&self, relative_path: &str) -> CommandResult<Option<String>> {
+        let client = webdav_client()?;
+        let url = join_url(&self.secret.root_url, relative_path)?;
+        webdav_get_etag(&client, &url, &self.secret.username, &self.secret.password)
+    }
+
+    fn download_file(&self, relative_path: &str, destination: &Path) -> CommandResult<()> {
+        let client = webdav_client()?;
+        let url = join_url(&self.secret.root_url, relative_path)?;
+        download_webdav_file(&client, &url, destination, &self.secret.username, &self.secret.password)?;
+        Ok(())
+    }
+
+    fn upload_file(&self, relative_path: &str) -> CommandResult<()> {
+        upload_relative_file_to_remote(self.library, &self.secret, relative_path)
+    }
+
+    fn upload_directory(&self, relative_path: &str) -> CommandResult<()> {
+        upload_directory_to_remote(self.library, &self.secret, relative_path)
+    }
+
+    fn delete_path(&self, relative_path: &str) -> CommandResult<()> {
+        delete_relative_path_from_remote(&self.secret, relative_path)
+    }
+
+    fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
+        initialize_or_sync_webdav_library(Path::new("/"), self.library, &self.secret)
+    }
+}
+
+use super::provider::RemoteProvider;
 
 #[cfg(test)]
 mod tests {

@@ -2,6 +2,7 @@ mod auth;
 mod dropbox;
 mod google_drive;
 mod mutation;
+pub(crate) mod provider;
 mod registry;
 mod sync;
 mod types;
@@ -195,14 +196,6 @@ pub(crate) fn delete_remote_library_root(
     app_data_dir: &std::path::Path,
     library: &RegisteredLibrary,
 ) -> CommandResult<()> {
-    match library.provider() {
-        Some(RemoteLibraryProvider::GoogleDrive) => {
-            google_drive::delete_remote_root(app_data_dir, library)
-        }
-        Some(RemoteLibraryProvider::Dropbox) => dropbox::delete_remote_root(app_data_dir, library),
-        Some(RemoteLibraryProvider::WebDav) => webdav::delete_remote_root(app_data_dir, library),
-        None => Err(library_error(
-            "the target library must be remote".to_owned(),
-        )),
-    }
+    let provider = provider::create_provider(app_data_dir, library)?;
+    provider.delete_path("")
 }
