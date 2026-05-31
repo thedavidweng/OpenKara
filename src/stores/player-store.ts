@@ -13,10 +13,7 @@ import type {
   PlaybackStateSnapshot,
   StemName,
 } from "@/types/ipc";
-import {
-  playSongWithOptionalStems,
-  shouldEnqueueInsteadOfReplacingCurrentSong,
-} from "./player-workflows";
+import { createPlaybackWorkflow } from "./playback-workflow";
 
 export const DEFAULT_AIRPLAY_OUTPUT_STATE: AirPlayOutputStateEvent = {
   active: false,
@@ -167,19 +164,26 @@ export function createPlayerStore(
       set(patch);
       syncChannel.publish(createPlayerSyncSnapshot(get()));
     };
-    const playSongAndApplySnapshot = (songId: string) =>
-      playSongWithOptionalStems(songId, {
-        play: api.play,
-        loadStems: api.loadStems,
-        getSeparationStatus: (nextSongId) =>
-          useLibraryStore.getState().separationStatuses[nextSongId],
-        applySnapshot: (nextSnapshot) =>
-          syncPatch({
-            snapshot: nextSnapshot,
-            positionMs: nextSnapshot.position_ms,
-            playingSinceMs: nextSnapshot.is_playing ? performance.now() : null,
-          }),
+    const applySnapshot = (nextSnapshot: PlaybackStateSnapshot) =>
+      syncPatch({
+        snapshot: nextSnapshot,
+        positionMs: nextSnapshot.position_ms,
+        playingSinceMs: nextSnapshot.is_playing ? performance.now() : null,
       });
+
+    const workflow = createPlaybackWorkflow({
+      getPlayerSnapshot: () => get().snapshot,
+      play: api.play,
+      loadStems: api.loadStems,
+      getSeparationStatus: (songId) =>
+        useLibraryStore.getState().separationStatuses[songId],
+      applySnapshot,
+      seek: api.seek,
+      addToQueue: (id) => useQueueStore.getState().addToQueue(id),
+      dequeue: () => useQueueStore.getState().dequeue() ?? null,
+      pushToHistory: (id) => useQueueStore.getState().pushToHistory(id),
+      popFromHistory: () => useQueueStore.getState().popFromHistory() ?? null,
+    });
 
     return {
       snapshot: null,
@@ -191,32 +195,16 @@ export function createPlayerStore(
       airPlayPlainTextPagePendingDirection: null,
 
       playSong: async (songId) => {
-        const { snapshot } = get();
-        if (shouldEnqueueInsteadOfReplacingCurrentSong(snapshot, songId)) {
-          useQueueStore.getState().addToQueue(songId);
-          return;
-        }
-
-        if (snapshot?.song_id) {
-          useQueueStore.getState().pushToHistory(snapshot.song_id);
-        }
-
         try {
-          await playSongAndApplySnapshot(songId);
+          await workflow.playSong(songId);
         } catch (e) {
           notifyError(e, () => get().playSong(songId));
         }
       },
 
       playNow: async (songId) => {
-        const { snapshot } = get();
-
-        if (snapshot?.song_id) {
-          useQueueStore.getState().pushToHistory(snapshot.song_id);
-        }
-
         try {
-          await playSongAndApplySnapshot(songId);
+          await workflow.playNow(songId);
         } catch (e) {
           notifyError(e, () => get().playNow(songId));
         }
@@ -335,57 +323,24 @@ export function createPlayerStore(
       },
 
       playNextFromQueue: async (endedSongId) => {
-        const { snapshot } = get();
-        if (snapshot?.song_id !== endedSongId) return;
-
-        const nextId = useQueueStore.getState().dequeue();
-        if (!nextId) return;
-
-        useQueueStore.getState().pushToHistory(endedSongId);
-
         try {
-          await playSongAndApplySnapshot(nextId);
+          await workflow.playNextFromQueue(endedSongId);
         } catch (e) {
           notifyError(e);
         }
       },
 
       skipForward: async () => {
-        const { snapshot } = get();
-        const nextId = useQueueStore.getState().dequeue();
-        if (!nextId) return;
-
-        if (snapshot?.song_id) {
-          useQueueStore.getState().pushToHistory(snapshot.song_id);
-        }
-
         try {
-          await playSongAndApplySnapshot(nextId);
+          await workflow.skipForward();
         } catch (e) {
           notifyError(e);
         }
       },
 
       skipBack: async () => {
-        const { snapshot } = get();
-        if (!snapshot?.song_id) return;
-
-        const previousSongId = useQueueStore.getState().popFromHistory();
-        if (previousSongId) {
-          try {
-            await playSongAndApplySnapshot(previousSongId);
-          } catch (e) {
-            notifyError(e);
-          }
-          return;
-        }
-
         try {
-          const newSnapshot = await api.seek(0);
-          syncPatch({
-            snapshot: newSnapshot,
-            positionMs: newSnapshot.position_ms,
-          });
+          await workflow.skipBack();
         } catch (e) {
           notifyError(e);
         }
