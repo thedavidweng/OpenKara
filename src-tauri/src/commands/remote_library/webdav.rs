@@ -578,9 +578,9 @@ impl RemoteProvider for WebDAVProvider<'_> {
     fn download_file(&self, relative_path: &str, destination: &Path) -> CommandResult<()> {
         let client = webdav_client()?;
         let url = join_url(&self.secret.root_url, relative_path)?;
-        download_webdav_file(&client, &url, destination, &self.secret.username, &self.secret.password)
-            .and_then(|opt| opt.ok_or_else(|| library_error(format!("remote file not found: {relative_path}"))))
-            .map(|_| ())
+        download_webdav_file(&client, &url, destination, &self.secret.username, &self.secret.password)?
+            .ok_or_else(|| library_error(format!("remote file {relative_path} was not found")))?;
+        Ok(())
     }
 
     fn upload_file(&self, relative_path: &str) -> CommandResult<()> {
