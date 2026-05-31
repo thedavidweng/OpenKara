@@ -1,5 +1,6 @@
 use crate::{
-    commands::error::{library_error, state_lock_error, CommandResult},
+    commands::error::{CommandError, state_lock_error, CommandResult},
+    library::error::LibraryError,
     config::RemoteLibraryProvider,
     AppState,
 };
@@ -70,15 +71,13 @@ pub(crate) fn begin_remote_auth(
                 | StatusCode::FOUND
                 | StatusCode::MOVED_PERMANENTLY => Some(session),
                 StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
-                    return Err(library_error(
-                        "WebDAV authentication failed. Double-check the server URL, username, and password."
-                            .to_owned(),
-                    ))
+                    return Err(CommandError::from(LibraryError::Internal("WebDAV authentication failed. Double-check the server URL, username, and password."
+                            .to_owned(),)))
                 }
                 status => {
-                    return Err(library_error(format!(
+                    return Err(CommandError::from(LibraryError::Internal(format!(
                         "WebDAV server check failed with status {status}"
-                    )))
+                    ))))
                 }
             }
         }
@@ -87,7 +86,7 @@ pub(crate) fn begin_remote_auth(
     if provider == RemoteLibraryProvider::GoogleDrive {
         let google = google_drive_session
             .clone()
-            .ok_or_else(|| library_error("missing Google Drive session state".to_owned()))?;
+            .ok_or_else(|| CommandError::from(LibraryError::Internal("missing Google Drive session state".to_owned())))?;
         let session = RemoteAuthSession {
             provider,
             state: RemoteAuthState::Pending,
@@ -116,7 +115,7 @@ pub(crate) fn begin_remote_auth(
     if provider == RemoteLibraryProvider::Dropbox {
         let dropbox = dropbox_session
             .clone()
-            .ok_or_else(|| library_error("missing Dropbox session state".to_owned()))?;
+            .ok_or_else(|| CommandError::from(LibraryError::Internal("missing Dropbox session state".to_owned())))?;
         let session = RemoteAuthSession {
             provider,
             state: RemoteAuthState::Pending,
@@ -189,7 +188,7 @@ pub(crate) fn poll_remote_auth(
         .map_err(|_| state_lock_error("remote auth session lock was poisoned"))?;
     let session = sessions
         .get(&session_id)
-        .ok_or_else(|| library_error(format!("remote auth session {session_id} was not found")))?;
+        .ok_or_else(|| CommandError::from(LibraryError::Internal(format!("remote auth session {session_id} was not found"))))?;
 
     Ok(RemoteAuthStatus {
         session_id,
@@ -213,7 +212,7 @@ pub(crate) fn cancel_remote_auth(state: &AppState, session_id: String) -> Comman
 pub(crate) fn open_external_url(url: String) -> CommandResult<()> {
     open::that_detached(url.clone()).map_err(|_error| {
         tracing::trace!("failed to open external URL {url}");
-        library_error("Failed to open browser for authentication.".to_owned())
+        CommandError::from(LibraryError::Internal("Failed to open browser for authentication.".to_owned()))
     })
 }
 
@@ -228,7 +227,7 @@ pub(crate) fn oauth_pkce_code_challenge(code_verifier: &str) -> String {
 
 pub(crate) fn form_urlencoded_body(params: &[(&str, String)]) -> CommandResult<String> {
     let mut encoded = Url::parse("https://example.invalid")
-        .map_err(|error| library_error(format!("failed to build token body: {error}")))?;
+        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to build token body: {error}"))))?;
     {
         let mut pairs = encoded.query_pairs_mut();
         for (key, value) in params {

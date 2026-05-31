@@ -9,7 +9,8 @@ mod types;
 mod webdav;
 
 use crate::{
-    commands::error::{library_error, CommandResult},
+    commands::error::{CommandError, CommandResult},
+    library::error::LibraryError,
     config::{RegisteredLibrary, RemoteLibraryProvider},
     AppState,
 };
@@ -35,7 +36,7 @@ impl RequestSendExt for reqwest::blocking::RequestBuilder {
     {
         self.send().map_err(|_error| {
             tracing::trace!("{op} request failed");
-            crate::commands::error::library_error(format!("{op} could not be completed"))
+            crate::commands::error::CommandError::from(LibraryError::Internal(format!("{op} could not be completed")))
         })
     }
 }
@@ -117,7 +118,7 @@ pub fn register_remote_library(
     let app_data_dir = app_handle
         .path()
         .app_data_dir()
-        .map_err(|error| library_error(error.to_string()))?;
+        .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
     registry::register_remote_library(
         &state,
         &app_data_dir,
@@ -140,7 +141,7 @@ pub fn reauthorize_remote_library(
     let app_data_dir = app_handle
         .path()
         .app_data_dir()
-        .map_err(|error| library_error(error.to_string()))?;
+        .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
     registry::reauthorize_remote_library(
         &state,
         &app_data_dir,

@@ -1,4 +1,5 @@
-use openkara_lib::commands::error::{separation_error, ErrorCode, FallbackAction};
+use openkara_lib::commands::error::{CommandError, ErrorCode, FallbackAction};
+use openkara_lib::separator::error::SeparationError;
 use openkara_lib::commands::separation::{
     completed_status, failed_status, idle_status, running_status, SeparationState,
 };
@@ -33,7 +34,7 @@ fn separation_status_helpers_cover_idle_running_completed_and_failed_states() {
         Some("/tmp/accompaniment.ogg")
     );
 
-    let failed = failed_status("song-a", separation_error("boom"));
+    let failed = failed_status("song-a", CommandError::from(SeparationError::Failed("boom".to_owned())));
     assert_eq!(failed.state, SeparationState::Failed);
     let failed_error = failed
         .error

@@ -1,5 +1,6 @@
-use crate::commands::error::CommandResult;
+use crate::commands::error::{CommandError, CommandResult};
 use crate::config::RegisteredLibrary;
+use crate::library::error::LibraryError;
 use std::path::Path;
 
 /// Unified interface for remote storage providers (Google Drive, Dropbox, WebDAV).
@@ -36,7 +37,6 @@ pub(crate) fn create_provider<'a>(
     use super::dropbox;
     use super::google_drive;
     use super::webdav;
-    use crate::commands::error::library_error;
     use crate::config::RemoteLibraryProvider;
 
     match library.provider() {
@@ -64,8 +64,8 @@ pub(crate) fn create_provider<'a>(
                 library,
             )))
         }
-        None => Err(library_error(
+        None => Err(CommandError::from(LibraryError::Internal(
             "the target library is not a remote library".to_owned(),
-        )),
+        ))),
     }
 }
