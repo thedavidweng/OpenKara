@@ -549,8 +549,9 @@ fn airplay_audience_playlist_url(base_url: &str) -> String {
 }
 
 fn ensure_stream_server(state: &AppState) -> CommandResult<(PathBuf, String)> {
-    let root_dir = default_stream_root(&state.app_data_dir);
+    let root_dir = default_stream_root(&state.shell.app_data_dir);
     let mut server = state
+        .airplay
         .airplay_http_server
         .lock()
         .map_err(|_| internal_error("airplay http server lock was poisoned".to_owned()))?;
@@ -564,7 +565,7 @@ fn ensure_stream_server(state: &AppState) -> CommandResult<(PathBuf, String)> {
 
     let base_url = server
         .as_ref()
-        .map(|server| server.base_url().to_owned())
+        .map(|server: &AirPlayHttpServer| server.base_url().to_owned())
         .ok_or_else(|| internal_error("airplay server handle was not initialized".to_owned()))?;
 
     Ok((root_dir, airplay_audience_playlist_url(&base_url)))
@@ -801,11 +802,11 @@ pub fn sync_airplay_route_picker(
     webview: Webview,
     bounds: Option<AirPlayRoutePickerBounds>,
 ) -> CommandResult<()> {
-    remember_runtime_handles(&app_handle, &state.airplay_local_output_suppressed);
+    remember_runtime_handles(&app_handle, &state.airplay.airplay_local_output_suppressed);
     ensure_airplay_audience_coordinator_started(
-        state.playback.clone(),
-        state.cdg_state.clone(),
-        state.airplay_stream_generation.clone(),
+        state.playback.playback.clone(),
+        state.playback.cdg_state.clone(),
+        state.airplay.airplay_stream_generation.clone(),
     );
     let (stream_root, playlist_url) = ensure_stream_server(&state)?;
     native::sync_route_picker(&webview, &stream_root, &playlist_url, bounds)
@@ -817,11 +818,11 @@ pub fn sync_airplay_audience_state(
     app_handle: AppHandle,
     payload: AirPlayAudienceStatePayload,
 ) -> CommandResult<()> {
-    remember_runtime_handles(&app_handle, &state.airplay_local_output_suppressed);
+    remember_runtime_handles(&app_handle, &state.airplay.airplay_local_output_suppressed);
     ensure_airplay_audience_coordinator_started(
-        state.playback.clone(),
-        state.cdg_state.clone(),
-        state.airplay_stream_generation.clone(),
+        state.playback.playback.clone(),
+        state.playback.cdg_state.clone(),
+        state.airplay.airplay_stream_generation.clone(),
     );
 
     if let Ok(mut runtime_state) = airplay_runtime_state().lock() {
@@ -831,16 +832,19 @@ pub fn sync_airplay_audience_state(
             .map(|previous| previous.mode);
         runtime_state.latest_payload = Some(payload.clone());
         state
+            .airplay
             .airplay_audience_active
             .store(payload.mode != AirPlayAudienceMode::Idle, Ordering::SeqCst);
         if previous_mode != Some(payload.mode) {
             state
+                .airplay
                 .airplay_stream_generation
                 .fetch_add(1, Ordering::SeqCst);
         }
     }
 
     let snapshot = state
+        .playback
         .playback
         .lock()
         .map_err(|_| internal_error("playback controller lock was poisoned".to_owned()))?
@@ -849,9 +853,9 @@ pub fn sync_airplay_audience_state(
     let runtime = build_runtime_payload(
         Some(&payload),
         &snapshot,
-        state.airplay_stream_generation.load(Ordering::SeqCst),
+        state.airplay.airplay_stream_generation.load(Ordering::SeqCst),
     );
-    let cdg_frame = build_current_cdg_frame(&state.cdg_state, &runtime);
+    let cdg_frame = build_current_cdg_frame(&state.playback.cdg_state, &runtime);
 
     native::sync_audience_config(&scene_config)?;
     native::sync_audience_runtime(&runtime, cdg_frame.as_deref())
@@ -1116,15 +1120,16 @@ pub fn step_airplay_plain_text_page(
 
     let snapshot = state
         .playback
+        .playback
         .lock()
         .map_err(|_| internal_error("playback controller lock was poisoned".to_owned()))?
         .snapshot(monotonic_now_ms());
     let runtime = build_runtime_payload(
         Some(&scene),
         &snapshot,
-        state.airplay_stream_generation.load(Ordering::SeqCst),
+        state.airplay.airplay_stream_generation.load(Ordering::SeqCst),
     );
-    let cdg_frame = build_current_cdg_frame(&state.cdg_state, &runtime);
+    let cdg_frame = build_current_cdg_frame(&state.playback.cdg_state, &runtime);
     native::sync_audience_runtime(&runtime, cdg_frame.as_deref())?;
 
     Ok(())

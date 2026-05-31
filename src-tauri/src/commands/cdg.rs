@@ -1,7 +1,7 @@
 use crate::{
     cdg::{CdgPacket, CdgRenderer},
     commands::error::{internal_error, CommandResult},
-    AppState,
+    state::AppState,
 };
 use tauri::{ipc::Response, State};
 
@@ -98,6 +98,7 @@ pub fn render_cdg_frame_bytes(
 #[tauri::command]
 pub fn get_cdg_frame(state: State<'_, AppState>, position_ms: u64) -> CommandResult<Response> {
     let mut cdg_guard = state
+        .playback
         .cdg_state
         .lock()
         .map_err(|_| internal_error("CDG state lock was poisoned".to_owned()))?;

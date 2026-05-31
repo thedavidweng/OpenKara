@@ -39,7 +39,7 @@ pub struct ModelBootstrapStatusSnapshot {
 pub fn get_model_bootstrap_status(
     state: State<'_, AppState>,
 ) -> CommandResult<ModelBootstrapStatusSnapshot> {
-    get_model_bootstrap_status_from_state(&state.model_bootstrap_status)
+    get_model_bootstrap_status_from_state(&state.shell.model_bootstrap_status)
 }
 
 pub fn get_model_bootstrap_status_from_state(
@@ -237,12 +237,12 @@ pub fn download_model(
     let model_variant = ModelVariant::parse(&variant)
         .ok_or_else(|| internal_error(format!("invalid model variant: {variant}")))?;
     let descriptor = separator::bootstrap::descriptor_for(model_variant);
-    let model_path = separator::bootstrap::managed_model_path_for(&state.app_data_dir, descriptor);
-    let should_publish_status = is_active_variant(&state.app_data_dir, model_variant);
+    let model_path = separator::bootstrap::managed_model_path_for(&state.shell.app_data_dir, descriptor);
+    let should_publish_status = is_active_variant(&state.shell.app_data_dir, model_variant);
 
     if separator::bootstrap::resolve_existing_model_path(
         &model_path,
-        &state.app_data_dir.join("__no_dev_fallback_model__"),
+        &state.shell.app_data_dir.join("__no_dev_fallback_model__"),
         descriptor.sha256,
     )
     .map_err(|error| internal_error(format!("failed to inspect model status: {error}")))?
@@ -254,7 +254,7 @@ pub fn download_model(
         return Ok(ready_status(model_path.display().to_string()));
     }
 
-    let status = Arc::clone(&state.model_bootstrap_status);
+    let status = Arc::clone(&state.shell.model_bootstrap_status);
     let initial = downloading_status(model_path.display().to_string(), 0, None);
     if should_publish_status {
         // Bootstrap status is single-slot state for the currently active model.
@@ -270,7 +270,7 @@ pub fn download_model(
     let progress_path = model_path.display().to_string();
     let should_publish_status_for_task = should_publish_status;
     let task_variant = model_variant;
-    let task_app_data_dir = state.app_data_dir.clone();
+    let task_app_data_dir = state.shell.app_data_dir.clone();
 
     tauri::async_runtime::spawn(async move {
         let blocking_status = Arc::clone(&status);
@@ -353,7 +353,7 @@ pub fn delete_model(
         .map_err(|e| internal_error(format!("failed to delete model: {e}")))?;
 
     let snapshot =
-        sync_active_model_bootstrap_status(&app_data_dir, &state.model_bootstrap_status)?;
+        sync_active_model_bootstrap_status(&app_data_dir, &state.shell.model_bootstrap_status)?;
     emit_model_bootstrap_snapshot(&app_handle, &snapshot);
 
     if matches!(snapshot.state, ModelBootstrapState::Pending) {
@@ -369,7 +369,7 @@ pub fn delete_model(
                 app_handle.clone(),
                 managed,
                 descriptor,
-                Arc::clone(&state.model_bootstrap_status),
+                Arc::clone(&state.shell.model_bootstrap_status),
             );
         }
     }
