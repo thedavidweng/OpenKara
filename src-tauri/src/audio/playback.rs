@@ -1,5 +1,5 @@
 use crate::audio::decode::DecodedAudio;
-use anyhow::{bail, Result};
+use crate::audio::error::PlaybackError;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 use std::time::Instant;
@@ -145,11 +145,11 @@ impl PlaybackController {
         self.snapshot(monotonic_now_ms())
     }
 
-    pub fn play(&mut self, now_ms: u64) -> Result<PlaybackStateSnapshot> {
+    pub fn play(&mut self, now_ms: u64) -> Result<PlaybackStateSnapshot, PlaybackError> {
         let track = self
             .current_track
             .as_mut()
-            .ok_or_else(|| anyhow::anyhow!("no track is loaded"))?;
+            .ok_or_else(|| PlaybackError::InvalidPlaybackState("no track is loaded".to_owned()))?;
         let position_ms = track.position_ms(now_ms);
         track.base_position_ms = position_ms;
         track.started_at_ms = Some(now_ms);
@@ -157,11 +157,11 @@ impl PlaybackController {
         Ok(self.snapshot(now_ms))
     }
 
-    pub fn pause(&mut self, now_ms: u64) -> Result<PlaybackStateSnapshot> {
+    pub fn pause(&mut self, now_ms: u64) -> Result<PlaybackStateSnapshot, PlaybackError> {
         let track = self
             .current_track
             .as_mut()
-            .ok_or_else(|| anyhow::anyhow!("no track is loaded"))?;
+            .ok_or_else(|| PlaybackError::InvalidPlaybackState("no track is loaded".to_owned()))?;
         let position_ms = track.position_ms(now_ms);
         track.base_position_ms = position_ms;
         track.started_at_ms = None;
@@ -169,11 +169,11 @@ impl PlaybackController {
         Ok(self.snapshot(now_ms))
     }
 
-    pub fn seek(&mut self, target_ms: u64, now_ms: u64) -> Result<PlaybackStateSnapshot> {
+    pub fn seek(&mut self, target_ms: u64, now_ms: u64) -> Result<PlaybackStateSnapshot, PlaybackError> {
         let track = self
             .current_track
             .as_mut()
-            .ok_or_else(|| anyhow::anyhow!("no track is loaded"))?;
+            .ok_or_else(|| PlaybackError::InvalidPlaybackState("no track is loaded".to_owned()))?;
         let clamped_ms = target_ms.min(track.duration_ms());
         track.base_position_ms = clamped_ms;
         if track.started_at_ms.is_some() {
@@ -186,12 +186,12 @@ impl PlaybackController {
         Ok(self.snapshot(now_ms))
     }
 
-    pub fn set_volume(&mut self, level: f32) -> Result<PlaybackStateSnapshot> {
+    pub fn set_volume(&mut self, level: f32) -> Result<PlaybackStateSnapshot, PlaybackError> {
         self.volume = level.clamp(0.0, 1.0);
         Ok(self.snapshot(monotonic_now_ms()))
     }
 
-    pub fn set_stem_volume(&mut self, stem: StemName, level: f32) -> Result<PlaybackStateSnapshot> {
+    pub fn set_stem_volume(&mut self, stem: StemName, level: f32) -> Result<PlaybackStateSnapshot, PlaybackError> {
         let level = level.clamp(0.0, 1.0);
         match stem {
             StemName::Vocals => self.stem_volumes.vocals = level,
@@ -202,17 +202,15 @@ impl PlaybackController {
         Ok(self.snapshot(monotonic_now_ms()))
     }
 
-    pub fn attach_stems(&mut self, song_id: &str, stems: LoadedStems) -> Result<()> {
+    pub fn attach_stems(&mut self, song_id: &str, stems: LoadedStems) -> Result<(), PlaybackError> {
         let track = self
             .current_track
             .as_mut()
-            .ok_or_else(|| anyhow::anyhow!("no track is loaded"))?;
+            .ok_or_else(|| PlaybackError::InvalidPlaybackState("no track is loaded".to_owned()))?;
         if track.song_id != song_id {
-            bail!(
-                "cannot attach stems for song {} while {} is loaded",
-                song_id,
-                track.song_id
-            );
+            return Err(PlaybackError::InvalidPlaybackState(
+                format!("cannot attach stems for song {} while {} is loaded", song_id, track.song_id)
+            ));
         }
         track.stems = Some(stems);
         Ok(())

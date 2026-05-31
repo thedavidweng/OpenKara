@@ -98,22 +98,22 @@ pub fn model_bootstrap_error(message: impl ToString) -> CommandError {
 impl From<crate::separator::error::SeparationError> for CommandError {
     fn from(err: crate::separator::error::SeparationError) -> Self {
         use crate::separator::error::SeparationError::*;
-        match err {
-            SongNotFound(id) => CommandError::new(
+        match &err {
+            SongNotFound(_) => CommandError::new(
                 ErrorCode::SongNotFound,
-                format!("song {id} was not found in the library"),
+                err.to_string(),
                 false,
                 FallbackAction::RefreshLibrary,
             ),
-            AudioDecodeFailed(msg) => CommandError::new(
+            AudioDecodeFailed(_) => CommandError::new(
                 ErrorCode::AudioDecodeFailed,
-                msg,
+                err.to_string(),
                 false,
                 FallbackAction::ReimportSong,
             ),
-            Failed(msg) => CommandError::new(
+            Failed(_) => CommandError::new(
                 ErrorCode::SeparationFailed,
-                msg,
+                err.to_string(),
                 true,
                 FallbackAction::Retry,
             ),
@@ -124,40 +124,40 @@ impl From<crate::separator::error::SeparationError> for CommandError {
 impl From<crate::audio::error::PlaybackError> for CommandError {
     fn from(err: crate::audio::error::PlaybackError) -> Self {
         use crate::audio::error::PlaybackError::*;
-        match err {
-            SongNotFound(id) => CommandError::new(
+        match &err {
+            SongNotFound(_) => CommandError::new(
                 ErrorCode::SongNotFound,
-                format!("song {id} was not found in the library"),
+                err.to_string(),
                 false,
                 FallbackAction::RefreshLibrary,
             ),
-            AudioDecodeFailed(msg) => CommandError::new(
+            AudioDecodeFailed(_) => CommandError::new(
                 ErrorCode::AudioDecodeFailed,
-                msg,
+                err.to_string(),
                 false,
                 FallbackAction::ReimportSong,
             ),
-            AudioOutputUnavailable(msg) => CommandError::new(
+            AudioOutputUnavailable(_) => CommandError::new(
                 ErrorCode::AudioOutputUnavailable,
-                msg,
+                err.to_string(),
                 true,
                 FallbackAction::CheckAudioOutputDevice,
             ),
-            KaraokeNotReady(msg) => CommandError::new(
+            KaraokeNotReady(_) => CommandError::new(
                 ErrorCode::KaraokeNotReady,
-                msg,
+                err.to_string(),
                 true,
                 FallbackAction::StayInOriginalMode,
             ),
-            InvalidPlaybackState(msg) => CommandError::new(
+            InvalidPlaybackState(_) => CommandError::new(
                 ErrorCode::InvalidPlaybackState,
-                msg,
+                err.to_string(),
                 false,
                 FallbackAction::KeepCurrentState,
             ),
-            Internal(msg) => CommandError::new(
+            Internal(_) => CommandError::new(
                 ErrorCode::Internal,
-                msg,
+                err.to_string(),
                 true,
                 FallbackAction::Retry,
             ),
@@ -184,27 +184,27 @@ impl From<crate::library::error::LibraryError> for CommandError {
 impl From<crate::lyrics::error::LyricsError> for CommandError {
     fn from(err: crate::lyrics::error::LyricsError) -> Self {
         use crate::lyrics::error::LyricsError::*;
-        match err {
-            SongNotFound(id) => CommandError::new(
+        match &err {
+            SongNotFound(_) => CommandError::new(
                 ErrorCode::SongNotFound,
-                format!("song {id} was not found in the library"),
+                err.to_string(),
                 false,
                 FallbackAction::RefreshLibrary,
             ),
-            LyricsNotReady(msg) => CommandError::new(
+            LyricsNotReady(_) => CommandError::new(
                 ErrorCode::LyricsNotReady,
-                msg,
+                err.to_string(),
                 true,
                 FallbackAction::ShowEmptyState,
             ),
-            NetworkUnavailable(msg) => CommandError::new(
+            NetworkUnavailable(_) => CommandError::new(
                 ErrorCode::NetworkUnavailable,
-                msg,
+                err.to_string(),
                 true,
                 FallbackAction::Retry,
             ),
-            DatabaseUnavailable(msg) => database_error(msg),
-            Internal(msg) => internal_error(msg),
+            DatabaseUnavailable(_) => database_error(err.to_string()),
+            Internal(_) => internal_error(err.to_string()),
         }
     }
 }
