@@ -44,23 +44,29 @@ impl TimedLyricsProvider<'_> {
 
     fn fetch_timed_lrc(self, query: &LyricsLookupQuery) -> Result<Option<String>> {
         match self {
-            Self::LrcLib(client) => client.fetch_by_track(query).map(|result| {
-                result.and_then(|lyrics| {
-                    lyrics
-                        .synced_lyrics
-                        .filter(|lyrics| !lyrics.trim().is_empty())
+            Self::LrcLib(client) => client
+                .fetch_by_track(query)
+                .map(|result| {
+                    result.and_then(|lyrics| {
+                        lyrics
+                            .synced_lyrics
+                            .filter(|lyrics| !lyrics.trim().is_empty())
+                    })
                 })
-            }),
-            Self::LrcApi(client) => client.fetch_by_track(query).map(|result| {
-                result.and_then(|lyrics| {
-                    let lrc = lyrics.lrc.trim();
-                    if lrc.is_empty() {
-                        None
-                    } else {
-                        Some(lyrics.lrc)
-                    }
+                .map_err(Into::into),
+            Self::LrcApi(client) => client
+                .fetch_by_track(query)
+                .map(|result| {
+                    result.and_then(|lyrics| {
+                        let lrc = lyrics.lrc.trim();
+                        if lrc.is_empty() {
+                            None
+                        } else {
+                            Some(lyrics.lrc)
+                        }
+                    })
                 })
-            }),
+                .map_err(Into::into),
         }
     }
 }

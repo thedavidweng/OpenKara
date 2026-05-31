@@ -1,6 +1,7 @@
 use crate::{
     cache,
-    commands::error::{library_error, CommandResult},
+    commands::error::{CommandError, CommandResult},
+    library::error::LibraryError,
     config::RegisteredLibrary,
     library_root::LibraryRoot,
 };
@@ -40,7 +41,7 @@ pub(crate) fn build_dropbox_authorization_url(
     session: &DropboxSessionData,
 ) -> CommandResult<String> {
     let mut url = Url::parse("https://www.dropbox.com/oauth2/authorize")
-        .map_err(|error| library_error(format!("failed to build Dropbox auth URL: {error}")))?;
+        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to build Dropbox auth URL: {error}"))))?;
     url.query_pairs_mut()
         .append_pair("client_id", &session.app_key)
         .append_pair("redirect_uri", &session.redirect_uri)
@@ -61,9 +62,9 @@ pub(crate) fn dropbox_provider_credentials_from_env(
     app_secret: Option<String>,
 ) -> CommandResult<DropboxProviderCredentials> {
     let Some(app_key) = app_key.filter(|value| !value.trim().is_empty()) else {
-        return Err(library_error(format!(
+        return Err(CommandError::from(LibraryError::Internal(format!(
             "Dropbox is not available because the official app credential is missing. Set {DROPBOX_APP_KEY_ENV} before starting OpenKara."
-        )));
+        ))));
     };
 
     Ok(DropboxProviderCredentials {
@@ -81,16 +82,16 @@ fn load_dropbox_provider_credentials_from_resource_dir(
     }
 
     let raw = fs::read_to_string(&path).map_err(|error| {
-        library_error(format!(
+        CommandError::from(LibraryError::Internal(format!(
             "failed to read bundled Dropbox OAuth client metadata at {}: {error}",
             path.display()
-        ))
+        )))
     })?;
     let bundled: BundledDropboxOAuthClientFile = serde_json::from_str(&raw).map_err(|error| {
-        library_error(format!(
+        CommandError::from(LibraryError::Internal(format!(
             "failed to parse bundled Dropbox OAuth client metadata at {}: {error}",
             path.display()
-        ))
+        )))
     })?;
 
     dropbox_provider_credentials_from_env(Some(bundled.app_key), bundled.app_secret).map(Some)
@@ -159,19 +160,17 @@ pub(crate) fn load_dropbox_secret(
             access_token_expires_at_ms: secret.access_token_expires_at_ms,
         });
     }
-    Err(library_error(
-        "missing stored credentials for the remote repository".to_owned(),
-    ))
+    Err(CommandError::from(LibraryError::Internal("missing stored credentials for the remote repository".to_owned(),)))
 }
 
 fn dropbox_api_url(path: &str) -> CommandResult<Url> {
     Url::parse(&format!("https://api.dropboxapi.com{path}"))
-        .map_err(|error| library_error(format!("failed to build Dropbox URL: {error}")))
+        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to build Dropbox URL: {error}"))))
 }
 
 fn dropbox_content_url(path: &str) -> CommandResult<Url> {
     Url::parse(&format!("https://content.dropboxapi.com{path}"))
-        .map_err(|error| library_error(format!("failed to build Dropbox content URL: {error}")))
+        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to build Dropbox content URL: {error}"))))
 }
 
 fn dropbox_refresh_access_token(
@@ -203,20 +202,20 @@ fn dropbox_refresh_access_token(
         .body(body)
         .send()
         .map_err(|e| {
-            library_error(format!(
+            CommandError::from(LibraryError::Internal(format!(
                 "failed to refresh Dropbox access token: {}",
                 e.without_url()
-            ))
+            )))
         })?;
     if !response.status().is_success() {
-        return Err(library_error(format!(
+        return Err(CommandError::from(LibraryError::Internal(format!(
             "Dropbox token refresh failed with status {}",
             response.status()
-        )));
+        ))));
     }
 
     let body: DropboxTokenResponse = response.json().map_err(|error| {
-        library_error(format!("failed to parse Dropbox token response: {error}"))
+        CommandError::from(LibraryError::Internal(format!("failed to parse Dropbox token response: {error}")))
     })?;
     secret.access_token = body.access_token;
     secret.access_token_expires_at_ms = body
@@ -270,16 +269,16 @@ fn dropbox_exchange_code_for_tokens(
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(body)
         .send()
-        .map_err(|error| library_error(format!("failed to exchange Dropbox auth code: {error}")))?;
+        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to exchange Dropbox auth code: {error}"))))?;
     if !response.status().is_success() {
-        return Err(library_error(format!(
+        return Err(CommandError::from(LibraryError::Internal(format!(
             "Dropbox auth code exchange failed with status {}",
             response.status()
-        )));
+        ))));
     }
     response
         .json()
-        .map_err(|error| library_error(format!("failed to parse Dropbox token response: {error}")))
+        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to parse Dropbox token response: {error}"))))
 }
 
 pub(crate) fn spawn_dropbox_auth_worker(
@@ -292,12 +291,12 @@ pub(crate) fn spawn_dropbox_auth_worker(
         DROPBOX_FIXED_REDIRECT_PORT,
     ))
     .map_err(|error| {
-        library_error(format!(
+        CommandError::from(LibraryError::Internal(format!(
             "failed to bind Dropbox OAuth listener on {DROPBOX_FIXED_REDIRECT_URI}: {error}"
-        ))
+        )))
     })?;
     let server = Server::from_listener(listener, None).map_err(|error| {
-        library_error(format!("failed to start Dropbox OAuth listener: {error}"))
+        CommandError::from(LibraryError::Internal(format!("failed to start Dropbox OAuth listener: {error}")))
     })?;
 
     let mut session = session;
@@ -317,10 +316,8 @@ pub(crate) fn spawn_dropbox_auth_worker(
                     if started_at.elapsed() >= std::time::Duration::from_secs(300) {
                         update_remote_auth_session(&sessions, &session_id, |state| {
                             state.state = RemoteAuthState::Failed;
-                            state.error = Some(library_error(
-                                "Dropbox sign-in timed out before the browser returned to OpenKara."
-                                    .to_owned(),
-                            ));
+                            state.error = Some(CommandError::from(LibraryError::Internal("Dropbox sign-in timed out before the browser returned to OpenKara."
+                                    .to_owned(),)));
                         });
                         return;
                     }
@@ -328,9 +325,9 @@ pub(crate) fn spawn_dropbox_auth_worker(
                 Err(error) => {
                     update_remote_auth_session(&sessions, &session_id, |state| {
                         state.state = RemoteAuthState::Failed;
-                        state.error = Some(library_error(format!(
+                        state.error = Some(CommandError::from(LibraryError::Internal(format!(
                             "Dropbox sign-in listener failed: {error}"
-                        )));
+                        ))));
                     });
                     return;
                 }
@@ -348,9 +345,9 @@ pub(crate) fn spawn_dropbox_auth_worker(
                 let _ = request.respond(oauth_callback_response("Invalid OAuth callback."));
                 update_remote_auth_session(&sessions, &session_id, |state| {
                     state.state = RemoteAuthState::Failed;
-                    state.error = Some(library_error(format!(
+                    state.error = Some(CommandError::from(LibraryError::Internal(format!(
                         "failed to parse Dropbox OAuth callback: {error}"
-                    )));
+                    ))));
                 });
                 return;
             }
@@ -361,10 +358,8 @@ pub(crate) fn spawn_dropbox_auth_worker(
             let _ = request.respond(oauth_callback_response("OAuth state mismatch."));
             update_remote_auth_session(&sessions, &session_id, |state| {
                 state.state = RemoteAuthState::Failed;
-                state.error = Some(library_error(
-                    "Dropbox sign-in failed because the OAuth state token did not match."
-                        .to_owned(),
-                ));
+                state.error = Some(CommandError::from(LibraryError::Internal("Dropbox sign-in failed because the OAuth state token did not match."
+                        .to_owned(),)));
             });
             return;
         }
@@ -375,7 +370,7 @@ pub(crate) fn spawn_dropbox_auth_worker(
             ));
             update_remote_auth_session(&sessions, &session_id, |state| {
                 state.state = RemoteAuthState::Failed;
-                state.error = Some(library_error(format!("Dropbox sign-in failed: {error}")));
+                state.error = Some(CommandError::from(LibraryError::Internal(format!("Dropbox sign-in failed: {error}"))));
             });
             return;
         }
@@ -386,16 +381,14 @@ pub(crate) fn spawn_dropbox_auth_worker(
             ));
             update_remote_auth_session(&sessions, &session_id, |state| {
                 state.state = RemoteAuthState::Failed;
-                state.error = Some(library_error(
-                    "Dropbox sign-in did not return an authorization code.".to_owned(),
-                ));
+                state.error = Some(CommandError::from(LibraryError::Internal("Dropbox sign-in did not return an authorization code.".to_owned(),)));
             });
             return;
         };
 
         match dropbox_exchange_code_for_tokens(&worker_session, code).and_then(|tokens| {
             let account_id = tokens.account_id.clone().ok_or_else(|| {
-                library_error("Dropbox token response did not include an account ID.".to_owned())
+                CommandError::from(LibraryError::Internal("Dropbox token response did not include an account ID.".to_owned()))
             })?;
             Ok((tokens, account_id))
         }) {
@@ -471,12 +464,12 @@ pub(crate) fn dropbox_get_metadata(
         StatusCode::OK => response
             .json()
             .map(Some)
-            .map_err(|error| library_error(format!("failed to parse Dropbox metadata: {error}"))),
+            .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to parse Dropbox metadata: {error}")))),
         StatusCode::CONFLICT => Ok(None),
-        status => Err(library_error(format!(
+        status => Err(CommandError::from(LibraryError::Internal(format!(
             "Dropbox metadata lookup failed with status {}",
             status
-        ))),
+        )))),
     }
 }
 
@@ -492,12 +485,12 @@ fn dropbox_get_metadata_with_token(
         StatusCode::OK => response
             .json()
             .map(Some)
-            .map_err(|error| library_error(format!("failed to parse Dropbox metadata: {error}"))),
+            .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to parse Dropbox metadata: {error}")))),
         StatusCode::CONFLICT => Ok(None),
-        status => Err(library_error(format!(
+        status => Err(CommandError::from(LibraryError::Internal(format!(
             "Dropbox metadata lookup failed with status {}",
             status
-        ))),
+        )))),
     }
 }
 
@@ -511,18 +504,18 @@ fn dropbox_create_folder(
         .json(&serde_json::json!({ "path": path, "autorename": false }))
         .send_network("create Dropbox folder")?;
     if !response.status().is_success() {
-        return Err(library_error(format!(
+        return Err(CommandError::from(LibraryError::Internal(format!(
             "Dropbox folder creation failed with status {}",
             response.status()
-        )));
+        ))));
     }
     response
         .json::<DropboxCreateFolderResponse>()
         .map(|body| body.metadata)
         .map_err(|error| {
-            library_error(format!(
+            CommandError::from(LibraryError::Internal(format!(
                 "failed to parse Dropbox folder creation response: {error}"
-            ))
+            )))
         })
 }
 
@@ -535,18 +528,18 @@ fn dropbox_create_folder_with_token(
         .json(&serde_json::json!({ "path": path, "autorename": false }))
         .send_network("create Dropbox folder")?;
     if !response.status().is_success() {
-        return Err(library_error(format!(
+        return Err(CommandError::from(LibraryError::Internal(format!(
             "Dropbox folder creation failed with status {}",
             response.status()
-        )));
+        ))));
     }
     response
         .json::<DropboxCreateFolderResponse>()
         .map(|body| body.metadata)
         .map_err(|error| {
-            library_error(format!(
+            CommandError::from(LibraryError::Internal(format!(
                 "failed to parse Dropbox folder creation response: {error}"
-            ))
+            )))
         })
 }
 
@@ -612,14 +605,14 @@ fn dropbox_upload_file_bytes(
         .body(bytes)
         .send_network("upload Dropbox file bytes")?;
     if !response.status().is_success() {
-        return Err(library_error(format!(
+        return Err(CommandError::from(LibraryError::Internal(format!(
             "Dropbox file upload failed with status {}",
             response.status()
-        )));
+        ))));
     }
     response
         .json()
-        .map_err(|error| library_error(format!("failed to parse Dropbox upload response: {error}")))
+        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to parse Dropbox upload response: {error}"))))
 }
 
 pub(crate) fn dropbox_download_file(
@@ -636,31 +629,31 @@ pub(crate) fn dropbox_download_file(
         )
         .send_network("download Dropbox file")?;
     if !response.status().is_success() {
-        return Err(library_error(format!(
+        return Err(CommandError::from(LibraryError::Internal(format!(
             "Dropbox download failed with status {}",
             response.status()
-        )));
+        ))));
     }
 
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(|error| {
-            library_error(format!("failed to create {}: {error}", parent.display()))
+            CommandError::from(LibraryError::Internal(format!("failed to create {}: {error}", parent.display())))
         })?;
     }
     let bytes = response
         .bytes()
-        .map_err(|error| library_error(format!("failed to read Dropbox response: {error}")))?;
+        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to read Dropbox response: {error}"))))?;
     let mut file = fs::File::create(destination).map_err(|error| {
-        library_error(format!(
+        CommandError::from(LibraryError::Internal(format!(
             "failed to create {}: {error}",
             destination.display()
-        ))
+        )))
     })?;
     file.write_all(bytes.as_ref()).map_err(|error| {
-        library_error(format!(
+        CommandError::from(LibraryError::Internal(format!(
             "failed to write {}: {error}",
             destination.display()
-        ))
+        )))
     })?;
     Ok(())
 }
@@ -674,10 +667,10 @@ pub(crate) fn dropbox_upload_relative_file_to_remote(
 ) -> CommandResult<()> {
     let local_root = library
         .working_copy_root()
-        .ok_or_else(|| library_error("remote repository is missing a cached working copy"))?;
+        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a cached working copy".to_string())))?;
     let source = local_root.join(relative_path);
     let bytes = fs::read(&source)
-        .map_err(|error| library_error(format!("failed to read {}: {error}", source.display())))?;
+        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to read {}: {error}", source.display()))))?;
     let mut secret = secret.clone();
     if let Some(parent) = Path::new(relative_path).parent() {
         let parent_path = parent.to_string_lossy().replace('\\', "/");
@@ -703,19 +696,19 @@ pub(crate) fn dropbox_upload_directory_to_remote(
 ) -> CommandResult<()> {
     let local_root = library
         .working_copy_root()
-        .ok_or_else(|| library_error("remote repository is missing a cached working copy"))?;
+        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a cached working copy".to_string())))?;
     let base = local_root.join(relative_directory);
     if !base.exists() {
         return Ok(());
     }
     for entry in fs::read_dir(&base)
-        .map_err(|error| library_error(format!("failed to read {}: {error}", base.display())))?
+        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to read {}: {error}", base.display()))))?
     {
-        let entry = entry.map_err(|error| library_error(error.to_string()))?;
+        let entry = entry.map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
         let path = entry.path();
         let relative = path
             .strip_prefix(&local_root)
-            .map_err(|error| library_error(error.to_string()))?
+            .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?
             .to_string_lossy()
             .replace('\\', "/");
         if path.is_dir() {
@@ -746,17 +739,17 @@ pub(crate) fn initialize_or_sync_dropbox_library(
 ) -> CommandResult<Option<String>> {
     let root_path = library
         .working_copy_root()
-        .ok_or_else(|| library_error("remote repository is missing a cached working copy"))?;
+        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a cached working copy".to_string())))?;
     let root = if root_path.join(".openkara-library").exists() {
-        LibraryRoot::open(&root_path).map_err(library_error)?
+        LibraryRoot::open(&root_path).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
     } else {
-        LibraryRoot::create(&root_path).map_err(library_error)?
+        LibraryRoot::create(&root_path).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
     };
-    cache::initialize_library_database(&root.database_path()).map_err(library_error)?;
+    cache::initialize_library_database(&root.database_path()).map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
 
     let remote_root_path = library
         .remote_root_locator()
-        .ok_or_else(|| library_error("remote repository is missing a remote locator".to_owned()))?;
+        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned())))?;
     let mut secret = secret.clone();
     dropbox_ensure_folder(app_data_dir, &mut secret, remote_root_path)?;
     for directory in ["media", "media-g", "stems"] {
@@ -771,10 +764,10 @@ pub(crate) fn initialize_or_sync_dropbox_library(
     if dropbox_get_metadata(app_data_dir, &mut secret, &marker_remote_path)?.is_none() {
         let marker_path = root.resolve(".openkara-library");
         fs::write(&marker_path, b"openkara remote repository\n").map_err(|error| {
-            library_error(format!(
+            CommandError::from(LibraryError::Internal(format!(
                 "failed to write {}: {error}",
                 marker_path.display()
-            ))
+            )))
         })?;
         dropbox_upload_relative_file_to_remote(
             app_data_dir,
@@ -806,10 +799,8 @@ pub(crate) fn initialize_or_sync_dropbox_library(
         )?;
         let metadata = dropbox_get_metadata(app_data_dir, &mut secret, &database_remote_path)?
             .ok_or_else(|| {
-                library_error(
-                    "Dropbox database upload succeeded but the file was not found afterwards"
-                        .to_owned(),
-                )
+                CommandError::from(LibraryError::Internal("Dropbox database upload succeeded but the file was not found afterwards"
+                        .to_owned(),))
             })?;
         dropbox_metadata_revision(&metadata)
     };
@@ -824,28 +815,26 @@ pub(crate) fn refresh_existing_dropbox_library(
 ) -> CommandResult<Option<String>> {
     let root_path = library
         .working_copy_root()
-        .ok_or_else(|| library_error("remote repository is missing a cached working copy"))?;
+        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a cached working copy".to_string())))?;
     let root = if root_path.join(".openkara-library").exists() {
-        LibraryRoot::open(&root_path).map_err(library_error)?
+        LibraryRoot::open(&root_path).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
     } else {
-        LibraryRoot::create(&root_path).map_err(library_error)?
+        LibraryRoot::create(&root_path).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
     };
-    cache::initialize_library_database(&root.database_path()).map_err(library_error)?;
+    cache::initialize_library_database(&root.database_path()).map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
 
     let remote_root_path = library
         .remote_root_locator()
-        .ok_or_else(|| library_error("remote repository is missing a remote locator".to_owned()))?;
+        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned())))?;
     let mut secret = secret.clone();
     let marker_remote_path = dropbox_join_path(remote_root_path, ".openkara-library");
     if dropbox_get_metadata(app_data_dir, &mut secret, &marker_remote_path)?.is_none() {
-        return Err(library_error(
-            "The selected Dropbox folder is not an OpenKara remote repository.".to_owned(),
-        ));
+        return Err(CommandError::from(LibraryError::Internal("The selected Dropbox folder is not an OpenKara remote repository.".to_owned(),)));
     }
     let database_remote_path = dropbox_join_path(remote_root_path, "openkara.db");
     let metadata = dropbox_get_metadata(app_data_dir, &mut secret, &database_remote_path)?
         .ok_or_else(|| {
-            library_error("The selected Dropbox folder is missing openkara.db.".to_owned())
+            CommandError::from(LibraryError::Internal("The selected Dropbox folder is missing openkara.db.".to_owned()))
         })?;
     dropbox_download_file(
         app_data_dir,
@@ -867,9 +856,9 @@ fn dropbox_delete_path(
         .send_network("delete Dropbox path")?;
     match response.status() {
         StatusCode::OK | StatusCode::CONFLICT => Ok(()),
-        status => Err(library_error(format!(
+        status => Err(CommandError::from(LibraryError::Internal(format!(
             "Dropbox delete failed with status {status}"
-        ))),
+        )))),
     }
 }
 
@@ -881,7 +870,7 @@ pub(crate) fn delete_relative_path_from_remote(
     let mut secret = load_dropbox_secret(app_data_dir, library)?;
     let root_path = library
         .remote_root_locator()
-        .ok_or_else(|| library_error("remote repository is missing a remote locator".to_owned()))?;
+        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned())))?;
     dropbox_delete_path(
         app_data_dir,
         &mut secret,

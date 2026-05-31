@@ -1,6 +1,7 @@
 use crate::{
     cache,
-    commands::error::{library_error, state_lock_error, CommandResult},
+    commands::error::{CommandError, state_lock_error, CommandResult},
+    library::error::LibraryError,
     config::{self, AppConfig, RegisteredLibrary},
     library_root::LibraryRoot,
     AppState,
@@ -27,12 +28,12 @@ fn canonical_path_string(path: &Path) -> String {
 
 fn load_app_config(app_data_dir: &Path) -> CommandResult<AppConfig> {
     Ok(config::load_config(app_data_dir)
-        .map_err(library_error)?
+        .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
         .unwrap_or_default())
 }
 
 fn persist_app_config(app_data_dir: &Path, config: &AppConfig) -> CommandResult<()> {
-    config::save_config(app_data_dir, config).map_err(library_error)
+    config::save_config(app_data_dir, config).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))
 }
 
 fn update_library_display_name(
@@ -46,7 +47,7 @@ fn update_library_display_name(
         .iter_mut()
         .find(|entry| entry.id() == library_id)
     else {
-        return Err(library_error(format!("library {library_id} was not found")));
+        return Err(CommandError::from(LibraryError::Internal(format!("library {library_id} was not found"))));
     };
 
     match library {
@@ -73,7 +74,7 @@ fn delete_library_data(app_data_dir: &Path, library: &RegisteredLibrary) -> Comm
         RegisteredLibrary::Local { root_path, .. } => {
             if Path::new(root_path).exists() {
                 fs::remove_dir_all(root_path).map_err(|error| {
-                    library_error(format!("failed to delete {root_path}: {error}"))
+                    CommandError::from(LibraryError::Internal(format!("failed to delete {root_path}: {error}")))
                 })?;
             }
         }
@@ -82,10 +83,10 @@ fn delete_library_data(app_data_dir: &Path, library: &RegisteredLibrary) -> Comm
             if let Some(working_copy_root) = library.working_copy_root() {
                 if working_copy_root.exists() {
                     fs::remove_dir_all(&working_copy_root).map_err(|error| {
-                        library_error(format!(
+                        CommandError::from(LibraryError::Internal(format!(
                             "failed to delete {}: {error}",
                             working_copy_root.display()
-                        ))
+                        )))
                     })?;
                 }
             }
@@ -133,7 +134,7 @@ fn register_library(
     root: LibraryRoot,
 ) -> CommandResult<LibraryRegistrySnapshot> {
     let db_path = root.database_path();
-    cache::initialize_library_database(&db_path).map_err(library_error)?;
+    cache::initialize_library_database(&db_path).map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
 
     let mut config = load_app_config(app_data_dir)?;
     upsert_library(&mut config, library.clone());
@@ -166,14 +167,14 @@ fn activate_library(
         .iter()
         .find(|entry| entry.id() == library_id)
         .cloned()
-        .ok_or_else(|| library_error(format!("library {library_id} was not found")))?;
+        .ok_or_else(|| CommandError::from(LibraryError::Internal(format!("library {library_id} was not found"))))?;
 
     let root_path = library
         .working_copy_root()
-        .ok_or_else(|| library_error("remote repository is missing a cached working copy"))?;
-    let lib = LibraryRoot::open(&root_path).map_err(library_error)?;
+        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a cached working copy".to_string())))?;
+    let lib = LibraryRoot::open(&root_path).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?;
     let db_path = lib.database_path();
-    cache::initialize_library_database(&db_path).map_err(library_error)?;
+    cache::initialize_library_database(&db_path).map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
 
     {
         let mut playback = state
@@ -214,7 +215,7 @@ pub fn create_library(
 ) -> CommandResult<LibraryRegistrySnapshot> {
     let lib_path = PathBuf::from(&path);
 
-    let lib = LibraryRoot::create(&lib_path).map_err(library_error)?;
+    let lib = LibraryRoot::create(&lib_path).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?;
     let canonical_root = canonical_path_string(lib.root());
     let library = RegisteredLibrary::local(
         canonical_root.clone(),
@@ -231,7 +232,7 @@ pub fn open_library(
 ) -> CommandResult<LibraryRegistrySnapshot> {
     let lib_path = PathBuf::from(&path);
 
-    let lib = LibraryRoot::open(&lib_path).map_err(library_error)?;
+    let lib = LibraryRoot::open(&lib_path).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?;
     let canonical_root = canonical_path_string(lib.root());
     let library = RegisteredLibrary::local(
         canonical_root.clone(),
@@ -264,7 +265,7 @@ pub fn get_library_registry(app_handle: AppHandle) -> CommandResult<LibraryRegis
     let app_data_dir = app_handle
         .path()
         .app_data_dir()
-        .map_err(|error| library_error(error.to_string()))?;
+        .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
     let config = load_app_config(&app_data_dir)?;
 
     Ok(LibraryRegistrySnapshot {
@@ -278,7 +279,7 @@ pub fn get_active_library(app_handle: AppHandle) -> CommandResult<Option<Registe
     let app_data_dir = app_handle
         .path()
         .app_data_dir()
-        .map_err(|error| library_error(error.to_string()))?;
+        .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
     let config = load_app_config(&app_data_dir)?;
 
     Ok(config.active_library().cloned())
@@ -293,7 +294,7 @@ pub fn remove_library(
     let app_data_dir = app_handle
         .path()
         .app_data_dir()
-        .map_err(|error| library_error(error.to_string()))?;
+        .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
     let mut config = load_app_config(&app_data_dir)?;
     let removed_active = config.active_library_id.as_deref() == Some(library_id.as_str());
     let removed_libraries: Vec<_> = config
@@ -369,7 +370,7 @@ pub fn rename_library(
     let app_data_dir = app_handle
         .path()
         .app_data_dir()
-        .map_err(|error| library_error(error.to_string()))?;
+        .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
     update_library_display_name(&app_data_dir, &library_id, &display_name)
 }
 
@@ -382,7 +383,7 @@ pub fn delete_library(
     let app_data_dir = app_handle
         .path()
         .app_data_dir()
-        .map_err(|error| library_error(error.to_string()))?;
+        .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
     let config = load_app_config(&app_data_dir)?;
     let Some(library) = config
         .libraries
@@ -390,7 +391,7 @@ pub fn delete_library(
         .find(|entry| entry.id() == library_id)
         .cloned()
     else {
-        return Err(library_error(format!("library {library_id} was not found")));
+        return Err(CommandError::from(LibraryError::Internal(format!("library {library_id} was not found"))));
     };
 
     delete_library_data(&app_data_dir, &library)?;

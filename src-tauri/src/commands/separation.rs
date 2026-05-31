@@ -1,9 +1,9 @@
 use crate::{
     cache,
-    commands::error::{separation_error, state_lock_error, CommandError, CommandResult},
+    commands::error::{state_lock_error, CommandError, CommandResult},
     commands::remote_library,
     config::{self, ExecutionProviderPreference, StemMode},
-    separator::{self, model::LoadedModel, model_cache::ModelCache},
+    separator::{self, error::SeparationError, model::LoadedModel, model_cache::ModelCache},
     AppState,
 };
 use serde::Serialize;
@@ -104,7 +104,7 @@ pub fn upgrade_to_four_stem(
     {
         let library_root = state.library_root()?;
         let connection = cache::open_database(&library_root.database_path())
-            .map_err(|e| separation_error(e.to_string()))?;
+            .map_err(|e| SeparationError::Failed(e.to_string()))?;
         if let Ok(Some(entry)) = cache::stems::get_cached_stem_entry(&connection, &song_id) {
             if entry.has_individual_stems() {
                 return Ok(completed_status(
@@ -147,7 +147,7 @@ pub fn re_separate(
     {
         let library_root = state.library_root()?;
         let connection = cache::open_database(&library_root.database_path())
-            .map_err(|e| separation_error(e.to_string()))?;
+            .map_err(|e| SeparationError::Failed(e.to_string()))?;
         let _ = cache::stems::delete_stem_cache_entry(&connection, &library_root, &song_id);
     }
 
@@ -222,10 +222,10 @@ fn spawn_separation_job(
         let final_status = match result {
             Ok(Ok(artifacts)) => status_from_job_result(&song_id, Ok(artifacts)),
             Ok(Err(error)) => {
-                status_from_job_result(&song_id, Err(separation_error(error.to_string())))
+                status_from_job_result(&song_id, Err(SeparationError::Failed(error.to_string()).into()))
             }
             Err(error) => {
-                status_from_job_result(&song_id, Err(separation_error(error.to_string())))
+                status_from_job_result(&song_id, Err(SeparationError::Failed(error.to_string()).into()))
             }
         };
 
@@ -350,11 +350,11 @@ pub fn downgrade_single_to_two_stem(
 ) -> CommandResult<SeparationStatusSnapshot> {
     let library_root = state.library_root()?;
     let connection = cache::open_database(&library_root.database_path())
-        .map_err(|e| separation_error(e.to_string()))?;
+        .map_err(|e| SeparationError::Failed(e.to_string()))?;
 
     let (updated_entry, _freed_bytes) =
         cache::stems::downgrade_to_two_stem(&connection, &library_root, &song_id)
-            .map_err(|e| separation_error(e.to_string()))?;
+            .map_err(|e| SeparationError::Failed(e.to_string()))?;
 
     let completed = completed_status(
         &song_id,
@@ -456,14 +456,10 @@ pub fn get_separation_status_from_map(
 fn ensure_song_can_be_separated(state: &State<'_, AppState>, song_id: &str) -> CommandResult<()> {
     let library_root = state.library_root()?;
     let connection = cache::open_database(&library_root.database_path())
-        .map_err(|e| separation_error(e.to_string()))?;
+        .map_err(|e| SeparationError::Failed(e.to_string()))?;
     let song = cache::get_song_by_hash(&connection, song_id)
-        .map_err(|e| separation_error(e.to_string()))?
-        .ok_or_else(|| {
-            separation_error(format!(
-                "song with hash {song_id} was not found in the library"
-            ))
-        })?;
+        .map_err(|e| SeparationError::Failed(e.to_string()))?
+        .ok_or_else(|| SeparationError::SongNotFound(song_id.to_owned()))?;
 
     validate_song_can_be_separated(&song, song_id)
 }
@@ -472,15 +468,15 @@ fn validate_song_can_be_separated(song: &crate::library::Song, song_id: &str) ->
     if song.is_media_g() {
         // Media+G songs already carry karaoke graphics and intentionally skip
         // the stem pipeline, which is designed for plain audio assets only.
-        return Err(separation_error(format!(
+        return Err(SeparationError::Failed(format!(
             "song {song_id} is a Media+G track and cannot be separated"
-        )));
+        )).into());
     }
 
     if song.is_instrumental() {
-        return Err(separation_error(format!(
+        return Err(SeparationError::Failed(format!(
             "song {song_id} is marked instrumental and cannot be separated"
-        )));
+        )).into());
     }
 
     Ok(())
@@ -649,7 +645,7 @@ mod tests {
 
     #[test]
     fn status_from_job_result_maps_errors_to_failed_status() {
-        let error = separation_error("boom".to_owned());
+        let error: CommandError = SeparationError::Failed("boom".to_owned()).into();
 
         let status = status_from_job_result("song-1", Err(error.clone()));
 
