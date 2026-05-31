@@ -1,5 +1,5 @@
+use crate::lyrics::error::LyricsError;
 use crate::lyrics::lrclib::LyricsLookupQuery;
-use anyhow::{Context, Result};
 use serde::Deserialize;
 
 const DEFAULT_BASE_URL: &str = "https://api.lrc.cx";
@@ -50,7 +50,10 @@ impl LrcApiClient {
         Self::new(DEFAULT_BASE_URL)
     }
 
-    pub fn fetch_by_track(&self, query: &LyricsLookupQuery) -> Result<Option<LrcApiLyrics>> {
+    pub fn fetch_by_track(
+        &self,
+        query: &LyricsLookupQuery,
+    ) -> Result<Option<LrcApiLyrics>, LyricsError> {
         let url = format!("{}/jsonapi", self.base_url);
         let mut request = self.http.get(url).query(&[
             ("title", query.track_name.as_str()),
@@ -61,13 +64,15 @@ impl LrcApiClient {
             request = request.query(&[("album", album_name)]);
         }
 
-        let response = request.send().context("failed to request timed lyrics")?;
+        let response = request
+            .send()
+            .map_err(|e| LyricsError::NetworkUnavailable(format!("failed to request lyrics from LrcAPI: {e}")))?;
         let response = response
             .error_for_status()
-            .context("timed lyrics provider returned a non-success response")?;
+            .map_err(|e| LyricsError::NetworkUnavailable(format!("LrcAPI returned a non-success response: {e}")))?;
         let response = response
             .json::<LrcApiResponse>()
-            .context("failed to deserialize timed lyrics response")?;
+            .map_err(|e| LyricsError::NetworkUnavailable(format!("failed to deserialize LrcAPI lyrics response: {e}")))?;
 
         Ok(match response {
             LrcApiResponse::Hits(entries) => entries
@@ -78,8 +83,8 @@ impl LrcApiClient {
                 if miss.message.trim() == "未找到歌词" {
                     None
                 } else {
-                    return Err(anyhow::anyhow!(format!(
-                        "timed lyrics provider returned an unexpected response: {}",
+                    return Err(LyricsError::NetworkUnavailable(format!(
+                        "LrcAPI returned an unexpected response: {}",
                         miss.message
                     )));
                 }

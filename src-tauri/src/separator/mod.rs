@@ -1,5 +1,6 @@
 pub mod bootstrap;
 pub mod checkpoint;
+pub mod error;
 pub mod inference;
 pub mod job;
 pub mod mix;

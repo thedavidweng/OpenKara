@@ -1,6 +1,6 @@
 use crate::{
     audio::{
-        decode, output,
+        decode, error::PlaybackError, output,
         playback::{
             monotonic_now_ms, playback_position_event, LoadedStems, PlaybackController,
             PlaybackStateSnapshot, StemName, PLAYBACK_POSITION_EVENT,
@@ -14,7 +14,6 @@ use crate::{
     },
     state::{AppState, AirPlayState},
 };
-use anyhow::{Context, Result};
 use rusqlite::Connection;
 use std::path::Path;
 use std::sync::{
@@ -96,18 +95,20 @@ pub fn play<R: Runtime>(
     state: &AppState,
     app_handle: &AppHandle<R>,
     song_id: &str,
-) -> Result<PlaybackStateSnapshot> {
+) -> Result<PlaybackStateSnapshot, PlaybackError> {
     state.airplay.airplay_audio_tap.bump_epoch();
     crate::airplay_stream::notify_audio_epoch(state.airplay.airplay_audio_tap.current_epoch());
     bump_airplay_stream_generation(&state.airplay);
     let library_root = state
         .shell
         .library_root()
-        .map_err(|error| anyhow::anyhow!(error.message.clone()))?;
-    let connection = cache::open_database(&library_root.database_path())?;
+        .map_err(|error| PlaybackError::Internal(error.message))?;
+    let connection = cache::open_database(&library_root.database_path())
+        .map_err(|e| PlaybackError::Internal(e.to_string()))?;
     let request_id = state.playback.playback_request_id.fetch_add(1, Ordering::SeqCst) + 1;
-    let song = cache::get_song_by_hash(&connection, song_id)?
-        .with_context(|| format!("song with hash {song_id} was not found in the library"))?;
+    let song = cache::get_song_by_hash(&connection, song_id)
+        .map_err(|e| PlaybackError::Internal(e.to_string()))?
+        .ok_or_else(|| PlaybackError::SongNotFound(song_id.to_owned()))?;
     let active_song_id = song.hash.clone();
     let needs_remote_download = song.is_remote() || song.is_remote_stems();
 
@@ -117,10 +118,11 @@ pub fn play<R: Runtime>(
                 .playback
                 .playback
                 .lock()
-                .map_err(|_| anyhow::anyhow!("playback controller lock was poisoned"))?;
+                .map_err(|_| PlaybackError::Internal("playback controller lock was poisoned".to_owned()))?;
             playback.start_track_loading(&active_song_id)
         };
-        emit_playback_position(app_handle, &snapshot)?;
+        emit_playback_position(app_handle, &snapshot)
+            .map_err(|e| PlaybackError::Internal(e.to_string()))?;
 
         let background_state = state.clone();
         let background_handle = app_handle.clone();
@@ -170,12 +172,13 @@ pub fn play<R: Runtime>(
             .playback
             .cdg_state
             .lock()
-            .map_err(|_| anyhow::anyhow!("CDG state lock was poisoned"))?;
+            .map_err(|_| PlaybackError::Internal("CDG state lock was poisoned".to_owned()))?;
         *cdg_state = next_cdg_state;
     }
 
     ensure_output_thread(state)?;
-    emit_playback_position(app_handle, &snapshot)?;
+    emit_playback_position(app_handle, &snapshot)
+        .map_err(|e| PlaybackError::Internal(e.to_string()))?;
 
     Ok(snapshot)
 }
@@ -183,7 +186,7 @@ pub fn play<R: Runtime>(
 pub fn resume<R: Runtime>(
     state: &AppState,
     app_handle: &AppHandle<R>,
-) -> Result<PlaybackStateSnapshot> {
+) -> Result<PlaybackStateSnapshot, PlaybackError> {
     state.airplay.airplay_audio_tap.bump_epoch();
     crate::airplay_stream::notify_audio_epoch(state.airplay.airplay_audio_tap.current_epoch());
     bump_airplay_stream_generation(&state.airplay);
@@ -191,12 +194,13 @@ pub fn resume<R: Runtime>(
         .playback
         .playback
         .lock()
-        .map_err(|_| anyhow::anyhow!("playback controller lock was poisoned"))?;
+        .map_err(|_| PlaybackError::Internal("playback controller lock was poisoned".to_owned()))?;
     let snapshot = playback.play(monotonic_now_ms())?;
     drop(playback);
 
     ensure_output_thread(state)?;
-    emit_playback_position(app_handle, &snapshot)?;
+    emit_playback_position(app_handle, &snapshot)
+        .map_err(|e| PlaybackError::Internal(e.to_string()))?;
 
     Ok(snapshot)
 }
@@ -204,7 +208,7 @@ pub fn resume<R: Runtime>(
 pub fn pause<R: Runtime>(
     state: &AppState,
     app_handle: &AppHandle<R>,
-) -> Result<PlaybackStateSnapshot> {
+) -> Result<PlaybackStateSnapshot, PlaybackError> {
     state.airplay.airplay_audio_tap.bump_epoch();
     crate::airplay_stream::notify_audio_epoch(state.airplay.airplay_audio_tap.current_epoch());
     bump_airplay_stream_generation(&state.airplay);
@@ -212,9 +216,10 @@ pub fn pause<R: Runtime>(
         .playback
         .playback
         .lock()
-        .map_err(|_| anyhow::anyhow!("playback controller lock was poisoned"))?;
+        .map_err(|_| PlaybackError::Internal("playback controller lock was poisoned".to_owned()))?;
     let snapshot = playback.pause(monotonic_now_ms())?;
-    emit_playback_position(app_handle, &snapshot)?;
+    emit_playback_position(app_handle, &snapshot)
+        .map_err(|e| PlaybackError::Internal(e.to_string()))?;
     Ok(snapshot)
 }
 
@@ -222,7 +227,7 @@ pub fn seek<R: Runtime>(
     state: &AppState,
     app_handle: &AppHandle<R>,
     ms: u64,
-) -> Result<PlaybackStateSnapshot> {
+) -> Result<PlaybackStateSnapshot, PlaybackError> {
     state.airplay.airplay_audio_tap.bump_epoch();
     crate::airplay_stream::notify_audio_epoch(state.airplay.airplay_audio_tap.current_epoch());
     bump_airplay_stream_generation(&state.airplay);
@@ -230,7 +235,7 @@ pub fn seek<R: Runtime>(
         .playback
         .playback
         .lock()
-        .map_err(|_| anyhow::anyhow!("playback controller lock was poisoned"))?;
+        .map_err(|_| PlaybackError::Internal("playback controller lock was poisoned".to_owned()))?;
     let previous_position_ms = playback.snapshot(monotonic_now_ms()).position_ms;
     let snapshot = playback.seek(ms, monotonic_now_ms())?;
     drop(playback);
@@ -239,20 +244,21 @@ pub fn seek<R: Runtime>(
         .playback
         .cdg_state
         .lock()
-        .map_err(|_| anyhow::anyhow!("CDG state lock was poisoned"))?;
+        .map_err(|_| PlaybackError::Internal("CDG state lock was poisoned".to_owned()))?;
     mark_cdg_reset_for_seek(&mut cdg_state, previous_position_ms, snapshot.position_ms);
     drop(cdg_state);
 
-    emit_playback_position(app_handle, &snapshot)?;
+    emit_playback_position(app_handle, &snapshot)
+        .map_err(|e| PlaybackError::Internal(e.to_string()))?;
     Ok(snapshot)
 }
 
-pub fn set_volume(state: &AppState, level: f32) -> Result<PlaybackStateSnapshot> {
+pub fn set_volume(state: &AppState, level: f32) -> Result<PlaybackStateSnapshot, PlaybackError> {
     let mut playback = state
         .playback
         .playback
         .lock()
-        .map_err(|_| anyhow::anyhow!("playback controller lock was poisoned"))?;
+        .map_err(|_| PlaybackError::Internal("playback controller lock was poisoned".to_owned()))?;
     let snapshot = playback.set_volume(level)?;
     drop(playback);
     if state.airplay.airplay_audience_active.load(Ordering::SeqCst) {
@@ -268,12 +274,12 @@ pub fn set_stem_volume(
     state: &AppState,
     stem: StemName,
     level: f32,
-) -> Result<PlaybackStateSnapshot> {
+) -> Result<PlaybackStateSnapshot, PlaybackError> {
     let mut playback = state
         .playback
         .playback
         .lock()
-        .map_err(|_| anyhow::anyhow!("playback controller lock was poisoned"))?;
+        .map_err(|_| PlaybackError::Internal("playback controller lock was poisoned".to_owned()))?;
     let snapshot = playback.set_stem_volume(stem, level)?;
     drop(playback);
     if state.airplay.airplay_audience_active.load(Ordering::SeqCst) {
@@ -285,21 +291,22 @@ pub fn set_stem_volume(
     Ok(snapshot)
 }
 
-pub fn load_stems(state: &AppState) -> Result<PlaybackStateSnapshot> {
+pub fn load_stems(state: &AppState) -> Result<PlaybackStateSnapshot, PlaybackError> {
     let library_root = state
         .shell
         .library_root()
-        .map_err(|error| anyhow::anyhow!(error.message.clone()))?;
-    let connection = cache::open_database(&library_root.database_path())?;
+        .map_err(|error| PlaybackError::Internal(error.message))?;
+    let connection = cache::open_database(&library_root.database_path())
+        .map_err(|e| PlaybackError::Internal(e.to_string()))?;
     let mut playback = state
         .playback
         .playback
         .lock()
-        .map_err(|_| anyhow::anyhow!("playback controller lock was poisoned"))?;
+        .map_err(|_| PlaybackError::Internal("playback controller lock was poisoned".to_owned()))?;
 
     let song_id = playback
         .current_song_id()
-        .context("no track is loaded")?
+        .ok_or_else(|| PlaybackError::InvalidPlaybackState("no track is loaded".to_owned()))?
         .to_owned();
 
     if playback.has_stems() {
@@ -307,8 +314,8 @@ pub fn load_stems(state: &AppState) -> Result<PlaybackStateSnapshot> {
     }
 
     let song = cache::get_song_by_hash(&connection, &song_id)
-        .context("failed to load song before stem attachment")?
-        .with_context(|| format!("song with hash {song_id} was not found in the library"))?;
+        .map_err(|e| PlaybackError::Internal(e.to_string()))?
+        .ok_or_else(|| PlaybackError::SongNotFound(song_id.clone()))?;
     drop(playback);
 
     decode_then_attach_stems_if_current_song(&state.playback.playback, &song_id, || {
@@ -316,12 +323,12 @@ pub fn load_stems(state: &AppState) -> Result<PlaybackStateSnapshot> {
     })
 }
 
-pub fn get_state(state: &AppState) -> Result<PlaybackStateSnapshot> {
+pub fn get_state(state: &AppState) -> Result<PlaybackStateSnapshot, PlaybackError> {
     let mut playback = state
         .playback
         .playback
         .lock()
-        .map_err(|_| anyhow::anyhow!("playback controller lock was poisoned"))?;
+        .map_err(|_| PlaybackError::Internal("playback controller lock was poisoned".to_owned()))?;
     Ok(playback.snapshot(monotonic_now_ms()))
 }
 
@@ -336,7 +343,7 @@ fn play_remote_background<R: Runtime>(
     playback_arc: &Arc<Mutex<PlaybackController>>,
     request_id: u64,
     request_id_arc: &AtomicU64,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     let connection = cache::open_database(&library_root.database_path())?;
     let PlaybackSourceLoad {
         decoded_audio,
@@ -385,23 +392,24 @@ pub fn play_song_from_library(
     controller: &mut PlaybackController,
     song_id: &str,
     now_ms: u64,
-) -> Result<PlaybackStateSnapshot> {
+) -> Result<PlaybackStateSnapshot, PlaybackError> {
     let song = cache::get_song_by_hash(connection, song_id)
-        .context("failed to load song from library")?
-        .with_context(|| format!("song with hash {song_id} was not found in the library"))?;
+        .map_err(|e| PlaybackError::Internal(e.to_string()))?
+        .ok_or_else(|| PlaybackError::SongNotFound(song_id.to_owned()))?;
     let PlaybackSourceLoad {
         decoded_audio,
         stems,
     } = load_playback_source(None, connection, library_root, &song)?;
     let snapshot = controller.start_track(song.hash.clone(), decoded_audio, now_ms);
     if let Some(stems) = stems {
-        controller.attach_stems(&song.hash, stems)?;
+        controller.attach_stems(&song.hash, stems)
+            .map_err(|e| PlaybackError::Internal(e.to_string()))?;
         return Ok(controller.snapshot(now_ms));
     }
     Ok(snapshot)
 }
 
-pub(crate) fn ensure_output_thread(state: &AppState) -> Result<()> {
+pub(crate) fn ensure_output_thread(state: &AppState) -> Result<(), PlaybackError> {
     ensure_output_thread_inner(
         &state.playback.audio_output_started,
         &state.playback.audio_output_start_lock,
@@ -419,7 +427,7 @@ pub(crate) fn ensure_output_thread_inner(
     airplay_audio_tap: Arc<crate::airplay_stream::AirPlayAudioTap>,
     airplay_local_output_suppressed: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
-) -> Result<()> {
+) -> Result<(), PlaybackError> {
     output::ensure_output_thread(
         audio_output_started,
         audio_output_start_lock,
@@ -437,16 +445,16 @@ fn decode_then_start_track_if_latest<F>(
     request_id: u64,
     song_id: String,
     decode_audio: F,
-) -> Result<PlaybackStateSnapshot>
+) -> Result<PlaybackStateSnapshot, PlaybackError>
 where
-    F: FnOnce() -> Result<decode::DecodedAudio>,
+    F: FnOnce() -> Result<decode::DecodedAudio, PlaybackError>,
 {
     // Decode before taking the playback lock so expensive file IO does not stall
     // output/control paths, then apply a latest-request-wins guard before swap-in.
     let decoded_audio = decode_audio()?;
     let mut playback = playback
         .lock()
-        .map_err(|_| anyhow::anyhow!("playback controller lock was poisoned"))?;
+        .map_err(|_| PlaybackError::Internal("playback controller lock was poisoned".to_owned()))?;
 
     if latest_request_id.load(Ordering::SeqCst) != request_id {
         return Ok(playback.snapshot(monotonic_now_ms()));
@@ -459,20 +467,21 @@ fn decode_then_attach_stems_if_current_song<F>(
     playback: &Arc<Mutex<PlaybackController>>,
     song_id: &str,
     decode_stems: F,
-) -> Result<PlaybackStateSnapshot>
+) -> Result<PlaybackStateSnapshot, PlaybackError>
 where
-    F: FnOnce() -> Result<LoadedStems>,
+    F: FnOnce() -> Result<LoadedStems, PlaybackError>,
 {
     let loaded_stems = decode_stems()?;
     let mut playback = playback
         .lock()
-        .map_err(|_| anyhow::anyhow!("playback controller lock was poisoned"))?;
+        .map_err(|_| PlaybackError::Internal("playback controller lock was poisoned".to_owned()))?;
 
     if playback.current_song_id() != Some(song_id) {
         return Ok(playback.snapshot(monotonic_now_ms()));
     }
 
-    playback.attach_stems(song_id, loaded_stems)?;
+    playback.attach_stems(song_id, loaded_stems)
+        .map_err(|e| PlaybackError::Internal(e.to_string()))?;
     Ok(playback.snapshot(monotonic_now_ms()))
 }
 

@@ -1,10 +1,10 @@
 use crate::{
     cache,
     commands::error::{
-        database_error, library_error, state_lock_error, CommandError, CommandResult,
+        database_error, state_lock_error, CommandError, CommandResult,
     },
     config::{AppConfig, RegisteredLibrary, RemoteLibraryProvider},
-    library::Song,
+    library::{error::LibraryError, Song},
     library_root::LibraryRoot,
     AppState,
 };
@@ -107,50 +107,50 @@ fn copy_file_if_present(source: Option<&Path>, destination: &Path) -> CommandRes
 
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(|error| {
-            library_error(format!("failed to create {}: {error}", parent.display()))
+            CommandError::from(LibraryError::Internal(format!("failed to create {}: {error}", parent.display())))
         })?;
     }
 
     fs::copy(source, destination).map_err(|error| {
-        library_error(format!(
+        CommandError::from(LibraryError::Internal(format!(
             "failed to copy {} to {}: {error}",
             source.display(),
             destination.display()
-        ))
+        )))
     })?;
     Ok(())
 }
 
 fn copy_directory_recursive(source: &Path, destination: &Path) -> CommandResult<()> {
     if !source.exists() {
-        return Err(library_error(format!(
+        return Err(CommandError::from(LibraryError::Internal(format!(
             "source directory {} does not exist",
             source.display()
-        )));
+        ))));
     }
 
     if destination.exists() {
         fs::remove_dir_all(destination).map_err(|error| {
-            library_error(format!(
+            CommandError::from(LibraryError::Internal(format!(
                 "failed to clear destination directory {}: {error}",
                 destination.display()
-            ))
+            )))
         })?;
     }
     fs::create_dir_all(destination).map_err(|error| {
-        library_error(format!(
+        CommandError::from(LibraryError::Internal(format!(
             "failed to create destination directory {}: {error}",
             destination.display()
-        ))
+        )))
     })?;
 
     for entry in fs::read_dir(source).map_err(|error| {
-        library_error(format!(
+        CommandError::from(LibraryError::Internal(format!(
             "failed to read directory {}: {error}",
             source.display()
-        ))
+        )))
     })? {
-        let entry = entry.map_err(|error| library_error(error.to_string()))?;
+        let entry = entry.map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
         let source_path = entry.path();
         let destination_path = destination.join(entry.file_name());
 
@@ -159,18 +159,18 @@ fn copy_directory_recursive(source: &Path, destination: &Path) -> CommandResult<
         } else {
             if let Some(parent) = destination_path.parent() {
                 fs::create_dir_all(parent).map_err(|error| {
-                    library_error(format!(
+                    CommandError::from(LibraryError::Internal(format!(
                         "failed to create destination directory {}: {error}",
                         parent.display()
-                    ))
+                    )))
                 })?;
             }
             fs::copy(&source_path, &destination_path).map_err(|error| {
-                library_error(format!(
+                CommandError::from(LibraryError::Internal(format!(
                     "failed to copy {} to {}: {error}",
                     source_path.display(),
                     destination_path.display()
-                ))
+                )))
             })?;
         }
     }
@@ -206,11 +206,11 @@ fn load_registered_remote_library(
         .libraries
         .iter()
         .find(|entry| entry.id() == library_id)
-        .ok_or_else(|| library_error(format!("remote repository {library_id} was not found")))?;
+        .ok_or_else(|| CommandError::from(LibraryError::Internal(format!("remote repository {library_id} was not found"))))?;
     if !matches!(library, RegisteredLibrary::Remote { .. }) {
-        return Err(library_error(format!(
+        return Err(CommandError::from(LibraryError::Internal(format!(
             "library {library_id} is not a remote repository"
-        )));
+        ))));
     }
     Ok(library.clone())
 }
@@ -232,7 +232,7 @@ fn remote_database_revision(
         Some(RemoteLibraryProvider::GoogleDrive) => {
             let mut secret = load_google_drive_secret(app_data_dir, library)?;
             let root_folder_id = library.remote_root_locator().ok_or_else(|| {
-                library_error("remote repository is missing a remote locator".to_owned())
+                CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned()))
             })?;
             Ok(google_drive_find_relative_entry(
                 app_data_dir,
@@ -245,7 +245,7 @@ fn remote_database_revision(
         Some(RemoteLibraryProvider::Dropbox) => {
             let mut secret = load_dropbox_secret(app_data_dir, library)?;
             let root_path = library.remote_root_locator().ok_or_else(|| {
-                library_error("remote repository is missing a remote locator".to_owned())
+                CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned()))
             })?;
             Ok(dropbox_get_metadata(
                 app_data_dir,
@@ -254,9 +254,7 @@ fn remote_database_revision(
             )?
             .and_then(|metadata| dropbox_metadata_revision(&metadata)))
         }
-        _ => Err(library_error(
-            "the active remote provider is not supported for database revision checks".to_owned(),
-        )),
+        _ => Err(CommandError::from(LibraryError::Internal("the active remote provider is not supported for database revision checks".to_owned(),))),
     }
 }
 
@@ -271,12 +269,12 @@ fn remote_database_conflict_error(provider_revision: Option<&str>) -> CommandErr
     let revision_detail = provider_revision
         .map(|revision| format!(" Remote revision: {revision}."))
         .unwrap_or_default();
-    library_error(format!(
+    CommandError::from(LibraryError::Internal(format!(
         "Remote repository database changed on another device before this publish. \
          OpenKara stopped before overwriting it. Use Settings > Karaoke Library > \
          Refresh remote repository, then retry this edit. If refresh fails because authentication \
          or the server changed, use Reauthorize remote repository first.{revision_detail}"
-    ))
+    )))
 }
 
 fn sync_remote_database_from_provider(
@@ -297,9 +295,7 @@ fn sync_remote_database_from_provider(
             initialize_or_sync_dropbox_library(app_data_dir, library, &secret)?
         }
         None => {
-            return Err(library_error(
-                "the active remote provider is not supported for sync".to_owned(),
-            ));
+            return Err(CommandError::from(LibraryError::Internal("the active remote provider is not supported for sync".to_owned(),)));
         }
     };
     update_remote_revision_in_config(app_data_dir, library.id(), revision)?;
@@ -349,7 +345,7 @@ fn upload_remote_database(app_data_dir: &Path, library: &RegisteredLibrary) -> C
         Some(RemoteLibraryProvider::GoogleDrive) => {
             let secret = load_google_drive_secret(app_data_dir, library)?;
             let root_folder_id = library.remote_root_locator().ok_or_else(|| {
-                library_error("remote repository is missing a remote locator".to_owned())
+                CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned()))
             })?;
             google_drive_upload_relative_file_to_remote(
                 app_data_dir,
@@ -366,7 +362,7 @@ fn upload_remote_database(app_data_dir: &Path, library: &RegisteredLibrary) -> C
                 "openkara.db",
             )?
             .ok_or_else(|| {
-                library_error("Google Drive database file is missing after upload".to_owned())
+                CommandError::from(LibraryError::Internal("Google Drive database file is missing after upload".to_owned()))
             })?;
             update_remote_revision_in_config(
                 app_data_dir,
@@ -377,7 +373,7 @@ fn upload_remote_database(app_data_dir: &Path, library: &RegisteredLibrary) -> C
         Some(RemoteLibraryProvider::Dropbox) => {
             let secret = load_dropbox_secret(app_data_dir, library)?;
             let root_path = library.remote_root_locator().ok_or_else(|| {
-                library_error("remote repository is missing a remote locator".to_owned())
+                CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned()))
             })?;
             dropbox_upload_relative_file_to_remote(
                 app_data_dir,
@@ -393,7 +389,7 @@ fn upload_remote_database(app_data_dir: &Path, library: &RegisteredLibrary) -> C
                 &dropbox_join_path(root_path, "openkara.db"),
             )?
             .ok_or_else(|| {
-                library_error("Dropbox database file is missing after upload".to_owned())
+                CommandError::from(LibraryError::Internal("Dropbox database file is missing after upload".to_owned()))
             })?;
             update_remote_revision_in_config(
                 app_data_dir,
@@ -401,9 +397,7 @@ fn upload_remote_database(app_data_dir: &Path, library: &RegisteredLibrary) -> C
                 dropbox_metadata_revision(&metadata),
             )
         }
-        _ => Err(library_error(
-            "the active remote provider is not supported for database upload".to_owned(),
-        )),
+        _ => Err(CommandError::from(LibraryError::Internal("the active remote provider is not supported for database upload".to_owned(),))),
     }
 }
 
@@ -455,13 +449,13 @@ pub fn ensure_remote_file_cached(app_data_dir: &Path, relative_path: &str) -> Co
                 &secret.username,
                 &secret.password,
             )?
-            .ok_or_else(|| library_error(format!("remote file {relative_path} was not found")))?;
+            .ok_or_else(|| CommandError::from(LibraryError::Internal(format!("remote file {relative_path} was not found"))))?;
             Ok(())
         }
         Some(RemoteLibraryProvider::GoogleDrive) => {
             let mut secret = load_google_drive_secret(app_data_dir, &library)?;
             let root_folder_id = library.remote_root_locator().ok_or_else(|| {
-                library_error("remote repository is missing a remote locator".to_owned())
+                CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned()))
             })?;
             let entry = google_drive_find_relative_entry(
                 app_data_dir,
@@ -469,25 +463,23 @@ pub fn ensure_remote_file_cached(app_data_dir: &Path, relative_path: &str) -> Co
                 root_folder_id,
                 relative_path,
             )?
-            .ok_or_else(|| library_error(format!("remote file {relative_path} was not found")))?;
+            .ok_or_else(|| CommandError::from(LibraryError::Internal(format!("remote file {relative_path} was not found"))))?;
             google_drive_download_file(app_data_dir, &mut secret, &entry.id, &destination)
         }
         Some(RemoteLibraryProvider::Dropbox) => {
             let mut secret = load_dropbox_secret(app_data_dir, &library)?;
             let root_path = library.remote_root_locator().ok_or_else(|| {
-                library_error("remote repository is missing a remote locator".to_owned())
+                CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned()))
             })?;
             let remote_path = dropbox_join_path(root_path, relative_path);
             if dropbox_get_metadata(app_data_dir, &mut secret, &remote_path)?.is_none() {
-                return Err(library_error(format!(
+                return Err(CommandError::from(LibraryError::Internal(format!(
                     "remote file {relative_path} was not found"
-                )));
+                ))));
             }
             dropbox_download_file(app_data_dir, &mut secret, &remote_path, &destination)
         }
-        _ => Err(library_error(
-            "the active remote provider is not supported for file caching".to_owned(),
-        )),
+        _ => Err(CommandError::from(LibraryError::Internal("the active remote provider is not supported for file caching".to_owned(),))),
     }
 }
 
@@ -514,9 +506,7 @@ fn remote_delete_relative_path(
         Some(RemoteLibraryProvider::Dropbox) => {
             dropbox_delete_relative_path_from_remote(app_data_dir, library, relative_path)
         }
-        None => Err(library_error(
-            "the bound remote provider is not supported for deletion".to_owned(),
-        )),
+        None => Err(CommandError::from(LibraryError::Internal("the bound remote provider is not supported for deletion".to_owned(),))),
     }
 }
 
@@ -616,7 +606,7 @@ fn delete_remote_song_from_mirror(
         remote_root,
         &song.hash,
     )
-    .map_err(|error| library_error(error.to_string()))?;
+    .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
     Ok(())
 }
 
@@ -748,14 +738,12 @@ pub(crate) fn mirror_local_library_to_remote<R: tauri::Runtime>(
         .iter()
         .find(|entry| entry.id() == local_library_id)
     else {
-        return Err(library_error(format!(
+        return Err(CommandError::from(LibraryError::Internal(format!(
             "local library {local_library_id} was not found"
-        )));
+        ))));
     };
     if !matches!(local_library, RegisteredLibrary::Local { .. }) {
-        return Err(library_error(
-            "the source library must be a local library".to_owned(),
-        ));
+        return Err(CommandError::from(LibraryError::Internal("the source library must be a local library".to_owned(),)));
     }
 
     let Some(remote_library) = config
@@ -763,14 +751,12 @@ pub(crate) fn mirror_local_library_to_remote<R: tauri::Runtime>(
         .iter()
         .find(|entry| entry.id() == remote_library_id)
     else {
-        return Err(library_error(format!(
+        return Err(CommandError::from(LibraryError::Internal(format!(
             "remote repository {remote_library_id} was not found"
-        )));
+        ))));
     };
     if !matches!(remote_library, RegisteredLibrary::Remote { .. }) {
-        return Err(library_error(
-            "the target library must be a remote repository".to_owned(),
-        ));
+        return Err(CommandError::from(LibraryError::Internal("the target library must be a remote repository".to_owned(),)));
     }
 
     let original_active_library_id = config.active_library_id.clone();
@@ -793,7 +779,7 @@ fn publish_song_internal<R: tauri::Runtime>(
 ) -> CommandResult<UploadStatusSnapshot> {
     let config = load_app_config(&state.shell.app_data_dir)?;
     let remote_library = resolve_active_remote(&config)
-        .ok_or_else(|| library_error("no bound remote repository is available for publishing"))?;
+        .ok_or_else(|| CommandError::from(LibraryError::Internal("no bound remote repository is available for publishing".to_string())))?;
     let remote_library =
         prepare_remote_database_for_mutation(&state.shell.app_data_dir, &remote_library)?;
 
@@ -817,7 +803,7 @@ fn publish_song_internal<R: tauri::Runtime>(
 
     let song = cache::get_song_by_hash(&local_connection, song_id)
         .map_err(|error| database_error(error.to_string()))?
-        .ok_or_else(|| library_error(format!("song {song_id} was not found")))?;
+        .ok_or_else(|| CommandError::from(LibraryError::Internal(format!("song {song_id} was not found"))))?;
 
     let running = mark_upload_status(
         state,
@@ -834,9 +820,9 @@ fn publish_song_internal<R: tauri::Runtime>(
         let stem_entry = cache::stems::get_cached_stem_entry(&local_connection, song_id)
             .map_err(|error| database_error(error.to_string()))?
             .ok_or_else(|| {
-                library_error(format!(
+                CommandError::from(LibraryError::Internal(format!(
                     "song {song_id} must have cached stems before publishing to a remote repository"
-                ))
+                )))
             })?;
         if !same_root {
             let source_stems_dir = local_root.resolve(&format!("stems/{song_id}"));
@@ -858,7 +844,7 @@ fn publish_song_internal<R: tauri::Runtime>(
             Some(RemoteLibraryProvider::GoogleDrive) => {
                 let remote_secret = load_google_drive_secret(&state.shell.app_data_dir, &remote_library)?;
                 let root_folder_id = remote_library.remote_root_locator().ok_or_else(|| {
-                    library_error("remote repository is missing a remote locator".to_owned())
+                    CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned()))
                 })?;
                 google_drive_upload_directory_to_remote(
                     &state.shell.app_data_dir,
@@ -871,7 +857,7 @@ fn publish_song_internal<R: tauri::Runtime>(
             Some(RemoteLibraryProvider::Dropbox) => {
                 let remote_secret = load_dropbox_secret(&state.shell.app_data_dir, &remote_library)?;
                 let root_path = remote_library.remote_root_locator().ok_or_else(|| {
-                    library_error("remote repository is missing a remote locator".to_owned())
+                    CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned()))
                 })?;
                 dropbox_upload_directory_to_remote(
                     &state.shell.app_data_dir,
@@ -882,9 +868,7 @@ fn publish_song_internal<R: tauri::Runtime>(
                 )?;
             }
             _ => {
-                return Err(library_error(
-                    "the bound remote provider is not supported for publishing".to_owned(),
-                ));
+                return Err(CommandError::from(LibraryError::Internal("the bound remote provider is not supported for publishing".to_owned(),)));
             }
         }
         sync_song_lyrics_to_remote(&local_connection, &remote_connection, song_id)?;
@@ -903,7 +887,7 @@ fn publish_song_internal<R: tauri::Runtime>(
                     let remote_secret =
                         load_google_drive_secret(&state.shell.app_data_dir, &remote_library)?;
                     let root_folder_id = remote_library.remote_root_locator().ok_or_else(|| {
-                        library_error("remote repository is missing a remote locator".to_owned())
+                        CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned()))
                     })?;
                     google_drive_upload_relative_file_to_remote(
                         &state.shell.app_data_dir,
@@ -916,7 +900,7 @@ fn publish_song_internal<R: tauri::Runtime>(
                 Some(RemoteLibraryProvider::Dropbox) => {
                     let remote_secret = load_dropbox_secret(&state.shell.app_data_dir, &remote_library)?;
                     let root_path = remote_library.remote_root_locator().ok_or_else(|| {
-                        library_error("remote repository is missing a remote locator".to_owned())
+                        CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned()))
                     })?;
                     dropbox_upload_relative_file_to_remote(
                         &state.shell.app_data_dir,
@@ -927,9 +911,7 @@ fn publish_song_internal<R: tauri::Runtime>(
                     )?;
                 }
                 _ => {
-                    return Err(library_error(
-                        "the bound remote provider is not supported for publishing".to_owned(),
-                    ));
+                    return Err(CommandError::from(LibraryError::Internal("the bound remote provider is not supported for publishing".to_owned(),)));
                 }
             }
         }
@@ -946,7 +928,7 @@ fn publish_song_internal<R: tauri::Runtime>(
                     let remote_secret =
                         load_google_drive_secret(&state.shell.app_data_dir, &remote_library)?;
                     let root_folder_id = remote_library.remote_root_locator().ok_or_else(|| {
-                        library_error("remote repository is missing a remote locator".to_owned())
+                        CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned()))
                     })?;
                     google_drive_upload_relative_file_to_remote(
                         &state.shell.app_data_dir,
@@ -959,7 +941,7 @@ fn publish_song_internal<R: tauri::Runtime>(
                 Some(RemoteLibraryProvider::Dropbox) => {
                     let remote_secret = load_dropbox_secret(&state.shell.app_data_dir, &remote_library)?;
                     let root_path = remote_library.remote_root_locator().ok_or_else(|| {
-                        library_error("remote repository is missing a remote locator".to_owned())
+                        CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned()))
                     })?;
                     dropbox_upload_relative_file_to_remote(
                         &state.shell.app_data_dir,
@@ -970,9 +952,7 @@ fn publish_song_internal<R: tauri::Runtime>(
                     )?;
                 }
                 _ => {
-                    return Err(library_error(
-                        "the bound remote provider is not supported for publishing".to_owned(),
-                    ));
+                    return Err(CommandError::from(LibraryError::Internal("the bound remote provider is not supported for publishing".to_owned(),)));
                 }
             }
         }
@@ -1017,7 +997,7 @@ fn publish_song_internal<R: tauri::Runtime>(
 pub(crate) fn sync_active_remote_library(state: &AppState) -> CommandResult<()> {
     let config = load_app_config(&state.shell.app_data_dir)?;
     let Some(active_library) = config.active_library() else {
-        return Err(library_error("no library is currently active"));
+        return Err(CommandError::from(LibraryError::Internal("no library is currently active".to_string())));
     };
 
     if matches!(active_library, RegisteredLibrary::Remote { .. }) {

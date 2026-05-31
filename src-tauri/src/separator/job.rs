@@ -69,7 +69,7 @@ pub fn separate_song_into_cache(
     };
     let absolute_path = library_root.resolve(song_path);
     let decoded_audio = decode::decode_file(&absolute_path)
-        .with_context(|| format!("failed to decode audio for {}", song_path))?;
+        .map_err(|e| anyhow::anyhow!("failed to decode audio for {}: {}", song_path, e))?;
 
     report_progress(MODEL_LOAD_PROGRESS);
     let mut model_cache = model_cache

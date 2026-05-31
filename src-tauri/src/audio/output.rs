@@ -1,7 +1,7 @@
 use crate::airplay_stream::AirPlayAudioTap;
 use crate::audio::decode::DecodedAudio;
+use crate::audio::error::PlaybackError;
 use crate::audio::playback::{monotonic_now_ms, LoadedStems, PlaybackController};
-use anyhow::{Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Sample, SampleFormat, SizedSample, Stream};
 use std::{
@@ -20,14 +20,14 @@ pub fn ensure_output_thread(
     airplay_audio_tap: Arc<AirPlayAudioTap>,
     airplay_local_output_suppressed: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
-) -> Result<()> {
+) -> Result<(), PlaybackError> {
     if started.load(Ordering::SeqCst) {
         return Ok(());
     }
 
     let _guard = start_lock
         .lock()
-        .map_err(|_| anyhow::anyhow!("audio output start lock was poisoned"))?;
+        .map_err(|_| PlaybackError::AudioOutputUnavailable("audio output start lock was poisoned".to_owned()))?;
     if started.load(Ordering::SeqCst) {
         return Ok(());
     }
@@ -47,7 +47,8 @@ pub fn ensure_output_thread(
 
     startup_rx
         .recv_timeout(Duration::from_secs(5))
-        .context("timed out while waiting for audio output thread startup")??;
+        .map_err(|_| PlaybackError::AudioOutputUnavailable("timed out while waiting for audio output thread startup".to_owned()))?
+        .map_err(|e| PlaybackError::AudioOutputUnavailable(e.to_string()))?;
     started.store(true, Ordering::SeqCst);
 
     Ok(())
@@ -307,7 +308,7 @@ fn build_output_stream<T>(
     playback: Arc<Mutex<PlaybackController>>,
     airplay_audio_tap: Arc<AirPlayAudioTap>,
     airplay_local_output_suppressed: Arc<AtomicBool>,
-) -> Result<Stream>
+) -> Result<Stream, PlaybackError>
 where
     T: SizedSample + Sample + cpal::FromSample<f32>,
 {
@@ -354,7 +355,7 @@ where
             eprintln!("audio output stream error: {error}");
         },
         None,
-    )?;
+    ).map_err(|e| PlaybackError::AudioOutputUnavailable(format!("failed to build audio output stream: {e}")))?;
 
     Ok(stream)
 }
@@ -363,16 +364,16 @@ fn start_output_thread(
     playback: Arc<Mutex<PlaybackController>>,
     airplay_audio_tap: Arc<AirPlayAudioTap>,
     airplay_local_output_suppressed: Arc<AtomicBool>,
-    startup_tx: mpsc::SyncSender<Result<()>>,
+    startup_tx: mpsc::SyncSender<Result<(), PlaybackError>>,
     shutdown: Arc<AtomicBool>,
-) -> Result<()> {
+) -> Result<(), PlaybackError> {
     let host = cpal::default_host();
     let device = host
         .default_output_device()
-        .context("no default output audio device is available")?;
+        .ok_or_else(|| PlaybackError::AudioOutputUnavailable("no default output audio device is available".to_owned()))?;
     let config = device
         .default_output_config()
-        .context("failed to read default audio output config")?;
+        .map_err(|e| PlaybackError::AudioOutputUnavailable(format!("failed to read default audio output config: {e}")))?;
     let stream = match config.sample_format() {
         SampleFormat::F32 => build_output_stream::<f32>(
             &device,
@@ -396,13 +397,15 @@ fn start_output_thread(
             airplay_local_output_suppressed,
         )?,
         sample_format => {
-            anyhow::bail!("unsupported audio output sample format: {sample_format:?}");
+            return Err(PlaybackError::AudioOutputUnavailable(
+                format!("unsupported audio output sample format: {sample_format:?}")
+            ));
         }
     };
 
     stream
         .play()
-        .context("failed to start audio output stream")?;
+        .map_err(|e| PlaybackError::AudioOutputUnavailable(format!("failed to start audio output stream: {e}")))?;
     let _ = startup_tx.send(Ok(()));
 
     while !shutdown.load(Ordering::Relaxed) {
