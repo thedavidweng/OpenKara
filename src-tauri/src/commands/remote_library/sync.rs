@@ -3,7 +3,7 @@ use crate::{
     commands::error::{
         database_error, library_error, state_lock_error, CommandError, CommandResult,
     },
-    config::{AppConfig, RegisteredLibrary, RemoteLibraryProvider},
+    config::{AppConfig, RegisteredLibrary},
     library::Song,
     library_root::LibraryRoot,
     AppState,
@@ -12,28 +12,11 @@ use std::{collections::HashMap, fs, path::Path};
 use tauri::{AppHandle, Emitter};
 
 use super::{
-    dropbox::{
-        delete_relative_path_from_remote as dropbox_delete_relative_path_from_remote,
-        dropbox_download_file, dropbox_get_metadata, dropbox_join_path, dropbox_metadata_revision,
-        dropbox_upload_directory_to_remote, dropbox_upload_relative_file_to_remote,
-        initialize_or_sync_dropbox_library, load_dropbox_secret,
-    },
-    google_drive::{
-        delete_relative_path_from_remote as google_drive_delete_relative_path_from_remote,
-        google_drive_download_file, google_drive_find_relative_entry,
-        google_drive_upload_directory_to_remote, google_drive_upload_relative_file_to_remote,
-        initialize_or_sync_google_drive_library, load_google_drive_secret,
-    },
+    provider::create_provider,
     types::{
         current_unix_time_ms, load_app_config, load_remote_root, persist_app_config,
         upsert_stem_entry, UploadCompletePayload, UploadErrorPayload, UploadProgressPayload,
         UploadState, UploadStatusSnapshot,
-    },
-    webdav::{
-        delete_relative_path_from_remote as webdav_delete_relative_path_from_remote,
-        download_webdav_file, initialize_or_sync_webdav_library, join_url, load_webdav_secret,
-        upload_directory_to_remote, upload_relative_file_to_remote, webdav_client,
-        webdav_database_url, webdav_get_etag,
     },
 };
 
@@ -219,45 +202,8 @@ fn remote_database_revision(
     app_data_dir: &Path,
     library: &RegisteredLibrary,
 ) -> CommandResult<Option<String>> {
-    match library.provider() {
-        Some(RemoteLibraryProvider::WebDav) => {
-            let secret = load_webdav_secret(app_data_dir, library)?;
-            webdav_get_etag(
-                &webdav_client()?,
-                &webdav_database_url(&secret.root_url)?,
-                &secret.username,
-                &secret.password,
-            )
-        }
-        Some(RemoteLibraryProvider::GoogleDrive) => {
-            let mut secret = load_google_drive_secret(app_data_dir, library)?;
-            let root_folder_id = library.remote_root_locator().ok_or_else(|| {
-                library_error("remote repository is missing a remote locator".to_owned())
-            })?;
-            Ok(google_drive_find_relative_entry(
-                app_data_dir,
-                &mut secret,
-                root_folder_id,
-                "openkara.db",
-            )?
-            .and_then(|metadata| metadata.head_revision_id.or(metadata.modified_time)))
-        }
-        Some(RemoteLibraryProvider::Dropbox) => {
-            let mut secret = load_dropbox_secret(app_data_dir, library)?;
-            let root_path = library.remote_root_locator().ok_or_else(|| {
-                library_error("remote repository is missing a remote locator".to_owned())
-            })?;
-            Ok(dropbox_get_metadata(
-                app_data_dir,
-                &mut secret,
-                &dropbox_join_path(root_path, "openkara.db"),
-            )?
-            .and_then(|metadata| dropbox_metadata_revision(&metadata)))
-        }
-        _ => Err(library_error(
-            "the active remote provider is not supported for database revision checks".to_owned(),
-        )),
-    }
+    let provider = create_provider(app_data_dir, library)?;
+    provider.get_revision("openkara.db")
 }
 
 fn remote_database_revision_is_stale(
@@ -283,25 +229,8 @@ fn sync_remote_database_from_provider(
     app_data_dir: &Path,
     library: &RegisteredLibrary,
 ) -> CommandResult<RegisteredLibrary> {
-    let revision = match library.provider() {
-        Some(RemoteLibraryProvider::WebDav) => {
-            let secret = load_webdav_secret(app_data_dir, library)?;
-            initialize_or_sync_webdav_library(app_data_dir, library, &secret)?
-        }
-        Some(RemoteLibraryProvider::GoogleDrive) => {
-            let secret = load_google_drive_secret(app_data_dir, library)?;
-            initialize_or_sync_google_drive_library(app_data_dir, library, &secret)?
-        }
-        Some(RemoteLibraryProvider::Dropbox) => {
-            let secret = load_dropbox_secret(app_data_dir, library)?;
-            initialize_or_sync_dropbox_library(app_data_dir, library, &secret)?
-        }
-        None => {
-            return Err(library_error(
-                "the active remote provider is not supported for sync".to_owned(),
-            ));
-        }
-    };
+    let provider = create_provider(app_data_dir, library)?;
+    let revision = provider.initialize_or_sync()?;
     update_remote_revision_in_config(app_data_dir, library.id(), revision)?;
     load_registered_remote_library(app_data_dir, library.id())
 }
@@ -331,80 +260,10 @@ fn ensure_remote_database_upload_safe(
 fn upload_remote_database(app_data_dir: &Path, library: &RegisteredLibrary) -> CommandResult<()> {
     ensure_remote_database_upload_safe(app_data_dir, library)?;
 
-    match library.provider() {
-        Some(RemoteLibraryProvider::WebDav) => {
-            let secret = load_webdav_secret(app_data_dir, library)?;
-            upload_relative_file_to_remote(library, &secret, "openkara.db")?;
-            update_remote_revision_in_config(
-                app_data_dir,
-                library.id(),
-                webdav_get_etag(
-                    &webdav_client()?,
-                    &webdav_database_url(&secret.root_url)?,
-                    &secret.username,
-                    &secret.password,
-                )?,
-            )
-        }
-        Some(RemoteLibraryProvider::GoogleDrive) => {
-            let secret = load_google_drive_secret(app_data_dir, library)?;
-            let root_folder_id = library.remote_root_locator().ok_or_else(|| {
-                library_error("remote repository is missing a remote locator".to_owned())
-            })?;
-            google_drive_upload_relative_file_to_remote(
-                app_data_dir,
-                library,
-                &secret,
-                "openkara.db",
-                root_folder_id,
-            )?;
-            let mut refreshed_secret = load_google_drive_secret(app_data_dir, library)?;
-            let metadata = google_drive_find_relative_entry(
-                app_data_dir,
-                &mut refreshed_secret,
-                root_folder_id,
-                "openkara.db",
-            )?
-            .ok_or_else(|| {
-                library_error("Google Drive database file is missing after upload".to_owned())
-            })?;
-            update_remote_revision_in_config(
-                app_data_dir,
-                library.id(),
-                metadata.head_revision_id.or(metadata.modified_time),
-            )
-        }
-        Some(RemoteLibraryProvider::Dropbox) => {
-            let secret = load_dropbox_secret(app_data_dir, library)?;
-            let root_path = library.remote_root_locator().ok_or_else(|| {
-                library_error("remote repository is missing a remote locator".to_owned())
-            })?;
-            dropbox_upload_relative_file_to_remote(
-                app_data_dir,
-                library,
-                &secret,
-                "openkara.db",
-                root_path,
-            )?;
-            let mut refreshed_secret = load_dropbox_secret(app_data_dir, library)?;
-            let metadata = dropbox_get_metadata(
-                app_data_dir,
-                &mut refreshed_secret,
-                &dropbox_join_path(root_path, "openkara.db"),
-            )?
-            .ok_or_else(|| {
-                library_error("Dropbox database file is missing after upload".to_owned())
-            })?;
-            update_remote_revision_in_config(
-                app_data_dir,
-                library.id(),
-                dropbox_metadata_revision(&metadata),
-            )
-        }
-        _ => Err(library_error(
-            "the active remote provider is not supported for database upload".to_owned(),
-        )),
-    }
+    let provider = create_provider(app_data_dir, library)?;
+    provider.upload_file("openkara.db")?;
+    let new_revision = provider.get_revision("openkara.db")?;
+    update_remote_revision_in_config(app_data_dir, library.id(), new_revision)
 }
 
 fn active_remote_library(app_data_dir: &Path) -> CommandResult<Option<RegisteredLibrary>> {
@@ -443,52 +302,8 @@ pub fn ensure_remote_file_cached(app_data_dir: &Path, relative_path: &str) -> Co
         return Ok(());
     }
 
-    match library.provider() {
-        Some(RemoteLibraryProvider::WebDav) => {
-            let secret = load_webdav_secret(app_data_dir, &library)?;
-            let client = webdav_client()?;
-            let file_url = join_url(&secret.root_url, relative_path)?;
-            download_webdav_file(
-                &client,
-                &file_url,
-                &destination,
-                &secret.username,
-                &secret.password,
-            )?
-            .ok_or_else(|| library_error(format!("remote file {relative_path} was not found")))?;
-            Ok(())
-        }
-        Some(RemoteLibraryProvider::GoogleDrive) => {
-            let mut secret = load_google_drive_secret(app_data_dir, &library)?;
-            let root_folder_id = library.remote_root_locator().ok_or_else(|| {
-                library_error("remote repository is missing a remote locator".to_owned())
-            })?;
-            let entry = google_drive_find_relative_entry(
-                app_data_dir,
-                &mut secret,
-                root_folder_id,
-                relative_path,
-            )?
-            .ok_or_else(|| library_error(format!("remote file {relative_path} was not found")))?;
-            google_drive_download_file(app_data_dir, &mut secret, &entry.id, &destination)
-        }
-        Some(RemoteLibraryProvider::Dropbox) => {
-            let mut secret = load_dropbox_secret(app_data_dir, &library)?;
-            let root_path = library.remote_root_locator().ok_or_else(|| {
-                library_error("remote repository is missing a remote locator".to_owned())
-            })?;
-            let remote_path = dropbox_join_path(root_path, relative_path);
-            if dropbox_get_metadata(app_data_dir, &mut secret, &remote_path)?.is_none() {
-                return Err(library_error(format!(
-                    "remote file {relative_path} was not found"
-                )));
-            }
-            dropbox_download_file(app_data_dir, &mut secret, &remote_path, &destination)
-        }
-        _ => Err(library_error(
-            "the active remote provider is not supported for file caching".to_owned(),
-        )),
-    }
+    let provider = create_provider(app_data_dir, &library)?;
+    provider.download_file(relative_path, &destination)
 }
 
 fn resolve_active_remote(config: &AppConfig) -> Option<RegisteredLibrary> {
@@ -503,21 +318,8 @@ fn remote_delete_relative_path(
     library: &RegisteredLibrary,
     relative_path: &str,
 ) -> CommandResult<()> {
-    match library.provider() {
-        Some(RemoteLibraryProvider::WebDav) => {
-            let secret = load_webdav_secret(app_data_dir, library)?;
-            webdav_delete_relative_path_from_remote(&secret, relative_path)
-        }
-        Some(RemoteLibraryProvider::GoogleDrive) => {
-            google_drive_delete_relative_path_from_remote(app_data_dir, library, relative_path)
-        }
-        Some(RemoteLibraryProvider::Dropbox) => {
-            dropbox_delete_relative_path_from_remote(app_data_dir, library, relative_path)
-        }
-        None => Err(library_error(
-            "the bound remote provider is not supported for deletion".to_owned(),
-        )),
-    }
+    let provider = create_provider(app_data_dir, library)?;
+    provider.delete_path(relative_path)
 }
 
 fn song_ready_for_remote_publish(
@@ -830,6 +632,8 @@ fn publish_song_internal<R: tauri::Runtime>(
     )?;
     emit_upload_progress(app_handle, &running);
 
+    let provider = create_provider(&state.shell.app_data_dir, &remote_library)?;
+
     let publish_result = if song.is_separable() {
         let stem_entry = cache::stems::get_cached_stem_entry(&local_connection, song_id)
             .map_err(|error| database_error(error.to_string()))?
@@ -846,47 +650,7 @@ fn publish_song_internal<R: tauri::Runtime>(
         upsert_stem_entry(&remote_connection, &stem_entry)?;
 
         update_remote_song(&remote_connection, song.clone(), "stems_remote")?;
-        match remote_library.provider() {
-            Some(RemoteLibraryProvider::WebDav) => {
-                let remote_secret = load_webdav_secret(&state.shell.app_data_dir, &remote_library)?;
-                upload_directory_to_remote(
-                    &remote_library,
-                    &remote_secret,
-                    &format!("stems/{song_id}"),
-                )?;
-            }
-            Some(RemoteLibraryProvider::GoogleDrive) => {
-                let remote_secret = load_google_drive_secret(&state.shell.app_data_dir, &remote_library)?;
-                let root_folder_id = remote_library.remote_root_locator().ok_or_else(|| {
-                    library_error("remote repository is missing a remote locator".to_owned())
-                })?;
-                google_drive_upload_directory_to_remote(
-                    &state.shell.app_data_dir,
-                    &remote_library,
-                    &remote_secret,
-                    &format!("stems/{song_id}"),
-                    root_folder_id,
-                )?;
-            }
-            Some(RemoteLibraryProvider::Dropbox) => {
-                let remote_secret = load_dropbox_secret(&state.shell.app_data_dir, &remote_library)?;
-                let root_path = remote_library.remote_root_locator().ok_or_else(|| {
-                    library_error("remote repository is missing a remote locator".to_owned())
-                })?;
-                dropbox_upload_directory_to_remote(
-                    &state.shell.app_data_dir,
-                    &remote_library,
-                    &remote_secret,
-                    &format!("stems/{song_id}"),
-                    root_path,
-                )?;
-            }
-            _ => {
-                return Err(library_error(
-                    "the bound remote provider is not supported for publishing".to_owned(),
-                ));
-            }
-        }
+        provider.upload_directory(&format!("stems/{song_id}"))?;
         sync_song_lyrics_to_remote(&local_connection, &remote_connection, song_id)?;
         Ok::<_, CommandError>(())
     } else {
@@ -894,87 +658,13 @@ fn publish_song_internal<R: tauri::Runtime>(
             if !same_root {
                 copy_remote_song_assets(&local_root, &remote_root, file_path, file_path)?;
             }
-            match remote_library.provider() {
-                Some(RemoteLibraryProvider::WebDav) => {
-                    let remote_secret = load_webdav_secret(&state.shell.app_data_dir, &remote_library)?;
-                    upload_relative_file_to_remote(&remote_library, &remote_secret, file_path)?;
-                }
-                Some(RemoteLibraryProvider::GoogleDrive) => {
-                    let remote_secret =
-                        load_google_drive_secret(&state.shell.app_data_dir, &remote_library)?;
-                    let root_folder_id = remote_library.remote_root_locator().ok_or_else(|| {
-                        library_error("remote repository is missing a remote locator".to_owned())
-                    })?;
-                    google_drive_upload_relative_file_to_remote(
-                        &state.shell.app_data_dir,
-                        &remote_library,
-                        &remote_secret,
-                        file_path,
-                        root_folder_id,
-                    )?;
-                }
-                Some(RemoteLibraryProvider::Dropbox) => {
-                    let remote_secret = load_dropbox_secret(&state.shell.app_data_dir, &remote_library)?;
-                    let root_path = remote_library.remote_root_locator().ok_or_else(|| {
-                        library_error("remote repository is missing a remote locator".to_owned())
-                    })?;
-                    dropbox_upload_relative_file_to_remote(
-                        &state.shell.app_data_dir,
-                        &remote_library,
-                        &remote_secret,
-                        file_path,
-                        root_path,
-                    )?;
-                }
-                _ => {
-                    return Err(library_error(
-                        "the bound remote provider is not supported for publishing".to_owned(),
-                    ));
-                }
-            }
+            provider.upload_file(file_path)?;
         }
         if let Some(cdg_path) = song.cdg_path.as_deref() {
             if !same_root {
                 copy_remote_song_assets(&local_root, &remote_root, cdg_path, cdg_path)?;
             }
-            match remote_library.provider() {
-                Some(RemoteLibraryProvider::WebDav) => {
-                    let remote_secret = load_webdav_secret(&state.shell.app_data_dir, &remote_library)?;
-                    upload_relative_file_to_remote(&remote_library, &remote_secret, cdg_path)?;
-                }
-                Some(RemoteLibraryProvider::GoogleDrive) => {
-                    let remote_secret =
-                        load_google_drive_secret(&state.shell.app_data_dir, &remote_library)?;
-                    let root_folder_id = remote_library.remote_root_locator().ok_or_else(|| {
-                        library_error("remote repository is missing a remote locator".to_owned())
-                    })?;
-                    google_drive_upload_relative_file_to_remote(
-                        &state.shell.app_data_dir,
-                        &remote_library,
-                        &remote_secret,
-                        cdg_path,
-                        root_folder_id,
-                    )?;
-                }
-                Some(RemoteLibraryProvider::Dropbox) => {
-                    let remote_secret = load_dropbox_secret(&state.shell.app_data_dir, &remote_library)?;
-                    let root_path = remote_library.remote_root_locator().ok_or_else(|| {
-                        library_error("remote repository is missing a remote locator".to_owned())
-                    })?;
-                    dropbox_upload_relative_file_to_remote(
-                        &state.shell.app_data_dir,
-                        &remote_library,
-                        &remote_secret,
-                        cdg_path,
-                        root_path,
-                    )?;
-                }
-                _ => {
-                    return Err(library_error(
-                        "the bound remote provider is not supported for publishing".to_owned(),
-                    ));
-                }
-            }
+            provider.upload_file(cdg_path)?;
         }
 
         delete_remote_stem_cache_if_present(&remote_connection, &remote_root, song_id)?;
