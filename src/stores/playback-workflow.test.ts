@@ -103,6 +103,15 @@ describe("shouldEnqueueInsteadOfReplacingCurrentSong", () => {
       ),
     ).toBe(false);
   });
+
+  test("does not queue when snapshot has null song_id", () => {
+    expect(
+      shouldEnqueueInsteadOfReplacingCurrentSong(
+        snapshot({ song_id: null }),
+        "any-song",
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("shouldLoadSeparatedStems", () => {
@@ -157,7 +166,7 @@ describe("createPlaybackWorkflow", () => {
       expect(deps.play).not.toHaveBeenCalled();
     });
 
-    test("pushes current song to history and plays new song", async () => {
+    test("pushes current song to history and replays it when same song requested", async () => {
       const deps = mockDeps({
         getPlayerSnapshot: () =>
           snapshot({ song_id: "old-song", is_playing: false }),
