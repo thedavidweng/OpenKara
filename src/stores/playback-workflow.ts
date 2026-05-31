@@ -109,6 +109,9 @@ export function createPlaybackWorkflow(deps: PlaybackWorkflowDeps) {
         return;
       }
 
+      // NOTE: Unlike the old player-store code, applySnapshot here also updates
+      // playingSinceMs from the seek response, keeping the position extrapolation
+      // consistent after a restart-from-beginning.
       const newSnapshot = await deps.seek(0);
       deps.applySnapshot(newSnapshot);
     },
