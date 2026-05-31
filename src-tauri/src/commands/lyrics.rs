@@ -1,12 +1,13 @@
 use crate::{
     cache,
     cache::lyrics::LyricsCacheEntry,
-    commands::error::{database_error, lyrics_error, CommandResult},
+    commands::error::{database_error, CommandResult},
     commands::remote_library,
     library::Song,
     library_root::LibraryRoot,
     lyrics::{
         self,
+        error::LyricsError,
         fetch::{
             fetch_online_timed_lyrics, lookup_query_from_song, LyricsSource, TimedLyricsProvider,
         },
@@ -16,7 +17,6 @@ use crate::{
     },
     AppState,
 };
-use anyhow::{bail, Context, Result};
 use rusqlite::Connection;
 use serde::Serialize;
 use std::path::Path;
@@ -50,12 +50,7 @@ pub fn fetch_lyrics(
             &lrcapi_client,
             &song_id,
         )
-        .map_err(|error| {
-            // Lower-level lyrics modules still return anyhow errors. Classify them
-            // here so UI-facing commands expose stable error codes and fallback hints
-            // before the internal modules are fully migrated to typed domain errors.
-            lyrics_error(error.to_string())
-        })
+        .map_err(Into::into)
     })
 }
 
@@ -70,8 +65,7 @@ pub fn set_lyrics_offset(
     let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
 
     remote_library::run_song_database_mutation(&state, &app_handle, &song_id, || {
-        set_lyrics_offset_in_connection(&connection, &song_id, ms)
-            .map_err(|error| lyrics_error(error.to_string()))
+        set_lyrics_offset_in_connection(&connection, &song_id, ms).map_err(Into::into)
     })
 }
 
@@ -81,14 +75,16 @@ pub fn fetch_lyrics_from_connection(
     lrclib_client: &LrcLibClient,
     lrcapi_client: &LrcApiClient,
     song_id: &str,
-) -> Result<LyricsPayload> {
+) -> Result<LyricsPayload, LyricsError> {
     let song = cache::get_song_by_hash(connection, song_id)
-        .context("failed to load song from library")?
-        .with_context(|| format!("song with hash {song_id} was not found in the library"))?;
+        .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?
+        .ok_or(LyricsError::SongNotFound(song_id.to_string()))?;
 
     // Lyrics are cached by the stable song hash so repeat fetches can skip both
     // network and filesystem fallbacks once a synced source has been resolved.
-    if let Some(cached) = cache::lyrics::get_lyrics_cache_entry(connection, song_id)? {
+    if let Some(cached) = cache::lyrics::get_lyrics_cache_entry(connection, song_id)
+        .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?
+    {
         return payload_from_cached_entry(song.hash, cached);
     }
 
@@ -109,7 +105,8 @@ pub fn fetch_lyrics_from_connection(
 
     // Online requests are opportunistic: if they fail, we still want embedded
     // and sidecar sources to rescue the fetch instead of failing the whole song.
-    let Some(fetched) = lyrics::fetch::fetch_lyrics_for_song(&providers, &song, &resolved_path)?
+    let Some(fetched) = lyrics::fetch::fetch_lyrics_for_song(&providers, &song, &resolved_path)
+        .map_err(|e| LyricsError::Internal(e.to_string()))?
     else {
         return Ok(LyricsPayload {
             song_id: song.hash,
@@ -121,7 +118,7 @@ pub fn fetch_lyrics_from_connection(
     };
 
     let lines = lyrics::parser::parse_lrc(&fetched.raw_lrc)
-        .with_context(|| format!("failed to parse synced lyrics for song {song_id}"))?;
+        .map_err(|e| LyricsError::LyricsNotReady(e.to_string()))?;
     let source = fetched.source;
     let raw_lrc = fetched.raw_lrc.clone();
     cache::lyrics::upsert_lyrics_cache_entry(
@@ -131,10 +128,11 @@ pub fn fetch_lyrics_from_connection(
             lrc: fetched.raw_lrc,
             source: source.clone(),
             offset_ms: 0,
-            fetched_at: current_unix_timestamp()?,
+            fetched_at: current_unix_timestamp()
+                .map_err(|e| LyricsError::Internal(e.to_string()))?,
         },
     )
-    .context("failed to cache fetched lyrics")?;
+    .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?;
 
     Ok(LyricsPayload {
         song_id: song.hash,
@@ -149,27 +147,29 @@ pub fn set_lyrics_offset_in_connection(
     connection: &Connection,
     song_id: &str,
     ms: i64,
-) -> Result<()> {
-    let song_exists = cache::get_song_by_hash(connection, song_id)
-        .context("failed to load song from library")?
-        .is_some();
-    if !song_exists {
-        bail!("song with hash {song_id} was not found in the library");
-    }
+) -> Result<(), LyricsError> {
+    cache::get_song_by_hash(connection, song_id)
+        .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?
+        .ok_or(LyricsError::SongNotFound(song_id.to_string()))?;
 
-    if cache::lyrics::get_lyrics_cache_entry(connection, song_id)?.is_none() {
-        bail!("song with hash {song_id} does not have cached lyrics");
-    }
+    cache::lyrics::get_lyrics_cache_entry(connection, song_id)
+        .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?
+        .ok_or(LyricsError::LyricsNotReady(format!(
+            "song {song_id} does not have cached lyrics"
+        )))?;
 
     cache::lyrics::set_lyrics_offset(connection, song_id, ms)
-        .context("failed to persist lyrics offset")?;
+        .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?;
 
     Ok(())
 }
 
-fn payload_from_cached_entry(song_id: String, cached: LyricsCacheEntry) -> Result<LyricsPayload> {
+fn payload_from_cached_entry(
+    song_id: String,
+    cached: LyricsCacheEntry,
+) -> Result<LyricsPayload, LyricsError> {
     let mut lines = lyrics::parser::parse_lrc(&cached.lrc)
-        .with_context(|| format!("failed to parse cached synced lyrics for song {song_id}"))?;
+        .map_err(|e| LyricsError::LyricsNotReady(e.to_string()))?;
 
     if lines.is_empty() {
         lines = plain_text_to_lines(&cached.lrc);
@@ -204,7 +204,8 @@ pub fn save_manual_lyrics(
 
         let raw_lrc = text.clone();
 
-        let fetched_at = current_unix_timestamp().map_err(|e| lyrics_error(e.to_string()))?;
+        let fetched_at = current_unix_timestamp()
+            .map_err(|e| LyricsError::Internal(e.to_string()))?;
 
         cache::lyrics::upsert_lyrics_cache_entry(
             &connection,
@@ -312,8 +313,8 @@ pub fn import_lyrics_files(
                         .offset_ms
                         .unwrap_or(0);
 
-                    let fetched_at =
-                        current_unix_timestamp().map_err(|e| lyrics_error(e.to_string()))?;
+                    let fetched_at = current_unix_timestamp()
+                        .map_err(|e| LyricsError::Internal(e.to_string()))?;
 
                     let entry = LyricsCacheEntry {
                         song_hash: song.hash.clone(),
@@ -358,19 +359,22 @@ pub fn extract_embedded_lyrics(
     let publish_song_id = song_id.clone();
     remote_library::run_song_database_mutation(&state, &app_handle, &song_id, || {
         let song = cache::get_song_by_hash(&connection, &publish_song_id)
-            .map_err(|e| lyrics_error(e.to_string()))?
-            .ok_or_else(|| lyrics_error(format!("song {publish_song_id} not found")))?;
+            .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?
+            .ok_or(LyricsError::SongNotFound(publish_song_id.clone()))?;
 
         let Some(song_path) = song.file_path.as_deref() else {
-            return Err(lyrics_error(format!(
+            return Err(LyricsError::Internal(format!(
                 "song {} does not have a local file path",
                 publish_song_id
-            )));
+            ))
+            .into());
         };
         let resolved_path = library_root.resolve(song_path);
         let embedded = lyrics::fetch::read_embedded_lyrics(&resolved_path)
-            .map_err(|e| lyrics_error(e.to_string()))?
-            .ok_or_else(|| lyrics_error("No embedded lyrics found in this file".to_owned()))?;
+            .map_err(|e| LyricsError::Internal(e.to_string()))?
+            .ok_or(LyricsError::LyricsNotReady(
+                "No embedded lyrics found in this file".to_owned(),
+            ))?;
 
         // Parse and cache
         let lines = match lyrics::parser::parse_lrc(&embedded) {
@@ -380,7 +384,8 @@ pub fn extract_embedded_lyrics(
 
         let raw_lrc = embedded.clone();
 
-        let fetched_at = current_unix_timestamp().map_err(|e| lyrics_error(e.to_string()))?;
+        let fetched_at = current_unix_timestamp()
+            .map_err(|e| LyricsError::Internal(e.to_string()))?;
 
         cache::lyrics::upsert_lyrics_cache_entry(
             &connection,
@@ -418,8 +423,8 @@ pub fn fetch_lyrics_online(
         &app_handle,
         || {
             let song = cache::get_song_by_hash(&connection, &song_id)
-                .map_err(|e| lyrics_error(e.to_string()))?
-                .ok_or_else(|| lyrics_error(format!("song {song_id} not found")))?;
+                .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?
+                .ok_or(LyricsError::SongNotFound(song_id.clone()))?;
 
             let lrclib_client = LrcLibClient::new_default();
             let lrcapi_client = LrcApiClient::new_default();
@@ -441,7 +446,7 @@ pub fn fetch_lyrics_online(
             };
 
             let Some(fetched) = fetch_online_timed_lyrics(&providers, &query)
-                .map_err(|e| lyrics_error(e.to_string()))?
+                .map_err(|e| LyricsError::NetworkUnavailable(e.to_string()))?
             else {
                 return Ok(LyricsPayload {
                     song_id: song.hash,
@@ -453,9 +458,10 @@ pub fn fetch_lyrics_online(
             };
 
             let lines = lyrics::parser::parse_lrc(&fetched.raw_lrc)
-                .map_err(|e| lyrics_error(e.to_string()))?;
+                .map_err(|e| LyricsError::LyricsNotReady(e.to_string()))?;
 
-            let fetched_at = current_unix_timestamp().map_err(|e| lyrics_error(e.to_string()))?;
+            let fetched_at = current_unix_timestamp()
+            .map_err(|e| LyricsError::Internal(e.to_string()))?;
 
             cache::lyrics::upsert_lyrics_cache_entry(
                 &connection,

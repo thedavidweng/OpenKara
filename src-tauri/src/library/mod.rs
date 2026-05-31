@@ -1,3 +1,5 @@
+pub mod error;
+
 use crate::commands::error::CommandError;
 use serde::Serialize;
 
