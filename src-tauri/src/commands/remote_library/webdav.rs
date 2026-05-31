@@ -558,13 +558,22 @@ pub(crate) fn delete_relative_path_from_remote(
 // --- RemoteProvider implementation ---
 
 pub(crate) struct WebDAVProvider<'a> {
+    app_data_dir: &'a Path,
     secret: WebDavSecret,
     library: &'a RegisteredLibrary,
 }
 
 impl<'a> WebDAVProvider<'a> {
-    pub(crate) fn new(secret: WebDavSecret, library: &'a RegisteredLibrary) -> Self {
-        Self { secret, library }
+    pub(crate) fn new(
+        app_data_dir: &'a Path,
+        secret: WebDavSecret,
+        library: &'a RegisteredLibrary,
+    ) -> Self {
+        Self {
+            app_data_dir,
+            secret,
+            library,
+        }
     }
 }
 
@@ -596,7 +605,7 @@ impl RemoteProvider for WebDAVProvider<'_> {
     }
 
     fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
-        initialize_or_sync_webdav_library(Path::new("/"), self.library, &self.secret)
+        initialize_or_sync_webdav_library(self.app_data_dir, self.library, &self.secret)
     }
 }
 
