@@ -7,6 +7,7 @@ Coding agent instructions. Self-contained — do not assume cross-referencing.
 OpenKara: cross-platform desktop karaoke app. Tauri 2 (Rust + WebView) + React 19 + TypeScript + Zustand.
 
 **Model path boundary:**
+
 - `src-tauri/models/` is a local dev/test cache only.
 - End-user installs use the app data directory for runtime model downloads.
 - Do not treat `src-tauri/models/` as a required runtime dependency for shipped builds.
@@ -33,6 +34,8 @@ Formatting is automated via PostToolUse hook (`pnpm format:write` + `cargo fmt`)
 
 ## Skills (load on demand)
 
-- `/verify` — which verification commands to run for each change type
-- `/delivery` — PR description format and delivery report requirements
-- `/ci-notes` — CI environment constraints, CodeQL patterns, Cursor Cloud notes
+Project-specific skills in `.agents/skills/`. Read the relevant file when you need detailed guidance:
+
+- `.agents/skills/verify/SKILL.md` — which verification commands to run for each change type
+- `.agents/skills/delivery/SKILL.md` — PR description format and delivery report requirements
+- `.agents/skills/ci-notes/SKILL.md` — CI environment constraints, CodeQL patterns, Cursor Cloud notes
