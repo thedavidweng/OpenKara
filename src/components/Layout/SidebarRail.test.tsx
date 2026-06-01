@@ -29,4 +29,14 @@ describe("SidebarRail", () => {
     expect(markup).toContain("translate-x-0");
     expect(markup).toContain('role="separator"');
   });
+
+  test("disables text selection on the container when visible to prevent selection during drag", () => {
+    const markup = renderToStaticMarkup(
+      <SidebarRail visible width={300} onResize={() => {}}>
+        <div>Sidebar</div>
+      </SidebarRail>,
+    );
+
+    expect(markup).toContain("select-none");
+  });
 });

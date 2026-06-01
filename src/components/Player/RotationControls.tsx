@@ -1,7 +1,9 @@
-import { useState } from "react";
-import { X } from "lucide-react";
+import { useCallback, useState } from "react";
+import { Shuffle, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useRotationStore } from "@/stores/rotation-store";
+import { useQueueStore } from "@/stores/queue-store";
+import { ConfirmationDialog } from "@/components/Settings/ConfirmationDialog";
 
 interface AddSingerInputProps {
   onAdd: (name: string) => void;
@@ -58,16 +60,16 @@ function AddSingerInput({ onAdd }: AddSingerInputProps) {
 
 interface SingerTagProps {
   name: string;
-  isCurrent: boolean;
+  isSelected: boolean;
   onSelect: () => void;
   onRemove: () => void;
 }
 
-function SingerTag({ name, isCurrent, onSelect, onRemove }: SingerTagProps) {
+function SingerTag({ name, isSelected, onSelect, onRemove }: SingerTagProps) {
   return (
     <span
       className={`flex items-center overflow-hidden rounded-full text-[11px] ${
-        isCurrent
+        isSelected
           ? "bg-[var(--color-accent)] text-white"
           : "bg-[var(--color-hover)] text-[var(--color-text)]"
       }`}
@@ -75,8 +77,8 @@ function SingerTag({ name, isCurrent, onSelect, onRemove }: SingerTagProps) {
       <button
         type="button"
         onClick={onSelect}
-        className={`px-2 py-0.5 text-left ${isCurrent ? "font-medium" : ""}`}
-        aria-pressed={isCurrent}
+        className={`px-2 py-0.5 text-left ${isSelected ? "font-medium" : ""}`}
+        aria-pressed={isSelected}
       >
         {name}
       </button>
@@ -95,32 +97,57 @@ function SingerTag({ name, isCurrent, onSelect, onRemove }: SingerTagProps) {
 export function RotationControls() {
   const { t } = useTranslation();
   const {
-    active,
     singerNames,
-    currentIndex,
-    toggleActive,
+    filterSinger,
+    queueSingers,
     addSinger,
     removeSinger,
-    advanceRotation,
-    setCurrentSinger,
+    shuffleQueue,
+    setFilterSinger,
   } = useRotationStore();
+  const queue = useQueueStore((s) => s.queue);
+  const removeFromQueue = useQueueStore((s) => s.removeFromQueue);
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
 
-  if (!active && singerNames.length === 0) {
-    return (
-      <div className="flex items-center justify-between border-b border-[color-mix(in_srgb,var(--color-border)_86%,transparent)] px-4 py-2">
-        <span className="text-[12px] font-medium text-[var(--color-control-primary)]">
-          {t("rotation.singer")}
-        </span>
-        <button
-          type="button"
-          onClick={toggleActive}
-          className="motion-icon-button rounded px-1.5 py-1 text-[11px] text-[var(--color-text-dimmer)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-control-primary)]"
-        >
-          {t("rotation.roundRobin")}
-        </button>
-      </div>
-    );
-  }
+  const handleRemoveSinger = useCallback(
+    (name: string) => {
+      const assignedCount = [...queueSingers.values()].filter(
+        (s) => s === name,
+      ).length;
+      if (assignedCount === 0) {
+        void removeSinger(name);
+      } else {
+        setConfirmRemove(name);
+      }
+    },
+    [queueSingers, removeSinger],
+  );
+
+  const handleConfirmRemove = useCallback(() => {
+    if (!confirmRemove) return;
+    const indicesToRemove: number[] = [];
+    queue.forEach((songId, index) => {
+      if (queueSingers.get(songId) === confirmRemove) {
+        indicesToRemove.push(index);
+      }
+    });
+    for (let i = indicesToRemove.length - 1; i >= 0; i--) {
+      removeFromQueue(indicesToRemove[i]);
+    }
+    void removeSinger(confirmRemove);
+    if (filterSinger === confirmRemove) {
+      setFilterSinger(null);
+    }
+    setConfirmRemove(null);
+  }, [
+    confirmRemove,
+    queue,
+    queueSingers,
+    removeFromQueue,
+    removeSinger,
+    filterSinger,
+    setFilterSinger,
+  ]);
 
   return (
     <div className="border-b border-[color-mix(in_srgb,var(--color-border)_86%,transparent)] px-3 py-2 space-y-2">
@@ -130,38 +157,42 @@ export function RotationControls() {
         </span>
         <button
           type="button"
-          onClick={toggleActive}
-          className={`motion-icon-button rounded px-1.5 py-0.5 text-[11px] transition-colors ${
-            active
-              ? "bg-[var(--color-accent)] text-white"
-              : "text-[var(--color-text-dimmer)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-control-primary)]"
-          }`}
+          onClick={shuffleQueue}
+          disabled={queue.length <= 1}
+          className="motion-icon-button flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-control-primary)] disabled:opacity-30"
         >
-          {active ? t("rotation.roundRobin") : t("rotation.singer")}
+          <Shuffle size={11} />
+          {t("rotation.shuffle")}
         </button>
       </div>
 
-      {active && (
+      {singerNames.length > 0 && (
         <div className="flex flex-wrap items-center gap-1">
-          {singerNames.map((name, i) => (
+          {singerNames.map((name) => (
             <SingerTag
               key={name}
               name={name}
-              isCurrent={i === currentIndex}
-              onSelect={() => void setCurrentSinger(name)}
-              onRemove={() => void removeSinger(name)}
+              isSelected={filterSinger === name}
+              onSelect={() =>
+                setFilterSinger(filterSinger === name ? null : name)
+              }
+              onRemove={() => handleRemoveSinger(name)}
             />
           ))}
           <AddSingerInput onAdd={addSinger} />
-          <button
-            type="button"
-            onClick={() => void advanceRotation()}
-            disabled={singerNames.length === 0}
-            className="ml-auto rounded border border-[var(--color-border)] px-2 py-0.5 text-[11px] text-[var(--color-text-dim)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:opacity-40"
-          >
-            {t("rotation.nextSinger")}
-          </button>
         </div>
+      )}
+
+      {singerNames.length === 0 && <AddSingerInput onAdd={addSinger} />}
+
+      {confirmRemove && (
+        <ConfirmationDialog
+          title={t("rotation.confirmRemoveSinger")}
+          message={t("rotation.confirmRemoveSingerMessage")}
+          confirmLabel={t("rotation.removeSinger")}
+          onConfirm={handleConfirmRemove}
+          onCancel={() => setConfirmRemove(null)}
+        />
       )}
     </div>
   );

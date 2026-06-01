@@ -2,22 +2,19 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
 import { RotationControls } from "./RotationControls";
 
-const { mockRotationState } = vi.hoisted(() => ({
+const { mockRotationState, mockQueueState } = vi.hoisted(() => ({
   mockRotationState: {
-    active: true,
     singerNames: ["David", "John", "Jack"],
-    currentIndex: 1,
-    mode: "round_robin" as const,
+    filterSinger: "John",
     queueSingers: new Map<string, string | null>(),
-    isLoading: false,
-    loadRotation: vi.fn(),
-    toggleActive: vi.fn(),
     addSinger: vi.fn(),
     removeSinger: vi.fn(),
-    advanceRotation: vi.fn(),
-    setCurrentSinger: vi.fn(),
-    assignSingerToQueueEntry: vi.fn(),
-    getNextSinger: vi.fn(),
+    shuffleQueue: vi.fn(),
+    setFilterSinger: vi.fn(),
+  },
+  mockQueueState: {
+    queue: ["song-1", "song-2"],
+    removeFromQueue: vi.fn(),
   },
 }));
 
@@ -28,17 +25,42 @@ vi.mock("react-i18next", () => ({
 }));
 
 vi.mock("@/stores/rotation-store", () => ({
-  useRotationStore: () => mockRotationState,
+  useRotationStore: (selector?: (s: typeof mockRotationState) => unknown) =>
+    selector ? selector(mockRotationState) : mockRotationState,
+}));
+
+vi.mock("@/stores/queue-store", () => ({
+  useQueueStore: (selector?: (s: typeof mockQueueState) => unknown) =>
+    selector ? selector(mockQueueState) : mockQueueState,
 }));
 
 describe("RotationControls", () => {
-  test("renders the current singer selector and next singer action", () => {
+  test("renders singer tags and shuffle button", () => {
     const markup = renderToStaticMarkup(<RotationControls />);
 
     expect(markup).toContain("David");
     expect(markup).toContain("John");
     expect(markup).toContain("Jack");
-    expect(markup).toContain("rotation.nextSinger");
+    expect(markup).toContain("rotation.shuffle");
     expect(markup).toContain('aria-pressed="true"');
+  });
+
+  test("shuffle button is in the header row", () => {
+    const markup = renderToStaticMarkup(<RotationControls />);
+
+    const headerDivMatch = markup.match(
+      /<div class="flex items-center justify-between">(.*?)<\/div>/s,
+    );
+    expect(headerDivMatch).not.toBeNull();
+    const headerContent = headerDivMatch![1];
+    expect(headerContent).toContain("rotation.shuffle");
+  });
+
+  test("shows add singer button when no singers exist", () => {
+    mockRotationState.singerNames = [];
+    const markup = renderToStaticMarkup(<RotationControls />);
+    expect(markup).toContain("+ Add Singer");
+    // Restore
+    mockRotationState.singerNames = ["David", "John", "Jack"];
   });
 });

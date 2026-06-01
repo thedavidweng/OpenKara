@@ -437,12 +437,16 @@
   },
   "rotation": {
     "assignSinger": "Assign Singer",
+    "shuffle": "Shuffle",
     "singer": "Singer",
     "nextSinger": "Next Singer",
     "roundRobin": "Round-robin",
     "singleSinger": "Single singer",
     "noSinger": "No singer assigned",
-    "singerName": "Singer name"
+    "singerName": "Singer name",
+    "removeSinger": "Remove singer",
+    "confirmRemoveSinger": "Remove Singer",
+    "confirmRemoveSingerMessage": "This singer is assigned to songs in the queue. Removing them will also remove those songs from the queue."
   },
   "errors": {
     "database_unavailable": "Database Error",

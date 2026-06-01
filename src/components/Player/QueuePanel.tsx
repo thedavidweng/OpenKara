@@ -31,7 +31,7 @@ import { useLibraryStore } from "@/stores/library-store";
 import { useQueueStore } from "@/stores/queue-store";
 import { useRotationStore } from "@/stores/rotation-store";
 import { RotationControls } from "./RotationControls";
-import { InputDialog } from "@/components/Settings/InputDialog";
+import { SingerPickerDialog } from "./SingerPickerDialog";
 import {
   getDropAnnouncementPosition,
   getDropIndicatorPosition,
@@ -273,7 +273,9 @@ export function QueuePanel() {
   const clearQueue = useQueueStore((s) => s.clearQueue);
   const songs = useLibraryStore((s) => s.songs);
   const active = useRotationStore((s) => s.active);
+  const singerNames = useRotationStore((s) => s.singerNames);
   const queueSingers = useRotationStore((s) => s.queueSingers);
+  const filterSinger = useRotationStore((s) => s.filterSinger);
   const assignSingerToQueueEntry = useRotationStore(
     (s) => s.assignSingerToQueueEntry,
   );
@@ -295,14 +297,21 @@ export function QueuePanel() {
   );
 
   const handleAssignSinger = useCallback(
-    (next: string) => {
+    (singer: string) => {
       if (singerDialog.songId !== null) {
-        assignSingerToQueueEntry(singerDialog.songId, next.trim() || null);
+        assignSingerToQueueEntry(singerDialog.songId, singer);
       }
       setSingerDialog({ open: false, songId: null, currentSinger: "" });
     },
     [singerDialog.songId, assignSingerToQueueEntry],
   );
+
+  const handleRemoveSinger = useCallback(() => {
+    if (singerDialog.songId !== null) {
+      assignSingerToQueueEntry(singerDialog.songId, null);
+    }
+    setSingerDialog({ open: false, songId: null, currentSinger: "" });
+  }, [singerDialog.songId, assignSingerToQueueEntry]);
 
   const handleCancelAssignSinger = useCallback(() => {
     setSingerDialog({ open: false, songId: null, currentSinger: "" });
@@ -443,6 +452,11 @@ export function QueuePanel() {
   const overIndex = overSongId ? queue.indexOf(overSongId) : null;
   const activeSong = activeSongId ? getSong(activeSongId) : undefined;
 
+  const filteredQueue = useMemo(() => {
+    if (!filterSinger) return queue;
+    return queue.filter((songId) => queueSingers.get(songId) === filterSinger);
+  }, [queue, filterSinger, queueSingers]);
+
   return (
     <div className="app-panel-surface flex h-full w-[280px] shrink-0 flex-col border-l border-[color-mix(in_srgb,var(--color-border)_86%,transparent)] bg-[color-mix(in_srgb,var(--color-toolbar)_94%,transparent)] shadow-[-1px_0_0_rgba(255,255,255,0.02)]">
       <div className="flex items-center justify-between border-b border-[color-mix(in_srgb,var(--color-border)_86%,transparent)] px-4 py-2">
@@ -450,7 +464,11 @@ export function QueuePanel() {
           {t("queue.upNext")}
           {queue.length > 0 && (
             <span className="ml-2 text-[var(--color-text-dimmer)]">
-              ({queue.length})
+              (
+              {filterSinger
+                ? `${filteredQueue.length}/${queue.length}`
+                : queue.length}
+              )
             </span>
           )}
         </span>
@@ -468,7 +486,7 @@ export function QueuePanel() {
       <RotationControls />
 
       <div className="custom-scrollbar flex-1 overflow-y-auto px-1.5 py-1">
-        {queue.length === 0 ? (
+        {filteredQueue.length === 0 ? (
           <div className="flex items-center justify-center py-8">
             <span className="text-[13px] text-[var(--color-text-dimmer)]">
               {t("queue.empty")}
@@ -485,11 +503,11 @@ export function QueuePanel() {
             onDragCancel={clearDragState}
           >
             <SortableContext
-              items={queue}
+              items={filteredQueue}
               strategy={verticalListSortingStrategy}
             >
               <div className="space-y-1">
-                {queue.map((songId, index) => {
+                {filteredQueue.map((songId, index) => {
                   const song = getSong(songId);
                   const title = song?.title || songId.slice(0, 8);
                   const dropIndicator =
@@ -502,7 +520,7 @@ export function QueuePanel() {
                       key={songId}
                       songId={songId}
                       index={index}
-                      queueLength={queue.length}
+                      queueLength={filteredQueue.length}
                       title={title}
                       artist={song?.artist || t("common.unknownArtist")}
                       singer={
@@ -544,11 +562,11 @@ export function QueuePanel() {
       </div>
 
       {singerDialog.open && (
-        <InputDialog
-          title={t("rotation.assignSinger")}
-          initialValue={singerDialog.currentSinger}
-          confirmLabel={t("common.save")}
-          onConfirm={handleAssignSinger}
+        <SingerPickerDialog
+          singerNames={singerNames}
+          currentSinger={singerDialog.currentSinger || null}
+          onSelect={handleAssignSinger}
+          onRemove={handleRemoveSinger}
           onCancel={handleCancelAssignSinger}
         />
       )}

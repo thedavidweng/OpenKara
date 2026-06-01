@@ -437,12 +437,16 @@
   },
   "rotation": {
     "assignSinger": "指定歌手",
+    "shuffle": "随机排列",
     "singer": "歌手",
     "nextSinger": "下一位歌手",
     "roundRobin": "轮唱",
     "singleSinger": "单人演唱",
     "noSinger": "未指定歌手",
-    "singerName": "歌手姓名"
+    "singerName": "歌手姓名",
+    "removeSinger": "移除歌手",
+    "confirmRemoveSinger": "移除歌手",
+    "confirmRemoveSingerMessage": "该歌手已被分配到队列中的歌曲。移除歌手将同时从队列中删除这些歌曲。"
   },
   "errors": {
     "database_unavailable": "数据库错误",

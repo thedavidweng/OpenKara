@@ -1,11 +1,21 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-const { mockSetRotationState, mockGetRotationState, mockAdvanceRotation } =
-  vi.hoisted(() => ({
+const {
+  mockSetRotationState,
+  mockGetRotationState,
+  mockAdvanceRotation,
+  mockSetQueue,
+  mockQueueState,
+} = vi.hoisted(() => {
+  const state = { queue: [] as string[] };
+  return {
     mockSetRotationState: vi.fn().mockResolvedValue(undefined),
     mockGetRotationState: vi.fn(),
     mockAdvanceRotation: vi.fn(),
-  }));
+    mockSetQueue: vi.fn(),
+    mockQueueState: state,
+  };
+});
 
 vi.mock("@/lib/tauri/playlist", () => ({
   setRotationState: mockSetRotationState,
@@ -13,17 +23,32 @@ vi.mock("@/lib/tauri/playlist", () => ({
   advanceRotation: mockAdvanceRotation,
 }));
 
+vi.mock("@/stores/queue-store", () => ({
+  useQueueStore: {
+    getState: () => ({
+      get queue() {
+        return mockQueueState.queue;
+      },
+      setQueue: mockSetQueue,
+    }),
+  },
+}));
+
 import { useRotationStore } from "./rotation-store";
 
 describe("rotation-store", () => {
   beforeEach(() => {
     mockSetRotationState.mockClear();
+    mockAdvanceRotation.mockReset();
+    mockSetQueue.mockReset();
+    mockQueueState.queue = [];
     useRotationStore.setState({
       active: false,
       singerNames: [],
       currentIndex: 0,
       mode: "round_robin",
       queueSingers: new Map(),
+      filterSinger: null,
       isLoading: false,
     });
   });
@@ -127,6 +152,62 @@ describe("rotation-store", () => {
     });
   });
 
+  describe("filterSinger", () => {
+    test("defaults to null (show all)", () => {
+      expect(useRotationStore.getState().filterSinger).toBeNull();
+    });
+
+    test("setFilterSinger updates the filter", () => {
+      useRotationStore.setState({
+        singerNames: ["Alice", "Bob"],
+      });
+      useRotationStore.getState().setFilterSinger("Alice");
+      expect(useRotationStore.getState().filterSinger).toBe("Alice");
+    });
+
+    test("setFilterSinger with null clears the filter", () => {
+      useRotationStore.setState({ filterSinger: "Alice" });
+      useRotationStore.getState().setFilterSinger(null);
+      expect(useRotationStore.getState().filterSinger).toBeNull();
+    });
+
+    test("advanceRotation sets filter to the new current singer", async () => {
+      useRotationStore.setState({
+        singerNames: ["Alice", "Bob"],
+        currentIndex: 0,
+        active: true,
+      });
+      mockAdvanceRotation.mockResolvedValue({
+        singer_names: ["Alice", "Bob"],
+        current_index: 1,
+      });
+      await useRotationStore.getState().advanceRotation();
+      expect(useRotationStore.getState().filterSinger).toBe("Bob");
+    });
+
+    test("removeSinger clears filter if removed singer was the filtered one", async () => {
+      useRotationStore.setState({
+        singerNames: ["Alice", "Bob"],
+        currentIndex: 0,
+        filterSinger: "Alice",
+        active: true,
+      });
+      await useRotationStore.getState().removeSinger("Alice");
+      expect(useRotationStore.getState().filterSinger).toBeNull();
+    });
+
+    test("removeSinger keeps filter if removed singer was not the filtered one", async () => {
+      useRotationStore.setState({
+        singerNames: ["Alice", "Bob"],
+        currentIndex: 0,
+        filterSinger: "Bob",
+        active: true,
+      });
+      await useRotationStore.getState().removeSinger("Alice");
+      expect(useRotationStore.getState().filterSinger).toBe("Bob");
+    });
+  });
+
   describe("assignSingerToQueueEntry", () => {
     test("assigns singer to song hash", () => {
       useRotationStore.getState().assignSingerToQueueEntry("song-1", "Alice");
@@ -153,6 +234,86 @@ describe("rotation-store", () => {
       store.assignSingerToQueueEntry("song-2", "Bob");
 
       expect(prevMap.has("song-2")).toBe(false);
+    });
+  });
+
+  describe("shuffleQueue", () => {
+    test("does nothing when queue has 0 or 1 items", () => {
+      mockQueueState.queue = [];
+      useRotationStore.getState().shuffleQueue();
+      expect(mockSetQueue).not.toHaveBeenCalled();
+
+      mockQueueState.queue = ["song-1"];
+      useRotationStore.getState().shuffleQueue();
+      expect(mockSetQueue).not.toHaveBeenCalled();
+    });
+
+    test("randomly shuffles when no singers are assigned", () => {
+      mockQueueState.queue = ["a", "b", "c", "d", "e"];
+      useRotationStore.setState({ queueSingers: new Map() });
+      mockSetQueue.mockClear();
+
+      useRotationStore.getState().shuffleQueue();
+
+      expect(mockSetQueue).toHaveBeenCalledTimes(1);
+      const result = mockSetQueue.mock.calls[0][0];
+      expect(result).toHaveLength(5);
+      expect(result.sort()).toEqual(["a", "b", "c", "d", "e"]);
+    });
+
+    test("interleaves by singer to avoid back-to-back", () => {
+      // 3 songs by Alice, 2 by Bob
+      mockQueueState.queue = ["a1", "a2", "a3", "b1", "b2"];
+      useRotationStore.setState({
+        queueSingers: new Map([
+          ["a1", "Alice"],
+          ["a2", "Alice"],
+          ["a3", "Alice"],
+          ["b1", "Bob"],
+          ["b2", "Bob"],
+        ]),
+      });
+      mockSetQueue.mockClear();
+
+      // Run multiple times to account for randomness within groups
+      let hasBackToBack = false;
+      for (let run = 0; run < 20; run++) {
+        mockSetQueue.mockClear();
+        useRotationStore.getState().shuffleQueue();
+        const result = mockSetQueue.mock.calls[0][0];
+
+        for (let i = 1; i < result.length; i++) {
+          const prevSinger = useRotationStore
+            .getState()
+            .queueSingers.get(result[i - 1]);
+          const currSinger = useRotationStore
+            .getState()
+            .queueSingers.get(result[i]);
+          if (prevSinger && currSinger && prevSinger === currSinger) {
+            hasBackToBack = true;
+            break;
+          }
+        }
+        if (!hasBackToBack) break;
+      }
+      // With 3 Alice + 2 Bob, interleaving should avoid back-to-back
+      expect(hasBackToBack).toBe(false);
+    });
+
+    test("preserves all songs in shuffled result", () => {
+      mockQueueState.queue = ["x", "y", "z"];
+      useRotationStore.setState({
+        queueSingers: new Map([
+          ["x", "Alice"],
+          ["y", "Bob"],
+        ]),
+      });
+      mockSetQueue.mockClear();
+
+      useRotationStore.getState().shuffleQueue();
+
+      const result = mockSetQueue.mock.calls[0][0];
+      expect(result.sort()).toEqual(["x", "y", "z"]);
     });
   });
 });

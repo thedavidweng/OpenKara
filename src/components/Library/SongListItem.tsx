@@ -425,7 +425,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
             playNow: () => usePlayerStore.getState().playNow(song.hash),
             playNext: () => {
               useQueueStore.getState().playNext(song.hash);
-              if (rotation.active && rotation.singerNames.length > 0) {
+              if (rotation.singerNames.length > 0) {
                 const singer = rotation.getNextSinger();
                 rotation.assignSingerToQueueEntry(song.hash, singer);
                 void rotation.advanceRotation();
@@ -433,7 +433,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
             },
             addToQueue: () => {
               useQueueStore.getState().addToQueue(song.hash);
-              if (rotation.active && rotation.singerNames.length > 0) {
+              if (rotation.singerNames.length > 0) {
                 const singer = rotation.getNextSinger();
                 rotation.assignSingerToQueueEntry(song.hash, singer);
                 void rotation.advanceRotation();
