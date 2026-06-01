@@ -62,7 +62,9 @@ pub fn get_import_candidate_details(
     paths
         .into_iter()
         .map(|raw_path| {
-            inspect_import_candidate(&raw_path).map_err(|error| CommandError::from(LibraryError::MediaReadFailed(error.to_string())))
+            inspect_import_candidate(&raw_path).map_err(|error| {
+                CommandError::from(LibraryError::MediaReadFailed(error.to_string()))
+            })
         })
         .collect()
 }
@@ -127,7 +129,9 @@ pub fn pick_import_paths(default_path: Option<String>) -> CommandResult<Vec<Stri
     #[cfg(not(target_os = "macos"))]
     {
         let _ = default_path;
-        Err(CommandError::from(LibraryError::Internal("mixed file and folder selection is only available on macOS".to_string(),)))
+        Err(CommandError::from(LibraryError::Internal(
+            "mixed file and folder selection is only available on macOS".to_string(),
+        )))
     }
 }
 
@@ -156,7 +160,8 @@ pub fn delete_songs(
     let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
     let current_song_id = {
         let playback = state
-            .playback.playback
+            .playback
+            .playback
             .lock()
             .map_err(|_| state_lock_error("playback controller lock was poisoned"))?;
         playback.current_song_id().map(|value| value.to_owned())
@@ -181,13 +186,15 @@ pub fn delete_songs(
     {
         {
             let mut playback = state
-                .playback.playback
+                .playback
+                .playback
                 .lock()
                 .map_err(|_| state_lock_error("playback controller lock was poisoned"))?;
             playback.clear_track();
         }
         let mut cdg_state = state
-            .playback.cdg_state
+            .playback
+            .cdg_state
             .lock()
             .map_err(|_| state_lock_error("CDG state lock was poisoned"))?;
         *cdg_state = None;
@@ -438,8 +445,9 @@ pub fn get_song_properties(
         .unwrap_or("bin");
 
     let (decoded, file_size, format) = if song.media_g_container.as_deref() == Some(MEDIA_G_ZIP) {
-        let asset = media_g::inspect_zip_for_media_g(&file_path)
-            .map_err(|error| CommandError::from(LibraryError::MediaReadFailed(error.to_string())))?;
+        let asset = media_g::inspect_zip_for_media_g(&file_path).map_err(|error| {
+            CommandError::from(LibraryError::MediaReadFailed(error.to_string()))
+        })?;
         let decoded = decode::decode_bytes(asset.audio_bytes, ext).map_err(|e| {
             internal_error(format!("failed to decode audio for {}: {}", song_id, e))
         })?;

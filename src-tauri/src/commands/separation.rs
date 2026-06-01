@@ -78,8 +78,11 @@ pub fn separate(
     crate::commands::bootstrap::ensure_model_ready(&state.shell.model_bootstrap_status)?;
     ensure_song_can_be_separated(&state, &song_id)?;
 
-    let initial_status = reserve_running_status(&state.separation.separation_statuses, &song_id, true)?;
-    let app_config = config::load_config(&state.shell.app_data_dir).ok().flatten();
+    let initial_status =
+        reserve_running_status(&state.separation.separation_statuses, &song_id, true)?;
+    let app_config = config::load_config(&state.shell.app_data_dir)
+        .ok()
+        .flatten();
     let stem_mode = app_config
         .as_ref()
         .map(|c| c.effective_stem_mode())
@@ -120,7 +123,8 @@ pub fn upgrade_to_four_stem(
         }
     }
 
-    let initial_status = reserve_running_status(&state.separation.separation_statuses, &song_id, true)?;
+    let initial_status =
+        reserve_running_status(&state.separation.separation_statuses, &song_id, true)?;
     let execution_context = build_execution_context(&state)?;
 
     spawn_separation_job(
@@ -153,13 +157,15 @@ pub fn re_separate(
 
     {
         let mut statuses = state
-            .separation.separation_statuses
+            .separation
+            .separation_statuses
             .lock()
             .map_err(|_| state_lock_error("separation status lock was poisoned"))?;
         statuses.remove(&song_id);
     }
 
-    let initial_status = reserve_running_status(&state.separation.separation_statuses, &song_id, false)?;
+    let initial_status =
+        reserve_running_status(&state.separation.separation_statuses, &song_id, false)?;
     let execution_context = build_execution_context(&state)?;
 
     spawn_separation_job(app_handle, execution_context, song_id.clone(), stem_mode);
@@ -221,12 +227,14 @@ fn spawn_separation_job(
 
         let final_status = match result {
             Ok(Ok(artifacts)) => status_from_job_result(&song_id, Ok(artifacts)),
-            Ok(Err(error)) => {
-                status_from_job_result(&song_id, Err(SeparationError::Failed(error.to_string()).into()))
-            }
-            Err(error) => {
-                status_from_job_result(&song_id, Err(SeparationError::Failed(error.to_string()).into()))
-            }
+            Ok(Err(error)) => status_from_job_result(
+                &song_id,
+                Err(SeparationError::Failed(error.to_string()).into()),
+            ),
+            Err(error) => status_from_job_result(
+                &song_id,
+                Err(SeparationError::Failed(error.to_string()).into()),
+            ),
         };
 
         emit_terminal_status(&app_handle, &statuses, final_status);
@@ -272,7 +280,9 @@ fn emit_terminal_status(
 fn build_execution_context(
     state: &State<'_, AppState>,
 ) -> CommandResult<SeparationExecutionContext> {
-    let app_config = config::load_config(&state.shell.app_data_dir).ok().flatten();
+    let app_config = config::load_config(&state.shell.app_data_dir)
+        .ok()
+        .flatten();
     let model_variant = app_config
         .as_ref()
         .map(|c| c.effective_model_variant())
@@ -369,7 +379,8 @@ pub fn downgrade_single_to_two_stem(
     // Update in-memory separation statuses.
     {
         let mut statuses = state
-            .separation.separation_statuses
+            .separation
+            .separation_statuses
             .lock()
             .map_err(|_| state_lock_error("separation status lock was poisoned"))?;
         statuses.insert(song_id.clone(), completed.clone());
@@ -413,7 +424,8 @@ pub fn get_all_separation_statuses(
     // Also populate the in-memory separation_statuses map so that
     // subsequent get_separation_status calls return the correct state.
     let mut statuses_lock = state
-        .separation.separation_statuses
+        .separation
+        .separation_statuses
         .lock()
         .map_err(|_| state_lock_error("separation status lock was poisoned"))?;
 
@@ -470,13 +482,15 @@ fn validate_song_can_be_separated(song: &crate::library::Song, song_id: &str) ->
         // the stem pipeline, which is designed for plain audio assets only.
         return Err(SeparationError::Failed(format!(
             "song {song_id} is a Media+G track and cannot be separated"
-        )).into());
+        ))
+        .into());
     }
 
     if song.is_instrumental() {
         return Err(SeparationError::Failed(format!(
             "song {song_id} is marked instrumental and cannot be separated"
-        )).into());
+        ))
+        .into());
     }
 
     Ok(())

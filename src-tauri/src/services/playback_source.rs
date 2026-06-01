@@ -83,12 +83,18 @@ pub(crate) fn load_cached_stems_for_song(
         return load_remote_stems_playback_source(connection, library_root, song)
             .map_err(|e| PlaybackError::Internal(e.to_string()))?
             .stems
-            .ok_or_else(|| PlaybackError::KaraokeNotReady("remote stems song did not yield attached stems".to_owned()));
+            .ok_or_else(|| {
+                PlaybackError::KaraokeNotReady(
+                    "remote stems song did not yield attached stems".to_owned(),
+                )
+            });
     }
 
     let cached = cache::stems::get_cached_stem_entry(connection, &song.hash)
         .map_err(|e| PlaybackError::Internal(format!("failed to load cached stems: {e}")))?
-        .ok_or_else(|| PlaybackError::KaraokeNotReady(format!("no cached stems for song {}", song.hash)))?;
+        .ok_or_else(|| {
+            PlaybackError::KaraokeNotReady(format!("no cached stems for song {}", song.hash))
+        })?;
 
     decode_stem_entry(library_root, &cached)
         .map_err(|e| PlaybackError::AudioDecodeFailed(e.to_string()))
@@ -203,7 +209,8 @@ fn decode_stem_entry(
 ) -> Result<LoadedStems> {
     let load_stem = |path: &str| -> Result<decode::DecodedAudio> {
         let abs = library_root.resolve(path);
-        decode::decode_file(&abs).map_err(|e| anyhow::anyhow!("failed to decode stem {}: {}", path, e))
+        decode::decode_file(&abs)
+            .map_err(|e| anyhow::anyhow!("failed to decode stem {}: {}", path, e))
     };
 
     if cached.has_individual_stems() {

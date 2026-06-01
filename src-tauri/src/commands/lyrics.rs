@@ -204,8 +204,8 @@ pub fn save_manual_lyrics(
 
         let raw_lrc = text.clone();
 
-        let fetched_at = current_unix_timestamp()
-            .map_err(|e| LyricsError::Internal(e.to_string()))?;
+        let fetched_at =
+            current_unix_timestamp().map_err(|e| LyricsError::Internal(e.to_string()))?;
 
         cache::lyrics::upsert_lyrics_cache_entry(
             &connection,
@@ -384,8 +384,8 @@ pub fn extract_embedded_lyrics(
 
         let raw_lrc = embedded.clone();
 
-        let fetched_at = current_unix_timestamp()
-            .map_err(|e| LyricsError::Internal(e.to_string()))?;
+        let fetched_at =
+            current_unix_timestamp().map_err(|e| LyricsError::Internal(e.to_string()))?;
 
         cache::lyrics::upsert_lyrics_cache_entry(
             &connection,
@@ -460,8 +460,8 @@ pub fn fetch_lyrics_online(
             let lines = lyrics::parser::parse_lrc(&fetched.raw_lrc)
                 .map_err(|e| LyricsError::LyricsNotReady(e.to_string()))?;
 
-            let fetched_at = current_unix_timestamp()
-            .map_err(|e| LyricsError::Internal(e.to_string()))?;
+            let fetched_at =
+                current_unix_timestamp().map_err(|e| LyricsError::Internal(e.to_string()))?;
 
             cache::lyrics::upsert_lyrics_cache_entry(
                 &connection,

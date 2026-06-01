@@ -71,7 +71,10 @@ mod tests {
         let state = AppState::test_fixture();
         assert!(state.library_root().is_err());
         let bg = state.clone_for_background();
-        state.playback.playback_request_id.store(42, Ordering::SeqCst);
+        state
+            .playback
+            .playback_request_id
+            .store(42, Ordering::SeqCst);
         assert_eq!(bg.playback.playback_request_id.load(Ordering::SeqCst), 42);
     }
 }

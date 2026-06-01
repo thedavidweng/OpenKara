@@ -25,9 +25,9 @@ pub fn ensure_output_thread(
         return Ok(());
     }
 
-    let _guard = start_lock
-        .lock()
-        .map_err(|_| PlaybackError::AudioOutputUnavailable("audio output start lock was poisoned".to_owned()))?;
+    let _guard = start_lock.lock().map_err(|_| {
+        PlaybackError::AudioOutputUnavailable("audio output start lock was poisoned".to_owned())
+    })?;
     if started.load(Ordering::SeqCst) {
         return Ok(());
     }
@@ -47,7 +47,11 @@ pub fn ensure_output_thread(
 
     startup_rx
         .recv_timeout(Duration::from_secs(5))
-        .map_err(|_| PlaybackError::AudioOutputUnavailable("timed out while waiting for audio output thread startup".to_owned()))?
+        .map_err(|_| {
+            PlaybackError::AudioOutputUnavailable(
+                "timed out while waiting for audio output thread startup".to_owned(),
+            )
+        })?
         .map_err(|e| PlaybackError::AudioOutputUnavailable(e.to_string()))?;
     started.store(true, Ordering::SeqCst);
 
@@ -316,46 +320,52 @@ where
     let sample_rate = config.sample_rate;
     let mut scratch = Vec::<f32>::new();
 
-    let stream = device.build_output_stream(
-        config,
-        move |data: &mut [T], _info| {
-            // The audio callback is a realtime path. Reallocating a fresh scratch
-            // buffer every device tick can introduce allocator stalls and audible
-            // glitches, so the closure keeps one buffer and resizes only when the
-            // device changes its callback frame count.
-            scratch.resize(data.len(), 0.0);
+    let stream = device
+        .build_output_stream(
+            config,
+            move |data: &mut [T], _info| {
+                // The audio callback is a realtime path. Reallocating a fresh scratch
+                // buffer every device tick can introduce allocator stalls and audible
+                // glitches, so the closure keeps one buffer and resizes only when the
+                // device changes its callback frame count.
+                scratch.resize(data.len(), 0.0);
 
-            let mut rendered_samples = 0;
-            if let Ok(mut controller) = playback.lock() {
-                rendered_samples = render_output_buffer(
-                    &mut controller,
-                    monotonic_now_ms(),
-                    &mut scratch,
-                    sample_rate,
+                let mut rendered_samples = 0;
+                if let Ok(mut controller) = playback.lock() {
+                    rendered_samples = render_output_buffer(
+                        &mut controller,
+                        monotonic_now_ms(),
+                        &mut scratch,
+                        sample_rate,
+                        channels,
+                    );
+                } else {
+                    scratch.fill(0.0);
+                }
+
+                forward_rendered_audio_to_airplay(
+                    rendered_samples,
+                    &scratch,
                     channels,
+                    sample_rate,
+                    &airplay_audio_tap,
                 );
-            } else {
-                scratch.fill(0.0);
-            }
-
-            forward_rendered_audio_to_airplay(
-                rendered_samples,
-                &scratch,
-                channels,
-                sample_rate,
-                &airplay_audio_tap,
-            );
-            write_output_samples(
-                &scratch,
-                data,
-                airplay_local_output_suppressed.load(Ordering::SeqCst),
-            );
-        },
-        move |error| {
-            eprintln!("audio output stream error: {error}");
-        },
-        None,
-    ).map_err(|e| PlaybackError::AudioOutputUnavailable(format!("failed to build audio output stream: {e}")))?;
+                write_output_samples(
+                    &scratch,
+                    data,
+                    airplay_local_output_suppressed.load(Ordering::SeqCst),
+                );
+            },
+            move |error| {
+                eprintln!("audio output stream error: {error}");
+            },
+            None,
+        )
+        .map_err(|e| {
+            PlaybackError::AudioOutputUnavailable(format!(
+                "failed to build audio output stream: {e}"
+            ))
+        })?;
 
     Ok(stream)
 }
@@ -368,12 +378,16 @@ fn start_output_thread(
     shutdown: Arc<AtomicBool>,
 ) -> Result<(), PlaybackError> {
     let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .ok_or_else(|| PlaybackError::AudioOutputUnavailable("no default output audio device is available".to_owned()))?;
-    let config = device
-        .default_output_config()
-        .map_err(|e| PlaybackError::AudioOutputUnavailable(format!("failed to read default audio output config: {e}")))?;
+    let device = host.default_output_device().ok_or_else(|| {
+        PlaybackError::AudioOutputUnavailable(
+            "no default output audio device is available".to_owned(),
+        )
+    })?;
+    let config = device.default_output_config().map_err(|e| {
+        PlaybackError::AudioOutputUnavailable(format!(
+            "failed to read default audio output config: {e}"
+        ))
+    })?;
     let stream = match config.sample_format() {
         SampleFormat::F32 => build_output_stream::<f32>(
             &device,
@@ -397,15 +411,15 @@ fn start_output_thread(
             airplay_local_output_suppressed,
         )?,
         sample_format => {
-            return Err(PlaybackError::AudioOutputUnavailable(
-                format!("unsupported audio output sample format: {sample_format:?}")
-            ));
+            return Err(PlaybackError::AudioOutputUnavailable(format!(
+                "unsupported audio output sample format: {sample_format:?}"
+            )));
         }
     };
 
-    stream
-        .play()
-        .map_err(|e| PlaybackError::AudioOutputUnavailable(format!("failed to start audio output stream: {e}")))?;
+    stream.play().map_err(|e| {
+        PlaybackError::AudioOutputUnavailable(format!("failed to start audio output stream: {e}"))
+    })?;
     let _ = startup_tx.send(Ok(()));
 
     while !shutdown.load(Ordering::Relaxed) {

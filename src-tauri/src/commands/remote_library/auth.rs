@@ -1,7 +1,7 @@
 use crate::{
-    commands::error::{CommandError, state_lock_error, CommandResult},
-    library::error::LibraryError,
+    commands::error::{state_lock_error, CommandError, CommandResult},
     config::RemoteLibraryProvider,
+    library::error::LibraryError,
     AppState,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
@@ -84,9 +84,11 @@ pub(crate) fn begin_remote_auth(
     };
 
     if provider == RemoteLibraryProvider::GoogleDrive {
-        let google = google_drive_session
-            .clone()
-            .ok_or_else(|| CommandError::from(LibraryError::Internal("missing Google Drive session state".to_owned())))?;
+        let google = google_drive_session.clone().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "missing Google Drive session state".to_owned(),
+            ))
+        })?;
         let session = RemoteAuthSession {
             provider,
             state: RemoteAuthState::Pending,
@@ -99,7 +101,8 @@ pub(crate) fn begin_remote_auth(
             webdav: None,
         };
         state
-            .remote.remote_auth_sessions
+            .remote
+            .remote_auth_sessions
             .lock()
             .map_err(|_| state_lock_error("remote auth session lock was poisoned"))?
             .insert(session_id.clone(), session);
@@ -113,9 +116,11 @@ pub(crate) fn begin_remote_auth(
     }
 
     if provider == RemoteLibraryProvider::Dropbox {
-        let dropbox = dropbox_session
-            .clone()
-            .ok_or_else(|| CommandError::from(LibraryError::Internal("missing Dropbox session state".to_owned())))?;
+        let dropbox = dropbox_session.clone().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "missing Dropbox session state".to_owned(),
+            ))
+        })?;
         let session = RemoteAuthSession {
             provider,
             state: RemoteAuthState::Pending,
@@ -128,7 +133,8 @@ pub(crate) fn begin_remote_auth(
             webdav: None,
         };
         state
-            .remote.remote_auth_sessions
+            .remote
+            .remote_auth_sessions
             .lock()
             .map_err(|_| state_lock_error("remote auth session lock was poisoned"))?
             .insert(session_id.clone(), session);
@@ -165,7 +171,8 @@ pub(crate) fn begin_remote_auth(
     };
 
     state
-        .remote.remote_auth_sessions
+        .remote
+        .remote_auth_sessions
         .lock()
         .map_err(|_| state_lock_error("remote auth session lock was poisoned"))?
         .insert(session_id.clone(), session);
@@ -183,12 +190,15 @@ pub(crate) fn poll_remote_auth(
     session_id: String,
 ) -> CommandResult<RemoteAuthStatus> {
     let sessions = state
-        .remote.remote_auth_sessions
+        .remote
+        .remote_auth_sessions
         .lock()
         .map_err(|_| state_lock_error("remote auth session lock was poisoned"))?;
-    let session = sessions
-        .get(&session_id)
-        .ok_or_else(|| CommandError::from(LibraryError::Internal(format!("remote auth session {session_id} was not found"))))?;
+    let session = sessions.get(&session_id).ok_or_else(|| {
+        CommandError::from(LibraryError::Internal(format!(
+            "remote auth session {session_id} was not found"
+        )))
+    })?;
 
     Ok(RemoteAuthStatus {
         session_id,
@@ -202,7 +212,8 @@ pub(crate) fn poll_remote_auth(
 
 pub(crate) fn cancel_remote_auth(state: &AppState, session_id: String) -> CommandResult<()> {
     state
-        .remote.remote_auth_sessions
+        .remote
+        .remote_auth_sessions
         .lock()
         .map_err(|_| state_lock_error("remote auth session lock was poisoned"))?
         .remove(&session_id);
@@ -212,7 +223,9 @@ pub(crate) fn cancel_remote_auth(state: &AppState, session_id: String) -> Comman
 pub(crate) fn open_external_url(url: String) -> CommandResult<()> {
     open::that_detached(url.clone()).map_err(|_error| {
         tracing::trace!("failed to open external URL {url}");
-        CommandError::from(LibraryError::Internal("Failed to open browser for authentication.".to_owned()))
+        CommandError::from(LibraryError::Internal(
+            "Failed to open browser for authentication.".to_owned(),
+        ))
     })
 }
 
@@ -226,8 +239,11 @@ pub(crate) fn oauth_pkce_code_challenge(code_verifier: &str) -> String {
 }
 
 pub(crate) fn form_urlencoded_body(params: &[(&str, String)]) -> CommandResult<String> {
-    let mut encoded = Url::parse("https://example.invalid")
-        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to build token body: {error}"))))?;
+    let mut encoded = Url::parse("https://example.invalid").map_err(|error| {
+        CommandError::from(LibraryError::Internal(format!(
+            "failed to build token body: {error}"
+        )))
+    })?;
     {
         let mut pairs = encoded.query_pairs_mut();
         for (key, value) in params {

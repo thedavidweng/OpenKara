@@ -1,8 +1,8 @@
 use crate::{
     cache,
     commands::error::{CommandError, CommandResult},
-    library::error::LibraryError,
     config::RegisteredLibrary,
+    library::error::LibraryError,
     library_root::LibraryRoot,
 };
 use reqwest::{
@@ -19,8 +19,11 @@ use super::types::{
 };
 
 pub(crate) fn normalize_server_url(raw: &str) -> CommandResult<String> {
-    let mut url = Url::parse(raw)
-        .map_err(|error| CommandError::from(LibraryError::Internal(format!("invalid WebDAV server URL: {error}"))))?;
+    let mut url = Url::parse(raw).map_err(|error| {
+        CommandError::from(LibraryError::Internal(format!(
+            "invalid WebDAV server URL: {error}"
+        )))
+    })?;
     if !raw.ends_with('/') {
         let next_path = format!("{}/", url.path().trim_end_matches('/'));
         url.set_path(&next_path);
@@ -41,7 +44,11 @@ pub(crate) fn join_url(base: &str, relative: &str) -> CommandResult<String> {
     Url::parse(base)
         .and_then(|url| url.join(relative))
         .map(|url| url.to_string())
-        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to join URL {base} + {relative}: {error}"))))
+        .map_err(|error| {
+            CommandError::from(LibraryError::Internal(format!(
+                "failed to join URL {base} + {relative}: {error}"
+            )))
+        })
 }
 
 pub(crate) fn remote_path_display_from_url(url: &str) -> String {
@@ -59,7 +66,11 @@ pub(crate) fn webdav_client() -> CommandResult<Client> {
     Client::builder()
         .redirect(reqwest::redirect::Policy::limited(10))
         .build()
-        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to create WebDAV client: {error}"))))
+        .map_err(|error| {
+            CommandError::from(LibraryError::Internal(format!(
+                "failed to create WebDAV client: {error}"
+            )))
+        })
 }
 
 pub(crate) fn webdav_send(
@@ -82,7 +93,9 @@ pub(crate) fn webdav_send(
     }
     request.send().map_err(|_error| {
         tracing::trace!("WebDAV request to {url} failed");
-        CommandError::from(LibraryError::Internal("WebDAV request failed. Check the server URL and try again.".to_owned()))
+        CommandError::from(LibraryError::Internal(
+            "WebDAV request failed. Check the server URL and try again.".to_owned(),
+        ))
     })
 }
 
@@ -128,10 +141,16 @@ pub(crate) fn ensure_webdav_collection_chain(
     username: &str,
     password: &str,
 ) -> CommandResult<()> {
-    let server = Url::parse(server_url)
-        .map_err(|error| CommandError::from(LibraryError::Internal(format!("invalid WebDAV server URL: {error}"))))?;
-    let target = Url::parse(target_url)
-        .map_err(|error| CommandError::from(LibraryError::Internal(format!("invalid WebDAV target URL: {error}"))))?;
+    let server = Url::parse(server_url).map_err(|error| {
+        CommandError::from(LibraryError::Internal(format!(
+            "invalid WebDAV server URL: {error}"
+        )))
+    })?;
+    let target = Url::parse(target_url).map_err(|error| {
+        CommandError::from(LibraryError::Internal(format!(
+            "invalid WebDAV target URL: {error}"
+        )))
+    })?;
 
     let server_segments = non_empty_path_segments(&server);
     let target_segments = non_empty_path_segments(&target);
@@ -203,7 +222,10 @@ pub(crate) fn download_webdav_file(
     }
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(|error| {
-            CommandError::from(LibraryError::Internal(format!("failed to create {}: {error}", parent.display())))
+            CommandError::from(LibraryError::Internal(format!(
+                "failed to create {}: {error}",
+                parent.display()
+            )))
         })?;
     }
     let etag = response
@@ -211,9 +233,11 @@ pub(crate) fn download_webdav_file(
         .get(ETAG)
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned);
-    let bytes = response
-        .bytes()
-        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to read WebDAV response: {error}"))))?;
+    let bytes = response.bytes().map_err(|error| {
+        CommandError::from(LibraryError::Internal(format!(
+            "failed to read WebDAV response: {error}"
+        )))
+    })?;
     let mut file = fs::File::create(destination).map_err(|error| {
         CommandError::from(LibraryError::Internal(format!(
             "failed to create {}: {error}",
@@ -236,8 +260,12 @@ pub(crate) fn upload_webdav_file(
     username: &str,
     password: &str,
 ) -> CommandResult<Option<String>> {
-    let bytes = fs::read(source)
-        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to read {}: {error}", source.display()))))?;
+    let bytes = fs::read(source).map_err(|error| {
+        CommandError::from(LibraryError::Internal(format!(
+            "failed to read {}: {error}",
+            source.display()
+        )))
+    })?;
     upload_webdav_bytes(client, url, bytes, username, password)
 }
 
@@ -274,12 +302,16 @@ pub(crate) fn parse_webdav_payload(
     payload: Option<serde_json::Value>,
 ) -> CommandResult<WebDavSessionData> {
     let payload = payload.ok_or_else(|| {
-        CommandError::from(LibraryError::Internal("WebDAV connection details are required for this provider".to_owned()))
+        CommandError::from(LibraryError::Internal(
+            "WebDAV connection details are required for this provider".to_owned(),
+        ))
     })?;
 
-    match serde_json::from_value::<RemoteAuthPayloadInput>(payload)
-        .map_err(|error| CommandError::from(LibraryError::Internal(format!("invalid remote auth payload: {error}"))))?
-    {
+    match serde_json::from_value::<RemoteAuthPayloadInput>(payload).map_err(|error| {
+        CommandError::from(LibraryError::Internal(format!(
+            "invalid remote auth payload: {error}"
+        )))
+    })? {
         RemoteAuthPayloadInput::WebDav {
             server_url,
             username,
@@ -287,13 +319,19 @@ pub(crate) fn parse_webdav_payload(
             root_path,
         } => {
             if server_url.trim().is_empty() {
-                return Err(CommandError::from(LibraryError::Internal("WebDAV server URL cannot be empty".to_owned(),)));
+                return Err(CommandError::from(LibraryError::Internal(
+                    "WebDAV server URL cannot be empty".to_owned(),
+                )));
             }
             if username.trim().is_empty() {
-                return Err(CommandError::from(LibraryError::Internal("WebDAV username cannot be empty".to_owned())));
+                return Err(CommandError::from(LibraryError::Internal(
+                    "WebDAV username cannot be empty".to_owned(),
+                )));
             }
             if password.trim().is_empty() {
-                return Err(CommandError::from(LibraryError::Internal("WebDAV password cannot be empty".to_owned())));
+                return Err(CommandError::from(LibraryError::Internal(
+                    "WebDAV password cannot be empty".to_owned(),
+                )));
             }
 
             Ok(WebDavSessionData {
@@ -325,7 +363,11 @@ pub(crate) fn load_webdav_secret(
 ) -> CommandResult<WebDavSecret> {
     let remote_root_url = library
         .remote_root_locator()
-        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_string())))?
+        .ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "remote repository is missing a remote locator".to_string(),
+            ))
+        })?
         .to_owned();
     if let Some(secret) = load_remote_credential::<StoredWebDavSecret>(app_data_dir, library.id())?
     {
@@ -335,7 +377,9 @@ pub(crate) fn load_webdav_secret(
             password: secret.password,
         });
     }
-    Err(CommandError::from(LibraryError::Internal("missing stored credentials for the remote repository".to_owned(),)))
+    Err(CommandError::from(LibraryError::Internal(
+        "missing stored credentials for the remote repository".to_owned(),
+    )))
 }
 
 pub(crate) fn webdav_marker_url(root_url: &str) -> CommandResult<String> {
@@ -351,15 +395,20 @@ pub(crate) fn initialize_or_sync_webdav_library(
     library: &RegisteredLibrary,
     secret: &WebDavSecret,
 ) -> CommandResult<Option<String>> {
-    let root_path = library
-        .working_copy_root()
-        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a cached working copy".to_string())))?;
+    let root_path = library.working_copy_root().ok_or_else(|| {
+        CommandError::from(LibraryError::Internal(
+            "remote repository is missing a cached working copy".to_string(),
+        ))
+    })?;
     let root = if root_path.join(".openkara-library").exists() {
-        LibraryRoot::open(&root_path).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
+        LibraryRoot::open(&root_path)
+            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
     } else {
-        LibraryRoot::create(&root_path).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
+        LibraryRoot::create(&root_path)
+            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
     };
-    cache::initialize_library_database(&root.database_path()).map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
+    cache::initialize_library_database(&root.database_path())
+        .map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
 
     let client = webdav_client()?;
     let server_url = stored_webdav_server_url(library)?;
@@ -421,20 +470,27 @@ pub(crate) fn refresh_existing_webdav_library(
     library: &RegisteredLibrary,
     secret: &WebDavSecret,
 ) -> CommandResult<Option<String>> {
-    let root_path = library
-        .working_copy_root()
-        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a cached working copy".to_string())))?;
+    let root_path = library.working_copy_root().ok_or_else(|| {
+        CommandError::from(LibraryError::Internal(
+            "remote repository is missing a cached working copy".to_string(),
+        ))
+    })?;
     let root = if root_path.join(".openkara-library").exists() {
-        LibraryRoot::open(&root_path).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
+        LibraryRoot::open(&root_path)
+            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
     } else {
-        LibraryRoot::create(&root_path).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
+        LibraryRoot::create(&root_path)
+            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
     };
-    cache::initialize_library_database(&root.database_path()).map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
+    cache::initialize_library_database(&root.database_path())
+        .map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
 
     let client = webdav_client()?;
     let marker_url = webdav_marker_url(&secret.root_url)?;
     if !webdav_exists(&client, &marker_url, &secret.username, &secret.password)? {
-        return Err(CommandError::from(LibraryError::Internal("The selected WebDAV path is not an OpenKara remote repository.".to_owned(),)));
+        return Err(CommandError::from(LibraryError::Internal(
+            "The selected WebDAV path is not an OpenKara remote repository.".to_owned(),
+        )));
     }
 
     let database_url = webdav_database_url(&secret.root_url)?;
@@ -445,7 +501,11 @@ pub(crate) fn refresh_existing_webdav_library(
         &secret.username,
         &secret.password,
     )?
-    .ok_or_else(|| CommandError::from(LibraryError::Internal("The selected WebDAV path is missing openkara.db.".to_owned())))
+    .ok_or_else(|| {
+        CommandError::from(LibraryError::Internal(
+            "The selected WebDAV path is missing openkara.db.".to_owned(),
+        ))
+    })
     .map(Some)
 }
 
@@ -454,9 +514,11 @@ pub(crate) fn upload_relative_file_to_remote(
     secret: &WebDavSecret,
     relative_path: &str,
 ) -> CommandResult<()> {
-    let local_root = library
-        .working_copy_root()
-        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a cached working copy".to_string())))?;
+    let local_root = library.working_copy_root().ok_or_else(|| {
+        CommandError::from(LibraryError::Internal(
+            "remote repository is missing a cached working copy".to_string(),
+        ))
+    })?;
     let source = local_root.join(relative_path);
     let client = webdav_client()?;
     let server_url = stored_webdav_server_url(library)?;
@@ -493,18 +555,24 @@ pub(crate) fn upload_directory_to_remote(
     secret: &WebDavSecret,
     relative_directory: &str,
 ) -> CommandResult<()> {
-    let local_root = library
-        .working_copy_root()
-        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a cached working copy".to_string())))?;
+    let local_root = library.working_copy_root().ok_or_else(|| {
+        CommandError::from(LibraryError::Internal(
+            "remote repository is missing a cached working copy".to_string(),
+        ))
+    })?;
     let base = local_root.join(relative_directory);
     if !base.exists() {
         return Ok(());
     }
 
-    for entry in fs::read_dir(&base)
-        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to read {}: {error}", base.display()))))?
-    {
-        let entry = entry.map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
+    for entry in fs::read_dir(&base).map_err(|error| {
+        CommandError::from(LibraryError::Internal(format!(
+            "failed to read {}: {error}",
+            base.display()
+        )))
+    })? {
+        let entry =
+            entry.map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
         let path = entry.path();
         let relative = path
             .strip_prefix(&local_root)
@@ -543,7 +611,9 @@ pub(crate) fn delete_relative_path_from_remote(
         }
         status => {
             tracing::trace!("WebDAV delete at {url} returned {status}");
-            Err(CommandError::from(LibraryError::Internal("WebDAV delete failed. Check permissions and try again.".to_owned(),)))
+            Err(CommandError::from(LibraryError::Internal(
+                "WebDAV delete failed. Check permissions and try again.".to_owned(),
+            )))
         }
     }
 }
@@ -580,8 +650,19 @@ impl RemoteProvider for WebDAVProvider<'_> {
     fn download_file(&self, relative_path: &str, destination: &Path) -> CommandResult<()> {
         let client = webdav_client()?;
         let url = join_url(&self.secret.root_url, relative_path)?;
-        download_webdav_file(&client, &url, destination, &self.secret.username, &self.secret.password)?
-            .ok_or_else(|| CommandError::from(LibraryError::Internal(format!("remote file {relative_path} was not found"))))?;        Ok(())
+        download_webdav_file(
+            &client,
+            &url,
+            destination,
+            &self.secret.username,
+            &self.secret.password,
+        )?
+        .ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(format!(
+                "remote file {relative_path} was not found"
+            )))
+        })?;
+        Ok(())
     }
 
     fn upload_file(&self, relative_path: &str) -> CommandResult<()> {

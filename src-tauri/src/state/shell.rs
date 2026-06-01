@@ -40,9 +40,9 @@ impl AppShell {
             .library
             .lock()
             .map_err(|_| state_lock_error("library lock was poisoned"))?;
-        guard
-            .clone()
-            .ok_or_else(|| CommandError::from(LibraryError::Internal("no library configured".to_owned())))
+        guard.clone().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal("no library configured".to_owned()))
+        })
     }
 
     /// Resolve the path to the active AI model based on the current config.

@@ -454,12 +454,12 @@ pub fn downgrade_to_two_stem(
     let other_abs = library_root.resolve(other_rel);
 
     // Decode each stem file.
-    let drums_audio =
-        crate::audio::decode::decode_file(&drums_abs).map_err(|e| anyhow::anyhow!("failed to decode drums.ogg: {e}"))?;
-    let bass_audio =
-        crate::audio::decode::decode_file(&bass_abs).map_err(|e| anyhow::anyhow!("failed to decode bass.ogg: {e}"))?;
-    let other_audio =
-        crate::audio::decode::decode_file(&other_abs).map_err(|e| anyhow::anyhow!("failed to decode other.ogg: {e}"))?;
+    let drums_audio = crate::audio::decode::decode_file(&drums_abs)
+        .map_err(|e| anyhow::anyhow!("failed to decode drums.ogg: {e}"))?;
+    let bass_audio = crate::audio::decode::decode_file(&bass_abs)
+        .map_err(|e| anyhow::anyhow!("failed to decode bass.ogg: {e}"))?;
+    let other_audio = crate::audio::decode::decode_file(&other_abs)
+        .map_err(|e| anyhow::anyhow!("failed to decode other.ogg: {e}"))?;
 
     // Mix by summing samples element-wise.
     let len = drums_audio.samples.len();
