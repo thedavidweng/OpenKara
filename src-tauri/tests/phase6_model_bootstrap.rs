@@ -98,6 +98,12 @@ fn install_verified_model_bytes_writes_model_to_nested_runtime_directory() {
         fs::read(&destination).expect("installed model should be readable"),
         payload
     );
+    assert!(
+        destination
+            .with_file_name("htdemucs.onnx.verified.json")
+            .exists(),
+        "verified installs should persist a startup manifest"
+    );
 
     remove_dir_if_exists(&temp_dir);
 }
@@ -212,6 +218,37 @@ fn startup_bootstrap_keeps_verified_managed_model_ready_without_spawning_worker(
 }
 
 #[test]
+fn startup_bootstrap_uses_existing_verified_manifest_for_managed_model() {
+    let temp_dir = unique_temp_dir();
+    let managed_path = bootstrap::managed_model_path(&temp_dir);
+    let development_path = temp_dir.join("dev").join("htdemucs.onnx");
+    let managed_bytes = b"managed-model";
+
+    bootstrap::install_verified_model_bytes(
+        &managed_path,
+        managed_bytes,
+        &sha256_hex(managed_bytes),
+    )
+    .expect("verified model should install with manifest");
+
+    let startup = derive_startup_model_bootstrap(
+        &temp_dir,
+        &development_path,
+        ModelVariant::Htdemucs,
+        &sha256_hex(managed_bytes),
+    )
+    .expect("startup bootstrap should trust the matching manifest");
+
+    assert_eq!(startup.model_path, managed_path);
+    assert_eq!(
+        startup.status.state,
+        commands::bootstrap::ModelBootstrapState::Ready
+    );
+
+    remove_dir_if_exists(&temp_dir);
+}
+
+#[test]
 fn startup_bootstrap_detects_legacy_managed_model_without_spawning_worker() {
     let temp_dir = unique_temp_dir();
     let managed_path = bootstrap::managed_model_path(&temp_dir);
@@ -251,6 +288,26 @@ fn ensure_model_ready_rejects_outdated_install() {
         .expect_err("outdated install should block separation");
 
     assert_eq!(error.code, ErrorCode::ModelUnavailable);
+}
+
+#[test]
+fn delete_model_file_removes_verification_manifest() {
+    let temp_dir = unique_temp_dir();
+    let managed_path = bootstrap::managed_model_path(&temp_dir);
+    let payload = b"fake-model";
+
+    bootstrap::install_verified_model_bytes(&managed_path, payload, &sha256_hex(payload))
+        .expect("verified model should install with manifest");
+    let manifest_path = managed_path.with_file_name("htdemucs.onnx.verified.json");
+    assert!(manifest_path.exists());
+
+    bootstrap::delete_model_file(&temp_dir, ModelVariant::Htdemucs)
+        .expect("model deletion should remove model and manifest");
+
+    assert!(!managed_path.exists());
+    assert!(!manifest_path.exists());
+
+    remove_dir_if_exists(&temp_dir);
 }
 
 #[test]

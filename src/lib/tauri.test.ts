@@ -299,6 +299,14 @@ describe("tauri API wrappers", () => {
     });
   });
 
+  test("signals that the first app screen is ready through the shell command", async () => {
+    const { windowReady } = await import("./tauri");
+
+    await windowReady();
+
+    expect(mockInvoke).toHaveBeenCalledWith("window_ready");
+  });
+
   test("requests an app restart through the dedicated lifecycle command", async () => {
     const { restartApp } = await import("./tauri");
 

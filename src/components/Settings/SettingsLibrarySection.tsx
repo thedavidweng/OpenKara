@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { SettingsSectionCard } from "./SettingsSectionCard";
+import { InputDialog } from "./InputDialog";
 import { RemoteLibraryWizard } from "./RemoteLibraryWizard";
 import { useSettingsOverlay } from "./SettingsOverlay.context";
 import type { RegisteredLibrary, RemoteLibraryProvider } from "@/types/ipc";
@@ -31,6 +32,17 @@ type RemoteWizardOptions = {
   initialRootPath?: string;
   libraryId?: string;
   purpose?: "add" | "reauthorize";
+};
+
+type RenameDialogState = {
+  libraryId: string;
+  currentName: string;
+  kind: RegisteredLibrary["kind"];
+};
+
+type DeleteConfirmDialogState = {
+  libraryId: string;
+  displayName: string;
 };
 
 function webDavRootPathFromLocator(
@@ -69,6 +81,32 @@ export function SettingsLibrarySection() {
   const [remoteWizard, setRemoteWizard] = useState<RemoteWizardOptions | null>(
     null,
   );
+  const [renameDialog, setRenameDialog] = useState<RenameDialogState | null>(
+    null,
+  );
+  const [deleteConfirmDialog, setDeleteConfirmDialog] =
+    useState<DeleteConfirmDialogState | null>(null);
+
+  const handleRenameConfirm = (displayName: string) => {
+    if (!renameDialog) {
+      return;
+    }
+
+    const { libraryId } = renameDialog;
+    setRenameDialog(null);
+    void actions.renameLibrary(libraryId, displayName);
+  };
+
+  const handleDeleteConfirm = (confirmationName: string) => {
+    if (!deleteConfirmDialog) {
+      return;
+    }
+
+    const { libraryId } = deleteConfirmDialog;
+    setDeleteConfirmDialog(null);
+    void actions.deleteLibrary(libraryId, confirmationName);
+  };
+
   return (
     <SettingsSectionCard title={t("settings.library.label")}>
       {!hasLibraries ? (
@@ -177,7 +215,13 @@ export function SettingsLibrarySection() {
                   ) : null}
                   <button
                     type="button"
-                    onClick={() => void actions.renameLibrary(library.id)}
+                    onClick={() =>
+                      setRenameDialog({
+                        libraryId: library.id,
+                        currentName: library.display_name,
+                        kind: library.kind,
+                      })
+                    }
                     disabled={meta.isInitializing}
                     title={t("settings.library.renameLibrary", {
                       defaultValue: "Rename library",
@@ -199,7 +243,12 @@ export function SettingsLibrarySection() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void actions.deleteLibrary(library.id)}
+                    onClick={() =>
+                      setDeleteConfirmDialog({
+                        libraryId: library.id,
+                        displayName: library.display_name,
+                      })
+                    }
                     disabled={meta.isInitializing}
                     title={t("settings.library.deleteLibrary", {
                       defaultValue: "Delete repository",
@@ -259,6 +308,31 @@ export function SettingsLibrarySection() {
           initialRootPath={remoteWizard.initialRootPath}
           libraryId={remoteWizard.libraryId}
           purpose={remoteWizard.purpose}
+        />
+      )}
+
+      {renameDialog && (
+        <InputDialog
+          title={
+            renameDialog.kind === "remote"
+              ? t("settings.library.renameRemoteRepository")
+              : t("settings.library.renameLocalLibrary")
+          }
+          initialValue={renameDialog.currentName}
+          confirmLabel={t("common.save")}
+          onConfirm={handleRenameConfirm}
+          onCancel={() => setRenameDialog(null)}
+        />
+      )}
+
+      {deleteConfirmDialog && (
+        <InputDialog
+          title={t("settings.library.typeToConfirmDelete", {
+            displayName: deleteConfirmDialog.displayName,
+          })}
+          confirmLabel={t("common.confirm")}
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteConfirmDialog(null)}
         />
       )}
     </SettingsSectionCard>

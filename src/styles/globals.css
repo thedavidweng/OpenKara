@@ -271,7 +271,6 @@
     background: var(--color-border);
     border-radius: 9999px;
     height: 4px;
-    cursor: pointer;
     transition:
       background-color var(--motion-duration-quick) var(--motion-ease-soft-out),
       box-shadow var(--motion-duration-quick) var(--motion-ease-soft-out);
@@ -283,7 +282,6 @@
     height: 10px;
     border-radius: 50%;
     background: var(--color-control-primary);
-    cursor: pointer;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
     transition:
       background-color var(--motion-duration-quick) var(--motion-ease-soft-out),
@@ -307,7 +305,6 @@
     transform: scale(1.05);
   }
   .audio-level-slider:disabled {
-    cursor: default;
     opacity: 0.5;
   }
   .audio-level-slider:disabled::-webkit-slider-thumb {

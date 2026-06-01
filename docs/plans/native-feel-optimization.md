@@ -1,7 +1,9 @@
-# OpenKara 原生感优化实施计划
+# OpenKara 原生感优化实施记录
 
+> Status: implemented.
+>
 > 目标：消除 OpenKara 的"网页应用"感，使其在交互、视觉和窗口行为上与原生桌面应用一致。
-> 当前最高优先级：**启动时窗口闪烁（白屏/内容跳变）**。
+> 本记录保留原计划、实现结果和剩余手动验证项。
 
 ---
 
@@ -40,9 +42,9 @@
 | `src/components/Lyrics/LyricLine.tsx:113`                  | 可点击歌词行                           | 三元 `isSeekable ? "cursor-pointer" : "cursor-default"`                 |
 | `src/components/Settings/SettingsGeneralSection.tsx:14,34` | 2 处 label                             | `cursor-pointer` class（checkbox toggle 的 label）                      |
 
-### 方案
+### 实施结果
 
-直接移除所有显式声明。桌面应用可点击性通过 hover 状态、颜色变化、背景高亮传达，无需 cursor 变化。
+已直接移除显式 cursor 声明。桌面应用可点击性通过 hover 状态、颜色变化、背景高亮传达，无需 cursor 变化。
 
 - `globals.css`：
   - `.native-slider` 和 `::-webkit-slider-thumb` 的 `cursor: pointer` 删除
@@ -75,9 +77,9 @@
 | `src/components/Library/context-menu-position.ts:12-33` | `getContextMenuPosition` 对所有四个方向 clamp（`VIEWPORT_PADDING = 8`）                                                     |
 | `src/components/Library/ContextMenu.tsx:230-235`        | `SubMenu` 在右侧空间不足时自动向左展开                                                                                      |
 
-### 任务
+### 验证任务
 
-此 phase 从"编码"降级为**手动 audit + 验证**，确认无截断问题：
+此 phase 从"编码"降级为**手动 audit + 验证**，需在运行应用后确认无截断问题：
 
 1. 构建 dev 版本，窗口缩至最小尺寸（680×800），在**四角**右键触发 ContextMenu，确认菜单完整可见
 2. 在**右下角**触发 Tooltip，确认 tooltip 被 clamp 到 viewport 内且完整可见
@@ -137,7 +139,7 @@ static void replacement_setFrame(id self, SEL _cmd, NSRect frame) {
 
 ---
 
-## Phase 4: 启动窗口闪烁修复（最高优先级）
+## Phase 4: 启动窗口闪烁修复（已实现）
 
 ### 问题描述
 
@@ -155,11 +157,11 @@ static void replacement_setFrame(id self, SEL _cmd, NSRect frame) {
 3. App 首屏依赖 `getLibraryRegistry()` IPC 返回值，渲染前有不可避免的空隙
 4. 没有机制保证 WebView 首帧渲染完成后才显示窗口
 
-### 方案
+### 实施结果
 
-#### 4.1 第一步（必做）：内联 CSS 抹平白屏
+#### 4.1 内联 CSS 抹平白屏
 
-在 `index.html` 中直接内联深色背景，消除 CSS bundle 加载前的白色闪烁：
+`index.html` 已内联深色背景，消除 CSS bundle 加载前的白色闪烁：
 
 ```html
 <!doctype html>
@@ -183,9 +185,9 @@ static void replacement_setFrame(id self, SEL _cmd, NSRect frame) {
 </html>
 ```
 
-#### 4.2 第二步（必做）：`visible: false` + `window_ready` IPC
+#### 4.2 `visible: false` + `window_ready` IPC
 
-**配置层**：`tauri.conf.json` 中设窗口初始不可见：
+`tauri.conf.json` 已将主窗口设为初始不可见并居中：
 
 ```json
 {
@@ -200,7 +202,7 @@ static void replacement_setFrame(id self, SEL _cmd, NSRect frame) {
 }
 ```
 
-**Rust 层**：新增一个命令让前端通知后端窗口就绪：
+Rust 层已新增 `window_ready` 命令，让前端通知后端窗口就绪：
 
 ```rust
 // src-tauri/src/commands/window_shell.rs
@@ -211,7 +213,9 @@ pub fn window_ready(window: tauri::WebviewWindow) -> CommandResult<()> {
 }
 ```
 
-**前端层**（关键修正）：`window_ready` 不应在 `App.tsx` 的首次 `useEffect([], [])` 中发送，因为首次渲染时 `libraryReady === null`，组件返回 `null`（空白）。正确的时机是**首次渲染出实际 UI** 之后：
+前端层已在 `libraryReady` 变为非空、实际 UI 准备渲染后调用 `window_ready`。
+`window_ready` 不在 `App.tsx` 首次 `useEffect([], [])` 中发送，因为首次渲染时
+`libraryReady === null`，组件返回 `null`（空白）。正确的时机是**首次渲染出实际 UI** 之后：
 
 ```typescript
 // src/App.tsx
@@ -255,9 +259,20 @@ export function useAppReadyRuntime(
 - `requestAnimationFrame` 回调在下一帧 paint **之前**调用 → 触发 `window.show()`
 - 窗口显示时，至少上一帧的内容已在屏幕上
 
-#### 4.3 第三步（可选，延迟加载）：非关键数据延迟
+#### 4.3 模型校验启动优化
 
-`useAppStartupRuntime` 中的 `loadLibrary()`、`loadBootstrapStatus()`、`loadPlayerState()` 在 `libraryReady` 为 `true` 时触发。这些不阻塞首帧渲染，无需改动。
+额外实现了模型 verified manifest：
+
+1. 模型下载或首次完整 SHA-256 校验通过后，写入 `<filename>.verified.json`
+2. 后续启动如果 manifest 的文件名、pinned SHA、文件大小和修改时间都匹配，则不再读取整个 ONNX 文件
+3. manifest 缺失或不匹配时才重新执行完整 SHA-256 校验，并在通过后重写 manifest
+
+这避免每次启动同步读取 300MB+ ONNX 文件。
+
+#### 4.4 非关键数据延迟
+
+`useAppStartupRuntime` 中的 `loadLibrary()`、`loadBootstrapStatus()`、`loadPlayerState()` 在
+`libraryReady` 为 `true` 时触发。这些不阻塞首帧渲染，未改动。
 
 ### 验证
 
@@ -272,7 +287,7 @@ export function useAppReadyRuntime(
 
 ---
 
-## Phase 5: 设置 overlay 中剩余的 `window.prompt` 替换（关联修复）
+## Phase 5: 设置 overlay 中剩余的 `window.prompt` 替换（已实现）
 
 ### 现状
 
@@ -283,9 +298,10 @@ export function useAppReadyRuntime(
 
 与 Phase 1 中修复的 `Assign Singer` 和 `Create Playlist` 同根因：Tauri WebView 禁用 `window.prompt`，功能不可用。
 
-### 方案
+### 实施结果
 
-dialog 状态放在 `SettingsLibrarySection.tsx` 的局部 `useState` 中管理（和 `Sidebar.tsx` 中 `showCreatePlaylist` 的模式一致），**不要**改 `SettingsOverlayState`：
+dialog 状态已放在 `SettingsLibrarySection.tsx` 的局部 `useState` 中管理（和
+`Sidebar.tsx` 中 `showCreatePlaylist` 的模式一致），未改 `SettingsOverlayState`：
 
 ```typescript
 // src/components/Settings/SettingsLibrarySection.tsx
@@ -299,10 +315,10 @@ const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{
 } | null>(null);
 ```
 
-- `actions.renameLibrary(libraryId)` 不再弹 prompt，改为 `setRenameDialog({ libraryId, currentName })`
-- `actions.deleteLibrary(libraryId)` 的 window.confirm 保留（Tauri 支持），但 window.prompt 部分改为 `setDeleteConfirmDialog(...)`
+- `actions.renameLibrary(libraryId, displayName)` 不再弹 prompt；按钮只打开 `InputDialog`
+- `actions.deleteLibrary(libraryId, confirmationName)` 的 `window.confirm` 保留（Tauri 支持），但输入确认改为 `InputDialog`
 
-然后在 JSX 中挂载 `InputDialog`（确认后回调 `handleRename` / `handleDelete`）。
+JSX 中挂载 `InputDialog`，确认后回调 `handleRenameConfirm` / `handleDeleteConfirm`。
 
 ### 工作量
 
@@ -310,16 +326,17 @@ const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{
 
 ---
 
-## 实施顺序
+## 实施结果汇总
 
-| 优先级 | 阶段          | 内容                                     | 预估时间 |
-| ------ | ------------- | ---------------------------------------- | -------- |
-| P0     | **Phase 4.1** | `index.html` 内联深色背景                | 5 min    |
-| P0     | **Phase 4.2** | `visible: false` + `window_ready` IPC    | 1-2 h    |
-| P1     | **Phase 1**   | 移除所有 `cursor: pointer`               | 15 min   |
-| P1     | **Phase 5**   | 替换 Settings 中剩余的 `window.prompt`   | 1-2 h    |
-| P2     | **Phase 2**   | Tooltip/ContextMenu 边缘手动审计         | 30 min   |
-| P3     | **Phase 3**   | 窗口 resize 抗卡顿（写入文档，暂缓执行） | —        |
+| 阶段      | 结果                                                   |
+| --------- | ------------------------------------------------------ |
+| Phase 4.1 | 已实现：`index.html` 内联深色背景                      |
+| Phase 4.2 | 已实现：`visible: false` + `window_ready` IPC          |
+| Phase 4.3 | 已实现：模型 verified manifest，减少启动同步大文件读取 |
+| Phase 1   | 已实现：移除显式 cursor pointer/default 声明           |
+| Phase 5   | 已实现：Settings prompt 替换为 `InputDialog`           |
+| Phase 2   | 待手动 audit：Tooltip/ContextMenu 边缘验证             |
+| Phase 3   | 保持暂缓：resize 抗卡顿仅记录方案                      |
 
 ---
 
@@ -331,32 +348,35 @@ const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{
    - `src-tauri/src/commands/window_shell.rs`：新增 `window_ready` command
    - `src-tauri/src/lib.rs`：注册 `window_ready` command
    - 前端 `src/App.tsx` + `src/runtime/app-runtime.ts`：首屏渲染完成后调用 `window_ready`
-   - 前端 7 处 `cursor-pointer` 移除
+   - `src-tauri/src/separator/bootstrap.rs`：模型 verified manifest，减少重复大文件校验
+   - 前端显式 cursor pointer/default 移除
    - `SettingsLibrarySection.tsx`：`window.prompt` → `InputDialog`（局部 state）
 
 2. **测试验证**：
-   - `pnpm format` → `pnpm lint` → `pnpm test -- --run` → `pnpm build` → `cd src-tauri && cargo test -q`
+   - `pnpm lint` → `pnpm build` → `pnpm test` → `cd src-tauri && cargo test -q`
+   - 因修改 `tauri.conf.json`，最终 release gate 还需运行 `pnpm tauri build`
    - 手动启动测试：观察窗口首次可见时是否已有深色背景和实际内容
 
 3. **文档**：
    - 本计划文档（Phase 3 技术方案仅供参考，不可直接使用）
-   - ContextMenu/Tooltip 边缘 audit 的截图记录
+   - `phase-6-model-bootstrap-contract.md` 更新模型 manifest 语义
+   - ContextMenu/Tooltip 边缘 audit 仍需人工截图记录
 
 ---
 
 ## 风险与决策点
 
-| 风险                                              | 影响                            | 缓解                                                                       |
-| ------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------------- |
-| `window_ready` 依赖前端渲染时机                   | 如果首帧 paint 慢，窗口显示延迟 | 4.1 内联 CSS 已消除白色闪烁，延迟是"全内容→可见"而非"白→内容"，可接受      |
-| `_doAfterNextPresentationUpdate` 私有 API         | App Store 审核 + Tauri break    | 已放弃，改用跨平台 IPC 方案                                                |
-| `NSWindow.setFrame` swizzle                       | Tauri 升级 break                | 暂缓执行，Phase 3 仅文档记录                                               |
-| Phase 5 影响 `SettingsOverlay.controller.test.ts` | 测试 mock 需更新                | 动作层不变，mock 无需修改；仅 `SettingsLibrarySection` 测试可能需要补 mock |
+| 风险                                              | 影响                            | 缓解                                                                  |
+| ------------------------------------------------- | ------------------------------- | --------------------------------------------------------------------- |
+| `window_ready` 依赖前端渲染时机                   | 如果首帧 paint 慢，窗口显示延迟 | 4.1 内联 CSS 已消除白色闪烁，延迟是"全内容→可见"而非"白→内容"，可接受 |
+| 模型 manifest 元数据变化                          | 首次迁移仍需完整校验一次        | 只有 manifest 匹配时跳过大文件读取；不匹配会重新校验并重写            |
+| `_doAfterNextPresentationUpdate` 私有 API         | App Store 审核 + Tauri break    | 已放弃，改用跨平台 IPC 方案                                           |
+| `NSWindow.setFrame` swizzle                       | Tauri 升级 break                | 暂缓执行，Phase 3 仅文档记录                                          |
+| Phase 5 影响 `SettingsOverlay.controller.test.ts` | 测试 mock 需更新                | 已更新 action 测试，确认匹配文本才删除                                |
 
 ---
 
 ## 备注
 
 - **不要**在 `tauri.conf.json` 中加 `hiddenTitle: true` 或 `transparent: true` —— `window_shell.m` 已通过 AppKit 手动配置 titlebar，config 选项会冲突
-- **Phase 4.1 见效最快**：5 分钟修改，完全消除白色背景闪烁
 - Phase 5 中 `deleteLibrary` 的 `window.confirm` 保留不替换（Tauri WebView 支持 `confirm`）

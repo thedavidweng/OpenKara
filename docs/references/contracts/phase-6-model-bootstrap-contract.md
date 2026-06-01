@@ -102,9 +102,14 @@ payload 为完整的 `ModelBootstrapStatusSnapshot`，其中：
 
 1. 优先使用活动模型 variant 对应的 `<app_data_dir>/models/<descriptor.filename>`
 2. 若运行时安装目录已有模型且 SHA-256 校验通过，直接进入 `ready`
-3. 若运行时安装目录模型存在但校验失败（含旧版本 pin 不匹配），进入 `outdated`，**保留**托管文件以便用户在设置的危险区删除；不会静默删除后再下载
-4. 若运行时安装目录缺失，但开发目录 `src-tauri/models/<descriptor.filename>` 存在且校验通过，则直接进入 `ready`
-5. 只有当两处都没有可用模型时，才会在后台从固定 URL 下载到运行时安装目录
+3. 运行时安装目录的模型在完整 SHA-256 校验通过后，会在同目录写入
+   `<filename>.verified.json`。后续启动时若该 manifest 的文件名、pinned
+   SHA-256、文件大小和修改时间都匹配当前模型文件，则直接进入 `ready`，不再读取整个
+   ONNX 文件；manifest 缺失或不匹配时必须重新执行完整 SHA-256 校验，并在通过后重写
+   manifest。
+4. 若运行时安装目录模型存在但校验失败（含旧版本 pin 不匹配），进入 `outdated`，**保留**托管文件以便用户在设置的危险区删除；不会静默删除后再下载
+5. 若运行时安装目录缺失，但开发目录 `src-tauri/models/<descriptor.filename>` 存在且校验通过，则直接进入 `ready`。开发目录同样允许写入本地 manifest；该目录仍只是开发/测试缓存，不是生产运行时依赖。
+6. 只有当两处都没有可用模型时，才会在后台从固定 URL 下载到运行时安装目录
 
 ## ONNX Runtime path resolution semantics
 

@@ -9,6 +9,12 @@ React entry tree.
 
 - `get_window_shell_state() -> WindowShellStateSnapshot`
 - `set_native_sidebar_visibility(visible: boolean) -> void` (legacy no-op; kept for IPC stability)
+- `window_ready() -> void`
+
+`window_ready` is called by the frontend after the first real app screen has
+committed. The main window may start hidden, so this command is the contract
+boundary that lets the host reveal the window without exposing an empty WebView.
+
 - `restart_app() -> void`
 
 ## Payload

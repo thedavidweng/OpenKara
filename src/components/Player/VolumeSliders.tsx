@@ -265,7 +265,7 @@ export function VolumeSliders({
             className={`motion-icon-button flex rounded-xl p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 ${
               stemsAvailable
                 ? "text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-white"
-                : "cursor-default text-[var(--color-text-dimmer)]"
+                : "text-[var(--color-text-dimmer)]"
             } ${
               isExpanded
                 ? "bg-[color-mix(in_srgb,var(--color-hover)_86%,transparent)] text-white shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
@@ -404,7 +404,7 @@ function StemSlider({
             !disabled && value > 0
               ? "text-[var(--color-control-primary)] hover:bg-[var(--color-ghost-hover)] hover:text-white"
               : "text-[var(--color-text-dimmer)]"
-          } ${onIconClick && !disabled ? "cursor-pointer" : "cursor-default"}`}
+          }`}
           aria-label={onIconClick ? muteLabel : label}
         >
           {icon}

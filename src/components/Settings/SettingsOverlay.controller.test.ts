@@ -449,13 +449,12 @@ describe("SettingsOverlay controller", () => {
       meta: harness.getSnapshot().meta,
     });
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
-    const prompt = vi.spyOn(window, "prompt").mockReturnValue("Drive");
     vi.mocked(harness.dependencies.api.deleteLibrary).mockResolvedValue({
       active_library_id: null,
       libraries: [],
     });
 
-    await harness.actions.deleteLibrary("remote:library-1");
+    await harness.actions.deleteLibrary("remote:library-1", "Drive");
 
     expect(confirm).toHaveBeenCalledWith(
       expect.stringContaining(
@@ -464,10 +463,6 @@ describe("SettingsOverlay controller", () => {
     );
     expect(confirm).toHaveBeenCalledWith(
       expect.stringContaining("Google Drive / OpenKara"),
-    );
-    expect(prompt).toHaveBeenCalledWith(
-      expect.stringContaining('Type "Drive"'),
-      "",
     );
     expect(harness.dependencies.api.deleteLibrary).toHaveBeenCalledWith(
       "remote:library-1",
@@ -498,9 +493,8 @@ describe("SettingsOverlay controller", () => {
       meta: harness.getSnapshot().meta,
     });
     vi.spyOn(window, "confirm").mockReturnValue(true);
-    vi.spyOn(window, "prompt").mockReturnValue("Wrong");
 
-    await harness.actions.deleteLibrary("remote:library-1");
+    await harness.actions.deleteLibrary("remote:library-1", "Wrong");
 
     expect(harness.dependencies.api.deleteLibrary).not.toHaveBeenCalled();
   });

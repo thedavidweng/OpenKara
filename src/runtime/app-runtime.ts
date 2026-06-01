@@ -22,6 +22,8 @@ import {
 import { useAppMenuRuntime } from "./menu-runtime";
 import { loadStartupSettings } from "./settings-runtime";
 
+type AnimationFrameScheduler = (callback: FrameRequestCallback) => number;
+
 export function useAppStartupRuntime(
   libraryReady: boolean | null,
   setLibraryReady: (ready: boolean) => void,
@@ -62,6 +64,28 @@ export function useAppStartupRuntime(
     void loadBootstrapStatus();
     void loadPlayerState();
   }, [libraryReady, loadBootstrapStatus, loadLibrary, loadPlayerState]);
+}
+
+export function useAppReadyRuntime(
+  libraryReady: boolean | null,
+  windowShown: boolean,
+  setWindowShown: (shown: boolean) => void,
+  scheduleFrame: AnimationFrameScheduler = requestAnimationFrame,
+) {
+  useEffect(() => {
+    if (libraryReady === null || windowShown) {
+      return;
+    }
+
+    const frameId = scheduleFrame(() => {
+      void api.windowReady();
+      setWindowShown(true);
+    });
+
+    return () => {
+      cancelAnimationFrame(frameId);
+    };
+  }, [libraryReady, scheduleFrame, setWindowShown, windowShown]);
 }
 
 /**

@@ -110,8 +110,8 @@ export const LyricLine = memo(function LyricLine({
     <div
       onClick={isSeekable ? handleClick : undefined}
       className={`motion-surface flex flex-col items-center gap-1.5 text-center ${
-        isSeekable ? "cursor-pointer" : "cursor-default"
-      } ${state === "active" ? "scale-105 drop-shadow-md" : ""}`}
+        state === "active" ? "scale-105 drop-shadow-md" : ""
+      }`}
       style={
         presentation === "audience"
           ? {
