@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import * as api from "@/lib/tauri/playlist";
+import { useQueueStore } from "./queue-store";
 
 interface RotationState {
   active: boolean;
@@ -7,6 +8,7 @@ interface RotationState {
   currentIndex: number;
   mode: "round_robin" | "single";
   queueSingers: Map<string, string | null>;
+  filterSinger: string | null;
   isLoading: boolean;
 
   loadRotation: () => Promise<void>;
@@ -15,8 +17,10 @@ interface RotationState {
   removeSinger: (name: string) => Promise<void>;
   advanceRotation: () => Promise<void>;
   setCurrentSinger: (name: string) => Promise<void>;
+  setFilterSinger: (name: string | null) => void;
   assignSingerToQueueEntry: (songHash: string, singer: string | null) => void;
   getNextSinger: () => string | null;
+  shuffleQueue: () => void;
 }
 
 export const useRotationStore = create<RotationState>((set, get) => ({
@@ -25,6 +29,7 @@ export const useRotationStore = create<RotationState>((set, get) => ({
   currentIndex: 0,
   mode: "round_robin",
   queueSingers: new Map(),
+  filterSinger: null,
   isLoading: false,
 
   loadRotation: async () => {
@@ -72,7 +77,7 @@ export const useRotationStore = create<RotationState>((set, get) => ({
   },
 
   removeSinger: async (name: string) => {
-    const { singerNames, currentIndex, mode, active } = get();
+    const { singerNames, currentIndex, mode, active, filterSinger } = get();
     const removedIndex = singerNames.indexOf(name);
     const next = singerNames.filter((n) => n !== name);
     let nextIndex = currentIndex;
@@ -88,7 +93,11 @@ export const useRotationStore = create<RotationState>((set, get) => ({
       current_index: nextIndex,
       mode,
     });
-    set({ singerNames: next, currentIndex: nextIndex });
+    set({
+      singerNames: next,
+      currentIndex: nextIndex,
+      filterSinger: filterSinger === name ? null : filterSinger,
+    });
   },
 
   setCurrentSinger: async (name: string) => {
@@ -104,12 +113,18 @@ export const useRotationStore = create<RotationState>((set, get) => ({
     set({ currentIndex: nextIndex });
   },
 
+  setFilterSinger: (name: string | null) => {
+    set({ filterSinger: name });
+  },
+
   advanceRotation: async () => {
     try {
       const state = await api.advanceRotation();
+      const newSinger = state.singer_names[state.current_index] ?? null;
       set({
         singerNames: state.singer_names,
         currentIndex: state.current_index,
+        filterSinger: newSinger,
       });
     } catch {
       // silently fail
@@ -132,5 +147,67 @@ export const useRotationStore = create<RotationState>((set, get) => ({
     const { singerNames, currentIndex } = get();
     if (singerNames.length === 0) return null;
     return singerNames[currentIndex % singerNames.length];
+  },
+
+  shuffleQueue: () => {
+    const { queueSingers } = get();
+    const { queue, setQueue } = useQueueStore.getState();
+    if (queue.length <= 1) return;
+
+    // Check if any songs have assigned singers
+    const hasAssignments = queue.some((id) => queueSingers.has(id));
+
+    if (!hasAssignments) {
+      // Pure random shuffle (Fisher-Yates)
+      const shuffled = [...queue];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      setQueue(shuffled);
+      return;
+    }
+
+    // Interleave by singer to avoid back-to-back
+    const groups = new Map<string, string[]>();
+    const unassigned: string[] = [];
+    for (const id of queue) {
+      const singer = queueSingers.get(id);
+      if (singer) {
+        const group = groups.get(singer);
+        if (group) group.push(id);
+        else groups.set(singer, [id]);
+      } else {
+        unassigned.push(id);
+      }
+    }
+
+    // Shuffle within each group
+    const shuffle = (arr: string[]) => {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+    };
+    for (const group of groups.values()) shuffle(group);
+    shuffle(unassigned);
+
+    // Round-robin placement, starting with the largest group
+    const sorted = [...groups.entries()].sort(
+      (a, b) => b[1].length - a[1].length,
+    );
+    const result: string[] = [];
+    let hasMore = true;
+    while (hasMore) {
+      hasMore = false;
+      for (const [, songs] of sorted) {
+        if (songs.length > 0) {
+          result.push(songs.shift()!);
+          if (songs.length > 0) hasMore = true;
+        }
+      }
+    }
+    result.push(...unassigned);
+    setQueue(result);
   },
 }));

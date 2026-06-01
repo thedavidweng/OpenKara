@@ -63,7 +63,7 @@ export function SidebarRail({
   return (
     <div
       className={`shrink-0 overflow-hidden transition-[width] ${
-        visible ? "w-[var(--window-shell-sidebar-width)]" : "w-0"
+        visible ? "w-[var(--window-shell-sidebar-width)] select-none" : "w-0"
       }`}
       style={{
         transitionDuration: "var(--motion-duration-standard)",

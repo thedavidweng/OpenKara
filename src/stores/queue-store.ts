@@ -18,6 +18,7 @@ interface QueueState {
   reorder: (fromIndex: number, toIndex: number) => void;
   reorderBySongId: (activeId: string, overId: string) => void;
   clearQueue: () => void;
+  setQueue: (queue: string[]) => void;
   dequeue: () => string | undefined;
   pushToHistory: (songId: string) => void;
   popFromHistory: () => string | undefined;
@@ -123,6 +124,8 @@ export function createQueueStore(
       },
 
       clearQueue: () => syncQueue([]),
+
+      setQueue: (nextQueue: string[]) => syncQueue(nextQueue),
 
       dequeue: () => {
         const { queue } = get();
