@@ -95,4 +95,63 @@ mod tests {
         media_g.cdg_path = Some("media-g/song-1.cdg".to_owned());
         assert!(!media_g.is_separable());
     }
+
+    #[test]
+    fn is_media_g_with_cdg_path() {
+        let mut song = sample_song();
+        song.cdg_path = Some("media-g/song.cdg".to_owned());
+        assert!(song.is_media_g());
+    }
+
+    #[test]
+    fn is_media_g_with_container() {
+        let mut song = sample_song();
+        song.media_g_container = Some("zip".to_owned());
+        assert!(song.is_media_g());
+    }
+
+    #[test]
+    fn is_media_g_zip_only_when_zip() {
+        let mut song = sample_song();
+        assert!(!song.is_media_g_zip());
+
+        song.media_g_container = Some("zip".to_owned());
+        assert!(song.is_media_g_zip());
+
+        song.media_g_container = Some("folder".to_owned());
+        assert!(!song.is_media_g_zip());
+    }
+
+    #[test]
+    fn is_remote_when_not_original() {
+        let mut song = sample_song();
+        assert!(!song.is_remote());
+
+        song.audio_source_kind = "stems_remote".to_owned();
+        assert!(song.is_remote());
+
+        song.audio_source_kind = "original".to_owned();
+        assert!(!song.is_remote());
+    }
+
+    #[test]
+    fn is_remote_stems_specifically() {
+        let mut song = sample_song();
+        assert!(!song.is_remote_stems());
+
+        song.audio_source_kind = "stems_remote".to_owned();
+        assert!(song.is_remote_stems());
+
+        song.audio_source_kind = "other_kind".to_owned();
+        assert!(!song.is_remote_stems());
+    }
+
+    #[test]
+    fn is_instrumental_reflects_flag() {
+        let mut song = sample_song();
+        assert!(!song.is_instrumental());
+
+        song.instrumental = true;
+        assert!(song.is_instrumental());
+    }
 }
