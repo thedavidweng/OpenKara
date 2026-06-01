@@ -287,4 +287,102 @@ mod tests {
         assert_eq!(words[1].text, "two");
         assert_eq!(words[1].time_ms, 10_500);
     }
+
+    #[test]
+    fn parse_lrc_metadata_extracts_all_tags() {
+        let lrc = "[ar:Beatles]\n[ti:Let It Be]\n[al:Let It Be]\n[offset:-500]\n[00:10.00]Lyrics\n";
+        let meta = parse_lrc_metadata(lrc);
+        assert_eq!(meta.artist.as_deref(), Some("Beatles"));
+        assert_eq!(meta.title.as_deref(), Some("Let It Be"));
+        assert_eq!(meta.album.as_deref(), Some("Let It Be"));
+        assert_eq!(meta.offset_ms, Some(-500));
+    }
+
+    #[test]
+    fn parse_lrc_metadata_returns_defaults_for_empty_input() {
+        let meta = parse_lrc_metadata("");
+        assert!(meta.artist.is_none());
+        assert!(meta.title.is_none());
+        assert!(meta.album.is_none());
+        assert!(meta.offset_ms.is_none());
+    }
+
+    #[test]
+    fn parse_lrc_metadata_ignores_non_metadata_lines() {
+        let lrc = "[00:10.00]Hello\n[ar:Artist]\n[00:20.00]World\n";
+        let meta = parse_lrc_metadata(lrc);
+        assert_eq!(meta.artist.as_deref(), Some("Artist"));
+        assert!(meta.title.is_none());
+    }
+
+    #[test]
+    fn parse_lrc_metadata_ignores_invalid_offset() {
+        let lrc = "[offset:not_a_number]\n";
+        let meta = parse_lrc_metadata(lrc);
+        assert!(meta.offset_ms.is_none());
+    }
+
+    #[test]
+    fn parse_lrc_empty_input_returns_empty() {
+        let lines = parse_lrc("").expect("should parse");
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn parse_lrc_metadata_lines_are_skipped_by_parse_lrc() {
+        // Metadata tags like [ar:...] should not produce lyric lines
+        let lrc = "[ar:Artist]\n[ti:Title]\n[00:10.00]Actual lyric\n";
+        let lines = parse_lrc(lrc).expect("should parse");
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].text, "Actual lyric");
+    }
+
+    #[test]
+    fn parse_lrc_error_on_missing_closing_bracket() {
+        let lrc = "[00:10.00 unclosed\n";
+        let result = parse_lrc(lrc);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_lrc_multiple_timestamps_same_line() {
+        // Two timestamps on one line should produce two lyric lines
+        let lrc = "[00:10.00][00:20.00]Repeated lyric\n";
+        let lines = parse_lrc(lrc).expect("should parse");
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].time_ms, 10_000);
+        assert_eq!(lines[1].time_ms, 20_000);
+        assert_eq!(lines[0].text, "Repeated lyric");
+        assert_eq!(lines[1].text, "Repeated lyric");
+    }
+
+    #[test]
+    fn parse_timestamp_tag_rejects_seconds_over_59() {
+        let result = parse_timestamp_tag("00:61.00");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_timestamp_tag_returns_none_for_non_timestamp() {
+        let result = parse_timestamp_tag("ar:Artist").expect("should not error");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn parse_timestamp_tag_four_digit_fractional_returns_none() {
+        let result = parse_timestamp_tag("00:10.1234").expect("should not error");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn parse_word_tokens_returns_none_for_standard_text() {
+        assert!(parse_word_tokens("no angle brackets").is_none());
+    }
+
+    #[test]
+    fn parse_word_tokens_handles_unterminated_angle_bracket() {
+        let result = parse_word_tokens("hello < world");
+        // Unterminated '<' should be treated as literal
+        assert!(result.is_none()); // no valid tokens found
+    }
 }

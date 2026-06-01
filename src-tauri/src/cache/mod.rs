@@ -548,4 +548,234 @@ mod tests {
         assert_eq!(file_path.as_deref(), Some("media/song-1.mp3"));
         assert_eq!(audio_source_kind, "original");
     }
+
+    fn test_db() -> Connection {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_migrations(&conn).expect("migrations");
+        conn
+    }
+
+    fn sample_song(hash: &str) -> Song {
+        Song {
+            hash: hash.to_owned(),
+            file_path: Some(format!("media/{hash}.mp3")),
+            cdg_path: None,
+            media_g_container: None,
+            instrumental: false,
+            language: None,
+            audio_source_kind: "original".to_owned(),
+            title: Some("Test Song".to_owned()),
+            artist: Some("Test Artist".to_owned()),
+            album: Some("Test Album".to_owned()),
+            duration_ms: 180_000,
+            cover_art: None,
+            imported_at: 1000,
+            original_ext: Some("mp3".to_owned()),
+        }
+    }
+
+    #[test]
+    fn upsert_and_get_song_round_trip() {
+        let conn = test_db();
+        let song = sample_song("abc123");
+
+        upsert_song(&conn, &song).expect("upsert should succeed");
+        let retrieved = get_song_by_hash(&conn, "abc123")
+            .expect("get should succeed")
+            .expect("song should exist");
+
+        assert_eq!(retrieved, song);
+    }
+
+    #[test]
+    fn get_song_by_hash_returns_none_for_missing() {
+        let conn = test_db();
+        let result = get_song_by_hash(&conn, "nonexistent").expect("get should succeed");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn upsert_song_updates_on_conflict() {
+        let conn = test_db();
+        let mut song = sample_song("abc123");
+        upsert_song(&conn, &song).expect("first upsert");
+
+        song.title = Some("Updated Title".to_owned());
+        song.duration_ms = 240_000;
+        upsert_song(&conn, &song).expect("second upsert");
+
+        let retrieved = get_song_by_hash(&conn, "abc123")
+            .expect("get should succeed")
+            .expect("song should exist");
+
+        assert_eq!(retrieved.title.as_deref(), Some("Updated Title"));
+        assert_eq!(retrieved.duration_ms, 240_000);
+    }
+
+    #[test]
+    fn list_songs_orders_by_imported_at_desc() {
+        let conn = test_db();
+        let mut s1 = sample_song("a");
+        s1.imported_at = 100;
+        s1.title = Some("Alpha".to_owned());
+        let mut s2 = sample_song("b");
+        s2.imported_at = 300;
+        s2.title = Some("Charlie".to_owned());
+        let mut s3 = sample_song("c");
+        s3.imported_at = 200;
+        s3.title = Some("Bravo".to_owned());
+
+        upsert_song(&conn, &s1).unwrap();
+        upsert_song(&conn, &s2).unwrap();
+        upsert_song(&conn, &s3).unwrap();
+
+        let songs = list_songs(&conn).expect("list should succeed");
+        assert_eq!(songs.len(), 3);
+        assert_eq!(songs[0].hash, "b"); // imported_at 300
+        assert_eq!(songs[1].hash, "c"); // imported_at 200
+        assert_eq!(songs[2].hash, "a"); // imported_at 100
+    }
+
+    #[test]
+    fn list_songs_secondary_sorts_by_title_case_insensitive() {
+        let conn = test_db();
+        let mut s1 = sample_song("a");
+        s1.imported_at = 100;
+        s1.title = Some("banana".to_owned());
+        let mut s2 = sample_song("b");
+        s2.imported_at = 100;
+        s2.title = Some("Apple".to_owned());
+
+        upsert_song(&conn, &s1).unwrap();
+        upsert_song(&conn, &s2).unwrap();
+
+        let songs = list_songs(&conn).expect("list should succeed");
+        assert_eq!(songs[0].title.as_deref(), Some("Apple"));
+        assert_eq!(songs[1].title.as_deref(), Some("banana"));
+    }
+
+    #[test]
+    fn search_songs_matches_title() {
+        let conn = test_db();
+        let mut s1 = sample_song("a");
+        s1.title = Some("Bohemian Rhapsody".to_owned());
+        let mut s2 = sample_song("b");
+        s2.title = Some("Yesterday".to_owned());
+
+        upsert_song(&conn, &s1).unwrap();
+        upsert_song(&conn, &s2).unwrap();
+
+        let results = search_songs(&conn, "rhapsody").expect("search should succeed");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].hash, "a");
+    }
+
+    #[test]
+    fn search_songs_matches_artist() {
+        let conn = test_db();
+        let mut s1 = sample_song("a");
+        s1.artist = Some("The Beatles".to_owned());
+        let mut s2 = sample_song("b");
+        s2.artist = Some("Queen".to_owned());
+
+        upsert_song(&conn, &s1).unwrap();
+        upsert_song(&conn, &s2).unwrap();
+
+        let results = search_songs(&conn, "beatles").expect("search should succeed");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].hash, "a");
+    }
+
+    #[test]
+    fn search_songs_matches_file_path() {
+        let conn = test_db();
+        let mut s1 = sample_song("a");
+        s1.file_path = Some("media/special-track.mp3".to_owned());
+        s1.title = Some("Generic".to_owned());
+        s1.artist = None;
+        s1.album = None;
+
+        upsert_song(&conn, &s1).unwrap();
+
+        let results = search_songs(&conn, "special").expect("search should succeed");
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn update_song_title_and_artist() {
+        let conn = test_db();
+        upsert_song(&conn, &sample_song("abc")).unwrap();
+
+        update_song_title_artist(&conn, "abc", Some("New Title"), Some("New Artist"))
+            .expect("update should succeed");
+
+        let song = get_song_by_hash(&conn, "abc").unwrap().unwrap();
+        assert_eq!(song.title.as_deref(), Some("New Title"));
+        assert_eq!(song.artist.as_deref(), Some("New Artist"));
+    }
+
+    #[test]
+    fn update_song_cover_art_bytes() {
+        let conn = test_db();
+        upsert_song(&conn, &sample_song("abc")).unwrap();
+
+        let art = vec![0xFF, 0xD8, 0xFF, 0xE0]; // JPEG magic bytes
+        update_song_cover_art(&conn, "abc", Some(&art)).expect("update should succeed");
+
+        let song = get_song_by_hash(&conn, "abc").unwrap().unwrap();
+        assert_eq!(song.cover_art.as_deref(), Some(art.as_slice()));
+    }
+
+    #[test]
+    fn update_song_instrumental_flag() {
+        let conn = test_db();
+        upsert_song(&conn, &sample_song("abc")).unwrap();
+
+        let affected = update_song_instrumental(&conn, "abc", true).expect("update should succeed");
+        assert_eq!(affected, 1);
+
+        let song = get_song_by_hash(&conn, "abc").unwrap().unwrap();
+        assert!(song.instrumental);
+    }
+
+    #[test]
+    fn update_song_language_field() {
+        let conn = test_db();
+        upsert_song(&conn, &sample_song("abc")).unwrap();
+
+        update_song_language(&conn, "abc", Some("ja")).expect("update should succeed");
+
+        let song = get_song_by_hash(&conn, "abc").unwrap().unwrap();
+        assert_eq!(song.language.as_deref(), Some("ja"));
+    }
+
+    #[test]
+    fn upsert_song_with_null_optional_fields() {
+        let conn = test_db();
+        let song = Song {
+            hash: "minimal".to_owned(),
+            file_path: None,
+            cdg_path: None,
+            media_g_container: None,
+            instrumental: false,
+            language: None,
+            audio_source_kind: "original".to_owned(),
+            title: None,
+            artist: None,
+            album: None,
+            duration_ms: 0,
+            cover_art: None,
+            imported_at: 0,
+            original_ext: None,
+        };
+
+        upsert_song(&conn, &song).expect("upsert should succeed");
+        let retrieved = get_song_by_hash(&conn, "minimal").unwrap().unwrap();
+        assert!(retrieved.file_path.is_none());
+        assert!(retrieved.title.is_none());
+        assert!(retrieved.artist.is_none());
+        assert!(retrieved.album.is_none());
+        assert!(retrieved.cover_art.is_none());
+        assert!(retrieved.original_ext.is_none());
+    }
 }
