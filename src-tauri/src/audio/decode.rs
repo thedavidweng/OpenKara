@@ -100,7 +100,11 @@ fn extend_interleaved_samples(samples: &mut Vec<f32>, decoded: AudioBufferRef<'_
     samples.extend_from_slice(sample_buffer.samples());
 }
 
-fn probe_source<R>(source: R, extension: Option<&str>, source_label: &str) -> Result<(), DecodeError>
+fn probe_source<R>(
+    source: R,
+    extension: Option<&str>,
+    source_label: &str,
+) -> Result<(), DecodeError>
 where
     R: Read + Seek + MediaSource + Send + Sync + 'static,
 {
@@ -128,7 +132,11 @@ where
     Ok(())
 }
 
-fn decode_source<R>(source: R, extension: Option<&str>, source_label: &str) -> Result<DecodedAudio, DecodeError>
+fn decode_source<R>(
+    source: R,
+    extension: Option<&str>,
+    source_label: &str,
+) -> Result<DecodedAudio, DecodeError>
 where
     R: Read + Seek + MediaSource + Send + Sync + 'static,
 {
@@ -149,9 +157,7 @@ where
         .map_err(|e| DecodeError::ProbeFailed(format!("for {source_label}: {e}")))?;
     let mut format = probed.format;
 
-    let track = format
-        .default_track()
-        .ok_or(DecodeError::NoDefaultTrack)?;
+    let track = format.default_track().ok_or(DecodeError::NoDefaultTrack)?;
     let codec_params = &track.codec_params;
     let mut sample_rate = codec_params.sample_rate;
     let mut channels = codec_params.channels.map(|layout| layout.count());

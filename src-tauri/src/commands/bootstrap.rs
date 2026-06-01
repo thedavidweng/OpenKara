@@ -237,7 +237,8 @@ pub fn download_model(
     let model_variant = ModelVariant::parse(&variant)
         .ok_or_else(|| internal_error(format!("invalid model variant: {variant}")))?;
     let descriptor = separator::bootstrap::descriptor_for(model_variant);
-    let model_path = separator::bootstrap::managed_model_path_for(&state.shell.app_data_dir, descriptor);
+    let model_path =
+        separator::bootstrap::managed_model_path_for(&state.shell.app_data_dir, descriptor);
     let should_publish_status = is_active_variant(&state.shell.app_data_dir, model_variant);
 
     if separator::bootstrap::resolve_existing_model_path(

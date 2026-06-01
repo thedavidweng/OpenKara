@@ -169,7 +169,11 @@ impl PlaybackController {
         Ok(self.snapshot(now_ms))
     }
 
-    pub fn seek(&mut self, target_ms: u64, now_ms: u64) -> Result<PlaybackStateSnapshot, PlaybackError> {
+    pub fn seek(
+        &mut self,
+        target_ms: u64,
+        now_ms: u64,
+    ) -> Result<PlaybackStateSnapshot, PlaybackError> {
         let track = self
             .current_track
             .as_mut()
@@ -191,7 +195,11 @@ impl PlaybackController {
         Ok(self.snapshot(monotonic_now_ms()))
     }
 
-    pub fn set_stem_volume(&mut self, stem: StemName, level: f32) -> Result<PlaybackStateSnapshot, PlaybackError> {
+    pub fn set_stem_volume(
+        &mut self,
+        stem: StemName,
+        level: f32,
+    ) -> Result<PlaybackStateSnapshot, PlaybackError> {
         let level = level.clamp(0.0, 1.0);
         match stem {
             StemName::Vocals => self.stem_volumes.vocals = level,
@@ -208,9 +216,10 @@ impl PlaybackController {
             .as_mut()
             .ok_or_else(|| PlaybackError::InvalidPlaybackState("no track is loaded".to_owned()))?;
         if track.song_id != song_id {
-            return Err(PlaybackError::InvalidPlaybackState(
-                format!("cannot attach stems for song {} while {} is loaded", song_id, track.song_id)
-            ));
+            return Err(PlaybackError::InvalidPlaybackState(format!(
+                "cannot attach stems for song {} while {} is loaded",
+                song_id, track.song_id
+            )));
         }
         track.stems = Some(stems);
         Ok(())

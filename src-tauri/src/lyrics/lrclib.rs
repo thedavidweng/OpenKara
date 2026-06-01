@@ -65,19 +65,21 @@ impl LrcLibClient {
             request = request.query(&[("duration", duration_seconds)]);
         }
 
-        let response = request
-            .send()
-            .map_err(|e| LyricsError::NetworkUnavailable(format!("failed to request lyrics from LRCLIB: {e}")))?;
+        let response = request.send().map_err(|e| {
+            LyricsError::NetworkUnavailable(format!("failed to request lyrics from LRCLIB: {e}"))
+        })?;
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(None);
         }
 
-        let response = response
-            .error_for_status()
-            .map_err(|e| LyricsError::NetworkUnavailable(format!("LRCLIB returned a non-success response: {e}")))?;
-        let lyrics = response
-            .json::<LrcLibLyrics>()
-            .map_err(|e| LyricsError::NetworkUnavailable(format!("failed to deserialize LRCLIB lyrics response: {e}")))?;
+        let response = response.error_for_status().map_err(|e| {
+            LyricsError::NetworkUnavailable(format!("LRCLIB returned a non-success response: {e}"))
+        })?;
+        let lyrics = response.json::<LrcLibLyrics>().map_err(|e| {
+            LyricsError::NetworkUnavailable(format!(
+                "failed to deserialize LRCLIB lyrics response: {e}"
+            ))
+        })?;
 
         Ok(Some(lyrics))
     }

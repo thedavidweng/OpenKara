@@ -10,8 +10,8 @@ mod webdav;
 
 use crate::{
     commands::error::{CommandError, CommandResult},
-    library::error::LibraryError,
     config::{RegisteredLibrary, RemoteLibraryProvider},
+    library::error::LibraryError,
     AppState,
 };
 use tauri::{AppHandle, Manager, State};
@@ -36,7 +36,9 @@ impl RequestSendExt for reqwest::blocking::RequestBuilder {
     {
         self.send().map_err(|_error| {
             tracing::trace!("{op} request failed");
-            crate::commands::error::CommandError::from(LibraryError::Internal(format!("{op} could not be completed")))
+            crate::commands::error::CommandError::from(LibraryError::Internal(format!(
+                "{op} could not be completed"
+            )))
         })
     }
 }

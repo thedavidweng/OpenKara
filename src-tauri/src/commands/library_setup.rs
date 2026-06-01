@@ -1,8 +1,8 @@
 use crate::{
     cache,
-    commands::error::{CommandError, state_lock_error, CommandResult},
-    library::error::LibraryError,
+    commands::error::{state_lock_error, CommandError, CommandResult},
     config::{self, AppConfig, RegisteredLibrary},
+    library::error::LibraryError,
     library_root::LibraryRoot,
     AppState,
 };
@@ -33,7 +33,8 @@ fn load_app_config(app_data_dir: &Path) -> CommandResult<AppConfig> {
 }
 
 fn persist_app_config(app_data_dir: &Path, config: &AppConfig) -> CommandResult<()> {
-    config::save_config(app_data_dir, config).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))
+    config::save_config(app_data_dir, config)
+        .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))
 }
 
 fn update_library_display_name(
@@ -47,7 +48,9 @@ fn update_library_display_name(
         .iter_mut()
         .find(|entry| entry.id() == library_id)
     else {
-        return Err(CommandError::from(LibraryError::Internal(format!("library {library_id} was not found"))));
+        return Err(CommandError::from(LibraryError::Internal(format!(
+            "library {library_id} was not found"
+        ))));
     };
 
     match library {
@@ -74,7 +77,9 @@ fn delete_library_data(app_data_dir: &Path, library: &RegisteredLibrary) -> Comm
         RegisteredLibrary::Local { root_path, .. } => {
             if Path::new(root_path).exists() {
                 fs::remove_dir_all(root_path).map_err(|error| {
-                    CommandError::from(LibraryError::Internal(format!("failed to delete {root_path}: {error}")))
+                    CommandError::from(LibraryError::Internal(format!(
+                        "failed to delete {root_path}: {error}"
+                    )))
                 })?;
             }
         }
@@ -119,7 +124,8 @@ fn store_active_library(
     library: LibraryRoot,
 ) -> CommandResult<()> {
     let mut guard = state
-        .shell.library
+        .shell
+        .library
         .lock()
         .map_err(|_| state_lock_error("library lock was poisoned"))?;
     *guard = Some(library);
@@ -134,7 +140,8 @@ fn register_library(
     root: LibraryRoot,
 ) -> CommandResult<LibraryRegistrySnapshot> {
     let db_path = root.database_path();
-    cache::initialize_library_database(&db_path).map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
+    cache::initialize_library_database(&db_path)
+        .map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
 
     let mut config = load_app_config(app_data_dir)?;
     upsert_library(&mut config, library.clone());
@@ -144,7 +151,8 @@ fn register_library(
     store_active_library(state, &mut config, root)?;
     {
         let mut upload_statuses = state
-            .remote.remote_upload_statuses
+            .remote
+            .remote_upload_statuses
             .lock()
             .map_err(|_| state_lock_error("remote upload status lock was poisoned"))?;
         upload_statuses.clear();
@@ -167,32 +175,43 @@ fn activate_library(
         .iter()
         .find(|entry| entry.id() == library_id)
         .cloned()
-        .ok_or_else(|| CommandError::from(LibraryError::Internal(format!("library {library_id} was not found"))))?;
+        .ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(format!(
+                "library {library_id} was not found"
+            )))
+        })?;
 
-    let root_path = library
-        .working_copy_root()
-        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a cached working copy".to_string())))?;
-    let lib = LibraryRoot::open(&root_path).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?;
+    let root_path = library.working_copy_root().ok_or_else(|| {
+        CommandError::from(LibraryError::Internal(
+            "remote repository is missing a cached working copy".to_string(),
+        ))
+    })?;
+    let lib = LibraryRoot::open(&root_path)
+        .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?;
     let db_path = lib.database_path();
-    cache::initialize_library_database(&db_path).map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
+    cache::initialize_library_database(&db_path)
+        .map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
 
     {
         let mut playback = state
-            .playback.playback
+            .playback
+            .playback
             .lock()
             .map_err(|_| state_lock_error("playback controller lock was poisoned"))?;
         playback.clear_track();
     }
     {
         let mut cdg_state = state
-            .playback.cdg_state
+            .playback
+            .cdg_state
             .lock()
             .map_err(|_| state_lock_error("CDG state lock was poisoned"))?;
         *cdg_state = None;
     }
     {
         let mut upload_statuses = state
-            .remote.remote_upload_statuses
+            .remote
+            .remote_upload_statuses
             .lock()
             .map_err(|_| state_lock_error("remote upload status lock was poisoned"))?;
         upload_statuses.clear();
@@ -215,7 +234,8 @@ pub fn create_library(
 ) -> CommandResult<LibraryRegistrySnapshot> {
     let lib_path = PathBuf::from(&path);
 
-    let lib = LibraryRoot::create(&lib_path).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?;
+    let lib = LibraryRoot::create(&lib_path)
+        .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?;
     let canonical_root = canonical_path_string(lib.root());
     let library = RegisteredLibrary::local(
         canonical_root.clone(),
@@ -232,7 +252,8 @@ pub fn open_library(
 ) -> CommandResult<LibraryRegistrySnapshot> {
     let lib_path = PathBuf::from(&path);
 
-    let lib = LibraryRoot::open(&lib_path).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?;
+    let lib = LibraryRoot::open(&lib_path)
+        .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?;
     let canonical_root = canonical_path_string(lib.root());
     let library = RegisteredLibrary::local(
         canonical_root.clone(),
@@ -253,11 +274,14 @@ pub fn switch_library(
 #[tauri::command]
 pub fn get_library_path(state: State<'_, AppState>) -> CommandResult<Option<String>> {
     let guard = state
-        .shell.library
+        .shell
+        .library
         .lock()
         .map_err(|_| state_lock_error("library lock was poisoned"))?;
 
-    Ok(guard.as_ref().map(|lib: &LibraryRoot| canonical_path_string(lib.root())))
+    Ok(guard
+        .as_ref()
+        .map(|lib: &LibraryRoot| canonical_path_string(lib.root())))
 }
 
 #[tauri::command]
@@ -322,27 +346,31 @@ pub fn remove_library(
 
     if config.active_library_id.is_none() {
         let mut guard = state
-            .shell.library
+            .shell
+            .library
             .lock()
             .map_err(|_| state_lock_error("library lock was poisoned"))?;
         *guard = None;
         {
             let mut playback = state
-                .playback.playback
+                .playback
+                .playback
                 .lock()
                 .map_err(|_| state_lock_error("playback controller lock was poisoned"))?;
             playback.clear_track();
         }
         {
             let mut cdg_state = state
-                .playback.cdg_state
+                .playback
+                .cdg_state
                 .lock()
                 .map_err(|_| state_lock_error("CDG state lock was poisoned"))?;
             *cdg_state = None;
         }
         {
             let mut upload_statuses = state
-                .remote.remote_upload_statuses
+                .remote
+                .remote_upload_statuses
                 .lock()
                 .map_err(|_| state_lock_error("remote upload status lock was poisoned"))?;
             upload_statuses.clear();
@@ -391,7 +419,9 @@ pub fn delete_library(
         .find(|entry| entry.id() == library_id)
         .cloned()
     else {
-        return Err(CommandError::from(LibraryError::Internal(format!("library {library_id} was not found"))));
+        return Err(CommandError::from(LibraryError::Internal(format!(
+            "library {library_id} was not found"
+        ))));
     };
 
     delete_library_data(&app_data_dir, &library)?;

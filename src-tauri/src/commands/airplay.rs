@@ -853,7 +853,10 @@ pub fn sync_airplay_audience_state(
     let runtime = build_runtime_payload(
         Some(&payload),
         &snapshot,
-        state.airplay.airplay_stream_generation.load(Ordering::SeqCst),
+        state
+            .airplay
+            .airplay_stream_generation
+            .load(Ordering::SeqCst),
     );
     let cdg_frame = build_current_cdg_frame(&state.playback.cdg_state, &runtime);
 
@@ -1127,7 +1130,10 @@ pub fn step_airplay_plain_text_page(
     let runtime = build_runtime_payload(
         Some(&scene),
         &snapshot,
-        state.airplay.airplay_stream_generation.load(Ordering::SeqCst),
+        state
+            .airplay
+            .airplay_stream_generation
+            .load(Ordering::SeqCst),
     );
     let cdg_frame = build_current_cdg_frame(&state.playback.cdg_state, &runtime);
     native::sync_audience_runtime(&runtime, cdg_frame.as_deref())?;

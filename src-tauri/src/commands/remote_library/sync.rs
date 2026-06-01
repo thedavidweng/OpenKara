@@ -1,8 +1,6 @@
 use crate::{
     cache,
-    commands::error::{
-        database_error, state_lock_error, CommandError, CommandResult,
-    },
+    commands::error::{database_error, state_lock_error, CommandError, CommandResult},
     config::{AppConfig, RegisteredLibrary, RemoteLibraryProvider},
     library::{error::LibraryError, Song},
     library_root::LibraryRoot,
@@ -39,7 +37,8 @@ fn mark_upload_status(
     };
 
     let mut guard = state
-        .remote.remote_upload_statuses
+        .remote
+        .remote_upload_statuses
         .lock()
         .map_err(|_| state_lock_error("remote upload status lock was poisoned"))?;
     guard.insert(song_id.to_owned(), snapshot.clone());
@@ -90,7 +89,10 @@ fn copy_file_if_present(source: Option<&Path>, destination: &Path) -> CommandRes
 
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(|error| {
-            CommandError::from(LibraryError::Internal(format!("failed to create {}: {error}", parent.display())))
+            CommandError::from(LibraryError::Internal(format!(
+                "failed to create {}: {error}",
+                parent.display()
+            )))
         })?;
     }
 
@@ -133,7 +135,8 @@ fn copy_directory_recursive(source: &Path, destination: &Path) -> CommandResult<
             source.display()
         )))
     })? {
-        let entry = entry.map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
+        let entry =
+            entry.map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
         let source_path = entry.path();
         let destination_path = destination.join(entry.file_name());
 
@@ -189,7 +192,11 @@ fn load_registered_remote_library(
         .libraries
         .iter()
         .find(|entry| entry.id() == library_id)
-        .ok_or_else(|| CommandError::from(LibraryError::Internal(format!("remote repository {library_id} was not found"))))?;
+        .ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(format!(
+                "remote repository {library_id} was not found"
+            )))
+        })?;
     if !matches!(library, RegisteredLibrary::Remote { .. }) {
         return Err(CommandError::from(LibraryError::Internal(format!(
             "library {library_id} is not a remote repository"
@@ -269,8 +276,7 @@ fn upload_remote_database(app_data_dir: &Path, library: &RegisteredLibrary) -> C
     if new_revision.is_none()
         && matches!(
             library.provider(),
-            Some(RemoteLibraryProvider::GoogleDrive)
-                | Some(RemoteLibraryProvider::Dropbox)
+            Some(RemoteLibraryProvider::GoogleDrive) | Some(RemoteLibraryProvider::Dropbox)
         )
     {
         return Err(CommandError::from(LibraryError::Internal(format!(
@@ -552,7 +558,8 @@ pub(crate) fn sync_bound_remote_for_active_local_library<R: tauri::Runtime>(
         .filter_map(|song| desired_kinds.contains_key(&song.hash).then_some(song.hash))
         .collect();
     maybe_publish_songs_to_bound_remote(state, app_handle, &desired_song_ids)?;
-    let remote_library = load_registered_remote_library(&state.shell.app_data_dir, remote_library.id())?;
+    let remote_library =
+        load_registered_remote_library(&state.shell.app_data_dir, remote_library.id())?;
     upload_remote_database(&state.shell.app_data_dir, &remote_library)?;
     Ok(())
 }
@@ -574,7 +581,9 @@ pub(crate) fn mirror_local_library_to_remote<R: tauri::Runtime>(
         ))));
     };
     if !matches!(local_library, RegisteredLibrary::Local { .. }) {
-        return Err(CommandError::from(LibraryError::Internal("the source library must be a local library".to_owned(),)));
+        return Err(CommandError::from(LibraryError::Internal(
+            "the source library must be a local library".to_owned(),
+        )));
     }
 
     let Some(remote_library) = config
@@ -587,7 +596,9 @@ pub(crate) fn mirror_local_library_to_remote<R: tauri::Runtime>(
         ))));
     };
     if !matches!(remote_library, RegisteredLibrary::Remote { .. }) {
-        return Err(CommandError::from(LibraryError::Internal("the target library must be a remote repository".to_owned(),)));
+        return Err(CommandError::from(LibraryError::Internal(
+            "the target library must be a remote repository".to_owned(),
+        )));
     }
 
     let original_active_library_id = config.active_library_id.clone();
@@ -609,8 +620,11 @@ fn publish_song_internal<R: tauri::Runtime>(
     song_id: &str,
 ) -> CommandResult<UploadStatusSnapshot> {
     let config = load_app_config(&state.shell.app_data_dir)?;
-    let remote_library = resolve_active_remote(&config)
-        .ok_or_else(|| CommandError::from(LibraryError::Internal("no bound remote repository is available for publishing".to_string())))?;
+    let remote_library = resolve_active_remote(&config).ok_or_else(|| {
+        CommandError::from(LibraryError::Internal(
+            "no bound remote repository is available for publishing".to_string(),
+        ))
+    })?;
     let remote_library =
         prepare_remote_database_for_mutation(&state.shell.app_data_dir, &remote_library)?;
 
@@ -634,7 +648,11 @@ fn publish_song_internal<R: tauri::Runtime>(
 
     let song = cache::get_song_by_hash(&local_connection, song_id)
         .map_err(|error| database_error(error.to_string()))?
-        .ok_or_else(|| CommandError::from(LibraryError::Internal(format!("song {song_id} was not found"))))?;
+        .ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(format!(
+                "song {song_id} was not found"
+            )))
+        })?;
 
     let running = mark_upload_status(
         state,
@@ -722,7 +740,9 @@ fn publish_song_internal<R: tauri::Runtime>(
 pub(crate) fn sync_active_remote_library(state: &AppState) -> CommandResult<()> {
     let config = load_app_config(&state.shell.app_data_dir)?;
     let Some(active_library) = config.active_library() else {
-        return Err(CommandError::from(LibraryError::Internal("no library is currently active".to_string())));
+        return Err(CommandError::from(LibraryError::Internal(
+            "no library is currently active".to_string(),
+        )));
     };
 
     if matches!(active_library, RegisteredLibrary::Remote { .. }) {
@@ -794,7 +814,8 @@ pub(crate) fn get_all_upload_statuses(
     state: &AppState,
 ) -> CommandResult<Vec<UploadStatusSnapshot>> {
     let guard = state
-        .remote.remote_upload_statuses
+        .remote
+        .remote_upload_statuses
         .lock()
         .map_err(|_| state_lock_error("remote upload status lock was poisoned"))?;
     Ok(guard.values().cloned().collect())

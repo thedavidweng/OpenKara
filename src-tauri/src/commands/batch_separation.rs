@@ -41,19 +41,22 @@ pub fn batch_separate(
 
     // Prevent concurrent batch operations.
     if state.separation.batch_running.load(Ordering::Relaxed) {
-        return Err(SeparationError::Failed(
-            "A batch separation is already running".to_owned(),
-        ).into());
+        return Err(
+            SeparationError::Failed("A batch separation is already running".to_owned()).into(),
+        );
     }
 
     let library_root = state.library_root()?;
     let model_path = state.resolve_model_path()?;
     let separation_statuses = Arc::clone(&state.separation.separation_statuses);
-    let model_cache: Arc<Mutex<ModelCache<LoadedModel>>> = Arc::clone(&state.separation.separator_model_cache);
+    let model_cache: Arc<Mutex<ModelCache<LoadedModel>>> =
+        Arc::clone(&state.separation.separator_model_cache);
     let batch_running = Arc::clone(&state.separation.batch_running);
     let batch_cancel = Arc::clone(&state.separation.batch_cancel);
 
-    let app_config = config::load_config(&state.shell.app_data_dir).ok().flatten();
+    let app_config = config::load_config(&state.shell.app_data_dir)
+        .ok()
+        .flatten();
     let stem_mode = app_config
         .as_ref()
         .map(|c| c.effective_stem_mode())
@@ -310,9 +313,9 @@ pub fn batch_separate(
 #[tauri::command]
 pub fn cancel_batch_separation(state: State<'_, AppState>) -> CommandResult<()> {
     if !state.separation.batch_running.load(Ordering::Relaxed) {
-        return Err(SeparationError::Failed(
-            "No batch separation is currently running".to_owned(),
-        ).into());
+        return Err(
+            SeparationError::Failed("No batch separation is currently running".to_owned()).into(),
+        );
     }
     state.separation.batch_cancel.store(true, Ordering::Relaxed);
     Ok(())

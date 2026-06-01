@@ -64,15 +64,17 @@ impl LrcApiClient {
             request = request.query(&[("album", album_name)]);
         }
 
-        let response = request
-            .send()
-            .map_err(|e| LyricsError::NetworkUnavailable(format!("failed to request lyrics from LrcAPI: {e}")))?;
-        let response = response
-            .error_for_status()
-            .map_err(|e| LyricsError::NetworkUnavailable(format!("LrcAPI returned a non-success response: {e}")))?;
-        let response = response
-            .json::<LrcApiResponse>()
-            .map_err(|e| LyricsError::NetworkUnavailable(format!("failed to deserialize LrcAPI lyrics response: {e}")))?;
+        let response = request.send().map_err(|e| {
+            LyricsError::NetworkUnavailable(format!("failed to request lyrics from LrcAPI: {e}"))
+        })?;
+        let response = response.error_for_status().map_err(|e| {
+            LyricsError::NetworkUnavailable(format!("LrcAPI returned a non-success response: {e}"))
+        })?;
+        let response = response.json::<LrcApiResponse>().map_err(|e| {
+            LyricsError::NetworkUnavailable(format!(
+                "failed to deserialize LrcAPI lyrics response: {e}"
+            ))
+        })?;
 
         Ok(match response {
             LrcApiResponse::Hits(entries) => entries

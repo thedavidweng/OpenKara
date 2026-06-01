@@ -1,5 +1,5 @@
 use crate::library_root::LibraryRoot;
-use crate::state::{AirPlayState, PlaybackState, RemoteState, SeparationState, AppShell};
+use crate::state::{AirPlayState, AppShell, PlaybackState, RemoteState, SeparationState};
 use crate::{
     airplay_stream, audio,
     audio::playback::{monotonic_now_ms, PlaybackController, PLAYBACK_POSITION_POLL_INTERVAL_MS},
@@ -114,7 +114,9 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         &playback_state_for_output.audio_output_start_lock,
         playback_state_for_output.playback.clone(),
         airplay_state_for_output.airplay_audio_tap.clone(),
-        airplay_state_for_output.airplay_local_output_suppressed.clone(),
+        airplay_state_for_output
+            .airplay_local_output_suppressed
+            .clone(),
         Arc::clone(&shutdown),
     ) {
         eprintln!("warning: failed to pre-warm audio output: {err:#}");

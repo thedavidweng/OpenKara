@@ -50,7 +50,9 @@ fn lyrics_errors_map_network_failures_to_retry_fallback() {
 
 #[test]
 fn separation_errors_map_worker_failures_to_retry_fallback() {
-    let error = CommandError::from(SeparationError::Failed("failed to separate stems for song song-a".to_owned()));
+    let error = CommandError::from(SeparationError::Failed(
+        "failed to separate stems for song song-a".to_owned(),
+    ));
 
     assert_eq!(error.code, ErrorCode::SeparationFailed);
     assert_eq!(error.fallback, FallbackAction::Retry);

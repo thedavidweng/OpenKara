@@ -1,8 +1,8 @@
 use crate::{
     cache,
     commands::error::{CommandError, CommandResult},
-    library::error::LibraryError,
     config::RegisteredLibrary,
+    library::error::LibraryError,
     library_root::LibraryRoot,
 };
 use reqwest::{blocking::Client, Method, Url};
@@ -41,8 +41,11 @@ pub(crate) const GOOGLE_DRIVE_ROOT_ID: &str = "root";
 pub(crate) fn build_google_drive_authorization_url(
     session: &GoogleDriveSessionData,
 ) -> CommandResult<String> {
-    let mut url = Url::parse("https://accounts.google.com/o/oauth2/v2/auth")
-        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to build Google auth URL: {error}"))))?;
+    let mut url = Url::parse("https://accounts.google.com/o/oauth2/v2/auth").map_err(|error| {
+        CommandError::from(LibraryError::Internal(format!(
+            "failed to build Google auth URL: {error}"
+        )))
+    })?;
     url.query_pairs_mut()
         .append_pair("client_id", &session.client_id)
         .append_pair("redirect_uri", &session.redirect_uri)
@@ -170,12 +173,17 @@ pub(crate) fn load_google_drive_secret(
             access_token_expires_at_ms: secret.access_token_expires_at_ms,
         });
     }
-    Err(CommandError::from(LibraryError::Internal("missing stored credentials for the remote repository".to_owned(),)))
+    Err(CommandError::from(LibraryError::Internal(
+        "missing stored credentials for the remote repository".to_owned(),
+    )))
 }
 
 fn google_drive_api_url(path: &str) -> CommandResult<Url> {
-    Url::parse(&format!("https://www.googleapis.com{path}"))
-        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to build Google Drive URL: {error}"))))
+    Url::parse(&format!("https://www.googleapis.com{path}")).map_err(|error| {
+        CommandError::from(LibraryError::Internal(format!(
+            "failed to build Google Drive URL: {error}"
+        )))
+    })
 }
 
 fn google_drive_refresh_access_token(
@@ -289,7 +297,9 @@ fn google_drive_find_child(
         ))));
     }
     let body: GoogleDriveFileListResponse = response.json().map_err(|error| {
-        CommandError::from(LibraryError::Internal(format!("failed to parse Google Drive file list: {error}")))
+        CommandError::from(LibraryError::Internal(format!(
+            "failed to parse Google Drive file list: {error}"
+        )))
     })?;
     Ok(body.files.into_iter().next())
 }
@@ -329,7 +339,9 @@ fn google_drive_find_child_with_token(
         ))));
     }
     let body: GoogleDriveFileListResponse = response.json().map_err(|error| {
-        CommandError::from(LibraryError::Internal(format!("failed to parse Google Drive file list: {error}")))
+        CommandError::from(LibraryError::Internal(format!(
+            "failed to parse Google Drive file list: {error}"
+        )))
     })?;
     Ok(body.files.into_iter().next())
 }
@@ -355,7 +367,9 @@ fn google_drive_create_folder(
         ))));
     }
     response.json().map_err(|error| {
-        CommandError::from(LibraryError::Internal(format!("failed to parse folder creation response: {error}")))
+        CommandError::from(LibraryError::Internal(format!(
+            "failed to parse folder creation response: {error}"
+        )))
     })
 }
 
@@ -397,7 +411,9 @@ fn google_drive_create_folder_with_token(
         ))));
     }
     response.json().map_err(|error| {
-        CommandError::from(LibraryError::Internal(format!("failed to parse folder creation response: {error}")))
+        CommandError::from(LibraryError::Internal(format!(
+            "failed to parse folder creation response: {error}"
+        )))
     })
 }
 
@@ -438,9 +454,11 @@ fn google_drive_create_empty_file(
             response.status()
         ))));
     }
-    response
-        .json()
-        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to parse file creation response: {error}"))))
+    response.json().map_err(|error| {
+        CommandError::from(LibraryError::Internal(format!(
+            "failed to parse file creation response: {error}"
+        )))
+    })
 }
 
 fn google_drive_upload_file_bytes(
@@ -462,9 +480,11 @@ fn google_drive_upload_file_bytes(
             response.status()
         ))));
     }
-    response
-        .json()
-        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to parse upload response: {error}"))))
+    response.json().map_err(|error| {
+        CommandError::from(LibraryError::Internal(format!(
+            "failed to parse upload response: {error}"
+        )))
+    })
 }
 
 pub(crate) fn google_drive_download_file(
@@ -484,12 +504,17 @@ pub(crate) fn google_drive_download_file(
     }
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(|error| {
-            CommandError::from(LibraryError::Internal(format!("failed to create {}: {error}", parent.display())))
+            CommandError::from(LibraryError::Internal(format!(
+                "failed to create {}: {error}",
+                parent.display()
+            )))
         })?;
     }
-    let bytes = response
-        .bytes()
-        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to read Google Drive response: {error}"))))?;
+    let bytes = response.bytes().map_err(|error| {
+        CommandError::from(LibraryError::Internal(format!(
+            "failed to read Google Drive response: {error}"
+        )))
+    })?;
     let mut file = fs::File::create(destination).map_err(|error| {
         CommandError::from(LibraryError::Internal(format!(
             "failed to create {}: {error}",
@@ -531,21 +556,30 @@ fn google_drive_exchange_code_for_tokens(
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(body)
         .send()
-        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to exchange Google auth code: {error}"))))?;
+        .map_err(|error| {
+            CommandError::from(LibraryError::Internal(format!(
+                "failed to exchange Google auth code: {error}"
+            )))
+        })?;
     if !response.status().is_success() {
         return Err(CommandError::from(LibraryError::Internal(format!(
             "Google auth code exchange failed with status {}",
             response.status()
         ))));
     }
-    response
-        .json()
-        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to parse Google token response: {error}"))))
+    response.json().map_err(|error| {
+        CommandError::from(LibraryError::Internal(format!(
+            "failed to parse Google token response: {error}"
+        )))
+    })
 }
 
 fn google_drive_fetch_account_id(access_token: &str) -> CommandResult<String> {
-    let url = Url::parse("https://openidconnect.googleapis.com/v1/userinfo")
-        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to build Google userinfo URL: {error}"))))?;
+    let url = Url::parse("https://openidconnect.googleapis.com/v1/userinfo").map_err(|error| {
+        CommandError::from(LibraryError::Internal(format!(
+            "failed to build Google userinfo URL: {error}"
+        )))
+    })?;
     let response = Client::new()
         .get(url)
         .bearer_auth(access_token)
@@ -589,7 +623,9 @@ pub(crate) fn spawn_google_drive_auth_worker(
         })?
         .port();
     let server = Server::from_listener(listener, None).map_err(|error| {
-        CommandError::from(LibraryError::Internal(format!("failed to start Google OAuth listener: {error}")))
+        CommandError::from(LibraryError::Internal(format!(
+            "failed to start Google OAuth listener: {error}"
+        )))
     })?;
 
     let mut session = session;
@@ -609,8 +645,10 @@ pub(crate) fn spawn_google_drive_auth_worker(
                     if started_at.elapsed() >= std::time::Duration::from_secs(300) {
                         update_remote_auth_session(&sessions, &session_id, |state| {
                             state.state = RemoteAuthState::Failed;
-                            state.error = Some(CommandError::from(LibraryError::Internal("Google sign-in timed out before the browser returned to OpenKara."
-                                    .to_owned(),)));
+                            state.error = Some(CommandError::from(LibraryError::Internal(
+                                "Google sign-in timed out before the browser returned to OpenKara."
+                                    .to_owned(),
+                            )));
                         });
                         return;
                     }
@@ -647,7 +685,9 @@ pub(crate) fn spawn_google_drive_auth_worker(
             let _ = request.respond(oauth_callback_response("OAuth state mismatch."));
             update_remote_auth_session(&sessions, &session_id, |state| {
                 state.state = RemoteAuthState::Failed;
-                state.error = Some(CommandError::from(LibraryError::Internal("Google sign-in failed because the OAuth state token did not match.".to_owned(),)));
+                state.error = Some(CommandError::from(LibraryError::Internal(
+                    "Google sign-in failed because the OAuth state token did not match.".to_owned(),
+                )));
             });
             return;
         }
@@ -658,7 +698,9 @@ pub(crate) fn spawn_google_drive_auth_worker(
             ));
             update_remote_auth_session(&sessions, &session_id, |state| {
                 state.state = RemoteAuthState::Failed;
-                state.error = Some(CommandError::from(LibraryError::Internal(format!("Google sign-in failed: {error}"))));
+                state.error = Some(CommandError::from(LibraryError::Internal(format!(
+                    "Google sign-in failed: {error}"
+                ))));
             });
             return;
         }
@@ -669,7 +711,9 @@ pub(crate) fn spawn_google_drive_auth_worker(
             ));
             update_remote_auth_session(&sessions, &session_id, |state| {
                 state.state = RemoteAuthState::Failed;
-                state.error = Some(CommandError::from(LibraryError::Internal("Google sign-in did not return an authorization code.".to_owned(),)));
+                state.error = Some(CommandError::from(LibraryError::Internal(
+                    "Google sign-in did not return an authorization code.".to_owned(),
+                )));
             });
             return;
         };
@@ -759,12 +803,18 @@ pub(crate) fn google_drive_upload_relative_file_to_remote(
     relative_path: &str,
     root_folder_id: &str,
 ) -> CommandResult<()> {
-    let local_root = library
-        .working_copy_root()
-        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a cached working copy".to_string())))?;
+    let local_root = library.working_copy_root().ok_or_else(|| {
+        CommandError::from(LibraryError::Internal(
+            "remote repository is missing a cached working copy".to_string(),
+        ))
+    })?;
     let source = local_root.join(relative_path);
-    let bytes = fs::read(&source)
-        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to read {}: {error}", source.display()))))?;
+    let bytes = fs::read(&source).map_err(|error| {
+        CommandError::from(LibraryError::Internal(format!(
+            "failed to read {}: {error}",
+            source.display()
+        )))
+    })?;
     let mut secret = secret.clone();
 
     let segments: Vec<&str> = relative_path
@@ -800,17 +850,23 @@ pub(crate) fn google_drive_upload_directory_to_remote(
     relative_directory: &str,
     root_folder_id: &str,
 ) -> CommandResult<()> {
-    let local_root = library
-        .working_copy_root()
-        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a cached working copy".to_string())))?;
+    let local_root = library.working_copy_root().ok_or_else(|| {
+        CommandError::from(LibraryError::Internal(
+            "remote repository is missing a cached working copy".to_string(),
+        ))
+    })?;
     let base = local_root.join(relative_directory);
     if !base.exists() {
         return Ok(());
     }
-    for entry in fs::read_dir(&base)
-        .map_err(|error| CommandError::from(LibraryError::Internal(format!("failed to read {}: {error}", base.display()))))?
-    {
-        let entry = entry.map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
+    for entry in fs::read_dir(&base).map_err(|error| {
+        CommandError::from(LibraryError::Internal(format!(
+            "failed to read {}: {error}",
+            base.display()
+        )))
+    })? {
+        let entry =
+            entry.map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
         let path = entry.path();
         let relative = path
             .strip_prefix(&local_root)
@@ -843,19 +899,26 @@ pub(crate) fn initialize_or_sync_google_drive_library(
     library: &RegisteredLibrary,
     secret: &GoogleDriveSecret,
 ) -> CommandResult<Option<String>> {
-    let root_path = library
-        .working_copy_root()
-        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a cached working copy".to_string())))?;
+    let root_path = library.working_copy_root().ok_or_else(|| {
+        CommandError::from(LibraryError::Internal(
+            "remote repository is missing a cached working copy".to_string(),
+        ))
+    })?;
     let root = if root_path.join(".openkara-library").exists() {
-        LibraryRoot::open(&root_path).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
+        LibraryRoot::open(&root_path)
+            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
     } else {
-        LibraryRoot::create(&root_path).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
+        LibraryRoot::create(&root_path)
+            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
     };
-    cache::initialize_library_database(&root.database_path()).map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
+    cache::initialize_library_database(&root.database_path())
+        .map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
 
-    let root_folder_id = library
-        .remote_root_locator()
-        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned())))?;
+    let root_folder_id = library.remote_root_locator().ok_or_else(|| {
+        CommandError::from(LibraryError::Internal(
+            "remote repository is missing a remote locator".to_owned(),
+        ))
+    })?;
     let mut secret = secret.clone();
     for directory in ["media", "media-g", "stems"] {
         let _ = google_drive_get_or_create_folder(
@@ -917,8 +980,10 @@ pub(crate) fn initialize_or_sync_google_drive_library(
             "openkara.db",
         )?
         .ok_or_else(|| {
-            CommandError::from(LibraryError::Internal("Google Drive database upload succeeded but the file was not found afterwards"
-                    .to_owned(),))
+            CommandError::from(LibraryError::Internal(
+                "Google Drive database upload succeeded but the file was not found afterwards"
+                    .to_owned(),
+            ))
         })?;
         uploaded.head_revision_id.or(uploaded.modified_time)
     };
@@ -931,19 +996,26 @@ pub(crate) fn refresh_existing_google_drive_library(
     library: &RegisteredLibrary,
     secret: &GoogleDriveSecret,
 ) -> CommandResult<Option<String>> {
-    let root_path = library
-        .working_copy_root()
-        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a cached working copy".to_string())))?;
+    let root_path = library.working_copy_root().ok_or_else(|| {
+        CommandError::from(LibraryError::Internal(
+            "remote repository is missing a cached working copy".to_string(),
+        ))
+    })?;
     let root = if root_path.join(".openkara-library").exists() {
-        LibraryRoot::open(&root_path).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
+        LibraryRoot::open(&root_path)
+            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
     } else {
-        LibraryRoot::create(&root_path).map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
+        LibraryRoot::create(&root_path)
+            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
     };
-    cache::initialize_library_database(&root.database_path()).map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
+    cache::initialize_library_database(&root.database_path())
+        .map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
 
-    let root_folder_id = library
-        .remote_root_locator()
-        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned())))?;
+    let root_folder_id = library.remote_root_locator().ok_or_else(|| {
+        CommandError::from(LibraryError::Internal(
+            "remote repository is missing a remote locator".to_owned(),
+        ))
+    })?;
     let mut secret = secret.clone();
     if google_drive_find_relative_entry(
         app_data_dir,
@@ -953,12 +1025,16 @@ pub(crate) fn refresh_existing_google_drive_library(
     )?
     .is_none()
     {
-        return Err(CommandError::from(LibraryError::Internal("The selected Google Drive folder is not an OpenKara remote repository.".to_owned(),)));
+        return Err(CommandError::from(LibraryError::Internal(
+            "The selected Google Drive folder is not an OpenKara remote repository.".to_owned(),
+        )));
     }
     let database_entry =
         google_drive_find_relative_entry(app_data_dir, &mut secret, root_folder_id, "openkara.db")?
             .ok_or_else(|| {
-                CommandError::from(LibraryError::Internal("The selected Google Drive folder is missing openkara.db.".to_owned()))
+                CommandError::from(LibraryError::Internal(
+                    "The selected Google Drive folder is missing openkara.db.".to_owned(),
+                ))
             })?;
     google_drive_download_file(
         app_data_dir,
@@ -993,9 +1069,11 @@ pub(crate) fn delete_relative_path_from_remote(
     relative_path: &str,
 ) -> CommandResult<()> {
     let mut secret = load_google_drive_secret(app_data_dir, library)?;
-    let root_folder_id = library
-        .remote_root_locator()
-        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned())))?;
+    let root_folder_id = library.remote_root_locator().ok_or_else(|| {
+        CommandError::from(LibraryError::Internal(
+            "remote repository is missing a remote locator".to_owned(),
+        ))
+    })?;
     let Some(entry) =
         google_drive_find_relative_entry(app_data_dir, &mut secret, root_folder_id, relative_path)?
     else {
@@ -1009,9 +1087,11 @@ pub(crate) fn delete_remote_root(
     library: &RegisteredLibrary,
 ) -> CommandResult<()> {
     let mut secret = load_google_drive_secret(app_data_dir, library)?;
-    let root_folder_id = library
-        .remote_root_locator()
-        .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned())))?;
+    let root_folder_id = library.remote_root_locator().ok_or_else(|| {
+        CommandError::from(LibraryError::Internal(
+            "remote repository is missing a remote locator".to_owned(),
+        ))
+    })?;
     google_drive_delete_entry(app_data_dir, &mut secret, root_folder_id)
 }
 
@@ -1040,38 +1120,48 @@ impl<'a> GoogleDriveProvider<'a> {
 impl RemoteProvider for GoogleDriveProvider<'_> {
     fn get_revision(&self, relative_path: &str) -> CommandResult<Option<String>> {
         let mut secret = self.secret.borrow_mut();
-        let root_folder_id = self
-            .library
-            .remote_root_locator()
-            .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned())))?;
-        Ok(
-            google_drive_find_relative_entry(self.app_data_dir, &mut secret, root_folder_id, relative_path)?
-                .and_then(|metadata| metadata.head_revision_id.or(metadata.modified_time)),
-        )
+        let root_folder_id = self.library.remote_root_locator().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "remote repository is missing a remote locator".to_owned(),
+            ))
+        })?;
+        Ok(google_drive_find_relative_entry(
+            self.app_data_dir,
+            &mut secret,
+            root_folder_id,
+            relative_path,
+        )?
+        .and_then(|metadata| metadata.head_revision_id.or(metadata.modified_time)))
     }
 
     fn download_file(&self, relative_path: &str, destination: &Path) -> CommandResult<()> {
         let mut secret = self.secret.borrow_mut();
-        let root_folder_id = self
-            .library
-            .remote_root_locator()
-            .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned())))?;
+        let root_folder_id = self.library.remote_root_locator().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "remote repository is missing a remote locator".to_owned(),
+            ))
+        })?;
         let entry = google_drive_find_relative_entry(
             self.app_data_dir,
             &mut secret,
             root_folder_id,
             relative_path,
         )?
-        .ok_or_else(|| CommandError::from(LibraryError::Internal(format!("remote file {relative_path} was not found"))))?;
+        .ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(format!(
+                "remote file {relative_path} was not found"
+            )))
+        })?;
         google_drive_download_file(self.app_data_dir, &mut secret, &entry.id, destination)
     }
 
     fn upload_file(&self, relative_path: &str) -> CommandResult<()> {
         let secret = self.secret.borrow();
-        let root_folder_id = self
-            .library
-            .remote_root_locator()
-            .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned())))?;
+        let root_folder_id = self.library.remote_root_locator().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "remote repository is missing a remote locator".to_owned(),
+            ))
+        })?;
         google_drive_upload_relative_file_to_remote(
             self.app_data_dir,
             self.library,
@@ -1083,10 +1173,11 @@ impl RemoteProvider for GoogleDriveProvider<'_> {
 
     fn upload_directory(&self, relative_path: &str) -> CommandResult<()> {
         let secret = self.secret.borrow();
-        let root_folder_id = self
-            .library
-            .remote_root_locator()
-            .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned())))?;
+        let root_folder_id = self.library.remote_root_locator().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "remote repository is missing a remote locator".to_owned(),
+            ))
+        })?;
         google_drive_upload_directory_to_remote(
             self.app_data_dir,
             self.library,
@@ -1098,15 +1189,20 @@ impl RemoteProvider for GoogleDriveProvider<'_> {
 
     fn delete_path(&self, relative_path: &str) -> CommandResult<()> {
         let mut secret = self.secret.borrow_mut();
-        let root_folder_id = self
-            .library
-            .remote_root_locator()
-            .ok_or_else(|| CommandError::from(LibraryError::Internal("remote repository is missing a remote locator".to_owned())))?;
+        let root_folder_id = self.library.remote_root_locator().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "remote repository is missing a remote locator".to_owned(),
+            ))
+        })?;
         if relative_path.is_empty() {
             return google_drive_delete_entry(self.app_data_dir, &mut secret, root_folder_id);
         }
-        let Some(entry) =
-            google_drive_find_relative_entry(self.app_data_dir, &mut secret, root_folder_id, relative_path)?
+        let Some(entry) = google_drive_find_relative_entry(
+            self.app_data_dir,
+            &mut secret,
+            root_folder_id,
+            relative_path,
+        )?
         else {
             return Ok(());
         };
