@@ -1,8 +1,9 @@
 # Current Implementation Status
 
 > **Last updated:** 2026-05-14 · This file tracks the implementation status and is updated alongside releases.
-> **Current source version:** 0.9.0  
+> **Current source version:** 0.9.0
 > **Released source of truth:** `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` must match the version described here.
+> **For a concise version history, see [CHANGELOG.md](../CHANGELOG.md).**
 
 ## Completed Milestones
 

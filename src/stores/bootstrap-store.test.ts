@@ -17,6 +17,7 @@ describe("bootstrap-store updateStatus", () => {
       model_path: "/models/htdemucs.onnx",
       downloaded_bytes: 500,
       total_bytes: 1000,
+      error: null,
     };
 
     useBootstrapStore.getState().updateStatus(incoming);
@@ -31,6 +32,7 @@ describe("bootstrap-store updateStatus", () => {
         model_path: "/models/htdemucs.onnx",
         downloaded_bytes: 800,
         total_bytes: 1000,
+        error: null,
       },
     });
 
@@ -40,6 +42,7 @@ describe("bootstrap-store updateStatus", () => {
       model_path: "/models/htdemucs.onnx",
       downloaded_bytes: 500,
       total_bytes: 1000,
+      error: null,
     });
 
     const status = useBootstrapStore.getState().status!;
@@ -54,6 +57,7 @@ describe("bootstrap-store updateStatus", () => {
         model_path: "/models/htdemucs.onnx",
         downloaded_bytes: 500,
         total_bytes: 1000,
+        error: null,
       },
     });
 
@@ -62,6 +66,7 @@ describe("bootstrap-store updateStatus", () => {
       model_path: "/models/htdemucs.onnx",
       downloaded_bytes: 900,
       total_bytes: 1000,
+      error: null,
     });
 
     const status = useBootstrapStore.getState().status!;
@@ -75,6 +80,7 @@ describe("bootstrap-store updateStatus", () => {
         model_path: "/models/htdemucs.onnx",
         downloaded_bytes: 800,
         total_bytes: 1000,
+        error: null,
       },
     });
 
@@ -83,6 +89,7 @@ describe("bootstrap-store updateStatus", () => {
       model_path: "/models/htdemucs_ft.onnx",
       downloaded_bytes: 100,
       total_bytes: 2000,
+      error: null,
     };
 
     useBootstrapStore.getState().updateStatus(newStatus);
@@ -97,6 +104,7 @@ describe("bootstrap-store updateStatus", () => {
         model_path: "/models/htdemucs.onnx",
         downloaded_bytes: 500,
         total_bytes: 1000,
+        error: null,
       },
     });
 
@@ -117,6 +125,7 @@ describe("bootstrap-store updateStatus", () => {
         model_path: "/models/htdemucs.onnx",
         downloaded_bytes: 500,
         total_bytes: 1000,
+        error: null,
       },
     });
 
@@ -125,6 +134,7 @@ describe("bootstrap-store updateStatus", () => {
       model_path: "/models/htdemucs.onnx",
       downloaded_bytes: 600,
       total_bytes: 2000,
+      error: null,
     });
 
     expect(useBootstrapStore.getState().status!.total_bytes).toBe(2000);
@@ -137,6 +147,7 @@ describe("bootstrap-store updateStatus", () => {
         model_path: "/models/htdemucs.onnx",
         downloaded_bytes: 500,
         total_bytes: 1000,
+        error: null,
       },
     });
 
@@ -145,6 +156,7 @@ describe("bootstrap-store updateStatus", () => {
       model_path: "/models/htdemucs.onnx",
       downloaded_bytes: 600,
       total_bytes: null,
+      error: null,
     });
 
     expect(useBootstrapStore.getState().status!.total_bytes).toBe(1000);
