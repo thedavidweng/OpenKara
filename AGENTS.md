@@ -27,6 +27,7 @@ Formatting is automated via PostToolUse hook (`pnpm format:write` + `cargo fmt`)
 
 ## Never Do
 
+- Never use `as any`, `@ts-ignore`, or `@ts-expect-error` to silence type errors. Fix the types instead.
 - Never change public IPC commands, payloads, or events without updating the corresponding contract docs.
 - Never remove rationale comments just because the surrounding code was refactored.
 - Never remove Linux CI package `libasound2-dev` unless the audio stack itself changes.

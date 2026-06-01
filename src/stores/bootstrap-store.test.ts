@@ -111,9 +111,12 @@ describe("bootstrap-store updateStatus", () => {
     const completed = {
       state: "ready" as const,
       model_path: "/models/htdemucs.onnx",
+      downloaded_bytes: null,
+      total_bytes: null,
+      error: null,
     };
 
-    useBootstrapStore.getState().updateStatus(completed as any);
+    useBootstrapStore.getState().updateStatus(completed);
 
     expect(useBootstrapStore.getState().status).toEqual(completed);
   });
