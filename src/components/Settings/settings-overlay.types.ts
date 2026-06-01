@@ -64,9 +64,9 @@ export interface SettingsOverlayActions {
   openLibrary: (dialogTitle: string) => Promise<void>;
   switchLibrary: (libraryId: string) => Promise<void>;
   refreshRemoteRepository: (libraryId: string) => Promise<void>;
-  renameLibrary: (libraryId: string) => Promise<void>;
+  renameLibrary: (libraryId: string, displayName: string) => Promise<void>;
   removeLibrary: (libraryId: string) => Promise<void>;
-  deleteLibrary: (libraryId: string) => Promise<void>;
+  deleteLibrary: (libraryId: string, confirmationName: string) => Promise<void>;
   setLanguage: (language: string) => Promise<void>;
   restartApp: () => Promise<void>;
   setStemMode: (mode: StemMode) => Promise<void>;

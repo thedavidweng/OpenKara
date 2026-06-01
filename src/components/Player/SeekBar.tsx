@@ -81,7 +81,7 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
       </span>
       <div
         ref={barRef}
-        className={`group relative h-1.5 ${PLAYBACK_BAR_SEEK_RAIL_MIN_WIDTH_CLASS} flex-1 cursor-pointer rounded-full bg-[var(--color-border)]`}
+        className={`group relative h-1.5 ${PLAYBACK_BAR_SEEK_RAIL_MIN_WIDTH_CLASS} flex-1 rounded-full bg-[var(--color-border)]`}
         onMouseDown={handleMouseDown}
         role="slider"
         aria-label={t("player.seek")}

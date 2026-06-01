@@ -122,6 +122,16 @@ describe("SettingsOverlay sections", () => {
     expect(markup).toContain("settings.dangerZone.label");
   });
 
+  test("settings library section does not depend on browser prompt dialogs", async () => {
+    const { default: source } =
+      await import("./SettingsLibrarySection.tsx?raw");
+    const { default: actionsSource } =
+      await import("./settings-overlay.library-actions.ts?raw");
+
+    expect(source).not.toContain("window.prompt");
+    expect(actionsSource).not.toContain("window.prompt");
+  });
+
   test("renders downloaded, downloading, and not-downloaded model statuses", () => {
     const value = createSettingsOverlayTestContextValue({
       state: {

@@ -169,6 +169,7 @@ pub fn run() {
             commands::settings::restart_app,
             commands::window_shell::get_window_shell_state,
             commands::window_shell::set_native_sidebar_visibility,
+            commands::window_shell::window_ready,
             commands::bootstrap::download_model,
             commands::bootstrap::delete_model,
             commands::bootstrap::get_model_status

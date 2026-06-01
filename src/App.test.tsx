@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 import App from "./App";
 
 vi.mock("@/runtime/app-runtime", () => ({
+  useAppReadyRuntime: vi.fn(),
   useAppStartupRuntime: vi.fn(),
   useAppRuntime: vi.fn(),
 }));

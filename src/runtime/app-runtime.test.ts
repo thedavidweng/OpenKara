@@ -6,6 +6,7 @@ describe("unified app runtime module", () => {
     const { default: src } = await import("./app-runtime.ts?raw");
 
     expect(src).toContain("export function useAppRuntime");
+    expect(src).toContain("export function useAppReadyRuntime");
     expect(src).not.toContain("useSidebarWindowRuntimeWhen");
     expect(src).not.toContain("useSidebarPaneEventListeners");
     expect(src).not.toContain("sidebar-webview");
@@ -15,6 +16,7 @@ describe("unified app runtime module", () => {
     expect(src).toContain("useFileDrop");
     expect(src).toContain("useAppMenuRuntime");
     expect(src).toContain("getLibraryRegistry");
+    expect(src).toContain("windowReady");
     expect(src).not.toContain("getLibraryPath()");
   });
 });

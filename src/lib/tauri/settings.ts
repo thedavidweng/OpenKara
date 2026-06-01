@@ -23,6 +23,10 @@ export function setNativeSidebarVisibility(visible: boolean): Promise<void> {
   return invoke<void>("set_native_sidebar_visibility", { visible });
 }
 
+export function windowReady(): Promise<void> {
+  return invoke<void>("window_ready");
+}
+
 export function setStemMode(mode: string): Promise<AppSettings> {
   return invoke<AppSettings>("set_stem_mode", { mode });
 }

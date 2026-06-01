@@ -175,24 +175,14 @@ export function createLibrarySettingsActions(
       }
     },
 
-    renameLibrary: async (libraryId) => {
+    renameLibrary: async (libraryId, displayName) => {
       patchState({ libraryError: null });
 
       const currentLibrary = controls
         .getSnapshot()
         .state.libraries.find((library) => library.id === libraryId);
       const currentName = currentLibrary?.display_name ?? "";
-      const nextName = window.prompt(
-        currentLibrary?.kind === "remote"
-          ? "Rename the remote repository"
-          : "Rename the local library",
-        currentName,
-      );
-      if (nextName == null) {
-        return;
-      }
-
-      const trimmedName = nextName.trim();
+      const trimmedName = displayName.trim();
       if (!trimmedName || trimmedName === currentName) {
         return;
       }
@@ -237,7 +227,7 @@ export function createLibrarySettingsActions(
       }
     },
 
-    deleteLibrary: async (libraryId) => {
+    deleteLibrary: async (libraryId, confirmationName) => {
       patchState({ libraryError: null });
 
       const currentLibrary = controls
@@ -256,11 +246,7 @@ export function createLibrarySettingsActions(
         return;
       }
 
-      const typedConfirmation = window.prompt(
-        `Type "${displayName}" to confirm permanent deletion.`,
-        "",
-      );
-      if (typedConfirmation !== displayName) {
+      if (confirmationName !== displayName) {
         return;
       }
 

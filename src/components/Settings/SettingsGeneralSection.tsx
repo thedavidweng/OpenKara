@@ -11,7 +11,7 @@ export function SettingsGeneralSection() {
     <SettingsSectionCard title={t("settings.language.label")}>
       <div className="space-y-4">
         <div className="space-y-2">
-          <label className="flex cursor-pointer items-center gap-3">
+          <label className="flex items-center gap-3">
             <input
               type="checkbox"
               checked={state.hideBatchSeparate}
@@ -31,7 +31,7 @@ export function SettingsGeneralSection() {
         </div>
 
         <div className="space-y-2 border-t border-[var(--color-border)] pt-4">
-          <label className="flex cursor-pointer items-center gap-3">
+          <label className="flex items-center gap-3">
             <input
               type="checkbox"
               checked={!state.coverArtBackdrop}

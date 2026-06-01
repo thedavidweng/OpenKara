@@ -232,7 +232,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
       }
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
-      className={`group relative flex cursor-default select-none items-center gap-2.5 rounded-[14px] border px-3 py-2.5 transition-colors duration-150 ${
+      className={`group relative flex select-none items-center gap-2.5 rounded-[14px] border px-3 py-2.5 transition-colors duration-150 ${
         isSelected
           ? "border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-white"
           : "border-transparent text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
