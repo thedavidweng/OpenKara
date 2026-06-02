@@ -50,7 +50,7 @@ pub(crate) use mutation::{
     run_songs_database_mutation, run_updated_songs_mutation, song_ids_from_songs,
 };
 pub(crate) use registry::remove_remote_library_credentials;
-pub(crate) use sync::ensure_remote_file_cached;
+pub(crate) use sync::{active_remote_library, ensure_remote_file_cached};
 pub use types::{
     RemoteAuthSession, RemoteAuthStart, RemoteAuthState, RemoteAuthStatus, RemoteLibraryCandidate,
     UploadState, UploadStatusSnapshot,

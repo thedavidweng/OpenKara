@@ -467,6 +467,57 @@ pub fn spawn_decode_producer_with_proxy(
     Ok((cons, metadata, handle))
 }
 
+/// Spawn a decode producer from a `RemoteMediaSource` (or any `MediaSource`).
+/// The caller provides pre-probed metadata since the source may not support
+/// seeking back to re-probe.
+///
+/// When `slow_flag` is provided, the decode producer checks it periodically
+/// (every decoded packet). When the flag is `true`, every other audio frame
+/// is dropped before pushing into the ring buffer, effectively halving the
+/// data rate while keeping the consumer's sample rate consistent. This lets
+/// playback continue on slow connections at the cost of audio quality.
+///
+/// Returns `(consumer, join_handle)`.
+pub fn spawn_decode_producer_from_source(
+    source: Box<dyn symphonia::core::io::MediaSource>,
+    extension: Option<&str>,
+    metadata: &StreamMetadata,
+    proxy: ProxyConfig,
+    slow_flag: Option<Arc<AtomicBool>>,
+) -> Result<(AudioConsumer, JoinHandle<Result<(), DecodeError>>), DecodeError> {
+    let (ring_rate, ring_channels) = if proxy.enabled {
+        (proxy.target_sample_rate, proxy.target_channels)
+    } else {
+        (metadata.sample_rate, metadata.channels)
+    };
+
+    let (mut prod, cons) = create_stream_pair(ring_rate, ring_channels);
+
+    let mut hint = Hint::new();
+    if let Some(ext) = extension {
+        hint.with_extension(ext);
+    }
+    let label = "remote-source".to_owned();
+    let sr = metadata.sample_rate;
+    let ch = metadata.channels;
+
+    let handle = std::thread::spawn(move || {
+        let mss = MediaSourceStream::new(source, Default::default());
+        decode_mss_into_producer(
+            mss,
+            hint,
+            &label,
+            &mut prod,
+            sr,
+            ch,
+            &proxy,
+            slow_flag.as_deref(),
+        )
+    });
+
+    Ok((cons, handle))
+}
+
 /// Result of spawning decode producers for multiple stems.
 pub struct MultiStemResult {
     pub track: StreamingTrack,
@@ -557,8 +608,8 @@ pub fn spawn_multi_stem_decode_producers_with_proxy(
 fn decode_into_producer(
     path: &Path,
     prod: &mut AudioProducer,
-    _expected_sample_rate: u32,
-    _expected_channels: usize,
+    expected_sample_rate: u32,
+    expected_channels: usize,
     proxy: &ProxyConfig,
 ) -> Result<(), DecodeError> {
     let file = File::open(path)
@@ -566,16 +617,60 @@ fn decode_into_producer(
     let extension = path.extension().and_then(|v| v.to_str());
     let label = path.display().to_string();
 
-    let media_source_stream = MediaSourceStream::new(Box::new(file), Default::default());
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = extension {
         hint.with_extension(ext);
     }
 
+    decode_mss_into_producer(
+        mss,
+        hint,
+        &label,
+        prod,
+        expected_sample_rate,
+        expected_channels,
+        proxy,
+        None,
+    )
+}
+
+/// Drop every other audio frame from interleaved samples. A "frame" is
+/// `channels` consecutive samples (e.g., L, R for stereo). Frame 0 is
+/// kept, frame 1 is dropped, frame 2 is kept, etc.
+fn decimate_frames(samples: &[f32], channels: usize) -> Vec<f32> {
+    if channels == 0 {
+        return samples.to_vec();
+    }
+    let frame_size = channels;
+    let num_frames = samples.len() / frame_size;
+    // Keep even-indexed frames (0, 2, 4, ...).
+    let keep = (num_frames + 1) / 2;
+    let mut out = Vec::with_capacity(keep * frame_size);
+    for i in (0..num_frames).step_by(2) {
+        let start = i * frame_size;
+        let end = (start + frame_size).min(samples.len());
+        out.extend_from_slice(&samples[start..end]);
+    }
+    out
+}
+
+/// Decode from a `MediaSourceStream` into the producer. Used for both local
+/// files and remote sources (e.g., `RemoteMediaSource`).
+fn decode_mss_into_producer(
+    mss: MediaSourceStream,
+    hint: Hint,
+    label: &str,
+    prod: &mut AudioProducer,
+    expected_sample_rate: u32,
+    expected_channels: usize,
+    proxy: &ProxyConfig,
+    slow_flag: Option<&AtomicBool>,
+) -> Result<(), DecodeError> {
     let probed = symphonia::default::get_probe()
         .format(
             &hint,
-            media_source_stream,
+            mss,
             &FormatOptions::default(),
             &MetadataOptions::default(),
         )
@@ -597,9 +692,9 @@ fn decode_into_producer(
         // Check for pending seek before each packet.
         let target = seek_target.load(Ordering::Relaxed);
         if target != SeekTarget::NONE {
-            let seconds = (target as u64) / _expected_sample_rate as u64;
-            let frac = ((target as u64) % _expected_sample_rate as u64) as f64
-                / _expected_sample_rate as f64;
+            let seconds = (target as u64) / expected_sample_rate as u64;
+            let frac = ((target as u64) % expected_sample_rate as u64) as f64
+                / expected_sample_rate as f64;
             match format.seek(
                 symphonia::core::formats::SeekMode::Accurate,
                 symphonia::core::formats::SeekTo::Time {
@@ -647,17 +742,22 @@ fn decode_into_producer(
         sample_buffer.copy_interleaved_ref(decoded);
         let samples = sample_buffer.samples();
 
-        // Apply proxy resampling if enabled.
+        // Apply proxy resampling if enabled, otherwise check slow flag
+        // for dynamic frame decimation.
         let resampled;
-        let push_samples = if proxy.enabled {
+        let decimated;
+        let push_samples: &[f32] = if proxy.enabled {
             resampled = resample_interleaved(
                 samples,
-                _expected_sample_rate,
-                _expected_channels,
+                expected_sample_rate,
+                expected_channels,
                 proxy.target_sample_rate,
                 proxy.target_channels,
             );
             &resampled
+        } else if slow_flag.is_some_and(|f| f.load(Ordering::Relaxed)) {
+            decimated = decimate_frames(samples, expected_channels);
+            &decimated
         } else {
             samples
         };
@@ -963,6 +1063,30 @@ mod tests {
     fn proxy_config_none_is_disabled() {
         let proxy = ProxyConfig::none();
         assert!(!proxy.enabled);
+    }
+
+    #[test]
+    fn decimate_frames_drops_every_other_frame() {
+        // Stereo: [L0, R0, L1, R1, L2, R2, L3, R3]
+        let samples = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let result = super::decimate_frames(&samples, 2);
+        // Keeps frames 0, 2: [L0, R0, L2, R2]
+        assert_eq!(result, vec![1.0, 2.0, 5.0, 6.0]);
+    }
+
+    #[test]
+    fn decimate_frames_mono() {
+        let samples = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let result = super::decimate_frames(&samples, 1);
+        // Keeps frames 0, 2, 4: [1.0, 3.0, 5.0]
+        assert_eq!(result, vec![1.0, 3.0, 5.0]);
+    }
+
+    #[test]
+    fn decimate_frames_empty_channels() {
+        let samples = vec![1.0, 2.0, 3.0];
+        let result = super::decimate_frames(&samples, 0);
+        assert_eq!(result, vec![1.0, 2.0, 3.0]);
     }
 
     #[test]

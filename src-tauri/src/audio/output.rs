@@ -649,8 +649,11 @@ where
                 // device changes its callback frame count.
                 scratch.resize(data.len(), 0.0);
 
+                // Realtime callback: never block on the playback mutex. If control
+                // threads hold the lock (seek/volume/load), output silence for this
+                // tick rather than stalling the device callback.
                 let mut rendered_samples = 0;
-                if let Ok(mut controller) = playback.lock() {
+                if let Ok(mut controller) = playback.try_lock() {
                     rendered_samples =
                         render_output_buffer(&mut controller, &mut scratch, sample_rate, channels);
                 } else {

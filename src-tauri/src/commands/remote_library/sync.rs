@@ -291,7 +291,9 @@ fn upload_remote_database(app_data_dir: &Path, library: &RegisteredLibrary) -> C
     update_remote_revision_in_config(app_data_dir, library.id(), new_revision)
 }
 
-fn active_remote_library(app_data_dir: &Path) -> CommandResult<Option<RegisteredLibrary>> {
+pub(crate) fn active_remote_library(
+    app_data_dir: &Path,
+) -> CommandResult<Option<RegisteredLibrary>> {
     let config = load_app_config(app_data_dir)?;
     let Some(active_library) = config.active_library() else {
         return Ok(None);

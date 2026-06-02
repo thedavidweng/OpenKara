@@ -239,6 +239,18 @@ fn google_drive_refresh_access_token(
     Ok(secret.access_token.clone())
 }
 
+/// Load the Google Drive secret from disk and refresh the access token.
+/// Used as a callback by `ProviderFetcher` for automatic token renewal on 403.
+fn refresh_google_drive_token(
+    app_data_dir: &Path,
+    library: &RegisteredLibrary,
+) -> Result<String, crate::audio::remote_source::FetchError> {
+    let mut secret = load_google_drive_secret(app_data_dir, library)
+        .map_err(|e| crate::audio::remote_source::FetchError::Cache(e.message))?;
+    google_drive_refresh_access_token(app_data_dir, &mut secret)
+        .map_err(|e| crate::audio::remote_source::FetchError::Cache(e.message))
+}
+
 fn google_drive_authorized_request(
     app_data_dir: &Path,
     secret: &mut GoogleDriveSecret,
@@ -284,7 +296,7 @@ fn google_drive_find_child(
         .append_pair("q", &query)
         .append_pair(
             "fields",
-            "files(id,name,mimeType,headRevisionId,modifiedTime)",
+            "files(id,name,mimeType,headRevisionId,modifiedTime,size)",
         )
         .append_pair("spaces", "drive");
 
@@ -326,7 +338,7 @@ fn google_drive_find_child_with_token(
         .append_pair("q", &query)
         .append_pair(
             "fields",
-            "files(id,name,mimeType,headRevisionId,modifiedTime)",
+            "files(id,name,mimeType,headRevisionId,modifiedTime,size)",
         )
         .append_pair("spaces", "drive");
 
@@ -440,7 +452,7 @@ fn google_drive_create_empty_file(
     name: &str,
 ) -> CommandResult<GoogleDriveFileMetadata> {
     let url = google_drive_api_url(
-        "/drive/v3/files?fields=id,name,mimeType,headRevisionId,modifiedTime",
+        "/drive/v3/files?fields=id,name,mimeType,headRevisionId,modifiedTime,size",
     )?;
     let response = google_drive_authorized_request(app_data_dir, secret, Method::POST, url)?
         .json(&serde_json::json!({
@@ -468,7 +480,7 @@ fn google_drive_upload_file_bytes(
     bytes: Vec<u8>,
 ) -> CommandResult<GoogleDriveFileMetadata> {
     let url = google_drive_api_url(&format!(
-        "/upload/drive/v3/files/{file_id}?uploadType=media&fields=id,name,mimeType,headRevisionId,modifiedTime"
+        "/upload/drive/v3/files/{file_id}?uploadType=media&fields=id,name,mimeType,headRevisionId,modifiedTime,size"
     ))?;
     let response = google_drive_authorized_request(app_data_dir, secret, Method::PATCH, url)?
         .header("Content-Type", "application/octet-stream")
@@ -1063,6 +1075,7 @@ pub(crate) fn google_drive_delete_entry(
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn delete_relative_path_from_remote(
     app_data_dir: &Path,
     library: &RegisteredLibrary,
@@ -1082,6 +1095,7 @@ pub(crate) fn delete_relative_path_from_remote(
     google_drive_delete_entry(app_data_dir, &mut secret, &entry.id)
 }
 
+#[allow(dead_code)]
 pub(crate) fn delete_remote_root(
     app_data_dir: &Path,
     library: &RegisteredLibrary,
@@ -1212,6 +1226,59 @@ impl RemoteProvider for GoogleDriveProvider<'_> {
     fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
         let secret = self.secret.borrow();
         initialize_or_sync_google_drive_library(self.app_data_dir, self.library, &secret)
+    }
+
+    fn create_range_fetcher(
+        &self,
+        relative_path: &str,
+    ) -> CommandResult<Option<Box<dyn crate::audio::remote_source::HttpFetcher>>> {
+        let mut secret = self.secret.borrow_mut();
+        let root_folder_id = self.library.remote_root_locator().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "remote repository is missing a remote locator".to_owned(),
+            ))
+        })?;
+        let entry = google_drive_find_relative_entry(
+            self.app_data_dir,
+            &mut secret,
+            root_folder_id,
+            relative_path,
+        )?
+        .ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(format!(
+                "remote file {relative_path} was not found"
+            )))
+        })?;
+
+        let url = format!(
+            "https://www.googleapis.com/drive/v3/files/{}?alt=media",
+            entry.id
+        );
+        let token = google_drive_refresh_access_token(self.app_data_dir, &mut secret)?;
+        let headers = vec![("Authorization".to_owned(), format!("Bearer {token}"))];
+
+        let app_data_dir = self.app_data_dir.to_path_buf();
+        let library = self.library.clone();
+        Ok(Some(Box::new(
+            crate::audio::remote_source::ProviderFetcher::new(url, headers)
+                .with_token_refresh(move || refresh_google_drive_token(&app_data_dir, &library)),
+        )))
+    }
+
+    fn get_file_size(&self, relative_path: &str) -> CommandResult<Option<u64>> {
+        let mut secret = self.secret.borrow_mut();
+        let root_folder_id = self.library.remote_root_locator().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "remote repository is missing a remote locator".to_owned(),
+            ))
+        })?;
+        let entry = google_drive_find_relative_entry(
+            self.app_data_dir,
+            &mut secret,
+            root_folder_id,
+            relative_path,
+        )?;
+        Ok(entry.and_then(|e| e.size))
     }
 }
 
