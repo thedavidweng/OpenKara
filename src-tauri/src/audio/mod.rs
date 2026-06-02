@@ -1,6 +1,9 @@
+pub mod chunked_cache;
 pub mod decode;
 pub mod encode;
 pub mod error;
 pub mod output;
 pub mod playback;
+pub mod range_set;
+pub mod remote_source;
 pub mod streaming;
