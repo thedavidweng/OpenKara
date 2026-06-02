@@ -7,15 +7,17 @@ use crate::{
             monotonic_now_ms, playback_position_event, LoadedStems, PlaybackController,
             PlaybackStateSnapshot, StemName, PLAYBACK_ERROR_EVENT, PLAYBACK_POSITION_EVENT,
         },
+        remote_source,
     },
     cache,
-    commands::error::CommandError,
+    commands::error::{CommandError, ErrorCode, FallbackAction},
     library,
     library_root::LibraryRoot,
     services::{
         cdg::{load_cdg_state_for_song, mark_cdg_reset_for_seek},
         playback_source::{
-            self, load_cached_stems_for_song, load_playback_source, PlaybackSourceLoad,
+            self, ensure_remote_stem_files_cached, load_cached_stems_for_song,
+            load_playback_source, PlaybackSourceLoad,
         },
     },
     state::{AirPlayState, AppState},
@@ -152,7 +154,7 @@ pub fn play<R: Runtime>(
             &song,
             &playback_arc,
             request_id,
-            &latest_request_id,
+            latest_request_id.clone(),
         ) {
             emit_playback_failure(
                 &background_handle,
@@ -325,12 +327,15 @@ fn play_track_background<R: Runtime>(
     song: &library::Song,
     playback_arc: &Arc<Mutex<PlaybackController>>,
     request_id: u64,
-    request_id_arc: &AtomicU64,
+    request_id_arc: Arc<AtomicU64>,
 ) -> Result<(), PlaybackError> {
-    // Try streaming path first for local files (low latency, bounded memory).
-    if let Some(streaming_source) =
-        playback_source::load_playback_source_streaming(library_root, song)?
-    {
+    // Try streaming path first for local and remote files (low latency, bounded memory).
+    if let Some(streaming_source) = playback_source::load_playback_source_streaming(
+        Some(app_data_dir),
+        &state.remote.remote_chunk_cache,
+        library_root,
+        song,
+    )? {
         let snapshot = {
             let Ok(mut controller) = playback_arc.lock() else {
                 return Err(PlaybackError::Internal(
@@ -350,6 +355,10 @@ fn play_track_background<R: Runtime>(
         // Try to load stems in streaming mode too.
         let connection = cache::open_database(&library_root.database_path())
             .map_err(|e| PlaybackError::Internal(e.to_string()))?;
+        if song.is_remote_stems() {
+            ensure_remote_stem_files_cached(Some(app_data_dir), &connection, song)
+                .map_err(|e| PlaybackError::Internal(e.to_string()))?;
+        }
         if let Some(stems_source) = playback_source::load_cached_stems_for_song_streaming(
             Some(app_data_dir),
             &connection,
@@ -389,6 +398,73 @@ fn play_track_background<R: Runtime>(
 
         ensure_output_thread(state)?;
 
+        // Consume fetch events in the background (for remote streaming).
+        if let Some(fetch_event_rx) = streaming_source.fetch_event_rx {
+            let event_state = state.clone();
+            let event_app_handle = app_handle.clone();
+            let event_song_id = song.hash.clone();
+            let event_playback_arc = playback_arc.clone();
+            let event_request_id = request_id;
+            let event_request_id_arc = request_id_arc.clone();
+            let event_library_root = library_root.clone();
+            let event_app_data_dir = app_data_dir.to_path_buf();
+            std::thread::spawn(move || {
+                for event in fetch_event_rx {
+                    match event {
+                        remote_source::FetchEvent::ConsecutiveFailures { count } => {
+                            eprintln!(
+                                "remote fetch: {count} consecutive failures for {event_song_id}"
+                            );
+                            let _ = event_app_handle.emit(
+                                PLAYBACK_ERROR_EVENT,
+                                PlaybackErrorEvent {
+                                    song_id: event_song_id.clone(),
+                                    error: CommandError::new(
+                                        ErrorCode::NetworkUnavailable,
+                                        format!("remote fetch failed {count} times consecutively"),
+                                        true,
+                                        FallbackAction::Retry,
+                                    ),
+                                },
+                            );
+                        }
+                        remote_source::FetchEvent::RangeNotSupported
+                        | remote_source::FetchEvent::UrlExpired => {
+                            let reason = match event {
+                                remote_source::FetchEvent::RangeNotSupported => {
+                                    "Range requests not supported"
+                                }
+                                remote_source::FetchEvent::UrlExpired => "download URL expired",
+                                _ => unreachable!(),
+                            };
+                            eprintln!("remote fetch: {reason} for {event_song_id}, falling back to full-file playback");
+                            if let Err(error) = fallback_remote_playback_to_full_file(
+                                &event_state,
+                                &event_app_handle,
+                                &event_playback_arc,
+                                event_request_id_arc.as_ref(),
+                                event_request_id,
+                                &event_library_root,
+                                &event_app_data_dir,
+                                &event_song_id,
+                            ) {
+                                eprintln!(
+                                    "remote fetch fallback failed for {event_song_id}: {error:#}"
+                                );
+                                let _ = event_app_handle.emit(
+                                    PLAYBACK_ERROR_EVENT,
+                                    PlaybackErrorEvent {
+                                        song_id: event_song_id.clone(),
+                                        error: CommandError::from(error),
+                                    },
+                                );
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
         // Log decode errors in the background (non-blocking).
         let song_id = song.hash.clone();
         std::thread::spawn(move || {
@@ -410,7 +486,7 @@ fn play_track_background<R: Runtime>(
 
     let snapshot = decode_then_start_track_if_latest(
         playback_arc,
-        request_id_arc,
+        request_id_arc.as_ref(),
         request_id,
         song.hash.clone(),
         move || Ok(decoded_audio),
@@ -438,6 +514,63 @@ fn play_track_background<R: Runtime>(
 
     ensure_output_thread(state)?;
 
+    Ok(())
+}
+
+/// Fallback when the remote byte-range stream becomes unusable.
+///
+/// We fully decode from the provider-backed cached full-file path (or an
+/// equivalent non-range route) to keep playback progressing.
+fn fallback_remote_playback_to_full_file<R: Runtime>(
+    state: &AppState,
+    app_handle: &AppHandle<R>,
+    playback_arc: &Arc<Mutex<PlaybackController>>,
+    latest_request_id: &AtomicU64,
+    request_id: u64,
+    library_root: &LibraryRoot,
+    app_data_dir: &Path,
+    song_id: &str,
+) -> Result<(), PlaybackError> {
+    let connection = cache::open_database(&library_root.database_path())
+        .map_err(|e| PlaybackError::Internal(e.to_string()))?;
+
+    let song = cache::get_song_by_hash(&connection, song_id)
+        .map_err(|e| PlaybackError::Internal(e.to_string()))?
+        .ok_or_else(|| PlaybackError::SongNotFound(song_id.to_owned()))?;
+
+    let PlaybackSourceLoad {
+        decoded_audio,
+        stems,
+    } = load_playback_source(Some(app_data_dir), &connection, library_root, &song)?;
+
+    let mut snapshot = decode_then_start_track_if_latest(
+        playback_arc,
+        latest_request_id,
+        request_id,
+        song.hash.clone(),
+        move || Ok(decoded_audio),
+    )?;
+
+    if let Some(stems) = stems {
+        snapshot =
+            decode_then_attach_stems_if_current_song(playback_arc, &song.hash, move || Ok(stems))?;
+    }
+
+    emit_playback_position(app_handle, &snapshot)
+        .map_err(|e| PlaybackError::Internal(format!("failed to emit playback position: {e}")))?;
+
+    // Attach CDG state if this song still owns the player.
+    if snapshot.song_id.as_deref() == Some(song.hash.as_str()) {
+        let next_cdg_state = load_cdg_state_for_song(library_root, &song);
+        let mut cdg_state = state
+            .playback
+            .cdg_state
+            .lock()
+            .map_err(|_| PlaybackError::Internal("CDG state lock was poisoned".to_owned()))?;
+        *cdg_state = next_cdg_state;
+    }
+
+    ensure_output_thread(state)?;
     Ok(())
 }
 
@@ -649,7 +782,7 @@ mod tests {
                 airplay_local_output_suppressed: Arc::new(AtomicBool::new(false)),
             },
             separation: SeparationState::new(),
-            remote: RemoteState::new(),
+            remote: RemoteState::test_fixture(),
             shell: AppShell::new(
                 Arc::new(Mutex::new(None)),
                 PathBuf::from(env!("CARGO_MANIFEST_DIR"))

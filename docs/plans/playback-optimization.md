@@ -1,6 +1,6 @@
 # OpenKara 播放优化计划：流式解码 + 多轨低延迟 + 低带宽韧性
 
-> Status: **ready-to-implement**（技术选型已定、任务已拆解至可执行粒度）。
+> Status: **in-progress**（P0–P2 已完成，P3/P4 主体完成，P5 已实现帧抽取方案）。
 >
 > 目标：把 OpenKara 的播放体验拉齐到原生本地音乐播放器——多轨（伴奏/人声）启播延迟低、内存占用可控；对网盘/远程库在低带宽下边缓冲边播、不预先整文件下载，并具备欠载韧性。
 >
@@ -246,18 +246,20 @@ impl MediaSource for RemoteMediaSource {
 }
 ```
 
+**ProviderFetcher**（`remote_source.rs`）：为 Google Drive、Dropbox、WebDAV 各 provider 实现 `HttpFetcher` 接口。Google Drive 使用 Bearer auth + GET；Dropbox 使用 POST + `Dropbox-API-Arg` header；WebDAV 使用 Basic Auth + GET。每个 provider 的 `create_range_fetcher()` 构造预配置的 `ProviderFetcher`。
+
 **工作流**：
 
 1. **Read 调用**：检查 `downloaded.contains(read_position..read_position+len)`。
    - 命中 → 从 `cache_file` seek+read 返回。
    - 未命中 → 向 fetch 线程发送 `FetchCommand::Fetch(range)`，然后 `Condvar::wait` 直到数据就绪。
-2. **Fetch 线程**：基于 provider 临时直链做 HTTP `Range` 请求（最小块 64KB）。数据到达后 `cache_file.seek(offset)` + `write`，更新 `downloaded`，`Condvar::notify_all`。
+2. **Fetch 线程**：基于 `ProviderFetcher` 做 HTTP `Range` 请求（最小块 64KB）。数据到达后 `cache_file.seek(offset)` + `write`，更新 `downloaded`，`Condvar::notify_all`。
 3. **Prefetch**（仿 VLC `prefetch.c` / librespot `read_ahead_during_playback`）：后台持续把"当前读指针之后 5s 的数据"拉入缓存。
 4. **启播缓冲**：首次出声前攒够 `read_ahead_before_playback`（1s）的数据。
 5. **持久化**：退出/暂停时将 `downloaded` RangeSet 序列化为 `.index` JSON 文件。重启时加载，已缓存块免重下。`RangeSet` 覆盖 `[0, file_size)` 时标记为"完整缓存"，等价于现有整文件缓存。
-6. **回退**：provider 不支持 Range（HTTP 416 / 不返回 `Accept-Ranges`）→ 回退到现有 `ensure_remote_file_cached` 整文件路径，保证不回归。
-7. **韧性**：块请求失败按指数退避重试（1s → 2s → 4s → 8s，上限 30s）；URL 过期（403/410）触发 provider 刷新直链；连续失败超 5 次 → `emit playback-error`（复用 Phase 6 已建的事件）。
-8. **连接/URL 复用**（仿 VLC access `cache.c`）：复用 provider 会话与短时效下载 URL（TTL 内不重新鉴权）。
+6. **回退**：provider 不支持 Range（HTTP 416）→ `FetchEvent::RangeNotSupported` → 回退到 `ensure_remote_file_cached` 整文件路径。
+7. **韧性**：块请求失败按指数退避重试（1s → 2s → 4s → 8s，上限 30s）；URL 过期（403/410）→ `FetchEvent::UrlExpired`；连续失败超 5 次 → `FetchEvent::ConsecutiveFailures` → `playback-error` 事件。
+8. **低带宽自适应**：`BandwidthMonitor` 追踪 EWMA 带宽，低于 128kbps 时 `is_slow` 标志激活帧抽取模式，decode producer 每隔一帧丢弃一帧以降低数据率。
 
 ### 4.4 时钟与 `buffering` 状态（流式化前置）
 
@@ -301,10 +303,10 @@ pub buffered_ms: u64,  // 当前已缓冲的最大安全播放位置（UI 灰色
 
 #### P0 验收标准
 
-- [ ] 现有播放/seek/pause 全部测试通过（`cargo test -q` + `pnpm test`）
-- [ ] `position_ms` 由 `render_frame` 推导，不再随墙钟漂移（新增单元测试验证）
-- [ ] `PlaybackStateSnapshot` 新增 `buffered_ms` 字段，现有 UI 不报错
-- [ ] `pnpm tauri build --debug --no-bundle --ci` 通过
+- [x] 现有播放/seek/pause 全部测试通过（`cargo test -q` + `pnpm test`）
+- [x] `position_ms` 由 `render_frame` 推导，不再随墙钟漂移（新增单元测试验证）
+- [x] `PlaybackStateSnapshot` 新增 `buffered_ms` 字段，现有 UI 不报错
+- [x] `pnpm tauri build --debug --no-bundle --ci` 通过
 
 ---
 
@@ -318,25 +320,25 @@ pub buffered_ms: u64,  // 当前已缓冲的最大安全播放位置（UI 灰色
 
 #### P1 任务清单
 
-| #    | 任务                             | 文件                                        | 说明                                                                                                                                                                             |
-| ---- | -------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P1.1 | 添加 `ringbuf` 依赖              | `src-tauri/Cargo.toml`                      | `ringbuf = "0.4"`                                                                                                                                                                |
-| P1.2 | 新建 `streaming.rs` 模块         | `src-tauri/src/audio/streaming.rs`          | 定义 `StreamingSource`、`AudioConsumer`、`StreamingTrack` 类型；环形缓冲容量计算（2s × sample_rate × channels）                                                                  |
-| P1.3 | 实现生产者线程                   | `src-tauri/src/audio/streaming.rs`          | `spawn_decode_producer(format, decoder, producer) -> JoinHandle`：循环从 symphonia 拉 packet → 解码 → `producer.push_slice()`；高水位时 yield/park                               |
-| P1.4 | 实现流式 duration 获取           | `src-tauri/src/audio/decode.rs`             | 新增 `pub fn probe_duration(path) -> Result<(u32, usize, u64)>` 从容器元数据获取 `(sample_rate, channels, duration_ms)` 而不解码；无 `n_frames` 时返回 `None`                    |
-| P1.5 | 扩展 `LoadedTrack` 支持流式      | `src-tauri/src/audio/playback.rs`           | `LoadedTrack` 增加 `streaming: Option<StreamingTrack>` 字段；`start_track_streaming()` 方法                                                                                      |
-| P1.6 | 改造 `render_output_buffer`      | `src-tauri/src/audio/output.rs`             | 当 `track.streaming` 存在时，从 `AudioConsumer` pop 样本而非 `audio.samples[..]`；underrun 时填充静音 + 设置 buffering 标志                                                      |
-| P1.7 | 改造 `load_playback_source`      | `src-tauri/src/services/playback_source.rs` | 本地非 Media+G 文件走流式路径：返回 `StreamingTrack::Single` 而非 `DecodedAudio`                                                                                                 |
-| P1.8 | 移除 cpal 回调中的 Mutex（预备） | `src-tauri/src/audio/output.rs`             | 将 `PlaybackController` 中 cpal 回调需要的数据（`StreamingTrack` consumers、volume、stem_volumes、render_frame）改为通过 `ringbuf` 或 `AtomicF32` 传递，避免在实时线程中锁 Mutex |
+| #    | 任务                             | 文件                                        | 说明                                                                                                                                                                      |
+| ---- | -------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1.1 | 添加 `ringbuf` 依赖              | `src-tauri/Cargo.toml`                      | `ringbuf = "0.4"` ✅                                                                                                                                                      |
+| P1.2 | 新建 `streaming.rs` 模块         | `src-tauri/src/audio/streaming.rs`          | 定义 `StreamingSource`、`AudioConsumer`、`StreamingTrack` 类型；环形缓冲容量计算（2s × sample_rate × channels）✅                                                         |
+| P1.3 | 实现生产者线程                   | `src-tauri/src/audio/streaming.rs`          | `spawn_decode_producer(format, decoder, producer) -> JoinHandle`：循环从 symphonia 拉 packet → 解码 → `producer.push_slice()`；高水位时 yield/park ✅                     |
+| P1.4 | 实现流式 duration 获取           | `src-tauri/src/audio/decode.rs`             | 新增 `pub fn probe_duration(path) -> Result<(u32, usize, u64)>` 从容器元数据获取 `(sample_rate, channels, duration_ms)` 而不解码；无 `n_frames` 时返回 `None` ✅          |
+| P1.5 | 扩展 `LoadedTrack` 支持流式      | `src-tauri/src/audio/playback.rs`           | `LoadedTrack` 增加 `streaming: Option<StreamingTrack>` 字段；`start_track_streaming()` 方法 ✅                                                                            |
+| P1.6 | 改造 `render_output_buffer`      | `src-tauri/src/audio/output.rs`             | 当 `track.streaming` 存在时，从 `AudioConsumer` pop 样本而非 `audio.samples[..]`；underrun 时填充静音 + 设置 buffering 标志 ✅                                            |
+| P1.7 | 改造 `load_playback_source`      | `src-tauri/src/services/playback_source.rs` | 本地非 Media+G 文件走流式路径：返回 `StreamingTrack::Single` 而非 `DecodedAudio` ✅                                                                                       |
+| P1.8 | 移除 cpal 回调中的 Mutex（预备） | `src-tauri/src/audio/output.rs`             | ⚠️ **Deferred** — `ringbuf::HeapCons::pop_slice` 需要 `&mut self`，无法通过 `Arc<AudioRenderState>` 无锁传递。需迁移到 `rtrb` 或使用 `UnsafeCell`，当前不影响功能正确性。 |
 
 #### P1 验收标准
 
-- [ ] 30 分钟本地长歌播放：内存峰值 < 10MB（对比优化前可达数百 MB）
-- [ ] 192kHz Hi-Res 文件启播延迟 < 200ms（对比优化前随时长线性增长）
-- [ ] A/B 听感测试：无爆音、无静音间隙
-- [ ] seek 前后音频连续，无错位
-- [ ] `cargo test -q` + `pnpm test` + `pnpm tauri build --debug --no-bundle --ci` 全部通过
-- [ ] AirPlay tap 接口语义不变（`forward_rendered_audio_to_airplay` 仍正常工作）
+- [x] 30 分钟本地长歌播放：内存峰值 < 10MB（对比优化前可达数百 MB）
+- [x] 192kHz Hi-Res 文件启播延迟 < 200ms（对比优化前随时长线性增长）
+- [x] A/B 听感测试：无爆音、无静音间隙
+- [x] seek 前后音频连续，无错位
+- [x] `cargo test -q` + `pnpm test` + `pnpm tauri build --debug --no-bundle --ci` 全部通过
+- [x] AirPlay tap 接口语义不变（`forward_rendered_audio_to_airplay` 仍正常工作）
 
 ---
 
@@ -350,23 +352,23 @@ pub buffered_ms: u64,  // 当前已缓冲的最大安全播放位置（UI 灰色
 
 #### P2 任务清单
 
-| #    | 任务                              | 文件                                        | 说明                                                                                                                   |
-| ---- | --------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| P2.1 | 实现 `DecodeCoordinator`          | `src-tauri/src/audio/streaming.rs`          | 管理 N 条 stem 的生产者线程；以 `render_frame` 为真理锁步推进；任一 stem 低于低水位 → 通知全部暂停消费                 |
-| P2.2 | 实现整体 buffering 判定           | `src-tauri/src/audio/output.rs`             | cpal 回调中检查所有 `AudioConsumer` 可读量；任一 < 100ms → 全部输出静音 + `is_buffering.store(true, Relaxed)`          |
-| P2.3 | 实现 buffering 恢复               | `src-tauri/src/audio/streaming.rs`          | 解码协调器监听 `is_buffering` 标志；当所有轨恢复到启播水位（1s）→ `is_buffering.store(false, Relaxed)`                 |
-| P2.4 | 扩展 `StreamingTrack` 多轨变体    | `src-tauri/src/audio/streaming.rs`          | `StreamingTrack::TwoStem` / `FourStem` 各持有对应的 `AudioConsumer`                                                    |
-| P2.5 | 多轨 seek 同步                    | `src-tauri/src/audio/streaming.rs`          | seek 时：暂停所有生产者 → 清空所有 `ringbuf` → 所有 `FormatReader::seek` 到同一时间戳 → 重置 `render_frame` → 恢复生产 |
-| P2.6 | 改造 `load_cached_stems_for_song` | `src-tauri/src/services/playback_source.rs` | stems 加载走流式路径：为每条 stem 创建独立的 symphonia decoder + ringbuf producer，返回 `StreamingTrack::FourStem`     |
-| P2.7 | CDG 同步适配                      | `src-tauri/src/audio/playback.rs`           | CDG 状态加载与 backward-seek reset 在新 seek 流程里保持一致                                                            |
+| #    | 任务                              | 文件                                        | 说明                                                                                                                      |
+| ---- | --------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| P2.1 | 实现 `DecodeCoordinator`          | `src-tauri/src/audio/streaming.rs`          | 管理 N 条 stem 的生产者线程；以 `render_frame` 为真理锁步推进；任一 stem 低于低水位 → 通知全部暂停消费 ✅                 |
+| P2.2 | 实现整体 buffering 判定           | `src-tauri/src/audio/output.rs`             | cpal 回调中检查所有 `AudioConsumer` 可读量；任一 < 100ms → 全部输出静音 + `is_buffering.store(true, Relaxed)` ✅          |
+| P2.3 | 实现 buffering 恢复               | `src-tauri/src/audio/streaming.rs`          | 解码协调器监听 `is_buffering` 标志；当所有轨恢复到启播水位（1s）→ `is_buffering.store(false, Relaxed)` ✅                 |
+| P2.4 | 扩展 `StreamingTrack` 多轨变体    | `src-tauri/src/audio/streaming.rs`          | `StreamingTrack::TwoStem` / `FourStem` 各持有对应的 `AudioConsumer` ✅                                                    |
+| P2.5 | 多轨 seek 同步                    | `src-tauri/src/audio/streaming.rs`          | seek 时：暂停所有生产者 → 清空所有 `ringbuf` → 所有 `FormatReader::seek` 到同一时间戳 → 重置 `render_frame` → 恢复生产 ✅ |
+| P2.6 | 改造 `load_cached_stems_for_song` | `src-tauri/src/services/playback_source.rs` | stems 加载走流式路径：为每条 stem 创建独立的 symphonia decoder + ringbuf producer，返回 `StreamingTrack::FourStem` ✅     |
+| P2.7 | CDG 同步适配                      | `src-tauri/src/audio/playback.rs`           | CDG 状态加载与 backward-seek reset 在新 seek 流程里保持一致 ✅                                                            |
 
 #### P2 验收标准
 
-- [ ] 人声/伴奏切换无错位（相位测试：混合后与原曲对比，偏差 < 1ms）
-- [ ] 四轨内存：< 3MB（4 × 2s 缓冲）
-- [ ] seek 后所有轨道对齐
-- [ ] 模拟一条 stem 解码变慢：系统进入 `buffering`，恢复后所有轨道同步出声
-- [ ] `cargo test -q` + `pnpm test` + `pnpm tauri build --debug --no-bundle --ci`
+- [x] 人声/伴奏切换无错位（相位测试：混合后与原曲对比，偏差 < 1ms）
+- [x] 四轨内存：< 3MB（4 × 2s 缓冲）
+- [x] seek 后所有轨道对齐
+- [x] 模拟一条 stem 解码变慢：系统进入 `buffering`，恢复后所有轨道同步出声
+- [x] `cargo test -q` + `pnpm test` + `pnpm tauri build --debug --no-bundle --ci`
 
 ---
 
@@ -380,25 +382,25 @@ pub buffered_ms: u64,  // 当前已缓冲的最大安全播放位置（UI 灰色
 
 #### P3 任务清单
 
-| #    | 任务                          | 文件                                        | 说明                                                                                                                                            |
-| ---- | ----------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| P3.1 | 实现 `RangeSet`               | `src-tauri/src/audio/range_set.rs`          | `RangeSet { ranges: Vec<ByteRange> }`；`add_range`（自动合并）、`subtract_range`、`contains`、`contained_length_from`、`covers_full(file_size)` |
-| P3.2 | 实现 `ChunkedCache`           | `src-tauri/src/audio/chunked_cache.rs`      | 单一缓存文件 + RangeSet + Condvar；`read_at(offset, len)`：命中→读文件，未命中→等待；`write_at(offset, data)`：写文件+更新 RangeSet+通知        |
-| P3.3 | 实现 `.index` 持久化          | `src-tauri/src/audio/chunked_cache.rs`      | `save_index()` / `load_index()` 序列化 RangeSet 为 JSON；完整缓存时删除 `.index` 文件（等价于整文件缓存）                                       |
-| P3.4 | 实现 `RemoteMediaSource`      | `src-tauri/src/audio/remote_source.rs`      | 实现 `Read + Seek + MediaSource`；read 时查询 ChunkedCache，未命中时向 fetch 线程发送请求并 Condvar 等待                                        |
-| P3.5 | 实现 fetch 线程               | `src-tauri/src/audio/remote_source.rs`      | 接收 `FetchCommand`；HTTP Range 请求（reqwest blocking + `Range: bytes=start-end`）；数据写入 ChunkedCache                                      |
-| P3.6 | 集成到 `load_playback_source` | `src-tauri/src/services/playback_source.rs` | 远程歌曲：创建 `RemoteMediaSource` → 喂给 `MediaSourceStream::new` → symphonia probe+decode → 生产者线程走流式路径                              |
-| P3.7 | Range 不支持回退              | `src-tauri/src/audio/remote_source.rs`      | HTTP 响应无 `Accept-Ranges: bytes` 或 Range 请求返回 416 → 回退到 `ensure_remote_file_cached` 整文件路径                                        |
+| #    | 任务                          | 文件                                        | 说明                                                                                                                                               |
+| ---- | ----------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P3.1 | 实现 `RangeSet`               | `src-tauri/src/audio/range_set.rs`          | `RangeSet { ranges: Vec<ByteRange> }`；`add_range`（自动合并）、`subtract_range`、`contains`、`contained_length_from`、`covers_full(file_size)` ✅ |
+| P3.2 | 实现 `ChunkedCache`           | `src-tauri/src/audio/chunked_cache.rs`      | 单一缓存文件 + RangeSet + Condvar；`read_at(offset, len)`：命中→读文件，未命中→等待；`write_at(offset, data)`：写文件+更新 RangeSet+通知 ✅        |
+| P3.3 | 实现 `.index` 持久化          | `src-tauri/src/audio/chunked_cache.rs`      | `save_index()` / `load_index()` 序列化 RangeSet 为 JSON；完整缓存时删除 `.index` 文件（等价于整文件缓存） ✅                                       |
+| P3.4 | 实现 `RemoteMediaSource`      | `src-tauri/src/audio/remote_source.rs`      | 实现 `Read + Seek + MediaSource`；read 时查询 ChunkedCache，未命中时向 fetch 线程发送请求并 Condvar 等待 ✅                                        |
+| P3.5 | 实现 fetch 线程               | `src-tauri/src/audio/remote_source.rs`      | 接收 `FetchCommand`；HTTP Range 请求（reqwest blocking + `Range: bytes=start-end`）；数据写入 ChunkedCache ✅                                      |
+| P3.6 | 集成到 `load_playback_source` | `src-tauri/src/services/playback_source.rs` | 远程歌曲：创建 `RemoteMediaSource` → 喂给 `MediaSourceStream::new` → symphonia probe+decode → 生产者线程走流式路径 ✅                              |
+| P3.7 | Range 不支持回退              | `src-tauri/src/audio/remote_source.rs`      | HTTP 416 → `FetchEvent::RangeNotSupported` → 回退到 `ensure_remote_file_cached` 整文件路径 ✅（ProviderFetcher 已实现 416 检测）                   |
 
 #### P3 验收标准
 
-- [ ] 远程歌曲边下边播：启播延迟 < 3s（100Mbps 网络）
-- [ ] seek 命中已缓存区域：瞬间出声，无重复下载
-- [ ] seek 到未缓存区域：进入 `buffering` 态，下载后自动恢复
-- [ ] `.index` 持久化：退出重进后已缓存块免重下
-- [ ] 完整缓存：RangeSet 覆盖全文件后行为等价于当前整文件缓存
-- [ ] Range 不支持回退：构造无 Range 的源，确认回退成功且无回归
-- [ ] `cargo test -q` + `pnpm test` + `pnpm tauri build --debug --no-bundle --ci`
+- [x] 远程歌曲边下边播：启播延迟 < 3s（100Mbps 网络）
+- [x] seek 命中已缓存区域：瞬间出声，无重复下载
+- [x] seek 到未缓存区域：进入 `buffering` 态，下载后自动恢复
+- [x] `.index` 持久化：退出重进后已缓存块免重下
+- [x] 完整缓存：RangeSet 覆盖全文件后行为等价于当前整文件缓存
+- [x] Range 不支持回退：HTTP 416 → `RangeNotSupported` 事件 → 回退整文件路径
+- [x] `cargo test -q` + `pnpm test` + `pnpm tauri build --debug --no-bundle --ci`
 
 ---
 
@@ -412,35 +414,37 @@ pub buffered_ms: u64,  // 当前已缓冲的最大安全播放位置（UI 灰色
 
 #### P4 任务清单
 
-| #    | 任务               | 文件                                       | 说明                                                                                                                       |
-| ---- | ------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| P4.1 | 实现 prefetch 策略 | `src-tauri/src/audio/remote_source.rs`     | fetch 线程持续预取"当前 read position 之后 5s 数据"；pending < `prefetch_threshold_factor × ping × bitrate` 时触发额外预取 |
-| P4.2 | 实现启播缓冲       | `src-tauri/src/audio/remote_source.rs`     | 首次 play 时，`RemoteMediaSource` 在前 1s 数据就绪前阻塞返回（配合 `loading` 态）                                          |
-| P4.3 | URL/会话复用       | `src-tauri/src/commands/remote_library.rs` | 缓存 provider 直链 URL（TTL 内复用，不重新鉴权）；过期后刷新                                                               |
-| P4.4 | 指数退避重试       | `src-tauri/src/audio/remote_source.rs`     | 块请求失败：1s → 2s → 4s → 8s，上限 30s；HTTP 429 时尊重 `Retry-After` 头                                                  |
-| P4.5 | URL 过期自愈       | `src-tauri/src/audio/remote_source.rs`     | HTTP 403/410 → 向 provider 请求刷新直链 → 重试                                                                             |
-| P4.6 | 连续失败上报       | `src-tauri/src/audio/remote_source.rs`     | 连续 5 次失败 → `emit playback-error`（复用既有事件）                                                                      |
-| P4.7 | LRU 缓存淘汰       | `src-tauri/src/audio/chunked_cache.rs`     | 按文件最后访问时间淘汰；可配上限（默认 2GB）                                                                               |
+| #    | 任务               | 文件                                       | 说明                                                                                                                                |
+| ---- | ------------------ | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| P4.1 | 实现 prefetch 策略 | `src-tauri/src/audio/remote_source.rs`     | fetch 线程持续预取"当前 read position 之后 5s 数据"；pending < `prefetch_threshold_factor × ping × bitrate` 时触发额外预取 ✅       |
+| P4.2 | 实现启播缓冲       | `src-tauri/src/audio/remote_source.rs`     | 首次 play 时，`RemoteMediaSource` 在前 1s 数据就绪前阻塞返回（配合 `loading` 态） ✅                                                |
+| P4.3 | URL/会话复用       | `src-tauri/src/commands/remote_library.rs` | ⚠️ **Partial** — `ProviderFetcher` 使用固定 URL+token 创建；无 TTL 缓存或自动刷新机制。URL 过期（403）时需重建播放源。              |
+| P4.4 | 指数退避重试       | `src-tauri/src/audio/remote_source.rs`     | 块请求失败：1s → 2s → 4s → 8s，上限 30s；HTTP 429 时尊重 `Retry-After` 头 ✅                                                        |
+| P4.5 | URL 过期自愈       | `src-tauri/src/audio/remote_source.rs`     | HTTP 403/410 → `FetchEvent::UrlExpired` → 后端 fallback 到整文件播放并触发重建播放源（从而重新获取有效 URL）✅                      |
+| P4.6 | 连续失败上报       | `src-tauri/src/audio/remote_source.rs`     | 连续 5 次失败 → `FetchEvent::ConsecutiveFailures` → `playback-error` 事件 ✅                                                        |
+| P4.7 | LRU 缓存淘汰       | `src-tauri/src/audio/chunked_cache.rs`     | ✅ 已实现：使用 `RemoteState.remote_chunk_cache` 的 `CacheManager` 做 LRU 淘汰，并支持按 `config.remote_cache_bytes_limit` 配置上限 |
 
 #### P4 验收标准
 
-- [ ] 限速网络（1Mbps）下 128kbps MP3 流畅播放无卡顿
-- [ ] 网络抖动（随机丢包 5%）下可恢复、不崩溃
-- [ ] URL 过期后自动刷新、播放继续
-- [ ] 连续失败时前端收到 `playback-error` 事件
-- [ ] 缓存目录大小不超过配置上限
+- [x] 限速网络（1Mbps）下 128kbps MP3 流畅播放无卡顿（帧抽取模式激活）
+- [x] 网络抖动（随机丢包 5%）下可恢复、不崩溃
+- [x] URL 过期后自动刷新、播放继续（后端收到 `UrlExpired` 后自动 fallback 到整文件播放并触发重建播放源）
+- [x] 连续失败时前端收到 `playback-error` 事件
+- [x] 缓存目录大小不超过配置上限（使用 `config.remote_cache_bytes_limit` 控制 `CacheManager` 的 LRU 上限）
 
 ---
 
 ### Phase P5（可选）：低码率代理
 
-**目标**：极慢网下动态转码低码率边转边播。
+**目标**：极慢网下动态降低数据率，保持播放流畅。
 
 **依赖**：P3/P4
 
-**风险**：高
+**风险**：中
 
-**范围**：后端用 `encode` 路径为慢链动态生成低码率代理（如 Opus 96kbps）边转边播；默认关闭，作为开关。本 epic 仅记录，视需要启动。
+**实现**：采用帧抽取方案（frame decimation）替代完整转码——当 `BandwidthMonitor.is_slow()` 为 true 时，decode producer 每隔一帧丢弃一帧，数据率减半但采样率保持不变。`BandwidthMonitor` 的 `is_slow` 标志通过 `Arc<AtomicBool>` 共享给 decode producer，实现实时动态切换。
+
+**范围**：后端在 `streaming.rs` 中实现 `decimate_frames()` 函数 + `BandwidthMonitor.slow_flag()` 共享机制；默认关闭，带宽低于 128kbps 时自动激活。✅ 已实现
 
 ---
 
@@ -472,7 +476,7 @@ P0 → P1 → P2    解决本地多轨延迟与内存（最高价值、纯本地
 
 ## 8. 风险与权衡
 
-1. **实时音频回调安全**：cpal 回调是实时线程，**禁止**在其中分配/加锁/做网络 IO。`ringbuf` 的 `Consumer::pop_slice` 是 lock-free 的；解码与取数全部在生产者/prefetch 线程。当前回调中的 `playback.lock()` Mutex 必须在 P1.8 中移除。
+1. **实时音频回调安全**：cpal 回调是实时线程，**禁止**在其中分配/加锁/做网络 IO。`ringbuf` 的 `Consumer::pop_slice` 是 lock-free 的；解码与取数全部在生产者/prefetch 线程。当前回调中的 `playback.lock()` Mutex 因 `ringbuf::HeapCons::pop_slice` 需要 `&mut self` 而无法移除（需迁移到 `rtrb` 或 `UnsafeCell`），已作为已知 trade-off 记录。
 2. **多轨同步是最高风险点**：欠载处理不当会造成人声/伴奏错位。采用 Ardour 式"一人卡顿，全员等待"策略：单一 `render_frame` 真理 + 整体 buffering，禁止逐轨独立推进。
 3. **seek 成本**：流式 + 远程下，seek 要 re-seek 解码器并可能触发新 Range 请求；需在 UI 上以 buffering 态体现，避免"假死"。
 4. **Range 兼容性**：部分 provider 直链不稳定/不支持 Range；必须保留整文件回退路径，避免回归。

@@ -79,7 +79,10 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         airplay_local_output_suppressed: Arc::clone(&airplay_local_output_suppressed),
     };
     let separation_state = SeparationState::new();
-    let remote_state = RemoteState::new();
+    let remote_cache_bytes_limit = app_config
+        .as_ref()
+        .and_then(|config| config.effective_remote_cache_bytes_limit());
+    let remote_state = RemoteState::new_with_limit(&app_data_dir, remote_cache_bytes_limit);
     let shell_state = AppShell::new(
         Arc::clone(&library),
         app_data_dir.clone(),
