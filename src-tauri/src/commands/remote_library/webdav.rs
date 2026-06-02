@@ -5,12 +5,17 @@ use crate::{
     library::error::LibraryError,
     library_root::LibraryRoot,
 };
+use base64::Engine;
 use reqwest::{
     blocking::{Client, Response},
     header::ETAG,
     Method, StatusCode, Url,
 };
 use std::{fs, io::Write, path::Path};
+
+fn base64_encode(input: &str) -> String {
+    base64::engine::general_purpose::STANDARD.encode(input.as_bytes())
+}
 
 use super::types::{
     load_remote_credential, slugify_display_name, store_remote_credential,
@@ -679,6 +684,46 @@ impl RemoteProvider for WebDAVProvider<'_> {
 
     fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
         initialize_or_sync_webdav_library(self.app_data_dir, self.library, &self.secret)
+    }
+
+    fn get_file_size(&self, relative_path: &str) -> CommandResult<Option<u64>> {
+        let client = webdav_client()?;
+        let url = join_url(&self.secret.root_url, relative_path)?;
+        let response = webdav_send(
+            &client,
+            Method::HEAD,
+            &url,
+            &self.secret.username,
+            &self.secret.password,
+            None,
+            None,
+        )?;
+        if !response.status().is_success() {
+            return Ok(None);
+        }
+        Ok(response
+            .headers()
+            .get(reqwest::header::CONTENT_LENGTH)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok()))
+    }
+
+    fn create_range_fetcher(
+        &self,
+        relative_path: &str,
+    ) -> CommandResult<Option<Box<dyn crate::audio::remote_source::HttpFetcher>>> {
+        let url = join_url(&self.secret.root_url, relative_path)?;
+        let auth_value = format!(
+            "Basic {}",
+            base64_encode(&format!(
+                "{}:{}",
+                self.secret.username, self.secret.password
+            ))
+        );
+        let headers = vec![("Authorization".to_owned(), auth_value)];
+        Ok(Some(Box::new(
+            crate::audio::remote_source::ProviderFetcher::new(url, headers),
+        )))
     }
 }
 

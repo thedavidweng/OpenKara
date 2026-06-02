@@ -1,3 +1,4 @@
+use crate::audio::remote_source::HttpFetcher;
 use crate::commands::error::{CommandError, CommandResult};
 use crate::config::RegisteredLibrary;
 use crate::library::error::LibraryError;
@@ -25,6 +26,22 @@ pub(crate) trait RemoteProvider {
 
     /// Initialize or sync the library (ensure folders exist, download DB if needed).
     fn initialize_or_sync(&self) -> CommandResult<Option<String>>;
+
+    /// Create an `HttpFetcher` for streaming byte ranges from a remote file.
+    ///
+    /// Returns `Ok(Some(fetcher))` if the provider supports Range requests,
+    /// `Ok(None)` if it doesn't (caller should fall back to full-file download).
+    fn create_range_fetcher(
+        &self,
+        _relative_path: &str,
+    ) -> CommandResult<Option<Box<dyn HttpFetcher>>> {
+        Ok(None)
+    }
+
+    /// Get the file size in bytes for a remote file, if available.
+    fn get_file_size(&self, _relative_path: &str) -> CommandResult<Option<u64>> {
+        Ok(None)
+    }
 }
 
 /// Create a `RemoteProvider` implementation for the given library.

@@ -239,6 +239,18 @@ fn dropbox_refresh_access_token(
     Ok(secret.access_token.clone())
 }
 
+/// Load the Dropbox secret from disk and refresh the access token.
+/// Used as a callback by `ProviderFetcher` for automatic token renewal on 403.
+fn refresh_dropbox_token(
+    app_data_dir: &Path,
+    library: &RegisteredLibrary,
+) -> Result<String, crate::audio::remote_source::FetchError> {
+    let mut secret = load_dropbox_secret(app_data_dir, library)
+        .map_err(|e| crate::audio::remote_source::FetchError::Cache(e.message))?;
+    dropbox_refresh_access_token(app_data_dir, &mut secret)
+        .map_err(|e| crate::audio::remote_source::FetchError::Cache(e.message))
+}
+
 fn dropbox_authorized_request(
     app_data_dir: &Path,
     secret: &mut DropboxSecret,
@@ -933,6 +945,7 @@ pub(crate) fn dropbox_delete_path(
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn delete_relative_path_from_remote(
     app_data_dir: &Path,
     library: &RegisteredLibrary,
@@ -1054,6 +1067,46 @@ impl RemoteProvider for DropboxProvider<'_> {
     fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
         let secret = self.secret.borrow();
         initialize_or_sync_dropbox_library(self.app_data_dir, self.library, &secret)
+    }
+
+    fn get_file_size(&self, relative_path: &str) -> CommandResult<Option<u64>> {
+        let mut secret = self.secret.borrow_mut();
+        let root_path = self.library.remote_root_locator().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "remote repository is missing a remote locator".to_owned(),
+            ))
+        })?;
+        let remote_path = dropbox_join_path(root_path, relative_path);
+        Ok(
+            dropbox_get_metadata(self.app_data_dir, &mut secret, &remote_path)?
+                .and_then(|m| m.size),
+        )
+    }
+
+    fn create_range_fetcher(
+        &self,
+        relative_path: &str,
+    ) -> CommandResult<Option<Box<dyn crate::audio::remote_source::HttpFetcher>>> {
+        let mut secret = self.secret.borrow_mut();
+        let root_path = self.library.remote_root_locator().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "remote repository is missing a remote locator".to_owned(),
+            ))
+        })?;
+        let remote_path = dropbox_join_path(root_path, relative_path);
+        let token = dropbox_refresh_access_token(self.app_data_dir, &mut secret)?;
+
+        let url = "https://content.dropboxapi.com/2/files/download".to_owned();
+        let headers = vec![("Authorization".to_owned(), format!("Bearer {token}"))];
+        let api_arg = serde_json::json!({ "path": remote_path }).to_string();
+
+        let app_data_dir = self.app_data_dir.to_path_buf();
+        let library = self.library.clone();
+        Ok(Some(Box::new(
+            crate::audio::remote_source::ProviderFetcher::new(url, headers)
+                .with_post(api_arg)
+                .with_token_refresh(move || refresh_dropbox_token(&app_data_dir, &library)),
+        )))
     }
 }
 

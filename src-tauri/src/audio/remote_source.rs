@@ -1,4 +1,4 @@
-use super::chunked_cache::{self, ChunkedCache};
+use super::chunked_cache::ChunkedCache;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
@@ -15,7 +15,9 @@ pub struct BandwidthMonitor {
     /// Bytes per second, exponentially weighted moving average.
     bytes_per_sec: AtomicU64,
     /// Whether the connection is currently considered slow.
-    is_slow: AtomicBool,
+    /// Wrapped in `Arc` so it can be shared with the decode producer via
+    /// [`slow_flag()`](Self::slow_flag) for dynamic proxy switching.
+    is_slow: Arc<AtomicBool>,
     /// Threshold in bytes/sec below which the connection is considered slow.
     slow_threshold: AtomicU64,
 }
@@ -26,7 +28,7 @@ impl BandwidthMonitor {
     pub fn new(slow_threshold_bps: u64) -> Self {
         Self {
             bytes_per_sec: AtomicU64::new(0),
-            is_slow: AtomicBool::new(false),
+            is_slow: Arc::new(AtomicBool::new(false)),
             slow_threshold: AtomicU64::new(slow_threshold_bps),
         }
     }
@@ -71,6 +73,14 @@ impl BandwidthMonitor {
         let current = self.bytes_per_sec.load(Ordering::Relaxed);
         self.is_slow.store(current < bps, Ordering::Relaxed);
     }
+
+    /// Return a read-only view of the slow flag. The flag is automatically
+    /// updated by [`record_fetch`](Self::record_fetch) and
+    /// [`set_slow_threshold`](Self::set_slow_threshold). Intended to be
+    /// shared with the decode producer for dynamic proxy switching.
+    pub fn slow_flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.is_slow)
+    }
 }
 
 /// Commands sent from the `RemoteMediaSource` to the background fetch thread.
@@ -89,6 +99,9 @@ pub enum FetchEvent {
     UrlExpired,
     /// Consecutive failures exceeded the threshold.
     ConsecutiveFailures { count: u32 },
+    /// Server does not support Range requests. Caller should fall back to
+    /// full-file download.
+    RangeNotSupported,
 }
 
 /// Configuration for exponential backoff retry.
@@ -114,6 +127,135 @@ impl Default for RetryConfig {
 /// Abstraction over HTTP range fetching, enabling test injection.
 pub trait HttpFetcher: Send + 'static {
     fn fetch_range(&self, url: &str, offset: u64, length: u64) -> Result<Vec<u8>, FetchError>;
+}
+
+impl HttpFetcher for Box<dyn HttpFetcher> {
+    fn fetch_range(&self, url: &str, offset: u64, length: u64) -> Result<Vec<u8>, FetchError> {
+        (**self).fetch_range(url, offset, length)
+    }
+}
+
+/// An `HttpFetcher` backed by a pre-configured URL and auth headers, suitable
+/// for use with remote storage providers (Google Drive, Dropbox, WebDAV).
+///
+/// For Dropbox (POST-based API), the file path is stored in `api_arg_header`
+/// and requests use POST instead of GET.
+///
+/// Supports automatic token refresh: when a 403 is received, the fetcher
+/// calls the `token_refresh` callback to obtain fresh credentials, updates
+/// its Authorization header, and retries the request once.
+pub struct ProviderFetcher {
+    url: String,
+    headers: std::sync::Mutex<Vec<(String, String)>>,
+    use_post: bool,
+    api_arg_header: Option<String>,
+    token_refresh: Option<Box<dyn Fn() -> Result<String, FetchError> + Send + Sync>>,
+    /// Prevents repeated refresh attempts across retries in `fetch_range_with_retry`.
+    refresh_attempted: std::sync::atomic::AtomicBool,
+}
+
+impl ProviderFetcher {
+    pub fn new(url: String, headers: Vec<(String, String)>) -> Self {
+        Self {
+            url,
+            headers: std::sync::Mutex::new(headers),
+            use_post: false,
+            api_arg_header: None,
+            token_refresh: None,
+            refresh_attempted: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    pub fn with_post(mut self, api_arg_header: String) -> Self {
+        self.use_post = true;
+        self.api_arg_header = Some(api_arg_header);
+        self
+    }
+
+    /// Register a callback that returns a fresh access token. Called on HTTP 403
+    /// to refresh credentials and retry without falling back to full-file download.
+    pub fn with_token_refresh(
+        mut self,
+        refresh: impl Fn() -> Result<String, FetchError> + Send + Sync + 'static,
+    ) -> Self {
+        self.token_refresh = Some(Box::new(refresh));
+        self
+    }
+
+    /// Update the Authorization header with a new token.
+    fn update_auth_header(&self, new_token: &str) {
+        let mut headers = self.headers.lock().unwrap();
+        if let Some(entry) = headers.iter_mut().find(|(k, _)| k == "Authorization") {
+            entry.1 = format!("Bearer {new_token}");
+        }
+    }
+
+    fn execute_request(&self, offset: u64, length: u64) -> Result<Vec<u8>, FetchError> {
+        let end = offset + length - 1;
+        let range_value = format!("bytes={offset}-{end}");
+        let client = reqwest::blocking::Client::new();
+
+        let mut builder = if self.use_post {
+            client.post(&self.url)
+        } else {
+            client.get(&self.url)
+        };
+
+        builder = builder.header("Range", &range_value);
+
+        let headers = self.headers.lock().unwrap();
+        for (key, value) in headers.iter() {
+            builder = builder.header(key.as_str(), value.as_str());
+        }
+        drop(headers);
+
+        if let Some(ref arg) = self.api_arg_header {
+            builder = builder.header("Dropbox-API-Arg", arg.as_str());
+        }
+
+        let response = builder.send().map_err(FetchError::Http)?;
+        let status = response.status().as_u16();
+
+        if status == 416 {
+            return Err(FetchError::RangeNotSupported);
+        }
+        if status == 429 {
+            let retry_after = response
+                .headers()
+                .get("retry-after")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse::<u64>().ok())
+                .map(Duration::from_secs);
+            return Err(FetchError::RateLimited(retry_after));
+        }
+        if !response.status().is_success() && status != 206 {
+            return Err(FetchError::HttpStatus(status));
+        }
+
+        let bytes = response.bytes().map_err(FetchError::Http)?;
+        Ok(bytes.to_vec())
+    }
+}
+
+impl HttpFetcher for ProviderFetcher {
+    fn fetch_range(&self, _url: &str, offset: u64, length: u64) -> Result<Vec<u8>, FetchError> {
+        match self.execute_request(offset, length) {
+            Ok(bytes) => Ok(bytes),
+            Err(FetchError::HttpStatus(403 | 410))
+                if self.token_refresh.is_some()
+                    && !self.refresh_attempted.load(Ordering::Relaxed) =>
+            {
+                // Token expired — refresh and retry once. The flag prevents
+                // repeated refresh attempts across retries in fetch_range_with_retry.
+                self.refresh_attempted.store(true, Ordering::Relaxed);
+                let refresh = self.token_refresh.as_ref().unwrap();
+                let new_token = refresh()?;
+                self.update_auth_header(&new_token);
+                self.execute_request(offset, length)
+            }
+            Err(e) => Err(e),
+        }
+    }
 }
 
 /// A media source that fetches byte ranges on demand from a remote URL.
@@ -261,6 +403,7 @@ impl MediaSource for RemoteMediaSource {
 enum FetchOutcome {
     Ok,
     UrlExpired,
+    RangeNotSupported,
     Failed(FetchError),
 }
 
@@ -283,7 +426,7 @@ pub fn spawn_fetch_thread(
     spawn_fetch_thread_with_fetcher(
         url,
         cache,
-        ReqwestFetcher { client },
+        Box::new(ReqwestFetcher { client }),
         RetryConfig::default(),
     )
 }
@@ -292,7 +435,7 @@ pub fn spawn_fetch_thread(
 pub fn spawn_fetch_thread_with_fetcher(
     url: String,
     cache: Arc<ChunkedCache>,
-    fetcher: impl HttpFetcher,
+    fetcher: Box<dyn HttpFetcher>,
     retry_config: RetryConfig,
 ) -> (
     mpsc::Sender<FetchCommand>,
@@ -342,6 +485,9 @@ impl HttpFetcher for ReqwestFetcher {
         if status == 403 || status == 410 {
             return Err(FetchError::HttpStatus(status));
         }
+        if status == 416 {
+            return Err(FetchError::RangeNotSupported);
+        }
         if !response.status().is_success() && status != 206 {
             return Err(FetchError::HttpStatus(status));
         }
@@ -371,8 +517,9 @@ fn fetch_loop(
     retry_config: &RetryConfig,
     monitor: &BandwidthMonitor,
 ) {
-    let mut current_url = url.to_string();
+    let current_url = url.to_string();
     let mut consecutive_failures: u32 = 0;
+    #[allow(unused_assignments)]
     let mut current_read_position: u64 = 0;
 
     loop {
@@ -396,6 +543,10 @@ fn fetch_loop(
                         // Try to refresh URL by requesting the same range again
                         // after the caller provides a new URL via a new fetch thread.
                         consecutive_failures += 1;
+                    }
+                    FetchOutcome::RangeNotSupported => {
+                        let _ = event_tx.send(FetchEvent::RangeNotSupported);
+                        return; // No point continuing — server can't serve ranges.
                     }
                     FetchOutcome::Failed(e) => {
                         consecutive_failures += 1;
@@ -434,6 +585,10 @@ fn fetch_loop(
                             FetchOutcome::UrlExpired => {
                                 let _ = event_tx.send(FetchEvent::UrlExpired);
                                 consecutive_failures += 1;
+                            }
+                            FetchOutcome::RangeNotSupported => {
+                                let _ = event_tx.send(FetchEvent::RangeNotSupported);
+                                return;
                             }
                             FetchOutcome::Failed(_) => {
                                 // Prefetch failures are non-fatal, don't increment counter.
@@ -483,6 +638,9 @@ fn fetch_range_with_retry(
             Err(FetchError::HttpStatus(403 | 410)) => {
                 return FetchOutcome::UrlExpired;
             }
+            Err(FetchError::RangeNotSupported) => {
+                return FetchOutcome::RangeNotSupported;
+            }
             Err(FetchError::RateLimited(retry_after)) => {
                 let wait = retry_after.unwrap_or(delay);
                 std::thread::sleep(wait);
@@ -508,6 +666,8 @@ pub enum FetchError {
     HttpStatus(u16),
     RateLimited(Option<Duration>),
     Cache(String),
+    /// The server does not support Range requests (HTTP 416 or missing Accept-Ranges).
+    RangeNotSupported,
 }
 
 impl std::fmt::Display for FetchError {
@@ -523,6 +683,7 @@ impl std::fmt::Display for FetchError {
                 Ok(())
             }
             FetchError::Cache(msg) => write!(f, "cache error: {msg}"),
+            FetchError::RangeNotSupported => write!(f, "server does not support Range requests"),
         }
     }
 }
@@ -697,7 +858,7 @@ mod tests {
         let (_tx, event_rx, _monitor, handle) = spawn_fetch_thread_with_fetcher(
             "http://example.com/test.mp3".to_string(),
             Arc::clone(&cache),
-            mock,
+            Box::new(mock),
             RetryConfig {
                 initial_delay: Duration::from_millis(10),
                 max_delay: Duration::from_millis(100),
@@ -739,7 +900,7 @@ mod tests {
         let (tx, event_rx, _monitor, handle) = spawn_fetch_thread_with_fetcher(
             "http://example.com/test.mp3".to_string(),
             Arc::clone(&cache),
-            mock,
+            Box::new(mock),
             RetryConfig {
                 initial_delay: Duration::from_millis(10),
                 max_delay: Duration::from_millis(100),
@@ -782,7 +943,7 @@ mod tests {
         let (tx, event_rx, _monitor, handle) = spawn_fetch_thread_with_fetcher(
             "http://example.com/test.mp3".to_string(),
             Arc::clone(&cache),
-            mock,
+            Box::new(mock),
             RetryConfig {
                 initial_delay: Duration::from_millis(10),
                 max_delay: Duration::from_millis(50),
@@ -829,7 +990,7 @@ mod tests {
         let (tx, event_rx, _monitor, handle) = spawn_fetch_thread_with_fetcher(
             "http://example.com/test.mp3".to_string(),
             Arc::clone(&cache),
-            mock,
+            Box::new(mock),
             RetryConfig {
                 initial_delay: Duration::from_millis(10),
                 max_delay: Duration::from_millis(100),
@@ -933,7 +1094,7 @@ mod tests {
         let (tx, _event_rx, _monitor, handle) = spawn_fetch_thread_with_fetcher(
             "http://example.com/test.mp3".to_string(),
             Arc::clone(&cache),
-            mock,
+            Box::new(mock),
             RetryConfig {
                 initial_delay: Duration::from_millis(10),
                 max_delay: Duration::from_millis(100),
@@ -995,5 +1156,74 @@ mod tests {
         // Zero-duration fetch should not panic or produce infinite bps.
         monitor.record_fetch(1000, Duration::ZERO);
         assert_eq!(monitor.bytes_per_sec(), 0);
+    }
+
+    #[test]
+    fn bandwidth_monitor_slow_flag_shares_state() {
+        let monitor = BandwidthMonitor::new(16_384);
+        let flag = monitor.slow_flag();
+
+        // Initially not slow.
+        assert!(!flag.load(Ordering::Relaxed));
+
+        // Record slow fetches to converge EWMA below threshold.
+        for _ in 0..15 {
+            monitor.record_fetch(100, Duration::from_secs(1));
+        }
+        assert!(flag.load(Ordering::Relaxed));
+
+        // Record fast fetches to converge above threshold.
+        for _ in 0..15 {
+            monitor.record_fetch(100_000, Duration::from_millis(10));
+        }
+        assert!(!flag.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn range_not_supported_emits_event() {
+        let dir = temp_dir("range_not_supp");
+        let cache = Arc::new(ChunkedCache::open(&dir, "rns1", 100).unwrap());
+
+        let mock = MockFetcher::new(vec![Err(FetchError::RangeNotSupported)]);
+
+        let (tx, event_rx, _monitor, handle) = spawn_fetch_thread_with_fetcher(
+            "http://example.com/test.mp3".to_string(),
+            Arc::clone(&cache),
+            Box::new(mock),
+            RetryConfig {
+                initial_delay: Duration::from_millis(10),
+                max_delay: Duration::from_millis(100),
+                max_retries: 0,
+                consecutive_failure_threshold: 5,
+            },
+        );
+
+        tx.send(FetchCommand::Fetch {
+            offset: 0,
+            length: 100,
+        })
+        .unwrap();
+
+        std::thread::sleep(Duration::from_millis(200));
+        let _ = tx.send(FetchCommand::Shutdown);
+        handle.join().unwrap();
+
+        // Should receive RangeNotSupported event.
+        let event = event_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(matches!(event, FetchEvent::RangeNotSupported));
+
+        // Fetch thread exits immediately — no data cached.
+        assert!(!cache.is_cached(0, 100));
+
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn box_dyn_http_fetcher_delegates() {
+        let mock = MockFetcher::new(vec![Ok(vec![42u8; 10])]);
+        let boxed: Box<dyn HttpFetcher> = Box::new(mock);
+
+        let result = boxed.fetch_range("http://example.com", 0, 10).unwrap();
+        assert_eq!(result, vec![42u8; 10]);
     }
 }

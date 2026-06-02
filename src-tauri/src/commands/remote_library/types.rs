@@ -6,11 +6,22 @@ use crate::{
     library_root::LibraryRoot,
     system_credentials,
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::{
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
+
+fn deserialize_optional_string_as_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt: Option<String> = Option::deserialize(deserializer)?;
+    match opt {
+        Some(s) => s.parse::<u64>().map(Some).map_err(serde::de::Error::custom),
+        None => Ok(None),
+    }
+}
 
 pub(crate) const REMOTE_LIBRARIES_DIR: &str = "remote-libraries";
 pub(crate) const GOOGLE_DRIVE_CLIENT_ID_ENV: &str = "OPENKARA_GOOGLE_DRIVE_CLIENT_ID";
@@ -177,6 +188,10 @@ pub(crate) struct GoogleDriveFileMetadata {
     pub(crate) head_revision_id: Option<String>,
     #[serde(default, rename = "modifiedTime")]
     pub(crate) modified_time: Option<String>,
+    /// File size in bytes (only present for files, not folders).
+    /// Google Drive returns this as a string in the JSON response.
+    #[serde(default, deserialize_with = "deserialize_optional_string_as_u64")]
+    pub(crate) size: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -191,6 +206,9 @@ pub(crate) struct DropboxMetadata {
     pub(crate) rev: Option<String>,
     #[serde(default)]
     pub(crate) server_modified: Option<String>,
+    /// File size in bytes.
+    #[serde(default)]
+    pub(crate) size: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
