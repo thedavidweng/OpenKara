@@ -269,7 +269,7 @@ impl CacheManager {
     /// Evict least-recently-used caches until there's room for `needed_bytes`.
     fn evict_if_needed(&mut self, needed_bytes: u64) -> Result<(), CacheError> {
         let current: u64 = self.total_bytes();
-        if current + needed_bytes <= self.max_bytes {
+        if current.saturating_add(needed_bytes) <= self.max_bytes {
             return Ok(());
         }
 
@@ -281,7 +281,7 @@ impl CacheManager {
         let mut to_remove = Vec::new();
 
         for (key, cache) in &entries {
-            if freed + needed_bytes <= self.max_bytes {
+            if freed.saturating_add(needed_bytes) <= self.max_bytes {
                 break;
             }
             let cache_bytes = cache.data_bytes();
