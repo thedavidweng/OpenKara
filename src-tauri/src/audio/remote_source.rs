@@ -1,8 +1,77 @@
 use super::chunked_cache::{self, ChunkedCache};
 use std::io::{self, Read, Seek, SeekFrom};
-use std::sync::{mpsc, Arc};
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    mpsc, Arc,
+};
 use std::time::Duration;
 use symphonia::core::io::MediaSource;
+
+/// Tracks download bandwidth and signals when the connection is slow.
+///
+/// Shared between the fetch thread (which updates it) and the playback system
+/// (which reads it to decide whether to enable proxy mode).
+pub struct BandwidthMonitor {
+    /// Bytes per second, exponentially weighted moving average.
+    bytes_per_sec: AtomicU64,
+    /// Whether the connection is currently considered slow.
+    is_slow: AtomicBool,
+    /// Threshold in bytes/sec below which the connection is considered slow.
+    slow_threshold: AtomicU64,
+}
+
+impl BandwidthMonitor {
+    /// Create a new monitor. `slow_threshold_bps` is in bytes per second.
+    /// Default threshold: 16384 (128 kbps).
+    pub fn new(slow_threshold_bps: u64) -> Self {
+        Self {
+            bytes_per_sec: AtomicU64::new(0),
+            is_slow: AtomicBool::new(false),
+            slow_threshold: AtomicU64::new(slow_threshold_bps),
+        }
+    }
+
+    /// Default slow threshold: 128 kbps = 16384 bytes/sec.
+    pub const DEFAULT_SLOW_THRESHOLD: u64 = 16_384;
+
+    /// Record a completed fetch of `bytes` taking `elapsed`.
+    pub fn record_fetch(&self, bytes: u64, elapsed: Duration) {
+        let secs = elapsed.as_secs_f64();
+        if secs <= 0.0 {
+            return;
+        }
+        let instant_bps = (bytes as f64 / secs) as u64;
+        // EWMA with alpha=0.3.
+        let prev = self.bytes_per_sec.load(Ordering::Relaxed);
+        let new_bps = if prev == 0 {
+            instant_bps
+        } else {
+            (prev as f64 * 0.7 + instant_bps as f64 * 0.3) as u64
+        };
+        self.bytes_per_sec.store(new_bps, Ordering::Relaxed);
+
+        let threshold = self.slow_threshold.load(Ordering::Relaxed);
+        self.is_slow.store(new_bps < threshold, Ordering::Relaxed);
+    }
+
+    /// Current estimated bandwidth in bytes/sec.
+    pub fn bytes_per_sec(&self) -> u64 {
+        self.bytes_per_sec.load(Ordering::Relaxed)
+    }
+
+    /// Whether the connection is currently slow.
+    pub fn is_slow(&self) -> bool {
+        self.is_slow.load(Ordering::Relaxed)
+    }
+
+    /// Update the slow threshold at runtime.
+    pub fn set_slow_threshold(&self, bps: u64) {
+        self.slow_threshold.store(bps, Ordering::Relaxed);
+        // Re-evaluate whether the connection is slow.
+        let current = self.bytes_per_sec.load(Ordering::Relaxed);
+        self.is_slow.store(current < bps, Ordering::Relaxed);
+    }
+}
 
 /// Commands sent from the `RemoteMediaSource` to the background fetch thread.
 pub enum FetchCommand {
@@ -207,6 +276,7 @@ pub fn spawn_fetch_thread(
 ) -> (
     mpsc::Sender<FetchCommand>,
     mpsc::Receiver<FetchEvent>,
+    Arc<BandwidthMonitor>,
     std::thread::JoinHandle<()>,
 ) {
     let client = reqwest::blocking::Client::new();
@@ -227,16 +297,29 @@ pub fn spawn_fetch_thread_with_fetcher(
 ) -> (
     mpsc::Sender<FetchCommand>,
     mpsc::Receiver<FetchEvent>,
+    Arc<BandwidthMonitor>,
     std::thread::JoinHandle<()>,
 ) {
     let (tx, rx) = mpsc::channel();
     let (event_tx, event_rx) = mpsc::channel();
+    let monitor = Arc::new(BandwidthMonitor::new(
+        BandwidthMonitor::DEFAULT_SLOW_THRESHOLD,
+    ));
+    let monitor_clone = Arc::clone(&monitor);
 
     let handle = std::thread::spawn(move || {
-        fetch_loop(&fetcher, &url, &cache, &rx, &event_tx, &retry_config);
+        fetch_loop(
+            &fetcher,
+            &url,
+            &cache,
+            &rx,
+            &event_tx,
+            &retry_config,
+            &monitor_clone,
+        );
     });
 
-    (tx, event_rx, handle)
+    (tx, event_rx, monitor, handle)
 }
 
 struct ReqwestFetcher {
@@ -286,6 +369,7 @@ fn fetch_loop(
     rx: &mpsc::Receiver<FetchCommand>,
     event_tx: &mpsc::Sender<FetchEvent>,
     retry_config: &RetryConfig,
+    monitor: &BandwidthMonitor,
 ) {
     let mut current_url = url.to_string();
     let mut consecutive_failures: u32 = 0;
@@ -301,6 +385,7 @@ fn fetch_loop(
                     offset,
                     length,
                     retry_config,
+                    monitor,
                 );
                 match outcome {
                     FetchOutcome::Ok => {
@@ -328,17 +413,11 @@ fn fetch_loop(
             Ok(FetchCommand::UpdatePosition { position }) => {
                 current_read_position = position;
                 // Prefetch: request the next 5 seconds of data.
-                // Estimate bytes per second from cached data pattern.
                 let prefetch_bytes = estimate_prefetch_bytes(cache, current_read_position);
                 if prefetch_bytes > 0 {
                     let prefetch_offset = current_read_position;
-                    let _ = fetcher; // Available for future use
-                                     // Only prefetch if the range isn't already cached.
+                    // Only prefetch if the range isn't already cached.
                     if !cache.is_cached(prefetch_offset, prefetch_bytes) {
-                        let _ = rx; // channel is used above
-                                    // We can't call fetch_range_with_retry here because we'd block
-                                    // the command channel. Instead, send a Fetch command back to ourselves.
-                                    // But since we own the loop, we just do it inline.
                         let outcome = fetch_range_with_retry(
                             fetcher,
                             &current_url,
@@ -346,6 +425,7 @@ fn fetch_loop(
                             prefetch_offset,
                             prefetch_bytes,
                             retry_config,
+                            monitor,
                         );
                         match outcome {
                             FetchOutcome::Ok => {
@@ -384,15 +464,20 @@ fn fetch_range_with_retry(
     offset: u64,
     length: u64,
     config: &RetryConfig,
+    monitor: &BandwidthMonitor,
 ) -> FetchOutcome {
     let mut delay = config.initial_delay;
 
     for attempt in 0..=config.max_retries {
+        let start = std::time::Instant::now();
         match fetcher.fetch_range(url, offset, length) {
             Ok(bytes) => {
+                let elapsed = start.elapsed();
+                let byte_count = bytes.len() as u64;
                 if let Err(e) = cache.write_at(offset, &bytes) {
                     return FetchOutcome::Failed(FetchError::Cache(e.to_string()));
                 }
+                monitor.record_fetch(byte_count, elapsed);
                 return FetchOutcome::Ok;
             }
             Err(FetchError::HttpStatus(403 | 410)) => {
@@ -609,7 +694,7 @@ mod tests {
         // First call fails, second succeeds.
         let mock = MockFetcher::new(vec![Err(FetchError::HttpStatus(500)), Ok(data.clone())]);
 
-        let (_tx, event_rx, handle) = spawn_fetch_thread_with_fetcher(
+        let (_tx, event_rx, _monitor, handle) = spawn_fetch_thread_with_fetcher(
             "http://example.com/test.mp3".to_string(),
             Arc::clone(&cache),
             mock,
@@ -651,7 +736,7 @@ mod tests {
 
         let mock = MockFetcher::new(vec![Err(FetchError::HttpStatus(403))]);
 
-        let (tx, event_rx, handle) = spawn_fetch_thread_with_fetcher(
+        let (tx, event_rx, _monitor, handle) = spawn_fetch_thread_with_fetcher(
             "http://example.com/test.mp3".to_string(),
             Arc::clone(&cache),
             mock,
@@ -694,7 +779,7 @@ mod tests {
             Err(FetchError::HttpStatus(500)),
         ]);
 
-        let (tx, event_rx, handle) = spawn_fetch_thread_with_fetcher(
+        let (tx, event_rx, _monitor, handle) = spawn_fetch_thread_with_fetcher(
             "http://example.com/test.mp3".to_string(),
             Arc::clone(&cache),
             mock,
@@ -741,7 +826,7 @@ mod tests {
             Ok(data.clone()),
         ]);
 
-        let (tx, event_rx, handle) = spawn_fetch_thread_with_fetcher(
+        let (tx, event_rx, _monitor, handle) = spawn_fetch_thread_with_fetcher(
             "http://example.com/test.mp3".to_string(),
             Arc::clone(&cache),
             mock,
@@ -845,7 +930,7 @@ mod tests {
         let call_count_ref = Arc::new(AtomicU32::new(0));
         // We'll check the mock's call count after.
 
-        let (tx, _event_rx, handle) = spawn_fetch_thread_with_fetcher(
+        let (tx, _event_rx, _monitor, handle) = spawn_fetch_thread_with_fetcher(
             "http://example.com/test.mp3".to_string(),
             Arc::clone(&cache),
             mock,
@@ -870,5 +955,45 @@ mod tests {
         assert!(cache.is_cached(0, 100));
 
         cleanup(&dir);
+    }
+
+    #[test]
+    fn bandwidth_monitor_records_speed() {
+        let monitor = BandwidthMonitor::new(16_384); // 128kbps threshold
+
+        // Simulate fast fetches: 100KB in 100ms = 1MB/s.
+        for _ in 0..5 {
+            monitor.record_fetch(100_000, Duration::from_millis(100));
+        }
+        assert!(monitor.bytes_per_sec() > 500_000);
+        assert!(!monitor.is_slow());
+
+        // Simulate many slow fetches: 100 bytes in 1s = 100 B/s.
+        // EWMA with alpha=0.3 needs ~10 iterations to converge.
+        for _ in 0..15 {
+            monitor.record_fetch(100, Duration::from_secs(1));
+        }
+        assert!(monitor.is_slow());
+    }
+
+    #[test]
+    fn bandwidth_monitor_threshold_update() {
+        let monitor = BandwidthMonitor::new(16_384);
+
+        // Fast fetch.
+        monitor.record_fetch(100_000, Duration::from_millis(100));
+        assert!(!monitor.is_slow());
+
+        // Raise threshold to 10MB/s — now it should be slow.
+        monitor.set_slow_threshold(10_000_000);
+        assert!(monitor.is_slow());
+    }
+
+    #[test]
+    fn bandwidth_monitor_zero_elapsed() {
+        let monitor = BandwidthMonitor::new(16_384);
+        // Zero-duration fetch should not panic or produce infinite bps.
+        monitor.record_fetch(1000, Duration::ZERO);
+        assert_eq!(monitor.bytes_per_sec(), 0);
     }
 }

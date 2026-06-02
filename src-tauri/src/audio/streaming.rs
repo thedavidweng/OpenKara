@@ -14,6 +14,79 @@ use symphonia::core::{
 
 use super::decode::DecodeError;
 
+/// Configuration for low-bitrate proxy mode.
+///
+/// When enabled, decoded audio is downsampled to `target_sample_rate` and
+/// converted to mono before being pushed into the ring buffer. This reduces
+/// the data rate in the buffer by roughly `(original_rate / target_rate) * channels`,
+/// allowing playback to continue on slow network connections.
+#[derive(Debug, Clone)]
+pub struct ProxyConfig {
+    /// Whether proxy mode is enabled.
+    pub enabled: bool,
+    /// Target sample rate for the proxy (e.g., 22050).
+    pub target_sample_rate: u32,
+    /// Target channel count (1 for mono).
+    pub target_channels: usize,
+}
+
+impl ProxyConfig {
+    /// Proxy mode disabled (pass-through).
+    pub fn none() -> Self {
+        Self {
+            enabled: false,
+            target_sample_rate: 0,
+            target_channels: 0,
+        }
+    }
+
+    /// Low-bitrate proxy: mono 22050 Hz (~4x data reduction from stereo 44100).
+    pub fn low_bitrate() -> Self {
+        Self {
+            enabled: true,
+            target_sample_rate: 22_050,
+            target_channels: 1,
+        }
+    }
+}
+
+/// Downsample interleaved f32 samples from one rate/channels to another using
+/// linear interpolation. Returns the resampled samples.
+fn resample_interleaved(
+    samples: &[f32],
+    from_rate: u32,
+    from_channels: usize,
+    to_rate: u32,
+    to_channels: usize,
+) -> Vec<f32> {
+    if from_rate == to_rate && from_channels == to_channels {
+        return samples.to_vec();
+    }
+
+    let from_frames = samples.len() / from_channels;
+    let ratio = from_rate as f64 / to_rate as f64;
+    let to_frames = (from_frames as f64 / ratio) as usize;
+    let mut out = Vec::with_capacity(to_frames * to_channels);
+
+    for i in 0..to_frames {
+        let src_pos = i as f64 * ratio;
+        let src_idx = src_pos as usize;
+        let frac = src_pos - src_idx as f64;
+
+        for ch in 0..to_channels {
+            let from_ch = ch.min(from_channels - 1);
+            let s0_idx = src_idx * from_channels + from_ch;
+            let s1_idx = ((src_idx + 1).min(from_frames - 1)) * from_channels + from_ch;
+
+            let s0 = samples.get(s0_idx).copied().unwrap_or(0.0);
+            let s1 = samples.get(s1_idx).copied().unwrap_or(0.0);
+            out.push(s0 + (s1 - s0) * frac as f32);
+        }
+    }
+
+    out
+}
+
 /// Shared seek target between the consumer (output callback) and the producer
 /// (decode thread). Stores the target frame position, or `NONE` when no seek
 /// is pending.
@@ -355,15 +428,40 @@ pub fn spawn_decode_producer(
     ),
     DecodeError,
 > {
+    spawn_decode_producer_with_proxy(path, ProxyConfig::none())
+}
+
+/// Like `spawn_decode_producer`, but with optional proxy mode for low-bitrate
+/// streaming. When proxy is enabled, decoded audio is downsampled before being
+/// pushed into the ring buffer, and the consumer reports the proxy sample rate.
+pub fn spawn_decode_producer_with_proxy(
+    path: &Path,
+    proxy: ProxyConfig,
+) -> Result<
+    (
+        AudioConsumer,
+        StreamMetadata,
+        JoinHandle<Result<(), DecodeError>>,
+    ),
+    DecodeError,
+> {
     let metadata = probe_stream_metadata(path)?;
-    let (mut prod, cons) = create_stream_pair(metadata.sample_rate, metadata.channels);
+
+    // If proxy is enabled, the ring buffer and consumer use the proxy parameters.
+    let (ring_rate, ring_channels) = if proxy.enabled {
+        (proxy.target_sample_rate, proxy.target_channels)
+    } else {
+        (metadata.sample_rate, metadata.channels)
+    };
+
+    let (mut prod, cons) = create_stream_pair(ring_rate, ring_channels);
 
     let path_buf = path.to_path_buf();
     let sample_rate = metadata.sample_rate;
     let channels = metadata.channels;
 
     let handle = std::thread::spawn(move || {
-        decode_into_producer(&path_buf, &mut prod, sample_rate, channels)
+        decode_into_producer(&path_buf, &mut prod, sample_rate, channels, &proxy)
     });
 
     Ok((cons, metadata, handle))
@@ -382,6 +480,14 @@ pub struct MultiStemResult {
 pub fn spawn_multi_stem_decode_producers(
     paths: &[std::path::PathBuf],
 ) -> Result<MultiStemResult, DecodeError> {
+    spawn_multi_stem_decode_producers_with_proxy(paths, ProxyConfig::none())
+}
+
+/// Like `spawn_multi_stem_decode_producers`, but with optional proxy mode.
+pub fn spawn_multi_stem_decode_producers_with_proxy(
+    paths: &[std::path::PathBuf],
+    proxy: ProxyConfig,
+) -> Result<MultiStemResult, DecodeError> {
     if paths.is_empty() || paths.len() > 4 {
         return Err(DecodeError::ProbeFailed(format!(
             "expected 1-4 stem paths, got {}",
@@ -395,12 +501,22 @@ pub fn spawn_multi_stem_decode_producers(
 
     for path in paths {
         let meta = probe_stream_metadata(path)?;
-        let (mut prod, cons) = create_stream_pair(meta.sample_rate, meta.channels);
+
+        let (ring_rate, ring_channels) = if proxy.enabled {
+            (proxy.target_sample_rate, proxy.target_channels)
+        } else {
+            (meta.sample_rate, meta.channels)
+        };
+
+        let (mut prod, cons) = create_stream_pair(ring_rate, ring_channels);
 
         let path_buf = path.clone();
         let sr = meta.sample_rate;
         let ch = meta.channels;
-        let handle = std::thread::spawn(move || decode_into_producer(&path_buf, &mut prod, sr, ch));
+        let proxy_clone = proxy.clone();
+        let handle = std::thread::spawn(move || {
+            decode_into_producer(&path_buf, &mut prod, sr, ch, &proxy_clone)
+        });
 
         consumers.push(cons);
         metadata_vec.push(meta);
@@ -443,6 +559,7 @@ fn decode_into_producer(
     prod: &mut AudioProducer,
     _expected_sample_rate: u32,
     _expected_channels: usize,
+    proxy: &ProxyConfig,
 ) -> Result<(), DecodeError> {
     let file = File::open(path)
         .map_err(|e| DecodeError::FileOpenFailed(format!("{}: {}", path.display(), e)))?;
@@ -530,10 +647,25 @@ fn decode_into_producer(
         sample_buffer.copy_interleaved_ref(decoded);
         let samples = sample_buffer.samples();
 
+        // Apply proxy resampling if enabled.
+        let resampled;
+        let push_samples = if proxy.enabled {
+            resampled = resample_interleaved(
+                samples,
+                _expected_sample_rate,
+                _expected_channels,
+                proxy.target_sample_rate,
+                proxy.target_channels,
+            );
+            &resampled
+        } else {
+            samples
+        };
+
         // Push in chunks, yielding if the buffer is full.
         let mut offset = 0;
-        while offset < samples.len() {
-            let pushed = prod.push_samples(&samples[offset..]);
+        while offset < push_samples.len() {
+            let pushed = prod.push_samples(&push_samples[offset..]);
             if pushed == 0 {
                 // Buffer full — yield to let the consumer drain.
                 std::thread::yield_now();
@@ -772,5 +904,96 @@ mod tests {
             Ordering::Relaxed,
         );
         assert_ne!(seek_target.load(Ordering::Relaxed), SeekTarget::NONE);
+    }
+
+    #[test]
+    fn resample_same_rate_passthrough() {
+        let input = vec![1.0f32, 2.0, 3.0, 4.0]; // 2 stereo frames
+        let output = resample_interleaved(&input, 44_100, 2, 44_100, 2);
+        assert_eq!(output, input);
+    }
+
+    #[test]
+    fn resample_stereo_to_mono() {
+        // 2 stereo frames: [L0, R0, L1, R1]
+        let input = vec![1.0f32, 0.5, 0.8, 0.2];
+        let output = resample_interleaved(&input, 44_100, 2, 44_100, 1);
+        // Each mono frame takes the first channel (L).
+        assert_eq!(output.len(), 2); // 2 mono frames
+        assert_eq!(output[0], 1.0); // L0
+        assert_eq!(output[1], 0.8); // L1
+    }
+
+    #[test]
+    fn resample_halves_sample_rate() {
+        // 4 mono frames at 44100 Hz → 2 mono frames at 22050 Hz
+        let input = vec![1.0f32, 2.0, 3.0, 4.0];
+        let output = resample_interleaved(&input, 44_100, 1, 22_050, 1);
+        assert_eq!(output.len(), 2);
+        // Frame 0: src_pos=0.0 → 1.0
+        assert_eq!(output[0], 1.0);
+        // Frame 1: src_pos=2.0 → 3.0
+        assert_eq!(output[1], 3.0);
+    }
+
+    #[test]
+    fn resample_stereo_to_mono_halved_rate() {
+        // 4 stereo frames at 44100 Hz → 2 mono frames at 22050 Hz
+        let input = vec![
+            1.0f32, 0.1, // frame 0: L=1.0, R=0.1
+            2.0, 0.2, // frame 1: L=2.0, R=0.2
+            3.0, 0.3, // frame 2: L=3.0, R=0.3
+            4.0, 0.4, // frame 3: L=4.0, R=0.4
+        ];
+        let output = resample_interleaved(&input, 44_100, 2, 22_050, 1);
+        assert_eq!(output.len(), 2);
+        assert_eq!(output[0], 1.0); // src_pos=0.0, ch0 (L) of frame 0
+        assert_eq!(output[1], 3.0); // src_pos=2.0, ch0 (L) of frame 2
+    }
+
+    #[test]
+    fn proxy_config_low_bitrate_values() {
+        let proxy = ProxyConfig::low_bitrate();
+        assert!(proxy.enabled);
+        assert_eq!(proxy.target_sample_rate, 22_050);
+        assert_eq!(proxy.target_channels, 1);
+    }
+
+    #[test]
+    fn proxy_config_none_is_disabled() {
+        let proxy = ProxyConfig::none();
+        assert!(!proxy.enabled);
+    }
+
+    #[test]
+    fn proxy_decode_producer_downsamples() {
+        use std::path::PathBuf;
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("audio")
+            .join("fixture.wav");
+
+        let proxy = ProxyConfig::low_bitrate();
+        let (consumer, metadata, handle) =
+            spawn_decode_producer_with_proxy(&path, proxy).expect("spawn should succeed");
+
+        // Source metadata is unchanged.
+        assert_eq!(metadata.sample_rate, 44_100);
+        assert_eq!(metadata.channels, 2);
+
+        handle
+            .join()
+            .expect("thread should not panic")
+            .expect("decode should succeed");
+
+        // Consumer reports proxy rate.
+        assert_eq!(consumer.sample_rate, 22_050);
+        assert_eq!(consumer.channels, 1);
+
+        // fixture.wav is 1s: 44100 stereo → 22050 mono = 22050 samples.
+        assert_eq!(consumer.available_samples(), 22_050);
+        assert_eq!(consumer.available_ms(), 1000);
     }
 }
