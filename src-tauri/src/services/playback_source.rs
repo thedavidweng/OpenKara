@@ -101,6 +101,67 @@ pub(crate) fn load_cached_stems_for_song(
         .map_err(|e| PlaybackError::AudioDecodeFailed(e.to_string()))
 }
 
+/// Result of loading stems in streaming mode.
+pub(crate) struct StreamingStemsSource {
+    pub(crate) streaming_track: StreamingTrack,
+    #[allow(dead_code)]
+    pub(crate) metadata: Vec<streaming::StreamMetadata>,
+    pub(crate) decode_handles: Vec<std::thread::JoinHandle<Result<(), decode::DecodeError>>>,
+}
+
+/// Load cached stems for streaming playback. Spawns one decode thread per stem
+/// file, each writing into its own ring buffer. Returns `None` for remote stems
+/// (which need caching first) or Media+G containers.
+pub(crate) fn load_cached_stems_for_song_streaming(
+    app_data_dir: Option<&Path>,
+    connection: &Connection,
+    library_root: &LibraryRoot,
+    song: &Song,
+) -> Result<Option<StreamingStemsSource>, PlaybackError> {
+    // Remote stems need caching first — handled by the non-streaming path.
+    if song.is_remote_stems() {
+        return Ok(None);
+    }
+
+    let cached = cache::stems::get_cached_stem_entry(connection, &song.hash)
+        .map_err(|e| PlaybackError::Internal(format!("failed to load cached stems: {e}")))?
+        .ok_or_else(|| {
+            PlaybackError::KaraokeNotReady(format!("no cached stems for song {}", song.hash))
+        })?;
+
+    let paths: Vec<std::path::PathBuf> =
+        if cached.has_individual_stems() {
+            vec![
+                library_root.resolve(&cached.vocals_path),
+                library_root.resolve(cached.drums_path.as_deref().ok_or_else(|| {
+                    PlaybackError::Internal("missing drums stem path".to_owned())
+                })?),
+                library_root.resolve(
+                    cached.bass_path.as_deref().ok_or_else(|| {
+                        PlaybackError::Internal("missing bass stem path".to_owned())
+                    })?,
+                ),
+                library_root.resolve(cached.other_path.as_deref().ok_or_else(|| {
+                    PlaybackError::Internal("missing other stem path".to_owned())
+                })?),
+            ]
+        } else {
+            vec![
+                library_root.resolve(&cached.vocals_path),
+                library_root.resolve(&cached.accomp_path),
+            ]
+        };
+
+    let result = streaming::spawn_multi_stem_decode_producers(&paths)
+        .map_err(|e| PlaybackError::AudioDecodeFailed(e.to_string()))?;
+
+    Ok(Some(StreamingStemsSource {
+        streaming_track: result.track,
+        metadata: result.metadata,
+        decode_handles: result.decode_handles,
+    }))
+}
+
 /// Result of loading a playback source in streaming mode.
 pub(crate) struct StreamingPlaybackSource {
     pub(crate) streaming_track: StreamingTrack,
