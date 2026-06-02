@@ -25,6 +25,7 @@ function playbackSnapshot(
     is_playing: true,
     position_ms: 1200,
     duration_ms: 3000,
+    buffered_ms: 3000,
     volume: 1,
     stem_volumes: {
       vocals: 1,

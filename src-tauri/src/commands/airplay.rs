@@ -1,7 +1,7 @@
 use crate::{
     airplay_stream::stream_tick_interval,
     airplay_stream::{default_stream_root, AirPlayHttpServer},
-    audio::playback::{monotonic_now_ms, PlaybackController, PlaybackStateSnapshot},
+    audio::playback::{PlaybackController, PlaybackStateSnapshot},
     commands::cdg::{render_cdg_frame_bytes, CdgPlaybackState},
     commands::error::{internal_error, CommandResult},
     lyrics::parser::LyricLine,
@@ -461,7 +461,7 @@ fn build_current_runtime_payload(
     let snapshot = playback
         .lock()
         .ok()
-        .map(|mut controller| controller.snapshot(monotonic_now_ms()))?;
+        .map(|mut controller| controller.snapshot())?;
     Some(build_runtime_payload(
         read_latest_airplay_payload().as_ref(),
         &snapshot,
@@ -848,7 +848,7 @@ pub fn sync_airplay_audience_state(
         .playback
         .lock()
         .map_err(|_| internal_error("playback controller lock was poisoned".to_owned()))?
-        .snapshot(monotonic_now_ms());
+        .snapshot();
     let scene_config = build_scene_config(Some(&payload));
     let runtime = build_runtime_payload(
         Some(&payload),
@@ -880,6 +880,7 @@ mod tests {
             is_playing,
             position_ms,
             duration_ms: Some(240_000),
+            buffered_ms: 240_000,
             volume: 1.0,
             stem_volumes: StemVolumes {
                 vocals: 1.0,
@@ -1126,7 +1127,7 @@ pub fn step_airplay_plain_text_page(
         .playback
         .lock()
         .map_err(|_| internal_error("playback controller lock was poisoned".to_owned()))?
-        .snapshot(monotonic_now_ms());
+        .snapshot();
     let runtime = build_runtime_payload(
         Some(&scene),
         &snapshot,

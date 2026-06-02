@@ -1,7 +1,7 @@
 use crate::airplay_stream::AirPlayAudioTap;
 use crate::audio::decode::DecodedAudio;
 use crate::audio::error::PlaybackError;
-use crate::audio::playback::{monotonic_now_ms, LoadedStems, PlaybackController};
+use crate::audio::playback::{LoadedStems, PlaybackController};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Sample, SampleFormat, SizedSample, Stream};
 use std::{
@@ -60,14 +60,13 @@ pub fn ensure_output_thread(
 
 pub fn render_output_buffer(
     playback: &mut PlaybackController,
-    now_ms: u64,
     output: &mut [f32],
     device_sample_rate: u32,
     device_channels: usize,
 ) -> usize {
     output.fill(0.0);
 
-    let snapshot = playback.snapshot(now_ms);
+    let snapshot = playback.snapshot();
     if !snapshot.is_playing {
         return 0;
     }
@@ -332,13 +331,8 @@ where
 
                 let mut rendered_samples = 0;
                 if let Ok(mut controller) = playback.lock() {
-                    rendered_samples = render_output_buffer(
-                        &mut controller,
-                        monotonic_now_ms(),
-                        &mut scratch,
-                        sample_rate,
-                        channels,
-                    );
+                    rendered_samples =
+                        render_output_buffer(&mut controller, &mut scratch, sample_rate, channels);
                 } else {
                     scratch.fill(0.0);
                 }

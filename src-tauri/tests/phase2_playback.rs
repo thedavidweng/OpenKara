@@ -37,17 +37,23 @@ fn playback_controller_transitions_pause_seek_and_volume() {
     let decoded =
         decode::decode_file(PathBuf::from(fixture_path("audio", "fixture.wav")).as_path()).unwrap();
     let mut controller = PlaybackController::default();
-    assert_eq!(controller.snapshot(0).volume, 1.0);
+    assert_eq!(controller.snapshot().volume, 1.0);
 
+    // 44100 Hz, 1 second track
     let started = controller.start_track("song-a".into(), decoded, 1_000);
     assert_snapshot(&started, Some("song-a"), true, 0);
+
+    // Simulate 250ms of playback (250ms * 44100 / 1000 = 11025 frames)
+    controller.advance_render_frame(11_025);
 
     let paused = controller.pause(1_250).expect("pause should succeed");
     assert_snapshot(&paused, Some("song-a"), false, 250);
 
+    // Resume — render_frame unchanged, position stays at 250ms
     let resumed = controller.play(1_500).expect("resume should succeed");
     assert_snapshot(&resumed, Some("song-a"), true, 250);
 
+    // Seek to 900ms — resets render_frame
     let sought = controller.seek(900, 1_700).expect("seek should succeed");
     assert_snapshot(&sought, Some("song-a"), true, 900);
 
@@ -68,12 +74,17 @@ fn playback_controller_advances_and_stops_at_track_end() {
         decode::decode_file(PathBuf::from(fixture_path("audio", "fixture.wav")).as_path()).unwrap();
     let mut controller = PlaybackController::default();
 
+    // 44100 Hz, ~1 second track
     controller.start_track("song-a".into(), decoded, 5_000);
 
-    let advanced = controller.snapshot(5_400);
+    // Simulate 400ms of playback (400ms * 44100 / 1000 = 17640 frames)
+    controller.advance_render_frame(17_640);
+    let advanced = controller.snapshot();
     assert_snapshot(&advanced, Some("song-a"), true, 400);
 
-    let ended = controller.snapshot(6_500);
+    // Advance past the 1-second duration — should clamp and stop
+    controller.advance_render_frame(44_100);
+    let ended = controller.snapshot();
     assert!(ended.duration_ms.is_some());
     assert_eq!(
         ended.position_ms,

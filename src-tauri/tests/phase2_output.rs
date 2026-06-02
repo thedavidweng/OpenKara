@@ -21,7 +21,6 @@ fn render_output_buffer_returns_silence_without_an_active_track() {
 
     let rendered_samples = render_output_buffer(
         &mut controller,
-        0,
         &mut output,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
@@ -40,7 +39,6 @@ fn render_output_buffer_writes_audio_when_playing_and_silence_when_paused() {
     let mut playing_output = vec![0.0; 256];
     let rendered_samples = render_output_buffer(
         &mut controller,
-        0,
         &mut playing_output,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
@@ -53,7 +51,6 @@ fn render_output_buffer_writes_audio_when_playing_and_silence_when_paused() {
     let mut paused_output = vec![1.0; 256];
     let rendered_after_pause = render_output_buffer(
         &mut controller,
-        100,
         &mut paused_output,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
@@ -71,7 +68,6 @@ fn render_output_buffer_advances_render_frame_for_original_audio() {
     let mut first_output = vec![0.0; 128];
     let rendered_first = render_output_buffer(
         &mut controller,
-        0,
         &mut first_output,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
@@ -84,7 +80,6 @@ fn render_output_buffer_advances_render_frame_for_original_audio() {
     let mut second_output = vec![0.0; 128];
     let rendered_second = render_output_buffer(
         &mut controller,
-        1,
         &mut second_output,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
