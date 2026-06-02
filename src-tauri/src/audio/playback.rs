@@ -104,6 +104,9 @@ pub(crate) struct LoadedTrack {
     /// The sole authority for `position_ms`. Updated exclusively by the render
     /// callback; reset by seek / start_track.
     pub(crate) render_frame: u64,
+    /// Streaming ring-buffer consumers. When `Some`, the render callback reads
+    /// from these instead of `original_audio.samples`.
+    pub(crate) streaming: Option<super::streaming::StreamingTrack>,
 }
 
 #[derive(Debug)]
@@ -144,6 +147,36 @@ impl PlaybackController {
             stems: None,
             is_playing: true,
             render_frame: 0,
+            streaming: None,
+        });
+        self.snapshot()
+    }
+
+    /// Start a track in streaming mode. The audio samples live in ring buffers
+    /// (held in `streaming`) rather than in `original_audio.samples`.
+    /// `metadata` provides sample_rate/channels/duration_ms for position calculation.
+    pub fn start_track_streaming(
+        &mut self,
+        song_id: String,
+        sample_rate: u32,
+        channels: usize,
+        duration_ms: u64,
+        streaming: super::streaming::StreamingTrack,
+        _now_ms: u64,
+    ) -> PlaybackStateSnapshot {
+        self.loading_song_id = None;
+        self.current_track = Some(LoadedTrack {
+            song_id,
+            original_audio: DecodedAudio {
+                sample_rate,
+                channels,
+                duration_ms,
+                samples: Vec::new(), // samples live in the ring buffer
+            },
+            stems: None,
+            is_playing: true,
+            render_frame: 0,
+            streaming: Some(streaming),
         });
         self.snapshot()
     }

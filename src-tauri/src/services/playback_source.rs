@@ -3,6 +3,7 @@ use crate::{
         decode,
         error::PlaybackError,
         playback::{LoadedStems, StemSet},
+        streaming::{self, StreamMetadata, StreamingTrack},
     },
     cache,
     commands::remote_library,
@@ -98,6 +99,46 @@ pub(crate) fn load_cached_stems_for_song(
 
     decode_stem_entry(library_root, &cached)
         .map_err(|e| PlaybackError::AudioDecodeFailed(e.to_string()))
+}
+
+/// Result of loading a playback source in streaming mode.
+pub(crate) struct StreamingPlaybackSource {
+    pub(crate) streaming_track: StreamingTrack,
+    pub(crate) metadata: StreamMetadata,
+    pub(crate) decode_handle: std::thread::JoinHandle<Result<(), decode::DecodeError>>,
+}
+
+/// Load a local song for streaming playback. Returns the ring-buffer consumer,
+/// metadata, and a join handle for the decode thread.
+///
+/// Falls back to full decode for Media+G containers (which require in-memory
+/// byte extraction) and remote songs (which need caching first).
+pub(crate) fn load_playback_source_streaming(
+    library_root: &LibraryRoot,
+    song: &Song,
+) -> Result<Option<StreamingPlaybackSource>, PlaybackError> {
+    // Media+G containers require in-memory extraction — can't stream from disk.
+    if song.media_g_container.as_deref() == Some(MEDIA_G_ZIP) {
+        return Ok(None);
+    }
+
+    // Remote songs need caching first — handled by the non-streaming path.
+    if song.is_remote() {
+        return Ok(None);
+    }
+
+    let song_path =
+        resolve_song_file_path(song).map_err(|e| PlaybackError::Internal(e.to_string()))?;
+    let absolute_path = library_root.resolve(song_path);
+
+    let (consumer, metadata, decode_handle) = streaming::spawn_decode_producer(&absolute_path)
+        .map_err(|e| PlaybackError::AudioDecodeFailed(e.to_string()))?;
+
+    Ok(Some(StreamingPlaybackSource {
+        streaming_track: StreamingTrack::Single { consumer },
+        metadata,
+        decode_handle,
+    }))
 }
 
 pub(crate) fn resolve_song_file_path(song: &Song) -> Result<&str> {
