@@ -4,6 +4,10 @@
   "version": "0.9.0",
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=24 <25",
+    "pnpm": "10.33.2"
+  },
   "scripts": {
     "version:sync": "node scripts/sync-version.mjs",
     "dev": "pnpm version:sync && vite",
@@ -38,6 +42,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.2.4",
+    "@tanstack/react-virtual": "^3.14.1",
     "@tauri-apps/cli": "^2.11.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

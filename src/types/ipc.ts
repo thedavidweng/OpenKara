@@ -275,6 +275,11 @@ export interface PlaybackEndedEvent {
   song_id: string;
 }
 
+export interface PlaybackErrorEvent {
+  song_id: string;
+  error: CommandError;
+}
+
 export interface AirPlayRoutePickerBounds {
   left: number;
   top: number;

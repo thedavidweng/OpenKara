@@ -6,6 +6,7 @@ use std::time::Instant;
 
 pub const PLAYBACK_POSITION_EVENT: &str = "playback-position";
 pub const PLAYBACK_ENDED_EVENT: &str = "playback-ended";
+pub const PLAYBACK_ERROR_EVENT: &str = "playback-error";
 pub const PLAYBACK_POSITION_POLL_INTERVAL_MS: u64 = 33;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -303,6 +304,15 @@ impl PlaybackController {
         self.loading_song_id = None;
     }
 
+    /// Clear a pending background load when decode/start fails for the given song.
+    pub fn cancel_loading_if_matching(&mut self, song_id: &str) -> bool {
+        if self.loading_song_id.as_deref() == Some(song_id) {
+            self.loading_song_id = None;
+            return true;
+        }
+        false
+    }
+
     fn idle_snapshot(&self) -> PlaybackStateSnapshot {
         PlaybackStateSnapshot {
             volume: self.volume,
@@ -421,5 +431,16 @@ mod tests {
         let started = controller.start_track("song-a".to_owned(), decoded, 1_000);
         assert_eq!(started.state, "playing");
         assert!(started.is_playing);
+    }
+
+    #[test]
+    fn cancel_loading_if_matching_clears_pending_load() {
+        let mut controller = super::PlaybackController::default();
+        controller.start_track_loading("song-a");
+        assert!(controller.cancel_loading_if_matching("song-a"));
+
+        let snapshot = controller.snapshot(0);
+        assert_eq!(snapshot.song_id, None);
+        assert_eq!(snapshot.state, "idle");
     }
 }

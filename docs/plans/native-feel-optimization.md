@@ -326,9 +326,9 @@ JSX 中挂载 `InputDialog`，确认后回调 `handleRenameConfirm` / `handleDel
 
 ---
 
-## Phase 6: 双击列表播放歌曲时的卡顿 + macOS 彩虹圈（待实现）
+## Phase 6: 双击列表播放歌曲时的卡顿 + macOS 彩虹圈（已实现）
 
-> Status: 已定位根因，尚未实现修复。
+> Status: 方案 1–4 已实现；整轨预解码内存占用为桌面端可接受 tradeoff，流式播放列为后续 epic。
 
 ### 问题描述
 
@@ -405,15 +405,23 @@ WebKit 渲染线程被卡住 → macOS 彩虹圈。
 
 ### 修复方案
 
-| #   | 方案                                                                                                                                                                                                                                             | 解决的根因 | 预估   |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- | ------ |
-| 1   | **本地歌曲也先发 `loading` 快照再后台解码**：把本地路径改成和远程一致——先 `start_track_loading()` 立即返回，再用后台线程 `decode_then_start_track_if_latest`（已有该 helper + `request_id` 防竞态）。UI 立刻显示加载态，消除"无反馈卡死"。       | A          | 1-2 h  |
-| 2   | **虚拟化曲库列表**：引入 `@tanstack/react-virtual`，只渲染可视区域行，把同时挂载的 `SongListItem` 从 N 降到常数。                                                                                                                                | B          | 2-3 h  |
-| 3   | **把列表项里的 O(N) 计算移出去**：`songs.filter(...)`、playlist 成员关系、language 聚合等不应在每个列表项里算。改为父层 memo 化一次性算好，或只在"右键打开菜单时"惰性计算。                                                                      | B          | 1-2 h  |
-| 4   | **收窄 snapshot 订阅**：`SongListItem` 不订阅整个 snapshot，改用返回原始值的 selector（如 `usePlayerStore((s) => s.snapshot?.song_id === song.hash && s.snapshot.is_playing)`），让 snapshot 引用变化时只有"当前/上一首"两项重渲染，而非整列表。 | B          | 30 min |
+| #   | 方案                                                                                                                                                                                                                                             | 解决的根因 | 预估   | 状态       |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- | ------ | ---------- |
+| 1   | **本地歌曲也先发 `loading` 快照再后台解码**：把本地路径改成和远程一致——先 `start_track_loading()` 立即返回，再用后台线程 `decode_then_start_track_if_latest`（已有该 helper + `request_id` 防竞态）。UI 立刻显示加载态，消除"无反馈卡死"。       | A          | 1-2 h  | **已实现** |
+| 2   | **虚拟化曲库列表**：引入 `@tanstack/react-virtual`，只渲染可视区域行，把同时挂载的 `SongListItem` 从 N 降到常数。                                                                                                                                | B          | 2-3 h  | **已实现** |
+| 3   | **把列表项里的 O(N) 计算移出去**：`songs.filter(...)`、playlist 成员关系、language 聚合等不应在每个列表项里算。改为父层 memo 化一次性算好，或只在"右键打开菜单时"惰性计算。                                                                      | B          | 1-2 h  | **已实现** |
+| 4   | **收窄 snapshot 订阅**：`SongListItem` 不订阅整个 snapshot，改用返回原始值的 selector（如 `usePlayerStore((s) => s.snapshot?.song_id === song.hash && s.snapshot.is_playing)`），让 snapshot 引用变化时只有"当前/上一首"两项重渲染，而非整列表。 | B          | 30 min | **已实现** |
 
-> 最快见效：**方案 4 + 方案 1**。方案 4 几乎立刻消除播放开始时的全列表重渲染风暴
-> （彩虹圈），方案 1 消除"解码期间无反馈"的卡死感。方案 2/3 是更彻底的结构性优化。
+### 实施结果（方案 1–4 + 后台错误上报）
+
+- **后端**（`src-tauri/src/services/playback.rs`）：`play()` 对所有歌曲统一先返回 `state: "loading"` 快照，再在 `play_track_background` 后台线程完成 decode + 换轨；失败时 `emit_playback_failure` 清除 loading 并发出 `playback-error`。
+- **前端**（`src/components/Library/SongListItem.tsx`）：`isCurrentPlaying` / `isCurrentLoading` 原始值 selector；loading 时行首显示 `Loader2` spinner。
+- **前端**（`src/components/Library/SongList.tsx`）：`@tanstack/react-virtual` 虚拟化，仅渲染可视行。
+- **前端**（`song-list-item-context-menu-build.ts`）：右键菜单 O(N) 计算惰性化；`selectedSongIds.has(hash)` 收窄订阅。
+- **前端**（`use-playback-runtime.ts`）：监听 `playback-error`，`notifyError` + 重试 `playSong`。
+- **契约**（`phase-2-playback-contract.md`）：`play` 立即返回 loading；新增 `playback-error` 事件。
+
+> 整轨预解码仍一次性分配 PCM 缓冲（约 10MB/分钟），这是当前 `PlaybackController` 的设计 tradeoff；改为流式 decode/play 需要单独 epic，不在 Phase 6 范围。
 
 ### 验证
 
@@ -430,16 +438,16 @@ WebKit 渲染线程被卡住 → macOS 彩虹圈。
 
 ## 实施结果汇总
 
-| 阶段      | 结果                                                     |
-| --------- | -------------------------------------------------------- |
-| Phase 4.1 | 已实现：`index.html` 内联深色背景                        |
-| Phase 4.2 | 已实现：`visible: false` + `window_ready` IPC            |
-| Phase 4.3 | 已实现：模型 verified manifest，减少启动同步大文件读取   |
-| Phase 1   | 已实现：移除显式 cursor pointer/default 声明             |
-| Phase 5   | 已实现：Settings prompt 替换为 `InputDialog`             |
-| Phase 2   | 待手动 audit：Tooltip/ContextMenu 边缘验证               |
-| Phase 3   | 保持暂缓：resize 抗卡顿仅记录方案                        |
-| Phase 6   | 待实现：双击播放卡顿 + 彩虹圈，已定位根因 A/B 与修复方案 |
+| 阶段      | 结果                                                                                 |
+| --------- | ------------------------------------------------------------------------------------ |
+| Phase 4.1 | 已实现：`index.html` 内联深色背景                                                    |
+| Phase 4.2 | 已实现：`visible: false` + `window_ready` IPC                                        |
+| Phase 4.3 | 已实现：模型 verified manifest，减少启动同步大文件读取                               |
+| Phase 1   | 已实现：移除显式 cursor pointer/default 声明                                         |
+| Phase 5   | 已实现：Settings prompt 替换为 `InputDialog`                                         |
+| Phase 2   | 待手动 audit：Tooltip/ContextMenu 边缘验证                                           |
+| Phase 3   | 保持暂缓：resize 抗卡顿仅记录方案                                                    |
+| Phase 6   | 已实现：方案 1–4 + 后台 decode 失败 `playback-error` 上报；整轨预解码为已知 tradeoff |
 
 ---
 

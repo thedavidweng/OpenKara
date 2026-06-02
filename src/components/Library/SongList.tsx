@@ -1,9 +1,13 @@
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { SongListItem } from "./SongListItem";
 import { EmptyLibrary } from "./EmptyLibrary";
 import { useLibraryStore } from "@/stores/library-store";
 import { usePlaylistStore } from "@/stores/playlist-store";
 import type { Song } from "@/types/ipc";
+
+const SONG_ROW_ESTIMATE_PX = 68;
+const SONG_ROW_GAP_PX = 4;
 
 export function SongList() {
   const songs = useLibraryStore((s) => s.songs);
@@ -13,6 +17,7 @@ export function SongList() {
   const getPlaylistSongs = usePlaylistStore((s) => s.getPlaylistSongs);
   const playlistSongSets = usePlaylistStore((s) => s.playlistSongSets);
   const [playlistSongs, setPlaylistSongs] = useState<Song[]>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const loadPlaylistSongsFromLibrary = useCallback(
     async (playlistId: string, librarySongs: Song[]): Promise<Song[]> => {
@@ -39,22 +44,41 @@ export function SongList() {
 
   const orderedHashes = displaySongs.map((s) => s.hash);
 
+  const virtualizer = useVirtualizer({
+    count: displaySongs.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => SONG_ROW_ESTIMATE_PX,
+    gap: SONG_ROW_GAP_PX,
+    overscan: 8,
+  });
+
   if (displaySongs.length === 0) {
     return <EmptyLibrary />;
   }
 
   return (
     <div
-      className="custom-scrollbar flex-1 space-y-1 overflow-y-auto"
+      ref={scrollRef}
+      className="custom-scrollbar flex-1 overflow-y-auto"
       data-song-list-visual-variant="unified"
     >
-      {displaySongs.map((song) => (
-        <SongListItem
-          key={song.hash}
-          song={song}
-          orderedHashes={orderedHashes}
-        />
-      ))}
+      <div
+        className="relative w-full"
+        style={{ height: `${virtualizer.getTotalSize()}px` }}
+      >
+        {virtualizer.getVirtualItems().map((virtualRow) => {
+          const song = displaySongs[virtualRow.index];
+          return (
+            <div
+              key={song.hash}
+              className="absolute left-0 top-0 w-full"
+              style={{ transform: `translateY(${virtualRow.start}px)` }}
+            >
+              <SongListItem song={song} orderedHashes={orderedHashes} />
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

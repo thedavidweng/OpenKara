@@ -5,10 +5,12 @@ use crate::{
         output,
         playback::{
             monotonic_now_ms, playback_position_event, LoadedStems, PlaybackController,
-            PlaybackStateSnapshot, StemName, PLAYBACK_POSITION_EVENT,
+            PlaybackStateSnapshot, StemName, PLAYBACK_ERROR_EVENT, PLAYBACK_POSITION_EVENT,
         },
     },
-    cache, library,
+    cache,
+    commands::error::CommandError,
+    library,
     library_root::LibraryRoot,
     services::{
         cdg::{load_cdg_state_for_song, mark_cdg_reset_for_seek},
@@ -27,6 +29,12 @@ use std::{
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter, Runtime};
+
+#[derive(Clone, serde::Serialize)]
+pub struct PlaybackErrorEvent {
+    pub song_id: String,
+    pub error: CommandError,
+}
 
 fn bump_airplay_stream_generation(airplay: &AirPlayState) {
     airplay
@@ -116,80 +124,44 @@ pub fn play<R: Runtime>(
         .map_err(|e| PlaybackError::Internal(e.to_string()))?
         .ok_or_else(|| PlaybackError::SongNotFound(song_id.to_owned()))?;
     let active_song_id = song.hash.clone();
-    let needs_remote_download = song.is_remote() || song.is_remote_stems();
 
-    if needs_remote_download {
-        let snapshot = {
-            let mut playback = state.playback.playback.lock().map_err(|_| {
-                PlaybackError::Internal("playback controller lock was poisoned".to_owned())
-            })?;
-            playback.start_track_loading(&active_song_id)
-        };
-        emit_playback_position(app_handle, &snapshot)
-            .map_err(|e| PlaybackError::Internal(e.to_string()))?;
-
-        let background_state = state.clone();
-        let background_handle = app_handle.clone();
-        let app_data_dir = state.shell.app_data_dir.clone();
-        let library_root = library_root.clone();
-        let playback_arc = state.playback.playback.clone();
-        let latest_request_id = state.playback.playback_request_id.clone();
-        let song = song.clone();
-        std::thread::spawn(move || {
-            let _ = play_remote_background(
-                &background_state,
-                &background_handle,
-                &app_data_dir,
-                &library_root,
-                &song,
-                &playback_arc,
-                request_id,
-                &latest_request_id,
-            );
-        });
-
-        return Ok(snapshot);
-    }
-
-    let PlaybackSourceLoad {
-        decoded_audio,
-        stems,
-    } = load_playback_source(
-        Some(&state.shell.app_data_dir),
-        &connection,
-        &library_root,
-        &song,
-    )?;
-    let snapshot = decode_then_start_track_if_latest(
-        &state.playback.playback,
-        &state.playback.playback_request_id,
-        request_id,
-        active_song_id.clone(),
-        move || Ok(decoded_audio),
-    )?;
-    let snapshot = if let Some(stems) = stems {
-        decode_then_attach_stems_if_current_song(
-            &state.playback.playback,
-            &active_song_id,
-            move || Ok(stems),
-        )?
-    } else {
-        snapshot
+    let snapshot = {
+        let mut playback = state.playback.playback.lock().map_err(|_| {
+            PlaybackError::Internal("playback controller lock was poisoned".to_owned())
+        })?;
+        playback.start_track_loading(&active_song_id)
     };
-
-    if snapshot.song_id.as_deref() == Some(active_song_id.as_str()) {
-        let next_cdg_state = load_cdg_state_for_song(&library_root, &song);
-        let mut cdg_state = state
-            .playback
-            .cdg_state
-            .lock()
-            .map_err(|_| PlaybackError::Internal("CDG state lock was poisoned".to_owned()))?;
-        *cdg_state = next_cdg_state;
-    }
-
-    ensure_output_thread(state)?;
     emit_playback_position(app_handle, &snapshot)
         .map_err(|e| PlaybackError::Internal(e.to_string()))?;
+
+    let background_state = state.clone();
+    let background_handle = app_handle.clone();
+    let app_data_dir = state.shell.app_data_dir.clone();
+    let library_root = library_root.clone();
+    let playback_arc = state.playback.playback.clone();
+    let latest_request_id = state.playback.playback_request_id.clone();
+    let song = song.clone();
+    std::thread::spawn(move || {
+        if let Err(error) = play_track_background(
+            &background_state,
+            &background_handle,
+            &app_data_dir,
+            &library_root,
+            &song,
+            &playback_arc,
+            request_id,
+            &latest_request_id,
+        ) {
+            emit_playback_failure(
+                &background_handle,
+                &playback_arc,
+                &song.hash,
+                request_id,
+                &latest_request_id,
+                error,
+            );
+        }
+    });
 
     Ok(snapshot)
 }
@@ -341,9 +313,9 @@ pub fn get_state(state: &AppState) -> Result<PlaybackStateSnapshot, PlaybackErro
     Ok(playback.snapshot(monotonic_now_ms()))
 }
 
-/// Background task: download remote audio/stems, decode, then start playback.
-/// Runs on a spawned thread so the UI stays responsive during download.
-fn play_remote_background<R: Runtime>(
+/// Background task: load, decode, and start playback for any song (local or remote).
+/// Runs on a spawned thread so the UI stays responsive during decode/download.
+fn play_track_background<R: Runtime>(
     state: &AppState,
     app_handle: &AppHandle<R>,
     app_data_dir: &Path,
@@ -352,32 +324,30 @@ fn play_remote_background<R: Runtime>(
     playback_arc: &Arc<Mutex<PlaybackController>>,
     request_id: u64,
     request_id_arc: &AtomicU64,
-) -> anyhow::Result<()> {
-    let connection = cache::open_database(&library_root.database_path())?;
+) -> Result<(), PlaybackError> {
+    let connection = cache::open_database(&library_root.database_path())
+        .map_err(|e| PlaybackError::Internal(e.to_string()))?;
     let PlaybackSourceLoad {
         decoded_audio,
         stems,
     } = load_playback_source(Some(app_data_dir), &connection, library_root, song)?;
 
-    // Swap in the track with a latest-request-wins guard.
-    let snapshot = {
-        let mut playback = playback_arc
-            .lock()
-            .map_err(|_| anyhow::anyhow!("playback controller lock was poisoned"))?;
+    let snapshot = decode_then_start_track_if_latest(
+        playback_arc,
+        request_id_arc,
+        request_id,
+        song.hash.clone(),
+        move || Ok(decoded_audio),
+    )?;
 
-        if request_id_arc.load(Ordering::SeqCst) != request_id {
-            return Ok(());
-        }
-
-        let now = monotonic_now_ms();
-        let snapshot = playback.start_track(song.hash.clone(), decoded_audio, now);
-        if let Some(stems) = stems {
-            playback.attach_stems(&song.hash, stems)?;
-        }
+    let snapshot = if let Some(stems) = stems {
+        decode_then_attach_stems_if_current_song(playback_arc, &song.hash, move || Ok(stems))?
+    } else {
         snapshot
     };
 
-    emit_playback_position(app_handle, &snapshot)?;
+    emit_playback_position(app_handle, &snapshot)
+        .map_err(|e| PlaybackError::Internal(format!("failed to emit playback position: {e}")))?;
 
     // Attach CDG state if this song still owns the player.
     if snapshot.song_id.as_deref() == Some(song.hash.as_str()) {
@@ -386,13 +356,45 @@ fn play_remote_background<R: Runtime>(
             .playback
             .cdg_state
             .lock()
-            .map_err(|_| anyhow::anyhow!("CDG state lock was poisoned"))?;
+            .map_err(|_| PlaybackError::Internal("CDG state lock was poisoned".to_owned()))?;
         *cdg_state = next_cdg_state;
     }
 
     ensure_output_thread(state)?;
 
     Ok(())
+}
+
+fn emit_playback_failure<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    playback_arc: &Arc<Mutex<PlaybackController>>,
+    song_id: &str,
+    request_id: u64,
+    request_id_arc: &AtomicU64,
+    error: PlaybackError,
+) {
+    if request_id_arc.load(Ordering::SeqCst) != request_id {
+        return;
+    }
+
+    let snapshot = {
+        let Ok(mut playback) = playback_arc.lock() else {
+            return;
+        };
+        if !playback.cancel_loading_if_matching(song_id) {
+            return;
+        }
+        playback.snapshot(monotonic_now_ms())
+    };
+
+    let _ = emit_playback_position(app_handle, &snapshot);
+    let _ = app_handle.emit(
+        PLAYBACK_ERROR_EVENT,
+        PlaybackErrorEvent {
+            song_id: song_id.to_owned(),
+            error: CommandError::from(error),
+        },
+    );
 }
 
 pub fn play_song_from_library(
@@ -513,11 +515,9 @@ mod tests {
     use crate::{
         airplay_stream::AirPlayAudioTap,
         commands::bootstrap,
-        separator::model_cache::ModelCache,
         state::{AirPlayState, AppShell, AppState, PlaybackState, RemoteState, SeparationState},
     };
     use std::{
-        collections::HashMap,
         path::PathBuf,
         sync::{
             atomic::{AtomicBool, AtomicU64, Ordering},
