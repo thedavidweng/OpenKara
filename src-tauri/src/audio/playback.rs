@@ -223,7 +223,20 @@ impl PlaybackController {
         // Reset render frame to match the new seek position — this is the
         // sole authority for position_ms.
         let sample_rate = track.original_audio.sample_rate as f64;
-        track.render_frame = (clamped_ms as f64 * sample_rate / 1000.0) as u64;
+        let target_frame = (clamped_ms as f64 * sample_rate / 1000.0) as u64;
+        track.render_frame = target_frame;
+
+        // Propagate seek to streaming consumers so their decode threads
+        // seek the symphonia decoder to the new position.
+        if let Some(ref mut streaming) = track.streaming {
+            for consumer in streaming.consumers_mut() {
+                consumer
+                    .seek_target()
+                    .store(target_frame as i64, std::sync::atomic::Ordering::Relaxed);
+            }
+            // Set buffering while the decode threads seek and refill.
+            self.is_buffering = true;
+        }
 
         Ok(self.snapshot())
     }
@@ -263,6 +276,27 @@ impl PlaybackController {
         Ok(())
     }
 
+    /// Replace the streaming track's single consumer with multi-stem consumers.
+    /// Used when stems are loaded in streaming mode after the main track started.
+    pub fn attach_streaming_stems(
+        &mut self,
+        song_id: &str,
+        stem_track: super::streaming::StreamingTrack,
+    ) -> Result<(), PlaybackError> {
+        let track = self
+            .current_track
+            .as_mut()
+            .ok_or_else(|| PlaybackError::InvalidPlaybackState("no track is loaded".to_owned()))?;
+        if track.song_id != song_id {
+            return Err(PlaybackError::InvalidPlaybackState(format!(
+                "cannot attach streaming stems for song {} while {} is loaded",
+                song_id, track.song_id
+            )));
+        }
+        track.streaming = Some(stem_track);
+        Ok(())
+    }
+
     pub fn has_stems(&self) -> bool {
         self.current_track
             .as_ref()
@@ -299,10 +333,57 @@ impl PlaybackController {
                 LoadedStems::FourStem(_) => "four_stem".to_owned(),
             });
 
+            // Streaming stems also count as "has stems".
+            let has_stems = track.stems.is_some()
+                || matches!(
+                    track.streaming,
+                    Some(super::streaming::StreamingTrack::TwoStem { .. })
+                        | Some(super::streaming::StreamingTrack::FourStem { .. })
+                );
+
+            // Derive stem_mode from streaming track if not already set by pre-decoded stems.
+            let stem_mode = stem_mode.or_else(|| match track.streaming {
+                Some(super::streaming::StreamingTrack::TwoStem { .. }) => {
+                    Some("two_stem".to_owned())
+                }
+                Some(super::streaming::StreamingTrack::FourStem { .. }) => {
+                    Some("four_stem".to_owned())
+                }
+                _ => None,
+            });
+
             let (state, is_playing) = if self.is_buffering {
                 ("buffering", false)
             } else {
                 ("playing", track.is_playing)
+            };
+
+            // Derive buffered_ms: in streaming mode, compute from ring-buffer
+            // water level (min across all consumers); in whole-track mode, the
+            // entire track is buffered.
+            let buffered_ms = if let Some(ref streaming) = track.streaming {
+                let min_available_ms = match streaming {
+                    super::streaming::StreamingTrack::Single { consumer } => {
+                        consumer.available_ms()
+                    }
+                    super::streaming::StreamingTrack::TwoStem {
+                        vocals,
+                        accompaniment,
+                    } => vocals.available_ms().min(accompaniment.available_ms()),
+                    super::streaming::StreamingTrack::FourStem {
+                        vocals,
+                        drums,
+                        bass,
+                        other,
+                    } => vocals
+                        .available_ms()
+                        .min(drums.available_ms())
+                        .min(bass.available_ms())
+                        .min(other.available_ms()),
+                };
+                (position_ms + min_available_ms).min(duration_ms)
+            } else {
+                duration_ms
             };
 
             return PlaybackStateSnapshot {
@@ -311,12 +392,10 @@ impl PlaybackController {
                 is_playing,
                 position_ms,
                 duration_ms: Some(duration_ms),
-                // Whole-track mode: everything is buffered. Streaming (P1+) will
-                // derive this from ring-buffer water level instead.
-                buffered_ms: duration_ms,
+                buffered_ms,
                 volume: self.volume,
                 stem_volumes: self.stem_volumes,
-                has_stems: track.stems.is_some(),
+                has_stems,
                 stem_mode,
             };
         }

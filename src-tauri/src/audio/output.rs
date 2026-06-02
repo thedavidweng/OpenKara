@@ -132,30 +132,22 @@ pub fn render_output_buffer(
             *sample = sample.clamp(-1.0, 1.0);
         }
 
-        // Check for underrun
-        let track = playback.current_track.as_ref().unwrap();
-        let below_low = match track.streaming.as_ref().unwrap() {
-            crate::audio::streaming::StreamingTrack::Single { consumer } => {
-                consumer.is_below_low_water()
-            }
-            crate::audio::streaming::StreamingTrack::TwoStem {
-                vocals,
-                accompaniment,
-            } => vocals.is_below_low_water() || accompaniment.is_below_low_water(),
-            crate::audio::streaming::StreamingTrack::FourStem {
-                vocals,
-                drums,
-                bass,
-                other,
-            } => {
-                vocals.is_below_low_water()
-                    || drums.is_below_low_water()
-                    || bass.is_below_low_water()
-                    || other.is_below_low_water()
-            }
-        };
+        // Handle flush after seek and buffering underrun/recovery.
+        let track = playback.current_track.as_mut().unwrap();
+        let streaming = track.streaming.as_mut().unwrap();
+
+        // First, acknowledge any pending flush (drains stale samples after seek).
+        acknowledge_flush_if_needed(streaming);
+
+        // Then check buffering state.
+        let below_low = any_consumer_below_low_water(streaming);
+        let all_above_high = all_consumers_above_high_water(streaming);
+
         if below_low {
             playback.is_buffering = true;
+        } else if playback.is_buffering && all_above_high {
+            // All stems have refilled — resume playback.
+            playback.is_buffering = false;
         }
 
         result
@@ -545,6 +537,92 @@ fn render_streaming_four_stem(
         device_channels,
     );
     (r1.max(r2).max(r3).max(r4), f1.max(f2).max(f3).max(f4))
+}
+
+fn acknowledge_flush_if_needed(streaming: &mut crate::audio::streaming::StreamingTrack) {
+    match streaming {
+        crate::audio::streaming::StreamingTrack::Single { consumer } => {
+            if consumer.needs_flush() {
+                consumer.acknowledge_flush();
+            }
+        }
+        crate::audio::streaming::StreamingTrack::TwoStem {
+            vocals,
+            accompaniment,
+        } => {
+            if vocals.needs_flush() {
+                vocals.acknowledge_flush();
+            }
+            if accompaniment.needs_flush() {
+                accompaniment.acknowledge_flush();
+            }
+        }
+        crate::audio::streaming::StreamingTrack::FourStem {
+            vocals,
+            drums,
+            bass,
+            other,
+        } => {
+            if vocals.needs_flush() {
+                vocals.acknowledge_flush();
+            }
+            if drums.needs_flush() {
+                drums.acknowledge_flush();
+            }
+            if bass.needs_flush() {
+                bass.acknowledge_flush();
+            }
+            if other.needs_flush() {
+                other.acknowledge_flush();
+            }
+        }
+    }
+}
+
+fn any_consumer_below_low_water(streaming: &crate::audio::streaming::StreamingTrack) -> bool {
+    match streaming {
+        crate::audio::streaming::StreamingTrack::Single { consumer } => {
+            consumer.is_below_low_water()
+        }
+        crate::audio::streaming::StreamingTrack::TwoStem {
+            vocals,
+            accompaniment,
+        } => vocals.is_below_low_water() || accompaniment.is_below_low_water(),
+        crate::audio::streaming::StreamingTrack::FourStem {
+            vocals,
+            drums,
+            bass,
+            other,
+        } => {
+            vocals.is_below_low_water()
+                || drums.is_below_low_water()
+                || bass.is_below_low_water()
+                || other.is_below_low_water()
+        }
+    }
+}
+
+fn all_consumers_above_high_water(streaming: &crate::audio::streaming::StreamingTrack) -> bool {
+    match streaming {
+        crate::audio::streaming::StreamingTrack::Single { consumer } => {
+            consumer.is_above_high_water()
+        }
+        crate::audio::streaming::StreamingTrack::TwoStem {
+            vocals,
+            accompaniment,
+        } => vocals.is_above_high_water() && accompaniment.is_above_high_water(),
+        crate::audio::streaming::StreamingTrack::FourStem {
+            vocals,
+            drums,
+            bass,
+            other,
+        } => {
+            vocals.is_above_high_water()
+                && drums.is_above_high_water()
+                && bass.is_above_high_water()
+                && other.is_above_high_water()
+        }
+    }
 }
 
 fn build_output_stream<T>(

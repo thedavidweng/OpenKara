@@ -2,6 +2,10 @@ use ringbuf::traits::{Consumer, Observer, Producer, Split};
 use ringbuf::HeapRb;
 use std::fs::File;
 use std::path::Path;
+use std::sync::{
+    atomic::{AtomicBool, AtomicI64, Ordering},
+    Arc,
+};
 use std::thread::JoinHandle;
 use symphonia::core::{
     audio::SampleBuffer, codecs::DecoderOptions, errors::Error as SymphoniaError,
@@ -9,6 +13,35 @@ use symphonia::core::{
 };
 
 use super::decode::DecodeError;
+
+/// Shared seek target between the consumer (output callback) and the producer
+/// (decode thread). Stores the target frame position, or `NONE` when no seek
+/// is pending.
+pub struct SeekTarget(AtomicI64);
+
+impl SeekTarget {
+    pub const NONE: i64 = -1;
+
+    pub fn new() -> Self {
+        Self(AtomicI64::new(Self::NONE))
+    }
+
+    pub fn load(&self, order: Ordering) -> i64 {
+        self.0.load(order)
+    }
+
+    pub fn store(&self, val: i64, order: Ordering) {
+        self.0.store(val, order);
+    }
+}
+
+impl std::fmt::Debug for SeekTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SeekTarget")
+            .field("target", &self.0.load(Ordering::Relaxed))
+            .finish()
+    }
+}
 
 /// Target buffer duration in seconds. 2 seconds provides enough headroom for
 /// most decode latencies while keeping memory bounded.
@@ -33,6 +66,13 @@ pub struct AudioConsumer {
     cons: ringbuf::HeapCons<f32>,
     pub sample_rate: u32,
     pub channels: usize,
+    /// Set by the producer when decode reaches EOF.
+    is_eof: Arc<AtomicBool>,
+    /// Set by the producer after a seek to signal the consumer should drain
+    /// stale samples from the ring buffer before reading new ones.
+    needs_flush: Arc<AtomicBool>,
+    /// Shared seek target between consumer and producer.
+    seek_target: Arc<SeekTarget>,
 }
 
 impl std::fmt::Debug for AudioConsumer {
@@ -41,6 +81,7 @@ impl std::fmt::Debug for AudioConsumer {
             .field("sample_rate", &self.sample_rate)
             .field("channels", &self.channels)
             .field("available_samples", &self.cons.occupied_len())
+            .field("is_eof", &self.is_eof.load(Ordering::Relaxed))
             .finish()
     }
 }
@@ -65,6 +106,34 @@ impl AudioConsumer {
         self.cons.occupied_len() < LOW_WATER_SAMPLES
     }
 
+    /// Whether the buffer is above the high-water mark.
+    pub fn is_above_high_water(&self) -> bool {
+        self.cons.occupied_len() >= HIGH_WATER_SAMPLES
+    }
+
+    /// Whether the producer has finished decoding all samples.
+    pub fn is_eof(&self) -> bool {
+        self.is_eof.load(Ordering::Relaxed)
+    }
+
+    /// Whether the producer has signaled a flush is needed after a seek.
+    pub fn needs_flush(&self) -> bool {
+        self.needs_flush.load(Ordering::Relaxed)
+    }
+
+    /// Acknowledge the flush — clears the flag and drains stale samples.
+    pub fn acknowledge_flush(&mut self) {
+        self.needs_flush.store(false, Ordering::Relaxed);
+        // Drain all stale samples that were pushed before the seek.
+        let mut scratch = vec![0.0f32; self.cons.occupied_len()];
+        let _ = self.cons.pop_slice(&mut scratch);
+    }
+
+    /// Get the shared seek target for setting seek positions.
+    pub fn seek_target(&self) -> &SeekTarget {
+        &self.seek_target
+    }
+
     /// Pop up to `max_samples` interleaved samples into `output`.
     /// Returns the number of samples actually popped (may be less if the
     /// buffer doesn't have enough).
@@ -76,6 +145,12 @@ impl AudioConsumer {
 /// Producer side of a streaming audio track, held by the decode thread.
 pub struct AudioProducer {
     prod: ringbuf::HeapProd<f32>,
+    /// Shared EOF flag — set when decode reaches end of file.
+    is_eof: Arc<AtomicBool>,
+    /// Shared flush-needed flag — set after a seek so the consumer drains stale data.
+    needs_flush: Arc<AtomicBool>,
+    /// Shared seek target — checked before each packet decode.
+    seek_target: Arc<SeekTarget>,
 }
 
 impl AudioProducer {
@@ -93,6 +168,26 @@ impl AudioProducer {
     /// Whether the buffer is above the high-water mark (producer should yield).
     pub fn is_above_high_water(&self) -> bool {
         self.prod.vacant_len() < (ring_capacity_from_prod(&self.prod) - HIGH_WATER_SAMPLES)
+    }
+
+    /// Mark this producer's stream as EOF.
+    pub fn set_eof(&self) {
+        self.is_eof.store(true, Ordering::Relaxed);
+    }
+
+    /// After a seek, signal the consumer to drain stale samples.
+    pub fn signal_flush(&self) {
+        self.needs_flush.store(true, Ordering::Relaxed);
+    }
+
+    /// Get the shared seek target.
+    pub fn seek_target(&self) -> &SeekTarget {
+        &self.seek_target
+    }
+
+    /// Get the Arc to the shared seek target (for cloning across thread boundaries).
+    pub fn seek_target_arc(&self) -> &Arc<SeekTarget> {
+        &self.seek_target
     }
 }
 
@@ -121,17 +216,49 @@ pub enum StreamingTrack {
     },
 }
 
+impl StreamingTrack {
+    /// Get mutable references to all consumers in this track.
+    pub fn consumers_mut(&mut self) -> Vec<&mut AudioConsumer> {
+        match self {
+            StreamingTrack::Single { consumer } => vec![consumer],
+            StreamingTrack::TwoStem {
+                vocals,
+                accompaniment,
+            } => vec![vocals, accompaniment],
+            StreamingTrack::FourStem {
+                vocals,
+                drums,
+                bass,
+                other,
+            } => vec![vocals, drums, bass, other],
+        }
+    }
+}
+
 /// Create a producer-consumer pair for a single audio stream.
 pub fn create_stream_pair(sample_rate: u32, channels: usize) -> (AudioProducer, AudioConsumer) {
     let capacity = ring_capacity(sample_rate, channels);
     let rb = HeapRb::<f32>::new(capacity);
     let (prod, cons) = rb.split();
+
+    let is_eof = Arc::new(AtomicBool::new(false));
+    let needs_flush = Arc::new(AtomicBool::new(false));
+    let seek_target = Arc::new(SeekTarget::new());
+
     (
-        AudioProducer { prod },
+        AudioProducer {
+            prod,
+            is_eof: Arc::clone(&is_eof),
+            needs_flush: Arc::clone(&needs_flush),
+            seek_target: Arc::clone(&seek_target),
+        },
         AudioConsumer {
             cons,
             sample_rate,
             channels,
+            is_eof,
+            needs_flush,
+            seek_target,
         },
     )
 }
@@ -242,7 +369,75 @@ pub fn spawn_decode_producer(
     Ok((cons, metadata, handle))
 }
 
+/// Result of spawning decode producers for multiple stems.
+pub struct MultiStemResult {
+    pub track: StreamingTrack,
+    pub metadata: Vec<StreamMetadata>,
+    pub decode_handles: Vec<JoinHandle<Result<(), DecodeError>>>,
+}
+
+/// Spawn decode producers for multiple stem files (e.g., vocals, drums, bass, other).
+/// Returns a `StreamingTrack` with the appropriate variant based on the number of stems,
+/// along with metadata and join handles for each decode thread.
+pub fn spawn_multi_stem_decode_producers(
+    paths: &[std::path::PathBuf],
+) -> Result<MultiStemResult, DecodeError> {
+    if paths.is_empty() || paths.len() > 4 {
+        return Err(DecodeError::ProbeFailed(format!(
+            "expected 1-4 stem paths, got {}",
+            paths.len()
+        )));
+    }
+
+    let mut consumers = Vec::with_capacity(paths.len());
+    let mut metadata_vec = Vec::with_capacity(paths.len());
+    let mut handles = Vec::with_capacity(paths.len());
+
+    for path in paths {
+        let meta = probe_stream_metadata(path)?;
+        let (mut prod, cons) = create_stream_pair(meta.sample_rate, meta.channels);
+
+        let path_buf = path.clone();
+        let sr = meta.sample_rate;
+        let ch = meta.channels;
+        let handle = std::thread::spawn(move || decode_into_producer(&path_buf, &mut prod, sr, ch));
+
+        consumers.push(cons);
+        metadata_vec.push(meta);
+        handles.push(handle);
+    }
+
+    let track = match consumers.len() {
+        1 => StreamingTrack::Single {
+            consumer: consumers.pop().unwrap(),
+        },
+        2 => {
+            let mut iter = consumers.into_iter();
+            StreamingTrack::TwoStem {
+                vocals: iter.next().unwrap(),
+                accompaniment: iter.next().unwrap(),
+            }
+        }
+        _ => {
+            let mut iter = consumers.into_iter();
+            StreamingTrack::FourStem {
+                vocals: iter.next().unwrap(),
+                drums: iter.next().unwrap(),
+                bass: iter.next().unwrap(),
+                other: iter.next().unwrap(),
+            }
+        }
+    };
+
+    Ok(MultiStemResult {
+        track,
+        metadata: metadata_vec,
+        decode_handles: handles,
+    })
+}
+
 /// Decode a file and push samples into the producer. Runs on the decode thread.
+/// Handles seek requests via the shared `seek_target` and signals EOF via `is_eof`.
 fn decode_into_producer(
     path: &Path,
     prod: &mut AudioProducer,
@@ -278,7 +473,37 @@ fn decode_into_producer(
         .map_err(|e| DecodeError::DecoderCreationFailed(e.to_string()))?;
     let track_id = track.id;
 
+    // Clone the Arc so we can access the seek target without borrowing prod.
+    let seek_target = Arc::clone(prod.seek_target_arc());
+
     loop {
+        // Check for pending seek before each packet.
+        let target = seek_target.load(Ordering::Relaxed);
+        if target != SeekTarget::NONE {
+            let seconds = (target as u64) / _expected_sample_rate as u64;
+            let frac = ((target as u64) % _expected_sample_rate as u64) as f64
+                / _expected_sample_rate as f64;
+            match format.seek(
+                symphonia::core::formats::SeekMode::Accurate,
+                symphonia::core::formats::SeekTo::Time {
+                    track_id: Some(track_id),
+                    time: symphonia::core::units::Time { seconds, frac },
+                },
+            ) {
+                Ok(_) => {
+                    decoder.reset();
+                    seek_target.store(SeekTarget::NONE, Ordering::Relaxed);
+                    // Signal the consumer to drain any stale samples on its side.
+                    prod.signal_flush();
+                }
+                Err(_) => {
+                    // Seek failed — clear the target to avoid retrying forever.
+                    seek_target.store(SeekTarget::NONE, Ordering::Relaxed);
+                }
+            }
+            continue;
+        }
+
         let packet = match format.next_packet() {
             Ok(packet) => packet,
             Err(SymphoniaError::IoError(error))
@@ -317,6 +542,7 @@ fn decode_into_producer(
         }
     }
 
+    prod.set_eof();
     Ok(())
 }
 
@@ -443,5 +669,108 @@ mod tests {
             output.iter().any(|s| *s != 0.0),
             "decoded samples should not all be zero"
         );
+    }
+
+    #[test]
+    fn consumer_reports_eof_when_producer_finishes() {
+        use std::path::PathBuf;
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("audio")
+            .join("fixture.wav");
+
+        let (consumer, _metadata, handle) =
+            spawn_decode_producer(&path).expect("spawn_decode_producer should succeed");
+
+        // Before decode finishes, EOF should be false
+        assert!(!consumer.is_eof());
+
+        handle
+            .join()
+            .expect("decode thread should not panic")
+            .expect("decode should succeed");
+
+        // After decode finishes, EOF should be true
+        assert!(consumer.is_eof());
+    }
+
+    #[test]
+    fn multi_stem_decode_producers_all_fill_their_buffers() {
+        use std::path::PathBuf;
+
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("audio")
+            .join("fixture.wav");
+
+        // Simulate two-stem mode: same file for both (in real use, different files)
+        let result = spawn_multi_stem_decode_producers(&[fixture.clone(), fixture.clone()])
+            .expect("spawn_multi_stem_decode_producers should succeed");
+
+        let StreamingTrack::TwoStem {
+            vocals,
+            accompaniment,
+        } = result.track
+        else {
+            panic!("expected TwoStem variant");
+        };
+
+        // Both metadata entries should match the fixture
+        assert_eq!(result.metadata.len(), 2);
+        for meta in &result.metadata {
+            assert_eq!(meta.sample_rate, 44_100);
+            assert_eq!(meta.channels, 2);
+        }
+
+        // Wait for all decode threads
+        for handle in result.decode_handles {
+            handle
+                .join()
+                .expect("decode thread should not panic")
+                .expect("decode should succeed");
+        }
+
+        // Both consumers should have the full 1-second audio
+        assert_eq!(vocals.available_samples(), 88_200);
+        assert_eq!(accompaniment.available_samples(), 88_200);
+        assert!(vocals.is_eof());
+        assert!(accompaniment.is_eof());
+    }
+
+    #[test]
+    fn seek_target_can_be_shared_between_producer_and_consumer() {
+        use std::path::PathBuf;
+        use std::sync::atomic::Ordering;
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("audio")
+            .join("fixture.wav");
+
+        let (consumer, metadata, handle) =
+            spawn_decode_producer(&path).expect("spawn_decode_producer should succeed");
+
+        // Wait for decode to fill the buffer
+        handle
+            .join()
+            .expect("decode thread should not panic")
+            .expect("decode should succeed");
+
+        assert_eq!(consumer.available_samples(), 88_200);
+
+        // No seek pending
+        let seek_target = consumer.seek_target();
+        assert_eq!(seek_target.load(Ordering::Relaxed), SeekTarget::NONE);
+
+        // Setting a seek target should be visible to the consumer
+        seek_target.store(
+            ms_to_frames(500, metadata.sample_rate) as i64,
+            Ordering::Relaxed,
+        );
+        assert_ne!(seek_target.load(Ordering::Relaxed), SeekTarget::NONE);
     }
 }

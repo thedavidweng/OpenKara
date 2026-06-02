@@ -421,7 +421,7 @@ WebKit 渲染线程被卡住 → macOS 彩虹圈。
 - **前端**（`use-playback-runtime.ts`）：监听 `playback-error`，`notifyError` + 重试 `playSong`。
 - **契约**（`phase-2-playback-contract.md`）：`play` 立即返回 loading；新增 `playback-error` 事件。
 
-> 整轨预解码仍一次性分配 PCM 缓冲（约 10MB/分钟），这是当前 `PlaybackController` 的设计 tradeoff；改为流式 decode/play 需要单独 epic，不在 Phase 6 范围。
+> 整轨预解码仍一次性分配 PCM 缓冲（约 10MB/分钟，四轨模式约 4×），这是当前 `PlaybackController` 的设计 tradeoff；改为流式 decode/play（含远程低带宽边下边播、多轨锁步同步）需要单独 epic，已拆出独立计划：[`playback-optimization.md`](./playback-optimization.md)。
 
 ### 验证
 
