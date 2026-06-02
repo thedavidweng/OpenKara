@@ -7739,5 +7739,12 @@
     "contents": "[source.vendored-sources]\ndirectory = \"cargo/vendor\"\n\n[source.crates-io]\nreplace-with = \"vendored-sources\"\n",
     "dest": "cargo",
     "dest-filename": "config"
+  },
+  {
+    "type": "archive",
+    "archive-type": "tar-gzip",
+    "url": "https://static.crates.io/crates/ringbuf/ringbuf-0.4.8.crate",
+    "sha256": "fe47b720588c8702e34b5979cb3271a8b1842c7cb6f57408efa70c779363488c",
+    "dest": "cargo/vendor/ringbuf-0.4.8"
   }
 ]

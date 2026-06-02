@@ -1,7 +1,7 @@
 use crate::airplay_stream::AirPlayAudioTap;
 use crate::audio::decode::DecodedAudio;
 use crate::audio::error::PlaybackError;
-use crate::audio::playback::{LoadedStems, PlaybackController};
+use crate::audio::playback::{LoadedStems, PlaybackController, StemVolumes};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Sample, SampleFormat, SizedSample, Stream};
 use std::{
@@ -78,8 +78,91 @@ pub fn render_output_buffer(
     let master = snapshot.volume;
     let sv = snapshot.stem_volumes;
     let render_frame = track.render_frame;
+    let has_stems = track.stems.is_some();
+    let has_streaming = track.streaming.is_some();
 
-    let (rendered, src_frames_advanced) = if let Some(loaded_stems) = &track.stems {
+    let (rendered, src_frames_advanced) = if has_streaming {
+        // Streaming mode: pop from ring buffer consumers.
+        // We need mutable access to streaming, so borrow the track mutably.
+        let track = playback.current_track.as_mut().unwrap();
+        let streaming = track.streaming.as_mut().unwrap();
+
+        let result = match streaming {
+            crate::audio::streaming::StreamingTrack::Single { consumer } => {
+                render_streaming_single(
+                    output,
+                    consumer,
+                    master,
+                    device_sample_rate,
+                    device_channels,
+                )
+            }
+            crate::audio::streaming::StreamingTrack::TwoStem {
+                vocals,
+                accompaniment,
+            } => render_streaming_two_stem(
+                output,
+                vocals,
+                accompaniment,
+                master,
+                sv,
+                device_sample_rate,
+                device_channels,
+            ),
+            crate::audio::streaming::StreamingTrack::FourStem {
+                vocals,
+                drums,
+                bass,
+                other,
+            } => render_streaming_four_stem(
+                output,
+                vocals,
+                drums,
+                bass,
+                other,
+                master,
+                sv,
+                device_sample_rate,
+                device_channels,
+            ),
+        };
+
+        // Clamp to prevent clipping
+        for sample in output.iter_mut() {
+            *sample = sample.clamp(-1.0, 1.0);
+        }
+
+        // Check for underrun
+        let track = playback.current_track.as_ref().unwrap();
+        let below_low = match track.streaming.as_ref().unwrap() {
+            crate::audio::streaming::StreamingTrack::Single { consumer } => {
+                consumer.is_below_low_water()
+            }
+            crate::audio::streaming::StreamingTrack::TwoStem {
+                vocals,
+                accompaniment,
+            } => vocals.is_below_low_water() || accompaniment.is_below_low_water(),
+            crate::audio::streaming::StreamingTrack::FourStem {
+                vocals,
+                drums,
+                bass,
+                other,
+            } => {
+                vocals.is_below_low_water()
+                    || drums.is_below_low_water()
+                    || bass.is_below_low_water()
+                    || other.is_below_low_water()
+            }
+        };
+        if below_low {
+            playback.is_buffering = true;
+        }
+
+        result
+    } else if has_stems {
+        // Stem mode: mix from pre-decoded stem buffers
+        let track = playback.current_track.as_ref().unwrap();
+        let loaded_stems = track.stems.as_ref().unwrap();
         let result = match loaded_stems {
             LoadedStems::TwoStem {
                 vocals,
@@ -149,6 +232,7 @@ pub fn render_output_buffer(
         result
     } else {
         // Fallback: play original audio with master volume
+        let track = playback.current_track.as_ref().unwrap();
         let original = &track.original_audio;
         let result = mix_stem_resampled(
             output,
@@ -303,6 +387,164 @@ fn mix_stem_linearly_resampled(
     let src_frames_consumed = (rendered_out_frames as f64 * rate_ratio).round() as u64;
 
     (written, src_frames_consumed)
+}
+
+/// Render a single streaming track into the output buffer.
+/// Pops samples from the ring buffer consumer and applies gain.
+/// Returns (rendered_output_samples, source_frames_consumed).
+fn render_streaming_single(
+    output: &mut [f32],
+    consumer: &mut crate::audio::streaming::AudioConsumer,
+    gain: f32,
+    device_sample_rate: u32,
+    device_channels: usize,
+) -> (usize, u64) {
+    if gain == 0.0 {
+        // Drain the buffer to keep it flowing, but don't write to output
+        let src_channels = consumer.channels;
+        let output_frames = output.len() / device_channels;
+        let mut scratch = vec![0.0f32; output_frames * src_channels];
+        let popped = consumer.pop_samples(&mut scratch);
+        let src_frames = (popped / src_channels) as u64;
+        return (0, src_frames);
+    }
+
+    let src_channels = consumer.channels;
+    let src_rate = consumer.sample_rate;
+    let output_frames = output.len() / device_channels;
+
+    if src_rate == device_sample_rate {
+        // Same rate — direct pop with channel mapping
+        let mut scratch = vec![0.0f32; output_frames * src_channels];
+        let popped = consumer.pop_samples(&mut scratch);
+        let src_frames = popped / src_channels;
+
+        for out_frame in 0..src_frames {
+            for out_ch in 0..device_channels {
+                let src_ch = if out_ch < src_channels {
+                    out_ch
+                } else {
+                    out_ch % src_channels
+                };
+                let sample = scratch[out_frame * src_channels + src_ch];
+                output[out_frame * device_channels + out_ch] += sample * gain;
+            }
+        }
+
+        (src_frames * device_channels, src_frames as u64)
+    } else {
+        // Different rate — linear interpolation resampling
+        let rate_ratio = src_rate as f64 / device_sample_rate as f64;
+        let needed_src_frames = (output_frames as f64 * rate_ratio).ceil() as usize + 1;
+        let mut scratch = vec![0.0f32; needed_src_frames * src_channels];
+        let popped = consumer.pop_samples(&mut scratch);
+        let available_src_frames = popped / src_channels;
+
+        let mut written = 0;
+        let mut rendered_out_frames = 0;
+        for out_frame in 0..output_frames {
+            let src_pos = out_frame as f64 * rate_ratio;
+            let src_idx = src_pos as usize;
+            let frac = src_pos - src_idx as f64;
+
+            if src_idx + 1 >= available_src_frames {
+                break;
+            }
+
+            for out_ch in 0..device_channels {
+                let src_ch = if out_ch < src_channels {
+                    out_ch
+                } else {
+                    out_ch % src_channels
+                };
+                let s0 = scratch[src_idx * src_channels + src_ch];
+                let s1 = scratch[(src_idx + 1) * src_channels + src_ch];
+                let sample = s0 + (s1 - s0) * frac as f32;
+                output[out_frame * device_channels + out_ch] += sample * gain;
+            }
+            written += device_channels;
+            rendered_out_frames += 1;
+        }
+
+        let src_frames_consumed = if rendered_out_frames > 0 {
+            (rendered_out_frames as f64 * rate_ratio).round() as u64
+        } else {
+            0
+        };
+
+        (written, src_frames_consumed)
+    }
+}
+
+/// Render two streaming stems (vocals + accompaniment).
+fn render_streaming_two_stem(
+    output: &mut [f32],
+    vocals: &mut crate::audio::streaming::AudioConsumer,
+    accompaniment: &mut crate::audio::streaming::AudioConsumer,
+    master: f32,
+    sv: StemVolumes,
+    device_sample_rate: u32,
+    device_channels: usize,
+) -> (usize, u64) {
+    let accomp_gain = sv.drums.max(sv.bass).max(sv.other);
+    let (r1, f1) = render_streaming_single(
+        output,
+        vocals,
+        master * sv.vocals,
+        device_sample_rate,
+        device_channels,
+    );
+    let (r2, f2) = render_streaming_single(
+        output,
+        accompaniment,
+        master * accomp_gain,
+        device_sample_rate,
+        device_channels,
+    );
+    (r1.max(r2), f1.max(f2))
+}
+
+/// Render four streaming stems.
+fn render_streaming_four_stem(
+    output: &mut [f32],
+    vocals: &mut crate::audio::streaming::AudioConsumer,
+    drums: &mut crate::audio::streaming::AudioConsumer,
+    bass: &mut crate::audio::streaming::AudioConsumer,
+    other: &mut crate::audio::streaming::AudioConsumer,
+    master: f32,
+    sv: StemVolumes,
+    device_sample_rate: u32,
+    device_channels: usize,
+) -> (usize, u64) {
+    let (r1, f1) = render_streaming_single(
+        output,
+        vocals,
+        master * sv.vocals,
+        device_sample_rate,
+        device_channels,
+    );
+    let (r2, f2) = render_streaming_single(
+        output,
+        drums,
+        master * sv.drums,
+        device_sample_rate,
+        device_channels,
+    );
+    let (r3, f3) = render_streaming_single(
+        output,
+        bass,
+        master * sv.bass,
+        device_sample_rate,
+        device_channels,
+    );
+    let (r4, f4) = render_streaming_single(
+        output,
+        other,
+        master * sv.other,
+        device_sample_rate,
+        device_channels,
+    );
+    (r1.max(r2).max(r3).max(r4), f1.max(f2).max(f3).max(f4))
 }
 
 fn build_output_stream<T>(

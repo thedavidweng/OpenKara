@@ -14,7 +14,9 @@ use crate::{
     library_root::LibraryRoot,
     services::{
         cdg::{load_cdg_state_for_song, mark_cdg_reset_for_seek},
-        playback_source::{load_cached_stems_for_song, load_playback_source, PlaybackSourceLoad},
+        playback_source::{
+            self, load_cached_stems_for_song, load_playback_source, PlaybackSourceLoad,
+        },
     },
     state::{AirPlayState, AppState},
 };
@@ -325,6 +327,54 @@ fn play_track_background<R: Runtime>(
     request_id: u64,
     request_id_arc: &AtomicU64,
 ) -> Result<(), PlaybackError> {
+    // Try streaming path first for local files (low latency, bounded memory).
+    if let Some(streaming_source) =
+        playback_source::load_playback_source_streaming(library_root, song)?
+    {
+        let snapshot = {
+            let Ok(mut controller) = playback_arc.lock() else {
+                return Err(PlaybackError::Internal(
+                    "playback controller lock was poisoned".to_owned(),
+                ));
+            };
+            controller.start_track_streaming(
+                song.hash.clone(),
+                streaming_source.metadata.sample_rate,
+                streaming_source.metadata.channels,
+                streaming_source.metadata.duration_ms,
+                streaming_source.streaming_track,
+                monotonic_now_ms(),
+            )
+        };
+
+        emit_playback_position(app_handle, &snapshot).map_err(|e| {
+            PlaybackError::Internal(format!("failed to emit playback position: {e}"))
+        })?;
+
+        // Attach CDG state if this song still owns the player.
+        if snapshot.song_id.as_deref() == Some(song.hash.as_str()) {
+            let next_cdg_state = load_cdg_state_for_song(library_root, song);
+            let mut cdg_state =
+                state.playback.cdg_state.lock().map_err(|_| {
+                    PlaybackError::Internal("CDG state lock was poisoned".to_owned())
+                })?;
+            *cdg_state = next_cdg_state;
+        }
+
+        ensure_output_thread(state)?;
+
+        // Log decode errors in the background (non-blocking).
+        let song_id = song.hash.clone();
+        std::thread::spawn(move || {
+            if let Err(e) = streaming_source.decode_handle.join() {
+                eprintln!("decode thread panicked for {song_id}: {e:?}");
+            }
+        });
+
+        return Ok(());
+    }
+
+    // Fallback: full decode path (remote, Media+G, or streaming not available).
     let connection = cache::open_database(&library_root.database_path())
         .map_err(|e| PlaybackError::Internal(e.to_string()))?;
     let PlaybackSourceLoad {
