@@ -326,17 +326,120 @@ JSX 中挂载 `InputDialog`，确认后回调 `handleRenameConfirm` / `handleDel
 
 ---
 
+## Phase 6: 双击列表播放歌曲时的卡顿 + macOS 彩虹圈（待实现）
+
+> Status: 已定位根因，尚未实现修复。
+
+### 问题描述
+
+在左侧曲库列表中**双击一首本地歌曲**后，"音频真正开始播放"之前会有一段明显卡顿，
+macOS 鼠标指针变成彩虹旋转（beach ball）。即：双击 →（卡住一段时间，无任何反馈）→ 音频才出声。
+
+### 调用链
+
+```
+SongListItem.handleDoubleClick           // src/components/Library/SongListItem.tsx:146
+  └─ usePlayerStore.playSong(hash)        // src/stores/player-store.ts:197
+       └─ workflow.playSong              // src/stores/playback-workflow.ts:56
+            └─ await deps.play(songId)   // = api.play → invoke("play")
+                 └─ #[tauri::command] play // src-tauri/src/commands/playback.rs:11 (async + spawn_blocking)
+                      └─ services::playback::play  // src-tauri/src/services/playback.rs:95
+```
+
+### 根因 A：本地歌曲走"整轨同步预解码"路径，且全程无 loading 反馈
+
+`services::playback::play`（`src-tauri/src/services/playback.rs:95`）对两类歌曲处理方式不同：
+
+- **远程歌曲**（`needs_remote_download`）：先调用 `start_track_loading()` 立即返回一个
+  `state: "loading"` 的快照，真正的下载 + 解码放到 `std::thread::spawn` 的后台线程里做。
+  UI 立刻能显示 spinner，不会卡。
+- **本地歌曲**：**同步**执行 `load_playback_source → load_song_audio → decode::decode_file`，
+  而 `decode_file`（`src-tauri/src/audio/decode.rs:129-155`）会把**整首歌的全部 PCM
+  采样一次性解码进 `Vec<f32>`** 之后才返回。**完全没有发出 loading 快照**。
+
+后果：前端 `await deps.play(songId)` 在整轨解码完成前不会 resolve。对一首 4 分钟、
+44.1kHz 立体声的歌，解码缓冲约 80MB，解码耗时可达 0.5–2s+；若是 Media+G ZIP
+（`inspect_zip_for_media_g` 先把音频字节解压进内存再解码）或磁盘较慢，会更久。
+这段时间 UI 没有任何"加载中"状态 → 用户感觉**整段卡死**。
+
+> 注：`play` 命令本身是 `async` + `spawn_blocking`，解码在阻塞线程池上跑，
+> 并不会直接阻塞 Tauri/Cocoa 主线程。所以"解码慢"只解释了"卡一段时间"，
+> 还需根因 B 才能解释**彩虹圈**。
+
+### 根因 B：曲库列表未虚拟化 + 每个列表项渲染开销 O(N)，播放开始瞬间触发全列表重渲染风暴
+
+1. **列表未虚拟化**：`SongList.tsx` 直接 `displaySongs.map(...)` 渲染**全部**歌曲，
+   曲库有几千首时就有几千个 `SongListItem` 同时挂载。
+2. **每个 `SongListItem` 订阅整个 snapshot**：`SongListItem.tsx:52`
+   `const snapshot = usePlayerStore((s) => s.snapshot)`。播放开始时
+   `applySnapshot`（`player-store.ts:167`）替换了 snapshot 对象引用（`song_id`、
+   `is_playing` 变化），zustand 默认按引用比较 → **每一个** `SongListItem` 都重渲染。
+3. **每个列表项渲染做 O(N) 工作**：`SongListItem.tsx:73`
+   `const selectedSongs = songs.filter(...)` 对整个曲库做一次过滤；
+   随后又对所有 playlist 构建 `Map` 并逐个 `contextSongIds.filter`；
+   还有 `.some/.every/.map` 和 `new Set(...)`。
+
+于是一次"播放开始"会触发一轮 **O(N × (N + P)) ≈ O(N²)** 的同步重渲染：N 个列表项、
+每项内部又遍历 N 首歌。几千首歌时就是数百万次操作压在**一个同步 JS 任务**里，
+WebKit 渲染线程被卡住 → macOS 彩虹圈。
+
+> 同样的风暴在**单击选中**（`selectSong` 改变 `selectedSongIds`）时也会发生，
+> 这就是为什么连点选都感觉发涩。
+
+### 综合时间线（用户感知）
+
+```
+双击
+ → [根因A] 后端整轨同步解码，无 loading 快照……（数百毫秒~数秒，界面无反馈）
+ → play() resolve，applySnapshot 替换 snapshot 引用
+ → [根因B] 几千个 SongListItem 同步重渲染，每项 O(N) ……（彩虹圈尖峰）
+ → 音频终于出声
+```
+
+### 加重因素
+
+- `decode_file` 一次性分配整轨 PCM 缓冲（约 10MB/分钟），大块分配 + 解码 CPU 开销。
+- **首次播放**还会触发 `ensure_output_thread`（`playback.rs:404`）初始化 cpal
+  输出设备，带来一次性额外延迟。
+- Media+G ZIP 路径需先解压音频字节进内存再解码，成本更高。
+
+### 修复方案
+
+| #   | 方案                                                                                                                                                                                                                                             | 解决的根因 | 预估   |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- | ------ |
+| 1   | **本地歌曲也先发 `loading` 快照再后台解码**：把本地路径改成和远程一致——先 `start_track_loading()` 立即返回，再用后台线程 `decode_then_start_track_if_latest`（已有该 helper + `request_id` 防竞态）。UI 立刻显示加载态，消除"无反馈卡死"。       | A          | 1-2 h  |
+| 2   | **虚拟化曲库列表**：引入 `@tanstack/react-virtual`，只渲染可视区域行，把同时挂载的 `SongListItem` 从 N 降到常数。                                                                                                                                | B          | 2-3 h  |
+| 3   | **把列表项里的 O(N) 计算移出去**：`songs.filter(...)`、playlist 成员关系、language 聚合等不应在每个列表项里算。改为父层 memo 化一次性算好，或只在"右键打开菜单时"惰性计算。                                                                      | B          | 1-2 h  |
+| 4   | **收窄 snapshot 订阅**：`SongListItem` 不订阅整个 snapshot，改用返回原始值的 selector（如 `usePlayerStore((s) => s.snapshot?.song_id === song.hash && s.snapshot.is_playing)`），让 snapshot 引用变化时只有"当前/上一首"两项重渲染，而非整列表。 | B          | 30 min |
+
+> 最快见效：**方案 4 + 方案 1**。方案 4 几乎立刻消除播放开始时的全列表重渲染风暴
+> （彩虹圈），方案 1 消除"解码期间无反馈"的卡死感。方案 2/3 是更彻底的结构性优化。
+
+### 验证
+
+1. 准备一个 ≥2000 首歌的曲库（或临时放宽渲染数量）。
+2. 双击一首本地长歌：应**立刻**看到加载/播放态变化（方案 1），且双击瞬间无彩虹圈（方案 4）。
+3. 用 Web Inspector 的 Performance 录制双击过程，确认不再有单个 >100ms 的长任务来自 `SongListItem` 渲染。
+4. `pnpm test`（含 `playback-workflow.test.ts`、`SongListItem.test.tsx`）无回归。
+
+### 工作量
+
+方案 4：~30 分钟；方案 1：~1-2 小时；方案 2/3：~半天。
+
+---
+
 ## 实施结果汇总
 
-| 阶段      | 结果                                                   |
-| --------- | ------------------------------------------------------ |
-| Phase 4.1 | 已实现：`index.html` 内联深色背景                      |
-| Phase 4.2 | 已实现：`visible: false` + `window_ready` IPC          |
-| Phase 4.3 | 已实现：模型 verified manifest，减少启动同步大文件读取 |
-| Phase 1   | 已实现：移除显式 cursor pointer/default 声明           |
-| Phase 5   | 已实现：Settings prompt 替换为 `InputDialog`           |
-| Phase 2   | 待手动 audit：Tooltip/ContextMenu 边缘验证             |
-| Phase 3   | 保持暂缓：resize 抗卡顿仅记录方案                      |
+| 阶段      | 结果                                                     |
+| --------- | -------------------------------------------------------- |
+| Phase 4.1 | 已实现：`index.html` 内联深色背景                        |
+| Phase 4.2 | 已实现：`visible: false` + `window_ready` IPC            |
+| Phase 4.3 | 已实现：模型 verified manifest，减少启动同步大文件读取   |
+| Phase 1   | 已实现：移除显式 cursor pointer/default 声明             |
+| Phase 5   | 已实现：Settings prompt 替换为 `InputDialog`             |
+| Phase 2   | 待手动 audit：Tooltip/ContextMenu 边缘验证               |
+| Phase 3   | 保持暂缓：resize 抗卡顿仅记录方案                        |
+| Phase 6   | 待实现：双击播放卡顿 + 彩虹圈，已定位根因 A/B 与修复方案 |
 
 ---
 
