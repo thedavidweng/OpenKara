@@ -1,8 +1,10 @@
 use super::range_set::RangeSet;
+use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
+use std::time::Instant;
 
 /// Errors specific to the chunked cache.
 #[derive(Debug)]
@@ -34,6 +36,8 @@ struct CacheInner {
     downloaded: RangeSet,
     /// Total size of the remote file (known from HTTP Content-Length).
     file_size: u64,
+    /// Last time this cache was read or written (for LRU eviction).
+    last_access: Instant,
 }
 
 /// A chunked disk cache for a single remote file. Supports concurrent read
@@ -78,6 +82,7 @@ impl ChunkedCache {
                 file,
                 downloaded,
                 file_size,
+                last_access: Instant::now(),
             }),
             data_available: Condvar::new(),
         })
@@ -113,6 +118,24 @@ impl ChunkedCache {
         inner.downloaded.covers_full(inner.file_size)
     }
 
+    /// Last time this cache was accessed (read or write).
+    pub fn last_access(&self) -> Instant {
+        let inner = self.inner.lock().unwrap();
+        inner.last_access
+    }
+
+    /// Total bytes of data stored in this cache (may include gaps filled with
+    /// zeros due to `set_len` extension).
+    pub fn data_bytes(&self) -> u64 {
+        let inner = self.inner.lock().unwrap();
+        inner.file.metadata().map(|m| m.len()).unwrap_or(0)
+    }
+
+    /// The cache file path on disk.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
     /// Write data at the given offset. Updates the RangeSet and notifies
     /// any blocked readers. Extends the file if the write goes past the
     /// current end (required for non-contiguous downloads on macOS, which
@@ -127,6 +150,7 @@ impl ChunkedCache {
         inner.file.seek(SeekFrom::Start(offset))?;
         inner.file.write_all(data)?;
         inner.downloaded.add_range(offset, data.len() as u64);
+        inner.last_access = Instant::now();
         self.data_available.notify_all();
         Ok(())
     }
@@ -145,6 +169,7 @@ impl ChunkedCache {
                 let to_read = available as usize;
                 inner.file.seek(SeekFrom::Start(offset))?;
                 inner.file.read_exact(&mut buf[..to_read])?;
+                inner.last_access = Instant::now();
                 return Ok(to_read);
             }
             inner = self.data_available.wait(inner).map_err(|_| {
@@ -154,6 +179,7 @@ impl ChunkedCache {
 
         inner.file.seek(SeekFrom::Start(offset))?;
         inner.file.read_exact(buf)?;
+        inner.last_access = Instant::now();
         Ok(buf.len())
     }
 
@@ -178,6 +204,121 @@ impl ChunkedCache {
 
     fn index_path(&self) -> PathBuf {
         self.path.with_extension("index")
+    }
+}
+
+/// Manages multiple `ChunkedCache` instances with LRU eviction.
+///
+/// Tracks total disk usage across all managed caches. When the total exceeds
+/// `max_bytes`, the least-recently-used cache is evicted (its data file and
+/// index are deleted).
+pub struct CacheManager {
+    cache_dir: PathBuf,
+    caches: HashMap<String, Arc<ChunkedCache>>,
+    max_bytes: u64,
+}
+
+impl CacheManager {
+    /// Create a new cache manager.
+    ///
+    /// - `cache_dir`: directory where cache files are stored.
+    /// - `max_bytes`: maximum total disk usage across all caches (default 2GB).
+    pub fn new(cache_dir: PathBuf, max_bytes: u64) -> Self {
+        Self {
+            cache_dir,
+            caches: HashMap::new(),
+            max_bytes,
+        }
+    }
+
+    /// Default maximum cache size: 2 GB.
+    pub const DEFAULT_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
+    /// Get or create a cache for the given key. If the cache doesn't exist,
+    /// it's created with the given `file_size`. Evicts LRU caches if needed.
+    pub fn get_or_create(
+        &mut self,
+        key: &str,
+        file_size: u64,
+    ) -> Result<Arc<ChunkedCache>, CacheError> {
+        if let Some(cache) = self.caches.get(key) {
+            return Ok(Arc::clone(cache));
+        }
+
+        self.evict_if_needed(file_size)?;
+
+        let cache = Arc::new(ChunkedCache::open(&self.cache_dir, key, file_size)?);
+        self.caches.insert(key.to_string(), Arc::clone(&cache));
+        Ok(cache)
+    }
+
+    /// Total disk bytes used by all managed caches.
+    pub fn total_bytes(&self) -> u64 {
+        self.caches.values().map(|c| c.data_bytes()).sum()
+    }
+
+    /// Number of managed caches.
+    pub fn len(&self) -> usize {
+        self.caches.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.caches.is_empty()
+    }
+
+    /// Evict least-recently-used caches until there's room for `needed_bytes`.
+    fn evict_if_needed(&mut self, needed_bytes: u64) -> Result<(), CacheError> {
+        let current: u64 = self.total_bytes();
+        if current + needed_bytes <= self.max_bytes {
+            return Ok(());
+        }
+
+        // Sort by last_access (oldest first).
+        let mut entries: Vec<(&String, &Arc<ChunkedCache>)> = self.caches.iter().collect();
+        entries.sort_by_key(|(_, c)| c.last_access());
+
+        let mut freed = current;
+        let mut to_remove = Vec::new();
+
+        for (key, cache) in &entries {
+            if freed + needed_bytes <= self.max_bytes {
+                break;
+            }
+            let cache_bytes = cache.data_bytes();
+            cache.save_index().ok();
+            // Delete the cache data file.
+            let _ = fs::remove_file(cache.path());
+            // Delete the index file.
+            let index_path = cache.path().with_extension("index");
+            let _ = fs::remove_file(&index_path);
+            freed -= cache_bytes;
+            to_remove.push(key.to_string());
+        }
+
+        for key in to_remove {
+            self.caches.remove(&key);
+        }
+
+        Ok(())
+    }
+
+    /// Remove a specific cache by key, deleting its files.
+    pub fn remove(&mut self, key: &str) -> Result<(), CacheError> {
+        if let Some(cache) = self.caches.remove(key) {
+            cache.save_index().ok();
+            let _ = fs::remove_file(cache.path());
+            let index_path = cache.path().with_extension("index");
+            let _ = fs::remove_file(&index_path);
+        }
+        Ok(())
+    }
+
+    /// Save all cache indices to disk.
+    pub fn save_all_indices(&self) -> Result<(), CacheError> {
+        for cache in self.caches.values() {
+            cache.save_index()?;
+        }
+        Ok(())
     }
 }
 
@@ -304,6 +445,145 @@ mod tests {
         let (read, buf) = reader.join().unwrap();
         assert_eq!(read, 50);
         assert!(buf[..50].iter().all(|&b| b == 7));
+
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn cache_manager_create_and_get() {
+        let dir = temp_dir("mgr_create");
+        let mut mgr = CacheManager::new(dir.clone(), CacheManager::DEFAULT_MAX_BYTES);
+
+        let cache = mgr.get_or_create("file1", 1000).unwrap();
+        assert_eq!(cache.file_size(), 1000);
+        assert_eq!(mgr.len(), 1);
+
+        // Getting same key returns same cache.
+        let cache2 = mgr.get_or_create("file1", 1000).unwrap();
+        assert!(Arc::ptr_eq(&cache, &cache2));
+        assert_eq!(mgr.len(), 1);
+
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn cache_manager_evicts_lru() {
+        let dir = temp_dir("mgr_evict");
+        // Set max to 200 bytes — enough for one small cache but not two.
+        let mut mgr = CacheManager::new(dir.clone(), 200);
+
+        let cache1 = mgr.get_or_create("small1", 100).unwrap();
+        cache1.write_at(0, &[1u8; 50]).unwrap();
+
+        let cache2 = mgr.get_or_create("small2", 100).unwrap();
+        cache2.write_at(0, &[2u8; 50]).unwrap();
+
+        // Both should exist.
+        assert_eq!(mgr.len(), 2);
+
+        // Access cache2 to make it more recent.
+        let mut buf = [0u8; 10];
+        cache2.read_at(0, &mut buf).unwrap();
+
+        // Now try to add a cache that would exceed the limit.
+        // The manager should evict cache1 (LRU) to make room.
+        let _cache3 = mgr.get_or_create("big", 150).unwrap();
+
+        // cache1 should have been evicted.
+        assert!(mgr.len() <= 2);
+
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn cache_manager_total_bytes() {
+        let dir = temp_dir("mgr_bytes");
+        let mut mgr = CacheManager::new(dir.clone(), CacheManager::DEFAULT_MAX_BYTES);
+
+        let c1 = mgr.get_or_create("a", 1000).unwrap();
+        c1.write_at(0, &[0u8; 100]).unwrap();
+
+        let c2 = mgr.get_or_create("b", 2000).unwrap();
+        c2.write_at(0, &[0u8; 200]).unwrap();
+
+        // Total should be 100 + 200 = 300 bytes of actual data.
+        assert_eq!(mgr.total_bytes(), 300);
+
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn cache_manager_remove() {
+        let dir = temp_dir("mgr_remove");
+        let mut mgr = CacheManager::new(dir.clone(), CacheManager::DEFAULT_MAX_BYTES);
+
+        mgr.get_or_create("removeme", 100).unwrap();
+        assert_eq!(mgr.len(), 1);
+
+        mgr.remove("removeme").unwrap();
+        assert_eq!(mgr.len(), 0);
+        assert!(mgr.is_empty());
+
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn cache_manager_save_all_indices() {
+        let dir = temp_dir("mgr_save");
+        let mut mgr = CacheManager::new(dir.clone(), CacheManager::DEFAULT_MAX_BYTES);
+
+        let c1 = mgr.get_or_create("s1", 200).unwrap();
+        c1.write_at(0, &[0u8; 50]).unwrap();
+
+        let c2 = mgr.get_or_create("s2", 200).unwrap();
+        c2.write_at(0, &[0u8; 50]).unwrap();
+
+        mgr.save_all_indices().unwrap();
+
+        // Index files should exist.
+        assert!(dir.join("s1.index").exists());
+        assert!(dir.join("s2.index").exists());
+
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn chunked_cache_data_bytes() {
+        let dir = temp_dir("data_bytes");
+        let cache = ChunkedCache::open(&dir, "db1", 500).unwrap();
+
+        assert_eq!(cache.data_bytes(), 0);
+
+        cache.write_at(0, &[0u8; 100]).unwrap();
+        assert_eq!(cache.data_bytes(), 100);
+
+        // Non-contiguous write extends the file.
+        cache.write_at(300, &[0u8; 50]).unwrap();
+        assert_eq!(cache.data_bytes(), 350);
+
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn chunked_cache_last_access_updates() {
+        let dir = temp_dir("last_access");
+        let cache = ChunkedCache::open(&dir, "la1", 200).unwrap();
+
+        let t0 = cache.last_access();
+
+        // Small delay to ensure time moves forward.
+        std::thread::sleep(Duration::from_millis(10));
+
+        cache.write_at(0, &[0u8; 50]).unwrap();
+        let t1 = cache.last_access();
+        assert!(t1 > t0);
+
+        std::thread::sleep(Duration::from_millis(10));
+
+        let mut buf = [0u8; 50];
+        cache.read_at(0, &mut buf).unwrap();
+        let t2 = cache.last_access();
+        assert!(t2 > t1);
 
         cleanup(&dir);
     }
