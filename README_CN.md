@@ -90,7 +90,7 @@ xattr -rd com.apple.quarantine /Applications/OpenKara.app
 
 **前置条件：**
 
-- [Node.js](https://nodejs.org/) 20+
+- [Node.js](https://nodejs.org/) 24（与 CI 一致；仓库根目录含 `.nvmrc`）
 - [pnpm](https://pnpm.io/) 10+
 - [Rust](https://rustup.rs/) stable 工具链
 - [Tauri 2](https://v2.tauri.app/start/prerequisites/) 平台依赖
@@ -214,7 +214,7 @@ MyKaraokeLibrary/
 
 ### 前置条件
 
-- Node.js 20+
+- Node.js 24（`nvm use` 或 `fnm use` 读取 `.nvmrc` / `.node-version`）
 - pnpm 10+
 - 通过 [rustup](https://rustup.rs/) 安装的 Rust stable
 - 对应平台的 [Tauri 2 依赖](https://v2.tauri.app/start/prerequisites/)
@@ -222,6 +222,7 @@ MyKaraokeLibrary/
 ### 环境搭建
 
 ```bash
+nvm use          # 或 fnm use — 读取 .nvmrc / .node-version
 pnpm install
 ./scripts/setup.sh          # 下载 Demucs ONNX 模型到 src-tauri/models/
 pnpm tauri dev               # 启动开发服务器（支持热更新）

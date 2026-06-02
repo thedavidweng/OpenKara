@@ -65,9 +65,11 @@
 **Semantics**
 
 1. `song_id` 对应 `songs.hash`
-2. 命令会从 SQLite 读取歌曲路径，并实时解码为 `f32` PCM
-3. 首次播放时会懒启动 `cpal` 输出线程
-4. 如果找不到歌曲、无法解码或输出设备不可用，命令返回 `CommandError`
+2. 命令会立即返回 `state: "loading"` 的快照，并在后台线程完成文件读取与 PCM 解码
+3. 解码完成后 backend 通过 `playback-position` 事件推送 `state: "playing"` 快照；前端无需再调用 `get_playback_state`
+4. 首次真正开始输出时会懒启动 `cpal` 输出线程
+5. 如果找不到歌曲，命令返回 `CommandError`；解码/输出失败发生在后台线程时，backend 会清除 loading 并通过 `playback-error` 事件通知前端
+6. latest-request-wins：`request_id` 较旧的 decode 结果不会覆盖较新的播放请求
 
 ### Command: `pause`
 
@@ -196,6 +198,28 @@
 4. `play`、`pause`、`seek`、`resume` 命令执行后也会立即补发一次最新位置
 5. `snapshot` 是前端播放状态的权威来源；远端加载从 `loading` 切到 `playing` 时，不需要前端再反查 `get_playback_state`
 6. `playback-ended` 是额外内部事件，用于前端队列自动推进；不替代 `playback-position`
+
+### Event: `playback-error`
+
+**Payload**
+
+```json
+{
+  "song_id": "sha256 hash string",
+  "error": {
+    "code": "audio_decode_failed",
+    "message": "failed to decode audio: ...",
+    "retryable": false,
+    "fallback": "reimport_song"
+  }
+}
+```
+
+**Semantics**
+
+1. 当 `play` 已返回 `loading` 快照，但后台 decode/换轨失败且该请求仍为 latest 时发出
+2. 发出前先通过 `playback-position` 推送 idle snapshot（清除 loading 状态）
+3. 前端应调用 `notifyError` 并根据 `error.retryable` 提供重试（通常重试 `play(song_id)`）
 
 ### Shared error type: `CommandError`
 

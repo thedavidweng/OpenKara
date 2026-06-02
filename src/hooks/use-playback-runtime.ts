@@ -23,6 +23,7 @@ import type {
   BatchSeparationProgress,
   ModelBootstrapStatusSnapshot,
   PlaybackEndedEvent,
+  PlaybackErrorEvent,
   PlaybackPositionEvent,
   SeparationCompleteEvent,
   SeparationErrorEvent,
@@ -190,6 +191,23 @@ function useBootstrapEvents(enabled: boolean) {
   );
 }
 
+function usePlaybackErrorEvents(enabled: boolean) {
+  useEventSubscriptions(
+    [
+      {
+        event: "playback-error",
+        handler: (payload) => {
+          const event = payload as PlaybackErrorEvent;
+          notifyError(event.error, () =>
+            usePlayerStore.getState().playSong(event.song_id),
+          );
+        },
+      },
+    ],
+    enabled,
+  );
+}
+
 function usePlaybackEndedQueueAdvance(enabled: boolean) {
   useEventSubscriptions(
     [
@@ -300,6 +318,7 @@ function useUploadEvents(enabled: boolean) {
 
 export function useEventListeners(enabled = true) {
   usePlaybackPositionEvents(enabled);
+  usePlaybackErrorEvents(enabled);
   useSeparationEvents(enabled);
   useBootstrapEvents(enabled);
   usePlaybackEndedQueueAdvance(enabled);

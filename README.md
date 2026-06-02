@@ -103,7 +103,7 @@ On first launch, OpenKara will prompt you to create a Karaoke Library and start 
 
 **Prerequisites:**
 
-- [Node.js](https://nodejs.org/) 20+
+- [Node.js](https://nodejs.org/) 24（与 CI 一致；仓库根目录含 `.nvmrc`）
 - [pnpm](https://pnpm.io/) 10+
 - [Rust](https://rustup.rs/) stable toolchain
 - Platform dependencies for [Tauri 2](https://v2.tauri.app/start/prerequisites/)
@@ -250,7 +250,7 @@ For the detailed, up-to-date implementation status and future plans, see:
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 24（`nvm use` 或 `fnm use` 读取 `.nvmrc` / `.node-version`）
 - pnpm 10+
 - Rust stable via [rustup](https://rustup.rs/)
 - [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your platform
@@ -258,6 +258,7 @@ For the detailed, up-to-date implementation status and future plans, see:
 ### Setup
 
 ```bash
+nvm use          # 或 fnm use — 读取 .nvmrc / .node-version
 pnpm install
 ./scripts/setup.sh          # download Demucs ONNX model to src-tauri/models/
 pnpm tauri dev               # start dev server with hot reload
