@@ -152,17 +152,35 @@
 
 ### Shared type: `PlaybackStateSnapshot`
 
-| Field         | Type                                | Notes                                                  |
-| ------------- | ----------------------------------- | ------------------------------------------------------ |
-| `songId`      | `Option<String>`                    | 当前未加载轨道时为 `null`                              |
-| `state`       | `"idle" \| "loading" \| "playing"`  | 后端 transport 生命周期；暂停由 `isPlaying=false` 表示 |
-| `isPlaying`   | `bool`                              | 当前是否处于播放推进状态                               |
-| `positionMs`  | `u64`                               | 当前播放位置                                           |
-| `durationMs`  | `Option<u64>`                       | 未加载轨道时为 `null`                                  |
-| `volume`      | `f32`                               | `0.0..1.0`                                             |
-| `stemVolumes` | `{ vocals, drums, bass, other }`    | 各 stem 音量                                           |
-| `hasStems`    | `bool`                              | 当前是否已挂载 stems                                   |
-| `stemMode`    | `"two_stem" \| "four_stem" \| null` | 当前 stem 模式                                         |
+| Field         | Type                                              | Notes                                                   |
+| ------------- | ------------------------------------------------- | ------------------------------------------------------- |
+| `songId`      | `Option<String>`                                  | 当前未加载轨道时为 `null`                               |
+| `state`       | `"idle" \| "loading" \| "playing" \| "buffering"` | 后端 transport 生命周期；暂停由 `isPlaying=false` 表示  |
+| `isPlaying`   | `bool`                                            | 当前是否处于播放推进状态                                |
+| `positionMs`  | `u64`                                             | 当前播放位置（由 `render_frame` 推导，非墙钟）          |
+| `durationMs`  | `Option<u64>`                                     | 未加载轨道时为 `null`                                   |
+| `bufferedMs`  | `u64`                                             | 已缓冲的最大安全播放位置（ms）；整轨模式 = `durationMs` |
+| `volume`      | `f32`                                             | `0.0..1.0`                                              |
+| `stemVolumes` | `{ vocals, drums, bass, other }`                  | 各 stem 音量                                            |
+| `hasStems`    | `bool`                                            | 当前是否已挂载 stems                                    |
+| `stemMode`    | `"two_stem" \| "four_stem" \| null`               | 当前 stem 模式                                          |
+
+**Transport state 语义：**
+
+- `idle`：无轨道加载。
+- `loading`：首次取数/解码尚未出声。
+- `playing`：正常播放（`isPlaying` 区分播放/暂停）。
+- `buffering`：已开始播放但缓冲欠载，暂停等待数据（P1+ 流式模式触发）。
+
+**状态转移：**
+
+```
+idle → loading（play 命令）
+loading → playing（解码完成、出声）
+playing ↔ buffering（流式缓冲欠载/恢复，P1+）
+playing → idle（clear_track）
+playing ↔ playing（pause/resume，通过 isPlaying 区分）
+```
 
 ### Event: `playback-position`
 
@@ -177,6 +195,7 @@
     "is_playing": true,
     "position_ms": 1234,
     "duration_ms": 180000,
+    "buffered_ms": 180000,
     "volume": 1.0,
     "stem_volumes": {
       "vocals": 1.0,

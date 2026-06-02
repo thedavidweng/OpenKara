@@ -45,7 +45,6 @@ fn render_output_mixes_stems_with_individual_volumes() {
     let mut output = vec![0.0; 4];
     let rendered = render_output_buffer(
         &mut controller,
-        0,
         &mut output,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
@@ -77,7 +76,6 @@ fn render_output_falls_back_to_original_when_no_stems() {
     let mut output = vec![0.0; 4];
     let rendered = render_output_buffer(
         &mut controller,
-        0,
         &mut output,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,

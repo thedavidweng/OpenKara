@@ -216,7 +216,7 @@ pub fn seek<R: Runtime>(
         state.playback.playback.lock().map_err(|_| {
             PlaybackError::Internal("playback controller lock was poisoned".to_owned())
         })?;
-    let previous_position_ms = playback.snapshot(monotonic_now_ms()).position_ms;
+    let previous_position_ms = playback.snapshot().position_ms;
     let snapshot = playback.seek(ms, monotonic_now_ms())?;
     drop(playback);
 
@@ -287,7 +287,7 @@ pub fn load_stems(state: &AppState) -> Result<PlaybackStateSnapshot, PlaybackErr
         .to_owned();
 
     if playback.has_stems() {
-        return Ok(playback.snapshot(monotonic_now_ms()));
+        return Ok(playback.snapshot());
     }
 
     let song = cache::get_song_by_hash(&connection, &song_id)
@@ -310,7 +310,7 @@ pub fn get_state(state: &AppState) -> Result<PlaybackStateSnapshot, PlaybackErro
         state.playback.playback.lock().map_err(|_| {
             PlaybackError::Internal("playback controller lock was poisoned".to_owned())
         })?;
-    Ok(playback.snapshot(monotonic_now_ms()))
+    Ok(playback.snapshot())
 }
 
 /// Background task: load, decode, and start playback for any song (local or remote).
@@ -384,7 +384,7 @@ fn emit_playback_failure<R: Runtime>(
         if !playback.cancel_loading_if_matching(song_id) {
             return;
         }
-        playback.snapshot(monotonic_now_ms())
+        playback.snapshot()
     };
 
     let _ = emit_playback_position(app_handle, &snapshot);
@@ -416,7 +416,7 @@ pub fn play_song_from_library(
         controller
             .attach_stems(&song.hash, stems)
             .map_err(|e| PlaybackError::Internal(e.to_string()))?;
-        return Ok(controller.snapshot(now_ms));
+        return Ok(controller.snapshot());
     }
     Ok(snapshot)
 }
@@ -469,7 +469,7 @@ where
         .map_err(|_| PlaybackError::Internal("playback controller lock was poisoned".to_owned()))?;
 
     if latest_request_id.load(Ordering::SeqCst) != request_id {
-        return Ok(playback.snapshot(monotonic_now_ms()));
+        return Ok(playback.snapshot());
     }
 
     Ok(playback.start_track(song_id, decoded_audio, monotonic_now_ms()))
@@ -489,13 +489,13 @@ where
         .map_err(|_| PlaybackError::Internal("playback controller lock was poisoned".to_owned()))?;
 
     if playback.current_song_id() != Some(song_id) {
-        return Ok(playback.snapshot(monotonic_now_ms()));
+        return Ok(playback.snapshot());
     }
 
     playback
         .attach_stems(song_id, loaded_stems)
         .map_err(|e| PlaybackError::Internal(e.to_string()))?;
-    Ok(playback.snapshot(monotonic_now_ms()))
+    Ok(playback.snapshot())
 }
 
 pub fn emit_playback_position<R: Runtime>(
@@ -685,7 +685,7 @@ mod tests {
         let position_ms = playback
             .lock()
             .expect("playback lock should succeed")
-            .snapshot(monotonic_now_ms())
+            .snapshot()
             .position_ms;
         assert!(
             position_ms < 20,

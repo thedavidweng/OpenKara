@@ -2,7 +2,7 @@ use crate::library_root::LibraryRoot;
 use crate::state::{AirPlayState, AppShell, PlaybackState, RemoteState, SeparationState};
 use crate::{
     airplay_stream, audio,
-    audio::playback::{monotonic_now_ms, PlaybackController, PLAYBACK_POSITION_POLL_INTERVAL_MS},
+    audio::playback::{PlaybackController, PLAYBACK_POSITION_POLL_INTERVAL_MS},
     cache, commands, config, derive_startup_model_bootstrap, separator, AppState,
 };
 use anyhow::Context;
@@ -223,7 +223,7 @@ fn spawn_playback_position_emitter<R: Runtime>(
             thread::sleep(Duration::from_millis(PLAYBACK_POSITION_POLL_INTERVAL_MS));
 
             let snapshot = match playback.lock() {
-                Ok(mut controller) => controller.snapshot(monotonic_now_ms()),
+                Ok(mut controller) => controller.snapshot(),
                 Err(_) => break,
             };
 

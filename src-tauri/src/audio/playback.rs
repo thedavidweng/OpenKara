@@ -65,6 +65,10 @@ pub struct PlaybackStateSnapshot {
     pub is_playing: bool,
     pub position_ms: u64,
     pub duration_ms: Option<u64>,
+    /// Maximum safe playback position (ms) that has been buffered.
+    /// In whole-track mode equals `duration_ms`; in streaming mode (P1+) driven
+    /// by ring-buffer water level. Used by the UI for the grey buffer bar.
+    pub buffered_ms: u64,
     pub volume: f32,
     pub stem_volumes: StemVolumes,
     pub has_stems: bool,
@@ -79,6 +83,7 @@ impl PlaybackStateSnapshot {
             is_playing: false,
             position_ms: 0,
             duration_ms: None,
+            buffered_ms: 0,
             volume: 1.0,
             stem_volumes: StemVolumes::default(),
             has_stems: false,
@@ -92,10 +97,12 @@ pub(crate) struct LoadedTrack {
     pub(crate) song_id: String,
     pub(crate) original_audio: DecodedAudio,
     pub(crate) stems: Option<LoadedStems>,
-    base_position_ms: u64,
-    started_at_ms: Option<u64>,
+    /// Whether the audio output is actively producing sound.
+    /// `false` when paused or after end-of-track.
+    is_playing: bool,
     /// Source-rate frame index where the audio output thread renders from next.
-    /// Updated exclusively by the render callback; reset by seek/start_track.
+    /// The sole authority for `position_ms`. Updated exclusively by the render
+    /// callback; reset by seek / start_track.
     pub(crate) render_frame: u64,
 }
 
@@ -105,6 +112,10 @@ pub struct PlaybackController {
     loading_song_id: Option<String>,
     volume: f32,
     stem_volumes: StemVolumes,
+    /// Transport-level buffering flag. When `true` and a track is loaded,
+    /// `snapshot()` reports `state: "buffering"`. Set by the streaming layer
+    /// (P1/P2) on underrun; cleared when the buffer refills.
+    pub(crate) is_buffering: bool,
 }
 
 impl Default for PlaybackController {
@@ -114,6 +125,7 @@ impl Default for PlaybackController {
             loading_song_id: None,
             volume: 1.0,
             stem_volumes: StemVolumes::default(),
+            is_buffering: false,
         }
     }
 }
@@ -123,18 +135,17 @@ impl PlaybackController {
         &mut self,
         song_id: String,
         decoded_audio: DecodedAudio,
-        now_ms: u64,
+        _now_ms: u64,
     ) -> PlaybackStateSnapshot {
         self.loading_song_id = None;
         self.current_track = Some(LoadedTrack {
             song_id,
             original_audio: decoded_audio,
             stems: None,
-            base_position_ms: 0,
-            started_at_ms: Some(now_ms),
+            is_playing: true,
             render_frame: 0,
         });
-        self.snapshot(now_ms)
+        self.snapshot()
     }
 
     /// Mark a track as loading — the audio data will arrive later from a
@@ -143,57 +154,50 @@ impl PlaybackController {
     pub fn start_track_loading(&mut self, song_id: &str) -> PlaybackStateSnapshot {
         self.current_track = None;
         self.loading_song_id = Some(song_id.to_owned());
-        self.snapshot(monotonic_now_ms())
+        self.snapshot()
     }
 
-    pub fn play(&mut self, now_ms: u64) -> Result<PlaybackStateSnapshot, PlaybackError> {
+    pub fn play(&mut self, _now_ms: u64) -> Result<PlaybackStateSnapshot, PlaybackError> {
         let track = self
             .current_track
             .as_mut()
             .ok_or_else(|| PlaybackError::InvalidPlaybackState("no track is loaded".to_owned()))?;
-        let position_ms = track.position_ms(now_ms);
-        track.base_position_ms = position_ms;
-        track.started_at_ms = Some(now_ms);
+        track.is_playing = true;
 
-        Ok(self.snapshot(now_ms))
+        Ok(self.snapshot())
     }
 
-    pub fn pause(&mut self, now_ms: u64) -> Result<PlaybackStateSnapshot, PlaybackError> {
+    pub fn pause(&mut self, _now_ms: u64) -> Result<PlaybackStateSnapshot, PlaybackError> {
         let track = self
             .current_track
             .as_mut()
             .ok_or_else(|| PlaybackError::InvalidPlaybackState("no track is loaded".to_owned()))?;
-        let position_ms = track.position_ms(now_ms);
-        track.base_position_ms = position_ms;
-        track.started_at_ms = None;
+        track.is_playing = false;
 
-        Ok(self.snapshot(now_ms))
+        Ok(self.snapshot())
     }
 
     pub fn seek(
         &mut self,
         target_ms: u64,
-        now_ms: u64,
+        _now_ms: u64,
     ) -> Result<PlaybackStateSnapshot, PlaybackError> {
         let track = self
             .current_track
             .as_mut()
             .ok_or_else(|| PlaybackError::InvalidPlaybackState("no track is loaded".to_owned()))?;
         let clamped_ms = target_ms.min(track.duration_ms());
-        track.base_position_ms = clamped_ms;
-        if track.started_at_ms.is_some() {
-            track.started_at_ms = Some(now_ms);
-        }
-        // Reset render frame to match the new seek position
+        // Reset render frame to match the new seek position — this is the
+        // sole authority for position_ms.
         let sample_rate = track.original_audio.sample_rate as f64;
         track.render_frame = (clamped_ms as f64 * sample_rate / 1000.0) as u64;
 
-        Ok(self.snapshot(now_ms))
+        Ok(self.snapshot())
     }
 
     pub fn set_volume(&mut self, level: f32) -> Result<PlaybackStateSnapshot, PlaybackError> {
         self.volume = level.clamp(0.0, 1.0);
-        Ok(self.snapshot(monotonic_now_ms()))
+        Ok(self.snapshot())
     }
 
     pub fn set_stem_volume(
@@ -208,7 +212,7 @@ impl PlaybackController {
             StemName::Bass => self.stem_volumes.bass = level,
             StemName::Other => self.stem_volumes.other = level,
         }
-        Ok(self.snapshot(monotonic_now_ms()))
+        Ok(self.snapshot())
     }
 
     pub fn attach_stems(&mut self, song_id: &str, stems: LoadedStems) -> Result<(), PlaybackError> {
@@ -244,15 +248,14 @@ impl PlaybackController {
             })
     }
 
-    pub fn snapshot(&mut self, now_ms: u64) -> PlaybackStateSnapshot {
+    pub fn snapshot(&mut self) -> PlaybackStateSnapshot {
         if let Some(track) = self.current_track.as_mut() {
-            let raw_position = track.position_ms(now_ms);
             let duration_ms = track.duration_ms();
+            let raw_position = track.position_ms();
 
             // Clamp to duration and stop playback if past the end.
             let position_ms = if raw_position >= duration_ms {
-                track.base_position_ms = duration_ms;
-                track.started_at_ms = None;
+                track.is_playing = false;
                 duration_ms
             } else {
                 raw_position
@@ -263,12 +266,21 @@ impl PlaybackController {
                 LoadedStems::FourStem(_) => "four_stem".to_owned(),
             });
 
+            let (state, is_playing) = if self.is_buffering {
+                ("buffering", false)
+            } else {
+                ("playing", track.is_playing)
+            };
+
             return PlaybackStateSnapshot {
                 song_id: Some(track.song_id.clone()),
-                state: "playing".to_owned(),
-                is_playing: track.started_at_ms.is_some(),
+                state: state.to_owned(),
+                is_playing,
                 position_ms,
                 duration_ms: Some(duration_ms),
+                // Whole-track mode: everything is buffered. Streaming (P1+) will
+                // derive this from ring-buffer water level instead.
+                buffered_ms: duration_ms,
                 volume: self.volume,
                 stem_volumes: self.stem_volumes,
                 has_stems: track.stems.is_some(),
@@ -283,6 +295,7 @@ impl PlaybackController {
                 is_playing: false,
                 position_ms: 0,
                 duration_ms: None,
+                buffered_ms: 0,
                 volume: self.volume,
                 stem_volumes: self.stem_volumes,
                 has_stems: false,
@@ -339,13 +352,13 @@ impl LoadedTrack {
         self.original_audio.duration_ms
     }
 
-    fn position_ms(&self, now_ms: u64) -> u64 {
-        let elapsed_ms = self
-            .started_at_ms
-            .map(|started_at_ms| now_ms.saturating_sub(started_at_ms))
-            .unwrap_or(0);
-
-        (self.base_position_ms + elapsed_ms).min(self.duration_ms())
+    /// Position derived solely from `render_frame` — the authoritative clock.
+    fn position_ms(&self) -> u64 {
+        let sample_rate = self.original_audio.sample_rate as u64;
+        if sample_rate == 0 {
+            return 0;
+        }
+        ((self.render_frame * 1000) / sample_rate).min(self.duration_ms())
     }
 }
 
@@ -397,6 +410,7 @@ mod tests {
             is_playing: true,
             position_ms: 1_234,
             duration_ms: Some(5_000),
+            buffered_ms: 5_000,
             volume: 0.8,
             stem_volumes: StemVolumes::default(),
             has_stems: false,
@@ -417,7 +431,7 @@ mod tests {
         assert_eq!(loading.song_id.as_deref(), Some("song-a"));
         assert_eq!(loading.state, "loading");
 
-        let snapshot = controller.snapshot(1_000);
+        let snapshot = controller.snapshot();
         assert_eq!(snapshot.song_id.as_deref(), Some("song-a"));
         assert_eq!(snapshot.state, "loading");
         assert!(!snapshot.is_playing);
@@ -439,8 +453,90 @@ mod tests {
         controller.start_track_loading("song-a");
         assert!(controller.cancel_loading_if_matching("song-a"));
 
-        let snapshot = controller.snapshot(0);
+        let snapshot = controller.snapshot();
         assert_eq!(snapshot.song_id, None);
         assert_eq!(snapshot.state, "idle");
+    }
+
+    #[test]
+    fn position_ms_derives_from_render_frame_not_wall_clock() {
+        use super::DecodedAudio;
+
+        let mut controller = super::PlaybackController::default();
+        // 5-second track at 44.1 kHz stereo
+        let decoded = DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 100);
+        controller.play(100).unwrap();
+
+        // Advance render_frame by 44100 samples = 1 second at 44.1 kHz
+        controller.advance_render_frame(44_100);
+
+        // Wall clock says 5100ms (5 seconds later), but render_frame only
+        // advanced 1 second — position must reflect render_frame, not wall.
+        let snapshot = controller.snapshot();
+        assert_eq!(
+            snapshot.position_ms, 1_000,
+            "position_ms must derive from render_frame, not wall clock"
+        );
+    }
+
+    #[test]
+    fn snapshot_reports_buffering_state_when_flag_set() {
+        use super::DecodedAudio;
+
+        let mut controller = super::PlaybackController::default();
+        let decoded = DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+
+        // Normal playing state
+        let snap = controller.snapshot();
+        assert_eq!(snap.state, "playing");
+        assert!(snap.is_playing);
+
+        // Set buffering flag — state changes, is_playing becomes false
+        controller.is_buffering = true;
+        let snap = controller.snapshot();
+        assert_eq!(snap.state, "buffering");
+        assert!(!snap.is_playing);
+
+        // Clear buffering — back to playing
+        controller.is_buffering = false;
+        let snap = controller.snapshot();
+        assert_eq!(snap.state, "playing");
+        assert!(snap.is_playing);
+    }
+
+    #[test]
+    fn buffered_ms_defaults_to_duration_in_whole_track_mode() {
+        use super::DecodedAudio;
+
+        let mut controller = super::PlaybackController::default();
+
+        // Idle: buffered_ms = 0
+        let snap = controller.snapshot();
+        assert_eq!(snap.buffered_ms, 0);
+
+        let decoded = DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+
+        // Whole-track mode: buffered_ms == duration_ms
+        let snap = controller.snapshot();
+        assert_eq!(snap.buffered_ms, 5_000);
+        assert_eq!(snap.buffered_ms, snap.duration_ms.unwrap());
     }
 }

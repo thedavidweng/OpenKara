@@ -244,7 +244,11 @@ export interface WindowShellStateSnapshot {
 // ─── Playback ────────────────────────────────────────────
 
 export type StemName = "vocals" | "drums" | "bass" | "other";
-export type PlaybackTransportState = "idle" | "loading" | "playing";
+export type PlaybackTransportState =
+  | "idle"
+  | "loading"
+  | "playing"
+  | "buffering";
 
 export interface StemVolumes {
   vocals: number;
@@ -260,6 +264,8 @@ export interface PlaybackStateSnapshot {
   is_playing: boolean;
   position_ms: number;
   duration_ms: number | null;
+  /** Maximum safe playback position (ms) that has been buffered. */
+  buffered_ms: number;
   volume: number;
   stem_volumes: StemVolumes;
   has_stems: boolean;
