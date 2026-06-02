@@ -1,6 +1,6 @@
 # OpenKara 播放优化计划：流式解码 + 多轨低延迟 + 低带宽韧性
 
-> Status: **in-progress**（P0–P2 已完成，P3/P4 主体完成，P5 已实现帧抽取方案）。
+> Status: **implemented**（P0–P5 全部完成，已合并 main）。
 >
 > 目标：把 OpenKara 的播放体验拉齐到原生本地音乐播放器——多轨（伴奏/人声）启播延迟低、内存占用可控；对网盘/远程库在低带宽下边缓冲边播、不预先整文件下载，并具备欠载韧性。
 >
@@ -414,15 +414,15 @@ pub buffered_ms: u64,  // 当前已缓冲的最大安全播放位置（UI 灰色
 
 #### P4 任务清单
 
-| #    | 任务               | 文件                                       | 说明                                                                                                                                |
-| ---- | ------------------ | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| P4.1 | 实现 prefetch 策略 | `src-tauri/src/audio/remote_source.rs`     | fetch 线程持续预取"当前 read position 之后 5s 数据"；pending < `prefetch_threshold_factor × ping × bitrate` 时触发额外预取 ✅       |
-| P4.2 | 实现启播缓冲       | `src-tauri/src/audio/remote_source.rs`     | 首次 play 时，`RemoteMediaSource` 在前 1s 数据就绪前阻塞返回（配合 `loading` 态） ✅                                                |
-| P4.3 | URL/会话复用       | `src-tauri/src/commands/remote_library.rs` | ⚠️ **Partial** — `ProviderFetcher` 使用固定 URL+token 创建；无 TTL 缓存或自动刷新机制。URL 过期（403）时需重建播放源。              |
-| P4.4 | 指数退避重试       | `src-tauri/src/audio/remote_source.rs`     | 块请求失败：1s → 2s → 4s → 8s，上限 30s；HTTP 429 时尊重 `Retry-After` 头 ✅                                                        |
-| P4.5 | URL 过期自愈       | `src-tauri/src/audio/remote_source.rs`     | HTTP 403/410 → `FetchEvent::UrlExpired` → 后端 fallback 到整文件播放并触发重建播放源（从而重新获取有效 URL）✅                      |
-| P4.6 | 连续失败上报       | `src-tauri/src/audio/remote_source.rs`     | 连续 5 次失败 → `FetchEvent::ConsecutiveFailures` → `playback-error` 事件 ✅                                                        |
-| P4.7 | LRU 缓存淘汰       | `src-tauri/src/audio/chunked_cache.rs`     | ✅ 已实现：使用 `RemoteState.remote_chunk_cache` 的 `CacheManager` 做 LRU 淘汰，并支持按 `config.remote_cache_bytes_limit` 配置上限 |
+| #    | 任务               | 文件                                       | 说明                                                                                                                                   |
+| ---- | ------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| P4.1 | 实现 prefetch 策略 | `src-tauri/src/audio/remote_source.rs`     | fetch 线程持续预取"当前 read position 之后 5s 数据"；pending < `prefetch_threshold_factor × ping × bitrate` 时触发额外预取 ✅          |
+| P4.2 | 实现启播缓冲       | `src-tauri/src/audio/remote_source.rs`     | 首次 play 时，`RemoteMediaSource` 在前 1s 数据就绪前阻塞返回（配合 `loading` 态） ✅                                                   |
+| P4.3 | URL/会话复用       | `src-tauri/src/commands/remote_library.rs` | ✅ `ProviderFetcher` 支持 `with_token_refresh` 回调：403 时自动从磁盘重新加载 secret、刷新 token、更新 Authorization header 并重试一次 |
+| P4.4 | 指数退避重试       | `src-tauri/src/audio/remote_source.rs`     | 块请求失败：1s → 2s → 4s → 8s，上限 30s；HTTP 429 时尊重 `Retry-After` 头 ✅                                                           |
+| P4.5 | URL 过期自愈       | `src-tauri/src/audio/remote_source.rs`     | HTTP 403/410 → `FetchEvent::UrlExpired` → 后端 fallback 到整文件播放并触发重建播放源（从而重新获取有效 URL）✅                         |
+| P4.6 | 连续失败上报       | `src-tauri/src/audio/remote_source.rs`     | 连续 5 次失败 → `FetchEvent::ConsecutiveFailures` → `playback-error` 事件 ✅                                                           |
+| P4.7 | LRU 缓存淘汰       | `src-tauri/src/audio/chunked_cache.rs`     | ✅ 已实现：使用 `RemoteState.remote_chunk_cache` 的 `CacheManager` 做 LRU 淘汰，并支持按 `config.remote_cache_bytes_limit` 配置上限    |
 
 #### P4 验收标准
 
