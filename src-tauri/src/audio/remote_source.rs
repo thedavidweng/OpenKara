@@ -721,10 +721,6 @@ mod tests {
                 call_count: AtomicU32::new(0),
             }
         }
-
-        fn call_count(&self) -> u32 {
-            self.call_count.load(Ordering::Relaxed)
-        }
     }
 
     impl HttpFetcher for MockFetcher {
@@ -1081,16 +1077,13 @@ mod tests {
         let cache = Arc::new(ChunkedCache::open(&dir, "bo1", 100).unwrap());
         let data = vec![1u8; 100];
 
-        // Fail 3 times, then succeed. Track call count.
+        // Fail 3 times, then succeed.
         let mock = MockFetcher::new(vec![
             Err(FetchError::HttpStatus(500)),
             Err(FetchError::HttpStatus(500)),
             Err(FetchError::HttpStatus(500)),
             Ok(data),
         ]);
-        let call_count_ref = Arc::new(AtomicU32::new(0));
-        // We'll check the mock's call count after.
-
         let (tx, _event_rx, _monitor, handle) = spawn_fetch_thread_with_fetcher(
             "http://example.com/test.mp3".to_string(),
             Arc::clone(&cache),

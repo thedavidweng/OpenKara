@@ -450,6 +450,23 @@ mod tests {
     }
 
     #[test]
+    fn partial_read_stops_at_uncached_gap() {
+        let dir = temp_dir("partial_gap");
+        let cache = ChunkedCache::open(&dir, "test_gap", 200).unwrap();
+
+        cache.write_at(0, &[1u8; 30]).unwrap();
+        cache.write_at(50, &[2u8; 30]).unwrap();
+
+        let mut buf = vec![0u8; 80];
+        let read = cache.read_at(0, &mut buf).unwrap();
+
+        assert_eq!(read, 30);
+        assert!(buf[..30].iter().all(|&b| b == 1));
+
+        cleanup(&dir);
+    }
+
+    #[test]
     fn cache_manager_create_and_get() {
         let dir = temp_dir("mgr_create");
         let mut mgr = CacheManager::new(dir.clone(), CacheManager::DEFAULT_MAX_BYTES);
