@@ -25,7 +25,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' blob:; connect-src 'self' https://lrclib.net https://api.lrc.cx"
+      "csp": "default-src 'self'; script-src 'self'; img-src 'self' blob:; connect-src 'self' https://lrclib.net https://api.lrc.cx; frame-ancestors 'none'; object-src 'none'"
     }
   },
   "bundle": {

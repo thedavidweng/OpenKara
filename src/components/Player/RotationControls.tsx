@@ -53,6 +53,7 @@ function AddSingerInput({ onAdd }: AddSingerInputProps) {
         }
       }}
       placeholder="Singer name"
+      aria-label="Singer name"
       className="min-w-[80px] rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-0.5 text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
     />
   );

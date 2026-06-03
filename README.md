@@ -50,8 +50,13 @@ So my no-compromise solution was born: OpenKara uses open-source AI to separate 
 
 - **Local Audio Import** — Use music you already own. No subscriptions, no repurchases.
 - **AI Stem Separation** — Separate vocals and accompaniment on-device.
+- **Streaming Playback** — Ring-buffer streaming decode with chunked cache, bandwidth-aware proxy mode for slow networks, and automatic retry with exponential backoff.
+- **Remote Repositories** — Connect Google Drive, Dropbox, or WebDAV libraries. Refresh, publish, and reauthorize without losing local state.
+- **Saved Playlists & Singer Rotation** — Create playlists, assign singers with round-robin queue rotation, and filter the queue by singer.
 - **Synced Lyrics** — Load timed lyrics from online sources, embedded tags, or sidecar `.lrc` files.
+- **Lyrics Romanization** — Automatic romanization for 13 languages including Mandarin, Cantonese, Japanese, Korean, and more. Per-song language override.
 - **CD+G Sidecars** — Render same-name `.cdg` graphics during fullscreen playback when a track includes them.
+- **AirPlay Casting** — Cast karaoke playback to AirPlay-compatible devices with audience streaming.
 - **Portable Library** — Self-contained library directory that works on NAS, USB drives, and across machines.
 - **Cross-Platform** — Available on macOS, Windows, and Linux.
 - **4-Stem Mixer** — Individual volume control for vocals, drums, bass, and other instruments. Collapsible accompaniment slider with per-stem breakdown.

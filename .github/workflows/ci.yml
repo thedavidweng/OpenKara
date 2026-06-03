@@ -228,6 +228,10 @@ jobs:
       - name: Prepare ONNX Runtime
         run: node scripts/prepare-onnx-runtime.mjs --target "${{ matrix.ort_target }}"
 
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy 2>&1 | head -50
+
       - name: Run Rust tests
         working-directory: src-tauri
         run: cargo test -q

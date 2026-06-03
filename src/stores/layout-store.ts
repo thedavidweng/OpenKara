@@ -3,6 +3,11 @@ import {
   createWebviewSyncChannel,
   type WebviewSyncChannel,
 } from "@/runtime/webview-sync";
+import {
+  MIN_SIDEBAR_WIDTH,
+  MAX_SIDEBAR_WIDTH,
+  DEFAULT_SIDEBAR_WIDTH,
+} from "@/lib/layout-constants";
 
 interface LayoutState {
   sidebarVisible: boolean;
@@ -16,10 +21,6 @@ export interface LayoutSyncSnapshot {
   sidebarVisible: boolean;
   sidebarWidth: number;
 }
-
-const MIN_SIDEBAR_WIDTH = 240;
-const MAX_SIDEBAR_WIDTH = 420;
-const DEFAULT_SIDEBAR_WIDTH = 260;
 
 function clampSidebarWidth(width: number): number {
   return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width));

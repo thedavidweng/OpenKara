@@ -116,7 +116,7 @@ export function Sidebar({ header }: SidebarProps = {}) {
           <button
             onClick={() => setActivePlaylist(null)}
             className="shrink-0 text-[var(--color-text-dim)] hover:text-[var(--color-control-primary)] transition-colors"
-            aria-label="Back"
+            aria-label={t("setup.back")}
           >
             <ArrowLeft size={14} />
           </button>

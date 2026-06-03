@@ -5,9 +5,9 @@
 OpenKara is a cross-platform desktop karaoke application built with Tauri 2. It combines a Rust backend for audio processing and AI inference with a React frontend for the karaoke UI.
 
 ```
-User's local music files
-        │
-        ▼
+User's local music files / Remote repositories
+        │                        │
+        ▼                        ▼
 ┌──────────────────────────────────────────────┐
 │              Tauri Frontend (React)           │
 │                                               │
@@ -15,8 +15,12 @@ User's local music files
 │  │ File Import │  │     Karaoke Player UI   │ │
 │  │ & Library   │  │  (lyrics sync/highlight)│ │
 │  ├────────────┤  ├─────────────────────────┤ │
-│  │  Playback   │  │   Progress & Volume     │ │
-│  │  Controls   │  │   Controls              │ │
+│  │  Playlists  │  │   Playback & Volume     │ │
+│  │  & Rotation │  │   Controls              │ │
+│  ├────────────┤  ├─────────────────────────┤ │
+│  │  Remote     │  │   AirPlay / Fullscreen  │ │
+│  │  Repository │  │   Presentation          │ │
+│  │  Wizard     │  │                         │ │
 │  └────────────┘  └─────────────────────────┘ │
 ├──────────────────────────────────────────────┤
 │              Tauri Rust Backend               │
@@ -24,14 +28,20 @@ User's local music files
 │  ┌────────────┐  ┌─────────────────────────┐ │
 │  │   Audio     │  │    AI Stem Separation   │ │
 │  │   Decode &  │  │    (Demucs v4 via       │ │
-│  │   Playback  │  │     ONNX Runtime)       │ │
+│  │   Streaming │  │     ONNX Runtime)       │ │
 │  ├────────────┤  ├─────────────────────────┤ │
-│  │  Metadata   │  │    Lyrics Fetcher       │ │
-│  │  Reader     │  │    (LRCLIB API +        │ │
-│  │  (ID3/Flac) │  │     embedded lyrics)    │ │
+│  │  Metadata   │  │    Lyrics + Romanizer   │ │
+│  │  Reader     │  │    (LRCLIB + embedded)  │ │
+│  ├────────────┤  ├─────────────────────────┤ │
+│  │  Remote     │  │    AirPlay Streaming    │ │
+│  │  Providers  │  │    (HLS + route ctrl)   │ │
+│  │  (GDrive,   │  │                         │ │
+│  │  Dropbox,   │  │                         │ │
+│  │  WebDAV)    │  │                         │ │
 │  ├────────────┴──┴─────────────────────────┤ │
 │  │         Cache Layer (SQLite + fs)        │ │
-│  │   separated stems / lyrics / metadata    │ │
+│  │  stems / lyrics / metadata / playlists   │ │
+│  │  ChunkedCache (streaming media cache)    │ │
 │  └──────────────────────────────────────────┘ │
 └──────────────────────────────────────────────┘
 ```
@@ -232,3 +242,82 @@ The cache key is a SHA-256 hash of the audio file content, ensuring deduplicatio
 | Linux    | PulseAudio/ALSA | XNNPACK by default                                   |
 
 ONNX Runtime CPU execution provider works on all platforms out of the box. Hardware acceleration is configured via the **Hardware Acceleration** setting in Preferences, which only exposes explicit providers such as `CPU`, `XNNPACK`, and `DirectML`. When the setting is unset, the app chooses a platform default internally. Session setup logs the requested provider path, still falls back to CPU if the selected accelerated provider fails during session creation, keys the in-process model session cache with `openkara.model_cache_key` when present, and disables runtime graph optimization for models tagged with `openkara.optimized_by=onnxruntime`.
+
+## Backend Architecture
+
+### Decomposed AppState
+
+The Rust backend `AppState` is composed of five domain modules:
+
+```
+AppState
+├── PlaybackState    — playback controller, audio output, streaming state
+├── AirPlayState     — AirPlay HTTP server, route discovery
+├── SeparationState  — ONNX model cache, separation jobs
+├── RemoteState      — remote repository connections, provider dispatch
+└── AppShell         — window chrome, menu state
+```
+
+Each module owns its `Arc<Mutex<...>>` state and exposes domain-specific methods. IPC commands in `commands/` compose across modules.
+
+### Typed Error Handling
+
+IPC commands use a typed `ErrorCode` enum with `FallbackAction` hints for the frontend. Domain errors (`PlaybackError`, `CacheError`, `FetchError`) convert into `ErrorCode` variants, providing structured recovery signals instead of string matching.
+
+### Remote Repository System
+
+```
+┌─────────────────────────────────────────────────┐
+│  Frontend: RemoteLibraryWizard / Settings UI    │
+├─────────────────────────────────────────────────┤
+│  IPC: register_remote_library, refresh, publish │
+├─────────────────────────────────────────────────┤
+│  RemoteProvider trait                           │
+│  ├── GoogleDriveProvider (OAuth 2.0)            │
+│  ├── DropboxProvider (OAuth 2.0)                │
+│  └── WebDAVProvider (Basic Auth)                │
+├─────────────────────────────────────────────────┤
+│  Local Working Copy (SQLite + media files)      │
+│  Remote Revision tracking for conflict safety   │
+└─────────────────────────────────────────────────┘
+```
+
+- **Credentials** stored in OS keychain (macOS Keychain, Windows Credential Manager, Linux secret-tool)
+- **Pre-Mutation Refresh**: automatic refresh before local edits when remote revision is newer
+- **Pre-Publish Conflict**: safety stop when remote changes after local edit but before publish
+
+### Streaming Playback
+
+For remote audio, playback uses a streaming architecture:
+
+```
+Remote URL → Fetch Thread → ChunkedCache (disk) → Symphonia Decode → Audio Output
+                ↑                                        │
+          BandwidthMonitor ←── prefetch tracking ────────┘
+```
+
+- **ChunkedCache**: disk-backed byte-range cache with LRU eviction and condvar-based blocking reads
+- **RemoteMediaSource**: implements `Read + Seek + MediaSource` for symphonia, backed by the chunked cache
+- **ProviderFetcher**: HTTP Range fetcher with automatic token refresh on 403
+- **BandwidthMonitor**: EWMA bandwidth estimation with automatic low-bitrate proxy mode for slow connections
+- **Retry**: exponential backoff with configurable max retries and consecutive failure threshold
+
+### Playlists & Singer Rotation
+
+SQLite schema migrations (`008_playlists.sql`, `009_singer_rotation.sql`) add:
+
+- `playlists` and `playlist_songs` tables for saved playlists
+- `rotation_state` table with round-robin singer queue assignment
+- IPC commands: `create_playlist`, `add_songs_to_playlist`, `advance_rotation`, etc.
+
+## Tech Stack Additions
+
+| Layer                | Technology                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------- |
+| Streaming cache      | Custom `ChunkedCache` with `RangeSet` tracking, condvar blocking reads                |
+| HTTP Range fetch     | `reqwest` (blocking) with `rustls` TLS                                                |
+| Bandwidth monitoring | Custom EWMA `BandwidthMonitor`                                                        |
+| Remote providers     | `GoogleDriveProvider`, `DropboxProvider`, `WebDAVProvider` via `RemoteProvider` trait |
+| Credential storage   | OS keychain (macOS), Credential Manager (Windows), secret-tool (Linux)                |
+| Romanization         | `lyric-romanizer` crate + bundled `kuromoji` dictionary                               |
+| Virtualization       | `@tanstack/react-virtual` for efficient long lists                                    |
