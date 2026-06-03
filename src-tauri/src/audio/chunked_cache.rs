@@ -50,6 +50,11 @@ pub struct ChunkedCache {
     data_available: Condvar,
 }
 
+/// Acquire the cache mutex, returning an IO error instead of panicking on poison.
+fn acquire_lock(mutex: &Mutex<CacheInner>) -> std::sync::MutexGuard<'_, CacheInner> {
+    mutex.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 impl ChunkedCache {
     /// Open or create a chunked cache for the given file.
     ///
@@ -90,44 +95,44 @@ impl ChunkedCache {
 
     /// Check if a range is fully cached.
     pub fn is_cached(&self, offset: u64, length: u64) -> bool {
-        let inner = self.inner.lock().unwrap();
+        let inner = acquire_lock(&self.inner);
         inner.downloaded.contains(offset, length)
     }
 
     /// How many bytes starting from `offset` (up to `max_length`) are cached.
     pub fn cached_length_from(&self, offset: u64, max_length: u64) -> u64 {
-        let inner = self.inner.lock().unwrap();
+        let inner = acquire_lock(&self.inner);
         inner.downloaded.contained_length_from(offset, max_length)
     }
 
     /// The RangeSet of downloaded ranges.
     pub fn downloaded(&self) -> RangeSet {
-        let inner = self.inner.lock().unwrap();
+        let inner = acquire_lock(&self.inner);
         inner.downloaded.clone()
     }
 
     /// Total file size.
     pub fn file_size(&self) -> u64 {
-        let inner = self.inner.lock().unwrap();
+        let inner = acquire_lock(&self.inner);
         inner.file_size
     }
 
     /// Whether the entire file is cached.
     pub fn is_complete(&self) -> bool {
-        let inner = self.inner.lock().unwrap();
+        let inner = acquire_lock(&self.inner);
         inner.downloaded.covers_full(inner.file_size)
     }
 
     /// Last time this cache was accessed (read or write).
     pub fn last_access(&self) -> Instant {
-        let inner = self.inner.lock().unwrap();
+        let inner = acquire_lock(&self.inner);
         inner.last_access
     }
 
     /// Total bytes of data stored in this cache (may include gaps filled with
     /// zeros due to `set_len` extension).
     pub fn data_bytes(&self) -> u64 {
-        let inner = self.inner.lock().unwrap();
+        let inner = acquire_lock(&self.inner);
         inner.file.metadata().map(|m| m.len()).unwrap_or(0)
     }
 
@@ -141,7 +146,7 @@ impl ChunkedCache {
     /// current end (required for non-contiguous downloads on macOS, which
     /// does not support sparse file holes).
     pub fn write_at(&self, offset: u64, data: &[u8]) -> Result<(), CacheError> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = acquire_lock(&self.inner);
         let write_end = offset + data.len() as u64;
         let current_len = inner.file.metadata()?.len();
         if write_end > current_len {
@@ -158,7 +163,7 @@ impl ChunkedCache {
     /// Read data at the given offset. Blocks (via condvar wait) if the range
     /// is not yet cached. Returns the number of bytes actually read.
     pub fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize, CacheError> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = acquire_lock(&self.inner);
         let length = buf.len() as u64;
 
         // Wait until the range is available.
@@ -185,7 +190,7 @@ impl ChunkedCache {
 
     /// Save the RangeSet index to disk as JSON.
     pub fn save_index(&self) -> Result<(), CacheError> {
-        let inner = self.inner.lock().unwrap();
+        let inner = acquire_lock(&self.inner);
         if inner.downloaded.covers_full(inner.file_size) {
             // Complete file — remove the index file (it's equivalent to
             // a full cache, no need to track partial state).

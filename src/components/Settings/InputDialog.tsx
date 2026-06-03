@@ -67,6 +67,7 @@ export function InputDialog({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder={placeholder}
+          aria-label={title}
           className="mt-3 w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-white placeholder-[var(--color-text-dimmer)] outline-none transition-colors focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)]/30"
         />
 

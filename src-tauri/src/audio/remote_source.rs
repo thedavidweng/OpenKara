@@ -184,7 +184,7 @@ impl ProviderFetcher {
 
     /// Update the Authorization header with a new token.
     fn update_auth_header(&self, new_token: &str) {
-        let mut headers = self.headers.lock().unwrap();
+        let mut headers = self.headers.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(entry) = headers.iter_mut().find(|(k, _)| k == "Authorization") {
             entry.1 = format!("Bearer {new_token}");
         }
@@ -203,7 +203,7 @@ impl ProviderFetcher {
 
         builder = builder.header("Range", &range_value);
 
-        let headers = self.headers.lock().unwrap();
+        let headers = self.headers.lock().unwrap_or_else(|e| e.into_inner());
         for (key, value) in headers.iter() {
             builder = builder.header(key.as_str(), value.as_str());
         }

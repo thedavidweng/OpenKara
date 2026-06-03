@@ -1,5 +1,6 @@
 import { useCallback, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import { MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH } from "@/lib/layout-constants";
 
 interface SidebarRailProps {
   visible: boolean;
@@ -7,9 +8,6 @@ interface SidebarRailProps {
   onResize: (width: number) => void;
   children: ReactNode;
 }
-
-const MIN_SIDEBAR_WIDTH = 240;
-const MAX_SIDEBAR_WIDTH = 420;
 
 function clampWidth(width: number): number {
   return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width));

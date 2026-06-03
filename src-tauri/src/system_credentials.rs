@@ -67,7 +67,14 @@ fn target_name(library_id: &str) -> String {
 }
 
 fn test_store_dir() -> Option<PathBuf> {
-    env::var_os("OPENKARA_TEST_CREDENTIAL_STORE_DIR").map(PathBuf::from)
+    #[cfg(debug_assertions)]
+    {
+        env::var_os("OPENKARA_TEST_CREDENTIAL_STORE_DIR").map(PathBuf::from)
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        None
+    }
 }
 
 fn test_store_path(directory: &Path, library_id: &str) -> PathBuf {

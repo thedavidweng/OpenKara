@@ -234,6 +234,7 @@ export function SongPropertiesDialog({
                           event.target.checked,
                         )
                       }
+                      aria-label={t("songProperties.instrumental")}
                       className="h-4 w-4 rounded border-[var(--color-border-light)] bg-[var(--color-surface)] accent-[var(--color-accent)]"
                     />
                   </label>
