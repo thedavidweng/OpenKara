@@ -353,32 +353,40 @@ fn play_track_background<R: Runtime>(
         };
 
         // Try to load stems in streaming mode too.
+        // Stem loading is non-fatal: if stems can't be loaded (no cache,
+        // corrupted files, etc.), playback continues with the base audio.
         let connection = cache::open_database(&library_root.database_path())
             .map_err(|e| PlaybackError::Internal(e.to_string()))?;
         if song.is_remote_stems() {
-            ensure_remote_stem_files_cached(Some(app_data_dir), &connection, song)
-                .map_err(|e| PlaybackError::Internal(e.to_string()))?;
+            let _ = ensure_remote_stem_files_cached(Some(app_data_dir), &connection, song);
         }
-        if let Some(stems_source) = playback_source::load_cached_stems_for_song_streaming(
+        match playback_source::load_cached_stems_for_song_streaming(
             Some(app_data_dir),
             &connection,
             library_root,
             song,
-        )? {
-            let Ok(mut controller) = playback_arc.lock() else {
-                return Err(PlaybackError::Internal(
-                    "playback controller lock was poisoned".to_owned(),
-                ));
-            };
-            controller.attach_streaming_stems(&song.hash, stems_source.streaming_track)?;
-            // Log stem decode errors in the background.
-            for handle in stems_source.decode_handles {
-                let song_id = song.hash.clone();
-                std::thread::spawn(move || {
-                    if let Err(e) = handle.join() {
-                        eprintln!("stem decode thread panicked for {song_id}: {e:?}");
-                    }
-                });
+        ) {
+            Ok(Some(stems_source)) => {
+                let Ok(mut controller) = playback_arc.lock() else {
+                    return Err(PlaybackError::Internal(
+                        "playback controller lock was poisoned".to_owned(),
+                    ));
+                };
+                controller.attach_streaming_stems(&song.hash, stems_source.streaming_track)?;
+                // Log stem decode errors in the background.
+                for handle in stems_source.decode_handles {
+                    let song_id = song.hash.clone();
+                    std::thread::spawn(move || {
+                        if let Err(e) = handle.join() {
+                            eprintln!("stem decode thread panicked for {song_id}: {e:?}");
+                        }
+                    });
+                }
+            }
+            Ok(None) => { /* No cached stems — play base audio only. */ }
+            Err(e) => {
+                eprintln!("streaming stem load failed for {}: {e}", song.hash);
+                // Continue without stems — base audio is already loaded.
             }
         }
 

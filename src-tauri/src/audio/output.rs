@@ -66,6 +66,34 @@ pub fn render_output_buffer(
 ) -> usize {
     output.fill(0.0);
 
+    // In streaming mode, ALWAYS check buffer levels — even when is_buffering is
+    // true and snapshot() has set is_playing to false.  Without this, the buffer
+    // recovery check (all_above_high → is_buffering = false) is never reached
+    // once playback enters the buffering state, because the early return
+    // prevents the code below from running.
+    if playback
+        .current_track
+        .as_ref()
+        .is_some_and(|t| t.streaming.is_some())
+    {
+        let track = playback.current_track.as_mut().unwrap();
+        let streaming = track.streaming.as_mut().unwrap();
+
+        acknowledge_flush_if_needed(streaming);
+
+        let below_low = any_consumer_below_low_water(streaming);
+        let all_above_high = all_consumers_above_high_water(streaming);
+
+        if below_low {
+            playback.is_buffering = true;
+        } else if playback.is_buffering && all_above_high {
+            playback.is_buffering = false;
+        }
+    }
+
+    // Take the snapshot AFTER the buffer-level update so is_playing reflects
+    // the current buffering state (the snapshot taken before the update may
+    // still carry the old is_buffering flag).
     let snapshot = playback.snapshot();
     if !snapshot.is_playing {
         return 0;
@@ -130,24 +158,6 @@ pub fn render_output_buffer(
         // Clamp to prevent clipping
         for sample in output.iter_mut() {
             *sample = sample.clamp(-1.0, 1.0);
-        }
-
-        // Handle flush after seek and buffering underrun/recovery.
-        let track = playback.current_track.as_mut().unwrap();
-        let streaming = track.streaming.as_mut().unwrap();
-
-        // First, acknowledge any pending flush (drains stale samples after seek).
-        acknowledge_flush_if_needed(streaming);
-
-        // Then check buffering state.
-        let below_low = any_consumer_below_low_water(streaming);
-        let all_above_high = all_consumers_above_high_water(streaming);
-
-        if below_low {
-            playback.is_buffering = true;
-        } else if playback.is_buffering && all_above_high {
-            // All stems have refilled — resume playback.
-            playback.is_buffering = false;
         }
 
         result
@@ -813,7 +823,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{forward_rendered_audio_to_airplay, write_output_samples};
+    use super::{forward_rendered_audio_to_airplay, render_output_buffer, write_output_samples};
     use crate::airplay_stream::AirPlayAudioTap;
 
     #[test]
@@ -846,5 +856,63 @@ mod tests {
         let drained = tap.drain_pending();
         assert_eq!(drained.len(), 1);
         assert_eq!(drained[0].samples, vec![0.1, 0.2, 0.3, 0.4]);
+    }
+
+    /// Regression test: once `is_buffering` is set (e.g. initial empty buffer),
+    /// `render_output_buffer` must continue checking buffer levels on every
+    /// callback — even when `snapshot()` reports `is_playing: false` — so the
+    /// high-water recovery path can clear the flag and resume playback.
+    #[test]
+    fn streaming_buffering_recovers_after_underrun() {
+        use crate::audio::playback::PlaybackController;
+        use crate::audio::streaming::{self, StreamingTrack};
+
+        let sample_rate: u32 = 44_100;
+        let channels: usize = 2;
+        let (mut prod, consumer) = streaming::create_stream_pair(sample_rate, channels);
+
+        let mut controller = PlaybackController::default();
+        controller.start_track_streaming(
+            "test-recovery".to_owned(),
+            sample_rate,
+            channels,
+            30_000, // 30-second track
+            StreamingTrack::Single { consumer },
+            0,
+        );
+
+        // 1st callback: buffer is empty → below low water → is_buffering = true.
+        let device_channels = 2;
+        let mut output = vec![0.0f32; 512 * device_channels];
+        let rendered =
+            render_output_buffer(&mut controller, &mut output, sample_rate, device_channels);
+        assert_eq!(rendered, 0);
+        assert!(
+            controller.is_buffering,
+            "should enter buffering after empty underrun"
+        );
+
+        // 2nd callback: is_buffering is true → snapshot reports is_playing = false.
+        // Before the fix, this would early-return without checking buffer levels,
+        // permanently locking the player in "buffering" state.
+        output.fill(0.0);
+        let rendered =
+            render_output_buffer(&mut controller, &mut output, sample_rate, device_channels);
+        assert_eq!(rendered, 0);
+
+        // Simulate the decode thread filling the buffer past the high-water mark.
+        let high_water = 88_200usize; // HIGH_WATER_SAMPLES
+        let filler = vec![0.5f32; high_water + 1000];
+        prod.push_samples(&filler);
+
+        // 3rd callback: buffer is now above high water → is_buffering clears.
+        output.fill(0.0);
+        let rendered =
+            render_output_buffer(&mut controller, &mut output, sample_rate, device_channels);
+        assert!(
+            !controller.is_buffering,
+            "buffering flag should clear once buffer refills"
+        );
+        assert!(rendered > 0, "should render audio after recovery");
     }
 }

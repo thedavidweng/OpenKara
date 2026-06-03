@@ -123,11 +123,11 @@ pub(crate) fn load_cached_stems_for_song_streaming(
     library_root: &LibraryRoot,
     song: &Song,
 ) -> Result<Option<StreamingStemsSource>, PlaybackError> {
-    let cached = cache::stems::get_cached_stem_entry(connection, &song.hash)
+    let Some(cached) = cache::stems::get_cached_stem_entry(connection, &song.hash)
         .map_err(|e| PlaybackError::Internal(format!("failed to load cached stems: {e}")))?
-        .ok_or_else(|| {
-            PlaybackError::KaraokeNotReady(format!("no cached stems for song {}", song.hash))
-        })?;
+    else {
+        return Ok(None);
+    };
 
     let paths: Vec<std::path::PathBuf> =
         if cached.has_individual_stems() {
@@ -332,7 +332,7 @@ fn probe_remote_source(
     }
 
     let mss = MediaSourceStream::new(Box::new(source), Default::default());
-    let probed = symphonia::default::get_probe()
+    let mut probed = symphonia::default::get_probe()
         .format(
             &hint,
             mss,
@@ -341,19 +341,41 @@ fn probe_remote_source(
         )
         .map_err(|e| decode::DecodeError::ProbeFailed(format!("remote source: {e}")))?;
 
-    let track = probed
-        .format
-        .default_track()
-        .ok_or(decode::DecodeError::NoDefaultTrack)?;
-    let codec_params = &track.codec_params;
+    let (codec_params, track_id) = {
+        let track = probed
+            .format
+            .default_track()
+            .ok_or(decode::DecodeError::NoDefaultTrack)?;
+        (track.codec_params.clone(), track.id)
+    };
 
-    let sample_rate = codec_params
-        .sample_rate
-        .ok_or(decode::DecodeError::MissingSampleRate)?;
-    let channels = codec_params
-        .channels
-        .map(|c| c.count())
-        .ok_or(decode::DecodeError::MissingChannels)?;
+    let mut sample_rate = codec_params.sample_rate;
+    let mut channels = codec_params.channels.map(|c| c.count());
+
+    // Some containers don't expose sample rate / channel layout in the
+    // codec params.  symphonia only populates these after decoding the
+    // first packet, so try that before giving up.
+    if sample_rate.is_none() || channels.is_none() {
+        use symphonia::core::codecs::DecoderOptions as DO;
+        if let Ok(mut decoder) =
+            symphonia::default::get_codecs().make(&codec_params, &DO::default())
+        {
+            while let Ok(packet) = probed.format.next_packet() {
+                if packet.track_id() != track_id {
+                    continue;
+                }
+                if let Ok(decoded) = decoder.decode(&packet) {
+                    let spec = *decoded.spec();
+                    sample_rate.get_or_insert(spec.rate);
+                    channels.get_or_insert(spec.channels.count());
+                    break;
+                }
+            }
+        }
+    }
+
+    let sample_rate = sample_rate.ok_or(decode::DecodeError::MissingSampleRate)?;
+    let channels = channels.ok_or(decode::DecodeError::MissingChannels)?;
 
     // Try to get duration from container metadata.
     let duration_ms =
