@@ -370,7 +370,7 @@ pub fn probe_stream_metadata(path: &Path) -> Result<StreamMetadata, DecodeError>
         hint.with_extension(ext);
     }
 
-    let probed = symphonia::default::get_probe()
+    let mut probed = symphonia::default::get_probe()
         .format(
             &hint,
             media_source_stream,
@@ -379,19 +379,40 @@ pub fn probe_stream_metadata(path: &Path) -> Result<StreamMetadata, DecodeError>
         )
         .map_err(|e| DecodeError::ProbeFailed(format!("for {label}: {e}")))?;
 
-    let track = probed
-        .format
-        .default_track()
-        .ok_or(DecodeError::NoDefaultTrack)?;
-    let codec_params = &track.codec_params;
+    let (codec_params, track_id) = {
+        let track = probed
+            .format
+            .default_track()
+            .ok_or(DecodeError::NoDefaultTrack)?;
+        (track.codec_params.clone(), track.id)
+    };
 
-    let sample_rate = codec_params
-        .sample_rate
-        .ok_or(DecodeError::MissingSampleRate)?;
-    let channels = codec_params
-        .channels
-        .map(|c| c.count())
-        .ok_or(DecodeError::MissingChannels)?;
+    let mut sample_rate = codec_params.sample_rate;
+    let mut channels = codec_params.channels.map(|c| c.count());
+
+    // Some containers don't expose sample rate / channel layout in the
+    // codec params.  symphonia only populates these after decoding the
+    // first packet, so try that before giving up.
+    if sample_rate.is_none() || channels.is_none() {
+        if let Ok(mut decoder) =
+            symphonia::default::get_codecs().make(&codec_params, &DecoderOptions::default())
+        {
+            while let Ok(packet) = probed.format.next_packet() {
+                if packet.track_id() != track_id {
+                    continue;
+                }
+                if let Ok(decoded) = decoder.decode(&packet) {
+                    let spec = *decoded.spec();
+                    sample_rate.get_or_insert(spec.rate);
+                    channels.get_or_insert(spec.channels.count());
+                    break;
+                }
+            }
+        }
+    }
+
+    let sample_rate = sample_rate.ok_or(DecodeError::MissingSampleRate)?;
+    let channels = channels.ok_or(DecodeError::MissingChannels)?;
 
     // Try to get duration from container metadata.
     let duration_ms =
@@ -926,6 +947,181 @@ mod tests {
 
         // After decode finishes, EOF should be true
         assert!(consumer.is_eof());
+    }
+
+    #[test]
+    fn probe_stream_metadata_returns_valid_duration_for_m4a() {
+        use std::path::PathBuf;
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("metadata")
+            .join("fixture.m4a");
+
+        let metadata = probe_stream_metadata(&path).expect("probe should succeed for m4a");
+        eprintln!(
+            "m4a metadata: rate={}, ch={}, dur={}ms",
+            metadata.sample_rate, metadata.channels, metadata.duration_ms
+        );
+        assert!(metadata.sample_rate > 0);
+        assert!(metadata.channels > 0);
+        assert!(
+            metadata.duration_ms > 0,
+            "duration_ms must be > 0, got {}",
+            metadata.duration_ms
+        );
+    }
+
+    #[test]
+    fn streaming_decode_works_for_m4a_files() {
+        use std::path::PathBuf;
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("metadata")
+            .join("fixture.m4a");
+
+        // Probe should succeed and return valid metadata
+        let metadata =
+            probe_stream_metadata(&path).expect("probe_stream_metadata should succeed for m4a");
+        assert!(metadata.sample_rate > 0, "sample_rate should be positive");
+        assert!(metadata.channels > 0, "channels should be positive");
+        assert!(metadata.duration_ms > 0, "duration_ms should be positive");
+
+        // Spawn decode producer and verify it fills the ring buffer
+        let (mut consumer, _, handle) =
+            spawn_decode_producer(&path).expect("spawn_decode_producer should succeed for m4a");
+
+        // Wait for decode to finish
+        handle
+            .join()
+            .expect("decode thread should not panic")
+            .expect("decode should succeed for m4a");
+
+        // Should have decoded audio samples
+        assert!(
+            consumer.available_samples() > 0,
+            "ring buffer should have samples after decoding m4a"
+        );
+
+        // Pop and verify non-zero content
+        let mut output = vec![0.0f32; consumer.available_samples()];
+        let popped = consumer.pop_samples(&mut output);
+        assert!(popped > 0, "should pop > 0 samples");
+        assert!(
+            output.iter().any(|s| *s != 0.0),
+            "decoded m4a samples should not all be zero"
+        );
+    }
+
+    #[test]
+    fn streaming_decode_with_render_output_buffer_works_for_m4a() {
+        use crate::audio::output::render_output_buffer;
+        use std::path::PathBuf;
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("metadata")
+            .join("fixture.m4a");
+
+        let (consumer, metadata, handle) =
+            spawn_decode_producer(&path).expect("spawn_decode_producer should succeed for m4a");
+
+        let mut controller = crate::audio::playback::PlaybackController::default();
+        controller.start_track_streaming(
+            "test-m4a".to_owned(),
+            metadata.sample_rate,
+            metadata.channels,
+            metadata.duration_ms,
+            StreamingTrack::Single { consumer },
+            0,
+        );
+
+        // Wait for decode to fill the buffer
+        handle
+            .join()
+            .expect("decode thread should not panic")
+            .expect("decode should succeed");
+
+        // Render audio — the ring buffer should have data now
+        let device_rate = metadata.sample_rate;
+        let device_channels = 2;
+        let buffer_frames = 512;
+        let mut output = vec![0.0f32; buffer_frames * device_channels];
+        let rendered =
+            render_output_buffer(&mut controller, &mut output, device_rate, device_channels);
+
+        assert!(rendered > 0, "should render audio from m4a streaming");
+        assert!(
+            output.iter().any(|s| *s != 0.0),
+            "rendered m4a audio should contain non-zero samples"
+        );
+    }
+
+    #[test]
+    fn streaming_playback_loop_consumes_entire_track() {
+        use crate::audio::output::render_output_buffer;
+        use std::path::PathBuf;
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("metadata")
+            .join("fixture.m4a");
+
+        let (consumer, metadata, handle) =
+            spawn_decode_producer(&path).expect("spawn_decode_producer should succeed");
+
+        let mut controller = crate::audio::playback::PlaybackController::default();
+        controller.start_track_streaming(
+            "test-m4a-loop".to_owned(),
+            metadata.sample_rate,
+            metadata.channels,
+            metadata.duration_ms,
+            StreamingTrack::Single { consumer },
+            0,
+        );
+
+        // Wait for full decode
+        handle.join().expect("thread join").expect("decode ok");
+
+        let device_rate = metadata.sample_rate;
+        let device_channels = 2;
+        let buffer_frames = 512;
+        let mut total_rendered = 0u64;
+        let mut callbacks_with_audio = 0u32;
+
+        // Simulate cpal callback loop until track finishes
+        for _ in 0..10_000 {
+            let snapshot = controller.snapshot();
+            if !snapshot.is_playing {
+                break;
+            }
+            let mut output = vec![0.0f32; buffer_frames * device_channels];
+            let rendered =
+                render_output_buffer(&mut controller, &mut output, device_rate, device_channels);
+            if rendered > 0 {
+                total_rendered += rendered as u64;
+                callbacks_with_audio += 1;
+            }
+        }
+
+        assert!(
+            callbacks_with_audio > 0,
+            "should have rendered audio in at least one callback"
+        );
+        // fixture.m4a is ~1s of audio at 44.1kHz stereo = ~88200 interleaved samples
+        assert!(total_rendered > 0, "total rendered samples should be > 0");
+
+        // The position should have advanced
+        let final_snapshot = controller.snapshot();
+        assert!(
+            final_snapshot.position_ms > 0,
+            "position should have advanced from 0"
+        );
     }
 
     #[test]
