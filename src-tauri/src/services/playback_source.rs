@@ -544,7 +544,6 @@ fn map_cache_error(error: CacheError) -> PlaybackError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::audio::chunked_cache::CacheManager;
     use tempfile::tempdir;
 

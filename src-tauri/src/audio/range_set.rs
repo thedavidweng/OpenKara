@@ -112,15 +112,13 @@ impl RangeSet {
         false
     }
 
-    /// How many bytes starting from `start` (up to `max_length`) are already
-    /// covered by this range set. Sums coverage across all overlapping ranges,
-    /// including across gaps.
+    /// How many contiguous bytes starting from `start` (up to `max_length`)
+    /// are already covered by this range set.
     pub fn contained_length_from(&self, start: u64, max_length: u64) -> u64 {
         if max_length == 0 {
             return 0;
         }
         let end = start + max_length;
-        let mut covered: u64 = 0;
 
         for range in &self.ranges {
             if range.end() <= start {
@@ -129,12 +127,13 @@ impl RangeSet {
             if range.start >= end {
                 break;
             }
-            let overlap_start = range.start.max(start);
-            let overlap_end = range.end().min(end);
-            covered += overlap_end - overlap_start;
+            if range.start > start {
+                return 0;
+            }
+            return range.end().min(end) - start;
         }
 
-        covered
+        0
     }
 
     /// Whether the range set covers the entire file [0, file_size).
@@ -262,10 +261,10 @@ mod tests {
         let mut rs = RangeSet::new();
         rs.add_range(0, 30);
         rs.add_range(50, 30);
-        // Starting from 0, max 100: 30 from [0,30) + 30 from [50,80) = 60
-        assert_eq!(rs.contained_length_from(0, 100), 60);
-        // Starting from 20, max 100: 10 from [0,30) + 30 from [50,80) = 40
-        assert_eq!(rs.contained_length_from(20, 100), 40);
+        // Starting from 0, max 100: only [0,30) is contiguous.
+        assert_eq!(rs.contained_length_from(0, 100), 30);
+        // Starting from 20, max 100: only [20,30) is contiguous.
+        assert_eq!(rs.contained_length_from(20, 100), 10);
         // Starting from 60, max 10: 10 bytes from [50,80)
         assert_eq!(rs.contained_length_from(60, 10), 10);
         // Window entirely in the gap: 0
