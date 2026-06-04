@@ -185,7 +185,7 @@ describe("Flatpak packaging", () => {
     );
     expect(packagingWorkflow).toContain("options: --privileged");
     expect(packagingWorkflow).toContain(
-      "uses: flatpak/flatpak-github-actions/flatpak-builder@v6",
+      "uses: flatpak/flatpak-github-actions/flatpak-builder@v6.7",
     );
     // Without this, `flatpak-builder-lint builddir/repo` fails with
     // "appstream-external-screenshot-url: Screenshots are not mirrored to

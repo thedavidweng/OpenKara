@@ -44,7 +44,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v6.0.3
 
       - name: Setup Node.js
         uses: actions/setup-node@v6.4.0
@@ -87,10 +87,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v6.0.3
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6.0.6
+        uses: pnpm/action-setup@v6.0.8
         with:
           version: 10.33.2
 
@@ -169,7 +169,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v6.0.3
 
       - name: Download rendered Flatpak manifest
         uses: actions/download-artifact@v8.0.1
@@ -178,7 +178,7 @@ jobs:
           path: dist/flatpak
 
       - name: Build Flatpak
-        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6.7
         with:
           bundle: openkara.flatpak
           manifest-path: dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml
