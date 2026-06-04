@@ -60,7 +60,7 @@ function parsePnpmLockfilePackages(lockfile: string): LockfilePackage[] {
     }
 
     const packageKeyMatch = line.match(
-      /^  (?:(?:"([^"]+)")|([^\s:#][^:#]*)):\s*$/,
+      /^ {2}(?:(?:"([^"]+)")|([^\s:#][^:#]*)):\s*$/,
     );
 
     if (packageKeyMatch) {
