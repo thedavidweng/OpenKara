@@ -147,10 +147,6 @@ pub struct AudioConsumer {
     needs_flush: Arc<AtomicBool>,
     /// Shared seek target between consumer and producer.
     seek_target: Arc<SeekTarget>,
-    /// Set by PlaybackController::seek before the decode thread has a chance
-    /// to process the seek and signal a flush. Prevents the render callback
-    /// from prematurely clearing `is_buffering` based on stale ring data.
-    flush_expected: bool,
 }
 
 impl std::fmt::Debug for AudioConsumer {
@@ -202,7 +198,6 @@ impl AudioConsumer {
     /// Acknowledge the flush — clears the flag and drains stale samples.
     pub fn acknowledge_flush(&mut self) {
         self.needs_flush.store(false, Ordering::Relaxed);
-        self.flush_expected = false;
         self.pending_samples.clear();
         // Drain all stale samples that were pushed before the seek.
         let mut scratch = vec![0.0f32; self.cons.occupied_len()];
@@ -212,17 +207,6 @@ impl AudioConsumer {
     /// Get the shared seek target for setting seek positions.
     pub fn seek_target(&self) -> &SeekTarget {
         &self.seek_target
-    }
-
-    /// Mark that a flush is expected (called during seek, before the decode
-    /// thread has processed the seek target).
-    pub fn expect_flush(&mut self) {
-        self.flush_expected = true;
-    }
-
-    /// Whether a flush is expected but hasn't been acknowledged yet.
-    pub fn is_flush_expected(&self) -> bool {
-        self.flush_expected
     }
 
     /// Pop up to `max_samples` interleaved samples into `output`.
@@ -375,7 +359,6 @@ pub fn create_stream_pair(sample_rate: u32, channels: usize) -> (AudioProducer, 
             is_eof,
             needs_flush,
             seek_target,
-            flush_expected: false,
         },
     )
 }
