@@ -16,6 +16,13 @@ type LockfilePackage = {
   version: string;
 };
 
+type CargoLockfilePackage = {
+  checksum: string;
+  dest: string;
+  name: string;
+  version: string;
+};
+
 function splitPackageKey(key: string) {
   const versionSeparator = key.lastIndexOf("@");
 
@@ -79,6 +86,35 @@ function parsePnpmLockfilePackages(lockfile: string): LockfilePackage[] {
     packages.push({
       filename: tarballFilename(name, version),
       integrityHex,
+      name,
+      version,
+    });
+  }
+
+  return packages;
+}
+
+function parseCargoLockfilePackages(lockfile: string): CargoLockfilePackage[] {
+  const packages: CargoLockfilePackage[] = [];
+
+  for (const packageBlock of lockfile.split(/\n\[\[package\]\]\n/)) {
+    const name = packageBlock.match(/(?:^|\n)name = "([^"]+)"/)?.[1];
+    const version = packageBlock.match(/(?:^|\n)version = "([^"]+)"/)?.[1];
+    const source = packageBlock.match(/(?:^|\n)source = "([^"]+)"/)?.[1];
+    const checksum = packageBlock.match(/(?:^|\n)checksum = "([^"]+)"/)?.[1];
+
+    if (
+      name === undefined ||
+      version === undefined ||
+      checksum === undefined ||
+      !source?.startsWith("registry+")
+    ) {
+      continue;
+    }
+
+    packages.push({
+      checksum,
+      dest: `cargo/vendor/${name}-${version}`,
       name,
       version,
     });
@@ -267,6 +303,55 @@ describe("Flatpak packaging", () => {
         version: pkg.version,
       });
       expect(sourceTarballs.get(pkg.filename)).toBe(pkg.integrityHex);
+    }
+  });
+
+  test("keeps Cargo dependency sources in sync with the lockfile packages used by the app", () => {
+    const lockfilePackages = parseCargoLockfilePackages(
+      readProjectFile("src-tauri/Cargo.lock"),
+    );
+    const cargoSources = JSON.parse(
+      readProjectFile("packaging/flatpak/generated/cargo-sources.json"),
+    ) as Array<{
+      dest?: string;
+      "dest-filename"?: string;
+      sha256?: string;
+      type: string;
+      contents?: string;
+    }>;
+    const archives = new Map(
+      cargoSources
+        .filter(
+          (source) =>
+            source.type === "archive" &&
+            source.dest?.startsWith("cargo/vendor/"),
+        )
+        .map((source) => [source.dest, source.sha256]),
+    );
+    const checksumFiles = new Map(
+      cargoSources
+        .filter(
+          (source) =>
+            source.type === "inline" &&
+            source.dest?.startsWith("cargo/vendor/") &&
+            source["dest-filename"] === ".cargo-checksum.json",
+        )
+        .map((source) => [
+          source.dest,
+          (JSON.parse(source.contents ?? "{}") as { package?: string }).package,
+        ]),
+    );
+
+    expect(Array.from(archives.keys()).sort()).toEqual(
+      lockfilePackages.map((pkg) => pkg.dest).sort(),
+    );
+    expect(Array.from(checksumFiles.keys()).sort()).toEqual(
+      lockfilePackages.map((pkg) => pkg.dest).sort(),
+    );
+
+    for (const pkg of lockfilePackages) {
+      expect(archives.get(pkg.dest)).toBe(pkg.checksum);
+      expect(checksumFiles.get(pkg.dest)).toBe(pkg.checksum);
     }
   });
 
