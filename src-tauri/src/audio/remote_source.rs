@@ -15,8 +15,6 @@ pub struct BandwidthMonitor {
     /// Bytes per second, exponentially weighted moving average.
     bytes_per_sec: AtomicU64,
     /// Whether the connection is currently considered slow.
-    /// Wrapped in `Arc` so it can be shared with the decode producer via
-    /// [`slow_flag()`](Self::slow_flag) for dynamic proxy switching.
     is_slow: Arc<AtomicBool>,
     /// Threshold in bytes/sec below which the connection is considered slow.
     slow_threshold: AtomicU64,
@@ -72,14 +70,6 @@ impl BandwidthMonitor {
         // Re-evaluate whether the connection is slow.
         let current = self.bytes_per_sec.load(Ordering::Relaxed);
         self.is_slow.store(current < bps, Ordering::Relaxed);
-    }
-
-    /// Return a read-only view of the slow flag. The flag is automatically
-    /// updated by [`record_fetch`](Self::record_fetch) and
-    /// [`set_slow_threshold`](Self::set_slow_threshold). Intended to be
-    /// shared with the decode producer for dynamic proxy switching.
-    pub fn slow_flag(&self) -> Arc<AtomicBool> {
-        Arc::clone(&self.is_slow)
     }
 }
 
@@ -1149,27 +1139,6 @@ mod tests {
         // Zero-duration fetch should not panic or produce infinite bps.
         monitor.record_fetch(1000, Duration::ZERO);
         assert_eq!(monitor.bytes_per_sec(), 0);
-    }
-
-    #[test]
-    fn bandwidth_monitor_slow_flag_shares_state() {
-        let monitor = BandwidthMonitor::new(16_384);
-        let flag = monitor.slow_flag();
-
-        // Initially not slow.
-        assert!(!flag.load(Ordering::Relaxed));
-
-        // Record slow fetches to converge EWMA below threshold.
-        for _ in 0..15 {
-            monitor.record_fetch(100, Duration::from_secs(1));
-        }
-        assert!(flag.load(Ordering::Relaxed));
-
-        // Record fast fetches to converge above threshold.
-        for _ in 0..15 {
-            monitor.record_fetch(100_000, Duration::from_millis(10));
-        }
-        assert!(!flag.load(Ordering::Relaxed));
     }
 
     #[test]

@@ -83,8 +83,9 @@ pub fn render_output_buffer(
 
         let below_low = any_consumer_below_low_water(streaming);
         let all_above_high = all_consumers_above_high_water(streaming);
+        let any_flush_expected = any_consumer_flush_expected(streaming);
 
-        if below_low {
+        if below_low || any_flush_expected {
             playback.is_buffering = true;
         } else if playback.is_buffering && all_above_high {
             playback.is_buffering = false;
@@ -473,6 +474,12 @@ fn render_streaming_single(
         } else {
             0
         };
+        let consumed_samples = (src_frames_consumed as usize)
+            .saturating_mul(src_channels)
+            .min(popped);
+        if consumed_samples < popped {
+            consumer.prepend_samples(&scratch[consumed_samples..popped]);
+        }
 
         (written, src_frames_consumed)
     }
@@ -631,6 +638,32 @@ fn all_consumers_above_high_water(streaming: &crate::audio::streaming::Streaming
                 && drums.is_above_high_water()
                 && bass.is_above_high_water()
                 && other.is_above_high_water()
+        }
+    }
+}
+
+/// Whether any consumer is still waiting for a flush to be signaled by
+/// its decode thread. True between `PlaybackController::seek` (which sets
+/// the seek target) and the render callback acknowledging the flush.
+fn any_consumer_flush_expected(streaming: &crate::audio::streaming::StreamingTrack) -> bool {
+    match streaming {
+        crate::audio::streaming::StreamingTrack::Single { consumer } => {
+            consumer.is_flush_expected()
+        }
+        crate::audio::streaming::StreamingTrack::TwoStem {
+            vocals,
+            accompaniment,
+        } => vocals.is_flush_expected() || accompaniment.is_flush_expected(),
+        crate::audio::streaming::StreamingTrack::FourStem {
+            vocals,
+            drums,
+            bass,
+            other,
+        } => {
+            vocals.is_flush_expected()
+                || drums.is_flush_expected()
+                || bass.is_flush_expected()
+                || other.is_flush_expected()
         }
     }
 }
@@ -914,5 +947,24 @@ mod tests {
             "buffering flag should clear once buffer refills"
         );
         assert!(rendered > 0, "should render audio after recovery");
+    }
+
+    #[test]
+    fn streaming_resample_keeps_lookahead_sample_for_next_callback() {
+        use crate::audio::streaming;
+
+        let (mut prod, mut consumer) = streaming::create_stream_pair(4, 1);
+        let input = [0.0_f32, 1.0, 2.0, 3.0, 4.0, 5.0];
+        assert_eq!(prod.push_samples(&input), input.len());
+
+        let mut first = vec![0.0_f32; 4];
+        let rendered = super::render_streaming_single(&mut first, &mut consumer, 1.0, 8, 1);
+        assert_eq!(rendered, (4, 2));
+        assert_eq!(first, vec![0.0, 0.5, 1.0, 1.5]);
+
+        let mut second = vec![0.0_f32; 4];
+        let rendered = super::render_streaming_single(&mut second, &mut consumer, 1.0, 8, 1);
+        assert_eq!(rendered, (4, 2));
+        assert_eq!(second, vec![2.0, 2.5, 3.0, 3.5]);
     }
 }
