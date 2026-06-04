@@ -9,6 +9,84 @@ function readProjectFile(path: string) {
   return readFileSync(join(projectRoot, path), "utf8");
 }
 
+type LockfilePackage = {
+  filename: string;
+  integrityHex: string;
+  name: string;
+  version: string;
+};
+
+function splitPackageKey(key: string) {
+  const versionSeparator = key.lastIndexOf("@");
+
+  if (versionSeparator <= 0) {
+    throw new Error(`Invalid pnpm lockfile package key: ${key}`);
+  }
+
+  return {
+    name: key.slice(0, versionSeparator),
+    version: key.slice(versionSeparator + 1),
+  };
+}
+
+function tarballFilename(name: string, version: string) {
+  return `${name.replace("/", "__")}-${version}.tgz`;
+}
+
+function parsePnpmLockfilePackages(lockfile: string): LockfilePackage[] {
+  const packages: LockfilePackage[] = [];
+  let inPackagesSection = false;
+  let currentKey: string | null = null;
+
+  for (const line of lockfile.split(/\r?\n/)) {
+    if (line === "packages:") {
+      inPackagesSection = true;
+      continue;
+    }
+
+    if (inPackagesSection && /^[a-zA-Z].*:/.test(line)) {
+      break;
+    }
+
+    if (!inPackagesSection) {
+      continue;
+    }
+
+    const packageKeyMatch = line.match(
+      /^  (?:(?:"([^"]+)")|([^\s:#][^:#]*)):\s*$/,
+    );
+
+    if (packageKeyMatch) {
+      currentKey = packageKeyMatch[1] ?? packageKeyMatch[2] ?? null;
+      continue;
+    }
+
+    if (currentKey === null) {
+      continue;
+    }
+
+    const integrityMatch = line.match(/integrity:\s*sha512-([^,}\s]+)/);
+
+    if (!integrityMatch) {
+      continue;
+    }
+
+    const { name, version } = splitPackageKey(currentKey);
+    const integrityHex = Buffer.from(integrityMatch[1], "base64").toString(
+      "hex",
+    );
+
+    packages.push({
+      filename: tarballFilename(name, version),
+      integrityHex,
+      name,
+      version,
+    });
+  }
+
+  return packages;
+}
+
 describe("Flatpak packaging", () => {
   test("targets current supported Flathub runtimes and both default architectures", () => {
     const manifestTemplate = readProjectFile(
@@ -136,16 +214,60 @@ describe("Flatpak packaging", () => {
     expect(metainfo).toContain("/v0.8.1/packaging/flatpak/screenshots/");
   });
 
-  test("keeps pnpm dependency sources in sync with the lockfile versions used by the app", () => {
-    const nodeSources = readProjectFile(
-      "packaging/flatpak/generated/node-sources.0.json",
+  test("keeps pnpm dependency sources in sync with the lockfile packages used by the app", () => {
+    const lockfilePackages = parsePnpmLockfilePackages(
+      readProjectFile("pnpm-lock.yaml"),
+    );
+    const nodeSources = JSON.parse(
+      readProjectFile("packaging/flatpak/generated/node-sources.0.json"),
+    ) as Array<{
+      dest?: string;
+      "dest-filename"?: string;
+      sha512?: string;
+      type: string;
+      contents?: string;
+    }>;
+    const manifestSource = nodeSources.find(
+      (source) => source["dest-filename"] === "pnpm-manifest.json",
     );
 
-    expect(nodeSources).toContain("@tauri-apps__api-2.11.0.tgz");
-    expect(nodeSources).toContain("react-19.2.5.tgz");
-    expect(nodeSources).toContain("vite-8.0.10.tgz");
-    expect(nodeSources).not.toContain("react-19.2.4.tgz");
-    expect(nodeSources).not.toContain("vite-7.3.1.tgz");
+    expect(manifestSource).toBeDefined();
+
+    const manifest = JSON.parse(manifestSource?.contents ?? "") as {
+      packages: Record<
+        string,
+        { integrity_hex: string; name: string; version: string }
+      >;
+      store_version: string;
+    };
+    const sourceTarballs = new Map(
+      nodeSources
+        .filter(
+          (source) =>
+            source.type === "file" &&
+            source.dest === "flatpak-node/pnpm-tarballs",
+        )
+        .map((source) => [source["dest-filename"], source.sha512]),
+    );
+
+    expect(manifest.store_version).toBe("v10");
+    expect(Object.keys(manifest.packages).sort()).toEqual(
+      lockfilePackages.map((pkg) => pkg.filename).sort(),
+    );
+    expect(Array.from(sourceTarballs.keys()).sort()).toEqual(
+      lockfilePackages.map((pkg) => pkg.filename).sort(),
+    );
+
+    for (const pkg of lockfilePackages) {
+      const manifestPackage = manifest.packages[pkg.filename];
+
+      expect(manifestPackage).toEqual({
+        integrity_hex: pkg.integrityHex,
+        name: pkg.name,
+        version: pkg.version,
+      });
+      expect(sourceTarballs.get(pkg.filename)).toBe(pkg.integrityHex);
+    }
   });
 
   test("release automation never opens initial Flathub submission PRs automatically", () => {
