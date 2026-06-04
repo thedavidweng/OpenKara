@@ -23,7 +23,7 @@ describe("LyricLine", () => {
     );
 
     expect(markup).not.toContain("cursor-pointer");
-    expect(markup).not.toContain("group-hover:underline");
+    expect(markup).not.toContain("group-hover/line:underline");
   });
 
   test("renders seekable lines with cursor-pointer and hover underline", () => {
@@ -37,7 +37,7 @@ describe("LyricLine", () => {
     );
 
     expect(markup).toContain("cursor-pointer");
-    expect(markup).toContain("group-hover:underline");
+    expect(markup).toContain("group-hover/line:underline");
   });
 
   test("renders word-level states for the active line without changing lyric timing behavior", () => {
