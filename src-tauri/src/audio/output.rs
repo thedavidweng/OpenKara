@@ -427,13 +427,21 @@ fn render_streaming_single(
     device_channels: usize,
 ) -> (usize, u64) {
     if gain == 0.0 {
-        // Drain the buffer to keep it flowing, but don't write to output
+        // Muted streaming tracks still advance so re-enabling a stem stays
+        // aligned with the shared render clock. Drain by source frames, not
+        // device frames, because common 44.1kHz→48kHz output resampling would
+        // otherwise skip too far while the stem is muted.
         let src_channels = consumer.channels;
         let output_frames = output.len() / device_channels;
-        let mut scratch = vec![0.0f32; output_frames * src_channels];
+        let src_frames = if consumer.sample_rate == device_sample_rate {
+            output_frames
+        } else {
+            (output_frames as f64 * consumer.sample_rate as f64 / device_sample_rate as f64).round()
+                as usize
+        };
+        let mut scratch = vec![0.0f32; src_frames * src_channels];
         let popped = consumer.pop_samples(&mut scratch);
-        let src_frames = (popped / src_channels) as u64;
-        return (0, src_frames);
+        return (0, (popped / src_channels) as u64);
     }
 
     let src_channels = consumer.channels;
@@ -964,5 +972,23 @@ mod tests {
         let rendered = super::render_streaming_single(&mut second, &mut consumer, 1.0, 8, 1);
         assert_eq!(rendered, (4, 2));
         assert_eq!(second, vec![2.0, 2.5, 3.0, 3.5]);
+    }
+
+    #[test]
+    fn muted_streaming_resample_advances_by_source_frames() {
+        use crate::audio::streaming;
+
+        let (mut prod, mut consumer) = streaming::create_stream_pair(4, 1);
+        let input = [0.0_f32, 1.0, 2.0, 3.0, 4.0, 5.0];
+        assert_eq!(prod.push_samples(&input), input.len());
+
+        let mut muted = vec![0.0_f32; 4];
+        let rendered = super::render_streaming_single(&mut muted, &mut consumer, 0.0, 8, 1);
+        assert_eq!(rendered, (0, 2));
+
+        let mut audible = vec![0.0_f32; 4];
+        let rendered = super::render_streaming_single(&mut audible, &mut consumer, 1.0, 8, 1);
+        assert_eq!(rendered, (4, 2));
+        assert_eq!(audible, vec![2.0, 2.5, 3.0, 3.5]);
     }
 }
