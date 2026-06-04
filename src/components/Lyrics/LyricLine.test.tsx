@@ -23,6 +23,21 @@ describe("LyricLine", () => {
     );
 
     expect(markup).not.toContain("cursor-pointer");
+    expect(markup).not.toContain("group-hover:underline");
+  });
+
+  test("renders seekable lines with cursor-pointer and hover underline", () => {
+    const markup = renderToStaticMarkup(
+      <LyricLine
+        line={{ time_ms: 1000, text: "seekable line", words: null }}
+        state="future"
+        adjustedMs={0}
+        lyricsFontStep={0}
+      />,
+    );
+
+    expect(markup).toContain("cursor-pointer");
+    expect(markup).toContain("group-hover:underline");
   });
 
   test("renders word-level states for the active line without changing lyric timing behavior", () => {
