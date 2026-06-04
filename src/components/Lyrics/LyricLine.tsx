@@ -106,7 +106,7 @@ export const LyricLine = memo(function LyricLine({
       ? getActiveWordIndex(line.words!, adjustedMs)
       : -1;
   const hoverClass = isSeekable
-    ? "group-hover:underline decoration-2 underline-offset-4"
+    ? "group-hover/line:underline decoration-2 underline-offset-4"
     : "";
 
   return (
@@ -114,7 +114,7 @@ export const LyricLine = memo(function LyricLine({
       onClick={isSeekable ? handleClick : undefined}
       className={`motion-surface flex flex-col items-center gap-1.5 text-center ${
         state === "active" ? "scale-105 drop-shadow-md" : ""
-      } ${isSeekable ? "cursor-pointer group" : ""}`}
+      } ${isSeekable ? "cursor-pointer group/line" : ""}`}
       style={
         presentation === "audience"
           ? {
