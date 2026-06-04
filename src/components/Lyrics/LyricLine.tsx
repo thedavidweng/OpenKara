@@ -105,13 +105,16 @@ export const LyricLine = memo(function LyricLine({
     hasWords && state === "active"
       ? getActiveWordIndex(line.words!, adjustedMs)
       : -1;
+  const hoverClass = isSeekable
+    ? "group-hover:underline decoration-2 underline-offset-4"
+    : "";
 
   return (
     <div
       onClick={isSeekable ? handleClick : undefined}
       className={`motion-surface flex flex-col items-center gap-1.5 text-center ${
         state === "active" ? "scale-105 drop-shadow-md" : ""
-      }`}
+      } ${isSeekable ? "cursor-pointer group" : ""}`}
       style={
         presentation === "audience"
           ? {
@@ -125,11 +128,10 @@ export const LyricLine = memo(function LyricLine({
     >
       {hasWords ? (
         <span
-          className={
-            presentation === "audience"
-              ? "font-bold tracking-tight"
-              : textSizeClass
-          }
+          className={(presentation === "audience"
+            ? `font-bold tracking-tight ${hoverClass}`
+            : `${textSizeClass} ${hoverClass}`
+          ).trim()}
           style={
             presentation === "audience"
               ? {
@@ -201,17 +203,16 @@ export const LyricLine = memo(function LyricLine({
         </span>
       ) : (
         <span
-          className={
-            presentation === "audience"
-              ? "motion-surface font-bold tracking-tight"
-              : `motion-surface ${textSizeClass} ${
-                  state === "plain" || state === "active"
-                    ? "text-white"
-                    : state === "past"
-                      ? "text-[var(--color-text-dimmer)]"
-                      : "text-[var(--color-active)]"
-                }`
-          }
+          className={(presentation === "audience"
+            ? `motion-surface font-bold tracking-tight ${hoverClass}`
+            : `motion-surface ${textSizeClass} ${
+                state === "plain" || state === "active"
+                  ? "text-white"
+                  : state === "past"
+                    ? "text-[var(--color-text-dimmer)]"
+                    : "text-[var(--color-active)]"
+              } ${hoverClass}`
+          ).trim()}
           style={
             presentation === "audience"
               ? {
