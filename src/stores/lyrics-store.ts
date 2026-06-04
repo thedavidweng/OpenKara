@@ -72,10 +72,12 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
         source: payload.source,
         offsetMs: payload.offset_ms,
         rawLrc: payload.raw_lrc,
+        isLoading: false,
       });
 
-      // Auto-upgrade: if lyrics are unsynced (all time_ms === 0) and not from LrcLib,
-      // try fetching synced lyrics from network
+      // Auto-upgrade: if lyrics are unsynced (all time_ms === 0) and not
+      // from LrcLib, try fetching synced lyrics from the network silently.
+      // isLoading is already false so the UI shows local lyrics immediately.
       if (
         payload.lines.length > 0 &&
         payload.source !== "lrc_lib" &&
@@ -84,6 +86,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
         try {
           const online = await api.fetchLyricsOnline(songId);
           if (
+            get().songId === songId &&
             online.lines.length > 0 &&
             online.lines.some((l) => l.time_ms > 0)
           ) {
@@ -95,16 +98,13 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
               rawLrc: online.raw_lrc,
             });
           }
-          // If online lyrics are also unsynced or empty, keep the original local lyrics (already set above)
         } catch {
           // Network failure is non-fatal; keep original local lyrics
         }
       }
     } catch (e) {
       notifyError(e);
-      set({ lines: [], source: null, rawLrc: "" });
-    } finally {
-      set({ isLoading: false });
+      set({ lines: [], source: null, rawLrc: "", isLoading: false });
     }
   },
 

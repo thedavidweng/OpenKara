@@ -233,6 +233,10 @@ impl PlaybackController {
                 consumer
                     .seek_target()
                     .store(target_frame as i64, std::sync::atomic::Ordering::Relaxed);
+                // Mark the consumer so the render callback won't prematurely
+                // clear is_buffering based on stale ring data before the
+                // decode thread has processed the seek and signaled a flush.
+                consumer.expect_flush();
             }
             // Set buffering while the decode threads seek and refill.
             self.is_buffering = true;

@@ -137,6 +137,7 @@ pub fn ring_capacity(sample_rate: u32, channels: usize) -> usize {
 /// Consumer side of a streaming audio track, held by the cpal callback.
 pub struct AudioConsumer {
     cons: ringbuf::HeapCons<f32>,
+    pending_samples: Vec<f32>,
     pub sample_rate: u32,
     pub channels: usize,
     /// Set by the producer when decode reaches EOF.
@@ -146,6 +147,10 @@ pub struct AudioConsumer {
     needs_flush: Arc<AtomicBool>,
     /// Shared seek target between consumer and producer.
     seek_target: Arc<SeekTarget>,
+    /// Set by PlaybackController::seek before the decode thread has a chance
+    /// to process the seek and signal a flush. Prevents the render callback
+    /// from prematurely clearing `is_buffering` based on stale ring data.
+    flush_expected: bool,
 }
 
 impl std::fmt::Debug for AudioConsumer {
@@ -162,7 +167,7 @@ impl std::fmt::Debug for AudioConsumer {
 impl AudioConsumer {
     /// Number of samples available to read right now.
     pub fn available_samples(&self) -> usize {
-        self.cons.occupied_len()
+        self.pending_samples.len() + self.cons.occupied_len()
     }
 
     /// Available duration in milliseconds.
@@ -176,12 +181,12 @@ impl AudioConsumer {
 
     /// Whether the buffer is below the low-water mark.
     pub fn is_below_low_water(&self) -> bool {
-        self.cons.occupied_len() < LOW_WATER_SAMPLES
+        self.available_samples() < LOW_WATER_SAMPLES
     }
 
     /// Whether the buffer is above the high-water mark.
     pub fn is_above_high_water(&self) -> bool {
-        self.cons.occupied_len() >= HIGH_WATER_SAMPLES
+        self.available_samples() >= HIGH_WATER_SAMPLES
     }
 
     /// Whether the producer has finished decoding all samples.
@@ -197,6 +202,8 @@ impl AudioConsumer {
     /// Acknowledge the flush — clears the flag and drains stale samples.
     pub fn acknowledge_flush(&mut self) {
         self.needs_flush.store(false, Ordering::Relaxed);
+        self.flush_expected = false;
+        self.pending_samples.clear();
         // Drain all stale samples that were pushed before the seek.
         let mut scratch = vec![0.0f32; self.cons.occupied_len()];
         let _ = self.cons.pop_slice(&mut scratch);
@@ -207,11 +214,46 @@ impl AudioConsumer {
         &self.seek_target
     }
 
+    /// Mark that a flush is expected (called during seek, before the decode
+    /// thread has processed the seek target).
+    pub fn expect_flush(&mut self) {
+        self.flush_expected = true;
+    }
+
+    /// Whether a flush is expected but hasn't been acknowledged yet.
+    pub fn is_flush_expected(&self) -> bool {
+        self.flush_expected
+    }
+
     /// Pop up to `max_samples` interleaved samples into `output`.
     /// Returns the number of samples actually popped (may be less if the
     /// buffer doesn't have enough).
     pub fn pop_samples(&mut self, output: &mut [f32]) -> usize {
-        self.cons.pop_slice(output)
+        let pending_count = self.pending_samples.len().min(output.len());
+        if pending_count > 0 {
+            output[..pending_count].copy_from_slice(&self.pending_samples[..pending_count]);
+            self.pending_samples.drain(..pending_count);
+        }
+
+        if pending_count == output.len() {
+            return pending_count;
+        }
+
+        pending_count + self.cons.pop_slice(&mut output[pending_count..])
+    }
+
+    /// Put samples back at the front of the next pop. Streaming resampling
+    /// reads a small lookahead window for interpolation; frames beyond the
+    /// committed render position must be preserved for the next callback.
+    pub(crate) fn prepend_samples(&mut self, samples: &[f32]) {
+        if samples.is_empty() {
+            return;
+        }
+
+        let mut pending = Vec::with_capacity(samples.len() + self.pending_samples.len());
+        pending.extend_from_slice(samples);
+        pending.append(&mut self.pending_samples);
+        self.pending_samples = pending;
     }
 }
 
@@ -327,11 +369,13 @@ pub fn create_stream_pair(sample_rate: u32, channels: usize) -> (AudioProducer, 
         },
         AudioConsumer {
             cons,
+            pending_samples: Vec::new(),
             sample_rate,
             channels,
             is_eof,
             needs_flush,
             seek_target,
+            flush_expected: false,
         },
     )
 }
@@ -492,19 +536,12 @@ pub fn spawn_decode_producer_with_proxy(
 /// The caller provides pre-probed metadata since the source may not support
 /// seeking back to re-probe.
 ///
-/// When `slow_flag` is provided, the decode producer checks it periodically
-/// (every decoded packet). When the flag is `true`, every other audio frame
-/// is dropped before pushing into the ring buffer, effectively halving the
-/// data rate while keeping the consumer's sample rate consistent. This lets
-/// playback continue on slow connections at the cost of audio quality.
-///
 /// Returns `(consumer, join_handle)`.
 pub fn spawn_decode_producer_from_source(
     source: Box<dyn symphonia::core::io::MediaSource>,
     extension: Option<&str>,
     metadata: &StreamMetadata,
     proxy: ProxyConfig,
-    slow_flag: Option<Arc<AtomicBool>>,
 ) -> Result<(AudioConsumer, JoinHandle<Result<(), DecodeError>>), DecodeError> {
     let (ring_rate, ring_channels) = if proxy.enabled {
         (proxy.target_sample_rate, proxy.target_channels)
@@ -524,16 +561,7 @@ pub fn spawn_decode_producer_from_source(
 
     let handle = std::thread::spawn(move || {
         let mss = MediaSourceStream::new(source, Default::default());
-        decode_mss_into_producer(
-            mss,
-            hint,
-            &label,
-            &mut prod,
-            sr,
-            ch,
-            &proxy,
-            slow_flag.as_deref(),
-        )
+        decode_mss_into_producer(mss, hint, &label, &mut prod, sr, ch, &proxy)
     });
 
     Ok((cons, handle))
@@ -652,28 +680,7 @@ fn decode_into_producer(
         expected_sample_rate,
         expected_channels,
         proxy,
-        None,
     )
-}
-
-/// Drop every other audio frame from interleaved samples. A "frame" is
-/// `channels` consecutive samples (e.g., L, R for stereo). Frame 0 is
-/// kept, frame 1 is dropped, frame 2 is kept, etc.
-fn decimate_frames(samples: &[f32], channels: usize) -> Vec<f32> {
-    if channels == 0 {
-        return samples.to_vec();
-    }
-    let frame_size = channels;
-    let num_frames = samples.len() / frame_size;
-    // Keep even-indexed frames (0, 2, 4, ...).
-    let keep = (num_frames + 1) / 2;
-    let mut out = Vec::with_capacity(keep * frame_size);
-    for i in (0..num_frames).step_by(2) {
-        let start = i * frame_size;
-        let end = (start + frame_size).min(samples.len());
-        out.extend_from_slice(&samples[start..end]);
-    }
-    out
 }
 
 /// Decode from a `MediaSourceStream` into the producer. Used for both local
@@ -686,7 +693,6 @@ fn decode_mss_into_producer(
     expected_sample_rate: u32,
     expected_channels: usize,
     proxy: &ProxyConfig,
-    slow_flag: Option<&AtomicBool>,
 ) -> Result<(), DecodeError> {
     let probed = symphonia::default::get_probe()
         .format(
@@ -763,10 +769,8 @@ fn decode_mss_into_producer(
         sample_buffer.copy_interleaved_ref(decoded);
         let samples = sample_buffer.samples();
 
-        // Apply proxy resampling if enabled, otherwise check slow flag
-        // for dynamic frame decimation.
+        // Apply proxy resampling if enabled.
         let resampled;
-        let decimated;
         let push_samples: &[f32] = if proxy.enabled {
             resampled = resample_interleaved(
                 samples,
@@ -776,9 +780,6 @@ fn decode_mss_into_producer(
                 proxy.target_channels,
             );
             &resampled
-        } else if slow_flag.is_some_and(|f| f.load(Ordering::Relaxed)) {
-            decimated = decimate_frames(samples, expected_channels);
-            &decimated
         } else {
             samples
         };
@@ -1262,30 +1263,6 @@ mod tests {
     }
 
     #[test]
-    fn decimate_frames_drops_every_other_frame() {
-        // Stereo: [L0, R0, L1, R1, L2, R2, L3, R3]
-        let samples = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-        let result = super::decimate_frames(&samples, 2);
-        // Keeps frames 0, 2: [L0, R0, L2, R2]
-        assert_eq!(result, vec![1.0, 2.0, 5.0, 6.0]);
-    }
-
-    #[test]
-    fn decimate_frames_mono() {
-        let samples = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let result = super::decimate_frames(&samples, 1);
-        // Keeps frames 0, 2, 4: [1.0, 3.0, 5.0]
-        assert_eq!(result, vec![1.0, 3.0, 5.0]);
-    }
-
-    #[test]
-    fn decimate_frames_empty_channels() {
-        let samples = vec![1.0, 2.0, 3.0];
-        let result = super::decimate_frames(&samples, 0);
-        assert_eq!(result, vec![1.0, 2.0, 3.0]);
-    }
-
-    #[test]
     fn proxy_decode_producer_downsamples() {
         use std::path::PathBuf;
 
@@ -1315,5 +1292,39 @@ mod tests {
         // fixture.wav is 1s: 44100 stereo → 22050 mono = 22050 samples.
         assert_eq!(consumer.available_samples(), 22_050);
         assert_eq!(consumer.available_ms(), 1000);
+    }
+
+    #[test]
+    fn source_decode_preserves_audio_frames() {
+        use std::fs::File;
+        use std::path::PathBuf;
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("audio")
+            .join("fixture.wav");
+        let file = File::open(path).expect("fixture should open");
+        let metadata = StreamMetadata {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 1_000,
+        };
+
+        let (consumer, handle) = spawn_decode_producer_from_source(
+            Box::new(file),
+            Some("wav"),
+            &metadata,
+            ProxyConfig::none(),
+        )
+        .expect("spawn should succeed");
+
+        handle
+            .join()
+            .expect("thread should not panic")
+            .expect("decode should succeed");
+
+        assert_eq!(consumer.available_samples(), 88_200);
+        assert_eq!(consumer.available_ms(), 1_000);
     }
 }

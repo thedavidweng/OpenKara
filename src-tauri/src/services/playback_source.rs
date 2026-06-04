@@ -294,16 +294,14 @@ fn load_remote_streaming_source(
     let startup_bytes = file_size.min(16 * 1024);
     let decode_source = RemoteMediaSource::new(cache, fetch_tx).with_startup_buffer(startup_bytes);
 
-    // Spawn the decode producer from the remote source.
-    // Pass the bandwidth monitor's slow flag so the decode producer can
-    // dynamically switch to frame decimation when the connection is slow.
-    let slow_flag = bandwidth_monitor.slow_flag();
+    // Spawn the decode producer from the remote source. Slow networks should
+    // surface as buffering/retry behavior, not PCM frame dropping, because
+    // changing decoded samples audibly degrades karaoke playback quality.
     let (consumer, decode_handle) = streaming::spawn_decode_producer_from_source(
         Box::new(decode_source),
         extension.as_deref(),
         &probe_metadata,
         streaming::ProxyConfig::none(),
-        Some(slow_flag),
     )
     .map_err(|e| PlaybackError::AudioDecodeFailed(e.to_string()))?;
 

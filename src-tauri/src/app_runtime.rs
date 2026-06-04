@@ -221,6 +221,7 @@ fn spawn_playback_position_emitter<R: Runtime>(
         let mut last_emitted_position = None;
         let mut was_playing = false;
         let mut last_song_id: Option<String> = None;
+        let mut last_emitted_state: Option<String> = None;
 
         loop {
             thread::sleep(Duration::from_millis(PLAYBACK_POSITION_POLL_INTERVAL_MS));
@@ -253,11 +254,13 @@ fn spawn_playback_position_emitter<R: Runtime>(
 
             if snapshot.song_id.is_none() {
                 last_emitted_position = None;
+                last_emitted_state = None;
                 continue;
             }
 
             if airplay_audience_active.load(Ordering::SeqCst) {
                 last_emitted_position = Some(snapshot.position_ms);
+                last_emitted_state = Some(snapshot.state.clone());
                 continue;
             }
 
@@ -265,12 +268,18 @@ fn spawn_playback_position_emitter<R: Runtime>(
                 .map(|last| snapshot.position_ms.abs_diff(last))
                 .unwrap_or(u64::MAX);
 
-            if position_delta_ms > 16 {
+            // Emit when the playback state changes (e.g. buffering → playing)
+            // even if the position delta is small. Without this, the frontend
+            // can remain stuck with a stale is_playing=false after a seek.
+            let state_changed = last_emitted_state.as_deref() != Some(&snapshot.state);
+
+            if position_delta_ms > 16 || state_changed {
                 let _ = app_handle.emit(
                     audio::playback::PLAYBACK_POSITION_EVENT,
                     audio::playback::playback_position_event(&snapshot),
                 );
                 last_emitted_position = Some(snapshot.position_ms);
+                last_emitted_state = Some(snapshot.state.clone());
             }
         }
     });

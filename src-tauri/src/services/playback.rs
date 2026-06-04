@@ -336,7 +336,7 @@ fn play_track_background<R: Runtime>(
         library_root,
         song,
     )? {
-        let snapshot = {
+        let mut snapshot = {
             let Ok(mut controller) = playback_arc.lock() else {
                 return Err(PlaybackError::Internal(
                     "playback controller lock was poisoned".to_owned(),
@@ -373,6 +373,9 @@ fn play_track_background<R: Runtime>(
                     ));
                 };
                 controller.attach_streaming_stems(&song.hash, stems_source.streaming_track)?;
+                // Re-read snapshot so the emitted event reflects has_stems
+                // and stem_mode from the newly attached streaming stems.
+                snapshot = controller.snapshot();
                 // Log stem decode errors in the background.
                 for handle in stems_source.decode_handles {
                     let song_id = song.hash.clone();
