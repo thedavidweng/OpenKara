@@ -1,6 +1,6 @@
 # OpenKara 播放优化计划：流式解码 + 多轨低延迟 + 低带宽韧性
 
-> Status: **implemented**（P0–P5 全部完成，已合并 main）。
+> Status: **implemented**（P0–P4 完成，P5 低码率代理因音质风险已禁用）。
 >
 > 目标：把 OpenKara 的播放体验拉齐到原生本地音乐播放器——多轨（伴奏/人声）启播延迟低、内存占用可控；对网盘/远程库在低带宽下边缓冲边播、不预先整文件下载，并具备欠载韧性。
 >
@@ -20,7 +20,7 @@
 
 ### 非目标
 
-- **真正的 ABR（自适应码率）**：OpenKara 远程库是用户自己的**单一画质**原始文件，没有服务端多档转码与 manifest，因此 DASH/HLS 那套 ABR 不适用。低带宽策略走"缓冲 + prefetch + 可选低码率代理"，不做多 rendition 切换。
+- **真正的 ABR（自适应码率）**：OpenKara 远程库是用户自己的**单一画质**原始文件，没有服务端多档转码与 manifest，因此 DASH/HLS 那套 ABR 不适用。低带宽策略走"缓冲 + prefetch"，不做多 rendition 切换，也不在播放路径里降质改写 PCM。
 - **浏览器侧播放**：OpenKara 在 Rust 后端用 `symphonia` 解码、`cpal` 输出，不经过 WebView `<audio>`，因此 Shaka Player / MSE 一律不引入。
 - **重写分离（separation）链路**：本计划只动播放/解码/取数路径，不动 Demucs 分离与 stems 产物格式。
 
@@ -259,7 +259,7 @@ impl MediaSource for RemoteMediaSource {
 5. **持久化**：退出/暂停时将 `downloaded` RangeSet 序列化为 `.index` JSON 文件。重启时加载，已缓存块免重下。`RangeSet` 覆盖 `[0, file_size)` 时标记为"完整缓存"，等价于现有整文件缓存。
 6. **回退**：provider 不支持 Range（HTTP 416）→ `FetchEvent::RangeNotSupported` → 回退到 `ensure_remote_file_cached` 整文件路径。
 7. **韧性**：块请求失败按指数退避重试（1s → 2s → 4s → 8s，上限 30s）；URL 过期（403/410）→ `FetchEvent::UrlExpired`；连续失败超 5 次 → `FetchEvent::ConsecutiveFailures` → `playback-error` 事件。
-8. **低带宽自适应**：`BandwidthMonitor` 追踪 EWMA 带宽，低于 128kbps 时 `is_slow` 标志激活帧抽取模式，decode producer 每隔一帧丢弃一帧以降低数据率。
+8. **低带宽自适应**：`BandwidthMonitor` 追踪 EWMA 带宽；低带宽时只能驱动 buffering / retry / prefetch 策略，不能丢弃已解码音频帧。
 
 ### 4.4 时钟与 `buffering` 状态（流式化前置）
 
@@ -426,7 +426,7 @@ pub buffered_ms: u64,  // 当前已缓冲的最大安全播放位置（UI 灰色
 
 #### P4 验收标准
 
-- [x] 限速网络（1Mbps）下 128kbps MP3 流畅播放无卡顿（帧抽取模式激活）
+- [x] 限速网络（1Mbps）下 128kbps MP3 通过缓冲与预取维持播放；不得启用会改变 PCM 的帧抽取模式
 - [x] 网络抖动（随机丢包 5%）下可恢复、不崩溃
 - [x] URL 过期后自动刷新、播放继续（后端收到 `UrlExpired` 后自动 fallback 到整文件播放并触发重建播放源）
 - [x] 连续失败时前端收到 `playback-error` 事件
@@ -434,7 +434,7 @@ pub buffered_ms: u64,  // 当前已缓冲的最大安全播放位置（UI 灰色
 
 ---
 
-### Phase P5（可选）：低码率代理
+### Phase P5（禁用）：低码率代理
 
 **目标**：极慢网下动态降低数据率，保持播放流畅。
 
@@ -442,9 +442,9 @@ pub buffered_ms: u64,  // 当前已缓冲的最大安全播放位置（UI 灰色
 
 **风险**：中
 
-**实现**：采用帧抽取方案（frame decimation）替代完整转码——当 `BandwidthMonitor.is_slow()` 为 true 时，decode producer 每隔一帧丢弃一帧，数据率减半但采样率保持不变。`BandwidthMonitor` 的 `is_slow` 标志通过 `Arc<AtomicBool>` 共享给 decode producer，实现实时动态切换。
+**结果**：禁用。帧抽取会直接改变解码后的 PCM，导致播放听感、节奏和音色明显劣化；这与 Karaoke 播放质量目标冲突。
 
-**范围**：后端在 `streaming.rs` 中实现 `decimate_frames()` 函数 + `BandwidthMonitor.slow_flag()` 共享机制；默认关闭，带宽低于 128kbps 时自动激活。✅ 已实现
+**当前策略**：远程低带宽只通过 buffering、prefetch、重试和整文件回退处理。除非未来引入真正的服务端多 rendition 或高质量转码链路，否则播放路径不得用丢帧来伪装低码率代理。
 
 ---
 
@@ -455,7 +455,7 @@ P0 → P1 → P2    解决本地多轨延迟与内存（最高价值、纯本地
           ↘
            P3 → P4    解决远程低带宽（P3 可与 P2 并行，仅依赖 P1）
                   ↘
-                   P5   可选
+                   P5   禁用
 ```
 
 ---
@@ -516,5 +516,5 @@ pnpm tauri build --debug --no-bundle --ci
 | **多轨锁步**       | 单一解码协调器 + 整体 buffering（一人卡顿全员等待）  | Ardour DAW xrun 报告机制                                |
 | **远程分块缓存**   | 单一缓存文件 + `RangeSet` 内存索引 + `.index` 持久化 | librespot `range_set.rs` + `fetch/mod.rs`（源码级验证） |
 | **预取参数**       | 启播 1s、预读 5s、最小块 64KB                        | librespot `AudioFetchParams` 默认值                     |
-| **不做 ABR**       | 缓冲 + prefetch（+ 可选 P5 低码率代理）              | 远程为单画质用户文件，无多 rendition                    |
+| **不做 ABR**       | 缓冲 + prefetch；禁止播放路径丢帧降质                | 远程为单画质用户文件，无多 rendition                    |
 | **实时回调零阻塞** | 解码/网络全部移出 cpal 回调线程                      | 实时音频工程最佳实践（Ross Bencina, timur.audio）       |

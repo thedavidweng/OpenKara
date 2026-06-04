@@ -83,20 +83,33 @@ pub fn render_output_buffer(
 
         let below_low = any_consumer_below_low_water(streaming);
         let all_above_high = all_consumers_above_high_water(streaming);
-        let any_flush_expected = any_consumer_flush_expected(streaming);
 
-        if below_low || any_flush_expected {
+        if below_low {
             playback.is_buffering = true;
+            // Clear any active fade — buffer underrun means we can't produce audio.
+            playback.fade = crate::audio::playback::FadeState::None;
         } else if playback.is_buffering && all_above_high {
             playback.is_buffering = false;
         }
     }
 
+    // Check if a fade-out has completed since the last callback. If so,
+    // finalize it (set is_playing = false) before taking the snapshot so
+    // the snapshot correctly reports paused state.
+    playback.finalize_fade_if_complete();
+
     // Take the snapshot AFTER the buffer-level update so is_playing reflects
     // the current buffering state (the snapshot taken before the update may
     // still carry the old is_buffering flag).
     let snapshot = playback.snapshot();
-    if !snapshot.is_playing {
+    // During a fade-out, is_playing stays true until the envelope completes.
+    // If is_playing is false and no fade-out is active, output silence.
+    if !snapshot.is_playing
+        && !matches!(
+            playback.fade,
+            crate::audio::playback::FadeState::FadingOut { .. }
+        )
+    {
         return 0;
     }
 
@@ -253,6 +266,17 @@ pub fn render_output_buffer(
 
         result
     };
+
+    // Apply fade-in/fade-out envelope if active.
+    if let Some(fade_gain) = playback.take_fade_gain() {
+        if fade_gain < 1.0 {
+            for sample in output.iter_mut() {
+                *sample *= fade_gain;
+            }
+        }
+        // When fade_gain reaches 0.0 (fade-out complete), take_fade_gain already
+        // set is_playing = false, so the next callback will return 0 immediately.
+    }
 
     // Advance the render frame counter so the next callback continues seamlessly
     playback.advance_render_frame(src_frames_advanced);
@@ -638,32 +662,6 @@ fn all_consumers_above_high_water(streaming: &crate::audio::streaming::Streaming
                 && drums.is_above_high_water()
                 && bass.is_above_high_water()
                 && other.is_above_high_water()
-        }
-    }
-}
-
-/// Whether any consumer is still waiting for a flush to be signaled by
-/// its decode thread. True between `PlaybackController::seek` (which sets
-/// the seek target) and the render callback acknowledging the flush.
-fn any_consumer_flush_expected(streaming: &crate::audio::streaming::StreamingTrack) -> bool {
-    match streaming {
-        crate::audio::streaming::StreamingTrack::Single { consumer } => {
-            consumer.is_flush_expected()
-        }
-        crate::audio::streaming::StreamingTrack::TwoStem {
-            vocals,
-            accompaniment,
-        } => vocals.is_flush_expected() || accompaniment.is_flush_expected(),
-        crate::audio::streaming::StreamingTrack::FourStem {
-            vocals,
-            drums,
-            bass,
-            other,
-        } => {
-            vocals.is_flush_expected()
-                || drums.is_flush_expected()
-                || bass.is_flush_expected()
-                || other.is_flush_expected()
         }
     }
 }

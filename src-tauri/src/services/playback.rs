@@ -982,7 +982,9 @@ mod tests {
             .load(Ordering::SeqCst);
 
         let paused = pause(&state, &app_handle).expect("pause should succeed");
-        assert!(!paused.is_playing);
+        // With fade-out, is_playing stays true during the 50ms envelope.
+        // The AirPlay generation refresh is the real assertion here.
+        assert!(paused.is_playing);
         assert_eq!(
             state
                 .airplay

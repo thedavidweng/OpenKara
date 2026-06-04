@@ -48,6 +48,21 @@ fn render_output_buffer_writes_audio_when_playing_and_silence_when_paused() {
 
     controller.pause(100).expect("pause should succeed");
 
+    // During the 50ms fade-out, audio is still rendered (with decreasing gain).
+    let mut fading_output = vec![0.0; 256];
+    let rendered_during_fade = render_output_buffer(
+        &mut controller,
+        &mut fading_output,
+        TEST_SAMPLE_RATE,
+        TEST_CHANNELS,
+    );
+    assert!(
+        rendered_during_fade > 0,
+        "audio should render during fade-out"
+    );
+
+    // After the fade completes, output should be silence.
+    std::thread::sleep(std::time::Duration::from_millis(60));
     let mut paused_output = vec![1.0; 256];
     let rendered_after_pause = render_output_buffer(
         &mut controller,

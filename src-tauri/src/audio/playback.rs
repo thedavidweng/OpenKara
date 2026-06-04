@@ -2,7 +2,10 @@ use crate::audio::decode::DecodedAudio;
 use crate::audio::error::PlaybackError;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+/// Duration of the fade-in/fade-out envelope applied to play/pause transitions.
+const FADE_DURATION: Duration = Duration::from_millis(50);
 
 pub const PLAYBACK_POSITION_EVENT: &str = "playback-position";
 pub const PLAYBACK_ENDED_EVENT: &str = "playback-ended";
@@ -109,6 +112,16 @@ pub(crate) struct LoadedTrack {
     pub(crate) streaming: Option<super::streaming::StreamingTrack>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum FadeState {
+    /// No fade active.
+    None,
+    /// Fading in (volume ramping up) after a play command.
+    FadingIn { start: Instant },
+    /// Fading out (volume ramping down) after a pause command.
+    FadingOut { start: Instant },
+}
+
 #[derive(Debug)]
 pub struct PlaybackController {
     pub(crate) current_track: Option<LoadedTrack>,
@@ -119,6 +132,8 @@ pub struct PlaybackController {
     /// `snapshot()` reports `state: "buffering"`. Set by the streaming layer
     /// (P1/P2) on underrun; cleared when the buffer refills.
     pub(crate) is_buffering: bool,
+    /// Active fade envelope for play/pause transitions.
+    pub(crate) fade: FadeState,
 }
 
 impl Default for PlaybackController {
@@ -129,6 +144,7 @@ impl Default for PlaybackController {
             volume: 1.0,
             stem_volumes: StemVolumes::default(),
             is_buffering: false,
+            fade: FadeState::None,
         }
     }
 }
@@ -196,6 +212,9 @@ impl PlaybackController {
             .as_mut()
             .ok_or_else(|| PlaybackError::InvalidPlaybackState("no track is loaded".to_owned()))?;
         track.is_playing = true;
+        self.fade = FadeState::FadingIn {
+            start: Instant::now(),
+        };
 
         Ok(self.snapshot())
     }
@@ -205,7 +224,12 @@ impl PlaybackController {
             .current_track
             .as_mut()
             .ok_or_else(|| PlaybackError::InvalidPlaybackState("no track is loaded".to_owned()))?;
-        track.is_playing = false;
+        // Start a fade-out. The render callback will set is_playing = false
+        // once the fade envelope completes.
+        self.fade = FadeState::FadingOut {
+            start: Instant::now(),
+        };
+        let _ = track; // keep the borrow alive for the duration check above
 
         Ok(self.snapshot())
     }
@@ -215,6 +239,8 @@ impl PlaybackController {
         target_ms: u64,
         _now_ms: u64,
     ) -> Result<PlaybackStateSnapshot, PlaybackError> {
+        // Cancel any active fade — seek should restart audio cleanly.
+        self.fade = FadeState::None;
         let track = self
             .current_track
             .as_mut()
@@ -233,10 +259,6 @@ impl PlaybackController {
                 consumer
                     .seek_target()
                     .store(target_frame as i64, std::sync::atomic::Ordering::Relaxed);
-                // Mark the consumer so the render callback won't prematurely
-                // clear is_buffering based on stale ring data before the
-                // decode thread has processed the seek and signaled a flush.
-                consumer.expect_flush();
             }
             // Set buffering while the decode threads seek and refill.
             self.is_buffering = true;
@@ -431,6 +453,7 @@ impl PlaybackController {
     pub fn clear_track(&mut self) {
         self.current_track = None;
         self.loading_song_id = None;
+        self.fade = FadeState::None;
     }
 
     /// Clear a pending background load when decode/start fails for the given song.
@@ -459,6 +482,51 @@ impl PlaybackController {
     pub fn advance_render_frame(&mut self, frames: u64) {
         if let Some(track) = &mut self.current_track {
             track.render_frame += frames;
+        }
+    }
+
+    /// If a fade-out has elapsed past `FADE_DURATION`, finalize it: set
+    /// `is_playing = false` and clear the fade state.  Called before
+    /// `snapshot()` so the snapshot correctly reports the paused state.
+    pub(crate) fn finalize_fade_if_complete(&mut self) {
+        if let FadeState::FadingOut { start } = self.fade {
+            if start.elapsed() >= FADE_DURATION {
+                self.fade = FadeState::None;
+                if let Some(track) = &mut self.current_track {
+                    track.is_playing = false;
+                }
+            }
+        }
+    }
+
+    /// Compute the fade gain to apply to the rendered buffer.  Returns `None`
+    /// if no fade is active, or `Some(gain)` with the gain to multiply into
+    /// every output sample.
+    ///
+    /// For fade-ins, resets `fade` to `None` once the envelope completes.
+    pub(crate) fn take_fade_gain(&mut self) -> Option<f32> {
+        match self.fade {
+            FadeState::None => None,
+            FadeState::FadingIn { start } => {
+                let elapsed = start.elapsed();
+                if elapsed >= FADE_DURATION {
+                    self.fade = FadeState::None;
+                    Some(1.0)
+                } else {
+                    Some(elapsed.as_secs_f32() / FADE_DURATION.as_secs_f32())
+                }
+            }
+            FadeState::FadingOut { start } => {
+                let elapsed = start.elapsed();
+                if elapsed >= FADE_DURATION {
+                    // Already finalized by finalize_fade_if_complete; this
+                    // branch is a safety net.
+                    self.fade = FadeState::None;
+                    Some(0.0)
+                } else {
+                    Some(1.0 - elapsed.as_secs_f32() / FADE_DURATION.as_secs_f32())
+                }
+            }
         }
     }
 }
