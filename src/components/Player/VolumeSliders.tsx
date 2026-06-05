@@ -262,7 +262,7 @@ export function VolumeSliders({
             }}
             disabled={!stemsAvailable}
             aria-label={triggerLabel}
-            className={`motion-icon-button flex rounded-xl p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 ${
+            className={`motion-icon-button flex rounded-xl p-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
               stemsAvailable
                 ? "text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-white"
                 : "text-[var(--color-text-dimmer)]"
@@ -328,7 +328,7 @@ export function VolumeSliders({
               aria-label={
                 isExpanded ? t("stems.collapseStems") : t("stems.expandStems")
               }
-              className="motion-icon-button flex h-4 w-4 items-center justify-center rounded-full text-[var(--color-text-dimmer)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-control-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
+              className="motion-icon-button flex h-4 w-4 items-center justify-center rounded-full text-[var(--color-text-dimmer)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-control-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
             >
               <ChevronDown
                 size={12}

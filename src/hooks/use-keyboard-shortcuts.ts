@@ -109,6 +109,18 @@ export function handleAppKeyDown(
 
   const { snapshot, resume, pause, seek, setVolume, positionMs } = player;
 
+  // Don't intercept arrow keys when focus is inside a dialog or panel that
+  // has its own keyboard navigation (e.g. settings, modals).  This lets the
+  // browser's native focus traversal work in those contexts.
+  const target = e.target as HTMLElement | null;
+  if (
+    target?.closest(
+      '[role="dialog"], [data-dialog], [role="listbox"], [role="menu"]',
+    )
+  ) {
+    return false;
+  }
+
   switch (e.code) {
     case "Space": {
       e.preventDefault();

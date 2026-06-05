@@ -61,6 +61,7 @@ pub fn ensure_output_thread(
 pub fn render_output_buffer(
     playback: &mut PlaybackController,
     output: &mut [f32],
+    stem_scratch: &mut Vec<f32>,
     device_sample_rate: u32,
     device_channels: usize,
 ) -> usize {
@@ -134,6 +135,7 @@ pub fn render_output_buffer(
                 render_streaming_single(
                     output,
                     consumer,
+                    stem_scratch,
                     master,
                     device_sample_rate,
                     device_channels,
@@ -146,6 +148,7 @@ pub fn render_output_buffer(
                 output,
                 vocals,
                 accompaniment,
+                stem_scratch,
                 master,
                 sv,
                 device_sample_rate,
@@ -162,6 +165,7 @@ pub fn render_output_buffer(
                 drums,
                 bass,
                 other,
+                stem_scratch,
                 master,
                 sv,
                 device_sample_rate,
@@ -419,9 +423,13 @@ fn mix_stem_linearly_resampled(
 /// Render a single streaming track into the output buffer.
 /// Pops samples from the ring buffer consumer and applies gain.
 /// Returns (rendered_output_samples, source_frames_consumed).
+///
+/// `scratch` is a reusable buffer — callers pass one pre-allocated instance to
+/// avoid `vec![]` allocations on the realtime audio thread.
 fn render_streaming_single(
     output: &mut [f32],
     consumer: &mut crate::audio::streaming::AudioConsumer,
+    scratch: &mut Vec<f32>,
     gain: f32,
     device_sample_rate: u32,
     device_channels: usize,
@@ -439,8 +447,8 @@ fn render_streaming_single(
             (output_frames as f64 * consumer.sample_rate as f64 / device_sample_rate as f64).round()
                 as usize
         };
-        let mut scratch = vec![0.0f32; src_frames * src_channels];
-        let popped = consumer.pop_samples(&mut scratch);
+        scratch.resize(src_frames * src_channels, 0.0);
+        let popped = consumer.pop_samples(scratch);
         return (0, (popped / src_channels) as u64);
     }
 
@@ -450,8 +458,8 @@ fn render_streaming_single(
 
     if src_rate == device_sample_rate {
         // Same rate — direct pop with channel mapping
-        let mut scratch = vec![0.0f32; output_frames * src_channels];
-        let popped = consumer.pop_samples(&mut scratch);
+        scratch.resize(output_frames * src_channels, 0.0);
+        let popped = consumer.pop_samples(scratch);
         let src_frames = popped / src_channels;
 
         for out_frame in 0..src_frames {
@@ -471,8 +479,8 @@ fn render_streaming_single(
         // Different rate — linear interpolation resampling
         let rate_ratio = src_rate as f64 / device_sample_rate as f64;
         let needed_src_frames = (output_frames as f64 * rate_ratio).ceil() as usize + 1;
-        let mut scratch = vec![0.0f32; needed_src_frames * src_channels];
-        let popped = consumer.pop_samples(&mut scratch);
+        scratch.resize(needed_src_frames * src_channels, 0.0);
+        let popped = consumer.pop_samples(scratch);
         let available_src_frames = popped / src_channels;
 
         let mut written = 0;
@@ -522,6 +530,7 @@ fn render_streaming_two_stem(
     output: &mut [f32],
     vocals: &mut crate::audio::streaming::AudioConsumer,
     accompaniment: &mut crate::audio::streaming::AudioConsumer,
+    scratch: &mut Vec<f32>,
     master: f32,
     sv: StemVolumes,
     device_sample_rate: u32,
@@ -531,6 +540,7 @@ fn render_streaming_two_stem(
     let (r1, f1) = render_streaming_single(
         output,
         vocals,
+        scratch,
         master * sv.vocals,
         device_sample_rate,
         device_channels,
@@ -538,6 +548,7 @@ fn render_streaming_two_stem(
     let (r2, f2) = render_streaming_single(
         output,
         accompaniment,
+        scratch,
         master * accomp_gain,
         device_sample_rate,
         device_channels,
@@ -552,6 +563,7 @@ fn render_streaming_four_stem(
     drums: &mut crate::audio::streaming::AudioConsumer,
     bass: &mut crate::audio::streaming::AudioConsumer,
     other: &mut crate::audio::streaming::AudioConsumer,
+    scratch: &mut Vec<f32>,
     master: f32,
     sv: StemVolumes,
     device_sample_rate: u32,
@@ -560,6 +572,7 @@ fn render_streaming_four_stem(
     let (r1, f1) = render_streaming_single(
         output,
         vocals,
+        scratch,
         master * sv.vocals,
         device_sample_rate,
         device_channels,
@@ -567,6 +580,7 @@ fn render_streaming_four_stem(
     let (r2, f2) = render_streaming_single(
         output,
         drums,
+        scratch,
         master * sv.drums,
         device_sample_rate,
         device_channels,
@@ -574,6 +588,7 @@ fn render_streaming_four_stem(
     let (r3, f3) = render_streaming_single(
         output,
         bass,
+        scratch,
         master * sv.bass,
         device_sample_rate,
         device_channels,
@@ -581,6 +596,7 @@ fn render_streaming_four_stem(
     let (r4, f4) = render_streaming_single(
         output,
         other,
+        scratch,
         master * sv.other,
         device_sample_rate,
         device_channels,
@@ -687,6 +703,11 @@ where
     let channels = config.channels as usize;
     let sample_rate = config.sample_rate;
     let mut scratch = Vec::<f32>::new();
+    // Pre-allocated scratch buffer for per-stem pop operations inside the audio
+    // callback.  Reusing one buffer across all stems avoids `vec![]` allocations
+    // on the realtime thread — after the first callback the capacity is sufficient
+    // and `resize` becomes a no-op memset.
+    let mut stem_scratch = Vec::<f32>::new();
 
     let stream = device
         .build_output_stream(
@@ -703,8 +724,13 @@ where
                 // tick rather than stalling the device callback.
                 let mut rendered_samples = 0;
                 if let Ok(mut controller) = playback.try_lock() {
-                    rendered_samples =
-                        render_output_buffer(&mut controller, &mut scratch, sample_rate, channels);
+                    rendered_samples = render_output_buffer(
+                        &mut controller,
+                        &mut scratch,
+                        &mut stem_scratch,
+                        sample_rate,
+                        channels,
+                    );
                 } else {
                     scratch.fill(0.0);
                 }
@@ -923,8 +949,13 @@ mod tests {
         // 1st callback: buffer is empty → below low water → is_buffering = true.
         let device_channels = 2;
         let mut output = vec![0.0f32; 512 * device_channels];
-        let rendered =
-            render_output_buffer(&mut controller, &mut output, sample_rate, device_channels);
+        let rendered = render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            sample_rate,
+            device_channels,
+        );
         assert_eq!(rendered, 0);
         assert!(
             controller.is_buffering,
@@ -935,8 +966,13 @@ mod tests {
         // Before the fix, this would early-return without checking buffer levels,
         // permanently locking the player in "buffering" state.
         output.fill(0.0);
-        let rendered =
-            render_output_buffer(&mut controller, &mut output, sample_rate, device_channels);
+        let rendered = render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            sample_rate,
+            device_channels,
+        );
         assert_eq!(rendered, 0);
 
         // Simulate the decode thread filling the buffer past the high-water mark.
@@ -946,8 +982,13 @@ mod tests {
 
         // 3rd callback: buffer is now above high water → is_buffering clears.
         output.fill(0.0);
-        let rendered =
-            render_output_buffer(&mut controller, &mut output, sample_rate, device_channels);
+        let rendered = render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            sample_rate,
+            device_channels,
+        );
         assert!(
             !controller.is_buffering,
             "buffering flag should clear once buffer refills"
@@ -964,12 +1005,15 @@ mod tests {
         assert_eq!(prod.push_samples(&input), input.len());
 
         let mut first = vec![0.0_f32; 4];
-        let rendered = super::render_streaming_single(&mut first, &mut consumer, 1.0, 8, 1);
+        let mut scratch = Vec::new();
+        let rendered =
+            super::render_streaming_single(&mut first, &mut consumer, &mut scratch, 1.0, 8, 1);
         assert_eq!(rendered, (4, 2));
         assert_eq!(first, vec![0.0, 0.5, 1.0, 1.5]);
 
         let mut second = vec![0.0_f32; 4];
-        let rendered = super::render_streaming_single(&mut second, &mut consumer, 1.0, 8, 1);
+        let rendered =
+            super::render_streaming_single(&mut second, &mut consumer, &mut scratch, 1.0, 8, 1);
         assert_eq!(rendered, (4, 2));
         assert_eq!(second, vec![2.0, 2.5, 3.0, 3.5]);
     }
@@ -983,11 +1027,14 @@ mod tests {
         assert_eq!(prod.push_samples(&input), input.len());
 
         let mut muted = vec![0.0_f32; 4];
-        let rendered = super::render_streaming_single(&mut muted, &mut consumer, 0.0, 8, 1);
+        let mut scratch = Vec::new();
+        let rendered =
+            super::render_streaming_single(&mut muted, &mut consumer, &mut scratch, 0.0, 8, 1);
         assert_eq!(rendered, (0, 2));
 
         let mut audible = vec![0.0_f32; 4];
-        let rendered = super::render_streaming_single(&mut audible, &mut consumer, 1.0, 8, 1);
+        let rendered =
+            super::render_streaming_single(&mut audible, &mut consumer, &mut scratch, 1.0, 8, 1);
         assert_eq!(rendered, (4, 2));
         assert_eq!(audible, vec![2.0, 2.5, 3.0, 3.5]);
     }

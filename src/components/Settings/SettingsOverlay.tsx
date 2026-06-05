@@ -25,7 +25,7 @@ export function SettingsOverlay() {
             type="button"
             onClick={closeSettings}
             aria-label={t("common.close")}
-            className="motion-icon-button rounded-xl p-2 text-[var(--color-text-dim)] hover:bg-white/6 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
+            className="motion-icon-button rounded-xl p-2 text-[var(--color-text-dim)] hover:bg-white/6 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
           >
             <X size={16} />
           </button>

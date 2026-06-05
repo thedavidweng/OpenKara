@@ -101,7 +101,7 @@ function WindowControlButton({
       aria-label={ariaLabel}
       title={title ?? ariaLabel}
       onClick={onClick}
-      className={`motion-icon-button flex h-7 w-9 items-center justify-center rounded-md text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 ${className}`}
+      className={`motion-icon-button flex h-7 w-9 items-center justify-center rounded-md text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${className}`}
     >
       {children}
     </button>
@@ -240,7 +240,7 @@ export function DesktopTitlebar({
                 type="button"
                 onClick={onToggleSidebar}
                 aria-label={t("toolbar.toggleSidebar")}
-                className={`motion-icon-button rounded-md p-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 ${
+                className={`motion-icon-button rounded-md p-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
                   sidebarVisible
                     ? "bg-[var(--color-hover)] text-white shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
                     : "text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-white"
@@ -270,7 +270,7 @@ export function DesktopTitlebar({
                 key={key}
                 type="button"
                 onClick={(event) => handleOpenMenu(key, event.currentTarget)}
-                className="motion-surface rounded-md px-2 py-1 text-[12px] font-medium text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
+                className="motion-surface rounded-md px-2 py-1 text-[12px] font-medium text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
               >
                 {t(`windowChrome.${key}`)}
               </button>
@@ -298,7 +298,7 @@ export function DesktopTitlebar({
               type="button"
               onClick={onToggleSettings}
               aria-label={t("toolbar.settings")}
-              className={`motion-icon-button rounded-md p-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 ${
+              className={`motion-icon-button rounded-md p-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
                 settingsOpen
                   ? "bg-[var(--color-hover)] text-white shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
                   : "text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-white"
@@ -319,7 +319,7 @@ export function DesktopTitlebar({
                 ref={monitorBtnRef}
                 onClick={() => setMonitorPickerOpen((open) => !open)}
                 aria-label={t("player.selectMonitor")}
-                className={`motion-icon-button rounded-md p-1.5 text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 ${
+                className={`motion-icon-button rounded-md p-1.5 text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
                   monitorPickerOpen
                     ? "bg-[var(--color-hover)] text-white shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
                     : ""

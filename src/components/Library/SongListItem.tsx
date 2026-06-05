@@ -13,7 +13,7 @@ import { TaskProgressBar } from "@/components/Layout/GlobalProgressBar";
 import { songCanBeSeparated } from "@/lib/song-media";
 import * as api from "@/lib/tauri";
 import { notifyError, notifySuccess } from "@/lib/errors";
-import { ContextMenu } from "./ContextMenu";
+import { showNativeContextMenu } from "@/lib/native-context-menu";
 import { ConfirmationDialog } from "../Settings/ConfirmationDialog";
 import { InputDialog } from "../Settings/InputDialog";
 import { SongEditDialog } from "./SongEditDialog";
@@ -46,10 +46,6 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
   const playSong = usePlayerStore((s) => s.playSong);
   const closeSettings = useSettingsStore((s) => s.close);
 
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [propertiesDialogOpen, setPropertiesDialogOpen] = useState(false);
   const [deleteSongIds, setDeleteSongIds] = useState<string[] | null>(null);
@@ -147,22 +143,18 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
         orderedHashes,
       );
     }
-    setContextMenu({ x: e.clientX, y: e.clientY });
+    const items = buildSongListContextMenuForSong(
+      song,
+      (key, options) => String(t(key as never, options as never)),
+      {
+        setEditDialogOpen,
+        setPropertiesDialogOpen,
+        setDeleteSongIds,
+        setPlaylistDialogOpen,
+      },
+    );
+    void showNativeContextMenu(items, e.clientX, e.clientY);
   };
-
-  const contextMenuItems =
-    contextMenu === null
-      ? null
-      : buildSongListContextMenuForSong(
-          song,
-          (key, options) => String(t(key as never, options as never)),
-          {
-            setEditDialogOpen,
-            setPropertiesDialogOpen,
-            setDeleteSongIds,
-            setPlaylistDialogOpen,
-          },
-        );
 
   return (
     <div
@@ -330,15 +322,6 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
           </span>
         </div>
       </div>
-
-      {contextMenu && contextMenuItems && (
-        <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          items={contextMenuItems}
-          onClose={() => setContextMenu(null)}
-        />
-      )}
 
       {editDialogOpen && (
         <SongEditDialog song={song} onClose={() => setEditDialogOpen(false)} />

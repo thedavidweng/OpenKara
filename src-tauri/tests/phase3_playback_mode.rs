@@ -43,9 +43,11 @@ fn render_output_mixes_stems_with_individual_volumes() {
         .expect("setting stem volume should succeed");
 
     let mut output = vec![0.0; 4];
+    let mut stem_scratch = Vec::new();
     let rendered = render_output_buffer(
         &mut controller,
         &mut output,
+        &mut stem_scratch,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
     );
@@ -74,9 +76,11 @@ fn render_output_falls_back_to_original_when_no_stems() {
     assert!(!controller.has_stems());
 
     let mut output = vec![0.0; 4];
+    let mut stem_scratch = Vec::new();
     let rendered = render_output_buffer(
         &mut controller,
         &mut output,
+        &mut stem_scratch,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
     );
