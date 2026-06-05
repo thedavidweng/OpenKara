@@ -25,7 +25,7 @@ modules:
     build-commands:
       - mkdir -p .cargo
       - printf '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "cargo/vendor"\n' > .cargo/config.toml
-      - sh -c 'mkdir -p src-tauri/generated/onnxruntime && runtime_path="$(find src-tauri/generated/onnxruntime-source -name "libonnxruntime.so*" ! -name "*providers*" ! -name "*.a" | sort | head -n 1)" && test -n "$runtime_path" && cp -f "$runtime_path" src-tauri/generated/onnxruntime/libonnxruntime.so && printf "{\"version\":\"1.24.4\",\"target\":\"flatpak-linux\",\"sourceArchive\":\"flatpak-builder-source\"}\n" > src-tauri/generated/onnxruntime/manifest.json'
+      - sh -c 'mkdir -p src-tauri/generated/onnxruntime && runtime_path="$(find src-tauri/generated/onnxruntime-source -name "libonnxruntime.so*" ! -name "*providers*" ! -name "*.a" | sort | head -n 1)" && test -n "$runtime_path" && cp -f "$runtime_path" src-tauri/generated/onnxruntime/libonnxruntime.so && printf "{\"version\":\"1.23.0\",\"target\":\"flatpak-linux\",\"sourceArchive\":\"flatpak-builder-source\"}\n" > src-tauri/generated/onnxruntime/manifest.json'
       - npm install -g --prefix /run/build/openkara/pnpm-install ./pnpm-package
       - PATH="/run/build/openkara/pnpm-install/bin:$PATH" pnpm install --offline --frozen-lockfile
       - PATH="/run/build/openkara/pnpm-install/bin:$PATH" pnpm tauri build --config packaging/flatpak/tauri.flatpak.conf.json --no-bundle
@@ -48,14 +48,14 @@ modules:
         sha256: 7a7bcf13d7f6ceb3946c03978373d99be9fde1cafc3000bdfed4c4f791167610
         dest: pnpm-package
       - type: archive
-        url: https://github.com/microsoft/onnxruntime/releases/download/v1.24.4/onnxruntime-linux-x64-1.24.4.tgz
-        sha256: 3a211fbea252c1e66290658f1b735b772056149f28321e71c308942cdb54b747
+        url: https://github.com/microsoft/onnxruntime/releases/download/v1.23.0/onnxruntime-linux-x64-1.23.0.tgz
+        sha256: b6deea7f2e22c10c043019f294a0ea4d2a6c0ae52a009c34847640db75ec5580
         dest: src-tauri/generated/onnxruntime-source
         only-arches:
           - x86_64
       - type: archive
-        url: https://github.com/microsoft/onnxruntime/releases/download/v1.24.4/onnxruntime-linux-aarch64-1.24.4.tgz
-        sha256: 866109a9248d057671a039b9d725be4bd86888e3754140e6701ec621be9d4d7e
+        url: https://github.com/microsoft/onnxruntime/releases/download/v1.23.0/onnxruntime-linux-aarch64-1.23.0.tgz
+        sha256: 0b9f47d140411d938e47915824d8daaa424df95a88b5f1fc843172a75168f7a0
         dest: src-tauri/generated/onnxruntime-source
         only-arches:
           - aarch64
