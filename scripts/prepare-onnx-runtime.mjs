@@ -14,7 +14,7 @@ import os from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const ORT_VERSION = "1.24.4";
+const ORT_VERSION = "1.23.0";
 const WINDOWS_ORT_PACKAGE_NAME = "Microsoft.ML.OnnxRuntime.DirectML";
 const WINDOWS_ORT_PACKAGE_VERSION = ORT_VERSION;
 const WINDOWS_DIRECTML_PACKAGE_NAME = "Microsoft.AI.DirectML";
