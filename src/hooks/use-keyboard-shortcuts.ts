@@ -114,7 +114,8 @@ export function handleAppKeyDown(
   // browser's native focus traversal work in those contexts.
   const target = e.target as HTMLElement | null;
   if (
-    target?.closest(
+    typeof target?.closest === "function" &&
+    target.closest(
       '[role="dialog"], [data-dialog], [role="listbox"], [role="menu"]',
     )
   ) {
