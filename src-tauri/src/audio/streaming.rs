@@ -1035,8 +1035,13 @@ mod tests {
         let device_channels = 2;
         let buffer_frames = 512;
         let mut output = vec![0.0f32; buffer_frames * device_channels];
-        let rendered =
-            render_output_buffer(&mut controller, &mut output, device_rate, device_channels);
+        let rendered = render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            device_rate,
+            device_channels,
+        );
 
         assert!(rendered > 0, "should render audio from m4a streaming");
         assert!(
@@ -1085,8 +1090,13 @@ mod tests {
                 break;
             }
             let mut output = vec![0.0f32; buffer_frames * device_channels];
-            let rendered =
-                render_output_buffer(&mut controller, &mut output, device_rate, device_channels);
+            let rendered = render_output_buffer(
+                &mut controller,
+                &mut output,
+                &mut Vec::new(),
+                device_rate,
+                device_channels,
+            );
             if rendered > 0 {
                 total_rendered += rendered as u64;
                 callbacks_with_audio += 1;

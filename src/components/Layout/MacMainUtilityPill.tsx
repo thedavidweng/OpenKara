@@ -32,7 +32,7 @@ export function MacMainUtilityPill({
           type="button"
           onClick={onToggleSettings}
           aria-label={t("toolbar.settings")}
-          className={`motion-icon-button rounded-lg p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 ${
+          className={`motion-icon-button rounded-lg p-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
             settingsOpen
               ? "bg-[color-mix(in_srgb,var(--color-hover)_86%,transparent)] text-white"
               : "text-[var(--color-text-dim)] hover:bg-white/4 hover:text-white"
@@ -49,7 +49,7 @@ export function MacMainUtilityPill({
             ref={monitorBtnRef}
             onClick={() => setMonitorPickerOpen(!monitorPickerOpen)}
             aria-label={t("player.selectMonitor")}
-            className={`motion-icon-button rounded-lg p-2 text-[var(--color-text-dim)] hover:bg-white/4 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 ${
+            className={`motion-icon-button rounded-lg p-2 text-[var(--color-text-dim)] hover:bg-white/4 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
               monitorPickerOpen
                 ? "bg-[color-mix(in_srgb,var(--color-hover)_86%,transparent)] text-white"
                 : ""

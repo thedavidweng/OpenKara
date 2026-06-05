@@ -18,10 +18,12 @@ const TEST_CHANNELS: usize = 2;
 fn render_output_buffer_returns_silence_without_an_active_track() {
     let mut controller = PlaybackController::default();
     let mut output = vec![1.0; 128];
+    let mut stem_scratch = Vec::new();
 
     let rendered_samples = render_output_buffer(
         &mut controller,
         &mut output,
+        &mut stem_scratch,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
     );
@@ -35,11 +37,13 @@ fn render_output_buffer_writes_audio_when_playing_and_silence_when_paused() {
     let decoded = decode::decode_file(&fixture_path("audio", "fixture.wav")).unwrap();
     let mut controller = PlaybackController::default();
     controller.start_track("song-a".into(), decoded, 0);
+    let mut stem_scratch = Vec::new();
 
     let mut playing_output = vec![0.0; 256];
     let rendered_samples = render_output_buffer(
         &mut controller,
         &mut playing_output,
+        &mut stem_scratch,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
     );
@@ -53,6 +57,7 @@ fn render_output_buffer_writes_audio_when_playing_and_silence_when_paused() {
     let rendered_during_fade = render_output_buffer(
         &mut controller,
         &mut fading_output,
+        &mut stem_scratch,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
     );
@@ -67,6 +72,7 @@ fn render_output_buffer_writes_audio_when_playing_and_silence_when_paused() {
     let rendered_after_pause = render_output_buffer(
         &mut controller,
         &mut paused_output,
+        &mut stem_scratch,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
     );
@@ -79,11 +85,13 @@ fn render_output_buffer_advances_render_frame_for_original_audio() {
     let decoded = decode::decode_file(&fixture_path("audio", "fixture.wav")).unwrap();
     let mut controller = PlaybackController::default();
     controller.start_track("song-a".into(), decoded, 0);
+    let mut stem_scratch = Vec::new();
 
     let mut first_output = vec![0.0; 128];
     let rendered_first = render_output_buffer(
         &mut controller,
         &mut first_output,
+        &mut stem_scratch,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
     );
@@ -96,6 +104,7 @@ fn render_output_buffer_advances_render_frame_for_original_audio() {
     let rendered_second = render_output_buffer(
         &mut controller,
         &mut second_output,
+        &mut stem_scratch,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
     );

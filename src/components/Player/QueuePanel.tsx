@@ -190,7 +190,7 @@ function SortableQueueItem({
               className={`motion-icon-button -m-1 shrink-0 rounded-md p-1 ${
                 isDragging
                   ? "cursor-grabbing bg-[var(--color-ghost-hover)] text-[var(--color-control-primary)] shadow-[0_8px_18px_rgba(0,0,0,0.2)]"
-                  : "cursor-grab text-[var(--color-text-dimmer)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-control-primary)] motion-safe:active:scale-95 active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+                  : "cursor-grab text-[var(--color-text-dimmer)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-control-primary)] active:opacity-70 active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
               }`}
               aria-label={dragLabel}
             >
@@ -476,7 +476,7 @@ export function QueuePanel() {
           <button
             type="button"
             onClick={clearQueue}
-            className="motion-icon-button rounded px-1.5 py-1 text-[11px] text-[var(--color-text-dimmer)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-control-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
+            className="motion-icon-button rounded px-1.5 py-1 text-[11px] text-[var(--color-text-dimmer)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-control-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
           >
             {t("queue.clearAll")}
           </button>
@@ -485,7 +485,7 @@ export function QueuePanel() {
 
       <RotationControls />
 
-      <div className="custom-scrollbar flex-1 overflow-y-auto px-1.5 py-1">
+      <div className="flex-1 overflow-y-auto px-1.5 py-1">
         {filteredQueue.length === 0 ? (
           <div className="flex items-center justify-center py-8">
             <span className="text-[13px] text-[var(--color-text-dimmer)]">

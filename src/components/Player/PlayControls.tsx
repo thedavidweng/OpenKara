@@ -39,7 +39,7 @@ export function PlayControls({ density = "relaxed" }: PlayControlsProps = {}) {
       <Tooltip label={t("player.previous")}>
         <button
           onClick={skipBack}
-          className="motion-icon-button rounded-full p-2 opacity-80 hover:bg-[var(--color-ghost-hover)] hover:text-white hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
+          className="motion-icon-button rounded-full p-2 opacity-80 hover:bg-[var(--color-ghost-hover)] hover:text-white hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
           aria-label={t("player.previous")}
         >
           <SkipBack size={20} fill="currentColor" />
@@ -48,7 +48,7 @@ export function PlayControls({ density = "relaxed" }: PlayControlsProps = {}) {
       <Tooltip label={isPlaying ? t("player.pause") : t("player.play")}>
         <button
           onClick={handleToggle}
-          className="motion-icon-button flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-control-primary)] text-[var(--color-control-primary-foreground)] shadow-[0_10px_24px_rgba(0,0,0,0.22)] hover:bg-[color-mix(in_srgb,var(--color-control-primary)_90%,white)] hover:shadow-[0_14px_28px_rgba(0,0,0,0.28)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-control-primary)]/30"
+          className="motion-icon-button flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-control-primary)] text-[var(--color-control-primary-foreground)] shadow-[0_10px_24px_rgba(0,0,0,0.22)] hover:bg-[color-mix(in_srgb,var(--color-control-primary)_90%,white)] hover:shadow-[0_14px_28px_rgba(0,0,0,0.28)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-control-primary)]/50"
           aria-label={isPlaying ? t("player.pause") : t("player.play")}
         >
           {isPlaying ? (
@@ -61,7 +61,7 @@ export function PlayControls({ density = "relaxed" }: PlayControlsProps = {}) {
       <Tooltip label={t("player.next")}>
         <button
           onClick={skipForward}
-          className="motion-icon-button rounded-full p-2 opacity-80 hover:bg-[var(--color-ghost-hover)] hover:text-white hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
+          className="motion-icon-button rounded-full p-2 opacity-80 hover:bg-[var(--color-ghost-hover)] hover:text-white hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
           aria-label={t("player.next")}
         >
           <SkipForward size={20} fill="currentColor" />

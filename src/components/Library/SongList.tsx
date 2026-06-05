@@ -60,7 +60,7 @@ export function SongList() {
   return (
     <div
       ref={scrollRef}
-      className="custom-scrollbar flex-1 overflow-y-auto"
+      className="flex-1 overflow-y-auto"
       data-song-list-visual-variant="unified"
     >
       <div
