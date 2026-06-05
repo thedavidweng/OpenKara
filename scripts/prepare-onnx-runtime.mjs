@@ -20,7 +20,9 @@ const ORT_VERSION = "1.26.0";
 // last version that ships onnxruntime-osx-x86_64-*.tgz.
 const ORT_VERSION_LEGACY_X86_64_MACOS = "1.23.2";
 const WINDOWS_ORT_PACKAGE_NAME = "Microsoft.ML.OnnxRuntime.DirectML";
-const WINDOWS_ORT_PACKAGE_VERSION = ORT_VERSION;
+// Microsoft.ML.OnnxRuntime.DirectML lags behind the base package on NuGet.
+// Pin to the latest available version (1.24.4) rather than ORT_VERSION.
+const WINDOWS_ORT_PACKAGE_VERSION = "1.24.4";
 const WINDOWS_DIRECTML_PACKAGE_NAME = "Microsoft.AI.DirectML";
 const WINDOWS_DIRECTML_PACKAGE_VERSION = "1.15.4";
 const ROOT_DIR = fileURLToPath(new URL("..", import.meta.url));
