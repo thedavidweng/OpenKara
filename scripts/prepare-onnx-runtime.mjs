@@ -14,7 +14,11 @@ import os from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const ORT_VERSION = "1.23.0";
+const ORT_VERSION = "1.26.0";
+// DO NOT upgrade this. ORT 1.24.1+ dropped x86_64 macOS prebuilt binaries
+// (documented breaking change in v1.24.1 release notes). v1.23.2 is the
+// last version that ships onnxruntime-osx-x86_64-*.tgz.
+const ORT_VERSION_LEGACY_X86_64_MACOS = "1.23.2";
 const WINDOWS_ORT_PACKAGE_NAME = "Microsoft.ML.OnnxRuntime.DirectML";
 const WINDOWS_ORT_PACKAGE_VERSION = ORT_VERSION;
 const WINDOWS_DIRECTML_PACKAGE_NAME = "Microsoft.AI.DirectML";
@@ -32,10 +36,10 @@ const TARGET_CONFIG = {
     sourceKind: "github-release",
   },
   "x86_64-apple-darwin": {
-    archiveName: `onnxruntime-osx-x86_64-${ORT_VERSION}.tgz`,
+    archiveName: `onnxruntime-osx-x86_64-${ORT_VERSION_LEGACY_X86_64_MACOS}.tgz`,
     outputName: "libonnxruntime.dylib",
     manifestTarget: "x86_64-apple-darwin",
-    runtimeVersion: ORT_VERSION,
+    runtimeVersion: ORT_VERSION_LEGACY_X86_64_MACOS,
     sourceKind: "github-release",
   },
   "x86_64-unknown-linux-gnu": {
