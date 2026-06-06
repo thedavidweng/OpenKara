@@ -270,6 +270,7 @@ describe("Flatpak packaging", () => {
     );
 
     expect(manifestSource).toBeDefined();
+    expect(manifestSource?.dest).toBe("flatpak-node");
 
     const manifest = JSON.parse(manifestSource?.contents ?? "") as {
       packages: Record<
