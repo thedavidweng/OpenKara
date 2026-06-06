@@ -1,0 +1,7 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "singleQuote": false,
+  "trailingComma": "all",
+  "printWidth": 80,
+  "ignorePatterns": ["dist", "node_modules", "src-tauri", "**/*.toml"]
+}

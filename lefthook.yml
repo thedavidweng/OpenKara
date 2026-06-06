@@ -1,9 +1,9 @@
 pre-commit:
   parallel: true
   commands:
-    prettier:
+    oxfmt:
       glob: "*.{ts,tsx,js,jsx,json,css,md,html,yml,yaml}"
-      run: pnpm exec prettier --write {staged_files}
+      run: pnpm exec oxfmt {staged_files}
       stage_fixed: true
     cargo-fmt:
       glob: "*.rs"

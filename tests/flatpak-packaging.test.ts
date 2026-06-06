@@ -24,15 +24,17 @@ type CargoLockfilePackage = {
 };
 
 function splitPackageKey(key: string) {
-  const versionSeparator = key.lastIndexOf("@");
+  // pnpm wraps scoped keys in single quotes: '@scope/pkg@version'
+  const unquoted = key.replace(/^'|'$/g, "");
+  const versionSeparator = unquoted.lastIndexOf("@");
 
   if (versionSeparator <= 0) {
     throw new Error(`Invalid pnpm lockfile package key: ${key}`);
   }
 
   return {
-    name: key.slice(0, versionSeparator),
-    version: key.slice(versionSeparator + 1),
+    name: unquoted.slice(0, versionSeparator),
+    version: unquoted.slice(versionSeparator + 1),
   };
 }
 
@@ -268,6 +270,7 @@ describe("Flatpak packaging", () => {
     );
 
     expect(manifestSource).toBeDefined();
+    expect(manifestSource?.dest).toBe("flatpak-node");
 
     const manifest = JSON.parse(manifestSource?.contents ?? "") as {
       packages: Record<

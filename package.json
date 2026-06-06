@@ -1,21 +1,17 @@
 {
   "name": "openkara",
-  "private": true,
   "version": "0.9.0",
+  "private": true,
   "license": "MIT",
   "type": "module",
-  "engines": {
-    "node": ">=24 <25",
-    "pnpm": "10.33.2"
-  },
   "scripts": {
     "version:sync": "node scripts/sync-version.mjs",
     "dev": "pnpm version:sync && vite",
     "build": "pnpm version:sync && tsc && vite build",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "oxlint --config oxlintrc.json --deny-warnings",
     "icons:generate": "tauri icon src-tauri/icons/app-icon.png",
-    "format": "prettier --check .",
-    "format:write": "prettier --write .",
+    "format": "oxfmt --check",
+    "format:write": "oxfmt",
     "preview": "vite preview",
     "render:flatpak": "node scripts/render-flatpak-manifest.mjs",
     "render:winget": "node scripts/render-winget-manifests.mjs",
@@ -40,25 +36,24 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.2.4",
     "@tanstack/react-virtual": "^3.14.1",
     "@tauri-apps/cli": "^2.11.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
-    "eslint": "^10.3.0",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.2",
-    "globals": "^17.6.0",
     "jsdom": "^29.1.1",
     "lefthook": "^2.1.9",
-    "prettier": "^3.8.3",
+    "oxfmt": "^0.53.0",
+    "oxlint": "^1.68.0",
     "tailwindcss": "^4.2.4",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.59.1",
     "vite": "^8.0.10",
     "vitest": "^4.1.5"
+  },
+  "engines": {
+    "node": ">=24 <25",
+    "pnpm": "10.33.2"
   },
   "packageManager": "pnpm@10.33.2",
   "pnpm": {
