@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript"],
+  "rules": {
+    "react/react-in-jsx-scope": "off"
+  },
+  "ignorePatterns": [
+    ".claude",
+    ".worktrees",
+    "dist",
+    "node_modules",
+    "src-tauri/target",
+    "src-tauri/gen"
+  ]
+}
