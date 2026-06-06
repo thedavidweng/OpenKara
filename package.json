@@ -8,7 +8,7 @@
     "version:sync": "node scripts/sync-version.mjs",
     "dev": "pnpm version:sync && vite",
     "build": "pnpm version:sync && tsc && vite build",
-    "lint": "oxlint --config oxlintrc.json",
+    "lint": "oxlint --config oxlintrc.json --deny-warnings",
     "icons:generate": "tauri icon src-tauri/icons/app-icon.png",
     "format": "oxfmt --check",
     "format:write": "oxfmt",

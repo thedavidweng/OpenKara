@@ -211,7 +211,6 @@ for (let i = 0; i < files.length; i++) {
       .split("\n")[0]
       ?.replace(/^--\s*/, "")
       .trim() || "";
-  const num = f.split("_")[0];
   lines.push(`${i + 1}. \`${f}\`${firstLine ? ` — ${firstLine}` : ""}`);
 }
 lines.push("");
