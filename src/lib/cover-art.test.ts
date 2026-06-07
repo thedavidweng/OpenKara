@@ -27,6 +27,15 @@ describe("cover-art", () => {
     expect(detectCoverArtMime([0x52, 0x49, 0x46, 0x46])).toBe("image/webp");
   });
 
+  test("defaults to image/jpeg for empty or null bytes", () => {
+    expect(detectCoverArtMime([])).toBe("image/jpeg");
+    expect(detectCoverArtMime(null as unknown as number[])).toBe("image/jpeg");
+  });
+
+  test("defaults to image/jpeg for unknown magic bytes", () => {
+    expect(detectCoverArtMime([0x00, 0x01, 0x02, 0x03])).toBe("image/jpeg");
+  });
+
   test("reuses cached object urls per song hash and revokes after the final release", () => {
     const jpegBytes = [0xff, 0xd8, 0x00];
 
@@ -76,5 +85,19 @@ describe("cover-art", () => {
 
     expect(url).toBe("blob:image/png");
     expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+  });
+
+  test("returns null from retainCoverArtUrl when bytes are empty", () => {
+    expect(retainCoverArtUrl("song-empty", [])).toBeNull();
+  });
+
+  test("releaseCoverArtUrl is a no-op for unknown song hashes", () => {
+    releaseCoverArtUrl("nonexistent-hash");
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+  });
+
+  test("invalidateCoverArtUrl is a no-op for unknown song hashes", () => {
+    invalidateCoverArtUrl("nonexistent-hash");
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
   });
 });
