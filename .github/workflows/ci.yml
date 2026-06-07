@@ -122,6 +122,10 @@ jobs:
     name: Frontend tests
     runs-on: ubuntu-22.04
 
+    permissions:
+      contents: read
+      pull-requests: write
+
     steps:
       - name: Checkout
         uses: actions/checkout@v6.0.3
@@ -144,8 +148,46 @@ jobs:
       - name: Audit dependencies
         run: pnpm audit --audit-level=high --ignore-registry-errors
 
-      - name: Run frontend tests
-        run: pnpm test
+      - name: Run frontend tests with coverage
+        run: pnpm test:coverage
+
+      - name: Test metrics summary
+        if: always()
+        run: |
+          echo "## Frontend Test Metrics" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          # Parse coverage from json-summary if available
+          if [ -f coverage/coverage-summary.json ]; then
+            BRANCHES=$(jq '.total.branches.pct' coverage/coverage-summary.json)
+            FUNCTIONS=$(jq '.total.functions.pct' coverage/coverage-summary.json)
+            LINES=$(jq '.total.lines.pct' coverage/coverage-summary.json)
+            STATEMENTS=$(jq '.total.statements.pct' coverage/coverage-summary.json)
+
+            echo "### Coverage" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Metric | Percentage |" >> "$GITHUB_STEP_SUMMARY"
+            echo "|--------|------------|" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Branches | ${BRANCHES}% |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Functions | ${FUNCTIONS}% |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Lines | ${LINES}% |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Statements | ${STATEMENTS}% |" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: frontend-coverage
+          path: coverage/
+          retention-days: 14
+
+      - name: Report coverage on PR
+        if: always() && github.event_name == 'pull_request'
+        uses: davelosert/vitest-coverage-report-action@v2
+        with:
+          json-summary-path: ./coverage/coverage-summary.json
+          vite-config-path: ./vite.config.ts
 
   rust-test:
     name: Rust tests (${{ matrix.name }})
