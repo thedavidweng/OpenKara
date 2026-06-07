@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { LyricsFontSizeControl } from "./LyricsFontSizeControl";
 
 const { mockSettingsState } = vi.hoisted(() => ({
@@ -22,9 +22,11 @@ vi.mock("@/stores/settings-store", () => ({
 }));
 
 describe("LyricsFontSizeControl", () => {
-  test("displays the default medium label at font step zero", () => {
+  beforeEach(() => {
     mockSettingsState.lyricsFontStep = 0;
+  });
 
+  test("displays the default medium label at font step zero", () => {
     const markup = renderToStaticMarkup(<LyricsFontSizeControl />);
 
     expect(markup).toContain(">M<");
@@ -39,8 +41,6 @@ describe("LyricsFontSizeControl", () => {
     const markup = renderToStaticMarkup(<LyricsFontSizeControl />);
 
     expect(markup).toContain(">L<");
-
-    mockSettingsState.lyricsFontStep = 0;
   });
 
   test("displays the extra-small label at font step -2", () => {
@@ -49,8 +49,6 @@ describe("LyricsFontSizeControl", () => {
     const markup = renderToStaticMarkup(<LyricsFontSizeControl />);
 
     expect(markup).toContain(">XS<");
-
-    mockSettingsState.lyricsFontStep = 0;
   });
 
   test("displays the extra-large label at font step 2", () => {
@@ -59,8 +57,6 @@ describe("LyricsFontSizeControl", () => {
     const markup = renderToStaticMarkup(<LyricsFontSizeControl />);
 
     expect(markup).toContain(">XL<");
-
-    mockSettingsState.lyricsFontStep = 0;
   });
 
   test("highlights the step label in white when non-default", () => {
@@ -69,21 +65,15 @@ describe("LyricsFontSizeControl", () => {
     const markup = renderToStaticMarkup(<LyricsFontSizeControl />);
 
     expect(markup).toContain("text-white");
-
-    mockSettingsState.lyricsFontStep = 0;
   });
 
   test("uses dimmer text for the step label at default", () => {
-    mockSettingsState.lyricsFontStep = 0;
-
     const markup = renderToStaticMarkup(<LyricsFontSizeControl />);
 
     expect(markup).toContain("text-[var(--color-text)]");
   });
 
   test("renders accessible labels for the decrease, increase, and reset buttons", () => {
-    mockSettingsState.lyricsFontStep = 0;
-
     const markup = renderToStaticMarkup(<LyricsFontSizeControl />);
 
     expect(markup).toContain("lyrics.fontSizeDecrease");
