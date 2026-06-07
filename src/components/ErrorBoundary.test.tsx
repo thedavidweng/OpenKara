@@ -17,18 +17,14 @@ describe("ErrorBoundary", () => {
   });
 
   test("getDerivedStateFromError produces an error state with the message", () => {
-    const state = (ErrorBoundary as any).getDerivedStateFromError(
-      new Error("kaboom"),
-    );
+    const state = ErrorBoundary.getDerivedStateFromError(new Error("kaboom"));
 
     expect(state).toEqual({ hasError: true, error: expect.any(Error) });
-    expect(state.error.message).toBe("kaboom");
+    expect(state.error!.message).toBe("kaboom");
   });
 
   test("getDerivedStateFromError sets hasError to true", () => {
-    const state = (ErrorBoundary as any).getDerivedStateFromError(
-      new Error("any"),
-    );
+    const state = ErrorBoundary.getDerivedStateFromError(new Error("any"));
 
     expect(state.hasError).toBe(true);
   });
