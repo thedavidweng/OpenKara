@@ -1,5 +1,41 @@
 import { describe, expect, test, vi } from "vitest";
-import { startCdgPositionSync } from "./use-cdg-sync";
+import { getCdgSyncBucket, startCdgPositionSync } from "./use-cdg-sync";
+
+describe("getCdgSyncBucket", () => {
+  test("returns 0 for position 0", () => {
+    expect(getCdgSyncBucket(0)).toBe(0);
+  });
+
+  test("returns 0 for positions within the first bucket (0-32ms)", () => {
+    expect(getCdgSyncBucket(1)).toBe(0);
+    expect(getCdgSyncBucket(16)).toBe(0);
+    expect(getCdgSyncBucket(32)).toBe(0);
+  });
+
+  test("returns 1 for position at the bucket boundary (33ms)", () => {
+    expect(getCdgSyncBucket(33)).toBe(1);
+  });
+
+  test("returns 1 for positions within the second bucket (33-65ms)", () => {
+    expect(getCdgSyncBucket(34)).toBe(1);
+    expect(getCdgSyncBucket(50)).toBe(1);
+    expect(getCdgSyncBucket(65)).toBe(1);
+  });
+
+  test("returns 2 for position 66ms", () => {
+    expect(getCdgSyncBucket(66)).toBe(2);
+  });
+
+  test("clamps negative positions to bucket 0", () => {
+    expect(getCdgSyncBucket(-1)).toBe(0);
+    expect(getCdgSyncBucket(-100)).toBe(0);
+  });
+
+  test("handles large positions correctly", () => {
+    expect(getCdgSyncBucket(330)).toBe(10);
+    expect(getCdgSyncBucket(3300)).toBe(100);
+  });
+});
 
 describe("startCdgPositionSync", () => {
   test("ticks only when playback crosses a new CDG sync bucket", () => {
@@ -30,5 +66,76 @@ describe("startCdgPositionSync", () => {
 
     stop();
     expect(listener).toBeNull();
+  });
+
+  test("does not tick when position stays within the same bucket", () => {
+    const tick = vi.fn();
+    let listener:
+      | ((positionMs: number, previousPositionMs: number) => void)
+      | null = null;
+
+    const stop = startCdgPositionSync(tick, (nextListener) => {
+      listener = nextListener;
+      return () => {
+        listener = null;
+      };
+    });
+
+    listener!(5, 0);
+    listener!(10, 5);
+    listener!(20, 10);
+    listener!(30, 20);
+
+    expect(tick).not.toHaveBeenCalled();
+
+    stop();
+  });
+
+  test("ticks on each bucket boundary crossing", () => {
+    const tick = vi.fn();
+    let listener:
+      | ((positionMs: number, previousPositionMs: number) => void)
+      | null = null;
+
+    const stop = startCdgPositionSync(tick, (nextListener) => {
+      listener = nextListener;
+      return () => {
+        listener = null;
+      };
+    });
+
+    // bucket 0 -> 1
+    listener!(33, 32);
+    // bucket 1 -> 2
+    listener!(66, 65);
+    // bucket 2 -> 3
+    listener!(99, 98);
+
+    expect(tick).toHaveBeenCalledTimes(3);
+
+    stop();
+  });
+
+  test("returns an unsubscribe function that stops ticking", () => {
+    const tick = vi.fn();
+    let listener:
+      | ((positionMs: number, previousPositionMs: number) => void)
+      | null = null;
+
+    const stop = startCdgPositionSync(tick, (nextListener) => {
+      listener = nextListener;
+      return () => {
+        listener = null;
+      };
+    });
+
+    listener!(33, 0);
+    expect(tick).toHaveBeenCalledTimes(1);
+
+    stop();
+    expect(listener).toBeNull();
+
+    // Re-subscribe with a new listener after stop to verify cleanup worked
+    // The old listener reference should be nulled out
   });
 });
