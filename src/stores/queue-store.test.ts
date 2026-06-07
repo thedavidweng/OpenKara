@@ -1,10 +1,6 @@
 import { beforeEach, describe, expect, test } from "vitest";
 import { createWebviewSyncChannel } from "@/runtime/webview-sync";
-import { createQueueStore, useQueueStore } from "./queue-store";
-
-type QueueStoreWithDragReorder = ReturnType<typeof useQueueStore.getState> & {
-  reorderBySongId?: (activeId: string, overId: string) => void;
-};
+import { createQueueStore } from "./queue-store";
 
 interface FakeChannel {
   onmessage: ((event: { data: unknown }) => void) | null;
@@ -12,89 +8,308 @@ interface FakeChannel {
   close: () => void;
 }
 
-describe("queue-store drag reorder", () => {
+describe("queue-store", () => {
+  let store: ReturnType<typeof createQueueStore>;
+
   beforeEach(() => {
-    useQueueStore.setState({ queue: [], playHistory: [], isOpen: false });
+    store = createQueueStore();
+    store.store.setState({ queue: [], playHistory: [], isOpen: false });
   });
 
-  test("moves the dragged song before the hovered song", () => {
-    useQueueStore.setState({ queue: ["song-a", "song-b", "song-c"] });
+  // ── addToQueue ────────────────────────────────────────────────────────────
 
-    const store = useQueueStore.getState() as QueueStoreWithDragReorder;
+  test("addToQueue appends a song to the end of the queue", () => {
+    store.store.getState().addToQueue("song-a");
+    store.store.getState().addToQueue("song-b");
+    expect(store.store.getState().queue).toEqual(["song-a", "song-b"]);
+  });
 
-    expect(typeof store.reorderBySongId).toBe("function");
+  test("addToQueue is a no-op when songId is already in the queue", () => {
+    store.store.setState({ queue: ["song-a", "song-b"] });
+    store.store.getState().addToQueue("song-a");
+    expect(store.store.getState().queue).toEqual(["song-a", "song-b"]);
+  });
 
-    store.reorderBySongId?.("song-c", "song-a");
+  // ── playNext ──────────────────────────────────────────────────────────────
 
-    expect(useQueueStore.getState().queue).toEqual([
+  test("playNext prepends a new song to the front of the queue", () => {
+    store.store.setState({ queue: ["song-a", "song-b"] });
+    store.store.getState().playNext("song-c");
+    expect(store.store.getState().queue).toEqual([
       "song-c",
       "song-a",
       "song-b",
     ]);
   });
 
-  test("moves the dragged song after the hovered song when dragging downward", () => {
-    useQueueStore.setState({ queue: ["song-a", "song-b", "song-c"] });
+  test("playNext moves an existing song to the front of the queue", () => {
+    store.store.setState({ queue: ["song-a", "song-b", "song-c"] });
+    store.store.getState().playNext("song-c");
+    expect(store.store.getState().queue).toEqual([
+      "song-c",
+      "song-a",
+      "song-b",
+    ]);
+  });
 
-    const store = useQueueStore.getState() as QueueStoreWithDragReorder;
+  test("playNext on an empty queue creates a single-item queue", () => {
+    store.store.getState().playNext("song-a");
+    expect(store.store.getState().queue).toEqual(["song-a"]);
+  });
 
-    expect(typeof store.reorderBySongId).toBe("function");
+  // ── removeFromQueue ───────────────────────────────────────────────────────
 
-    store.reorderBySongId?.("song-a", "song-c");
+  test("removeFromQueue removes a song by index", () => {
+    store.store.setState({ queue: ["song-a", "song-b", "song-c"] });
+    store.store.getState().removeFromQueue(1);
+    expect(store.store.getState().queue).toEqual(["song-a", "song-c"]);
+  });
 
-    expect(useQueueStore.getState().queue).toEqual([
+  test("removeFromQueue with out-of-range index is a no-op", () => {
+    store.store.setState({ queue: ["song-a"] });
+    store.store.getState().removeFromQueue(5);
+    expect(store.store.getState().queue).toEqual(["song-a"]);
+  });
+
+  // ── removeSongIds ─────────────────────────────────────────────────────────
+
+  test("removeSongIds removes multiple songs by id", () => {
+    store.store.setState({ queue: ["song-a", "song-b", "song-c", "song-d"] });
+    store.store.getState().removeSongIds(["song-b", "song-d"]);
+    expect(store.store.getState().queue).toEqual(["song-a", "song-c"]);
+  });
+
+  test("removeSongIds is a no-op when no ids match", () => {
+    store.store.setState({ queue: ["song-a", "song-b"] });
+    store.store.getState().removeSongIds(["song-x"]);
+    expect(store.store.getState().queue).toEqual(["song-a", "song-b"]);
+  });
+
+  test("removeSongIds handles empty ids array", () => {
+    store.store.setState({ queue: ["song-a"] });
+    store.store.getState().removeSongIds([]);
+    expect(store.store.getState().queue).toEqual(["song-a"]);
+  });
+
+  // ── reorder ───────────────────────────────────────────────────────────────
+
+  test("reorder moves a song from one position to another", () => {
+    store.store.setState({ queue: ["song-a", "song-b", "song-c"] });
+    store.store.getState().reorder(0, 2);
+    expect(store.store.getState().queue).toEqual([
       "song-b",
       "song-c",
       "song-a",
     ]);
   });
 
-  test("ignores drag reorder when one of the songs is missing", () => {
-    useQueueStore.setState({ queue: ["song-a", "song-b", "song-c"] });
+  test("reorder is a no-op when fromIndex equals toIndex", () => {
+    store.store.setState({ queue: ["song-a", "song-b"] });
+    store.store.getState().reorder(1, 1);
+    expect(store.store.getState().queue).toEqual(["song-a", "song-b"]);
+  });
 
-    const store = useQueueStore.getState() as QueueStoreWithDragReorder;
+  test("reorder is a no-op when indices are out of range", () => {
+    store.store.setState({ queue: ["song-a"] });
+    store.store.getState().reorder(-1, 0);
+    expect(store.store.getState().queue).toEqual(["song-a"]);
+    store.store.getState().reorder(0, 5);
+    expect(store.store.getState().queue).toEqual(["song-a"]);
+  });
 
-    expect(typeof store.reorderBySongId).toBe("function");
+  // ── reorderBySongId ───────────────────────────────────────────────────────
 
-    store.reorderBySongId?.("song-x", "song-a");
+  test("reorderBySongId moves the dragged song before the hovered song", () => {
+    store.store.setState({ queue: ["song-a", "song-b", "song-c"] });
+    store.store.getState().reorderBySongId("song-c", "song-a");
+    expect(store.store.getState().queue).toEqual([
+      "song-c",
+      "song-a",
+      "song-b",
+    ]);
+  });
 
-    expect(useQueueStore.getState().queue).toEqual([
+  test("reorderBySongId moves the dragged song after the hovered song when dragging downward", () => {
+    store.store.setState({ queue: ["song-a", "song-b", "song-c"] });
+    store.store.getState().reorderBySongId("song-a", "song-c");
+    expect(store.store.getState().queue).toEqual([
+      "song-b",
+      "song-c",
+      "song-a",
+    ]);
+  });
+
+  test("reorderBySongId is a no-op when one of the songs is missing", () => {
+    store.store.setState({ queue: ["song-a", "song-b", "song-c"] });
+    store.store.getState().reorderBySongId("song-x", "song-a");
+    expect(store.store.getState().queue).toEqual([
       "song-a",
       "song-b",
       "song-c",
     ]);
   });
 
-  test("manages a play history stack for previous-track navigation", () => {
-    useQueueStore.setState({ queue: [], playHistory: [], isOpen: false });
-
-    const store = useQueueStore.getState();
-
-    store.pushToHistory("song-1");
-    expect(useQueueStore.getState().playHistory).toEqual(["song-1"]);
-
-    store.pushToHistory("song-2");
-    expect(useQueueStore.getState().playHistory).toEqual(["song-1", "song-2"]);
-
-    const popped = store.popFromHistory();
-    expect(popped).toBe("song-2");
-    expect(useQueueStore.getState().playHistory).toEqual(["song-1"]);
-
-    const popped2 = store.popFromHistory();
-    expect(popped2).toBe("song-1");
-    expect(useQueueStore.getState().playHistory).toEqual([]);
-
-    const popped3 = store.popFromHistory();
-    expect(popped3).toBeUndefined();
-
-    store.pushToHistory("song-1");
-    store.pushToHistory("song-1");
-    expect(useQueueStore.getState().playHistory).toEqual(["song-1"]);
-
-    store.clearHistory();
-    expect(useQueueStore.getState().playHistory).toEqual([]);
+  test("reorderBySongId is a no-op when both ids are the same", () => {
+    store.store.setState({ queue: ["song-a", "song-b"] });
+    store.store.getState().reorderBySongId("song-a", "song-a");
+    expect(store.store.getState().queue).toEqual(["song-a", "song-b"]);
   });
 
+  // ── clearQueue ────────────────────────────────────────────────────────────
+
+  test("clearQueue empties the queue", () => {
+    store.store.setState({ queue: ["song-a", "song-b"] });
+    store.store.getState().clearQueue();
+    expect(store.store.getState().queue).toEqual([]);
+  });
+
+  // ── setQueue ──────────────────────────────────────────────────────────────
+
+  test("setQueue replaces the entire queue", () => {
+    store.store.setState({ queue: ["song-a"] });
+    store.store.getState().setQueue(["song-x", "song-y", "song-z"]);
+    expect(store.store.getState().queue).toEqual([
+      "song-x",
+      "song-y",
+      "song-z",
+    ]);
+  });
+
+  test("setQueue with empty array empties the queue", () => {
+    store.store.setState({ queue: ["song-a"] });
+    store.store.getState().setQueue([]);
+    expect(store.store.getState().queue).toEqual([]);
+  });
+
+  // ── dequeue ───────────────────────────────────────────────────────────────
+
+  test("dequeue returns the first song and removes it from the queue", () => {
+    store.store.setState({ queue: ["song-a", "song-b", "song-c"] });
+    const first = store.store.getState().dequeue();
+    expect(first).toBe("song-a");
+    expect(store.store.getState().queue).toEqual(["song-b", "song-c"]);
+  });
+
+  test("dequeue returns undefined when the queue is empty", () => {
+    const result = store.store.getState().dequeue();
+    expect(result).toBeUndefined();
+    expect(store.store.getState().queue).toEqual([]);
+  });
+
+  test("dequeue returns the only item and leaves the queue empty", () => {
+    store.store.setState({ queue: ["song-a"] });
+    const result = store.store.getState().dequeue();
+    expect(result).toBe("song-a");
+    expect(store.store.getState().queue).toEqual([]);
+  });
+
+  // ── pushToHistory ─────────────────────────────────────────────────────────
+
+  test("pushToHistory appends a song to the history", () => {
+    store.store.getState().pushToHistory("song-1");
+    store.store.getState().pushToHistory("song-2");
+    expect(store.store.getState().playHistory).toEqual(["song-1", "song-2"]);
+  });
+
+  test("pushToHistory deduplicates by moving the song to the end", () => {
+    store.store.setState({ playHistory: ["song-1", "song-2", "song-3"] });
+    store.store.getState().pushToHistory("song-1");
+    expect(store.store.getState().playHistory).toEqual([
+      "song-2",
+      "song-3",
+      "song-1",
+    ]);
+  });
+
+  test("pushToHistory caps history at 500 entries", () => {
+    const history = Array.from({ length: 500 }, (_, i) => `song-${i}`);
+    store.store.setState({ playHistory: history });
+    store.store.getState().pushToHistory("song-new");
+    const result = store.store.getState().playHistory;
+    expect(result).toHaveLength(500);
+    expect(result[0]).toBe("song-1");
+    expect(result[499]).toBe("song-new");
+  });
+
+  test("pushToHistory does not affect the queue", () => {
+    store.store.setState({ queue: ["song-a"], playHistory: [] });
+    store.store.getState().pushToHistory("song-x");
+    expect(store.store.getState().queue).toEqual(["song-a"]);
+  });
+
+  // ── popFromHistory ────────────────────────────────────────────────────────
+
+  test("popFromHistory returns the last history entry and removes it", () => {
+    store.store.setState({ playHistory: ["song-1", "song-2"] });
+    const result = store.store.getState().popFromHistory();
+    expect(result).toBe("song-2");
+    expect(store.store.getState().playHistory).toEqual(["song-1"]);
+  });
+
+  test("popFromHistory returns undefined when history is empty", () => {
+    const result = store.store.getState().popFromHistory();
+    expect(result).toBeUndefined();
+  });
+
+  test("popFromHistory returns the only item and leaves history empty", () => {
+    store.store.setState({ playHistory: ["song-1"] });
+    const result = store.store.getState().popFromHistory();
+    expect(result).toBe("song-1");
+    expect(store.store.getState().playHistory).toEqual([]);
+  });
+
+  // ── clearHistory ──────────────────────────────────────────────────────────
+
+  test("clearHistory empties the play history", () => {
+    store.store.setState({ playHistory: ["song-1", "song-2"] });
+    store.store.getState().clearHistory();
+    expect(store.store.getState().playHistory).toEqual([]);
+  });
+
+  test("clearHistory does not affect the queue", () => {
+    store.store.setState({ queue: ["song-a"], playHistory: ["song-b"] });
+    store.store.getState().clearHistory();
+    expect(store.store.getState().queue).toEqual(["song-a"]);
+    expect(store.store.getState().playHistory).toEqual([]);
+  });
+
+  // ── togglePanel ───────────────────────────────────────────────────────────
+
+  test("togglePanel flips isOpen from false to true", () => {
+    store.store.setState({ isOpen: false });
+    store.store.getState().togglePanel();
+    expect(store.store.getState().isOpen).toBe(true);
+  });
+
+  test("togglePanel flips isOpen from true to false", () => {
+    store.store.setState({ isOpen: true });
+    store.store.getState().togglePanel();
+    expect(store.store.getState().isOpen).toBe(false);
+  });
+
+  // ── dispose ───────────────────────────────────────────────────────────────
+
+  test("dispose closes the sync channel", () => {
+    const closed = { value: false };
+    const channel = {
+      onmessage: null as ((event: { data: unknown }) => void) | null,
+      postMessage: () => {},
+      close: () => {
+        closed.value = true;
+      },
+    };
+    const instance = createQueueStore(
+      createWebviewSyncChannel("test-dispose", {
+        channelFactory: () => channel,
+        originId: "test",
+      }),
+    );
+    instance.dispose();
+    expect(closed.value).toBe(true);
+  });
+});
+
+describe("queue-store webview sync", () => {
   test("syncs queue and playHistory across webview contexts", () => {
     const channelsByName = new Map<string, Set<FakeChannel>>();
     const channelFactory = (name: string) => {
