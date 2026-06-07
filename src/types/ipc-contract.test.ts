@@ -290,9 +290,11 @@ const ALL_COMMANDS = [
 ];
 
 // ─── Command Name Registry Tests ───────────────────────────────────────
-// These verify that every command in our registry actually exists in the
-// frontend wrappers (by reading the source files at test time) and that
-// no command registered in the frontend wrappers is missing from our registry.
+// These verify that the canonical command registry is internally consistent:
+// all commands have unique names, expected parameter shapes match, and the
+// registry covers the documented contract phases. The registry constants
+// above must be kept in sync with src/lib/tauri/*.ts and
+// src-tauri/src/commands/*.rs manually.
 
 describe("IPC command registry", () => {
   test("all registered commands have unique names", () => {
@@ -365,20 +367,16 @@ describe("IPC command registry", () => {
   });
 
   test("all command names use snake_case (Tauri convention)", () => {
+    const snakeCase = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
     for (const cmd of ALL_COMMANDS) {
-      expect(cmd.command).toMatch(
-        /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/,
-        `Command "${cmd.command}" should be snake_case`,
-      );
+      expect(cmd.command).toMatch(snakeCase);
     }
   });
 
   test("all frontend function names use camelCase", () => {
+    const camelCase = /^[a-z][a-zA-Z0-9]*$/;
     for (const cmd of ALL_COMMANDS) {
-      expect(cmd.frontendFn).toMatch(
-        /^[a-z][a-zA-Z0-9]*$/,
-        `Frontend function "${cmd.frontendFn}" should be camelCase`,
-      );
+      expect(cmd.frontendFn).toMatch(camelCase);
     }
   });
 });

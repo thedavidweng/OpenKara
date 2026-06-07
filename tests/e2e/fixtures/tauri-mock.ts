@@ -65,17 +65,20 @@ export const TAURI_MOCK_SCRIPT = `
     get_library_path: "/tmp/openkara-test-lib",
 
     // Library songs
-    get_songs: MOCK_SONGS,
-    get_songs_meta: MOCK_SONGS,
-    search_songs: (args) => {
+    get_active_library: {
+      id: "mock-lib-1", kind: "local",
+      display_name: "Test Library", root_path: "/tmp/openkara-test-lib",
+    },
+    get_library: MOCK_SONGS,
+    search_library: (args) => {
       const q = ((args && args.query) || "").toLowerCase();
       if (!q) return MOCK_SONGS;
       return MOCK_SONGS.filter(
         (s) => s.title.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q)
       );
     },
-    get_separation_statuses: {},
-    get_upload_statuses: {},
+    get_all_separation_statuses: {},
+    get_all_upload_statuses: {},
 
     // Playback
     get_playback_state: {
