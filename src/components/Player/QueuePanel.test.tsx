@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { QueuePanel } from "./QueuePanel";
 
 const { mockQueueState, mockLibraryState, mockRotationState } = vi.hoisted(
@@ -64,10 +64,16 @@ vi.mock("./SingerPickerDialog", () => ({
 }));
 
 describe("QueuePanel", () => {
-  test("renders the empty state when the queue is empty", () => {
+  beforeEach(() => {
     mockQueueState.queue = [];
     mockLibraryState.songs = [];
+    mockRotationState.active = false;
+    mockRotationState.singerNames = [];
+    mockRotationState.queueSingers = new Map();
+    mockRotationState.filterSinger = null;
+  });
 
+  test("renders the empty state when the queue is empty", () => {
     const markup = renderToStaticMarkup(<QueuePanel />);
 
     expect(markup).toContain("queue.empty");
@@ -145,9 +151,6 @@ describe("QueuePanel", () => {
     const markup = renderToStaticMarkup(<QueuePanel />);
 
     expect(markup).toContain("David");
-
-    mockRotationState.active = false;
-    mockRotationState.queueSingers = new Map();
   });
 
   test("hides singer assignment when rotation is inactive", () => {
@@ -170,9 +173,6 @@ describe("QueuePanel", () => {
         original_ext: "mp3",
       },
     ];
-    mockRotationState.active = false;
-    mockRotationState.queueSingers = new Map();
-
     const markup = renderToStaticMarkup(<QueuePanel />);
 
     expect(markup).not.toContain("rotation.assignSinger");
@@ -299,9 +299,5 @@ describe("QueuePanel", () => {
     expect(markup).toContain("Alpha");
     expect(markup).not.toContain("Beta");
     expect(markup).toContain("Gamma");
-
-    mockRotationState.active = false;
-    mockRotationState.filterSinger = null;
-    mockRotationState.queueSingers = new Map();
   });
 });
