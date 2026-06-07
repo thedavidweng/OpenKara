@@ -88,9 +88,9 @@ export const TAURI_MOCK_SCRIPT = `
       has_stems: false, stem_mode: null,
     },
     play: (args) => {
-      const song = MOCK_SONGS.find((s) => s.hash === (args && args.songId));
+      const song = MOCK_SONGS.find((s) => s.hash === (args && args.song_id));
       return {
-        song_id: (args && args.songId) || "aaa111",
+        song_id: (args && args.song_id) || "aaa111",
         state: "playing", is_playing: true, position_ms: 0,
         duration_ms: song ? song.duration_ms : 300000, buffered_ms: 0, volume: 0.8,
         stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
