@@ -65,8 +65,24 @@ export default defineConfig(async () => ({
       "src/**/*.{test,spec}.?(c|m)[jt]s?(x)",
       "tests/**/*.{test,spec}.?(c|m)[jt]s?(x)",
     ],
-    exclude: ["**/node_modules/**", "**/dist/**", "**/.worktrees/**"],
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/.worktrees/**",
+      "tests/e2e/**",
+    ],
     setupFiles: ["./src/test-setup.ts"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "text-summary", "json-summary", "lcov"],
+      reportsDirectory: "./coverage",
+      thresholds: {
+        branches: 70,
+        functions: 70,
+        lines: 70,
+        statements: 70,
+      },
+    },
   },
   resolve: {
     alias: {
