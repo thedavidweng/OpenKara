@@ -1,85 +1,208 @@
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
+  createCdgSyncChannel,
+  postCdgClear,
+  postCdgFrame,
+  postCdgStatus,
   startCdgSyncReceiver,
   startCdgSyncRequestListener,
   type CdgSyncChannel,
+  type CdgSyncMessage,
 } from "./cdg-sync-channel";
 
-function createFakeChannel(): CdgSyncChannel {
-  const listeners = new Set<(event: { data: unknown }) => void>();
-
+function createMockChannel(): CdgSyncChannel {
   return {
-    addEventListener: vi.fn((type, listener) => {
-      if (type === "message") {
-        listeners.add(listener as (event: { data: unknown }) => void);
-      }
-    }),
-    removeEventListener: vi.fn((type, listener) => {
-      if (type === "message") {
-        listeners.delete(listener as (event: { data: unknown }) => void);
-      }
-    }),
+    postMessage: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
     close: vi.fn(),
-    postMessage(message) {
-      for (const listener of listeners) {
-        listener({ data: message });
-      }
-    },
   };
 }
 
-describe("cdg-sync-channel", () => {
-  test("registers broadcast listeners before requesting sync", () => {
-    const channel = createFakeChannel();
-    const callOrder: string[] = [];
+function makeEvent(data: CdgSyncMessage): MessageEvent<CdgSyncMessage> {
+  return { data } as MessageEvent<CdgSyncMessage>;
+}
 
-    const recordingChannel: CdgSyncChannel = {
-      ...channel,
-      addEventListener: vi.fn((type, listener) => {
-        callOrder.push(`listen:${type}`);
-        channel.addEventListener(type, listener);
-      }),
-      removeEventListener: channel.removeEventListener,
-      close: channel.close,
-      postMessage: (message) => {
-        callOrder.push(`post:${message.type}`);
-        channel.postMessage(message);
-      },
-    };
+function extractListener(channel: CdgSyncChannel) {
+  return (channel.addEventListener as ReturnType<typeof vi.fn>).mock
+    .calls[0][1] as (event: MessageEvent<CdgSyncMessage>) => void;
+}
+
+describe("createCdgSyncChannel", () => {
+  test("calls factory with channel name and returns result", () => {
+    const mockChannel = createMockChannel();
+    const factory = vi.fn().mockReturnValue(mockChannel);
+
+    const result = createCdgSyncChannel(factory);
+
+    expect(factory).toHaveBeenCalledWith("openkara-cdg-sync-v1");
+    expect(result).toBe(mockChannel);
+  });
+
+  test("returns null when factory throws", () => {
+    const factory = vi.fn().mockImplementation(() => {
+      throw new Error("boom");
+    });
+
+    const result = createCdgSyncChannel(factory);
+
+    expect(result).toBeNull();
+  });
+
+  test("returns null when BroadcastChannel is undefined", () => {
+    const original = globalThis.BroadcastChannel;
+    // @ts-expect-error intentionally deleting for test
+    delete globalThis.BroadcastChannel;
+
+    const factory = vi.fn();
+    const result = createCdgSyncChannel(factory);
+
+    expect(result).toBeNull();
+    expect(factory).not.toHaveBeenCalled();
+
+    globalThis.BroadcastChannel = original;
+  });
+});
+
+describe("postCdgStatus", () => {
+  test("posts {type:'status', payload} to channel", () => {
+    const channel = createMockChannel();
+
+    postCdgStatus(channel, { songId: "abc", hasCdg: true });
+
+    expect(channel.postMessage).toHaveBeenCalledWith({
+      type: "status",
+      payload: { songId: "abc", hasCdg: true },
+    });
+  });
+
+  test("no-op with null channel (no throw)", () => {
+    expect(() =>
+      postCdgStatus(null, { songId: null, hasCdg: false }),
+    ).not.toThrow();
+  });
+});
+
+describe("postCdgFrame", () => {
+  test("posts {type:'frame', payload} to channel", () => {
+    const channel = createMockChannel();
+    const buf = new ArrayBuffer(8);
+
+    postCdgFrame(channel, buf);
+
+    expect(channel.postMessage).toHaveBeenCalledWith({
+      type: "frame",
+      payload: buf,
+    });
+  });
+});
+
+describe("postCdgClear", () => {
+  test("posts {type:'clear'} to channel", () => {
+    const channel = createMockChannel();
+
+    postCdgClear(channel);
+
+    expect(channel.postMessage).toHaveBeenCalledWith({ type: "clear" });
+  });
+});
+
+describe("startCdgSyncRequestListener", () => {
+  test("on 'request-sync' message, calls getSnapshot and posts status + frame", () => {
+    const channel = createMockChannel();
+    const frame = new ArrayBuffer(16);
+    const status = { songId: "s1", hasCdg: true };
+    const getSnapshot = vi.fn().mockReturnValue({ status, frame });
+
+    startCdgSyncRequestListener({ channel, getSnapshot });
+    const listener = extractListener(channel);
+
+    listener(makeEvent({ type: "request-sync" }));
+
+    expect(getSnapshot).toHaveBeenCalled();
+    expect(channel.postMessage).toHaveBeenCalledWith({
+      type: "status",
+      payload: status,
+    });
+    expect(channel.postMessage).toHaveBeenCalledWith({
+      type: "frame",
+      payload: frame,
+    });
+  });
+
+  test("ignores non-'request-sync' messages", () => {
+    const channel = createMockChannel();
+    const getSnapshot = vi.fn();
+
+    startCdgSyncRequestListener({ channel, getSnapshot });
+    const listener = extractListener(channel);
+
+    listener(makeEvent({ type: "clear" }));
+    listener(
+      makeEvent({ type: "status", payload: { songId: null, hasCdg: false } }),
+    );
+    listener(makeEvent({ type: "frame", payload: new ArrayBuffer(0) }));
+
+    expect(getSnapshot).not.toHaveBeenCalled();
+    expect(channel.postMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe("startCdgSyncReceiver", () => {
+  test("on 'frame' calls onFrame, on 'clear' calls onClear, on 'status' calls onStatus", () => {
+    const channel = createMockChannel();
+    const onFrame = vi.fn();
+    const onClear = vi.fn();
+    const onStatus = vi.fn();
+
+    startCdgSyncReceiver({ channel, onFrame, onClear, onStatus });
+    const listener = extractListener(channel);
+
+    const buf = new ArrayBuffer(4);
+    listener(makeEvent({ type: "frame", payload: buf }));
+    expect(onFrame).toHaveBeenCalledWith(buf);
+
+    listener(makeEvent({ type: "clear" }));
+    expect(onClear).toHaveBeenCalled();
+
+    const statusPayload = { songId: "x", hasCdg: false };
+    listener(makeEvent({ type: "status", payload: statusPayload }));
+    expect(onStatus).toHaveBeenCalledWith(statusPayload);
+  });
+
+  test("posts initial 'request-sync' on setup", () => {
+    const channel = createMockChannel();
 
     startCdgSyncReceiver({
-      channel: recordingChannel,
+      channel,
       onFrame: vi.fn(),
       onClear: vi.fn(),
       onStatus: vi.fn(),
     });
 
-    expect(callOrder).toEqual(["listen:message", "post:request-sync"]);
+    expect(channel.postMessage).toHaveBeenCalledWith({
+      type: "request-sync",
+    });
   });
+});
 
-  test("replays the latest status and frame when sync is requested", () => {
-    const channel = createFakeChannel();
-    const onStatus = vi.fn();
-    const onFrame = vi.fn();
+describe("returned cleanup function", () => {
+  test("removes listener", () => {
+    const channel = createMockChannel();
 
-    startCdgSyncRequestListener({
+    const cleanup = startCdgSyncReceiver({
       channel,
-      getSnapshot: () => ({
-        status: { songId: "song-1", hasCdg: true },
-        frame: new Uint8Array([1, 2, 3]).buffer,
-      }),
-    });
-    startCdgSyncReceiver({
-      channel,
-      onFrame,
+      onFrame: vi.fn(),
       onClear: vi.fn(),
-      onStatus,
+      onStatus: vi.fn(),
     });
 
-    expect(onStatus).toHaveBeenCalledWith({ songId: "song-1", hasCdg: true });
-    expect(onFrame).toHaveBeenCalledOnce();
-    expect(new Uint8Array(onFrame.mock.calls[0][0])).toEqual(
-      new Uint8Array([1, 2, 3]),
+    const addedListener = extractListener(channel);
+    cleanup();
+
+    expect(channel.removeEventListener).toHaveBeenCalledWith(
+      "message",
+      addedListener,
     );
   });
 });
