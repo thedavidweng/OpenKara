@@ -17,9 +17,14 @@ use std::{fs, path::Path};
 pub enum LyricsSource {
     LrcLib,
     LrcApi,
+    LrcApiTtml,
     Embedded,
     Sidecar,
+    SidecarTtml,
+    SidecarLys,
     Manual,
+    ManualTtml,
+    ManualLys,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

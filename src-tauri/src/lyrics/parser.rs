@@ -12,6 +12,8 @@ pub struct LyricLine {
     pub time_ms: u64,
     pub text: String,
     pub words: Option<Vec<WordToken>>,
+    pub bg_words: Option<Vec<WordToken>>,
+    pub section: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -86,6 +88,8 @@ pub fn parse_lrc(lrc: &str) -> Result<Vec<LyricLine>> {
                 time_ms: timestamp_ms,
                 text: lyric_text.clone(),
                 words: words.clone(),
+                bg_words: None,
+                section: None,
             });
         }
     }
@@ -214,11 +218,15 @@ mod tests {
                     time_ms: 10_000,
                     text: "Hello world".to_owned(),
                     words: None,
+                    bg_words: None,
+                    section: None,
                 },
                 LyricLine {
                     time_ms: 20_500,
                     text: "Goodbye".to_owned(),
                     words: None,
+                    bg_words: None,
+                    section: None,
                 },
             ]
         );
