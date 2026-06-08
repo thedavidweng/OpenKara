@@ -1,5 +1,77 @@
 [
   {
+    "type": "archive",
+    "url": "https://registry.npmjs.org/@esbuild/linux-arm/-/linux-arm-0.27.4.tgz",
+    "strip-components": 1,
+    "sha512": "681620708c57ff07799f6cacd3211219e60c185fa9bfa8340e166bdc6d591b88cc7ebb94f539758b667e5a78fdfca8c6cf59532c2728aea136be278f66a8f812",
+    "dest": "flatpak-node/cache/esbuild/.package/@esbuild/linux-arm@0.27.4",
+    "only-arches": ["arm"]
+  },
+  {
+    "type": "archive",
+    "url": "https://registry.npmjs.org/@esbuild/linux-arm64/-/linux-arm64-0.27.4.tgz",
+    "strip-components": 1,
+    "sha512": "ee740eb6d773546b61d62cf9ee4c60f6e0b3e7b77140b1d6c68a4bea662e62d86884f2842b4bd4d02dcedb509c04ae8a0e591855c9c35d8d3df477020d777d74",
+    "dest": "flatpak-node/cache/esbuild/.package/@esbuild/linux-arm64@0.27.4",
+    "only-arches": ["aarch64"]
+  },
+  {
+    "type": "archive",
+    "url": "https://registry.npmjs.org/@esbuild/linux-ia32/-/linux-ia32-0.27.4.tgz",
+    "strip-components": 1,
+    "sha512": "a0fb62c6d008ce0bf361c28140cfea67747ef5311477568d250bb41e11b2aadc7aa12eea4e9be385e21605b7ace3eaaed5b365a3657871b9084abf2aea044114",
+    "dest": "flatpak-node/cache/esbuild/.package/@esbuild/linux-ia32@0.27.4",
+    "only-arches": ["i386"]
+  },
+  {
+    "type": "archive",
+    "url": "https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.27.4.tgz",
+    "strip-components": 1,
+    "sha512": "4b9a8e5eb295f01404cc93d5c40c27af28b6f88ab9a41e348131084faf4140e36a47b247d443c8710fd48aff660a79f4e637dff6e9aaff99eacf196a4ce83d34",
+    "dest": "flatpak-node/cache/esbuild/.package/@esbuild/linux-x64@0.27.4",
+    "only-arches": ["x86_64"]
+  },
+  {
+    "type": "shell",
+    "commands": [
+      "mkdir -p \"bin/@esbuild\"",
+      "cp \".package/@esbuild/linux-arm64@0.27.4/bin/esbuild\" \"bin/@esbuild/linux-arm64@0.27.4\"",
+      "ln -sf \"@esbuild/linux-arm64@0.27.4\" \"bin/esbuild-current\""
+    ],
+    "dest": "flatpak-node/cache/esbuild",
+    "only-arches": ["aarch64"]
+  },
+  {
+    "type": "shell",
+    "commands": [
+      "mkdir -p \"bin/@esbuild\"",
+      "cp \".package/@esbuild/linux-arm@0.27.4/bin/esbuild\" \"bin/@esbuild/linux-arm@0.27.4\"",
+      "ln -sf \"@esbuild/linux-arm@0.27.4\" \"bin/esbuild-current\""
+    ],
+    "dest": "flatpak-node/cache/esbuild",
+    "only-arches": ["arm"]
+  },
+  {
+    "type": "shell",
+    "commands": [
+      "mkdir -p \"bin/@esbuild\"",
+      "cp \".package/@esbuild/linux-ia32@0.27.4/bin/esbuild\" \"bin/@esbuild/linux-ia32@0.27.4\"",
+      "ln -sf \"@esbuild/linux-ia32@0.27.4\" \"bin/esbuild-current\""
+    ],
+    "dest": "flatpak-node/cache/esbuild",
+    "only-arches": ["i386"]
+  },
+  {
+    "type": "shell",
+    "commands": [
+      "mkdir -p \"bin/@esbuild\"",
+      "cp \".package/@esbuild/linux-x64@0.27.4/bin/esbuild\" \"bin/@esbuild/linux-x64@0.27.4\"",
+      "ln -sf \"@esbuild/linux-x64@0.27.4\" \"bin/esbuild-current\""
+    ],
+    "dest": "flatpak-node/cache/esbuild",
+    "only-arches": ["x86_64"]
+  },
+  {
     "type": "file",
     "url": "https://registry.npmjs.org/@asamuzakjp/css-color/-/css-color-5.1.11.tgz",
     "sha512": "295c3aa888824d44210727d377bf21db20f5ff4d306939a6f6ecbf47b0a4fdcb54c803e3f801032e44087495b44fcfaa1a08f78f96e934a2bb4371be2de7495a",

@@ -88,9 +88,10 @@ export const TAURI_MOCK_SCRIPT = `
       has_stems: false, stem_mode: null,
     },
     play: (args) => {
-      const song = MOCK_SONGS.find((s) => s.hash === (args && args.song_id));
+      const songId = (args && (args.songId || args.song_id)) || "aaa111";
+      const song = MOCK_SONGS.find((s) => s.hash === songId);
       return {
-        song_id: (args && args.song_id) || "aaa111",
+        song_id: songId,
         state: "playing", is_playing: true, position_ms: 0,
         duration_ms: song ? song.duration_ms : 300000, buffered_ms: 0, volume: 0.8,
         stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
@@ -195,6 +196,31 @@ export const TAURI_MOCK_SCRIPT = `
       lyrics_font_step: 0, execution_provider: "cpu",
       available_execution_providers: ["cpu"],
     }),
+    set_lyrics_font_step: (args) => ({
+      stem_mode: "two_stem", model_variant: "htdemucs",
+      language: "en", hide_batch_separate: false, cover_art_backdrop: false,
+      lyrics_font_step: (args && args.step) || 0, execution_provider: "cpu",
+      available_execution_providers: ["cpu"],
+    }),
+    set_execution_provider: (args) => ({
+      stem_mode: "two_stem", model_variant: "htdemucs",
+      language: "en", hide_batch_separate: false, cover_art_backdrop: false,
+      lyrics_font_step: 0, execution_provider: (args && args.provider) || "cpu",
+      available_execution_providers: ["cpu"],
+    }),
+    set_hide_batch_separate: (args) => ({
+      stem_mode: "two_stem", model_variant: "htdemucs",
+      language: "en", hide_batch_separate: (args && args.value) || false, cover_art_backdrop: false,
+      lyrics_font_step: 0, execution_provider: "cpu",
+      available_execution_providers: ["cpu"],
+    }),
+    set_cover_art_backdrop: (args) => ({
+      stem_mode: "two_stem", model_variant: "htdemucs",
+      language: "en", hide_batch_separate: false, cover_art_backdrop: (args && args.value) || false,
+      lyrics_font_step: 0, execution_provider: "cpu",
+      available_execution_providers: ["cpu"],
+    }),
+    restart_app: undefined,
     create_library: undefined,
     open_library: undefined,
     batch_separate: undefined,

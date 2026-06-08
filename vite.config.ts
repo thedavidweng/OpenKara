@@ -82,6 +82,7 @@ export default defineConfig(async () => ({
         // Functions/branches at 60%: remaining uncovered code is React UI
         // component event handlers that require @testing-library/react or
         // Playwright E2E to exercise — not practical for unit tests alone.
+        // Note: these are 65/60, not 70% — see PR description for context.
         lines: 65,
         statements: 65,
         functions: 60,
