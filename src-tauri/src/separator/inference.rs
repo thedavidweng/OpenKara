@@ -87,9 +87,7 @@ fn separate_window_audio(
 
         if matching_outputs.len() == DEMUCS_STEM_NAMES.len() {
             let mut stems = Vec::with_capacity(DEMUCS_STEM_NAMES.len());
-            for (stem_name, (_, output_value)) in
-                DEMUCS_STEM_NAMES.iter().zip(matching_outputs.into_iter())
-            {
+            for (stem_name, (_, output_value)) in DEMUCS_STEM_NAMES.iter().zip(matching_outputs) {
                 stems.push(stem_from_single_output(
                     stem_name,
                     &output_value,
