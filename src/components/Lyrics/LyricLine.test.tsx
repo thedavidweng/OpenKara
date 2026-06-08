@@ -51,6 +51,8 @@ describe("LyricLine", () => {
             { text: "beta", time_ms: 1500 },
             { text: "gamma", time_ms: 2000 },
           ],
+          bg_words: null,
+          section: null,
         }}
         state="active"
         adjustedMs={1600}

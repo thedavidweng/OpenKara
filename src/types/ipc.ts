@@ -431,9 +431,14 @@ export interface UploadErrorEvent {
 export type LyricsSource =
   | "lrc_lib"
   | "lrc_api"
+  | "lrc_api_ttml"
   | "embedded"
   | "sidecar"
-  | "manual";
+  | "sidecar_ttml"
+  | "sidecar_lys"
+  | "manual"
+  | "manual_ttml"
+  | "manual_lys";
 
 export interface WordToken {
   time_ms: number;
@@ -444,6 +449,8 @@ export interface LyricLine {
   time_ms: number;
   text: string;
   words: WordToken[] | null;
+  bg_words: WordToken[] | null;
+  section: string | null;
 }
 
 export interface LyricsPayload {
