@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
+
 pub mod airplay_stream;
 mod app_menu;
 mod app_runtime;

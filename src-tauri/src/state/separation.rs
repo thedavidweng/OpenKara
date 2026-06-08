@@ -13,6 +13,12 @@ pub struct SeparationState {
     pub batch_cancel: Arc<AtomicBool>,
 }
 
+impl Default for SeparationState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SeparationState {
     pub fn new() -> Self {
         Self {
