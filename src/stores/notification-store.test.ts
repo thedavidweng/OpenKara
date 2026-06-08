@@ -21,7 +21,8 @@ describe("notification-store", () => {
     vi.useFakeTimers();
     uuidCounter = 0;
     vi.spyOn(crypto, "randomUUID").mockImplementation(
-      () => `uuid-${++uuidCounter}`,
+      () =>
+        `00000000-0000-0000-0000-${String(++uuidCounter).padStart(12, "0")}`,
     );
     useNotificationStore.setState({ notifications: [] });
   });

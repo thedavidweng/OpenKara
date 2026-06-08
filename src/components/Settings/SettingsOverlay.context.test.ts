@@ -35,7 +35,6 @@ vi.mock("react", async (importOriginal) => {
 import {
   createSettingsOverlayTestContextValue,
   useSettingsOverlay,
-  type SettingsOverlayContextValue,
 } from "./SettingsOverlay.context";
 
 describe("createSettingsOverlayTestContextValue", () => {

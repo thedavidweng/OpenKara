@@ -19,7 +19,8 @@ const {
   mockNotifySuccess: vi.fn(),
   mockSongCanBeSeparated: vi.fn().mockReturnValue(false),
   mockSongSupportsInstrumentalFlag: vi.fn().mockReturnValue(false),
-  mockBuildSongListContextMenuItems: vi.fn((args: unknown) => args),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  mockBuildSongListContextMenuItems: vi.fn((args: any) => args),
 }));
 
 vi.mock("@/lib/tauri", () => ({
