@@ -92,6 +92,12 @@ fn resample_interleaved(
 /// is pending.
 pub struct SeekTarget(AtomicI64);
 
+impl Default for SeekTarget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SeekTarget {
     pub const NONE: i64 = -1;
 

@@ -321,9 +321,10 @@ impl Read for RemoteMediaSource {
                 self.request_fetch(offset, startup_length);
                 // Block until the startup region is fully cached.
                 let mut startup_buf = vec![0u8; startup_length as usize];
-                let _ = self.cache.read_at(offset, &mut startup_buf).map_err(|e| {
-                    io::Error::new(io::ErrorKind::Other, format!("cache read error: {e}"))
-                })?;
+                let _ = self
+                    .cache
+                    .read_at(offset, &mut startup_buf)
+                    .map_err(|e| io::Error::other(format!("cache read error: {e}")))?;
             }
             self.startup_satisfied = true;
         }
@@ -333,9 +334,10 @@ impl Read for RemoteMediaSource {
 
         // Check if data is already cached.
         if self.cache.is_cached(offset, length) {
-            let read = self.cache.read_at(offset, buf).map_err(|e| {
-                io::Error::new(io::ErrorKind::Other, format!("cache read error: {e}"))
-            })?;
+            let read = self
+                .cache
+                .read_at(offset, buf)
+                .map_err(|e| io::Error::other(format!("cache read error: {e}")))?;
             self.read_position += read as u64;
             return Ok(read);
         }
@@ -347,7 +349,7 @@ impl Read for RemoteMediaSource {
         let read = self
             .cache
             .read_at(offset, buf)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("cache read error: {e}")))?;
+            .map_err(|e| io::Error::other(format!("cache read error: {e}")))?;
         self.read_position += read as u64;
         Ok(read)
     }
@@ -598,8 +600,7 @@ fn estimate_prefetch_bytes(cache: &ChunkedCache, position: u64) -> u64 {
     let file_size = cache.file_size();
     let remaining = file_size.saturating_sub(position);
     // 5 seconds at 128kbps = 80KB, but use min_fetch_size as floor.
-    let prefetch = remaining.min(80 * 1024);
-    prefetch
+    remaining.min(80 * 1024)
 }
 
 fn fetch_range_with_retry(

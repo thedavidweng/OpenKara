@@ -177,9 +177,10 @@ impl ChunkedCache {
                 inner.last_access = Instant::now();
                 return Ok(to_read);
             }
-            inner = self.data_available.wait(inner).map_err(|_| {
-                CacheError::Io(io::Error::new(io::ErrorKind::Other, "lock poisoned"))
-            })?;
+            inner = self
+                .data_available
+                .wait(inner)
+                .map_err(|_| CacheError::Io(io::Error::other("lock poisoned")))?;
         }
 
         inner.file.seek(SeekFrom::Start(offset))?;
@@ -202,7 +203,7 @@ impl ChunkedCache {
         }
 
         let json = serde_json::to_string(&inner.downloaded)
-            .map_err(|e| CacheError::Io(io::Error::new(io::ErrorKind::Other, e)))?;
+            .map_err(|e| CacheError::Io(io::Error::other(e)))?;
         fs::write(self.index_path(), json)?;
         Ok(())
     }
