@@ -496,6 +496,8 @@ fn plain_text_to_lines(text: &str) -> Vec<LyricLine> {
             time_ms: 0,
             text: l.to_string(),
             words: None,
+            bg_words: None,
+            section: None,
         })
         .collect()
 }
