@@ -115,34 +115,36 @@ export const LyricLine = memo(function LyricLine({
       className={`motion-surface flex flex-col items-center gap-1.5 text-center ${
         state === "active" ? "opacity-100" : "opacity-70"
       } ${isSeekable ? "cursor-pointer group/line" : ""}`}
-      style={
-        presentation === "audience"
+      style={{
+        fontFamily:
+          '-apple-system, BlinkMacSystemFont, "Helvetica Neue", "Noto Sans SC", "Noto Sans JP", "Noto Sans KR", system-ui, sans-serif',
+        ...(presentation === "audience"
           ? {
               transform:
                 state === "active"
                   ? `scale(${audiencePresentationSpec.activeScale})`
                   : undefined,
             }
-          : undefined
-      }
+          : undefined),
+      }}
     >
       {hasWords ? (
         <span
           className={(presentation === "audience"
-            ? `font-bold tracking-tight ${hoverClass}`
+            ? `tracking-tight ${hoverClass}`
             : `${textSizeClass} ${hoverClass}`
           ).trim()}
-          style={
-            presentation === "audience"
+          style={{
+            fontWeight: state === "active" ? 500 : 400,
+            ...(presentation === "audience"
               ? {
                   fontSize: audiencePresentationSpec.fontSizePx,
                   lineHeight: audiencePresentationSpec.lineHeightMultiple,
                 }
-              : undefined
-          }
+              : undefined),
+          }}
         >
           {line.words!.map((word, idx) => {
-            // When the whole line is past or future, all words use the line-level color
             const wordState =
               state === "plain"
                 ? "active"
@@ -156,13 +158,28 @@ export const LyricLine = memo(function LyricLine({
                     ? "past"
                     : "future";
 
+            const isActiveWord = wordState === "active";
+            const isPastWord = wordState === "past";
+
+            // Calculate fill progress for active word
+            const wordDuration =
+              idx < line.words!.length - 1
+                ? line.words![idx + 1].time_ms - word.time_ms
+                : 500; // default 500ms for last word
+            const elapsed = Math.max(0, adjustedMs - word.time_ms);
+            const progress = isActiveWord
+              ? Math.min(1, elapsed / Math.max(wordDuration, 1))
+              : isPastWord
+                ? 1
+                : 0;
+
             return (
               <span
                 key={idx}
                 className={
                   presentation === "audience"
                     ? "motion-surface"
-                    : `motion-surface ${
+                    : `motion-surface relative inline-block ${
                         wordState === "active"
                           ? "text-white"
                           : wordState === "past"
@@ -170,8 +187,8 @@ export const LyricLine = memo(function LyricLine({
                             : "text-[var(--color-active)]"
                       }`
                 }
-                style={
-                  presentation === "audience"
+                style={{
+                  ...(presentation === "audience"
                     ? {
                         color: colorToCss(
                           wordState === "active"
@@ -187,13 +204,23 @@ export const LyricLine = memo(function LyricLine({
                               )}`
                             : undefined,
                       }
-                    : wordState === "active"
+                    : isActiveWord
                       ? {
                           textShadow:
-                            "0 0 12px rgba(255,255,255,0.8), 0 0 4px rgba(255,255,255,0.6)",
+                            "0 0 12px rgba(255,255,255,0.5), 0 0 4px rgba(255,255,255,0.4)",
                         }
-                      : undefined
-                }
+                      : undefined),
+                  ...(isActiveWord && presentation !== "audience"
+                    ? {
+                        WebkitMaskImage: `linear-gradient(to right, rgba(0,0,0,1) ${progress * 100}%, rgba(0,0,0,0.2) ${progress * 100}%)`,
+                        WebkitMaskRepeat: "no-repeat",
+                        WebkitMaskOrigin: "left",
+                        maskImage: `linear-gradient(to right, rgba(0,0,0,1) ${progress * 100}%, rgba(0,0,0,0.2) ${progress * 100}%)`,
+                        maskRepeat: "no-repeat",
+                        maskOrigin: "left",
+                      }
+                    : {}),
+                }}
               >
                 {word.text}
                 {idx < line.words!.length - 1 ? " " : ""}
@@ -238,6 +265,44 @@ export const LyricLine = memo(function LyricLine({
           {line.text}
         </span>
       )}
+      {line.bg_words && line.bg_words.length > 0 ? (
+        <span
+          className={
+            presentation === "audience"
+              ? "motion-surface font-medium tracking-tight opacity-40"
+              : `motion-surface text-sm font-medium md:text-base opacity-40 ${
+                  state === "plain" || state === "active"
+                    ? "text-[var(--color-text-dim)]"
+                    : state === "past"
+                      ? "text-[var(--color-text-dimmer)]"
+                      : "text-[var(--color-text-dim)]"
+                }`
+          }
+          style={
+            presentation === "audience"
+              ? {
+                  fontSize: audiencePresentationSpec.fontSizePx * 0.55,
+                  lineHeight: audiencePresentationSpec.lineHeightMultiple,
+                  color: colorToCss(
+                    state === "plain" || state === "active"
+                      ? audiencePresentationSpec.activeTextColor
+                      : state === "past"
+                        ? audiencePresentationSpec.pastTextColor
+                        : audiencePresentationSpec.futureTextColor,
+                  ),
+                  opacity: 0.4,
+                }
+              : undefined
+          }
+        >
+          {line.bg_words.map((word, idx) => (
+            <span key={idx}>
+              {word.text}
+              {idx < line.bg_words!.length - 1 ? " " : ""}
+            </span>
+          ))}
+        </span>
+      ) : null}
       {romanizedText ? (
         <span
           className={

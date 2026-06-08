@@ -15,7 +15,13 @@ describe("LyricLine", () => {
   test("does not render plain-text lyrics as clickable", () => {
     const markup = renderToStaticMarkup(
       <LyricLine
-        line={{ time_ms: 0, text: "plain line", words: null }}
+        line={{
+          time_ms: 0,
+          text: "plain line",
+          words: null,
+          bg_words: null,
+          section: null,
+        }}
         state="plain"
         adjustedMs={0}
         lyricsFontStep={0}
@@ -29,7 +35,13 @@ describe("LyricLine", () => {
   test("renders seekable lines with cursor-pointer and hover underline", () => {
     const markup = renderToStaticMarkup(
       <LyricLine
-        line={{ time_ms: 1000, text: "seekable line", words: null }}
+        line={{
+          time_ms: 1000,
+          text: "seekable line",
+          words: null,
+          bg_words: null,
+          section: null,
+        }}
         state="future"
         adjustedMs={0}
         lyricsFontStep={0}
@@ -68,7 +80,13 @@ describe("LyricLine", () => {
   test("uses the configured font scale without changing the lyric state logic", () => {
     const markup = renderToStaticMarkup(
       <LyricLine
-        line={{ time_ms: 1000, text: "scaled line", words: null }}
+        line={{
+          time_ms: 1000,
+          text: "scaled line",
+          words: null,
+          bg_words: null,
+          section: null,
+        }}
         state="active"
         adjustedMs={1000}
         presentation="audience"
