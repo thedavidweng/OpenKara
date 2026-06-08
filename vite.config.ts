@@ -74,7 +74,14 @@ export default defineConfig(async () => ({
     setupFiles: ["./src/test-setup.ts"],
     coverage: {
       provider: "v8",
-      reporter: ["text", "text-summary", "json", "json-summary", "lcov"],
+      reporter: [
+        "text",
+        "text-summary",
+        "json",
+        "json-summary",
+        "lcov",
+        "html",
+      ],
       reportsDirectory: "./coverage",
       thresholds: {
         // Lines/statements at 65%: nearly all testable pure logic and store

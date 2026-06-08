@@ -294,7 +294,8 @@ const ALL_COMMANDS = [
 // all commands have unique names, expected parameter shapes match, and the
 // registry covers the documented contract phases. The registry constants
 // above must be kept in sync with src/lib/tauri/*.ts and
-// src-tauri/src/commands/*.rs manually.
+// src-tauri/src/commands/*.rs manually. NOTE: these tests compare in-file
+// arrays against each other — they do NOT read the actual source files.
 
 describe("IPC command registry", () => {
   test("all registered commands have unique names", () => {

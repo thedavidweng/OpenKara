@@ -45,19 +45,9 @@ test.describe("Queue panel", () => {
     await page.getByText("Hotel California").click({ button: "right" });
 
     // Context menu should appear with queue-related options
-    // Look for "Add to queue" or "Play next" text
-    const menuVisible = await page
-      .getByText(/add to queue|play next|queue/i)
-      .first()
-      .isVisible()
-      .catch(() => false);
-
-    // If context menu appeared, verify it has queue options
-    if (menuVisible) {
-      await expect(
-        page.getByText(/add to queue|play next/i).first(),
-      ).toBeVisible();
-    }
+    await expect(page.getByText(/add to queue|play next/i).first()).toBeVisible(
+      { timeout: 5000 },
+    );
 
     // Dismiss context menu
     await page.keyboard.press("Escape");

@@ -13,7 +13,7 @@ Every CI run on `frontend-test` produces a coverage report with four metrics:
 | **Lines**      | Percentage of executable source lines covered |
 | **Statements** | Percentage of individual statements executed  |
 
-The minimum threshold for each metric is **70%**. If coverage drops below this threshold the CI job fails.
+The minimum threshold for each metric is **65%** (lines/statements) and **60%** (functions/branches). If coverage drops below these thresholds the CI job fails. The lower functions/branches threshold reflects React UI component event handlers that require `@testing-library/react` or Playwright E2E to exercise — not practical for unit tests alone.
 
 ### Test Execution Summary
 
@@ -57,8 +57,8 @@ Current counts (unit / integration / E2E):
 | ----------- | -------------------- | ------- |
 | Unit tests  | `src/**/*.test.*`    | 99      |
 | Integration | `tests/*.test.*`     | 4       |
-| E2E         | `tests/e2e/*.spec.*` | 7       |
-| **Total**   |                      | **110** |
+| E2E         | `tests/e2e/*.spec.*` | 28      |
+| **Total**   |                      | **131** |
 
 The project is heavily weighted toward unit tests, which aligns with the fast-feedback goal of the frontend test suite. E2E tests cover critical user flows (library, playback, playlists, lyrics, queue/rotation, song import, and smoke).
 
@@ -74,7 +74,7 @@ pnpm test:coverage
 # Run tests in watch mode during development
 pnpm test -- --watch
 
-# Run E2E tests (requires the Tauri app to be built)
+# Run E2E tests (runs against Vite dev server with mocked Tauri IPC)
 pnpm test:e2e
 
 # Run E2E tests with the Playwright UI
