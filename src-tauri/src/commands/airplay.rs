@@ -942,6 +942,7 @@ mod tests {
                 text: "line 1".to_owned(),
                 words: Some(vec![crate::lyrics::parser::WordToken {
                     time_ms: 1_050,
+                    end_ms: 1_550,
                     text: "line".to_owned(),
                 }]),
                 bg_words: None,
@@ -977,6 +978,7 @@ mod tests {
                     text: "line 1".to_owned(),
                     words: Some(vec![crate::lyrics::parser::WordToken {
                         time_ms: 1_050,
+                        end_ms: 1_550,
                         text: "line".to_owned(),
                     }]),
                     bg_words: None,
