@@ -316,6 +316,8 @@ Contributions are welcome! Please open an issue before starting major changes so
 - [demucs.onnx](https://github.com/sevagh/demucs.onnx) — Reference for STFT/ISTFT to real-valued ONNX conversion
 - [LRCLIB](https://lrclib.net) — Open synced lyrics API
 - [monochrome](https://github.com/monochrome-music/monochrome) — Lyrics sync and LRCLIB integration reference
+- [amll-ttml-db](https://github.com/amll-dev/amll-ttml-db) — Community-maintained word-by-word lyrics database (CC0)
+- [AMLL (Apple Music-like Lyrics)](https://github.com/amll-dev/applemusic-like-lyrics) — Lyrics rendering techniques (karaoke fill, spring physics, glow effects)
 
 ## License
 
