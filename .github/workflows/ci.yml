@@ -20,7 +20,7 @@ env:
 jobs:
   prepare-model:
     name: Prepare separation model
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -57,9 +57,33 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  conventional-commits:
+    name: Conventional commits
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Enforce conventional PR title
+        uses: amannn/action-semantic-pull-request@v6.1.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  cargo-deny:
+    name: Cargo deny
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.3
+
+      - name: Check Rust dependencies
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: src-tauri/Cargo.toml
+
   frontend-quality:
     name: Frontend quality
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -91,7 +115,7 @@ jobs:
 
   frontend-build:
     name: Frontend build
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -120,7 +144,7 @@ jobs:
 
   frontend-test:
     name: Frontend tests
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     permissions:
       contents: read
@@ -184,7 +208,7 @@ jobs:
 
       - name: Report coverage on PR
         if: always() && github.event_name == 'pull_request'
-        uses: davelosert/vitest-coverage-report-action@v2
+        uses: davelosert/vitest-coverage-report-action@v2.12.0
         with:
           json-summary-path: ./coverage/coverage-summary.json
           vite-config-path: ./vite.config.ts
@@ -201,7 +225,7 @@ jobs:
             os: macos-14
             ort_target: aarch64-apple-darwin
           - name: Linux
-            os: ubuntu-22.04
+            os: ubuntu-24.04
             ort_target: x86_64-unknown-linux-gnu
 
     steps:
@@ -238,7 +262,7 @@ jobs:
           shared-key: ${{ github.workflow }}-${{ matrix.os }}
           workspaces: ./src-tauri -> target
           cache-bin: false
-          # Include full OS name in cache key to distinguish ubuntu-22.04 from ubuntu-24.04
+          # Include full OS name in cache key to distinguish ubuntu versions
           key: ${{ matrix.os }}
 
       - name: Install Linux test dependencies
@@ -270,9 +294,13 @@ jobs:
       - name: Prepare ONNX Runtime
         run: node scripts/prepare-onnx-runtime.mjs --target "${{ matrix.ort_target }}"
 
+      - name: Verify Rust formatting
+        working-directory: src-tauri
+        run: cargo fmt --check
+
       - name: Clippy
         working-directory: src-tauri
-        run: cargo clippy 2>&1 | head -50
+        run: cargo clippy -- -D warnings
 
       - name: Run Rust tests
         working-directory: src-tauri
@@ -328,7 +356,7 @@ jobs:
             os: windows-latest
             ort_target: x86_64-pc-windows-msvc
           - name: Linux
-            os: ubuntu-22.04
+            os: ubuntu-24.04
             ort_target: x86_64-unknown-linux-gnu
 
     steps:
@@ -378,7 +406,7 @@ jobs:
           shared-key: ${{ github.workflow }}-${{ matrix.os }}
           workspaces: ./src-tauri -> target
           cache-bin: false
-          # Include full OS name in cache key to distinguish ubuntu-22.04 from ubuntu-24.04
+          # Include full OS name in cache key to distinguish ubuntu versions
           key: ${{ matrix.os }}
 
       - name: Install Linux build dependencies
