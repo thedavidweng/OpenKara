@@ -1,8 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, test, vi } from "vitest";
+import { afterAll, describe, expect, test, vi } from "vitest";
 import { ErrorBoundary } from "./ErrorBoundary";
 
-vi.spyOn(console, "error").mockImplementation(() => {});
+const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+afterAll(() => {
+  consoleSpy.mockRestore();
+});
 
 describe("ErrorBoundary", () => {
   test("renders children when no error is thrown", () => {
