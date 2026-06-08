@@ -654,7 +654,7 @@ describe("loadStems", () => {
   });
 
   test("calls api.loadStems and updates the snapshot", async () => {
-    const snap = playbackSnapshot({ has_stems: true, stem_mode: "vocals" });
+    const snap = playbackSnapshot({ has_stems: true, stem_mode: "two_stem" });
     mockLoadStems.mockResolvedValue(snap);
 
     await player.store.getState().loadStems();

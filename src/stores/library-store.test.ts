@@ -962,7 +962,17 @@ describe("library-store batch progress", () => {
 describe("library-store clearImportErrors", () => {
   test("resets importErrors to an empty array", () => {
     useLibraryStore.setState({
-      importErrors: [{ path: "/tmp/fail.mp3", error: new Error("bad file") }],
+      importErrors: [
+        {
+          path: "/tmp/fail.mp3",
+          error: {
+            code: "media_read_failed",
+            message: "bad file",
+            retryable: false,
+            fallback: "retry",
+          },
+        },
+      ],
     });
 
     useLibraryStore.getState().clearImportErrors();

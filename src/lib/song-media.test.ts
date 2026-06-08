@@ -95,7 +95,7 @@ describe("songCanBeSeparated", () => {
 
   test("returns false for non-original audio source kind", () => {
     expect(
-      songCanBeSeparated(makeSong({ audio_source_kind: "instrumental" })),
+      songCanBeSeparated(makeSong({ audio_source_kind: "stems_remote" })),
     ).toBe(false);
   });
 

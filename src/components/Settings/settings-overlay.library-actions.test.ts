@@ -644,22 +644,22 @@ describe("createLibrarySettingsActions", () => {
       const harness = createHarness();
       const appSettings = {
         ...createAppSettings(),
-        execution_provider: "coreml" as const,
+        execution_provider: "xnnpack" as const,
       };
       harness.dependencies.api.setExecutionProvider.mockResolvedValue(
         appSettings,
       );
 
-      await harness.actions.setExecutionProvider("coreml");
+      await harness.actions.setExecutionProvider("xnnpack");
 
       expect(
         harness.dependencies.api.setExecutionProvider,
-      ).toHaveBeenCalledWith("coreml");
+      ).toHaveBeenCalledWith("xnnpack");
       expect(
         harness.dependencies.settingsStore.hydrateAppSettings,
       ).toHaveBeenCalledWith(appSettings);
       expect(harness.patchState).toHaveBeenCalledWith({
-        executionProvider: "coreml",
+        executionProvider: "xnnpack",
       });
     });
 

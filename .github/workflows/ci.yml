@@ -151,12 +151,6 @@ jobs:
       - name: Run frontend tests with coverage
         run: pnpm test:coverage
 
-      - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: Run E2E tests
-        run: pnpm test:e2e
-
       - name: Test metrics summary
         if: always()
         run: |

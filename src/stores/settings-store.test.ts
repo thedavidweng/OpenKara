@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AppSettings } from "@/types/ipc";
 import {
   createSettingsStore,
@@ -105,7 +105,7 @@ describe("settings-store sync", () => {
 
 describe("settings-store actions", () => {
   let store: ReturnType<typeof createSettingsStore>["store"];
-  let dispose: () => void;
+  let dispose: (() => void) | undefined;
 
   beforeEach(() => {
     const instance = createSettingsStore();
@@ -125,6 +125,10 @@ describe("settings-store actions", () => {
     });
     mockSetLyricsFontStep.mockReset();
     mockNotifyError.mockReset();
+  });
+
+  afterEach(() => {
+    dispose?.();
   });
 
   // ── toggle ──────────────────────────────────────────────────────────────
@@ -176,8 +180,8 @@ describe("settings-store actions", () => {
       hide_batch_separate: true,
       cover_art_backdrop: false,
       lyrics_font_step: 1,
-      execution_provider: "cuda",
-      available_execution_providers: ["cpu", "cuda"],
+      execution_provider: "xnnpack",
+      available_execution_providers: ["cpu", "xnnpack"],
     });
 
     store.getState().hydrateAppSettings(settings);
@@ -190,8 +194,8 @@ describe("settings-store actions", () => {
     expect(state.hideBatchSeparate).toBe(true);
     expect(state.coverArtBackdrop).toBe(false);
     expect(state.lyricsFontStep).toBe(1);
-    expect(state.executionProvider).toBe("cuda");
-    expect(state.availableExecutionProviders).toEqual(["cpu", "cuda"]);
+    expect(state.executionProvider).toBe("xnnpack");
+    expect(state.availableExecutionProviders).toEqual(["cpu", "xnnpack"]);
   });
 
   test("hydrateAppSettings maps snake_case keys to camelCase", () => {
@@ -214,8 +218,8 @@ describe("settings-store actions", () => {
     expect(state.lyricsFontStep).toBe(0);
   });
 
-  test("patchAppSettings can update isOpen", () => {
-    store.getState().patchAppSettings({ isOpen: true });
+  test("open sets isOpen to true", () => {
+    store.getState().open();
     expect(store.getState().isOpen).toBe(true);
   });
 
@@ -326,8 +330,8 @@ describe("settings-store actions", () => {
       hideBatchSeparate: true,
       coverArtBackdrop: false,
       lyricsFontStep: 1,
-      executionProvider: "cuda",
-      availableExecutionProviders: ["cpu", "cuda"],
+      executionProvider: "xnnpack",
+      availableExecutionProviders: ["cpu", "xnnpack"],
     });
 
     const snapshot = store.getState().getAppSettingsSnapshot();
@@ -340,8 +344,8 @@ describe("settings-store actions", () => {
       hideBatchSeparate: true,
       coverArtBackdrop: false,
       lyricsFontStep: 1,
-      executionProvider: "cuda",
-      availableExecutionProviders: ["cpu", "cuda"],
+      executionProvider: "xnnpack",
+      availableExecutionProviders: ["cpu", "xnnpack"],
     });
     expect(snapshot).not.toHaveProperty("isOpen");
   });
