@@ -282,13 +282,14 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
         className={`flex w-full flex-1 overflow-y-auto animate-[song-fade-in_var(--motion-duration-slow)_var(--motion-ease-emphasized-out)] ${
           isAudience ? "" : spaciousStageLayout ? "px-16 py-10" : "px-12 py-8"
         }`}
-        style={
-          isAudience
+        style={{
+          mixBlendMode: "plus-lighter" as const,
+          ...(isAudience
             ? {
                 padding: `${audiencePresentationSpec.verticalPaddingPx}px ${audiencePresentationSpec.horizontalPaddingPx}px`,
               }
-            : undefined
-        }
+            : undefined),
+        }}
       >
         <div
           className={`mx-auto flex w-full flex-col items-center ${
@@ -314,11 +315,36 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
               ? currentPageStart + idx
               : idx;
 
+            const distance = isPlainText
+              ? 0
+              : Math.abs(absoluteIndex - activeLineIndex);
+
             return (
               <div
                 key={`${absoluteIndex}-${line.time_ms}-${line.text}`}
                 data-lyrics-line-index={absoluteIndex}
-                className="w-full"
+                data-line-distance={distance}
+                className="w-full transition-all duration-400 ease-out"
+                style={{
+                  filter:
+                    distance === 0
+                      ? "blur(0)"
+                      : distance === 1
+                        ? "blur(1px)"
+                        : `blur(${Math.min(distance, 4)}px)`,
+                  transform:
+                    distance === 0
+                      ? "scale(1)"
+                      : distance === 1
+                        ? "scale(0.98)"
+                        : `scale(${Math.max(0.95, 1 - distance * 0.015)})`,
+                  opacity:
+                    distance === 0 ? 1 : Math.max(0.3, 1 - distance * 0.2),
+                  transition:
+                    "filter 0.4s ease, transform 0.4s cubic-bezier(0.25, 0.1, 0.25, 1), opacity 0.3s ease",
+                  willChange: "transform, opacity, filter",
+                  contain: "layout style paint",
+                }}
               >
                 <LyricLine
                   line={line}
