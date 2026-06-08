@@ -67,14 +67,8 @@ impl TimedLyricsProvider<'_> {
                         let lrc = lyrics.lrc.trim();
                         if !lrc.is_empty() {
                             Some(lyrics.lrc)
-                        } else if let Some(ttml) = lyrics.lrc_ttml {
-                            if !ttml.trim().is_empty() {
-                                Some(ttml)
-                            } else {
-                                None
-                            }
                         } else {
-                            None
+                            lyrics.lrc_ttml.filter(|ttml| !ttml.trim().is_empty())
                         }
                     })
                 })
