@@ -3,7 +3,7 @@ use crate::{
     lyrics::{
         lrcapi::LrcApiClient,
         lrclib::{LrcLibClient, LyricsLookupQuery},
-        parser,
+        lys_parser, parser, ttml_parser,
     },
     metadata,
 };
@@ -63,11 +63,18 @@ impl TimedLyricsProvider<'_> {
                 .fetch_by_track(query)
                 .map(|result| {
                     result.and_then(|lyrics| {
+                        // Prefer LRC, fall back to TTML
                         let lrc = lyrics.lrc.trim();
-                        if lrc.is_empty() {
-                            None
-                        } else {
+                        if !lrc.is_empty() {
                             Some(lyrics.lrc)
+                        } else if let Some(ttml) = lyrics.lrc_ttml {
+                            if !ttml.trim().is_empty() {
+                                Some(ttml)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
                         }
                     })
                 })
@@ -98,9 +105,9 @@ pub fn fetch_lyrics_for_song(
         }));
     }
 
-    if let Some(sidecar_lyrics) = read_sidecar_lrc(resolved_audio_path)? {
+    if let Some((sidecar_lyrics, sidecar_source)) = read_sidecar_lyrics(resolved_audio_path)? {
         return Ok(Some(LyricsFetchResult {
-            source: LyricsSource::Sidecar,
+            source: sidecar_source,
             raw_lrc: sidecar_lyrics,
         }));
     }
@@ -125,11 +132,30 @@ pub fn fetch_online_timed_lyrics(
 
     for provider in providers {
         match (*provider).fetch_timed_lrc(query) {
-            Ok(Some(raw_lrc)) => {
-                if has_timed_lines(&raw_lrc) {
+            Ok(Some(raw)) => {
+                let trimmed = raw.trim();
+                // Detect TTML content from LrcAPI
+                let source = if (*provider).source() == LyricsSource::LrcApi
+                    && (trimmed.starts_with("<?xml") || trimmed.starts_with("<tt"))
+                {
+                    LyricsSource::LrcApiTtml
+                } else {
+                    (*provider).source()
+                };
+
+                // Verify it has timed content
+                let has_timed = if source == LyricsSource::LrcApiTtml {
+                    ttml_parser::parse_ttml(&raw)
+                        .map(|lines| !lines.is_empty())
+                        .unwrap_or(false)
+                } else {
+                    has_timed_lines(&raw)
+                };
+
+                if has_timed {
                     return Ok(Some(LyricsFetchResult {
-                        source: (*provider).source(),
-                        raw_lrc,
+                        source,
+                        raw_lrc: raw,
                     }));
                 }
             }
@@ -167,24 +193,56 @@ pub fn read_embedded_lyrics(path: &Path) -> Result<Option<String>> {
     Ok(None)
 }
 
-fn read_sidecar_lrc(path: &Path) -> Result<Option<String>> {
-    let sidecar_path = path.with_extension("lrc");
-    if !sidecar_path.exists() {
-        return Ok(None);
+fn read_sidecar_lyrics(path: &Path) -> Result<Option<(String, LyricsSource)>> {
+    // Priority: .ttml > .lys > .lrc
+    for (ext, source) in &[
+        ("ttml", LyricsSource::SidecarTtml),
+        ("lys", LyricsSource::SidecarLys),
+        ("lrc", LyricsSource::Sidecar),
+    ] {
+        let sidecar_path = path.with_extension(ext);
+        if sidecar_path.exists() {
+            let contents = fs::read_to_string(&sidecar_path).with_context(|| {
+                format!(
+                    "failed to read sidecar lyrics from {}",
+                    sidecar_path.display()
+                )
+            })?;
+            let contents = contents.trim().to_owned();
+            if !contents.is_empty() {
+                return Ok(Some((contents, source.clone())));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Detect format and parse lyrics automatically.
+/// TTML if starts with "<?xml" or "<tt", LYS if matches "^\[\d\]", otherwise LRC.
+pub fn parse_lyrics_auto(raw: &str) -> Result<Vec<crate::lyrics::parser::LyricLine>> {
+    let trimmed = raw.trim();
+
+    // TTML detection
+    if trimmed.starts_with("<?xml") || trimmed.starts_with("<tt") {
+        return ttml_parser::parse_ttml(raw).map_err(|e| anyhow::anyhow!("TTML parse error: {e}"));
     }
 
-    let contents = fs::read_to_string(&sidecar_path).with_context(|| {
-        format!(
-            "failed to read sidecar lyrics from {}",
-            sidecar_path.display()
-        )
-    })?;
-    let contents = contents.trim().to_owned();
-    if contents.is_empty() {
-        return Ok(None);
+    // LYS detection: first non-empty line starts with [digit]
+    if let Some(first_line) = trimmed.lines().find(|l| !l.trim().is_empty()) {
+        if first_line.trim().starts_with('[')
+            && first_line.trim().len() >= 2
+            && first_line.trim().as_bytes()[1].is_ascii_digit()
+        {
+            if let Ok(lines) = lys_parser::parse_lys(raw) {
+                if !lines.is_empty() {
+                    return Ok(lines);
+                }
+            }
+        }
     }
 
-    Ok(Some(contents))
+    // Default: LRC
+    crate::lyrics::parser::parse_lrc(raw)
 }
 
 fn has_timed_lines(raw_lrc: &str) -> bool {

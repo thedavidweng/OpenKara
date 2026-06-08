@@ -48,6 +48,8 @@ tiny_http = "0.12.0"
 tracing = "0.1"
 vorbis_rs = "0.5.5"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+quick-xml = "0.37"
+regex = "1"
 
 [dev-dependencies]
 hound = "3.5.1"
