@@ -1,0 +1,759 @@
+// @vitest-environment jsdom
+
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import type { LibraryRegistrySnapshot, RegisteredLibrary } from "@/types/ipc";
+import type {
+  SettingsActionContext,
+  SettingsOverlaySnapshot,
+} from "./settings-overlay.types";
+
+vi.mock("@/lib/errors", () => ({
+  getErrorMessage: (error: unknown) =>
+    error instanceof Error ? error.message : String(error),
+}));
+
+vi.mock("@/stores/library-store", () => ({
+  useLibraryStore: {
+    setState: vi.fn(),
+  },
+}));
+
+import {
+  createLibrarySettingsActions,
+  describeLibrary,
+} from "./settings-overlay.library-actions";
+
+// ---------------------------------------------------------------------------
+// Fixtures
+// ---------------------------------------------------------------------------
+
+const localLibrary: RegisteredLibrary = {
+  id: "local:/karaoke",
+  kind: "local",
+  display_name: "karaoke",
+  root_path: "/karaoke",
+};
+
+const remoteLibraryWithDisplay: RegisteredLibrary = {
+  id: "remote:drive-1",
+  kind: "remote",
+  display_name: "Drive",
+  provider: "google_drive",
+  account_id: "account-1",
+  remote_root_locator: "root-1",
+  remote_path_display: "Google Drive / OpenKara",
+  connection_config: null,
+  cached_db_path: null,
+  remote_revision: null,
+};
+
+const remoteLibraryWithoutDisplay: RegisteredLibrary = {
+  id: "remote:drive-2",
+  kind: "remote",
+  display_name: "Dropbox",
+  provider: "dropbox",
+  account_id: "account-2",
+  remote_root_locator: "/shared/openkara",
+  remote_path_display: "",
+  connection_config: null,
+  cached_db_path: null,
+  remote_revision: null,
+};
+
+const emptyRegistry: LibraryRegistrySnapshot = {
+  active_library_id: null,
+  libraries: [],
+};
+
+function createAppSettings() {
+  return {
+    stem_mode: "four_stem" as const,
+    model_variant: "htdemucs_ft" as const,
+    language: "en",
+    hide_batch_separate: false,
+    cover_art_backdrop: false,
+    lyrics_font_step: 0,
+    execution_provider: "xnnpack" as const,
+    available_execution_providers: ["cpu", "xnnpack"] as const,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Harness
+// ---------------------------------------------------------------------------
+
+function createHarness(overrides?: {
+  libraries?: RegisteredLibrary[];
+  activeLibraryId?: string | null;
+}) {
+  const libraries = overrides?.libraries ?? [localLibrary];
+  const activeLibraryId = overrides?.activeLibraryId ?? localLibrary.id;
+
+  let snapshot: SettingsOverlaySnapshot = {
+    state: {
+      libraryPath: null,
+      libraryError: null,
+      libraryRegistry: null,
+      libraries,
+      activeLibraryId,
+      stemMode: "four_stem",
+      modelVariant: "htdemucs_ft",
+      modelStatuses: {},
+      downloadingModel: null,
+      language: "en",
+      hideBatchSeparate: false,
+      coverArtBackdrop: false,
+      executionProvider: "xnnpack",
+      availableExecutionProviders: ["cpu", "xnnpack"],
+    },
+    meta: {
+      isInitializing: false,
+      dangerDialog: null,
+      stemsSize: null,
+      downgradeSavings: null,
+      deletingStemsInProgress: false,
+      deletingLyricsInProgress: false,
+      downgradingInProgress: false,
+    },
+  };
+
+  const dependencies = {
+    api: {
+      createLocalLibrary: vi.fn().mockResolvedValue(undefined),
+      registerLocalLibrary: vi.fn().mockResolvedValue(undefined),
+      switchLibrary: vi.fn(),
+      refreshRemoteRepository: vi.fn().mockResolvedValue(undefined),
+      getLibraryRegistry: vi.fn().mockResolvedValue(emptyRegistry),
+      renameLibrary: vi.fn(),
+      removeLibrary: vi.fn(),
+      deleteLibrary: vi.fn(),
+      setLanguage: vi.fn(),
+      restartApp: vi.fn().mockResolvedValue(undefined),
+      setStemMode: vi.fn(),
+      setExecutionProvider: vi.fn(),
+      setHideBatchSeparate: vi.fn(),
+      setCoverArtBackdrop: vi.fn(),
+      createLibrary: vi.fn(),
+      deleteAllCachedLyrics: vi.fn(),
+      deleteAllStems: vi.fn(),
+      deleteModel: vi.fn(),
+      downloadModel: vi.fn(),
+      downgradeAllToTwoStem: vi.fn(),
+      estimateDowngradeSavings: vi.fn(),
+      estimateStemsSize: vi.fn(),
+      getAllSeparationStatuses: vi.fn(),
+      getLibraryPath: vi.fn(),
+      getSettings: vi.fn(),
+      getModelStatus: vi.fn(),
+      openLibrary: vi.fn(),
+      mirrorLocalLibraryToRemote: vi.fn(),
+      reauthorizeRemoteLibrary: vi.fn(),
+      setModelVariant: vi.fn(),
+    },
+    notifyError: vi.fn(),
+    openDirectory: vi.fn(),
+    changeLanguage: vi.fn(),
+    libraryStore: {
+      clearAllSeparationStatuses: vi.fn(),
+      clearAllUploadStatuses: vi.fn(),
+      clearSelection: vi.fn(),
+      loadLibrary: vi.fn().mockResolvedValue(undefined),
+      updateSeparationStatus: vi.fn(),
+    },
+    queueStore: { clearQueue: vi.fn() },
+    playerStore: { loadState: vi.fn().mockResolvedValue(undefined) },
+    lyricsStore: { clear: vi.fn() },
+    settingsStore: {
+      getAppSettingsSnapshot: vi.fn(),
+      hydrateAppSettings: vi.fn(),
+      patchAppSettings: vi.fn(),
+    },
+  };
+
+  const patchState = vi.fn((patch: Record<string, unknown>) => {
+    snapshot = {
+      ...snapshot,
+      state: { ...snapshot.state, ...patch },
+    };
+  });
+
+  const refreshLibraryRegistry = vi.fn().mockResolvedValue(undefined);
+  const refreshModelStatuses = vi.fn().mockResolvedValue(undefined);
+  const selectSingleDirectory = vi.fn();
+
+  const context: SettingsActionContext = {
+    dependencies,
+    controls: {
+      getSnapshot: () => snapshot,
+      setSnapshot: (updater) => {
+        snapshot = updater(snapshot);
+      },
+    },
+    patchState,
+    patchMeta: vi.fn(),
+    refreshLibraryRegistry,
+    refreshModelStatuses,
+    applyModelVariant: vi.fn(),
+    selectSingleDirectory,
+    closeDialog: vi.fn(),
+  };
+
+  const actions = createLibrarySettingsActions(context);
+
+  return {
+    actions,
+    context,
+    dependencies,
+    patchState,
+    refreshLibraryRegistry,
+    refreshModelStatuses,
+    selectSingleDirectory,
+    getSnapshot: () => snapshot,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// describeLibrary
+// ---------------------------------------------------------------------------
+
+describe("describeLibrary", () => {
+  test("returns root_path for a local library", () => {
+    expect(describeLibrary(localLibrary)).toBe("/karaoke");
+  });
+
+  test("returns display_name with remote_path_display for a remote library", () => {
+    expect(describeLibrary(remoteLibraryWithDisplay)).toBe(
+      "Drive · Google Drive / OpenKara",
+    );
+  });
+
+  test("falls back to remote_root_locator when remote_path_display is empty", () => {
+    expect(describeLibrary(remoteLibraryWithoutDisplay)).toBe(
+      "Dropbox · /shared/openkara",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createLibrarySettingsActions
+// ---------------------------------------------------------------------------
+
+describe("createLibrarySettingsActions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // ---- createLibrary ----
+
+  describe("createLibrary", () => {
+    test("no-ops when selectSingleDirectory returns null", async () => {
+      const harness = createHarness();
+      harness.selectSingleDirectory.mockResolvedValue(null);
+
+      await harness.actions.createLibrary("Create");
+
+      expect(
+        harness.dependencies.api.createLocalLibrary,
+      ).not.toHaveBeenCalled();
+      expect(harness.refreshLibraryRegistry).not.toHaveBeenCalled();
+    });
+
+    test("creates a local library at selected path + /OpenKara on success", async () => {
+      const harness = createHarness();
+      harness.selectSingleDirectory.mockResolvedValue("/music");
+
+      await harness.actions.createLibrary("Create");
+
+      expect(harness.patchState).toHaveBeenCalledWith({ libraryError: null });
+      expect(harness.dependencies.api.createLocalLibrary).toHaveBeenCalledWith(
+        "/music/OpenKara",
+      );
+      expect(harness.refreshLibraryRegistry).toHaveBeenCalled();
+    });
+
+    test("patches libraryError on failure", async () => {
+      const harness = createHarness();
+      harness.selectSingleDirectory.mockResolvedValue("/music");
+      harness.dependencies.api.createLocalLibrary.mockRejectedValue(
+        new Error("disk full"),
+      );
+
+      await harness.actions.createLibrary("Create");
+
+      expect(harness.patchState).toHaveBeenCalledWith({
+        libraryError: "disk full",
+      });
+    });
+  });
+
+  // ---- openLibrary ----
+
+  describe("openLibrary", () => {
+    test("no-ops when selectSingleDirectory returns null", async () => {
+      const harness = createHarness();
+      harness.selectSingleDirectory.mockResolvedValue(null);
+
+      await harness.actions.openLibrary("Open");
+
+      expect(
+        harness.dependencies.api.registerLocalLibrary,
+      ).not.toHaveBeenCalled();
+    });
+
+    test("registers a local library at selected path", async () => {
+      const harness = createHarness();
+      harness.selectSingleDirectory.mockResolvedValue("/existing");
+
+      await harness.actions.openLibrary("Open");
+
+      expect(harness.patchState).toHaveBeenCalledWith({ libraryError: null });
+      expect(
+        harness.dependencies.api.registerLocalLibrary,
+      ).toHaveBeenCalledWith("/existing");
+      expect(harness.refreshLibraryRegistry).toHaveBeenCalled();
+    });
+
+    test("patches libraryError on failure", async () => {
+      const harness = createHarness();
+      harness.selectSingleDirectory.mockResolvedValue("/existing");
+      harness.dependencies.api.registerLocalLibrary.mockRejectedValue(
+        new Error("not found"),
+      );
+
+      await harness.actions.openLibrary("Open");
+
+      expect(harness.patchState).toHaveBeenCalledWith({
+        libraryError: "not found",
+      });
+    });
+  });
+
+  // ---- switchLibrary ----
+
+  describe("switchLibrary", () => {
+    test("calls switchLibrary API and applies side effects on success", async () => {
+      const harness = createHarness();
+      const registry: LibraryRegistrySnapshot = {
+        active_library_id: "local:/other",
+        libraries: [localLibrary],
+      };
+      harness.dependencies.api.switchLibrary.mockResolvedValue(registry);
+
+      await harness.actions.switchLibrary("local:/other");
+
+      expect(harness.patchState).toHaveBeenCalledWith({ libraryError: null });
+      expect(harness.dependencies.api.switchLibrary).toHaveBeenCalledWith(
+        "local:/other",
+      );
+      expect(
+        harness.dependencies.libraryStore.clearAllSeparationStatuses,
+      ).toHaveBeenCalled();
+      expect(
+        harness.dependencies.libraryStore.clearAllUploadStatuses,
+      ).toHaveBeenCalled();
+      expect(
+        harness.dependencies.libraryStore.clearSelection,
+      ).toHaveBeenCalled();
+      expect(harness.dependencies.queueStore.clearQueue).toHaveBeenCalled();
+      expect(harness.dependencies.lyricsStore.clear).toHaveBeenCalled();
+      expect(harness.dependencies.playerStore.loadState).toHaveBeenCalled();
+      expect(harness.dependencies.libraryStore.loadLibrary).toHaveBeenCalled();
+      expect(harness.refreshLibraryRegistry).toHaveBeenCalled();
+      expect(harness.refreshModelStatuses).toHaveBeenCalled();
+    });
+
+    test("refreshes remote repository when switching to a remote library", async () => {
+      const harness = createHarness({
+        libraries: [localLibrary, remoteLibraryWithDisplay],
+        activeLibraryId: localLibrary.id,
+      });
+      const registry: LibraryRegistrySnapshot = {
+        active_library_id: remoteLibraryWithDisplay.id,
+        libraries: [localLibrary, remoteLibraryWithDisplay],
+      };
+      harness.dependencies.api.switchLibrary.mockResolvedValue(registry);
+
+      await harness.actions.switchLibrary(remoteLibraryWithDisplay.id);
+
+      expect(
+        harness.dependencies.api.refreshRemoteRepository,
+      ).toHaveBeenCalled();
+    });
+
+    test("patches libraryError on failure", async () => {
+      const harness = createHarness();
+      harness.dependencies.api.switchLibrary.mockRejectedValue(
+        new Error("switch failed"),
+      );
+
+      await harness.actions.switchLibrary("local:/missing");
+
+      expect(harness.patchState).toHaveBeenCalledWith({
+        libraryError: "switch failed",
+      });
+    });
+  });
+
+  // ---- renameLibrary ----
+
+  describe("renameLibrary", () => {
+    test("no-ops when the trimmed name is empty", async () => {
+      const harness = createHarness();
+
+      await harness.actions.renameLibrary(localLibrary.id, "   ");
+
+      expect(harness.dependencies.api.renameLibrary).not.toHaveBeenCalled();
+    });
+
+    test("no-ops when the name is unchanged", async () => {
+      const harness = createHarness();
+
+      await harness.actions.renameLibrary(localLibrary.id, "karaoke");
+
+      expect(harness.dependencies.api.renameLibrary).not.toHaveBeenCalled();
+    });
+
+    test("calls renameLibrary API with trimmed name and refreshes state", async () => {
+      const harness = createHarness();
+      const registry: LibraryRegistrySnapshot = {
+        active_library_id: localLibrary.id,
+        libraries: [{ ...localLibrary, display_name: "New Name" }],
+      };
+      harness.dependencies.api.renameLibrary.mockResolvedValue(registry);
+
+      await harness.actions.renameLibrary(localLibrary.id, "  New Name  ");
+
+      expect(harness.dependencies.api.renameLibrary).toHaveBeenCalledWith(
+        localLibrary.id,
+        "New Name",
+      );
+      expect(harness.refreshLibraryRegistry).toHaveBeenCalled();
+      expect(harness.refreshModelStatuses).toHaveBeenCalled();
+    });
+
+    test("patches libraryError on failure", async () => {
+      const harness = createHarness();
+      harness.dependencies.api.renameLibrary.mockRejectedValue(
+        new Error("rename failed"),
+      );
+
+      await harness.actions.renameLibrary(localLibrary.id, "New Name");
+
+      expect(harness.patchState).toHaveBeenCalledWith({
+        libraryError: "rename failed",
+      });
+    });
+  });
+
+  // ---- removeLibrary ----
+
+  describe("removeLibrary", () => {
+    test("no-ops when window.confirm returns false", async () => {
+      const harness = createHarness();
+      vi.spyOn(window, "confirm").mockReturnValue(false);
+
+      await harness.actions.removeLibrary(localLibrary.id);
+
+      expect(harness.dependencies.api.removeLibrary).not.toHaveBeenCalled();
+    });
+
+    test("calls removeLibrary API when confirmed", async () => {
+      const harness = createHarness();
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      const registry: LibraryRegistrySnapshot = {
+        active_library_id: null,
+        libraries: [],
+      };
+      harness.dependencies.api.removeLibrary.mockResolvedValue(registry);
+
+      await harness.actions.removeLibrary(localLibrary.id);
+
+      expect(window.confirm).toHaveBeenCalled();
+      expect(harness.dependencies.api.removeLibrary).toHaveBeenCalledWith(
+        localLibrary.id,
+      );
+      expect(harness.refreshLibraryRegistry).toHaveBeenCalled();
+    });
+
+    test("patches libraryError on failure", async () => {
+      const harness = createHarness();
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      harness.dependencies.api.removeLibrary.mockRejectedValue(
+        new Error("remove failed"),
+      );
+
+      await harness.actions.removeLibrary(localLibrary.id);
+
+      expect(harness.patchState).toHaveBeenCalledWith({
+        libraryError: "remove failed",
+      });
+    });
+  });
+
+  // ---- deleteLibrary ----
+
+  describe("deleteLibrary", () => {
+    test("no-ops when window.confirm returns false", async () => {
+      const harness = createHarness();
+      vi.spyOn(window, "confirm").mockReturnValue(false);
+
+      await harness.actions.deleteLibrary(localLibrary.id, "karaoke");
+
+      expect(harness.dependencies.api.deleteLibrary).not.toHaveBeenCalled();
+    });
+
+    test("no-ops when confirmationName does not match display_name", async () => {
+      const harness = createHarness();
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+
+      await harness.actions.deleteLibrary(localLibrary.id, "Wrong Name");
+
+      expect(harness.dependencies.api.deleteLibrary).not.toHaveBeenCalled();
+    });
+
+    test("calls deleteLibrary API when confirmed with correct name", async () => {
+      const harness = createHarness();
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      const registry: LibraryRegistrySnapshot = {
+        active_library_id: null,
+        libraries: [],
+      };
+      harness.dependencies.api.deleteLibrary.mockResolvedValue(registry);
+
+      await harness.actions.deleteLibrary(localLibrary.id, "karaoke");
+
+      expect(harness.dependencies.api.deleteLibrary).toHaveBeenCalledWith(
+        localLibrary.id,
+      );
+      expect(harness.refreshLibraryRegistry).toHaveBeenCalled();
+    });
+
+    test("patches libraryError on failure", async () => {
+      const harness = createHarness();
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      harness.dependencies.api.deleteLibrary.mockRejectedValue(
+        new Error("delete failed"),
+      );
+
+      await harness.actions.deleteLibrary(localLibrary.id, "karaoke");
+
+      expect(harness.patchState).toHaveBeenCalledWith({
+        libraryError: "delete failed",
+      });
+    });
+  });
+
+  // ---- setLanguage ----
+
+  describe("setLanguage", () => {
+    test("patches state, updates settings store, calls changeLanguage, and hydrates", async () => {
+      const harness = createHarness();
+      const appSettings = createAppSettings();
+      harness.dependencies.api.setLanguage.mockResolvedValue(appSettings);
+
+      await harness.actions.setLanguage("ja");
+
+      expect(harness.patchState).toHaveBeenCalledWith({ language: "ja" });
+      expect(
+        harness.dependencies.settingsStore.patchAppSettings,
+      ).toHaveBeenCalledWith({ language: "ja" });
+      expect(harness.dependencies.changeLanguage).toHaveBeenCalledWith("ja");
+      expect(harness.dependencies.api.setLanguage).toHaveBeenCalledWith("ja");
+      expect(
+        harness.dependencies.settingsStore.hydrateAppSettings,
+      ).toHaveBeenCalledWith(appSettings);
+    });
+
+    test("calls notifyError on failure", async () => {
+      const harness = createHarness();
+      harness.dependencies.api.setLanguage.mockRejectedValue(
+        new Error("lang fail"),
+      );
+
+      await harness.actions.setLanguage("fr");
+
+      expect(harness.dependencies.notifyError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "lang fail" }),
+      );
+    });
+  });
+
+  // ---- restartApp ----
+
+  describe("restartApp", () => {
+    test("calls api.restartApp", async () => {
+      const harness = createHarness();
+
+      await harness.actions.restartApp();
+
+      expect(harness.dependencies.api.restartApp).toHaveBeenCalledOnce();
+    });
+
+    test("calls notifyError on failure", async () => {
+      const harness = createHarness();
+      harness.dependencies.api.restartApp.mockRejectedValue(
+        new Error("restart fail"),
+      );
+
+      await harness.actions.restartApp();
+
+      expect(harness.dependencies.notifyError).toHaveBeenCalled();
+    });
+  });
+
+  // ---- setStemMode ----
+
+  describe("setStemMode", () => {
+    test("calls api.setStemMode and hydrates settings", async () => {
+      const harness = createHarness();
+      const appSettings = {
+        ...createAppSettings(),
+        stem_mode: "two_stem" as const,
+      };
+      harness.dependencies.api.setStemMode.mockResolvedValue(appSettings);
+
+      await harness.actions.setStemMode("two_stem");
+
+      expect(harness.dependencies.api.setStemMode).toHaveBeenCalledWith(
+        "two_stem",
+      );
+      expect(
+        harness.dependencies.settingsStore.hydrateAppSettings,
+      ).toHaveBeenCalledWith(appSettings);
+      expect(harness.patchState).toHaveBeenCalledWith({
+        stemMode: "two_stem",
+      });
+    });
+
+    test("calls notifyError on failure", async () => {
+      const harness = createHarness();
+      harness.dependencies.api.setStemMode.mockRejectedValue(
+        new Error("stem fail"),
+      );
+
+      await harness.actions.setStemMode("four_stem");
+
+      expect(harness.dependencies.notifyError).toHaveBeenCalled();
+    });
+  });
+
+  // ---- setExecutionProvider ----
+
+  describe("setExecutionProvider", () => {
+    test("calls api.setExecutionProvider and hydrates settings", async () => {
+      const harness = createHarness();
+      const appSettings = {
+        ...createAppSettings(),
+        execution_provider: "xnnpack" as const,
+      };
+      harness.dependencies.api.setExecutionProvider.mockResolvedValue(
+        appSettings,
+      );
+
+      await harness.actions.setExecutionProvider("xnnpack");
+
+      expect(
+        harness.dependencies.api.setExecutionProvider,
+      ).toHaveBeenCalledWith("xnnpack");
+      expect(
+        harness.dependencies.settingsStore.hydrateAppSettings,
+      ).toHaveBeenCalledWith(appSettings);
+      expect(harness.patchState).toHaveBeenCalledWith({
+        executionProvider: "xnnpack",
+      });
+    });
+
+    test("calls notifyError on failure", async () => {
+      const harness = createHarness();
+      harness.dependencies.api.setExecutionProvider.mockRejectedValue(
+        new Error("provider fail"),
+      );
+
+      await harness.actions.setExecutionProvider("xnnpack");
+
+      expect(harness.dependencies.notifyError).toHaveBeenCalled();
+    });
+  });
+
+  // ---- toggleHideBatchSeparate ----
+
+  describe("toggleHideBatchSeparate", () => {
+    test("patches state, updates settings store, and calls api", async () => {
+      const harness = createHarness();
+      const appSettings = {
+        ...createAppSettings(),
+        hide_batch_separate: true,
+      };
+      harness.dependencies.api.setHideBatchSeparate.mockResolvedValue(
+        appSettings,
+      );
+
+      await harness.actions.toggleHideBatchSeparate(true);
+
+      expect(harness.patchState).toHaveBeenCalledWith({
+        hideBatchSeparate: true,
+      });
+      expect(
+        harness.dependencies.settingsStore.patchAppSettings,
+      ).toHaveBeenCalledWith({ hideBatchSeparate: true });
+      expect(
+        harness.dependencies.api.setHideBatchSeparate,
+      ).toHaveBeenCalledWith(true);
+      expect(
+        harness.dependencies.settingsStore.hydrateAppSettings,
+      ).toHaveBeenCalledWith(appSettings);
+    });
+
+    test("calls notifyError on failure", async () => {
+      const harness = createHarness();
+      harness.dependencies.api.setHideBatchSeparate.mockRejectedValue(
+        new Error("batch fail"),
+      );
+
+      await harness.actions.toggleHideBatchSeparate(false);
+
+      expect(harness.dependencies.notifyError).toHaveBeenCalled();
+    });
+  });
+
+  // ---- toggleCoverArtBackdrop ----
+
+  describe("toggleCoverArtBackdrop", () => {
+    test("patches state, updates settings store, and calls api", async () => {
+      const harness = createHarness();
+      const appSettings = {
+        ...createAppSettings(),
+        cover_art_backdrop: true,
+      };
+      harness.dependencies.api.setCoverArtBackdrop.mockResolvedValue(
+        appSettings,
+      );
+
+      await harness.actions.toggleCoverArtBackdrop(true);
+
+      expect(harness.patchState).toHaveBeenCalledWith({
+        coverArtBackdrop: true,
+      });
+      expect(
+        harness.dependencies.settingsStore.patchAppSettings,
+      ).toHaveBeenCalledWith({ coverArtBackdrop: true });
+      expect(harness.dependencies.api.setCoverArtBackdrop).toHaveBeenCalledWith(
+        true,
+      );
+      expect(
+        harness.dependencies.settingsStore.hydrateAppSettings,
+      ).toHaveBeenCalledWith(appSettings);
+    });
+
+    test("calls notifyError on failure", async () => {
+      const harness = createHarness();
+      harness.dependencies.api.setCoverArtBackdrop.mockRejectedValue(
+        new Error("backdrop fail"),
+      );
+
+      await harness.actions.toggleCoverArtBackdrop(false);
+
+      expect(harness.dependencies.notifyError).toHaveBeenCalled();
+    });
+  });
+});

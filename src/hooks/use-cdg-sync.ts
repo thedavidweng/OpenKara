@@ -75,7 +75,7 @@ function emitCdgStatus(songId: string | null, hasCdg: boolean): void {
   postCdgStatus(getCdgSyncChannel(), lastStatus);
 }
 
-function getCdgSyncBucket(positionMs: number): number {
+export function getCdgSyncBucket(positionMs: number): number {
   return Math.floor(Math.max(0, positionMs) / MIN_INTERVAL_MS);
 }
 

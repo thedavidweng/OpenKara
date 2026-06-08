@@ -10,6 +10,68 @@ import {
   usePlayerStore,
 } from "./player-store";
 
+const {
+  mockResume,
+  mockPause,
+  mockSeek,
+  mockSetVolume,
+  mockSetStemVolume,
+  mockLoadStems,
+  mockGetPlaybackState,
+  mockNotifyError,
+} = vi.hoisted(() => ({
+  mockResume: vi.fn(),
+  mockPause: vi.fn(),
+  mockSeek: vi.fn(),
+  mockSetVolume: vi.fn(),
+  mockSetStemVolume: vi.fn(),
+  mockLoadStems: vi.fn(),
+  mockGetPlaybackState: vi.fn(),
+  mockNotifyError: vi.fn(),
+}));
+
+vi.mock("@/lib/tauri", () => ({
+  play: vi.fn(),
+  resume: mockResume,
+  pause: mockPause,
+  seek: mockSeek,
+  setVolume: mockSetVolume,
+  setStemVolume: mockSetStemVolume,
+  loadStems: mockLoadStems,
+  getPlaybackState: mockGetPlaybackState,
+}));
+
+vi.mock("@/lib/errors", () => ({
+  notifyError: mockNotifyError,
+}));
+
+vi.mock("@/stores/library-store", () => ({
+  useLibraryStore: {
+    getState: () => ({ separationStatuses: {} }),
+  },
+}));
+
+vi.mock("@/stores/queue-store", () => ({
+  useQueueStore: {
+    getState: () => ({
+      addToQueue: vi.fn(),
+      dequeue: vi.fn(),
+      pushToHistory: vi.fn(),
+      popFromHistory: vi.fn(),
+    }),
+  },
+}));
+
+vi.mock("./playback-workflow", () => ({
+  createPlaybackWorkflow: vi.fn(() => ({
+    playSong: vi.fn(),
+    playNow: vi.fn(),
+    playNextFromQueue: vi.fn(),
+    skipForward: vi.fn(),
+    skipBack: vi.fn(),
+  })),
+}));
+
 interface FakeChannel {
   onmessage: ((event: { data: unknown }) => void) | null;
   postMessage: (data: unknown) => void;
@@ -362,5 +424,473 @@ describe("selectSyncDisplayPositionMs", () => {
     expect(player.store.getState().positionMs).toBe(1500);
 
     player.dispose();
+  });
+});
+
+describe("resume", () => {
+  let player: ReturnType<typeof createPlayerStore>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    player = createPlayerStore();
+    mockResume.mockReset();
+    mockNotifyError.mockReset();
+  });
+
+  afterEach(() => {
+    player.dispose();
+    vi.useRealTimers();
+  });
+
+  test("updates snapshot, positionMs, and sets playingSinceMs", async () => {
+    const snap = playbackSnapshot({ is_playing: true, position_ms: 500 });
+    mockResume.mockResolvedValue(snap);
+
+    await player.store.getState().resume();
+
+    expect(mockResume).toHaveBeenCalled();
+    expect(player.store.getState().snapshot).toEqual(snap);
+    expect(player.store.getState().positionMs).toBe(500);
+    expect(player.store.getState().playingSinceMs).not.toBeNull();
+  });
+
+  test("calls notifyError when api.resume rejects", async () => {
+    const error = new Error("resume failed");
+    mockResume.mockRejectedValue(error);
+
+    await player.store.getState().resume();
+
+    expect(mockNotifyError).toHaveBeenCalledWith(error);
+    expect(player.store.getState().snapshot).toBeNull();
+  });
+});
+
+describe("pause", () => {
+  let player: ReturnType<typeof createPlayerStore>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    player = createPlayerStore();
+    mockPause.mockReset();
+    mockNotifyError.mockReset();
+  });
+
+  afterEach(() => {
+    player.dispose();
+    vi.useRealTimers();
+  });
+
+  test("updates snapshot, positionMs, and clears playingSinceMs", async () => {
+    const snap = playbackSnapshot({ is_playing: false, position_ms: 1200 });
+    mockPause.mockResolvedValue(snap);
+
+    await player.store.getState().pause();
+
+    expect(mockPause).toHaveBeenCalled();
+    expect(player.store.getState().snapshot).toEqual(snap);
+    expect(player.store.getState().positionMs).toBe(1200);
+    expect(player.store.getState().playingSinceMs).toBeNull();
+  });
+
+  test("calls notifyError when api.pause rejects", async () => {
+    const error = new Error("pause failed");
+    mockPause.mockRejectedValue(error);
+
+    await player.store.getState().pause();
+
+    expect(mockNotifyError).toHaveBeenCalledWith(error);
+  });
+});
+
+describe("seek", () => {
+  let player: ReturnType<typeof createPlayerStore>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    player = createPlayerStore();
+    mockSeek.mockReset();
+    mockNotifyError.mockReset();
+  });
+
+  afterEach(() => {
+    player.dispose();
+    vi.useRealTimers();
+  });
+
+  test("is a no-op when no snapshot exists", async () => {
+    await player.store.getState().seek(1000);
+
+    expect(mockSeek).not.toHaveBeenCalled();
+  });
+
+  test("clamps negative ms to 0 and calls api.seek", async () => {
+    player.store.setState({ snapshot: playbackSnapshot() });
+    const snap = playbackSnapshot({ position_ms: 0, is_playing: true });
+    mockSeek.mockResolvedValue(snap);
+
+    await player.store.getState().seek(-500);
+
+    expect(mockSeek).toHaveBeenCalledWith(0);
+    expect(player.store.getState().snapshot).toEqual(snap);
+    expect(player.store.getState().positionMs).toBe(0);
+  });
+
+  test("passes through positive values to api.seek", async () => {
+    player.store.setState({ snapshot: playbackSnapshot() });
+    const snap = playbackSnapshot({ position_ms: 1500, is_playing: true });
+    mockSeek.mockResolvedValue(snap);
+
+    await player.store.getState().seek(1500);
+
+    expect(mockSeek).toHaveBeenCalledWith(1500);
+    expect(player.store.getState().snapshot).toEqual(snap);
+    expect(player.store.getState().positionMs).toBe(1500);
+  });
+
+  test("sets playingSinceMs to null when seek returns paused snapshot", async () => {
+    player.store.setState({ snapshot: playbackSnapshot() });
+    const snap = playbackSnapshot({ is_playing: false, position_ms: 800 });
+    mockSeek.mockResolvedValue(snap);
+
+    await player.store.getState().seek(800);
+
+    expect(player.store.getState().playingSinceMs).toBeNull();
+  });
+});
+
+describe("setVolume", () => {
+  let player: ReturnType<typeof createPlayerStore>;
+
+  beforeEach(() => {
+    player = createPlayerStore();
+    mockSetVolume.mockReset();
+    mockNotifyError.mockReset();
+  });
+
+  afterEach(() => {
+    player.dispose();
+  });
+
+  test("calls api.setVolume with the given level", async () => {
+    const snap = playbackSnapshot({ volume: 0.5 });
+    mockSetVolume.mockResolvedValue(snap);
+
+    await player.store.getState().setVolume(0.5);
+
+    expect(mockSetVolume).toHaveBeenCalledWith(0.5);
+    expect(player.store.getState().snapshot).toEqual(snap);
+  });
+
+  test("clamps volume below 0 to 0", async () => {
+    mockSetVolume.mockResolvedValue(playbackSnapshot());
+
+    await player.store.getState().setVolume(-0.5);
+
+    expect(mockSetVolume).toHaveBeenCalledWith(0);
+  });
+
+  test("clamps volume above 1 to 1", async () => {
+    mockSetVolume.mockResolvedValue(playbackSnapshot());
+
+    await player.store.getState().setVolume(1.5);
+
+    expect(mockSetVolume).toHaveBeenCalledWith(1);
+  });
+});
+
+describe("setStemVolume", () => {
+  let player: ReturnType<typeof createPlayerStore>;
+
+  beforeEach(() => {
+    player = createPlayerStore();
+    mockSetStemVolume.mockReset();
+    mockNotifyError.mockReset();
+  });
+
+  afterEach(() => {
+    player.dispose();
+  });
+
+  test("calls api.setStemVolume with the given stem and level", async () => {
+    const snap = playbackSnapshot({
+      stem_volumes: { vocals: 0.8, drums: 1, bass: 1, other: 1 },
+    });
+    mockSetStemVolume.mockResolvedValue(snap);
+
+    await player.store.getState().setStemVolume("vocals", 0.8);
+
+    expect(mockSetStemVolume).toHaveBeenCalledWith("vocals", 0.8);
+    expect(player.store.getState().snapshot).toEqual(snap);
+  });
+
+  test("clamps stem volume below 0 to 0", async () => {
+    mockSetStemVolume.mockResolvedValue(playbackSnapshot());
+
+    await player.store.getState().setStemVolume("drums", -1);
+
+    expect(mockSetStemVolume).toHaveBeenCalledWith("drums", 0);
+  });
+
+  test("clamps stem volume above 1 to 1", async () => {
+    mockSetStemVolume.mockResolvedValue(playbackSnapshot());
+
+    await player.store.getState().setStemVolume("bass", 2);
+
+    expect(mockSetStemVolume).toHaveBeenCalledWith("bass", 1);
+  });
+});
+
+describe("loadStems", () => {
+  let player: ReturnType<typeof createPlayerStore>;
+
+  beforeEach(() => {
+    player = createPlayerStore();
+    mockLoadStems.mockReset();
+    mockNotifyError.mockReset();
+  });
+
+  afterEach(() => {
+    player.dispose();
+  });
+
+  test("calls api.loadStems and updates the snapshot", async () => {
+    const snap = playbackSnapshot({ has_stems: true, stem_mode: "two_stem" });
+    mockLoadStems.mockResolvedValue(snap);
+
+    await player.store.getState().loadStems();
+
+    expect(mockLoadStems).toHaveBeenCalled();
+    expect(player.store.getState().snapshot).toEqual(snap);
+  });
+
+  test("calls notifyError when api.loadStems rejects", async () => {
+    const error = new Error("load stems failed");
+    mockLoadStems.mockRejectedValue(error);
+
+    await player.store.getState().loadStems();
+
+    expect(mockNotifyError).toHaveBeenCalledWith(error, expect.any(Function));
+  });
+});
+
+describe("loadState", () => {
+  let player: ReturnType<typeof createPlayerStore>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    player = createPlayerStore();
+    mockGetPlaybackState.mockReset();
+    mockNotifyError.mockReset();
+  });
+
+  afterEach(() => {
+    player.dispose();
+    vi.useRealTimers();
+  });
+
+  test("calls api.getPlaybackState and updates the store", async () => {
+    const snap = playbackSnapshot({ is_playing: true, position_ms: 2000 });
+    mockGetPlaybackState.mockResolvedValue(snap);
+
+    await player.store.getState().loadState();
+
+    expect(mockGetPlaybackState).toHaveBeenCalled();
+    expect(player.store.getState().snapshot).toEqual(snap);
+    expect(player.store.getState().positionMs).toBe(2000);
+    expect(player.store.getState().playingSinceMs).not.toBeNull();
+  });
+
+  test("sets playingSinceMs to null when paused", async () => {
+    const snap = playbackSnapshot({ is_playing: false, position_ms: 1000 });
+    mockGetPlaybackState.mockResolvedValue(snap);
+
+    await player.store.getState().loadState();
+
+    expect(player.store.getState().playingSinceMs).toBeNull();
+  });
+
+  test("calls notifyError when api.getPlaybackState rejects", async () => {
+    const error = new Error("get state failed");
+    mockGetPlaybackState.mockRejectedValue(error);
+
+    await player.store.getState().loadState();
+
+    expect(mockNotifyError).toHaveBeenCalledWith(error);
+  });
+});
+
+describe("updateSnapshot", () => {
+  let player: ReturnType<typeof createPlayerStore>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    player = createPlayerStore();
+  });
+
+  afterEach(() => {
+    player.dispose();
+    vi.useRealTimers();
+  });
+
+  test("sets playingSinceMs when is_playing is true", () => {
+    const snap = playbackSnapshot({ is_playing: true, position_ms: 500 });
+
+    player.store.getState().updateSnapshot(snap);
+
+    expect(player.store.getState().snapshot).toEqual(snap);
+    expect(player.store.getState().positionMs).toBe(500);
+    expect(player.store.getState().playingSinceMs).not.toBeNull();
+  });
+
+  test("sets playingSinceMs to null when is_playing is false", () => {
+    const snap = playbackSnapshot({ is_playing: false, position_ms: 1000 });
+
+    player.store.getState().updateSnapshot(snap);
+
+    expect(player.store.getState().snapshot).toEqual(snap);
+    expect(player.store.getState().positionMs).toBe(1000);
+    expect(player.store.getState().playingSinceMs).toBeNull();
+  });
+});
+
+describe("updateAirPlayOutput", () => {
+  let player: ReturnType<typeof createPlayerStore>;
+
+  beforeEach(() => {
+    player = createPlayerStore();
+  });
+
+  afterEach(() => {
+    player.dispose();
+  });
+
+  test("updates the airPlayOutput state", () => {
+    const airPlayState = {
+      ...DEFAULT_AIRPLAY_OUTPUT_STATE,
+      active: true,
+      audioActive: true,
+      routeName: "Living Room",
+      mode: "lyrics" as const,
+      phase: "playing" as const,
+    };
+
+    player.store.getState().updateAirPlayOutput(airPlayState);
+
+    expect(player.store.getState().airPlayOutput).toEqual(airPlayState);
+  });
+
+  test("resets to default when given the default state", () => {
+    player.store.getState().updateAirPlayOutput({
+      ...DEFAULT_AIRPLAY_OUTPUT_STATE,
+      active: true,
+      routeName: "TV",
+    });
+
+    player.store.getState().updateAirPlayOutput(DEFAULT_AIRPLAY_OUTPUT_STATE);
+
+    expect(player.store.getState().airPlayOutput).toEqual(
+      DEFAULT_AIRPLAY_OUTPUT_STATE,
+    );
+  });
+});
+
+describe("updateLocalAudienceOutputActive", () => {
+  let player: ReturnType<typeof createPlayerStore>;
+
+  beforeEach(() => {
+    player = createPlayerStore();
+  });
+
+  afterEach(() => {
+    player.dispose();
+  });
+
+  test("toggles the localAudienceOutputActive flag", () => {
+    player.store.getState().updateLocalAudienceOutputActive(true);
+    expect(player.store.getState().localAudienceOutputActive).toBe(true);
+
+    player.store.getState().updateLocalAudienceOutputActive(false);
+    expect(player.store.getState().localAudienceOutputActive).toBe(false);
+  });
+});
+
+describe("startAirPlayPlainTextPagePending", () => {
+  let player: ReturnType<typeof createPlayerStore>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    player = createPlayerStore();
+  });
+
+  afterEach(() => {
+    player.dispose();
+    vi.useRealTimers();
+  });
+
+  test("sets pending flag and clears after timeout", () => {
+    player.store.getState().startAirPlayPlainTextPagePending("next", 500);
+
+    expect(player.store.getState().airPlayPlainTextPagePending).toBe(true);
+    expect(player.store.getState().airPlayPlainTextPagePendingDirection).toBe(
+      "next",
+    );
+
+    vi.advanceTimersByTime(500);
+
+    expect(player.store.getState().airPlayPlainTextPagePending).toBe(false);
+    expect(player.store.getState().airPlayPlainTextPagePendingDirection).toBe(
+      null,
+    );
+  });
+
+  test("replaces previous timer when called again", () => {
+    player.store.getState().startAirPlayPlainTextPagePending("prev", 1000);
+    vi.advanceTimersByTime(500);
+    player.store.getState().startAirPlayPlainTextPagePending("next", 1000);
+
+    expect(player.store.getState().airPlayPlainTextPagePendingDirection).toBe(
+      "next",
+    );
+
+    // First timer has elapsed but second hasn't
+    vi.advanceTimersByTime(500);
+    expect(player.store.getState().airPlayPlainTextPagePending).toBe(true);
+
+    // Second timer elapses
+    vi.advanceTimersByTime(500);
+    expect(player.store.getState().airPlayPlainTextPagePending).toBe(false);
+    expect(player.store.getState().airPlayPlainTextPagePendingDirection).toBe(
+      null,
+    );
+  });
+});
+
+describe("clearAirPlayPlainTextPagePending", () => {
+  let player: ReturnType<typeof createPlayerStore>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    player = createPlayerStore();
+  });
+
+  afterEach(() => {
+    player.dispose();
+    vi.useRealTimers();
+  });
+
+  test("clears pending flag and cancels timer", () => {
+    player.store.getState().startAirPlayPlainTextPagePending("prev", 1000);
+    expect(player.store.getState().airPlayPlainTextPagePending).toBe(true);
+
+    player.store.getState().clearAirPlayPlainTextPagePending();
+
+    expect(player.store.getState().airPlayPlainTextPagePending).toBe(false);
+    expect(player.store.getState().airPlayPlainTextPagePendingDirection).toBe(
+      null,
+    );
+
+    // Timer should be cancelled — advancing time shouldn't restore state
+    vi.advanceTimersByTime(2000);
+    expect(player.store.getState().airPlayPlainTextPagePending).toBe(false);
   });
 });

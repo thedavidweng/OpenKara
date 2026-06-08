@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import {
   createDesktopWindowActions,
+  createNoopDesktopWindowController,
   getWindowChromeVariant,
   syncWindowMaximizedState,
   type DesktopWindowController,
@@ -70,5 +71,17 @@ describe("window chrome helpers", () => {
 
     expect(controller.isMaximized).toHaveBeenCalledOnce();
     expect(setMaximized).toHaveBeenCalledWith(true);
+  });
+
+  test("noop controller resolves without side effects", async () => {
+    const controller = createNoopDesktopWindowController();
+    expect(await controller.isMaximized()).toBe(false);
+    await controller.close();
+    await controller.minimize();
+    await controller.startDragging();
+    await controller.startResizeDragging("South");
+    await controller.toggleMaximize();
+    const cleanup = await controller.onResized(() => {});
+    expect(typeof cleanup).toBe("function");
   });
 });
