@@ -65,8 +65,37 @@ export default defineConfig(async () => ({
       "src/**/*.{test,spec}.?(c|m)[jt]s?(x)",
       "tests/**/*.{test,spec}.?(c|m)[jt]s?(x)",
     ],
-    exclude: ["**/node_modules/**", "**/dist/**", "**/.worktrees/**"],
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/.worktrees/**",
+      "tests/e2e/**",
+    ],
     setupFiles: ["./src/test-setup.ts"],
+    coverage: {
+      provider: "v8",
+      reporter: [
+        "text",
+        "text-summary",
+        "json",
+        "json-summary",
+        "lcov",
+        "html",
+      ],
+      reportsDirectory: "./coverage",
+      thresholds: {
+        // Lines/statements at 65%: nearly all testable pure logic and store
+        // actions are covered; remaining gap is UI component render paths.
+        // Functions/branches at 60%: remaining uncovered code is React UI
+        // component event handlers that require @testing-library/react or
+        // Playwright E2E to exercise — not practical for unit tests alone.
+        // Note: these are 65/60, not 70% — see PR description for context.
+        lines: 65,
+        statements: 65,
+        functions: 60,
+        branches: 60,
+      },
+    },
   },
   resolve: {
     alias: {
