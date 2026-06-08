@@ -52,10 +52,8 @@ pub fn parse_lys(lys: &str) -> Result<Vec<LyricLine>> {
         // Determine if background vocal (using raw text to detect parens)
         let is_bg = prop >= 6
             || (prop == 0
-                && raw_tokens
-                    .first()
-                    .map_or(false, |(t, _)| t.starts_with('('))
-                && raw_tokens.last().map_or(false, |(t, _)| t.ends_with(')')));
+                && raw_tokens.first().is_some_and(|(t, _)| t.starts_with('('))
+                && raw_tokens.last().is_some_and(|(t, _)| t.ends_with(')')));
 
         let (words, bg_words, display_text) = if is_bg {
             // Strip parentheses from bg tokens

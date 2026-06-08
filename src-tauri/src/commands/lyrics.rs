@@ -210,7 +210,7 @@ pub fn save_manual_lyrics(
             } else if trimmed
                 .lines()
                 .find(|l| !l.trim().is_empty())
-                .map_or(false, |l| {
+                .is_some_and(|l| {
                     l.trim().starts_with('[')
                         && l.trim().len() >= 2
                         && l.trim().as_bytes()[1].is_ascii_digit()

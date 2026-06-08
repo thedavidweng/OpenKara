@@ -52,10 +52,10 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                                 current_section =
                                     Some(String::from_utf8_lossy(&attr.value).into_owned());
                             }
-                            if key == "timing" || key.ends_with(":timing") {
-                                if String::from_utf8_lossy(&attr.value) == "Line" {
-                                    line_timing_mode = true;
-                                }
+                            if (key == "timing" || key.ends_with(":timing"))
+                                && String::from_utf8_lossy(&attr.value) == "Line"
+                            {
+                                line_timing_mode = true;
                             }
                         }
                     }
@@ -72,10 +72,10 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                             if key == "begin" {
                                 p_begin = parse_ttml_timestamp(&val);
                             }
-                            if key == "timing" || key.ends_with(":timing") {
-                                if val.as_ref() == "Line" {
-                                    line_timing_mode = true;
-                                }
+                            if (key == "timing" || key.ends_with(":timing"))
+                                && val.as_ref() == "Line"
+                            {
+                                line_timing_mode = true;
                             }
                         }
                     }
