@@ -1,5 +1,5 @@
 [advisories]
-unmaintained = "all"
+unmaintained = "workspace"
 yanked = "warn"
 
 [licenses]
@@ -19,6 +19,8 @@ allow = [
     "BSL-1.0",
     "FTL",
     "MPL-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "CDLA-Permissive-2.0",
 ]
 
 [bans]
