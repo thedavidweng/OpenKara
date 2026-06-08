@@ -51,7 +51,7 @@ const {
     lines: Array<{
       time_ms: number;
       text: string;
-      words: Array<{ text: string; time_ms: number }> | null;
+      words: Array<{ text: string; time_ms: number; end_ms: number }> | null;
     }>;
     activeLineIndex: number;
     offsetMs: number;
@@ -306,9 +306,9 @@ describe("LyricsPanel contextual reveal", () => {
         time_ms: 1000,
         text: "alpha beta gamma",
         words: [
-          { text: "alpha", time_ms: 1000 },
-          { text: "beta", time_ms: 1500 },
-          { text: "gamma", time_ms: 2000 },
+          { text: "alpha", time_ms: 1000, end_ms: 1500 },
+          { text: "beta", time_ms: 1500, end_ms: 2000 },
+          { text: "gamma", time_ms: 2000, end_ms: 2500 },
         ],
       },
     ];

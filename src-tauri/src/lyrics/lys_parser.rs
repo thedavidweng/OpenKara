@@ -24,14 +24,14 @@ pub fn parse_lys(lys: &str) -> Result<Vec<LyricLine>> {
         let prop: u8 = caps[1].parse().unwrap_or(0);
         let content = &raw_line[caps[0].len()..];
 
-        let mut raw_tokens: Vec<(String, u64)> = Vec::new();
+        let mut raw_tokens: Vec<(String, u64, u64)> = Vec::new();
         let mut search_start = 0;
         let content_bytes = content.as_bytes();
         while let Some(caps) = WORD_RE.captures_at(content, search_start) {
             let m = caps.get(0).unwrap();
             let mut text = caps[1].to_string();
             let start_ms: u64 = caps[2].parse().unwrap_or(0);
-            let _duration_ms: u64 = caps[3].parse().unwrap_or(0);
+            let duration_ms: u64 = caps[3].parse().unwrap_or(0);
             search_start = m.end();
 
             // Check for trailing ) right after the match (outer bg parentheses)
@@ -40,26 +40,28 @@ pub fn parse_lys(lys: &str) -> Result<Vec<LyricLine>> {
                 search_start += 1;
             }
 
-            raw_tokens.push((text, start_ms));
+            raw_tokens.push((text, start_ms, duration_ms));
         }
 
         if raw_tokens.is_empty() {
             continue;
         }
 
-        let time_ms = raw_tokens.iter().map(|(_, t)| *t).min().unwrap_or(0);
+        let time_ms = raw_tokens.iter().map(|(_, t, _)| *t).min().unwrap_or(0);
 
         // Determine if background vocal (using raw text to detect parens)
         let is_bg = prop >= 6
             || (prop == 0
-                && raw_tokens.first().is_some_and(|(t, _)| t.starts_with('('))
-                && raw_tokens.last().is_some_and(|(t, _)| t.ends_with(')')));
+                && raw_tokens
+                    .first()
+                    .is_some_and(|(t, _, _)| t.starts_with('('))
+                && raw_tokens.last().is_some_and(|(t, _, _)| t.ends_with(')')));
 
         let (words, bg_words, display_text) = if is_bg {
             // Strip parentheses from bg tokens
             let cleaned: Vec<WordToken> = raw_tokens
                 .iter()
-                .map(|(txt, start_ms)| {
+                .map(|(txt, start_ms, duration_ms)| {
                     let mut t = txt.trim().to_string();
                     if t.starts_with('(') {
                         t.remove(0);
@@ -69,6 +71,7 @@ pub fn parse_lys(lys: &str) -> Result<Vec<LyricLine>> {
                     }
                     WordToken {
                         time_ms: *start_ms,
+                        end_ms: start_ms + duration_ms,
                         text: t.trim().to_string(),
                     }
                 })
@@ -78,8 +81,9 @@ pub fn parse_lys(lys: &str) -> Result<Vec<LyricLine>> {
         } else {
             let tokens: Vec<WordToken> = raw_tokens
                 .iter()
-                .map(|(txt, start_ms)| WordToken {
+                .map(|(txt, start_ms, duration_ms)| WordToken {
                     time_ms: *start_ms,
+                    end_ms: start_ms + duration_ms,
                     text: txt.trim().to_string(),
                 })
                 .collect();
@@ -190,7 +194,17 @@ mod tests {
         let lines = parse_lys(lys).expect("should parse");
         let words = lines[0].words.as_ref().unwrap();
         assert_eq!(words[0].time_ms, 1000);
+        assert_eq!(words[0].end_ms, 1500);
         // text should be "Word"
         assert_eq!(words[0].text, "Word");
+    }
+
+    #[test]
+    fn parse_lys_word_end_time() {
+        let lys = "[0]Hello(1000,500) World(1500,750)\n";
+        let lines = parse_lys(lys).expect("should parse");
+        let words = lines[0].words.as_ref().unwrap();
+        assert_eq!(words[0].end_ms, 1500);
+        assert_eq!(words[1].end_ms, 2250);
     }
 }

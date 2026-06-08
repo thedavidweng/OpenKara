@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WordToken {
     pub time_ms: u64,
+    pub end_ms: u64,
     pub text: String,
 }
 
@@ -126,6 +127,7 @@ pub fn parse_word_tokens(text: &str) -> Option<(String, Vec<WordToken>)> {
                         plain.push_str(word_text);
                         tokens.push(WordToken {
                             time_ms,
+                            end_ms: time_ms, // will be fixed by fixup loop
                             text: word_text.to_owned(),
                         });
                         remaining = &rest[word_end..];
@@ -154,6 +156,17 @@ pub fn parse_word_tokens(text: &str) -> Option<(String, Vec<WordToken>)> {
 
     if tokens.is_empty() {
         return None;
+    }
+
+    // Fix up end_ms: use next word's start, or +500ms for the last word
+    for i in 0..tokens.len() {
+        if tokens[i].end_ms == tokens[i].time_ms {
+            if i + 1 < tokens.len() {
+                tokens[i].end_ms = tokens[i + 1].time_ms;
+            } else {
+                tokens[i].end_ms = tokens[i].time_ms + 500;
+            }
+        }
     }
 
     Some((plain, tokens))
@@ -245,14 +258,17 @@ mod tests {
             Some(vec![
                 WordToken {
                     time_ms: 12_000,
+                    end_ms: 12_300,
                     text: "I ".to_owned(),
                 },
                 WordToken {
                     time_ms: 12_300,
+                    end_ms: 12_600,
                     text: "see ".to_owned(),
                 },
                 WordToken {
                     time_ms: 12_600,
+                    end_ms: 13_100,
                     text: "trees".to_owned(),
                 },
             ])

@@ -26,10 +26,12 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
 
     // Current line state
     let mut p_begin: Option<u64> = None;
+    let mut p_end: Option<u64> = None;
     let mut words: Vec<WordToken> = Vec::new();
     let mut bg_words: Vec<WordToken> = Vec::new();
     let mut text_buf = String::new();
     let mut current_span_begin: Option<u64> = None;
+    let mut current_span_end: Option<u64> = None;
 
     // Stack to track nesting (for closing tags)
     let mut span_role_stack: Vec<String> = Vec::new();
@@ -62,6 +64,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                     "p" => {
                         in_p = true;
                         p_begin = None;
+                        p_end = None;
                         words.clear();
                         bg_words.clear();
                         text_buf.clear();
@@ -71,6 +74,9 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                             let val = String::from_utf8_lossy(&attr.value);
                             if key == "begin" {
                                 p_begin = parse_ttml_timestamp(&val);
+                            }
+                            if key == "end" {
+                                p_end = parse_ttml_timestamp(&val);
                             }
                             if (key == "timing" || key.ends_with(":timing"))
                                 && val.as_ref() == "Line"
@@ -82,6 +88,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                     "span" => {
                         let mut role = String::new();
                         let mut begin_ms: Option<u64> = None;
+                        let mut end_ms: Option<u64> = None;
                         for attr in e.attributes().flatten() {
                             let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
                             let val = String::from_utf8_lossy(&attr.value);
@@ -90,6 +97,9 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                             }
                             if key == "begin" {
                                 begin_ms = parse_ttml_timestamp(&val);
+                            }
+                            if key == "end" {
+                                end_ms = parse_ttml_timestamp(&val);
                             }
                         }
                         span_role_stack.push(role.clone());
@@ -102,6 +112,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                             in_bg_span = true;
                         } else if in_p && !line_timing_mode && begin_ms.is_some() {
                             current_span_begin = begin_ms;
+                            current_span_end = end_ms;
                         }
                     }
                     _ => {}
@@ -121,6 +132,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                     if let Some(begin) = current_span_begin {
                         bg_words.push(WordToken {
                             time_ms: begin,
+                            end_ms: current_span_end.unwrap_or(begin + 500),
                             text: text.to_string(),
                         });
                     }
@@ -129,6 +141,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                     if let Some(begin) = current_span_begin {
                         words.push(WordToken {
                             time_ms: begin,
+                            end_ms: current_span_end.unwrap_or(begin + 500),
                             text: text.to_string(),
                         });
                     }
@@ -146,6 +159,14 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                             if let Some(begin) = p_begin {
                                 let text = text_buf.trim().to_string();
                                 if !text.is_empty() {
+                                    // Fix up last word's end_ms from <p end="...">
+                                    if let Some(p_end_val) = p_end {
+                                        if let Some(last) = words.last_mut() {
+                                            if last.end_ms == last.time_ms + 500 {
+                                                last.end_ms = p_end_val;
+                                            }
+                                        }
+                                    }
                                     lines.push(LyricLine {
                                         time_ms: begin,
                                         text,
@@ -186,6 +207,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                             }
                         }
                         current_span_begin = None;
+                        current_span_end = None;
                     }
                     _ => {}
                 }
@@ -424,5 +446,25 @@ mod tests {
 </tt>"#;
         let lines = parse_ttml(ttml).expect("should parse");
         assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn parse_ttml_word_end_time() {
+        let ttml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml"
+    xmlns:itunes="http://music.apple.com/lyrics-ttml">
+  <body>
+    <div>
+      <p begin="00:10.000" end="00:12.000">
+        <span begin="00:10.000" end="00:10.500">Hello</span>
+        <span begin="00:10.500" end="00:12.000">world</span>
+      </p>
+    </div>
+  </body>
+</tt>"#;
+        let lines = parse_ttml(ttml).expect("should parse");
+        let words = lines[0].words.as_ref().unwrap();
+        assert_eq!(words[0].end_ms, 10_500);
+        assert_eq!(words[1].end_ms, 12_000);
     }
 }
