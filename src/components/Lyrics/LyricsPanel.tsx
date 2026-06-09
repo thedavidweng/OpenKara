@@ -131,7 +131,12 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
     return springs;
   }, []);
 
-  // Update springs each frame
+  // Clear stale spring entries when the song changes
+  useEffect(() => {
+    springsRef.current.clear();
+  }, [songId]);
+
+  // Update springs each frame — restart loop when active line changes
   const [, forceRender] = useState(0);
   useEffect(() => {
     let lastTime = performance.now();
@@ -154,17 +159,15 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
         }
       }
 
-      // Force re-render only when springs are animating
       if (anyMoving) {
         forceRender((n) => n + 1);
+        rafRef.current = requestAnimationFrame(tick);
       }
-
-      rafRef.current = requestAnimationFrame(tick);
     };
 
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, []);
+  }, [activeLineIndex]);
 
   const handleRemotePageStep = (direction: PlainTextPageDirection) => {
     void stepPlainTextRemotePage(
