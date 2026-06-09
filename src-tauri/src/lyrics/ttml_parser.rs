@@ -119,7 +119,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                 }
             }
             Ok(Event::Text(e)) => {
-                let text = e.unescape().unwrap_or_default();
+                let text = e.decode().unwrap_or_default();
                 if text.is_empty() || !in_p {
                     continue;
                 }
