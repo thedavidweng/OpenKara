@@ -131,7 +131,7 @@ TASK 6:
 
 TASK 12:
 1. Add 3 acknowledgment entries to README.md in the existing Acknowledgments section
-2. Commit: "docs: add LyricsBlossom, amll-ttml-db, and AMLL to acknowledgments"`,
+2. Commit: "docs: add amll-ttml-db and AMLL to acknowledgments"`,
       { label: "frontend", phase: "Frontend" },
     ),
   () =>
