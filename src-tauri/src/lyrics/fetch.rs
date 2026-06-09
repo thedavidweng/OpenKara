@@ -189,6 +189,8 @@ pub fn read_embedded_lyrics(path: &Path) -> Result<Option<String>> {
 
 fn read_sidecar_lyrics(path: &Path) -> Result<Option<(String, LyricsSource)>> {
     // Priority: .ttml > .lys > .lrc
+    // Validate each sidecar by attempting to parse; skip malformed files and
+    // fall through to the next format so a valid lower-priority sidecar is used.
     for (ext, source) in &[
         ("ttml", LyricsSource::SidecarTtml),
         ("lys", LyricsSource::SidecarLys),
@@ -203,7 +205,7 @@ fn read_sidecar_lyrics(path: &Path) -> Result<Option<(String, LyricsSource)>> {
                 )
             })?;
             let contents = contents.trim().to_owned();
-            if !contents.is_empty() {
+            if !contents.is_empty() && parse_lyrics_auto(&contents).is_ok_and(|l| !l.is_empty()) {
                 return Ok(Some((contents, source.clone())));
             }
         }
@@ -223,9 +225,11 @@ pub fn parse_lyrics_auto(raw: &str) -> Result<Vec<crate::lyrics::parser::LyricLi
 
     // LYS detection: first non-empty line starts with [digit]
     if let Some(first_line) = trimmed.lines().find(|l| !l.trim().is_empty()) {
-        if first_line.trim().starts_with('[')
-            && first_line.trim().len() >= 2
-            && first_line.trim().as_bytes()[1].is_ascii_digit()
+        let bytes = first_line.trim().as_bytes();
+        if bytes.starts_with(b"[")
+            && bytes.len() >= 3
+            && bytes[1].is_ascii_digit()
+            && bytes[2] == b']'
         {
             if let Ok(lines) = lys_parser::parse_lys(raw) {
                 if !lines.is_empty() {
@@ -243,4 +247,85 @@ fn has_timed_lines(raw_lrc: &str) -> bool {
     parser::parse_lrc(raw_lrc)
         .map(|lines| !lines.is_empty())
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_lyrics_auto_detects_ttml_xml_prefix() {
+        let ttml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml">
+  <body><div><p begin="00:10.000" end="00:12.000">Hello</p></div></body>
+</tt>"#;
+        let lines = parse_lyrics_auto(ttml).expect("should parse TTML");
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].text, "Hello");
+    }
+
+    #[test]
+    fn parse_lyrics_auto_detects_ttml_tt_prefix() {
+        let ttml = r#"<tt xmlns="http://www.w3.org/ns/ttml">
+  <body><div><p begin="00:05.000" end="00:07.000">World</p></div></body>
+</tt>"#;
+        let lines = parse_lyrics_auto(ttml).expect("should parse TTML without xml decl");
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].text, "World");
+    }
+
+    #[test]
+    fn parse_lyrics_auto_detects_lys_format() {
+        let lys = "[0]Hello(1000,500) World(1500,500)\n";
+        let lines = parse_lyrics_auto(lys).expect("should parse LYS");
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].text, "Hello World");
+    }
+
+    #[test]
+    fn parse_lyrics_auto_falls_back_to_lrc() {
+        let lrc = "[00:10.00]Hello world\n";
+        let lines = parse_lyrics_auto(lrc).expect("should parse LRC");
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].text, "Hello world");
+    }
+
+    #[test]
+    fn parse_lyrics_auto_empty_input_returns_empty() {
+        let lines = parse_lyrics_auto("").expect("should not error");
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn parse_lyrics_auto_lys_with_background_vocals() {
+        let lys = "[6]Background(3000,500)\n";
+        let lines = parse_lyrics_auto(lys).expect("should parse LYS bg");
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].bg_words.is_some());
+    }
+
+    #[test]
+    fn parse_lyrics_auto_lrc_with_l_bracket_digit_not_confused_with_lys() {
+        // "[00:10.00]Hello" starts with [digit but is LRC, not LYS
+        // LYS parser will fail (no parenthesized timestamps), falls back to LRC
+        let lrc = "[00:10.00]Hello world\n";
+        let lines = parse_lyrics_auto(lrc).expect("should fall back to LRC");
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].text, "Hello world");
+    }
+
+    #[test]
+    fn has_timed_lines_returns_true_for_valid_lrc() {
+        assert!(has_timed_lines("[00:10.00]Hello\n"));
+    }
+
+    #[test]
+    fn has_timed_lines_returns_false_for_empty() {
+        assert!(!has_timed_lines(""));
+    }
+
+    #[test]
+    fn has_timed_lines_returns_false_for_metadata_only() {
+        assert!(!has_timed_lines("[ar:Artist]\n[ti:Title]\n"));
+    }
 }

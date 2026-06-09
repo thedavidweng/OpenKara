@@ -211,9 +211,11 @@ pub fn save_manual_lyrics(
                 .lines()
                 .find(|l| !l.trim().is_empty())
                 .is_some_and(|l| {
-                    l.trim().starts_with('[')
-                        && l.trim().len() >= 2
-                        && l.trim().as_bytes()[1].is_ascii_digit()
+                    let bytes = l.trim().as_bytes();
+                    bytes.starts_with(b"[")
+                        && bytes.len() >= 3
+                        && bytes[1].is_ascii_digit()
+                        && bytes[2] == b']'
                 })
             {
                 LyricsSource::ManualLys
