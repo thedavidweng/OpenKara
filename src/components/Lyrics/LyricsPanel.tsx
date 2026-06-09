@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
@@ -27,6 +27,7 @@ import {
   buildAudiencePresentationSpec,
   colorToCss,
 } from "@/lib/audience-presentation";
+import { Spring } from "@/lib/spring";
 import { useLyricsStore } from "@/stores/lyrics-store";
 import {
   selectSyncDisplayPositionMs,
@@ -110,6 +111,60 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
     isAirPlayRemotePagingTarget,
     airPlayPlainTextPagePending,
   );
+
+  // Spring physics for line transitions
+  const springsRef = useRef<
+    Map<number, { scale: Spring; opacity: Spring; blur: Spring }>
+  >(new Map());
+  const rafRef = useRef<number>(0);
+
+  const getLineSprings = useCallback((index: number) => {
+    let springs = springsRef.current.get(index);
+    if (!springs) {
+      springs = {
+        scale: new Spring(1, { stiffness: 180, damping: 18 }),
+        opacity: new Spring(1, { stiffness: 120, damping: 14 }),
+        blur: new Spring(0, { stiffness: 120, damping: 14 }),
+      };
+      springsRef.current.set(index, springs);
+    }
+    return springs;
+  }, []);
+
+  // Update springs each frame
+  const [, forceRender] = useState(0);
+  useEffect(() => {
+    let lastTime = performance.now();
+
+    const tick = (now: number) => {
+      const dt = Math.min((now - lastTime) / 1000, 0.05); // cap at 50ms
+      lastTime = now;
+
+      let anyMoving = false;
+      for (const [, springs] of springsRef.current) {
+        springs.scale.update(dt);
+        springs.opacity.update(dt);
+        springs.blur.update(dt);
+        if (
+          !springs.scale.isSettled() ||
+          !springs.opacity.isSettled() ||
+          !springs.blur.isSettled()
+        ) {
+          anyMoving = true;
+        }
+      }
+
+      // Force re-render only when springs are animating
+      if (anyMoving) {
+        forceRender((n) => n + 1);
+      }
+
+      rafRef.current = requestAnimationFrame(tick);
+    };
+
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, []);
 
   const handleRemotePageStep = (direction: PlainTextPageDirection) => {
     void stepPlainTextRemotePage(
@@ -319,29 +374,32 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
               ? 0
               : Math.abs(absoluteIndex - activeLineIndex);
 
+            const targetScale =
+              distance === 0
+                ? 1
+                : distance === 1
+                  ? 0.98
+                  : Math.max(0.95, 1 - distance * 0.015);
+            const targetOpacity =
+              distance === 0 ? 1 : Math.max(0.3, 1 - distance * 0.2);
+            const targetBlur =
+              distance === 0 ? 0 : distance === 1 ? 1 : Math.min(distance, 4);
+
+            const springs = getLineSprings(absoluteIndex);
+            springs.scale.setTarget(targetScale);
+            springs.opacity.setTarget(targetOpacity);
+            springs.blur.setTarget(targetBlur);
+
             return (
               <div
                 key={`${absoluteIndex}-${line.time_ms}-${line.text}`}
                 data-lyrics-line-index={absoluteIndex}
                 data-line-distance={distance}
-                className="w-full transition-all duration-400 ease-out"
+                className="w-full"
                 style={{
-                  filter:
-                    distance === 0
-                      ? "blur(0)"
-                      : distance === 1
-                        ? "blur(1px)"
-                        : `blur(${Math.min(distance, 4)}px)`,
-                  transform:
-                    distance === 0
-                      ? "scale(1)"
-                      : distance === 1
-                        ? "scale(0.98)"
-                        : `scale(${Math.max(0.95, 1 - distance * 0.015)})`,
-                  opacity:
-                    distance === 0 ? 1 : Math.max(0.3, 1 - distance * 0.2),
-                  transition:
-                    "filter 0.4s ease, transform 0.4s cubic-bezier(0.25, 0.1, 0.25, 1), opacity 0.3s ease",
+                  transform: `scale(${springs.scale.getPosition().toFixed(4)})`,
+                  opacity: springs.opacity.getPosition(),
+                  filter: `blur(${springs.blur.getPosition().toFixed(1)}px)`,
                   willChange: "transform, opacity, filter",
                   contain: "layout style paint",
                 }}
