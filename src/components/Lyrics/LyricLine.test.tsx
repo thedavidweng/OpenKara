@@ -97,4 +97,189 @@ describe("LyricLine", () => {
     expect(markup).toContain("font-size:96px");
     expect(markup).toContain("color:rgba(255, 255, 255, 1)");
   });
+
+  test("renders bg_words with slide-in styles when line is active", () => {
+    const markup = renderToStaticMarkup(
+      <LyricLine
+        line={{
+          time_ms: 1000,
+          text: "main line",
+          words: [
+            { text: "main", time_ms: 1000, end_ms: 1500 },
+            { text: "line", time_ms: 1500, end_ms: 2000 },
+          ],
+          bg_words: [
+            { text: "bg", time_ms: 1200, end_ms: 1800 },
+            { text: "vocal", time_ms: 1800, end_ms: 2000 },
+          ],
+          section: null,
+        }}
+        state="active"
+        adjustedMs={1500}
+        lyricsFontStep={0}
+      />,
+    );
+
+    expect(markup).toContain("bg");
+    expect(markup).toContain("vocal");
+    expect(markup).toContain("translateY(0)");
+  });
+
+  test("renders bg_words hidden when line is future", () => {
+    const markup = renderToStaticMarkup(
+      <LyricLine
+        line={{
+          time_ms: 1000,
+          text: "main line",
+          words: [
+            { text: "main", time_ms: 1000, end_ms: 1500 },
+            { text: "line", time_ms: 1500, end_ms: 2000 },
+          ],
+          bg_words: [{ text: "bg", time_ms: 1200, end_ms: 1800 }],
+          section: null,
+        }}
+        state="future"
+        adjustedMs={0}
+        lyricsFontStep={0}
+      />,
+    );
+
+    expect(markup).toContain("translateY(8px)");
+  });
+
+  test("renders emphasis words as per-character spans with glow animation", () => {
+    const markup = renderToStaticMarkup(
+      <LyricLine
+        line={{
+          time_ms: 1000,
+          text: "你好世界",
+          words: [
+            { text: "你好", time_ms: 1000, end_ms: 2500 },
+            { text: "世界", time_ms: 2500, end_ms: 3000 },
+          ],
+          bg_words: null,
+          section: null,
+        }}
+        state="active"
+        adjustedMs={1200}
+        lyricsFontStep={0}
+      />,
+    );
+
+    // "你好" is active with duration 1500ms (>=1000) and CJK → emphasis
+    expect(markup).toContain("lyric-char-glow");
+    expect(markup).toContain("inline-block");
+  });
+
+  test("renders last word with amplified glow animation", () => {
+    const markup = renderToStaticMarkup(
+      <LyricLine
+        line={{
+          time_ms: 1000,
+          text: "你好世界",
+          words: [
+            { text: "你好", time_ms: 1000, end_ms: 1500 },
+            { text: "世界", time_ms: 1500, end_ms: 3000 },
+          ],
+          bg_words: null,
+          section: null,
+        }}
+        state="active"
+        adjustedMs={1600}
+        lyricsFontStep={0}
+      />,
+    );
+
+    // "世界" is active, last word, duration 1500ms, CJK → lyric-char-glow-last
+    expect(markup).toContain("lyric-char-glow-last");
+  });
+
+  test("renders past line words with dimmer text color", () => {
+    const markup = renderToStaticMarkup(
+      <LyricLine
+        line={{
+          time_ms: 1000,
+          text: "past line",
+          words: [
+            { text: "past", time_ms: 1000, end_ms: 1500 },
+            { text: "line", time_ms: 1500, end_ms: 2000 },
+          ],
+          bg_words: null,
+          section: null,
+        }}
+        state="past"
+        adjustedMs={3000}
+        lyricsFontStep={0}
+      />,
+    );
+
+    expect(markup).toContain("text-[var(--color-text-dimmer)]");
+  });
+
+  test("renders future line words with active text color", () => {
+    const markup = renderToStaticMarkup(
+      <LyricLine
+        line={{
+          time_ms: 1000,
+          text: "future line",
+          words: [
+            { text: "future", time_ms: 1000, end_ms: 1500 },
+            { text: "line", time_ms: 1500, end_ms: 2000 },
+          ],
+          bg_words: null,
+          section: null,
+        }}
+        state="future"
+        adjustedMs={0}
+        lyricsFontStep={0}
+      />,
+    );
+
+    expect(markup).toContain("text-[var(--color-active)]");
+  });
+
+  test("renders audience presentation with bg_words", () => {
+    const markup = renderToStaticMarkup(
+      <LyricLine
+        line={{
+          time_ms: 1000,
+          text: "main",
+          words: [{ text: "main", time_ms: 1000, end_ms: 1500 }],
+          bg_words: [{ text: "bg", time_ms: 1200, end_ms: 1500 }],
+          section: null,
+        }}
+        state="active"
+        adjustedMs={1200}
+        presentation="audience"
+        lyricsFontStep={0}
+      />,
+    );
+
+    expect(markup).toContain("bg");
+    expect(markup).toContain("opacity:0.4");
+  });
+
+  test("renders non-emphasis active word with amplified glow as last word", () => {
+    const markup = renderToStaticMarkup(
+      <LyricLine
+        line={{
+          time_ms: 1000,
+          text: "hello friend",
+          words: [
+            { text: "hello", time_ms: 1000, end_ms: 1200 },
+            { text: "friend", time_ms: 1200, end_ms: 1400 },
+          ],
+          bg_words: null,
+          section: null,
+        }}
+        state="active"
+        adjustedMs={1300}
+        lyricsFontStep={0}
+      />,
+    );
+
+    // "friend" is active, last word → amplified glow (20px)
+    expect(markup).toContain("text-white");
+    expect(markup).toContain("0 0 20px");
+  });
 });
