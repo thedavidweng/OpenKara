@@ -1,9 +1,14 @@
 # Current Implementation Status
 
+> **Archived:** 2026-06-11. This snapshot is superseded by
+> [`../../CHANGELOG.md`](../../CHANGELOG.md) for shipped history and the
+> [GitHub Project](https://github.com/users/thedavidweng/projects/2/views/1)
+> for future work.
+
 > **Last updated:** 2026-05-14 · This file tracks the implementation status and is updated alongside releases.
 > **Current source version:** 0.9.0
 > **Released source of truth:** `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` must match the version described here.
-> **For a concise version history, see [CHANGELOG.md](../CHANGELOG.md).**
+> **For a concise version history, see [CHANGELOG.md](../../CHANGELOG.md).**
 
 ## Completed Milestones
 
@@ -156,7 +161,7 @@ The v0.9.0 cycle is **complete in source** (merged via PR #20, commit `0eb8808`)
 
 ### 🎯 v0.9 and Beyond
 
-The **current execution plan skeleton** lives in **[`docs/plans/plan.md`](./plans/plan.md)**. Historical priority-only snapshot: [`archive/plans/future-work-and-hardening-priorities-2026-05.md`](./archive/plans/future-work-and-hardening-priorities-2026-05.md).
+Historical priority-only snapshot: [`plans/future-work-and-hardening-priorities-2026-05.md`](./plans/future-work-and-hardening-priorities-2026-05.md).
 
 High-level backlog (unchanged intent, version bucket renamed from “v0.8+” now that v0.8 has shipped):
 
@@ -168,4 +173,4 @@ High-level backlog (unchanged intent, version bucket renamed from “v0.8+” no
 
 ---
 
-_For the current technical roadmap, see [Technical Roadmap](./design-docs/roadmap.md)._
+_For the current technical roadmap, see [Technical Roadmap](../references/architecture/roadmap.md)._

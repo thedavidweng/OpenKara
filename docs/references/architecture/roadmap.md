@@ -1,6 +1,6 @@
 # Technical Implementation Roadmap
 
-> This document maps each subsystem to concrete technologies, crate/package choices, API contracts, and known technical risks. Historical phase checklists live in [archive/plans/development-phases.md](../archive/plans/development-phases.md).
+> This document maps each subsystem to concrete technologies, crate/package choices, API contracts, and known technical risks. Historical phase checklists live in [archive/plans/development-phases.md](../../archive/plans/development-phases.md).
 
 ---
 

@@ -183,7 +183,7 @@ export class KaraokeFillController {
   }
 
   private setMaskGradient(style: WebKitMaskStyle) {
-    const gradient = `linear-gradient(to right, rgba(0,0,0,${this.brightAlpha}), rgba(0,0,0,${this.darkAlpha}))`;
+    const gradient = `linear-gradient(to right, rgba(0,0,0,${this.darkAlpha}), rgba(0,0,0,${this.brightAlpha}))`;
     style.maskImage = gradient;
     style.webkitMaskImage = gradient;
   }

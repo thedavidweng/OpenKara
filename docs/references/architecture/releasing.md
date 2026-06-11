@@ -52,7 +52,7 @@ Default **GitHub Actions release** builds **do not** apply Apple codesigning + n
 ### In-app updates
 
 - **Today:** updates are **manual** (GitHub Releases, Homebrew, WinGet, Flatpak, etc.). There is **no** in-app Tauri updater wired in this repository.
-- **If added later:** document pubkey pinning, staging vs production endpoints, and update [`../references/contracts/`](../references/contracts/) together with IPC changes (`AGENTS.md`).
+- **If added later:** document pubkey pinning, staging vs production endpoints, and update [`../contracts/`](../contracts/) together with IPC changes (`AGENTS.md`).
 
 ## Upgrade, migration, and data safety (H8.2)
 
@@ -75,12 +75,12 @@ A future version may add a one-click export; for now the manual copy is the supp
 
 ## Supply chain checks (H8.4)
 
-| Check         | Status                                                                                                                                          | Waivers / issues                                                                                                    |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `pnpm audit`  | ✅ Green (CI runs per commit, `--audit-level=high`). Run log: [CI workflow](.github/workflows/ci.yml)                                           | None                                                                                                                |
-| `cargo audit` | ✅ Last scan (2026-05-13): 0 vulnerabilities, 18 allowed warnings (all Tauri/Linux-native deps with no runtime impact). Tool v0.22.1 installed. | Allowed warnings documented in [`../../AGENTS.md`](../../AGENTS.md) (Linux audio, WebKit, GTK — platform‑expected). |
-| `cargo deny`  | ❌ Not installed. Could be added as a scheduled weekly check (`cargo install cargo-deny` + config) — deferred as resource-constrained.          | —                                                                                                                   |
-| SBOM          | ❌ Not generated. GitHub Dependency Graph provides lockfile-level information. CycloneDX generation deferred.                                   | —                                                                                                                   |
+| Check         | Status                                                                                                                                          | Waivers / issues                                                                                                          |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm audit`  | ✅ Green (CI runs per commit, `--audit-level=high`). Run log: [CI workflow](../../../.github/workflows/ci.yml)                                  | None                                                                                                                      |
+| `cargo audit` | ✅ Last scan (2026-05-13): 0 vulnerabilities, 18 allowed warnings (all Tauri/Linux-native deps with no runtime impact). Tool v0.22.1 installed. | Allowed warnings documented in [`../../../AGENTS.md`](../../../AGENTS.md) (Linux audio, WebKit, GTK — platform‑expected). |
+| `cargo deny`  | ❌ Not installed. Could be added as a scheduled weekly check (`cargo install cargo-deny` + config) — deferred as resource-constrained.          | —                                                                                                                         |
+| SBOM          | ❌ Not generated. GitHub Dependency Graph provides lockfile-level information. CycloneDX generation deferred.                                   | —                                                                                                                         |
 
 ## Diagnostics & supportability (H8.5)
 
@@ -116,7 +116,8 @@ Use the "Copy debug info" option in the Help menu (or equivalent surface) to cop
 
 ## Pre-release checklist (H8)
 
-Before running the **Release** workflow for a version tag, use this list in addition to **[`docs/plans/plan.md`](../plans/plan.md)** stream **H8**:
+Before running the **Release** workflow for a version tag, use this list in
+addition to any active release plan under [`../../plans/`](../../plans/):
 
 - [ ] `pnpm format` and the `AGENTS.md` verification matrix for the **highest-risk area** touched since the last release.
 - [ ] `pnpm lint` → `pnpm build` → `pnpm test` → `cd src-tauri && cargo test -q` when frontend or Rust changed.
@@ -128,7 +129,9 @@ Before running the **Release** workflow for a version tag, use this list in addi
 - [ ] i18n: at least **en** and **zh-CN** checked for missing keys (run `node scripts/check-i18n.mjs` if available, or confirm by manual diff).
 - [ ] Release assets include a `SHA256SUMS` file (generated by CI after the build step, see H8.1).
 
-This is the **shippable bar without paid Apple signing**; completing H8 in the active plan adds diagnostics, migration safety, supply-chain checks, and i18n smoke beyond this short list.
+This is the **shippable bar without paid Apple signing**. If a release-specific
+plan exists, it may add diagnostics, migration safety, supply-chain checks, and
+i18n smoke beyond this short list.
 
 ## Automated Distribution Manifests
 

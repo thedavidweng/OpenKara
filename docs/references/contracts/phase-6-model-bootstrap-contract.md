@@ -189,7 +189,7 @@ pnpm tauri build --debug --no-bundle --ci
 
 ## Pause-and-resume instructions
 
-1. 接手前先读本文件，再读 [../../design-docs/roadmap.md](../../design-docs/roadmap.md)
+1. 接手前先读本文件，再读 [../architecture/roadmap.md](../architecture/roadmap.md)
 2. 若需要更换模型 URL、校验值或安装目录：
    - 先更新本契约
    - 再改 Rust 实现和测试

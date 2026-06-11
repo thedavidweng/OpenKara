@@ -21,6 +21,12 @@ function createMockEl(): HTMLElement {
   return el;
 }
 
+function maskAlphas(maskImage: string): number[] {
+  return [...maskImage.matchAll(/rgba?\(0,\s*0,\s*0(?:,\s*([\d.]+))?\)/g)].map(
+    (match) => (match[1] ? parseFloat(match[1]) : 1),
+  );
+}
+
 describe("KaraokeFillController", () => {
   let controller: KaraokeFillController;
 
@@ -43,6 +49,16 @@ describe("KaraokeFillController", () => {
       expect(el.style.maskSize).toBe("200% 100%");
       expect(el.animate).toHaveBeenCalled();
     }
+  });
+
+  test("activateLine puts unfilled mask alpha before filled mask alpha", () => {
+    const lineEl = document.createElement("div");
+    const wordEl = createMockEl();
+    const words = [{ time_ms: 1000, end_ms: 1500 }];
+
+    controller.activateLine(lineEl, words, [wordEl]);
+
+    expect(maskAlphas(wordEl.style.maskImage)).toEqual([1, 0.2]);
   });
 
   test("activateLine sets prefixed mask styles and keyframes for WebKit", () => {
@@ -189,9 +205,9 @@ describe("KaraokeFillController", () => {
       expect(maskImage).toContain("linear-gradient");
       // jsdom normalizes rgba(0,0,0,1.0) to rgb(0,0,0)
       // Check if it has converged to fully opaque or near it
-      const rgbaMatch = maskImage.match(/rgba\(0,\s*0,\s*0,\s*([\d.]+)\)/);
-      if (rgbaMatch) {
-        const brightValue = parseFloat(rgbaMatch[1]);
+      const alphas = maskAlphas(maskImage);
+      if (alphas.length > 0) {
+        const brightValue = alphas[alphas.length - 1];
         expect(brightValue).toBeGreaterThan(0.9);
       }
       // If no rgba match, it converged to rgb(0,0,0) which is alpha=1.0 — great
@@ -217,9 +233,9 @@ describe("KaraokeFillController", () => {
 
       // Check initial mask has low bright alpha
       const maskImage = wordEl2.style.maskImage;
-      const rgbaMatch = maskImage.match(/rgba\(0,\s*0,\s*0,\s*([\d.]+)\)/);
-      expect(rgbaMatch).not.toBeNull();
-      const brightValue = parseFloat(rgbaMatch![1]);
+      const alphas = maskAlphas(maskImage);
+      expect(alphas).not.toHaveLength(0);
+      const brightValue = alphas[alphas.length - 1];
       expect(brightValue).toBeLessThan(0.5);
     });
   });
