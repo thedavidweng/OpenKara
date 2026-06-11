@@ -12,7 +12,6 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
     }
 
     let mut reader = Reader::from_str(ttml);
-    reader.config_mut().trim_text(true);
 
     let mut lines: Vec<LyricLine> = Vec::new();
     let mut current_section: Option<String> = None;
@@ -133,12 +132,18 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                     continue;
                 }
 
+                // TTML word spans carry significant spaces in their text nodes. Drop only
+                // pretty-print indentation between tags; trimming all text corrupts line.text.
+                if text.trim().is_empty() && text.contains(['\n', '\r']) {
+                    continue;
+                }
+
                 if in_bg_span {
                     if let Some(begin) = current_span_begin {
                         bg_words.push(WordToken {
                             time_ms: begin,
                             end_ms: current_span_end.unwrap_or(begin + 500),
-                            text: text.to_string(),
+                            text: text.trim().to_string(),
                         });
                     }
                 } else if !line_timing_mode {
@@ -147,7 +152,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                         words.push(WordToken {
                             time_ms: begin,
                             end_ms: current_span_end.unwrap_or(begin + 500),
-                            text: text.to_string(),
+                            text: text.trim().to_string(),
                         });
                     }
                 } else {
@@ -321,8 +326,8 @@ mod tests {
   <body>
     <div>
       <p begin="00:15.700" end="00:17.659" itunes:key="L1">
-        <span begin="00:15.700" end="00:15.960">I</span>
-        <span begin="00:15.960" end="00:16.324">want</span>
+        <span begin="00:15.700" end="00:15.960">I </span>
+        <span begin="00:15.960" end="00:16.324">want </span>
         <span begin="00:16.324" end="00:16.688">you</span>
       </p>
     </div>
@@ -332,7 +337,7 @@ mod tests {
         assert_eq!(lines.len(), 1);
         let line = &lines[0];
         assert_eq!(line.time_ms, 15_700);
-        assert_eq!(line.text, "Iwantyou");
+        assert_eq!(line.text, "I want you");
         let words = line.words.as_ref().expect("should have words");
         assert_eq!(words.len(), 3);
         assert_eq!(words[0].text, "I");
@@ -368,7 +373,7 @@ mod tests {
   <body>
     <div>
       <p begin="00:10.000" end="00:12.000">
-        <span begin="00:10.000" end="00:11.000">Hello</span>
+        <span begin="00:10.000" end="00:11.000">Hello </span>
         <span begin="00:11.000" end="00:12.000">world</span>
         <span ttm:role="x-translation" xml:lang="zh-CN">你好世界</span>
       </p>
@@ -378,7 +383,7 @@ mod tests {
         let lines = parse_ttml(ttml).expect("should parse");
         assert_eq!(lines.len(), 1);
         // Text should only contain the timed words, not the translation
-        assert_eq!(lines[0].text, "Helloworld");
+        assert_eq!(lines[0].text, "Hello world");
         let words = lines[0].words.as_ref().expect("should have words");
         assert_eq!(words.len(), 2);
     }
@@ -446,8 +451,8 @@ mod tests {
 </tt>"#;
         let lines = parse_ttml(ttml).expect("should parse");
         assert_eq!(lines.len(), 2);
-        assert_eq!(lines[0].text, "Firstline");
-        assert_eq!(lines[1].text, "Secondline");
+        assert_eq!(lines[0].text, "First line");
+        assert_eq!(lines[1].text, "Second line");
         assert!(lines[0].words.is_none());
         assert!(lines[1].words.is_none());
     }
