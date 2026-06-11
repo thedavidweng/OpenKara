@@ -83,6 +83,13 @@ function hasBackgroundWords(line: LyricLineType): boolean {
   return line.bg_words !== null && line.bg_words.length > 0;
 }
 
+function wordTimingSignature(words: WordToken[] | null): string {
+  if (words === null || words.length === 0) return "";
+  return words
+    .map((word) => `${word.time_ms}:${word.end_ms}:${word.text}`)
+    .join("|");
+}
+
 function areLyricLinePropsEqual(
   previous: LyricLineProps,
   next: LyricLineProps,
@@ -123,30 +130,33 @@ export const LyricLine = memo(function LyricLine({
     seek(line.time_ms);
   };
 
-  const hasWords = line.words !== null && line.words.length > 0;
+  const words = line.words;
+  const hasWords = words !== null && words.length > 0;
+  const wordsSignature = wordTimingSignature(words);
   const hasOnlyBackgroundWords = !hasWords && hasBackgroundWords(line);
   const activeWordIndex =
-    hasWords && state === "active"
-      ? getActiveWordIndex(line.words!, adjustedMs)
-      : -1;
+    hasWords && state === "active" ? getActiveWordIndex(words, adjustedMs) : -1;
   const hoverClass = isSeekable
     ? "group-hover/line:underline decoration-2 underline-offset-4"
     : "";
 
   const karaokeRef = useRef<KaraokeFillController | null>(null);
   const wordElsRef = useRef<HTMLElement[]>([]);
+  const wordsRef = useRef(words);
+  wordsRef.current = words;
 
-  // Activate/deactivate karaoke fill controller based on line state
+  // Activate/deactivate karaoke fill controller when the logical word timings change.
   useEffect(() => {
     if (state === "active" && hasWords && presentation !== "audience") {
       if (!karaokeRef.current) {
         karaokeRef.current = new KaraokeFillController();
       }
       const container = wordElsRef.current[0]?.parentElement;
+      const currentWords = wordsRef.current;
       if (container) {
         karaokeRef.current.activateLine(
           container,
-          line.words!,
+          currentWords!,
           wordElsRef.current,
         );
         karaokeRef.current.setTargetAlpha(0.2, 1.0); // keep active sweep contrast
@@ -162,10 +172,20 @@ export const LyricLine = memo(function LyricLine({
     }
 
     return () => {
+      if (state === "active" && hasWords && presentation !== "audience") {
+        karaokeRef.current?.destroy();
+        karaokeRef.current = null;
+      }
+    };
+  }, [state, line.time_ms, wordsSignature, hasWords, presentation]);
+
+  useEffect(
+    () => () => {
       karaokeRef.current?.destroy();
       karaokeRef.current = null;
-    };
-  }, [state, line, hasWords, presentation]);
+    },
+    [],
+  );
 
   // Update karaoke fill progress each frame
   useEffect(() => {

@@ -10,8 +10,14 @@ describe("Spring", () => {
 
   test("setTarget starts animation", () => {
     const spring = new Spring(0);
-    spring.setTarget(1);
+    expect(spring.setTarget(1)).toBe(true);
     expect(spring.isSettled()).toBe(false);
+  });
+
+  test("setTarget reports unchanged targets", () => {
+    const spring = new Spring(1);
+    expect(spring.setTarget(1)).toBe(false);
+    expect(spring.isSettled()).toBe(true);
   });
 
   test("converges to target after enough updates", () => {

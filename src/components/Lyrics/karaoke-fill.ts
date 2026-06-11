@@ -90,8 +90,8 @@ export class KaraokeFillController {
 
   /**
    * Set the target alpha values for the mask gradient.
-   * bright: alpha for the "filled" portion (0-1). Active lines: 1.0, inactive: 0.2
-   * dark: alpha for the "unfilled" portion (0-1). Typically 1.0
+   * bright: alpha for the filled portion (0-1). Past lines: 1.0, active sweep: 0.2
+   * dark: alpha for the unfilled portion (0-1). Typically 1.0
    */
   setTargetAlpha(bright: number, dark: number) {
     this.targetBrightAlpha = bright;
@@ -183,7 +183,7 @@ export class KaraokeFillController {
   }
 
   private setMaskGradient(style: WebKitMaskStyle) {
-    const gradient = `linear-gradient(to right, rgba(0,0,0,${this.darkAlpha}), rgba(0,0,0,${this.brightAlpha}))`;
+    const gradient = `linear-gradient(to right, rgba(0,0,0,${this.brightAlpha}), rgba(0,0,0,${this.darkAlpha}))`;
     style.maskImage = gradient;
     style.webkitMaskImage = gradient;
   }

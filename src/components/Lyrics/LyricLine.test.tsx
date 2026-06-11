@@ -250,6 +250,53 @@ describe("LyricLine", () => {
     container.remove();
   });
 
+  test("keeps the karaoke controller when the same logical line gets a new object reference", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const makeLine = () => ({
+      time_ms: 1000,
+      text: "alpha beta",
+      words: [
+        { text: "alpha", time_ms: 1000, end_ms: 1500 },
+        { text: "beta", time_ms: 1500, end_ms: 2000 },
+      ],
+      bg_words: null,
+      section: null,
+    });
+
+    await act(async () => {
+      root.render(
+        <LyricLine
+          line={makeLine()}
+          state="active"
+          adjustedMs={1200}
+          lyricsFontStep={0}
+        />,
+      );
+    });
+    const firstController = mockControllerInstances[0];
+
+    await act(async () => {
+      root.render(
+        <LyricLine
+          line={makeLine()}
+          state="active"
+          adjustedMs={1300}
+          lyricsFontStep={0}
+        />,
+      );
+    });
+
+    expect(mockControllerInstances).toHaveLength(1);
+    expect(firstController.destroy).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   test("renders emphasis words as per-character spans with glow animation", () => {
     const markup = renderToStaticMarkup(
       <LyricLine

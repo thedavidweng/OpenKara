@@ -303,6 +303,29 @@ describe("LyricsPanel contextual reveal", () => {
     expect(markup).toContain('data-lyrics-line-index="1"');
   });
 
+  test("advances changed spring targets before the first rendered frame", () => {
+    mockLyricsState.lines = [
+      line({
+        time_ms: 1000,
+        text: "line one",
+        words: null,
+      }),
+      line({
+        time_ms: 2000,
+        text: "line two",
+        words: null,
+      }),
+    ];
+    mockLyricsState.activeLineIndex = 0;
+
+    const markup = renderToStaticMarkup(<LyricsPanel />);
+
+    expect(markup).toContain(
+      'data-line-distance="1" class="w-full" style="transform:scale(0.9990)',
+    );
+    expect(markup).toContain('data-line-distance="1"');
+  });
+
   test("uses the sync display clock for standard word highlighting", () => {
     mockPlayerState.positionMs = 1000;
     mockSelectSyncDisplayPositionMs.mockReturnValue(1600);
