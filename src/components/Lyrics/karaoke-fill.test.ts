@@ -45,6 +45,25 @@ describe("KaraokeFillController", () => {
     }
   });
 
+  test("activateLine sets prefixed mask styles and keyframes for WebKit", () => {
+    const lineEl = document.createElement("div");
+    const wordEl = createMockEl();
+    const words = [{ time_ms: 1000, end_ms: 1500 }];
+
+    controller.activateLine(lineEl, words, [wordEl]);
+
+    expect(wordEl.style.webkitMaskImage).toContain("linear-gradient");
+    expect(wordEl.style.webkitMaskRepeat).toBe("no-repeat");
+    expect(wordEl.style.webkitMaskSize).toBe("200% 100%");
+    expect(wordEl.animate).toHaveBeenCalledWith(
+      [
+        { maskPosition: "-100% 0", webkitMaskPosition: "-100% 0" },
+        { maskPosition: "0% 0", webkitMaskPosition: "0% 0" },
+      ],
+      expect.objectContaining({ duration: 500 }),
+    );
+  });
+
   test("activateLine is a no-op when called with the same line element", () => {
     const lineEl = document.createElement("div");
     const wordEl = createMockEl();

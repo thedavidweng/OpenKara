@@ -5,6 +5,9 @@ Current backend performance baseline for `Phase 5.3`.
 ## Scope
 
 This report is generated from the Rust-side benchmark helper in `src-tauri/tests/phase5_perf.rs`.
+CI runs this fixed-threshold performance check on Linux only. macOS hosted runners
+show cold metadata-probe variance that can exceed the threshold without a code
+regression, while Linux gives the stable baseline used for gating.
 
 It currently measures:
 
