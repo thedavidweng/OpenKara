@@ -1,5 +1,9 @@
+// @vitest-environment jsdom
+
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AirPlayOutputStateEvent } from "@/types/ipc";
 import type { LyricLine } from "@/types/ipc";
 import { LyricsPanel } from "./LyricsPanel";
@@ -104,6 +108,24 @@ vi.mock("@/stores/settings-store", () => ({
 
 describe("LyricsPanel contextual reveal", () => {
   beforeEach(() => {
+    (
+      globalThis as typeof globalThis & {
+        IS_REACT_ACT_ENVIRONMENT?: boolean;
+      }
+    ).IS_REACT_ACT_ENVIRONMENT = true;
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((callback: FrameRequestCallback) => {
+        void callback;
+        return 1;
+      }),
+    );
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      value: vi.fn(),
+    });
+
     mockPlayerState.snapshot = {
       song_id: "song-1",
     };
@@ -144,6 +166,11 @@ describe("LyricsPanel contextual reveal", () => {
     mockLyricsState.songId = "song-1";
     mockLyricsState.adjustOffset.mockReset();
     mockSettingsState.lyricsFontStep = 0;
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+    vi.unstubAllGlobals();
   });
 
   test("renders utility chrome in an overlay layer without layout controls at rest", () => {
@@ -323,7 +350,61 @@ describe("LyricsPanel contextual reveal", () => {
     expect(markup).toContain(
       'data-line-distance="1" class="w-full" style="transform:scale(0.9990)',
     );
+    expect(markup).toContain("opacity:0.9933333333333333");
     expect(markup).toContain('data-line-distance="1"');
+  });
+
+  test("restarts the spring RAF loop when the song changes without active line movement", async () => {
+    mockLyricsState.lines = [
+      line({
+        time_ms: 1000,
+        text: "first song line one",
+        words: null,
+      }),
+      line({
+        time_ms: 2000,
+        text: "first song line two",
+        words: null,
+      }),
+    ];
+    mockLyricsState.activeLineIndex = 0;
+    const requestAnimationFrameMock = vi.mocked(requestAnimationFrame);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<LyricsPanel />);
+    });
+
+    expect(requestAnimationFrameMock).toHaveBeenCalledTimes(1);
+
+    mockPlayerState.snapshot = {
+      song_id: "song-2",
+    };
+    mockLyricsState.rawLrc = "[00:00.00]second song line one";
+    mockLyricsState.lines = [
+      line({
+        time_ms: 1000,
+        text: "second song line one",
+        words: null,
+      }),
+      line({
+        time_ms: 2000,
+        text: "second song line two",
+        words: null,
+      }),
+    ];
+
+    await act(async () => {
+      root.render(<LyricsPanel />);
+    });
+
+    expect(requestAnimationFrameMock).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      root.unmount();
+    });
   });
 
   test("uses the sync display clock for standard word highlighting", () => {

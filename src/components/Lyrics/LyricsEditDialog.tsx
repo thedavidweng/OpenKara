@@ -42,12 +42,15 @@ function LyricsEditDialogContent({
 
   const isTtml =
     text.trim().startsWith("<?xml") || text.trim().startsWith("<tt");
-  const isLys = /^\[\d]/.test(
+  const firstLyricsLine =
     text
       .trim()
       .split("\n")
-      .find((l) => l.trim().length > 0) ?? "",
-  );
+      .find((l) => l.trim().length > 0)
+      ?.trim() ?? "";
+  // LYS line prefixes are [single-digit]; the closing bracket keeps LRC
+  // timestamps like [00:12.34] out of this branch.
+  const isLys = /^\[\d\]/.test(firstLyricsLine);
   const isLrc = /\[\d{2}:\d{2}/.test(text);
 
   const handleSave = async () => {

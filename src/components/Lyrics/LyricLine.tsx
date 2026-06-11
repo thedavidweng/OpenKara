@@ -362,7 +362,7 @@ export const LyricLine = memo(function LyricLine({
         <span
           className={
             presentation === "audience"
-              ? "motion-surface font-medium tracking-tight opacity-40"
+              ? "motion-surface font-medium tracking-tight"
               : `motion-surface text-sm font-medium md:text-base ${
                   state === "plain" || state === "active"
                     ? "text-[var(--color-text-dim)]"
@@ -383,7 +383,6 @@ export const LyricLine = memo(function LyricLine({
                         ? audiencePresentationSpec.pastTextColor
                         : audiencePresentationSpec.futureTextColor,
                   ),
-                  opacity: 0.4,
                 }
               : undefined),
             transition: "opacity 0.3s ease, transform 0.3s ease",
