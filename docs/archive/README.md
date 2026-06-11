@@ -1,25 +1,24 @@
 # Documentation Archive
 
-This folder keeps documents that still have historical value but no longer guide current or upcoming implementation.
+This folder keeps completed, superseded, or point-in-time documents that may be
+useful for historical context but should not guide current implementation.
 
-Rules:
+## Rules
 
-- Keep **active** plans, current specs, and current references outside `archive/`
-- Move one-off execution plans here once they stop driving live work
-- Do not treat archived plans as the source of truth for current behavior
+- Do not treat archived plans as current behavior. Current behavior belongs in
+  [`../references/`](../references/).
+- Completed user-visible or maintainer-visible changes should be summarized in
+  [`../../CHANGELOG.md`](../../CHANGELOG.md).
+- Future work belongs in the
+  [GitHub Project](https://github.com/users/thedavidweng/projects/2/views/1)
+  until it becomes an executable plan.
+- Repo-local execution plans live in [`../plans/`](../plans/) only while they
+  are actively driving work.
 
-Current archive split:
+## Contents
 
-- `archive/plans/` — superseded point-in-time implementation plans
-- `archive/plans/2026-05-13-v0.9-hardening-and-playlists-plan.md` — completed
-  hardening cycle H1–H8 + F1 playlists/singer-rotation. Superseded by current
-  `docs/plans/plan.md` skeleton for next slice.
-- `archive/plans/development-phases.md` and `archive/plans/milestones.md` —
-  historical delivery plans retained for context, not current execution
-  guidance
-- `archive/plans/remote-library-hardening.md` — completed remote-library
-  conflict handling, recovery UX, and deterministic verification work
-- `archive/plans/playback-optimization.md` — archived playback optimization
-  review with implemented items and rejected outdated items
-- `archive/plans/future-work-and-hardening-priorities-2026-05.md` — archived
-  agreed-priority tables (superseded by `docs/plans/plan.md`)
+- [`plans/`](./plans/) — completed or superseded implementation plans, candidate
+  snapshots, and old tech-debt snapshots
+- [`workflows/`](./workflows/) — archived agent workflow helper scripts
+- [`implementation-status-2026-05-14.md`](./implementation-status-2026-05-14.md)
+  — previous milestone status snapshot superseded by `CHANGELOG.md`

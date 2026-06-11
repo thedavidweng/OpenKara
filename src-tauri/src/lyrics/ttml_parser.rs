@@ -36,6 +36,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
 
     // Stack to track nesting (for closing tags)
     let mut span_role_stack: Vec<String> = Vec::new();
+    let mut span_timing_stack: Vec<(Option<u64>, Option<u64>)> = Vec::new();
 
     loop {
         match reader.read_event() {
@@ -106,6 +107,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                             }
                         }
                         span_role_stack.push(role.clone());
+                        span_timing_stack.push((current_span_begin, current_span_end));
 
                         if role == "x-translation" {
                             in_translation_span = true;
@@ -210,8 +212,13 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                                 in_bg_span = false;
                             }
                         }
-                        current_span_begin = None;
-                        current_span_end = None;
+                        if let Some((previous_begin, previous_end)) = span_timing_stack.pop() {
+                            current_span_begin = previous_begin;
+                            current_span_end = previous_end;
+                        } else {
+                            current_span_begin = None;
+                            current_span_end = None;
+                        }
                     }
                     _ => {}
                 }
@@ -496,6 +503,38 @@ mod tests {
         let words = lines[0].words.as_ref().unwrap();
         assert_eq!(words[0].end_ms, 10_500);
         assert_eq!(words[1].end_ms, 12_000);
+    }
+
+    #[test]
+    fn parse_ttml_nested_span_preserves_outer_word_timing_after_child_closes() {
+        let ttml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml"
+    xmlns:itunes="http://music.apple.com/lyrics-ttml">
+  <body>
+    <div>
+      <p begin="00:10.000" end="00:12.000">
+        <span begin="00:10.000" end="00:11.000"><span>Hello</span> world</span>
+      </p>
+    </div>
+  </body>
+</tt>"#;
+        let lines = parse_ttml(ttml).expect("should parse");
+        let words = lines[0].words.as_ref().expect("should keep word timing");
+        assert_eq!(
+            words,
+            &vec![
+                WordToken {
+                    time_ms: 10_000,
+                    end_ms: 11_000,
+                    text: "Hello".to_owned(),
+                },
+                WordToken {
+                    time_ms: 10_000,
+                    end_ms: 11_000,
+                    text: "world".to_owned(),
+                }
+            ]
+        );
     }
 
     #[test]

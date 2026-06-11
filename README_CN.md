@@ -202,11 +202,12 @@ MyKaraokeLibrary/
 
 ## 路线图
 
-当前**已发布版本**与按里程碑整理的完整清单见 **[实现状态（英文主文档）](./docs/implementation-status.md)**。以下为与英文 README 对齐的索引；避免在本文件重复维护长列表以免与源码版本漂移。
+当前**已交付内容**以 **[Changelog](./CHANGELOG.md)** 为准；未来事项以 GitHub Project 为准。以下为与英文 README 对齐的索引，避免在多个文件重复维护长列表。
 
-- **[实现状态](./docs/implementation-status.md)** — 已交付里程碑、v0.8.x 说明与「v0.9+」意向功能
-- **[当前实施计划](./docs/plans/plan.md)** — 唯一活跃计划：加固 H1–H8（含无 Apple 付费账号下的发布就绪）+ 新功能 1（歌单 / 轮唱）
-- **[技术路线图](./docs/design-docs/roadmap.md)** — 技术选型、契约与风险
+- **[Changelog](./CHANGELOG.md)** — 已完成改动和版本记录
+- **[文档总览](./docs/README.md)** — 当前文档归属规则与入口
+- **[GitHub Project](https://github.com/users/thedavidweng/projects/2/views/1)** — 未来事项与优先级
+- **[技术路线图](./docs/references/architecture/roadmap.md)** — 技术选型、契约与风险
 
 **当前应用版本（源码）：** 与 `package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json` 一致，截至文档更新为 **v0.8.1**。
 
@@ -251,13 +252,12 @@ pnpm tauri build             # 生产构建，生成平台特定安装包
 
 ## 文档
 
-- [文档总览](./docs/README.md) — 设计文档、规划、产品规范、参考资料与归档总入口
+- [文档总览](./docs/README.md) — 当前参考资料、可执行计划、Changelog 与归档总入口
 - [计划目录说明](./docs/plans/README.md) — `docs/plans` 约定与入口
-- [实现状态](./docs/implementation-status.md) — 已发布功能与版本说明（主清单）
-- [当前实施计划](./docs/plans/plan.md) — 加固 H1–H8 + 新功能 1 的执行清单
-- [系统架构](./docs/design-docs/architecture.md) — 系统设计、技术栈、数据流与运行时细节
-- [项目结构](./docs/design-docs/project-structure.md) — 当前目录布局与模块职责
-- [技术路线图](./docs/design-docs/roadmap.md) — 技术选型、API 契约与风险应对
+- [Changelog](./CHANGELOG.md) — 已交付改动与版本说明
+- [系统架构](./docs/references/architecture/architecture.md) — 系统设计、技术栈、数据流与运行时细节
+- [项目结构](./docs/references/architecture/project-structure.md) — 当前目录布局与模块职责
+- [技术路线图](./docs/references/architecture/roadmap.md) — 技术选型、API 契约与风险应对
 
 ## 参与贡献
 
