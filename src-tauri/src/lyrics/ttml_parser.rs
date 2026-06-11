@@ -22,6 +22,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
     let mut in_bg_span = false;
     let mut in_translation_span = false;
     let mut in_roman_span = false;
+    let mut div_line_timing_mode = false;
     let mut line_timing_mode = false;
 
     // Current line state
@@ -57,6 +58,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                             if (key == "timing" || key.ends_with(":timing"))
                                 && String::from_utf8_lossy(&attr.value) == "Line"
                             {
+                                div_line_timing_mode = true;
                                 line_timing_mode = true;
                             }
                         }
@@ -68,6 +70,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                         words.clear();
                         bg_words.clear();
                         text_buf.clear();
+                        line_timing_mode = div_line_timing_mode;
 
                         for attr in e.attributes().flatten() {
                             let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
@@ -185,12 +188,13 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                                 }
                             }
                             in_p = false;
-                            line_timing_mode = false;
+                            line_timing_mode = div_line_timing_mode;
                         }
                     }
                     "div" => {
                         _in_div = false;
                         current_section = None;
+                        div_line_timing_mode = false;
                         line_timing_mode = false;
                     }
                     "body" => {
@@ -267,7 +271,7 @@ fn parse_seconds_and_ms(s: &str) -> Option<(u64, u64)> {
             1 => frac * 100,
             2 => frac * 10,
             3 => frac,
-            _ => return None,
+            len => frac / 10_u64.pow((len - 3) as u32),
         };
         Some((secs, ms))
     } else {
@@ -416,6 +420,32 @@ mod tests {
     }
 
     #[test]
+    fn parse_ttml_div_line_timing_applies_to_every_p_in_div() {
+        let ttml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml"
+    xmlns:itunes="http://music.apple.com/lyrics-ttml">
+  <body>
+    <div itunes:timing="Line">
+      <p begin="00:10.000" end="00:12.000">
+        <span begin="00:10.000" end="00:11.000">First</span>
+        <span begin="00:11.000" end="00:12.000"> line</span>
+      </p>
+      <p begin="00:13.000" end="00:15.000">
+        <span begin="00:13.000" end="00:14.000">Second</span>
+        <span begin="00:14.000" end="00:15.000"> line</span>
+      </p>
+    </div>
+  </body>
+</tt>"#;
+        let lines = parse_ttml(ttml).expect("should parse");
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].text, "Firstline");
+        assert_eq!(lines[1].text, "Secondline");
+        assert!(lines[0].words.is_none());
+        assert!(lines[1].words.is_none());
+    }
+
+    #[test]
     fn parse_ttml_hh_mm_ss_format() {
         let ttml = r#"<?xml version="1.0" encoding="UTF-8"?>
 <tt xmlns="http://www.w3.org/ns/ttml"
@@ -466,5 +496,11 @@ mod tests {
         let words = lines[0].words.as_ref().unwrap();
         assert_eq!(words[0].end_ms, 10_500);
         assert_eq!(words[1].end_ms, 12_000);
+    }
+
+    #[test]
+    fn parse_seconds_and_ms_truncates_sub_millisecond_fraction() {
+        assert_eq!(parse_seconds_and_ms("5.1234"), Some((5, 123)));
+        assert_eq!(parse_seconds_and_ms("5.1239"), Some((5, 123)));
     }
 }

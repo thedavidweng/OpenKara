@@ -88,11 +88,7 @@ pub fn parse_lys(lys: &str) -> Result<Vec<LyricLine>> {
                 })
                 .collect();
             // Reconstruct display text from trimmed token texts
-            let display = tokens
-                .iter()
-                .map(|t| t.text.as_str())
-                .collect::<Vec<_>>()
-                .join(" ");
+            let display = display_text_for_tokens(&tokens);
             (Some(tokens), None, display)
         };
 
@@ -106,6 +102,33 @@ pub fn parse_lys(lys: &str) -> Result<Vec<LyricLine>> {
     }
 
     Ok(lines)
+}
+
+fn display_text_for_tokens(tokens: &[WordToken]) -> String {
+    let mut display = String::new();
+
+    for (index, token) in tokens.iter().enumerate() {
+        display.push_str(token.text.as_str());
+        if let Some(next) = tokens.get(index + 1) {
+            if !contains_cjk(token.text.as_str()) && !contains_cjk(next.text.as_str()) {
+                display.push(' ');
+            }
+        }
+    }
+
+    display
+}
+
+fn contains_cjk(text: &str) -> bool {
+    text.chars().any(|ch| {
+        matches!(
+            ch,
+            '\u{4E00}'..='\u{9FFF}'
+                | '\u{3040}'..='\u{309F}'
+                | '\u{30A0}'..='\u{30FF}'
+                | '\u{AC00}'..='\u{D7A3}'
+        )
+    })
 }
 
 #[cfg(test)]
@@ -206,5 +229,19 @@ mod tests {
         let words = lines[0].words.as_ref().unwrap();
         assert_eq!(words[0].end_ms, 1500);
         assert_eq!(words[1].end_ms, 2250);
+    }
+
+    #[test]
+    fn parse_lys_cjk_syllables_are_not_space_joined() {
+        let lys = "[0]愛し(1000,300)てる(1300,500)\n";
+        let lines = parse_lys(lys).expect("should parse");
+        assert_eq!(lines[0].text, "愛してる");
+    }
+
+    #[test]
+    fn parse_lys_latin_words_stay_space_joined() {
+        let lys = "[0]Hello(1000,500) world(1500,500)\n";
+        let lines = parse_lys(lys).expect("should parse");
+        assert_eq!(lines[0].text, "Hello world");
     }
 }

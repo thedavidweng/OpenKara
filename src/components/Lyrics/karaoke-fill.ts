@@ -13,6 +13,13 @@ interface WordAnimation {
   endTime: number;
 }
 
+type WebKitMaskStyle = CSSStyleDeclaration & {
+  webkitMaskImage: string;
+  webkitMaskRepeat: string;
+  webkitMaskOrigin: string;
+  webkitMaskSize: string;
+};
+
 export class KaraokeFillController {
   private wordAnimations = new Map<HTMLElement, WordAnimation>();
   private activeLineEl: HTMLElement | null = null;
@@ -45,17 +52,23 @@ export class KaraokeFillController {
       const word = words[i];
       const el = wordEls[i];
       const duration = Math.max(1, word.end_ms - word.time_ms);
+      const style = el.style as WebKitMaskStyle;
 
       // Set up the mask gradient (static)
-      el.style.maskImage =
-        "linear-gradient(to right, rgba(0,0,0,1), rgba(0,0,0,0.2))";
-      el.style.maskRepeat = "no-repeat";
-      el.style.maskOrigin = "left";
-      el.style.maskSize = "200% 100%";
+      this.setMaskGradient(style);
+      style.maskRepeat = "no-repeat";
+      style.webkitMaskRepeat = "no-repeat";
+      style.maskOrigin = "left";
+      style.webkitMaskOrigin = "left";
+      style.maskSize = "200% 100%";
+      style.webkitMaskSize = "200% 100%";
 
       // Create the sweep animation
       const animation = el.animate(
-        [{ maskPosition: "-100% 0" }, { maskPosition: "0% 0" }],
+        [
+          { maskPosition: "-100% 0", webkitMaskPosition: "-100% 0" },
+          { maskPosition: "0% 0", webkitMaskPosition: "0% 0" },
+        ],
         {
           duration,
           fill: "forwards",
@@ -116,7 +129,7 @@ export class KaraokeFillController {
 
     // Update mask gradient with smoothed alpha
     for (const [, wa] of this.wordAnimations) {
-      wa.element.style.maskImage = `linear-gradient(to right, rgba(0,0,0,${this.brightAlpha}), rgba(0,0,0,${this.darkAlpha}))`;
+      this.setMaskGradient(wa.element.style as WebKitMaskStyle);
     }
 
     for (const [, wa] of this.wordAnimations) {
@@ -146,10 +159,15 @@ export class KaraokeFillController {
   deactivateLine() {
     for (const [, wa] of this.wordAnimations) {
       wa.animation.cancel();
-      wa.element.style.maskImage = "";
-      wa.element.style.maskRepeat = "";
-      wa.element.style.maskOrigin = "";
-      wa.element.style.maskSize = "";
+      const style = wa.element.style as WebKitMaskStyle;
+      style.maskImage = "";
+      style.webkitMaskImage = "";
+      style.maskRepeat = "";
+      style.webkitMaskRepeat = "";
+      style.maskOrigin = "";
+      style.webkitMaskOrigin = "";
+      style.maskSize = "";
+      style.webkitMaskSize = "";
     }
     this.wordAnimations.clear();
     this.activeLineEl = null;
@@ -162,5 +180,11 @@ export class KaraokeFillController {
 
   destroy() {
     this.deactivateLine();
+  }
+
+  private setMaskGradient(style: WebKitMaskStyle) {
+    const gradient = `linear-gradient(to right, rgba(0,0,0,${this.brightAlpha}), rgba(0,0,0,${this.darkAlpha}))`;
+    style.maskImage = gradient;
+    style.webkitMaskImage = gradient;
   }
 }
