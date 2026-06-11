@@ -386,9 +386,15 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
             const targetOpacity =
               distance === 0 ? 1 : Math.max(0.3, 1 - distance * 0.2);
             const springs = getLineSprings(absoluteIndex);
-            springs.scale.setTarget(targetScale);
-            springs.opacity.setTarget(targetOpacity);
-            springs.blur.setTarget(0);
+            const targetChanged =
+              springs.scale.setTarget(targetScale) ||
+              springs.opacity.setTarget(targetOpacity) ||
+              springs.blur.setTarget(0);
+            if (targetChanged) {
+              springs.scale.update(1 / 60);
+              springs.opacity.update(1 / 60);
+              springs.blur.update(1 / 60);
+            }
 
             return (
               <div

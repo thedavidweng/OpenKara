@@ -28,6 +28,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
     let mut p_begin: Option<u64> = None;
     let mut p_end: Option<u64> = None;
     let mut words: Vec<WordToken> = Vec::new();
+    let mut word_has_explicit_end: Vec<bool> = Vec::new();
     let mut bg_words: Vec<WordToken> = Vec::new();
     let mut text_buf = String::new();
     let mut current_span_begin: Option<u64> = None;
@@ -68,6 +69,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                         p_begin = None;
                         p_end = None;
                         words.clear();
+                        word_has_explicit_end.clear();
                         bg_words.clear();
                         text_buf.clear();
                         line_timing_mode = div_line_timing_mode;
@@ -154,6 +156,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                             end_ms: current_span_end.unwrap_or(begin + 500),
                             text: text.trim().to_string(),
                         });
+                        word_has_explicit_end.push(current_span_end.is_some());
                     }
                 } else {
                     text_buf.push_str(&text);
@@ -169,10 +172,11 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                             if let Some(begin) = p_begin {
                                 let text = text_buf.trim().to_string();
                                 if !text.is_empty() {
-                                    // Fix up last word's end_ms from <p end="...">
+                                    // Only words without an explicit span end inherit <p end>.
                                     if let Some(p_end_val) = p_end {
-                                        if let Some(last) = words.last_mut() {
-                                            if last.end_ms == last.time_ms + 500 {
+                                        if let Some(last_index) = words.len().checked_sub(1) {
+                                            if !word_has_explicit_end[last_index] {
+                                                let last = &mut words[last_index];
                                                 last.end_ms = p_end_val;
                                             }
                                         }
@@ -508,6 +512,42 @@ mod tests {
         let words = lines[0].words.as_ref().unwrap();
         assert_eq!(words[0].end_ms, 10_500);
         assert_eq!(words[1].end_ms, 12_000);
+    }
+
+    #[test]
+    fn parse_ttml_preserves_explicit_last_word_end() {
+        let ttml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml"
+    xmlns:itunes="http://music.apple.com/lyrics-ttml">
+  <body>
+    <div>
+      <p begin="00:10.000" end="00:12.000">
+        <span begin="00:10.000" end="00:10.500">Hello</span>
+      </p>
+    </div>
+  </body>
+</tt>"#;
+        let lines = parse_ttml(ttml).expect("should parse");
+        let words = lines[0].words.as_ref().unwrap();
+        assert_eq!(words[0].end_ms, 10_500);
+    }
+
+    #[test]
+    fn parse_ttml_uses_p_end_for_last_word_without_explicit_end() {
+        let ttml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml"
+    xmlns:itunes="http://music.apple.com/lyrics-ttml">
+  <body>
+    <div>
+      <p begin="00:10.000" end="00:12.000">
+        <span begin="00:10.000">Hello</span>
+      </p>
+    </div>
+  </body>
+</tt>"#;
+        let lines = parse_ttml(ttml).expect("should parse");
+        let words = lines[0].words.as_ref().unwrap();
+        assert_eq!(words[0].end_ms, 12_000);
     }
 
     #[test]

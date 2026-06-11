@@ -51,14 +51,14 @@ describe("KaraokeFillController", () => {
     }
   });
 
-  test("activateLine puts unfilled mask alpha before filled mask alpha", () => {
+  test("activateLine puts filled mask alpha before unfilled mask alpha", () => {
     const lineEl = document.createElement("div");
     const wordEl = createMockEl();
     const words = [{ time_ms: 1000, end_ms: 1500 }];
 
     controller.activateLine(lineEl, words, [wordEl]);
 
-    expect(maskAlphas(wordEl.style.maskImage)).toEqual([1, 0.2]);
+    expect(maskAlphas(wordEl.style.maskImage)).toEqual([0.2, 1]);
   });
 
   test("activateLine sets prefixed mask styles and keyframes for WebKit", () => {
@@ -207,7 +207,7 @@ describe("KaraokeFillController", () => {
       // Check if it has converged to fully opaque or near it
       const alphas = maskAlphas(maskImage);
       if (alphas.length > 0) {
-        const brightValue = alphas[alphas.length - 1];
+        const brightValue = alphas[0];
         expect(brightValue).toBeGreaterThan(0.9);
       }
       // If no rgba match, it converged to rgb(0,0,0) which is alpha=1.0 — great
@@ -225,7 +225,7 @@ describe("KaraokeFillController", () => {
         controller.update(1500, true);
       }
 
-      expect(maskAlphas(wordEl.style.maskImage)).toEqual([1, 0.2]);
+      expect(maskAlphas(wordEl.style.maskImage)).toEqual([0.2, 1]);
     });
 
     test("deactivateLine resets alpha state", () => {
@@ -250,7 +250,7 @@ describe("KaraokeFillController", () => {
       const maskImage = wordEl2.style.maskImage;
       const alphas = maskAlphas(maskImage);
       expect(alphas).not.toHaveLength(0);
-      const brightValue = alphas[alphas.length - 1];
+      const brightValue = alphas[0];
       expect(brightValue).toBeLessThan(0.5);
     });
   });

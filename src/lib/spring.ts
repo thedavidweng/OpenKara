@@ -38,10 +38,11 @@ export class Spring {
     this.settled = true;
   }
 
-  setTarget(target: number) {
-    if (this.target === target && this.settled) return;
+  setTarget(target: number): boolean {
+    if (this.target === target) return false;
     this.target = target;
     this.settled = false;
+    return true;
   }
 
   /**
