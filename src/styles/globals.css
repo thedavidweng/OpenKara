@@ -427,6 +427,40 @@
   }
 }
 
+@keyframes lyric-char-glow {
+  0%,
+  100% {
+    text-shadow:
+      0 0 4px rgba(255, 255, 255, 0.3),
+      0 0 2px rgba(255, 255, 255, 0.2);
+    transform: scale(1) translateY(0);
+  }
+  40%,
+  60% {
+    text-shadow:
+      0 0 16px rgba(255, 255, 255, 0.6),
+      0 0 6px rgba(255, 255, 255, 0.5);
+    transform: scale(1.05) translateY(-1px);
+  }
+}
+
+@keyframes lyric-char-glow-last {
+  0%,
+  100% {
+    text-shadow:
+      0 0 6px rgba(255, 255, 255, 0.4),
+      0 0 3px rgba(255, 255, 255, 0.3);
+    transform: scale(1) translateY(0);
+  }
+  35%,
+  65% {
+    text-shadow:
+      0 0 24px rgba(255, 255, 255, 0.8),
+      0 0 10px rgba(255, 255, 255, 0.6);
+    transform: scale(1.08) translateY(-2px);
+  }
+}
+
 .marquee-active {
   animation: marquee-scroll 8s ease-in-out infinite;
   white-space: nowrap;

@@ -6,7 +6,12 @@ import { createRoot } from "react-dom/client";
 import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
 import { LyricLine } from "./LyricLine";
 
-const { mockSeek } = vi.hoisted(() => ({
+const { mockPlayerState, mockSeek } = vi.hoisted(() => ({
+  mockPlayerState: {
+    snapshot: {
+      is_playing: true,
+    },
+  },
   mockSeek: vi.fn(),
 }));
 
@@ -14,14 +19,20 @@ const { mockControllerInstances } = vi.hoisted(() => ({
   mockControllerInstances: [] as Array<{
     activateLine: ReturnType<typeof vi.fn>;
     setTargetAlpha: ReturnType<typeof vi.fn>;
+    setCurrentAlpha: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
+    deactivateLine: ReturnType<typeof vi.fn>;
     destroy: ReturnType<typeof vi.fn>;
   }>,
 }));
 
 vi.mock("@/stores/player-store", () => ({
-  usePlayerStore: (selector: (state: { seek: typeof mockSeek }) => unknown) =>
-    selector({ seek: mockSeek }),
+  usePlayerStore: (
+    selector: (state: {
+      seek: typeof mockSeek;
+      snapshot: typeof mockPlayerState.snapshot;
+    }) => unknown,
+  ) => selector({ seek: mockSeek, snapshot: mockPlayerState.snapshot }),
 }));
 
 vi.mock("./karaoke-fill", () => ({
@@ -29,7 +40,9 @@ vi.mock("./karaoke-fill", () => ({
     const controller = {
       activateLine: vi.fn(),
       setTargetAlpha: vi.fn(),
+      setCurrentAlpha: vi.fn(),
       update: vi.fn(),
+      deactivateLine: vi.fn(),
       destroy: vi.fn(),
     };
     mockControllerInstances.push(controller);
@@ -40,6 +53,7 @@ vi.mock("./karaoke-fill", () => ({
 describe("LyricLine", () => {
   beforeEach(() => {
     mockControllerInstances.length = 0;
+    mockPlayerState.snapshot.is_playing = true;
     (
       globalThis as typeof globalThis & {
         IS_REACT_ACT_ENVIRONMENT?: boolean;
@@ -243,6 +257,187 @@ describe("LyricLine", () => {
       1.0,
       1.0,
     );
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  test("keeps the karaoke controller when an active line becomes past", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const line = {
+      time_ms: 1000,
+      text: "alpha beta",
+      words: [
+        { text: "alpha", time_ms: 1000, end_ms: 1500 },
+        { text: "beta", time_ms: 1500, end_ms: 2000 },
+      ],
+      bg_words: null,
+      section: null,
+    };
+
+    await act(async () => {
+      root.render(
+        <LyricLine
+          line={line}
+          state="active"
+          adjustedMs={1200}
+          lyricsFontStep={0}
+        />,
+      );
+    });
+    const controller = mockControllerInstances[0];
+
+    await act(async () => {
+      root.render(
+        <LyricLine
+          line={line}
+          state="past"
+          adjustedMs={2500}
+          lyricsFontStep={0}
+        />,
+      );
+    });
+
+    expect(mockControllerInstances).toHaveLength(1);
+    expect(controller.destroy).not.toHaveBeenCalled();
+    expect(controller.setCurrentAlpha).toHaveBeenLastCalledWith(1.0, 1.0);
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  test("pauses karaoke fill updates when playback is paused", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const line = {
+      time_ms: 1000,
+      text: "alpha beta",
+      words: [
+        { text: "alpha", time_ms: 1000, end_ms: 1500 },
+        { text: "beta", time_ms: 1500, end_ms: 2000 },
+      ],
+      bg_words: null,
+      section: null,
+    };
+
+    mockPlayerState.snapshot.is_playing = false;
+
+    await act(async () => {
+      root.render(
+        <LyricLine
+          line={line}
+          state="active"
+          adjustedMs={1200}
+          lyricsFontStep={0}
+        />,
+      );
+    });
+
+    expect(mockControllerInstances[0].update).toHaveBeenLastCalledWith(
+      1200,
+      false,
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  test("deactivates karaoke fill when an active line switches to audience presentation", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const line = {
+      time_ms: 1000,
+      text: "alpha beta",
+      words: [
+        { text: "alpha", time_ms: 1000, end_ms: 1500 },
+        { text: "beta", time_ms: 1500, end_ms: 2000 },
+      ],
+      bg_words: null,
+      section: null,
+    };
+
+    await act(async () => {
+      root.render(
+        <LyricLine
+          line={line}
+          state="active"
+          adjustedMs={1200}
+          lyricsFontStep={0}
+        />,
+      );
+    });
+    const controller = mockControllerInstances[0];
+
+    await act(async () => {
+      root.render(
+        <LyricLine
+          line={line}
+          state="active"
+          adjustedMs={1200}
+          presentation="audience"
+          lyricsFontStep={0}
+        />,
+      );
+    });
+
+    expect(controller.deactivateLine).toHaveBeenCalled();
+    expect(controller.destroy).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  test("rebinds karaoke fill when emphasis rendering swaps word elements", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const line = {
+      time_ms: 1000,
+      text: "alpha beta",
+      words: [
+        { text: "alpha", time_ms: 1000, end_ms: 2500 },
+        { text: "beta", time_ms: 2500, end_ms: 3000 },
+      ],
+      bg_words: null,
+      section: null,
+    };
+
+    await act(async () => {
+      root.render(
+        <LyricLine
+          line={line}
+          state="active"
+          adjustedMs={1200}
+          lyricsFontStep={0}
+        />,
+      );
+    });
+    const controller = mockControllerInstances[0];
+
+    await act(async () => {
+      root.render(
+        <LyricLine
+          line={line}
+          state="active"
+          adjustedMs={2600}
+          lyricsFontStep={0}
+        />,
+      );
+    });
+
+    expect(controller.activateLine).toHaveBeenCalledTimes(2);
 
     await act(async () => {
       root.unmount();
