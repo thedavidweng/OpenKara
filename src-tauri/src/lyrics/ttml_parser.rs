@@ -23,6 +23,7 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
     let mut in_roman_span = false;
     let mut div_line_timing_mode = false;
     let mut line_timing_mode = false;
+    let mut div_context_stack: Vec<(Option<String>, bool)> = Vec::new();
 
     // Current line state
     let mut p_begin: Option<u64> = None;
@@ -50,19 +51,24 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                     }
                     "div" => {
                         _in_div = true;
+                        div_context_stack.push((current_section.clone(), div_line_timing_mode));
+                        let mut next_section = current_section.clone();
+                        let mut next_div_line_timing_mode = div_line_timing_mode;
                         for attr in e.attributes().flatten() {
                             let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
                             if key == "song-part" || key.ends_with(":song-part") {
-                                current_section =
+                                next_section =
                                     Some(String::from_utf8_lossy(&attr.value).into_owned());
                             }
                             if (key == "timing" || key.ends_with(":timing"))
                                 && String::from_utf8_lossy(&attr.value) == "Line"
                             {
-                                div_line_timing_mode = true;
-                                line_timing_mode = true;
+                                next_div_line_timing_mode = true;
                             }
                         }
+                        current_section = next_section;
+                        div_line_timing_mode = next_div_line_timing_mode;
+                        line_timing_mode = div_line_timing_mode;
                     }
                     "p" => {
                         in_p = true;
@@ -203,10 +209,17 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
                         }
                     }
                     "div" => {
-                        _in_div = false;
-                        current_section = None;
-                        div_line_timing_mode = false;
-                        line_timing_mode = false;
+                        if let Some((previous_section, previous_div_line_timing_mode)) =
+                            div_context_stack.pop()
+                        {
+                            current_section = previous_section;
+                            div_line_timing_mode = previous_div_line_timing_mode;
+                        } else {
+                            current_section = None;
+                            div_line_timing_mode = false;
+                        }
+                        line_timing_mode = div_line_timing_mode;
+                        _in_div = !div_context_stack.is_empty();
                     }
                     "body" => {
                         _in_body = false;
@@ -457,6 +470,34 @@ mod tests {
         assert_eq!(lines.len(), 2);
         assert_eq!(lines[0].text, "First line");
         assert_eq!(lines[1].text, "Second line");
+        assert!(lines[0].words.is_none());
+        assert!(lines[1].words.is_none());
+    }
+
+    #[test]
+    fn parse_ttml_nested_div_preserves_outer_line_timing_mode() {
+        let ttml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml"
+    xmlns:itunes="http://music.apple.com/lyrics-ttml">
+  <body>
+    <div itunes:timing="Line">
+      <div>
+        <p begin="00:10.000" end="00:12.000">
+          <span begin="00:10.000" end="00:11.000">Nested</span>
+          <span begin="00:11.000" end="00:12.000"> line</span>
+        </p>
+      </div>
+      <p begin="00:13.000" end="00:15.000">
+        <span begin="00:13.000" end="00:14.000">Outer</span>
+        <span begin="00:14.000" end="00:15.000"> line</span>
+      </p>
+    </div>
+  </body>
+</tt>"#;
+        let lines = parse_ttml(ttml).expect("should parse");
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].text, "Nested line");
+        assert_eq!(lines[1].text, "Outer line");
         assert!(lines[0].words.is_none());
         assert!(lines[1].words.is_none());
     }

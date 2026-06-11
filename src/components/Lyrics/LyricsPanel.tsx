@@ -117,6 +117,14 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
     Map<number, { scale: Spring; opacity: Spring; blur: Spring }>
   >(new Map());
   const rafRef = useRef<number>(0);
+  const springSongIdRef = useRef<string | null | undefined>(songId);
+
+  if (springSongIdRef.current !== songId) {
+    // Reset before line springs are read during render so a song change cannot
+    // leave the next RAF loop with an empty spring map.
+    springsRef.current.clear();
+    springSongIdRef.current = songId;
+  }
 
   const getLineSprings = useCallback((index: number) => {
     let springs = springsRef.current.get(index);
@@ -131,12 +139,7 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
     return springs;
   }, []);
 
-  // Clear stale spring entries when the song changes
-  useEffect(() => {
-    springsRef.current.clear();
-  }, [songId]);
-
-  // Update springs each frame — restart loop when active line changes
+  // Update springs each frame — restart loop when active line or song changes
   const [, forceRender] = useState(0);
   useEffect(() => {
     let lastTime = performance.now();
@@ -167,7 +170,7 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
 
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [activeLineIndex]);
+  }, [activeLineIndex, songId]);
 
   const handleRemotePageStep = (direction: PlainTextPageDirection) => {
     void stepPlainTextRemotePage(
@@ -386,10 +389,10 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
             const targetOpacity =
               distance === 0 ? 1 : Math.max(0.3, 1 - distance * 0.2);
             const springs = getLineSprings(absoluteIndex);
-            const targetChanged =
-              springs.scale.setTarget(targetScale) ||
-              springs.opacity.setTarget(targetOpacity) ||
-              springs.blur.setTarget(0);
+            const scaleChanged = springs.scale.setTarget(targetScale);
+            const opacityChanged = springs.opacity.setTarget(targetOpacity);
+            const blurChanged = springs.blur.setTarget(0);
+            const targetChanged = scaleChanged || opacityChanged || blurChanged;
             if (targetChanged) {
               springs.scale.update(1 / 60);
               springs.opacity.update(1 / 60);
