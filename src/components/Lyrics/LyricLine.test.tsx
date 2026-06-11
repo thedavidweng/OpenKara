@@ -1,9 +1,22 @@
+// @vitest-environment jsdom
+
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, test, vi } from "vitest";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
 import { LyricLine } from "./LyricLine";
 
 const { mockSeek } = vi.hoisted(() => ({
   mockSeek: vi.fn(),
+}));
+
+const { mockControllerInstances } = vi.hoisted(() => ({
+  mockControllerInstances: [] as Array<{
+    activateLine: ReturnType<typeof vi.fn>;
+    setTargetAlpha: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
+    destroy: ReturnType<typeof vi.fn>;
+  }>,
 }));
 
 vi.mock("@/stores/player-store", () => ({
@@ -11,7 +24,33 @@ vi.mock("@/stores/player-store", () => ({
     selector({ seek: mockSeek }),
 }));
 
+vi.mock("./karaoke-fill", () => ({
+  KaraokeFillController: vi.fn().mockImplementation(function () {
+    const controller = {
+      activateLine: vi.fn(),
+      setTargetAlpha: vi.fn(),
+      update: vi.fn(),
+      destroy: vi.fn(),
+    };
+    mockControllerInstances.push(controller);
+    return controller;
+  }),
+}));
+
 describe("LyricLine", () => {
+  beforeEach(() => {
+    mockControllerInstances.length = 0;
+    (
+      globalThis as typeof globalThis & {
+        IS_REACT_ACT_ENVIRONMENT?: boolean;
+      }
+    ).IS_REACT_ACT_ENVIRONMENT = true;
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
   test("does not render plain-text lyrics as clickable", () => {
     const markup = renderToStaticMarkup(
       <LyricLine
@@ -145,6 +184,70 @@ describe("LyricLine", () => {
     );
 
     expect(markup).toContain("translateY(8px)");
+  });
+
+  test("does not render duplicate main text for bg-only lines", () => {
+    const markup = renderToStaticMarkup(
+      <LyricLine
+        line={{
+          time_ms: 1000,
+          text: "Back Up",
+          words: null,
+          bg_words: [
+            { text: "Back", time_ms: 1000, end_ms: 1200 },
+            { text: "Up", time_ms: 1200, end_ms: 1500 },
+          ],
+          section: null,
+        }}
+        state="active"
+        adjustedMs={1200}
+        lyricsFontStep={0}
+      />,
+    );
+
+    expect(markup.match(/Back/g)).toHaveLength(1);
+    expect(markup.match(/Up/g)).toHaveLength(1);
+  });
+
+  test("keeps active karaoke fill alpha contrast instead of collapsing the mask", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <LyricLine
+          line={{
+            time_ms: 1000,
+            text: "alpha beta",
+            words: [
+              { text: "alpha", time_ms: 1000, end_ms: 1500 },
+              { text: "beta", time_ms: 1500, end_ms: 2000 },
+            ],
+            bg_words: null,
+            section: null,
+          }}
+          state="active"
+          adjustedMs={1200}
+          lyricsFontStep={0}
+        />,
+      );
+    });
+
+    expect(mockControllerInstances).toHaveLength(1);
+    expect(mockControllerInstances[0].setTargetAlpha).toHaveBeenCalledWith(
+      0.2,
+      1.0,
+    );
+    expect(mockControllerInstances[0].setTargetAlpha).not.toHaveBeenCalledWith(
+      1.0,
+      1.0,
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
   });
 
   test("renders emphasis words as per-character spans with glow animation", () => {

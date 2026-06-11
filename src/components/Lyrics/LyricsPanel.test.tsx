@@ -1,7 +1,16 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { AirPlayOutputStateEvent } from "@/types/ipc";
+import type { LyricLine } from "@/types/ipc";
 import { LyricsPanel } from "./LyricsPanel";
+
+function line(input: Omit<LyricLine, "bg_words" | "section">): LyricLine {
+  return {
+    ...input,
+    bg_words: null,
+    section: null,
+  };
+}
 
 const {
   mockPlayerState,
@@ -31,11 +40,11 @@ const {
   },
   mockLyricsState: {
     lines: [
-      {
+      line({
         time_ms: 0,
         text: "line one",
         words: null,
-      },
+      }),
     ],
     activeLineIndex: 0,
     offsetMs: 0,
@@ -48,11 +57,7 @@ const {
     songId: "song-1",
     adjustOffset: vi.fn(),
   } as {
-    lines: Array<{
-      time_ms: number;
-      text: string;
-      words: Array<{ text: string; time_ms: number; end_ms: number }> | null;
-    }>;
+    lines: LyricLine[];
     activeLineIndex: number;
     offsetMs: number;
     isLoading: boolean;
@@ -122,11 +127,11 @@ describe("LyricsPanel contextual reveal", () => {
     );
 
     mockLyricsState.lines = [
-      {
+      line({
         time_ms: 0,
         text: "line one",
         words: null,
-      },
+      }),
     ];
     mockLyricsState.activeLineIndex = 0;
     mockLyricsState.offsetMs = 0;
@@ -176,16 +181,16 @@ describe("LyricsPanel contextual reveal", () => {
 
   test("renders plain-text lyrics at full brightness when no timestamps exist", () => {
     mockLyricsState.lines = [
-      {
+      line({
         time_ms: 0,
         text: "line one",
         words: null,
-      },
-      {
+      }),
+      line({
         time_ms: 0,
         text: "line two",
         words: null,
-      },
+      }),
     ];
 
     const markup = renderToStaticMarkup(<LyricsPanel />);
@@ -279,16 +284,16 @@ describe("LyricsPanel contextual reveal", () => {
 
   test("renders stable line markers for timed lyrics auto-scroll targeting", () => {
     mockLyricsState.lines = [
-      {
+      line({
         time_ms: 1000,
         text: "line one",
         words: null,
-      },
-      {
+      }),
+      line({
         time_ms: 2000,
         text: "line two",
         words: null,
-      },
+      }),
     ];
     mockLyricsState.activeLineIndex = 1;
 
@@ -302,7 +307,7 @@ describe("LyricsPanel contextual reveal", () => {
     mockPlayerState.positionMs = 1000;
     mockSelectSyncDisplayPositionMs.mockReturnValue(1600);
     mockLyricsState.lines = [
-      {
+      line({
         time_ms: 1000,
         text: "alpha beta gamma",
         words: [
@@ -310,7 +315,7 @@ describe("LyricsPanel contextual reveal", () => {
           { text: "beta", time_ms: 1500, end_ms: 2000 },
           { text: "gamma", time_ms: 2000, end_ms: 2500 },
         ],
-      },
+      }),
     ];
     mockLyricsState.activeLineIndex = 0;
 

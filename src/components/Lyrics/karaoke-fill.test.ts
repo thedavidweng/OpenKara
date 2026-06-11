@@ -213,6 +213,21 @@ describe("KaraokeFillController", () => {
       // If no rgba match, it converged to rgb(0,0,0) which is alpha=1.0 — great
     });
 
+    test("active-line target keeps mask contrast during the sweep", () => {
+      const lineEl = document.createElement("div");
+      const wordEl = createMockEl();
+      const words = [{ time_ms: 1000, end_ms: 3000 }];
+      controller.activateLine(lineEl, words, [wordEl]);
+
+      controller.setTargetAlpha(0.2, 1.0);
+
+      for (let i = 0; i < 60; i++) {
+        controller.update(1500, true);
+      }
+
+      expect(maskAlphas(wordEl.style.maskImage)).toEqual([1, 0.2]);
+    });
+
     test("deactivateLine resets alpha state", () => {
       const lineEl = document.createElement("div");
       const wordEl = createMockEl();

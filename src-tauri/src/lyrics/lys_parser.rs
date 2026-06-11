@@ -76,7 +76,7 @@ pub fn parse_lys(lys: &str) -> Result<Vec<LyricLine>> {
                     }
                 })
                 .collect();
-            let bg_text: String = cleaned.iter().map(|t| t.text.as_str()).collect();
+            let bg_text = display_text_for_tokens(&cleaned);
             (None, Some(cleaned), bg_text)
         } else {
             let tokens: Vec<WordToken> = raw_tokens
@@ -169,6 +169,17 @@ mod tests {
         let bg = lines[0].bg_words.as_ref().expect("should have bg_words");
         assert_eq!(bg.len(), 1);
         assert_eq!(bg[0].text, "Background");
+    }
+
+    #[test]
+    fn parse_lys_background_vocals_keep_word_spacing() {
+        let lys = "[6]Back(1000,200) Up(1200,300)\n";
+        let lines = parse_lys(lys).expect("should parse");
+        assert_eq!(lines[0].text, "Back Up");
+        let bg = lines[0].bg_words.as_ref().expect("should have bg_words");
+        assert_eq!(bg.len(), 2);
+        assert_eq!(bg[0].text, "Back");
+        assert_eq!(bg[1].text, "Up");
     }
 
     #[test]

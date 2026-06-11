@@ -79,6 +79,10 @@ function isLastWord(index: number, total: number): boolean {
   return index === total - 1;
 }
 
+function hasBackgroundWords(line: LyricLineType): boolean {
+  return line.bg_words !== null && line.bg_words.length > 0;
+}
+
 function areLyricLinePropsEqual(
   previous: LyricLineProps,
   next: LyricLineProps,
@@ -120,6 +124,7 @@ export const LyricLine = memo(function LyricLine({
   };
 
   const hasWords = line.words !== null && line.words.length > 0;
+  const hasOnlyBackgroundWords = !hasWords && hasBackgroundWords(line);
   const activeWordIndex =
     hasWords && state === "active"
       ? getActiveWordIndex(line.words!, adjustedMs)
@@ -144,7 +149,7 @@ export const LyricLine = memo(function LyricLine({
           line.words!,
           wordElsRef.current,
         );
-        karaokeRef.current.setTargetAlpha(1.0, 1.0); // fully bright when active
+        karaokeRef.current.setTargetAlpha(0.2, 1.0); // keep active sweep contrast
       }
     } else if (state === "past") {
       karaokeRef.current?.setTargetAlpha(1.0, 1.0); // fully filled when past
@@ -337,7 +342,7 @@ export const LyricLine = memo(function LyricLine({
               );
             })}
           </span>
-        ) : (
+        ) : hasOnlyBackgroundWords ? null : (
           <span
             className={(presentation === "audience"
               ? `motion-surface font-bold tracking-tight ${hoverClass}`
