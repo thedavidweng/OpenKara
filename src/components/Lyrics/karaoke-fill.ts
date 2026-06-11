@@ -23,6 +23,8 @@ type WebKitMaskStyle = CSSStyleDeclaration & {
 export class KaraokeFillController {
   private wordAnimations = new Map<HTMLElement, WordAnimation>();
   private activeLineEl: HTMLElement | null = null;
+  private activeWordEls: HTMLElement[] = [];
+  private activeWordTimings: Array<{ time_ms: number; end_ms: number }> = [];
 
   // Alpha smoothing state
   private brightAlpha = 0.2;
@@ -44,7 +46,9 @@ export class KaraokeFillController {
     words: Array<{ time_ms: number; end_ms: number }>,
     wordEls: HTMLElement[],
   ) {
-    if (this.activeLineEl === lineEl) return;
+    if (this.activeLineEl === lineEl && this.hasSameBinding(words, wordEls)) {
+      return;
+    }
     this.deactivateLine();
     this.activeLineEl = lineEl;
 
@@ -84,6 +88,8 @@ export class KaraokeFillController {
         endTime: word.end_ms,
       });
     }
+    this.activeWordEls = wordEls.slice(0, this.wordAnimations.size);
+    this.activeWordTimings = words.slice(0, this.wordAnimations.size);
 
     this.lastUpdateTime = 0;
   }
@@ -96,6 +102,13 @@ export class KaraokeFillController {
   setTargetAlpha(bright: number, dark: number) {
     this.targetBrightAlpha = bright;
     this.targetDarkAlpha = dark;
+  }
+
+  setCurrentAlpha(bright: number, dark: number) {
+    this.brightAlpha = bright;
+    this.darkAlpha = dark;
+    this.setTargetAlpha(bright, dark);
+    this.updateMaskGradients();
   }
 
   /**
@@ -128,9 +141,7 @@ export class KaraokeFillController {
       (this.targetDarkAlpha - this.darkAlpha) * (1 - Math.exp(-darkSpeed * dt));
 
     // Update mask gradient with smoothed alpha
-    for (const [, wa] of this.wordAnimations) {
-      this.setMaskGradient(wa.element.style as WebKitMaskStyle);
-    }
+    this.updateMaskGradients();
 
     for (const [, wa] of this.wordAnimations) {
       if (currentMs < wa.startTime) {
@@ -171,6 +182,8 @@ export class KaraokeFillController {
     }
     this.wordAnimations.clear();
     this.activeLineEl = null;
+    this.activeWordEls = [];
+    this.activeWordTimings = [];
     this.brightAlpha = 0.2;
     this.darkAlpha = 1.0;
     this.targetBrightAlpha = 0.2;
@@ -186,5 +199,35 @@ export class KaraokeFillController {
     const gradient = `linear-gradient(to right, rgba(0,0,0,${this.brightAlpha}), rgba(0,0,0,${this.darkAlpha}))`;
     style.maskImage = gradient;
     style.webkitMaskImage = gradient;
+  }
+
+  private updateMaskGradients() {
+    for (const [, wa] of this.wordAnimations) {
+      this.setMaskGradient(wa.element.style as WebKitMaskStyle);
+    }
+  }
+
+  private hasSameBinding(
+    words: Array<{ time_ms: number; end_ms: number }>,
+    wordEls: HTMLElement[],
+  ) {
+    const bindingLength = Math.min(words.length, wordEls.length);
+    if (bindingLength !== this.activeWordEls.length) {
+      return false;
+    }
+
+    for (let index = 0; index < bindingLength; index += 1) {
+      const activeTiming = this.activeWordTimings[index];
+      const nextTiming = words[index];
+      if (
+        this.activeWordEls[index] !== wordEls[index] ||
+        activeTiming.time_ms !== nextTiming.time_ms ||
+        activeTiming.end_ms !== nextTiming.end_ms
+      ) {
+        return false;
+      }
+    }
+
+    return true;
   }
 }

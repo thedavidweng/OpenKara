@@ -95,6 +95,20 @@ describe("KaraokeFillController", () => {
     );
   });
 
+  test("activateLine rebuilds animations when word elements change in the same line", () => {
+    const lineEl = document.createElement("div");
+    const firstWordEl = createMockEl();
+    const secondWordEl = createMockEl();
+    const words = [{ time_ms: 1000, end_ms: 1500 }];
+
+    controller.activateLine(lineEl, words, [firstWordEl]);
+    controller.activateLine(lineEl, words, [secondWordEl]);
+
+    expect(secondWordEl.animate).toHaveBeenCalled();
+    expect(secondWordEl.style.maskImage).toContain("linear-gradient");
+    expect(firstWordEl.style.maskImage).toBe("");
+  });
+
   test("update sets animation currentTime before start time", () => {
     const lineEl = document.createElement("div");
     const wordEl = createMockEl();
@@ -135,6 +149,17 @@ describe("KaraokeFillController", () => {
     controller.update(1200, false);
     expect(animation.currentTime).toBe(200);
     expect(animation.paused).toBe(true);
+  });
+
+  test("setCurrentAlpha immediately updates mask contrast", () => {
+    const lineEl = document.createElement("div");
+    const wordEl = createMockEl();
+    const words = [{ time_ms: 1000, end_ms: 1500 }];
+    controller.activateLine(lineEl, words, [wordEl]);
+
+    controller.setCurrentAlpha(1, 1);
+
+    expect(maskAlphas(wordEl.style.maskImage)).toEqual([1, 1]);
   });
 
   test("update sets end time when word is past", () => {

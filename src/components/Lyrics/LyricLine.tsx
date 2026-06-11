@@ -83,13 +83,6 @@ function hasBackgroundWords(line: LyricLineType): boolean {
   return line.bg_words !== null && line.bg_words.length > 0;
 }
 
-function wordTimingSignature(words: WordToken[] | null): string {
-  if (words === null || words.length === 0) return "";
-  return words
-    .map((word) => `${word.time_ms}:${word.end_ms}:${word.text}`)
-    .join("|");
-}
-
 function areLyricLinePropsEqual(
   previous: LyricLineProps,
   next: LyricLineProps,
@@ -120,6 +113,7 @@ export const LyricLine = memo(function LyricLine({
   romanizedText,
 }: LyricLineProps) {
   const seek = usePlayerStore((s) => s.seek);
+  const isPlaying = usePlayerStore((s) => s.snapshot?.is_playing ?? false);
   const isSeekable = state !== "plain";
   const textSizeClass = getLyricsTextSizeClass(presentation, lyricsFontStep);
   const audiencePresentationSpec =
@@ -132,8 +126,9 @@ export const LyricLine = memo(function LyricLine({
 
   const words = line.words;
   const hasWords = words !== null && words.length > 0;
-  const wordsSignature = wordTimingSignature(words);
   const hasOnlyBackgroundWords = !hasWords && hasBackgroundWords(line);
+  const shouldUseKaraokeFill =
+    state === "active" && hasWords && presentation !== "audience";
   const activeWordIndex =
     hasWords && state === "active" ? getActiveWordIndex(words, adjustedMs) : -1;
   const hoverClass = isSeekable
@@ -145,9 +140,10 @@ export const LyricLine = memo(function LyricLine({
   const wordsRef = useRef(words);
   wordsRef.current = words;
 
-  // Activate/deactivate karaoke fill controller when the logical word timings change.
+  // Word DOM nodes can swap when emphasis rendering turns into plain text.
+  // Keep this render-synchronized; KaraokeFillController skips unchanged bindings.
   useEffect(() => {
-    if (state === "active" && hasWords && presentation !== "audience") {
+    if (shouldUseKaraokeFill) {
       if (!karaokeRef.current) {
         karaokeRef.current = new KaraokeFillController();
       }
@@ -161,23 +157,17 @@ export const LyricLine = memo(function LyricLine({
         );
         karaokeRef.current.setTargetAlpha(0.2, 1.0); // keep active sweep contrast
       }
-    } else if (state === "past") {
-      karaokeRef.current?.setTargetAlpha(1.0, 1.0); // fully filled when past
-    } else {
-      karaokeRef.current?.setTargetAlpha(0.2, 1.0); // dim when future
+      return;
     }
 
-    if (state !== "active" && state !== "past") {
-      karaokeRef.current?.deactivateLine();
+    if (state === "past") {
+      karaokeRef.current?.setCurrentAlpha(1.0, 1.0); // fully filled when past
+      return;
     }
 
-    return () => {
-      if (state === "active" && hasWords && presentation !== "audience") {
-        karaokeRef.current?.destroy();
-        karaokeRef.current = null;
-      }
-    };
-  }, [state, line.time_ms, wordsSignature, hasWords, presentation]);
+    karaokeRef.current?.setTargetAlpha(0.2, 1.0); // dim when future
+    karaokeRef.current?.deactivateLine();
+  });
 
   useEffect(
     () => () => {
@@ -190,291 +180,258 @@ export const LyricLine = memo(function LyricLine({
   // Update karaoke fill progress each frame
   useEffect(() => {
     if (state === "active") {
-      karaokeRef.current?.update(adjustedMs, true);
+      karaokeRef.current?.update(adjustedMs, isPlaying);
     }
-  }, [adjustedMs, state]);
+  }, [adjustedMs, isPlaying, state]);
 
   return (
-    <>
-      <style>{`
-      @keyframes lyric-char-glow {
-        0%, 100% {
-          text-shadow: 0 0 4px rgba(255,255,255,0.3), 0 0 2px rgba(255,255,255,0.2);
-          transform: scale(1) translateY(0);
-        }
-        40% {
-          text-shadow: 0 0 16px rgba(255,255,255,0.6), 0 0 6px rgba(255,255,255,0.5);
-          transform: scale(1.05) translateY(-1px);
-        }
-        60% {
-          text-shadow: 0 0 16px rgba(255,255,255,0.6), 0 0 6px rgba(255,255,255,0.5);
-          transform: scale(1.05) translateY(-1px);
-        }
-      }
-      @keyframes lyric-char-glow-last {
-        0%, 100% {
-          text-shadow: 0 0 6px rgba(255,255,255,0.4), 0 0 3px rgba(255,255,255,0.3);
-          transform: scale(1) translateY(0);
-        }
-        35% {
-          text-shadow: 0 0 24px rgba(255,255,255,0.8), 0 0 10px rgba(255,255,255,0.6);
-          transform: scale(1.08) translateY(-2px);
-        }
-        65% {
-          text-shadow: 0 0 24px rgba(255,255,255,0.8), 0 0 10px rgba(255,255,255,0.6);
-          transform: scale(1.08) translateY(-2px);
-        }
-      }
-    `}</style>
-      <div
-        onClick={isSeekable ? handleClick : undefined}
-        className={`motion-surface flex flex-col items-center gap-1.5 text-center ${
-          state === "active" ? "opacity-100" : "opacity-70"
-        } ${isSeekable ? "cursor-pointer group/line" : ""}`}
-        style={{
-          fontFamily:
-            '-apple-system, BlinkMacSystemFont, "Helvetica Neue", "Noto Sans SC", "Noto Sans JP", "Noto Sans KR", system-ui, sans-serif',
-          ...(presentation === "audience"
-            ? {
-                transform:
-                  state === "active"
-                    ? `scale(${audiencePresentationSpec.activeScale})`
-                    : undefined,
-              }
-            : undefined),
-        }}
-      >
-        {hasWords ? (
-          <span
-            className={(presentation === "audience"
-              ? `tracking-tight ${hoverClass}`
-              : `${textSizeClass} ${hoverClass}`
-            ).trim()}
-            style={{
-              fontWeight: state === "active" ? 500 : 400,
-              ...(presentation === "audience"
-                ? {
-                    fontSize: audiencePresentationSpec.fontSizePx,
-                    lineHeight: audiencePresentationSpec.lineHeightMultiple,
-                  }
-                : undefined),
-            }}
-          >
-            {line.words!.map((word, idx) => {
-              const wordState =
-                state === "plain"
-                  ? "active"
-                  : state === "active"
-                    ? idx < activeWordIndex
-                      ? "past"
-                      : idx === activeWordIndex
-                        ? "active"
-                        : "future"
-                    : state === "past"
-                      ? "past"
-                      : "future";
+    <div
+      onClick={isSeekable ? handleClick : undefined}
+      className={`motion-surface flex flex-col items-center gap-1.5 text-center ${
+        state === "active" ? "opacity-100" : "opacity-70"
+      } ${isSeekable ? "cursor-pointer group/line" : ""}`}
+      style={{
+        fontFamily:
+          '-apple-system, BlinkMacSystemFont, "Helvetica Neue", "Noto Sans SC", "Noto Sans JP", "Noto Sans KR", system-ui, sans-serif',
+        ...(presentation === "audience"
+          ? {
+              transform:
+                state === "active"
+                  ? `scale(${audiencePresentationSpec.activeScale})`
+                  : undefined,
+            }
+          : undefined),
+      }}
+    >
+      {hasWords ? (
+        <span
+          className={(presentation === "audience"
+            ? `tracking-tight ${hoverClass}`
+            : `${textSizeClass} ${hoverClass}`
+          ).trim()}
+          style={{
+            fontWeight: state === "active" ? 500 : 400,
+            ...(presentation === "audience"
+              ? {
+                  fontSize: audiencePresentationSpec.fontSizePx,
+                  lineHeight: audiencePresentationSpec.lineHeightMultiple,
+                }
+              : undefined),
+          }}
+        >
+          {line.words!.map((word, idx) => {
+            const wordState =
+              state === "plain"
+                ? "active"
+                : state === "active"
+                  ? idx < activeWordIndex
+                    ? "past"
+                    : idx === activeWordIndex
+                      ? "active"
+                      : "future"
+                  : state === "past"
+                    ? "past"
+                    : "future";
 
-              const isActiveWord = wordState === "active";
+            const isActiveWord = wordState === "active";
 
-              // Per-character glow for emphasis words (non-audience only)
-              if (
-                shouldEmphasize(word) &&
-                isActiveWord &&
-                presentation !== "audience"
-              ) {
-                const wordDuration = word.end_ms - word.time_ms;
-                const last = isLastWord(idx, line.words!.length);
-                return (
-                  <span
-                    key={idx}
-                    ref={(el) => {
-                      if (el) wordElsRef.current[idx] = el;
-                    }}
-                    className="motion-surface relative inline-block text-white"
-                  >
-                    {word.text.split("").map((char, charIdx) => (
-                      <span
-                        key={charIdx}
-                        style={{
-                          display: "inline-block",
-                          textShadow:
-                            "0 0 12px rgba(255,255,255,0.5), 0 0 4px rgba(255,255,255,0.4)",
-                          animation: last
-                            ? `lyric-char-glow-last ${wordDuration * 1.2}ms ease-in-out`
-                            : `lyric-char-glow ${wordDuration}ms ease-in-out`,
-                          animationDelay: `${charIdx * 20}ms`,
-                        }}
-                      >
-                        {char}
-                      </span>
-                    ))}
-                    {idx < line.words!.length - 1 ? " " : ""}
-                  </span>
-                );
-              }
-
+            // Per-character glow for emphasis words (non-audience only)
+            if (
+              shouldEmphasize(word) &&
+              isActiveWord &&
+              presentation !== "audience"
+            ) {
+              const wordDuration = word.end_ms - word.time_ms;
+              const last = isLastWord(idx, line.words!.length);
               return (
                 <span
                   key={idx}
                   ref={(el) => {
                     if (el) wordElsRef.current[idx] = el;
                   }}
-                  className={
-                    presentation === "audience"
-                      ? "motion-surface"
-                      : `motion-surface relative inline-block ${
-                          wordState === "active"
-                            ? "text-white"
-                            : wordState === "past"
-                              ? "text-[var(--color-text-dimmer)]"
-                              : "text-[var(--color-active)]"
-                        }`
-                  }
-                  style={{
-                    ...(presentation === "audience"
-                      ? {
-                          color: colorToCss(
-                            wordState === "active"
-                              ? audiencePresentationSpec.activeTextColor
-                              : wordState === "past"
-                                ? audiencePresentationSpec.pastTextColor
-                                : audiencePresentationSpec.futureTextColor,
-                          ),
-                          textShadow:
-                            wordState === "active"
-                              ? `0 0 ${audiencePresentationSpec.activeGlowBlurPx}px ${colorToCss(
-                                  audiencePresentationSpec.activeGlowColor,
-                                )}`
-                              : undefined,
-                        }
-                      : isActiveWord
-                        ? {
-                            textShadow: isLastWord(idx, line.words!.length)
-                              ? "0 0 20px rgba(255,255,255,0.7), 0 0 8px rgba(255,255,255,0.5)"
-                              : "0 0 12px rgba(255,255,255,0.5), 0 0 4px rgba(255,255,255,0.4)",
-                          }
-                        : undefined),
-                  }}
+                  className="motion-surface relative inline-block text-white"
                 >
-                  {word.text}
+                  {word.text.split("").map((char, charIdx) => (
+                    <span
+                      key={charIdx}
+                      style={{
+                        display: "inline-block",
+                        textShadow:
+                          "0 0 12px rgba(255,255,255,0.5), 0 0 4px rgba(255,255,255,0.4)",
+                        animation: last
+                          ? `lyric-char-glow-last ${wordDuration * 1.2}ms ease-in-out`
+                          : `lyric-char-glow ${wordDuration}ms ease-in-out`,
+                        animationDelay: `${charIdx * 20}ms`,
+                      }}
+                    >
+                      {char}
+                    </span>
+                  ))}
                   {idx < line.words!.length - 1 ? " " : ""}
                 </span>
               );
-            })}
-          </span>
-        ) : hasOnlyBackgroundWords ? null : (
-          <span
-            className={(presentation === "audience"
-              ? `motion-surface font-bold tracking-tight ${hoverClass}`
-              : `motion-surface ${textSizeClass} ${
+            }
+
+            return (
+              <span
+                key={idx}
+                ref={(el) => {
+                  if (el) wordElsRef.current[idx] = el;
+                }}
+                className={
+                  presentation === "audience"
+                    ? "motion-surface"
+                    : `motion-surface relative inline-block ${
+                        wordState === "active"
+                          ? "text-white"
+                          : wordState === "past"
+                            ? "text-[var(--color-text-dimmer)]"
+                            : "text-[var(--color-active)]"
+                      }`
+                }
+                style={{
+                  ...(presentation === "audience"
+                    ? {
+                        color: colorToCss(
+                          wordState === "active"
+                            ? audiencePresentationSpec.activeTextColor
+                            : wordState === "past"
+                              ? audiencePresentationSpec.pastTextColor
+                              : audiencePresentationSpec.futureTextColor,
+                        ),
+                        textShadow:
+                          wordState === "active"
+                            ? `0 0 ${audiencePresentationSpec.activeGlowBlurPx}px ${colorToCss(
+                                audiencePresentationSpec.activeGlowColor,
+                              )}`
+                            : undefined,
+                      }
+                    : isActiveWord
+                      ? {
+                          textShadow: isLastWord(idx, line.words!.length)
+                            ? "0 0 20px rgba(255,255,255,0.7), 0 0 8px rgba(255,255,255,0.5)"
+                            : "0 0 12px rgba(255,255,255,0.5), 0 0 4px rgba(255,255,255,0.4)",
+                        }
+                      : undefined),
+                }}
+              >
+                {word.text}
+                {idx < line.words!.length - 1 ? " " : ""}
+              </span>
+            );
+          })}
+        </span>
+      ) : hasOnlyBackgroundWords ? null : (
+        <span
+          className={(presentation === "audience"
+            ? `motion-surface font-bold tracking-tight ${hoverClass}`
+            : `motion-surface ${textSizeClass} ${
+                state === "plain" || state === "active"
+                  ? "text-white"
+                  : state === "past"
+                    ? "text-[var(--color-text-dimmer)]"
+                    : "text-[var(--color-active)]"
+              } ${hoverClass}`
+          ).trim()}
+          style={
+            presentation === "audience"
+              ? {
+                  fontSize: audiencePresentationSpec.fontSizePx,
+                  lineHeight: audiencePresentationSpec.lineHeightMultiple,
+                  color: colorToCss(
+                    state === "plain" || state === "active"
+                      ? audiencePresentationSpec.activeTextColor
+                      : state === "past"
+                        ? audiencePresentationSpec.pastTextColor
+                        : audiencePresentationSpec.futureTextColor,
+                  ),
+                  textShadow:
+                    state === "active"
+                      ? `0 0 ${audiencePresentationSpec.activeGlowBlurPx}px ${colorToCss(
+                          audiencePresentationSpec.activeGlowColor,
+                        )}`
+                      : undefined,
+                }
+              : undefined
+          }
+        >
+          {line.text}
+        </span>
+      )}
+      {line.bg_words && line.bg_words.length > 0 ? (
+        <span
+          className={
+            presentation === "audience"
+              ? "motion-surface font-medium tracking-tight opacity-40"
+              : `motion-surface text-sm font-medium md:text-base ${
                   state === "plain" || state === "active"
-                    ? "text-white"
+                    ? "text-[var(--color-text-dim)]"
                     : state === "past"
                       ? "text-[var(--color-text-dimmer)]"
-                      : "text-[var(--color-active)]"
-                } ${hoverClass}`
-            ).trim()}
-            style={
-              presentation === "audience"
-                ? {
-                    fontSize: audiencePresentationSpec.fontSizePx,
-                    lineHeight: audiencePresentationSpec.lineHeightMultiple,
-                    color: colorToCss(
-                      state === "plain" || state === "active"
-                        ? audiencePresentationSpec.activeTextColor
-                        : state === "past"
-                          ? audiencePresentationSpec.pastTextColor
-                          : audiencePresentationSpec.futureTextColor,
-                    ),
-                    textShadow:
-                      state === "active"
-                        ? `0 0 ${audiencePresentationSpec.activeGlowBlurPx}px ${colorToCss(
-                            audiencePresentationSpec.activeGlowColor,
-                          )}`
-                        : undefined,
-                  }
-                : undefined
-            }
-          >
-            {line.text}
-          </span>
-        )}
-        {line.bg_words && line.bg_words.length > 0 ? (
-          <span
-            className={
-              presentation === "audience"
-                ? "motion-surface font-medium tracking-tight opacity-40"
-                : `motion-surface text-sm font-medium md:text-base ${
+                      : "text-[var(--color-text-dim)]"
+                }`
+          }
+          style={{
+            ...(presentation === "audience"
+              ? {
+                  fontSize: audiencePresentationSpec.fontSizePx * 0.55,
+                  lineHeight: audiencePresentationSpec.lineHeightMultiple,
+                  color: colorToCss(
                     state === "plain" || state === "active"
-                      ? "text-[var(--color-text-dim)]"
+                      ? audiencePresentationSpec.activeTextColor
                       : state === "past"
-                        ? "text-[var(--color-text-dimmer)]"
-                        : "text-[var(--color-text-dim)]"
-                  }`
-            }
-            style={{
-              ...(presentation === "audience"
-                ? {
-                    fontSize: audiencePresentationSpec.fontSizePx * 0.55,
-                    lineHeight: audiencePresentationSpec.lineHeightMultiple,
-                    color: colorToCss(
-                      state === "plain" || state === "active"
-                        ? audiencePresentationSpec.activeTextColor
-                        : state === "past"
-                          ? audiencePresentationSpec.pastTextColor
-                          : audiencePresentationSpec.futureTextColor,
-                    ),
-                    opacity: 0.4,
-                  }
-                : undefined),
-              transition: "opacity 0.3s ease, transform 0.3s ease",
-              opacity: state === "active" ? 0.4 : 0,
-              transform:
-                state === "active" ? "translateY(0)" : "translateY(8px)",
-            }}
-          >
-            {line.bg_words.map((word, idx) => (
-              <span key={idx}>
-                {word.text}
-                {idx < line.bg_words!.length - 1 ? " " : ""}
-              </span>
-            ))}
-          </span>
-        ) : null}
-        {romanizedText ? (
-          <span
-            className={
-              presentation === "audience"
-                ? "motion-surface font-medium tracking-tight opacity-50"
-                : `motion-surface text-sm font-medium md:text-base ${
+                        ? audiencePresentationSpec.pastTextColor
+                        : audiencePresentationSpec.futureTextColor,
+                  ),
+                  opacity: 0.4,
+                }
+              : undefined),
+            transition: "opacity 0.3s ease, transform 0.3s ease",
+            opacity: state === "active" ? 0.4 : 0,
+            transform: state === "active" ? "translateY(0)" : "translateY(8px)",
+          }}
+        >
+          {line.bg_words.map((word, idx) => (
+            <span key={idx}>
+              {word.text}
+              {idx < line.bg_words!.length - 1 ? " " : ""}
+            </span>
+          ))}
+        </span>
+      ) : null}
+      {romanizedText ? (
+        <span
+          className={
+            presentation === "audience"
+              ? "motion-surface font-medium tracking-tight opacity-50"
+              : `motion-surface text-sm font-medium md:text-base ${
+                  state === "plain" || state === "active"
+                    ? "text-[var(--color-text-dim)]"
+                    : state === "past"
+                      ? "text-[var(--color-text-dimmer)]"
+                      : "text-[var(--color-text-dim)]"
+                }`
+          }
+          style={
+            presentation === "audience"
+              ? {
+                  fontSize: audiencePresentationSpec.fontSizePx * 0.55,
+                  lineHeight: audiencePresentationSpec.lineHeightMultiple,
+                  color: colorToCss(
                     state === "plain" || state === "active"
-                      ? "text-[var(--color-text-dim)]"
+                      ? audiencePresentationSpec.activeTextColor
                       : state === "past"
-                        ? "text-[var(--color-text-dimmer)]"
-                        : "text-[var(--color-text-dim)]"
-                  }`
-            }
-            style={
-              presentation === "audience"
-                ? {
-                    fontSize: audiencePresentationSpec.fontSizePx * 0.55,
-                    lineHeight: audiencePresentationSpec.lineHeightMultiple,
-                    color: colorToCss(
-                      state === "plain" || state === "active"
-                        ? audiencePresentationSpec.activeTextColor
-                        : state === "past"
-                          ? audiencePresentationSpec.pastTextColor
-                          : audiencePresentationSpec.futureTextColor,
-                    ),
-                    opacity: 0.45,
-                  }
-                : undefined
-            }
-          >
-            {romanizedText}
-          </span>
-        ) : null}
-      </div>
-    </>
+                        ? audiencePresentationSpec.pastTextColor
+                        : audiencePresentationSpec.futureTextColor,
+                  ),
+                  opacity: 0.45,
+                }
+              : undefined
+          }
+        >
+          {romanizedText}
+        </span>
+      ) : null}
+    </div>
   );
 }, areLyricLinePropsEqual);
