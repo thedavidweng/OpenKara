@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Lyrics formats:** TTML and LYS parsing, LrcApi TTML fallback, validated sidecar priority `.ttml -> .lys -> .lrc`, word `end_ms`, background-vocal words, and section metadata.
+- **Lyrics rendering:** word-level karaoke fill, WebKit mask support, spring-based line transitions, per-character glow, and background-vocal display.
+
+### Fixed
+
+- **TTML parsing:** nested child spans inside a timed span no longer clear the parent word timing.
+- **Karaoke fill:** mask gradient roles now keep the unfilled and filled sides in the expected order during sweeps.
+
+### Changed
+
+- **Documentation ownership:** completed work is tracked in this changelog, future work stays in the GitHub Project, executable plans live in `docs/plans/`, current facts and contracts live in `docs/references/`, and completed/superseded plans live in `docs/archive/`.
+
 ## 0.9.0 - 2026-06-04
 
 ### Added

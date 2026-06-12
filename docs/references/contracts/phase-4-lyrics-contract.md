@@ -2,11 +2,11 @@
 
 **Goal:** 固定 `Phase 4` 代码侧已经实现的歌词抓取、解析、缓存和 offset 持久化语义，保证 UI Agent 与后续接手者都基于同一套返回结构继续。
 
-**Current starting point:** 本契约对应分支 `codex/phase0-m0` 上 LRCLIB client、LrcApi client、LRC parser、抓取优先链、SQLite cache，以及 `fetch_lyrics / fetch_lyrics_online / set_lyrics_offset` 命令接入之后的状态。
+**Current starting point:** 本契约覆盖当前歌词 IPC：LRCLIB client、LrcApi client、LRC/TTML/LYS parser、抓取优先链、SQLite cache，以及 `fetch_lyrics / fetch_lyrics_online / set_lyrics_offset` 命令。
 
 ## Owner
 
-- 代码 Agent：歌词来源选择、LRC 解析、SQLite cache、offset 持久化、命令错误语义
+- 代码 Agent：歌词来源选择、LRC/TTML/LYS 解析、SQLite cache、offset 持久化、命令错误语义
 - UI Agent：消费命令返回值，不单方面修改命令名、字段名、source 语义或 miss 行为
 
 ## 已冻结能力
@@ -14,11 +14,12 @@
 1. `fetch_lyrics(song_id: String) -> LyricsPayload`
 2. `set_lyrics_offset(song_id: String, ms: i64) -> ()`
 3. `set_lyrics_font_step(step: i8) -> AppSettings`
-4. 抓取优先顺序固定为 `LRCLIB -> LrcApi -> embedded -> sidecar .lrc`
-5. SQLite `lyrics` 表按 `song_hash` 缓存原始 LRC 和 `offset_ms`
-6. 对同一首歌重复调用 `fetch_lyrics` 时，优先命中 SQLite cache，不重复发起 HTTP 请求
-7. 歌词字号是全局显示偏好，不写入 `lyrics` 表；它走 `AppSettings.lyrics_font_step`
-8. `Phase 5` 起，歌词命令失败值统一为 `CommandError`，详见 [phase-5-error-contract.md](./phase-5-error-contract.md)
+4. 抓取优先顺序固定为 `LRCLIB -> LrcApi -> embedded -> sidecar`
+5. sidecar 优先级固定为 `.ttml -> .lys -> .lrc`；每个候选格式必须先能解析出至少一行歌词，格式错误时继续尝试下一种
+6. SQLite `lyrics` 表按 `song_hash` 缓存原始歌词文本和 `offset_ms`
+7. 对同一首歌重复调用 `fetch_lyrics` 时，优先命中 SQLite cache，不重复发起 HTTP 请求
+8. 歌词字号是全局显示偏好，不写入 `lyrics` 表；它走 `AppSettings.lyrics_font_step`
+9. `Phase 5` 起，歌词命令失败值统一为 `CommandError`，详见 [phase-5-error-contract.md](./phase-5-error-contract.md)
 
 ## Inputs / outputs / required dependencies
 
@@ -40,11 +41,21 @@
   "lines": [
     {
       "time_ms": 35660,
-      "text": "Look at the stars"
+      "text": "Look at the stars",
+      "words": [
+        {
+          "time_ms": 35660,
+          "end_ms": 36020,
+          "text": "Look"
+        }
+      ],
+      "bg_words": null,
+      "section": null
     }
   ],
   "source": "lrc_lib",
-  "offset_ms": 0
+  "offset_ms": 0,
+  "raw_lrc": "[00:35.66]<00:35.66>Look <00:36.02>at the stars"
 }
 ```
 
@@ -55,23 +66,26 @@
   "song_id": "sha256 hash string",
   "lines": [],
   "source": null,
-  "offset_ms": 0
+  "offset_ms": 0,
+  "raw_lrc": ""
 }
 ```
 
 **Semantics**
 
 1. `song_id` 对应 `songs.hash`
-2. 后端会先检查 SQLite `lyrics` cache；命中后直接解析缓存的 LRC
+2. 后端会先检查 SQLite `lyrics` cache；命中后直接用 `parse_lyrics_auto` 解析缓存的原始歌词文本
 3. cache miss 时，后端按固定顺序尝试：
    - LRCLIB `GET /api/get`
-   - LrcApi `GET /jsonapi`
+   - LrcApi `GET /jsonapi`；优先用 `lrc`，没有 synced LRC 时可用 `lrc_ttml`
    - 音频文件内嵌歌词标签
+   - 同名 sidecar `.ttml`
+   - 同名 sidecar `.lys`
    - 同名 sidecar `.lrc`
-4. 一旦抓到歌词，后端会先解析成 `Vec<LyricLine>`，再把原始 LRC、来源和 `offset_ms = 0` 写入 SQLite
+4. 一旦抓到歌词，后端会先解析成 `Vec<LyricLine>`，再把原始歌词文本、来源和 `offset_ms = 0` 写入 SQLite
 5. 在线 provider 的请求失败或 `jsonapi` 返回 `{"message":"未找到歌词"}` 时，不会中断后续 provider / 本地来源的查找
 6. 如果所有来源都 miss，命令仍然成功返回；只是 `lines = []`、`source = null`
-7. 如果歌曲不存在、文件读取失败或 LRC 解析失败，命令返回 `CommandError`
+7. 如果歌曲不存在、文件读取失败或歌词解析失败，命令返回 `CommandError`
 
 ### Command: `fetch_lyrics_online`
 
@@ -85,7 +99,7 @@
 
 **Semantics**
 
-1. 仅尝试在线 timed lyrics provider，不读取 embedded 或 sidecar `.lrc`
+1. 仅尝试在线 timed lyrics provider，不读取 embedded 或 sidecar
 2. 在线 provider 顺序固定为 `LRCLIB -> LrcApi`
 3. 如果两个 provider 都 miss，命令返回空 payload，而不是写入缓存
 4. 如果任一 provider 命中，返回的 `LyricsPayload` 与 `fetch_lyrics` 保持一致，并将结果写入 SQLite cache
@@ -140,19 +154,46 @@
 
 ### Shared type: `LyricsPayload`
 
-| Field       | Type                                                            | Notes                        |
-| ----------- | --------------------------------------------------------------- | ---------------------------- |
-| `song_id`   | `String`                                                        | 对应 `songs.hash`            |
-| `lines`     | `Vec<LyricLine>`                                                | 已按 `time_ms` 升序排序      |
-| `source`    | `Option<"lrc_lib"\|"lrc_api"\|"embedded"\|"sidecar"\|"manual">` | 无命中时为 `null`            |
-| `offset_ms` | `i64`                                                           | 当前已持久化的 timing offset |
+| Field       | Type                   | Notes                                                           |
+| ----------- | ---------------------- | --------------------------------------------------------------- |
+| `song_id`   | `String`               | 对应 `songs.hash`                                               |
+| `lines`     | `Vec<LyricLine>`       | 已按 `time_ms` 升序排序                                         |
+| `source`    | `Option<LyricsSource>` | 无命中时为 `null`                                               |
+| `offset_ms` | `i64`                  | 当前已持久化的 timing offset                                    |
+| `raw_lrc`   | `String`               | 原始歌词文本；字段名保留历史命名，但内容可能是 LRC、TTML 或 LYS |
+
+### Shared type: `LyricsSource`
+
+| Serialized value | Meaning                          |
+| ---------------- | -------------------------------- |
+| `lrc_lib`        | LRCLIB timed LRC                 |
+| `lrc_api`        | LrcApi timed LRC                 |
+| `lrc_api_ttml`   | LrcApi TTML payload              |
+| `embedded`       | Audio tag embedded lyrics        |
+| `sidecar`        | Same-name `.lrc` sidecar         |
+| `sidecar_ttml`   | Same-name `.ttml` sidecar        |
+| `sidecar_lys`    | Same-name `.lys` sidecar         |
+| `manual`         | User-saved manual LRC/plain text |
+| `manual_ttml`    | User-saved manual TTML           |
+| `manual_lys`     | User-saved manual LYS            |
 
 ### Shared type: `LyricLine`
 
+| Field      | Type                     | Notes                                       |
+| ---------- | ------------------------ | ------------------------------------------- |
+| `time_ms`  | `u64`                    | 行起始时间，单位毫秒                        |
+| `text`     | `String`                 | 当前时间戳对应显示的主歌词文本              |
+| `words`    | `Option<Vec<WordToken>>` | 主唱逐词 timing；LRC/plain line 可为 `null` |
+| `bg_words` | `Option<Vec<WordToken>>` | 背景人声逐词 timing；无背景人声时为 `null`  |
+| `section`  | `Option<String>`         | TTML section/song-part，例如 verse/chorus   |
+
+### Shared type: `WordToken`
+
 | Field     | Type     | Notes                    |
 | --------- | -------- | ------------------------ |
-| `time_ms` | `u64`    | 行起始时间，单位毫秒     |
-| `text`    | `String` | 当前时间戳对应显示的文本 |
+| `time_ms` | `u64`    | 单词开始时间，单位毫秒   |
+| `end_ms`  | `u64`    | 单词结束时间，单位毫秒   |
+| `text`    | `String` | 单词或 syllable 显示文本 |
 
 ### Shared error type: `CommandError`
 
@@ -162,7 +203,7 @@
 
 1. SQLite `lyrics` 表字段固定为：
    - `song_hash`
-   - `lrc`
+   - `lrc`（历史字段名；内容是原始歌词文本，可为 LRC/TTML/LYS）
    - `source`
    - `offset_ms`
    - `fetched_at`
@@ -170,17 +211,24 @@
 3. `source` 序列化值固定为：
    - `lrc_lib`
    - `lrc_api`
+   - `lrc_api_ttml`
    - `embedded`
    - `sidecar`
+   - `sidecar_ttml`
+   - `sidecar_lys`
    - `manual`
+   - `manual_ttml`
+   - `manual_lys`
 
 ## Required dependencies
 
 1. `reqwest` 负责 LRCLIB 和 LrcApi HTTP 请求
 2. `lofty` 负责读取内嵌歌词标签
-3. `rusqlite` 负责缓存和 offset 持久化
-4. `playback-position` 事件继续由 Phase 2 播放契约提供，歌词契约本身不新增事件
-5. 全局显示偏好由 settings 命令提供；歌词模块当前额外依赖 `AppSettings.lyrics_font_step`
+3. `quick-xml` 负责 TTML 解析
+4. `regex` 负责 LYS token 解析
+5. `rusqlite` 负责缓存和 offset 持久化
+6. `playback-position` 事件继续由 Phase 2 播放契约提供，歌词契约本身不新增事件
+7. 全局显示偏好由 settings 命令提供；歌词模块当前额外依赖 `AppSettings.lyrics_font_step`
 
 ## Verification commands
 
@@ -206,7 +254,7 @@ pnpm tauri build --debug --no-bundle --ci
 
 ## Pause-and-resume instructions
 
-1. 接手前先读本文件，再读 [../../design-docs/roadmap.md](../../design-docs/roadmap.md)
+1. 接手前先读本文件，再读 [../architecture/roadmap.md](../architecture/roadmap.md)
 2. 先跑验证命令，确认歌词后端没有被后续改动打破
 3. 如果要改命令名、字段名、抓取顺序、miss 语义或 `source` 枚举值：
    - 先更新本契约

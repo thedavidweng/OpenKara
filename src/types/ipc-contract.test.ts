@@ -692,8 +692,20 @@ describe("LyricsPayload shape matches Rust LyricsPayload", () => {
     const payload: LyricsPayload = {
       song_id: "abc123",
       lines: [
-        { time_ms: 35660, text: "Look at the stars", words: null },
-        { time_ms: 38000, text: "Look how they shine", words: null },
+        {
+          time_ms: 35660,
+          text: "Look at the stars",
+          words: null,
+          bg_words: null,
+          section: null,
+        },
+        {
+          time_ms: 38000,
+          text: "Look how they shine",
+          words: null,
+          bg_words: null,
+          section: null,
+        },
       ],
       source: "lrc_lib",
       offset_ms: 0,
@@ -710,7 +722,15 @@ describe("LyricsPayload shape matches Rust LyricsPayload", () => {
   test("LyricLine has time_ms, text, and words fields", () => {
     const payload: LyricsPayload = {
       song_id: "abc123",
-      lines: [{ time_ms: 1000, text: "Hello", words: null }],
+      lines: [
+        {
+          time_ms: 1000,
+          text: "Hello",
+          words: null,
+          bg_words: null,
+          section: null,
+        },
+      ],
       source: "lrc_lib",
       offset_ms: 0,
       raw_lrc: "[00:01.00] Hello",

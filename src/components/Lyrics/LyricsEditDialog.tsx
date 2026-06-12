@@ -40,6 +40,17 @@ function LyricsEditDialogContent({
   const textareaId = `lyrics-edit-text-${songId}`;
   const errorId = `lyrics-edit-error-${songId}`;
 
+  const isTtml =
+    text.trim().startsWith("<?xml") || text.trim().startsWith("<tt");
+  const firstLyricsLine =
+    text
+      .trim()
+      .split("\n")
+      .find((l) => l.trim().length > 0)
+      ?.trim() ?? "";
+  // LYS line prefixes are [single-digit]; the closing bracket keeps LRC
+  // timestamps like [00:12.34] out of this branch.
+  const isLys = /^\[\d\]/.test(firstLyricsLine);
   const isLrc = /\[\d{2}:\d{2}/.test(text);
 
   const handleSave = async () => {
@@ -93,9 +104,13 @@ function LyricsEditDialogContent({
 
         <p className="text-[11px] text-[var(--color-text-dim)]">
           {text.trim().length > 0
-            ? isLrc
-              ? t("lyrics.detectedLrc")
-              : t("lyrics.detectedPlain")
+            ? isTtml
+              ? t("lyrics.detectedTtml")
+              : isLys
+                ? t("lyrics.detectedLys")
+                : isLrc
+                  ? t("lyrics.detectedLrc")
+                  : t("lyrics.detectedPlain")
             : t("lyrics.supportsFormats")}
         </p>
 

@@ -3,7 +3,7 @@
 > **Status:** Completed · **Created:** 2026-05-14 · **Validated:** 2026-05-15
 > **Scope:** 补全 F1（歌单 + 歌手轮唱）的前端缺失部分，修复 Issue #1–#3
 > **Depends on:** 后端 IPC、SQLite 迁移、i18n 字符串均已就绪
-> **Test report:** [`../testing/v0.9.0-test-report.md`](../testing/v0.9.0-test-report.md)
+> **Test report:** [`../../references/testing/v0.9.0-test-report.md`](../../references/testing/v0.9.0-test-report.md)
 
 ---
 
@@ -609,7 +609,7 @@ S4 (歌手轮唱)
 3. Issue #3（歌手轮唱）：队列面板集成轮唱 toggle + 歌手分配
 4. 歌单详情视图：点击歌单 → 显示歌单歌曲 → 可移除 → 可返回
 5. `pnpm format` → `pnpm lint` → `pnpm build` → `pnpm test` 全部通过
-6. `docs/testing/v0.9.0-test-report.md` 更新为全部通过
+6. `docs/references/testing/v0.9.0-test-report.md` 更新为全部通过
 
 ## 验收结果
 

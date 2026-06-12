@@ -79,8 +79,20 @@ describe("lyrics-store fetchLyrics", () => {
     const payload = {
       song_id: "song-1",
       lines: [
-        { time_ms: 1000, text: "Hello", words: [] },
-        { time_ms: 2000, text: "World", words: [] },
+        {
+          time_ms: 1000,
+          text: "Hello",
+          words: [],
+          bg_words: null,
+          section: null,
+        },
+        {
+          time_ms: 2000,
+          text: "World",
+          words: [],
+          bg_words: null,
+          section: null,
+        },
       ],
       source: "lrc_lib" as const,
       offset_ms: 50,
@@ -105,7 +117,9 @@ describe("lyrics-store fetchLyrics", () => {
     mockFetchLyrics.mockRejectedValue(error);
 
     useLyricsStore.setState({
-      lines: [{ time_ms: 0, text: "old", words: [] }],
+      lines: [
+        { time_ms: 0, text: "old", words: [], bg_words: null, section: null },
+      ],
     });
 
     await useLyricsStore.getState().fetchLyrics("song-1");
@@ -122,8 +136,20 @@ describe("lyrics-store fetchLyrics", () => {
     const unsynced = {
       song_id: "song-1",
       lines: [
-        { time_ms: 0, text: "Line A", words: [] },
-        { time_ms: 0, text: "Line B", words: [] },
+        {
+          time_ms: 0,
+          text: "Line A",
+          words: [],
+          bg_words: null,
+          section: null,
+        },
+        {
+          time_ms: 0,
+          text: "Line B",
+          words: [],
+          bg_words: null,
+          section: null,
+        },
       ],
       source: "embedded" as const,
       offset_ms: 0,
@@ -132,8 +158,20 @@ describe("lyrics-store fetchLyrics", () => {
     const synced = {
       song_id: "song-1",
       lines: [
-        { time_ms: 500, text: "Line A", words: [] },
-        { time_ms: 1500, text: "Line B", words: [] },
+        {
+          time_ms: 500,
+          text: "Line A",
+          words: [],
+          bg_words: null,
+          section: null,
+        },
+        {
+          time_ms: 1500,
+          text: "Line B",
+          words: [],
+          bg_words: null,
+          section: null,
+        },
       ],
       source: "lrc_lib" as const,
       offset_ms: 0,
@@ -153,7 +191,9 @@ describe("lyrics-store fetchLyrics", () => {
   test("does not auto-upgrade when source is lrc_lib", async () => {
     const synced = {
       song_id: "song-1",
-      lines: [{ time_ms: 0, text: "Solo", words: [] }],
+      lines: [
+        { time_ms: 0, text: "Solo", words: [], bg_words: null, section: null },
+      ],
       source: "lrc_lib" as const,
       offset_ms: 0,
       raw_lrc: "Solo",
@@ -169,8 +209,8 @@ describe("lyrics-store fetchLyrics", () => {
     const mixed = {
       song_id: "song-1",
       lines: [
-        { time_ms: 0, text: "A", words: [] },
-        { time_ms: 1000, text: "B", words: [] },
+        { time_ms: 0, text: "A", words: [], bg_words: null, section: null },
+        { time_ms: 1000, text: "B", words: [], bg_words: null, section: null },
       ],
       source: "embedded" as const,
       offset_ms: 0,
@@ -186,7 +226,9 @@ describe("lyrics-store fetchLyrics", () => {
   test("keeps local lyrics when fetchLyricsOnline fails", async () => {
     const unsynced = {
       song_id: "song-1",
-      lines: [{ time_ms: 0, text: "Local", words: [] }],
+      lines: [
+        { time_ms: 0, text: "Local", words: [], bg_words: null, section: null },
+      ],
       source: "embedded" as const,
       offset_ms: 0,
       raw_lrc: "Local",
@@ -203,7 +245,9 @@ describe("lyrics-store fetchLyrics", () => {
   test("does not auto-upgrade if songId changed during fetch", async () => {
     const unsynced = {
       song_id: "song-1",
-      lines: [{ time_ms: 0, text: "A", words: [] }],
+      lines: [
+        { time_ms: 0, text: "A", words: [], bg_words: null, section: null },
+      ],
       source: "embedded" as const,
       offset_ms: 0,
       raw_lrc: "A",
@@ -214,7 +258,9 @@ describe("lyrics-store fetchLyrics", () => {
       useLyricsStore.setState({ songId: "song-2" });
       return {
         song_id: "song-1",
-        lines: [{ time_ms: 500, text: "A", words: [] }],
+        lines: [
+          { time_ms: 500, text: "A", words: [], bg_words: null, section: null },
+        ],
         source: "lrc_lib" as const,
         offset_ms: 0,
         raw_lrc: "[00:00.50]A",
@@ -299,7 +345,15 @@ describe("lyrics-store clear", () => {
   test("resets all fields to defaults", () => {
     useLyricsStore.setState({
       songId: "song-1",
-      lines: [{ time_ms: 1000, text: "Hello", words: [] }],
+      lines: [
+        {
+          time_ms: 1000,
+          text: "Hello",
+          words: [],
+          bg_words: null,
+          section: null,
+        },
+      ],
       source: "lrc_lib",
       offsetMs: 50,
       rawLrc: "[00:01.00]Hello",
@@ -334,8 +388,14 @@ describe("lyrics-store romanizeCurrentLyrics", () => {
     useLyricsStore.setState({
       songId: "song-1",
       lines: [
-        { time_ms: 0, text: "你好", words: [] },
-        { time_ms: 1000, text: "世界", words: [] },
+        { time_ms: 0, text: "你好", words: [], bg_words: null, section: null },
+        {
+          time_ms: 1000,
+          text: "世界",
+          words: [],
+          bg_words: null,
+          section: null,
+        },
       ],
     });
 
@@ -356,7 +416,9 @@ describe("lyrics-store romanizeCurrentLyrics", () => {
     mockRomanizeLyricsLines.mockRejectedValue(new Error("romanize failed"));
     useLyricsStore.setState({
       songId: "song-1",
-      lines: [{ time_ms: 0, text: "你好", words: [] }],
+      lines: [
+        { time_ms: 0, text: "你好", words: [], bg_words: null, section: null },
+      ],
     });
 
     await useLyricsStore.getState().romanizeCurrentLyrics();
@@ -368,7 +430,9 @@ describe("lyrics-store romanizeCurrentLyrics", () => {
   test("no-op when already romanizing", async () => {
     useLyricsStore.setState({
       songId: "song-1",
-      lines: [{ time_ms: 0, text: "你好", words: [] }],
+      lines: [
+        { time_ms: 0, text: "你好", words: [], bg_words: null, section: null },
+      ],
       isRomanizing: true,
     });
 
@@ -389,7 +453,9 @@ describe("lyrics-store romanizeCurrentLyrics", () => {
     mockRomanizeLyricsLines.mockResolvedValue(["yo"]);
     useLyricsStore.setState({
       songId: "song-2",
-      lines: [{ time_ms: 0, text: "Hey", words: [] }],
+      lines: [
+        { time_ms: 0, text: "Hey", words: [], bg_words: null, section: null },
+      ],
     });
 
     await useLyricsStore.getState().romanizeCurrentLyrics();
@@ -407,7 +473,9 @@ describe("lyrics-store toggleRomanized", () => {
     mockRomanizeLyricsLines.mockResolvedValue(["ni hao"]);
     useLyricsStore.setState({
       songId: "song-1",
-      lines: [{ time_ms: 0, text: "你好", words: [] }],
+      lines: [
+        { time_ms: 0, text: "你好", words: [], bg_words: null, section: null },
+      ],
       showRomanized: false,
     });
 
@@ -421,7 +489,9 @@ describe("lyrics-store toggleRomanized", () => {
 
   test("toggles off when showRomanized is true", () => {
     useLyricsStore.setState({
-      lines: [{ time_ms: 0, text: "你好", words: [] }],
+      lines: [
+        { time_ms: 0, text: "你好", words: [], bg_words: null, section: null },
+      ],
       showRomanized: true,
       romanizedLines: ["ni hao"],
     });

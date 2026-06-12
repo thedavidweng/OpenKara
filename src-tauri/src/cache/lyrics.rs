@@ -89,9 +89,14 @@ fn serialize_source(source: &LyricsSource) -> &'static str {
     match source {
         LyricsSource::LrcLib => "lrclib",
         LyricsSource::LrcApi => "lrc_api",
+        LyricsSource::LrcApiTtml => "lrc_api_ttml",
         LyricsSource::Embedded => "embedded",
         LyricsSource::Sidecar => "sidecar",
+        LyricsSource::SidecarTtml => "sidecar_ttml",
+        LyricsSource::SidecarLys => "sidecar_lys",
         LyricsSource::Manual => "manual",
+        LyricsSource::ManualTtml => "manual_ttml",
+        LyricsSource::ManualLys => "manual_lys",
     }
 }
 
@@ -99,9 +104,14 @@ fn deserialize_source(source: &str) -> Result<LyricsSource> {
     match source {
         "lrclib" => Ok(LyricsSource::LrcLib),
         "lrc_api" => Ok(LyricsSource::LrcApi),
+        "lrc_api_ttml" => Ok(LyricsSource::LrcApiTtml),
         "embedded" => Ok(LyricsSource::Embedded),
         "sidecar" => Ok(LyricsSource::Sidecar),
+        "sidecar_ttml" => Ok(LyricsSource::SidecarTtml),
+        "sidecar_lys" => Ok(LyricsSource::SidecarLys),
         "manual" => Ok(LyricsSource::Manual),
+        "manual_ttml" => Ok(LyricsSource::ManualTtml),
+        "manual_lys" => Ok(LyricsSource::ManualLys),
         other => Err(anyhow!("unknown lyrics source {other}"))
             .with_context(|| format!("failed to deserialize lyrics source {source}")),
     }

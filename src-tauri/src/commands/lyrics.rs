@@ -117,7 +117,7 @@ pub fn fetch_lyrics_from_connection(
         });
     };
 
-    let lines = lyrics::parser::parse_lrc(&fetched.raw_lrc)
+    let lines = lyrics::fetch::parse_lyrics_auto(&fetched.raw_lrc)
         .map_err(|e| LyricsError::LyricsNotReady(e.to_string()))?;
     let source = fetched.source;
     let raw_lrc = fetched.raw_lrc.clone();
@@ -168,7 +168,7 @@ fn payload_from_cached_entry(
     song_id: String,
     cached: LyricsCacheEntry,
 ) -> Result<LyricsPayload, LyricsError> {
-    let mut lines = lyrics::parser::parse_lrc(&cached.lrc)
+    let mut lines = lyrics::fetch::parse_lyrics_auto(&cached.lrc)
         .map_err(|e| LyricsError::LyricsNotReady(e.to_string()))?;
 
     if lines.is_empty() {
@@ -196,10 +196,32 @@ pub fn save_manual_lyrics(
 
     let publish_song_id = song_id.clone();
     remote_library::run_song_database_mutation(&state, &app_handle, &song_id, || {
-        // Try parsing as LRC first
-        let lines = match lyrics::parser::parse_lrc(&text) {
+        // Try parsing with auto-detection
+        let lines = match lyrics::fetch::parse_lyrics_auto(&text) {
             Ok(parsed) if !parsed.is_empty() => parsed,
             _ => plain_text_to_lines(&text),
+        };
+
+        // Detect format for correct source variant
+        let source = {
+            let trimmed = text.trim();
+            if trimmed.starts_with("<?xml") || trimmed.starts_with("<tt") {
+                LyricsSource::ManualTtml
+            } else if trimmed
+                .lines()
+                .find(|l| !l.trim().is_empty())
+                .is_some_and(|l| {
+                    let bytes = l.trim().as_bytes();
+                    bytes.starts_with(b"[")
+                        && bytes.len() >= 3
+                        && bytes[1].is_ascii_digit()
+                        && bytes[2] == b']'
+                })
+            {
+                LyricsSource::ManualLys
+            } else {
+                LyricsSource::Manual
+            }
         };
 
         let raw_lrc = text.clone();
@@ -212,7 +234,7 @@ pub fn save_manual_lyrics(
             &LyricsCacheEntry {
                 song_hash: publish_song_id.clone(),
                 lrc: text,
-                source: LyricsSource::Manual,
+                source: source.clone(),
                 offset_ms: 0,
                 fetched_at,
             },
@@ -222,7 +244,7 @@ pub fn save_manual_lyrics(
         Ok(LyricsPayload {
             song_id: publish_song_id,
             lines,
-            source: Some(LyricsSource::Manual),
+            source: Some(source),
             offset_ms: 0,
             raw_lrc,
         })
@@ -377,7 +399,7 @@ pub fn extract_embedded_lyrics(
             ))?;
 
         // Parse and cache
-        let lines = match lyrics::parser::parse_lrc(&embedded) {
+        let lines = match lyrics::fetch::parse_lyrics_auto(&embedded) {
             Ok(parsed) if !parsed.is_empty() => parsed,
             _ => plain_text_to_lines(&embedded),
         };
@@ -457,7 +479,7 @@ pub fn fetch_lyrics_online(
                 });
             };
 
-            let lines = lyrics::parser::parse_lrc(&fetched.raw_lrc)
+            let lines = lyrics::fetch::parse_lyrics_auto(&fetched.raw_lrc)
                 .map_err(|e| LyricsError::LyricsNotReady(e.to_string()))?;
 
             let fetched_at =
@@ -496,6 +518,8 @@ fn plain_text_to_lines(text: &str) -> Vec<LyricLine> {
             time_ms: 0,
             text: l.to_string(),
             words: None,
+            bg_words: None,
+            section: None,
         })
         .collect()
 }
