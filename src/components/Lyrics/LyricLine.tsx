@@ -1,4 +1,5 @@
-import { memo } from "react";
+import { memo, useRef, useEffect } from "react";
+import { KaraokeFillController } from "./karaoke-fill";
 import {
   buildAudiencePresentationSpec,
   colorToCss,
@@ -60,6 +61,28 @@ function getActiveWordIndex(words: WordToken[], adjustedMs: number): number {
   return activeIndex;
 }
 
+function shouldEmphasize(word: {
+  text: string;
+  time_ms: number;
+  end_ms: number;
+}): boolean {
+  const duration = word.end_ms - word.time_ms;
+  if (duration < 1000) return false;
+  const trimmed = word.text.trim();
+  // CJK characters: any length qualifies
+  if (/[一-鿿぀-ゟ゠-ヿ]/.test(trimmed)) return true;
+  // Non-CJK: 2-7 characters
+  return trimmed.length >= 2 && trimmed.length <= 7;
+}
+
+function isLastWord(index: number, total: number): boolean {
+  return index === total - 1;
+}
+
+function hasBackgroundWords(line: LyricLineType): boolean {
+  return line.bg_words !== null && line.bg_words.length > 0;
+}
+
 function areLyricLinePropsEqual(
   previous: LyricLineProps,
   next: LyricLineProps,
@@ -90,6 +113,7 @@ export const LyricLine = memo(function LyricLine({
   romanizedText,
 }: LyricLineProps) {
   const seek = usePlayerStore((s) => s.seek);
+  const isPlaying = usePlayerStore((s) => s.snapshot?.is_playing ?? false);
   const isSeekable = state !== "plain";
   const textSizeClass = getLyricsTextSizeClass(presentation, lyricsFontStep);
   const audiencePresentationSpec =
@@ -100,14 +124,65 @@ export const LyricLine = memo(function LyricLine({
     seek(line.time_ms);
   };
 
-  const hasWords = line.words !== null && line.words.length > 0;
+  const words = line.words;
+  const hasWords = words !== null && words.length > 0;
+  const hasOnlyBackgroundWords = !hasWords && hasBackgroundWords(line);
+  const shouldUseKaraokeFill =
+    state === "active" && hasWords && presentation !== "audience";
   const activeWordIndex =
-    hasWords && state === "active"
-      ? getActiveWordIndex(line.words!, adjustedMs)
-      : -1;
+    hasWords && state === "active" ? getActiveWordIndex(words, adjustedMs) : -1;
   const hoverClass = isSeekable
     ? "group-hover/line:underline decoration-2 underline-offset-4"
     : "";
+
+  const karaokeRef = useRef<KaraokeFillController | null>(null);
+  const wordElsRef = useRef<HTMLElement[]>([]);
+  const wordsRef = useRef(words);
+  wordsRef.current = words;
+
+  // Word DOM nodes can swap when emphasis rendering turns into plain text.
+  // Keep this render-synchronized; KaraokeFillController skips unchanged bindings.
+  useEffect(() => {
+    if (shouldUseKaraokeFill) {
+      if (!karaokeRef.current) {
+        karaokeRef.current = new KaraokeFillController();
+      }
+      const container = wordElsRef.current[0]?.parentElement;
+      const currentWords = wordsRef.current;
+      if (container) {
+        karaokeRef.current.activateLine(
+          container,
+          currentWords!,
+          wordElsRef.current,
+        );
+        karaokeRef.current.setTargetAlpha(0.2, 1.0); // keep active sweep contrast
+      }
+      return;
+    }
+
+    if (state === "past") {
+      karaokeRef.current?.setCurrentAlpha(1.0, 1.0); // fully filled when past
+      return;
+    }
+
+    karaokeRef.current?.setTargetAlpha(0.2, 1.0); // dim when future
+    karaokeRef.current?.deactivateLine();
+  });
+
+  useEffect(
+    () => () => {
+      karaokeRef.current?.destroy();
+      karaokeRef.current = null;
+    },
+    [],
+  );
+
+  // Update karaoke fill progress each frame
+  useEffect(() => {
+    if (state === "active") {
+      karaokeRef.current?.update(adjustedMs, isPlaying);
+    }
+  }, [adjustedMs, isPlaying, state]);
 
   return (
     <div
@@ -115,34 +190,36 @@ export const LyricLine = memo(function LyricLine({
       className={`motion-surface flex flex-col items-center gap-1.5 text-center ${
         state === "active" ? "opacity-100" : "opacity-70"
       } ${isSeekable ? "cursor-pointer group/line" : ""}`}
-      style={
-        presentation === "audience"
+      style={{
+        fontFamily:
+          '-apple-system, BlinkMacSystemFont, "Helvetica Neue", "Noto Sans SC", "Noto Sans JP", "Noto Sans KR", system-ui, sans-serif',
+        ...(presentation === "audience"
           ? {
               transform:
                 state === "active"
                   ? `scale(${audiencePresentationSpec.activeScale})`
                   : undefined,
             }
-          : undefined
-      }
+          : undefined),
+      }}
     >
       {hasWords ? (
         <span
           className={(presentation === "audience"
-            ? `font-bold tracking-tight ${hoverClass}`
+            ? `tracking-tight ${hoverClass}`
             : `${textSizeClass} ${hoverClass}`
           ).trim()}
-          style={
-            presentation === "audience"
+          style={{
+            fontWeight: state === "active" ? 500 : 400,
+            ...(presentation === "audience"
               ? {
                   fontSize: audiencePresentationSpec.fontSizePx,
                   lineHeight: audiencePresentationSpec.lineHeightMultiple,
                 }
-              : undefined
-          }
+              : undefined),
+          }}
         >
           {line.words!.map((word, idx) => {
-            // When the whole line is past or future, all words use the line-level color
             const wordState =
               state === "plain"
                 ? "active"
@@ -156,13 +233,55 @@ export const LyricLine = memo(function LyricLine({
                     ? "past"
                     : "future";
 
+            const isActiveWord = wordState === "active";
+
+            // Per-character glow for emphasis words (non-audience only)
+            if (
+              shouldEmphasize(word) &&
+              isActiveWord &&
+              presentation !== "audience"
+            ) {
+              const wordDuration = word.end_ms - word.time_ms;
+              const last = isLastWord(idx, line.words!.length);
+              return (
+                <span
+                  key={idx}
+                  ref={(el) => {
+                    if (el) wordElsRef.current[idx] = el;
+                  }}
+                  className="motion-surface relative inline-block text-white"
+                >
+                  {word.text.split("").map((char, charIdx) => (
+                    <span
+                      key={charIdx}
+                      style={{
+                        display: "inline-block",
+                        textShadow:
+                          "0 0 12px rgba(255,255,255,0.5), 0 0 4px rgba(255,255,255,0.4)",
+                        animation: last
+                          ? `lyric-char-glow-last ${wordDuration * 1.2}ms ease-in-out`
+                          : `lyric-char-glow ${wordDuration}ms ease-in-out`,
+                        animationDelay: `${charIdx * 20}ms`,
+                      }}
+                    >
+                      {char}
+                    </span>
+                  ))}
+                  {idx < line.words!.length - 1 ? " " : ""}
+                </span>
+              );
+            }
+
             return (
               <span
                 key={idx}
+                ref={(el) => {
+                  if (el) wordElsRef.current[idx] = el;
+                }}
                 className={
                   presentation === "audience"
                     ? "motion-surface"
-                    : `motion-surface ${
+                    : `motion-surface relative inline-block ${
                         wordState === "active"
                           ? "text-white"
                           : wordState === "past"
@@ -170,8 +289,8 @@ export const LyricLine = memo(function LyricLine({
                             : "text-[var(--color-active)]"
                       }`
                 }
-                style={
-                  presentation === "audience"
+                style={{
+                  ...(presentation === "audience"
                     ? {
                         color: colorToCss(
                           wordState === "active"
@@ -187,13 +306,14 @@ export const LyricLine = memo(function LyricLine({
                               )}`
                             : undefined,
                       }
-                    : wordState === "active"
+                    : isActiveWord
                       ? {
-                          textShadow:
-                            "0 0 12px rgba(255,255,255,0.8), 0 0 4px rgba(255,255,255,0.6)",
+                          textShadow: isLastWord(idx, line.words!.length)
+                            ? "0 0 20px rgba(255,255,255,0.7), 0 0 8px rgba(255,255,255,0.5)"
+                            : "0 0 12px rgba(255,255,255,0.5), 0 0 4px rgba(255,255,255,0.4)",
                         }
-                      : undefined
-                }
+                      : undefined),
+                }}
               >
                 {word.text}
                 {idx < line.words!.length - 1 ? " " : ""}
@@ -201,7 +321,7 @@ export const LyricLine = memo(function LyricLine({
             );
           })}
         </span>
-      ) : (
+      ) : hasOnlyBackgroundWords ? null : (
         <span
           className={(presentation === "audience"
             ? `motion-surface font-bold tracking-tight ${hoverClass}`
@@ -238,6 +358,46 @@ export const LyricLine = memo(function LyricLine({
           {line.text}
         </span>
       )}
+      {line.bg_words && line.bg_words.length > 0 ? (
+        <span
+          className={
+            presentation === "audience"
+              ? "motion-surface font-medium tracking-tight"
+              : `motion-surface text-sm font-medium md:text-base ${
+                  state === "plain" || state === "active"
+                    ? "text-[var(--color-text-dim)]"
+                    : state === "past"
+                      ? "text-[var(--color-text-dimmer)]"
+                      : "text-[var(--color-text-dim)]"
+                }`
+          }
+          style={{
+            ...(presentation === "audience"
+              ? {
+                  fontSize: audiencePresentationSpec.fontSizePx * 0.55,
+                  lineHeight: audiencePresentationSpec.lineHeightMultiple,
+                  color: colorToCss(
+                    state === "plain" || state === "active"
+                      ? audiencePresentationSpec.activeTextColor
+                      : state === "past"
+                        ? audiencePresentationSpec.pastTextColor
+                        : audiencePresentationSpec.futureTextColor,
+                  ),
+                }
+              : undefined),
+            transition: "opacity 0.3s ease, transform 0.3s ease",
+            opacity: state === "active" ? 0.4 : 0,
+            transform: state === "active" ? "translateY(0)" : "translateY(8px)",
+          }}
+        >
+          {line.bg_words.map((word, idx) => (
+            <span key={idx}>
+              {word.text}
+              {idx < line.bg_words!.length - 1 ? " " : ""}
+            </span>
+          ))}
+        </span>
+      ) : null}
       {romanizedText ? (
         <span
           className={

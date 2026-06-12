@@ -7,7 +7,7 @@
 
 This spec covers the user-facing behaviour of the playback queue. It does **not** cover:
 
-- Underlying queue data structure or IPC commands (see [`../references/contracts/phase-2-playback-contract.md`](../references/contracts/phase-2-playback-contract.md))
+- Underlying queue data structure or IPC commands (see [`../contracts/phase-2-playback-contract.md`](../contracts/phase-2-playback-contract.md))
 - Singers or rotation (see planned `F1-*.md`)
 - CDG, AirPlay, or fullscreen audience out-of-band state
 

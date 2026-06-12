@@ -118,7 +118,7 @@ git commit -m "feat(separator): harden macos provider resolution and cache seman
 **Files:**
 
 - Modify: `src-tauri/src/separator/model.rs`
-- Modify: `docs/design-docs/architecture.md`
+- Modify: `docs/references/architecture/architecture.md`
 - Test: `src-tauri/tests/phase3_model.rs`
 
 **Step 1: Write the failing test**
@@ -144,7 +144,7 @@ Expected: PASS.
 **Step 5: Commit**
 
 ```bash
-git add src-tauri/src/separator/model.rs docs/design-docs/architecture.md src-tauri/tests/phase3_model.rs
+git add src-tauri/src/separator/model.rs docs/references/architecture/architecture.md src-tauri/tests/phase3_model.rs
 git commit -m "docs(separator): document macos provider defaults and diagnostics"
 ```
 

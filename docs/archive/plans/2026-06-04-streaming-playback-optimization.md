@@ -4,7 +4,7 @@
 >
 > 目标：把 OpenKara 的播放体验拉齐到原生本地音乐播放器——多轨（伴奏/人声）启播延迟低、内存占用可控；对网盘/远程库在低带宽下边缓冲边播、不预先整文件下载，并具备欠载韧性。
 >
-> 本文档是 [`native-feel-optimization.md`](./native-feel-optimization.md) Phase 6 中"整轨预解码 tradeoff"的承接 epic。
+> 本文档是 [`native-feel-optimization.md`](./2026-05-14-native-feel-optimization.md) Phase 6 中"整轨预解码 tradeoff"的承接 epic。
 
 ---
 

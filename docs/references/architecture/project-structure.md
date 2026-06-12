@@ -6,23 +6,14 @@ OpenKara/
 ├── ARCHITECTURE.md            # Root entry point to the canonical architecture docs
 ├── docs/
 │   ├── README.md              # Documentation hub
-│   ├── design-docs/           # Architecture, roadmap, release, and delivery docs
-│   │   ├── index.md
-│   │   ├── architecture.md
-│   │   ├── core-beliefs.md
-│   │   ├── project-structure.md
-│   │   └── performance/
-│   ├── plan/                  # Active plan + tech debt (one folder)
-│   │   ├── README.md
-│   │   ├── plan.md
-│   │   └── tech-debt.md
-│   ├── generated/             # Generated or migration-derived reference docs
-│   │   └── db-schema.md
-│   ├── product-specs/         # Product-facing behavior and experience specs
-│   │   ├── index.md
-│   │   └── new-user-onboarding.md
-│   └── references/            # Frozen contracts and other reference material
-│       └── contracts/
+│   ├── plans/                 # Executable plans only; empty unless work is active
+│   ├── references/            # Current architecture, contracts, product, testing, generated facts
+│   │   ├── architecture/
+│   │   ├── contracts/
+│   │   ├── generated/
+│   │   ├── product/
+│   │   └── testing/
+│   └── archive/               # Completed/superseded plans and historical snapshots
 ├── public/                    # Static frontend assets
 ├── src/                       # React frontend
 │   ├── components/
@@ -62,7 +53,10 @@ OpenKara/
 
 ### `docs/`
 
-The documentation tree is split by purpose: design docs explain the system, [`plan/`](../plan/README.md) holds the active plan and tech-debt tracker, generated docs summarize machine-derived state, product specs describe user-facing behavior, and references hold frozen contracts.
+The documentation tree is split by lifecycle: completed work is summarized in
+`CHANGELOG.md`, future backlog lives in the GitHub Project, executable plans
+live under `docs/plans/`, current facts live under `docs/references/`, and
+historical material lives under `docs/archive/`.
 
 ### `src/`
 

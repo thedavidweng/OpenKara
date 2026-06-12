@@ -165,7 +165,15 @@ describe("tauri API wrappers", () => {
     await syncAirPlayAudienceState({
       mode: "lyrics",
       songId: "song-1",
-      lines: [{ time_ms: 3000, text: "Line", words: null }],
+      lines: [
+        {
+          time_ms: 3000,
+          text: "Line",
+          words: null,
+          bg_words: null,
+          section: null,
+        },
+      ],
       offsetMs: 100,
       isLoading: false,
       lyricsFontStep: 1,
@@ -219,7 +227,15 @@ describe("tauri API wrappers", () => {
       payload: {
         mode: "lyrics",
         songId: "song-1",
-        lines: [{ time_ms: 3000, text: "Line", words: null }],
+        lines: [
+          {
+            time_ms: 3000,
+            text: "Line",
+            words: null,
+            bg_words: null,
+            section: null,
+          },
+        ],
         offsetMs: 100,
         isLoading: false,
         lyricsFontStep: 1,

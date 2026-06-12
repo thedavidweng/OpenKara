@@ -1,8 +1,8 @@
-# Design Docs
+# Architecture References
 
-These documents explain how OpenKara is structured, why major technical choices exist, and how delivery work is phased.
-
-For the **active execution plan** (hardening + next capability), see [`../plan/plan.md`](../plan/plan.md) — it lives outside this folder so design docs stay design-focused.
+These documents explain how OpenKara is structured, why major technical choices
+exist, and how releases are operated. Future work belongs in the GitHub Project;
+executable work slices belong in [`../../plans/`](../../plans/).
 
 ## Index
 

@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-05-13  
 **Status:** Approved (maintainer-attested for implementation, 2026-05-13)  
-**Spec acceptance:** Per [`../plan/plan.md`](../plan/plan.md) F1 spec acceptance — maintainer has confirmed via execution instruction: all 6 mandatory sections present and no open SPEC gap comments.
+**Spec acceptance:** Per the archived v0.9 plan's F1 spec acceptance — maintainer confirmed via execution instruction that all 6 mandatory sections were present and no SPEC gap comments remained.
 
 ---
 

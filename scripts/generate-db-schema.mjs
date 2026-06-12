@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Regenerate docs/generated/db-schema.md from src-tauri/migrations/*.sql.
+ * Regenerate docs/references/generated/db-schema.md from src-tauri/migrations/*.sql.
  *
  * Usage:
  *   node scripts/generate-db-schema.mjs
@@ -26,7 +26,13 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "..");
 const MIGRATIONS_DIR = join(REPO_ROOT, "src-tauri", "migrations");
-const OUTPUT_FILE = join(REPO_ROOT, "docs", "generated", "db-schema.md");
+const OUTPUT_FILE = join(
+  REPO_ROOT,
+  "docs",
+  "references",
+  "generated",
+  "db-schema.md",
+);
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -1,18 +1,29 @@
-# Plan
+# Plans
 
-This folder holds the **active engineering plan** and **tech-debt tracker** only. Everything else under `docs/` is either design reference, product behavior specs, frozen contracts, generated summaries, or **historical** material under `docs/archive/`.
+This folder holds executable plans only.
 
-| File                                                         | Purpose                                                                                          |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| [plan.md](./plan.md)                                         | **Single active plan skeleton** — candidate streams for the next slice                           |
-| [native-feel-optimization.md](./native-feel-optimization.md) | Native feel optimization — cursor, startup flicker, popover edge handling, window resize (P0-P3) |
-| [f1-frontend-completion.md](./f1-frontend-completion.md)     | Completed F1 frontend completion plan and acceptance checklist; archive with this plan cycle     |
-| [tech-debt.md](./tech-debt.md)                               | Cross-cutting debt that does not belong to one feature line                                      |
+An executable plan is a scoped work slice that someone can pick up and complete
+without rebuilding the product backlog from scratch. It must include:
 
-**Rules**
+- goal and non-goals
+- acceptance criteria
+- files or modules likely to change
+- verification commands
+- clear completion / archive condition
 
-- When `plan.md` is finished, move it to [`../archive/plans/`](../archive/plans/) (or add an outcome appendix there) and write a new `plan.md` for the next slice.
-- Older point-in-time plans and priority snapshots already live under [`../archive/plans/`](../archive/plans/).
-- Completed implementation plans (like `f1-frontend-completion.md`) should be archived after the planning cycle ends.
+## What Does Not Belong Here
 
-Historical agreed priority tables (no task breakdown): [`../archive/plans/future-work-and-hardening-priorities-2026-05.md`](../archive/plans/future-work-and-hardening-priorities-2026-05.md).
+- Completed work: summarize it in [`../../CHANGELOG.md`](../../CHANGELOG.md) and
+  move the detailed plan to [`../archive/`](../archive/).
+- Future ideas without a ready implementation shape: track them in the
+  [GitHub Project](https://github.com/users/thedavidweng/projects/2/views/1).
+- Current system behavior, contracts, release rules, or testing notes: put them
+  under [`../references/`](../references/).
+- Generated summaries: put them under [`../references/generated/`](../references/generated/)
+  and keep the generator documented in [`../../scripts/README.md`](../../scripts/README.md).
+
+## Current State
+
+There is no active repo-local execution plan. Use the GitHub Project to choose
+the next work item, then create a dated plan here only when the work is ready to
+execute.

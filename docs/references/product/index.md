@@ -3,7 +3,8 @@
 This directory holds user-facing behavior specs rather than implementation notes.
 Use these docs when the question is about what the product should do for a user, not how the code currently does it.
 
-Active engineering execution (plan + tech debt) lives in [`../plan/`](../plan/README.md), not here — avoids duplicating the docs hub.
+Executable engineering plans live in [`../../plans/`](../../plans/), not here.
+Future ideas belong in the GitHub Project until they are ready to execute.
 
 ## Current Specs
 
