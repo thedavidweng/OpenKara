@@ -57,6 +57,10 @@ src-tauri/generated/oauth/dropbox-client.json
 # Kuromoji dictionary (copied from node_modules at build time)
 public/dict/
 
+# Playwright
+test-results/
+blob-report/
+
 # CommandCode / Taste (auto-managed by CommandCode)
 .commandcode/
 
