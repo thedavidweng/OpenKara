@@ -47,6 +47,7 @@ describe("getPlaybackBarLayoutTokens", () => {
 
   test("uses the tighter seek-bar safety dimensions", () => {
     const centerMinWidth = getPlaybackBarCenterMinWidth("tight");
+    // seek (180) + cluster (120) + zoneGap (10)
     expect(centerMinWidth).toBe(180 + 120 + 10);
   });
 
