@@ -262,7 +262,7 @@ describe("Flatpak packaging", () => {
     expect(renderScript).not.toContain("tauri.flatpak.conf.json");
     expect(renderScript).not.toContain("flathub.json");
     expect(metainfo).not.toContain("/main/packaging/flatpak/screenshots/");
-    expect(metainfo).toContain("/v0.8.1/packaging/flatpak/screenshots/");
+    expect(metainfo).toContain("/v0.9.0/packaging/flatpak/screenshots/");
   });
 
   test("keeps pnpm dependency sources in sync with the lockfile packages used by the app", () => {

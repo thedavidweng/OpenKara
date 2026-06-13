@@ -42,7 +42,7 @@ interface LibraryChoice {
   description: string;
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
+// oxlint-disable-next-line react/only-export-components
 export const librarySetupChoices: LibraryChoice[] = [
   {
     kind: "create_local",
@@ -64,7 +64,7 @@ export const librarySetupChoices: LibraryChoice[] = [
   },
 ];
 
-// eslint-disable-next-line react-refresh/only-export-components
+// oxlint-disable-next-line react/only-export-components
 export const remoteLibraryProviders: RemoteProviderChoice[] = [
   {
     provider: "google_drive",

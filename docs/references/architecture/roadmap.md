@@ -266,7 +266,7 @@ Song metadata (title, artist, album, duration)
 | --------- | -------------- | ----------------------------------- |
 | Framework | React 19       | Ecosystem, hiring pool              |
 | Language  | TypeScript 5   | Type safety                         |
-| Bundler   | Vite 6         | Fast HMR, Tauri integration         |
+| Bundler   | Vite 8         | Fast HMR, Tauri integration         |
 | Styling   | Tailwind CSS 4 | Utility-first, no CSS-in-JS runtime |
 | State     | Zustand        | Minimal API, no boilerplate         |
 | Icons     | Lucide React   | Consistent, tree-shakeable          |

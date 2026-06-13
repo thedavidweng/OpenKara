@@ -167,7 +167,7 @@ On first launch, OpenKara automatically downloads the standard `openkara-models`
 | ----------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------- |
 | Desktop framework | [Tauri 2](https://github.com/tauri-apps/tauri)                                                          | Rust backend + system WebView   |
 | Frontend          | [React](https://github.com/facebook/react) 19 + [TypeScript](https://github.com/microsoft/TypeScript) 5 | UI components                   |
-| Bundler           | [Vite](https://github.com/vitejs/vite) 7                                                                | Dev server and build            |
+| Bundler           | [Vite](https://github.com/vitejs/vite) 8                                                                | Dev server and build            |
 | Styling           | [Tailwind CSS](https://github.com/tailwindlabs/tailwindcss) 4                                           | Utility-first CSS               |
 | State             | [Zustand](https://github.com/pmndrs/zustand)                                                            | Lightweight global state        |
 | Audio decode      | [symphonia](https://github.com/pdeljanov/Symphonia)                                                     | Pure-Rust codec support         |
@@ -279,8 +279,8 @@ pnpm tauri dev               # start dev server with hot reload
 
 ```bash
 cd src-tauri && cargo test -q   # backend tests (175+; see AGENTS.md for CI notes)
-pnpm lint                    # ESLint
-pnpm format                  # Prettier check
+pnpm lint                    # oxlint
+pnpm format                  # oxfmt check
 ```
 
 ### Building
@@ -292,7 +292,7 @@ pnpm tauri build             # production build with platform-specific bundle
 ### CI/CD
 
 - Pushes to `main` trigger the CI workflow ([`.github/workflows/ci.yml`](./.github/workflows/ci.yml)) — lint, build, and test on macOS, Windows, and Linux.
-- Pushing a version tag (e.g. `v0.8.1`) triggers the release workflow ([`.github/workflows/release.yml`](./.github/workflows/release.yml)) — builds and attaches binaries to a GitHub Release.
+- Pushing a version tag (e.g. `v0.9.0`) triggers the release workflow ([`.github/workflows/release.yml`](./.github/workflows/release.yml)) — builds and attaches binaries to a GitHub Release.
 
 ## Documentation
 

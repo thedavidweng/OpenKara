@@ -53,6 +53,6 @@ export function useEventSubscriptions(
     // a new array each render and onCleanup identity may change without requiring
     // re-subscription (callers reach side-effects through stable refs). The deps
     // parameter gives callers explicit control over when to re-subscribe.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, ...deps]);
 }
