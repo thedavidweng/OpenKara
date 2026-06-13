@@ -310,6 +310,7 @@ jobs:
       - name: Prepare ONNX Runtime
         env:
           ORT_TARGET: ${{ matrix.ort_target }}
+        shell: bash
         run: node scripts/prepare-onnx-runtime.mjs --target "${ORT_TARGET}"
 
       - name: Verify Rust formatting
@@ -475,6 +476,7 @@ jobs:
       - name: Prepare ONNX Runtime
         env:
           ORT_TARGET: ${{ matrix.ort_target }}
+        shell: bash
         run: node scripts/prepare-onnx-runtime.mjs --target "${ORT_TARGET}"
 
       - name: Validate Tauri build

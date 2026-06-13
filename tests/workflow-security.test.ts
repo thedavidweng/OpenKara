@@ -63,6 +63,30 @@ function runBlocks(workflow: string) {
   return blocks;
 }
 
+function stepsNamed(workflow: string, stepName: string) {
+  const lines = workflow.split(/\r?\n/);
+  const steps: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index].trim() !== `- name: ${stepName}`) {
+      continue;
+    }
+
+    const indentation = lines[index].search(/\S/);
+    const stepLines = [lines[index]];
+    for (let next = index + 1; next < lines.length; next += 1) {
+      const nextLine = lines[next];
+      if (nextLine.trim().length > 0 && nextLine.search(/\S/) <= indentation) {
+        break;
+      }
+      stepLines.push(nextLine);
+    }
+    steps.push(stepLines.join("\n"));
+  }
+
+  return steps;
+}
+
 describe("workflow security", () => {
   test("does not persist checkout credentials in workflow worktrees", () => {
     for (const filename of workflowFiles()) {
@@ -94,6 +118,23 @@ describe("workflow security", () => {
       for (const line of imageLines) {
         expect(line, filename).toContain("@sha256:");
       }
+    }
+  });
+
+  test("uses bash for matrix ONNX Runtime environment expansion", () => {
+    const ciWorkflow = readFileSync(join(workflowDir, "ci.yml"), "utf8");
+    const matrixPrepareSteps = stepsNamed(
+      ciWorkflow,
+      "Prepare ONNX Runtime",
+    ).filter((step) => step.includes("ORT_TARGET: ${{ matrix.ort_target }}"));
+
+    expect(matrixPrepareSteps).toHaveLength(2);
+
+    for (const step of matrixPrepareSteps) {
+      expect(step).toContain("shell: bash");
+      expect(step).toContain(
+        'node scripts/prepare-onnx-runtime.mjs --target "${ORT_TARGET}"',
+      );
     }
   });
 });
