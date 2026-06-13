@@ -69,8 +69,10 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Render WinGet manifests from current public release
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: |
-          node scripts/render-winget-manifests.mjs --version "${{ steps.release.outputs.version }}" --output ${{ github.workspace }}/dist/winget
+          node scripts/render-winget-manifests.mjs --version "${RELEASE_VERSION}" --output "${GITHUB_WORKSPACE}/dist/winget"
 
       - name: Install latest WinGet client
         shell: pwsh
@@ -85,8 +87,10 @@ jobs:
 
       - name: Validate WinGet manifests
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: |
-          winget validate --manifest "$env:GITHUB_WORKSPACE/dist/winget/t/thedavidweng/OpenKara/${{ steps.release.outputs.version }}"
+          winget validate --manifest "$env:GITHUB_WORKSPACE/dist/winget/t/thedavidweng/OpenKara/$env:RELEASE_VERSION"
 
   validate-flatpak:
     name: Validate Flatpak metadata
@@ -145,11 +149,11 @@ jobs:
           node scripts/render-flatpak-manifest.mjs \
             --version "${version}" \
             --source-url "https://github.com/${SOURCE_REPO}/archive/${SOURCE_SHA}.tar.gz" \
-            --output "${{ github.workspace }}/dist/flatpak"
+            --output "${GITHUB_WORKSPACE}/dist/flatpak"
 
       - name: Validate Flatpak manifest syntax
         run: |
-          flatpak-builder --show-manifest "${{ github.workspace }}/dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml" > /dev/null
+          flatpak-builder --show-manifest "${GITHUB_WORKSPACE}/dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml" > /dev/null
 
       - name: Upload rendered Flatpak manifest
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -175,7 +179,7 @@ jobs:
     # bubblewrap can operate inside the container. This mirrors the shape used
     # in flathub-infra/actions-images' own test workflow.
     container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50@sha256:5767ab6266c0680cbe827f17b41a8120ac02c6a09bf5feced438831e57425c68
       options: --privileged
 
     steps:

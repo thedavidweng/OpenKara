@@ -34,6 +34,35 @@ function checkoutSteps(workflow: string) {
   return steps;
 }
 
+function runBlocks(workflow: string) {
+  const lines = workflow.split(/\r?\n/);
+  const blocks: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const runMatch = lines[index].match(/^(\s*)run:\s*(.*)$/);
+    if (runMatch === null) {
+      continue;
+    }
+
+    const indentation = runMatch[1].length;
+    const blockLines = [lines[index]];
+    for (let next = index + 1; next < lines.length; next += 1) {
+      const nextLine = lines[next];
+      if (
+        nextLine.trim().length > 0 &&
+        nextLine.search(/\S/) <= indentation &&
+        !nextLine.trimStart().startsWith("#")
+      ) {
+        break;
+      }
+      blockLines.push(nextLine);
+    }
+    blocks.push(blockLines.join("\n"));
+  }
+
+  return blocks;
+}
+
 describe("workflow security", () => {
   test("does not persist checkout credentials in workflow worktrees", () => {
     for (const filename of workflowFiles()) {
@@ -41,6 +70,29 @@ describe("workflow security", () => {
 
       for (const step of checkoutSteps(workflow)) {
         expect(step, filename).toContain("persist-credentials: false");
+      }
+    }
+  });
+
+  test("passes GitHub expressions through env before shell execution", () => {
+    for (const filename of workflowFiles()) {
+      const workflow = readFileSync(join(workflowDir, filename), "utf8");
+
+      for (const runBlock of runBlocks(workflow)) {
+        expect(runBlock, filename).not.toContain("${{");
+      }
+    }
+  });
+
+  test("pins job containers by digest", () => {
+    for (const filename of workflowFiles()) {
+      const workflow = readFileSync(join(workflowDir, filename), "utf8");
+      const imageLines = workflow
+        .split(/\r?\n/)
+        .filter((line) => line.trimStart().startsWith("image: "));
+
+      for (const line of imageLines) {
+        expect(line, filename).toContain("@sha256:");
       }
     }
   });

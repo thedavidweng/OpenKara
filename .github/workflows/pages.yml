@@ -10,8 +10,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -24,6 +22,10 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      pages: write # Needed by actions/deploy-pages to publish the built site.
+      id-token: write # Needed by actions/deploy-pages for GitHub Pages OIDC deployment.
 
     steps:
       - name: Checkout
