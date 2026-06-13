@@ -1,4 +1,4 @@
-import { Play, Pause, SkipBack, SkipForward } from "lucide-react";
+import { Loader2, Play, Pause, SkipBack, SkipForward } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Tooltip } from "@/components/Overlay/Tooltip";
 import { usePlayerStore } from "@/stores/player-store";
@@ -16,8 +16,15 @@ export function PlayControls({ density = "relaxed" }: PlayControlsProps = {}) {
   const skipBack = usePlayerStore((s) => s.skipBack);
   const skipForward = usePlayerStore((s) => s.skipForward);
   const isPlaying = snapshot?.is_playing ?? false;
+  const isStarting = snapshot?.state === "loading";
+  const toggleLabel = isStarting
+    ? t("player.loading")
+    : isPlaying
+      ? t("player.pause")
+      : t("player.play");
 
   const handleToggle = () => {
+    if (isStarting) return;
     if (isPlaying) {
       pause();
     } else if (snapshot?.song_id) {
@@ -45,13 +52,17 @@ export function PlayControls({ density = "relaxed" }: PlayControlsProps = {}) {
           <SkipBack size={20} fill="currentColor" />
         </button>
       </Tooltip>
-      <Tooltip label={isPlaying ? t("player.pause") : t("player.play")}>
+      <Tooltip label={toggleLabel}>
         <button
           onClick={handleToggle}
-          className="motion-icon-button flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-control-primary)] text-[var(--color-control-primary-foreground)] shadow-[0_10px_24px_rgba(0,0,0,0.22)] hover:bg-[color-mix(in_srgb,var(--color-control-primary)_90%,white)] hover:shadow-[0_14px_28px_rgba(0,0,0,0.28)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-control-primary)]/50"
-          aria-label={isPlaying ? t("player.pause") : t("player.play")}
+          disabled={isStarting}
+          className="motion-icon-button flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-control-primary)] text-[var(--color-control-primary-foreground)] shadow-[0_10px_24px_rgba(0,0,0,0.22)] hover:bg-[color-mix(in_srgb,var(--color-control-primary)_90%,white)] hover:shadow-[0_14px_28px_rgba(0,0,0,0.28)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-control-primary)]/50 disabled:cursor-default disabled:opacity-80"
+          aria-label={toggleLabel}
+          aria-busy={isStarting}
         >
-          {isPlaying ? (
+          {isStarting ? (
+            <Loader2 size={16} className="animate-spin" />
+          ) : isPlaying ? (
             <Pause size={16} fill="currentColor" />
           ) : (
             <Play size={16} fill="currentColor" className="ml-0.5" />

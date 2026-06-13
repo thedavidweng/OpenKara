@@ -436,7 +436,15 @@ fn advance_rotation_single_singer_stays_at_zero() {
     )
     .unwrap();
 
-    let new_index = (0 + 1) % 1;
+    let names_json: String = conn
+        .query_row(
+            "SELECT singer_names FROM rotation_state WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let names: Vec<String> = serde_json::from_str(&names_json).unwrap();
+    let new_index = (1_usize) % names.len();
     assert_eq!(new_index, 0);
 }
 
@@ -462,7 +470,7 @@ fn advance_rotation_empty_singers_stays_at_zero() {
     let new_index = if names.is_empty() {
         0
     } else {
-        (0 + 1) % names.len()
+        1_usize % names.len()
     };
     assert_eq!(new_index, 0);
 }

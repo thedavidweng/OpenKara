@@ -59,6 +59,7 @@ fn fixture_song(hash: &str, file_path: &Path) -> Song {
         album: Some("Parachutes".to_owned()),
         duration_ms: 267_000,
         cover_art: None,
+        has_cover_art: true,
         imported_at: 1,
         original_ext: None,
     }
@@ -270,9 +271,10 @@ fn fetch_lyrics_returns_empty_payload_when_no_synced_source_exists() {
     assert!(payload.lines.is_empty());
     assert_eq!(payload.offset_ms, 0);
     assert_eq!(payload.source, None);
-    assert!(lyrics::get_lyrics_cache_entry(&connection, &song.hash)
+    let cached = lyrics::get_lyrics_cache_entry(&connection, &song.hash)
         .expect("lyrics cache lookup should succeed")
-        .is_none());
+        .expect("negative cache should be stored");
+    assert_eq!(cached.source, LyricsSource::Absent);
 
     lrclib_mock.assert();
     lrcapi_mock.assert();
@@ -363,6 +365,7 @@ fn extract_embedded_cover_art_updates_a_regular_song_and_persists_it() {
         album: Some("Fixture Album".to_owned()),
         duration_ms: 1_000,
         cover_art: None,
+        has_cover_art: true,
         imported_at: 1,
         original_ext: Some("mp3".to_owned()),
     };
@@ -426,6 +429,7 @@ fn extract_embedded_cover_art_reads_cover_art_from_media_g_zip_audio_bytes() {
         album: Some("Fixture Album".to_owned()),
         duration_ms: 1_000,
         cover_art: None,
+        has_cover_art: true,
         imported_at: 1,
         original_ext: Some("mp3".to_owned()),
     };
@@ -468,6 +472,7 @@ fn extract_embedded_cover_art_keeps_existing_cover_when_a_song_has_no_embedded_a
         album: None,
         duration_ms: 1_000,
         cover_art: Some(vec![1, 2, 3, 4]),
+        has_cover_art: true,
         imported_at: 1,
         original_ext: Some("wav".to_owned()),
     };

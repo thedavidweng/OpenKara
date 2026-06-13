@@ -9,7 +9,7 @@ use std::{
 };
 
 pub const EMBEDDED_MODEL_FILENAME: &str = "htdemucs.onnx";
-pub const ORT_RUNTIME_VERSION: &str = "1.24.4";
+pub const ORT_RUNTIME_VERSION: &str = "1.26.0";
 pub const ORT_RUNTIME_STAGING_DIR: &str = "generated/onnxruntime";
 
 #[cfg(target_os = "windows")]
@@ -38,7 +38,9 @@ pub struct LoadedModel {
     pub outputs: Vec<String>,
     pub input_shape: Vec<i64>,
     pub input_tensor_type: TensorElementType,
-    pub(crate) session: ort::session::Session,
+    // Mutex allows &self access to session.run() since ort::Session is thread-safe
+    // and run() only needs exclusive access to its internal state, not the model.
+    pub(crate) session: std::sync::Mutex<ort::session::Session>,
 }
 
 impl std::fmt::Debug for LoadedModel {
@@ -127,22 +129,44 @@ pub fn ensure_runtime_loaded(resource_dir: Option<&Path>) -> Result<&'static Pat
     }
 
     let runtime_path = resolve_runtime_library_path(resource_dir)?;
-    let committed = ort::init_from(&runtime_path)?
-        .with_name("openkara")
-        .commit();
+    init_ort_from_path(&runtime_path)?;
+    Ok(ORT_RUNTIME_PATH
+        .get()
+        .expect("runtime path should be stored after successful initialization")
+        .as_path())
+}
+
+/// Load the ORT runtime from a specific path. Used when the runtime is
+/// resolved from the managed app-data location rather than bundled resources.
+pub fn ensure_runtime_loaded_from_path(runtime_path: &Path) -> Result<&'static Path> {
+    if let Some(path) = ORT_RUNTIME_PATH.get() {
+        return Ok(path.as_path());
+    }
+
+    let _init_guard = ORT_RUNTIME_INIT_LOCK
+        .lock()
+        .map_err(|_| anyhow::anyhow!("onnx runtime initialization lock was poisoned"))?;
+    if let Some(path) = ORT_RUNTIME_PATH.get() {
+        return Ok(path.as_path());
+    }
+
+    init_ort_from_path(runtime_path)?;
+    Ok(ORT_RUNTIME_PATH
+        .get()
+        .expect("runtime path should be stored after successful initialization")
+        .as_path())
+}
+
+fn init_ort_from_path(runtime_path: &Path) -> Result<()> {
+    let committed = ort::init_from(runtime_path)?.with_name("openkara").commit();
     anyhow::ensure!(
         committed,
         "failed to initialize ONNX Runtime from {} before another ORT environment was configured",
         runtime_path.display()
     );
 
-    // The process-global ORT environment can only be configured once. We persist the
-    // exact loaded library path so every later session uses the same runtime contract.
-    let _ = ORT_RUNTIME_PATH.set(runtime_path);
-    Ok(ORT_RUNTIME_PATH
-        .get()
-        .expect("runtime path should be stored after successful initialization")
-        .as_path())
+    let _ = ORT_RUNTIME_PATH.set(runtime_path.to_path_buf());
+    Ok(())
 }
 
 pub fn resolve_runtime_library_path_for_tests(
@@ -311,7 +335,7 @@ fn load_with_ep(path: &Path, ep_preference: ExecutionProviderPreference) -> Resu
         outputs,
         input_shape,
         input_tensor_type,
-        session,
+        session: std::sync::Mutex::new(session),
     })
 }
 

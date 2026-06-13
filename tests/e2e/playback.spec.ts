@@ -1,7 +1,7 @@
-import { test, expect } from "./fixtures/base-test";
+import { expect, objectRecord, test } from "./fixtures/base-test";
 
 /**
- * Playback controls E2E tests.
+ * Playback controls UI smoke tests.
  *
  * Verifies play/pause, skip, and seek bar interactions against the
  * mocked Tauri backend.  The mock returns deterministic playback state
@@ -13,16 +13,28 @@ test.describe("Playback controls", () => {
     await expect(page.getByText("Bohemian Rhapsody")).toBeVisible();
   });
 
-  test("double-clicking a song starts playback", async ({ page }) => {
+  test("double-clicking a song starts playback", async ({
+    page,
+    tauriMock,
+  }) => {
     await page.getByText("Bohemian Rhapsody").dblclick();
 
     // The play button should become a pause button
     await expect(page.getByRole("button", { name: /pause/i })).toBeVisible({
       timeout: 5000,
     });
+
+    await expect
+      .poll(async () =>
+        (await tauriMock.getInvokeCalls()).some((call) => {
+          const args = objectRecord(call.args);
+          return call.cmd === "play" && args?.songId === "aaa111";
+        }),
+      )
+      .toBe(true);
   });
 
-  test("pause button stops playback", async ({ page }) => {
+  test("pause button stops playback", async ({ page, tauriMock }) => {
     // Start playback
     await page.getByText("Bohemian Rhapsody").dblclick();
     await expect(page.getByRole("button", { name: /pause/i })).toBeVisible({
@@ -33,9 +45,15 @@ test.describe("Playback controls", () => {
     await page.getByRole("button", { name: /pause/i }).click();
 
     // Should show play button again
-    await expect(page.getByRole("button", { name: /play/i })).toBeVisible({
-      timeout: 5000,
-    });
+    await expect(
+      page.getByRole("button", { exact: true, name: "Play" }),
+    ).toBeVisible({ timeout: 5000 });
+
+    await expect
+      .poll(async () =>
+        (await tauriMock.getInvokeCalls()).some((call) => call.cmd === "pause"),
+      )
+      .toBe(true);
   });
 
   test("skip forward and back buttons exist and are clickable", async ({
@@ -57,7 +75,10 @@ test.describe("Playback controls", () => {
     await skipBack.click();
   });
 
-  test("seek bar is visible during playback", async ({ page }) => {
+  test("seek bar sends seek commands during playback", async ({
+    page,
+    tauriMock,
+  }) => {
     await page.getByText("Bohemian Rhapsody").dblclick();
     await expect(page.getByRole("button", { name: /pause/i })).toBeVisible({
       timeout: 5000,
@@ -66,6 +87,21 @@ test.describe("Playback controls", () => {
     // The seek bar should be rendered as a slider
     const seekBar = page.getByRole("slider", { name: /seek/i });
     await expect(seekBar).toBeVisible();
+    const box = await seekBar.boundingBox();
+    expect(box).not.toBeNull();
+    if (box === null) {
+      throw new Error("Seek slider has no bounding box");
+    }
+    await page.mouse.move(box.x + box.width * 0.25, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height / 2);
+    await page.mouse.up();
+
+    await expect
+      .poll(async () =>
+        (await tauriMock.getInvokeCalls()).some((call) => call.cmd === "seek"),
+      )
+      .toBe(true);
   });
 
   test("now-playing info shows song title during playback", async ({

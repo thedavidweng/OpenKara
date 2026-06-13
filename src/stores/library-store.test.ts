@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { useLibraryStore } from "./library-store";
 
 const {
@@ -108,6 +108,7 @@ describe("library-store updateSongMetadata", () => {
           language: null,
           duration_ms: 123000,
           cover_art: null,
+          has_cover_art: false,
           imported_at: 0,
           original_ext: null,
         },
@@ -124,6 +125,7 @@ describe("library-store updateSongMetadata", () => {
           language: null,
           duration_ms: 456000,
           cover_art: null,
+          has_cover_art: false,
           imported_at: 0,
           original_ext: null,
         },
@@ -190,6 +192,7 @@ describe("library-store updateSongMetadata", () => {
         language: null,
         duration_ms: 123000,
         cover_art: null,
+        has_cover_art: false,
         imported_at: 0,
         original_ext: null,
       },
@@ -249,6 +252,7 @@ describe("library-store updateSongMetadata", () => {
           language: null,
           duration_ms: 123000,
           cover_art: [0xff, 0xd8, 0x00],
+          has_cover_art: true,
           imported_at: 0,
           original_ext: null,
         },
@@ -337,6 +341,7 @@ describe("library-store loadLibrary", () => {
     language: null,
     duration_ms: 200000,
     cover_art: null,
+    has_cover_art: false,
     imported_at: 0,
     original_ext: null,
   };
@@ -674,6 +679,7 @@ describe("library-store setSongsLanguage", () => {
     language: null,
     duration_ms: 180000,
     cover_art: null,
+    has_cover_art: false,
     imported_at: 0,
     original_ext: null,
   };
@@ -770,6 +776,7 @@ describe("library-store searchSongs", () => {
         language: null,
         duration_ms: 100000,
         cover_art: null,
+        has_cover_art: false,
         imported_at: 0,
         original_ext: null,
       },
@@ -790,6 +797,113 @@ describe("library-store searchSongs", () => {
     await useLibraryStore.getState().searchSongs("bad query");
 
     expect(mockNotifyError).toHaveBeenCalledWith(error);
+  });
+});
+
+// ─── setSearchQuery debounce race (F2) ──────────────────────
+
+describe("library-store setSearchQuery debounce race (F2)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockSearchLibrary.mockReset();
+    mockNotifyError.mockReset();
+    mockGetLibrary.mockReset();
+    mockGetActiveLibrary.mockReset();
+    mockRefreshRemoteRepository.mockReset();
+    mockGetAllSeparationStatuses.mockReset();
+    mockGetAllUploadStatuses.mockReset();
+    mockCreateWebviewSyncChannel.mockReturnValue({
+      publish: vi.fn(),
+      subscribe: vi.fn().mockReturnValue(vi.fn()),
+      close: vi.fn(),
+    });
+    useLibraryStore.setState({
+      songs: [],
+      searchQuery: "",
+      isImporting: false,
+      importErrors: [],
+      selectedSongIds: new Set<string>(),
+      lastClickedSongId: null,
+      separationStatuses: {},
+      uploadStatuses: {},
+      filter: "all",
+      batchSeparation: null,
+      pendingImportCdgChoice: null,
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("slow search does not overwrite fast search results (generation guard)", async () => {
+    const songA = {
+      hash: "song-a",
+      title: "Song A",
+      artist: "Artist A",
+      album: null,
+      file_path: "/music/a.mp3",
+      audio_source_kind: "original" as const,
+      cdg_path: null,
+      media_g_container: null,
+      instrumental: false,
+      language: null,
+      duration_ms: 100000,
+      cover_art: null,
+      has_cover_art: false,
+      imported_at: 0,
+      original_ext: null,
+    };
+    const songB = {
+      hash: "song-b",
+      title: "Song B",
+      artist: "Artist B",
+      album: null,
+      file_path: "/music/b.mp3",
+      audio_source_kind: "original" as const,
+      cdg_path: null,
+      media_g_container: null,
+      instrumental: false,
+      language: null,
+      duration_ms: 200000,
+      cover_art: null,
+      has_cover_art: false,
+      imported_at: 0,
+      original_ext: null,
+    };
+
+    let resolveSlow: (v: unknown) => void;
+    const slowPromise = new Promise((resolve) => {
+      resolveSlow = resolve;
+    });
+
+    mockSearchLibrary.mockImplementation(async (query: string) => {
+      if (query === "a") return [songA];
+      // "slow-query" hangs until we manually resolve
+      return slowPromise;
+    });
+
+    // Type "slow-query" -> debounce schedules for 300ms
+    useLibraryStore.getState().setSearchQuery("slow-query");
+
+    // Advance past debounce to fire the search
+    await vi.advanceTimersByTimeAsync(300);
+
+    // Now type "a" -> new debounce schedules for 300ms
+    useLibraryStore.getState().setSearchQuery("a");
+
+    // Advance past debounce to fire the "a" search
+    await vi.advanceTimersByTimeAsync(300);
+
+    // "a" results should be applied
+    expect(useLibraryStore.getState().songs).toEqual([songA]);
+
+    // Now resolve the slow-query search (which was still in-flight)
+    resolveSlow!([songB]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Slow results must NOT overwrite the fast "a" results
+    expect(useLibraryStore.getState().songs).toEqual([songA]);
   });
 });
 

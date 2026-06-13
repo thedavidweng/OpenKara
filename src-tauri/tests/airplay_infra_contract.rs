@@ -13,8 +13,8 @@ use std::net::Ipv4Addr;
 fn audio_tap_keeps_streaming_chunks_from_the_same_epoch() {
     let tap = AirPlayAudioTap::new(2);
 
-    tap.push_interleaved(44_100, 2, &[0.1, 0.2, 0.3, 0.4]);
-    tap.push_interleaved(44_100, 2, &[0.5, 0.6, 0.7, 0.8]);
+    tap.push_interleaved(44_100, 2, vec![0.1, 0.2, 0.3, 0.4]);
+    tap.push_interleaved(44_100, 2, vec![0.5, 0.6, 0.7, 0.8]);
 
     let drained = tap.drain_pending();
 
@@ -29,9 +29,9 @@ fn audio_tap_keeps_streaming_chunks_from_the_same_epoch() {
 fn audio_tap_respects_bounded_capacity() {
     let tap = AirPlayAudioTap::new(2);
 
-    tap.push_interleaved(44_100, 2, &[0.1, 0.2]);
-    tap.push_interleaved(44_100, 2, &[0.3, 0.4]);
-    tap.push_interleaved(44_100, 2, &[0.5, 0.6]);
+    tap.push_interleaved(44_100, 2, vec![0.1, 0.2]);
+    tap.push_interleaved(44_100, 2, vec![0.3, 0.4]);
+    tap.push_interleaved(44_100, 2, vec![0.5, 0.6]);
 
     let drained = tap.drain_pending();
 

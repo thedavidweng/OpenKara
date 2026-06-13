@@ -5,6 +5,7 @@ import { usePlayerStore } from "@/stores/player-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useLyricsStore } from "@/stores/lyrics-store";
 import { useBootstrapStore } from "@/stores/bootstrap-store";
+import { useRuntimeBootstrapStore } from "@/stores/runtime-bootstrap-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { notifyError } from "@/lib/errors";
 import i18next, { detectSystemLanguage } from "@/lib/i18n";
@@ -25,6 +26,7 @@ import type {
   PlaybackEndedEvent,
   PlaybackErrorEvent,
   PlaybackPositionEvent,
+  RuntimeBootstrapStatusSnapshot,
   SeparationCompleteEvent,
   SeparationErrorEvent,
   SeparationProgressEvent,
@@ -70,6 +72,11 @@ function usePlaybackPositionSubscription(
           if (!cancelled) onPosition(e.payload);
         },
       );
+      // F3: If unmount happened before listen() resolved, clean up now.
+      if (cancelled) {
+        unlisten();
+        return;
+      }
     };
 
     void setup();
@@ -166,6 +173,9 @@ function useSeparationEvents(enabled: boolean) {
 
 function useBootstrapEvents(enabled: boolean) {
   const updateBootstrapStatus = useBootstrapStore((s) => s.updateStatus);
+  const updateRuntimeBootstrapStatus = useRuntimeBootstrapStore(
+    (s) => s.updateStatus,
+  );
 
   useEventSubscriptions(
     [
@@ -184,10 +194,31 @@ function useBootstrapEvents(enabled: boolean) {
         handler: (payload) =>
           updateBootstrapStatus(payload as ModelBootstrapStatusSnapshot),
       },
+      {
+        event: "runtime-bootstrap-progress",
+        handler: (payload) =>
+          updateRuntimeBootstrapStatus(
+            payload as RuntimeBootstrapStatusSnapshot,
+          ),
+      },
+      {
+        event: "runtime-bootstrap-ready",
+        handler: (payload) =>
+          updateRuntimeBootstrapStatus(
+            payload as RuntimeBootstrapStatusSnapshot,
+          ),
+      },
+      {
+        event: "runtime-bootstrap-error",
+        handler: (payload) =>
+          updateRuntimeBootstrapStatus(
+            payload as RuntimeBootstrapStatusSnapshot,
+          ),
+      },
     ],
     enabled,
     undefined,
-    [updateBootstrapStatus],
+    [updateBootstrapStatus, updateRuntimeBootstrapStatus],
   );
 }
 

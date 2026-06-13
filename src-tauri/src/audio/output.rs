@@ -99,12 +99,17 @@ pub fn render_output_buffer(
     // the snapshot correctly reports paused state.
     playback.finalize_fade_if_complete();
 
-    // Take the snapshot AFTER the buffer-level update so is_playing reflects
-    // the current buffering state (the snapshot taken before the update may
-    // still carry the old is_buffering flag).
+    // Take the snapshot AFTER the buffer-level update so state reflects the
+    // current buffering flag (the snapshot taken before the update may still
+    // carry the old is_buffering value).
     let snapshot = playback.snapshot();
-    // During a fade-out, is_playing stays true until the envelope completes.
-    // If is_playing is false and no fade-out is active, output silence.
+    // Buffer underrun: snapshot may still report is_playing=true (transport intent)
+    // but we must output silence until the ring buffers recover.
+    if playback.is_buffering {
+        return 0;
+    }
+    // During a fade-out, snapshot reports is_playing=false for UI transport while
+    // the render callback still outputs the envelope until finalize_fade_if_complete.
     if !snapshot.is_playing
         && !matches!(
             playback.fade,
@@ -139,6 +144,7 @@ pub fn render_output_buffer(
                     master,
                     device_sample_rate,
                     device_channels,
+                    None,
                 )
             }
             crate::audio::streaming::StreamingTrack::TwoStem {
@@ -285,6 +291,10 @@ pub fn render_output_buffer(
     // Advance the render frame counter so the next callback continues seamlessly
     playback.advance_render_frame(src_frames_advanced);
 
+    if has_streaming {
+        finalize_streaming_natural_end(playback);
+    }
+
     rendered
 }
 
@@ -420,6 +430,49 @@ fn mix_stem_linearly_resampled(
     (written, src_frames_consumed)
 }
 
+/// Source frames needed to fill `output_frames` device frames at the given rates.
+fn src_frames_for_output(output_frames: usize, src_rate: u32, device_rate: u32) -> u64 {
+    if src_rate == device_rate {
+        output_frames as u64
+    } else {
+        (output_frames as f64 * src_rate as f64 / device_rate as f64).ceil() as u64 + 1
+    }
+}
+
+/// Source frames to drain when a stem is muted (no interpolation lookahead).
+fn src_frames_for_muted_drain(output_frames: usize, src_rate: u32, device_rate: u32) -> usize {
+    if src_rate == device_rate {
+        output_frames
+    } else {
+        (output_frames as f64 * src_rate as f64 / device_rate as f64).round() as usize
+    }
+}
+
+/// Shared source-frame budget for multi-stem streaming: min(available, needed) per stem.
+fn compute_shared_src_frame_budget(
+    consumers: &[&crate::audio::streaming::AudioConsumer],
+    output_frames: usize,
+    device_sample_rate: u32,
+) -> u64 {
+    let mut budget = u64::MAX;
+    for consumer in consumers {
+        let needed = src_frames_for_output(output_frames, consumer.sample_rate, device_sample_rate);
+        let available = consumer.available_src_frames() as u64;
+        budget = budget.min(available.min(needed));
+    }
+    if budget == u64::MAX {
+        0
+    } else {
+        budget
+    }
+}
+
+/// When every streaming consumer has EOF'd and drained, stop playback and backfill
+/// unknown duration from the final render position.
+fn finalize_streaming_natural_end(playback: &mut PlaybackController) {
+    playback.finalize_streaming_natural_end();
+}
+
 /// Render a single streaming track into the output buffer.
 /// Pops samples from the ring buffer consumer and applies gain.
 /// Returns (rendered_output_samples, source_frames_consumed).
@@ -433,34 +486,38 @@ fn render_streaming_single(
     gain: f32,
     device_sample_rate: u32,
     device_channels: usize,
+    max_src_frames: Option<u64>,
 ) -> (usize, u64) {
+    let output_frames = output.len() / device_channels;
+    let src_channels = consumer.channels;
+
+    let frame_cap = max_src_frames.map(|b| b as usize).unwrap_or_else(|| {
+        if gain == 0.0 {
+            src_frames_for_muted_drain(output_frames, consumer.sample_rate, device_sample_rate)
+        } else if consumer.sample_rate == device_sample_rate {
+            output_frames
+        } else {
+            src_frames_for_output(output_frames, consumer.sample_rate, device_sample_rate) as usize
+        }
+    });
+
     if gain == 0.0 {
         // Muted streaming tracks still advance so re-enabling a stem stays
         // aligned with the shared render clock. Drain by source frames, not
         // device frames, because common 44.1kHz→48kHz output resampling would
         // otherwise skip too far while the stem is muted.
-        let src_channels = consumer.channels;
-        let output_frames = output.len() / device_channels;
-        let src_frames = if consumer.sample_rate == device_sample_rate {
-            output_frames
-        } else {
-            (output_frames as f64 * consumer.sample_rate as f64 / device_sample_rate as f64).round()
-                as usize
-        };
-        scratch.resize(src_frames * src_channels, 0.0);
+        scratch.resize(frame_cap.saturating_mul(src_channels), 0.0);
         let popped = consumer.pop_samples(scratch);
-        return (0, (popped / src_channels) as u64);
+        return (0, (popped / src_channels.max(1)) as u64);
     }
 
-    let src_channels = consumer.channels;
     let src_rate = consumer.sample_rate;
-    let output_frames = output.len() / device_channels;
 
     if src_rate == device_sample_rate {
         // Same rate — direct pop with channel mapping
-        scratch.resize(output_frames * src_channels, 0.0);
+        scratch.resize(frame_cap.saturating_mul(src_channels), 0.0);
         let popped = consumer.pop_samples(scratch);
-        let src_frames = popped / src_channels;
+        let src_frames = (popped / src_channels.max(1)).min(frame_cap);
 
         for out_frame in 0..src_frames {
             for out_ch in 0..device_channels {
@@ -478,10 +535,9 @@ fn render_streaming_single(
     } else {
         // Different rate — linear interpolation resampling
         let rate_ratio = src_rate as f64 / device_sample_rate as f64;
-        let needed_src_frames = (output_frames as f64 * rate_ratio).ceil() as usize + 1;
-        scratch.resize(needed_src_frames * src_channels, 0.0);
+        scratch.resize(frame_cap.saturating_mul(src_channels), 0.0);
         let popped = consumer.pop_samples(scratch);
-        let available_src_frames = popped / src_channels;
+        let available_src_frames = popped / src_channels.max(1);
 
         let mut written = 0;
         let mut rendered_out_frames = 0;
@@ -510,7 +566,9 @@ fn render_streaming_single(
         }
 
         let src_frames_consumed = if rendered_out_frames > 0 {
-            (rendered_out_frames as f64 * rate_ratio).round() as u64
+            (rendered_out_frames as f64 * rate_ratio)
+                .round()
+                .min(frame_cap as f64) as u64
         } else {
             0
         };
@@ -536,24 +594,36 @@ fn render_streaming_two_stem(
     device_sample_rate: u32,
     device_channels: usize,
 ) -> (usize, u64) {
+    let output_frames = output.len() / device_channels;
+    let budget = compute_shared_src_frame_budget(
+        &[vocals as &_, accompaniment as &_],
+        output_frames,
+        device_sample_rate,
+    );
+    if budget == 0 {
+        return (0, 0);
+    }
+    let max_frames = Some(budget);
     let accomp_gain = sv.drums.max(sv.bass).max(sv.other);
-    let (r1, f1) = render_streaming_single(
+    let (r1, _) = render_streaming_single(
         output,
         vocals,
         scratch,
         master * sv.vocals,
         device_sample_rate,
         device_channels,
+        max_frames,
     );
-    let (r2, f2) = render_streaming_single(
+    let (r2, _) = render_streaming_single(
         output,
         accompaniment,
         scratch,
         master * accomp_gain,
         device_sample_rate,
         device_channels,
+        max_frames,
     );
-    (r1.max(r2), f1.max(f2))
+    (r1.max(r2), budget)
 }
 
 /// Render four streaming stems.
@@ -569,39 +639,53 @@ fn render_streaming_four_stem(
     device_sample_rate: u32,
     device_channels: usize,
 ) -> (usize, u64) {
-    let (r1, f1) = render_streaming_single(
+    let output_frames = output.len() / device_channels;
+    let budget = compute_shared_src_frame_budget(
+        &[vocals as &_, drums as &_, bass as &_, other as &_],
+        output_frames,
+        device_sample_rate,
+    );
+    if budget == 0 {
+        return (0, 0);
+    }
+    let max_frames = Some(budget);
+    let (r1, _) = render_streaming_single(
         output,
         vocals,
         scratch,
         master * sv.vocals,
         device_sample_rate,
         device_channels,
+        max_frames,
     );
-    let (r2, f2) = render_streaming_single(
+    let (r2, _) = render_streaming_single(
         output,
         drums,
         scratch,
         master * sv.drums,
         device_sample_rate,
         device_channels,
+        max_frames,
     );
-    let (r3, f3) = render_streaming_single(
+    let (r3, _) = render_streaming_single(
         output,
         bass,
         scratch,
         master * sv.bass,
         device_sample_rate,
         device_channels,
+        max_frames,
     );
-    let (r4, f4) = render_streaming_single(
+    let (r4, _) = render_streaming_single(
         output,
         other,
         scratch,
         master * sv.other,
         device_sample_rate,
         device_channels,
+        max_frames,
     );
-    (r1.max(r2).max(r3).max(r4), f1.max(f2).max(f3).max(f4))
+    (r1.max(r2).max(r3).max(r4), budget)
 }
 
 fn acknowledge_flush_if_needed(streaming: &mut crate::audio::streaming::StreamingTrack) {
@@ -644,6 +728,19 @@ fn acknowledge_flush_if_needed(streaming: &mut crate::audio::streaming::Streamin
     }
 }
 
+// R5 RATIONALE: All-or-nothing buffering policy.
+//
+// Multi-stem rendering requires every stem to stay frame-synchronized with the
+// shared source clock. If we allowed playback to continue while one stem is
+// below the low-water mark, the render callback would mix rendered audio from
+// buffered stems with silence (or stale data) from the depleted stem, producing
+// audible artifacts and — because the source clock advances — permanent drift
+// between stems that can never self-heal.
+//
+// Muting the entire stream when *any* required stem is below low water
+// guarantees that when playback resumes (all stems above high water), every
+// consumer is at the same source-clock position. This is the simplest
+// correctness strategy for synchronised multi-stem playback.
 fn any_consumer_below_low_water(streaming: &crate::audio::streaming::StreamingTrack) -> bool {
     match streaming {
         crate::audio::streaming::StreamingTrack::Single { consumer } => {
@@ -708,6 +805,9 @@ where
     // on the realtime thread — after the first callback the capacity is sufficient
     // and `resize` becomes a no-op memset.
     let mut stem_scratch = Vec::<f32>::new();
+    // R1: Pre-allocated scratch buffer for AirPlay downmix. Eliminates the
+    // per-callback heap allocation that `downmix_for_airplay` previously caused.
+    let mut airplay_scratch = Vec::<f32>::new();
 
     let stream = device
         .build_output_stream(
@@ -741,6 +841,7 @@ where
                     channels,
                     sample_rate,
                     &airplay_audio_tap,
+                    &mut airplay_scratch,
                 );
                 write_output_samples(
                     &scratch,
@@ -828,6 +929,7 @@ fn forward_rendered_audio_to_airplay(
     channels: usize,
     sample_rate: u32,
     airplay_audio_tap: &AirPlayAudioTap,
+    airplay_scratch: &mut Vec<f32>,
 ) {
     if rendered_samples == 0 {
         return;
@@ -838,36 +940,43 @@ fn forward_rendered_audio_to_airplay(
         return;
     }
 
-    let tap_samples = downmix_for_airplay(&scratch[..rendered_samples], channels);
-    if !tap_samples.is_empty() {
-        airplay_audio_tap.push_interleaved(sample_rate, 2, &tap_samples);
+    downmix_for_airplay_into(&scratch[..rendered_samples], channels, airplay_scratch);
+    if !airplay_scratch.is_empty() {
+        // R1: Swap out the buffer so push_interleaved takes ownership (no to_vec).
+        // The replacement Vec reuses the same capacity for the next callback.
+        let owned = std::mem::replace(
+            airplay_scratch,
+            Vec::with_capacity(airplay_scratch.capacity()),
+        );
+        airplay_audio_tap.push_interleaved(sample_rate, 2, owned);
     }
 }
 
-fn downmix_for_airplay(samples: &[f32], channels: usize) -> Vec<f32> {
+/// R1: Downmix multi-channel audio to stereo, writing into a reusable buffer
+/// to avoid heap allocation on the realtime audio callback thread.
+fn downmix_for_airplay_into(samples: &[f32], channels: usize, output: &mut Vec<f32>) {
+    output.clear();
+
     if channels == 0 || samples.is_empty() {
-        return Vec::new();
+        return;
     }
 
-    let mut stereo = Vec::with_capacity((samples.len() / channels).saturating_mul(2));
+    let stereo_frames = samples.len() / channels;
+    output.reserve(stereo_frames * 2);
+
     for frame in samples.chunks(channels) {
         let (left, right) = match channels {
             1 => (frame[0], frame[0]),
             2 => (frame[0], frame[1]),
             _ => {
-                // For multi-channel audio (e.g., 5.1), mix down to stereo.
-                // Standard downmix: L = FL + 0.707*C + 0.707*SL, R = FR + 0.707*C + 0.707*SR
-                // Without knowing exact layout, average all channels into left and right.
                 let sum: f32 = frame.iter().sum();
                 let avg = sum / channels as f32;
                 (avg, avg)
             }
         };
-        stereo.push(left);
-        stereo.push(right);
+        output.push(left);
+        output.push(right);
     }
-
-    stereo
 }
 
 fn write_output_samples<T>(scratch: &[f32], data: &mut [T], suppress_local_output: bool)
@@ -908,7 +1017,15 @@ mod tests {
     #[test]
     fn forward_rendered_audio_to_airplay_skips_unrendered_frames() {
         let tap = AirPlayAudioTap::new(4);
-        forward_rendered_audio_to_airplay(0, &[0.8, 0.7, 0.6, 0.5], 2, 44_100, &tap);
+        let mut airplay_scratch = Vec::new();
+        forward_rendered_audio_to_airplay(
+            0,
+            &[0.8, 0.7, 0.6, 0.5],
+            2,
+            44_100,
+            &tap,
+            &mut airplay_scratch,
+        );
 
         assert!(tap.drain_pending().is_empty());
     }
@@ -916,7 +1033,15 @@ mod tests {
     #[test]
     fn forward_rendered_audio_to_airplay_limits_payload_to_rendered_samples() {
         let tap = AirPlayAudioTap::new(4);
-        forward_rendered_audio_to_airplay(4, &[0.1, 0.2, 0.3, 0.4, 0.9, 0.8], 2, 44_100, &tap);
+        let mut airplay_scratch = Vec::new();
+        forward_rendered_audio_to_airplay(
+            4,
+            &[0.1, 0.2, 0.3, 0.4, 0.9, 0.8],
+            2,
+            44_100,
+            &tap,
+            &mut airplay_scratch,
+        );
 
         let drained = tap.drain_pending();
         assert_eq!(drained.len(), 1);
@@ -962,9 +1087,8 @@ mod tests {
             "should enter buffering after empty underrun"
         );
 
-        // 2nd callback: is_buffering is true → snapshot reports is_playing = false.
-        // Before the fix, this would early-return without checking buffer levels,
-        // permanently locking the player in "buffering" state.
+        // 2nd callback: is_buffering is true → snapshot reports transport intent
+        // (is_playing stays true) but render_output_buffer still outputs silence.
         output.fill(0.0);
         let rendered = render_output_buffer(
             &mut controller,
@@ -1006,14 +1130,28 @@ mod tests {
 
         let mut first = vec![0.0_f32; 4];
         let mut scratch = Vec::new();
-        let rendered =
-            super::render_streaming_single(&mut first, &mut consumer, &mut scratch, 1.0, 8, 1);
+        let rendered = super::render_streaming_single(
+            &mut first,
+            &mut consumer,
+            &mut scratch,
+            1.0,
+            8,
+            1,
+            None,
+        );
         assert_eq!(rendered, (4, 2));
         assert_eq!(first, vec![0.0, 0.5, 1.0, 1.5]);
 
         let mut second = vec![0.0_f32; 4];
-        let rendered =
-            super::render_streaming_single(&mut second, &mut consumer, &mut scratch, 1.0, 8, 1);
+        let rendered = super::render_streaming_single(
+            &mut second,
+            &mut consumer,
+            &mut scratch,
+            1.0,
+            8,
+            1,
+            None,
+        );
         assert_eq!(rendered, (4, 2));
         assert_eq!(second, vec![2.0, 2.5, 3.0, 3.5]);
     }
@@ -1028,14 +1166,193 @@ mod tests {
 
         let mut muted = vec![0.0_f32; 4];
         let mut scratch = Vec::new();
-        let rendered =
-            super::render_streaming_single(&mut muted, &mut consumer, &mut scratch, 0.0, 8, 1);
+        let rendered = super::render_streaming_single(
+            &mut muted,
+            &mut consumer,
+            &mut scratch,
+            0.0,
+            8,
+            1,
+            None,
+        );
         assert_eq!(rendered, (0, 2));
 
         let mut audible = vec![0.0_f32; 4];
-        let rendered =
-            super::render_streaming_single(&mut audible, &mut consumer, &mut scratch, 1.0, 8, 1);
+        let rendered = super::render_streaming_single(
+            &mut audible,
+            &mut consumer,
+            &mut scratch,
+            1.0,
+            8,
+            1,
+            None,
+        );
         assert_eq!(rendered, (4, 2));
         assert_eq!(audible, vec![2.0, 2.5, 3.0, 3.5]);
+    }
+
+    /// R4: When one stem has fewer samples than another, the source clock must
+    /// NOT advance past the slow stem. This test forces one stem to
+    /// under-render and verifies the committed frame count is the minimum.
+    #[test]
+    fn streaming_two_stem_clock_does_not_advance_past_slow_stem() {
+        use crate::audio::streaming;
+
+        let sample_rate: u32 = 44_100;
+        let channels: usize = 2;
+        // Stem 1 (vocals): plenty of data
+        let (mut prod1, mut consumer1) = streaming::create_stream_pair(sample_rate, channels);
+        let filler1 = vec![0.5_f32; sample_rate as usize * channels]; // 1 second
+        prod1.push_samples(&filler1);
+
+        // Stem 2 (accompaniment): only 100ms of data — will under-render
+        let (mut prod2, mut consumer2) = streaming::create_stream_pair(sample_rate, channels);
+        let filler2 = vec![0.3_f32; (sample_rate as usize / 10) * channels]; // 100ms
+        prod2.push_samples(&filler2);
+
+        // Request 512 output frames (= 512 source frames at same rate)
+        let device_channels = 2;
+        let mut scratch = Vec::new();
+
+        // Render both stems — stem2 only has ~100ms = ~4410 frames, stem1 has 44100
+        // Requested: 512 frames. Both stems have enough for one callback.
+        // We need more callbacks or a smaller buffer to actually see under-render.
+        // Use a buffer of 4410 frames (= 100ms) so stem2 is exactly at the edge.
+        let big_frames = (sample_rate / 10) as usize; // 4410 frames = 100ms
+        let mut big_output = vec![0.0f32; big_frames * device_channels];
+
+        // First callback: both stems render 4410 frames (stem2 is now empty)
+        let result = super::render_streaming_two_stem(
+            &mut big_output,
+            &mut consumer1,
+            &mut consumer2,
+            &mut scratch,
+            1.0,
+            super::StemVolumes::default(),
+            sample_rate,
+            device_channels,
+        );
+        let (_rendered_1, frames_1) = result;
+        assert!(frames_1 > 0, "first callback should render frames");
+
+        // Second callback: stem1 still has data, stem2 has nothing
+        big_output.fill(0.0);
+        let result2 = super::render_streaming_two_stem(
+            &mut big_output,
+            &mut consumer1,
+            &mut consumer2,
+            &mut scratch,
+            1.0,
+            super::StemVolumes::default(),
+            sample_rate,
+            device_channels,
+        );
+        let (_rendered_2, frames_2) = result2;
+
+        // CRITICAL: frames advanced must be 0 or small — stem2 has no data,
+        // so min(f1, f2) must be 0 (f2=0).
+        assert_eq!(
+            frames_2, 0,
+            "when one stem has no data, source clock must not advance (min)"
+        );
+    }
+
+    /// R4: Four-stem variant — when one of four stems under-renders, the source
+    /// clock must advance only by the minimum rendered count.
+    #[test]
+    fn streaming_four_stem_clock_uses_minimum_across_stems() {
+        use crate::audio::streaming;
+
+        let sample_rate: u32 = 44_100;
+        let channels: usize = 2;
+
+        let (mut p_v, mut c_v) = streaming::create_stream_pair(sample_rate, channels);
+        let (mut p_d, mut c_d) = streaming::create_stream_pair(sample_rate, channels);
+        let (mut p_b, mut c_b) = streaming::create_stream_pair(sample_rate, channels);
+        let (_p_o, mut c_o) = streaming::create_stream_pair(sample_rate, channels);
+
+        // Fill all stems generously except "other" which is empty
+        let fill = vec![0.5_f32; sample_rate as usize * channels];
+        p_v.push_samples(&fill);
+        p_d.push_samples(&fill);
+        p_b.push_samples(&fill);
+        // p_o: no data
+
+        let device_channels = 2;
+        let frames = 512usize;
+        let mut output = vec![0.0f32; frames * device_channels];
+        let mut scratch = Vec::new();
+
+        let (_rendered, src_frames) = super::render_streaming_four_stem(
+            &mut output,
+            &mut c_v,
+            &mut c_d,
+            &mut c_b,
+            &mut c_o,
+            &mut scratch,
+            1.0,
+            super::StemVolumes::default(),
+            sample_rate,
+            device_channels,
+        );
+
+        assert_eq!(
+            src_frames, 0,
+            "four-stem clock must not advance when any stem has no data"
+        );
+    }
+
+    /// R5: Position must not advance while any required stem is unavailable
+    /// (below low water). The all-or-nothing buffering policy ensures this.
+    #[test]
+    fn streaming_two_stem_enters_buffering_when_one_stem_below_low_water() {
+        use crate::audio::playback::PlaybackController;
+        use crate::audio::streaming::{self, StreamingTrack};
+
+        let sample_rate: u32 = 44_100;
+        let channels: usize = 2;
+
+        let (mut prod_v, consumer_v) = streaming::create_stream_pair(sample_rate, channels);
+        let (_prod_a, consumer_a) = streaming::create_stream_pair(sample_rate, channels);
+
+        // Fill vocals generously but leave accompaniment empty (below low water).
+        let filler = vec![0.5_f32; sample_rate as usize * channels];
+        prod_v.push_samples(&filler);
+
+        let mut controller = PlaybackController::default();
+        controller.start_track_streaming(
+            "test-r5".to_owned(),
+            sample_rate,
+            channels,
+            30_000,
+            StreamingTrack::TwoStem {
+                vocals: consumer_v,
+                accompaniment: consumer_a,
+            },
+            0,
+        );
+
+        let device_channels = 2;
+        let mut output = vec![0.0f32; 512 * device_channels];
+        let rendered = super::render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            sample_rate,
+            device_channels,
+        );
+
+        // Accompaniment is empty → below low water → must enter buffering.
+        assert!(
+            controller.is_buffering,
+            "must enter buffering when a required stem is below low water"
+        );
+        assert_eq!(rendered, 0, "must render silence during buffering");
+
+        let snapshot = controller.snapshot();
+        assert_eq!(
+            snapshot.position_ms, 0,
+            "position must not advance during buffering"
+        );
     }
 }

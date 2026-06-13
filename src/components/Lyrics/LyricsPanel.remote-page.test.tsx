@@ -12,15 +12,18 @@ const {
   mockPlayerState,
   mockLyricsState,
   mockSettingsState,
-  mockSelectSyncDisplayPositionMs,
+  mockSelectCurrentPositionMs,
 } = vi.hoisted(() => ({
   mockListen: vi.fn(),
   mockStepPlainTextRemotePage: vi.fn(),
   mockPlayerState: {
     snapshot: {
       song_id: "song-1",
+      is_playing: false,
+      state: "playing",
     },
     positionMs: 4000,
+    playingSinceMs: null,
     airPlayOutput: {
       active: false,
       audioActive: false,
@@ -54,7 +57,7 @@ const {
   mockSettingsState: {
     lyricsFontStep: 0,
   },
-  mockSelectSyncDisplayPositionMs: vi.fn(
+  mockSelectCurrentPositionMs: vi.fn(
     (state: { positionMs: number }) => state.positionMs,
   ),
 }));
@@ -71,14 +74,24 @@ vi.mock("react-i18next", () => ({
 }));
 
 vi.mock("@/stores/player-store", () => ({
-  usePlayerStore: (selector: (state: typeof mockPlayerState) => unknown) =>
-    selector(mockPlayerState),
-  selectSyncDisplayPositionMs: mockSelectSyncDisplayPositionMs,
+  usePlayerStore: Object.assign(
+    (selector: (state: typeof mockPlayerState) => unknown) =>
+      selector(mockPlayerState),
+    {
+      getState: () => mockPlayerState,
+    },
+  ),
+  selectCurrentPositionMs: mockSelectCurrentPositionMs,
 }));
 
 vi.mock("@/stores/lyrics-store", () => ({
-  useLyricsStore: (selector: (state: typeof mockLyricsState) => unknown) =>
-    selector(mockLyricsState),
+  useLyricsStore: Object.assign(
+    (selector: (state: typeof mockLyricsState) => unknown) =>
+      selector(mockLyricsState),
+    {
+      getState: () => mockLyricsState,
+    },
+  ),
 }));
 
 vi.mock("@/stores/settings-store", () => ({
@@ -140,9 +153,7 @@ describe("LyricsPanel remote paging", () => {
     ];
     mockLyricsState.songId = "song-1";
     mockLyricsState.rawLrc = "line one\nline two\nline three\nline four";
-    mockSelectSyncDisplayPositionMs.mockImplementation(
-      (state) => state.positionMs,
-    );
+    mockSelectCurrentPositionMs.mockImplementation((state) => state.positionMs);
 
     class MockResizeObserver {
       observe() {}

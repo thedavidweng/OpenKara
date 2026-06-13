@@ -9,18 +9,21 @@
     "dev": "pnpm version:sync && vite",
     "build": "pnpm version:sync && tsc && vite build",
     "lint": "oxlint --config oxlintrc.json --deny-warnings",
-    "icons:generate": "tauri icon src-tauri/icons/app-icon.png",
+    "icons:generate": "tauri icon src-tauri/icons/app-icon.png && node scripts/generate-macos-liquid-glass-icon.mjs",
     "format": "oxfmt --check",
     "format:write": "oxfmt",
     "preview": "vite preview",
     "render:flatpak": "node scripts/render-flatpak-manifest.mjs",
+    "generate:flatpak-node-sources": "node scripts/generate-flatpak-node-sources.mjs",
     "render:winget": "node scripts/render-winget-manifests.mjs",
     "generate:db-schema": "node scripts/generate-db-schema.mjs",
     "check:i18n": "node scripts/check-i18n.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui",
+    "test:ui-smoke": "playwright test",
+    "test:ui-smoke:ui": "playwright test --ui",
+    "test:e2e": "pnpm test:ui-smoke",
+    "test:e2e:ui": "pnpm test:ui-smoke:ui",
     "tauri": "pnpm version:sync && tauri"
   },
   "dependencies": {
@@ -45,9 +48,11 @@
     "@tauri-apps/cli": "^2.11.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@typescript/native-preview": "7.0.0-dev.20260421.2",
     "@vitejs/plugin-react": "^6.0.1",
     "@vitest/coverage-v8": "4.1.5",
     "jsdom": "^29.1.1",
+    "knip": "^5.61.0",
     "lefthook": "^2.1.9",
     "oxfmt": "^0.53.0",
     "oxlint": "^1.68.0",
@@ -62,6 +67,9 @@
   },
   "packageManager": "pnpm@10.33.2",
   "pnpm": {
+    "overrides": {
+      "esbuild": "0.28.1"
+    },
     "onlyBuiltDependencies": [
       "esbuild",
       "lefthook"

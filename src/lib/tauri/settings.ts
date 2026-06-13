@@ -4,6 +4,7 @@ import type {
   ExecutionProvider,
   ModelBootstrapStatusSnapshot,
   ModelStatusSnapshot,
+  RuntimeBootstrapStatusSnapshot,
   WindowShellStateSnapshot,
 } from "@/types/ipc";
 
@@ -73,4 +74,16 @@ export function setLyricsFontStep(step: number): Promise<AppSettings> {
 
 export function restartApp(): Promise<void> {
   return invoke<void>("restart_app");
+}
+
+export function getRuntimeBootstrapStatus(): Promise<RuntimeBootstrapStatusSnapshot> {
+  return invoke<RuntimeBootstrapStatusSnapshot>("get_runtime_bootstrap_status");
+}
+
+export function downloadRuntime(): Promise<RuntimeBootstrapStatusSnapshot> {
+  return invoke<RuntimeBootstrapStatusSnapshot>("download_runtime");
+}
+
+export function deleteRuntime(): Promise<void> {
+  return invoke<void>("delete_runtime");
 }

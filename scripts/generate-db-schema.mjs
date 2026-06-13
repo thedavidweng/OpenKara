@@ -113,6 +113,46 @@ function parseCreateTableStatements(sql) {
   return results;
 }
 
+/** Parse CREATE VIRTUAL TABLE statements, currently used for FTS5 indexes. */
+function parseCreateVirtualTableStatements(sql) {
+  const results = [];
+  const tableRe =
+    /CREATE\s+VIRTUAL\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s+USING\s+(\w+)\s*\(/gi;
+  let tableMatch;
+  while ((tableMatch = tableRe.exec(sql)) !== null) {
+    const tableName = tableMatch[1];
+    const moduleName = tableMatch[2].toUpperCase();
+    const startPos = tableMatch.index + tableMatch[0].length;
+
+    let depth = 0;
+    let i;
+    for (i = startPos; i < sql.length; i++) {
+      const ch = sql[i];
+      if (ch === "(") depth++;
+      else if (ch === ")") {
+        if (depth === 0) break;
+        depth--;
+      }
+      if (ch === "-" && sql[i + 1] === "-") {
+        while (i < sql.length && sql[i] !== "\n") i++;
+        continue;
+      }
+    }
+
+    const body = sql.slice(startPos, i);
+    const columns = [];
+    for (const raw of body.split(",")) {
+      const token = raw.trim();
+      if (!token || token.includes("=")) continue;
+      const name = token.replace(/`|"/g, "");
+      columns.push({ name, type: "TEXT", notes: moduleName });
+    }
+
+    results.push({ tableName, columns });
+  }
+  return results;
+}
+
 /** Parse ALTER TABLE … ADD COLUMN statements. */
 function extractAlterAdds(sql) {
   const results = [];
@@ -130,9 +170,25 @@ function extractAlterAdds(sql) {
   return results;
 }
 
-/** Format a markdown table row for a column. */
-function columnRow(col) {
-  return `| \`${col.name}\` | \`${col.type}\` | ${col.notes} |`;
+function formatMarkdownTable(rows) {
+  const tableRows = [
+    ["Column", "Type", "Notes"],
+    ...rows.map((col) => [
+      `\`${col.name}\``,
+      `\`${col.type}\``,
+      col.notes || "",
+    ]),
+  ];
+  const widths = tableRows[0].map((_, columnIndex) =>
+    Math.max(...tableRows.map((row) => row[columnIndex].length)),
+  );
+  const formatRow = (row) =>
+    `| ${row.map((cell, index) => cell.padEnd(widths[index])).join(" | ")} |`;
+  return [
+    formatRow(tableRows[0]),
+    `| ${widths.map((width) => "-".repeat(width)).join(" | ")} |`,
+    ...tableRows.slice(1).map(formatRow),
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -153,6 +209,10 @@ for (const file of files) {
 
   // CREATE TABLE (supports multiple tables per file)
   for (const { tableName, columns } of parseCreateTableStatements(sql)) {
+    tables.set(tableName, { createdBy: fileLabel, columns });
+  }
+
+  for (const { tableName, columns } of parseCreateVirtualTableStatements(sql)) {
     tables.set(tableName, { createdBy: fileLabel, columns });
   }
 
@@ -198,11 +258,7 @@ for (const [tableName, info] of tables) {
   lines.push("");
   lines.push(`Created by \`${info.createdBy}.sql\`.`);
   lines.push("");
-  lines.push("| Column | Type | Notes |");
-  lines.push("| ------ | ---- | ----- |");
-  for (const col of info.columns) {
-    lines.push(columnRow(col));
-  }
+  lines.push(...formatMarkdownTable(info.columns));
   lines.push("");
 }
 

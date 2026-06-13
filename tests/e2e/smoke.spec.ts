@@ -50,9 +50,9 @@ test.describe("Smoke: happy path", () => {
 
     // Pause
     await page.getByRole("button", { name: /pause/i }).click();
-    await expect(page.getByRole("button", { name: /play/i })).toBeVisible({
-      timeout: 5000,
-    });
+    await expect(
+      page.getByRole("button", { exact: true, name: "Play" }),
+    ).toBeVisible({ timeout: 5000 });
   });
 
   test("queue panel toggles open and closed", async ({ page }) => {
@@ -61,15 +61,14 @@ test.describe("Smoke: happy path", () => {
 
     // Find and click the queue toggle button
     const queueButton = page.getByRole("button", { name: /queue/i });
-    if (await queueButton.isVisible()) {
-      await queueButton.click();
+    await expect(queueButton).toBeVisible();
+    await queueButton.click();
 
-      // Queue panel header should appear
-      await expect(page.getByText(/up next/i)).toBeVisible();
+    // Queue panel header should appear
+    await expect(page.getByText(/up next/i)).toBeVisible();
 
-      // Close the queue panel
-      await queueButton.click();
-    }
+    // Close the queue panel
+    await queueButton.click();
   });
 
   test("lyrics section responds to song selection", async ({ page }) => {
@@ -79,14 +78,14 @@ test.describe("Smoke: happy path", () => {
     // Before any song is selected, the lyrics area should show "select a song"
     // or similar prompt (depends on i18n key "lyrics.selectSong")
     const lyricsPrompt = page.getByText(/select.*song|choose.*song/i);
-    if (await lyricsPrompt.isVisible()) {
-      // Play a song
-      await page.getByText("Bohemian Rhapsody").dblclick();
+    await expect(lyricsPrompt).toBeVisible();
 
-      // After playing, lyrics should load (mock returns lyrics)
-      await expect(page.getByText("Is this the real life?")).toBeVisible({
-        timeout: 10000,
-      });
-    }
+    // Play a song
+    await page.getByText("Bohemian Rhapsody").dblclick();
+
+    // After playing, lyrics should load (mock returns lyrics)
+    await expect(page.getByText("Is this the real life?")).toBeVisible({
+      timeout: 10000,
+    });
   });
 });

@@ -26,9 +26,9 @@ describe("romanizeLyricsLines", () => {
   test("keeps Latin lyrics on the detector path without loading the full romanizer", async () => {
     const { romanizeLyricsLines } = await import("./lyrics-romanizer");
 
-    await expect(romanizeLyricsLines(["Hello world"])).resolves.toEqual([
-      "Hello world",
-    ]);
+    const { result, requestId } = await romanizeLyricsLines(["Hello world"]);
+    expect(result).toEqual(["Hello world"]);
+    expect(requestId).toBe(-1);
 
     expect(mockCreateRomanizer).not.toHaveBeenCalled();
   });
@@ -36,7 +36,8 @@ describe("romanizeLyricsLines", () => {
   test("loads and reuses the full romanizer for non-Latin lyrics", async () => {
     const { romanizeLyricsLines } = await import("./lyrics-romanizer");
 
-    await expect(romanizeLyricsLines(["你好"])).resolves.toEqual(["ni hao"]);
+    const { result } = await romanizeLyricsLines(["你好"]);
+    expect(result).toEqual(["ni hao"]);
     await romanizeLyricsLines(["世界"]);
 
     expect(mockCreateRomanizer).toHaveBeenCalledTimes(1);
@@ -69,11 +70,21 @@ describe("romanizeLyricsLines", () => {
     });
     const { romanizeLyricsLines } = await import("./lyrics-romanizer");
 
-    const result = await romanizeLyricsLines(["Hello", "你好", "World"]);
+    const { result } = await romanizeLyricsLines(["Hello", "你好", "World"]);
 
     expect(result).toEqual(["Hello", "ni hao", "World"]);
     // romanizeLines should only be called for the non-Latin line
     expect(mockRomanizeLines).toHaveBeenCalledTimes(1);
     expect(mockRomanizeLines).toHaveBeenCalledWith(["你好"], undefined);
+  });
+
+  test("returns monotonically increasing requestIds for non-Latin content", async () => {
+    const { romanizeLyricsLines } = await import("./lyrics-romanizer");
+
+    const { requestId: id1 } = await romanizeLyricsLines(["你好"]);
+    const { requestId: id2 } = await romanizeLyricsLines(["世界"]);
+
+    expect(id1).toBeGreaterThan(0);
+    expect(id2).toBeGreaterThan(id1);
   });
 });

@@ -150,6 +150,13 @@ const LIBRARY_COMMANDS: CommandContract[] = [
     rustParams: ["query"],
   },
   {
+    command: "get_cover_art",
+    frontendFile: "src/lib/tauri/library.ts",
+    frontendFn: "getCoverArt",
+    hasArgs: true,
+    rustParams: ["hash"],
+  },
+  {
     command: "update_song_metadata",
     frontendFile: "src/lib/tauri/library.ts",
     frontendFn: "updateSongMetadata",
@@ -328,6 +335,7 @@ describe("IPC command registry", () => {
       "expand_import_paths",
       "get_library",
       "search_library",
+      "get_cover_art",
       "set_songs_instrumental",
       "extract_embedded_cover_art",
       "get_import_candidate_details",
@@ -466,6 +474,7 @@ describe("PlaybackStateSnapshot shape matches Rust PlaybackStateSnapshot", () =>
   function assertSnapshotShape(snapshot: PlaybackStateSnapshot): void {
     // Required fields that Rust always serializes
     expect(snapshot).toHaveProperty("song_id");
+    expect(snapshot).toHaveProperty("transport_generation");
     expect(snapshot).toHaveProperty("state");
     expect(snapshot).toHaveProperty("is_playing");
     expect(snapshot).toHaveProperty("position_ms");
@@ -486,6 +495,7 @@ describe("PlaybackStateSnapshot shape matches Rust PlaybackStateSnapshot", () =>
   test("idle snapshot has all required fields", () => {
     const idle: PlaybackStateSnapshot = {
       song_id: null,
+      transport_generation: 0,
       state: "idle",
       is_playing: false,
       position_ms: 0,
@@ -502,6 +512,7 @@ describe("PlaybackStateSnapshot shape matches Rust PlaybackStateSnapshot", () =>
   test("playing snapshot has all required fields", () => {
     const playing: PlaybackStateSnapshot = {
       song_id: "abc123",
+      transport_generation: 1,
       state: "playing",
       is_playing: true,
       position_ms: 1500,
@@ -518,6 +529,7 @@ describe("PlaybackStateSnapshot shape matches Rust PlaybackStateSnapshot", () =>
   test("loading snapshot has all required fields", () => {
     const loading: PlaybackStateSnapshot = {
       song_id: "abc123",
+      transport_generation: 2,
       state: "loading",
       is_playing: false,
       position_ms: 0,
@@ -536,6 +548,7 @@ describe("PlaybackStateSnapshot shape matches Rust PlaybackStateSnapshot", () =>
     for (const state of validStates) {
       const snapshot: PlaybackStateSnapshot = {
         song_id: null,
+        transport_generation: 0,
         state: state as PlaybackStateSnapshot["state"],
         is_playing: false,
         position_ms: 0,
@@ -575,6 +588,7 @@ describe("Song shape matches Rust Song struct", () => {
       album: "Test Album",
       duration_ms: 180000,
       cover_art: null,
+      has_cover_art: false,
       imported_at: 1700000000,
       original_ext: "mp3",
     };
@@ -592,6 +606,7 @@ describe("Song shape matches Rust Song struct", () => {
     expect(song).toHaveProperty("album");
     expect(song).toHaveProperty("duration_ms");
     expect(song).toHaveProperty("cover_art");
+    expect(song).toHaveProperty("has_cover_art");
     expect(song).toHaveProperty("imported_at");
     expect(song).toHaveProperty("original_ext");
   });
@@ -610,6 +625,7 @@ describe("Song shape matches Rust Song struct", () => {
       album: null,
       duration_ms: 0,
       cover_art: null,
+      has_cover_art: false,
       imported_at: 0,
       original_ext: null,
     };
@@ -1053,8 +1069,10 @@ describe("Event payload shapes", () => {
     // the shape by constructing a compatible object
     const event = {
       ms: 1234,
+      transport_generation: 1,
       snapshot: {
         song_id: "abc123",
+        transport_generation: 1,
         state: "playing" as const,
         is_playing: true,
         position_ms: 1234,
@@ -1067,6 +1085,7 @@ describe("Event payload shapes", () => {
       },
     };
     expect(event).toHaveProperty("ms");
+    expect(event).toHaveProperty("transport_generation");
     expect(event).toHaveProperty("snapshot");
   });
 
@@ -1144,6 +1163,7 @@ describe("Serialization compatibility", () => {
     // so fields serialize as-is in snake_case. The TypeScript type must match.
     const snapshot: PlaybackStateSnapshot = {
       song_id: "x", // not songId
+      transport_generation: 1, // not transportGeneration
       state: "idle",
       is_playing: false, // not isPlaying
       position_ms: 0, // not positionMs
@@ -1155,6 +1175,7 @@ describe("Serialization compatibility", () => {
       stem_mode: null, // not stemMode
     };
     expect(snapshot.song_id).toBeDefined();
+    expect(snapshot.transport_generation).toBeDefined();
     expect(snapshot.is_playing).toBeDefined();
     expect(snapshot.position_ms).toBeDefined();
   });
@@ -1173,6 +1194,7 @@ describe("Serialization compatibility", () => {
       album: null,
       duration_ms: 0, // not durationMs
       cover_art: null, // not coverArt
+      has_cover_art: false,
       imported_at: 0, // not importedAt
       original_ext: null, // not originalExt
     };

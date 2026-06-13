@@ -26,7 +26,10 @@ pub fn target_frame_count(model: &LoadedModel, fallback_frame_count: usize) -> R
     })
 }
 
-pub fn normalize_audio_for_model(decoded_audio: &DecodedAudio) -> Result<DecodedAudio> {
+/// Item 4: Takes ownership of the decoded audio buffer to avoid holding two
+/// full-song PCM copies in memory simultaneously. If resampling is needed, the
+/// original buffer is consumed and replaced; otherwise it is returned as-is.
+pub fn normalize_audio_for_model(decoded_audio: DecodedAudio) -> Result<DecodedAudio> {
     if decoded_audio.channels != DEMUCS_CHANNELS {
         bail!(
             "Demucs preprocessing currently requires stereo audio, got {} channels",
@@ -35,7 +38,7 @@ pub fn normalize_audio_for_model(decoded_audio: &DecodedAudio) -> Result<Decoded
     }
 
     if decoded_audio.sample_rate == DEMUCS_SAMPLE_RATE {
-        return Ok(decoded_audio.clone());
+        return Ok(decoded_audio);
     }
 
     let frame_count = decoded_audio.samples.len() / decoded_audio.channels;
@@ -79,7 +82,7 @@ pub fn normalize_audio_for_model(decoded_audio: &DecodedAudio) -> Result<Decoded
 
 pub fn prepare_model_input(
     model: &LoadedModel,
-    decoded_audio: &DecodedAudio,
+    decoded_audio: DecodedAudio,
 ) -> Result<PreparedModelInput> {
     let decoded_audio = normalize_audio_for_model(decoded_audio)?;
     prepare_model_input_from_normalized(model, &decoded_audio)

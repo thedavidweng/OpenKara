@@ -12,9 +12,25 @@
 - **TTML parsing:** nested child spans inside a timed span no longer clear the parent word timing.
 - **Karaoke fill:** mask gradient roles now keep the unfilled and filled sides in the expected order during sweeps.
 
+### Fixed (post audit-v0.9.0 follow-up)
+
+- **Lyrics readability:** cover-art ambience overlays are darker; standard-mode lyric lines use white opacity steps instead of low-contrast theme grays; removed `plus-lighter` blend on the lyrics scroll viewport.
+- **Lyrics interaction:** seekable lines use a rounded hover highlight instead of underline.
+- **Playback state:** multi-stem streaming uses a shared source-frame budget (fixes position/audio drift); EOF-aware buffering prevents permanent `buffering`/`paused` UI; unknown-duration tracks no longer clamp to zero length; cross-webview sync rebases `playingSinceMs` locally.
+- **Lyrics fetch latency:** embedded/sidecar lyrics return before online lookup; LRCLIB/LrcAPI clients use 3s/6s timeouts; negative cache (`absent`) skips repeat network probes when a song has no lyrics.
+- **Remote fetch:** position-update prefetch runs after fetch-queue drain (fixes compiler warning and stale prefetch gap).
+- **Release validation:** the Release workflow now runs a release-only real separation smoke that downloads ONNX Runtime and the pinned model, imports fixture audio, probes playback, and requires successful vocal/accompaniment stem output before publishing.
+- **Supply chain:** Dependabot alert 16 (`esbuild >=0.27.3 <0.28.1`) is addressed by pinning the transitive `esbuild` resolver to `0.28.1` and regenerating Flatpak offline pnpm sources without the stale `esbuild@0.27.4` bootstrap cache.
+- **Playback transport UI:** pause/resume snapshots report user intent immediately (not after the 50ms fade envelope); frontend ignores stale `is_playing` position ticks for 300ms after transport commands.
+- **Lyrics scroll:** timed lyrics now move line-by-line with spring-smoothed transitions, without continuously drifting toward the next line during playback.
+- **Lyrics seek:** clicking a distant lyric line now resumes auto-scroll from the current viewport position instead of flashing back to the previous lyric target first.
+- **macOS Liquid Glass icon:** Icon Composer layer scale restored to full bleed; translucency disabled; `CFBundleIconName` aligned to `OpenKara`; `Assets.car` bundled via Tauri resources; `pnpm icons:generate` recompiles Liquid Glass assets with `actool`.
+- **Playback controls:** master volume icon now uses the same active brightness as the vocal and accompaniment stem controls.
+
 ### Changed
 
 - **Documentation ownership:** completed work is tracked in this changelog, future work stays in the GitHub Project, executable plans live in `docs/plans/`, current facts and contracts live in `docs/references/`, and completed/superseded plans live in `docs/archive/`.
+- **Audit plans:** v0.9.0 audit and follow-up plans were archived; signing/updater/runner decisions now live under architecture references.
 
 ## 0.9.0 - 2026-06-04
 

@@ -1,6 +1,8 @@
 use crate::lyrics::error::LyricsError;
 use serde::Deserialize;
 
+use std::time::Duration;
+
 const DEFAULT_BASE_URL: &str = "https://lrclib.net";
 const USER_AGENT: &str = concat!("OpenKara/", env!("CARGO_PKG_VERSION"));
 
@@ -38,6 +40,8 @@ impl LrcLibClient {
             base_url: base_url.into().trim_end_matches('/').to_owned(),
             http: reqwest::blocking::Client::builder()
                 .user_agent(USER_AGENT)
+                .connect_timeout(Duration::from_secs(3))
+                .timeout(Duration::from_secs(6))
                 .build()
                 .expect("reqwest blocking client should build"),
         }

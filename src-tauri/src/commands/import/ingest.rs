@@ -77,6 +77,7 @@ pub(super) fn build_and_store_song(
         artist: metadata.artist,
         album: metadata.album,
         duration_ms: metadata.duration_ms,
+        has_cover_art: metadata.cover_art.is_some(),
         cover_art: metadata.cover_art,
         imported_at,
         original_ext: Some(ext.to_owned()),
@@ -122,6 +123,7 @@ pub(super) fn build_and_store_media_g_pair(
         artist: metadata.artist,
         album: metadata.album,
         duration_ms: metadata.duration_ms,
+        has_cover_art: metadata.cover_art.is_some(),
         cover_art: metadata.cover_art,
         imported_at,
         original_ext: Some(ext.to_owned()),
@@ -150,6 +152,7 @@ pub(super) fn build_and_store_media_g_zip(source: &Path, library: &LibraryRoot) 
         artist: metadata.artist,
         album: metadata.album,
         duration_ms: metadata.duration_ms,
+        has_cover_art: metadata.cover_art.is_some(),
         cover_art: metadata.cover_art,
         imported_at,
         original_ext: Some(asset.audio_extension),
@@ -205,9 +208,13 @@ pub(super) fn try_extract_embedded_lyrics(
         return;
     }
 
+    let Some(file_path) = song.file_path.as_deref() else {
+        return;
+    };
+
     let raw_lrc = match song.media_g_container.as_deref() {
         Some(MEDIA_G_ZIP) => {
-            let archive_path = library.resolve(song.file_path.as_deref().unwrap());
+            let archive_path = library.resolve(file_path);
             match media_g::inspect_zip_for_media_g(&archive_path).and_then(|asset| {
                 read_embedded_lyrics_from_bytes(&asset.audio_bytes, &asset.audio_extension)
             }) {
@@ -216,7 +223,7 @@ pub(super) fn try_extract_embedded_lyrics(
             }
         }
         _ => {
-            let resolved_path = library.resolve(song.file_path.as_deref().unwrap());
+            let resolved_path = library.resolve(file_path);
             match read_embedded_lyrics(&resolved_path) {
                 Ok(Some(lrc)) => lrc,
                 _ => return,
@@ -253,4 +260,48 @@ pub(super) fn read_embedded_lyrics_from_bytes(
     }
 
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::library::Song;
+
+    /// R8: Verify that `try_extract_embedded_lyrics` does not panic when the
+    /// song has a `None` file_path. Before the fix, this would call `.unwrap()`
+    /// on `song.file_path.as_deref()` and panic.
+    #[test]
+    fn try_extract_embedded_lyrics_with_none_file_path_does_not_panic() {
+        let connection =
+            rusqlite::Connection::open_in_memory().expect("in-memory database should open");
+        crate::cache::apply_migrations(&connection).expect("migrations should succeed");
+
+        let song = Song {
+            hash: "test-hash-r8".to_owned(),
+            file_path: None,
+            cdg_path: None,
+            media_g_container: None,
+            instrumental: false,
+            language: None,
+            audio_source_kind: "original".to_owned(),
+            title: Some("Test Song".to_owned()),
+            artist: None,
+            album: None,
+            duration_ms: 0,
+            cover_art: None,
+            has_cover_art: false,
+            imported_at: 0,
+            original_ext: None,
+        };
+
+        let dir = std::env::temp_dir().join(format!("ingest_r8_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let library =
+            crate::library_root::LibraryRoot::create(&dir).expect("should create test library");
+
+        // Should return without panicking when file_path is None.
+        try_extract_embedded_lyrics(&connection, &song, &library);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

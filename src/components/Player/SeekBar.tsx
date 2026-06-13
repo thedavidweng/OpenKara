@@ -1,6 +1,6 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { usePlayerStore } from "@/stores/player-store";
+import { usePlayerStore, selectCurrentPositionMs } from "@/stores/player-store";
 import { formatDuration } from "@/lib/format";
 import {
   PLAYBACK_BAR_SEEK_MIN_WIDTH_CLASS,
@@ -17,10 +17,32 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
   const { t } = useTranslation();
   const snapshot = usePlayerStore((s) => s.snapshot);
   const positionMs = usePlayerStore((s) => s.positionMs);
+  const playingSinceMs = usePlayerStore((s) => s.playingSinceMs);
   const seek = usePlayerStore((s) => s.seek);
 
+  // Use a rAF loop to smoothly extrapolate the current position between
+  // IPC position events. This prevents the progress bar from jumping
+  // per-event and provides buttery-smooth animation.
+  const [displayPositionMs, setDisplayPositionMs] = useState(positionMs);
+
+  useEffect(() => {
+    let rafId: number;
+    const tick = () => {
+      const current = selectCurrentPositionMs({
+        snapshot,
+        positionMs,
+        playingSinceMs,
+      });
+      setDisplayPositionMs(current);
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [snapshot, positionMs, playingSinceMs]);
+
   const durationMs = snapshot?.duration_ms ?? 0;
-  const progressPercent = durationMs > 0 ? (positionMs / durationMs) * 100 : 0;
+  const progressPercent =
+    durationMs > 0 ? (displayPositionMs / durationMs) * 100 : 0;
 
   const barRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -66,7 +88,9 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
   }, [isDragging, durationMs, seek, getPercentFromEvent]);
 
   const displayPercent = isDragging ? dragPercent : progressPercent;
-  const displayMs = isDragging ? (dragPercent / 100) * durationMs : positionMs;
+  const displayMs = isDragging
+    ? (dragPercent / 100) * durationMs
+    : displayPositionMs;
 
   return (
     <div

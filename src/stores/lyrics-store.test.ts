@@ -242,6 +242,65 @@ describe("lyrics-store fetchLyrics", () => {
     expect(useLyricsStore.getState().source).toBe("embedded");
   });
 
+  test("stale fetch result does not overwrite current lyrics (F1 race guard)", async () => {
+    // Song A responds slowly; Song B responds immediately.
+    // After both settle, the store must hold Song B's lyrics.
+    let resolveA: (v: unknown) => void;
+    const promiseA = new Promise((resolve) => {
+      resolveA = resolve;
+    });
+    mockFetchLyrics.mockImplementation(async (id: string) => {
+      if (id === "song-A") return promiseA;
+      return {
+        song_id: "song-B",
+        lines: [
+          {
+            time_ms: 1000,
+            text: "B line",
+            words: [],
+            bg_words: null,
+            section: null,
+          },
+        ],
+        source: "lrc_lib" as const,
+        offset_ms: 0,
+        raw_lrc: "[00:01.00]B line",
+      };
+    });
+
+    // Start fetching song A (will hang)
+    const fetchAPromise = useLyricsStore.getState().fetchLyrics("song-A");
+
+    // Start fetching song B (resolves immediately)
+    await useLyricsStore.getState().fetchLyrics("song-B");
+
+    // Store should now hold song B's lyrics
+    expect(useLyricsStore.getState().songId).toBe("song-B");
+    expect(useLyricsStore.getState().lines[0]?.text).toBe("B line");
+
+    // Now let song A's response arrive late
+    resolveA!({
+      song_id: "song-A",
+      lines: [
+        {
+          time_ms: 500,
+          text: "A stale line",
+          words: [],
+          bg_words: null,
+          section: null,
+        },
+      ],
+      source: "embedded" as const,
+      offset_ms: 0,
+      raw_lrc: "[00:00.50]A stale line",
+    });
+    await fetchAPromise;
+
+    // Song A's stale result must NOT overwrite song B
+    expect(useLyricsStore.getState().songId).toBe("song-B");
+    expect(useLyricsStore.getState().lines[0]?.text).toBe("B line");
+  });
+
   test("does not auto-upgrade if songId changed during fetch", async () => {
     const unsynced = {
       song_id: "song-1",
@@ -384,7 +443,10 @@ describe("lyrics-store romanizeCurrentLyrics", () => {
   beforeEach(resetStore);
 
   test("sets romanizedLines on success", async () => {
-    mockRomanizeLyricsLines.mockResolvedValue(["ni hao", "shi jie"]);
+    mockRomanizeLyricsLines.mockResolvedValue({
+      result: ["ni hao", "shi jie"],
+      requestId: 1,
+    });
     useLyricsStore.setState({
       songId: "song-1",
       lines: [
@@ -450,7 +512,7 @@ describe("lyrics-store romanizeCurrentLyrics", () => {
   });
 
   test("passes null language when song has no matching language", async () => {
-    mockRomanizeLyricsLines.mockResolvedValue(["yo"]);
+    mockRomanizeLyricsLines.mockResolvedValue({ result: ["yo"], requestId: 2 });
     useLyricsStore.setState({
       songId: "song-2",
       lines: [
@@ -470,7 +532,10 @@ describe("lyrics-store toggleRomanized", () => {
   beforeEach(resetStore);
 
   test("toggles on and triggers romanization", async () => {
-    mockRomanizeLyricsLines.mockResolvedValue(["ni hao"]);
+    mockRomanizeLyricsLines.mockResolvedValue({
+      result: ["ni hao"],
+      requestId: 3,
+    });
     useLyricsStore.setState({
       songId: "song-1",
       lines: [
