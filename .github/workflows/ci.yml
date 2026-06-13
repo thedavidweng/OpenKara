@@ -99,7 +99,7 @@ jobs:
           actionlint_flags: ""
 
       - name: zizmor
-        uses: zizmor-core/zizmor-action@v0.1.0
+        uses: zizmorcore/zizmor-action@v0.5.6
         with:
           persona: pedantic
           min-severity: low
