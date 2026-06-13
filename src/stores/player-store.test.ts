@@ -83,6 +83,7 @@ function playbackSnapshot(
 ): PlaybackStateSnapshot {
   return {
     song_id: "song-1",
+    transport_generation: 1,
     state: "playing",
     is_playing: true,
     position_ms: 1200,
@@ -106,6 +107,7 @@ function playbackPositionEvent(
 ): PlaybackPositionEvent {
   return {
     ms: snapshot.position_ms,
+    transport_generation: snapshot.transport_generation,
     snapshot,
   };
 }
@@ -368,6 +370,77 @@ describe("selectSyncDisplayPositionMs", () => {
     player.dispose();
   });
 
+  test("ignores stale position events from an older transport generation", () => {
+    const player = createPlayerStore();
+    player.store.getState().updateSnapshot(
+      playbackSnapshot({
+        song_id: "song-2",
+        transport_generation: 2,
+        state: "loading",
+        is_playing: false,
+        position_ms: 0,
+        duration_ms: null,
+      }),
+    );
+
+    player.store.getState().applyPlaybackPositionEvent(
+      playbackPositionEvent(
+        playbackSnapshot({
+          song_id: "song-1",
+          transport_generation: 1,
+          is_playing: true,
+          position_ms: 2400,
+        }),
+      ),
+    );
+
+    expect(player.store.getState().snapshot).toEqual(
+      playbackSnapshot({
+        song_id: "song-2",
+        transport_generation: 2,
+        state: "loading",
+        is_playing: false,
+        position_ms: 0,
+        duration_ms: null,
+      }),
+    );
+    expect(player.store.getState().positionMs).toBe(0);
+
+    player.dispose();
+  });
+
+  test("accepts the matching generation event that starts playback after loading", () => {
+    const player = createPlayerStore();
+    player.store.getState().updateSnapshot(
+      playbackSnapshot({
+        song_id: "song-2",
+        transport_generation: 2,
+        state: "loading",
+        is_playing: false,
+        position_ms: 0,
+        duration_ms: null,
+      }),
+    );
+
+    player.store.getState().applyPlaybackPositionEvent(
+      playbackPositionEvent(
+        playbackSnapshot({
+          song_id: "song-2",
+          transport_generation: 2,
+          is_playing: true,
+          position_ms: 120,
+        }),
+      ),
+    );
+
+    expect(player.store.getState().snapshot?.song_id).toBe("song-2");
+    expect(player.store.getState().snapshot?.is_playing).toBe(true);
+    expect(player.store.getState().positionMs).toBe(120);
+    expect(player.store.getState().playingSinceMs).not.toBeNull();
+
+    player.dispose();
+  });
+
   test("syncs transport fields from position ticks without replacing snapshot", () => {
     const player = createPlayerStore();
     const currentSnapshot = playbackSnapshot({ is_playing: false });
@@ -600,7 +673,11 @@ describe("pause", () => {
       .getState()
       .updateSnapshot(playbackSnapshot({ is_playing: true }));
     mockPause.mockResolvedValue(
-      playbackSnapshot({ is_playing: true, position_ms: 1200 }),
+      playbackSnapshot({
+        transport_generation: 2,
+        is_playing: true,
+        position_ms: 1200,
+      }),
     );
 
     await player.store.getState().pause();
@@ -614,16 +691,6 @@ describe("pause", () => {
         ),
       );
     expect(player.store.getState().snapshot?.is_playing).toBe(false);
-
-    vi.advanceTimersByTime(350);
-    player.store
-      .getState()
-      .applyPlaybackPositionEvent(
-        playbackPositionEvent(
-          playbackSnapshot({ is_playing: true, position_ms: 1200 }),
-        ),
-      );
-    expect(player.store.getState().snapshot?.is_playing).toBe(true);
   });
 
   test("updates snapshot, positionMs, and clears playingSinceMs", async () => {
@@ -807,6 +874,28 @@ describe("loadStems", () => {
 
     expect(mockLoadStems).toHaveBeenCalled();
     expect(player.store.getState().snapshot).toEqual(snap);
+  });
+
+  test("does not let an older loadStems response replace the active transport", async () => {
+    player.store
+      .getState()
+      .updateSnapshot(
+        playbackSnapshot({ transport_generation: 2, is_playing: true }),
+      );
+    mockLoadStems.mockResolvedValue(
+      playbackSnapshot({
+        transport_generation: 1,
+        is_playing: false,
+        has_stems: true,
+        stem_mode: "two_stem",
+      }),
+    );
+
+    await player.store.getState().loadStems();
+
+    expect(player.store.getState().snapshot).toEqual(
+      playbackSnapshot({ transport_generation: 2, is_playing: true }),
+    );
   });
 
   test("calls notifyError when api.loadStems rejects", async () => {

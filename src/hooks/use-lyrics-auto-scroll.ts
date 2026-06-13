@@ -1,12 +1,6 @@
 import { useEffect, useRef, type RefObject } from "react";
-import {
-  getScrollTopForLineIndex,
-  interpolateScrollTop,
-} from "@/components/Lyrics/lyrics-scroll";
-import {
-  findActiveLyricLineIndex,
-  getLinePlaybackProgress,
-} from "@/lib/lyrics-timing";
+import { getScrollTopForLineIndex } from "@/components/Lyrics/lyrics-scroll";
+import { findActiveLyricLineIndex } from "@/lib/lyrics-timing";
 import { readLyricsAdjustedPlaybackMs } from "@/lib/lyrics-playback-clock";
 import { Spring } from "@/lib/spring";
 import { useLyricsStore } from "@/stores/lyrics-store";
@@ -15,7 +9,7 @@ import { useLyricsStore } from "@/stores/lyrics-store";
 // Long enough to let users read ahead without being yanked back immediately.
 const USER_SCROLL_PAUSE_MS = 3000;
 
-const SCROLL_SPRING = { stiffness: 72, damping: 20, mass: 1.1 };
+const SCROLL_SPRING = { stiffness: 170, damping: 28, mass: 1 };
 
 /**
  * Attaches wheel and touchstart listeners to a container element and tracks
@@ -63,7 +57,7 @@ export function createUserScrollGuard(
   };
 }
 
-export function computeContinuousLyricsScrollTop(
+export function computeLineChangeLyricsScrollTop(
   container: HTMLElement,
   lines: { time_ms: number }[],
   adjustedMs: number,
@@ -82,18 +76,7 @@ export function computeContinuousLyricsScrollTop(
     return null;
   }
 
-  const nextIndex = activeIndex + 1;
-  if (nextIndex >= lines.length) {
-    return currentTop;
-  }
-
-  const nextTop = getScrollTopForLineIndex(container, nextIndex);
-  if (nextTop === null) {
-    return currentTop;
-  }
-
-  const progress = getLinePlaybackProgress(lines, activeIndex, adjustedMs);
-  return interpolateScrollTop(currentTop, nextTop, progress);
+  return currentTop;
 }
 
 function readAdjustedPlaybackMs(): number {
@@ -101,8 +84,9 @@ function readAdjustedPlaybackMs(): number {
 }
 
 /**
- * Continuously scrolls the lyrics viewport so playback progress glides between
- * lines instead of snapping when the active index changes.
+ * Scrolls the lyrics viewport when the active line changes. The target remains
+ * anchored to the active line for the whole lyric duration, avoiding the
+ * constant slow drift that feels unlike Apple Music's line-based movement.
  */
 export function useLyricsAutoScroll(
   containerRef: RefObject<HTMLDivElement | null>,
@@ -116,6 +100,7 @@ export function useLyricsAutoScroll(
     null,
   );
   const scrollSpringRef = useRef(new Spring(0, SCROLL_SPRING));
+  const targetScrollTopRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (isPlainText) return;
@@ -139,6 +124,7 @@ export function useLyricsAutoScroll(
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const scrollSpring = scrollSpringRef.current;
     scrollSpring.jumpTo(containerRef.current?.scrollTop ?? 0);
+    targetScrollTopRef.current = containerRef.current?.scrollTop ?? null;
 
     let rafId = 0;
     let lastTime = performance.now();
@@ -148,7 +134,7 @@ export function useLyricsAutoScroll(
       const lines = useLyricsStore.getState().lines;
 
       if (container && lines.length > 0 && !guardRef.current?.isActive()) {
-        const target = computeContinuousLyricsScrollTop(
+        const target = computeLineChangeLyricsScrollTop(
           container,
           lines,
           readAdjustedPlaybackMs(),
@@ -158,8 +144,13 @@ export function useLyricsAutoScroll(
           if (reducedMotion) {
             scrollSpring.jumpTo(target);
             container.scrollTop = target;
-          } else {
+            targetScrollTopRef.current = target;
+          } else if (target !== targetScrollTopRef.current) {
+            targetScrollTopRef.current = target;
             scrollSpring.setTarget(target);
+          }
+
+          if (!reducedMotion && !scrollSpring.isSettled()) {
             const dt = Math.min((now - lastTime) / 1000, 0.05);
             scrollSpring.update(dt);
             container.scrollTop = scrollSpring.getPosition();

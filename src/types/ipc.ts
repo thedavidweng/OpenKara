@@ -260,6 +260,7 @@ export interface StemVolumes {
 
 export interface PlaybackStateSnapshot {
   song_id: string | null;
+  transport_generation: number;
   /** Backend transport lifecycle; pause is represented by `is_playing: false`. */
   state: PlaybackTransportState;
   is_playing: boolean;
@@ -275,6 +276,7 @@ export interface PlaybackStateSnapshot {
 
 export interface PlaybackPositionEvent {
   ms: number;
+  transport_generation: number;
   snapshot: PlaybackStateSnapshot;
 }
 

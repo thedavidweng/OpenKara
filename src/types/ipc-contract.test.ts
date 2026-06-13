@@ -474,6 +474,7 @@ describe("PlaybackStateSnapshot shape matches Rust PlaybackStateSnapshot", () =>
   function assertSnapshotShape(snapshot: PlaybackStateSnapshot): void {
     // Required fields that Rust always serializes
     expect(snapshot).toHaveProperty("song_id");
+    expect(snapshot).toHaveProperty("transport_generation");
     expect(snapshot).toHaveProperty("state");
     expect(snapshot).toHaveProperty("is_playing");
     expect(snapshot).toHaveProperty("position_ms");
@@ -494,6 +495,7 @@ describe("PlaybackStateSnapshot shape matches Rust PlaybackStateSnapshot", () =>
   test("idle snapshot has all required fields", () => {
     const idle: PlaybackStateSnapshot = {
       song_id: null,
+      transport_generation: 0,
       state: "idle",
       is_playing: false,
       position_ms: 0,
@@ -510,6 +512,7 @@ describe("PlaybackStateSnapshot shape matches Rust PlaybackStateSnapshot", () =>
   test("playing snapshot has all required fields", () => {
     const playing: PlaybackStateSnapshot = {
       song_id: "abc123",
+      transport_generation: 1,
       state: "playing",
       is_playing: true,
       position_ms: 1500,
@@ -526,6 +529,7 @@ describe("PlaybackStateSnapshot shape matches Rust PlaybackStateSnapshot", () =>
   test("loading snapshot has all required fields", () => {
     const loading: PlaybackStateSnapshot = {
       song_id: "abc123",
+      transport_generation: 2,
       state: "loading",
       is_playing: false,
       position_ms: 0,
@@ -544,6 +548,7 @@ describe("PlaybackStateSnapshot shape matches Rust PlaybackStateSnapshot", () =>
     for (const state of validStates) {
       const snapshot: PlaybackStateSnapshot = {
         song_id: null,
+        transport_generation: 0,
         state: state as PlaybackStateSnapshot["state"],
         is_playing: false,
         position_ms: 0,
@@ -1064,8 +1069,10 @@ describe("Event payload shapes", () => {
     // the shape by constructing a compatible object
     const event = {
       ms: 1234,
+      transport_generation: 1,
       snapshot: {
         song_id: "abc123",
+        transport_generation: 1,
         state: "playing" as const,
         is_playing: true,
         position_ms: 1234,
@@ -1078,6 +1085,7 @@ describe("Event payload shapes", () => {
       },
     };
     expect(event).toHaveProperty("ms");
+    expect(event).toHaveProperty("transport_generation");
     expect(event).toHaveProperty("snapshot");
   });
 
@@ -1155,6 +1163,7 @@ describe("Serialization compatibility", () => {
     // so fields serialize as-is in snake_case. The TypeScript type must match.
     const snapshot: PlaybackStateSnapshot = {
       song_id: "x", // not songId
+      transport_generation: 1, // not transportGeneration
       state: "idle",
       is_playing: false, // not isPlaying
       position_ms: 0, // not positionMs
@@ -1166,6 +1175,7 @@ describe("Serialization compatibility", () => {
       stem_mode: null, // not stemMode
     };
     expect(snapshot.song_id).toBeDefined();
+    expect(snapshot.transport_generation).toBeDefined();
     expect(snapshot.is_playing).toBeDefined();
     expect(snapshot.position_ms).toBeDefined();
   });

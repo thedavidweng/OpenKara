@@ -62,6 +62,9 @@ pub enum LoadedStems {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PlaybackStateSnapshot {
     pub song_id: Option<String>,
+    /// Monotonic transport generation. Incremented when a new song load starts
+    /// so webviews can discard delayed events from the previous transport.
+    pub transport_generation: u64,
     /// Backend transport lifecycle; pause is represented by `is_playing: false`.
     /// `playing` means a decoded track owns the transport, not that time is advancing.
     pub state: String,
@@ -82,6 +85,7 @@ impl PlaybackStateSnapshot {
     pub fn idle() -> Self {
         Self {
             song_id: None,
+            transport_generation: 0,
             state: "idle".to_owned(),
             is_playing: false,
             position_ms: 0,
@@ -126,6 +130,7 @@ pub(crate) enum FadeState {
 pub struct PlaybackController {
     pub(crate) current_track: Option<LoadedTrack>,
     loading_song_id: Option<String>,
+    transport_generation: u64,
     volume: f32,
     stem_volumes: StemVolumes,
     /// Transport-level buffering flag. When `true` and a track is loaded,
@@ -141,6 +146,7 @@ impl Default for PlaybackController {
         Self {
             current_track: None,
             loading_song_id: None,
+            transport_generation: 0,
             volume: 1.0,
             stem_volumes: StemVolumes::default(),
             is_buffering: false,
@@ -150,6 +156,10 @@ impl Default for PlaybackController {
 }
 
 impl PlaybackController {
+    fn bump_transport_generation(&mut self) {
+        self.transport_generation = self.transport_generation.saturating_add(1);
+    }
+
     pub fn start_track(
         &mut self,
         song_id: String,
@@ -201,16 +211,23 @@ impl PlaybackController {
     /// background download/decode task.  The snapshot reports `state: "loading"`
     /// so the UI can show a spinner without freezing the window.
     pub fn start_track_loading(&mut self, song_id: &str) -> PlaybackStateSnapshot {
+        self.bump_transport_generation();
         self.current_track = None;
         self.loading_song_id = Some(song_id.to_owned());
         self.snapshot()
     }
 
     pub fn play(&mut self, _now_ms: u64) -> Result<PlaybackStateSnapshot, PlaybackError> {
+        if self.current_track.is_none() {
+            return Err(PlaybackError::InvalidPlaybackState(
+                "no track is loaded".to_owned(),
+            ));
+        }
+        self.bump_transport_generation();
         let track = self
             .current_track
             .as_mut()
-            .ok_or_else(|| PlaybackError::InvalidPlaybackState("no track is loaded".to_owned()))?;
+            .expect("track existence checked before generation bump");
         track.is_playing = true;
         self.fade = FadeState::FadingIn {
             start: Instant::now(),
@@ -220,16 +237,17 @@ impl PlaybackController {
     }
 
     pub fn pause(&mut self, _now_ms: u64) -> Result<PlaybackStateSnapshot, PlaybackError> {
-        let track = self
-            .current_track
-            .as_mut()
-            .ok_or_else(|| PlaybackError::InvalidPlaybackState("no track is loaded".to_owned()))?;
+        if self.current_track.is_none() {
+            return Err(PlaybackError::InvalidPlaybackState(
+                "no track is loaded".to_owned(),
+            ));
+        }
+        self.bump_transport_generation();
         // Start a fade-out. The render callback will set is_playing = false
         // once the fade envelope completes.
         self.fade = FadeState::FadingOut {
             start: Instant::now(),
         };
-        let _ = track; // keep the borrow alive for the duration check above
 
         Ok(self.snapshot())
     }
@@ -240,6 +258,7 @@ impl PlaybackController {
         _now_ms: u64,
     ) -> Result<PlaybackStateSnapshot, PlaybackError> {
         // Cancel any active fade — seek should restart audio cleanly.
+        self.bump_transport_generation();
         self.fade = FadeState::None;
         let track = self
             .current_track
@@ -431,6 +450,7 @@ impl PlaybackController {
 
             return PlaybackStateSnapshot {
                 song_id: Some(track.song_id.clone()),
+                transport_generation: self.transport_generation,
                 state: state.to_owned(),
                 is_playing,
                 position_ms,
@@ -450,6 +470,7 @@ impl PlaybackController {
         if let Some(song_id) = &self.loading_song_id {
             return PlaybackStateSnapshot {
                 song_id: Some(song_id.clone()),
+                transport_generation: self.transport_generation,
                 state: "loading".to_owned(),
                 is_playing: false,
                 position_ms: 0,
@@ -605,6 +626,7 @@ pub fn monotonic_now_ms() -> u64 {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PlaybackPositionEvent {
     pub ms: u64,
+    pub transport_generation: u64,
     pub snapshot: PlaybackStateSnapshot,
 }
 
@@ -616,6 +638,7 @@ pub struct PlaybackEndedEvent {
 pub fn playback_position_event(snapshot: &PlaybackStateSnapshot) -> PlaybackPositionEvent {
     PlaybackPositionEvent {
         ms: snapshot.position_ms,
+        transport_generation: snapshot.transport_generation,
         snapshot: snapshot.clone(),
     }
 }
@@ -636,6 +659,7 @@ mod tests {
     fn playback_position_event_carries_the_authoritative_snapshot() {
         let snapshot = PlaybackStateSnapshot {
             song_id: Some("song-a".to_owned()),
+            transport_generation: 7,
             state: "playing".to_owned(),
             is_playing: true,
             position_ms: 1_234,
@@ -650,6 +674,7 @@ mod tests {
         let event = playback_position_event(&snapshot);
 
         assert_eq!(event.ms, 1_234);
+        assert_eq!(event.transport_generation, 7);
         assert_eq!(event.snapshot, snapshot);
     }
 
@@ -659,10 +684,12 @@ mod tests {
 
         let loading = controller.start_track_loading("song-a");
         assert_eq!(loading.song_id.as_deref(), Some("song-a"));
+        assert_eq!(loading.transport_generation, 1);
         assert_eq!(loading.state, "loading");
 
         let snapshot = controller.snapshot();
         assert_eq!(snapshot.song_id.as_deref(), Some("song-a"));
+        assert_eq!(snapshot.transport_generation, 1);
         assert_eq!(snapshot.state, "loading");
         assert!(!snapshot.is_playing);
 
@@ -674,6 +701,7 @@ mod tests {
         };
         let started = controller.start_track("song-a".to_owned(), decoded, 1_000);
         assert_eq!(started.state, "playing");
+        assert_eq!(started.transport_generation, 1);
         assert!(started.is_playing);
     }
 

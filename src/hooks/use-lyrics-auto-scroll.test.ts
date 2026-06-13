@@ -4,10 +4,27 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { act, createElement, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  computeContinuousLyricsScrollTop,
+  computeLineChangeLyricsScrollTop,
   createUserScrollGuard,
   useLyricsAutoScroll,
 } from "./use-lyrics-auto-scroll";
+
+const { mockLyricsState, mockAdjustedPlaybackMs } = vi.hoisted(() => ({
+  mockLyricsState: {
+    lines: [] as { time_ms: number }[],
+  },
+  mockAdjustedPlaybackMs: vi.fn(() => 0),
+}));
+
+vi.mock("@/stores/lyrics-store", () => ({
+  useLyricsStore: {
+    getState: () => mockLyricsState,
+  },
+}));
+
+vi.mock("@/lib/lyrics-playback-clock", () => ({
+  readLyricsAdjustedPlaybackMs: mockAdjustedPlaybackMs,
+}));
 
 const PAUSE_MS = 3000;
 
@@ -145,8 +162,8 @@ describe("createUserScrollGuard", () => {
   });
 });
 
-describe("computeContinuousLyricsScrollTop", () => {
-  test("interpolates between two lyric anchors", () => {
+describe("computeLineChangeLyricsScrollTop", () => {
+  test("keeps the current lyric anchor stable for the whole active line", () => {
     const container = document.createElement("div");
     Object.defineProperty(container, "clientHeight", { value: 100 });
     Object.defineProperty(container, "scrollHeight", { value: 500 });
@@ -164,21 +181,21 @@ describe("computeContinuousLyricsScrollTop", () => {
     container.append(line0, line1);
 
     expect(
-      computeContinuousLyricsScrollTop(
+      computeLineChangeLyricsScrollTop(
         container,
         [{ time_ms: 0 }, { time_ms: 1000 }],
         0,
       ),
     ).toBe(0);
     expect(
-      computeContinuousLyricsScrollTop(
+      computeLineChangeLyricsScrollTop(
         container,
         [{ time_ms: 0 }, { time_ms: 1000 }],
         500,
       ),
-    ).toBe(35);
+    ).toBe(0);
     expect(
-      computeContinuousLyricsScrollTop(
+      computeLineChangeLyricsScrollTop(
         container,
         [{ time_ms: 0 }, { time_ms: 1000 }],
         1000,
@@ -188,6 +205,105 @@ describe("computeContinuousLyricsScrollTop", () => {
 });
 
 describe("useLyricsAutoScroll", () => {
+  test("does not keep drifting while playback remains within the same lyric line", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const rafCallbacks: FrameRequestCallback[] = [];
+    const originalRaf = window.requestAnimationFrame;
+    const originalCancelRaf = window.cancelAnimationFrame;
+    window.requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
+      rafCallbacks.push(callback);
+      return rafCallbacks.length;
+    });
+    window.cancelAnimationFrame = vi.fn();
+    mockLyricsState.lines = [{ time_ms: 0 }, { time_ms: 1000 }];
+    mockAdjustedPlaybackMs.mockReturnValue(0);
+
+    function TestHarness() {
+      const containerRef = useRef<HTMLDivElement | null>(null);
+
+      useLyricsAutoScroll(containerRef, false, 0, "standard", "song-1");
+
+      return createElement(
+        "div",
+        {
+          ref: (node: HTMLDivElement | null) => {
+            containerRef.current = node;
+            if (!node) return;
+            Object.defineProperty(node, "clientHeight", {
+              configurable: true,
+              value: 100,
+            });
+            Object.defineProperty(node, "scrollHeight", {
+              configurable: true,
+              value: 500,
+            });
+          },
+        },
+        createElement(
+          "div",
+          {
+            ref: (node: HTMLDivElement | null) => {
+              if (!node) return;
+              Object.defineProperty(node, "offsetTop", {
+                configurable: true,
+                value: 0,
+              });
+              Object.defineProperty(node, "clientHeight", {
+                configurable: true,
+                value: 40,
+              });
+            },
+            "data-lyrics-line-index": "0",
+          },
+          "Line 0",
+        ),
+        createElement(
+          "div",
+          {
+            ref: (node: HTMLDivElement | null) => {
+              if (!node) return;
+              Object.defineProperty(node, "offsetTop", {
+                configurable: true,
+                value: 100,
+              });
+              Object.defineProperty(node, "clientHeight", {
+                configurable: true,
+                value: 40,
+              });
+            },
+            "data-lyrics-line-index": "1",
+          },
+          "Line 1",
+        ),
+      );
+    }
+
+    await act(async () => {
+      root.render(createElement(TestHarness));
+    });
+
+    const container = host.firstElementChild as HTMLDivElement;
+    await act(async () => {
+      rafCallbacks.shift()?.(16);
+    });
+    const scrollAfterFirstTick = container.scrollTop;
+
+    mockAdjustedPlaybackMs.mockReturnValue(500);
+    await act(async () => {
+      rafCallbacks.shift()?.(32);
+    });
+
+    expect(container.scrollTop).toBe(scrollAfterFirstTick);
+
+    window.requestAnimationFrame = originalRaf;
+    window.cancelAnimationFrame = originalCancelRaf;
+    root.unmount();
+    host.remove();
+    mockLyricsState.lines = [];
+  });
+
   test("rebinds continuous scroll when lyric layout changes", async () => {
     const host = document.createElement("div");
     document.body.append(host);
