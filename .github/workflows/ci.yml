@@ -117,7 +117,7 @@ jobs:
 
     permissions:
       contents: read
-      pull-requests: write
+      pull-requests: write # Needed by vitest-coverage-report-action to comment coverage on PRs.
 
     steps:
       - name: Checkout
@@ -308,7 +308,9 @@ jobs:
           key: onnxruntime-${{ matrix.ort_target }}-${{ hashFiles('scripts/prepare-onnx-runtime.mjs') }}
 
       - name: Prepare ONNX Runtime
-        run: node scripts/prepare-onnx-runtime.mjs --target "${{ matrix.ort_target }}"
+        env:
+          ORT_TARGET: ${{ matrix.ort_target }}
+        run: node scripts/prepare-onnx-runtime.mjs --target "${ORT_TARGET}"
 
       - name: Verify Rust formatting
         working-directory: src-tauri
@@ -471,7 +473,9 @@ jobs:
           key: onnxruntime-${{ matrix.ort_target }}-${{ hashFiles('scripts/prepare-onnx-runtime.mjs') }}
 
       - name: Prepare ONNX Runtime
-        run: node scripts/prepare-onnx-runtime.mjs --target "${{ matrix.ort_target }}"
+        env:
+          ORT_TARGET: ${{ matrix.ort_target }}
+        run: node scripts/prepare-onnx-runtime.mjs --target "${ORT_TARGET}"
 
       - name: Validate Tauri build
         env:

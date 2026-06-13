@@ -14,8 +14,7 @@ on:
         default: ""
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: release-${{ github.event.inputs.version }}
@@ -152,6 +151,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     needs: release-separation-smoke
+    permissions:
+      contents: write # Needed by tauri-action to create the draft GitHub Release and upload assets.
     strategy:
       fail-fast: false
       matrix:
@@ -229,8 +230,10 @@ jobs:
           key: onnxruntime-${{ matrix.ort_target }}-${{ hashFiles('scripts/prepare-onnx-runtime.mjs') }}
 
       - name: Prepare ONNX Runtime
+        env:
+          ORT_TARGET: ${{ matrix.ort_target }}
         run: |
-          node scripts/prepare-onnx-runtime.mjs --target "${{ matrix.ort_target }}"
+          node scripts/prepare-onnx-runtime.mjs --target "${ORT_TARGET}"
 
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
@@ -261,6 +264,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: publish
+    permissions:
+      contents: write # Needed to attach SHA256SUMS to the draft GitHub Release.
     steps:
       - name: Checkout
         uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0
@@ -289,8 +294,9 @@ jobs:
       - name: Attach SHA256SUMS to release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ github.event.inputs.version }}
         run: |
-          tag="v${{ github.event.inputs.version }}"
+          tag="v${RELEASE_VERSION}"
           gh release upload "${tag}" artifacts/SHA256SUMS --clobber
 
   prepare-distribution-manifests:
@@ -298,6 +304,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [publish, generate-checksums]
+    permissions:
+      contents: write # Needed only to create the release tag when tauri-action has not done so first.
     env:
       GITHUB_TOKEN: ${{ github.token }}
 
@@ -313,10 +321,12 @@ jobs:
           node-version: 24
 
       - name: Ensure release source tag exists
+        env:
+          RELEASE_VERSION: ${{ github.event.inputs.version }}
         run: |
           set -euo pipefail
 
-          tag="v${{ github.event.inputs.version }}"
+          tag="v${RELEASE_VERSION}"
           git fetch --tags origin
 
           if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
@@ -334,16 +344,20 @@ jobs:
             push origin "refs/tags/${tag}"
 
       - name: Render WinGet manifests
+        env:
+          RELEASE_VERSION: ${{ github.event.inputs.version }}
         run: |
           node scripts/render-winget-manifests.mjs \
-            --version "${{ github.event.inputs.version }}" \
-            --output "${{ github.workspace }}/dist/winget"
+            --version "${RELEASE_VERSION}" \
+            --output "${GITHUB_WORKSPACE}/dist/winget"
 
       - name: Render Flatpak manifests
+        env:
+          RELEASE_VERSION: ${{ github.event.inputs.version }}
         run: |
           node scripts/render-flatpak-manifest.mjs \
-            --version "${{ github.event.inputs.version }}" \
-            --output "${{ github.workspace }}/dist/flatpak"
+            --version "${RELEASE_VERSION}" \
+            --output "${GITHUB_WORKSPACE}/dist/flatpak"
 
       - name: Upload WinGet manifest artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
