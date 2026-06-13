@@ -138,6 +138,18 @@ pub fn play<R: Runtime>(
     emit_playback_position(app_handle, &snapshot)
         .map_err(|e| PlaybackError::Internal(e.to_string()))?;
 
+    // R9: Signal any previously running background thread to stop. Replace the
+    // old Arc with a fresh one so the new thread gets its own un-signalled flag.
+    let shutdown = {
+        let mut guard = state.playback.background_shutdown.lock().map_err(|_| {
+            PlaybackError::Internal("background_shutdown lock was poisoned".to_owned())
+        })?;
+        guard.store(true, Ordering::Relaxed);
+        let new_shutdown = Arc::new(AtomicBool::new(false));
+        *guard = new_shutdown.clone();
+        new_shutdown
+    };
+
     let background_state = state.clone();
     let background_handle = app_handle.clone();
     let app_data_dir = state.shell.app_data_dir.clone();
@@ -146,6 +158,9 @@ pub fn play<R: Runtime>(
     let latest_request_id = state.playback.playback_request_id.clone();
     let song = song.clone();
     std::thread::spawn(move || {
+        if shutdown.load(Ordering::Relaxed) {
+            return;
+        }
         if let Err(error) = play_track_background(
             &background_state,
             &background_handle,
@@ -155,6 +170,7 @@ pub fn play<R: Runtime>(
             &playback_arc,
             request_id,
             latest_request_id.clone(),
+            &shutdown,
         ) {
             emit_playback_failure(
                 &background_handle,
@@ -328,7 +344,12 @@ fn play_track_background<R: Runtime>(
     playback_arc: &Arc<Mutex<PlaybackController>>,
     request_id: u64,
     request_id_arc: Arc<AtomicU64>,
+    shutdown: &AtomicBool,
 ) -> Result<(), PlaybackError> {
+    // R9: Early exit if a newer play() has signalled shutdown.
+    if shutdown.load(Ordering::Relaxed) {
+        return Ok(());
+    }
     // Try streaming path first for local and remote files (low latency, bounded memory).
     if let Some(streaming_source) = playback_source::load_playback_source_streaming(
         Some(app_data_dir),
@@ -336,6 +357,9 @@ fn play_track_background<R: Runtime>(
         library_root,
         song,
     )? {
+        if shutdown.load(Ordering::Relaxed) {
+            return Ok(());
+        }
         let mut snapshot = {
             let Ok(mut controller) = playback_arc.lock() else {
                 return Err(PlaybackError::Internal(
@@ -346,7 +370,9 @@ fn play_track_background<R: Runtime>(
                 song.hash.clone(),
                 streaming_source.metadata.sample_rate,
                 streaming_source.metadata.channels,
-                streaming_source.metadata.duration_ms,
+                // Item 12: duration_ms may be None if the container doesn't expose
+                // frame count metadata. Use 0 as fallback; it will be resolved async.
+                streaming_source.metadata.duration_ms.unwrap_or(0),
                 streaming_source.streaming_track,
                 monotonic_now_ms(),
             )
@@ -494,6 +520,11 @@ fn play_track_background<R: Runtime>(
         decoded_audio,
         stems,
     } = load_playback_source(Some(app_data_dir), &connection, library_root, song)?;
+
+    // R9: After the expensive decode, check if a newer play() has started.
+    if shutdown.load(Ordering::Relaxed) {
+        return Ok(());
+    }
 
     let snapshot = decode_then_start_track_if_latest(
         playback_arc,
@@ -783,6 +814,7 @@ mod tests {
                 playback_request_id: Arc::new(AtomicU64::new(0)),
                 audio_output_started: Arc::new(AtomicBool::new(true)),
                 audio_output_start_lock: Arc::new(Mutex::new(())),
+                background_shutdown: Arc::new(Mutex::new(Arc::new(AtomicBool::new(false)))),
             },
             airplay: AirPlayState {
                 airplay_audio_tap: Arc::new(AirPlayAudioTap::new(4)),
@@ -804,6 +836,16 @@ mod tests {
                     .join("fixtures"),
                 PathBuf::from("model.bin"),
                 Arc::new(Mutex::new(bootstrap::pending_status("model.bin"))),
+                Arc::new(Mutex::new(
+                    crate::commands::runtime_bootstrap::RuntimeBootstrapStatusSnapshot {
+                        state: crate::commands::runtime_bootstrap::RuntimeBootstrapState::Missing,
+                        runtime_path: "test.dylib".to_owned(),
+                        downloaded_bytes: None,
+                        total_bytes: None,
+                        version: "test".to_owned(),
+                        error: None,
+                    },
+                )),
             ),
         }
     }
@@ -982,9 +1024,10 @@ mod tests {
             .load(Ordering::SeqCst);
 
         let paused = pause(&state, &app_handle).expect("pause should succeed");
-        // With fade-out, is_playing stays true during the 50ms envelope.
-        // The AirPlay generation refresh is the real assertion here.
-        assert!(paused.is_playing);
+        assert!(
+            !paused.is_playing,
+            "pause snapshot must reflect user intent immediately, not after the fade envelope"
+        );
         assert_eq!(
             state
                 .airplay

@@ -366,15 +366,14 @@ fn probe_remote_source(
     let sample_rate = sample_rate.ok_or(decode::DecodeError::MissingSampleRate)?;
     let channels = channels.ok_or(decode::DecodeError::MissingChannels)?;
 
-    // Try to get duration from container metadata.
+    // Item 12: Try to get duration from container metadata.
+    // Return None when unavailable so playback can start immediately.
     let duration_ms =
         if let (Some(n_frames), Some(tb)) = (codec_params.n_frames, codec_params.time_base) {
             let time = tb.calc_time(n_frames);
-            (time.seconds * 1000) + (time.frac * 1000.0) as u64
+            Some((time.seconds * 1000) + (time.frac * 1000.0) as u64)
         } else {
-            // For remote sources, we can't fall back to full decode for duration.
-            // Use 0 and let the UI handle it gracefully.
-            0
+            None
         };
 
     Ok(StreamMetadata {

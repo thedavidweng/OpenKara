@@ -142,7 +142,11 @@ export function PlaybackBar({ densityOverride }: PlaybackBarProps = {}) {
             >
               <button
                 onClick={handleMasterMuteToggle}
-                className="motion-icon-button min-h-11 min-w-11 rounded-full p-1.5 text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
+                className={`motion-icon-button min-h-11 min-w-11 rounded-full p-1.5 hover:bg-[var(--color-ghost-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
+                  volume > 0
+                    ? "text-[var(--color-control-primary)] hover:text-white"
+                    : "text-[var(--color-text-dimmer)]"
+                }`}
                 aria-label={
                   volume === 0 ? t("player.unmute") : t("player.mute")
                 }

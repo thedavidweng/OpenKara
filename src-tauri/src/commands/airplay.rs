@@ -876,6 +876,7 @@ mod tests {
     ) -> PlaybackStateSnapshot {
         PlaybackStateSnapshot {
             song_id: song_id.map(str::to_owned),
+            transport_generation: 1,
             state: "playing".to_owned(),
             is_playing,
             position_ms,

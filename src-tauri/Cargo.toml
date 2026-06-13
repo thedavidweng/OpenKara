@@ -49,7 +49,9 @@ tracing = "0.1"
 vorbis_rs = "0.5.5"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 quick-xml = "0.39"
-regex = "1"
+regex-lite = "0.1"
+flate2 = "1"
+tar = "0.4"
 
 [dev-dependencies]
 hound = "3.5.1"
@@ -59,5 +61,6 @@ tempfile = "3.27.0"
 
 [profile.release]
 strip = true
-lto = "thin"
+lto = "fat"
+opt-level = "s"
 codegen-units = 1

@@ -16,6 +16,7 @@ describe("ipc type shapes", () => {
       album: null,
       duration_ms: 123000,
       cover_art: null,
+      has_cover_art: false,
       imported_at: 0,
       original_ext: "mp3",
     };

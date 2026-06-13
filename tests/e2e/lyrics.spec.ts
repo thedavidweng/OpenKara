@@ -1,7 +1,7 @@
 import { test, expect } from "./fixtures/base-test";
 
 /**
- * Lyrics display and sync E2E tests.
+ * Lyrics display and sync UI smoke tests.
  *
  * The Tauri mock returns sample LRC lyrics for `fetch_lyrics`.  These
  * tests verify that lyrics lines render in the UI after a song starts

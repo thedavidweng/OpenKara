@@ -31,7 +31,7 @@ fn cleanup_dir(path: &Path) {
 
 #[test]
 fn separates_fixture_audio_into_named_stems_and_writes_wavs() {
-    let mut loaded_model = model::load_from_path(
+    let loaded_model = model::load_from_path(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("models")
             .join("htdemucs.onnx"),
@@ -40,10 +40,12 @@ fn separates_fixture_audio_into_named_stems_and_writes_wavs() {
     .expect("demucs model should load");
     let decoded = decode::decode_file(&fixture_path("audio", "fixture.wav"))
         .expect("wav fixture should decode");
+    let expected_sample_rate = decoded.sample_rate;
+    let expected_channels = decoded.channels;
+    let expected_sample_count = decoded.samples.len();
 
-    let separated =
-        inference::separate_audio(&mut loaded_model, &decoded, |_, _| {}, None, "fixture")
-            .expect("fixture audio should separate into stems");
+    let separated = inference::separate_audio(&loaded_model, decoded, |_, _| {}, None, "fixture")
+        .expect("fixture audio should separate into stems");
 
     assert_eq!(separated.stems.len(), 4);
     assert_eq!(
@@ -57,15 +59,15 @@ fn separates_fixture_audio_into_named_stems_and_writes_wavs() {
     assert!(separated
         .stems
         .iter()
-        .all(|stem| stem.audio.sample_rate == decoded.sample_rate));
+        .all(|stem| stem.audio.sample_rate == expected_sample_rate));
     assert!(separated
         .stems
         .iter()
-        .all(|stem| stem.audio.channels == decoded.channels));
+        .all(|stem| stem.audio.channels == expected_channels));
     assert!(separated
         .stems
         .iter()
-        .all(|stem| stem.audio.samples.len() == decoded.samples.len()));
+        .all(|stem| stem.audio.samples.len() == expected_sample_count));
 
     let output_dir = unique_output_dir();
     cleanup_dir(&output_dir);
@@ -84,7 +86,7 @@ fn separates_fixture_audio_into_named_stems_and_writes_wavs() {
 
 #[test]
 fn separates_audio_longer_than_a_single_demucs_window() {
-    let mut loaded_model = model::load_from_path(
+    let loaded_model = model::load_from_path(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("models")
             .join("htdemucs.onnx"),
@@ -96,19 +98,15 @@ fn separates_audio_longer_than_a_single_demucs_window() {
 
     let mut long_audio = fixture.clone();
     long_audio.samples = fixture.samples.repeat(8);
+    let expected_len = long_audio.samples.len();
 
-    let separated = inference::separate_audio(
-        &mut loaded_model,
-        &long_audio,
-        |_, _| {},
-        None,
-        "fixture-long",
-    )
-    .expect("audio longer than one model window should separate");
+    let separated =
+        inference::separate_audio(&loaded_model, long_audio, |_, _| {}, None, "fixture-long")
+            .expect("audio longer than one model window should separate");
 
     assert_eq!(separated.stems.len(), 4);
     assert!(separated
         .stems
         .iter()
-        .all(|stem| stem.audio.samples.len() == long_audio.samples.len()));
+        .all(|stem| stem.audio.samples.len() == expected_len));
 }

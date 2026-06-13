@@ -15,6 +15,7 @@ function snapshot(
 ): PlaybackStateSnapshot {
   return {
     song_id: null,
+    transport_generation: 0,
     state: "idle",
     is_playing: false,
     position_ms: 0,
@@ -331,5 +332,72 @@ describe("createPlaybackWorkflow", () => {
       expect(deps.popFromHistory).not.toHaveBeenCalled();
       expect(deps.seek).not.toHaveBeenCalled();
     });
+  });
+});
+
+// ─── F6: loadStems not validated against current song ───────
+
+describe("F6: playSongWithOptionalStems guards against stale loadStems", () => {
+  test("skips applySnapshot if song changed during loadStems()", async () => {
+    // Scenario: play() returns snapshot for song-1, then loadStems() completes
+    // but the user has since switched to song-2. The snapshot with stems
+    // should NOT be applied because it's for the wrong song.
+    let currentSongId: string | null = "song-1";
+    const applySnapshot = vi.fn();
+
+    const deps = mockDeps({
+      getPlayerSnapshot: () => snapshot({ song_id: currentSongId }),
+      play: vi
+        .fn()
+        .mockResolvedValue(snapshot({ song_id: "song-1", is_playing: true })),
+      getSeparationStatus: () => completedSeparation(),
+      loadStems: vi.fn().mockImplementation(async () => {
+        // Simulate user switching songs during the async loadStems call
+        currentSongId = "song-2";
+        return snapshot({
+          song_id: "song-1",
+          is_playing: true,
+          has_stems: true,
+        });
+      }),
+      applySnapshot,
+    });
+
+    const workflow = createPlaybackWorkflow(deps);
+    await workflow.playSong("song-1");
+
+    // applySnapshot should be called once for the initial play() result,
+    // but NOT for the stale loadStems() result because song changed.
+    expect(applySnapshot).toHaveBeenCalledTimes(1);
+    expect(applySnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ song_id: "song-1", has_stems: false }),
+    );
+  });
+
+  test("applies loadStems snapshot when song has not changed", async () => {
+    const applySnapshot = vi.fn();
+
+    const deps = mockDeps({
+      getPlayerSnapshot: () => snapshot({ song_id: "song-1" }),
+      play: vi
+        .fn()
+        .mockResolvedValue(snapshot({ song_id: "song-1", is_playing: true })),
+      getSeparationStatus: () => completedSeparation(),
+      loadStems: vi
+        .fn()
+        .mockResolvedValue(
+          snapshot({ song_id: "song-1", is_playing: true, has_stems: true }),
+        ),
+      applySnapshot,
+    });
+
+    const workflow = createPlaybackWorkflow(deps);
+    await workflow.playSong("song-1");
+
+    // Both snapshots should be applied: initial play + stems
+    expect(applySnapshot).toHaveBeenCalledTimes(2);
+    expect(applySnapshot).toHaveBeenLastCalledWith(
+      expect.objectContaining({ song_id: "song-1", has_stems: true }),
+    );
   });
 });

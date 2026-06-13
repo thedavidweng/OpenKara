@@ -107,7 +107,10 @@ pnpm tauri dev
 
 - 源图标：`src-tauri/icons/app-icon.png`（`1024x1024` 主母版）
 - 重新生成全平台图标：`pnpm icons:generate`
+  - 栅格图标（`icon.icns`、各尺寸 PNG、Windows/Android/iOS）由 `tauri icon` 生成
+  - 在 macOS 上，同一命令还会用 Xcode `actool` 将 `src-tauri/icons/OpenKara.icon` 编译为 `Assets.car`（Liquid Glass，macOS 26+）
 - 生成产物会写入 `src-tauri/icons/`，用于 Tauri 桌面端以及未来可能的移动端目标
+- macOS 26 使用 `Assets.car` + `CFBundleIconName=OpenKara`；更早版本回退到传统 `icon.icns` 位图
 
 ## AI 模型
 

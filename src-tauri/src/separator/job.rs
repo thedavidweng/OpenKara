@@ -9,8 +9,12 @@ use anyhow::{Context, Result};
 use rusqlite::Connection;
 use std::{
     path::Path,
-    sync::{Arc, Mutex},
+    sync::{Arc, LazyLock, Mutex},
 };
+
+/// R3: Global lock that serializes audio decoding for separation jobs.
+/// Prevents N concurrent full-song PCM decodes from accumulating in memory.
+static DECODE_SERIALIZE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 const CACHE_HIT_PROGRESS: u8 = 100;
 const LOOKUP_PROGRESS: u8 = 2;
@@ -68,24 +72,40 @@ pub fn separate_song_into_cache(
         ));
     };
     let absolute_path = library_root.resolve(song_path);
+
+    // R3: Serialize audio decoding across all separation jobs. Multiple
+    // concurrent decodes would each hold a full-song PCM buffer in memory,
+    // causing OOM on large libraries. The lock is released before model load
+    // so the model-cache lock is not held during decode.
+    let _decode_guard = DECODE_SERIALIZE_LOCK
+        .lock()
+        .map_err(|_| anyhow::anyhow!("separation decode lock was poisoned"))?;
     let decoded_audio = decode::decode_file(&absolute_path)
         .map_err(|e| anyhow::anyhow!("failed to decode audio for {}: {}", song_path, e))?;
+    drop(_decode_guard);
 
     report_progress(MODEL_LOAD_PROGRESS);
-    let mut model_cache = model_cache
-        .lock()
-        .map_err(|_| anyhow::anyhow!("separator model cache lock was poisoned"))?;
-    let runtime_metadata = model::read_model_runtime_metadata(model_path).with_context(|| {
-        format!(
-            "failed to inspect model metadata for {}",
-            model_path.display()
-        )
-    })?;
-    let cache_key = model::session_cache_key(model_path, ep_preference, &runtime_metadata);
-    let loaded_model = model_cache.get_or_load_with_key(cache_key, || {
-        model::load_from_path(model_path, ep_preference)
-            .with_context(|| format!("failed to load Demucs model from {}", model_path.display()))
-    })?;
+    // Item 3: Lock the model cache only for the get_or_load operation, then
+    // release it so other jobs can access the cache while inference runs.
+    let loaded_model = {
+        let mut model_cache = model_cache
+            .lock()
+            .map_err(|_| anyhow::anyhow!("separator model cache lock was poisoned"))?;
+        let runtime_metadata =
+            model::read_model_runtime_metadata(model_path).with_context(|| {
+                format!(
+                    "failed to inspect model metadata for {}",
+                    model_path.display()
+                )
+            })?;
+        let cache_key = model::session_cache_key(model_path, ep_preference, &runtime_metadata);
+        model_cache.get_or_load_with_key(cache_key, || {
+            model::load_from_path(model_path, ep_preference).with_context(|| {
+                format!("failed to load Demucs model from {}", model_path.display())
+            })
+        })?
+    };
+    // model_cache lock is now released. The Arc<LoadedModel> keeps the model alive.
 
     let checkpoint_dir = checkpoint::checkpoint_dir(&library_root.stems_dir(), song_hash);
     let inference_progress = |completed: usize, total: usize| {
@@ -97,8 +117,8 @@ pub fn separate_song_into_cache(
         }
     };
     let separation = inference::separate_audio(
-        loaded_model,
-        &decoded_audio,
+        &loaded_model,
+        decoded_audio,
         inference_progress,
         Some(checkpoint_dir.as_path()),
         song_hash,
@@ -136,5 +156,127 @@ fn artifacts_from_cache_entry(
         drums_path: entry.drums_path,
         bass_path: entry.bass_path,
         other_path: entry.other_path,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    /// R3: Verify that the DECODE_SERIALIZE_LOCK serializes concurrent tasks.
+    /// Only one task can hold the lock at a time; others must wait.
+    #[test]
+    fn decode_serialize_lock_serializes_concurrent_tasks() {
+        let (tx, rx) = mpsc::channel();
+        let lock_guard = DECODE_SERIALIZE_LOCK
+            .lock()
+            .expect("should acquire decode lock");
+
+        let worker_tx = tx.clone();
+        let handle = std::thread::spawn(move || {
+            worker_tx.send("worker_started").unwrap();
+            let _guard = DECODE_SERIALIZE_LOCK
+                .lock()
+                .expect("worker should acquire lock");
+            worker_tx.send("worker_acquired").unwrap();
+        });
+
+        // Wait for worker to start.
+        assert_eq!(
+            rx.recv_timeout(Duration::from_millis(100)).unwrap(),
+            "worker_started"
+        );
+
+        // Worker should be blocked waiting for the lock.
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(
+            rx.try_recv().is_err(),
+            "worker should not have acquired the lock yet"
+        );
+
+        // Release the lock.
+        drop(lock_guard);
+
+        // Worker should now acquire the lock.
+        assert_eq!(
+            rx.recv_timeout(Duration::from_millis(100)).unwrap(),
+            "worker_acquired"
+        );
+
+        handle.join().expect("worker thread should finish");
+    }
+
+    /// R3: Verify that concurrent lock acquisitions are serialized (only 1 at a time).
+    #[test]
+    fn decode_serialize_lock_prevents_concurrent_execution() {
+        let active_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let max_concurrent = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+        let mut handles = Vec::new();
+        for _ in 0..4 {
+            let active = Arc::clone(&active_count);
+            let max = Arc::clone(&max_concurrent);
+            handles.push(std::thread::spawn(move || {
+                let _guard = DECODE_SERIALIZE_LOCK.lock().expect("should acquire lock");
+                let current = active.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                max.fetch_max(current, std::sync::atomic::Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(10));
+                active.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            }));
+        }
+
+        for h in handles {
+            h.join().expect("thread should finish");
+        }
+
+        assert_eq!(
+            max_concurrent.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "at most 1 thread should hold the decode lock at a time"
+        );
+    }
+
+    /// Item 3: Verify that the model cache lock is NOT held during inference.
+    /// After get_or_load_with_key returns an Arc, another thread should be able
+    /// to acquire the model cache lock while inference is "running".
+    #[test]
+    fn model_cache_lock_released_before_inference() {
+        use crate::separator::model_cache::ModelCache;
+        use std::sync::{Arc, Mutex};
+
+        let cache: Arc<Mutex<ModelCache<i32>>> = Arc::new(Mutex::new(ModelCache::default()));
+
+        // Simulate the separation job pattern:
+        // 1. Lock cache, get_or_load, get Arc
+        // 2. Drop lock
+        // 3. "Run inference" with the Arc
+        let loaded_model = {
+            let mut guard = cache.lock().unwrap();
+            guard
+                .get_or_load_with_key("test-model", || Ok::<_, anyhow::Error>(42))
+                .unwrap()
+        };
+        // Lock is now released.
+
+        // Another thread should be able to acquire the lock immediately.
+        let cache_clone = Arc::clone(&cache);
+        let (tx, rx) = mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let _guard = cache_clone.lock().unwrap();
+            tx.send("lock_acquired").unwrap();
+        });
+
+        // The other thread should acquire the lock without waiting.
+        assert_eq!(
+            rx.recv_timeout(Duration::from_millis(100)).unwrap(),
+            "lock_acquired",
+            "model cache lock should be available while inference runs"
+        );
+        handle.join().unwrap();
+
+        // The model Arc is still valid.
+        assert_eq!(*loaded_model, 42);
     }
 }

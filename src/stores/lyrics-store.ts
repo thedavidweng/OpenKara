@@ -9,6 +9,9 @@ import {
 import { useLibraryStore } from "@/stores/library-store";
 import type { LyricLine, LyricsSource } from "@/types/ipc";
 
+// F1: Generation counter to prevent stale fetch results from overwriting current lyrics.
+let fetchGeneration = 0;
+
 function getSongLanguage(songId: string | null): SongLanguage | null {
   if (!songId) return null;
   const song = useLibraryStore.getState().songs.find((s) => s.hash === songId);
@@ -55,6 +58,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
   showRomanized: false,
 
   fetchLyrics: async (songId) => {
+    const gen = ++fetchGeneration;
     set({
       isLoading: true,
       lines: [],
@@ -66,6 +70,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
     });
     try {
       const payload = await api.fetchLyrics(songId);
+      if (gen !== fetchGeneration) return;
       set({
         songId: payload.song_id,
         lines: payload.lines,
@@ -86,6 +91,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
         try {
           const online = await api.fetchLyricsOnline(songId);
           if (
+            gen === fetchGeneration &&
             get().songId === songId &&
             online.lines.length > 0 &&
             online.lines.some((l) => l.time_ms > 0)
@@ -103,6 +109,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
         }
       }
     } catch (e) {
+      if (gen !== fetchGeneration) return;
       notifyError(e);
       set({ lines: [], source: null, rawLrc: "", isLoading: false });
     }
@@ -158,11 +165,17 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
     if (isRomanizing || lines.length === 0) return;
 
     const texts = lines.map((l) => l.text);
+    const currentSongId = get().songId;
     set({ isRomanizing: true });
     try {
-      const language = getSongLanguage(get().songId);
-      const romanizedLines = await romanizeLyricsLines(texts, language);
-      set({ romanizedLines });
+      const language = getSongLanguage(currentSongId);
+      const { result, requestId } = await romanizeLyricsLines(texts, language);
+      // Item 7: Discard stale responses if the song changed during romanization.
+      if (get().songId !== currentSongId || requestId === -1) {
+        // requestId === -1 means Latin-only (no worker involved), always apply.
+        if (requestId !== -1) return;
+      }
+      set({ romanizedLines: result });
     } catch (err) {
       console.error("Romanization failed:", err);
       set({ romanizedLines: [] });

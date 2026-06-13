@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  CoverArtBytes,
   DeleteSongsResult,
   ExpandedImportPaths,
   ImportCandidateDetails,
@@ -72,4 +73,8 @@ export function deleteSongs(songIds: string[]): Promise<DeleteSongsResult> {
 
 export function getSongProperties(songId: string): Promise<SongProperties> {
   return invoke<SongProperties>("get_song_properties", { songId });
+}
+
+export function getCoverArt(hash: string): Promise<CoverArtBytes> {
+  return invoke<CoverArtBytes>("get_cover_art", { hash });
 }

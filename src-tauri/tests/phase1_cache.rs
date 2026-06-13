@@ -15,6 +15,7 @@ fn sample_song(hash: &str, title: &str, artist: &str, imported_at: i64) -> Song 
         album: Some("Fixture Album".to_owned()),
         duration_ms: 1_000,
         cover_art: Some(vec![1, 2, 3, 4]),
+        has_cover_art: true,
         imported_at,
         original_ext: None,
     }
@@ -41,7 +42,7 @@ fn inserts_and_lists_songs_in_reverse_import_order() {
     assert_eq!(songs.len(), 2);
     assert_eq!(songs[0].hash, "hash-b");
     assert_eq!(songs[0].title.as_deref(), Some("Second Song"));
-    assert_eq!(songs[0].cover_art.as_deref(), Some(&[1, 2, 3, 4][..]));
+    assert!(songs[0].has_cover_art);
     assert_eq!(songs[1].hash, "hash-a");
 }
 
@@ -59,9 +60,9 @@ fn search_matches_title_and_artist_case_insensitively() {
     .expect("second insert should succeed");
 
     let title_results =
-        cache::search_songs(&connection, "star").expect("title search should succeed");
+        cache::search_songs(&connection, "star*").expect("title search should succeed");
     let artist_results =
-        cache::search_songs(&connection, "muse").expect("artist search should succeed");
+        cache::search_songs(&connection, "muse*").expect("artist search should succeed");
 
     assert_eq!(title_results.len(), 1);
     assert_eq!(title_results[0].hash, "hash-a");

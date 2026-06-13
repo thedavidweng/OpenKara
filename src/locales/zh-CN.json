@@ -151,6 +151,7 @@
   "player": {
     "previous": "上一首",
     "play": "播放",
+    "loading": "加载中",
     "pause": "暂停",
     "next": "下一首",
     "mute": "静音",
@@ -332,7 +333,14 @@
       "downloaded": "已下载",
       "legacyOnDisk": "磁盘上为旧版本 — 请在「危险区」删除后重新下载",
       "notDownloaded": "未下载",
+      "runtimeRequired": "需要 ONNX 运行时",
+      "delete": "删除",
       "download": "下载"
+    },
+    "runtime": {
+      "installRequired": "AI 音轨分离需要 ONNX 运行时库。安装后才能下载模型。",
+      "installButton": "安装 ONNX 运行时",
+      "downloading": "正在下载 ONNX 运行时..."
     },
     "hideBatchSeparate": {
       "hide": "隐藏“全部分离”按钮",
@@ -363,7 +371,13 @@
       "deleteModelStandard": "删除标准模型",
       "deleteModelHQ": "删除高质量模型",
       "deleteModelDescription": "删除已下载的模型文件以释放磁盘空间。如果再次选择该模型，需要重新下载。",
-      "deleteModelButton": "删除模型"
+      "deleteModelButton": "删除模型",
+      "deleteActiveModelBlockedTitle": "请先切换到其他模型再删除此文件",
+      "deleteLegacyActiveModelTitle": "删除过时文件后可重新下载升级",
+      "confirmDeleteModel": "确定要删除此模型吗？再次使用时需要重新下载。",
+      "deleteRuntime": "删除 ONNX 运行时",
+      "deleteRuntimeDescription": "移除 ONNX 运行时库以释放磁盘空间。下次开始分离时将自动重新下载。",
+      "deleteRuntimeButton": "删除运行时"
     },
     "confirmDeleteStems": {
       "title": "删除所有分离音轨",
@@ -381,6 +395,11 @@
       "title": "删除所有缓存歌词",
       "message": "这将永久删除所有缓存的歌词。歌词将在播放歌曲时自动重新获取。",
       "confirm": "删除全部歌词"
+    },
+    "confirmDeleteRuntime": {
+      "title": "删除 ONNX 运行时",
+      "message": "这将删除 ONNX 运行时库。下次开始分离时将自动重新下载。",
+      "confirm": "删除运行时"
     },
     "executionProvider": {
       "label": "硬件加速",

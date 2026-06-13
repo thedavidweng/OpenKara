@@ -183,11 +183,11 @@ describe("Flatpak packaging", () => {
     // use the official flatpak-builder action. Do not revert without reading
     // the history in commits touching this file.
     expect(packagingWorkflow).toContain(
-      "image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50",
+      "image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50@sha256:",
     );
     expect(packagingWorkflow).toContain("options: --privileged");
-    expect(packagingWorkflow).toContain(
-      "uses: flatpak/flatpak-github-actions/flatpak-builder@v6.7",
+    expect(packagingWorkflow).toMatch(
+      /uses: flatpak\/flatpak-github-actions\/flatpak-builder@[a-f0-9]{40}/,
     );
     // Without this, `flatpak-builder-lint builddir/repo` fails with
     // "appstream-external-screenshot-url: Screenshots are not mirrored to
@@ -197,6 +197,19 @@ describe("Flatpak packaging", () => {
     // which is what the linter's check_repo() looks for.
     expect(packagingWorkflow).toContain(
       "mirror-screenshots-url: https://dl.flathub.org/media",
+    );
+  });
+
+  test("renders WinGet manifests with PowerShell environment syntax on Windows", () => {
+    const packagingWorkflow = readProjectFile(
+      ".github/workflows/packaging.yml",
+    );
+
+    expect(packagingWorkflow).toContain(
+      'node scripts/render-winget-manifests.mjs --version "$env:RELEASE_VERSION" --output "$env:GITHUB_WORKSPACE/dist/winget"',
+    );
+    expect(packagingWorkflow).not.toContain(
+      'node scripts/render-winget-manifests.mjs --version "${RELEASE_VERSION}"',
     );
   });
 
@@ -290,6 +303,13 @@ describe("Flatpak packaging", () => {
     );
 
     expect(manifest.store_version).toBe("v10");
+    expect(
+      nodeSources.filter(
+        (source) =>
+          source.dest === "flatpak-node/cache/esbuild" ||
+          source.dest?.startsWith("flatpak-node/cache/esbuild/"),
+      ),
+    ).toEqual([]);
     expect(Object.keys(manifest.packages).sort()).toEqual(
       lockfilePackages.map((pkg) => pkg.filename).sort(),
     );
@@ -363,7 +383,11 @@ describe("Flatpak packaging", () => {
 
     expect(releaseWorkflow).toContain("GITHUB_TOKEN: ${{ github.token }}");
     expect(releaseWorkflow).toContain("Ensure release source tag exists");
-    expect(releaseWorkflow).toContain('git push origin "refs/tags/${tag}"');
+    expect(releaseWorkflow).toContain("persist-credentials: false");
+    expect(releaseWorkflow).toContain(
+      'git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}"',
+    );
+    expect(releaseWorkflow).toContain('push origin "refs/tags/${tag}"');
     expect(releaseWorkflow).toContain(
       '--title "New version: ${WINGET_PACKAGE_IDENTIFIER} version ${VERSION}"',
     );

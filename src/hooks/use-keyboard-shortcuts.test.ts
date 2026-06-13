@@ -45,6 +45,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: null,
         positionMs: 0,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume: vi.fn(),
         seek: vi.fn(),
@@ -77,6 +78,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: null,
         positionMs: 0,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume: vi.fn(),
         seek: vi.fn(),
@@ -108,6 +110,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: null,
         positionMs: 0,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume: vi.fn(),
         seek: vi.fn(),
@@ -139,6 +142,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: null,
         positionMs: 0,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume: vi.fn(),
         seek: vi.fn(),
@@ -169,6 +173,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: null,
         positionMs: 0,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume: vi.fn(),
         seek: vi.fn(),
@@ -201,6 +206,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: null,
         positionMs: 0,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume: vi.fn(),
         seek: vi.fn(),
@@ -231,6 +237,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: null,
         positionMs: 0,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume: vi.fn(),
         seek: vi.fn(),
@@ -263,6 +270,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: null,
         positionMs: 0,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume: vi.fn(),
         seek: vi.fn(),
@@ -292,6 +300,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: null,
         positionMs: 0,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume: vi.fn(),
         seek: vi.fn(),
@@ -322,6 +331,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: null,
         positionMs: 0,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume: vi.fn(),
         seek: vi.fn(),
@@ -351,6 +361,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: null,
         positionMs: 0,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume: vi.fn(),
         seek: vi.fn(),
@@ -381,6 +392,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: null,
         positionMs: 0,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume: vi.fn(),
         seek: vi.fn(),
@@ -413,6 +425,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: null,
         positionMs: 0,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume: vi.fn(),
         seek: vi.fn(),
@@ -442,6 +455,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: { is_playing: true, song_id: "abc", volume: 0.8 } as never,
         positionMs: 10000,
+        playingSinceMs: null,
         pause,
         resume: vi.fn(),
         seek: vi.fn(),
@@ -472,6 +486,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: { is_playing: false, song_id: "abc", volume: 0.8 } as never,
         positionMs: 10000,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume,
         seek: vi.fn(),
@@ -503,6 +518,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: null,
         positionMs: 0,
+        playingSinceMs: null,
         pause,
         resume,
         seek: vi.fn(),
@@ -534,6 +550,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: null,
         positionMs: 15000,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume: vi.fn(),
         seek,
@@ -564,6 +581,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: null,
         positionMs: 10000,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume: vi.fn(),
         seek,
@@ -574,6 +592,49 @@ describe("handleAppKeyDown", () => {
     expect(handled).toBe(true);
     expect(event.preventDefault).toHaveBeenCalledOnce();
     expect(seek).toHaveBeenCalledWith(15000);
+  });
+
+  test("F7: arrow key seek uses extrapolated position, not raw snapshot", () => {
+    const seek = vi.fn();
+    const event = createKeyboardEvent({
+      code: "ArrowLeft",
+      key: "ArrowLeft",
+    });
+
+    // Mock performance.now() to return a known value.
+    const originalNow = performance.now.bind(performance);
+    let mockNow = 5000;
+    performance.now = () => mockNow;
+
+    try {
+      // positionMs=10000, playingSinceMs=1000, now=5000
+      // extrapolated = 10000 + (5000 - 1000) = 14000
+      // seek = 14000 - 5000 = 9000
+      // If the code used raw positionMs instead: seek = 10000 - 5000 = 5000
+      const handled = handleAppKeyDown(event, {
+        openImportDialog: vi.fn(),
+        toggleSettings: vi.fn(),
+        toggleSidebar: vi.fn(),
+        adjustLyricsFont: vi.fn(),
+        resetLyricsFont: vi.fn(),
+        canStepPlainTextPage: false,
+        stepPlainTextPage: vi.fn(),
+        player: {
+          snapshot: { is_playing: true, song_id: "abc" } as never,
+          positionMs: 10000,
+          playingSinceMs: 1000,
+          pause: vi.fn(),
+          resume: vi.fn(),
+          seek,
+          setVolume: vi.fn(),
+        },
+      });
+
+      expect(handled).toBe(true);
+      expect(seek).toHaveBeenCalledWith(9000);
+    } finally {
+      performance.now = originalNow;
+    }
   });
 
   test("increases volume by 0.05 with ArrowUp, capped at 1", () => {
@@ -594,6 +655,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: { is_playing: true, song_id: "abc", volume: 0.97 } as never,
         positionMs: 0,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume: vi.fn(),
         seek: vi.fn(),
@@ -624,6 +686,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: null,
         positionMs: 0,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume: vi.fn(),
         seek: vi.fn(),
@@ -653,6 +716,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: { is_playing: true, song_id: "abc", volume: 0.02 } as never,
         positionMs: 0,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume: vi.fn(),
         seek: vi.fn(),
@@ -683,6 +747,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: null,
         positionMs: 0,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume: vi.fn(),
         seek: vi.fn(),
@@ -717,6 +782,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: null,
         positionMs: 10000,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume: vi.fn(),
         seek,
@@ -745,6 +811,7 @@ describe("handleAppKeyDown", () => {
       player: {
         snapshot: null,
         positionMs: 0,
+        playingSinceMs: null,
         pause: vi.fn(),
         resume: vi.fn(),
         seek: vi.fn(),

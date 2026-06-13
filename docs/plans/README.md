@@ -24,6 +24,4 @@ without rebuilding the product backlog from scratch. It must include:
 
 ## Current State
 
-There is no active repo-local execution plan. Use the GitHub Project to choose
-the next work item, then create a dated plan here only when the work is ready to
-execute.
+No active executable plans are currently tracked in this folder.

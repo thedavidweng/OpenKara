@@ -1,24 +1,32 @@
 {
-  "fill": "none",
+  "fill": {
+    "linear-gradient": [
+      "srgb:0.00000,0.00000,0.00000,1.00000",
+      "srgb:0.00000,0.00000,0.00000,1.00000"
+    ]
+  },
   "groups": [
     {
+      "blend-mode": "normal",
       "layers": [
         {
-          "image-name": "OpenKara 2.png",
-          "name": "OpenKara 2",
+          "blend-mode": "normal",
+          "image-name": "OpenKara Mic.png",
+          "name": "OpenKara Mic",
           "position": {
-            "scale": 0.3,
+            "scale": 1,
             "translation-in-points": [0, 0]
           }
         }
       ],
+      "opacity": 1,
       "shadow": {
         "kind": "neutral",
-        "opacity": 0.5
+        "opacity": 0
       },
       "translucency": {
-        "enabled": true,
-        "value": 0.5
+        "enabled": false,
+        "value": 0
       }
     }
   ],
