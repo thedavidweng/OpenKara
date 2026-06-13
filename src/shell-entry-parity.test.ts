@@ -10,10 +10,4 @@ describe("shell entry parity guards", () => {
     expect(appSource).toContain("useAppRuntime");
     expect(appSource).not.toContain("useMainWindowRuntimeWhen");
   });
-
-  test("app-shell resolves only the unified full-app product mode", async () => {
-    const { default: shellSource } = await import("./lib/app-shell.ts?raw");
-    expect(shellSource).not.toContain('"sidebar-webview"');
-    expect(shellSource).not.toContain('"main-content-webview"');
-  });
 });

@@ -22,7 +22,7 @@ type TranslateFn = (
   options?: Record<string, string | number>,
 ) => string;
 
-export interface SongListContextMenuActions {
+interface SongListContextMenuActions {
   setEditDialogOpen: (open: boolean) => void;
   setPropertiesDialogOpen: (open: boolean) => void;
   setDeleteSongIds: (songIds: string[]) => void;

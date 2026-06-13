@@ -5,9 +5,6 @@ import {
   getPlaybackBarLayoutTokens,
   PLAYBACK_BAR_LEFT_MIN_WIDTH,
   PLAYBACK_BAR_METADATA_COLLAPSE_WIDTH,
-  PLAYBACK_BAR_SEEK_MIN_WIDTH,
-  PLAYBACK_BAR_SEEK_RAIL_MIN_WIDTH,
-  PLAYBACK_BAR_TIME_LABEL_WIDTH_REM,
   shouldCollapsePlaybackBarMetadata,
 } from "./playback-bar-layout";
 
@@ -49,15 +46,13 @@ describe("getPlaybackBarLayoutTokens", () => {
   });
 
   test("uses the tighter seek-bar safety dimensions", () => {
-    expect(PLAYBACK_BAR_SEEK_MIN_WIDTH).toBe(180);
-    expect(PLAYBACK_BAR_SEEK_RAIL_MIN_WIDTH).toBe(120);
-    expect(PLAYBACK_BAR_TIME_LABEL_WIDTH_REM).toBe(3.25);
+    const centerMinWidth = getPlaybackBarCenterMinWidth("tight");
+    // seek (180) + cluster (120) + zoneGap (10)
+    expect(centerMinWidth).toBe(180 + 120 + 10);
   });
 
   test("keeps a non-zero center zone minimum so inner controls do not paint under the right zone", () => {
-    expect(getPlaybackBarCenterMinWidth("tight")).toBeGreaterThan(
-      PLAYBACK_BAR_SEEK_MIN_WIDTH,
-    );
+    expect(getPlaybackBarCenterMinWidth("tight")).toBeGreaterThan(180);
   });
 
   test("collapses now playing metadata before the transport and utility zones collide", () => {

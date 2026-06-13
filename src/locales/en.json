@@ -14,8 +14,7 @@
     "loading": "Loading…",
     "deleting": "Deleting...",
     "unknownTitle": "Unknown Title",
-    "unknownArtist": "Unknown Artist",
-    "error": "Error"
+    "unknownArtist": "Unknown Artist"
   },
   "setup": {
     "welcome": "Set up your karaoke library",
@@ -63,11 +62,9 @@
     "localMusic": "LOCAL MUSIC",
     "separateAll": "Separate All",
     "separating": "Separating {{current}}/{{total}}",
-    "batchFailed": "{{count}} failed",
     "separationComplete": "Separation complete: {{done}} done",
     "skipped": "{{count}} skipped",
     "failed": "{{count}} failed",
-    "cancelBatch": "Cancel batch separation",
     "twoStem": "2-stem",
     "fourStem": "4-stem",
     "upgradeAll": "Upgrade All to 4-stem",
@@ -161,15 +158,11 @@
     "unmute": "Unmute",
     "volume": "Volume",
     "seek": "Seek",
-    "exitFullscreen": "Exit Fullscreen",
     "selectMonitor": "Select Monitor",
     "monitor": "Monitor {{index}}",
     "localDisplayOutput": "Local Display Output",
     "airPlayOutput": "AirPlay Output",
-    "airPlayNativePickerHint": "Choose an AirPlay device from the native system control below.",
-    "noDisplaysFound": "No displays found yet.",
-    "airPlayActive": "AirPlay active",
-    "airPlayInactive": "AirPlay inactive"
+    "noDisplaysFound": "No displays found yet."
   },
   "progress": {
     "separating": "Separating: {{title}}",
@@ -180,7 +173,6 @@
     "upNext": "Up Next",
     "clearAll": "Clear All",
     "empty": "Queue is empty",
-    "badge": "9+",
     "reorder": "Reorder {{title}}",
     "remove": "Remove {{title}} from queue",
     "moveUp": "Move Up",
@@ -220,7 +212,6 @@
     "romanizeTooltip": "Romanized lyrics",
     "previousPage": "Previous page",
     "nextPage": "Next page",
-    "fontSizeTooltip": "Lyrics size",
     "fontSizeDecrease": "Decrease lyrics size",
     "fontSizeIncrease": "Increase lyrics size",
     "fontSizeReset": "Reset lyrics size",
@@ -257,7 +248,6 @@
     "twoStem": "2-stem",
     "fourStem": "4-stem",
     "upgradeToFourStem": "Upgrade to 4-stem",
-    "reSeparateAsTwoStem": "Re-separate as 2-stem",
     "downgradeToTwoStem": "Downgrade to 2-stem",
     "reSeparate": "Re-separate",
     "reSeparateAs": "Re-separate as:",
@@ -278,7 +268,6 @@
       "createAndMirrorActiveLocal": "Create And Mirror Active Local",
       "mirrorActiveLocalDescriptionWithName": "Mirror {{displayName}} into a new remote repository.",
       "mirrorActiveLocalDescriptionNoLocal": "Switch to the local library you want to mirror first.",
-      "remoteMirrorHint": "Switch to the local library you want to mirror before creating a new remote mirror.",
       "displayName": "Display name",
       "remoteLibraryDisplayName": "OpenKara",
       "renameLibrary": "Rename library",
@@ -354,12 +343,10 @@
       "downloading": "Downloading ONNX Runtime..."
     },
     "hideBatchSeparate": {
-      "label": "Separate All Button",
       "hide": "Hide “Separate All”",
       "description": "Hide the sidebar button that separates all songs."
     },
     "coverArtBackdrop": {
-      "label": "Album Art Background",
       "hide": "Disable blurred album art backdrop",
       "description": "Removes the blurred album cover behind lyrics."
     },
@@ -442,28 +429,19 @@
     "name": "Playlist name",
     "rename": "Rename",
     "delete": "Delete Playlist",
-    "deleteConfirm": "Delete \"{{name}}\"?",
-    "deleteMessage": "Songs in the playlist will not be removed from your library.",
     "empty": "This playlist is empty. Add songs from your library.",
     "addTo": "Add to Playlist…",
     "addedToast": "Added {{count}} song(s) to playlist.",
     "createdAndAddedToast": "Created playlist and added {{count}} song(s).",
     "removedFromPlaylistToast": "Removed {{count}} song(s) from playlist.",
-    "removedToast": "Removed {{count}} songs from {{playlistCount}} playlists.",
     "section": "PLAYLISTS",
     "newPlaylist": "[+] New Playlist…",
-    "removeFromPlaylist": "Remove from Playlist",
-    "confirmDeleteTitle": "Delete Playlist",
-    "editSong": "Edit Song"
+    "removeFromPlaylist": "Remove from Playlist"
   },
   "rotation": {
     "assignSinger": "Assign Singer",
     "shuffle": "Shuffle",
     "singer": "Singer",
-    "nextSinger": "Next Singer",
-    "roundRobin": "Round-robin",
-    "singleSinger": "Single singer",
-    "noSinger": "No singer assigned",
     "singerName": "Singer name",
     "removeSinger": "Remove singer",
     "confirmRemoveSinger": "Remove Singer",

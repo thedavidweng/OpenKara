@@ -1,4 +1,4 @@
-export type TooltipVisibilityAction =
+type TooltipVisibilityAction =
   | { type: "pointer-enter" }
   | { type: "pointer-leave" }
   | { type: "focus" }

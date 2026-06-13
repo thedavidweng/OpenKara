@@ -80,25 +80,11 @@ pub fn managed_model_path_for(app_data_dir: &Path, descriptor: &ModelDescriptor)
     app_data_dir.join("models").join(descriptor.filename)
 }
 
-/// Check if a specific model variant is present and valid on disk.
-pub fn is_model_available(app_data_dir: &Path, variant: ModelVariant) -> bool {
-    let descriptor = descriptor_for(variant);
-    let path = managed_model_path_for(app_data_dir, descriptor);
-    path.exists() && verify_model_install(&path, descriptor.sha256).unwrap_or(false)
-}
-
 /// Get the file size of a model variant if it exists on disk.
 pub fn model_file_size(app_data_dir: &Path, variant: ModelVariant) -> Option<u64> {
     let descriptor = descriptor_for(variant);
     let path = managed_model_path_for(app_data_dir, descriptor);
     fs::metadata(&path).ok().map(|m| m.len())
-}
-
-/// True when a managed file exists but does not match the pinned checksum.
-pub fn legacy_managed_install_present(app_data_dir: &Path, variant: ModelVariant) -> bool {
-    let descriptor = descriptor_for(variant);
-    let path = managed_model_path_for(app_data_dir, descriptor);
-    path.exists() && !verify_model_install(&path, descriptor.sha256).unwrap_or(false)
 }
 
 /// Delete a model variant from disk.
