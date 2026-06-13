@@ -1,10 +1,5 @@
 import { describe, expect, test } from "vitest";
-import {
-  findActiveLyricLineIndex,
-  getLinePlaybackProgress,
-  getVirtualLineCenter,
-  smoothstep,
-} from "./lyrics-timing";
+import { findActiveLyricLineIndex } from "./lyrics-timing";
 
 const lines = [
   { time_ms: 0 },
@@ -21,22 +16,10 @@ describe("lyrics-timing", () => {
     expect(findActiveLyricLineIndex(lines, 5000)).toBe(3);
   });
 
-  test("getLinePlaybackProgress interpolates within the current line window", () => {
-    expect(getLinePlaybackProgress(lines, 1, 1000)).toBe(0);
-    expect(getLinePlaybackProgress(lines, 1, 2000)).toBe(0.5);
-    expect(getLinePlaybackProgress(lines, 1, 2999)).toBeCloseTo(0.9995, 3);
-    expect(getLinePlaybackProgress(lines, 3, 6000)).toBe(0);
-  });
-
-  test("getVirtualLineCenter advances continuously between timestamps", () => {
-    expect(getVirtualLineCenter(lines, 1000)).toBe(1);
-    expect(getVirtualLineCenter(lines, 2000)).toBe(1.5);
-    expect(getVirtualLineCenter(lines, 4000)).toBe(2.5);
-  });
-
-  test("smoothstep eases at the ends", () => {
-    expect(smoothstep(0)).toBe(0);
-    expect(smoothstep(1)).toBe(1);
-    expect(smoothstep(0.5)).toBe(0.5);
+  test("findActiveLyricLineIndex holds the same line until the next timestamp", () => {
+    expect(findActiveLyricLineIndex(lines, 1000)).toBe(1);
+    expect(findActiveLyricLineIndex(lines, 2000)).toBe(1);
+    expect(findActiveLyricLineIndex(lines, 2999)).toBe(1);
+    expect(findActiveLyricLineIndex(lines, 3000)).toBe(2);
   });
 });

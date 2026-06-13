@@ -53,10 +53,6 @@ export function getCdgSyncChannel(): CdgSyncChannel | null {
   return cachedChannel;
 }
 
-export function resetCdgSyncChannelForTests(): void {
-  cachedChannel = undefined;
-}
-
 export function postCdgStatus(
   channel: CdgSyncChannel | null,
   payload: CdgSyncStatusPayload,

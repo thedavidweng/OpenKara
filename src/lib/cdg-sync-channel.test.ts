@@ -51,8 +51,7 @@ describe("createCdgSyncChannel", () => {
 
   test("returns null when BroadcastChannel is undefined", () => {
     const original = globalThis.BroadcastChannel;
-    // @ts-expect-error intentionally deleting for test
-    delete globalThis.BroadcastChannel;
+    Reflect.deleteProperty(globalThis, "BroadcastChannel");
 
     const factory = vi.fn();
     const result = createCdgSyncChannel(factory);

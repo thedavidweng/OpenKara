@@ -974,7 +974,7 @@ mod tests {
 
     #[test]
     fn eof_consumer_is_not_below_low_water() {
-        let (mut prod, consumer) = super::create_stream_pair(44_100, 2);
+        let (prod, consumer) = super::create_stream_pair(44_100, 2);
         prod.set_eof();
         assert!(!consumer.is_below_low_water());
         assert!(consumer.is_above_high_water());
@@ -982,7 +982,7 @@ mod tests {
 
     #[test]
     fn all_eof_and_drained_detects_natural_end() {
-        let (mut prod, consumer) = super::create_stream_pair(44_100, 2);
+        let (prod, consumer) = super::create_stream_pair(44_100, 2);
         prod.set_eof();
         let track = super::StreamingTrack::Single { consumer };
         assert!(track.all_eof_and_drained());
