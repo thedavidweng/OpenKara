@@ -154,6 +154,7 @@
   "player": {
     "previous": "Previous",
     "play": "Play",
+    "loading": "Loading",
     "pause": "Pause",
     "next": "Next",
     "mute": "Mute",

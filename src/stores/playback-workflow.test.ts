@@ -15,6 +15,7 @@ function snapshot(
 ): PlaybackStateSnapshot {
   return {
     song_id: null,
+    transport_generation: 0,
     state: "idle",
     is_playing: false,
     position_ms: 0,

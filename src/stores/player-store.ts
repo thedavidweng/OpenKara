@@ -168,37 +168,6 @@ function resolvePlayingSinceMs(
   return performance.now();
 }
 
-const TRANSPORT_COMMAND_GUARD_MS = 300;
-
-function createTransportCommandGuard() {
-  let guardUntilMs = 0;
-  let guardedIsPlaying: boolean | null = null;
-
-  return {
-    lock(isPlaying: boolean, nowMs = performance.now()) {
-      guardUntilMs = nowMs + TRANSPORT_COMMAND_GUARD_MS;
-      guardedIsPlaying = isPlaying;
-    },
-    apply(
-      snapshot: PlaybackStateSnapshot,
-      nowMs = performance.now(),
-    ): PlaybackStateSnapshot {
-      if (guardedIsPlaying === null || nowMs >= guardUntilMs) {
-        guardedIsPlaying = null;
-        return snapshot;
-      }
-      if (snapshot.is_playing === guardedIsPlaying) {
-        return snapshot;
-      }
-      return { ...snapshot, is_playing: guardedIsPlaying };
-    },
-    clear() {
-      guardUntilMs = 0;
-      guardedIsPlaying = null;
-    },
-  };
-}
-
 function shouldReplaceSnapshotFromPositionEvent(
   current: PlaybackStateSnapshot | null,
   next: PlaybackStateSnapshot,
@@ -218,6 +187,15 @@ function shouldReplaceSnapshotFromPositionEvent(
   );
 }
 
+function isStaleTransportSnapshot(
+  current: PlaybackStateSnapshot | null,
+  next: PlaybackStateSnapshot,
+): boolean {
+  return (
+    current !== null && next.transport_generation < current.transport_generation
+  );
+}
+
 export function createPlayerStore(
   syncChannel: WebviewSyncChannel<PlayerSyncSnapshot> = createWebviewSyncChannel<PlayerSyncSnapshot>(
     "openkara.player",
@@ -225,7 +203,6 @@ export function createPlayerStore(
 ) {
   let airPlayPlainTextPagePendingTimer: ReturnType<typeof setTimeout> | null =
     null;
-  const transportCommandGuard = createTransportCommandGuard();
 
   const store = create<PlayerState>((set, get) => {
     const syncPatch = (patch: Partial<PlayerState>) => {
@@ -233,9 +210,11 @@ export function createPlayerStore(
       syncChannel.publish(createPlayerSyncSnapshot(get()));
     };
     const applySnapshot = (nextSnapshot: PlaybackStateSnapshot) => {
-      transportCommandGuard.lock(nextSnapshot.is_playing);
+      if (isStaleTransportSnapshot(get().snapshot, nextSnapshot)) {
+        return;
+      }
       syncPatch({
-        snapshot: { ...nextSnapshot, is_playing: nextSnapshot.is_playing },
+        snapshot: nextSnapshot,
         positionMs: nextSnapshot.position_ms,
         playingSinceMs: resolvePlayingSinceMs(get(), nextSnapshot),
       });
@@ -283,11 +262,13 @@ export function createPlayerStore(
       resume: async () => {
         try {
           const snapshot = await api.resume();
-          transportCommandGuard.lock(true);
-          const authoritative = transportCommandGuard.apply({
+          const authoritative = {
             ...snapshot,
             is_playing: true,
-          });
+          };
+          if (isStaleTransportSnapshot(get().snapshot, authoritative)) {
+            return;
+          }
           syncPatch({
             snapshot: authoritative,
             positionMs: authoritative.position_ms,
@@ -303,11 +284,13 @@ export function createPlayerStore(
       pause: async () => {
         try {
           const snapshot = await api.pause();
-          transportCommandGuard.lock(false);
-          const authoritative = transportCommandGuard.apply({
+          const authoritative = {
             ...snapshot,
             is_playing: false,
-          });
+          };
+          if (isStaleTransportSnapshot(get().snapshot, authoritative)) {
+            return;
+          }
           syncPatch({
             snapshot: authoritative,
             positionMs: authoritative.position_ms,
@@ -324,6 +307,9 @@ export function createPlayerStore(
         try {
           const clamped = Math.max(0, ms);
           const snapshot = await api.seek(clamped);
+          if (isStaleTransportSnapshot(get().snapshot, snapshot)) {
+            return;
+          }
           syncPatch({
             snapshot,
             positionMs: snapshot.position_ms,
@@ -340,6 +326,9 @@ export function createPlayerStore(
         try {
           const clamped = Math.max(0, Math.min(1, level));
           const snapshot = await api.setVolume(clamped);
+          if (isStaleTransportSnapshot(get().snapshot, snapshot)) {
+            return;
+          }
           syncPatch({ snapshot });
         } catch (e) {
           notifyError(e);
@@ -350,6 +339,9 @@ export function createPlayerStore(
         try {
           const clamped = Math.max(0, Math.min(1, level));
           const snapshot = await api.setStemVolume(stem, clamped);
+          if (isStaleTransportSnapshot(get().snapshot, snapshot)) {
+            return;
+          }
           syncPatch({ snapshot });
         } catch (e) {
           notifyError(e);
@@ -359,7 +351,14 @@ export function createPlayerStore(
       loadStems: async () => {
         try {
           const snapshot = await api.loadStems();
-          syncPatch({ snapshot });
+          if (isStaleTransportSnapshot(get().snapshot, snapshot)) {
+            return;
+          }
+          syncPatch({
+            snapshot,
+            positionMs: snapshot.position_ms,
+            playingSinceMs: resolvePlayingSinceMs(get(), snapshot),
+          });
         } catch (e) {
           notifyError(e, () => get().loadStems());
         }
@@ -368,10 +367,13 @@ export function createPlayerStore(
       applyPlaybackPositionEvent: (event) => {
         const current = get();
         const currentSnapshot = current.snapshot;
-        if (currentSnapshot?.song_id !== event.snapshot.song_id) {
-          transportCommandGuard.clear();
+        const nextSnapshot = event.snapshot;
+        if (event.transport_generation !== nextSnapshot.transport_generation) {
+          return;
         }
-        const nextSnapshot = transportCommandGuard.apply(event.snapshot);
+        if (isStaleTransportSnapshot(currentSnapshot, nextSnapshot)) {
+          return;
+        }
         if (
           shouldReplaceSnapshotFromPositionEvent(currentSnapshot, nextSnapshot)
         ) {
@@ -402,6 +404,9 @@ export function createPlayerStore(
       },
 
       updateSnapshot: (snapshot) => {
+        if (isStaleTransportSnapshot(get().snapshot, snapshot)) {
+          return;
+        }
         syncPatch({
           snapshot,
           positionMs: snapshot.position_ms,
@@ -412,6 +417,9 @@ export function createPlayerStore(
       loadState: async () => {
         try {
           const snapshot = await api.getPlaybackState();
+          if (isStaleTransportSnapshot(get().snapshot, snapshot)) {
+            return;
+          }
           syncPatch({
             snapshot,
             positionMs: snapshot.position_ms,

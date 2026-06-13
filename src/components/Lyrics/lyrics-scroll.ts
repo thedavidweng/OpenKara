@@ -55,12 +55,3 @@ export function getScrollTopForLineIndex(
     lineHeight: metrics.height,
   });
 }
-
-export function interpolateScrollTop(
-  fromTop: number,
-  toTop: number,
-  progress: number,
-): number {
-  const eased = progress * progress * (3 - 2 * progress);
-  return fromTop + (toTop - fromTop) * eased;
-}

@@ -62,7 +62,9 @@ Optional custom paths:
 
 Compiles the Icon Composer project into macOS 26 Liquid Glass assets.
 
-- **Input:** `src-tauri/icons/OpenKara.icon/` (syncs `app-icon.png` into the layer asset first)
+- **Input:** `src-tauri/icons/OpenKara.icon/` plus `src-tauri/icons/app-icon.png`
+  (extracts the microphone foreground into `OpenKara Mic.png` before compiling;
+  the `.icon` fill owns the macOS 26 background shape)
 - **Prerequisites:** macOS host with Xcode `actool` (`xcrun actool`)
 - **Output:** `src-tauri/icons/Assets.car`, `src-tauri/icons/OpenKara.icns`
 - **Run:** `node scripts/generate-macos-liquid-glass-icon.mjs` or `pnpm icons:generate` (chained after `tauri icon`)

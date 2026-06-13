@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { getCenteredScrollTop, interpolateScrollTop } from "./lyrics-scroll";
+import { getCenteredScrollTop } from "./lyrics-scroll";
 
 describe("getCenteredScrollTop", () => {
   test("centers the active lyric line when there is enough space", () => {
@@ -44,13 +44,5 @@ describe("getCenteredScrollTop", () => {
         lineHeight: 140,
       }),
     ).toBe(540);
-  });
-});
-
-describe("interpolateScrollTop", () => {
-  test("eases halfway between two scroll anchors", () => {
-    expect(interpolateScrollTop(100, 300, 0)).toBe(100);
-    expect(interpolateScrollTop(100, 300, 1)).toBe(300);
-    expect(interpolateScrollTop(100, 300, 0.5)).toBe(200);
   });
 });
