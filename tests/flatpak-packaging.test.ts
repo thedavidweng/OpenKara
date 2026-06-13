@@ -183,7 +183,7 @@ describe("Flatpak packaging", () => {
     // use the official flatpak-builder action. Do not revert without reading
     // the history in commits touching this file.
     expect(packagingWorkflow).toContain(
-      "image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50",
+      "image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50@sha256:",
     );
     expect(packagingWorkflow).toContain("options: --privileged");
     expect(packagingWorkflow).toMatch(
@@ -197,6 +197,19 @@ describe("Flatpak packaging", () => {
     // which is what the linter's check_repo() looks for.
     expect(packagingWorkflow).toContain(
       "mirror-screenshots-url: https://dl.flathub.org/media",
+    );
+  });
+
+  test("renders WinGet manifests with PowerShell environment syntax on Windows", () => {
+    const packagingWorkflow = readProjectFile(
+      ".github/workflows/packaging.yml",
+    );
+
+    expect(packagingWorkflow).toContain(
+      'node scripts/render-winget-manifests.mjs --version "$env:RELEASE_VERSION" --output "$env:GITHUB_WORKSPACE/dist/winget"',
+    );
+    expect(packagingWorkflow).not.toContain(
+      'node scripts/render-winget-manifests.mjs --version "${RELEASE_VERSION}"',
     );
   });
 

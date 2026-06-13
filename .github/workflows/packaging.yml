@@ -69,10 +69,11 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Render WinGet manifests from current public release
+        shell: pwsh
         env:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: |
-          node scripts/render-winget-manifests.mjs --version "${RELEASE_VERSION}" --output "${GITHUB_WORKSPACE}/dist/winget"
+          node scripts/render-winget-manifests.mjs --version "$env:RELEASE_VERSION" --output "$env:GITHUB_WORKSPACE/dist/winget"
 
       - name: Install latest WinGet client
         shell: pwsh
