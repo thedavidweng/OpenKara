@@ -370,7 +370,11 @@ describe("Flatpak packaging", () => {
 
     expect(releaseWorkflow).toContain("GITHUB_TOKEN: ${{ github.token }}");
     expect(releaseWorkflow).toContain("Ensure release source tag exists");
-    expect(releaseWorkflow).toContain('git push origin "refs/tags/${tag}"');
+    expect(releaseWorkflow).toContain("persist-credentials: false");
+    expect(releaseWorkflow).toContain(
+      'git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}"',
+    );
+    expect(releaseWorkflow).toContain('push origin "refs/tags/${tag}"');
     expect(releaseWorkflow).toContain(
       '--title "New version: ${WINGET_PACKAGE_IDENTIFIER} version ${VERSION}"',
     );
