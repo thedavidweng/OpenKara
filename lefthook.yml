@@ -3,6 +3,7 @@ pre-commit:
   commands:
     oxfmt:
       glob: "*.{ts,tsx,js,jsx,json,css,md,html,yml,yaml}"
+      exclude: "pnpm-lock.yaml"
       run: pnpm exec oxfmt {staged_files}
       stage_fixed: true
     cargo-fmt:
