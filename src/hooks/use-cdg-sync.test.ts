@@ -139,3 +139,31 @@ describe("startCdgPositionSync", () => {
     // The old listener reference should be nulled out
   });
 });
+
+// ─── F5: CDG frame IPC songId guard ─────────────────────────
+
+describe("F5: CDG frame IPC validates against current song before drawFrame", () => {
+  test("hot frame path captures songId at request time and compares before draw", async () => {
+    const { default: src } = await import("./use-cdg-sync.ts?raw");
+
+    // In the hot frame path (the second useEffect that calls getCdgFrame
+    // in a loop), the fix must:
+    // 1. Capture the current songId before the IPC call
+    // 2. After the IPC resolves, compare against current songId
+    // 3. Skip drawFrame/emitCdgFrame if song changed
+
+    // Find the hot frame getCdgFrame call (the one inside startCdgPositionSync)
+    const hotFrameSection = src.slice(src.indexOf("startCdgPositionSync"));
+
+    // The songId must be captured before getCdgFrame
+    // (verified indirectly by checking the guard after IPC)
+
+    // After the IPC resolves, there must be a songId comparison
+    const afterIpc = hotFrameSection.slice(
+      hotFrameSection.indexOf(".getCdgFrame(positionMs)"),
+    );
+
+    // The guard should check that the current song still matches
+    expect(afterIpc).toContain("snapshot?.song_id");
+  });
+});

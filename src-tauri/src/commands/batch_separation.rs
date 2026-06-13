@@ -37,8 +37,6 @@ pub fn batch_separate(
     app_handle: AppHandle,
     song_ids: Vec<String>,
 ) -> CommandResult<()> {
-    crate::commands::bootstrap::ensure_model_ready(&state.shell.model_bootstrap_status)?;
-
     // Prevent concurrent batch operations.
     if state.separation.batch_running.load(Ordering::Relaxed) {
         return Err(
@@ -47,7 +45,9 @@ pub fn batch_separate(
     }
 
     let library_root = state.library_root()?;
-    let model_path = state.resolve_model_path()?;
+    let app_data_dir = state.shell.app_data_dir.clone();
+    let runtime_bootstrap_status = Arc::clone(&state.shell.runtime_bootstrap_status);
+    let model_bootstrap_status = Arc::clone(&state.shell.model_bootstrap_status);
     let separation_statuses = Arc::clone(&state.separation.separation_statuses);
     let model_cache: Arc<Mutex<ModelCache<LoadedModel>>> =
         Arc::clone(&state.separation.separator_model_cache);
@@ -137,6 +137,69 @@ pub fn batch_separate(
     tauri::async_runtime::spawn(async move {
         let mut completed: usize = 0;
         let mut failed_count: usize = 0;
+
+        let prerequisite_result = {
+            let app_data_dir = app_data_dir.clone();
+            let app_handle = app_handle.clone();
+            let runtime_status = Arc::clone(&runtime_bootstrap_status);
+            let model_status = Arc::clone(&model_bootstrap_status);
+            tauri::async_runtime::spawn_blocking(move || {
+                let mut emit_runtime = |event, snapshot| {
+                    let _ = app_handle.emit(event, snapshot);
+                };
+                crate::commands::runtime_bootstrap::ensure_runtime_ready_or_install_blocking(
+                    &app_data_dir,
+                    &runtime_status,
+                    &mut emit_runtime,
+                )?;
+
+                let mut emit_model = |event, snapshot| {
+                    let _ = app_handle.emit(event, snapshot);
+                };
+                crate::commands::bootstrap::ensure_active_model_ready_or_install_blocking(
+                    &app_data_dir,
+                    &model_status,
+                    &mut emit_model,
+                )
+            })
+            .await
+        };
+
+        let model_path = match prerequisite_result {
+            Ok(Ok(path)) => path,
+            Ok(Err(error)) => {
+                let _ = app_handle.emit(
+                    BATCH_SEPARATION_COMPLETE_EVENT,
+                    BatchSeparationProgress {
+                        total,
+                        completed,
+                        skipped,
+                        failed: total.saturating_sub(completed + skipped),
+                        current_song_id: None,
+                        current_percent: 0,
+                    },
+                );
+                batch_running.store(false, Ordering::Relaxed);
+                eprintln!("batch separation prerequisites failed: {}", error.message);
+                return;
+            }
+            Err(error) => {
+                let _ = app_handle.emit(
+                    BATCH_SEPARATION_COMPLETE_EVENT,
+                    BatchSeparationProgress {
+                        total,
+                        completed,
+                        skipped,
+                        failed: total.saturating_sub(completed + skipped),
+                        current_song_id: None,
+                        current_percent: 0,
+                    },
+                );
+                batch_running.store(false, Ordering::Relaxed);
+                eprintln!("batch separation prerequisites task failed: {error}");
+                return;
+            }
+        };
 
         for song_id in &to_separate {
             // Check cancellation.

@@ -66,6 +66,17 @@ export function SettingsDialogHost() {
         />
       );
 
+    case "delete_runtime":
+      return (
+        <ConfirmationDialog
+          title={t("settings.confirmDeleteRuntime.title")}
+          message={t("settings.confirmDeleteRuntime.message")}
+          confirmLabel={t("settings.confirmDeleteRuntime.confirm")}
+          onConfirm={() => void actions.deleteRuntime()}
+          onCancel={actions.closeDialog}
+        />
+      );
+
     default:
       return null;
   }

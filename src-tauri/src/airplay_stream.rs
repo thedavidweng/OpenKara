@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::{
     fs,
-    io::Read,
+    io::{Read, Seek, SeekFrom},
     net::{Ipv4Addr, SocketAddrV4, TcpListener},
     path::{Path, PathBuf},
     sync::{
@@ -51,12 +51,18 @@ impl AirPlayAudioTap {
         self.epoch.fetch_add(1, Ordering::SeqCst) + 1
     }
 
-    pub fn push_interleaved(&self, sample_rate: u32, channels: u16, samples: &[f32]) {
+    /// R1: Takes ownership of `samples` to avoid heap allocation on the realtime
+    /// audio callback thread. Caller passes its pre-allocated scratch buffer and
+    /// replaces it with a fresh Vec for the next callback.
+    pub fn push_interleaved(&self, sample_rate: u32, channels: u16, samples: Vec<f32>) {
         if samples.is_empty() {
             return;
         }
 
-        let Ok(mut buffer) = self.buffer.lock() else {
+        // R1: Use try_lock() instead of blocking lock() on the realtime audio
+        // callback thread. If drain_pending holds the lock, dropping samples is
+        // preferable to blocking the callback and causing audible glitches.
+        let Ok(mut buffer) = self.buffer.try_lock() else {
             return;
         };
 
@@ -64,7 +70,7 @@ impl AirPlayAudioTap {
             epoch: self.current_epoch(),
             sample_rate,
             channels,
-            samples: samples.to_vec(),
+            samples,
         });
     }
 
@@ -250,12 +256,6 @@ fn build_file_response(
     range_header: Option<&str>,
     file_path: &Path,
 ) -> Result<Response<std::io::Cursor<Vec<u8>>>> {
-    let mut file = fs::File::open(file_path)
-        .with_context(|| format!("failed to open requested asset {}", file_path.display()))?;
-    let mut body = Vec::new();
-    file.read_to_end(&mut body)
-        .with_context(|| format!("failed to read requested asset {}", file_path.display()))?;
-
     let content_type = match file_path
         .extension()
         .and_then(|extension| extension.to_str())
@@ -266,16 +266,46 @@ fn build_file_response(
         _ => "application/octet-stream",
     };
 
-    let total_len = body.len() as u64;
+    // R11: Determine file size from metadata rather than reading the whole file.
+    let metadata = fs::metadata(file_path)
+        .with_context(|| format!("failed to stat requested asset {}", file_path.display()))?;
+    let total_len = metadata.len();
+
     let requested_range = range_header.and_then(|header| parse_byte_range(header, total_len));
+
+    // R11: For Range requests, seek to the start and read only the requested
+    // byte range instead of reading the entire file into memory.
     let (status, response_body, content_range) = if let Some(range) = requested_range {
-        let partial = body[range.start as usize..=range.end as usize].to_vec();
+        let mut file = fs::File::open(file_path)
+            .with_context(|| format!("failed to open requested asset {}", file_path.display()))?;
+        file.seek(SeekFrom::Start(range.start)).with_context(|| {
+            format!(
+                "failed to seek to byte {} in {}",
+                range.start,
+                file_path.display()
+            )
+        })?;
+        let read_len = (range.end - range.start + 1) as usize;
+        let mut partial = vec![0u8; read_len];
+        file.read_exact(&mut partial).with_context(|| {
+            format!(
+                "failed to read bytes {}-{} from {}",
+                range.start,
+                range.end,
+                file_path.display()
+            )
+        })?;
         (
             StatusCode(206),
             partial,
             Some(format!("bytes {}-{}/{}", range.start, range.end, total_len)),
         )
     } else {
+        let mut file = fs::File::open(file_path)
+            .with_context(|| format!("failed to open requested asset {}", file_path.display()))?;
+        let mut body = Vec::new();
+        file.read_to_end(&mut body)
+            .with_context(|| format!("failed to read requested asset {}", file_path.display()))?;
         (StatusCode(200), body, None)
     };
 
@@ -283,9 +313,6 @@ fn build_file_response(
     response.add_header(Header::from_bytes("Content-Type", content_type.as_bytes()).unwrap());
     response.add_header(Header::from_bytes("Accept-Ranges", "bytes").unwrap());
     if head_only {
-        // tiny_http derives Content-Length from the response body size. Returning
-        // the same framed payload for HEAD keeps byte-range probes deterministic
-        // without manufacturing conflicting length headers.
         let _ = head_only;
     }
     if let Some(content_range) = content_range {
@@ -304,8 +331,11 @@ mod tests {
     use super::*;
     use std::{sync::Arc, thread, time::Duration};
 
+    /// R1: push_interleaved must use try_lock() on the audio callback thread so
+    /// that contention with drain_pending drops samples instead of blocking.
+    /// Blocking the realtime callback causes audible glitches.
     #[test]
-    fn push_interleaved_waits_for_contended_lock_instead_of_dropping_audio() {
+    fn push_interleaved_drops_samples_when_lock_is_contended() {
         let tap = Arc::new(AirPlayAudioTap::new(4));
         let guard = tap.buffer.lock().expect("test should hold the queue lock");
         let (ready_tx, ready_rx) = std::sync::mpsc::channel();
@@ -313,25 +343,98 @@ mod tests {
 
         let worker = thread::spawn(move || {
             ready_tx.send(()).expect("worker should signal readiness");
-            worker_tap.push_interleaved(44_100, 2, &[0.25, 0.5]);
+            worker_tap.push_interleaved(44_100, 2, vec![0.25, 0.5]);
         });
 
         ready_rx.recv().expect("worker should start");
         thread::sleep(Duration::from_millis(25));
 
+        // With try_lock, the worker should have returned (dropped samples)
+        // instead of blocking on the contended mutex.
         assert!(
-            !worker.is_finished(),
-            "push_interleaved returned while the queue lock was still held"
+            worker.is_finished(),
+            "push_interleaved should return immediately (try_lock) when lock is contended"
         );
 
         drop(guard);
-        worker
-            .join()
-            .expect("worker should finish once the lock is released");
+        worker.join().expect("worker should have finished");
+
+        // Samples should have been dropped because the lock was held.
+        let drained = tap.drain_pending();
+        assert!(
+            drained.is_empty(),
+            "samples should be dropped when lock is contended, got {} chunks",
+            drained.len()
+        );
+    }
+
+    /// R1: push_interleaved successfully enqueues when the lock is available.
+    #[test]
+    fn push_interleaved_enqueues_when_lock_available() {
+        let tap = AirPlayAudioTap::new(4);
+        tap.push_interleaved(44_100, 2, vec![0.25, 0.5]);
 
         let drained = tap.drain_pending();
         assert_eq!(drained.len(), 1);
         assert_eq!(drained[0].samples, vec![0.25, 0.5]);
+        assert_eq!(drained[0].sample_rate, 44_100);
+        assert_eq!(drained[0].channels, 2);
+    }
+
+    /// R11: Range requests must read only the requested byte range from disk,
+    /// not the entire file. This test writes a file and verifies that a Range
+    /// request returns exactly the requested slice.
+    #[test]
+    fn range_request_reads_only_requested_bytes() {
+        let dir = std::env::temp_dir().join(format!("airplay_r11_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        // Write a 1000-byte test file.
+        let file_path = dir.join("test.bin");
+        let data: Vec<u8> = (0..=255).cycle().take(1000).collect();
+        fs::write(&file_path, &data).unwrap();
+
+        // Request bytes 100-199 (100 bytes).
+        let response =
+            super::build_file_response(false, Some("bytes=100-199"), &file_path).unwrap();
+
+        // The response body should be exactly 100 bytes matching the file slice.
+        let mut reader = response.into_reader();
+        let mut body = Vec::new();
+        reader.read_to_end(&mut body).unwrap();
+        assert_eq!(
+            body.len(),
+            100,
+            "Range response should contain exactly 100 bytes"
+        );
+        assert_eq!(
+            body,
+            &data[100..200],
+            "Range response should match the file slice"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// R11: Full (non-Range) requests should still return the complete file.
+    #[test]
+    fn full_request_returns_entire_file() {
+        let dir = std::env::temp_dir().join(format!("airplay_r11_full_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let file_path = dir.join("test.bin");
+        let data: Vec<u8> = (0..=255).cycle().take(500).collect();
+        fs::write(&file_path, &data).unwrap();
+
+        let response = super::build_file_response(false, None, &file_path).unwrap();
+        let mut reader = response.into_reader();
+        let mut body = Vec::new();
+        reader.read_to_end(&mut body).unwrap();
+        assert_eq!(body.len(), 500, "Full response should contain entire file");
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }
 

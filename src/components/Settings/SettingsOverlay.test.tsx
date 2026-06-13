@@ -135,6 +135,11 @@ describe("SettingsOverlay sections", () => {
   test("renders downloaded, downloading, and not-downloaded model statuses", () => {
     const value = createSettingsOverlayTestContextValue({
       state: {
+        runtimeStatus: {
+          state: "ready",
+          version: "1.26.0",
+          runtime_path: "/test/runtime",
+        },
         modelStatuses: {
           htdemucs: {
             downloaded: true,
@@ -164,6 +169,11 @@ describe("SettingsOverlay sections", () => {
   test("model variant section shows legacy-on-disk label", () => {
     const value = createSettingsOverlayTestContextValue({
       state: {
+        runtimeStatus: {
+          state: "ready",
+          version: "1.26.0",
+          runtime_path: "/test/runtime",
+        },
         modelStatuses: {
           htdemucs: {
             downloaded: false,

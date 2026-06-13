@@ -94,13 +94,13 @@ export function startCdgPositionSync(
 
 export function useCdgSync(enabled = true): void {
   const songId = usePlayerStore((s) => s.snapshot?.song_id ?? null);
-  const songs = useLibraryStore((s) => s.songs);
+  const currentSong = useLibraryStore(
+    (s) => s.songs.find((song) => song.hash === songId) ?? null,
+  );
   const setSong = useCdgStore((s) => s.setSong);
   const clear = useCdgStore((s) => s.clear);
   const pendingRef = useRef(false);
-  const currentSongHasCdg = songHasCdgMedia(
-    songs.find((song) => song.hash === songId) ?? null,
-  );
+  const currentSongHasCdg = songHasCdgMedia(currentSong);
 
   useEffect(() => {
     if (!enabled) return;
@@ -201,6 +201,8 @@ export function useCdgSync(enabled = true): void {
         }
         pendingRef.current = true;
         const positionMs = selectSyncDisplayPositionMs(state);
+        // F5: Capture songId at request time so stale frames are discarded.
+        const requestSongId = snapshot?.song_id;
 
         // PERF: The hot frame path stays out of React state. The IPC returns a
         // raw ArrayBuffer (no base64), and drawFrame() paints it to a pre-
@@ -208,6 +210,10 @@ export function useCdgSync(enabled = true): void {
         api
           .getCdgFrame(positionMs)
           .then((result) => {
+            // F5: Discard stale frames if the song changed during the IPC call.
+            if (requestSongId !== usePlayerStore.getState().snapshot?.song_id) {
+              return;
+            }
             const buffer = ensureArrayBuffer(result);
             if (buffer.byteLength > 0) {
               drawFrame(buffer);

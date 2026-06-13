@@ -143,7 +143,10 @@ user.
 
 - Source icon: `src-tauri/icons/app-icon.png` (`1024x1024` master asset)
 - Regenerate all platform icons with `pnpm icons:generate`
+  - Raster icons (`icon.icns`, PNG sizes, Windows/Android/iOS) come from `tauri icon`
+  - On macOS, the same command also compiles `src-tauri/icons/OpenKara.icon` into `Assets.car` (Liquid Glass, macOS 26+) via Xcode `actool`
 - Generated assets are written to `src-tauri/icons/` for Tauri desktop and future mobile targets
+- macOS 26 uses `Assets.car` + `CFBundleIconName=OpenKara`; older macOS versions fall back to the legacy `icon.icns` raster
 
 ## AI Models
 

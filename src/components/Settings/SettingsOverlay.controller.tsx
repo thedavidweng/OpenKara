@@ -7,6 +7,7 @@ import { useLibraryStore } from "@/stores/library-store";
 import { useLyricsStore } from "@/stores/lyrics-store";
 import { usePlayerStore } from "@/stores/player-store";
 import { useQueueStore } from "@/stores/queue-store";
+import { useRuntimeBootstrapStore } from "@/stores/runtime-bootstrap-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import {
   SettingsOverlayContext,
@@ -37,6 +38,7 @@ export function SettingsOverlayProvider({
   const [snapshot, setSnapshot] = useState<SettingsOverlaySnapshot>(
     initialSnapshot ?? createInitialSettingsOverlaySnapshot(),
   );
+  const runtimeBootstrapStatus = useRuntimeBootstrapStore((s) => s.status);
   const didInitializeRef = useRef(false);
 
   const stateControls = useMemo<SettingsOverlayStateControls>(
@@ -107,6 +109,24 @@ export function SettingsOverlayProvider({
     didInitializeRef.current = true;
     void actions.initialize();
   }, [actions, skipInitialize]);
+
+  useEffect(() => {
+    if (!runtimeBootstrapStatus) {
+      return;
+    }
+
+    setSnapshot((previous) => ({
+      ...previous,
+      state: {
+        ...previous.state,
+        runtimeStatus: {
+          state: runtimeBootstrapStatus.state,
+          version: runtimeBootstrapStatus.version,
+          runtime_path: runtimeBootstrapStatus.runtime_path,
+        },
+      },
+    }));
+  }, [runtimeBootstrapStatus]);
 
   const value = useMemo<SettingsOverlayContextValue>(
     () => ({

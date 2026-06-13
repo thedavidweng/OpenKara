@@ -89,6 +89,7 @@ pub fn run() {
             commands::import::pick_import_paths,
             commands::import::get_library,
             commands::import::search_library,
+            commands::import::get_cover_art,
             commands::import::delete_songs,
             commands::import::extract_embedded_cover_art,
             commands::import::update_song_metadata,
@@ -174,7 +175,10 @@ pub fn run() {
             commands::window_shell::window_ready,
             commands::bootstrap::download_model,
             commands::bootstrap::delete_model,
-            commands::bootstrap::get_model_status
+            commands::bootstrap::get_model_status,
+            commands::runtime_bootstrap::get_runtime_bootstrap_status,
+            commands::runtime_bootstrap::download_runtime,
+            commands::runtime_bootstrap::delete_runtime
         ]);
 
     #[cfg(target_os = "macos")]

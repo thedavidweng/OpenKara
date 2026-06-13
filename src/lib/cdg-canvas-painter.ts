@@ -74,29 +74,6 @@ export function drawFrame(buffer: ArrayBuffer): void {
   paintBytes(lastFrameBytes);
 }
 
-/**
- * Paint a base64-encoded RGBA frame onto the CDG canvas.
- *
- * Used exclusively by the **fullscreen window's event receiver path**, where
- * frames arrive as base64 strings through Tauri's JSON-serialized event
- * system (which cannot carry raw `ArrayBuffer` payloads). The main window
- * uses `drawFrame(ArrayBuffer)` instead for better performance.
- *
- * This path is intentionally separate from `drawFrame` — do not merge them.
- * The base64 overhead here is acceptable because the fullscreen window is a
- * secondary display; the main window's rendering path must remain binary.
- */
-export function drawFrameFromBase64(base64Frame: string): void {
-  const binary = atob(base64Frame);
-  const bytes = new Uint8ClampedArray(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-
-  lastFrameBytes = bytes;
-  paintBytes(bytes);
-}
-
 export function clearFrame(): void {
   lastFrameBytes = null;
   cdgCanvasCtx?.clearRect(0, 0, CDG_WIDTH, CDG_HEIGHT);

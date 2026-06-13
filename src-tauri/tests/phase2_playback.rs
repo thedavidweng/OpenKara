@@ -47,8 +47,7 @@ fn playback_controller_transitions_pause_seek_and_volume() {
     controller.advance_render_frame(11_025);
 
     let paused = controller.pause(1_250).expect("pause should succeed");
-    // With fade-out, is_playing stays true during the 50ms envelope.
-    assert_snapshot(&paused, Some("song-a"), true, 250);
+    assert_snapshot(&paused, Some("song-a"), false, 250);
 
     // Resume — render_frame unchanged, position stays at 250ms
     let resumed = controller.play(1_500).expect("resume should succeed");

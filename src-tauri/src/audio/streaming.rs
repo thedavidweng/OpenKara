@@ -3,10 +3,11 @@ use ringbuf::HeapRb;
 use std::fs::File;
 use std::path::Path;
 use std::sync::{
-    atomic::{AtomicBool, AtomicI64, Ordering},
+    atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
     Arc,
 };
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 use symphonia::core::{
     audio::SampleBuffer, codecs::DecoderOptions, errors::Error as SymphoniaError,
     formats::FormatOptions, io::MediaSourceStream, meta::MetadataOptions, probe::Hint,
@@ -181,14 +182,22 @@ impl AudioConsumer {
         (frames as u64 * 1000) / self.sample_rate as u64
     }
 
+    /// Number of source frames (not interleaved samples) available to read.
+    pub fn available_src_frames(&self) -> usize {
+        let ch = self.channels.max(1);
+        self.available_samples() / ch
+    }
+
     /// Whether the buffer is below the low-water mark.
+    /// EOF streams are never treated as underrun — the decode thread is done.
     pub fn is_below_low_water(&self) -> bool {
-        self.available_samples() < LOW_WATER_SAMPLES
+        !self.is_eof() && self.available_samples() < LOW_WATER_SAMPLES
     }
 
     /// Whether the buffer is above the high-water mark.
+    /// EOF streams are always considered "ready" so playback can drain and finish.
     pub fn is_above_high_water(&self) -> bool {
-        self.available_samples() >= HIGH_WATER_SAMPLES
+        self.is_eof() || self.available_samples() >= HIGH_WATER_SAMPLES
     }
 
     /// Whether the producer has finished decoding all samples.
@@ -256,6 +265,9 @@ pub struct AudioProducer {
     needs_flush: Arc<AtomicBool>,
     /// Shared seek target — checked before each packet decode.
     seek_target: Arc<SeekTarget>,
+    /// R6: Shared flush epoch — incremented on each flush so the consumer can
+    /// track which flush it has acknowledged.
+    flush_epoch: Arc<AtomicU64>,
 }
 
 impl AudioProducer {
@@ -281,8 +293,21 @@ impl AudioProducer {
     }
 
     /// After a seek, signal the consumer to drain stale samples.
+    ///
+    /// R6: Increments the flush epoch and waits (with a bounded timeout) for
+    /// the ring buffer to drain. This prevents the producer from pushing
+    /// post-seek samples that the consumer would then discard as stale.
     pub fn signal_flush(&self) {
+        self.flush_epoch.fetch_add(1, Ordering::Relaxed);
         self.needs_flush.store(true, Ordering::Relaxed);
+
+        // Wait for the consumer to drain stale samples. The consumer checks
+        // needs_flush on every audio callback (~10ms). We spin with yield_now
+        // to avoid busy-waiting while giving the realtime thread priority.
+        let deadline = Instant::now() + Duration::from_millis(100);
+        while self.prod.occupied_len() > 0 && Instant::now() < deadline {
+            std::thread::yield_now();
+        }
     }
 
     /// Get the shared seek target.
@@ -338,6 +363,30 @@ impl StreamingTrack {
             } => vec![vocals, drums, bass, other],
         }
     }
+
+    /// Immutable view of all consumers — used for budget/EOF checks without mixing.
+    pub fn consumers(&self) -> Vec<&AudioConsumer> {
+        match self {
+            StreamingTrack::Single { consumer } => vec![consumer],
+            StreamingTrack::TwoStem {
+                vocals,
+                accompaniment,
+            } => vec![vocals, accompaniment],
+            StreamingTrack::FourStem {
+                vocals,
+                drums,
+                bass,
+                other,
+            } => vec![vocals, drums, bass, other],
+        }
+    }
+
+    /// True when every consumer has reached EOF and drained its ring buffer.
+    pub fn all_eof_and_drained(&self) -> bool {
+        self.consumers()
+            .iter()
+            .all(|c| c.is_eof() && c.available_samples() == 0)
+    }
 }
 
 /// Create a producer-consumer pair for a single audio stream.
@@ -349,6 +398,7 @@ pub fn create_stream_pair(sample_rate: u32, channels: usize) -> (AudioProducer, 
     let is_eof = Arc::new(AtomicBool::new(false));
     let needs_flush = Arc::new(AtomicBool::new(false));
     let seek_target = Arc::new(SeekTarget::new());
+    let flush_epoch = Arc::new(AtomicU64::new(0));
 
     (
         AudioProducer {
@@ -356,6 +406,7 @@ pub fn create_stream_pair(sample_rate: u32, channels: usize) -> (AudioProducer, 
             is_eof: Arc::clone(&is_eof),
             needs_flush: Arc::clone(&needs_flush),
             seek_target: Arc::clone(&seek_target),
+            flush_epoch: Arc::clone(&flush_epoch),
         },
         AudioConsumer {
             cons,
@@ -386,11 +437,17 @@ pub fn frames_to_ms(frames: u64, sample_rate: u32) -> u64 {
 pub struct StreamMetadata {
     pub sample_rate: u32,
     pub channels: usize,
-    pub duration_ms: u64,
+    /// Item 12: Duration is optional so playback can start immediately.
+    /// When `None`, the container did not expose frame count metadata and
+    /// the duration should be resolved asynchronously after playback begins.
+    pub duration_ms: Option<u64>,
 }
 
 /// Probe an audio file for metadata without decoding the full PCM data.
-/// Falls back to a full decode if the container doesn't expose `n_frames`.
+///
+/// Item 12: Returns `duration_ms: None` when the container doesn't expose
+/// `n_frames` instead of blocking on a full decode. Playback can start
+/// immediately and the duration can be resolved asynchronously.
 pub fn probe_stream_metadata(path: &Path) -> Result<StreamMetadata, DecodeError> {
     let file = File::open(path)
         .map_err(|e| DecodeError::FileOpenFailed(format!("{}: {}", path.display(), e)))?;
@@ -447,16 +504,14 @@ pub fn probe_stream_metadata(path: &Path) -> Result<StreamMetadata, DecodeError>
     let sample_rate = sample_rate.ok_or(DecodeError::MissingSampleRate)?;
     let channels = channels.ok_or(DecodeError::MissingChannels)?;
 
-    // Try to get duration from container metadata.
+    // Item 12: Try to get duration from container metadata only.
+    // Do NOT fall back to full decode — return None so playback starts immediately.
     let duration_ms =
         if let (Some(n_frames), Some(tb)) = (codec_params.n_frames, codec_params.time_base) {
             let time = tb.calc_time(n_frames);
-            (time.seconds * 1000) + (time.frac * 1000.0) as u64
+            Some((time.seconds * 1000) + (time.frac * 1000.0) as u64)
         } else {
-            // Fallback: full decode to compute duration.
-            // Re-open the file since the MediaSourceStream was consumed.
-            let decoded = super::decode::decode_file(path)?;
-            decoded.duration_ms
+            None
         };
 
     Ok(StreamMetadata {
@@ -891,7 +946,10 @@ mod tests {
         // Metadata should match the fixture
         assert_eq!(metadata.sample_rate, 44_100);
         assert_eq!(metadata.channels, 2);
-        assert!(metadata.duration_ms >= 999 && metadata.duration_ms <= 1_001);
+        let duration = metadata
+            .duration_ms
+            .expect("WAV should have duration from container");
+        assert!(duration >= 999 && duration <= 1_001);
 
         // Wait for decode to finish
         handle
@@ -912,6 +970,22 @@ mod tests {
             output.iter().any(|s| *s != 0.0),
             "decoded samples should not all be zero"
         );
+    }
+
+    #[test]
+    fn eof_consumer_is_not_below_low_water() {
+        let (mut prod, consumer) = super::create_stream_pair(44_100, 2);
+        prod.set_eof();
+        assert!(!consumer.is_below_low_water());
+        assert!(consumer.is_above_high_water());
+    }
+
+    #[test]
+    fn all_eof_and_drained_detects_natural_end() {
+        let (mut prod, consumer) = super::create_stream_pair(44_100, 2);
+        prod.set_eof();
+        let track = super::StreamingTrack::Single { consumer };
+        assert!(track.all_eof_and_drained());
     }
 
     #[test]
@@ -951,16 +1025,15 @@ mod tests {
 
         let metadata = probe_stream_metadata(&path).expect("probe should succeed for m4a");
         eprintln!(
-            "m4a metadata: rate={}, ch={}, dur={}ms",
+            "m4a metadata: rate={}, ch={}, dur={:?}ms",
             metadata.sample_rate, metadata.channels, metadata.duration_ms
         );
         assert!(metadata.sample_rate > 0);
         assert!(metadata.channels > 0);
-        assert!(
-            metadata.duration_ms > 0,
-            "duration_ms must be > 0, got {}",
-            metadata.duration_ms
-        );
+        let duration = metadata
+            .duration_ms
+            .expect("m4a should have duration from container");
+        assert!(duration > 0, "duration_ms must be > 0, got {}", duration);
     }
 
     #[test]
@@ -978,7 +1051,12 @@ mod tests {
             probe_stream_metadata(&path).expect("probe_stream_metadata should succeed for m4a");
         assert!(metadata.sample_rate > 0, "sample_rate should be positive");
         assert!(metadata.channels > 0, "channels should be positive");
-        assert!(metadata.duration_ms > 0, "duration_ms should be positive");
+        let duration = metadata.duration_ms.expect("m4a should have duration");
+        assert!(
+            duration > 0,
+            "duration_ms should be positive, got {}",
+            duration
+        );
 
         // Spawn decode producer and verify it fills the ring buffer
         let (mut consumer, _, handle) =
@@ -1025,7 +1103,7 @@ mod tests {
             "test-m4a".to_owned(),
             metadata.sample_rate,
             metadata.channels,
-            metadata.duration_ms,
+            metadata.duration_ms.unwrap_or(0),
             StreamingTrack::Single { consumer },
             0,
         );
@@ -1075,7 +1153,7 @@ mod tests {
             "test-m4a-loop".to_owned(),
             metadata.sample_rate,
             metadata.channels,
-            metadata.duration_ms,
+            metadata.duration_ms.unwrap_or(0),
             StreamingTrack::Single { consumer },
             0,
         );
@@ -1307,7 +1385,7 @@ mod tests {
         let metadata = StreamMetadata {
             sample_rate: 44_100,
             channels: 2,
-            duration_ms: 1_000,
+            duration_ms: Some(1_000),
         };
 
         let (consumer, handle) = spawn_decode_producer_from_source(
@@ -1325,5 +1403,88 @@ mod tests {
 
         assert_eq!(consumer.available_samples(), 88_200);
         assert_eq!(consumer.available_ms(), 1_000);
+    }
+
+    /// R6: Verify that post-seek samples are not drained by the flush
+    /// that clears stale pre-seek data. The producer's signal_flush waits
+    /// for the ring buffer to drain before the decode thread pushes new
+    /// samples, so the consumer only drains stale data.
+    #[test]
+    fn seek_flush_preserves_post_seek_samples() {
+        let (mut prod, mut cons) = create_stream_pair(44_100, 2);
+
+        // Push pre-seek samples.
+        let pre_seek: Vec<f32> = (0..1000).map(|i| i as f32).collect();
+        assert_eq!(prod.push_samples(&pre_seek), 1000);
+        assert_eq!(cons.available_samples(), 1000);
+
+        // Signal flush from a background thread (simulates decode thread).
+        let flush_handle = std::thread::spawn(move || {
+            prod.signal_flush();
+            // After flush returns, the ring buffer should be empty.
+            // Push post-seek samples.
+            let post_seek: Vec<f32> = (2000..2500).map(|i| i as f32).collect();
+            prod.push_samples(&post_seek);
+            prod
+        });
+
+        // Give the flush thread time to start waiting.
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        // Consumer acknowledges flush (drains stale samples).
+        // This should unblock the producer's signal_flush.
+        cons.acknowledge_flush();
+        assert!(!cons.needs_flush());
+
+        // Wait for the producer to finish pushing post-seek samples.
+        let _prod = flush_handle.join().expect("flush thread should finish");
+
+        // The consumer should have only the post-seek samples.
+        let available = cons.available_samples();
+        assert_eq!(
+            available, 500,
+            "should have exactly 500 post-seek samples, got {available}"
+        );
+
+        let mut output = vec![0.0f32; 500];
+        let popped = cons.pop_samples(&mut output);
+        assert_eq!(popped, 500);
+        assert_eq!(output[0], 2000.0, "first post-seek sample should be 2000");
+        assert_eq!(output[499], 2499.0, "last post-seek sample should be 2499");
+    }
+
+    /// Item 12: Verify that probe_stream_metadata returns duration as Option.
+    /// WAV files have container-level duration, so it should be Some.
+    #[test]
+    fn probe_returns_some_duration_when_container_has_metadata() {
+        use std::path::PathBuf;
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("audio")
+            .join("fixture.wav");
+
+        let metadata = probe_stream_metadata(&path).expect("probe should succeed");
+        // WAV container exposes n_frames, so duration should be available.
+        assert!(
+            metadata.duration_ms.is_some(),
+            "WAV files should have duration from container metadata"
+        );
+        let dur = metadata.duration_ms.unwrap();
+        assert!(dur > 0, "duration should be positive");
+    }
+
+    /// Item 12: Verify that StreamMetadata.duration_ms is Option to allow
+    /// immediate playback start when duration is unknown.
+    #[test]
+    fn stream_metadata_duration_is_optional() {
+        let metadata = StreamMetadata {
+            sample_rate: 44100,
+            channels: 2,
+            duration_ms: None,
+        };
+        // Playback should be able to start with None duration.
+        assert!(metadata.duration_ms.is_none());
     }
 }

@@ -57,3 +57,15 @@ Optional custom paths:
 ```bash
 ./scripts/run-local-smoke.sh ./test ./output
 ```
+
+## `generate-macos-liquid-glass-icon.mjs`
+
+Compiles the Icon Composer project into macOS 26 Liquid Glass assets.
+
+- **Input:** `src-tauri/icons/OpenKara.icon/` (syncs `app-icon.png` into the layer asset first)
+- **Prerequisites:** macOS host with Xcode `actool` (`xcrun actool`)
+- **Output:** `src-tauri/icons/Assets.car`, `src-tauri/icons/OpenKara.icns`
+- **Run:** `node scripts/generate-macos-liquid-glass-icon.mjs` or `pnpm icons:generate` (chained after `tauri icon`)
+- **Non-macOS hosts:** exits successfully without writing files
+- **When to run:** after changing `app-icon.png` or `OpenKara.icon/icon.json`
+- **Bundle:** `Assets.car` is copied into the app via `tauri.conf.json` `bundle.resources`; `Info.plist` sets `CFBundleIconName` to `OpenKara`

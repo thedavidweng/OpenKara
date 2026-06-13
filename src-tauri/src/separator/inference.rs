@@ -23,9 +23,18 @@ pub struct SeparationResult {
     pub stems: Vec<SeparatedStem>,
 }
 
+/// Item 3: Takes `&LoadedModel` (not `&mut`) so the model cache lock can be
+/// released before calling this function. The ONNX session is thread-safe and
+/// only requires shared access for `session.run()`.
+/// Item 3: Takes `&LoadedModel` (not `&mut`) so the model cache lock can be
+/// released before calling this function. The ONNX session is thread-safe and
+/// only requires shared access for `session.run()`.
+///
+/// Item 4: Takes ownership of `decoded_audio` so the original buffer is
+/// consumed during normalization, preventing two full-song PCM copies.
 pub fn separate_audio(
-    model: &mut LoadedModel,
-    decoded_audio: &DecodedAudio,
+    model: &LoadedModel,
+    decoded_audio: DecodedAudio,
     mut on_chunk_complete: impl FnMut(usize, usize),
     checkpoint_dir: Option<&Path>,
     song_hash: &str,
@@ -51,15 +60,18 @@ pub fn separate_audio(
 }
 
 fn separate_window_audio(
-    model: &mut LoadedModel,
+    model: &LoadedModel,
     decoded_audio: &DecodedAudio,
     trim_frame_count: usize,
 ) -> Result<SeparationResult> {
     let prepared_input = preprocess::prepare_model_input_from_normalized(model, decoded_audio)?;
     let session_inputs = build_session_inputs(model, decoded_audio, prepared_input)
         .context("failed to prepare Demucs inputs")?;
-    let outputs = model
+    let mut session_guard = model
         .session
+        .lock()
+        .map_err(|_| anyhow::anyhow!("ONNX session lock was poisoned"))?;
+    let outputs = session_guard
         .run(session_inputs)
         .context("failed to run Demucs inference")?;
 
@@ -114,16 +126,40 @@ fn separate_window_audio(
     )
 }
 
+/// Item 5: Generate a Hann window of the given size for overlap-add processing.
+/// Sine window satisfying the squared constant-overlap-add constraint at 50%
+/// overlap: w[n]^2 + w[n + N/2]^2 = 1.
+///
+/// This is equivalent to `sqrt(hann)` and is the standard choice for
+/// overlap-add processing where chunks are windowed, processed, then
+/// overlap-added with the same window (squared normalization).
+fn hann_window(size: usize) -> Vec<f32> {
+    (0..size)
+        .map(|i| {
+            let phase = std::f64::consts::TAU * i as f64 / size as f64;
+            (0.5 * (1.0 - phase.cos())).sqrt() as f32
+        })
+        .collect()
+}
+
 fn separate_chunked_audio(
-    model: &mut LoadedModel,
+    model: &LoadedModel,
     decoded_audio: &DecodedAudio,
     target_frame_count: usize,
     on_chunk_complete: &mut impl FnMut(usize, usize),
     checkpoint_dir: Option<&Path>,
     song_hash: &str,
 ) -> Result<SeparationResult> {
-    let input_frame_count = decoded_audio.samples.len() / decoded_audio.channels;
-    let total_chunks = input_frame_count.div_ceil(target_frame_count);
+    let channels = decoded_audio.channels;
+    let input_frame_count = decoded_audio.samples.len() / channels;
+
+    // Item 5: 50% overlap with Hann window for smooth chunk boundaries.
+    let hop_size = target_frame_count / 2;
+    let total_chunks = if input_frame_count <= target_frame_count {
+        1
+    } else {
+        (input_frame_count - target_frame_count).div_ceil(hop_size) + 1
+    };
 
     // Write checkpoint manifest and discover already-completed chunks.
     let completed_set: HashSet<usize> = if let Some(dir) = checkpoint_dir {
@@ -132,7 +168,7 @@ fn separate_chunked_audio(
             total_chunks,
             target_frame_count,
             input_frame_count,
-            channels: decoded_audio.channels,
+            channels,
             sample_rate: decoded_audio.sample_rate,
             stem_count: DEMUCS_STEM_NAMES.len(),
         };
@@ -144,43 +180,63 @@ fn separate_chunked_audio(
         HashSet::new()
     };
 
+    let output_sample_count = decoded_audio.samples.len();
     let mut merged_stems = DEMUCS_STEM_NAMES
         .iter()
         .map(|stem_name| SeparatedStem {
             name: (*stem_name).to_string(),
             audio: DecodedAudio {
                 sample_rate: decoded_audio.sample_rate,
-                channels: decoded_audio.channels,
+                channels,
                 duration_ms: decoded_audio.duration_ms,
-                samples: vec![0.0_f32; decoded_audio.samples.len()],
+                samples: vec![0.0_f32; output_sample_count],
             },
         })
         .collect::<Vec<_>>();
 
+    // Overlap-add normalization buffer: tracks the sum of squared Hann
+    // windows at each sample position for proper normalization.
+    let mut overlap_norm = vec![0.0_f32; output_sample_count];
+
     // Restore already-completed chunks from checkpoint.
     if let Some(dir) = checkpoint_dir {
         for &completed_idx in &completed_set {
-            let chunk_start_frame = completed_idx * target_frame_count;
+            let chunk_start_frame = completed_idx * hop_size;
             if chunk_start_frame >= input_frame_count {
                 continue;
             }
             let chunk_frame_count = (input_frame_count - chunk_start_frame).min(target_frame_count);
             let chunk_data = checkpoint::read_chunk(dir, completed_idx)?;
-            let samples_per_stem = chunk_frame_count * decoded_audio.channels;
+            let window = hann_window(target_frame_count);
+            let samples_per_stem = chunk_frame_count * channels;
             for (stem_idx, stem) in merged_stems.iter_mut().enumerate() {
                 let src_offset = stem_idx * samples_per_stem;
-                let dst_offset = chunk_start_frame * decoded_audio.channels;
-                stem.audio.samples[dst_offset..dst_offset + samples_per_stem]
-                    .copy_from_slice(&chunk_data[src_offset..src_offset + samples_per_stem]);
+                let dst_start = chunk_start_frame * channels;
+                for frame in 0..chunk_frame_count {
+                    let w = window[frame];
+                    for ch in 0..channels {
+                        let src_idx = src_offset + frame * channels + ch;
+                        let dst_idx = dst_start + frame * channels + ch;
+                        stem.audio.samples[dst_idx] += chunk_data[src_idx] * w * w;
+                    }
+                }
+            }
+            // Update normalization.
+            for frame in 0..chunk_frame_count {
+                let w = window[frame];
+                let w2 = w * w;
+                let base = (chunk_start_frame + frame) * channels;
+                for ch in 0..channels {
+                    overlap_norm[base + ch] += w2;
+                }
             }
         }
     }
 
-    // Demucs exposes a fixed input window. For full-length songs we run
-    // sequential windows and stitch the per-window stems back into the
-    // original timeline so later UX smoke tests can cover real songs.
+    // Item 5: Process chunks with 50% overlap and Hann windowing.
+    let window = hann_window(target_frame_count);
     let mut chunk_index = 0_usize;
-    for chunk_start_frame in (0..input_frame_count).step_by(target_frame_count) {
+    for chunk_start_frame in (0..input_frame_count).step_by(hop_size) {
         let chunk_frame_count = (input_frame_count - chunk_start_frame).min(target_frame_count);
 
         // Skip chunks that were already completed in a previous run.
@@ -201,17 +257,33 @@ fn separate_chunked_audio(
                 format!("failed to separate chunk starting at frame {chunk_start_frame}")
             })?;
 
+        // Item 5: Apply Hann window and overlap-add into merged output.
         for (stem_index, chunk_stem) in chunk_result.stems.iter().enumerate() {
             let destination = &mut merged_stems[stem_index].audio.samples;
-            let sample_offset = chunk_start_frame * decoded_audio.channels;
-            let chunk_sample_count = chunk_frame_count * decoded_audio.channels;
-            destination[sample_offset..sample_offset + chunk_sample_count]
-                .copy_from_slice(&chunk_stem.audio.samples[..chunk_sample_count]);
+            let dst_start = chunk_start_frame * channels;
+            for frame in 0..chunk_frame_count {
+                let w = window[frame];
+                for ch in 0..channels {
+                    let src_idx = frame * channels + ch;
+                    let dst_idx = dst_start + frame * channels + ch;
+                    destination[dst_idx] += chunk_stem.audio.samples[src_idx] * w * w;
+                }
+            }
+        }
+
+        // Update normalization buffer.
+        for frame in 0..chunk_frame_count {
+            let w = window[frame];
+            let w2 = w * w;
+            let base = (chunk_start_frame + frame) * channels;
+            for ch in 0..channels {
+                overlap_norm[base + ch] += w2;
+            }
         }
 
         // Persist the chunk to disk for crash recovery.
         if let Some(dir) = checkpoint_dir {
-            let chunk_sample_count = chunk_frame_count * decoded_audio.channels;
+            let chunk_sample_count = chunk_frame_count * channels;
             let mut chunk_data = Vec::with_capacity(chunk_sample_count * DEMUCS_STEM_NAMES.len());
             for stem in &chunk_result.stems {
                 chunk_data.extend_from_slice(&stem.audio.samples[..chunk_sample_count]);
@@ -221,6 +293,16 @@ fn separate_chunked_audio(
 
         chunk_index += 1;
         on_chunk_complete(chunk_index, total_chunks);
+    }
+
+    // Normalize the overlap-add output to compensate for Hann window weighting.
+    for stem in merged_stems.iter_mut() {
+        for (i, sample) in stem.audio.samples.iter_mut().enumerate() {
+            let norm = overlap_norm[i];
+            if norm > 1e-8 {
+                *sample /= norm;
+            }
+        }
     }
 
     Ok(SeparationResult {
@@ -384,14 +466,18 @@ fn build_session_inputs(
     decoded_audio: &DecodedAudio,
     prepared_input: preprocess::PreparedModelInput,
 ) -> Result<Vec<(String, Tensor<f32>)>> {
-    let mut session_inputs = Vec::with_capacity(model.session.inputs().len());
+    let session = model
+        .session
+        .lock()
+        .map_err(|_| anyhow::anyhow!("ONNX session lock was poisoned"))?;
+    let mut session_inputs = Vec::with_capacity(session.inputs().len());
     let expected_audio_shape = prepared_input.shape.clone();
     let preprocess::PreparedModelInput {
         shape: audio_shape,
         samples: audio_samples,
     } = prepared_input;
 
-    for input in model.session.inputs() {
+    for input in session.inputs() {
         let input_shape = input
             .dtype()
             .tensor_shape()
@@ -529,4 +615,106 @@ fn tensor_dims(output_value: &ort::value::DynValue) -> Result<Vec<i64>> {
         .try_extract_tensor::<f32>()
         .context("Demucs output tensor was not readable as f32")?;
     Ok(shape.iter().copied().collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Item 5: Hann window should have correct size and boundary values.
+    #[test]
+    fn hann_window_has_correct_properties() {
+        let n = 1024;
+        let w = hann_window(n);
+
+        assert_eq!(w.len(), n);
+        // First value is exactly 0; last value is small but non-zero
+        // for the periodic form (≈π/N for large N).
+        assert!(w[0] < 1e-6, "Hann window should start at 0");
+        assert!(w[n - 1] < 0.01, "Hann window should end near 0");
+        assert!(
+            w[n - 1] > 1e-6,
+            "Hann window end should be non-zero (periodic form)"
+        );
+        // Middle value should be 1.0.
+        assert!(
+            (w[n / 2] - 1.0).abs() < 1e-6,
+            "Hann window should peak at 1.0"
+        );
+    }
+
+    /// Item 5: Hann window squared + shifted by 50% should sum to 1.0
+    /// (constant overlap-add constraint).
+    #[test]
+    fn hann_window_constant_overlap_add_constraint() {
+        let n = 1024;
+        let w = hann_window(n);
+        let hop = n / 2;
+
+        for i in 0..hop {
+            let sum = w[i] * w[i] + w[i + hop] * w[i + hop];
+            assert!(
+                (sum - 1.0).abs() < 1e-5,
+                "w[{i}]^2 + w[{}]^2 = {sum}, expected 1.0",
+                i + hop,
+            );
+        }
+    }
+
+    /// Item 5: Verify that overlap-add with Hann window produces a smooth
+    /// reconstruction of a constant signal.
+    #[test]
+    fn overlap_add_reconstructs_constant_signal() {
+        let channels = 2;
+        let target_frames = 256;
+        let input_frames = target_frames * 3; // 3 non-overlapping would have seams
+
+        // Create a constant input signal.
+        let input_samples = vec![1.0_f32; input_frames * channels];
+        let decoded = DecodedAudio {
+            sample_rate: 44100,
+            channels,
+            duration_ms: (input_frames as f64 / 44.1) as u64,
+            samples: input_samples,
+        };
+
+        let hop_size = target_frames / 2;
+        let window = hann_window(target_frames);
+        let mut output = vec![0.0_f32; input_frames * channels];
+        let mut norm = vec![0.0_f32; input_frames * channels];
+
+        // Simulate overlap-add with 50% overlap and Hann window.
+        for chunk_start in (0..input_frames).step_by(hop_size) {
+            let chunk_frames = (input_frames - chunk_start).min(target_frames);
+            for frame in 0..chunk_frames {
+                let w = window[frame];
+                let w2 = w * w;
+                for ch in 0..channels {
+                    let idx = (chunk_start + frame) * channels + ch;
+                    // "Inference" just passes through the input.
+                    output[idx] += decoded.samples[idx] * w2;
+                    norm[idx] += w2;
+                }
+            }
+        }
+
+        // Normalize.
+        for (i, sample) in output.iter_mut().enumerate() {
+            if norm[i] > 1e-8 {
+                *sample /= norm[i];
+            }
+        }
+
+        // Interior samples (where window norm > 0) should reconstruct to ~1.0.
+        // Boundary samples at the very start/end where the Hann window is 0
+        // cannot be reconstructed — that's expected, not a bug.
+        for (i, (&sample, &n)) in output.iter().zip(norm.iter()).enumerate() {
+            if n > 0.1 {
+                assert!(
+                    (sample - 1.0).abs() < 0.01,
+                    "sample[{i}] = {sample}, expected ~1.0 (overlap-add should reconstruct constant signal)"
+                );
+            }
+        }
+    }
 }

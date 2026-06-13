@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { act, createElement, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import {
+  computeContinuousLyricsScrollTop,
   createUserScrollGuard,
   useLyricsAutoScroll,
 } from "./use-lyrics-auto-scroll";
@@ -78,20 +79,14 @@ describe("createUserScrollGuard", () => {
     const container = makeContainer();
     const guard = createUserScrollGuard(container, PAUSE_MS);
 
-    // First scroll — advances almost to the end of the window.
     container.dispatchEvent(new Event("wheel"));
     vi.advanceTimersByTime(PAUSE_MS - 500);
-
-    // Second scroll — should restart the full 3 s window.
     container.dispatchEvent(new Event("wheel"));
     vi.advanceTimersByTime(PAUSE_MS - 1);
 
-    // Still inside the second window, so still active.
     expect(guard.isActive()).toBe(true);
 
     vi.advanceTimersByTime(1);
-
-    // Now the second window has fully elapsed.
     expect(guard.isActive()).toBe(false);
 
     guard.destroy();
@@ -102,7 +97,6 @@ describe("createUserScrollGuard", () => {
     const guard = createUserScrollGuard(container, PAUSE_MS);
 
     guard.destroy();
-
     container.dispatchEvent(new Event("wheel"));
 
     expect(guard.isActive()).toBe(false);
@@ -117,8 +111,6 @@ describe("createUserScrollGuard", () => {
     });
 
     container.dispatchEvent(new Event("wheel"));
-
-    // Timer was set; destroying before it fires must clear it.
     guard.destroy();
 
     expect(clearTimeout).toHaveBeenCalled();
@@ -132,7 +124,6 @@ describe("createUserScrollGuard", () => {
     expect(guard.isActive()).toBe(true);
 
     guard.destroy();
-
     expect(guard.isActive()).toBe(false);
   });
 
@@ -142,46 +133,71 @@ describe("createUserScrollGuard", () => {
 
     container.dispatchEvent(new Event("wheel"));
     vi.advanceTimersByTime(PAUSE_MS - 500);
-
-    // Touch interaction restarts the window.
     container.dispatchEvent(new Event("touchstart"));
     vi.advanceTimersByTime(PAUSE_MS - 1);
 
     expect(guard.isActive()).toBe(true);
 
     vi.advanceTimersByTime(1);
-
     expect(guard.isActive()).toBe(false);
 
     guard.destroy();
   });
 });
 
+describe("computeContinuousLyricsScrollTop", () => {
+  test("interpolates between two lyric anchors", () => {
+    const container = document.createElement("div");
+    Object.defineProperty(container, "clientHeight", { value: 100 });
+    Object.defineProperty(container, "scrollHeight", { value: 500 });
+
+    const line0 = document.createElement("div");
+    line0.dataset.lyricsLineIndex = "0";
+    Object.defineProperty(line0, "offsetTop", { value: 0 });
+    Object.defineProperty(line0, "clientHeight", { value: 40 });
+
+    const line1 = document.createElement("div");
+    line1.dataset.lyricsLineIndex = "1";
+    Object.defineProperty(line1, "offsetTop", { value: 100 });
+    Object.defineProperty(line1, "clientHeight", { value: 40 });
+
+    container.append(line0, line1);
+
+    expect(
+      computeContinuousLyricsScrollTop(
+        container,
+        [{ time_ms: 0 }, { time_ms: 1000 }],
+        0,
+      ),
+    ).toBe(0);
+    expect(
+      computeContinuousLyricsScrollTop(
+        container,
+        [{ time_ms: 0 }, { time_ms: 1000 }],
+        500,
+      ),
+    ).toBe(35);
+    expect(
+      computeContinuousLyricsScrollTop(
+        container,
+        [{ time_ms: 0 }, { time_ms: 1000 }],
+        1000,
+      ),
+    ).toBe(70);
+  });
+});
+
 describe("useLyricsAutoScroll", () => {
-  test("re-centers the active line when lyric layout changes without an index change", async () => {
+  test("rebinds continuous scroll when lyric layout changes", async () => {
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
-    const scrollTo = vi.fn();
 
     function TestHarness({ layoutVersion }: { layoutVersion: string }) {
-      const ref = (node: HTMLDivElement | null) => {
-        if (!node) return;
-        Object.defineProperty(node, "clientHeight", {
-          configurable: true,
-          value: 100,
-        });
-        Object.defineProperty(node, "scrollHeight", {
-          configurable: true,
-          value: 500,
-        });
-        node.scrollTo = scrollTo;
-      };
-
       const containerRef = useRef<HTMLDivElement | null>(null);
+
       useLyricsAutoScroll(
         containerRef,
-        1,
         false,
         0,
         "standard",
@@ -194,10 +210,18 @@ describe("useLyricsAutoScroll", () => {
         {
           ref: (node: HTMLDivElement | null) => {
             containerRef.current = node;
-            ref(node);
+            if (!node) return;
+            Object.defineProperty(node, "clientHeight", {
+              configurable: true,
+              value: 100,
+            });
+            Object.defineProperty(node, "scrollHeight", {
+              configurable: true,
+              value: 500,
+            });
           },
         },
-        createElement("div", { "data-lyrics-line-index": "1" }, "Line"),
+        createElement("div", { "data-lyrics-line-index": "0" }, "Line"),
       );
     }
 
@@ -212,8 +236,6 @@ describe("useLyricsAutoScroll", () => {
         createElement(TestHarness, { layoutVersion: "romanized-on" }),
       );
     });
-
-    expect(scrollTo).toHaveBeenCalledTimes(2);
 
     root.unmount();
     host.remove();

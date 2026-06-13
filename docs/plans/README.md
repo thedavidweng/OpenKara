@@ -24,6 +24,6 @@ without rebuilding the product backlog from scratch. It must include:
 
 ## Current State
 
-There is no active repo-local execution plan. Use the GitHub Project to choose
-the next work item, then create a dated plan here only when the work is ready to
-execute.
+- [`audit-v0.9.0.md`](audit-v0.9.0.md) — Engineering audit resolution
+  (bugs, perf, bundle, CI). 5 Critical + 14 High findings across Rust and
+  frontend, plus CI gate fixes and −51 MB bundle potential.

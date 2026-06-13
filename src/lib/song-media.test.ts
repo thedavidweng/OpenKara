@@ -20,6 +20,7 @@ function makeSong(overrides: Partial<Song> = {}): Song {
     album: null,
     duration_ms: 1000,
     cover_art: null,
+    has_cover_art: false,
     imported_at: 0,
     original_ext: "mp3",
     ...overrides,

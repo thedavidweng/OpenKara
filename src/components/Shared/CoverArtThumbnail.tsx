@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useCoverArtUrl } from "@/lib/cover-art";
+import { getCoverArt } from "@/lib/tauri/library";
 import type { CoverArtBytes } from "@/types/ipc";
 
 interface CoverArtThumbnailProps {
   songHash: string;
-  coverArt: CoverArtBytes;
+  coverArt?: CoverArtBytes | null;
   alt: string;
   className?: string;
 }
@@ -15,16 +16,31 @@ export function CoverArtThumbnail({
   alt,
   className = "",
 }: CoverArtThumbnailProps) {
-  const url = useCoverArtUrl(songHash, coverArt);
+  const [fetchedBytes, setFetchedBytes] = useState<CoverArtBytes | null>(null);
+  const effectiveBytes = coverArt ?? fetchedBytes;
+
+  // Fetch on-demand when cover art bytes are not provided (list/search results
+  // only carry has_cover_art, not the BLOB itself).
+  useEffect(() => {
+    if (coverArt != null) return;
+    let cancelled = false;
+    getCoverArt(songHash)
+      .then((data) => {
+        if (!cancelled) setFetchedBytes(data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [songHash, coverArt]);
+
+  const url = useCoverArtUrl(songHash, effectiveBytes);
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
 
   return (
     <div
       className={`overflow-hidden rounded-[10px] border border-[color-mix(in_srgb,var(--color-border)_82%,transparent)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--color-control-primary)_10%,transparent),color-mix(in_srgb,var(--color-control-primary)_4%,transparent))] ${className}`}
     >
-      {/* These covers already live in the local database. In desktop WebViews,
-          lazy/async image decoding can leave blob-backed thumbnails unpainted,
-          so we render them eagerly and fall back immediately on load failure. */}
       {url && failedUrl !== url ? (
         <img
           src={url}

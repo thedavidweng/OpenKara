@@ -173,6 +173,11 @@ export function useAudiencePlainTextPaging({
           });
         },
       );
+      // F4: If unmount happened before listen() resolved, clean up now.
+      if (cancelled) {
+        unlisten();
+        return;
+      }
     };
 
     void setup();

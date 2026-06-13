@@ -17,6 +17,10 @@ permissions:
   contents: write
   pull-requests: write
 
+concurrency:
+  group: release-${{ github.event.inputs.version }}
+  cancel-in-progress: false
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -24,6 +28,7 @@ jobs:
   publish:
     name: Release (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -72,7 +77,7 @@ jobs:
       - name: Restore Rust cache
         uses: swatinem/rust-cache@v2.9.1
         with:
-          shared-key: ${{ github.workflow }}-${{ matrix.os }}
+          shared-key: ${{ github.workflow }}-${{ matrix.os }}-release
           workspaces: ./src-tauri -> target
 
       - name: Install Linux build dependencies
@@ -92,6 +97,12 @@ jobs:
             libxdo-dev \
             wget
 
+      - name: Restore ONNX Runtime cache
+        uses: actions/cache@v5.0.5
+        with:
+          path: src-tauri/generated/onnxruntime
+          key: onnxruntime-${{ matrix.ort_target }}-${{ hashFiles('scripts/prepare-onnx-runtime.mjs') }}
+
       - name: Prepare ONNX Runtime
         run: |
           node scripts/prepare-onnx-runtime.mjs --target "${{ matrix.ort_target }}"
@@ -100,7 +111,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Audit dependencies
-        run: pnpm audit --audit-level=high --ignore-registry-errors
+        run: pnpm audit --audit-level=high
 
       - name: Build and publish release
         uses: tauri-apps/tauri-action@action-v0.6.2
@@ -123,6 +134,7 @@ jobs:
   generate-checksums:
     name: Generate SHA256SUMS
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: publish
     steps:
       - name: Checkout
@@ -157,6 +169,7 @@ jobs:
   prepare-distribution-manifests:
     name: Prepare distribution manifests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [publish, generate-checksums]
     env:
       GITHUB_TOKEN: ${{ github.token }}
@@ -216,6 +229,7 @@ jobs:
   submit-winget-pr:
     name: Submit WinGet PR
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: prepare-distribution-manifests
     if: ${{ vars.WINGET_FORK_REPO != '' }}
 
@@ -296,6 +310,7 @@ jobs:
   submit-flathub-pr:
     name: Prepare or submit Flathub PR
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: prepare-distribution-manifests
     if: ${{ vars.FLATHUB_FORK_REPO != '' }}
 

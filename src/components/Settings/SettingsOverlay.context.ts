@@ -71,6 +71,10 @@ export function createSettingsOverlayTestContextValue(
       confirmDeleteLyrics: async () => {},
       closeDialog: () => {},
       refreshModelStatuses: async () => {},
+      refreshRuntimeStatus: async () => {},
+      downloadRuntime: async () => {},
+      deleteRuntime: async () => {},
+      openDeleteRuntimeDialog: () => {},
       ...actions,
     },
   };

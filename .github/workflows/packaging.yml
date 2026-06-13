@@ -31,6 +31,10 @@ on:
       - "src-tauri/tauri.conf.json"
       - "tests/flatpak-packaging.test.ts"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -41,6 +45,7 @@ jobs:
   validate-winget:
     name: Validate WinGet manifests
     runs-on: windows-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -84,6 +89,7 @@ jobs:
   validate-flatpak:
     name: Validate Flatpak metadata
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -104,7 +110,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Audit dependencies
-        run: pnpm audit --audit-level=high --ignore-registry-errors
+        run: pnpm audit --audit-level=high
 
       - name: Install Flatpak validators
         run: |
@@ -153,6 +159,7 @@ jobs:
     name: Build Flatpak (x86_64)
     needs: validate-flatpak
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     # Run inside the Flathub-maintained container. This image ships a
     # pre-configured flatpak + flatpak-builder + flatpak-builder-lint + flathub
     # remote + gnome-50 SDK, which is the environment every Flathub-hosted app
@@ -182,7 +189,7 @@ jobs:
         with:
           bundle: openkara.flatpak
           manifest-path: dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml
-          cache-key: flatpak-builder-x86_64-${{ github.sha }}
+          cache-key: flatpak-builder-x86_64-${{ hashFiles('dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml') }}
           arch: x86_64
           verbose: true
           # Required for `flatpak-builder-lint builddir/repo` to pass

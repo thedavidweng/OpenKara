@@ -1,4 +1,4 @@
-import { useRef, useCallback } from "react";
+import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { Search } from "lucide-react";
 import { useLibraryStore } from "@/stores/library-store";
@@ -7,16 +7,13 @@ export function SearchBox() {
   const { t } = useTranslation();
   const searchQuery = useLibraryStore((s) => s.searchQuery);
   const setSearchQuery = useLibraryStore((s) => s.setSearchQuery);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
+  // F9: The store's setSearchQuery already debounces the actual library search
+  // at 300ms. Adding a second 200ms debounce here creates a cumulative 500ms
+  // delay. Call setSearchQuery directly so the total debounce is ~300ms.
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const value = e.target.value;
-      // Update local display immediately
-      useLibraryStore.setState({ searchQuery: value });
-      // Debounce the actual search
-      clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => setSearchQuery(value), 200);
+      setSearchQuery(e.target.value);
     },
     [setSearchQuery],
   );

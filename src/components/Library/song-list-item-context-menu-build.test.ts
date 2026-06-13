@@ -90,6 +90,7 @@ function makeSong(overrides: Partial<Song> = {}): Song {
     language: null,
     duration_ms: 180_000,
     cover_art: null,
+    has_cover_art: false,
     imported_at: 0,
     original_ext: null,
     ...overrides,

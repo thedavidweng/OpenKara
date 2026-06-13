@@ -88,10 +88,19 @@ function applyPlayerSyncSnapshot(
   set: (partial: Partial<PlayerState>) => void,
   payload: PlayerSyncSnapshot,
 ) {
+  // RATIONALE: playingSinceMs is tied to this webview's performance.now() clock.
+  // Applying a peer window's timestamp would break selectCurrentPositionMs extrapolation.
+  const playingSinceMs =
+    payload.playingSinceMs === null
+      ? null
+      : payload.snapshot?.is_playing
+        ? performance.now()
+        : null;
+
   set({
     snapshot: payload.snapshot,
     positionMs: payload.positionMs,
-    playingSinceMs: payload.playingSinceMs,
+    playingSinceMs,
     airPlayOutput: payload.airPlayOutput,
     localAudienceOutputActive: payload.localAudienceOutputActive,
     airPlayPlainTextPagePending: payload.airPlayPlainTextPagePending,
@@ -126,10 +135,68 @@ export function selectCurrentPositionMs(
   nowMs = () => performance.now(),
 ): number {
   const { snapshot, positionMs, playingSinceMs } = state;
-  if (snapshot?.is_playing && playingSinceMs !== null) {
+  // Do not extrapolate during buffer underrun — backend position is frozen even
+  // though is_playing still reflects transport intent.
+  if (
+    snapshot?.is_playing &&
+    snapshot.state !== "buffering" &&
+    playingSinceMs !== null
+  ) {
     return positionMs + (nowMs() - playingSinceMs);
   }
   return positionMs;
+}
+
+function shouldAnchorPlayingSinceMs(snapshot: PlaybackStateSnapshot): boolean {
+  return snapshot.is_playing && snapshot.state !== "buffering";
+}
+
+function resolvePlayingSinceMs(
+  prev: Pick<PlayerState, "snapshot" | "playingSinceMs">,
+  nextSnapshot: PlaybackStateSnapshot,
+): number | null {
+  if (!shouldAnchorPlayingSinceMs(nextSnapshot)) {
+    return null;
+  }
+  if (
+    prev.playingSinceMs !== null &&
+    prev.snapshot?.is_playing === nextSnapshot.is_playing &&
+    prev.snapshot?.state === nextSnapshot.state
+  ) {
+    return prev.playingSinceMs;
+  }
+  return performance.now();
+}
+
+const TRANSPORT_COMMAND_GUARD_MS = 300;
+
+function createTransportCommandGuard() {
+  let guardUntilMs = 0;
+  let guardedIsPlaying: boolean | null = null;
+
+  return {
+    lock(isPlaying: boolean, nowMs = performance.now()) {
+      guardUntilMs = nowMs + TRANSPORT_COMMAND_GUARD_MS;
+      guardedIsPlaying = isPlaying;
+    },
+    apply(
+      snapshot: PlaybackStateSnapshot,
+      nowMs = performance.now(),
+    ): PlaybackStateSnapshot {
+      if (guardedIsPlaying === null || nowMs >= guardUntilMs) {
+        guardedIsPlaying = null;
+        return snapshot;
+      }
+      if (snapshot.is_playing === guardedIsPlaying) {
+        return snapshot;
+      }
+      return { ...snapshot, is_playing: guardedIsPlaying };
+    },
+    clear() {
+      guardUntilMs = 0;
+      guardedIsPlaying = null;
+    },
+  };
 }
 
 function shouldReplaceSnapshotFromPositionEvent(
@@ -158,18 +225,21 @@ export function createPlayerStore(
 ) {
   let airPlayPlainTextPagePendingTimer: ReturnType<typeof setTimeout> | null =
     null;
+  const transportCommandGuard = createTransportCommandGuard();
 
   const store = create<PlayerState>((set, get) => {
     const syncPatch = (patch: Partial<PlayerState>) => {
       set(patch);
       syncChannel.publish(createPlayerSyncSnapshot(get()));
     };
-    const applySnapshot = (nextSnapshot: PlaybackStateSnapshot) =>
+    const applySnapshot = (nextSnapshot: PlaybackStateSnapshot) => {
+      transportCommandGuard.lock(nextSnapshot.is_playing);
       syncPatch({
-        snapshot: nextSnapshot,
+        snapshot: { ...nextSnapshot, is_playing: nextSnapshot.is_playing },
         positionMs: nextSnapshot.position_ms,
-        playingSinceMs: nextSnapshot.is_playing ? performance.now() : null,
+        playingSinceMs: resolvePlayingSinceMs(get(), nextSnapshot),
       });
+    };
 
     const workflow = createPlaybackWorkflow({
       getPlayerSnapshot: () => get().snapshot,
@@ -213,10 +283,17 @@ export function createPlayerStore(
       resume: async () => {
         try {
           const snapshot = await api.resume();
+          transportCommandGuard.lock(true);
+          const authoritative = transportCommandGuard.apply({
+            ...snapshot,
+            is_playing: true,
+          });
           syncPatch({
-            snapshot,
-            positionMs: snapshot.position_ms,
-            playingSinceMs: performance.now(),
+            snapshot: authoritative,
+            positionMs: authoritative.position_ms,
+            playingSinceMs: shouldAnchorPlayingSinceMs(authoritative)
+              ? performance.now()
+              : null,
           });
         } catch (e) {
           notifyError(e);
@@ -226,9 +303,14 @@ export function createPlayerStore(
       pause: async () => {
         try {
           const snapshot = await api.pause();
+          transportCommandGuard.lock(false);
+          const authoritative = transportCommandGuard.apply({
+            ...snapshot,
+            is_playing: false,
+          });
           syncPatch({
-            snapshot,
-            positionMs: snapshot.position_ms,
+            snapshot: authoritative,
+            positionMs: authoritative.position_ms,
             playingSinceMs: null,
           });
         } catch (e) {
@@ -245,7 +327,9 @@ export function createPlayerStore(
           syncPatch({
             snapshot,
             positionMs: snapshot.position_ms,
-            playingSinceMs: snapshot.is_playing ? performance.now() : null,
+            playingSinceMs: shouldAnchorPlayingSinceMs(snapshot)
+              ? performance.now()
+              : null,
           });
         } catch (e) {
           notifyError(e);
@@ -282,22 +366,38 @@ export function createPlayerStore(
       },
 
       applyPlaybackPositionEvent: (event) => {
-        const nextSnapshot = event.snapshot;
-        const currentSnapshot = get().snapshot;
+        const current = get();
+        const currentSnapshot = current.snapshot;
+        if (currentSnapshot?.song_id !== event.snapshot.song_id) {
+          transportCommandGuard.clear();
+        }
+        const nextSnapshot = transportCommandGuard.apply(event.snapshot);
         if (
           shouldReplaceSnapshotFromPositionEvent(currentSnapshot, nextSnapshot)
         ) {
           syncPatch({
             snapshot: nextSnapshot,
             positionMs: nextSnapshot.position_ms,
-            playingSinceMs: nextSnapshot.is_playing ? performance.now() : null,
+            playingSinceMs: resolvePlayingSinceMs(current, nextSnapshot),
           });
           return;
         }
 
         syncPatch({
           positionMs: nextSnapshot.position_ms,
-          playingSinceMs: nextSnapshot.is_playing ? performance.now() : null,
+          playingSinceMs: resolvePlayingSinceMs(current, nextSnapshot),
+          snapshot:
+            currentSnapshot &&
+            (nextSnapshot.is_playing !== currentSnapshot.is_playing ||
+              nextSnapshot.state !== currentSnapshot.state ||
+              nextSnapshot.buffered_ms !== currentSnapshot.buffered_ms)
+              ? {
+                  ...currentSnapshot,
+                  is_playing: nextSnapshot.is_playing,
+                  state: nextSnapshot.state,
+                  buffered_ms: nextSnapshot.buffered_ms,
+                }
+              : (currentSnapshot ?? nextSnapshot),
         });
       },
 
@@ -305,7 +405,7 @@ export function createPlayerStore(
         syncPatch({
           snapshot,
           positionMs: snapshot.position_ms,
-          playingSinceMs: snapshot.is_playing ? performance.now() : null,
+          playingSinceMs: resolvePlayingSinceMs(get(), snapshot),
         });
       },
 
@@ -315,7 +415,7 @@ export function createPlayerStore(
           syncPatch({
             snapshot,
             positionMs: snapshot.position_ms,
-            playingSinceMs: snapshot.is_playing ? performance.now() : null,
+            playingSinceMs: resolvePlayingSinceMs(get(), snapshot),
           });
         } catch (e) {
           notifyError(e);

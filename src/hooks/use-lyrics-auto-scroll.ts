@@ -1,9 +1,21 @@
 import { useEffect, useRef, type RefObject } from "react";
-import { getCenteredScrollTop } from "@/components/Lyrics/lyrics-scroll";
+import {
+  getScrollTopForLineIndex,
+  interpolateScrollTop,
+} from "@/components/Lyrics/lyrics-scroll";
+import {
+  findActiveLyricLineIndex,
+  getLinePlaybackProgress,
+} from "@/lib/lyrics-timing";
+import { readLyricsAdjustedPlaybackMs } from "@/lib/lyrics-playback-clock";
+import { Spring } from "@/lib/spring";
+import { useLyricsStore } from "@/stores/lyrics-store";
 
 // Duration (ms) to suppress auto-scroll after the user manually scrolls.
 // Long enough to let users read ahead without being yanked back immediately.
 const USER_SCROLL_PAUSE_MS = 3000;
+
+const SCROLL_SPRING = { stiffness: 72, damping: 20, mass: 1.1 };
 
 /**
  * Attaches wheel and touchstart listeners to a container element and tracks
@@ -15,7 +27,7 @@ const USER_SCROLL_PAUSE_MS = 3000;
  * needing a React renderer.
  *
  * Wheel and touchstart fire only on genuine user interaction — programmatic
- * scrollTo() does not trigger them — so no extra flag is needed to tell
+ * scrollTop updates do not trigger them — so no extra flag is needed to tell
  * auto-scrolls apart from manual ones.
  */
 export function createUserScrollGuard(
@@ -51,18 +63,49 @@ export function createUserScrollGuard(
   };
 }
 
+export function computeContinuousLyricsScrollTop(
+  container: HTMLElement,
+  lines: { time_ms: number }[],
+  adjustedMs: number,
+): number | null {
+  if (lines.length === 0) {
+    return null;
+  }
+
+  const activeIndex = findActiveLyricLineIndex(lines, adjustedMs);
+  if (activeIndex < 0) {
+    return getScrollTopForLineIndex(container, 0);
+  }
+
+  const currentTop = getScrollTopForLineIndex(container, activeIndex);
+  if (currentTop === null) {
+    return null;
+  }
+
+  const nextIndex = activeIndex + 1;
+  if (nextIndex >= lines.length) {
+    return currentTop;
+  }
+
+  const nextTop = getScrollTopForLineIndex(container, nextIndex);
+  if (nextTop === null) {
+    return currentTop;
+  }
+
+  const progress = getLinePlaybackProgress(lines, activeIndex, adjustedMs);
+  return interpolateScrollTop(currentTop, nextTop, progress);
+}
+
+function readAdjustedPlaybackMs(): number {
+  return readLyricsAdjustedPlaybackMs();
+}
+
 /**
- * Scrolls the lyrics container so the currently active line is vertically
- * centered. Disabled for plain-text (un-synced) lyrics where there is no
- * meaningful active line to track.
- *
- * When the user manually scrolls (wheel or touch), auto-scroll is suppressed
- * for USER_SCROLL_PAUSE_MS so they can preview upcoming lyrics without
- * being immediately pulled back to the current line.
+ * Continuously scrolls the lyrics viewport so playback progress glides between
+ * lines instead of snapping when the active index changes.
  */
 export function useLyricsAutoScroll(
   containerRef: RefObject<HTMLDivElement | null>,
-  activeLineIndex: number,
   isPlainText: boolean,
   lyricsFontStep: number,
   presentation: "standard" | "audience",
@@ -72,10 +115,8 @@ export function useLyricsAutoScroll(
   const guardRef = useRef<ReturnType<typeof createUserScrollGuard> | null>(
     null,
   );
+  const scrollSpringRef = useRef(new Spring(0, SCROLL_SPRING));
 
-  // Attach user-scroll detection. Re-runs when the song changes so the guard
-  // is always scoped to the current container and starts fresh (no stale pause
-  // window carrying over from a previous track).
   useEffect(() => {
     if (isPlainText) return;
     const container = containerRef.current;
@@ -90,32 +131,50 @@ export function useLyricsAutoScroll(
     };
   }, [containerRef, isPlainText, songId]);
 
-  // Scroll to center the active line, skipping if the user has recently
-  // scrolled manually.
   useEffect(() => {
     if (isPlainText) return;
-    if (activeLineIndex < 0 || !containerRef.current) return;
-    if (guardRef.current?.isActive()) return;
 
-    const lineEl = containerRef.current.querySelector<HTMLElement>(
-      `[data-lyrics-line-index="${activeLineIndex}"]`,
-    );
-    if (!lineEl) return;
+    const reducedMotion =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const scrollSpring = scrollSpringRef.current;
+    scrollSpring.jumpTo(containerRef.current?.scrollTop ?? 0);
 
-    const top = getCenteredScrollTop({
-      viewportHeight: containerRef.current.clientHeight,
-      scrollHeight: containerRef.current.scrollHeight,
-      lineOffsetTop: lineEl.offsetTop,
-      lineHeight: lineEl.clientHeight,
-    });
+    let rafId = 0;
+    let lastTime = performance.now();
 
-    containerRef.current.scrollTo({
-      top,
-      behavior: "smooth",
-    });
+    const tick = (now: number) => {
+      const container = containerRef.current;
+      const lines = useLyricsStore.getState().lines;
+
+      if (container && lines.length > 0 && !guardRef.current?.isActive()) {
+        const target = computeContinuousLyricsScrollTop(
+          container,
+          lines,
+          readAdjustedPlaybackMs(),
+        );
+
+        if (target !== null) {
+          if (reducedMotion) {
+            scrollSpring.jumpTo(target);
+            container.scrollTop = target;
+          } else {
+            scrollSpring.setTarget(target);
+            const dt = Math.min((now - lastTime) / 1000, 0.05);
+            scrollSpring.update(dt);
+            container.scrollTop = scrollSpring.getPosition();
+          }
+        }
+      }
+
+      lastTime = now;
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
   }, [
     containerRef,
-    activeLineIndex,
     isPlainText,
     lyricsFontStep,
     presentation,
