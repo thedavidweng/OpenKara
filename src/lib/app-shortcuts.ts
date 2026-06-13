@@ -86,12 +86,6 @@ export function getShortcutPlatform(): ShortcutPlatform {
   return "linux";
 }
 
-export function isMacShortcutPlatform(
-  platform: ShortcutPlatform = getShortcutPlatform(),
-): boolean {
-  return platform === "mac";
-}
-
 export function getShortcutDisplay(
   shortcut: ShortcutDefinition,
   platform: ShortcutPlatform = getShortcutPlatform(),

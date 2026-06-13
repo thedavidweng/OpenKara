@@ -648,7 +648,7 @@ fn fetch_range_with_retry(
         }
     }
 
-    FetchOutcome::Failed(FetchError::HttpStatus(0)) // unreachable
+    FetchOutcome::Failed(FetchError::HttpStatus(0)) // safety net: reachable when RateLimited with max_retries=0
 }
 
 #[derive(Debug)]

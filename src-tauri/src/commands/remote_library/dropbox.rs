@@ -945,25 +945,6 @@ pub(crate) fn dropbox_delete_path(
     }
 }
 
-#[allow(dead_code)]
-pub(crate) fn delete_relative_path_from_remote(
-    app_data_dir: &Path,
-    library: &RegisteredLibrary,
-    relative_path: &str,
-) -> CommandResult<()> {
-    let mut secret = load_dropbox_secret(app_data_dir, library)?;
-    let root_path = library.remote_root_locator().ok_or_else(|| {
-        CommandError::from(LibraryError::Internal(
-            "remote repository is missing a remote locator".to_owned(),
-        ))
-    })?;
-    dropbox_delete_path(
-        app_data_dir,
-        &mut secret,
-        &dropbox_join_path(root_path, relative_path),
-    )
-}
-
 // --- RemoteProvider implementation ---
 
 pub(crate) struct DropboxProvider<'a> {

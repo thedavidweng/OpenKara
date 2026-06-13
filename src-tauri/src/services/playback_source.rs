@@ -4,7 +4,7 @@ use crate::{
         decode,
         error::PlaybackError,
         playback::{LoadedStems, StemSet},
-        remote_source::{self, BandwidthMonitor, FetchEvent, RemoteMediaSource},
+        remote_source::{self, FetchEvent, RemoteMediaSource},
         streaming::{self, StreamMetadata, StreamingTrack},
     },
     cache,
@@ -109,8 +109,6 @@ pub(crate) fn load_cached_stems_for_song(
 /// Result of loading stems in streaming mode.
 pub(crate) struct StreamingStemsSource {
     pub(crate) streaming_track: StreamingTrack,
-    #[allow(dead_code)]
-    pub(crate) metadata: Vec<streaming::StreamMetadata>,
     pub(crate) decode_handles: Vec<std::thread::JoinHandle<Result<(), decode::DecodeError>>>,
 }
 
@@ -157,7 +155,6 @@ pub(crate) fn load_cached_stems_for_song_streaming(
 
     Ok(Some(StreamingStemsSource {
         streaming_track: result.track,
-        metadata: result.metadata,
         decode_handles: result.decode_handles,
     }))
 }
@@ -170,10 +167,6 @@ pub(crate) struct StreamingPlaybackSource {
     /// Receiver for fetch events (only present for remote streaming).
     /// The caller should consume these to handle ConsecutiveFailures, etc.
     pub(crate) fetch_event_rx: Option<mpsc::Receiver<FetchEvent>>,
-    /// Bandwidth monitor for the fetch thread (only present for remote streaming).
-    /// Stored so the caller can inspect bandwidth or reconfigure thresholds.
-    #[allow(dead_code)]
-    pub(crate) bandwidth_monitor: Option<Arc<BandwidthMonitor>>,
 }
 
 /// Load a song for streaming playback. Returns the ring-buffer consumer,
@@ -213,7 +206,6 @@ pub(crate) fn load_playback_source_streaming(
         metadata,
         decode_handle,
         fetch_event_rx: None,
-        bandwidth_monitor: None,
     }))
 }
 
@@ -270,7 +262,7 @@ fn load_remote_streaming_source(
     };
 
     // Spawn the fetch thread.
-    let (fetch_tx, fetch_event_rx, bandwidth_monitor, _fetch_handle) =
+    let (fetch_tx, fetch_event_rx, _bandwidth_monitor, _fetch_handle) =
         remote_source::spawn_fetch_thread_with_fetcher(
             String::new(), // URL is embedded in the fetcher
             Arc::clone(&cache),
@@ -310,7 +302,6 @@ fn load_remote_streaming_source(
         metadata: probe_metadata,
         decode_handle,
         fetch_event_rx: Some(fetch_event_rx),
-        bandwidth_monitor: Some(bandwidth_monitor),
     }))
 }
 

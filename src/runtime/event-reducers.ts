@@ -8,7 +8,7 @@ import type {
   UploadStatusSnapshot,
 } from "@/types/ipc";
 
-export const EVENT_STATUS_CLEAR_DELAY_MS = 3_000;
+const EVENT_STATUS_CLEAR_DELAY_MS = 3_000;
 
 export function separationProgressStatus(
   event: SeparationProgressEvent,

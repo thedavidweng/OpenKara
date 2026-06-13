@@ -1,7 +1,7 @@
 import type { Transform } from "@dnd-kit/utilities";
 
 export type DropIndicatorPosition = "above" | "below";
-export type DropAnnouncementPosition = "before" | "after";
+type DropAnnouncementPosition = "before" | "after";
 
 export function getDropIndicatorPosition(
   activeIndex: number | null,

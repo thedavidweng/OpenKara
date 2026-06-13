@@ -14,8 +14,7 @@
     "loading": "加载中…",
     "deleting": "删除中...",
     "unknownTitle": "未知标题",
-    "unknownArtist": "未知艺术家",
-    "error": "错误"
+    "unknownArtist": "未知艺术家"
   },
   "setup": {
     "welcome": "欢迎使用 OpenKara",
@@ -63,11 +62,9 @@
     "localMusic": "本地音乐",
     "separateAll": "全部分离",
     "separating": "正在分离 {{current}}/{{total}}",
-    "batchFailed": "{{count}} 个失败",
     "separationComplete": "分离完成：{{done}} 个已完成",
     "skipped": "{{count}} 个已跳过",
     "failed": "{{count}} 个失败",
-    "cancelBatch": "取消批量分离",
     "twoStem": "2轨",
     "fourStem": "4轨",
     "upgradeAll": "全部升级为4轨",
@@ -160,15 +157,11 @@
     "unmute": "取消静音",
     "volume": "音量",
     "seek": "进度",
-    "exitFullscreen": "退出全屏",
     "selectMonitor": "选择显示器",
     "monitor": "显示器 {{index}}",
     "localDisplayOutput": "本地显示器输出",
     "airPlayOutput": "AirPlay 输出",
-    "airPlayNativePickerHint": "请在下方原生系统控件中选择 AirPlay 设备。",
-    "noDisplaysFound": "暂未发现可用显示器。",
-    "airPlayActive": "AirPlay 已连接",
-    "airPlayInactive": "AirPlay 未连接"
+    "noDisplaysFound": "暂未发现可用显示器。"
   },
   "progress": {
     "separating": "正在分离：{{title}}",
@@ -179,7 +172,6 @@
     "upNext": "即将播放",
     "clearAll": "清空",
     "empty": "队列为空",
-    "badge": "9+",
     "reorder": "重新排序 {{title}}",
     "remove": "将 {{title}} 从队列中移除",
     "moveUp": "上移",
@@ -219,7 +211,6 @@
     "romanizeTooltip": "罗马化歌词",
     "previousPage": "上一页",
     "nextPage": "下一页",
-    "fontSizeTooltip": "歌词字号",
     "fontSizeDecrease": "减小歌词字号",
     "fontSizeIncrease": "增大歌词字号",
     "fontSizeReset": "重置歌词字号",
@@ -256,7 +247,6 @@
     "twoStem": "2轨",
     "fourStem": "4轨",
     "upgradeToFourStem": "升级为4轨",
-    "reSeparateAsTwoStem": "重新分离为2轨",
     "downgradeToTwoStem": "降级为2轨",
     "reSeparate": "重新分离",
     "reSeparateAs": "重新分离为：",
@@ -277,7 +267,6 @@
       "createAndMirrorActiveLocal": "创建并镜像当前本地曲库",
       "mirrorActiveLocalDescriptionWithName": "将 {{displayName}} 镜像到新的远程资料库。",
       "mirrorActiveLocalDescriptionNoLocal": "请先切换到你想镜像的本地曲库。",
-      "remoteMirrorHint": "创建新的远端镜像前，请先切换到你要镜像的本地曲库。",
       "displayName": "显示名称",
       "remoteLibraryDisplayName": "OpenKara",
       "renameLibrary": "重命名曲库",
@@ -343,16 +332,13 @@
       "downloaded": "已下载",
       "legacyOnDisk": "磁盘上为旧版本 — 请在「危险区」删除后重新下载",
       "notDownloaded": "未下载",
-      "delete": "删除",
       "download": "下载"
     },
     "hideBatchSeparate": {
-      "label": "全部分离按钮",
       "hide": "隐藏“全部分离”按钮",
       "description": "隐藏侧栏中用于分离全部歌曲的按钮。"
     },
     "coverArtBackdrop": {
-      "label": "专辑封面背景",
       "hide": "禁用模糊专辑封面背景",
       "description": "移除歌词后的模糊专辑封面。"
     },
@@ -377,10 +363,7 @@
       "deleteModelStandard": "删除标准模型",
       "deleteModelHQ": "删除高质量模型",
       "deleteModelDescription": "删除已下载的模型文件以释放磁盘空间。如果再次选择该模型，需要重新下载。",
-      "deleteModelButton": "删除模型",
-      "deleteActiveModelBlockedTitle": "请先切换到其他模型再删除此文件",
-      "deleteLegacyActiveModelTitle": "删除过时文件后可重新下载升级",
-      "confirmDeleteModel": "确定要删除此模型吗？再次使用时需要重新下载。"
+      "deleteModelButton": "删除模型"
     },
     "confirmDeleteStems": {
       "title": "删除所有分离音轨",
@@ -427,28 +410,19 @@
     "name": "播放列表名称",
     "rename": "重命名",
     "delete": "删除播放列表",
-    "deleteConfirm": "删除\"{{name}}\"?",
-    "deleteMessage": "播放列表中的歌曲不会从曲库中删除。",
     "empty": "这个播放列表是空的。请从曲库中添加歌曲。",
     "addTo": "添加到播放列表…",
     "addedToast": "已添加 {{count}} 首歌曲到播放列表。",
     "createdAndAddedToast": "已创建播放列表并添加 {{count}} 首歌曲。",
     "removedFromPlaylistToast": "已从播放列表移除 {{count}} 首歌曲。",
-    "removedToast": "已从 {{playlistCount}} 个播放列表中移除了 {{count}} 首歌曲。",
     "section": "播放列表",
     "newPlaylist": "[+] 新建播放列表…",
-    "removeFromPlaylist": "从播放列表中移除",
-    "confirmDeleteTitle": "删除播放列表",
-    "editSong": "编辑歌曲"
+    "removeFromPlaylist": "从播放列表中移除"
   },
   "rotation": {
     "assignSinger": "指定歌手",
     "shuffle": "随机排列",
     "singer": "歌手",
-    "nextSinger": "下一位歌手",
-    "roundRobin": "轮唱",
-    "singleSinger": "单人演唱",
-    "noSinger": "未指定歌手",
     "singerName": "歌手姓名",
     "removeSinger": "移除歌手",
     "confirmRemoveSinger": "移除歌手",
