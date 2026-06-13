@@ -37,7 +37,6 @@ export interface CommandError {
 // ─── Library ─────────────────────────────────────────────
 
 export type CoverArtBytes = number[] | Uint8Array | ArrayBuffer | null;
-export type LibraryKind = "local" | "remote";
 export type RemoteLibraryProvider = "google_drive" | "dropbox" | "webdav";
 
 export interface WebDavRemoteAuthPayload {

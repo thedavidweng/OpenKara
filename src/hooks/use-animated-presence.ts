@@ -1,6 +1,6 @@
 import { useReducer, useCallback } from "react";
 
-export interface AnimatedPresenceResult {
+interface AnimatedPresenceResult {
   shouldRender: boolean;
   className: string;
   onAnimationEnd: (() => void) | undefined;

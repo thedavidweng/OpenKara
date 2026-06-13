@@ -16,11 +16,6 @@ impl ByteRange {
         self.start + self.length
     }
 
-    #[allow(dead_code)]
-    fn overlaps(&self, other: &ByteRange) -> bool {
-        self.start < other.end() && other.start < self.end()
-    }
-
     fn is_adjacent_or_overlapping(&self, other: &ByteRange) -> bool {
         self.start <= other.end() && other.start <= self.end()
     }

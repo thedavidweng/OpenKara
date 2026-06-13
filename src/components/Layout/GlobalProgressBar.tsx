@@ -18,7 +18,7 @@ interface ActiveTask {
   onCancel?: () => void;
 }
 
-export interface TaskProgressBarProps extends Omit<ActiveTask, "key"> {
+interface TaskProgressBarProps extends Omit<ActiveTask, "key"> {
   className?: string;
 }
 

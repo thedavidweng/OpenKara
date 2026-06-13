@@ -95,19 +95,9 @@ impl LibraryRoot {
         self.root.join(DATABASE_FILENAME)
     }
 
-    /// Path to the `media/` directory that holds copied audio originals.
-    pub fn media_dir(&self) -> PathBuf {
-        self.root.join(MEDIA_DIRECTORY)
-    }
-
     /// Path to the `stems/` directory that holds separation output.
     pub fn stems_dir(&self) -> PathBuf {
         self.root.join(STEMS_DIRECTORY)
-    }
-
-    /// Path to the `media-g/` directory that holds Media+G assets.
-    pub fn media_g_dir(&self) -> PathBuf {
-        self.root.join(MEDIA_G_DIRECTORY)
     }
 
     /// Build the absolute path for a media file given its hash and extension.
