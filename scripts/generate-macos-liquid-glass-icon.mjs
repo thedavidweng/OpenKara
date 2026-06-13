@@ -35,7 +35,10 @@ function makePngChunk(type, data) {
   chunk.writeUInt32BE(data.length, 0);
   typeBuffer.copy(chunk, 4);
   data.copy(chunk, 8);
-  chunk.writeUInt32BE(crc32(Buffer.concat([typeBuffer, data])), 8 + data.length);
+  chunk.writeUInt32BE(
+    crc32(Buffer.concat([typeBuffer, data])),
+    8 + data.length,
+  );
   return chunk;
 }
 
@@ -127,7 +130,8 @@ function writeMicLayerFromMasterIcon(inputPath, outputPath) {
       const green = current[index + 1];
       const blue = current[index + 2];
       const alpha = current[index + 3];
-      const isWhiteMicPixel = alpha > 32 && red > 180 && green > 180 && blue > 180;
+      const isWhiteMicPixel =
+        alpha > 32 && red > 180 && green > 180 && blue > 180;
       output[outputPosition++] = 255;
       output[outputPosition++] = 255;
       output[outputPosition++] = 255;
@@ -189,7 +193,10 @@ execFileSync(
   { stdio: "inherit" },
 );
 
-await cp(path.join(stagingDir, "Assets.car"), path.join(iconsDir, "Assets.car"));
+await cp(
+  path.join(stagingDir, "Assets.car"),
+  path.join(iconsDir, "Assets.car"),
+);
 await cp(
   path.join(stagingDir, "OpenKara.icns"),
   path.join(iconsDir, "OpenKara.icns"),

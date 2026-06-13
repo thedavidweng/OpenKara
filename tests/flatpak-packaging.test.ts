@@ -290,6 +290,13 @@ describe("Flatpak packaging", () => {
     );
 
     expect(manifest.store_version).toBe("v10");
+    expect(
+      nodeSources.filter(
+        (source) =>
+          source.dest === "flatpak-node/cache/esbuild" ||
+          source.dest?.startsWith("flatpak-node/cache/esbuild/"),
+      ),
+    ).toEqual([]);
     expect(Object.keys(manifest.packages).sort()).toEqual(
       lockfilePackages.map((pkg) => pkg.filename).sort(),
     );

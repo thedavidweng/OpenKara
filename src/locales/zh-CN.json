@@ -154,6 +154,7 @@
   "player": {
     "previous": "上一首",
     "play": "播放",
+    "loading": "加载中",
     "pause": "暂停",
     "next": "下一首",
     "mute": "静音",

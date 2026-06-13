@@ -25,10 +25,131 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  release-separation-smoke:
+    name: Release separation smoke
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust cache
+        uses: swatinem/rust-cache@v2.9.1
+        with:
+          shared-key: ${{ github.workflow }}-ubuntu-22.04-smoke
+          workspaces: ./src-tauri -> target
+          cache-bin: false
+          key: ubuntu-22.04-smoke
+
+      - name: Install Linux smoke dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            libasound2-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev
+
+      - name: Download runtime and model
+        run: ./scripts/setup.sh
+
+      - name: Run real separation smoke
+        run: |
+          set -euo pipefail
+
+          input_dir="${RUNNER_TEMP}/openkara-smoke-input"
+          output_dir="${RUNNER_TEMP}/openkara-smoke-output"
+          mkdir -p "${input_dir}" "${output_dir}"
+          cp src-tauri/tests/fixtures/audio/fixture.wav "${input_dir}/fixture.wav"
+
+          ./scripts/run-local-smoke.sh "${input_dir}" "${output_dir}"
+
+      - name: Validate real separation smoke report
+        run: |
+          set -euo pipefail
+
+          report_path="${RUNNER_TEMP}/openkara-smoke-output/local-audio-smoke-report.json"
+          node --input-type=module - "${report_path}" <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const reportPath = process.argv[2];
+          const report = JSON.parse(readFileSync(reportPath, "utf8"));
+          const summary = report.summary;
+          const failures = [];
+
+          if (report.model.status !== "passed") {
+            failures.push(`model status was ${report.model.status}`);
+          }
+          if (summary.discovered_files !== 1) {
+            failures.push(`expected 1 discovered file, got ${summary.discovered_files}`);
+          }
+          if (summary.imported !== 1) {
+            failures.push(`expected 1 imported file, got ${summary.imported}`);
+          }
+          if (summary.playback_failed !== 0) {
+            failures.push(`playback_failed was ${summary.playback_failed}`);
+          }
+          if (summary.separation_passed < 1) {
+            failures.push(`separation_passed was ${summary.separation_passed}`);
+          }
+          if (summary.separation_failed !== 0) {
+            failures.push(`separation_failed was ${summary.separation_failed}`);
+          }
+          if (summary.separation_skipped !== 0) {
+            failures.push(`separation_skipped was ${summary.separation_skipped}`);
+          }
+
+          const separatedSongs = report.songs.filter(
+            (song) =>
+              song.separation_status === "passed" &&
+              song.accompaniment_path !== null &&
+              song.vocals_path !== null,
+          );
+          if (separatedSongs.length < 1) {
+            failures.push("no song produced both accompaniment and vocals artifacts");
+          }
+
+          if (failures.length > 0) {
+            console.error(`Release separation smoke failed for ${reportPath}:`);
+            for (const failure of failures) {
+              console.error(`- ${failure}`);
+            }
+            process.exit(1);
+          }
+
+          console.log(
+            `Release separation smoke passed: separation_passed=${summary.separation_passed}, separation_failed=${summary.separation_failed}, separation_skipped=${summary.separation_skipped}`,
+          );
+          NODE
+
+      - name: Upload release separation smoke report
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-separation-smoke-report
+          path: ${{ runner.temp }}/openkara-smoke-output/local-audio-smoke-report.*
+          if-no-files-found: warn
+          retention-days: 14
+
   publish:
     name: Release (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
+    needs: release-separation-smoke
     strategy:
       fail-fast: false
       matrix:

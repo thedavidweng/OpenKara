@@ -547,8 +547,6 @@ fn runtime_filename_matches(candidate: &str, expected: &str) -> bool {
             && !candidate.contains("providers")
     } else if expected.ends_with(".so") {
         candidate.starts_with("libonnxruntime.so") && !candidate.contains("providers")
-    } else if expected.ends_with(".dll") {
-        candidate == expected
     } else {
         candidate == expected
     }

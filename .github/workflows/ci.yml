@@ -215,8 +215,8 @@ jobs:
       - name: cargo-shear (unused Cargo dependencies)
         working-directory: src-tauri
         run: |
-          cargo install cargo-shear --locked
-          cargo shear --deny
+          cargo install cargo-shear --version 1.12.4 --locked
+          cargo shear --deny-warnings --locked
 
   rust-test:
     name: Rust tests (${{ matrix.name }})
@@ -521,8 +521,8 @@ jobs:
 
           assert_glibc_floor "$app_binary"
 
-  playwright-e2e:
-    name: Playwright E2E
+  playwright-ui-smoke:
+    name: Playwright UI smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
@@ -548,8 +548,8 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm exec playwright install chromium --with-deps
 
-      - name: Run Playwright E2E tests
-        run: pnpm test:e2e
+      - name: Run Playwright UI smoke tests
+        run: pnpm test:ui-smoke
 
       - name: Upload Playwright report
         if: always()

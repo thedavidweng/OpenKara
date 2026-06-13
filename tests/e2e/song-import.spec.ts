@@ -1,10 +1,10 @@
 import { test, expect } from "./fixtures/base-test";
 
 /**
- * Song import workflow E2E tests.
+ * Song import workflow UI smoke tests.
  *
  * In the real Tauri app, song import uses native file dialogs and the Rust
- * backend to process audio files.  In browser-based E2E we can only verify
+ * backend to process audio files.  In browser-based UI smoke we can only verify
  * that the UI surfaces for import are present and correctly wired.  The
  * actual file dialog cannot be triggered in a browser context.
  */
@@ -50,8 +50,9 @@ test.describe("Song import workflow", () => {
   test("empty library state is not shown when songs exist", async ({
     page,
   }) => {
-    // When the mock library has songs, the empty state should NOT appear
-    const emptyState = page.getByText(/no songs|empty library|add.*songs/i);
-    await expect(emptyState).not.toBeVisible();
+    const songList = page.getByTestId("song-list");
+    await expect(songList).toBeVisible();
+    await expect(songList.getByText("Bohemian Rhapsody")).toBeVisible();
+    await expect(songList.getByText(/no tracks/i)).not.toBeVisible();
   });
 });

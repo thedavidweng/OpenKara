@@ -212,8 +212,7 @@ fn separate_chunked_audio(
             for (stem_idx, stem) in merged_stems.iter_mut().enumerate() {
                 let src_offset = stem_idx * samples_per_stem;
                 let dst_start = chunk_start_frame * channels;
-                for frame in 0..chunk_frame_count {
-                    let w = window[frame];
+                for (frame, &w) in window.iter().take(chunk_frame_count).enumerate() {
                     for ch in 0..channels {
                         let src_idx = src_offset + frame * channels + ch;
                         let dst_idx = dst_start + frame * channels + ch;
@@ -222,8 +221,7 @@ fn separate_chunked_audio(
                 }
             }
             // Update normalization.
-            for frame in 0..chunk_frame_count {
-                let w = window[frame];
+            for (frame, &w) in window.iter().take(chunk_frame_count).enumerate() {
                 let w2 = w * w;
                 let base = (chunk_start_frame + frame) * channels;
                 for ch in 0..channels {
@@ -261,8 +259,7 @@ fn separate_chunked_audio(
         for (stem_index, chunk_stem) in chunk_result.stems.iter().enumerate() {
             let destination = &mut merged_stems[stem_index].audio.samples;
             let dst_start = chunk_start_frame * channels;
-            for frame in 0..chunk_frame_count {
-                let w = window[frame];
+            for (frame, &w) in window.iter().take(chunk_frame_count).enumerate() {
                 for ch in 0..channels {
                     let src_idx = frame * channels + ch;
                     let dst_idx = dst_start + frame * channels + ch;
@@ -272,8 +269,7 @@ fn separate_chunked_audio(
         }
 
         // Update normalization buffer.
-        for frame in 0..chunk_frame_count {
-            let w = window[frame];
+        for (frame, &w) in window.iter().take(chunk_frame_count).enumerate() {
             let w2 = w * w;
             let base = (chunk_start_frame + frame) * channels;
             for ch in 0..channels {
@@ -686,8 +682,7 @@ mod tests {
         // Simulate overlap-add with 50% overlap and Hann window.
         for chunk_start in (0..input_frames).step_by(hop_size) {
             let chunk_frames = (input_frames - chunk_start).min(target_frames);
-            for frame in 0..chunk_frames {
-                let w = window[frame];
+            for (frame, &w) in window.iter().take(chunk_frames).enumerate() {
                 let w2 = w * w;
                 for ch in 0..channels {
                     let idx = (chunk_start + frame) * channels + ch;

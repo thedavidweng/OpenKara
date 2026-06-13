@@ -251,8 +251,8 @@ mod tests {
 
         for source in &sources {
             let serialized = serialize_source(source);
-            let deserialized =
-                deserialize_source(serialized).expect(&format!("deserialize {serialized}"));
+            let deserialized = deserialize_source(serialized)
+                .unwrap_or_else(|_| panic!("deserialize {serialized}"));
             assert_eq!(&deserialized, source);
         }
     }
