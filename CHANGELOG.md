@@ -20,12 +20,14 @@
 - **Lyrics fetch latency:** embedded/sidecar lyrics return before online lookup; LRCLIB/LrcAPI clients use 3s/6s timeouts; negative cache (`absent`) skips repeat network probes when a song has no lyrics.
 - **Remote fetch:** position-update prefetch runs after fetch-queue drain (fixes compiler warning and stale prefetch gap).
 - **Playback transport UI:** pause/resume snapshots report user intent immediately (not after the 50ms fade envelope); frontend ignores stale `is_playing` position ticks for 300ms after transport commands.
-- **Lyrics scroll:** timed lyrics now glide continuously with playback (spring-smoothed scroll + interpolated line focus) instead of snapping on each line change.
+- **Lyrics scroll:** timed lyrics now move line-by-line with spring-smoothed transitions, without continuously drifting toward the next line during playback.
 - **macOS Liquid Glass icon:** Icon Composer layer scale restored to full bleed; translucency disabled; `CFBundleIconName` aligned to `OpenKara`; `Assets.car` bundled via Tauri resources; `pnpm icons:generate` recompiles Liquid Glass assets with `actool`.
+- **Playback controls:** master volume icon now uses the same active brightness as the vocal and accompaniment stem controls.
 
 ### Changed
 
 - **Documentation ownership:** completed work is tracked in this changelog, future work stays in the GitHub Project, executable plans live in `docs/plans/`, current facts and contracts live in `docs/references/`, and completed/superseded plans live in `docs/archive/`.
+- **Audit plans:** v0.9.0 audit and follow-up plans were archived; signing/updater/runner decisions now live under architecture references.
 
 ## 0.9.0 - 2026-06-04
 

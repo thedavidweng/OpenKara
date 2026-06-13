@@ -743,6 +743,7 @@ mod tests {
         );
     }
 
+    #[test]
     fn snapshot_reports_paused_during_fade_out() {
         use super::DecodedAudio;
 

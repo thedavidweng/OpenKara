@@ -71,3 +71,15 @@ Compiles the Icon Composer project into macOS 26 Liquid Glass assets.
 - **Non-macOS hosts:** exits successfully without writing files
 - **When to run:** after changing `app-icon.png` or `OpenKara.icon/icon.json`
 - **Bundle:** `Assets.car` is copied into the app via `tauri.conf.json` `bundle.resources`; `Info.plist` sets `CFBundleIconName` to `OpenKara`
+
+## `generate-flatpak-node-sources.mjs`
+
+Regenerates Flatpak offline pnpm dependency sources from `pnpm-lock.yaml`.
+
+- **Input:** `pnpm-lock.yaml` plus existing
+  `packaging/flatpak/generated/node-sources.0.json` scaffold entries
+- **Output:** `packaging/flatpak/generated/node-sources.0.json`
+- **Run:** `node scripts/generate-flatpak-node-sources.mjs` or
+  `pnpm generate:flatpak-node-sources`
+- **When to run:** after changing JavaScript dependencies or lockfile entries
+  used by Flatpak packaging

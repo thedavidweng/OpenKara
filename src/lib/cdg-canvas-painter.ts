@@ -50,10 +50,6 @@ export function setCdgCanvas(canvas: HTMLCanvasElement | null): void {
   }
 }
 
-export function hasCdgCanvas(): boolean {
-  return cdgCanvasEl !== null;
-}
-
 /**
  * Paint a raw RGBA frame (as `ArrayBuffer` from the Tauri IPC binary path)
  * directly onto the CDG canvas.

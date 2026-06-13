@@ -1,12 +1,7 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": ["src/main.tsx", "src-tauri/**/*.rs"],
+  "entry": ["src-tauri/**/*.rs"],
   "project": ["src/**/*.{ts,tsx}"],
-  "ignore": ["tests/**", "scripts/**"],
-  "ignoreDependencies": [
-    "@tauri-apps/plugin-dialog",
-    "@tailwindcss/vite",
-    "@vitest/coverage-v8",
-    "lefthook"
-  ]
+  "exclude": ["exports", "types"],
+  "ignoreDependencies": ["tailwindcss"]
 }

@@ -31,7 +31,7 @@ fn cleanup_dir(path: &Path) {
 
 #[test]
 fn separates_fixture_audio_into_named_stems_and_writes_wavs() {
-    let mut loaded_model = model::load_from_path(
+    let loaded_model = model::load_from_path(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("models")
             .join("htdemucs.onnx"),
@@ -86,7 +86,7 @@ fn separates_fixture_audio_into_named_stems_and_writes_wavs() {
 
 #[test]
 fn separates_audio_longer_than_a_single_demucs_window() {
-    let mut loaded_model = model::load_from_path(
+    let loaded_model = model::load_from_path(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("models")
             .join("htdemucs.onnx"),

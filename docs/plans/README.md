@@ -24,6 +24,4 @@ without rebuilding the product backlog from scratch. It must include:
 
 ## Current State
 
-- [`audit-v0.9.0.md`](audit-v0.9.0.md) — Engineering audit resolution
-  (bugs, perf, bundle, CI). 5 Critical + 14 High findings across Rust and
-  frontend, plus CI gate fixes and −51 MB bundle potential.
+No active executable plans are currently tracked in this folder.

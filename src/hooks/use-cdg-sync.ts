@@ -17,10 +17,6 @@ import {
 import { songHasCdgMedia } from "@/lib/song-media";
 import * as api from "@/lib/tauri";
 
-// Re-export so CdgCanvas can import from the painter module directly, but
-// keep backward compat for any existing callers.
-export { setCdgCanvas } from "@/lib/cdg-canvas-painter";
-
 /**
  * Target cadence for CDG frame fetches. We no longer rely on JS timers here,
  * because macOS can throttle them in occluded windows; instead we map backend

@@ -17,12 +17,12 @@ export function getCenteredScrollTop({
   return Math.max(0, Math.min(maxScrollTop, Math.round(centeredTop)));
 }
 
-export interface LyricLineScrollMetrics {
+interface LyricLineScrollMetrics {
   offsetTop: number;
   height: number;
 }
 
-export function getLineScrollMetrics(
+function getLineScrollMetrics(
   container: HTMLElement,
   lineIndex: number,
 ): LyricLineScrollMetrics | null {

@@ -28,8 +28,6 @@ import {
   colorToCss,
 } from "@/lib/audience-presentation";
 import { Spring } from "@/lib/spring";
-import { getVirtualLineCenter } from "@/lib/lyrics-timing";
-import { readLyricsAdjustedPlaybackMs } from "@/lib/lyrics-playback-clock";
 import { useLyricsStore } from "@/stores/lyrics-store";
 import { selectCurrentPositionMs, usePlayerStore } from "@/stores/player-store";
 interface LyricsPanelProps {
@@ -127,17 +125,15 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
     springSongIdRef.current = songId;
   }
 
-  const virtualCenterRef = useRef(0);
-
   function getLineVisualTargets(distance: number) {
     const targetScale =
-      distance < 0.35
-        ? 1 - distance * 0.04
-        : Math.max(0.94, 1 - distance * 0.018);
+      distance === 0
+        ? 1
+        : distance === 1
+          ? 0.98
+          : Math.max(0.94, 1 - distance * 0.018);
     const targetOpacity =
-      distance < 0.35
-        ? 1 - distance * 0.12
-        : Math.max(0.38, 1 - distance * 0.16);
+      distance === 0 ? 1 : Math.max(0.38, 1 - distance * 0.16);
     return { targetScale, targetOpacity };
   }
 
@@ -166,15 +162,11 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
       lastTime = now;
 
       const lines = useLyricsStore.getState().lines;
-      const virtualCenter = getVirtualLineCenter(
-        lines,
-        readLyricsAdjustedPlaybackMs(),
-      );
-      virtualCenterRef.current = virtualCenter;
+      const currentActiveLineIndex = useLyricsStore.getState().activeLineIndex;
 
       for (const [index, springs] of springsRef.current) {
         const { targetScale, targetOpacity } = getLineVisualTargets(
-          Math.abs(index - virtualCenter),
+          Math.abs(index - currentActiveLineIndex),
         );
         springs.scale.setTarget(targetScale);
         springs.opacity.setTarget(targetOpacity);
