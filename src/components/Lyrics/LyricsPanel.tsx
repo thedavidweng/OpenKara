@@ -28,11 +28,10 @@ import {
   colorToCss,
 } from "@/lib/audience-presentation";
 import { Spring } from "@/lib/spring";
+import { getVirtualLineCenter } from "@/lib/lyrics-timing";
+import { readLyricsAdjustedPlaybackMs } from "@/lib/lyrics-playback-clock";
 import { useLyricsStore } from "@/stores/lyrics-store";
-import {
-  selectSyncDisplayPositionMs,
-  usePlayerStore,
-} from "@/stores/player-store";
+import { selectCurrentPositionMs, usePlayerStore } from "@/stores/player-store";
 interface LyricsPanelProps {
   presentation?: "standard" | "audience";
 }
@@ -49,8 +48,12 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
   const showRomanized = useLyricsStore((s) => s.showRomanized);
   const toggleRomanized = useLyricsStore((s) => s.toggleRomanized);
   const songId = usePlayerStore((s) => s.snapshot?.song_id);
-  const positionMs = usePlayerStore(selectSyncDisplayPositionMs);
   const airPlayOutput = usePlayerStore((s) => s.airPlayOutput);
+  const positionMs = usePlayerStore((s) =>
+    airPlayOutput.active && airPlayOutput.displayedPositionMs !== null
+      ? airPlayOutput.displayedPositionMs
+      : selectCurrentPositionMs(s),
+  );
   const localAudienceOutputActive = usePlayerStore(
     (s) => s.localAudienceOutputActive,
   );
@@ -96,7 +99,6 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
 
   useLyricsAutoScroll(
     containerRef,
-    activeLineIndex,
     isPlainText,
     lyricsFontStep,
     presentation,
@@ -116,7 +118,6 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
   const springsRef = useRef<
     Map<number, { scale: Spring; opacity: Spring; blur: Spring }>
   >(new Map());
-  const rafRef = useRef<number>(0);
   const springSongIdRef = useRef<string | null | undefined>(songId);
 
   if (springSongIdRef.current !== songId) {
@@ -126,51 +127,73 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
     springSongIdRef.current = songId;
   }
 
+  const virtualCenterRef = useRef(0);
+
+  function getLineVisualTargets(distance: number) {
+    const targetScale =
+      distance < 0.35
+        ? 1 - distance * 0.04
+        : Math.max(0.94, 1 - distance * 0.018);
+    const targetOpacity =
+      distance < 0.35
+        ? 1 - distance * 0.12
+        : Math.max(0.38, 1 - distance * 0.16);
+    return { targetScale, targetOpacity };
+  }
+
   const getLineSprings = useCallback((index: number) => {
     let springs = springsRef.current.get(index);
     if (!springs) {
       springs = {
-        scale: new Spring(1, { stiffness: 180, damping: 18 }),
-        opacity: new Spring(1, { stiffness: 120, damping: 14 }),
-        blur: new Spring(0, { stiffness: 120, damping: 14 }),
+        scale: new Spring(1, { stiffness: 96, damping: 22 }),
+        opacity: new Spring(1, { stiffness: 80, damping: 20 }),
+        blur: new Spring(0, { stiffness: 80, damping: 20 }),
       };
       springsRef.current.set(index, springs);
     }
     return springs;
   }, []);
 
-  // Update springs each frame — restart loop when active line or song changes
   const [, forceRender] = useState(0);
   useEffect(() => {
+    if (isPlainText || !songId) return;
+
+    let rafId = 0;
     let lastTime = performance.now();
 
     const tick = (now: number) => {
-      const dt = Math.min((now - lastTime) / 1000, 0.05); // cap at 50ms
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
       lastTime = now;
 
-      let anyMoving = false;
-      for (const [, springs] of springsRef.current) {
+      const lines = useLyricsStore.getState().lines;
+      const virtualCenter = getVirtualLineCenter(
+        lines,
+        readLyricsAdjustedPlaybackMs(),
+      );
+      virtualCenterRef.current = virtualCenter;
+
+      for (const [index, springs] of springsRef.current) {
+        const { targetScale, targetOpacity } = getLineVisualTargets(
+          Math.abs(index - virtualCenter),
+        );
+        springs.scale.setTarget(targetScale);
+        springs.opacity.setTarget(targetOpacity);
+        springs.blur.setTarget(0);
         springs.scale.update(dt);
         springs.opacity.update(dt);
         springs.blur.update(dt);
-        if (
-          !springs.scale.isSettled() ||
-          !springs.opacity.isSettled() ||
-          !springs.blur.isSettled()
-        ) {
-          anyMoving = true;
-        }
       }
 
-      if (anyMoving) {
+      if (lines.length > 0) {
         forceRender((n) => n + 1);
-        rafRef.current = requestAnimationFrame(tick);
       }
+
+      rafId = requestAnimationFrame(tick);
     };
 
-    rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [activeLineIndex, songId]);
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [isPlainText, songId, lyricsLayoutVersion]);
 
   const handleRemotePageStep = (direction: PlainTextPageDirection) => {
     void stepPlainTextRemotePage(
@@ -344,7 +367,6 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
           isAudience ? "" : spaciousStageLayout ? "px-16 py-10" : "px-12 py-8"
         }`}
         style={{
-          mixBlendMode: "plus-lighter" as const,
           ...(isAudience
             ? {
                 padding: `${audiencePresentationSpec.verticalPaddingPx}px ${audiencePresentationSpec.horizontalPaddingPx}px`,
@@ -376,34 +398,12 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
               ? currentPageStart + idx
               : idx;
 
-            const distance = isPlainText
-              ? 0
-              : Math.abs(absoluteIndex - activeLineIndex);
-
-            const targetScale =
-              distance === 0
-                ? 1
-                : distance === 1
-                  ? 0.98
-                  : Math.max(0.95, 1 - distance * 0.015);
-            const targetOpacity =
-              distance === 0 ? 1 : Math.max(0.3, 1 - distance * 0.2);
             const springs = getLineSprings(absoluteIndex);
-            const scaleChanged = springs.scale.setTarget(targetScale);
-            const opacityChanged = springs.opacity.setTarget(targetOpacity);
-            const blurChanged = springs.blur.setTarget(0);
-            const targetChanged = scaleChanged || opacityChanged || blurChanged;
-            if (targetChanged) {
-              springs.scale.update(1 / 60);
-              springs.opacity.update(1 / 60);
-              springs.blur.update(1 / 60);
-            }
 
             return (
               <div
                 key={`${absoluteIndex}-${line.time_ms}-${line.text}`}
                 data-lyrics-line-index={absoluteIndex}
-                data-line-distance={distance}
                 className="w-full"
                 style={{
                   transform: `scale(${springs.scale.getPosition().toFixed(4)})`,

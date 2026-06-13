@@ -10,6 +10,7 @@ import type {
   LibraryRegistrySnapshot,
   ModelVariant,
   RegisteredLibrary,
+  RuntimeBootstrapState,
   StemMode,
 } from "@/types/ipc";
 
@@ -17,6 +18,7 @@ export type DangerDialog =
   | "delete_stems"
   | "downgrade_stems"
   | "delete_lyrics"
+  | "delete_runtime"
   | "ft_warning"
   | null;
 
@@ -24,6 +26,12 @@ export interface ModelStatusView {
   downloaded: boolean;
   legacy_install_present: boolean;
   file_size: number | null;
+}
+
+export interface RuntimeStatusView {
+  state: RuntimeBootstrapState;
+  version: string;
+  runtime_path: string;
 }
 
 export interface SettingsOverlayState {
@@ -36,6 +44,7 @@ export interface SettingsOverlayState {
   modelVariant: ModelVariant;
   modelStatuses: Partial<Record<ModelVariant, ModelStatusView>>;
   downloadingModel: ModelVariant | null;
+  runtimeStatus: RuntimeStatusView | null;
   language: string;
   hideBatchSeparate: boolean;
   coverArtBackdrop: boolean;
@@ -84,6 +93,10 @@ export interface SettingsOverlayActions {
   confirmDeleteLyrics: () => Promise<void>;
   closeDialog: () => void;
   refreshModelStatuses: () => Promise<void>;
+  refreshRuntimeStatus: () => Promise<void>;
+  downloadRuntime: () => Promise<void>;
+  deleteRuntime: () => Promise<void>;
+  openDeleteRuntimeDialog: () => void;
 }
 
 export interface SettingsOverlayControllerDependencies {
@@ -94,13 +107,16 @@ export interface SettingsOverlayControllerDependencies {
     | "deleteAllCachedLyrics"
     | "deleteAllStems"
     | "deleteModel"
+    | "deleteRuntime"
     | "downloadModel"
+    | "downloadRuntime"
     | "downgradeAllToTwoStem"
     | "estimateDowngradeSavings"
     | "estimateStemsSize"
     | "getAllSeparationStatuses"
     | "getLibraryPath"
     | "getLibraryRegistry"
+    | "getRuntimeBootstrapStatus"
     | "getSettings"
     | "getModelStatus"
     | "openLibrary"

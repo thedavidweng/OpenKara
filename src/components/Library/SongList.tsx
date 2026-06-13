@@ -12,7 +12,17 @@ const SONG_ROW_GAP_PX = 4;
 export function SongList() {
   const songs = useLibraryStore((s) => s.songs);
   const filter = useLibraryStore((s) => s.filter);
-  const separationStatuses = useLibraryStore((s) => s.separationStatuses);
+  // Item 6: Only subscribe to separationStatuses when the "separated" filter
+  // is active. This prevents the entire list from re-rendering on every
+  // separation progress tick — only completed status changes matter for the
+  // filter view.
+  const separatedSongs = useLibraryStore((s) =>
+    s.filter === "separated"
+      ? s.songs.filter(
+          (song) => s.separationStatuses[song.hash]?.state === "completed",
+        )
+      : null,
+  );
   const activePlaylistId = usePlaylistStore((s) => s.activePlaylistId);
   const getPlaylistSongs = usePlaylistStore((s) => s.getPlaylistSongs);
   const playlistSongSets = usePlaylistStore((s) => s.playlistSongSets);
@@ -28,18 +38,29 @@ export function SongList() {
     [getPlaylistSongs],
   );
 
+  // F8: Cancel stale async playlist loads when the active playlist changes
+  // rapidly. Without this guard, a slow response from playlist A can overwrite
+  // the song list after the user has already switched to playlist B.
   useEffect(() => {
     if (activePlaylistId) {
+      let cancelled = false;
       void loadPlaylistSongsFromLibrary(activePlaylistId, songs).then(
-        setPlaylistSongs,
+        (result) => {
+          if (!cancelled) {
+            setPlaylistSongs(result);
+          }
+        },
       );
+      return () => {
+        cancelled = true;
+      };
     }
   }, [activePlaylistId, songs, loadPlaylistSongsFromLibrary, playlistSongSets]);
 
   const displaySongs = activePlaylistId
     ? playlistSongs
     : filter === "separated"
-      ? songs.filter((s) => separationStatuses[s.hash]?.state === "completed")
+      ? (separatedSongs ?? songs)
       : songs;
 
   const orderedHashes = displaySongs.map((s) => s.hash);

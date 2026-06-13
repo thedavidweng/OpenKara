@@ -132,6 +132,7 @@ export interface Song {
   album: string | null;
   duration_ms: number;
   cover_art: CoverArtBytes;
+  has_cover_art: boolean;
   imported_at: number;
   original_ext: string | null;
 }
@@ -497,5 +498,23 @@ export interface ModelBootstrapStatusSnapshot {
   model_path: string;
   downloaded_bytes: number | null;
   total_bytes: number | null;
+  error: CommandError | null;
+}
+
+// ─── Runtime Bootstrap ────────────────────────────────────
+
+export type RuntimeBootstrapState =
+  | "missing"
+  | "downloading"
+  | "ready"
+  | "corrupt"
+  | "failed";
+
+export interface RuntimeBootstrapStatusSnapshot {
+  state: RuntimeBootstrapState;
+  runtime_path: string;
+  downloaded_bytes: number | null;
+  total_bytes: number | null;
+  version: string;
   error: CommandError | null;
 }

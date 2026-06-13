@@ -99,6 +99,7 @@ fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode
         .mock("GET", "/api/get")
         .match_query(mockito::Matcher::Any)
         .with_status(404)
+        .expect_at_most(0)
         .create();
 
     let lyrics = fetch_lyrics_from_connection(

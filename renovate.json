@@ -1,0 +1,18 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":pinDigests"],
+  "constraints": {
+    "rust": ">= 1.75.0"
+  },
+  "packageRules": [
+    {
+      "matchManagers": ["github-actions"],
+      "pinDigests": true
+    },
+    {
+      "matchManagers": ["cargo"],
+      "enabled": true,
+      "schedule": ["every weekend"]
+    }
+  ]
+}

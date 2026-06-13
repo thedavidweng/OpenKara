@@ -7,18 +7,18 @@
           "image-name": "OpenKara 2.png",
           "name": "OpenKara 2",
           "position": {
-            "scale": 0.3,
+            "scale": 1,
             "translation-in-points": [0, 0]
           }
         }
       ],
       "shadow": {
         "kind": "neutral",
-        "opacity": 0.5
+        "opacity": 0.2
       },
       "translucency": {
-        "enabled": true,
-        "value": 0.5
+        "enabled": false,
+        "value": 0
       }
     }
   ],

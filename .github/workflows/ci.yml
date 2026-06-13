@@ -21,6 +21,7 @@ jobs:
   prepare-model:
     name: Prepare separation model
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -61,6 +62,7 @@ jobs:
     name: Conventional commits
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
 
     steps:
       - name: Enforce conventional PR title
@@ -71,6 +73,7 @@ jobs:
   cargo-deny:
     name: Cargo deny
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -81,70 +84,30 @@ jobs:
         with:
           manifest-path: src-tauri/Cargo.toml
 
-  frontend-quality:
-    name: Frontend quality
+  workflow-lint:
+    name: Workflow lint
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6.0.3
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6.0.8
+      - name: actionlint
+        uses: reviewdog/action-actionlint@v1
         with:
-          version: 10.33.2
+          actionlint_flags: ""
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6.4.0
+      - name: zizmor
+        uses: zizmor-core/zizmor-action@v0.1.0
         with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+          persona: pedantic
+          min-severity: low
 
-      - name: Install JavaScript dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Audit dependencies
-        run: pnpm audit --audit-level=high --ignore-registry-errors
-
-      - name: Verify formatting
-        run: pnpm format
-
-      - name: Lint frontend
-        run: pnpm lint
-
-  frontend-build:
-    name: Frontend build
+  frontend:
+    name: Frontend quality / build / test
     runs-on: ubuntu-24.04
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6.0.3
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6.0.8
-        with:
-          version: 10.33.2
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6.4.0
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Install JavaScript dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Audit dependencies
-        run: pnpm audit --audit-level=high --ignore-registry-errors
-
-      - name: Build frontend
-        run: pnpm build
-
-  frontend-test:
-    name: Frontend tests
-    runs-on: ubuntu-24.04
+    timeout-minutes: 15
 
     permissions:
       contents: read
@@ -170,7 +133,31 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Audit dependencies
-        run: pnpm audit --audit-level=high --ignore-registry-errors
+        run: pnpm audit --audit-level=high
+
+      - name: Verify formatting
+        run: pnpm format
+
+      - name: Lint frontend
+        run: pnpm lint
+
+      - name: Check i18n keys
+        run: pnpm check:i18n
+
+      - name: Check db-schema drift
+        run: |
+          pnpm generate:db-schema
+          git diff --exit-code docs/references/generated/db-schema.md
+
+      - name: knip (unused exports / dependencies)
+        run: pnpm knip --no-progress
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Typecheck with tsgo
+        run: pnpm tsgo --noEmit --project tsconfig.json
+        continue-on-error: true
 
       - name: Run frontend tests with coverage
         run: pnpm test:coverage
@@ -213,9 +200,28 @@ jobs:
           json-summary-path: ./coverage/coverage-summary.json
           vite-config-path: ./vite.config.ts
 
+  dependency-checks:
+    name: Dependency surface checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.3
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo-shear (unused Cargo dependencies)
+        working-directory: src-tauri
+        run: |
+          cargo install cargo-shear --locked
+          cargo shear --deny
+
   rust-test:
     name: Rust tests (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     needs: prepare-model
     strategy:
       fail-fast: false
@@ -257,13 +263,11 @@ jobs:
 
       - name: Restore Rust cache
         uses: swatinem/rust-cache@v2.9.1
-        continue-on-error: true
         with:
-          shared-key: ${{ github.workflow }}-${{ matrix.os }}
+          shared-key: ${{ github.workflow }}-${{ matrix.os }}-debug
           workspaces: ./src-tauri -> target
           cache-bin: false
-          # Include full OS name in cache key to distinguish ubuntu versions
-          key: ${{ matrix.os }}
+          key: ${{ matrix.os }}-debug
 
       - name: Install Linux test dependencies
         if: runner.os == 'Linux'
@@ -300,32 +304,28 @@ jobs:
 
       - name: Clippy
         working-directory: src-tauri
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
 
       - name: Run Rust tests
         working-directory: src-tauri
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then
-            cargo test -q
+            cargo nextest run --no-fail-fast
           else
             # phase5_perf asserts fixed latency thresholds for fixture audio. GitHub's
             # macOS runners have noisy cold metadata probes; Linux remains the CI
             # baseline, while macOS still runs the functional Rust suite.
-            cargo test -q --lib
-            cargo test -q --bins
-            for test_file in tests/*.rs; do
-              test_name="$(basename "$test_file" .rs)"
-              if [ "$test_name" = "phase5_perf" ]; then
-                continue
-              fi
-              cargo test -q --test "$test_name"
-            done
+            cargo nextest run --no-fail-fast -E '!test(phase5_perf)'
           fi
         shell: bash
 
   rust-test-windows-compile:
     name: Rust tests (Windows compile)
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v6.0.3
@@ -335,12 +335,11 @@ jobs:
 
       - name: Restore Rust cache
         uses: swatinem/rust-cache@v2.9.1
-        continue-on-error: true
         with:
-          shared-key: ${{ github.workflow }}-windows-latest
+          shared-key: ${{ github.workflow }}-windows-latest-debug
           workspaces: ./src-tauri -> target
           cache-bin: false
-          key: windows-latest
+          key: windows-latest-debug
 
       - name: Restore ONNX Runtime cache
         uses: actions/cache@v5.0.5
@@ -358,10 +357,11 @@ jobs:
   tauri-build:
     name: Tauri build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     needs:
-      - frontend-quality
-      - frontend-build
-      - frontend-test
+      - frontend
+      - rust-test
+      - cargo-deny
     strategy:
       fail-fast: false
       matrix:
@@ -418,13 +418,11 @@ jobs:
 
       - name: Restore Rust cache
         uses: swatinem/rust-cache@v2.9.1
-        continue-on-error: true
         with:
-          shared-key: ${{ github.workflow }}-${{ matrix.os }}
+          shared-key: ${{ github.workflow }}-${{ matrix.os }}-release
           workspaces: ./src-tauri -> target
           cache-bin: false
-          # Include full OS name in cache key to distinguish ubuntu versions
-          key: ${{ matrix.os }}
+          key: ${{ matrix.os }}-release
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
@@ -448,7 +446,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Audit dependencies
-        run: pnpm audit --audit-level=high --ignore-registry-errors
+        run: pnpm audit --audit-level=high
 
       - name: Restore ONNX Runtime cache
         uses: actions/cache@v5.0.5
@@ -485,7 +483,7 @@ jobs:
 
           max_glibc_version() {
             local binary="$1"
-            # Exclude weak undefined symbols — Rust's stdlib weak-imports
+            # Exclude weak undefined symbols -- Rust's stdlib weak-imports
             # glibc helpers like pidfd_spawnp / pidfd_getpid that gracefully
             # fall back at runtime and do not create a hard dependency.
             # objdump -T flags field: "  w   DF" for weak, "      DF" for strong.
@@ -519,10 +517,44 @@ jobs:
           }
 
           app_binary="$(find_one '*/bundle/deb/*/usr/bin/openkara')"
-          ort_binary="$(find_one '*/bundle/deb/*/usr/lib/OpenKara/onnxruntime/libonnxruntime.so')"
-
           test -n "$app_binary"
-          test -n "$ort_binary"
 
           assert_glibc_floor "$app_binary"
-          assert_glibc_floor "$ort_binary"
+
+  playwright-e2e:
+    name: Playwright E2E
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.3
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6.0.8
+        with:
+          version: 10.33.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install chromium --with-deps
+
+      - name: Run Playwright E2E tests
+        run: pnpm test:e2e
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

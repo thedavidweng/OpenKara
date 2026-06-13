@@ -343,8 +343,14 @@
       "downloaded": "Downloaded",
       "legacyOnDisk": "Old version on disk — delete in Danger Zone, then download again",
       "notDownloaded": "Not downloaded",
+      "runtimeRequired": "ONNX Runtime required",
       "delete": "Delete",
       "download": "Download"
+    },
+    "runtime": {
+      "installRequired": "The ONNX Runtime library is required for AI stem separation. Install it to enable model downloads.",
+      "installButton": "Install ONNX Runtime",
+      "downloading": "Downloading ONNX Runtime..."
     },
     "hideBatchSeparate": {
       "label": "Separate All Button",
@@ -380,7 +386,10 @@
       "deleteModelButton": "Delete Model",
       "deleteActiveModelBlockedTitle": "Switch models before deleting this file",
       "deleteLegacyActiveModelTitle": "Delete outdated file to allow upgrade download",
-      "confirmDeleteModel": "Are you sure you want to delete this model? You will need to re-download it to use it again."
+      "confirmDeleteModel": "Are you sure you want to delete this model? You will need to re-download it to use it again.",
+      "deleteRuntime": "Delete ONNX Runtime",
+      "deleteRuntimeDescription": "Remove the ONNX Runtime library to free disk space. It will be re-downloaded when you start a separation.",
+      "deleteRuntimeButton": "Delete Runtime"
     },
     "confirmDeleteStems": {
       "title": "Delete All Separated Stems",
@@ -398,6 +407,11 @@
       "title": "Delete All Cached Lyrics",
       "message": "This will permanently delete all cached lyrics. Lyrics will be automatically re-fetched when songs are played.",
       "confirm": "Delete All Lyrics"
+    },
+    "confirmDeleteRuntime": {
+      "title": "Delete ONNX Runtime",
+      "message": "This will delete the ONNX Runtime library. It will be automatically re-downloaded the next time you start a separation.",
+      "confirm": "Delete Runtime"
     },
     "executionProvider": {
       "label": "Hardware Acceleration",

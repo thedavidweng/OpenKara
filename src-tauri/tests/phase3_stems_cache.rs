@@ -80,6 +80,7 @@ fn sample_song(hash: &str, extension: &str) -> Song {
         album: Some("Fixture Album".to_owned()),
         duration_ms: 1,
         cover_art: None,
+        has_cover_art: true,
         imported_at: 1,
         original_ext: Some(extension.to_owned()),
     }

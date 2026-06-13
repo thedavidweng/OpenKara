@@ -245,7 +245,11 @@ impl PlaybackController {
             .current_track
             .as_mut()
             .ok_or_else(|| PlaybackError::InvalidPlaybackState("no track is loaded".to_owned()))?;
-        let clamped_ms = target_ms.min(track.duration_ms());
+        let clamped_ms = if track.duration_ms() == 0 {
+            target_ms
+        } else {
+            target_ms.min(track.duration_ms())
+        };
         // Reset render frame to match the new seek position — this is the
         // sole authority for position_ms.
         let sample_rate = track.original_audio.sample_rate as f64;
@@ -347,7 +351,8 @@ impl PlaybackController {
             let raw_position = track.position_ms();
 
             // Clamp to duration and stop playback if past the end.
-            let position_ms = if raw_position >= duration_ms {
+            // duration_ms == 0 means unknown — do not clamp until EOF backfill.
+            let position_ms = if duration_ms > 0 && raw_position >= duration_ms {
                 track.is_playing = false;
                 duration_ms
             } else {
@@ -378,10 +383,17 @@ impl PlaybackController {
                 _ => None,
             });
 
+            // RATIONALE: is_playing reflects transport intent for the UI. During a
+            // fade-out the audio thread still renders the envelope, but the user has
+            // already paused — report is_playing=false immediately. During buffer
+            // underrun the state becomes "buffering" but the user has not paused.
+            // output.rs gates silence on is_buffering separately from is_playing.
+            let transport_playing =
+                track.is_playing && !matches!(self.fade, FadeState::FadingOut { .. });
             let (state, is_playing) = if self.is_buffering {
-                ("buffering", false)
+                ("buffering", transport_playing)
             } else {
-                ("playing", track.is_playing)
+                ("playing", transport_playing)
             };
 
             // Derive buffered_ms: in streaming mode, compute from ring-buffer
@@ -407,7 +419,12 @@ impl PlaybackController {
                         .min(bass.available_ms())
                         .min(other.available_ms()),
                 };
-                (position_ms + min_available_ms).min(duration_ms)
+                let cap = if duration_ms > 0 {
+                    duration_ms
+                } else {
+                    u64::MAX
+                };
+                (position_ms + min_available_ms).min(cap)
             } else {
                 duration_ms
             };
@@ -417,7 +434,11 @@ impl PlaybackController {
                 state: state.to_owned(),
                 is_playing,
                 position_ms,
-                duration_ms: Some(duration_ms),
+                duration_ms: if duration_ms > 0 {
+                    Some(duration_ms)
+                } else {
+                    None
+                },
                 buffered_ms,
                 volume: self.volume,
                 stem_volumes: self.stem_volumes,
@@ -485,6 +506,26 @@ impl PlaybackController {
         }
     }
 
+    /// Called from the audio output thread when every streaming consumer has
+    /// reached EOF and drained its ring buffer.
+    pub(crate) fn finalize_streaming_natural_end(&mut self) {
+        let Some(track) = self.current_track.as_mut() else {
+            return;
+        };
+        let Some(streaming) = track.streaming.as_ref() else {
+            return;
+        };
+        if !streaming.all_eof_and_drained() {
+            return;
+        }
+        if track.is_playing {
+            track.is_playing = false;
+        }
+        if track.original_audio.duration_ms == 0 {
+            track.original_audio.duration_ms = track.position_ms();
+        }
+    }
+
     /// If a fade-out has elapsed past `FADE_DURATION`, finalize it: set
     /// `is_playing = false` and clear the fade state.  Called before
     /// `snapshot()` so the snapshot correctly reports the paused state.
@@ -542,7 +583,12 @@ impl LoadedTrack {
         if sample_rate == 0 {
             return 0;
         }
-        ((self.render_frame * 1000) / sample_rate).min(self.duration_ms())
+        let pos = (self.render_frame * 1000) / sample_rate;
+        if self.duration_ms() > 0 {
+            pos.min(self.duration_ms())
+        } else {
+            pos
+        }
     }
 }
 
@@ -669,6 +715,28 @@ mod tests {
         );
     }
 
+    fn snapshot_reports_paused_during_fade_out() {
+        use super::DecodedAudio;
+
+        let mut controller = super::PlaybackController::default();
+        let decoded = DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        controller.play(0).unwrap();
+
+        controller.pause(0).unwrap();
+        let snap = controller.snapshot();
+        assert_eq!(snap.state, "playing");
+        assert!(
+            !snap.is_playing,
+            "pause must report is_playing=false while the fade-out envelope runs"
+        );
+    }
+
     #[test]
     fn snapshot_reports_buffering_state_when_flag_set() {
         use super::DecodedAudio;
@@ -687,11 +755,11 @@ mod tests {
         assert_eq!(snap.state, "playing");
         assert!(snap.is_playing);
 
-        // Set buffering flag — state changes, is_playing becomes false
+        // Set buffering flag — state changes, transport intent stays playing
         controller.is_buffering = true;
         let snap = controller.snapshot();
         assert_eq!(snap.state, "buffering");
-        assert!(!snap.is_playing);
+        assert!(snap.is_playing);
 
         // Clear buffering — back to playing
         controller.is_buffering = false;

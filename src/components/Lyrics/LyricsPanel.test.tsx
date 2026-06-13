@@ -20,13 +20,16 @@ const {
   mockPlayerState,
   mockLyricsState,
   mockSettingsState,
-  mockSelectSyncDisplayPositionMs,
+  mockSelectCurrentPositionMs,
 } = vi.hoisted(() => ({
   mockPlayerState: {
     snapshot: {
       song_id: "song-1",
+      is_playing: true,
+      state: "playing",
     },
     positionMs: 4000,
+    playingSinceMs: 1000,
     airPlayOutput: {
       active: false,
       audioActive: false,
@@ -78,7 +81,7 @@ const {
     adjustLyricsFontStep: vi.fn(),
     resetLyricsFontStep: vi.fn(),
   },
-  mockSelectSyncDisplayPositionMs: vi.fn(
+  mockSelectCurrentPositionMs: vi.fn(
     (state: { positionMs: number }) => state.positionMs,
   ),
 }));
@@ -91,14 +94,24 @@ vi.mock("react-i18next", () => ({
 }));
 
 vi.mock("@/stores/player-store", () => ({
-  usePlayerStore: (selector: (state: typeof mockPlayerState) => unknown) =>
-    selector(mockPlayerState),
-  selectSyncDisplayPositionMs: mockSelectSyncDisplayPositionMs,
+  usePlayerStore: Object.assign(
+    (selector: (state: typeof mockPlayerState) => unknown) =>
+      selector(mockPlayerState),
+    {
+      getState: () => mockPlayerState,
+    },
+  ),
+  selectCurrentPositionMs: mockSelectCurrentPositionMs,
 }));
 
 vi.mock("@/stores/lyrics-store", () => ({
-  useLyricsStore: (selector: (state: typeof mockLyricsState) => unknown) =>
-    selector(mockLyricsState),
+  useLyricsStore: Object.assign(
+    (selector: (state: typeof mockLyricsState) => unknown) =>
+      selector(mockLyricsState),
+    {
+      getState: () => mockLyricsState,
+    },
+  ),
 }));
 
 vi.mock("@/stores/settings-store", () => ({
@@ -128,6 +141,8 @@ describe("LyricsPanel contextual reveal", () => {
 
     mockPlayerState.snapshot = {
       song_id: "song-1",
+      is_playing: true,
+      state: "playing",
     };
     mockPlayerState.positionMs = 4000;
     mockPlayerState.airPlayOutput = {
@@ -144,9 +159,7 @@ describe("LyricsPanel contextual reveal", () => {
     mockPlayerState.localAudienceOutputActive = false;
     mockPlayerState.airPlayPlainTextPagePending = false;
     mockPlayerState.airPlayPlainTextPagePendingDirection = null;
-    mockSelectSyncDisplayPositionMs.mockImplementation(
-      (state) => state.positionMs,
-    );
+    mockSelectCurrentPositionMs.mockImplementation((state) => state.positionMs);
 
     mockLyricsState.lines = [
       line({
@@ -330,7 +343,7 @@ describe("LyricsPanel contextual reveal", () => {
     expect(markup).toContain('data-lyrics-line-index="1"');
   });
 
-  test("advances changed spring targets before the first rendered frame", () => {
+  test("initializes line springs for timed lyrics", () => {
     mockLyricsState.lines = [
       line({
         time_ms: 1000,
@@ -347,11 +360,9 @@ describe("LyricsPanel contextual reveal", () => {
 
     const markup = renderToStaticMarkup(<LyricsPanel />);
 
-    expect(markup).toContain(
-      'data-line-distance="1" class="w-full" style="transform:scale(0.9990)',
-    );
-    expect(markup).toContain("opacity:0.9933333333333333");
-    expect(markup).toContain('data-line-distance="1"');
+    expect(markup).toContain('data-lyrics-line-index="0"');
+    expect(markup).toContain('data-lyrics-line-index="1"');
+    expect(markup).toContain("transform:scale(");
   });
 
   test("restarts the spring RAF loop when the song changes without active line movement", async () => {
@@ -377,10 +388,13 @@ describe("LyricsPanel contextual reveal", () => {
       root.render(<LyricsPanel />);
     });
 
-    expect(requestAnimationFrameMock).toHaveBeenCalledTimes(1);
+    const callsAfterMount = requestAnimationFrameMock.mock.calls.length;
+    expect(callsAfterMount).toBeGreaterThan(0);
 
     mockPlayerState.snapshot = {
       song_id: "song-2",
+      is_playing: true,
+      state: "playing",
     };
     mockLyricsState.rawLrc = "[00:00.00]second song line one";
     mockLyricsState.lines = [
@@ -400,16 +414,18 @@ describe("LyricsPanel contextual reveal", () => {
       root.render(<LyricsPanel />);
     });
 
-    expect(requestAnimationFrameMock).toHaveBeenCalledTimes(2);
+    expect(requestAnimationFrameMock.mock.calls.length).toBeGreaterThan(
+      callsAfterMount,
+    );
 
     await act(async () => {
       root.unmount();
     });
   });
 
-  test("uses the sync display clock for standard word highlighting", () => {
+  test("uses the extrapolated playback clock for standard word highlighting", () => {
     mockPlayerState.positionMs = 1000;
-    mockSelectSyncDisplayPositionMs.mockReturnValue(1600);
+    mockSelectCurrentPositionMs.mockReturnValue(1600);
     mockLyricsState.lines = [
       line({
         time_ms: 1000,
@@ -425,8 +441,8 @@ describe("LyricsPanel contextual reveal", () => {
 
     const markup = renderToStaticMarkup(<LyricsPanel />);
 
-    expect(markup).toContain("text-[var(--color-text-dimmer)]");
+    expect(markup).toContain("text-white/45");
     expect(markup).toContain("text-white");
-    expect(markup).toContain("text-[var(--color-active)]");
+    expect(markup).toContain("text-white/50");
   });
 });

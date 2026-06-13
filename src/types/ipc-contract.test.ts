@@ -150,6 +150,13 @@ const LIBRARY_COMMANDS: CommandContract[] = [
     rustParams: ["query"],
   },
   {
+    command: "get_cover_art",
+    frontendFile: "src/lib/tauri/library.ts",
+    frontendFn: "getCoverArt",
+    hasArgs: true,
+    rustParams: ["hash"],
+  },
+  {
     command: "update_song_metadata",
     frontendFile: "src/lib/tauri/library.ts",
     frontendFn: "updateSongMetadata",
@@ -328,6 +335,7 @@ describe("IPC command registry", () => {
       "expand_import_paths",
       "get_library",
       "search_library",
+      "get_cover_art",
       "set_songs_instrumental",
       "extract_embedded_cover_art",
       "get_import_candidate_details",
@@ -575,6 +583,7 @@ describe("Song shape matches Rust Song struct", () => {
       album: "Test Album",
       duration_ms: 180000,
       cover_art: null,
+      has_cover_art: false,
       imported_at: 1700000000,
       original_ext: "mp3",
     };
@@ -592,6 +601,7 @@ describe("Song shape matches Rust Song struct", () => {
     expect(song).toHaveProperty("album");
     expect(song).toHaveProperty("duration_ms");
     expect(song).toHaveProperty("cover_art");
+    expect(song).toHaveProperty("has_cover_art");
     expect(song).toHaveProperty("imported_at");
     expect(song).toHaveProperty("original_ext");
   });
@@ -610,6 +620,7 @@ describe("Song shape matches Rust Song struct", () => {
       album: null,
       duration_ms: 0,
       cover_art: null,
+      has_cover_art: false,
       imported_at: 0,
       original_ext: null,
     };
@@ -1173,6 +1184,7 @@ describe("Serialization compatibility", () => {
       album: null,
       duration_ms: 0, // not durationMs
       cover_art: null, // not coverArt
+      has_cover_art: false,
       imported_at: 0, // not importedAt
       original_ext: null, // not originalExt
     };

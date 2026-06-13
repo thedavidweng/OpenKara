@@ -48,6 +48,10 @@ async function playSongWithOptionalStems(
   }
 
   const snapshotWithStems = await deps.loadStems();
+  // F6: Skip applying stems snapshot if the song changed during loadStems().
+  if (deps.getPlayerSnapshot()?.song_id !== songId) {
+    return;
+  }
   deps.applySnapshot(snapshotWithStems);
 }
 

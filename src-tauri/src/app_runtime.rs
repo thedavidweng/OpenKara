@@ -23,8 +23,6 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         .path()
         .resource_dir()
         .context("failed to resolve bundled resource directory")?;
-    separator::model::ensure_runtime_loaded(Some(&app_resource_dir))
-        .context("failed to load ONNX Runtime shared library")?;
 
     let app_data_dir = app
         .path()
@@ -36,6 +34,65 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
             app_data_dir.display()
         )
     })?;
+
+    // Resolve the runtime bootstrap status. The runtime may come from:
+    // 1. Bundled resources (legacy, being phased out)
+    // 2. Managed app-data location (new externalized path)
+    // 3. Development fallback (staged by prepare-onnx-runtime.mjs)
+    let runtime_status_snapshot =
+        separator::runtime_bootstrap::runtime_status_snapshot(&app_data_dir);
+    let runtime_bootstrap_status = Arc::new(Mutex::new(
+        commands::runtime_bootstrap::RuntimeBootstrapStatusSnapshot::from(
+            runtime_status_snapshot.clone(),
+        ),
+    ));
+
+    // Attempt to load the runtime if available. If not, the app starts
+    // without it — separation commands will gate on runtime readiness.
+    if runtime_status_snapshot.status == separator::runtime_bootstrap::RuntimeStatus::Ready {
+        // Try to initialize ORT from the verified runtime path.
+        let runtime_path = separator::runtime_bootstrap::ensure_runtime_verified(&app_data_dir)
+            .or_else(|_| separator::model::resolve_runtime_library_path(Some(&app_resource_dir)));
+        match runtime_path {
+            Ok(path) => {
+                if let Err(err) = separator::model::ensure_runtime_loaded_from_path(&path) {
+                    eprintln!(
+                        "warning: failed to load ONNX Runtime from {}: {err:#}",
+                        path.display()
+                    );
+                }
+            }
+            Err(err) => {
+                eprintln!("warning: ONNX Runtime not available: {err:#}");
+            }
+        }
+    } else {
+        // Try the legacy bundled path as a fallback during the transition.
+        match separator::model::resolve_runtime_library_path(Some(&app_resource_dir)) {
+            Ok(path) => {
+                if let Err(err) = separator::model::ensure_runtime_loaded_from_path(&path) {
+                    eprintln!("warning: failed to load bundled ONNX Runtime: {err:#}");
+                }
+                // Update status to Ready since the bundled runtime loaded.
+                let ready_snapshot = commands::runtime_bootstrap::RuntimeBootstrapStatusSnapshot {
+                    state: commands::runtime_bootstrap::RuntimeBootstrapState::Ready,
+                    runtime_path: path.display().to_string(),
+                    downloaded_bytes: None,
+                    total_bytes: None,
+                    version: separator::runtime_bootstrap::ORT_RUNTIME_VERSION.to_owned(),
+                    error: None,
+                };
+                if let Ok(mut current) = runtime_bootstrap_status.lock() {
+                    *current = ready_snapshot;
+                }
+            }
+            Err(err) => {
+                eprintln!("warning: ONNX Runtime not available at startup: {err:#}");
+                eprintln!("  Separation will be unavailable until the runtime is downloaded.");
+            }
+        }
+    }
+
     let app_config = config::load_config(&app_data_dir).with_context(|| {
         format!(
             "failed to load application config from {}",
@@ -69,6 +126,7 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         playback_request_id: Arc::new(AtomicU64::new(0)),
         audio_output_started: Arc::new(AtomicBool::new(false)),
         audio_output_start_lock: Arc::new(Mutex::new(())),
+        background_shutdown: Arc::new(Mutex::new(Arc::new(AtomicBool::new(false)))),
     };
     let airplay_state = AirPlayState {
         airplay_audio_tap: Arc::clone(&airplay_audio_tap),
@@ -89,6 +147,7 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         app_resource_dir.clone(),
         model_bootstrap.model_path.clone(),
         Arc::clone(&model_bootstrap_status),
+        Arc::clone(&runtime_bootstrap_status),
     );
 
     // Register domain states — commands can extract State<'_, PlaybackState> etc.
@@ -222,6 +281,7 @@ fn spawn_playback_position_emitter<R: Runtime>(
         let mut was_playing = false;
         let mut last_song_id: Option<String> = None;
         let mut last_emitted_state: Option<String> = None;
+        let mut last_emitted_is_playing: Option<bool> = None;
 
         loop {
             thread::sleep(Duration::from_millis(PLAYBACK_POSITION_POLL_INTERVAL_MS));
@@ -255,12 +315,14 @@ fn spawn_playback_position_emitter<R: Runtime>(
             if snapshot.song_id.is_none() {
                 last_emitted_position = None;
                 last_emitted_state = None;
+                last_emitted_is_playing = None;
                 continue;
             }
 
             if airplay_audience_active.load(Ordering::SeqCst) {
                 last_emitted_position = Some(snapshot.position_ms);
                 last_emitted_state = Some(snapshot.state.clone());
+                last_emitted_is_playing = Some(snapshot.is_playing);
                 continue;
             }
 
@@ -268,18 +330,20 @@ fn spawn_playback_position_emitter<R: Runtime>(
                 .map(|last| snapshot.position_ms.abs_diff(last))
                 .unwrap_or(u64::MAX);
 
-            // Emit when the playback state changes (e.g. buffering → playing)
-            // even if the position delta is small. Without this, the frontend
-            // can remain stuck with a stale is_playing=false after a seek.
+            // Emit when transport fields change even if the position delta is small.
+            // Without this, the frontend can remain stuck with a stale is_playing
+            // after pause/resume or seek while state stays "playing".
             let state_changed = last_emitted_state.as_deref() != Some(&snapshot.state);
+            let is_playing_changed = last_emitted_is_playing != Some(snapshot.is_playing);
 
-            if position_delta_ms > 16 || state_changed {
+            if position_delta_ms > 16 || state_changed || is_playing_changed {
                 let _ = app_handle.emit(
                     audio::playback::PLAYBACK_POSITION_EVENT,
                     audio::playback::playback_position_event(&snapshot),
                 );
                 last_emitted_position = Some(snapshot.position_ms);
                 last_emitted_state = Some(snapshot.state.clone());
+                last_emitted_is_playing = Some(snapshot.is_playing);
             }
         }
     });

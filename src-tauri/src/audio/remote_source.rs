@@ -1,5 +1,6 @@
 use super::chunked_cache::ChunkedCache;
 use std::io::{self, Read, Seek, SeekFrom};
+use std::ops::ControlFlow;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     mpsc, Arc,
@@ -511,12 +512,51 @@ fn fetch_loop(
 ) {
     let current_url = url.to_string();
     let mut consecutive_failures: u32 = 0;
-    #[allow(unused_assignments)]
     let mut current_read_position: u64 = 0;
+
+    let mut handle_update_position =
+        |position: u64, consecutive_failures: &mut u32| -> ControlFlow<()> {
+            current_read_position = position;
+            let prefetch_bytes = estimate_prefetch_bytes(cache, current_read_position);
+            if prefetch_bytes == 0 {
+                return ControlFlow::Continue(());
+            }
+            let prefetch_offset = current_read_position;
+            if cache.is_cached(prefetch_offset, prefetch_bytes) {
+                return ControlFlow::Continue(());
+            }
+            let outcome = fetch_range_with_retry(
+                fetcher,
+                &current_url,
+                cache,
+                prefetch_offset,
+                prefetch_bytes,
+                retry_config,
+                monitor,
+            );
+            match outcome {
+                FetchOutcome::Ok => {
+                    *consecutive_failures = 0;
+                }
+                FetchOutcome::UrlExpired => {
+                    let _ = event_tx.send(FetchEvent::UrlExpired);
+                    *consecutive_failures += 1;
+                }
+                FetchOutcome::RangeNotSupported => {
+                    let _ = event_tx.send(FetchEvent::RangeNotSupported);
+                    return ControlFlow::Break(());
+                }
+                FetchOutcome::Failed(_) => {
+                    // Prefetch failures are non-fatal, don't increment counter.
+                }
+            }
+            ControlFlow::Continue(())
+        };
 
     loop {
         match rx.recv() {
             Ok(FetchCommand::Fetch { offset, length }) => {
+                let fetch_succeeded;
                 let outcome = fetch_range_with_retry(
                     fetcher,
                     &current_url,
@@ -526,14 +566,13 @@ fn fetch_loop(
                     retry_config,
                     monitor,
                 );
+                fetch_succeeded = matches!(outcome, FetchOutcome::Ok);
                 match outcome {
                     FetchOutcome::Ok => {
                         consecutive_failures = 0;
                     }
                     FetchOutcome::UrlExpired => {
                         let _ = event_tx.send(FetchEvent::UrlExpired);
-                        // Try to refresh URL by requesting the same range again
-                        // after the caller provides a new URL via a new fetch thread.
                         consecutive_failures += 1;
                     }
                     FetchOutcome::RangeNotSupported => {
@@ -552,41 +591,39 @@ fn fetch_loop(
                         }
                     }
                 }
-            }
-            Ok(FetchCommand::UpdatePosition { position }) => {
-                current_read_position = position;
-                // Prefetch: request the next 5 seconds of data.
-                let prefetch_bytes = estimate_prefetch_bytes(cache, current_read_position);
-                if prefetch_bytes > 0 {
-                    let prefetch_offset = current_read_position;
-                    // Only prefetch if the range isn't already cached.
-                    if !cache.is_cached(prefetch_offset, prefetch_bytes) {
-                        let outcome = fetch_range_with_retry(
-                            fetcher,
-                            &current_url,
-                            cache,
-                            prefetch_offset,
-                            prefetch_bytes,
-                            retry_config,
-                            monitor,
-                        );
-                        match outcome {
-                            FetchOutcome::Ok => {
-                                consecutive_failures = 0;
-                            }
-                            FetchOutcome::UrlExpired => {
-                                let _ = event_tx.send(FetchEvent::UrlExpired);
-                                consecutive_failures += 1;
-                            }
-                            FetchOutcome::RangeNotSupported => {
-                                let _ = event_tx.send(FetchEvent::RangeNotSupported);
-                                return;
-                            }
-                            FetchOutcome::Failed(_) => {
-                                // Prefetch failures are non-fatal, don't increment counter.
-                            }
+
+                // R10: After a successful fetch, drain stale queued Fetch
+                // commands. During fast scrubbing, many Fetch commands
+                // accumulate — we discard all but the most recent non-Fetch
+                // command so the fetch thread doesn't waste time on ranges the
+                // player has already moved past.  We only drain after success;
+                // after a failure we keep processing to honour retries.
+                if fetch_succeeded {
+                    let mut last_non_fetch: Option<FetchCommand> = None;
+                    while let Ok(cmd) = rx.try_recv() {
+                        match cmd {
+                            FetchCommand::Fetch { .. } => { /* discard stale fetch */ }
+                            other => last_non_fetch = Some(other),
                         }
                     }
+                    if let Some(cmd) = last_non_fetch {
+                        match cmd {
+                            FetchCommand::UpdatePosition { position } => {
+                                if handle_update_position(position, &mut consecutive_failures)
+                                    .is_break()
+                                {
+                                    return;
+                                }
+                            }
+                            FetchCommand::Shutdown => return,
+                            FetchCommand::Fetch { .. } => unreachable!(),
+                        }
+                    }
+                }
+            }
+            Ok(FetchCommand::UpdatePosition { position }) => {
+                if handle_update_position(position, &mut consecutive_failures).is_break() {
+                    return;
                 }
             }
             Ok(FetchCommand::Shutdown) | Err(_) => break,
@@ -1188,5 +1225,98 @@ mod tests {
 
         let result = boxed.fetch_range("http://example.com", 0, 10).unwrap();
         assert_eq!(result, vec![42u8; 10]);
+    }
+
+    /// R10: Fast scrubbing must not queue stale fetches. When many Fetch
+    /// commands accumulate, the fetch loop should drain stale ones and only
+    /// process the most recent.
+    #[test]
+    fn fast_scrubbing_drains_stale_fetch_commands() {
+        use std::sync::mpsc;
+
+        let dir = temp_dir("stale_drain");
+        let cache = Arc::new(ChunkedCache::open(&dir, "stale", 10_000).unwrap());
+
+        // Create an unbounded channel. The fetch_loop drains stale Fetch
+        // commands after each fetch completes.
+        let (tx, rx) = mpsc::channel();
+        let (event_tx, _event_rx) = mpsc::channel();
+        let monitor = BandwidthMonitor::new(BandwidthMonitor::DEFAULT_SLOW_THRESHOLD);
+
+        // Queue 10 stale Fetch commands + 1 UpdatePosition.
+        // The fetch loop should drain the stale Fetches and only process the
+        // first one (the rest are discarded).
+        let call_count = Arc::new(AtomicU32::new(0));
+        let call_count_clone = Arc::clone(&call_count);
+
+        // We need to run fetch_loop in a thread because it blocks on rx.recv().
+        let cache_clone = Arc::clone(&cache);
+        let handle = std::thread::spawn(move || {
+            let fetcher = CountingFetcher {
+                count: call_count_clone,
+            };
+            super::fetch_loop(
+                &fetcher,
+                "http://example.com/test",
+                &cache_clone,
+                &rx,
+                &event_tx,
+                &RetryConfig::default(),
+                &monitor,
+            );
+        });
+
+        // Send a batch of commands simulating fast scrubbing.
+        tx.send(FetchCommand::Fetch {
+            offset: 0,
+            length: 100,
+        })
+        .unwrap();
+        // Queue stale fetches — these should be drained after the first fetch.
+        for i in 1..10u64 {
+            tx.send(FetchCommand::Fetch {
+                offset: i * 100,
+                length: 100,
+            })
+            .unwrap();
+        }
+        // A position update should survive the drain.
+        tx.send(FetchCommand::UpdatePosition { position: 500 })
+            .unwrap();
+
+        // Give the fetch loop time to process.
+        std::thread::sleep(Duration::from_millis(500));
+
+        // Shutdown.
+        let _ = tx.send(FetchCommand::Shutdown);
+        handle.join().unwrap();
+
+        // Only the first Fetch should have been processed (stale ones drained).
+        // The count might be 1 or 2 depending on timing (the drain loop may
+        // re-process one more), but it must be far less than 10.
+        let count = call_count.load(Ordering::Relaxed);
+        assert!(
+            count <= 2,
+            "stale fetches should be drained, but {count} fetches were executed"
+        );
+
+        cleanup(&dir);
+    }
+
+    /// Helper fetcher that counts how many fetch_range calls were made.
+    struct CountingFetcher {
+        count: Arc<AtomicU32>,
+    }
+
+    impl HttpFetcher for CountingFetcher {
+        fn fetch_range(
+            &self,
+            _url: &str,
+            _offset: u64,
+            length: u64,
+        ) -> Result<Vec<u8>, FetchError> {
+            self.count.fetch_add(1, Ordering::Relaxed);
+            Ok(vec![0u8; length as usize])
+        }
     }
 }

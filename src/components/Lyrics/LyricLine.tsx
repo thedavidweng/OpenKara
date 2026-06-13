@@ -16,6 +16,9 @@ interface LyricLineProps {
   romanizedText?: string;
 }
 
+const SEEKABLE_HOVER_CLASS =
+  "relative transition-[color,transform,text-shadow] duration-300 ease-out group-hover/line:text-white group-hover/line:-translate-y-px group-hover/line:[text-shadow:0_2px_4px_rgba(0,0,0,0.55),0_10px_36px_rgba(0,0,0,0.42),0_22px_64px_rgba(0,0,0,0.28),0_0_48px_rgba(255,255,255,0.14)]";
+
 const STANDARD_TEXT_SIZE_CLASSES = {
   [-2]: "text-lg font-bold tracking-tight md:text-xl",
   [-1]: "text-xl font-bold tracking-tight md:text-2xl",
@@ -131,9 +134,7 @@ export const LyricLine = memo(function LyricLine({
     state === "active" && hasWords && presentation !== "audience";
   const activeWordIndex =
     hasWords && state === "active" ? getActiveWordIndex(words, adjustedMs) : -1;
-  const hoverClass = isSeekable
-    ? "group-hover/line:underline decoration-2 underline-offset-4"
-    : "";
+  const hoverClass = isSeekable ? SEEKABLE_HOVER_CLASS : "";
 
   const karaokeRef = useRef<KaraokeFillController | null>(null);
   const wordElsRef = useRef<HTMLElement[]>([]);
@@ -167,7 +168,7 @@ export const LyricLine = memo(function LyricLine({
 
     karaokeRef.current?.setTargetAlpha(0.2, 1.0); // dim when future
     karaokeRef.current?.deactivateLine();
-  });
+  }, [shouldUseKaraokeFill, state, adjustedMs]);
 
   useEffect(
     () => () => {
@@ -187,9 +188,9 @@ export const LyricLine = memo(function LyricLine({
   return (
     <div
       onClick={isSeekable ? handleClick : undefined}
-      className={`motion-surface flex flex-col items-center gap-1.5 text-center ${
-        state === "active" ? "opacity-100" : "opacity-70"
-      } ${isSeekable ? "cursor-pointer group/line" : ""}`}
+      className={`flex flex-col items-center gap-1.5 text-center ${
+        isSeekable ? "cursor-pointer group/line" : ""
+      }`}
       style={{
         fontFamily:
           '-apple-system, BlinkMacSystemFont, "Helvetica Neue", "Noto Sans SC", "Noto Sans JP", "Noto Sans KR", system-ui, sans-serif',
@@ -285,8 +286,8 @@ export const LyricLine = memo(function LyricLine({
                         wordState === "active"
                           ? "text-white"
                           : wordState === "past"
-                            ? "text-[var(--color-text-dimmer)]"
-                            : "text-[var(--color-active)]"
+                            ? "text-white/45"
+                            : "text-white/50"
                       }`
                 }
                 style={{
@@ -329,8 +330,8 @@ export const LyricLine = memo(function LyricLine({
                 state === "plain" || state === "active"
                   ? "text-white"
                   : state === "past"
-                    ? "text-[var(--color-text-dimmer)]"
-                    : "text-[var(--color-active)]"
+                    ? "text-white/45"
+                    : "text-white/50"
               } ${hoverClass}`
           ).trim()}
           style={

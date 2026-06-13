@@ -85,6 +85,9 @@ pub fn fetch_lyrics_from_connection(
     if let Some(cached) = cache::lyrics::get_lyrics_cache_entry(connection, song_id)
         .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?
     {
+        if cached.source == LyricsSource::Absent {
+            return Ok(empty_lyrics_payload(song.hash));
+        }
         return payload_from_cached_entry(song.hash, cached);
     }
 
@@ -108,13 +111,8 @@ pub fn fetch_lyrics_from_connection(
     let Some(fetched) = lyrics::fetch::fetch_lyrics_for_song(&providers, &song, &resolved_path)
         .map_err(|e| LyricsError::Internal(e.to_string()))?
     else {
-        return Ok(LyricsPayload {
-            song_id: song.hash,
-            lines: Vec::new(),
-            source: None,
-            offset_ms: 0,
-            raw_lrc: String::new(),
-        });
+        cache_negative_lyrics_lookup(connection, &song.hash)?;
+        return Ok(empty_lyrics_payload(song.hash));
     };
 
     let lines = lyrics::fetch::parse_lyrics_auto(&fetched.raw_lrc)
@@ -168,6 +166,10 @@ fn payload_from_cached_entry(
     song_id: String,
     cached: LyricsCacheEntry,
 ) -> Result<LyricsPayload, LyricsError> {
+    if cached.source == LyricsSource::Absent {
+        return Ok(empty_lyrics_payload(song_id));
+    }
+
     let mut lines = lyrics::fetch::parse_lyrics_auto(&cached.lrc)
         .map_err(|e| LyricsError::LyricsNotReady(e.to_string()))?;
 
@@ -509,9 +511,6 @@ pub fn fetch_lyrics_online(
     )
 }
 
-/// Convert plain text (no LRC timestamps) into `LyricLine` entries with
-/// `time_ms: 0` so the frontend can display them as unsynced lyrics.
-/// Preserve empty lines so paragraph breaks entered by the user are kept.
 fn plain_text_to_lines(text: &str) -> Vec<LyricLine> {
     text.lines()
         .map(|l| LyricLine {
@@ -522,6 +521,35 @@ fn plain_text_to_lines(text: &str) -> Vec<LyricLine> {
             section: None,
         })
         .collect()
+}
+
+fn empty_lyrics_payload(song_id: String) -> LyricsPayload {
+    LyricsPayload {
+        song_id,
+        lines: Vec::new(),
+        source: None,
+        offset_ms: 0,
+        raw_lrc: String::new(),
+    }
+}
+
+fn cache_negative_lyrics_lookup(
+    connection: &rusqlite::Connection,
+    song_hash: &str,
+) -> Result<(), LyricsError> {
+    let fetched_at = current_unix_timestamp().map_err(|e| LyricsError::Internal(e.to_string()))?;
+    cache::lyrics::upsert_lyrics_cache_entry(
+        connection,
+        &LyricsCacheEntry {
+            song_hash: song_hash.to_owned(),
+            lrc: String::new(),
+            source: LyricsSource::Absent,
+            offset_ms: 0,
+            fetched_at,
+        },
+    )
+    .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?;
+    Ok(())
 }
 
 use super::error::current_unix_timestamp;

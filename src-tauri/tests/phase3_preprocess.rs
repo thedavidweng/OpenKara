@@ -26,7 +26,7 @@ fn preprocesses_stereo_audio_into_channels_first_model_tensor() {
     let decoded = decode::decode_file(&fixture_path("audio", "fixture.wav"))
         .expect("wav fixture should decode");
 
-    let prepared = preprocess::prepare_model_input(&loaded_model, &decoded)
+    let prepared = preprocess::prepare_model_input(&loaded_model, decoded)
         .expect("decoded audio should convert to model input");
 
     assert_eq!(prepared.shape, vec![1, 2, 343_980]);
@@ -50,7 +50,7 @@ fn resamples_audio_with_a_non_demucs_sample_rate() {
     decoded.duration_ms =
         ((input_frame_count as f64 / decoded.sample_rate as f64) * 1000.0).round() as u64;
 
-    let normalized = preprocess::normalize_audio_for_model(&decoded)
+    let normalized = preprocess::normalize_audio_for_model(decoded)
         .expect("48k audio should be resampled for demucs");
 
     assert_eq!(normalized.sample_rate, preprocess::DEMUCS_SAMPLE_RATE);
@@ -77,12 +77,14 @@ fn prepares_model_input_from_pre_normalized_audio_without_re_normalizing() {
     .expect("demucs model should load");
     let decoded = decode::decode_file(&fixture_path("audio", "fixture.wav"))
         .expect("wav fixture should decode");
-    let normalized = preprocess::normalize_audio_for_model(&decoded)
+    let normalized = preprocess::normalize_audio_for_model(decoded)
         .expect("fixture should normalize for demucs");
 
     let prepared = preprocess::prepare_model_input_from_normalized(&loaded_model, &normalized)
         .expect("normalized audio should convert directly to model input");
-    let wrapped = preprocess::prepare_model_input(&loaded_model, &decoded)
+    let decoded2 = decode::decode_file(&fixture_path("audio", "fixture.wav"))
+        .expect("wav fixture should decode");
+    let wrapped = preprocess::prepare_model_input(&loaded_model, decoded2)
         .expect("wrapper should preserve existing behavior");
 
     assert_eq!(prepared.shape, wrapped.shape);

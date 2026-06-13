@@ -86,11 +86,17 @@ function publishLibraryInvalidation() {
   librarySyncChannel.publish({ revision: librarySyncRevision });
 }
 
+// F2: Generation counter to prevent stale search results from overwriting current results.
+let searchGeneration = 0;
+
 const debouncedSearch = debounce(async (query: string) => {
+  const gen = ++searchGeneration;
   try {
     const songs = await api.searchLibrary(query);
+    if (gen !== searchGeneration) return;
     useLibraryStore.setState({ songs });
   } catch (e) {
+    if (gen !== searchGeneration) return;
     notifyError(e);
   }
 }, 300);
@@ -189,6 +195,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     if (query.trim()) {
       debouncedSearch(query);
     } else {
+      searchGeneration++;
       get().loadLibrary();
     }
   },

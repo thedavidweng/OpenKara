@@ -69,6 +69,24 @@ function DeleteModelAction({ variant }: { variant: ModelVariant }) {
   );
 }
 
+function DeleteRuntimeAction() {
+  const { t } = useTranslation();
+  const { state, actions } = useSettingsOverlay();
+
+  if (state.runtimeStatus?.state !== "ready") {
+    return null;
+  }
+
+  return (
+    <DangerActionRow
+      title={t("settings.dangerZone.deleteRuntime")}
+      description={t("settings.dangerZone.deleteRuntimeDescription")}
+      actionLabel={t("settings.dangerZone.deleteRuntimeButton")}
+      onClick={() => void actions.openDeleteRuntimeDialog()}
+    />
+  );
+}
+
 export function SettingsDangerZoneSection() {
   const { t } = useTranslation();
   const { meta, actions } = useSettingsOverlay();
@@ -99,6 +117,8 @@ export function SettingsDangerZoneSection() {
           actionState={meta.downgradingInProgress ? "busy" : "idle"}
           onClick={() => void actions.openDowngradeDialog()}
         />
+
+        <DeleteRuntimeAction />
 
         <DeleteModelAction variant="htdemucs" />
         <DeleteModelAction variant="htdemucs_ft" />

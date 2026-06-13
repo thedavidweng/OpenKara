@@ -8,7 +8,7 @@
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "pnpm build",
-    "beforeBundleCommand": "node scripts/prepare-bundled-oauth-client.mjs && node scripts/clean-macos-bundle.mjs",
+    "beforeBundleCommand": "node scripts/prepare-bundled-oauth-client.mjs && node scripts/clean-macos-bundle.mjs && node scripts/generate-macos-liquid-glass-icon.mjs",
     "frontendDist": "../dist"
   },
   "app": {
@@ -40,9 +40,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "icons/Assets.car": "Assets.car",
-      "generated/onnxruntime": "onnxruntime",
-      "generated/oauth": "oauth"
+      "generated/oauth": "oauth",
+      "icons/Assets.car": "Assets.car"
     },
     "macOS": {
       "signingIdentity": "-",

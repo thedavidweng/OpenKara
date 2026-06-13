@@ -85,7 +85,7 @@ describe("LyricLine", () => {
     expect(markup).not.toContain("group-hover/line:underline");
   });
 
-  test("renders seekable lines with cursor-pointer and hover underline", () => {
+  test("renders seekable lines with cursor-pointer and hover highlight", () => {
     const markup = renderToStaticMarkup(
       <LyricLine
         line={{
@@ -102,7 +102,9 @@ describe("LyricLine", () => {
     );
 
     expect(markup).toContain("cursor-pointer");
-    expect(markup).toContain("group-hover/line:underline");
+    expect(markup).toContain("group-hover/line:-translate-y-px");
+    expect(markup).toContain("group-hover/line:[text-shadow:");
+    expect(markup).not.toContain("group-hover/line:bg-white/10");
   });
 
   test("renders word-level states for the active line without changing lyric timing behavior", () => {
@@ -125,9 +127,9 @@ describe("LyricLine", () => {
       />,
     );
 
-    expect(markup).toContain("text-[var(--color-text-dimmer)]");
+    expect(markup).toContain("text-white/45");
     expect(markup).toContain("text-white");
-    expect(markup).toContain("text-[var(--color-active)]");
+    expect(markup).toContain("text-white/50");
   });
 
   test("uses the configured font scale without changing the lyric state logic", () => {
@@ -558,7 +560,7 @@ describe("LyricLine", () => {
       />,
     );
 
-    expect(markup).toContain("text-[var(--color-text-dimmer)]");
+    expect(markup).toContain("text-white/45");
   });
 
   test("renders future line words with active text color", () => {
@@ -580,7 +582,7 @@ describe("LyricLine", () => {
       />,
     );
 
-    expect(markup).toContain("text-[var(--color-active)]");
+    expect(markup).toContain("text-white/50");
   });
 
   test("renders audience presentation with bg_words", () => {

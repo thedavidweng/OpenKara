@@ -22,7 +22,7 @@ fn model_cache_reuses_the_loaded_model_for_the_same_path() {
                 Ok::<String, anyhow::Error>(path.display().to_string())
             })
             .expect("first load should succeed");
-        assert_eq!(loaded, "/tmp/model-a.onnx");
+        assert_eq!(loaded.as_str(), "/tmp/model-a.onnx");
     }
 
     {
@@ -33,7 +33,7 @@ fn model_cache_reuses_the_loaded_model_for_the_same_path() {
                 Ok::<String, anyhow::Error>(path.display().to_string())
             })
             .expect("cached load should succeed");
-        assert_eq!(loaded, "/tmp/model-a.onnx");
+        assert_eq!(loaded.as_str(), "/tmp/model-a.onnx");
     }
 
     assert_eq!(load_count.load(Ordering::SeqCst), 1);
