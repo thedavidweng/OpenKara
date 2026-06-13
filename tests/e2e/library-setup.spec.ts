@@ -1,7 +1,7 @@
 import { test, expect } from "./fixtures/base-test";
 
 /**
- * Library setup flow E2E tests.
+ * Library setup flow UI smoke tests.
  *
  * These tests verify the LibrarySetup wizard that appears when no library
  * is configured.  The Tauri mock defaults to a configured library, so

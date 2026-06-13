@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { findActiveLyricLineIndex } from "@/lib/lyrics-timing";
 import { selectCurrentPositionMs, usePlayerStore } from "@/stores/player-store";
 import { useLyricsStore } from "@/stores/lyrics-store";
 
@@ -21,14 +22,13 @@ export function syncLyricsToPlayback(prevIndexRef: { current: number }) {
   // consult selectSyncDisplayPositionMs.
   const positionMs = selectCurrentPositionMs(state);
   const adjustedMs = positionMs - offsetMs;
-  const index = binarySearchLine(lines, adjustedMs);
+  const index = findActiveLyricLineIndex(lines, adjustedMs);
 
   if (index !== prevIndexRef.current) {
     prevIndexRef.current = index;
     setActiveLineIndex(index);
   }
 }
-
 export function startLyricsSyncLoop(
   tick: () => void,
   timers: Pick<typeof globalThis, "setInterval" | "clearInterval"> = globalThis,
@@ -39,9 +39,10 @@ export function startLyricsSyncLoop(
 
 export function useLyricsSync(enabled = true): void {
   const prevIndexRef = useRef(-1);
+  const hasSong = usePlayerStore((s) => !!s.snapshot?.song_id);
 
   useEffect(() => {
-    if (!enabled) {
+    if (!enabled || !hasSong) {
       return;
     }
 
@@ -60,26 +61,5 @@ export function useLyricsSync(enabled = true): void {
       stopLoop();
       window.removeEventListener("focus", syncNow);
     };
-  }, [enabled]);
-}
-
-function binarySearchLine(
-  lines: { time_ms: number }[],
-  currentMs: number,
-): number {
-  let lo = 0;
-  let hi = lines.length - 1;
-  let result = -1;
-
-  while (lo <= hi) {
-    const mid = (lo + hi) >>> 1;
-    if (lines[mid].time_ms <= currentMs) {
-      result = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-
-  return result;
+  }, [enabled, hasSong]);
 }

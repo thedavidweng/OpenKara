@@ -62,6 +62,9 @@ pub enum LoadedStems {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PlaybackStateSnapshot {
     pub song_id: Option<String>,
+    /// Monotonic transport generation. Incremented when a new song load starts
+    /// so webviews can discard delayed events from the previous transport.
+    pub transport_generation: u64,
     /// Backend transport lifecycle; pause is represented by `is_playing: false`.
     /// `playing` means a decoded track owns the transport, not that time is advancing.
     pub state: String,
@@ -82,6 +85,7 @@ impl PlaybackStateSnapshot {
     pub fn idle() -> Self {
         Self {
             song_id: None,
+            transport_generation: 0,
             state: "idle".to_owned(),
             is_playing: false,
             position_ms: 0,
@@ -126,6 +130,7 @@ pub(crate) enum FadeState {
 pub struct PlaybackController {
     pub(crate) current_track: Option<LoadedTrack>,
     loading_song_id: Option<String>,
+    transport_generation: u64,
     volume: f32,
     stem_volumes: StemVolumes,
     /// Transport-level buffering flag. When `true` and a track is loaded,
@@ -141,6 +146,7 @@ impl Default for PlaybackController {
         Self {
             current_track: None,
             loading_song_id: None,
+            transport_generation: 0,
             volume: 1.0,
             stem_volumes: StemVolumes::default(),
             is_buffering: false,
@@ -150,6 +156,10 @@ impl Default for PlaybackController {
 }
 
 impl PlaybackController {
+    fn bump_transport_generation(&mut self) {
+        self.transport_generation = self.transport_generation.saturating_add(1);
+    }
+
     pub fn start_track(
         &mut self,
         song_id: String,
@@ -201,16 +211,23 @@ impl PlaybackController {
     /// background download/decode task.  The snapshot reports `state: "loading"`
     /// so the UI can show a spinner without freezing the window.
     pub fn start_track_loading(&mut self, song_id: &str) -> PlaybackStateSnapshot {
+        self.bump_transport_generation();
         self.current_track = None;
         self.loading_song_id = Some(song_id.to_owned());
         self.snapshot()
     }
 
     pub fn play(&mut self, _now_ms: u64) -> Result<PlaybackStateSnapshot, PlaybackError> {
+        if self.current_track.is_none() {
+            return Err(PlaybackError::InvalidPlaybackState(
+                "no track is loaded".to_owned(),
+            ));
+        }
+        self.bump_transport_generation();
         let track = self
             .current_track
             .as_mut()
-            .ok_or_else(|| PlaybackError::InvalidPlaybackState("no track is loaded".to_owned()))?;
+            .expect("track existence checked before generation bump");
         track.is_playing = true;
         self.fade = FadeState::FadingIn {
             start: Instant::now(),
@@ -220,16 +237,17 @@ impl PlaybackController {
     }
 
     pub fn pause(&mut self, _now_ms: u64) -> Result<PlaybackStateSnapshot, PlaybackError> {
-        let track = self
-            .current_track
-            .as_mut()
-            .ok_or_else(|| PlaybackError::InvalidPlaybackState("no track is loaded".to_owned()))?;
+        if self.current_track.is_none() {
+            return Err(PlaybackError::InvalidPlaybackState(
+                "no track is loaded".to_owned(),
+            ));
+        }
+        self.bump_transport_generation();
         // Start a fade-out. The render callback will set is_playing = false
         // once the fade envelope completes.
         self.fade = FadeState::FadingOut {
             start: Instant::now(),
         };
-        let _ = track; // keep the borrow alive for the duration check above
 
         Ok(self.snapshot())
     }
@@ -240,12 +258,17 @@ impl PlaybackController {
         _now_ms: u64,
     ) -> Result<PlaybackStateSnapshot, PlaybackError> {
         // Cancel any active fade — seek should restart audio cleanly.
+        self.bump_transport_generation();
         self.fade = FadeState::None;
         let track = self
             .current_track
             .as_mut()
             .ok_or_else(|| PlaybackError::InvalidPlaybackState("no track is loaded".to_owned()))?;
-        let clamped_ms = target_ms.min(track.duration_ms());
+        let clamped_ms = if track.duration_ms() == 0 {
+            target_ms
+        } else {
+            target_ms.min(track.duration_ms())
+        };
         // Reset render frame to match the new seek position — this is the
         // sole authority for position_ms.
         let sample_rate = track.original_audio.sample_rate as f64;
@@ -347,7 +370,8 @@ impl PlaybackController {
             let raw_position = track.position_ms();
 
             // Clamp to duration and stop playback if past the end.
-            let position_ms = if raw_position >= duration_ms {
+            // duration_ms == 0 means unknown — do not clamp until EOF backfill.
+            let position_ms = if duration_ms > 0 && raw_position >= duration_ms {
                 track.is_playing = false;
                 duration_ms
             } else {
@@ -378,10 +402,17 @@ impl PlaybackController {
                 _ => None,
             });
 
+            // RATIONALE: is_playing reflects transport intent for the UI. During a
+            // fade-out the audio thread still renders the envelope, but the user has
+            // already paused — report is_playing=false immediately. During buffer
+            // underrun the state becomes "buffering" but the user has not paused.
+            // output.rs gates silence on is_buffering separately from is_playing.
+            let transport_playing =
+                track.is_playing && !matches!(self.fade, FadeState::FadingOut { .. });
             let (state, is_playing) = if self.is_buffering {
-                ("buffering", false)
+                ("buffering", transport_playing)
             } else {
-                ("playing", track.is_playing)
+                ("playing", transport_playing)
             };
 
             // Derive buffered_ms: in streaming mode, compute from ring-buffer
@@ -407,17 +438,27 @@ impl PlaybackController {
                         .min(bass.available_ms())
                         .min(other.available_ms()),
                 };
-                (position_ms + min_available_ms).min(duration_ms)
+                let cap = if duration_ms > 0 {
+                    duration_ms
+                } else {
+                    u64::MAX
+                };
+                (position_ms + min_available_ms).min(cap)
             } else {
                 duration_ms
             };
 
             return PlaybackStateSnapshot {
                 song_id: Some(track.song_id.clone()),
+                transport_generation: self.transport_generation,
                 state: state.to_owned(),
                 is_playing,
                 position_ms,
-                duration_ms: Some(duration_ms),
+                duration_ms: if duration_ms > 0 {
+                    Some(duration_ms)
+                } else {
+                    None
+                },
                 buffered_ms,
                 volume: self.volume,
                 stem_volumes: self.stem_volumes,
@@ -429,6 +470,7 @@ impl PlaybackController {
         if let Some(song_id) = &self.loading_song_id {
             return PlaybackStateSnapshot {
                 song_id: Some(song_id.clone()),
+                transport_generation: self.transport_generation,
                 state: "loading".to_owned(),
                 is_playing: false,
                 position_ms: 0,
@@ -482,6 +524,26 @@ impl PlaybackController {
     pub fn advance_render_frame(&mut self, frames: u64) {
         if let Some(track) = &mut self.current_track {
             track.render_frame += frames;
+        }
+    }
+
+    /// Called from the audio output thread when every streaming consumer has
+    /// reached EOF and drained its ring buffer.
+    pub(crate) fn finalize_streaming_natural_end(&mut self) {
+        let Some(track) = self.current_track.as_mut() else {
+            return;
+        };
+        let Some(streaming) = track.streaming.as_ref() else {
+            return;
+        };
+        if !streaming.all_eof_and_drained() {
+            return;
+        }
+        if track.is_playing {
+            track.is_playing = false;
+        }
+        if track.original_audio.duration_ms == 0 {
+            track.original_audio.duration_ms = track.position_ms();
         }
     }
 
@@ -542,7 +604,12 @@ impl LoadedTrack {
         if sample_rate == 0 {
             return 0;
         }
-        ((self.render_frame * 1000) / sample_rate).min(self.duration_ms())
+        let pos = (self.render_frame * 1000) / sample_rate;
+        if self.duration_ms() > 0 {
+            pos.min(self.duration_ms())
+        } else {
+            pos
+        }
     }
 }
 
@@ -559,6 +626,7 @@ pub fn monotonic_now_ms() -> u64 {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PlaybackPositionEvent {
     pub ms: u64,
+    pub transport_generation: u64,
     pub snapshot: PlaybackStateSnapshot,
 }
 
@@ -570,6 +638,7 @@ pub struct PlaybackEndedEvent {
 pub fn playback_position_event(snapshot: &PlaybackStateSnapshot) -> PlaybackPositionEvent {
     PlaybackPositionEvent {
         ms: snapshot.position_ms,
+        transport_generation: snapshot.transport_generation,
         snapshot: snapshot.clone(),
     }
 }
@@ -590,6 +659,7 @@ mod tests {
     fn playback_position_event_carries_the_authoritative_snapshot() {
         let snapshot = PlaybackStateSnapshot {
             song_id: Some("song-a".to_owned()),
+            transport_generation: 7,
             state: "playing".to_owned(),
             is_playing: true,
             position_ms: 1_234,
@@ -604,6 +674,7 @@ mod tests {
         let event = playback_position_event(&snapshot);
 
         assert_eq!(event.ms, 1_234);
+        assert_eq!(event.transport_generation, 7);
         assert_eq!(event.snapshot, snapshot);
     }
 
@@ -613,10 +684,12 @@ mod tests {
 
         let loading = controller.start_track_loading("song-a");
         assert_eq!(loading.song_id.as_deref(), Some("song-a"));
+        assert_eq!(loading.transport_generation, 1);
         assert_eq!(loading.state, "loading");
 
         let snapshot = controller.snapshot();
         assert_eq!(snapshot.song_id.as_deref(), Some("song-a"));
+        assert_eq!(snapshot.transport_generation, 1);
         assert_eq!(snapshot.state, "loading");
         assert!(!snapshot.is_playing);
 
@@ -628,6 +701,7 @@ mod tests {
         };
         let started = controller.start_track("song-a".to_owned(), decoded, 1_000);
         assert_eq!(started.state, "playing");
+        assert_eq!(started.transport_generation, 1);
         assert!(started.is_playing);
     }
 
@@ -670,6 +744,29 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_reports_paused_during_fade_out() {
+        use super::DecodedAudio;
+
+        let mut controller = super::PlaybackController::default();
+        let decoded = DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        controller.play(0).unwrap();
+
+        controller.pause(0).unwrap();
+        let snap = controller.snapshot();
+        assert_eq!(snap.state, "playing");
+        assert!(
+            !snap.is_playing,
+            "pause must report is_playing=false while the fade-out envelope runs"
+        );
+    }
+
+    #[test]
     fn snapshot_reports_buffering_state_when_flag_set() {
         use super::DecodedAudio;
 
@@ -687,11 +784,11 @@ mod tests {
         assert_eq!(snap.state, "playing");
         assert!(snap.is_playing);
 
-        // Set buffering flag — state changes, is_playing becomes false
+        // Set buffering flag — state changes, transport intent stays playing
         controller.is_buffering = true;
         let snap = controller.snapshot();
         assert_eq!(snap.state, "buffering");
-        assert!(!snap.is_playing);
+        assert!(snap.is_playing);
 
         // Clear buffering — back to playing
         controller.is_buffering = false;

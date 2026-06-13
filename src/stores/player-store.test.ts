@@ -83,6 +83,7 @@ function playbackSnapshot(
 ): PlaybackStateSnapshot {
   return {
     song_id: "song-1",
+    transport_generation: 1,
     state: "playing",
     is_playing: true,
     position_ms: 1200,
@@ -106,6 +107,7 @@ function playbackPositionEvent(
 ): PlaybackPositionEvent {
   return {
     ms: snapshot.position_ms,
+    transport_generation: snapshot.transport_generation,
     snapshot,
   };
 }
@@ -202,6 +204,22 @@ describe("selectSyncDisplayPositionMs", () => {
           () => 5000,
         ),
       ).toBe(0);
+    });
+
+    test("does not extrapolate during buffer underrun", () => {
+      expect(
+        selectCurrentPositionMs(
+          {
+            snapshot: playbackSnapshot({
+              is_playing: true,
+              state: "buffering",
+            }),
+            positionMs: 1500,
+            playingSinceMs: 1000,
+          },
+          () => 2000,
+        ),
+      ).toBe(1500);
     });
 
     test("extrapolates position from the last sync point when playing", () => {
@@ -352,6 +370,97 @@ describe("selectSyncDisplayPositionMs", () => {
     player.dispose();
   });
 
+  test("ignores stale position events from an older transport generation", () => {
+    const player = createPlayerStore();
+    player.store.getState().updateSnapshot(
+      playbackSnapshot({
+        song_id: "song-2",
+        transport_generation: 2,
+        state: "loading",
+        is_playing: false,
+        position_ms: 0,
+        duration_ms: null,
+      }),
+    );
+
+    player.store.getState().applyPlaybackPositionEvent(
+      playbackPositionEvent(
+        playbackSnapshot({
+          song_id: "song-1",
+          transport_generation: 1,
+          is_playing: true,
+          position_ms: 2400,
+        }),
+      ),
+    );
+
+    expect(player.store.getState().snapshot).toEqual(
+      playbackSnapshot({
+        song_id: "song-2",
+        transport_generation: 2,
+        state: "loading",
+        is_playing: false,
+        position_ms: 0,
+        duration_ms: null,
+      }),
+    );
+    expect(player.store.getState().positionMs).toBe(0);
+
+    player.dispose();
+  });
+
+  test("accepts the matching generation event that starts playback after loading", () => {
+    const player = createPlayerStore();
+    player.store.getState().updateSnapshot(
+      playbackSnapshot({
+        song_id: "song-2",
+        transport_generation: 2,
+        state: "loading",
+        is_playing: false,
+        position_ms: 0,
+        duration_ms: null,
+      }),
+    );
+
+    player.store.getState().applyPlaybackPositionEvent(
+      playbackPositionEvent(
+        playbackSnapshot({
+          song_id: "song-2",
+          transport_generation: 2,
+          is_playing: true,
+          position_ms: 120,
+        }),
+      ),
+    );
+
+    expect(player.store.getState().snapshot?.song_id).toBe("song-2");
+    expect(player.store.getState().snapshot?.is_playing).toBe(true);
+    expect(player.store.getState().positionMs).toBe(120);
+    expect(player.store.getState().playingSinceMs).not.toBeNull();
+
+    player.dispose();
+  });
+
+  test("syncs transport fields from position ticks without replacing snapshot", () => {
+    const player = createPlayerStore();
+    const currentSnapshot = playbackSnapshot({ is_playing: false });
+    player.store.getState().updateSnapshot(currentSnapshot);
+
+    player.store
+      .getState()
+      .applyPlaybackPositionEvent(
+        playbackPositionEvent(
+          playbackSnapshot({ position_ms: 1500, is_playing: true }),
+        ),
+      );
+
+    expect(player.store.getState().snapshot).not.toBe(currentSnapshot);
+    expect(player.store.getState().snapshot?.is_playing).toBe(true);
+    expect(player.store.getState().positionMs).toBe(1500);
+
+    player.dispose();
+  });
+
   test("keeps the snapshot stable for ordinary position ticks", () => {
     const player = createPlayerStore();
     const currentSnapshot = playbackSnapshot();
@@ -425,6 +534,75 @@ describe("selectSyncDisplayPositionMs", () => {
 
     player.dispose();
   });
+
+  test("applies position-only events while playing without monotonic guard", () => {
+    const player = createPlayerStore();
+    player.store
+      .getState()
+      .updateSnapshot(
+        playbackSnapshot({ is_playing: true, position_ms: 2000 }),
+      );
+
+    player.store
+      .getState()
+      .applyPlaybackPositionEvent(
+        playbackPositionEvent(playbackSnapshot({ position_ms: 1500 })),
+      );
+
+    expect(player.store.getState().positionMs).toBe(1500);
+
+    player.dispose();
+  });
+
+  test("rebases playingSinceMs when applying cross-webview sync snapshot", () => {
+    const nowSpy = vi.spyOn(performance, "now").mockReturnValue(5000);
+    const channelsByName = new Map<string, Set<FakeChannel>>();
+    const channelFactory = (name: string) => {
+      const peers = channelsByName.get(name) ?? new Set<FakeChannel>();
+      channelsByName.set(name, peers);
+
+      const channel: FakeChannel = {
+        onmessage: null,
+        postMessage(data: unknown) {
+          for (const peer of peers) {
+            if (peer === channel) continue;
+            peer.onmessage?.({ data });
+          }
+        },
+        close() {
+          peers.delete(channel);
+        },
+      };
+
+      peers.add(channel);
+      return channel;
+    };
+
+    const primary = createPlayerStore(
+      createWebviewSyncChannel<PlayerSyncSnapshot>("player", {
+        channelFactory,
+        originId: "primary",
+      }),
+    );
+    const secondary = createPlayerStore(
+      createWebviewSyncChannel<PlayerSyncSnapshot>("player", {
+        channelFactory,
+        originId: "secondary",
+      }),
+    );
+
+    primary.store
+      .getState()
+      .updateSnapshot(
+        playbackSnapshot({ is_playing: true, position_ms: 1200 }),
+      );
+
+    expect(secondary.store.getState().playingSinceMs).toBe(5000);
+
+    nowSpy.mockRestore();
+    primary.dispose();
+    secondary.dispose();
+  });
 });
 
 describe("resume", () => {
@@ -478,6 +656,41 @@ describe("pause", () => {
   afterEach(() => {
     player.dispose();
     vi.useRealTimers();
+  });
+
+  test("forces is_playing false when the pause API still reports playing", async () => {
+    const snap = playbackSnapshot({ is_playing: true, position_ms: 1200 });
+    mockPause.mockResolvedValue(snap);
+
+    await player.store.getState().pause();
+
+    expect(player.store.getState().snapshot?.is_playing).toBe(false);
+    expect(player.store.getState().playingSinceMs).toBeNull();
+  });
+
+  test("ignores stale is_playing position ticks briefly after pause", async () => {
+    player.store
+      .getState()
+      .updateSnapshot(playbackSnapshot({ is_playing: true }));
+    mockPause.mockResolvedValue(
+      playbackSnapshot({
+        transport_generation: 2,
+        is_playing: true,
+        position_ms: 1200,
+      }),
+    );
+
+    await player.store.getState().pause();
+    expect(player.store.getState().snapshot?.is_playing).toBe(false);
+
+    player.store
+      .getState()
+      .applyPlaybackPositionEvent(
+        playbackPositionEvent(
+          playbackSnapshot({ is_playing: true, position_ms: 1200 }),
+        ),
+      );
+    expect(player.store.getState().snapshot?.is_playing).toBe(false);
   });
 
   test("updates snapshot, positionMs, and clears playingSinceMs", async () => {
@@ -661,6 +874,28 @@ describe("loadStems", () => {
 
     expect(mockLoadStems).toHaveBeenCalled();
     expect(player.store.getState().snapshot).toEqual(snap);
+  });
+
+  test("does not let an older loadStems response replace the active transport", async () => {
+    player.store
+      .getState()
+      .updateSnapshot(
+        playbackSnapshot({ transport_generation: 2, is_playing: true }),
+      );
+    mockLoadStems.mockResolvedValue(
+      playbackSnapshot({
+        transport_generation: 1,
+        is_playing: false,
+        has_stems: true,
+        stem_mode: "two_stem",
+      }),
+    );
+
+    await player.store.getState().loadStems();
+
+    expect(player.store.getState().snapshot).toEqual(
+      playbackSnapshot({ transport_generation: 2, is_playing: true }),
+    );
   });
 
   test("calls notifyError when api.loadStems rejects", async () => {

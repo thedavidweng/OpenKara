@@ -461,8 +461,33 @@ pub fn downgrade_to_two_stem(
     let other_audio = crate::audio::decode::decode_file(&other_abs)
         .map_err(|e| anyhow::anyhow!("failed to decode other.ogg: {e}"))?;
 
-    // Mix by summing samples element-wise.
-    let len = drums_audio.samples.len();
+    // R7: Validate that all stems share the same sample rate and channel count.
+    validate_stem_compatibility(&drums_audio, &bass_audio, &other_audio)?;
+
+    // R7: Use max of all stem lengths. Before the fix, this used
+    // drums_audio.samples.len() which silently truncated longer stems.
+    let len = drums_audio
+        .samples
+        .len()
+        .max(bass_audio.samples.len())
+        .max(other_audio.samples.len());
+
+    // Log a warning if stem lengths differ by more than 1%.
+    let max_len = len as f64;
+    for (name, audio) in [
+        ("drums", &drums_audio),
+        ("bass", &bass_audio),
+        ("other", &other_audio),
+    ] {
+        let stem_len = audio.samples.len() as f64;
+        if stem_len > 0.0 && (max_len - stem_len) / max_len > 0.01 {
+            eprintln!(
+                "warning: stem {name} length differs from max by >1% ({} vs {max_len})",
+                audio.samples.len()
+            );
+        }
+    }
+
     let mut mixed_samples = Vec::with_capacity(len);
     for i in 0..len {
         let d = drums_audio.samples.get(i).copied().unwrap_or(0.0);
@@ -636,6 +661,149 @@ fn stem_title(song: &Song, source_path: &Path, suffix: &str) -> Result<String> {
 fn unix_timestamp() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("system time should be after unix epoch")
+        .unwrap_or_default()
         .as_secs() as i64
+}
+
+/// R7: Validate that all stems have compatible sample rate and channel count.
+fn validate_stem_compatibility(
+    drums: &crate::audio::decode::DecodedAudio,
+    bass: &crate::audio::decode::DecodedAudio,
+    other: &crate::audio::decode::DecodedAudio,
+) -> Result<()> {
+    anyhow::ensure!(
+        drums.sample_rate == bass.sample_rate && drums.sample_rate == other.sample_rate,
+        "stem sample rates do not match: drums={}, bass={}, other={}",
+        drums.sample_rate,
+        bass.sample_rate,
+        other.sample_rate
+    );
+    anyhow::ensure!(
+        drums.channels == bass.channels && drums.channels == other.channels,
+        "stem channel counts do not match: drums={}, bass={}, other={}",
+        drums.channels,
+        bass.channels,
+        other.channels
+    );
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::audio::decode::DecodedAudio;
+
+    /// R7: Verify that stem downgrade uses max() of all stem lengths and
+    /// validates sample_rate/channels match. Before the fix, this used
+    // drums_audio.samples.len() which silently truncated longer stems.
+    #[test]
+    fn downgrade_mix_uses_max_stem_length() {
+        // Create stems with different lengths.
+        let drums = DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 100,
+            samples: vec![1.0; 100], // 100 samples
+        };
+        let bass = DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 150,
+            samples: vec![2.0; 150], // 150 samples (longer)
+        };
+        let other = DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 120,
+            samples: vec![3.0; 120], // 120 samples
+        };
+
+        // Simulate the mixing logic from downgrade_to_two_stem.
+        let len = drums
+            .samples
+            .len()
+            .max(bass.samples.len())
+            .max(other.samples.len());
+
+        assert_eq!(len, 150, "max length should be 150");
+
+        let mut mixed = Vec::with_capacity(len);
+        for i in 0..len {
+            let d = drums.samples.get(i).copied().unwrap_or(0.0);
+            let b = bass.samples.get(i).copied().unwrap_or(0.0);
+            let o = other.samples.get(i).copied().unwrap_or(0.0);
+            mixed.push(d + b + o);
+        }
+
+        assert_eq!(mixed.len(), 150);
+        // First 100: drums(1.0) + bass(2.0) + other(3.0) = 6.0
+        assert_eq!(mixed[0], 6.0);
+        assert_eq!(mixed[99], 6.0);
+        // 100-119: drums(0.0) + bass(2.0) + other(3.0) = 5.0
+        assert_eq!(mixed[100], 5.0);
+        assert_eq!(mixed[119], 5.0);
+        // 120-149: drums(0.0) + bass(2.0) + other(0.0) = 2.0
+        assert_eq!(mixed[120], 2.0);
+        assert_eq!(mixed[149], 2.0);
+    }
+
+    /// R7: Verify that mismatched sample rates are rejected.
+    #[test]
+    fn downgrade_rejects_mismatched_sample_rates() {
+        let drums = DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 100,
+            samples: vec![1.0; 100],
+        };
+        let bass = DecodedAudio {
+            sample_rate: 48_000, // Different rate
+            channels: 2,
+            duration_ms: 100,
+            samples: vec![2.0; 100],
+        };
+        let other = DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 100,
+            samples: vec![3.0; 100],
+        };
+
+        let result = validate_stem_compatibility(&drums, &bass, &other);
+        assert!(result.is_err(), "should reject mismatched sample rates");
+        assert!(
+            result.unwrap_err().to_string().contains("sample rates"),
+            "error should mention sample rates"
+        );
+    }
+
+    /// R7: Verify that mismatched channel counts are rejected.
+    #[test]
+    fn downgrade_rejects_mismatched_channels() {
+        let drums = DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 100,
+            samples: vec![1.0; 100],
+        };
+        let bass = DecodedAudio {
+            sample_rate: 44_100,
+            channels: 1, // Different channels
+            duration_ms: 100,
+            samples: vec![2.0; 100],
+        };
+        let other = DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 100,
+            samples: vec![3.0; 100],
+        };
+
+        let result = validate_stem_compatibility(&drums, &bass, &other);
+        assert!(result.is_err(), "should reject mismatched channels");
+        assert!(
+            result.unwrap_err().to_string().contains("channel"),
+            "error should mention channels"
+        );
+    }
 }

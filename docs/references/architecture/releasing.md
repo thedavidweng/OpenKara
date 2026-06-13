@@ -4,9 +4,10 @@
 
 1. **Trigger**: Go to GitHub Actions → **Release** workflow → **Run workflow**
 2. **Input**: Enter the version number (e.g. `0.8.1`) — do not include the `v` prefix
-3. **Build**: CI builds for all 4 platforms (macOS ARM64, macOS x64, Windows, Linux)
-4. **Publish**: GitHub Release is created automatically with DMG, NSIS installer, and AppImage
-5. **Homebrew**: The tap repo (`thedavidweng/homebrew-tap`) polls for new releases once per day and updates the cask when it detects a new version. Expect up to about 24 hours before the scheduled sync picks it up.
+3. **Release smoke**: the workflow first downloads ONNX Runtime and the pinned separation model, then runs a real local-audio separation smoke on Linux. Publishing is blocked unless import, playback, and at least one vocal/accompaniment separation pass.
+4. **Build**: CI builds for all 4 platforms (macOS ARM64, macOS x64, Windows, Linux)
+5. **Publish**: GitHub Release is created automatically with DMG, NSIS installer, and AppImage
+6. **Homebrew**: The tap repo (`thedavidweng/homebrew-tap`) polls for new releases once per day and updates the cask when it detects a new version. Expect up to about 24 hours before the scheduled sync picks it up.
 
 ## Manual Homebrew Update
 
@@ -121,6 +122,7 @@ addition to any active release plan under [`../../plans/`](../../plans/):
 
 - [ ] `pnpm format` and the `AGENTS.md` verification matrix for the **highest-risk area** touched since the last release.
 - [ ] `pnpm lint` → `pnpm build` → `pnpm test` → `cd src-tauri && cargo test -q` when frontend or Rust changed.
+- [ ] Confirm the Release workflow's **Release separation smoke** job passed; it is the release-only automated check for runtime download, model install, import, playback, and real stem separation.
 - [ ] Manual smoke on **at least two OS tiers** when media, packaging, separation, or IPC changed.
 - [ ] Changelog / GitHub Release notes: version, highlights, and **known limitations** (unsigned macOS/Windows until signing credentials exist).
 - [ ] Confirm release assets match the workflow matrix (e.g. DMG variants, NSIS, Linux bundles).

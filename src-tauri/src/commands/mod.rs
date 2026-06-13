@@ -10,6 +10,7 @@ pub mod maintenance;
 pub mod playback;
 pub mod playlist;
 pub mod remote_library;
+pub mod runtime_bootstrap;
 pub mod separation;
 pub mod settings;
 pub mod window_shell;

@@ -110,9 +110,13 @@
 3. 分离前解码失败：
    - `code = audio_decode_failed`
    - `fallback = reimport_song`
-4. 运行时模型尚未下载完成、校验失败或 bootstrap 已失败：
+4. 运行时模型校验失败、bootstrap 已失败或旧模型需要用户删除：
    - `code = model_unavailable`
    - `fallback = retry`
+5. ONNX Runtime 下载、校验或加载失败（B2/B3/B4）：
+   - `code = model_unavailable`
+   - `fallback = retry`
+   - 触发场景：`separate`、`upgrade_to_four_stem`、`re_separate`、`batch_separate` 的后台前置 bootstrap 失败，或 `download_model` 命令在 Runtime 未就绪时返回此错误
 
 ## Important boundaries
 

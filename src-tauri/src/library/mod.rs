@@ -17,6 +17,7 @@ pub struct Song {
     pub album: Option<String>,
     pub duration_ms: i64,
     pub cover_art: Option<Vec<u8>>,
+    pub has_cover_art: bool,
     pub imported_at: i64,
     pub original_ext: Option<String>,
 }
@@ -77,6 +78,7 @@ mod tests {
             album: None,
             duration_ms: 1_000,
             cover_art: None,
+            has_cover_art: false,
             imported_at: 1,
             original_ext: Some("mp3".to_owned()),
         }

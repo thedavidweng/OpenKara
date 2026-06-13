@@ -4,13 +4,18 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+/// R2: Maximum time `read_at` waits for data before returning `CacheError::Timeout`.
+const READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Errors specific to the chunked cache.
 #[derive(Debug)]
 pub enum CacheError {
     Io(io::Error),
     CorruptedIndex(String),
+    /// R2: The condvar wait timed out — the fetch thread may have died.
+    Timeout,
 }
 
 impl std::fmt::Display for CacheError {
@@ -18,6 +23,7 @@ impl std::fmt::Display for CacheError {
         match self {
             CacheError::Io(e) => write!(f, "cache I/O error: {e}"),
             CacheError::CorruptedIndex(msg) => write!(f, "corrupted cache index: {msg}"),
+            CacheError::Timeout => write!(f, "cache read timed out waiting for data"),
         }
     }
 }
@@ -162,7 +168,21 @@ impl ChunkedCache {
 
     /// Read data at the given offset. Blocks (via condvar wait) if the range
     /// is not yet cached. Returns the number of bytes actually read.
+    ///
+    /// R2: Uses `wait_timeout` instead of infinite `wait` so that a dead
+    /// fetch thread does not hang the decode thread forever.
     pub fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize, CacheError> {
+        self.read_at_with_timeout(offset, buf, READ_TIMEOUT)
+    }
+
+    /// Read with a configurable timeout. Used by `read_at` and exposed for
+    /// testing timeout behavior without waiting 30 seconds.
+    fn read_at_with_timeout(
+        &self,
+        offset: u64,
+        buf: &mut [u8],
+        timeout: Duration,
+    ) -> Result<usize, CacheError> {
         let mut inner = acquire_lock(&self.inner);
         let length = buf.len() as u64;
 
@@ -177,10 +197,14 @@ impl ChunkedCache {
                 inner.last_access = Instant::now();
                 return Ok(to_read);
             }
-            inner = self
+            let (guard, timeout_result) = self
                 .data_available
-                .wait(inner)
+                .wait_timeout(inner, timeout)
                 .map_err(|_| CacheError::Io(io::Error::other("lock poisoned")))?;
+            inner = guard;
+            if timeout_result.timed_out() {
+                return Err(CacheError::Timeout);
+            }
         }
 
         inner.file.seek(SeekFrom::Start(offset))?;
@@ -607,6 +631,26 @@ mod tests {
         cache.read_at(0, &mut buf).unwrap();
         let t2 = cache.last_access();
         assert!(t2 > t1);
+
+        cleanup(&dir);
+    }
+
+    /// R2: Verify that `read_at` returns `CacheError::Timeout` instead of
+    /// blocking forever when no data is written. Before the fix, this would
+    /// hang indefinitely on `Condvar::wait`.
+    #[test]
+    fn read_at_times_out_when_no_data_arrives() {
+        let dir = temp_dir("timeout");
+        let cache = ChunkedCache::open(&dir, "timeout_test", 100).unwrap();
+
+        let mut buf = vec![0u8; 50];
+        let short_timeout = Duration::from_millis(100);
+        let result = cache.read_at_with_timeout(0, &mut buf, short_timeout);
+
+        assert!(
+            matches!(result, Err(CacheError::Timeout)),
+            "expected CacheError::Timeout, got {result:?}"
+        );
 
         cleanup(&dir);
     }

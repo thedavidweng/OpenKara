@@ -988,6 +988,7 @@ mod tests {
                 album: None,
                 duration_ms: 1_000,
                 cover_art: None,
+                has_cover_art: false,
                 imported_at: 1,
                 original_ext: Some("wav".to_owned()),
             },

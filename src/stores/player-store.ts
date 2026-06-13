@@ -88,10 +88,19 @@ function applyPlayerSyncSnapshot(
   set: (partial: Partial<PlayerState>) => void,
   payload: PlayerSyncSnapshot,
 ) {
+  // RATIONALE: playingSinceMs is tied to this webview's performance.now() clock.
+  // Applying a peer window's timestamp would break selectCurrentPositionMs extrapolation.
+  const playingSinceMs =
+    payload.playingSinceMs === null
+      ? null
+      : payload.snapshot?.is_playing
+        ? performance.now()
+        : null;
+
   set({
     snapshot: payload.snapshot,
     positionMs: payload.positionMs,
-    playingSinceMs: payload.playingSinceMs,
+    playingSinceMs,
     airPlayOutput: payload.airPlayOutput,
     localAudienceOutputActive: payload.localAudienceOutputActive,
     airPlayPlainTextPagePending: payload.airPlayPlainTextPagePending,
@@ -126,10 +135,37 @@ export function selectCurrentPositionMs(
   nowMs = () => performance.now(),
 ): number {
   const { snapshot, positionMs, playingSinceMs } = state;
-  if (snapshot?.is_playing && playingSinceMs !== null) {
+  // Do not extrapolate during buffer underrun — backend position is frozen even
+  // though is_playing still reflects transport intent.
+  if (
+    snapshot?.is_playing &&
+    snapshot.state !== "buffering" &&
+    playingSinceMs !== null
+  ) {
     return positionMs + (nowMs() - playingSinceMs);
   }
   return positionMs;
+}
+
+function shouldAnchorPlayingSinceMs(snapshot: PlaybackStateSnapshot): boolean {
+  return snapshot.is_playing && snapshot.state !== "buffering";
+}
+
+function resolvePlayingSinceMs(
+  prev: Pick<PlayerState, "snapshot" | "playingSinceMs">,
+  nextSnapshot: PlaybackStateSnapshot,
+): number | null {
+  if (!shouldAnchorPlayingSinceMs(nextSnapshot)) {
+    return null;
+  }
+  if (
+    prev.playingSinceMs !== null &&
+    prev.snapshot?.is_playing === nextSnapshot.is_playing &&
+    prev.snapshot?.state === nextSnapshot.state
+  ) {
+    return prev.playingSinceMs;
+  }
+  return performance.now();
 }
 
 function shouldReplaceSnapshotFromPositionEvent(
@@ -151,6 +187,15 @@ function shouldReplaceSnapshotFromPositionEvent(
   );
 }
 
+function isStaleTransportSnapshot(
+  current: PlaybackStateSnapshot | null,
+  next: PlaybackStateSnapshot,
+): boolean {
+  return (
+    current !== null && next.transport_generation < current.transport_generation
+  );
+}
+
 export function createPlayerStore(
   syncChannel: WebviewSyncChannel<PlayerSyncSnapshot> = createWebviewSyncChannel<PlayerSyncSnapshot>(
     "openkara.player",
@@ -164,12 +209,16 @@ export function createPlayerStore(
       set(patch);
       syncChannel.publish(createPlayerSyncSnapshot(get()));
     };
-    const applySnapshot = (nextSnapshot: PlaybackStateSnapshot) =>
+    const applySnapshot = (nextSnapshot: PlaybackStateSnapshot) => {
+      if (isStaleTransportSnapshot(get().snapshot, nextSnapshot)) {
+        return;
+      }
       syncPatch({
         snapshot: nextSnapshot,
         positionMs: nextSnapshot.position_ms,
-        playingSinceMs: nextSnapshot.is_playing ? performance.now() : null,
+        playingSinceMs: resolvePlayingSinceMs(get(), nextSnapshot),
       });
+    };
 
     const workflow = createPlaybackWorkflow({
       getPlayerSnapshot: () => get().snapshot,
@@ -213,10 +262,19 @@ export function createPlayerStore(
       resume: async () => {
         try {
           const snapshot = await api.resume();
+          const authoritative = {
+            ...snapshot,
+            is_playing: true,
+          };
+          if (isStaleTransportSnapshot(get().snapshot, authoritative)) {
+            return;
+          }
           syncPatch({
-            snapshot,
-            positionMs: snapshot.position_ms,
-            playingSinceMs: performance.now(),
+            snapshot: authoritative,
+            positionMs: authoritative.position_ms,
+            playingSinceMs: shouldAnchorPlayingSinceMs(authoritative)
+              ? performance.now()
+              : null,
           });
         } catch (e) {
           notifyError(e);
@@ -226,9 +284,16 @@ export function createPlayerStore(
       pause: async () => {
         try {
           const snapshot = await api.pause();
+          const authoritative = {
+            ...snapshot,
+            is_playing: false,
+          };
+          if (isStaleTransportSnapshot(get().snapshot, authoritative)) {
+            return;
+          }
           syncPatch({
-            snapshot,
-            positionMs: snapshot.position_ms,
+            snapshot: authoritative,
+            positionMs: authoritative.position_ms,
             playingSinceMs: null,
           });
         } catch (e) {
@@ -242,10 +307,15 @@ export function createPlayerStore(
         try {
           const clamped = Math.max(0, ms);
           const snapshot = await api.seek(clamped);
+          if (isStaleTransportSnapshot(get().snapshot, snapshot)) {
+            return;
+          }
           syncPatch({
             snapshot,
             positionMs: snapshot.position_ms,
-            playingSinceMs: snapshot.is_playing ? performance.now() : null,
+            playingSinceMs: shouldAnchorPlayingSinceMs(snapshot)
+              ? performance.now()
+              : null,
           });
         } catch (e) {
           notifyError(e);
@@ -256,6 +326,9 @@ export function createPlayerStore(
         try {
           const clamped = Math.max(0, Math.min(1, level));
           const snapshot = await api.setVolume(clamped);
+          if (isStaleTransportSnapshot(get().snapshot, snapshot)) {
+            return;
+          }
           syncPatch({ snapshot });
         } catch (e) {
           notifyError(e);
@@ -266,6 +339,9 @@ export function createPlayerStore(
         try {
           const clamped = Math.max(0, Math.min(1, level));
           const snapshot = await api.setStemVolume(stem, clamped);
+          if (isStaleTransportSnapshot(get().snapshot, snapshot)) {
+            return;
+          }
           syncPatch({ snapshot });
         } catch (e) {
           notifyError(e);
@@ -275,47 +351,79 @@ export function createPlayerStore(
       loadStems: async () => {
         try {
           const snapshot = await api.loadStems();
-          syncPatch({ snapshot });
+          if (isStaleTransportSnapshot(get().snapshot, snapshot)) {
+            return;
+          }
+          syncPatch({
+            snapshot,
+            positionMs: snapshot.position_ms,
+            playingSinceMs: resolvePlayingSinceMs(get(), snapshot),
+          });
         } catch (e) {
           notifyError(e, () => get().loadStems());
         }
       },
 
       applyPlaybackPositionEvent: (event) => {
+        const current = get();
+        const currentSnapshot = current.snapshot;
         const nextSnapshot = event.snapshot;
-        const currentSnapshot = get().snapshot;
+        if (event.transport_generation !== nextSnapshot.transport_generation) {
+          return;
+        }
+        if (isStaleTransportSnapshot(currentSnapshot, nextSnapshot)) {
+          return;
+        }
         if (
           shouldReplaceSnapshotFromPositionEvent(currentSnapshot, nextSnapshot)
         ) {
           syncPatch({
             snapshot: nextSnapshot,
             positionMs: nextSnapshot.position_ms,
-            playingSinceMs: nextSnapshot.is_playing ? performance.now() : null,
+            playingSinceMs: resolvePlayingSinceMs(current, nextSnapshot),
           });
           return;
         }
 
         syncPatch({
           positionMs: nextSnapshot.position_ms,
-          playingSinceMs: nextSnapshot.is_playing ? performance.now() : null,
+          playingSinceMs: resolvePlayingSinceMs(current, nextSnapshot),
+          snapshot:
+            currentSnapshot &&
+            (nextSnapshot.is_playing !== currentSnapshot.is_playing ||
+              nextSnapshot.state !== currentSnapshot.state ||
+              nextSnapshot.buffered_ms !== currentSnapshot.buffered_ms)
+              ? {
+                  ...currentSnapshot,
+                  is_playing: nextSnapshot.is_playing,
+                  state: nextSnapshot.state,
+                  buffered_ms: nextSnapshot.buffered_ms,
+                }
+              : (currentSnapshot ?? nextSnapshot),
         });
       },
 
       updateSnapshot: (snapshot) => {
+        if (isStaleTransportSnapshot(get().snapshot, snapshot)) {
+          return;
+        }
         syncPatch({
           snapshot,
           positionMs: snapshot.position_ms,
-          playingSinceMs: snapshot.is_playing ? performance.now() : null,
+          playingSinceMs: resolvePlayingSinceMs(get(), snapshot),
         });
       },
 
       loadState: async () => {
         try {
           const snapshot = await api.getPlaybackState();
+          if (isStaleTransportSnapshot(get().snapshot, snapshot)) {
+            return;
+          }
           syncPatch({
             snapshot,
             positionMs: snapshot.position_ms,
-            playingSinceMs: snapshot.is_playing ? performance.now() : null,
+            playingSinceMs: resolvePlayingSinceMs(get(), snapshot),
           });
         } catch (e) {
           notifyError(e);

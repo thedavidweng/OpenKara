@@ -14,16 +14,145 @@ on:
         default: ""
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.inputs.version }}
+  cancel-in-progress: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  release-separation-smoke:
+    name: Release separation smoke
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+
+      - name: Restore Rust cache
+        uses: swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc
+        with:
+          shared-key: ${{ github.workflow }}-ubuntu-22.04-smoke
+          workspaces: ./src-tauri -> target
+          cache-bin: false
+          key: ubuntu-22.04-smoke
+
+      - name: Install Linux smoke dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            libasound2-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev
+
+      - name: Download runtime and model
+        run: ./scripts/setup.sh
+
+      - name: Run real separation smoke
+        run: |
+          set -euo pipefail
+
+          input_dir="${RUNNER_TEMP}/openkara-smoke-input"
+          output_dir="${RUNNER_TEMP}/openkara-smoke-output"
+          mkdir -p "${input_dir}" "${output_dir}"
+          cp src-tauri/tests/fixtures/audio/fixture.wav "${input_dir}/fixture.wav"
+
+          ./scripts/run-local-smoke.sh "${input_dir}" "${output_dir}"
+
+      - name: Validate real separation smoke report
+        run: |
+          set -euo pipefail
+
+          report_path="${RUNNER_TEMP}/openkara-smoke-output/local-audio-smoke-report.json"
+          node --input-type=module - "${report_path}" <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const reportPath = process.argv[2];
+          const report = JSON.parse(readFileSync(reportPath, "utf8"));
+          const summary = report.summary;
+          const failures = [];
+
+          if (report.model.status !== "passed") {
+            failures.push(`model status was ${report.model.status}`);
+          }
+          if (summary.discovered_files !== 1) {
+            failures.push(`expected 1 discovered file, got ${summary.discovered_files}`);
+          }
+          if (summary.imported !== 1) {
+            failures.push(`expected 1 imported file, got ${summary.imported}`);
+          }
+          if (summary.playback_failed !== 0) {
+            failures.push(`playback_failed was ${summary.playback_failed}`);
+          }
+          if (summary.separation_passed < 1) {
+            failures.push(`separation_passed was ${summary.separation_passed}`);
+          }
+          if (summary.separation_failed !== 0) {
+            failures.push(`separation_failed was ${summary.separation_failed}`);
+          }
+          if (summary.separation_skipped !== 0) {
+            failures.push(`separation_skipped was ${summary.separation_skipped}`);
+          }
+
+          const separatedSongs = report.songs.filter(
+            (song) =>
+              song.separation_status === "passed" &&
+              song.accompaniment_path !== null &&
+              song.vocals_path !== null,
+          );
+          if (separatedSongs.length < 1) {
+            failures.push("no song produced both accompaniment and vocals artifacts");
+          }
+
+          if (failures.length > 0) {
+            console.error(`Release separation smoke failed for ${reportPath}:`);
+            for (const failure of failures) {
+              console.error(`- ${failure}`);
+            }
+            process.exit(1);
+          }
+
+          console.log(
+            `Release separation smoke passed: separation_passed=${summary.separation_passed}, separation_failed=${summary.separation_failed}, separation_skipped=${summary.separation_skipped}`,
+          );
+          NODE
+
+      - name: Upload release separation smoke report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-separation-smoke-report
+          path: ${{ runner.temp }}/openkara-smoke-output/local-audio-smoke-report.*
+          if-no-files-found: warn
+          retention-days: 14
+
   publish:
     name: Release (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    needs: release-separation-smoke
+    permissions:
+      contents: write # Needed by tauri-action to create the draft GitHub Release and upload assets.
     strategy:
       fail-fast: false
       matrix:
@@ -51,28 +180,30 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0
+        with:
+          persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6.0.8
+        uses: pnpm/action-setup@d15e628ca66d93ee5f352c71671a7bc6a97af5c9
         with:
           version: 10.33.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6.4.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 24
           cache: pnpm
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
         with:
           targets: ${{ matrix.rust_targets }}
 
       - name: Restore Rust cache
-        uses: swatinem/rust-cache@v2.9.1
+        uses: swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc
         with:
-          shared-key: ${{ github.workflow }}-${{ matrix.os }}
+          shared-key: ${{ github.workflow }}-${{ matrix.os }}-release
           workspaces: ./src-tauri -> target
 
       - name: Install Linux build dependencies
@@ -92,18 +223,26 @@ jobs:
             libxdo-dev \
             wget
 
+      - name: Restore ONNX Runtime cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae
+        with:
+          path: src-tauri/generated/onnxruntime
+          key: onnxruntime-${{ matrix.ort_target }}-${{ hashFiles('scripts/prepare-onnx-runtime.mjs') }}
+
       - name: Prepare ONNX Runtime
+        env:
+          ORT_TARGET: ${{ matrix.ort_target }}
         run: |
-          node scripts/prepare-onnx-runtime.mjs --target "${{ matrix.ort_target }}"
+          node scripts/prepare-onnx-runtime.mjs --target "${ORT_TARGET}"
 
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Audit dependencies
-        run: pnpm audit --audit-level=high --ignore-registry-errors
+        run: pnpm audit --audit-level=high
 
       - name: Build and publish release
-        uses: tauri-apps/tauri-action@action-v0.6.2
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENKARA_GOOGLE_DRIVE_OAUTH_CLIENT_JSON: ${{ secrets.OPENKARA_GOOGLE_DRIVE_OAUTH_CLIENT_JSON }}
@@ -123,13 +262,18 @@ jobs:
   generate-checksums:
     name: Generate SHA256SUMS
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: publish
+    permissions:
+      contents: write # Needed to attach SHA256SUMS to the draft GitHub Release.
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0
+        with:
+          persist-credentials: false
 
       - name: Download all release artifacts
-        uses: actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           pattern: "OpenKara*"
           merge-multiple: true
@@ -150,31 +294,39 @@ jobs:
       - name: Attach SHA256SUMS to release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ github.event.inputs.version }}
         run: |
-          tag="v${{ github.event.inputs.version }}"
+          tag="v${RELEASE_VERSION}"
           gh release upload "${tag}" artifacts/SHA256SUMS --clobber
 
   prepare-distribution-manifests:
     name: Prepare distribution manifests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [publish, generate-checksums]
+    permissions:
+      contents: write # Needed only to create the release tag when tauri-action has not done so first.
     env:
       GITHUB_TOKEN: ${{ github.token }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6.4.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 24
 
       - name: Ensure release source tag exists
+        env:
+          RELEASE_VERSION: ${{ github.event.inputs.version }}
         run: |
           set -euo pipefail
 
-          tag="v${{ github.event.inputs.version }}"
+          tag="v${RELEASE_VERSION}"
           git fetch --tags origin
 
           if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
@@ -187,28 +339,34 @@ jobs:
           fi
 
           git tag "${tag}" "${GITHUB_SHA}"
-          git push origin "refs/tags/${tag}"
+          auth_header="$(printf 'x-access-token:%s' "${GITHUB_TOKEN}" | base64 -w0)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
+            push origin "refs/tags/${tag}"
 
       - name: Render WinGet manifests
+        env:
+          RELEASE_VERSION: ${{ github.event.inputs.version }}
         run: |
           node scripts/render-winget-manifests.mjs \
-            --version "${{ github.event.inputs.version }}" \
-            --output "${{ github.workspace }}/dist/winget"
+            --version "${RELEASE_VERSION}" \
+            --output "${GITHUB_WORKSPACE}/dist/winget"
 
       - name: Render Flatpak manifests
+        env:
+          RELEASE_VERSION: ${{ github.event.inputs.version }}
         run: |
           node scripts/render-flatpak-manifest.mjs \
-            --version "${{ github.event.inputs.version }}" \
-            --output "${{ github.workspace }}/dist/flatpak"
+            --version "${RELEASE_VERSION}" \
+            --output "${GITHUB_WORKSPACE}/dist/flatpak"
 
       - name: Upload WinGet manifest artifact
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: winget-manifests
           path: dist/winget
 
       - name: Upload Flatpak manifest artifact
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: flatpak-manifests
           path: dist/flatpak
@@ -216,6 +374,7 @@ jobs:
   submit-winget-pr:
     name: Submit WinGet PR
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: prepare-distribution-manifests
     if: ${{ vars.WINGET_FORK_REPO != '' }}
 
@@ -234,7 +393,7 @@ jobs:
 
       - name: Download WinGet manifest artifact
         if: ${{ steps.bootstrap.outputs.ready == 'true' }}
-        uses: actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: winget-manifests
           path: dist/winget
@@ -296,6 +455,7 @@ jobs:
   submit-flathub-pr:
     name: Prepare or submit Flathub PR
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: prepare-distribution-manifests
     if: ${{ vars.FLATHUB_FORK_REPO != '' }}
 
@@ -314,7 +474,7 @@ jobs:
 
       - name: Download Flatpak manifest artifact
         if: ${{ steps.bootstrap.outputs.ready == 'true' }}
-        uses: actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: flatpak-manifests
           path: dist/flatpak

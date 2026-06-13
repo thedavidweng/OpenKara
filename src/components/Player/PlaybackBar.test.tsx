@@ -126,6 +126,14 @@ describe("PlaybackBar", () => {
     expect(markup).not.toContain("title=");
   });
 
+  test("renders the active master volume icon with the same control brightness as stem icons", () => {
+    const markup = renderToStaticMarkup(<PlaybackBar />);
+
+    expect(markup).toMatch(
+      /<button[^>]*class="[^"]*text-\[var\(--color-control-primary\)\][^"]*"[^>]*aria-label="Mute"/,
+    );
+  });
+
   test("forwards the tight density to the responsive children", () => {
     const markup = renderToStaticMarkup(
       <PlaybackBar densityOverride="tight" />,

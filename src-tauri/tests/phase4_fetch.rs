@@ -53,13 +53,14 @@ fn fixture_song(file_path: &Path) -> Song {
         album: Some("Parachutes".to_owned()),
         duration_ms: 267_000,
         cover_art: None,
+        has_cover_art: true,
         imported_at: 1,
         original_ext: None,
     }
 }
 
 #[test]
-fn fetch_chain_prefers_lrclib_synced_lyrics_over_sidecar() {
+fn fetch_chain_prefers_sidecar_without_calling_online_sources() {
     let fixture_dir = unique_fixture_dir();
     cleanup_dir(&fixture_dir);
     fs::create_dir_all(&fixture_dir).expect("fixture directory should create");
@@ -86,6 +87,7 @@ fn fetch_chain_prefers_lrclib_synced_lyrics_over_sidecar() {
                 "syncedLyrics": "[00:35.66] from lrclib"
             }"#,
         )
+        .expect_at_most(0)
         .create();
 
     let lrclib_client = LrcLibClient::new(server.url());
@@ -102,8 +104,8 @@ fn fetch_chain_prefers_lrclib_synced_lyrics_over_sidecar() {
     assert_eq!(
         fetched,
         LyricsFetchResult {
-            source: LyricsSource::LrcLib,
-            raw_lrc: "[00:35.66] from lrclib".to_owned(),
+            source: LyricsSource::Sidecar,
+            raw_lrc: "[00:10.00] from sidecar".to_owned(),
         }
     );
 
@@ -112,15 +114,13 @@ fn fetch_chain_prefers_lrclib_synced_lyrics_over_sidecar() {
 }
 
 #[test]
-fn fetch_chain_prefers_lrcapi_over_sidecar_when_lrclib_misses() {
+fn fetch_chain_uses_lrcapi_when_no_local_lyrics_exist() {
     let fixture_dir = unique_fixture_dir();
     cleanup_dir(&fixture_dir);
     fs::create_dir_all(&fixture_dir).expect("fixture directory should create");
 
     let audio_path = fixture_dir.join("yellow.mp3");
     fs::copy(metadata_fixture_path("fixture.mp3"), &audio_path).expect("fixture audio should copy");
-    fs::write(audio_path.with_extension("lrc"), "[00:10.00] from sidecar")
-        .expect("sidecar should write");
 
     let mut lrclib_server = mockito::Server::new();
     let lrclib_mock = lrclib_server
@@ -180,15 +180,13 @@ fn fetch_chain_prefers_lrcapi_over_sidecar_when_lrclib_misses() {
 }
 
 #[test]
-fn fetch_chain_falls_back_to_sidecar_when_online_sources_miss() {
+fn fetch_chain_returns_none_when_online_sources_miss_and_no_local_lyrics() {
     let fixture_dir = unique_fixture_dir();
     cleanup_dir(&fixture_dir);
     fs::create_dir_all(&fixture_dir).expect("fixture directory should create");
 
     let audio_path = fixture_dir.join("yellow.mp3");
     fs::copy(metadata_fixture_path("fixture.mp3"), &audio_path).expect("fixture audio should copy");
-    fs::write(audio_path.with_extension("lrc"), "[00:10.00] from sidecar")
-        .expect("sidecar should write");
 
     let mut lrclib_server = mockito::Server::new();
     let lrclib_mock = lrclib_server
@@ -214,16 +212,9 @@ fn fetch_chain_falls_back_to_sidecar_when_online_sources_miss() {
     ];
 
     let fetched = fetch_lyrics_for_song(&providers, &fixture_song(&audio_path), &audio_path)
-        .expect("fetch chain should succeed")
-        .expect("sidecar lyrics should be returned");
+        .expect("fetch chain should succeed");
 
-    assert_eq!(
-        fetched,
-        LyricsFetchResult {
-            source: LyricsSource::Sidecar,
-            raw_lrc: "[00:10.00] from sidecar".to_owned(),
-        }
-    );
+    assert!(fetched.is_none());
 
     lrclib_mock.assert();
     lrcapi_mock.assert();

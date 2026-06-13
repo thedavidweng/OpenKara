@@ -4,7 +4,7 @@ import {
   resolvePlainTextRemoteTarget,
   type PlainTextPageDirection,
 } from "@/lib/plain-text-page-controls";
-import { usePlayerStore } from "@/stores/player-store";
+import { usePlayerStore, selectCurrentPositionMs } from "@/stores/player-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useLyricsStore } from "@/stores/lyrics-store";
@@ -19,6 +19,7 @@ import {
 interface KeyboardShortcutPlayerState {
   snapshot: ReturnType<typeof usePlayerStore.getState>["snapshot"];
   positionMs: number;
+  playingSinceMs: number | null;
   resume: () => Promise<void>;
   pause: () => Promise<void>;
   seek: (ms: number) => Promise<void>;
@@ -107,7 +108,15 @@ export function handleAppKeyDown(
     return true;
   }
 
-  const { snapshot, resume, pause, seek, setVolume, positionMs } = player;
+  const {
+    snapshot,
+    resume,
+    pause,
+    seek,
+    setVolume,
+    positionMs,
+    playingSinceMs,
+  } = player;
 
   // Don't intercept arrow keys when focus is inside a dialog or panel that
   // has its own keyboard navigation (e.g. settings, modals).  This lets the
@@ -134,12 +143,23 @@ export function handleAppKeyDown(
     }
     case "ArrowLeft": {
       e.preventDefault();
-      seek(positionMs - 5000);
+      // F7: Use extrapolated position (not raw snapshot) for smooth seek.
+      const extrapolated = selectCurrentPositionMs({
+        snapshot,
+        positionMs,
+        playingSinceMs,
+      });
+      seek(extrapolated - 5000);
       return true;
     }
     case "ArrowRight": {
       e.preventDefault();
-      seek(positionMs + 5000);
+      const extrapolated = selectCurrentPositionMs({
+        snapshot,
+        positionMs,
+        playingSinceMs,
+      });
+      seek(extrapolated + 5000);
       return true;
     }
     case "ArrowUp": {

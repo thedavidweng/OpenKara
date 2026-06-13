@@ -1,10 +1,11 @@
 use anyhow::Result;
 use std::path::Path;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct ModelCache<T> {
     cached_key: Option<String>,
-    cached_model: Option<T>,
+    cached_model: Option<Arc<T>>,
 }
 
 impl<T> Default for ModelCache<T> {
@@ -21,15 +22,18 @@ impl<T> ModelCache<T> {
         &mut self,
         path: &Path,
         load: impl FnOnce(&Path) -> Result<T>,
-    ) -> Result<&mut T> {
+    ) -> Result<Arc<T>> {
         self.get_or_load_with_key(path.display().to_string(), || load(path))
     }
 
+    /// Item 3: Returns `Arc<T>` so the caller can release the model cache lock
+    /// before running inference. Previously returned `&mut T` which held the
+    /// lock for the entire inference duration (minutes).
     pub fn get_or_load_with_key(
         &mut self,
         key: impl Into<String>,
         load: impl FnOnce() -> Result<T>,
-    ) -> Result<&mut T> {
+    ) -> Result<Arc<T>> {
         let key = key.into();
 
         if self.cached_key.as_deref() != Some(key.as_str()) {
@@ -42,14 +46,13 @@ impl<T> ModelCache<T> {
         }
 
         if self.cached_model.is_none() {
-            self.cached_model = Some(load()?);
+            self.cached_model = Some(Arc::new(load()?));
             self.cached_key = Some(key);
         }
 
-        Ok(self
-            .cached_model
-            .as_mut()
-            .expect("model cache should hold a model after a successful load"))
+        Ok(Arc::clone(self.cached_model.as_ref().expect(
+            "model cache should hold a model after a successful load",
+        )))
     }
 }
 
@@ -85,5 +88,29 @@ mod tests {
             })
             .expect("different provider key should force a reload");
         assert_eq!(*model, 2);
+    }
+
+    /// Item 3: ModelCache returns Arc<T> so the lock can be released before
+    /// inference. Verify Arc semantics are correct.
+    #[test]
+    fn model_cache_returns_arc_allowing_lock_release() {
+        let mut cache = ModelCache::default();
+
+        let model1 = cache
+            .get_or_load_with_key("key", || Ok::<_, anyhow::Error>(42))
+            .expect("load should succeed");
+
+        // Clone the Arc before "dropping the lock".
+        let model1_clone = std::sync::Arc::clone(&model1);
+        drop(model1);
+
+        // The cloned Arc should still be valid.
+        assert_eq!(*model1_clone, 42);
+
+        // Getting the same key should return the same Arc.
+        let model2 = cache
+            .get_or_load_with_key("key", || Ok::<_, anyhow::Error>(99))
+            .expect("load should succeed");
+        assert!(std::sync::Arc::ptr_eq(&model1_clone, &model2));
     }
 }
