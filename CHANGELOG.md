@@ -20,6 +20,7 @@
 - **Lyrics fetch latency:** embedded/sidecar lyrics return before online lookup; LRCLIB/LrcAPI clients use 3s/6s timeouts; negative cache (`absent`) skips repeat network probes when a song has no lyrics.
 - **Remote fetch:** position-update prefetch runs after fetch-queue drain (fixes compiler warning and stale prefetch gap).
 - **Release validation:** the Release workflow now runs a release-only real separation smoke that downloads ONNX Runtime and the pinned model, imports fixture audio, probes playback, and requires successful vocal/accompaniment stem output before publishing.
+- **Supply chain:** Dependabot alert 16 (`esbuild >=0.27.3 <0.28.1`) is addressed by pinning the transitive `esbuild` resolver to `0.28.1` and regenerating Flatpak offline pnpm sources without the stale `esbuild@0.27.4` bootstrap cache.
 - **Playback transport UI:** pause/resume snapshots report user intent immediately (not after the 50ms fade envelope); frontend ignores stale `is_playing` position ticks for 300ms after transport commands.
 - **Lyrics scroll:** timed lyrics now move line-by-line with spring-smoothed transitions, without continuously drifting toward the next line during playback.
 - **Lyrics seek:** clicking a distant lyric line now resumes auto-scroll from the current viewport position instead of flashing back to the previous lyric target first.
