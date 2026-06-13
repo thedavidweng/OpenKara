@@ -19,8 +19,10 @@
 - **Playback state:** multi-stem streaming uses a shared source-frame budget (fixes position/audio drift); EOF-aware buffering prevents permanent `buffering`/`paused` UI; unknown-duration tracks no longer clamp to zero length; cross-webview sync rebases `playingSinceMs` locally.
 - **Lyrics fetch latency:** embedded/sidecar lyrics return before online lookup; LRCLIB/LrcAPI clients use 3s/6s timeouts; negative cache (`absent`) skips repeat network probes when a song has no lyrics.
 - **Remote fetch:** position-update prefetch runs after fetch-queue drain (fixes compiler warning and stale prefetch gap).
+- **Release validation:** the Release workflow now runs a release-only real separation smoke that downloads ONNX Runtime and the pinned model, imports fixture audio, probes playback, and requires successful vocal/accompaniment stem output before publishing.
 - **Playback transport UI:** pause/resume snapshots report user intent immediately (not after the 50ms fade envelope); frontend ignores stale `is_playing` position ticks for 300ms after transport commands.
 - **Lyrics scroll:** timed lyrics now move line-by-line with spring-smoothed transitions, without continuously drifting toward the next line during playback.
+- **Lyrics seek:** clicking a distant lyric line now resumes auto-scroll from the current viewport position instead of flashing back to the previous lyric target first.
 - **macOS Liquid Glass icon:** Icon Composer layer scale restored to full bleed; translucency disabled; `CFBundleIconName` aligned to `OpenKara`; `Assets.car` bundled via Tauri resources; `pnpm icons:generate` recompiles Liquid Glass assets with `actool`.
 - **Playback controls:** master volume icon now uses the same active brightness as the vocal and accompaniment stem controls.
 

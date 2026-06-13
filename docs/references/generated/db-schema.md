@@ -7,7 +7,7 @@ Do **not** edit it by hand. Regenerate after any migration change:
 node scripts/generate-db-schema.mjs
 ```
 
-Source migrations: `001_init.sql`, `002_stems.sql`, `003_lyrics.sql`, `004_portable_paths.sql`, `005_audio_source_kind.sql`, `005_individual_stem_paths.sql`, `006_stem_model_variant.sql`, `007_song_instrumental.sql`, `008_playlists.sql`, `009_singer_rotation.sql`.
+Source migrations: `001_init.sql`, `002_stems.sql`, `003_lyrics.sql`, `004_portable_paths.sql`, `005_audio_source_kind.sql`, `005_individual_stem_paths.sql`, `006_stem_model_variant.sql`, `007_song_instrumental.sql`, `008_playlists.sql`, `009_singer_rotation.sql`, `010_fts5_songs.sql`.
 
 ## `songs`
 
@@ -98,6 +98,17 @@ Created by `009_singer_rotation.sql`.
 | `mode`          | `TEXT`    | NOT NULL, default 'round_robin' |
 | `active`        | `INTEGER` | NOT NULL, default 0             |
 
+## `songs_fts`
+
+Created by `010_fts5_songs.sql`.
+
+| Column      | Type   | Notes |
+| ----------- | ------ | ----- |
+| `title`     | `TEXT` | FTS5  |
+| `artist`    | `TEXT` | FTS5  |
+| `album`     | `TEXT` | FTS5  |
+| `file_path` | `TEXT` | FTS5  |
+
 ## Migration History
 
 1. `001_init.sql` — CREATE TABLE IF NOT EXISTS songs (
@@ -110,3 +121,4 @@ Created by `009_singer_rotation.sql`.
 8. `007_song_instrumental.sql` — ALTER TABLE songs ADD COLUMN instrumental INTEGER NOT NULL DEFAULT 0;
 9. `008_playlists.sql` — Playlist management tables for saved playlists (F1).
 10. `009_singer_rotation.sql` — Singer rotation state for turn-based queue workflows (F1).
+11. `010_fts5_songs.sql` — FTS5 virtual table for fast full-text search on song metadata.

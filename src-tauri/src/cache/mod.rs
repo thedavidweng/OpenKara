@@ -301,9 +301,8 @@ pub fn list_songs(connection: &Connection) -> rusqlite::Result<Vec<Song>> {
 pub fn search_songs(connection: &Connection, query: &str) -> rusqlite::Result<Vec<Song>> {
     // FTS5 prefix queries use unquoted terms with trailing * (e.g. "bohem*").
     // Quoted terms are treated as literal phrase searches.
-    let fts_query = if query.ends_with('*') {
+    let fts_query = if let Some(prefix) = query.strip_suffix('*') {
         // Prefix query: strip trailing *, sanitize, re-append
-        let prefix = &query[..query.len() - 1];
         format!("{}*", prefix.replace('"', ""))
     } else {
         format!("\"{}\"", query.replace('"', "\"\""))

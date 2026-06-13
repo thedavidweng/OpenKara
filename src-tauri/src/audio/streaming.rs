@@ -949,7 +949,7 @@ mod tests {
         let duration = metadata
             .duration_ms
             .expect("WAV should have duration from container");
-        assert!(duration >= 999 && duration <= 1_001);
+        assert!((999..=1_001).contains(&duration));
 
         // Wait for decode to finish
         handle

@@ -34,6 +34,18 @@ interface LyricsPanelProps {
   presentation?: "standard" | "audience";
 }
 
+function readStableDisplayPositionMs({
+  airPlayOutput,
+  positionMs,
+}: Pick<
+  ReturnType<(typeof usePlayerStore)["getState"]>,
+  "airPlayOutput" | "positionMs"
+>): number {
+  return airPlayOutput.active && airPlayOutput.displayedPositionMs !== null
+    ? airPlayOutput.displayedPositionMs
+    : positionMs;
+}
+
 export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
   const { t } = useTranslation();
   const lines = useLyricsStore((s) => s.lines);
@@ -46,11 +58,15 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
   const showRomanized = useLyricsStore((s) => s.showRomanized);
   const toggleRomanized = useLyricsStore((s) => s.toggleRomanized);
   const songId = usePlayerStore((s) => s.snapshot?.song_id);
+  const playerSnapshot = usePlayerStore((s) => s.snapshot);
+  const basePositionMs = usePlayerStore((s) => s.positionMs);
+  const playingSinceMs = usePlayerStore((s) => s.playingSinceMs);
   const airPlayOutput = usePlayerStore((s) => s.airPlayOutput);
-  const positionMs = usePlayerStore((s) =>
-    airPlayOutput.active && airPlayOutput.displayedPositionMs !== null
-      ? airPlayOutput.displayedPositionMs
-      : selectCurrentPositionMs(s),
+  const [playbackClockMs, setPlaybackClockMs] = useState(() =>
+    readStableDisplayPositionMs({
+      airPlayOutput: usePlayerStore.getState().airPlayOutput,
+      positionMs: usePlayerStore.getState().positionMs,
+    }),
   );
   const localAudienceOutputActive = usePlayerStore(
     (s) => s.localAudienceOutputActive,
@@ -62,7 +78,7 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
     (s) => s.airPlayPlainTextPagePendingDirection,
   );
   const lyricsFontStep = useSettingsStore((s) => s.lyricsFontStep);
-  const adjustedMs = positionMs - offsetMs;
+  const adjustedMs = playbackClockMs - offsetMs;
   const [editOpen, setEditOpen] = useState(false);
   const utilityControlsPinned = offsetMs !== 0 || lyricsFontStep !== 0;
   const isAudience = presentation === "audience";
@@ -117,6 +133,43 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
     Map<number, { scale: Spring; opacity: Spring; blur: Spring }>
   >(new Map());
   const springSongIdRef = useRef<string | null | undefined>(songId);
+
+  useEffect(() => {
+    if (airPlayOutput.active && airPlayOutput.displayedPositionMs !== null) {
+      setPlaybackClockMs(airPlayOutput.displayedPositionMs);
+      return;
+    }
+
+    const state = {
+      snapshot: playerSnapshot,
+      positionMs: basePositionMs,
+      playingSinceMs,
+    };
+    setPlaybackClockMs(selectCurrentPositionMs(state));
+
+    if (
+      !playerSnapshot?.is_playing ||
+      playerSnapshot.state === "buffering" ||
+      playingSinceMs === null
+    ) {
+      return;
+    }
+
+    let rafId = 0;
+    const tick = (now: number) => {
+      setPlaybackClockMs(selectCurrentPositionMs(state, () => now));
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [
+    airPlayOutput.active,
+    airPlayOutput.displayedPositionMs,
+    basePositionMs,
+    playerSnapshot,
+    playingSinceMs,
+  ]);
 
   if (springSongIdRef.current !== songId) {
     // Reset before line springs are read during render so a song change cannot

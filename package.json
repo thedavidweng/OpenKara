@@ -20,8 +20,10 @@
     "check:i18n": "node scripts/check-i18n.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui",
+    "test:ui-smoke": "playwright test",
+    "test:ui-smoke:ui": "playwright test --ui",
+    "test:e2e": "pnpm test:ui-smoke",
+    "test:e2e:ui": "pnpm test:ui-smoke:ui",
     "tauri": "pnpm version:sync && tauri"
   },
   "dependencies": {
@@ -65,6 +67,9 @@
   },
   "packageManager": "pnpm@10.33.2",
   "pnpm": {
+    "overrides": {
+      "esbuild": "0.28.1"
+    },
     "onlyBuiltDependencies": [
       "esbuild",
       "lefthook"

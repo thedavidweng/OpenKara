@@ -1,8 +1,8 @@
 /**
- * Mock for Tauri IPC used by Playwright E2E tests.
+ * Mock for Tauri IPC used by Playwright UI smoke tests.
  *
  * In a real Tauri build the Rust backend owns the database, audio pipeline,
- * and filesystem.  During browser-based E2E runs (against the Vite dev
+ * and filesystem.  During browser-based UI smoke runs (against the Vite dev
  * server) none of that exists, so we stub `window.__TAURI_INTERNALS__` --
  * the single entry-point that every `invoke()` call from
  * `@tauri-apps/api/core` funnels through.
@@ -40,6 +40,95 @@ export const TAURI_MOCK_SCRIPT = `
       duration_ms: 187000, cover_art: null, imported_at: Date.now(), original_ext: ".mp3",
     },
   ];
+
+  const invokeCalls = [];
+  const playlists = [];
+  const playlistSongs = new Map();
+  const menuResources = new Map();
+  let nextPlaylistId = 1;
+  let nextEventId = 1;
+  let nextMenuRid = 1;
+  let lastNativeMenu = null;
+  let rotationState = {
+    singer_names: [], current_index: 0, mode: "round_robin", active: false,
+  };
+
+  function clone(value) {
+    return value == null ? value : JSON.parse(JSON.stringify(value));
+  }
+
+  function playlistSnapshot() {
+    return playlists.map((playlist) => ({
+      ...playlist,
+      song_count: playlistSongs.get(playlist.id)?.length || 0,
+    }));
+  }
+
+  function menuResourceSnapshot(resource) {
+    return {
+      label: resource.label,
+      children: resource.items
+        ? resource.items.map((child) => menuResourceSnapshot(child))
+        : undefined,
+    };
+  }
+
+  function readMenuItemReference(reference) {
+    const rid = Array.isArray(reference) ? reference[0] : reference?.rid;
+    const resource = menuResources.get(rid);
+    if (!resource) {
+      throw new Error("Unknown native menu resource in E2E mock: " + rid);
+    }
+    return resource;
+  }
+
+  function lyricLine(timeMs, text) {
+    return {
+      time_ms: timeMs,
+      text,
+      words: null,
+      bg_words: null,
+      section: null,
+    };
+  }
+
+  function handleTauriEventCommand(cmd) {
+    if (cmd === "plugin:event|listen") {
+      return Promise.resolve(nextEventId++);
+    }
+    if (
+      cmd === "plugin:event|emit" ||
+      cmd === "plugin:event|emit_to" ||
+      cmd === "plugin:event|unlisten"
+    ) {
+      return Promise.resolve(undefined);
+    }
+    return null;
+  }
+
+  function handleTauriResourceCommand(cmd, args) {
+    if (cmd === "plugin:resources|close") {
+      menuResources.delete(args.rid);
+      return Promise.resolve(undefined);
+    }
+    return null;
+  }
+
+  function handleTauriWindowCommand(cmd) {
+    if (cmd === "plugin:window|is_maximized") {
+      return Promise.resolve(false);
+    }
+    if (
+      cmd === "plugin:window|close" ||
+      cmd === "plugin:window|minimize" ||
+      cmd === "plugin:window|start_dragging" ||
+      cmd === "plugin:window|start_resize_dragging" ||
+      cmd === "plugin:window|toggle_maximize"
+    ) {
+      return Promise.resolve(undefined);
+    }
+    return null;
+  }
 
   // ── Command response table ──
   // Static payloads for most commands; functions for context-sensitive ones.
@@ -134,18 +223,18 @@ export const TAURI_MOCK_SCRIPT = `
     fetch_lyrics: {
       raw_lrc: "[00:05.00]Is this the real life?\\n[00:10.00]Is this just fantasy?\\n[00:15.00]Caught in a landslide\\n[00:20.00]No escape from reality",
       lines: [
-        { time_ms: 5000, text: "Is this the real life?" },
-        { time_ms: 10000, text: "Is this just fantasy?" },
-        { time_ms: 15000, text: "Caught in a landslide" },
-        { time_ms: 20000, text: "No escape from reality" },
+        lyricLine(5000, "Is this the real life?"),
+        lyricLine(10000, "Is this just fantasy?"),
+        lyricLine(15000, "Caught in a landslide"),
+        lyricLine(20000, "No escape from reality"),
       ],
       offset_ms: 0, source: "manual",
     },
     fetch_lyrics_online: {
       raw_lrc: "[00:05.00]Is this the real life?\\n[00:10.00]Is this just fantasy?",
       lines: [
-        { time_ms: 5000, text: "Is this the real life?" },
-        { time_ms: 10000, text: "Is this just fantasy?" },
+        lyricLine(5000, "Is this the real life?"),
+        lyricLine(10000, "Is this just fantasy?"),
       ],
       offset_ms: 0, source: "lrclib",
     },
@@ -155,24 +244,59 @@ export const TAURI_MOCK_SCRIPT = `
     set_lyrics_offset: undefined,
 
     // Playlists
-    list_playlists: [],
+    list_playlists: () => playlistSnapshot(),
     create_playlist: (args) => ({
-      id: "pl-" + Date.now(), name: (args && args.name) || "New Playlist",
-      song_count: 0, created_at: Date.now(), updated_at: Date.now(),
+      id: "pl-" + nextPlaylistId++,
+      name: (args && args.name) || "New Playlist",
+      song_count: 0,
+      created_at: Date.now(),
+      updated_at: Date.now(),
     }),
     rename_playlist: undefined,
     delete_playlist: undefined,
-    add_songs_to_playlist: undefined,
-    remove_songs_from_playlist: undefined,
-    get_playlist_songs: [],
+    add_songs_to_playlist: (args) => {
+      const current = playlistSongs.get(args.playlistId) || [];
+      const existing = new Set(current.map((entry) => entry.song_hash));
+      const next = [...current];
+      for (const songHash of args.songHashes || []) {
+        if (!existing.has(songHash)) {
+          next.push({
+            song_hash: songHash,
+            added_at: Date.now(),
+            sort_order: next.length,
+            singer: null,
+          });
+        }
+      }
+      playlistSongs.set(args.playlistId, next);
+      return undefined;
+    },
+    remove_songs_from_playlist: (args) => {
+      const remove = new Set(args.songHashes || []);
+      const next = (playlistSongs.get(args.playlistId) || [])
+        .filter((entry) => !remove.has(entry.song_hash))
+        .map((entry, index) => ({ ...entry, sort_order: index }));
+      playlistSongs.set(args.playlistId, next);
+      return undefined;
+    },
+    get_playlist_songs: (args) => playlistSongs.get(args.playlistId) || [],
 
     // Rotation / Queue
-    get_rotation_state: {
-      singer_names: [], current_index: 0, mode: "round_robin", active: false,
+    get_rotation_state: () => rotationState,
+    set_rotation_state: (args) => {
+      rotationState = args.rotation;
+      return undefined;
     },
-    set_rotation_state: undefined,
-    advance_rotation: {
-      singer_names: [], current_index: 0, mode: "round_robin", active: false,
+    advance_rotation: () => {
+      if (rotationState.singer_names.length > 0) {
+        rotationState = {
+          ...rotationState,
+          current_index:
+            (rotationState.current_index + 1) %
+            rotationState.singer_names.length,
+        };
+      }
+      return rotationState;
     },
 
     // Bootstrap / model
@@ -228,21 +352,98 @@ export const TAURI_MOCK_SCRIPT = `
   };
 
   function invoke(cmd, args) {
-    const handler = COMMANDS[cmd];
-    if (handler === undefined) {
+    invokeCalls.push({ cmd, args: clone(args) });
+    const eventResult = handleTauriEventCommand(cmd);
+    if (eventResult) {
+      return eventResult;
+    }
+    const resourceResult = handleTauriResourceCommand(cmd, args || {});
+    if (resourceResult) {
+      return resourceResult;
+    }
+    const windowResult = handleTauriWindowCommand(cmd);
+    if (windowResult) {
+      return windowResult;
+    }
+    if (cmd === "plugin:menu|new") {
+      const rid = nextMenuRid++;
+      const options = args.options || {};
+      const items = (options.items || []).map(readMenuItemReference);
+      const resource = {
+        rid,
+        kind: args.kind,
+        label: options.text || options.item || "",
+        action: options.handler?.onmessage || args.handler?.onmessage || null,
+        items,
+        popupPosition: null,
+      };
+      menuResources.set(rid, resource);
+      return Promise.resolve([rid, String(rid)]);
+    }
+    if (cmd === "plugin:menu|popup") {
+      const resource = readMenuItemReference({ rid: args.rid });
+      resource.popupPosition = args.at
+        ? { x: args.at.x, y: args.at.y }
+        : null;
+      lastNativeMenu = resource;
       return Promise.resolve(undefined);
     }
+
+    const handler = COMMANDS[cmd];
+    if (handler === undefined) {
+      if (Object.prototype.hasOwnProperty.call(COMMANDS, cmd)) {
+        return Promise.resolve(undefined);
+      }
+      return Promise.reject(new Error("Unhandled Tauri invoke in E2E mock: " + cmd));
+    }
     if (typeof handler === "function") {
-      try { return Promise.resolve(handler(args)); }
+      try {
+        const result = handler(args);
+        if (cmd === "create_playlist" && result) {
+          playlists.push(result);
+          playlistSongs.set(result.id, []);
+        }
+        return Promise.resolve(clone(result));
+      }
       catch (e) { return Promise.reject(e); }
     }
-    return Promise.resolve(handler);
+    return Promise.resolve(clone(handler));
   }
 
   let callbackId = 0;
   const callbacks = new Map();
 
+  function menuSnapshot(menu) {
+    return {
+      items: menu.items.map((item) => menuResourceSnapshot(item)),
+      popupPosition: menu.popupPosition,
+    };
+  }
+
+  async function clickMenuItem(menu, label) {
+    const item = menu.items.find((candidate) => candidate.label === label);
+    if (!item || typeof item.action !== "function") {
+      throw new Error("Native menu item not found in E2E mock: " + label);
+    }
+    await item.action();
+  }
+
+  async function clickSubmenuItem(menu, parentLabel, label) {
+    const parent = menu.items.find((candidate) => candidate.label === parentLabel);
+    const item = parent?.items?.find((candidate) => candidate.label === label);
+    if (!item || typeof item.action !== "function") {
+      throw new Error(
+        "Native submenu item not found in E2E mock: " + parentLabel + " > " + label,
+      );
+    }
+    await item.action();
+  }
+
   window.__TAURI_INTERNALS__ = {
+    metadata: {
+      currentWindow: { label: "main" },
+      currentWebview: { label: "main" },
+    },
     invoke: invoke,
     transformCallback: function(callback, once) {
       var id = ++callbackId;
@@ -251,6 +452,23 @@ export const TAURI_MOCK_SCRIPT = `
     },
     unregisterCallback: function(id) {
       callbacks.delete(id);
+    },
+  };
+
+  window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+    unregisterListener: function() {},
+  };
+
+  window.__OPENKARA_E2E__ = {
+    getInvokeCalls: () => clone(invokeCalls),
+    getLastNativeMenu: () => lastNativeMenu ? menuSnapshot(lastNativeMenu) : null,
+    clickNativeMenuItem: async (label) => {
+      if (!lastNativeMenu) throw new Error("No native menu has been opened");
+      await clickMenuItem(lastNativeMenu, label);
+    },
+    clickNativeSubmenuItem: async (parentLabel, label) => {
+      if (!lastNativeMenu) throw new Error("No native menu has been opened");
+      await clickSubmenuItem(lastNativeMenu, parentLabel, label);
     },
   };
 })();

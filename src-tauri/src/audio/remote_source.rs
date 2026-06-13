@@ -556,7 +556,6 @@ fn fetch_loop(
     loop {
         match rx.recv() {
             Ok(FetchCommand::Fetch { offset, length }) => {
-                let fetch_succeeded;
                 let outcome = fetch_range_with_retry(
                     fetcher,
                     &current_url,
@@ -566,7 +565,7 @@ fn fetch_loop(
                     retry_config,
                     monitor,
                 );
-                fetch_succeeded = matches!(outcome, FetchOutcome::Ok);
+                let fetch_succeeded = matches!(outcome, FetchOutcome::Ok);
                 match outcome {
                     FetchOutcome::Ok => {
                         consecutive_failures = 0;
@@ -855,7 +854,7 @@ mod tests {
 
         // Read 50 bytes from start.
         let mut buf = vec![0u8; 50];
-        source.read(&mut buf).unwrap();
+        source.read_exact(&mut buf).unwrap();
         assert_eq!(buf, data[..50]);
         assert_eq!(source.read_position, 50);
 
@@ -863,7 +862,7 @@ mod tests {
         source.seek(SeekFrom::Start(100)).unwrap();
 
         // Read 50 bytes from 100.
-        source.read(&mut buf).unwrap();
+        source.read_exact(&mut buf).unwrap();
         assert_eq!(buf, data[100..150]);
         assert_eq!(source.read_position, 150);
 

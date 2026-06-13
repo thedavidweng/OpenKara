@@ -8,6 +8,13 @@ import type { AirPlayOutputStateEvent } from "@/types/ipc";
 import type { LyricLine } from "@/types/ipc";
 import { LyricsPanel } from "./LyricsPanel";
 
+class MockAnimation {
+  currentTime: number | null = 0;
+  play() {}
+  pause() {}
+  cancel() {}
+}
+
 function line(input: Omit<LyricLine, "bg_words" | "section">): LyricLine {
   return {
     ...input,
@@ -134,6 +141,10 @@ describe("LyricsPanel contextual reveal", () => {
       }),
     );
     vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    Object.defineProperty(HTMLElement.prototype, "animate", {
+      configurable: true,
+      value: vi.fn(() => new MockAnimation() as unknown as Animation),
+    });
     Object.defineProperty(HTMLElement.prototype, "scrollTo", {
       configurable: true,
       value: vi.fn(),
@@ -160,6 +171,7 @@ describe("LyricsPanel contextual reveal", () => {
     mockPlayerState.airPlayPlainTextPagePending = false;
     mockPlayerState.airPlayPlainTextPagePendingDirection = null;
     mockSelectCurrentPositionMs.mockImplementation((state) => state.positionMs);
+    mockSelectCurrentPositionMs.mockClear();
 
     mockLyricsState.lines = [
       line({
@@ -423,7 +435,7 @@ describe("LyricsPanel contextual reveal", () => {
     });
   });
 
-  test("uses the extrapolated playback clock for standard word highlighting", () => {
+  test("uses the extrapolated playback clock for standard word highlighting", async () => {
     mockPlayerState.positionMs = 1000;
     mockSelectCurrentPositionMs.mockReturnValue(1600);
     mockLyricsState.lines = [
@@ -439,10 +451,27 @@ describe("LyricsPanel contextual reveal", () => {
     ];
     mockLyricsState.activeLineIndex = 0;
 
-    const markup = renderToStaticMarkup(<LyricsPanel />);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
 
+    await act(async () => {
+      root.render(<LyricsPanel />);
+    });
+
+    const markup = container.innerHTML;
     expect(markup).toContain("text-white/45");
     expect(markup).toContain("text-white");
     expect(markup).toContain("text-white/50");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  test("does not read the extrapolated clock during render", () => {
+    renderToStaticMarkup(<LyricsPanel />);
+
+    expect(mockSelectCurrentPositionMs).not.toHaveBeenCalled();
   });
 });

@@ -1,11 +1,11 @@
-# OpenKara E2E Smoke Tests
+# OpenKara Smoke Tests
 
-## Automated (Playwright)
+## Automated (Playwright UI smoke)
 
-Run the browser-based E2E suite against the Vite dev server:
+Run the browser-based UI smoke suite against the Vite dev server:
 
 ```bash
-pnpm test:e2e
+pnpm test:ui-smoke
 ```
 
 This tests the React frontend against a mocked Tauri IPC layer (no Rust
@@ -19,6 +19,26 @@ backend required). Coverage includes:
 - Queue panel toggle and empty state
 - Rotation / singer management
 - Playlist creation
+
+## Automated (Release-only separation smoke)
+
+The GitHub Actions **Release** workflow includes a `Release separation smoke`
+job before any publish matrix job starts. It runs only when a maintainer
+manually triggers the Release workflow for a version, not on regular push or
+pull request CI.
+
+That release-only job:
+
+- downloads ONNX Runtime via `./scripts/setup.sh`
+- downloads and verifies the pinned `htdemucs.onnx` model via the same script
+- copies `src-tauri/tests/fixtures/audio/fixture.wav` into a temporary input
+  directory
+- runs `./scripts/run-local-smoke.sh`
+- fails the release if the generated report has zero successful separations,
+  any failed separations, or any skipped separations
+
+This is the automated coverage for the full backend path: runtime bootstrap,
+model availability, local import, playback probing, and real stem separation.
 
 ## Manual Smoke Tests (Full Tauri Desktop)
 
@@ -121,5 +141,6 @@ WEBDRIVER=1 pnpm tauri dev
 ```
 
 This approach is more complex and platform-dependent. The Playwright
-frontend-only suite provides good coverage for the React UI layer and is
-recommended as the primary E2E strategy.
+UI smoke suite provides focused coverage for the React UI layer. It is not
+the full desktop E2E path; release-only separation smoke covers runtime/model
+bootstrap and real stem separation before publishing.

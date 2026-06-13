@@ -122,13 +122,15 @@ const manifestSource = {
 const preservedSources = existingSources.filter(
   (source) =>
     source.dest !== PNPM_TARBALL_DEST &&
+    source.dest !== "flatpak-node/cache/esbuild" &&
+    !source.dest?.startsWith("flatpak-node/cache/esbuild/") &&
     source["dest-filename"] !== PNPM_MANIFEST_FILENAME,
 );
 const nextSources = [
-  ...preservedSources.slice(0, 10),
+  ...preservedSources.slice(0, 1),
   ...generatedDependencySources,
   manifestSource,
-  ...preservedSources.slice(10),
+  ...preservedSources.slice(1),
 ];
 
 writeFileSync(nodeSourcesPath, `${JSON.stringify(nextSources, null, 2)}\n`);

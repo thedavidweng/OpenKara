@@ -83,6 +83,16 @@ function readAdjustedPlaybackMs(): number {
   return readLyricsAdjustedPlaybackMs();
 }
 
+function bindSpringToViewport(
+  scrollSpring: Spring,
+  container: HTMLElement,
+): void {
+  const currentScrollTop = container.scrollTop;
+  if (scrollSpring.getPosition() !== currentScrollTop) {
+    scrollSpring.jumpTo(currentScrollTop);
+  }
+}
+
 /**
  * Scrolls the lyrics viewport when the active line changes. The target remains
  * anchored to the active line for the whole lyric duration, avoiding the
@@ -133,6 +143,14 @@ export function useLyricsAutoScroll(
       const container = containerRef.current;
       const lines = useLyricsStore.getState().lines;
 
+      if (container && guardRef.current?.isActive()) {
+        // User-scroll guard lets the DOM move while auto-scroll is paused.
+        // Keep the spring bound to the visible viewport so the next seek
+        // animates from where the user is looking, not the old lyric target.
+        bindSpringToViewport(scrollSpring, container);
+        targetScrollTopRef.current = container.scrollTop;
+      }
+
       if (container && lines.length > 0 && !guardRef.current?.isActive()) {
         const target = computeLineChangeLyricsScrollTop(
           container,
@@ -146,6 +164,7 @@ export function useLyricsAutoScroll(
             container.scrollTop = target;
             targetScrollTopRef.current = target;
           } else if (target !== targetScrollTopRef.current) {
+            bindSpringToViewport(scrollSpring, container);
             targetScrollTopRef.current = target;
             scrollSpring.setTarget(target);
           }

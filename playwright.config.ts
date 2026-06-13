@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * Playwright E2E configuration for OpenKara.
+ * Playwright UI smoke configuration for OpenKara.
  *
  * These tests run against the Vite dev server (port 1420) with a mocked
  * Tauri IPC layer injected via fixtures (see tests/e2e/fixtures/base-test.ts).

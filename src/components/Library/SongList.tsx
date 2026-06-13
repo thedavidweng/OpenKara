@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { SongListItem } from "./SongListItem";
 import { EmptyLibrary } from "./EmptyLibrary";
@@ -12,17 +12,7 @@ const SONG_ROW_GAP_PX = 4;
 export function SongList() {
   const songs = useLibraryStore((s) => s.songs);
   const filter = useLibraryStore((s) => s.filter);
-  // Item 6: Only subscribe to separationStatuses when the "separated" filter
-  // is active. This prevents the entire list from re-rendering on every
-  // separation progress tick — only completed status changes matter for the
-  // filter view.
-  const separatedSongs = useLibraryStore((s) =>
-    s.filter === "separated"
-      ? s.songs.filter(
-          (song) => s.separationStatuses[song.hash]?.state === "completed",
-        )
-      : null,
-  );
+  const separationStatuses = useLibraryStore((s) => s.separationStatuses);
   const activePlaylistId = usePlaylistStore((s) => s.activePlaylistId);
   const getPlaylistSongs = usePlaylistStore((s) => s.getPlaylistSongs);
   const playlistSongSets = usePlaylistStore((s) => s.playlistSongSets);
@@ -57,6 +47,16 @@ export function SongList() {
     }
   }, [activePlaylistId, songs, loadPlaylistSongsFromLibrary, playlistSongSets]);
 
+  const separatedSongs = useMemo(
+    () =>
+      filter === "separated"
+        ? songs.filter(
+            (song) => separationStatuses[song.hash]?.state === "completed",
+          )
+        : null,
+    [filter, songs, separationStatuses],
+  );
+
   const displaySongs = activePlaylistId
     ? playlistSongs
     : filter === "separated"
@@ -82,6 +82,7 @@ export function SongList() {
     <div
       ref={scrollRef}
       className="flex-1 overflow-y-auto"
+      data-testid="song-list"
       data-song-list-visual-variant="unified"
     >
       <div
