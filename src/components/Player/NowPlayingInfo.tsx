@@ -32,15 +32,7 @@ export function NowPlayingInfo({
   const title = song?.title || t("common.unknownTitle");
   const artist = song?.artist || t("common.unknownArtist");
   const hideArtist = density === "tight";
-  const hasCoverArt =
-    song?.cover_art != null &&
-    (() => {
-      const ca = song.cover_art;
-      if (ca instanceof ArrayBuffer) return ca.byteLength > 0;
-      if (Array.isArray(ca)) return ca.length > 0;
-      return (ca as Uint8Array).length > 0;
-    })();
-  const showCoverArt = !hideCoverArt && hasCoverArt;
+  const showCoverArt = !hideCoverArt && (song?.has_cover_art ?? false);
 
   return (
     <div
@@ -57,7 +49,7 @@ export function NowPlayingInfo({
       {showCoverArt && (
         <CoverArtThumbnail
           songHash={snapshot.song_id}
-          coverArt={song!.cover_art!}
+          coverArt={song?.cover_art}
           alt={`${title} cover art`}
           className="h-12 w-12 shrink-0"
         />

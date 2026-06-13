@@ -79,6 +79,7 @@ describe("buildAirPlayAudienceState", () => {
       buildAirPlayAudienceState({
         playbackSnapshot: {
           song_id: "song-1",
+          transport_generation: 1,
           state: "playing",
           is_playing: true,
           position_ms: 1234,
@@ -155,6 +156,7 @@ describe("buildAirPlayAudienceState", () => {
       buildAirPlayAudienceState({
         playbackSnapshot: {
           song_id: "song-2",
+          transport_generation: 1,
           state: "playing",
           is_playing: false,
           position_ms: 900,
@@ -221,6 +223,7 @@ describe("buildAirPlayAudienceState", () => {
       buildAirPlayAudienceState({
         playbackSnapshot: {
           song_id: "song-3",
+          transport_generation: 1,
           state: "playing",
           is_playing: false,
           position_ms: 0,
@@ -279,6 +282,7 @@ describe("buildAirPlayAudienceState", () => {
       buildAirPlayAudienceState({
         playbackSnapshot: {
           song_id: "song-4",
+          transport_generation: 1,
           state: "playing",
           is_playing: true,
           position_ms: 2048,
@@ -345,6 +349,7 @@ describe("buildAirPlayAudienceState", () => {
       buildAirPlayAudienceState({
         playbackSnapshot: {
           song_id: "song-5",
+          transport_generation: 1,
           state: "playing",
           is_playing: true,
           position_ms: 4200,

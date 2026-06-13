@@ -1,4 +1,5 @@
 import { useBootstrapStore } from "@/stores/bootstrap-store";
+import { useRuntimeBootstrapStore } from "@/stores/runtime-bootstrap-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import type { LibraryRegistrySnapshot, ModelVariant } from "@/types/ipc";
 import {
@@ -45,6 +46,7 @@ export function createInitialSettingsOverlaySnapshot(
       modelVariant: initialSettings.modelVariant,
       modelStatuses: {},
       downloadingModel: null,
+      runtimeStatus: null,
       language: initialSettings.language ?? "en",
       hideBatchSeparate: initialSettings.hideBatchSeparate,
       coverArtBackdrop: initialSettings.coverArtBackdrop,
@@ -136,6 +138,22 @@ export function createSettingsOverlayActions(
     }
   };
 
+  const refreshRuntimeStatus = async () => {
+    try {
+      const status = await dependencies.api.getRuntimeBootstrapStatus();
+      useRuntimeBootstrapStore.getState().updateStatus(status);
+      patchState({
+        runtimeStatus: {
+          state: status.state,
+          version: status.version,
+          runtime_path: status.runtime_path,
+        },
+      });
+    } catch {
+      // Runtime status is display-only.
+    }
+  };
+
   const applyModelVariant = async (variant: ModelVariant) => {
     try {
       const current = controls.getSnapshot();
@@ -154,6 +172,35 @@ export function createSettingsOverlayActions(
       patchState({ modelVariant: settings.model_variant });
     } catch (error) {
       patchState({ downloadingModel: null });
+      dependencies.notifyError(error);
+    }
+  };
+
+  const downloadRuntimeAction = async () => {
+    try {
+      const status = await dependencies.api.downloadRuntime();
+      useRuntimeBootstrapStore.getState().updateStatus(status);
+      patchState({
+        runtimeStatus: {
+          state: status.state,
+          version: status.version,
+          runtime_path: status.runtime_path,
+        },
+      });
+      // Refresh model statuses too since model actions may now be enabled.
+      await refreshModelStatuses();
+    } catch (error) {
+      dependencies.notifyError(error);
+    }
+  };
+
+  const deleteRuntimeAction = async () => {
+    try {
+      await dependencies.api.deleteRuntime();
+      await refreshRuntimeStatus();
+      // Refresh model statuses since model actions may now be disabled.
+      await refreshModelStatuses();
+    } catch (error) {
       dependencies.notifyError(error);
     }
   };
@@ -220,10 +267,17 @@ export function createSettingsOverlayActions(
 
       patchMeta({ isInitializing: false });
 
+      void refreshRuntimeStatus();
       void refreshModelStatuses();
     },
 
     refreshModelStatuses,
+    refreshRuntimeStatus,
+    downloadRuntime: downloadRuntimeAction,
+    deleteRuntime: deleteRuntimeAction,
+    openDeleteRuntimeDialog: () => {
+      patchMeta({ dangerDialog: "delete_runtime" });
+    },
     ...createLibrarySettingsActions(actionContext),
     ...createModelSettingsActions(actionContext),
     ...createMaintenanceSettingsActions(actionContext),

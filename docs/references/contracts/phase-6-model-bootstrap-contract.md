@@ -113,27 +113,43 @@ payload 为完整的 `ModelBootstrapStatusSnapshot`，其中：
 
 ## ONNX Runtime path resolution semantics
 
-1. 应用启动时先检查打包后的资源目录 `onnxruntime/<platform-lib>`
-2. macOS 打包产物额外允许从 `Contents/Frameworks/libonnxruntime.dylib` 解析
-3. 若未打包运行时，则回退到开发目录 `src-tauri/generated/onnxruntime/<platform-lib>`
-4. 若三处都找不到运行时动态库，应用启动立即失败并提示执行
-   `./scripts/setup.sh` 或 `node scripts/prepare-onnx-runtime.mjs`
-5. Rust 侧固定使用 `ort 2.0.0-rc.12` 的 `load-dynamic` + `api-24` 模式；
+1. **Runtime 外部化 (B2):** ONNX Runtime 不再打包在安装包中。应用启动时按以下顺序查找：
+   1. **Managed app-data:** `<app_data_dir>/runtime/<platform-lib>`（已验证 SHA-256）
+   2. **Development fallback:** `src-tauri/generated/onnxruntime/<platform-lib>`（开发构建用）
+   3. **Legacy bundled:** 打包资源目录 `onnxruntime/<platform-lib>`（过渡期兼容）
+2. 若 managed 路径存在但 SHA-256 不匹配，状态标记为 `corrupt` 并删除无效文件
+3. 若所有路径都找不到运行时，应用以 Runtime 缺失状态启动；分离 worker 会在实际推理前自动下载并校验 Runtime
+4. Rust 侧固定使用 `ort 2.0.0-rc.12` 的 `load-dynamic` + `api-24` 模式；
    不允许重新打开 `download-binaries` 或 `copy-dylibs`
-6. macOS / Linux 使用官方 ONNX Runtime 1.24.4 release 动态库；Windows 使用
-   `Microsoft.ML.OnnxRuntime.DirectML` 1.24.4 NuGet runtime。Windows 官方 CPU
-   runtime 会在加载时 import `dxgi.dll`，会让 hosted Windows runner 的 Rust
-   test harness 在测试代码执行前失败；DirectML NuGet runtime 提供 DML
-   provider API，且不会在 DLL load 阶段静态 import DXGI。
-7. macOS 发布产物必须按目标架构分别准备 `arm64` / `x86_64` 动态库，不允许再把
+5. macOS / Linux 使用官方 ONNX Runtime 1.26.0 release 动态库；Windows 使用
+   `Microsoft.ML.OnnxRuntime.DirectML` 1.24.4 NuGet runtime。
+6. macOS 发布产物必须按目标架构分别准备 `arm64` / `x86_64` 动态库，不允许再把
    universal2 ORT 放进两个安装包里浪费体积
-8. macOS 发布包启用 hardened runtime 时必须携带
+7. macOS 发布包启用 hardened runtime 时必须携带
    `com.apple.security.cs.disable-library-validation` entitlement；官方 ORT dylib
    由 Microsoft Developer ID 签名，应用需要该最小豁免才能在启动阶段加载它。
+8. **Runtime status IPC (B2):**
+   - `get_runtime_bootstrap_status() -> RuntimeBootstrapStatusSnapshot`
+   - `download_runtime() -> RuntimeBootstrapStatusSnapshot`
+   - `delete_runtime() -> ()`
+9. **Runtime/model state matrix (B3/B4):**
+
+   | Runtime     | Model   | Settings model action        | Separation action                                       |
+   | ----------- | ------- | ---------------------------- | ------------------------------------------------------- |
+   | Missing     | Missing | Disabled; show runtime CTA   | Download runtime -> download model -> separate          |
+   | Missing     | Present | Disabled; show runtime CTA   | Download runtime -> separate                            |
+   | Present     | Missing | Enabled                      | Download model -> separate                              |
+   | Present     | Present | Enabled for management       | Separate                                                |
+   | Downloading | Any     | Disabled until runtime ready | Wait for the active runtime task, then re-check         |
+   | Corrupt     | Any     | Disabled; show runtime CTA   | Delete invalid artifact -> download runtime -> re-check |
+
+10. **Runtime verification manifest:** 管理的运行时文件在 SHA-256 校验通过后，会在同目录写入
+    `<filename>.verified.json`。后续启动时若该 manifest 的文件名、SHA-256、文件大小和修改时间
+    都匹配当前运行时文件，则直接进入 `ready`，不再读取整个动态库文件。
 
 ## Product UX target
 
-现有后端行为已经支持“启动后自动 bootstrap + 状态事件 + 分离前置 gate”。后续
+现有后端行为支持“启动后自动 bootstrap + 状态事件 + 分离前置 bootstrap”。后续
 UI 与产品行为应以以下目标为准，而不是把后台下载继续当成隐式行为：
 
 1. 启动时检查模型是否存在且校验通过
@@ -141,15 +157,17 @@ UI 与产品行为应以以下目标为准，而不是把后台下载继续当�
    - `Download now`
    - `Later`
 3. 用户选择下载后，后台执行下载并显示真实进度
-4. 用户选择稍后时，资料库和原曲播放仍然可用，但分离与 Karaoke 模式保持禁用
-5. 当用户首次进入 Karaoke 或主动触发分离时，如模型仍未 ready，需要再次提示
+4. 用户选择稍后时，资料库和原曲播放仍然可用；首次分离会自动补齐 Runtime 和模型后继续
+5. 当用户首次进入 Karaoke 或主动触发分离时，如 Runtime 或模型仍未 ready，后台 worker 必须按 Runtime -> model -> separation 的顺序继续
 6. 下载失败时，UI 使用现有 `model-bootstrap-error` 状态提供重试入口，而不是要求用户手动找脚本
 
 ## Separation gate semantics
 
-1. `separate(song_id)` 现在依赖模型 bootstrap 状态
-2. `state = ready` 时才允许启动推理 worker
-3. `state = pending / downloading / outdated / failed` 时，命令立即返回（`outdated` 时错误文案应引导用户打开设置删除旧文件并重新下载）：
+1. `separate(song_id)`、`upgrade_to_four_stem(song_id)`、`re_separate(song_id, stem_mode)` 和 `batch_separate(song_ids)` 会立即创建后台任务
+2. 后台任务先确保 Runtime ready：缺失或损坏时下载、校验、写入 manifest，并在当前进程中加载 ORT
+3. Runtime ready 后，后台任务确保 active model ready：缺失时下载并校验 active variant，然后继续推理
+4. 只有 Runtime/model 下载或校验失败时，任务以 `separation-error` / batch terminal event 结束；命令入口不因缺失 Runtime 或模型直接返回 `model_unavailable`
+5. `outdated` 模型仍然不会被静默覆盖，错误文案应引导用户打开设置删除旧文件并重新下载：
 
 ```json
 {

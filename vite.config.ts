@@ -5,9 +5,9 @@ import { fileURLToPath, URL } from "node:url";
 import { copyFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { createRequire } from "node:module";
+import process from "node:process";
 
 // Tauri injects this value when remote device debugging is enabled.
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // Locate the kuromoji dictionary shipped with the lyric-romanizer dependency

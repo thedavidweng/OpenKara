@@ -6,6 +6,7 @@ const { mockPlayerState } = vi.hoisted(() => ({
   mockPlayerState: {
     snapshot: {
       song_id: "song-1",
+      state: "playing",
       is_playing: false,
     },
     resume: vi.fn(),
@@ -31,7 +32,27 @@ vi.mock("@/components/Overlay/Tooltip", () => ({
 }));
 
 describe("PlayControls", () => {
+  test("disables the main transport button while a selected song is loading", () => {
+    mockPlayerState.snapshot = {
+      song_id: "song-1",
+      state: "loading",
+      is_playing: false,
+    };
+
+    const markup = renderToStaticMarkup(<PlayControls />);
+
+    expect(markup).toContain('aria-label="player.loading"');
+    expect(markup).toContain('aria-busy="true"');
+    expect(markup).toContain("disabled");
+  });
+
   test("exposes the unified transport cluster markers", () => {
+    mockPlayerState.snapshot = {
+      song_id: "song-1",
+      state: "playing",
+      is_playing: false,
+    };
+
     const markup = renderToStaticMarkup(<PlayControls />);
 
     expect(markup).toContain('data-play-controls-visual-variant="unified"');

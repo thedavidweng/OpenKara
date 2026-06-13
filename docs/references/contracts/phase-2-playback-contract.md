@@ -21,7 +21,7 @@
 6. `set_stem_volume(stem: StemName, level: f32) -> PlaybackStateSnapshot`
 7. `load_stems() -> PlaybackStateSnapshot`
 8. `get_playback_state() -> PlaybackStateSnapshot`
-9. `playback-position` 事件 payload 为 `{ ms: u64, snapshot: PlaybackStateSnapshot }`
+9. `playback-position` 事件 payload 为 `{ ms: u64, transport_generation: u64, snapshot: PlaybackStateSnapshot }`
 
 ### 后续 Phase 依赖
 
@@ -152,18 +152,19 @@
 
 ### Shared type: `PlaybackStateSnapshot`
 
-| Field         | Type                                              | Notes                                                   |
-| ------------- | ------------------------------------------------- | ------------------------------------------------------- |
-| `songId`      | `Option<String>`                                  | 当前未加载轨道时为 `null`                               |
-| `state`       | `"idle" \| "loading" \| "playing" \| "buffering"` | 后端 transport 生命周期；暂停由 `isPlaying=false` 表示  |
-| `isPlaying`   | `bool`                                            | 当前是否处于播放推进状态                                |
-| `positionMs`  | `u64`                                             | 当前播放位置（由 `render_frame` 推导，非墙钟）          |
-| `durationMs`  | `Option<u64>`                                     | 未加载轨道时为 `null`                                   |
-| `bufferedMs`  | `u64`                                             | 已缓冲的最大安全播放位置（ms）；整轨模式 = `durationMs` |
-| `volume`      | `f32`                                             | `0.0..1.0`                                              |
-| `stemVolumes` | `{ vocals, drums, bass, other }`                  | 各 stem 音量                                            |
-| `hasStems`    | `bool`                                            | 当前是否已挂载 stems                                    |
-| `stemMode`    | `"two_stem" \| "four_stem" \| null`               | 当前 stem 模式                                          |
+| Field                  | Type                                              | Notes                                                     |
+| ---------------------- | ------------------------------------------------- | --------------------------------------------------------- |
+| `song_id`              | `Option<String>`                                  | 当前未加载轨道时为 `null`                                 |
+| `transport_generation` | `u64`                                             | 单调 transport 代号；新歌加载、resume、pause、seek 时递增 |
+| `state`                | `"idle" \| "loading" \| "playing" \| "buffering"` | 后端 transport 生命周期；暂停由 `is_playing=false` 表示   |
+| `is_playing`           | `bool`                                            | 当前是否处于播放推进状态                                  |
+| `position_ms`          | `u64`                                             | 当前播放位置（由 `render_frame` 推导，非墙钟）            |
+| `duration_ms`          | `Option<u64>`                                     | 未加载轨道时为 `null`                                     |
+| `buffered_ms`          | `u64`                                             | 已缓冲的最大安全播放位置（ms）；整轨模式 = `duration_ms`  |
+| `volume`               | `f32`                                             | `0.0..1.0`                                                |
+| `stem_volumes`         | `{ vocals, drums, bass, other }`                  | 各 stem 音量                                              |
+| `has_stems`            | `bool`                                            | 当前是否已挂载 stems                                      |
+| `stem_mode`            | `"two_stem" \| "four_stem" \| null`               | 当前 stem 模式                                            |
 
 **Transport state 语义：**
 
@@ -189,8 +190,10 @@ playing ↔ playing（pause/resume，通过 isPlaying 区分）
 ```json
 {
   "ms": 1234,
+  "transport_generation": 4,
   "snapshot": {
     "song_id": "abc123",
+    "transport_generation": 4,
     "state": "playing",
     "is_playing": true,
     "position_ms": 1234,
@@ -216,7 +219,8 @@ playing ↔ playing（pause/resume，通过 isPlaying 区分）
 3. 后端线程约每 `33ms` 检查一次位置，并在位置变化时发出事件
 4. `play`、`pause`、`seek`、`resume` 命令执行后也会立即补发一次最新位置
 5. `snapshot` 是前端播放状态的权威来源；远端加载从 `loading` 切到 `playing` 时，不需要前端再反查 `get_playback_state`
-6. `playback-ended` 是额外内部事件，用于前端队列自动推进；不替代 `playback-position`
+6. 前端必须丢弃 `transport_generation` 小于当前快照的事件或命令响应；事件顶层 `transport_generation` 必须与 `snapshot.transport_generation` 一致
+7. `playback-ended` 是额外内部事件，用于前端队列自动推进；不替代 `playback-position`
 
 ### Event: `playback-error`
 

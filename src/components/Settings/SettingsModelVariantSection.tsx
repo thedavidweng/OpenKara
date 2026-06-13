@@ -43,7 +43,13 @@ export function SettingsModelVariantSection() {
   const { t } = useTranslation();
   const { state, meta, actions } = useSettingsOverlay();
 
+  const runtimeReady = state.runtimeStatus?.state === "ready";
+
   const modelStatusLabel = (variant: ModelVariant) => {
+    if (!runtimeReady) {
+      return t("settings.modelVariant.runtimeRequired");
+    }
+
     if (state.downloadingModel === variant) {
       return t("settings.modelVariant.downloading");
     }
@@ -65,8 +71,44 @@ export function SettingsModelVariantSection() {
     return t("settings.modelVariant.notDownloaded");
   };
 
+  // B3: Model download controls are disabled when runtime is missing.
   const controlsDisabled =
-    meta.isInitializing || state.downloadingModel !== null;
+    meta.isInitializing || state.downloadingModel !== null || !runtimeReady;
+
+  // B3: Show runtime install CTA when runtime is missing.
+  if (!runtimeReady && state.runtimeStatus?.state !== "downloading") {
+    return (
+      <SettingsSectionCard
+        title={t("settings.modelVariant.label")}
+        description={t("settings.modelVariant.description")}
+      >
+        <div className="flex flex-col gap-2">
+          <p className="text-[12px] text-[var(--color-text-dim)]">
+            {t("settings.runtime.installRequired")}
+          </p>
+          <button
+            onClick={() => void actions.downloadRuntime()}
+            className="self-start rounded-md border border-[var(--color-accent)] bg-[var(--color-accent)]/20 px-3 py-1.5 text-[12px] text-white transition-colors hover:bg-[var(--color-accent)]/30"
+          >
+            {t("settings.runtime.installButton")}
+          </button>
+        </div>
+      </SettingsSectionCard>
+    );
+  }
+
+  if (state.runtimeStatus?.state === "downloading") {
+    return (
+      <SettingsSectionCard
+        title={t("settings.modelVariant.label")}
+        description={t("settings.modelVariant.description")}
+      >
+        <p className="text-[12px] text-[var(--color-text-dim)]">
+          {t("settings.runtime.downloading")}
+        </p>
+      </SettingsSectionCard>
+    );
+  }
 
   return (
     <SettingsSectionCard

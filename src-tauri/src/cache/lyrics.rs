@@ -97,6 +97,7 @@ fn serialize_source(source: &LyricsSource) -> &'static str {
         LyricsSource::Manual => "manual",
         LyricsSource::ManualTtml => "manual_ttml",
         LyricsSource::ManualLys => "manual_lys",
+        LyricsSource::Absent => "absent",
     }
 }
 
@@ -112,6 +113,7 @@ fn deserialize_source(source: &str) -> Result<LyricsSource> {
         "manual" => Ok(LyricsSource::Manual),
         "manual_ttml" => Ok(LyricsSource::ManualTtml),
         "manual_lys" => Ok(LyricsSource::ManualLys),
+        "absent" => Ok(LyricsSource::Absent),
         other => Err(anyhow!("unknown lyrics source {other}"))
             .with_context(|| format!("failed to deserialize lyrics source {source}")),
     }
@@ -144,6 +146,7 @@ mod tests {
             album: None,
             duration_ms: 0,
             cover_art: None,
+            has_cover_art: false,
             imported_at: 0,
             original_ext: None,
         };
@@ -248,8 +251,8 @@ mod tests {
 
         for source in &sources {
             let serialized = serialize_source(source);
-            let deserialized =
-                deserialize_source(serialized).expect(&format!("deserialize {serialized}"));
+            let deserialized = deserialize_source(serialized)
+                .unwrap_or_else(|_| panic!("deserialize {serialized}"));
             assert_eq!(&deserialized, source);
         }
     }
@@ -258,5 +261,23 @@ mod tests {
     fn deserialize_source_rejects_unknown() {
         let result = deserialize_source("unknown_source");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn absent_cache_round_trip() {
+        let conn = test_db();
+        insert_song(&conn, "hash-absent");
+        let entry = LyricsCacheEntry {
+            song_hash: "hash-absent".to_owned(),
+            lrc: String::new(),
+            source: LyricsSource::Absent,
+            offset_ms: 0,
+            fetched_at: 1,
+        };
+        upsert_lyrics_cache_entry(&conn, &entry).expect("upsert absent");
+        let retrieved = get_lyrics_cache_entry(&conn, "hash-absent")
+            .expect("get")
+            .expect("entry");
+        assert_eq!(retrieved.source, LyricsSource::Absent);
     }
 }

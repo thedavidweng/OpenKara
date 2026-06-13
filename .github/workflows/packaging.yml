@@ -31,6 +31,10 @@ on:
       - "src-tauri/tauri.conf.json"
       - "tests/flatpak-packaging.test.ts"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -41,13 +45,16 @@ jobs:
   validate-winget:
     name: Validate WinGet manifests
     runs-on: windows-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6.4.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 24
           package-manager-cache: false
@@ -62,8 +69,11 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Render WinGet manifests from current public release
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: |
-          node scripts/render-winget-manifests.mjs --version "${{ steps.release.outputs.version }}" --output ${{ github.workspace }}/dist/winget
+          node scripts/render-winget-manifests.mjs --version "$env:RELEASE_VERSION" --output "$env:GITHUB_WORKSPACE/dist/winget"
 
       - name: Install latest WinGet client
         shell: pwsh
@@ -78,24 +88,29 @@ jobs:
 
       - name: Validate WinGet manifests
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: |
-          winget validate --manifest "$env:GITHUB_WORKSPACE/dist/winget/t/thedavidweng/OpenKara/${{ steps.release.outputs.version }}"
+          winget validate --manifest "$env:GITHUB_WORKSPACE/dist/winget/t/thedavidweng/OpenKara/$env:RELEASE_VERSION"
 
   validate-flatpak:
     name: Validate Flatpak metadata
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0
+        with:
+          persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6.0.8
+        uses: pnpm/action-setup@d15e628ca66d93ee5f352c71671a7bc6a97af5c9
         with:
           version: 10.33.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6.4.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 24
           cache: pnpm
@@ -104,7 +119,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Audit dependencies
-        run: pnpm audit --audit-level=high --ignore-registry-errors
+        run: pnpm audit --audit-level=high
 
       - name: Install Flatpak validators
         run: |
@@ -135,14 +150,14 @@ jobs:
           node scripts/render-flatpak-manifest.mjs \
             --version "${version}" \
             --source-url "https://github.com/${SOURCE_REPO}/archive/${SOURCE_SHA}.tar.gz" \
-            --output "${{ github.workspace }}/dist/flatpak"
+            --output "${GITHUB_WORKSPACE}/dist/flatpak"
 
       - name: Validate Flatpak manifest syntax
         run: |
-          flatpak-builder --show-manifest "${{ github.workspace }}/dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml" > /dev/null
+          flatpak-builder --show-manifest "${GITHUB_WORKSPACE}/dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml" > /dev/null
 
       - name: Upload rendered Flatpak manifest
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: flatpak-manifest
           path: dist/flatpak
@@ -153,6 +168,7 @@ jobs:
     name: Build Flatpak (x86_64)
     needs: validate-flatpak
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     # Run inside the Flathub-maintained container. This image ships a
     # pre-configured flatpak + flatpak-builder + flatpak-builder-lint + flathub
     # remote + gnome-50 SDK, which is the environment every Flathub-hosted app
@@ -164,25 +180,27 @@ jobs:
     # bubblewrap can operate inside the container. This mirrors the shape used
     # in flathub-infra/actions-images' own test workflow.
     container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50@sha256:5767ab6266c0680cbe827f17b41a8120ac02c6a09bf5feced438831e57425c68
       options: --privileged
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0
+        with:
+          persist-credentials: false
 
       - name: Download rendered Flatpak manifest
-        uses: actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: flatpak-manifest
           path: dist/flatpak
 
       - name: Build Flatpak
-        uses: flatpak/flatpak-github-actions/flatpak-builder@v6.7
+        uses: flatpak/flatpak-github-actions/flatpak-builder@bf5cafdfd97dcf5a89c7475bbc86a616e1f86acb
         with:
           bundle: openkara.flatpak
           manifest-path: dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml
-          cache-key: flatpak-builder-x86_64-${{ github.sha }}
+          cache-key: flatpak-builder-x86_64-${{ hashFiles('dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml') }}
           arch: x86_64
           verbose: true
           # Required for `flatpak-builder-lint builddir/repo` to pass

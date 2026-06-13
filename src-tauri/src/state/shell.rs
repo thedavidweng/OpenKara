@@ -1,5 +1,6 @@
 use crate::commands::bootstrap::{self, ModelBootstrapStatusSnapshot};
 use crate::commands::error::{state_lock_error, CommandError};
+use crate::commands::runtime_bootstrap::RuntimeBootstrapStatusSnapshot;
 use crate::library::error::LibraryError;
 use crate::library_root::LibraryRoot;
 use std::path::PathBuf;
@@ -13,6 +14,7 @@ pub struct AppShell {
     pub app_resource_dir: PathBuf,
     pub model_path: PathBuf,
     pub model_bootstrap_status: Arc<Mutex<ModelBootstrapStatusSnapshot>>,
+    pub runtime_bootstrap_status: Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
     pub shutdown: Arc<AtomicBool>,
 }
 
@@ -23,6 +25,7 @@ impl AppShell {
         app_resource_dir: PathBuf,
         model_path: PathBuf,
         model_bootstrap_status: Arc<Mutex<ModelBootstrapStatusSnapshot>>,
+        runtime_bootstrap_status: Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
     ) -> Self {
         Self {
             library,
@@ -30,6 +33,7 @@ impl AppShell {
             app_resource_dir,
             model_path,
             model_bootstrap_status,
+            runtime_bootstrap_status,
             shutdown: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -93,6 +97,16 @@ impl AppShell {
             PathBuf::from("/tmp/test-resources"),
             PathBuf::from("/tmp/test-models"),
             Arc::new(Mutex::new(bootstrap::pending_status("test-model.bin"))),
+            Arc::new(Mutex::new(
+                crate::commands::runtime_bootstrap::RuntimeBootstrapStatusSnapshot {
+                    state: crate::commands::runtime_bootstrap::RuntimeBootstrapState::Missing,
+                    runtime_path: "/tmp/test-app-data/runtime/test.dylib".to_owned(),
+                    downloaded_bytes: None,
+                    total_bytes: None,
+                    version: "test".to_owned(),
+                    error: None,
+                },
+            )),
         )
     }
 }

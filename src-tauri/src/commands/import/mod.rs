@@ -152,6 +152,14 @@ pub fn search_library(state: State<'_, AppState>, query: String) -> CommandResul
 }
 
 #[tauri::command]
+pub fn get_cover_art(state: State<'_, AppState>, hash: String) -> CommandResult<Option<Vec<u8>>> {
+    let library = state.library_root()?;
+    let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
+
+    cache::get_cover_art(&connection, &hash).map_err(|error| database_error(error.to_string()))
+}
+
+#[tauri::command]
 pub fn delete_songs(
     state: State<'_, AppState>,
     song_ids: Vec<String>,

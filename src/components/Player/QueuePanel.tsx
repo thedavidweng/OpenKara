@@ -458,7 +458,10 @@ export function QueuePanel() {
   }, [queue, filterSinger, queueSingers]);
 
   return (
-    <div className="app-panel-surface flex h-full w-[280px] shrink-0 flex-col border-l border-[color-mix(in_srgb,var(--color-border)_86%,transparent)] bg-[color-mix(in_srgb,var(--color-toolbar)_94%,transparent)] shadow-[-1px_0_0_rgba(255,255,255,0.02)]">
+    <div
+      className="app-panel-surface flex h-full w-[280px] shrink-0 flex-col border-l border-[color-mix(in_srgb,var(--color-border)_86%,transparent)] bg-[color-mix(in_srgb,var(--color-toolbar)_94%,transparent)] shadow-[-1px_0_0_rgba(255,255,255,0.02)]"
+      data-testid="queue-panel"
+    >
       <div className="flex items-center justify-between border-b border-[color-mix(in_srgb,var(--color-border)_86%,transparent)] px-4 py-2">
         <span className="text-[13px] font-medium text-[var(--color-control-primary)]">
           {t("queue.upNext")}

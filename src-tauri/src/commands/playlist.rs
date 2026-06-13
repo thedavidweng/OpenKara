@@ -41,7 +41,7 @@ fn get_connection(state: &AppState) -> CommandResult<rusqlite::Connection> {
 fn now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs() as i64
 }
 
@@ -351,4 +351,31 @@ pub fn set_queue_entry_singer(
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// R12: Verify that `now()` does not panic and returns a sensible timestamp.
+    /// The fix changes `.unwrap()` to `.unwrap_or_default()` so that a clock
+    /// rollback before UNIX_EPOCH returns 0 instead of panicking.
+    #[test]
+    fn now_returns_non_negative_timestamp() {
+        let ts = now();
+        assert!(ts > 0, "expected a positive unix timestamp, got {ts}");
+    }
+
+    /// R12: Demonstrate that the unwrap_or_default pattern handles pre-epoch
+    /// SystemTime without panicking.
+    #[test]
+    fn duration_since_unwrap_or_default_handles_pre_epoch() {
+        // Simulate a pre-epoch SystemTime by constructing one.
+        // SystemTime::UNIX_EPOCH - 1 second would fail duration_since.
+        let pre_epoch = std::time::UNIX_EPOCH - std::time::Duration::from_secs(1);
+        let result = pre_epoch
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        assert_eq!(result.as_secs(), 0, "pre-epoch should yield default (0)");
+    }
 }

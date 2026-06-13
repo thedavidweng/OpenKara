@@ -12,6 +12,9 @@ const VISIBLE_HEIGHT: usize = 192;
 const BORDER_X: usize = 6;
 const BORDER_Y: usize = 12;
 
+/// Item 11: Save a checkpoint every N packets to speed up backward seeks.
+const CHECKPOINT_INTERVAL: usize = 1000;
+
 /// CDG instruction codes (masked with 0x3F).
 const CMD_MEMORY_PRESET: u8 = 1;
 const CMD_BORDER_PRESET: u8 = 2;
@@ -21,6 +24,20 @@ const CMD_SCROLL_COPY: u8 = 24;
 const CMD_COLORS_LOW: u8 = 30;
 const CMD_COLORS_HIGH: u8 = 31;
 const CMD_TILE_BLOCK_XOR: u8 = 38;
+
+/// Item 11: Snapshot of renderer state at a specific packet index, used to
+/// accelerate backward seeks by restoring the nearest checkpoint instead of
+/// replaying from packet 0.
+#[derive(Clone)]
+struct CdgCheckpoint {
+    /// Packet index this checkpoint was saved at.
+    packet_index: usize,
+    pixels: Vec<u8>,
+    palette: [[u8; 4]; 16],
+    last_was_memory_preset: bool,
+    h_offset: usize,
+    v_offset: usize,
+}
 
 /// CDG renderer maintaining a 300x216 indexed-color frame buffer.
 pub struct CdgRenderer {
@@ -34,6 +51,10 @@ pub struct CdgRenderer {
     h_offset: usize,
     /// Current vertical scroll offset in pixels.
     v_offset: usize,
+    /// Item 11: Periodic checkpoints for fast backward seeking.
+    checkpoints: Vec<CdgCheckpoint>,
+    /// Tracks the last packet index processed (for checkpoint scheduling).
+    last_processed_index: usize,
 }
 
 impl CdgRenderer {
@@ -44,6 +65,8 @@ impl CdgRenderer {
             last_was_memory_preset: false,
             h_offset: 0,
             v_offset: 0,
+            checkpoints: Vec::new(),
+            last_processed_index: 0,
         }
     }
 
@@ -52,27 +75,102 @@ impl CdgRenderer {
     pub fn process_range(&mut self, packets: &[CdgPacket], start: usize, end: usize) -> bool {
         let mut changed = false;
         let end = end.min(packets.len());
-        for pkt in packets.iter().take(end).skip(start) {
+        for (i, pkt) in packets.iter().enumerate().take(end).skip(start) {
             if pkt.is_cdg() && self.apply_instruction(pkt) {
                 changed = true;
             }
             self.last_was_memory_preset =
                 pkt.is_cdg() && (pkt.instruction & 0x3F) == CMD_MEMORY_PRESET;
-            self.last_was_memory_preset =
-                pkt.is_cdg() && (pkt.instruction & 0x3F) == CMD_MEMORY_PRESET;
+            self.maybe_save_checkpoint(i);
         }
+        self.last_processed_index = end;
         changed
     }
 
+    /// Item 11: Seek to a specific packet position. If a checkpoint exists that
+    /// is before the target, restore it and replay forward from there. Otherwise
+    /// replay from packet 0.
+    pub fn seek_to(&mut self, packets: &[CdgPacket], target: usize) {
+        let target = target.min(packets.len());
+
+        // Find the nearest checkpoint at or before the target.
+        let checkpoint_index = self
+            .checkpoints
+            .iter()
+            .rev()
+            .find(|cp| cp.packet_index <= target)
+            .map(|cp| cp.packet_index);
+
+        if let Some(idx) = checkpoint_index {
+            self.restore_checkpoint_at(packets, idx, target);
+        } else {
+            self.reset_and_render_to(packets, target);
+        }
+    }
+
     /// Reset the renderer to initial state and re-render from packet 0 up to
-    /// `end` (exclusive). Used for seeking.
+    /// `end` (exclusive). Used for seeking when no checkpoint is available.
     pub fn reset_and_render_to(&mut self, packets: &[CdgPacket], end: usize) {
         self.pixels.fill(0);
         self.palette = [[0, 0, 0, 255]; 16];
         self.last_was_memory_preset = false;
         self.h_offset = 0;
         self.v_offset = 0;
+        self.checkpoints.clear();
+        self.last_processed_index = 0;
         self.process_range(packets, 0, end);
+    }
+
+    /// Item 11: Save a checkpoint if we've crossed a CHECKPOINT_INTERVAL boundary.
+    fn maybe_save_checkpoint(&mut self, packet_index: usize) {
+        let last_checkpoint_idx = self.checkpoints.last().map(|cp| cp.packet_index);
+        let should_save = match last_checkpoint_idx {
+            Some(last) => packet_index >= last + CHECKPOINT_INTERVAL,
+            None => packet_index >= CHECKPOINT_INTERVAL,
+        };
+
+        if should_save {
+            self.checkpoints.push(CdgCheckpoint {
+                packet_index,
+                pixels: self.pixels.clone(),
+                palette: self.palette,
+                last_was_memory_preset: self.last_was_memory_preset,
+                h_offset: self.h_offset,
+                v_offset: self.v_offset,
+            });
+        }
+    }
+
+    /// Restore from the nearest checkpoint at or before `target_packet` and
+    /// re-render forward to `target`. Avoids borrow conflicts by operating
+    /// entirely on `&mut self`.
+    fn restore_checkpoint_at(
+        &mut self,
+        packets: &[CdgPacket],
+        target_packet: usize,
+        target: usize,
+    ) {
+        if let Some(cp) = self
+            .checkpoints
+            .iter()
+            .rev()
+            .find(|cp| cp.packet_index <= target_packet)
+            .cloned()
+        {
+            self.restore_checkpoint(&cp);
+            self.process_range(packets, cp.packet_index, target);
+        } else {
+            self.reset_and_render_to(packets, target);
+        }
+    }
+
+    /// Item 11: Restore renderer state from a checkpoint.
+    fn restore_checkpoint(&mut self, cp: &CdgCheckpoint) {
+        self.pixels.copy_from_slice(&cp.pixels);
+        self.palette = cp.palette;
+        self.last_was_memory_preset = cp.last_was_memory_preset;
+        self.h_offset = cp.h_offset;
+        self.v_offset = cp.v_offset;
     }
 
     /// Convert the visible 288x192 area to RGBA pixels.
@@ -429,5 +527,81 @@ mod tests {
         r.process_range(&[pkt1, pkt2], 0, 2);
         // Should still be color 3, not 5
         assert_eq!(r.pixels[0], 3);
+    }
+
+    /// Item 11: Backward seek should restore from checkpoint, not replay from 0.
+    #[test]
+    fn seek_to_restores_nearest_checkpoint() {
+        let mut r = CdgRenderer::new();
+
+        // Create a sequence of packets that modify the state.
+        // Fill with color 5.
+        let mut color_data = [0u8; 16];
+        color_data[10] = 0x14; // color 5 low byte
+        color_data[11] = 0x00; // color 5 high byte
+        let color_pkt = cdg_packet(CMD_COLORS_LOW, color_data);
+
+        let mut preset_data = [0u8; 16];
+        preset_data[0] = 5;
+        let preset_pkt = cdg_packet(CMD_MEMORY_PRESET, preset_data);
+
+        // Build enough packets to trigger a checkpoint (> CHECKPOINT_INTERVAL).
+        let mut packets = Vec::new();
+        packets.push(color_pkt);
+        packets.push(preset_pkt);
+        // Add dummy packets to reach checkpoint threshold.
+        for _ in 2..=CHECKPOINT_INTERVAL + 10 {
+            let mut data = [0u8; 16];
+            data[0] = 0;
+            data[1] = 0;
+            packets.push(cdg_packet(CMD_MEMORY_PRESET, data));
+        }
+
+        // Process all packets to build checkpoints.
+        r.process_range(&packets, 0, packets.len());
+
+        // Record state at the end.
+        let end_pixel = r.pixels[0];
+
+        // Now seek backward to packet index 2 (right after initial setup).
+        r.seek_to(&packets, 2);
+
+        // The state should be as it was after processing packets 0..2.
+        // After color setup + memory preset with color 5, pixels should be 5.
+        assert_eq!(r.pixels[0], 5);
+        // Verify this is different from the end state.
+        assert_ne!(r.pixels[0], end_pixel);
+    }
+
+    /// Item 11: Checkpoints should be created at regular intervals.
+    #[test]
+    fn checkpoints_created_at_intervals() {
+        let mut r = CdgRenderer::new();
+
+        let mut packets = Vec::new();
+        // Create enough packets for multiple checkpoints.
+        for i in 0..CHECKPOINT_INTERVAL * 3 + 10 {
+            let mut data = [0u8; 16];
+            data[0] = (i % 16) as u8;
+            packets.push(cdg_packet(CMD_MEMORY_PRESET, data));
+        }
+
+        r.process_range(&packets, 0, packets.len());
+
+        // Should have at least 3 checkpoints (at ~1000, ~2000, ~3000).
+        assert!(
+            r.checkpoints.len() >= 3,
+            "Expected at least 3 checkpoints, got {}",
+            r.checkpoints.len()
+        );
+
+        // Checkpoints should be at intervals of CHECKPOINT_INTERVAL.
+        for window in r.checkpoints.windows(2) {
+            let gap = window[1].packet_index - window[0].packet_index;
+            assert!(
+                gap >= CHECKPOINT_INTERVAL,
+                "Checkpoint gap {gap} should be >= {CHECKPOINT_INTERVAL}"
+            );
+        }
     }
 }

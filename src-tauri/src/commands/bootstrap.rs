@@ -91,6 +91,89 @@ pub fn ensure_model_ready(status: &Arc<Mutex<ModelBootstrapStatusSnapshot>>) -> 
     }
 }
 
+pub fn ensure_active_model_ready_or_install_blocking(
+    app_data_dir: &Path,
+    status: &Arc<Mutex<ModelBootstrapStatusSnapshot>>,
+    emit: &mut impl FnMut(&'static str, ModelBootstrapStatusSnapshot),
+) -> CommandResult<std::path::PathBuf> {
+    let active_variant = config::load_config(app_data_dir)
+        .ok()
+        .flatten()
+        .map(|config| config.effective_model_variant())
+        .unwrap_or_default();
+    let descriptor = separator::bootstrap::descriptor_for(active_variant);
+    let managed_path = separator::bootstrap::managed_model_path_for(app_data_dir, descriptor);
+    let dev_path = separator::model::default_model_path_for_filename(descriptor.filename);
+
+    match separator::bootstrap::resolve_model_installation(
+        &managed_path,
+        &dev_path,
+        descriptor.sha256,
+    )
+    .map_err(|error| internal_error(format!("failed to inspect model status: {error}")))?
+    {
+        separator::bootstrap::ModelInstallationResolution::Ready(resolved) => {
+            let snapshot = ready_status(resolved.path.display().to_string());
+            if let Ok(mut current) = status.lock() {
+                *current = snapshot.clone();
+            }
+            emit(MODEL_BOOTSTRAP_READY_EVENT, snapshot);
+            Ok(resolved.path)
+        }
+        separator::bootstrap::ModelInstallationResolution::LegacyManaged(_) => {
+            Err(model_bootstrap_error(
+                "installed model does not match the pinned release; open Settings to delete it and download the update",
+            ))
+        }
+        separator::bootstrap::ModelInstallationResolution::Absent => {
+            let initial = downloading_status(managed_path.display().to_string(), 0, None);
+            if let Ok(mut current) = status.lock() {
+                *current = initial.clone();
+            }
+            emit(MODEL_BOOTSTRAP_PROGRESS_EVENT, initial);
+
+            let progress_path = managed_path.display().to_string();
+            let download_result = separator::bootstrap::download_and_install_model(
+                &managed_path,
+                descriptor.download_url,
+                descriptor.sha256,
+                |downloaded_bytes, total_bytes| {
+                    let snapshot = downloading_status(
+                        progress_path.clone(),
+                        downloaded_bytes,
+                        total_bytes,
+                    );
+                    if let Ok(mut current) = status.lock() {
+                        *current = snapshot.clone();
+                    }
+                    emit(MODEL_BOOTSTRAP_PROGRESS_EVENT, snapshot);
+                },
+            );
+
+            match download_result {
+                Ok(()) => {
+                    let snapshot = ready_status(managed_path.display().to_string());
+                    if let Ok(mut current) = status.lock() {
+                        *current = snapshot.clone();
+                    }
+                    emit(MODEL_BOOTSTRAP_READY_EVENT, snapshot);
+                    Ok(managed_path)
+                }
+                Err(error) => {
+                    let command_error = model_bootstrap_error(error.to_string());
+                    let snapshot =
+                        failed_status(managed_path.display().to_string(), command_error.clone());
+                    if let Ok(mut current) = status.lock() {
+                        *current = snapshot.clone();
+                    }
+                    emit(MODEL_BOOTSTRAP_ERROR_EVENT, snapshot);
+                    Err(command_error)
+                }
+            }
+        }
+    }
+}
+
 pub fn sync_active_model_bootstrap_status(
     app_data_dir: &Path,
     status: &Arc<Mutex<ModelBootstrapStatusSnapshot>>,
@@ -234,6 +317,11 @@ pub fn download_model(
     app_handle: AppHandle,
     variant: String,
 ) -> CommandResult<ModelBootstrapStatusSnapshot> {
+    // B3: Block model download when runtime is missing.
+    crate::commands::runtime_bootstrap::ensure_runtime_ready(
+        &state.shell.runtime_bootstrap_status,
+    )?;
+
     let model_variant = ModelVariant::parse(&variant)
         .ok_or_else(|| internal_error(format!("invalid model variant: {variant}")))?;
     let descriptor = separator::bootstrap::descriptor_for(model_variant);

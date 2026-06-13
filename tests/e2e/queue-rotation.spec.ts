@@ -1,7 +1,7 @@
-import { test, expect } from "./fixtures/base-test";
+import { expect, objectRecord, test } from "./fixtures/base-test";
 
 /**
- * Queue and rotation management E2E tests.
+ * Queue and rotation management UI smoke tests.
  *
  * Verifies queue panel interactions (add/remove/reorder songs) and the
  * rotation (singer rotation) feature that sits inside the queue panel.
@@ -40,17 +40,29 @@ test.describe("Queue panel", () => {
     });
   });
 
-  test("right-clicking a song offers queue actions", async ({ page }) => {
+  test("right-clicking a song exposes native queue actions that update the queue", async ({
+    page,
+    tauriMock,
+  }) => {
     // Right-click on a song in the library to get the context menu
     await page.getByText("Hotel California").click({ button: "right" });
 
-    // Context menu should appear with queue-related options
-    await expect(page.getByText(/add to queue|play next/i).first()).toBeVisible(
-      { timeout: 5000 },
-    );
+    await expect
+      .poll(async () => tauriMock.getLastNativeMenu())
+      .toMatchObject({
+        items: expect.arrayContaining([
+          expect.objectContaining({ label: "Play Next" }),
+          expect.objectContaining({ label: "Add to Queue" }),
+        ]),
+      });
 
-    // Dismiss context menu
-    await page.keyboard.press("Escape");
+    await tauriMock.clickNativeMenuItem("Add to Queue");
+
+    const queueButton = page.getByRole("button", { name: /queue/i });
+    await queueButton.click();
+    await expect(
+      page.getByTestId("queue-panel").getByText("Hotel California"),
+    ).toBeVisible({ timeout: 5000 });
   });
 });
 
@@ -71,7 +83,10 @@ test.describe("Rotation / singer management", () => {
     await expect(page.getByText(/add singer/i).first()).toBeVisible();
   });
 
-  test("add singer input can be opened", async ({ page }) => {
+  test("add singer input persists through the rotation IPC state", async ({
+    page,
+    tauriMock,
+  }) => {
     await page.goto("/");
     await expect(page.getByText("Bohemian Rhapsody")).toBeVisible();
 
@@ -97,5 +112,20 @@ test.describe("Rotation / singer management", () => {
 
     // Singer tag should appear
     await expect(page.getByText("Alice")).toBeVisible();
+
+    await expect
+      .poll(async () =>
+        (await tauriMock.getInvokeCalls()).some((call) => {
+          const args = objectRecord(call.args);
+          const rotation = objectRecord(args?.rotation);
+          const singers = rotation?.singer_names;
+          return (
+            call.cmd === "set_rotation_state" &&
+            Array.isArray(singers) &&
+            singers.includes("Alice")
+          );
+        }),
+      )
+      .toBe(true);
   });
 });

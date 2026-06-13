@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { SongListItem } from "./SongListItem";
 import { EmptyLibrary } from "./EmptyLibrary";
@@ -28,18 +28,39 @@ export function SongList() {
     [getPlaylistSongs],
   );
 
+  // F8: Cancel stale async playlist loads when the active playlist changes
+  // rapidly. Without this guard, a slow response from playlist A can overwrite
+  // the song list after the user has already switched to playlist B.
   useEffect(() => {
     if (activePlaylistId) {
+      let cancelled = false;
       void loadPlaylistSongsFromLibrary(activePlaylistId, songs).then(
-        setPlaylistSongs,
+        (result) => {
+          if (!cancelled) {
+            setPlaylistSongs(result);
+          }
+        },
       );
+      return () => {
+        cancelled = true;
+      };
     }
   }, [activePlaylistId, songs, loadPlaylistSongsFromLibrary, playlistSongSets]);
+
+  const separatedSongs = useMemo(
+    () =>
+      filter === "separated"
+        ? songs.filter(
+            (song) => separationStatuses[song.hash]?.state === "completed",
+          )
+        : null,
+    [filter, songs, separationStatuses],
+  );
 
   const displaySongs = activePlaylistId
     ? playlistSongs
     : filter === "separated"
-      ? songs.filter((s) => separationStatuses[s.hash]?.state === "completed")
+      ? (separatedSongs ?? songs)
       : songs;
 
   const orderedHashes = displaySongs.map((s) => s.hash);
@@ -61,6 +82,7 @@ export function SongList() {
     <div
       ref={scrollRef}
       className="flex-1 overflow-y-auto"
+      data-testid="song-list"
       data-song-list-visual-variant="unified"
     >
       <div

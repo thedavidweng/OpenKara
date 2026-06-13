@@ -114,6 +114,14 @@ describe("library", () => {
     expect(returned).toBe(result);
   });
 
+  test("getCoverArt invokes get_cover_art", async () => {
+    const result = [0xff, 0xd8, 0xff, 0xe0];
+    mockInvoke.mockResolvedValueOnce(result);
+    const returned = await library.getCoverArt("abc");
+    expect(mockInvoke).toHaveBeenCalledWith("get_cover_art", { hash: "abc" });
+    expect(returned).toBe(result);
+  });
+
   test("updateSongMetadata invokes update_song_metadata", async () => {
     const result = { hash: "abc", title: "New", artist: "Art" };
     mockInvoke.mockResolvedValueOnce(result);

@@ -62,9 +62,12 @@ pub struct SeparationErrorEvent {
 
 struct SeparationExecutionContext {
     library_root: crate::library_root::LibraryRoot,
-    model_path: PathBuf,
     model_variant: String,
     ep_preference: ExecutionProviderPreference,
+    app_data_dir: PathBuf,
+    model_bootstrap_status: Arc<Mutex<crate::commands::bootstrap::ModelBootstrapStatusSnapshot>>,
+    runtime_bootstrap_status:
+        Arc<Mutex<crate::commands::runtime_bootstrap::RuntimeBootstrapStatusSnapshot>>,
     statuses: Arc<Mutex<HashMap<String, SeparationStatusSnapshot>>>,
     model_cache: Arc<Mutex<ModelCache<LoadedModel>>>,
 }
@@ -75,7 +78,6 @@ pub fn separate(
     app_handle: AppHandle,
     song_id: String,
 ) -> CommandResult<SeparationStatusSnapshot> {
-    crate::commands::bootstrap::ensure_model_ready(&state.shell.model_bootstrap_status)?;
     ensure_song_can_be_separated(&state, &song_id)?;
 
     let initial_status =
@@ -100,7 +102,6 @@ pub fn upgrade_to_four_stem(
     app_handle: AppHandle,
     song_id: String,
 ) -> CommandResult<SeparationStatusSnapshot> {
-    crate::commands::bootstrap::ensure_model_ready(&state.shell.model_bootstrap_status)?;
     ensure_song_can_be_separated(&state, &song_id)?;
 
     // Check if song already has 4-stem separation cached.
@@ -144,7 +145,6 @@ pub fn re_separate(
     song_id: String,
     stem_mode: StemMode,
 ) -> CommandResult<SeparationStatusSnapshot> {
-    crate::commands::bootstrap::ensure_model_ready(&state.shell.model_bootstrap_status)?;
     ensure_song_can_be_separated(&state, &song_id)?;
 
     // Clear existing cache entry and stem files before relaunching separation.
@@ -184,9 +184,11 @@ fn spawn_separation_job(
 ) {
     let SeparationExecutionContext {
         library_root,
-        model_path,
         model_variant,
         ep_preference,
+        app_data_dir,
+        model_bootstrap_status,
+        runtime_bootstrap_status,
         statuses,
         model_cache,
     } = execution_context;
@@ -196,11 +198,34 @@ fn spawn_separation_job(
 
     tauri::async_runtime::spawn(async move {
         let worker_library_root = library_root.clone();
-        let worker_model_path = model_path.clone();
         let worker_song_id = song_id.clone();
+        let prerequisite_app_handle = app_handle.clone();
+        let prerequisite_app_data_dir = app_data_dir.clone();
+        let prerequisite_model_status = Arc::clone(&model_bootstrap_status);
+        let prerequisite_runtime_status = Arc::clone(&runtime_bootstrap_status);
 
-        let result = tauri::async_runtime::spawn_blocking(move || {
-            let connection = cache::open_database(&worker_library_root.database_path())?;
+        let result = tauri::async_runtime::spawn_blocking(move || -> CommandResult<_> {
+            let mut emit_runtime = |event, snapshot| {
+                let _ = prerequisite_app_handle.emit(event, snapshot);
+            };
+            crate::commands::runtime_bootstrap::ensure_runtime_ready_or_install_blocking(
+                &prerequisite_app_data_dir,
+                &prerequisite_runtime_status,
+                &mut emit_runtime,
+            )?;
+
+            let mut emit_model = |event, snapshot| {
+                let _ = prerequisite_app_handle.emit(event, snapshot);
+            };
+            let worker_model_path =
+                crate::commands::bootstrap::ensure_active_model_ready_or_install_blocking(
+                    &prerequisite_app_data_dir,
+                    &prerequisite_model_status,
+                    &mut emit_model,
+                )?;
+
+            let connection = cache::open_database(&worker_library_root.database_path())
+                .map_err(|error| SeparationError::Failed(error.to_string()))?;
             separator::job::separate_song_into_cache(
                 &connection,
                 &worker_library_root,
@@ -222,15 +247,13 @@ fn spawn_separation_job(
                     );
                 },
             )
+            .map_err(|error| SeparationError::Failed(error.to_string()).into())
         })
         .await;
 
         let final_status = match result {
             Ok(Ok(artifacts)) => status_from_job_result(&song_id, Ok(artifacts)),
-            Ok(Err(error)) => status_from_job_result(
-                &song_id,
-                Err(SeparationError::Failed(error.to_string()).into()),
-            ),
+            Ok(Err(error)) => status_from_job_result(&song_id, Err(error)),
             Err(error) => status_from_job_result(
                 &song_id,
                 Err(SeparationError::Failed(error.to_string()).into()),
@@ -296,9 +319,11 @@ fn build_execution_context(
 
     Ok(SeparationExecutionContext {
         library_root: state.library_root()?,
-        model_path: state.resolve_model_path()?,
         model_variant,
         ep_preference,
+        app_data_dir: state.shell.app_data_dir.clone(),
+        model_bootstrap_status: Arc::clone(&state.shell.model_bootstrap_status),
+        runtime_bootstrap_status: Arc::clone(&state.shell.runtime_bootstrap_status),
         statuses: Arc::clone(&state.separation.separation_statuses),
         model_cache: Arc::clone(&state.separation.separator_model_cache),
     })
@@ -681,6 +706,7 @@ mod tests {
             album: None,
             duration_ms: 1_000,
             cover_art: None,
+            has_cover_art: false,
             imported_at: 1,
             original_ext: Some("mp3".to_owned()),
         };

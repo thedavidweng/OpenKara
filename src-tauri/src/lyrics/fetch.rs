@@ -25,6 +25,8 @@ pub enum LyricsSource {
     Manual,
     ManualTtml,
     ManualLys,
+    /// Internal negative-cache marker — not exposed via IPC.
+    Absent,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,16 +84,11 @@ pub fn fetch_lyrics_for_song(
     song: &Song,
     resolved_audio_path: &Path,
 ) -> Result<Option<LyricsFetchResult>> {
-    if let Some(query) = lookup_query_from_song(song) {
-        if let Ok(Some(lyrics)) = fetch_online_timed_lyrics(providers, &query) {
-            return Ok(Some(lyrics));
-        }
-    }
-
     if song.is_media_g_zip() {
         return Ok(None);
     }
 
+    // Local-first: embedded and sidecar lyrics must not wait on network timeouts.
     if let Some(embedded_lyrics) = read_embedded_lyrics(resolved_audio_path)? {
         return Ok(Some(LyricsFetchResult {
             source: LyricsSource::Embedded,
@@ -104,6 +101,12 @@ pub fn fetch_lyrics_for_song(
             source: sidecar_source,
             raw_lrc: sidecar_lyrics,
         }));
+    }
+
+    if let Some(query) = lookup_query_from_song(song) {
+        if let Ok(Some(lyrics)) = fetch_online_timed_lyrics(providers, &query) {
+            return Ok(Some(lyrics));
+        }
     }
 
     Ok(None)
