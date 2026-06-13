@@ -10,7 +10,7 @@ import { useLibraryStore } from "@/stores/library-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useSettingsStore } from "@/stores/settings-store";
 
-export const APP_MENU_ACTION_EVENT = "openkara://menu-action";
+const APP_MENU_ACTION_EVENT = "openkara://menu-action";
 
 export type AppMenuAction =
   | "import-files"

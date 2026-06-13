@@ -9,7 +9,7 @@
  *   spring.update(dtSeconds);
  *   const value = spring.getPosition();
  */
-export interface SpringConfig {
+interface SpringConfig {
   stiffness: number; // Spring constant (higher = snappier). Default: 180
   damping: number; // Damping ratio (higher = less bounce). Default: 12
   mass: number; // Mass (higher = slower). Default: 1

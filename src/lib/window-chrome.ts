@@ -1,7 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ShortcutPlatform } from "@/lib/app-shortcuts";
 
-export type WindowChromeVariant = "mac" | "desktop";
+type WindowChromeVariant = "mac" | "desktop";
 export type ResizeDirection =
   | "East"
   | "North"
@@ -12,7 +12,7 @@ export type ResizeDirection =
   | "SouthWest"
   | "West";
 
-export interface DragRegionPointerLike {
+interface DragRegionPointerLike {
   buttons: number;
   detail: number;
 }

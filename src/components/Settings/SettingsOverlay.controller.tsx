@@ -21,7 +21,7 @@ import {
   type SettingsOverlayStateControls,
 } from "./SettingsOverlay.state";
 
-export interface SettingsOverlayProviderProps {
+interface SettingsOverlayProviderProps {
   children: ReactNode;
   dependencies?: Partial<SettingsOverlayControllerDependencies>;
   initialSnapshot?: SettingsOverlaySnapshot;

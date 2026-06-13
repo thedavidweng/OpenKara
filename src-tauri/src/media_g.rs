@@ -30,18 +30,14 @@ struct ArchiveEntry {
     extension: String,
 }
 
-pub fn is_media_g_container(value: Option<&str>) -> bool {
-    matches!(value, Some(MEDIA_G_PAIRED | MEDIA_G_ZIP))
-}
-
-pub fn is_audio_extension(ext: &str) -> bool {
+fn is_audio_extension(ext: &str) -> bool {
     matches!(
         ext.to_ascii_lowercase().as_str(),
         "mp3" | "flac" | "wav" | "ogg" | "m4a" | "aac" | "wma"
     )
 }
 
-pub fn is_cdg_extension(ext: &str) -> bool {
+fn is_cdg_extension(ext: &str) -> bool {
     ext.eq_ignore_ascii_case("cdg")
 }
 

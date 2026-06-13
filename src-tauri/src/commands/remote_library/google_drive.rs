@@ -1075,40 +1075,6 @@ pub(crate) fn google_drive_delete_entry(
     }
 }
 
-#[allow(dead_code)]
-pub(crate) fn delete_relative_path_from_remote(
-    app_data_dir: &Path,
-    library: &RegisteredLibrary,
-    relative_path: &str,
-) -> CommandResult<()> {
-    let mut secret = load_google_drive_secret(app_data_dir, library)?;
-    let root_folder_id = library.remote_root_locator().ok_or_else(|| {
-        CommandError::from(LibraryError::Internal(
-            "remote repository is missing a remote locator".to_owned(),
-        ))
-    })?;
-    let Some(entry) =
-        google_drive_find_relative_entry(app_data_dir, &mut secret, root_folder_id, relative_path)?
-    else {
-        return Ok(());
-    };
-    google_drive_delete_entry(app_data_dir, &mut secret, &entry.id)
-}
-
-#[allow(dead_code)]
-pub(crate) fn delete_remote_root(
-    app_data_dir: &Path,
-    library: &RegisteredLibrary,
-) -> CommandResult<()> {
-    let mut secret = load_google_drive_secret(app_data_dir, library)?;
-    let root_folder_id = library.remote_root_locator().ok_or_else(|| {
-        CommandError::from(LibraryError::Internal(
-            "remote repository is missing a remote locator".to_owned(),
-        ))
-    })?;
-    google_drive_delete_entry(app_data_dir, &mut secret, root_folder_id)
-}
-
 // --- RemoteProvider implementation ---
 
 pub(crate) struct GoogleDriveProvider<'a> {
