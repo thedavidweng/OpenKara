@@ -82,7 +82,7 @@ These actions are available from:
 - If the deleted song is currently playing, playback continues until the track ends or the user skips.
 - After the track ends, the deleted song does **not** auto-advance (it has no file to load), and playback transitions to idle.
 - If the deleted song is queued but not playing, it remains in the queue listing but will fail to load when auto-advanced. The error is surfaced as a toast: "Song not found."
-- The queue is **not** persisted across app restarts (intentional design choice for v0.8.x — may change in future).
+- The queue is **not** persisted across app restarts (intentional design choice — may change in future).
 
 ## Keyboard shortcuts
 

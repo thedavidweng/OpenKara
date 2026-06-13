@@ -3,7 +3,7 @@
 ## Release Flow
 
 1. **Trigger**: Go to GitHub Actions → **Release** workflow → **Run workflow**
-2. **Input**: Enter the version number (e.g. `0.8.1`) — do not include the `v` prefix
+2. **Input**: Enter the version number (e.g. `0.9.0`) — do not include the `v` prefix
 3. **Release smoke**: the workflow first downloads ONNX Runtime and the pinned separation model, then runs a real local-audio separation smoke on Linux. Publishing is blocked unless import, playback, and at least one vocal/accompaniment separation pass.
 4. **Build**: CI builds for all 4 platforms (macOS ARM64, macOS x64, Windows, Linux)
 5. **Publish**: GitHub Release is created automatically with DMG, NSIS installer, and AppImage

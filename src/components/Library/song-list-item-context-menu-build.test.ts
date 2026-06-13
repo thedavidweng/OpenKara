@@ -19,7 +19,6 @@ const {
   mockNotifySuccess: vi.fn(),
   mockSongCanBeSeparated: vi.fn().mockReturnValue(false),
   mockSongSupportsInstrumentalFlag: vi.fn().mockReturnValue(false),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   mockBuildSongListContextMenuItems: vi.fn((args: any) => args),
 }));
 

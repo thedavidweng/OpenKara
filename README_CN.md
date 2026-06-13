@@ -131,7 +131,7 @@ OpenKara 使用自定义 ONNX 格式的 [Demucs](https://github.com/adefossez/de
 | -------- | ------------------------------------------------------------------------------------------------------- | ---------------------------- |
 | 桌面框架 | [Tauri 2](https://github.com/tauri-apps/tauri)                                                          | Rust 后端 + 系统 WebView     |
 | 前端     | [React](https://github.com/facebook/react) 19 + [TypeScript](https://github.com/microsoft/TypeScript) 5 | UI 组件                      |
-| 构建工具 | [Vite](https://github.com/vitejs/vite) 7                                                                | 开发服务器与生产构建         |
+| 构建工具 | [Vite](https://github.com/vitejs/vite) 8                                                                | 开发服务器与生产构建         |
 | 样式     | [Tailwind CSS](https://github.com/tailwindlabs/tailwindcss) 4                                           | 原子化 CSS                   |
 | 状态管理 | [Zustand](https://github.com/pmndrs/zustand)                                                            | 轻量全局状态                 |
 | 音频解码 | [symphonia](https://github.com/pdeljanov/Symphonia)                                                     | 纯 Rust 解码器               |
@@ -212,7 +212,7 @@ MyKaraokeLibrary/
 - **[GitHub Project](https://github.com/users/thedavidweng/projects/2/views/1)** — 未来事项与优先级
 - **[技术路线图](./docs/references/architecture/roadmap.md)** — 技术选型、契约与风险
 
-**当前应用版本（源码）：** 与 `package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json` 一致，截至文档更新为 **v0.8.1**。
+**当前应用版本（源码）：** 与 `package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json` 一致，截至文档更新为 **v0.9.0**。
 
 ## 开发指南
 
@@ -238,8 +238,8 @@ pnpm tauri dev               # 启动开发服务器（支持热更新）
 
 ```bash
 cd src-tauri && cargo test -q   # 后端测试（175+；CI 行为见 AGENTS.md）
-pnpm lint                    # ESLint 检查
-pnpm format                  # Prettier 格式检查
+pnpm lint                    # oxlint 检查
+pnpm format                  # oxfmt 格式检查
 ```
 
 ### 构建
@@ -251,7 +251,7 @@ pnpm tauri build             # 生产构建，生成平台特定安装包
 ### CI/CD
 
 - 推送到 `main` 会触发 CI 流程（[`.github/workflows/ci.yml`](./.github/workflows/ci.yml)）— 在 macOS、Windows、Linux 上运行 lint、构建和测试。
-- 推送版本标签（如 `v0.8.1`）会触发发布流程（[`.github/workflows/release.yml`](./.github/workflows/release.yml)）— 构建并上传二进制文件到 GitHub Release。
+- 推送版本标签（如 `v0.9.0`）会触发发布流程（[`.github/workflows/release.yml`](./.github/workflows/release.yml)）— 构建并上传二进制文件到 GitHub Release。
 
 ## 文档
 

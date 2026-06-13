@@ -65,7 +65,7 @@ export function SongList() {
 
   const orderedHashes = displaySongs.map((s) => s.hash);
 
-  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual returns non-memoizable functions by design
+  // TanStack Virtual returns non-memoizable functions by design
   const virtualizer = useVirtualizer({
     count: displaySongs.length,
     getScrollElement: () => scrollRef.current,

@@ -10,7 +10,7 @@ description: CI environment constraints, CodeQL patterns, and Cursor Cloud notes
 - Every workflow file must have an explicit top-level `permissions:` block (typically `contents: read`).
 - Keep `actions/checkout` and `actions/setup-node` on supported major versions.
 - Preserve Linux native packages required by Tauri and audio builds when editing CI.
-- If all Verify jobs fail quickly on every OS, check whether they all failed at the same step before debugging platform-specific causes. If the shared failure step is formatting, assume a repo-wide Prettier issue first.
+- If all Verify jobs fail quickly on every OS, check whether they all failed at the same step before debugging platform-specific causes. If the shared failure step is formatting, assume a repo-wide formatting issue first.
 
 ## Windows CI: ONNX Runtime
 
