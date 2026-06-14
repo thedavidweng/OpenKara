@@ -3,5 +3,6 @@
   "entry": ["src-tauri/**/*.rs"],
   "project": ["src/**/*.{ts,tsx}"],
   "exclude": ["exports", "types"],
-  "ignoreDependencies": ["tailwindcss", "git-cliff"]
+  "ignoreDependencies": ["tailwindcss"],
+  "ignoreBinaries": ["git-cliff"]
 }
