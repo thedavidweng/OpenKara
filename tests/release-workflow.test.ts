@@ -25,7 +25,7 @@ describe("release workflow", () => {
     expect(releaseWorkflow).toContain("separation_failed");
     expect(releaseWorkflow).toContain("separation_skipped");
     expect(releaseWorkflow).toMatch(
-      /publish:\n(?: {2}.+\n)* {4}needs: release-separation-smoke/,
+      /publish:\n(?: {2}.+\n)* {4}needs:.*release-separation-smoke/,
     );
 
     expect(ciWorkflow).not.toContain("Release separation smoke");

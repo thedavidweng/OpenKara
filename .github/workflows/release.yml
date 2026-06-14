@@ -45,12 +45,15 @@ jobs:
 
       - name: Extract version
         id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
+          if [ "${EVENT_NAME}" = "push" ]; then
             tag="${GITHUB_REF#refs/tags/}"
             version="${tag#v}"
           else
-            version="${{ github.event.inputs.version }}"
+            version="${INPUT_VERSION}"
             tag="v${version}"
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
@@ -58,15 +61,18 @@ jobs:
 
       - name: Generate release notes with git-cliff
         id: notes
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          INPUT_NOTES: ${{ github.event.inputs.notes }}
         run: |
-          npx git-cliff --tag "${{ steps.version.outputs.tag }}" --strip header -o RELEASE_NOTES.md
+          npx git-cliff --tag "${RELEASE_TAG}" --strip header -o RELEASE_NOTES.md
           {
             echo 'body<<GIT_CLIFF_EOF'
             cat RELEASE_NOTES.md
             echo ""
-            if [ -n "${{ github.event.inputs.notes }}" ]; then
+            if [ -n "${INPUT_NOTES}" ]; then
               echo "---"
-              echo "${{ github.event.inputs.notes }}"
+              echo "${INPUT_NOTES}"
             fi
             echo 'GIT_CLIFF_EOF'
           } >> "$GITHUB_OUTPUT"
@@ -285,8 +291,11 @@ jobs:
           key: onnxruntime-${{ matrix.ort_target }}-${{ hashFiles('scripts/prepare-onnx-runtime.mjs') }}
 
       - name: Prepare ONNX Runtime
+        env:
+          ORT_TARGET: ${{ matrix.ort_target }}
+        shell: bash
         run: |
-          node scripts/prepare-onnx-runtime.mjs --target "${{ matrix.ort_target }}"
+          node scripts/prepare-onnx-runtime.mjs --target "${ORT_TARGET}"
 
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
@@ -321,11 +330,11 @@ jobs:
       - name: Download release assets and generate SHA256SUMS
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
         run: |
           set -euo pipefail
-          tag="${{ needs.prepare-release.outputs.tag }}"
           mkdir -p artifacts && cd artifacts
-          gh release download "${tag}" --pattern "OpenKara_*" --clobber
+          gh release download "${RELEASE_TAG}" --pattern "OpenKara_*" --clobber
           files=(OpenKara_*)
           if [ ${#files[@]} -eq 0 ]; then
             echo "No release assets found to checksum" >&2
@@ -333,7 +342,7 @@ jobs:
           fi
           sha256sum "${files[@]}" > SHA256SUMS
           cat SHA256SUMS
-          gh release upload "${tag}" SHA256SUMS --clobber
+          gh release upload "${RELEASE_TAG}" SHA256SUMS --clobber
 
   update-changelog:
     name: Update CHANGELOG
@@ -347,15 +356,20 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           ref: main
-          persist-credentials: true
+          persist-credentials: false
 
       - name: Generate CHANGELOG
-        run: npx git-cliff --tag "${{ needs.prepare-release.outputs.tag }}" -o CHANGELOG.md
+        env:
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+        run: npx git-cliff --tag "${RELEASE_TAG}" -o CHANGELOG.md
 
       - name: Format CHANGELOG
         run: npx oxfmt CHANGELOG.md
 
-      - name: Commit CHANGELOG
+      - name: Commit and push CHANGELOG
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -364,7 +378,8 @@ jobs:
             echo "CHANGELOG unchanged"
             exit 0
           fi
-          git commit -m "docs: update CHANGELOG for ${{ needs.prepare-release.outputs.tag }}"
+          git commit -m "docs: update CHANGELOG for ${RELEASE_TAG}"
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push
 
   prepare-distribution-manifests:
@@ -382,6 +397,27 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
+
+      - name: Ensure release source tag exists
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v${RELEASE_VERSION}"
+          git fetch --tags origin
+          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            tagged_sha="$(git rev-list -n 1 "${tag}")"
+            if [ "${tagged_sha}" != "${GITHUB_SHA}" ]; then
+              echo "::error::${tag} already points at ${tagged_sha}, expected ${GITHUB_SHA}."
+              exit 1
+            fi
+            exit 0
+          fi
+          git tag "${tag}" "${GITHUB_SHA}"
+          auth_header="$(printf 'x-access-token:%s' "${GITHUB_TOKEN}" | base64 -w0)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
+            push origin "refs/tags/${tag}"
 
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
