@@ -26,9 +26,6 @@ pub struct SeparationResult {
 /// Item 3: Takes `&LoadedModel` (not `&mut`) so the model cache lock can be
 /// released before calling this function. The ONNX session is thread-safe and
 /// only requires shared access for `session.run()`.
-/// Item 3: Takes `&LoadedModel` (not `&mut`) so the model cache lock can be
-/// released before calling this function. The ONNX session is thread-safe and
-/// only requires shared access for `session.run()`.
 ///
 /// Item 4: Takes ownership of `decoded_audio` so the original buffer is
 /// consumed during normalization, preventing two full-song PCM copies.
