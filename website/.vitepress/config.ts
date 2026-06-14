@@ -37,6 +37,13 @@ export default defineConfig({
             text: "Download",
             link: "https://github.com/thedavidweng/OpenKara/releases",
           },
+          {
+            text: "Legal",
+            items: [
+              { text: "Privacy Policy", link: "/privacy" },
+              { text: "Terms of Service", link: "/terms" },
+            ],
+          },
         ],
       },
     },
@@ -53,6 +60,13 @@ export default defineConfig({
             text: "下载",
             link: "https://github.com/thedavidweng/OpenKara/releases",
           },
+          {
+            text: "法律条款",
+            items: [
+              { text: "隐私政策", link: "/zh/privacy" },
+              { text: "服务条款", link: "/zh/terms" },
+            ],
+          },
         ],
       },
     },
@@ -68,6 +82,10 @@ export default defineConfig({
     ],
     footer: {
       message: "Licensed under Apache 2.0",
+    },
+    editLink: {
+      pattern:
+        "https://github.com/thedavidweng/OpenKara/edit/main/website/:path",
     },
   },
 });
