@@ -78,6 +78,12 @@
 brew install thedavidweng/tap/openkara
 ```
 
+**Windows (winget)：**
+
+```bash
+winget install thedavidweng.OpenKara
+```
+
 **macOS Gatekeeper 提示：** 如果 macOS 提示应用已损坏或无法打开，请在终端运行：
 
 ```bash
