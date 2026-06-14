@@ -43,13 +43,13 @@ features:
 
 ## The App
 
-<YouTubeLink href="https://youtu.be/OznVDmp9igk">
+<a href="https://youtu.be/OznVDmp9igk" target="_blank" rel="noopener noreferrer">
   <img
     src="https://github.com/user-attachments/assets/33fb3c92-460c-44fb-abf7-19d8ab0977b1"
     alt="OpenKara application interface"
     style="border-radius: 12px; width: 100%"
   />
-</YouTubeLink>
+</a>
 
 ## Import Your First Song
 
