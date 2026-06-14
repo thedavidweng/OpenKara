@@ -318,36 +318,22 @@ jobs:
     permissions:
       contents: write # Needed to attach SHA256SUMS to the draft GitHub Release.
     steps:
-      - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
-        with:
-          persist-credentials: false
-
-      - name: Download all release artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          pattern: "OpenKara*"
-          merge-multiple: true
-          path: artifacts
-
-      - name: Generate SHA256SUMS file
+      - name: Download release assets and generate SHA256SUMS
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd artifacts
-          shopt -s nullglob
-          files=(*)
+          set -euo pipefail
+          tag="${{ needs.prepare-release.outputs.tag }}"
+          mkdir -p artifacts && cd artifacts
+          gh release download "${tag}" --pattern "OpenKara_*" --clobber
+          files=(OpenKara_*)
           if [ ${#files[@]} -eq 0 ]; then
-            echo "No artifacts found to checksum" >&2
+            echo "No release assets found to checksum" >&2
             exit 1
           fi
           sha256sum "${files[@]}" > SHA256SUMS
           cat SHA256SUMS
-
-      - name: Attach SHA256SUMS to release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          tag="${{ needs.prepare-release.outputs.tag }}"
-          gh release upload "${tag}" artifacts/SHA256SUMS --clobber
+          gh release upload "${tag}" SHA256SUMS --clobber
 
   update-changelog:
     name: Update CHANGELOG
