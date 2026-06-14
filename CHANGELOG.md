@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [0.9.0] - 2026-06-14
 
 
-### Style
+### 📝 Documentation
 
-- Format liquid-glass script with oxfmt
+- Update CHANGELOG for v0.9.0
 
