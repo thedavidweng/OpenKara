@@ -352,6 +352,9 @@ jobs:
       - name: Generate CHANGELOG
         run: npx git-cliff --tag "${{ needs.prepare-release.outputs.tag }}" -o CHANGELOG.md
 
+      - name: Format CHANGELOG
+        run: npx oxfmt CHANGELOG.md
+
       - name: Commit CHANGELOG
         run: |
           git config user.name "github-actions[bot]"
