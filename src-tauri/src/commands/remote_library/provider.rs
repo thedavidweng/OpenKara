@@ -1,6 +1,6 @@
 use crate::audio::remote_source::HttpFetcher;
 use crate::commands::error::{CommandError, CommandResult};
-use crate::config::RegisteredLibrary;
+use crate::config::{RegisteredLibrary, RemoteLibraryConnectionConfig, RemoteLibraryProvider};
 use crate::library::error::LibraryError;
 use std::path::Path;
 
@@ -42,6 +42,21 @@ pub(crate) trait RemoteProvider {
     fn get_file_size(&self, _relative_path: &str) -> CommandResult<Option<u64>> {
         Ok(None)
     }
+
+    /// Persist the provider's credentials to disk.
+    fn store_secret(&self) -> CommandResult<()>;
+
+    /// Refresh an existing remote library (verify marker, re-download DB).
+    fn refresh_existing(&self) -> CommandResult<Option<String>>;
+
+    /// Return the connection config for this provider.
+    fn connection_config(&self) -> CommandResult<RemoteLibraryConnectionConfig>;
+
+    /// Format a human-readable remote path for display.
+    fn remote_path_display(&self, display_name: &str) -> String;
+
+    /// Ensure the remote root folder exists and return its locator.
+    fn create_remote_root(&self, display_name: &str) -> CommandResult<String>;
 }
 
 /// Create a `RemoteProvider` implementation for the given library.
@@ -84,5 +99,25 @@ pub(crate) fn create_provider<'a>(
         None => Err(CommandError::from(LibraryError::Internal(
             "the target library is not a remote library".to_owned(),
         ))),
+    }
+}
+
+/// Compute the display string for a remote root path.
+///
+/// Shared helper used by both `RemoteProvider` implementations and session-based
+/// code that doesn't yet have a provider instance.
+pub(crate) fn compute_remote_path_display(
+    provider: RemoteLibraryProvider,
+    remote_root_locator: &str,
+    display_name: &str,
+) -> String {
+    match provider {
+        RemoteLibraryProvider::WebDav => {
+            super::webdav::remote_path_display_from_url(remote_root_locator)
+        }
+        RemoteLibraryProvider::GoogleDrive => {
+            super::google_drive::google_drive_root_display_name(display_name)
+        }
+        RemoteLibraryProvider::Dropbox => remote_root_locator.to_owned(),
     }
 }

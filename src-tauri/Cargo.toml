@@ -3,7 +3,7 @@ name = "openkara"
 version = "0.9.0"
 description = "OpenKara desktop shell"
 authors = ["OpenKara contributors"]
-license = "MIT"
+license = "Apache-2.0"
 edition = "2021"
 default-run = "openkara"
 

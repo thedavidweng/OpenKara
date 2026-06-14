@@ -2,7 +2,7 @@
   "name": "openkara",
   "version": "0.9.0",
   "private": true,
-  "license": "MIT",
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "version:sync": "node scripts/sync-version.mjs",
