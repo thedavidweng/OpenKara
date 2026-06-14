@@ -310,13 +310,19 @@ fn build_file_response(
     };
 
     let mut response = Response::from_data(response_body).with_status_code(status);
-    response.add_header(Header::from_bytes("Content-Type", content_type.as_bytes()).unwrap());
-    response.add_header(Header::from_bytes("Accept-Ranges", "bytes").unwrap());
-    if head_only {
-        let _ = head_only;
-    }
+    response.add_header(
+        Header::from_bytes("Content-Type", content_type.as_bytes())
+            .expect("static ASCII header name is valid"),
+    );
+    response.add_header(
+        Header::from_bytes("Accept-Ranges", "bytes").expect("static ASCII header name is valid"),
+    );
+    let _ = head_only; // HEAD responses share the same headers as GET
     if let Some(content_range) = content_range {
-        response.add_header(Header::from_bytes("Content-Range", content_range.as_bytes()).unwrap());
+        response.add_header(
+            Header::from_bytes("Content-Range", content_range.as_bytes())
+                .expect("Content-Range value is ASCII"),
+        );
     }
 
     Ok(response)
