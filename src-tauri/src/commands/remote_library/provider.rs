@@ -1,6 +1,6 @@
 use crate::audio::remote_source::HttpFetcher;
 use crate::commands::error::{CommandError, CommandResult};
-use crate::config::{RegisteredLibrary, RemoteLibraryConnectionConfig, RemoteLibraryProvider};
+use crate::config::{RegisteredLibrary, RemoteLibraryProvider};
 use crate::library::error::LibraryError;
 use std::path::Path;
 
@@ -43,20 +43,8 @@ pub(crate) trait RemoteProvider {
         Ok(None)
     }
 
-    /// Persist the provider's credentials to disk.
-    fn store_secret(&self) -> CommandResult<()>;
-
     /// Refresh an existing remote library (verify marker, re-download DB).
     fn refresh_existing(&self) -> CommandResult<Option<String>>;
-
-    /// Return the connection config for this provider.
-    fn connection_config(&self) -> CommandResult<RemoteLibraryConnectionConfig>;
-
-    /// Format a human-readable remote path for display.
-    fn remote_path_display(&self, display_name: &str) -> String;
-
-    /// Ensure the remote root folder exists and return its locator.
-    fn create_remote_root(&self, display_name: &str) -> CommandResult<String>;
 }
 
 /// Create a `RemoteProvider` implementation for the given library.

@@ -1,7 +1,7 @@
 use crate::{
     cache,
     commands::error::{CommandError, CommandResult},
-    config::{RegisteredLibrary, RemoteLibraryConnectionConfig},
+    config::RegisteredLibrary,
     library::error::LibraryError,
     library_root::LibraryRoot,
 };
@@ -1090,35 +1090,9 @@ impl RemoteProvider for DropboxProvider<'_> {
         )))
     }
 
-    fn store_secret(&self) -> CommandResult<()> {
-        let secret = self.secret.borrow();
-        store_dropbox_secret(self.app_data_dir, secret.clone())
-    }
-
     fn refresh_existing(&self) -> CommandResult<Option<String>> {
         let secret = self.secret.borrow();
         refresh_existing_dropbox_library(self.app_data_dir, self.library, &secret)
-    }
-
-    fn connection_config(&self) -> CommandResult<RemoteLibraryConnectionConfig> {
-        let secret = self.secret.borrow();
-        Ok(RemoteLibraryConnectionConfig::Dropbox {
-            app_key: secret.app_key.clone(),
-        })
-    }
-
-    fn remote_path_display(&self, _display_name: &str) -> String {
-        self.library
-            .remote_root_locator()
-            .unwrap_or_default()
-            .to_owned()
-    }
-
-    fn create_remote_root(&self, display_name: &str) -> CommandResult<String> {
-        let secret = self.secret.borrow();
-        let root_path = normalize_dropbox_root_path(None, display_name);
-        dropbox_ensure_folder_with_token(&secret.access_token, &root_path)?;
-        Ok(root_path)
     }
 }
 

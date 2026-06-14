@@ -153,6 +153,7 @@ pub fn active_remote_library(app_data_dir: &Path) -> CommandResult<Option<Regist
     Ok(Some(active_library.clone()))
 }
 
+#[allow(dead_code)] // used by mutation::sync_backend in non-test builds
 pub fn sync_active_remote_database_if_needed(app_data_dir: &Path) -> CommandResult<()> {
     let Some(library) = active_remote_library(app_data_dir)? else {
         return Ok(());
@@ -160,6 +161,7 @@ pub fn sync_active_remote_database_if_needed(app_data_dir: &Path) -> CommandResu
     upload_remote_database(app_data_dir, &library)
 }
 
+#[allow(dead_code)] // used by mutation::sync_backend in non-test builds
 pub fn prepare_active_remote_database_for_mutation(app_data_dir: &Path) -> CommandResult<()> {
     let Some(library) = active_remote_library(app_data_dir)? else {
         return Ok(());
