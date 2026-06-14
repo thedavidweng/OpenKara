@@ -73,10 +73,14 @@ features:
 | Windows               | `.exe` 安装包        |
 | Linux                 | `.AppImage` / `.deb` |
 
-macOS 也可使用 Homebrew 安装：
+也可使用包管理器安装：
 
 ```bash
+# macOS (Homebrew)
 brew install thedavidweng/tap/openkara
+
+# Windows (winget)
+winget install thedavidweng.OpenKara
 ```
 
 如果 macOS 首次启动时阻止应用运行：
@@ -87,7 +91,7 @@ xattr -rd com.apple.quarantine /Applications/OpenKara.app
 
 首次启动时，OpenKara 会引导你创建曲库，并在后台下载默认音频模型。
 
-[查看所有下载](https://github.com/thedavidweng/OpenKara/releases){.VPButton.brand}
+[查看所有下载](https://github.com/thedavidweng/OpenKara/releases/latest){.VPButton.brand}
 
 ### 从源码构建
 
