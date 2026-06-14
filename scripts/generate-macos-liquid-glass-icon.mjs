@@ -217,5 +217,7 @@ await rm(stagingDir, { recursive: true, force: true });
 if (compiled.length > 0) {
   console.log(`Compiled macOS Liquid Glass assets: ${compiled.join(", ")}`);
 } else {
-  console.warn("No Liquid Glass assets were produced — continuing without them");
+  console.warn(
+    "No Liquid Glass assets were produced — continuing without them",
+  );
 }
