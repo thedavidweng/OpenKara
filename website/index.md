@@ -74,10 +74,14 @@ Most people only need the download. Build from source only if you want to contri
 | Windows               | `.exe` installer     |
 | Linux                 | `.AppImage` / `.deb` |
 
-Or install with Homebrew on macOS:
+Or install with a package manager:
 
 ```bash
+# macOS (Homebrew)
 brew install thedavidweng/tap/openkara
+
+# Windows (winget)
+winget install thedavidweng.OpenKara
 ```
 
 If macOS blocks the app on first launch:
@@ -88,7 +92,7 @@ xattr -rd com.apple.quarantine /Applications/OpenKara.app
 
 On first launch, OpenKara helps you create a karaoke library and starts downloading the default audio model in the background.
 
-[See all downloads](https://github.com/thedavidweng/OpenKara/releases){.VPButton.brand}
+[See all downloads](https://github.com/thedavidweng/OpenKara/releases/latest){.VPButton.brand}
 
 ### Build from source
 
