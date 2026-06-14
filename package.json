@@ -25,6 +25,9 @@
     "test:e2e": "pnpm test:ui-smoke",
     "test:e2e:ui": "pnpm test:ui-smoke:ui",
     "tauri": "pnpm version:sync && tauri",
+    "docs:dev": "vitepress dev website",
+    "docs:build": "vitepress build website",
+    "docs:preview": "vitepress preview website",
     "changelog": "git cliff -o CHANGELOG.md",
     "changelog:preview": "git cliff --latest"
   },
@@ -61,6 +64,7 @@
     "tailwindcss": "^4.2.4",
     "typescript": "^6.0.3",
     "vite": "^8.0.10",
+    "vitepress": "^1.6.4",
     "vitest": "^4.1.5"
   },
   "engines": {

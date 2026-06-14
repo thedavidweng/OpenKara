@@ -1,0 +1,73 @@
+import { defineConfig } from "vitepress";
+
+export default defineConfig({
+  title: "OpenKara",
+  description: "Turn your music library into a karaoke stage.",
+  head: [
+    [
+      "link",
+      {
+        rel: "icon",
+        type: "image/png",
+        sizes: "96x96",
+        href: "/img/favicon-96x96.png",
+      },
+    ],
+    ["link", { rel: "icon", type: "image/svg+xml", href: "/img/favicon.svg" }],
+    [
+      "link",
+      {
+        rel: "apple-touch-icon",
+        sizes: "180x180",
+        href: "/img/apple-touch-icon.png",
+      },
+    ],
+    ["link", { rel: "manifest", href: "/img/site.webmanifest" }],
+    ["meta", { name: "apple-mobile-web-app-title", content: "OpenKara" }],
+  ],
+  locales: {
+    root: {
+      label: "English",
+      lang: "en",
+      themeConfig: {
+        nav: [
+          { text: "Home", link: "/" },
+          { text: "FAQ", link: "/faq" },
+          {
+            text: "Download",
+            link: "https://github.com/thedavidweng/OpenKara/releases",
+          },
+        ],
+      },
+    },
+    zh: {
+      label: "简体中文",
+      lang: "zh-CN",
+      title: "OpenKara",
+      description: "把你的音乐库变成 Karaoke 舞台。",
+      themeConfig: {
+        nav: [
+          { text: "首页", link: "/zh/" },
+          { text: "常见问题", link: "/zh/faq" },
+          {
+            text: "下载",
+            link: "https://github.com/thedavidweng/OpenKara/releases",
+          },
+        ],
+      },
+    },
+  },
+  vite: {
+    build: {
+      target: "es2022",
+    },
+  },
+  themeConfig: {
+    socialLinks: [
+      { icon: "github", link: "https://github.com/thedavidweng/OpenKara" },
+    ],
+    footer: {
+      message: "Licensed under Apache 2.0",
+    },
+  },
+});
