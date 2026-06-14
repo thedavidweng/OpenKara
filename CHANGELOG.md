@@ -7,7 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-
 ### ♻️ Refactoring
 
 - Modularize root navigation, add web-specific layout, and introduce data source mode toggle with mock scripts.
@@ -34,4 +33,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Add 119 meaningful tests for mappers, format, map, store, and edge functions
 - Fix stage-4-copy to read from correct panel files
-

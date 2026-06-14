@@ -4,7 +4,7 @@ Brief description of the changes.
 
 ## Changes
 
-- 
+-
 
 ## Test plan
 
@@ -12,7 +12,7 @@ Brief description of the changes.
 - [ ] `go vet ./...` clean
 - [ ] `gofmt -l` empty
 - [ ] New/changed commands tested with `--json` output
-- [ ] Safety model respected (dry-run, confirm, read-only) *(if applicable)*
+- [ ] Safety model respected (dry-run, confirm, read-only) _(if applicable)_
 
 ## Related issues
 
