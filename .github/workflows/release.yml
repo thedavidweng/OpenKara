@@ -1,6 +1,8 @@
 name: Release
 
 on:
+  push:
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       version:
@@ -17,17 +19,70 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.event.inputs.version }}
+  group: release-${{ github.ref_name }}
   cancel-in-progress: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  prepare-release:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      release_body: ${{ steps.notes.outputs.body }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Extract version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            tag="${GITHUB_REF#refs/tags/}"
+            version="${tag#v}"
+          else
+            version="${{ github.event.inputs.version }}"
+            tag="v${version}"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes with git-cliff
+        id: notes
+        run: |
+          npx git-cliff --tag "${{ steps.version.outputs.tag }}" --strip header -o RELEASE_NOTES.md
+          {
+            echo 'body<<GIT_CLIFF_EOF'
+            cat RELEASE_NOTES.md
+            echo ""
+            if [ -n "${{ github.event.inputs.notes }}" ]; then
+              echo "---"
+              echo "${{ github.event.inputs.notes }}"
+            fi
+            echo 'GIT_CLIFF_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload release notes
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-notes
+          path: RELEASE_NOTES.md
+          retention-days: 5
+
   release-separation-smoke:
     name: Release separation smoke
     runs-on: ubuntu-22.04
     timeout-minutes: 30
+    needs: prepare-release
 
     steps:
       - name: Checkout
@@ -150,7 +205,7 @@ jobs:
     name: Release (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
-    needs: release-separation-smoke
+    needs: [prepare-release, release-separation-smoke]
     permissions:
       contents: write # Needed by tauri-action to create the draft GitHub Release and upload assets.
     strategy:
@@ -249,11 +304,9 @@ jobs:
           OPENKARA_DROPBOX_APP_KEY: ${{ secrets.OPENKARA_DROPBOX_APP_KEY }}
           OPENKARA_DROPBOX_APP_SECRET: ${{ secrets.OPENKARA_DROPBOX_APP_SECRET }}
         with:
-          tagName: v${{ github.event.inputs.version }}
-          releaseName: OpenKara v${{ github.event.inputs.version }}
-          releaseBody: |
-            See the assets below to download and install this version of OpenKara.
-            ${{ github.event.inputs.notes }}
+          tagName: ${{ needs.prepare-release.outputs.tag }}
+          releaseName: OpenKara v${{ needs.prepare-release.outputs.version }}
+          releaseBody: ${{ needs.prepare-release.outputs.release_body }}
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
@@ -263,7 +316,7 @@ jobs:
     name: Generate SHA256SUMS
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: publish
+    needs: [prepare-release, publish]
     permissions:
       contents: write # Needed to attach SHA256SUMS to the draft GitHub Release.
     steps:
@@ -294,18 +347,46 @@ jobs:
       - name: Attach SHA256SUMS to release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_VERSION: ${{ github.event.inputs.version }}
         run: |
-          tag="v${RELEASE_VERSION}"
+          tag="${{ needs.prepare-release.outputs.tag }}"
           gh release upload "${tag}" artifacts/SHA256SUMS --clobber
+
+  update-changelog:
+    name: Update CHANGELOG
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [prepare-release, publish]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Generate CHANGELOG
+        run: npx git-cliff --tag "${{ needs.prepare-release.outputs.tag }}" -o CHANGELOG.md
+
+      - name: Commit CHANGELOG
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          if git diff --cached --quiet; then
+            echo "CHANGELOG unchanged"
+            exit 0
+          fi
+          git commit -m "docs: update CHANGELOG for ${{ needs.prepare-release.outputs.tag }}"
+          git push
 
   prepare-distribution-manifests:
     name: Prepare distribution manifests
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [publish, generate-checksums]
+    needs: [prepare-release, publish, generate-checksums]
     permissions:
-      contents: write # Needed only to create the release tag when tauri-action has not done so first.
+      contents: write
     env:
       GITHUB_TOKEN: ${{ github.token }}
 
@@ -320,32 +401,9 @@ jobs:
         with:
           node-version: 24
 
-      - name: Ensure release source tag exists
-        env:
-          RELEASE_VERSION: ${{ github.event.inputs.version }}
-        run: |
-          set -euo pipefail
-
-          tag="v${RELEASE_VERSION}"
-          git fetch --tags origin
-
-          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
-            tagged_sha="$(git rev-list -n 1 "${tag}")"
-            if [ "${tagged_sha}" != "${GITHUB_SHA}" ]; then
-              echo "::error::${tag} already points at ${tagged_sha}, expected ${GITHUB_SHA}."
-              exit 1
-            fi
-            exit 0
-          fi
-
-          git tag "${tag}" "${GITHUB_SHA}"
-          auth_header="$(printf 'x-access-token:%s' "${GITHUB_TOKEN}" | base64 -w0)"
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" \
-            push origin "refs/tags/${tag}"
-
       - name: Render WinGet manifests
         env:
-          RELEASE_VERSION: ${{ github.event.inputs.version }}
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
         run: |
           node scripts/render-winget-manifests.mjs \
             --version "${RELEASE_VERSION}" \
@@ -353,7 +411,7 @@ jobs:
 
       - name: Render Flatpak manifests
         env:
-          RELEASE_VERSION: ${{ github.event.inputs.version }}
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
         run: |
           node scripts/render-flatpak-manifest.mjs \
             --version "${RELEASE_VERSION}" \
@@ -375,7 +433,7 @@ jobs:
     name: Submit WinGet PR
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: prepare-distribution-manifests
+    needs: [prepare-release, prepare-distribution-manifests]
     if: ${{ vars.WINGET_FORK_REPO != '' }}
 
     steps:
@@ -406,7 +464,7 @@ jobs:
           WINGET_TARGET_REPO: ${{ vars.WINGET_TARGET_REPO || 'microsoft/winget-pkgs' }}
           WINGET_BASE_BRANCH: ${{ vars.WINGET_BASE_BRANCH || 'master' }}
           WINGET_PACKAGE_IDENTIFIER: ${{ vars.WINGET_PACKAGE_IDENTIFIER || 'thedavidweng.OpenKara' }}
-          VERSION: ${{ github.event.inputs.version }}
+          VERSION: ${{ needs.prepare-release.outputs.version }}
         run: |
           set -euo pipefail
 
@@ -434,9 +492,6 @@ jobs:
           fi
 
           git commit -m "Add OpenKara ${VERSION}"
-          # RATIONALE: A branch cut from upstream/master may carry upstream .github/workflows
-          # updates relative to the fork. GitHub rejects PAT pushes that touch workflow files
-          # unless the token has classic `workflow` scope or fine-grained "Workflows" write.
           git push origin "${branch}" --force
 
           pr_url="$(gh pr list --repo "${target_repo}" --head "${fork_owner}:${branch}" --json url --jq '.[0].url')"
@@ -456,7 +511,7 @@ jobs:
     name: Prepare or submit Flathub PR
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: prepare-distribution-manifests
+    needs: [prepare-release, prepare-distribution-manifests]
     if: ${{ vars.FLATHUB_FORK_REPO != '' }}
 
     steps:
@@ -486,7 +541,7 @@ jobs:
           FLATHUB_FORK_REPO: ${{ vars.FLATHUB_FORK_REPO }}
           FLATHUB_TARGET_REPO: ${{ vars.FLATHUB_TARGET_REPO || 'flathub/flathub' }}
           FLATHUB_BASE_BRANCH: ${{ vars.FLATHUB_BASE_BRANCH || 'new-pr' }}
-          VERSION: ${{ github.event.inputs.version }}
+          VERSION: ${{ needs.prepare-release.outputs.version }}
         run: |
           set -euo pipefail
 
