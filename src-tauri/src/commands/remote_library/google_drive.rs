@@ -1,7 +1,7 @@
 use crate::{
     cache,
     commands::error::{CommandError, CommandResult},
-    config::{RegisteredLibrary, RemoteLibraryConnectionConfig},
+    config::RegisteredLibrary,
     library::error::LibraryError,
     library_root::LibraryRoot,
 };
@@ -1247,35 +1247,9 @@ impl RemoteProvider for GoogleDriveProvider<'_> {
         Ok(entry.and_then(|e| e.size))
     }
 
-    fn store_secret(&self) -> CommandResult<()> {
-        let secret = self.secret.borrow();
-        store_google_drive_secret(self.app_data_dir, secret.clone())
-    }
-
     fn refresh_existing(&self) -> CommandResult<Option<String>> {
         let secret = self.secret.borrow();
         refresh_existing_google_drive_library(self.app_data_dir, self.library, &secret)
-    }
-
-    fn connection_config(&self) -> CommandResult<RemoteLibraryConnectionConfig> {
-        let secret = self.secret.borrow();
-        Ok(RemoteLibraryConnectionConfig::GoogleDrive {
-            oauth_client_id: secret.client_id.clone(),
-        })
-    }
-
-    fn remote_path_display(&self, display_name: &str) -> String {
-        google_drive_root_display_name(display_name)
-    }
-
-    fn create_remote_root(&self, display_name: &str) -> CommandResult<String> {
-        let secret = self.secret.borrow();
-        let root = google_drive_get_or_create_folder_with_token(
-            &secret.access_token,
-            GOOGLE_DRIVE_ROOT_ID,
-            display_name,
-        )?;
-        Ok(root.id)
     }
 }
 

@@ -1,7 +1,7 @@
 use crate::{
     cache,
     commands::error::{CommandError, CommandResult},
-    config::{RegisteredLibrary, RemoteLibraryConnectionConfig},
+    config::RegisteredLibrary,
     library::error::LibraryError,
     library_root::LibraryRoot,
 };
@@ -726,32 +726,8 @@ impl RemoteProvider for WebDAVProvider<'_> {
         )))
     }
 
-    fn store_secret(&self) -> CommandResult<()> {
-        store_webdav_secret(
-            self.app_data_dir,
-            self.library.id(),
-            self.secret.username.clone(),
-            self.secret.password.clone(),
-        )
-    }
-
     fn refresh_existing(&self) -> CommandResult<Option<String>> {
         refresh_existing_webdav_library(self.app_data_dir, self.library, &self.secret)
-    }
-
-    fn connection_config(&self) -> CommandResult<RemoteLibraryConnectionConfig> {
-        let server_url = stored_webdav_server_url(self.library)?;
-        Ok(RemoteLibraryConnectionConfig::WebDav { server_url })
-    }
-
-    fn remote_path_display(&self, _display_name: &str) -> String {
-        remote_path_display_from_url(&self.secret.root_url)
-    }
-
-    fn create_remote_root(&self, display_name: &str) -> CommandResult<String> {
-        let server_url = stored_webdav_server_url(self.library)?;
-        let root_path = normalize_webdav_root_path(None, display_name);
-        join_url(&server_url, &format!("{root_path}/"))
     }
 }
 
