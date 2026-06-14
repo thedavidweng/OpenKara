@@ -24,7 +24,9 @@
     "test:ui-smoke:ui": "playwright test --ui",
     "test:e2e": "pnpm test:ui-smoke",
     "test:e2e:ui": "pnpm test:ui-smoke:ui",
-    "tauri": "pnpm version:sync && tauri"
+    "tauri": "pnpm version:sync && tauri",
+    "changelog": "git cliff -o CHANGELOG.md",
+    "changelog:preview": "git cliff --latest"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
