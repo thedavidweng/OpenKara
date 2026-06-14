@@ -193,17 +193,29 @@ execFileSync(
   { stdio: "inherit" },
 );
 
-await cp(
-  path.join(stagingDir, "Assets.car"),
-  path.join(iconsDir, "Assets.car"),
-);
-await cp(
-  path.join(stagingDir, "OpenKara.icns"),
-  path.join(iconsDir, "OpenKara.icns"),
-);
+const assetsCar = path.join(stagingDir, "Assets.car");
+const icns = path.join(stagingDir, "OpenKara.icns");
+
+// actool may not produce Assets.car if the Icon Composer input is incomplete
+// or the runner's Xcode version lacks Liquid Glass support. Copy what exists.
+const compiled = [];
+try {
+  await cp(assetsCar, path.join(iconsDir, "Assets.car"));
+  compiled.push("Assets.car");
+} catch {
+  console.warn("actool did not produce Assets.car — skipping");
+}
+try {
+  await cp(icns, path.join(iconsDir, "OpenKara.icns"));
+  compiled.push("OpenKara.icns");
+} catch {
+  console.warn("actool did not produce OpenKara.icns — skipping");
+}
 
 await rm(stagingDir, { recursive: true, force: true });
 
-console.log(
-  "Compiled macOS Liquid Glass assets: src-tauri/icons/Assets.car, OpenKara.icns",
-);
+if (compiled.length > 0) {
+  console.log(`Compiled macOS Liquid Glass assets: ${compiled.join(", ")}`);
+} else {
+  console.warn("No Liquid Glass assets were produced — continuing without them");
+}
