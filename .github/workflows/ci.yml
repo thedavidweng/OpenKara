@@ -177,25 +177,27 @@ jobs:
       - name: Test metrics summary
         if: always()
         run: |
-          echo "## Frontend Test Metrics" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## Frontend Test Metrics"
+            echo ""
 
-          # Parse coverage from json-summary if available
-          if [ -f coverage/coverage-summary.json ]; then
-            BRANCHES=$(jq '.total.branches.pct' coverage/coverage-summary.json)
-            FUNCTIONS=$(jq '.total.functions.pct' coverage/coverage-summary.json)
-            LINES=$(jq '.total.lines.pct' coverage/coverage-summary.json)
-            STATEMENTS=$(jq '.total.statements.pct' coverage/coverage-summary.json)
+            # Parse coverage from json-summary if available
+            if [ -f coverage/coverage-summary.json ]; then
+              BRANCHES=$(jq '.total.branches.pct' coverage/coverage-summary.json)
+              FUNCTIONS=$(jq '.total.functions.pct' coverage/coverage-summary.json)
+              LINES=$(jq '.total.lines.pct' coverage/coverage-summary.json)
+              STATEMENTS=$(jq '.total.statements.pct' coverage/coverage-summary.json)
 
-            echo "### Coverage" >> "$GITHUB_STEP_SUMMARY"
-            echo "| Metric | Percentage |" >> "$GITHUB_STEP_SUMMARY"
-            echo "|--------|------------|" >> "$GITHUB_STEP_SUMMARY"
-            echo "| Branches | ${BRANCHES}% |" >> "$GITHUB_STEP_SUMMARY"
-            echo "| Functions | ${FUNCTIONS}% |" >> "$GITHUB_STEP_SUMMARY"
-            echo "| Lines | ${LINES}% |" >> "$GITHUB_STEP_SUMMARY"
-            echo "| Statements | ${STATEMENTS}% |" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-          fi
+              echo "### Coverage"
+              echo "| Metric | Percentage |"
+              echo "|--------|------------|"
+              echo "| Branches | ${BRANCHES}% |"
+              echo "| Functions | ${FUNCTIONS}% |"
+              echo "| Lines | ${LINES}% |"
+              echo "| Statements | ${STATEMENTS}% |"
+              echo ""
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload coverage reports
         if: always()
