@@ -285,10 +285,8 @@ jobs:
           key: onnxruntime-${{ matrix.ort_target }}-${{ hashFiles('scripts/prepare-onnx-runtime.mjs') }}
 
       - name: Prepare ONNX Runtime
-        env:
-          ORT_TARGET: ${{ matrix.ort_target }}
         run: |
-          node scripts/prepare-onnx-runtime.mjs --target "${ORT_TARGET}"
+          node scripts/prepare-onnx-runtime.mjs --target "${{ matrix.ort_target }}"
 
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
