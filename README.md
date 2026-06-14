@@ -11,7 +11,7 @@
 An open-source desktop karaoke app powered by on-device AI stem separation and synced lyrics.
 
 [![CI](https://github.com/thedavidweng/OpenKara/actions/workflows/ci.yml/badge.svg)](https://github.com/thedavidweng/OpenKara/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 
 </div>
@@ -324,4 +324,4 @@ Contributions are welcome! Please open an issue before starting major changes so
 
 ## License
 
-[MIT](./LICENSE) — Copyright (c) 2025 David Weng
+[Apache License 2.0](./LICENSE) — Copyright (c) 2025 David Weng

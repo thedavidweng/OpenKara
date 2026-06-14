@@ -13,25 +13,19 @@ use std::{fs, path::Path};
 
 use super::{
     dropbox::{
-        dropbox_ensure_folder_with_token, initialize_or_sync_dropbox_library, load_dropbox_secret,
-        normalize_dropbox_root_path, refresh_existing_dropbox_library, store_dropbox_secret,
+        dropbox_ensure_folder_with_token, normalize_dropbox_root_path, store_dropbox_secret,
     },
     google_drive::{
-        google_drive_get_or_create_folder_with_token, google_drive_root_display_name,
-        initialize_or_sync_google_drive_library, load_google_drive_secret,
-        refresh_existing_google_drive_library, store_google_drive_secret, GOOGLE_DRIVE_ROOT_ID,
+        google_drive_get_or_create_folder_with_token, store_google_drive_secret,
+        GOOGLE_DRIVE_ROOT_ID,
     },
+    provider::{compute_remote_path_display, create_provider},
     types::{
         current_unix_time_ms, delete_remote_credential, load_app_config, persist_app_config,
         remote_libraries_dir, remote_library_id, remote_library_root, DropboxSecret,
         GoogleDriveSecret, RemoteAuthSession, RemoteAuthState, RemoteLibraryCandidate,
-        WebDavSecret,
     },
-    webdav::{
-        initialize_or_sync_webdav_library, join_url, load_webdav_secret,
-        normalize_webdav_root_path, refresh_existing_webdav_library, remote_path_display_from_url,
-        store_webdav_secret,
-    },
+    webdav::{join_url, normalize_webdav_root_path, store_webdav_secret},
 };
 
 fn candidate_from_session(
@@ -46,11 +40,11 @@ fn candidate_from_session(
     RemoteLibraryCandidate {
         provider: session.provider,
         remote_root_locator: remote_root_locator.clone(),
-        remote_path_display: match session.provider {
-            RemoteLibraryProvider::WebDav => remote_path_display_from_url(&remote_root_locator),
-            RemoteLibraryProvider::GoogleDrive => google_drive_root_display_name(display_name),
-            RemoteLibraryProvider::Dropbox => remote_root_locator.clone(),
-        },
+        remote_path_display: compute_remote_path_display(
+            session.provider,
+            &remote_root_locator,
+            display_name,
+        ),
         display_name: display_name.to_owned(),
         account_id: session.account_id.clone(),
     }
@@ -77,12 +71,12 @@ pub(crate) fn list_remote_library_roots(
     ) {
         return Ok(vec![RemoteLibraryCandidate {
             provider: session.provider,
-            remote_root_locator: remote_root_locator.clone(),
-            remote_path_display: match session.provider {
-                RemoteLibraryProvider::WebDav => remote_path_display_from_url(&remote_root_locator),
-                RemoteLibraryProvider::GoogleDrive => google_drive_root_display_name(&display_name),
-                RemoteLibraryProvider::Dropbox => remote_root_locator,
-            },
+            remote_path_display: compute_remote_path_display(
+                session.provider,
+                &remote_root_locator,
+                &display_name,
+            ),
+            remote_root_locator,
             display_name,
             account_id: session.account_id.clone(),
         }]);
@@ -269,59 +263,10 @@ pub(crate) fn register_remote_library(
     cache::initialize_library_database(&library_root.database_path())
         .map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
 
-    let remote_path_display = if provider == RemoteLibraryProvider::WebDav {
-        remote_path_display_from_url(&remote_root_locator)
-    } else if provider == RemoteLibraryProvider::GoogleDrive {
-        google_drive_root_display_name(&display_name)
-    } else {
-        remote_root_locator.clone()
-    };
+    // Extract session data, persist credentials, and build connection config in one pass.
     let connection_config = match provider {
-        RemoteLibraryProvider::GoogleDrive => Some(RemoteLibraryConnectionConfig::GoogleDrive {
-            oauth_client_id: google_drive
-                .as_ref()
-                .map(|session| session.client_id.clone())
-                .ok_or_else(|| {
-                    CommandError::from(LibraryError::Internal(
-                        "missing Google Drive session details during registration".to_owned(),
-                    ))
-                })?,
-        }),
-        RemoteLibraryProvider::Dropbox => Some(RemoteLibraryConnectionConfig::Dropbox {
-            app_key: dropbox
-                .as_ref()
-                .map(|session| session.app_key.clone())
-                .ok_or_else(|| {
-                    CommandError::from(LibraryError::Internal(
-                        "missing Dropbox session details during registration".to_owned(),
-                    ))
-                })?,
-        }),
-        RemoteLibraryProvider::WebDav => Some(RemoteLibraryConnectionConfig::WebDav {
-            server_url: webdav
-                .as_ref()
-                .map(|session| session.server_url.clone())
-                .ok_or_else(|| {
-                    CommandError::from(LibraryError::Internal(
-                        "missing WebDAV session details during registration".to_owned(),
-                    ))
-                })?,
-        }),
-    };
-    let provisional_library = RegisteredLibrary::remote(
-        library_id.clone(),
-        display_name.clone(),
-        provider,
-        account_id.clone(),
-        remote_root_locator.clone(),
-        remote_path_display.clone(),
-        connection_config.clone(),
-        Some(library_root.database_path().display().to_string()),
-        None,
-    );
-    let remote_revision = match provider {
         RemoteLibraryProvider::GoogleDrive => {
-            let google = google_drive.clone().ok_or_else(|| {
+            let google = google_drive.ok_or_else(|| {
                 CommandError::from(LibraryError::Internal(
                     "missing Google Drive session details during registration".to_owned(),
                 ))
@@ -336,6 +281,7 @@ pub(crate) fn register_remote_library(
                 CommandError::from(LibraryError::Internal("Google Drive did not return a refresh token. Reconnect and ensure consent was granted."
                         .to_owned(),))
             })?;
+            let oauth_client_id = google.client_id.clone();
             store_google_drive_secret(
                 app_data_dir,
                 GoogleDriveSecret {
@@ -347,11 +293,10 @@ pub(crate) fn register_remote_library(
                     access_token_expires_at_ms: google.access_token_expires_at_ms,
                 },
             )?;
-            let secret = load_google_drive_secret(app_data_dir, &provisional_library)?;
-            initialize_or_sync_google_drive_library(app_data_dir, &provisional_library, &secret)?
+            RemoteLibraryConnectionConfig::GoogleDrive { oauth_client_id }
         }
         RemoteLibraryProvider::Dropbox => {
-            let dropbox = dropbox.clone().ok_or_else(|| {
+            let dropbox = dropbox.ok_or_else(|| {
                 CommandError::from(LibraryError::Internal(
                     "missing Dropbox session details during registration".to_owned(),
                 ))
@@ -366,6 +311,7 @@ pub(crate) fn register_remote_library(
                 CommandError::from(LibraryError::Internal("Dropbox did not return a refresh token. Reconnect and ensure consent was granted."
                         .to_owned(),))
             })?;
+            let app_key = dropbox.app_key.clone();
             store_dropbox_secret(
                 app_data_dir,
                 DropboxSecret {
@@ -377,8 +323,7 @@ pub(crate) fn register_remote_library(
                     access_token_expires_at_ms: dropbox.access_token_expires_at_ms,
                 },
             )?;
-            let secret = load_dropbox_secret(app_data_dir, &provisional_library)?;
-            initialize_or_sync_dropbox_library(app_data_dir, &provisional_library, &secret)?
+            RemoteLibraryConnectionConfig::Dropbox { app_key }
         }
         RemoteLibraryProvider::WebDav => {
             let webdav = webdav.ok_or_else(|| {
@@ -386,11 +331,26 @@ pub(crate) fn register_remote_library(
                     "missing WebDAV session details during registration".to_owned(),
                 ))
             })?;
+            let server_url = webdav.server_url.clone();
             store_webdav_secret(app_data_dir, &library_id, webdav.username, webdav.password)?;
-            let secret = load_webdav_secret(app_data_dir, &provisional_library)?;
-            initialize_or_sync_webdav_library(app_data_dir, &provisional_library, &secret)?
+            RemoteLibraryConnectionConfig::WebDav { server_url }
         }
     };
+    let remote_path_display =
+        compute_remote_path_display(provider, &remote_root_locator, &display_name);
+    let provisional_library = RegisteredLibrary::remote(
+        library_id.clone(),
+        display_name.clone(),
+        provider,
+        account_id.clone(),
+        remote_root_locator.clone(),
+        remote_path_display.clone(),
+        Some(connection_config.clone()),
+        Some(library_root.database_path().display().to_string()),
+        None,
+    );
+    let remote_provider = create_provider(app_data_dir, &provisional_library)?;
+    let remote_revision = remote_provider.initialize_or_sync()?;
     let library = RegisteredLibrary::remote(
         library_id.clone(),
         display_name.clone(),
@@ -398,7 +358,7 @@ pub(crate) fn register_remote_library(
         account_id,
         remote_root_locator,
         remote_path_display,
-        connection_config,
+        Some(connection_config),
         Some(library_root.database_path().display().to_string()),
         remote_revision.or_else(|| Some(current_unix_time_ms().to_string())),
     );
@@ -515,61 +475,10 @@ pub(crate) fn reauthorize_remote_library(
             "remote repository is missing a local working copy".to_string(),
         ))
     })?;
-    let remote_path_display = if provider == RemoteLibraryProvider::WebDav {
-        remote_path_display_from_url(&remote_root_locator)
-    } else if provider == RemoteLibraryProvider::GoogleDrive {
-        google_drive_root_display_name(&display_name)
-    } else {
-        remote_root_locator.clone()
-    };
+    // Extract session data, persist credentials, and build connection config in one pass.
     let connection_config = match provider {
-        RemoteLibraryProvider::GoogleDrive => Some(RemoteLibraryConnectionConfig::GoogleDrive {
-            oauth_client_id: google_drive
-                .as_ref()
-                .map(|session| session.client_id.clone())
-                .ok_or_else(|| {
-                    CommandError::from(LibraryError::Internal(
-                        "missing Google Drive session details during reauthorization".to_owned(),
-                    ))
-                })?,
-        }),
-        RemoteLibraryProvider::Dropbox => Some(RemoteLibraryConnectionConfig::Dropbox {
-            app_key: dropbox
-                .as_ref()
-                .map(|session| session.app_key.clone())
-                .ok_or_else(|| {
-                    CommandError::from(LibraryError::Internal(
-                        "missing Dropbox session details during reauthorization".to_owned(),
-                    ))
-                })?,
-        }),
-        RemoteLibraryProvider::WebDav => Some(RemoteLibraryConnectionConfig::WebDav {
-            server_url: webdav
-                .as_ref()
-                .map(|session| session.server_url.clone())
-                .ok_or_else(|| {
-                    CommandError::from(LibraryError::Internal(
-                        "missing WebDAV session details during reauthorization".to_owned(),
-                    ))
-                })?,
-        }),
-    };
-
-    let provisional_library = RegisteredLibrary::remote(
-        library_id.clone(),
-        display_name.clone(),
-        provider,
-        account_id.clone(),
-        remote_root_locator.clone(),
-        remote_path_display.clone(),
-        connection_config.clone(),
-        Some(root_path.join("openkara.db").display().to_string()),
-        existing.remote_revision().map(str::to_owned),
-    );
-
-    let remote_revision = match provider {
         RemoteLibraryProvider::GoogleDrive => {
-            let google = google_drive.clone().ok_or_else(|| {
+            let google = google_drive.ok_or_else(|| {
                 CommandError::from(LibraryError::Internal(
                     "missing Google Drive session details during reauthorization".to_owned(),
                 ))
@@ -584,18 +493,22 @@ pub(crate) fn reauthorize_remote_library(
                 CommandError::from(LibraryError::Internal("Google Drive did not return a refresh token. Reauthorize and ensure consent was granted."
                         .to_owned(),))
             })?;
-            let secret = GoogleDriveSecret {
-                library_id: library_id.clone(),
-                client_id: google.client_id,
-                client_secret: google.client_secret,
-                access_token,
-                refresh_token,
-                access_token_expires_at_ms: google.access_token_expires_at_ms,
-            };
-            refresh_existing_google_drive_library(app_data_dir, &provisional_library, &secret)?
+            let oauth_client_id = google.client_id.clone();
+            store_google_drive_secret(
+                app_data_dir,
+                GoogleDriveSecret {
+                    library_id: library_id.clone(),
+                    client_id: google.client_id,
+                    client_secret: google.client_secret,
+                    access_token,
+                    refresh_token,
+                    access_token_expires_at_ms: google.access_token_expires_at_ms,
+                },
+            )?;
+            RemoteLibraryConnectionConfig::GoogleDrive { oauth_client_id }
         }
         RemoteLibraryProvider::Dropbox => {
-            let dropbox = dropbox.clone().ok_or_else(|| {
+            let dropbox = dropbox.ok_or_else(|| {
                 CommandError::from(LibraryError::Internal(
                     "missing Dropbox session details during reauthorization".to_owned(),
                 ))
@@ -610,97 +523,47 @@ pub(crate) fn reauthorize_remote_library(
                 CommandError::from(LibraryError::Internal("Dropbox did not return a refresh token. Reauthorize and ensure consent was granted."
                         .to_owned(),))
             })?;
-            let secret = DropboxSecret {
-                library_id: library_id.clone(),
-                app_key: dropbox.app_key,
-                app_secret: dropbox.app_secret,
-                access_token,
-                refresh_token,
-                access_token_expires_at_ms: dropbox.access_token_expires_at_ms,
-            };
-            refresh_existing_dropbox_library(app_data_dir, &provisional_library, &secret)?
-        }
-        RemoteLibraryProvider::WebDav => {
-            let webdav = webdav.clone().ok_or_else(|| {
-                CommandError::from(LibraryError::Internal(
-                    "missing WebDAV session details during reauthorization".to_owned(),
-                ))
-            })?;
-            let secret = WebDavSecret {
-                root_url: remote_root_locator.clone(),
-                username: webdav.username,
-                password: webdav.password,
-            };
-            refresh_existing_webdav_library(app_data_dir, &provisional_library, &secret)?
-        }
-    };
-
-    match provider {
-        RemoteLibraryProvider::GoogleDrive => {
-            let secret = google_drive.ok_or_else(|| {
-                CommandError::from(LibraryError::Internal(
-                    "missing Google Drive session details during reauthorization".to_owned(),
-                ))
-            })?;
-            let access_token = secret.access_token.ok_or_else(|| {
-                CommandError::from(LibraryError::Internal(
-                    "Google Drive sign-in has not completed yet. Finish the browser flow first."
-                        .to_owned(),
-                ))
-            })?;
-            let refresh_token = secret.refresh_token.ok_or_else(|| {
-                CommandError::from(LibraryError::Internal("Google Drive did not return a refresh token. Reauthorize and ensure consent was granted."
-                        .to_owned(),))
-            })?;
-            store_google_drive_secret(
-                app_data_dir,
-                GoogleDriveSecret {
-                    library_id: library_id.clone(),
-                    client_id: secret.client_id,
-                    client_secret: secret.client_secret,
-                    access_token,
-                    refresh_token,
-                    access_token_expires_at_ms: secret.access_token_expires_at_ms,
-                },
-            )?;
-        }
-        RemoteLibraryProvider::Dropbox => {
-            let secret = dropbox.ok_or_else(|| {
-                CommandError::from(LibraryError::Internal(
-                    "missing Dropbox session details during reauthorization".to_owned(),
-                ))
-            })?;
-            let access_token = secret.access_token.ok_or_else(|| {
-                CommandError::from(LibraryError::Internal(
-                    "Dropbox sign-in has not completed yet. Finish the browser flow first."
-                        .to_owned(),
-                ))
-            })?;
-            let refresh_token = secret.refresh_token.ok_or_else(|| {
-                CommandError::from(LibraryError::Internal("Dropbox did not return a refresh token. Reauthorize and ensure consent was granted."
-                        .to_owned(),))
-            })?;
+            let app_key = dropbox.app_key.clone();
             store_dropbox_secret(
                 app_data_dir,
                 DropboxSecret {
                     library_id: library_id.clone(),
-                    app_key: secret.app_key,
-                    app_secret: secret.app_secret,
+                    app_key: dropbox.app_key,
+                    app_secret: dropbox.app_secret,
                     access_token,
                     refresh_token,
-                    access_token_expires_at_ms: secret.access_token_expires_at_ms,
+                    access_token_expires_at_ms: dropbox.access_token_expires_at_ms,
                 },
             )?;
+            RemoteLibraryConnectionConfig::Dropbox { app_key }
         }
         RemoteLibraryProvider::WebDav => {
-            let secret = webdav.ok_or_else(|| {
+            let webdav = webdav.ok_or_else(|| {
                 CommandError::from(LibraryError::Internal(
                     "missing WebDAV session details during reauthorization".to_owned(),
                 ))
             })?;
-            store_webdav_secret(app_data_dir, &library_id, secret.username, secret.password)?;
+            let server_url = webdav.server_url.clone();
+            store_webdav_secret(app_data_dir, &library_id, webdav.username, webdav.password)?;
+            RemoteLibraryConnectionConfig::WebDav { server_url }
         }
-    }
+    };
+    let remote_path_display =
+        compute_remote_path_display(provider, &remote_root_locator, &display_name);
+
+    let provisional_library = RegisteredLibrary::remote(
+        library_id.clone(),
+        display_name.clone(),
+        provider,
+        account_id.clone(),
+        remote_root_locator.clone(),
+        remote_path_display.clone(),
+        Some(connection_config.clone()),
+        Some(root_path.join("openkara.db").display().to_string()),
+        existing.remote_revision().map(str::to_owned),
+    );
+    let remote_provider = create_provider(app_data_dir, &provisional_library)?;
+    let remote_revision = remote_provider.refresh_existing()?;
 
     let mut config = load_app_config(app_data_dir)?;
     let updated_library = RegisteredLibrary::remote(
@@ -710,7 +573,7 @@ pub(crate) fn reauthorize_remote_library(
         account_id,
         remote_root_locator,
         remote_path_display,
-        connection_config,
+        Some(connection_config),
         Some(root_path.join("openkara.db").display().to_string()),
         remote_revision.or_else(|| Some(current_unix_time_ms().to_string())),
     );
