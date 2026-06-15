@@ -214,6 +214,15 @@ jobs:
           json-summary-path: ./coverage/coverage-summary.json
           vite-config-path: ./vite.config.ts
 
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage/coverage-summary.json
+          flags: frontend
+          fail_ci_if_error: false
+
   dependency-checks:
     name: Dependency surface checks
     runs-on: ubuntu-24.04
