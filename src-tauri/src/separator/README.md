@@ -29,4 +29,4 @@ Current coverage:
 - cache completed stems and expose separation progress through Tauri events
 
 The runtime bootstrap contract is documented in
-`docs/references/contracts/phase-6-model-bootstrap-contract.md`.
+`docs/references/contracts/model-bootstrap.md`.

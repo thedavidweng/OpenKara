@@ -211,12 +211,8 @@ MyKaraokeLibrary/
 
 ## 路线图
 
-当前**已交付内容**以 **[Changelog](./CHANGELOG.md)** 为准；未来事项以 GitHub Project 为准。以下为与英文 README 对齐的索引，避免在多个文件重复维护长列表。
-
 - **[Changelog](./CHANGELOG.md)** — 已完成改动和版本记录
-- **[文档总览](./docs/README.md)** — 当前文档归属规则与入口
 - **[GitHub Project](https://github.com/users/thedavidweng/projects/2/views/1)** — 未来事项与优先级
-- **[技术路线图](./docs/references/architecture/roadmap.md)** — 技术选型、契约与风险
 
 **当前应用版本（源码）：** 与 `package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json` 一致，截至文档更新为 **v0.9.0**。
 
@@ -261,12 +257,9 @@ pnpm tauri build             # 生产构建，生成平台特定安装包
 
 ## 文档
 
-- [文档总览](./docs/README.md) — 当前参考资料、可执行计划、Changelog 与归档总入口
-- [计划目录说明](./docs/plans/README.md) — `docs/plans` 约定与入口
 - [Changelog](./CHANGELOG.md) — 已交付改动与版本说明
-- [系统架构](./docs/references/architecture/architecture.md) — 系统设计、技术栈、数据流与运行时细节
-- [项目结构](./docs/references/architecture/project-structure.md) — 当前目录布局与模块职责
-- [技术路线图](./docs/references/architecture/roadmap.md) — 技术选型、API 契约与风险应对
+- [IPC 契约](./docs/references/contracts/) — 稳定的后端接口
+- [产品规格](./docs/references/product/) — 用户可见行为规格
 
 ## 参与贡献
 

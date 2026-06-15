@@ -1,16 +1,8 @@
 # lyrics
 
-Lyrics backend for Phase 4.
+Lyrics backend: LRCLIB/LrcApi clients, TTML/LYS/LRC parsers, fetch priority
+chain (LRCLIB -> LrcApi -> embedded tags -> sidecar), SQLite cache, per-song
+offset persistence. Command payloads for `fetch_lyrics`, `fetch_lyrics_online`,
+and `set_lyrics_offset`.
 
-Current scope:
-
-- LRCLIB and LrcApi clients for synced lyric lookup
-- LRC parser for timestamped lyric lines
-- Fetch priority chain: LRCLIB -> LrcApi -> embedded tags -> sidecar `.lrc`
-- SQLite lyrics cache and per-song offset persistence
-- Command-facing payloads for `fetch_lyrics`, `fetch_lyrics_online`, and `set_lyrics_offset`
-
-Follow-up work outside this directory:
-
-- React lyrics panel and sync loop handled by the UI agent
-- End-to-end validation with playback/separation in Phase 5
+React lyrics panel and sync loop live in the frontend (`src/`).

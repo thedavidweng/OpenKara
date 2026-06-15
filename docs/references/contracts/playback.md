@@ -1,17 +1,8 @@
-# Phase 2 播放契约
+# 播放契约
 
-**Goal:** 固定当前播放层命令、状态快照、stem 加载与位置事件语义，保证后续 UI 和 Karaoke 体验都基于同一套契约继续推进。
+播放命令层收口为 thin Tauri command，具体编排在 backend playback service / CDG helper，对外 IPC 契约保持不变。
 
-**Current starting point:** 当前实现已经把播放命令层收口为 thin Tauri command，具体编排转移到 backend playback service / CDG helper，但对外 IPC 契约保持不变。
-
-## Owner
-
-- 代码 Agent：播放状态机、解码、设备输出、stem 挂载、位置事件、CDG 状态
-- UI Agent：消费命令返回值和位置事件，不单方面修改命令名、字段名或事件名
-
-## Phase-by-phase task breakdown
-
-### 已冻结能力
+## 接口
 
 1. `play(song_id: String) -> PlaybackStateSnapshot`
 2. `resume() -> PlaybackStateSnapshot`
@@ -22,13 +13,6 @@
 7. `load_stems() -> PlaybackStateSnapshot`
 8. `get_playback_state() -> PlaybackStateSnapshot`
 9. `playback-position` 事件 payload 为 `{ ms: u64, transport_generation: u64, snapshot: PlaybackStateSnapshot }`
-
-### 后续 Phase 依赖
-
-1. UI Agent 的 `Player` 组件依赖本契约驱动 seek bar、play/pause、volume 和 stem 混音状态
-2. `Phase 4` 歌词高亮将依赖 `playback-position`
-3. `Phase 5` 的延迟与 jitter 验证会以本快照和事件为基线
-4. `Phase 5` 起，播放命令失败值统一为 `CommandError`，详见 [phase-5-error-contract.md](./phase-5-error-contract.md)
 
 ## Inputs / outputs / required dependencies
 
@@ -246,7 +230,7 @@ playing ↔ playing（pause/resume，通过 isPlaying 区分）
 
 ### Shared error type: `CommandError`
 
-播放命令统一返回结构化错误，字段定义与错误码含义见 [phase-5-error-contract.md](./phase-5-error-contract.md)。
+播放命令统一返回结构化错误，字段定义与错误码含义见 [errors.md](./errors.md)。
 
 ### Required dependencies
 
@@ -273,18 +257,3 @@ pnpm tauri build --debug --no-bundle --ci
 3. `phase2_output`
 
 以上测试全部通过，并且调试构建成功。
-
-## Pause-and-resume instructions
-
-1. 接手前先读本文件，再读 [../architecture/roadmap.md](../architecture/roadmap.md)
-2. 先跑验证命令，确认播放层没有被后续修改打破
-3. 如果后续调整命令名、字段名、事件名或节流语义：
-   - 先更新本契约
-   - 再改 Rust 实现
-   - 最后通知 UI Agent
-4. 如果进入真实设备调试阶段，请把：
-   - 使用了哪些输入音频
-   - 输出设备环境
-   - 是否出现卡顿 / seek 偏移 / 静音
-
-写进交接说明。

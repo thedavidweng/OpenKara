@@ -252,12 +252,8 @@ All paths in the database are relative — including CD+G sidecars and MP3+G ZIP
 
 ## Roadmap
 
-For the detailed version history, current references, and future backlog, see:
-
 - **[Changelog](./CHANGELOG.md)** — Completed changes by version
-- **[Docs hub](./docs/README.md)** — Current documentation ownership rules and entrypoints
 - **[GitHub Project](https://github.com/users/thedavidweng/projects/2/views/1)** — Future work and prioritization
-- **[Technical Roadmap](./docs/references/architecture/roadmap.md)** — Architecture phases, technical decisions, and risk mitigations
 
 ---
 
@@ -302,12 +298,9 @@ pnpm tauri build             # production build with platform-specific bundle
 
 ## Documentation
 
-- [Docs Hub](./docs/README.md) — Canonical index for current references, executable plans, changelog, and archive
 - [Changelog](./CHANGELOG.md) — Shipped changes and version notes
-- [Plans](./docs/plans/README.md) — Rules for repo-local executable plans
-- [Architecture](./docs/references/architecture/architecture.md) — System design, tech stack, data flow, and runtime details
-- [Project Structure](./docs/references/architecture/project-structure.md) — Current directory layout and module responsibilities
-- [Technical Roadmap](./docs/references/architecture/roadmap.md) — Technology choices, API contracts, and risk mitigations
+- [IPC Contracts](./docs/references/contracts/) — Stable backend-facing interfaces
+- [Product Specs](./docs/references/product/) — User-facing behavior specs
 
 ## Contributing
 
