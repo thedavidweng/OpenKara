@@ -1,15 +1,8 @@
-# Phase 5 错误处理契约
+# 错误处理契约
 
-**Goal:** 固定当前后端已经开始使用的结构化错误模型，给 UI Agent 一个稳定的错误码、fallback 提示和 retry 语义来源，而不是继续解析自由文本字符串。
+结构化错误模型：`CommandError` 统一用于播放、歌词、分离和导入命令。
 
-**Current starting point:** 本契约对应分支 `codex/phase0-m0` 上播放命令、歌词命令和分离状态错误都已经切到 `CommandError` 结构之后的状态。
-
-## Owner
-
-- 代码 Agent：错误码定义、命令错误映射、fallback 语义
-- UI Agent：根据 `code / retryable / fallback` 决定 toast、empty state 和恢复动作，不单方面改字段名或枚举值
-
-## 已冻结能力
+## 接口
 
 1. `play / pause / seek / set_volume / set_playback_mode / get_playback_state` 失败时返回 `CommandError`
 2. `fetch_lyrics / set_lyrics_offset` 失败时返回 `CommandError`
@@ -139,12 +132,3 @@ pnpm tauri build --debug --no-bundle --ci
 2. `phase1_import` 证明导入失败项已携带结构化错误
 3. `phase3_status` 证明分离状态已携带结构化错误
 4. 全量测试和调试构建通过
-
-## Pause-and-resume instructions
-
-1. 接手前先读本文件，再读 [../architecture/roadmap.md](../architecture/roadmap.md)
-2. 若后续新增错误码或 fallback：
-   - 先更新本契约
-   - 再改 Rust 实现和测试
-   - 最后通知 UI Agent 按新枚举处理
-3. 若只改 `message` 文案而不改 `code / fallback`，仍需确认不会破坏当前分类逻辑的测试

@@ -1,15 +1,8 @@
-# Phase 3 分离契约
+# 分离契约
 
-**Goal:** 固定 `Phase 3` 代码侧已经实现的分离命令、状态快照、缓存语义和事件名，保证 UI Agent 与后续代码接手者都基于同一套约定继续。
+`separate`、`upgrade_to_four_stem`、`re_separate` 的后台编排收口到共享 helper，命令名、事件名和状态快照契约保持不变。
 
-**Current starting point:** 当前实现已经把 `separate`、`upgrade_to_four_stem`、`re_separate` 的重复后台编排收口到共享 helper，但命令名、事件名和状态快照契约保持不变。
-
-## Owner
-
-- 代码 Agent：模型加载、推理、伴奏混音、缓存、后台任务、状态事件
-- UI Agent：消费命令返回值和事件，不单方面改命令名、事件名、字段名
-
-## 已冻结能力
+## 接口
 
 1. `separate(song_id: String) -> SeparationStatusSnapshot`
 2. `upgrade_to_four_stem(song_id: String) -> SeparationStatusSnapshot`
@@ -56,7 +49,7 @@
 3. worker 会按阶段更新进度，并发出 progress / complete / error 事件
 4. 如果缓存命中，后台仍会发出一次 `separation-progress`，其 `percent` 为 `100`，然后再发 `separation-complete`
 5. 标记为 `instrumental = true` 的歌曲视为官方伴奏，不允许进入 AI 分离
-6. Runtime/model 缺失不阻止命令创建后台任务；worker 会按 Runtime -> active model -> separation 的顺序自动补齐前置资源。下载、校验或 outdated 模型失败时，任务通过 terminal error 状态返回；模型侧约束详见 [phase-6-model-bootstrap-contract.md](./phase-6-model-bootstrap-contract.md)
+6. Runtime/model 缺失不阻止命令创建后台任务；worker 会按 Runtime -> active model -> separation 的顺序自动补齐前置资源。下载、校验或 outdated 模型失败时，任务通过 terminal error 状态返回；模型侧约束详见 [model-bootstrap.md](./model-bootstrap.md)
 7. **ONNX Runtime 前置检查 (B2/B3/B4):** 分离命令（`separate`、`upgrade_to_four_stem`、`re_separate`、`batch_separate`）现在会在后台 worker 中确保 ONNX Runtime 已就绪。若 Runtime 缺失或损坏，worker 会下载、校验并在当前进程加载 Runtime，然后继续模型 bootstrap 与分离。Runtime 状态通过 `get_runtime_bootstrap_status` IPC 和 `runtime-bootstrap-*` 事件查询。
 
 ### Command: `upgrade_to_four_stem`
@@ -153,7 +146,7 @@
 
 ### Shared error type: `CommandError`
 
-分离失败状态和 `separation-error` 事件统一复用结构化错误，字段定义与错误码含义见 [phase-5-error-contract.md](./phase-5-error-contract.md)。
+分离失败状态和 `separation-error` 事件统一复用结构化错误，字段定义与错误码含义见 [errors.md](./errors.md)。
 
 ## Cache semantics
 
@@ -218,15 +211,3 @@ pnpm tauri build --debug --no-bundle --ci
 - File: 44.1 kHz / 16-bit / stereo WAV, 4:32 duration, 45 MB
 - 2-stem: 42 s inference, peak RSS 1.9 GB, output 4.1 MB (vocals) + 4.3 MB (accomp) OGG
 - 4-stem: 96 s inference, peak RSS 3.4 GB, output 4.1 + 4.3 + 2.8 (drums) + 2.6 (bass) + 3.1 (other) MB OGG
-
-## Pause-and-resume instructions
-
-1. 接手前先读本文件，再读 [../architecture/roadmap.md](../architecture/roadmap.md)
-2. 先跑验证命令，确认分离链路没有被后续改动打破
-3. 如果要改命令名、事件名、状态字段或缓存目录：
-   - 先更新本契约
-   - 再改 Rust 实现
-   - 最后通知 UI Agent
-4. 下一阶段推荐顺序：
-   - 接 `set_playback_mode`，把 `original / karaoke` 切换接到播放层
-   - 再进入歌词后端 `Phase 4`

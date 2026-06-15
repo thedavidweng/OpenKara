@@ -1,4 +1,4 @@
 # library
 
-Shared Phase 1 song contracts used by the SQLite cache and the Tauri command
-layer. Keep this module focused on stable data shapes the frontend can consume.
+Stable song data shapes shared by the SQLite cache and Tauri command layer.
+Keep this module focused on types the frontend can consume.

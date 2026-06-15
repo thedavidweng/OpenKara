@@ -1,15 +1,8 @@
-# Phase 4 歌词契约
+# 歌词契约
 
-**Goal:** 固定 `Phase 4` 代码侧已经实现的歌词抓取、解析、缓存和 offset 持久化语义，保证 UI Agent 与后续接手者都基于同一套返回结构继续。
+覆盖歌词 IPC：LRCLIB client、LrcApi client、LRC/TTML/LYS parser、抓取优先链、SQLite cache，以及 `fetch_lyrics / fetch_lyrics_online / set_lyrics_offset` 命令。
 
-**Current starting point:** 本契约覆盖当前歌词 IPC：LRCLIB client、LrcApi client、LRC/TTML/LYS parser、抓取优先链、SQLite cache，以及 `fetch_lyrics / fetch_lyrics_online / set_lyrics_offset` 命令。
-
-## Owner
-
-- 代码 Agent：歌词来源选择、LRC/TTML/LYS 解析、SQLite cache、offset 持久化、命令错误语义
-- UI Agent：消费命令返回值，不单方面修改命令名、字段名、source 语义或 miss 行为
-
-## 已冻结能力
+## 接口
 
 1. `fetch_lyrics(song_id: String) -> LyricsPayload`
 2. `set_lyrics_offset(song_id: String, ms: i64) -> ()`
@@ -19,7 +12,7 @@
 6. SQLite `lyrics` 表按 `song_hash` 缓存原始歌词文本和 `offset_ms`
 7. 对同一首歌重复调用 `fetch_lyrics` 时，优先命中 SQLite cache，不重复发起 HTTP 请求
 8. 歌词字号是全局显示偏好，不写入 `lyrics` 表；它走 `AppSettings.lyrics_font_step`
-9. `Phase 5` 起，歌词命令失败值统一为 `CommandError`，详见 [phase-5-error-contract.md](./phase-5-error-contract.md)
+9. 歌词命令失败值统一为 `CommandError`，详见 [errors.md](./errors.md)
 
 ## Inputs / outputs / required dependencies
 
@@ -197,7 +190,7 @@
 
 ### Shared error type: `CommandError`
 
-歌词命令统一返回结构化错误，字段定义与错误码含义见 [phase-5-error-contract.md](./phase-5-error-contract.md)。
+歌词命令统一返回结构化错误，字段定义与错误码含义见 [errors.md](./errors.md)。
 
 ## Cache semantics
 
@@ -227,7 +220,7 @@
 3. `quick-xml` 负责 TTML 解析
 4. `regex` 负责 LYS token 解析
 5. `rusqlite` 负责缓存和 offset 持久化
-6. `playback-position` 事件继续由 Phase 2 播放契约提供，歌词契约本身不新增事件
+6. `playback-position` 事件由播放契约（`playback.md`）提供，歌词契约本身不新增事件
 7. 全局显示偏好由 settings 命令提供；歌词模块当前额外依赖 `AppSettings.lyrics_font_step`
 
 ## Verification commands
@@ -251,17 +244,3 @@ pnpm tauri build --debug --no-bundle --ci
 7. `phase5_errors`
 
 以上测试全部通过，并且调试构建成功。
-
-## Pause-and-resume instructions
-
-1. 接手前先读本文件，再读 [../architecture/roadmap.md](../architecture/roadmap.md)
-2. 先跑验证命令，确认歌词后端没有被后续改动打破
-3. 如果要改命令名、字段名、抓取顺序、miss 语义或 `source` 枚举值：
-   - 先更新本契约
-   - 再改 Rust 实现
-   - 最后通知 UI Agent
-4. UI Agent 消费本契约时，默认流程应为：
-   - `play(song_id)`
-   - `fetch_lyrics(song_id)`
-   - 监听 `playback-position`
-   - 需要微调时调用 `set_lyrics_offset(song_id, ms)`

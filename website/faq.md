@@ -68,5 +68,5 @@ Then open the app again. This only needs to be done once.
 ## Need more detail?
 
 - [Project README](https://github.com/thedavidweng/OpenKara/blob/main/README.md)
-- [Architecture](https://github.com/thedavidweng/OpenKara/blob/main/docs/references/architecture/architecture.md)
-- [Release workflow](https://github.com/thedavidweng/OpenKara/blob/main/docs/references/architecture/releasing.md)
+- [IPC Contracts](https://github.com/thedavidweng/OpenKara/blob/main/docs/references/contracts/)
+- [Changelog](https://github.com/thedavidweng/OpenKara/blob/main/CHANGELOG.md)

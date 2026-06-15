@@ -1,9 +1,5 @@
 # F1 — Playlists & Singer Rotation
 
-**Last updated:** 2026-05-13  
-**Status:** Approved (maintainer-attested for implementation, 2026-05-13)  
-**Spec acceptance:** Per the archived v0.9 plan's F1 spec acceptance — maintainer confirmed via execution instruction that all 6 mandatory sections were present and no SPEC gap comments remained.
-
 ---
 
 ## 1. UX State Machine
@@ -121,7 +117,7 @@ When a song is removed from the library:
 
 ### SQLite migrations
 
-- Playlist/singer tables will be added in a **new migration** (`008_playlists.sql` and `009_singer_rotation.sql`).
+- Playlist/singer tables are in migrations `008_playlists.sql` and `009_singer_rotation.sql`.
 - Migrations are **forward-only**. If a migration fails (disk full, constraint violation):
   1. The transaction is rolled back.
   2. The app shows a toast: "Failed to update database. Your library is unchanged."
@@ -234,7 +230,7 @@ CREATE TABLE IF NOT EXISTS rotation_state (
 );
 ```
 
-### IPC commands (planned)
+### IPC commands
 
 | Command                      | Direction          | Purpose                                    |
 | ---------------------------- | ------------------ | ------------------------------------------ |
@@ -249,14 +245,3 @@ CREATE TABLE IF NOT EXISTS rotation_state (
 | `get_rotation_state`         | Frontend → Backend | Returns current rotation config            |
 | `advance_rotation`           | Frontend → Backend | Advances rotation pointer (manual next)    |
 | `set_queue_entry_singer`     | Frontend → Backend | Sets the singer for a specific queue entry |
-
-## Implementation Sequence
-
-1. **Spec approval** — This doc checked and approved per `plan.md` F1 spec acceptance.
-2. **Data layer** — Migrations `008_playlists.sql`, `009_singer_rotation.sql` + Rust commands.
-3. **Contracts** — Update `phase-1-library-contract.md` and playback contract.
-4. **i18n** — Add string keys to `en.json` and `zh-CN.json`.
-5. **Frontend playlist panel** — Sidebar section + playlist view + CRUD modals.
-6. **Singer rotation UI** — Queue singer assignment + rotation controls.
-7. **Tests** — Rust tests for persistence, rotation rules, library-track removal. Vitest for frontend store actions.
-8. **H8.6 gate** — Verify `check-i18n.mjs` passes with new keys.

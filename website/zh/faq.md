@@ -68,5 +68,5 @@ xattr -rd com.apple.quarantine /Applications/OpenKara.app
 ## 更多资料
 
 - [项目 README](https://github.com/thedavidweng/OpenKara/blob/main/README_CN.md)
-- [架构文档](https://github.com/thedavidweng/OpenKara/blob/main/docs/references/architecture/architecture.md)
-- [发布流程](https://github.com/thedavidweng/OpenKara/blob/main/docs/references/architecture/releasing.md)
+- [IPC 契约](https://github.com/thedavidweng/OpenKara/blob/main/docs/references/contracts/)
+- [Changelog](https://github.com/thedavidweng/OpenKara/blob/main/CHANGELOG.md)

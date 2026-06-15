@@ -1,15 +1,8 @@
-# Phase 6 模型 Bootstrap 契约
+# 模型 Bootstrap 契约
 
-**Goal:** 固定运行时模型解析、首次启动下载、状态查询和分离前置条件，避免 UI Agent 和后续代码接手者继续把“模型在哪里、什么时候可用”留成隐式约定。
+运行时模型解析、首次启动下载、状态查询和分离前置条件。
 
-**Current starting point:** 本契约对应分支 `codex/phase0-m0` 上首次启动模型 bootstrap、运行时状态快照和分离前置 gate 已接入之后的状态。
-
-## Owner
-
-- 代码 Agent：模型路径解析、下载、校验、状态快照、事件、分离前置条件
-- UI Agent：消费状态命令和事件，不单方面改命令名、事件名、字段名
-
-## 已冻结能力
+## 接口
 
 1. 应用启动时优先检查 `<app_data_dir>/models/htdemucs.onnx`
 2. 若运行时安装目录缺失模型，则回退检查开发目录 `src-tauri/models/htdemucs.onnx`
@@ -204,12 +197,3 @@ pnpm tauri build --debug --no-bundle --ci
 1. `phase6_model_bootstrap` 证明路径解析、已验证写盘、状态 gate 正常
 2. 全量 `cargo test` 证明现有分离/播放/歌词链路未被打破
 3. 调试构建成功
-
-## Pause-and-resume instructions
-
-1. 接手前先读本文件，再读 [../architecture/roadmap.md](../architecture/roadmap.md)
-2. 若需要更换模型 URL、校验值或安装目录：
-   - 先更新本契约
-   - 再改 Rust 实现和测试
-   - 最后通知 UI Agent
-3. 若后续要给 UI 暴露下载重试按钮，优先在此契约基础上新增 `retry_model_bootstrap()`，不要改现有状态字段
