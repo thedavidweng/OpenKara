@@ -1,0 +1,34 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 2%
+    patch:
+      default:
+        target: 80%
+
+  precision: 1
+  round: down
+  range: "60...100"
+
+flags:
+  frontend:
+    paths:
+      - src/
+    carryforward: true
+
+component_management:
+  individual_components:
+    - component_id: frontend
+      name: frontend
+      paths:
+        - src/**
+    - component_id: rust
+      name: rust
+      paths:
+        - src-tauri/**
+
+comment:
+  layout: "header, diff, flags, components, files"
+  require_changes: true
