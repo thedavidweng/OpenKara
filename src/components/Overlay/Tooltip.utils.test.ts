@@ -161,11 +161,8 @@ describe("getTooltipPosition", () => {
     const result = getTooltipPosition(anchorRect, tooltipSize, viewport);
 
     // Unclamped left = 100 + 40 - 500 = -360
-    // maxRight = 800 - 1000 - 8 = -208
-    // Math.min(Math.max(-360, 8), -208) = Math.min(8, -208) = -208
-    // Hmm, actually: Math.min(8, -208) = -208. That seems like a bug in the source but we test the actual behavior.
-    expect(result.left).toBe(
-      Math.min(Math.max(-360, VIEWPORT_PADDING), 800 - 1000 - VIEWPORT_PADDING),
-    );
+    // rightEdge = 800 - 1000 - 8 = -208
+    // Math.max(Math.min(-360, -208), 8) = Math.max(-360, 8) = 8
+    expect(result.left).toBe(VIEWPORT_PADDING);
   });
 });
