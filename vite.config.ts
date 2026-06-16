@@ -108,7 +108,6 @@ export default defineConfig(async () => ({
         // Deep Tauri native API dependencies
         "src/runtime/window-shell-runtime.ts",
         "src/lib/native-context-menu.ts",
-        "src/lib/lyrics-playback-clock.ts",
         // Heavy Tauri-dependent UI components (covered by Playwright E2E)
         "src/components/Library/ImportCdgChoiceDialog.tsx",
         "src/components/Library/SongEditDialog.tsx",
