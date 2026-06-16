@@ -1,5 +1,76 @@
 import { describe, expect, test, vi } from "vitest";
-import { getCdgSyncBucket, startCdgPositionSync } from "./use-cdg-sync";
+import {
+  ensureArrayBuffer,
+  getCdgSyncBucket,
+  startCdgPositionSync,
+} from "./use-cdg-sync";
+
+describe("ensureArrayBuffer", () => {
+  test("returns ArrayBuffer as-is", () => {
+    const buf = new ArrayBuffer(4);
+    expect(ensureArrayBuffer(buf)).toBe(buf);
+  });
+
+  test("converts Uint8Array view to a standalone ArrayBuffer", () => {
+    const source = new Uint8Array([1, 2, 3, 4]);
+    const result = ensureArrayBuffer(source);
+
+    expect(result).toBeInstanceOf(ArrayBuffer);
+    expect(result.byteLength).toBe(4);
+    expect(new Uint8Array(result)).toEqual(new Uint8Array([1, 2, 3, 4]));
+    // Must be a copy, not a view into the original buffer
+    expect(result).not.toBe(source.buffer);
+  });
+
+  test("converts Uint8Array with byteOffset to a standalone ArrayBuffer", () => {
+    const backing = new Uint8Array([0, 0, 1, 2, 3, 0, 0]);
+    const view = new Uint8Array(backing.buffer, 2, 3); // [1, 2, 3]
+    const result = ensureArrayBuffer(view);
+
+    expect(result).toBeInstanceOf(ArrayBuffer);
+    expect(result.byteLength).toBe(3);
+    expect(new Uint8Array(result)).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  test("converts number array to ArrayBuffer", () => {
+    const result = ensureArrayBuffer([10, 20, 30]);
+
+    expect(result).toBeInstanceOf(ArrayBuffer);
+    expect(result.byteLength).toBe(3);
+    expect(new Uint8Array(result)).toEqual(new Uint8Array([10, 20, 30]));
+  });
+
+  test("converts empty number array to empty ArrayBuffer", () => {
+    const result = ensureArrayBuffer([]);
+
+    expect(result).toBeInstanceOf(ArrayBuffer);
+    expect(result.byteLength).toBe(0);
+  });
+
+  test("returns empty ArrayBuffer for null", () => {
+    const result = ensureArrayBuffer(null);
+    expect(result).toBeInstanceOf(ArrayBuffer);
+    expect(result.byteLength).toBe(0);
+  });
+
+  test("returns empty ArrayBuffer for undefined", () => {
+    const result = ensureArrayBuffer(undefined);
+    expect(result).toBeInstanceOf(ArrayBuffer);
+    expect(result.byteLength).toBe(0);
+  });
+
+  test("returns empty ArrayBuffer for a string", () => {
+    const result = ensureArrayBuffer("hello");
+    expect(result).toBeInstanceOf(ArrayBuffer);
+    expect(result.byteLength).toBe(0);
+  });
+
+  test("returns empty ArrayBuffer for a plain object", () => {
+    const result = ensureArrayBuffer({ foo: "bar" });
+    expect(result).toBeInstanceOf(ArrayBuffer);
+    expect(result.byteLength).toBe(0);
+  });
+});
 
 describe("getCdgSyncBucket", () => {
   test("returns 0 for position 0", () => {

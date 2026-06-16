@@ -45,7 +45,7 @@ let lastStatus: CdgSyncStatusPayload = {
  * Vec<u8>) depending on the protocol path. This function handles both cases
  * so CDG rendering is robust regardless of IPC serialization behavior.
  */
-function ensureArrayBuffer(result: unknown): ArrayBuffer {
+export function ensureArrayBuffer(result: unknown): ArrayBuffer {
   if (result instanceof ArrayBuffer) return result;
   if (ArrayBuffer.isView(result)) {
     return Uint8Array.from(
