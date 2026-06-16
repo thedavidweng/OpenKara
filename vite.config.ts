@@ -95,6 +95,27 @@ export default defineConfig(async () => ({
         functions: 60,
         branches: 60,
       },
+      // Files excluded from coverage measurement — these are either Tauri
+      // IPC thin wrappers (invoke() calls), app entry points, Web Workers,
+      // or deep native-API modules that require a real Tauri runtime.
+      exclude: [
+        // Tauri IPC thin wrappers
+        "src/lib/tauri/*.ts",
+        // App entry point
+        "src/main.tsx",
+        // Web Worker
+        "src/workers/romanize.worker.ts",
+        // Deep Tauri native API dependencies
+        "src/runtime/window-shell-runtime.ts",
+        "src/lib/native-context-menu.ts",
+        // Heavy Tauri-dependent UI components (covered by Playwright E2E)
+        "src/components/Library/ImportCdgChoiceDialog.tsx",
+        "src/components/Library/SongEditDialog.tsx",
+        "src/components/Library/SongPropertiesDialog.tsx",
+        "src/components/Library/ImportButton.tsx",
+        "src/components/Bootstrap/ModelBootstrapBanner.tsx",
+        "src/components/Cdg/CdgCanvas.tsx",
+      ],
     },
   },
   resolve: {
