@@ -33,7 +33,6 @@ coverage:
     # for meaningful coverage; unit-test mocks only test the mock.
     - src/runtime/window-shell-runtime.ts
     - src/lib/native-context-menu.ts
-    - src/lib/lyrics-playback-clock.ts
     # Heavy Tauri-dependent UI — tested by Playwright E2E, not vitest.
     - src/components/Library/ImportCdgChoiceDialog.tsx
     - src/components/Library/SongEditDialog.tsx

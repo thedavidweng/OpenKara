@@ -278,7 +278,9 @@ describe("createSettingsOverlayActions - initialize", () => {
       state: "ready",
       version: "1.0.0",
       runtime_path: "/tmp/runtime",
-      download_progress: null,
+      downloaded_bytes: null,
+      total_bytes: null,
+      error: null,
     });
 
     await harness.actions.initialize();
@@ -338,7 +340,9 @@ describe("createSettingsOverlayActions - initialize", () => {
       state: "ready",
       version: "1.0.0",
       runtime_path: "/tmp/runtime",
-      download_progress: null,
+      downloaded_bytes: null,
+      total_bytes: null,
+      error: null,
     });
 
     await harness.actions.initialize();
@@ -380,7 +384,9 @@ describe("createSettingsOverlayActions - initialize", () => {
       state: "ready",
       version: "1.0.0",
       runtime_path: "/tmp/runtime",
-      download_progress: null,
+      downloaded_bytes: null,
+      total_bytes: null,
+      error: null,
     });
 
     await harness.actions.initialize();
@@ -423,7 +429,9 @@ describe("createSettingsOverlayActions - initialize", () => {
       state: "ready",
       version: "1.0.0",
       runtime_path: "/tmp/runtime",
-      download_progress: null,
+      downloaded_bytes: null,
+      total_bytes: null,
+      error: null,
     });
 
     await harness.actions.initialize();
