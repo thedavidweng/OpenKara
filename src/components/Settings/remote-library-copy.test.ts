@@ -6,11 +6,10 @@ import {
   getRemoteLibraryConnectedMessage,
 } from "./remote-library-copy";
 import type { RemoteLibraryProvider } from "@/types/ipc";
+import type { TFunction } from "i18next";
 
-type TFunction = (key: string, options?: { defaultValue?: string }) => string;
-
-const t: TFunction = (key: string, opts?: { defaultValue?: string }) =>
-  opts?.defaultValue ?? key;
+const t: TFunction = ((key: string, opts?: { defaultValue?: string }) =>
+  opts?.defaultValue ?? key) as TFunction;
 
 describe("getRemoteProviderLabel", () => {
   test('returns "Google Drive" for google_drive', () => {
