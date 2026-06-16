@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import type {
+  CdgSyncChannel,
+  CdgSyncStatusPayload,
+} from "@/lib/cdg-sync-channel";
 
 describe("createCoalescingPainter", () => {
   beforeEach(() => {
@@ -124,5 +128,179 @@ describe("createCoalescingPainter", () => {
 
     expect(paint).toHaveBeenCalledTimes(1);
     expect(paint).toHaveBeenCalledWith("new-frame");
+  });
+});
+
+// ─── startCdgBroadcastFrameReceiver ─────────────────────────
+
+describe("startCdgBroadcastFrameReceiver", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("onClear cancels pending coalesced frame and calls onClear", async () => {
+    vi.resetModules();
+
+    let capturedFrameHandler: ((payload: ArrayBuffer) => void) | null = null;
+    let capturedClearHandler: (() => void) | null = null;
+
+    vi.doMock("@/lib/cdg-sync-channel", () => ({
+      startCdgSyncReceiver: (opts: {
+        onFrame: (payload: ArrayBuffer) => void;
+        onClear: () => void;
+      }) => {
+        capturedFrameHandler = opts.onFrame;
+        capturedClearHandler = opts.onClear;
+        return vi.fn();
+      },
+    }));
+
+    const { startCdgBroadcastFrameReceiver } =
+      await import("./use-cdg-frame-receiver");
+
+    const onFrame = vi.fn();
+    const onClear = vi.fn();
+    const stop = startCdgBroadcastFrameReceiver({
+      channel: {} as CdgSyncChannel,
+      onFrame,
+      onClear,
+      onStatus: vi.fn(),
+    });
+
+    // Enqueue a frame
+    capturedFrameHandler!(new ArrayBuffer(4));
+    // Immediately clear before timer fires
+    capturedClearHandler!();
+
+    vi.runAllTimers();
+
+    // Frame should have been cancelled by clear
+    expect(onFrame).not.toHaveBeenCalled();
+    expect(onClear).toHaveBeenCalledOnce();
+
+    stop();
+  });
+
+  test("onStatus passes through to the caller", async () => {
+    vi.resetModules();
+
+    let capturedStatusHandler:
+      | ((payload: CdgSyncStatusPayload) => void)
+      | null = null;
+
+    vi.doMock("@/lib/cdg-sync-channel", () => ({
+      startCdgSyncReceiver: (opts: {
+        onStatus: (payload: CdgSyncStatusPayload) => void;
+      }) => {
+        capturedStatusHandler = opts.onStatus;
+        return vi.fn();
+      },
+    }));
+
+    const { startCdgBroadcastFrameReceiver } =
+      await import("./use-cdg-frame-receiver");
+
+    const onStatus = vi.fn();
+    const stop = startCdgBroadcastFrameReceiver({
+      channel: {} as CdgSyncChannel,
+      onFrame: vi.fn(),
+      onClear: vi.fn(),
+      onStatus,
+    });
+
+    const statusPayload: CdgSyncStatusPayload = {
+      songId: "abc",
+      hasCdg: true,
+    };
+    capturedStatusHandler!(statusPayload);
+
+    expect(onStatus).toHaveBeenCalledWith(statusPayload);
+
+    stop();
+  });
+
+  test("stop() cancels pending paint and stops the receiver", async () => {
+    vi.resetModules();
+
+    let capturedFrameHandler: ((payload: ArrayBuffer) => void) | null = null;
+    const stopReceiver = vi.fn();
+
+    vi.doMock("@/lib/cdg-sync-channel", () => ({
+      startCdgSyncReceiver: (opts: {
+        onFrame: (payload: ArrayBuffer) => void;
+      }) => {
+        capturedFrameHandler = opts.onFrame;
+        return stopReceiver;
+      },
+    }));
+
+    const { startCdgBroadcastFrameReceiver } =
+      await import("./use-cdg-frame-receiver");
+
+    const onFrame = vi.fn();
+    const stop = startCdgBroadcastFrameReceiver({
+      channel: {} as CdgSyncChannel,
+      onFrame,
+      onClear: vi.fn(),
+      onStatus: vi.fn(),
+    });
+
+    // Enqueue a frame, then immediately stop
+    capturedFrameHandler!(new ArrayBuffer(8));
+    stop();
+
+    vi.runAllTimers();
+
+    // Frame should have been cancelled and receiver stopped
+    expect(onFrame).not.toHaveBeenCalled();
+    expect(stopReceiver).toHaveBeenCalledOnce();
+  });
+
+  test("frames coalesce correctly across clear then re-enqueue", async () => {
+    vi.resetModules();
+
+    let capturedFrameHandler: ((payload: ArrayBuffer) => void) | null = null;
+    let capturedClearHandler: (() => void) | null = null;
+
+    vi.doMock("@/lib/cdg-sync-channel", () => ({
+      startCdgSyncReceiver: (opts: {
+        onFrame: (payload: ArrayBuffer) => void;
+        onClear: () => void;
+      }) => {
+        capturedFrameHandler = opts.onFrame;
+        capturedClearHandler = opts.onClear;
+        return vi.fn();
+      },
+    }));
+
+    const { startCdgBroadcastFrameReceiver } =
+      await import("./use-cdg-frame-receiver");
+
+    const onFrame = vi.fn();
+    const stop = startCdgBroadcastFrameReceiver({
+      channel: {} as CdgSyncChannel,
+      onFrame,
+      onClear: vi.fn(),
+      onStatus: vi.fn(),
+    });
+
+    // Enqueue, clear, then enqueue again
+    const buf1 = new ArrayBuffer(4);
+    const buf2 = new ArrayBuffer(8);
+    capturedFrameHandler!(buf1);
+    capturedClearHandler!();
+    capturedFrameHandler!(buf2);
+
+    vi.runAllTimers();
+
+    // Only the second frame should paint (after clear)
+    expect(onFrame).toHaveBeenCalledOnce();
+    expect(onFrame).toHaveBeenCalledWith(buf2);
+
+    stop();
   });
 });

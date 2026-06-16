@@ -12,6 +12,35 @@ coverage:
   round: down
   range: "60...100"
 
+  ignore:
+    # Tauri IPC thin wrappers — all are single-line invoke() calls;
+    # testing them validates the Tauri framework, not our logic.
+    - src/lib/tauri/cdg.ts
+    - src/lib/tauri/library-setup.ts
+    - src/lib/tauri/library.ts
+    - src/lib/tauri/lyrics.ts
+    - src/lib/tauri/maintenance.ts
+    - src/lib/tauri/playback.ts
+    - src/lib/tauri/playlist.ts
+    - src/lib/tauri/remote-repository.ts
+    - src/lib/tauri/separation.ts
+    - src/lib/tauri/settings.ts
+    # App entry point — bootstraps React + Tauri, not testable in jsdom.
+    - src/main.tsx
+    # Web Worker — requires worker runtime, not available in vitest/jsdom.
+    - src/workers/romanize.worker.ts
+    # Deep Tauri native API dependencies — require actual Tauri runtime
+    # for meaningful coverage; unit-test mocks only test the mock.
+    - src/runtime/window-shell-runtime.ts
+    - src/lib/native-context-menu.ts
+    # Heavy Tauri-dependent UI — tested by Playwright E2E, not vitest.
+    - src/components/Library/ImportCdgChoiceDialog.tsx
+    - src/components/Library/SongEditDialog.tsx
+    - src/components/Library/SongPropertiesDialog.tsx
+    - src/components/Library/ImportButton.tsx
+    - src/components/Bootstrap/ModelBootstrapBanner.tsx
+    - src/components/Cdg/CdgCanvas.tsx
+
 flags:
   frontend:
     paths:
