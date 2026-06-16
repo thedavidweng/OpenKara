@@ -172,7 +172,14 @@ jobs:
         continue-on-error: true
 
       - name: Run frontend tests with coverage
-        run: pnpm test:coverage
+        run: pnpm vitest run --coverage --reporter=junit --outputFile=test-results.junit.xml
+
+      - name: Upload test results to Codecov
+        if: always()
+        uses: codecov/test-results-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
       - name: Test metrics summary
         if: always()
