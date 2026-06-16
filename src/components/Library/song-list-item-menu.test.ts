@@ -107,9 +107,9 @@ describe("buildSongListContextMenuItems", () => {
       expect(addToPlaylist!.children).toBeDefined();
       // At minimum it has the "new playlist" entry
       expect(addToPlaylist!.children!.length).toBeGreaterThanOrEqual(1);
-      expect(addToPlaylist!.children!.at(-1)!.label).toBe(
-        "playlist.newPlaylist",
-      );
+      expect(
+        addToPlaylist!.children![addToPlaylist!.children!.length - 1]!.label,
+      ).toBe("playlist.newPlaylist");
     });
 
     test("addToPlaylist submenu lists playlists with correct membership indicators", () => {
@@ -461,7 +461,8 @@ describe("buildSongListContextMenuItems", () => {
       );
 
       const addToPlaylist = findItem(items, "playlist.addTo")!;
-      const newEntry = addToPlaylist.children!.at(-1)!;
+      const newEntry =
+        addToPlaylist.children![addToPlaylist.children!.length - 1]!;
       expect(newEntry.label).toBe("playlist.newPlaylist");
       newEntry.onClick!();
       expect(onCreate).toHaveBeenCalled();

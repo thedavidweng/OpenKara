@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createMaintenanceSettingsActions } from "./settings-overlay.maintenance-actions";
 import type { SettingsActionContext } from "./settings-overlay.types";
+import type { SeparationStatusSnapshot } from "@/types/ipc";
 
 function createContext(): SettingsActionContext {
   return {
@@ -77,9 +78,10 @@ describe("createMaintenanceSettingsActions", () => {
 
   describe("confirmDeleteStems", () => {
     test("calls deleteAllStems, clears statuses, and resets meta", async () => {
-      vi.mocked(context.dependencies.api.deleteAllStems).mockResolvedValue(
-        undefined,
-      );
+      vi.mocked(context.dependencies.api.deleteAllStems).mockResolvedValue({
+        deleted_count: 0,
+        freed_bytes: 0,
+      });
 
       await actions.confirmDeleteStems();
 
@@ -167,10 +169,10 @@ describe("createMaintenanceSettingsActions", () => {
 
       vi.mocked(
         context.dependencies.api.downgradeAllToTwoStem,
-      ).mockResolvedValue(undefined);
+      ).mockResolvedValue({ downgraded_count: 0, freed_bytes: 0 });
       vi.mocked(
         context.dependencies.api.getAllSeparationStatuses,
-      ).mockResolvedValue(statuses);
+      ).mockResolvedValue(statuses as SeparationStatusSnapshot[]);
 
       await actions.confirmDowngrade();
 
@@ -232,7 +234,7 @@ describe("createMaintenanceSettingsActions", () => {
     test("calls deleteAllCachedLyrics, clears lyrics store, and resets meta", async () => {
       vi.mocked(
         context.dependencies.api.deleteAllCachedLyrics,
-      ).mockResolvedValue(undefined);
+      ).mockResolvedValue(0);
 
       await actions.confirmDeleteLyrics();
 
