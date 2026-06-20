@@ -7,6 +7,7 @@ Thanks for your interest in contributing.
 ```bash
 git clone https://github.com/thedavidweng/OpenKara.git
 cd OpenKara
+mise install  # install tools pinned in mise.toml
 pnpm install
 ```
 
