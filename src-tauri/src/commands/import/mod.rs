@@ -31,6 +31,7 @@ use delete::delete_song_from_library;
 use expand::{build_selected_cdg_lookup, classify_import_paths, collect_expandable_import_paths};
 use ingest::{build_and_store_media_g_zip, build_and_store_song, try_extract_embedded_lyrics};
 use preview::{display_audio_format, inspect_import_candidate};
+use rayon::prelude::*;
 
 #[cfg(target_os = "macos")]
 use std::ffi::{c_char, CStr, CString};
@@ -255,27 +256,45 @@ pub fn import_songs_from_paths_with_options(
     let mut failed = Vec::new();
     let classified = classify_import_paths(paths);
     let selected_cdg_by_stem = build_selected_cdg_lookup(&classified.cdg_paths);
+
+    // Phase 1: Read metadata and copy files in parallel (I/O bound).
+    // Phase 2: Insert into database sequentially (SQLite single-writer).
+    let prepared: Vec<_> = classified
+        .audio_paths
+        .par_iter()
+        .map(|audio_path| {
+            let result = build_and_store_song(
+                audio_path,
+                library,
+                &selected_cdg_by_stem,
+                &options.explicit_cdg_by_audio_path,
+                &options.skip_cdg_for_audio_paths,
+                &mut HashSet::<std::path::PathBuf>::new(),
+            );
+            (audio_path, result)
+        })
+        .collect();
+
+    // Collect consumed CDG paths from successful imports.
     let mut consumed_cdg_paths = HashSet::new();
 
-    for audio_path in &classified.audio_paths {
-        match build_and_store_song(
-            audio_path,
-            library,
-            &selected_cdg_by_stem,
-            &options.explicit_cdg_by_audio_path,
-            &options.skip_cdg_for_audio_paths,
-            &mut consumed_cdg_paths,
-        ) {
-            Ok(song) => match cache::upsert_song(connection, &song) {
-                Ok(()) => {
-                    try_extract_embedded_lyrics(connection, &song, library);
-                    imported.push(song);
+    for (audio_path, result) in prepared {
+        match result {
+            Ok(song) => {
+                if let Some(ref cdg_path) = song.cdg_path {
+                    consumed_cdg_paths.insert(std::path::PathBuf::from(cdg_path));
                 }
-                Err(error) => failed.push(ImportFailure {
-                    path: audio_path.display().to_string(),
-                    error: database_error(error.to_string()),
-                }),
-            },
+                match cache::upsert_song(connection, &song) {
+                    Ok(()) => {
+                        try_extract_embedded_lyrics(connection, &song, library);
+                        imported.push(song);
+                    }
+                    Err(error) => failed.push(ImportFailure {
+                        path: audio_path.display().to_string(),
+                        error: database_error(error.to_string()),
+                    }),
+                }
+            }
             Err(error) => failed.push(ImportFailure {
                 path: audio_path.display().to_string(),
                 error: CommandError::from(LibraryError::MediaReadFailed(error.to_string())),

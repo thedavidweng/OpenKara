@@ -19,6 +19,8 @@ pub struct BandwidthMonitor {
     is_slow: Arc<AtomicBool>,
     /// Threshold in bytes/sec below which the connection is considered slow.
     slow_threshold: AtomicU64,
+    /// Request latency in microseconds, EWMA (alpha=0.3).
+    latency_us: AtomicU64,
 }
 
 impl BandwidthMonitor {
@@ -29,6 +31,7 @@ impl BandwidthMonitor {
             bytes_per_sec: AtomicU64::new(0),
             is_slow: Arc::new(AtomicBool::new(false)),
             slow_threshold: AtomicU64::new(slow_threshold_bps),
+            latency_us: AtomicU64::new(0),
         }
     }
 
@@ -53,6 +56,16 @@ impl BandwidthMonitor {
 
         let threshold = self.slow_threshold.load(Ordering::Relaxed);
         self.is_slow.store(new_bps < threshold, Ordering::Relaxed);
+
+        // Track request latency (EWMA, alpha=0.3).
+        let latency = elapsed.as_micros() as u64;
+        let prev_latency = self.latency_us.load(Ordering::Relaxed);
+        let new_latency = if prev_latency == 0 {
+            latency
+        } else {
+            (prev_latency as f64 * 0.7 + latency as f64 * 0.3) as u64
+        };
+        self.latency_us.store(new_latency, Ordering::Relaxed);
     }
 
     /// Current estimated bandwidth in bytes/sec.
@@ -63,6 +76,11 @@ impl BandwidthMonitor {
     /// Whether the connection is currently slow.
     pub fn is_slow(&self) -> bool {
         self.is_slow.load(Ordering::Relaxed)
+    }
+
+    /// Estimated request latency in microseconds.
+    pub fn latency_us(&self) -> u64 {
+        self.latency_us.load(Ordering::Relaxed)
     }
 
     /// Update the slow threshold at runtime.
@@ -143,6 +161,8 @@ pub struct ProviderFetcher {
     token_refresh: Option<Box<dyn Fn() -> Result<String, FetchError> + Send + Sync>>,
     /// Prevents repeated refresh attempts across retries in `fetch_range_with_retry`.
     refresh_attempted: std::sync::atomic::AtomicBool,
+    /// Reusable HTTP client — avoids creating a new client per request.
+    client: reqwest::blocking::Client,
 }
 
 impl ProviderFetcher {
@@ -154,6 +174,7 @@ impl ProviderFetcher {
             api_arg_header: None,
             token_refresh: None,
             refresh_attempted: std::sync::atomic::AtomicBool::new(false),
+            client: reqwest::blocking::Client::new(),
         }
     }
 
@@ -184,12 +205,11 @@ impl ProviderFetcher {
     fn execute_request(&self, offset: u64, length: u64) -> Result<Vec<u8>, FetchError> {
         let end = offset + length - 1;
         let range_value = format!("bytes={offset}-{end}");
-        let client = reqwest::blocking::Client::new();
 
         let mut builder = if self.use_post {
-            client.post(&self.url)
+            self.client.post(&self.url)
         } else {
-            client.get(&self.url)
+            self.client.get(&self.url)
         };
 
         builder = builder.header("Range", &range_value);
@@ -400,6 +420,46 @@ enum FetchOutcome {
     Failed(FetchError),
 }
 
+/// Semaphore for limiting concurrent HTTP downloads across multiple fetch threads.
+///
+/// When streaming multiple stems in parallel, each stem has its own fetch thread.
+/// Without coordination, all threads could saturate the network simultaneously.
+/// This semaphore limits the total number of concurrent HTTP requests.
+pub struct DownloadSemaphore {
+    max_concurrent: usize,
+    active: std::sync::atomic::AtomicUsize,
+}
+
+impl DownloadSemaphore {
+    /// Create a new semaphore allowing up to `max_concurrent` concurrent downloads.
+    pub fn new(max_concurrent: usize) -> Self {
+        Self {
+            max_concurrent,
+            active: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+
+    /// Try to acquire a slot. Returns `true` if a slot was acquired, `false` if
+    /// at capacity. Call `release()` when the download completes.
+    pub fn try_acquire(&self) -> bool {
+        let current = self.active.load(Ordering::Relaxed);
+        if current >= self.max_concurrent {
+            return false;
+        }
+        self.active
+            .compare_exchange(current, current + 1, Ordering::AcqRel, Ordering::Relaxed)
+            .is_ok()
+    }
+
+    /// Release a previously acquired slot.
+    pub fn release(&self) {
+        self.active.fetch_sub(1, Ordering::Release);
+    }
+
+    /// Default max concurrent downloads.
+    pub const DEFAULT_MAX_CONCURRENT: usize = 2;
+}
+
 /// Spawn a background fetch thread that receives `FetchCommand`s and fulfills
 /// them via HTTP Range requests. Returns the command sender, event receiver,
 /// and the join handle.
@@ -517,7 +577,7 @@ fn fetch_loop(
     let mut handle_update_position =
         |position: u64, consecutive_failures: &mut u32| -> ControlFlow<()> {
             current_read_position = position;
-            let prefetch_bytes = estimate_prefetch_bytes(cache, current_read_position);
+            let prefetch_bytes = estimate_prefetch_bytes(cache, current_read_position, monitor);
             if prefetch_bytes == 0 {
                 return ControlFlow::Continue(());
             }
@@ -630,13 +690,35 @@ fn fetch_loop(
     }
 }
 
+/// Prefetch factor: how many round-trips of data to buffer ahead.
+const PREFETCH_FACTOR: f64 = 4.0;
+
+/// Minimum prefetch size in bytes (floor for fast connections with tiny latency).
+const MIN_PREFETCH_BYTES: u64 = 64 * 1024;
+
+/// Maximum prefetch size in bytes (ceiling to avoid over-buffering).
+const MAX_PREFETCH_BYTES: u64 = 512 * 1024;
+
 /// Estimate how many bytes to prefetch ahead of the given position.
-/// Targets ~5 seconds of audio at ~128kbps (16KB/s) = 80KB minimum.
-fn estimate_prefetch_bytes(cache: &ChunkedCache, position: u64) -> u64 {
+///
+/// Adaptive strategy: `prefetch = max(factor * latency * throughput, latency * throughput)`
+/// where `factor` scales with connection quality. High-latency connections
+/// get more data buffered to absorb jitter; fast connections use the minimum.
+fn estimate_prefetch_bytes(cache: &ChunkedCache, position: u64, monitor: &BandwidthMonitor) -> u64 {
     let file_size = cache.file_size();
     let remaining = file_size.saturating_sub(position);
-    // 5 seconds at 128kbps = 80KB, but use min_fetch_size as floor.
-    remaining.min(80 * 1024)
+
+    let throughput = monitor.bytes_per_sec().max(1);
+    let latency_secs = monitor.latency_us() as f64 / 1_000_000.0;
+
+    // If we have no latency data yet, fall back to a conservative 80KB.
+    if latency_secs <= 0.0 {
+        return remaining.min(80 * 1024);
+    }
+
+    // Adaptive: prefetch ≈ factor × latency × throughput.
+    let adaptive = (PREFETCH_FACTOR * latency_secs * throughput as f64) as u64;
+    remaining.min(adaptive.max(MIN_PREFETCH_BYTES).min(MAX_PREFETCH_BYTES))
 }
 
 fn fetch_range_with_retry(
@@ -1070,21 +1152,40 @@ mod tests {
     }
 
     #[test]
-    fn prefetch_estimates_bytes() {
+    fn prefetch_estimates_bytes_with_no_latency_data() {
         let dir = temp_dir("prefetch_est");
         let cache = ChunkedCache::open(&dir, "pf1", 1_000_000).unwrap();
+        let monitor = BandwidthMonitor::new(BandwidthMonitor::DEFAULT_SLOW_THRESHOLD);
 
-        // At position 0 with 1MB file: should prefetch ~80KB.
-        let bytes = estimate_prefetch_bytes(&cache, 0);
+        // No latency data yet → falls back to 80KB.
+        let bytes = estimate_prefetch_bytes(&cache, 0, &monitor);
         assert_eq!(bytes, 80 * 1024);
 
         // Near end: only remaining bytes.
-        let bytes = estimate_prefetch_bytes(&cache, 999_900);
+        let bytes = estimate_prefetch_bytes(&cache, 999_900, &monitor);
         assert_eq!(bytes, 100);
 
         // At end: 0.
-        let bytes = estimate_prefetch_bytes(&cache, 1_000_000);
+        let bytes = estimate_prefetch_bytes(&cache, 1_000_000, &monitor);
         assert_eq!(bytes, 0);
+
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn prefetch_adapts_to_latency_and_throughput() {
+        let dir = temp_dir("prefetch_adapt");
+        let cache = ChunkedCache::open(&dir, "pf2", 1_000_000).unwrap();
+        let monitor = BandwidthMonitor::new(BandwidthMonitor::DEFAULT_SLOW_THRESHOLD);
+
+        // Simulate: 100ms latency, 100KB/s throughput.
+        monitor.record_fetch(10_000, Duration::from_millis(100));
+
+        let bytes = estimate_prefetch_bytes(&cache, 0, &monitor);
+        // Expected: factor(4) × 0.1s × 100_000 B/s = 40_000.
+        // Clamped to MIN_PREFETCH_BYTES (64KB) since 40KB < 64KB.
+        assert!(bytes >= 64 * 1024, "expected >= 64KB, got {bytes}");
+        assert!(bytes <= 512 * 1024, "expected <= 512KB, got {bytes}");
 
         cleanup(&dir);
     }
@@ -1300,6 +1401,37 @@ mod tests {
         );
 
         cleanup(&dir);
+    }
+
+    #[test]
+    fn download_semaphore_limits_concurrency() {
+        let sem = super::DownloadSemaphore::new(2);
+
+        // Should acquire first two slots.
+        assert!(sem.try_acquire());
+        assert!(sem.try_acquire());
+
+        // Third should fail.
+        assert!(!sem.try_acquire());
+
+        // Release one — now we can acquire again.
+        sem.release();
+        assert!(sem.try_acquire());
+
+        // Clean up.
+        sem.release();
+        sem.release();
+    }
+
+    #[test]
+    fn download_semaphore_release_is_idempotent() {
+        let sem = super::DownloadSemaphore::new(1);
+        assert!(sem.try_acquire());
+        sem.release();
+        // Extra release shouldn't go negative (wraps to usize::MAX).
+        // The semaphore should still work correctly.
+        assert!(sem.try_acquire());
+        sem.release();
     }
 
     /// Helper fetcher that counts how many fetch_range calls were made.

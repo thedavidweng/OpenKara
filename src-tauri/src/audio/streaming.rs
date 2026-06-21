@@ -1,13 +1,14 @@
 use ringbuf::traits::{Consumer, Observer, Producer, Split};
 use ringbuf::HeapRb;
+use std::collections::VecDeque;
 use std::fs::File;
 use std::path::Path;
 use std::sync::{
     atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
-    Arc,
+    Arc, Condvar, Mutex,
 };
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use symphonia::core::{
     audio::SampleBuffer, codecs::DecoderOptions, errors::Error as SymphoniaError,
     formats::FormatOptions, io::MediaSourceStream, meta::MetadataOptions, probe::Hint,
@@ -144,7 +145,9 @@ pub fn ring_capacity(sample_rate: u32, channels: usize) -> usize {
 /// Consumer side of a streaming audio track, held by the cpal callback.
 pub struct AudioConsumer {
     cons: ringbuf::HeapCons<f32>,
-    pending_samples: Vec<f32>,
+    /// Prepend buffer for resampling lookahead. Uses `VecDeque` for efficient
+    /// front insertion without allocating a new `Vec` on every `prepend_samples`.
+    pending_samples: VecDeque<f32>,
     pub sample_rate: u32,
     pub channels: usize,
     /// Set by the producer when decode reaches EOF.
@@ -154,6 +157,12 @@ pub struct AudioConsumer {
     needs_flush: Arc<AtomicBool>,
     /// Shared seek target between consumer and producer.
     seek_target: Arc<SeekTarget>,
+    /// Pre-allocated scratch buffer for `acknowledge_flush` to avoid heap
+    /// allocation on the realtime audio thread.
+    flush_scratch: Vec<f32>,
+    /// Condvar notified when flush is acknowledged. Wakes the producer
+    /// in `signal_flush` so it doesn't spin-wait.
+    flush_done: Arc<(Mutex<()>, Condvar)>,
 }
 
 impl std::fmt::Debug for AudioConsumer {
@@ -215,8 +224,15 @@ impl AudioConsumer {
         self.needs_flush.store(false, Ordering::Relaxed);
         self.pending_samples.clear();
         // Drain all stale samples that were pushed before the seek.
-        let mut scratch = vec![0.0f32; self.cons.occupied_len()];
-        let _ = self.cons.pop_slice(&mut scratch);
+        // Reuse the pre-allocated scratch buffer to avoid heap allocation
+        // on the realtime audio thread.
+        let occupied = self.cons.occupied_len();
+        self.flush_scratch.resize(occupied, 0.0);
+        let _ = self.cons.pop_slice(&mut self.flush_scratch);
+        // Notify the producer (waiting in `signal_flush`) that the flush
+        // is complete so it can resume pushing post-seek samples.
+        let (_, cvar) = &*self.flush_done;
+        cvar.notify_one();
     }
 
     /// Get the shared seek target for setting seek positions.
@@ -230,8 +246,9 @@ impl AudioConsumer {
     pub fn pop_samples(&mut self, output: &mut [f32]) -> usize {
         let pending_count = self.pending_samples.len().min(output.len());
         if pending_count > 0 {
-            output[..pending_count].copy_from_slice(&self.pending_samples[..pending_count]);
-            self.pending_samples.drain(..pending_count);
+            for (i, sample) in self.pending_samples.drain(..pending_count).enumerate() {
+                output[i] = sample;
+            }
         }
 
         if pending_count == output.len() {
@@ -244,15 +261,17 @@ impl AudioConsumer {
     /// Put samples back at the front of the next pop. Streaming resampling
     /// reads a small lookahead window for interpolation; frames beyond the
     /// committed render position must be preserved for the next callback.
+    ///
+    /// Uses `VecDeque` for O(n) front insertion without allocating a new buffer.
     pub(crate) fn prepend_samples(&mut self, samples: &[f32]) {
         if samples.is_empty() {
             return;
         }
 
-        let mut pending = Vec::with_capacity(samples.len() + self.pending_samples.len());
-        pending.extend_from_slice(samples);
-        pending.append(&mut self.pending_samples);
-        self.pending_samples = pending;
+        // Prepend by extending front in reverse order.
+        for &sample in samples.iter().rev() {
+            self.pending_samples.push_front(sample);
+        }
     }
 }
 
@@ -268,6 +287,9 @@ pub struct AudioProducer {
     /// R6: Shared flush epoch — incremented on each flush so the consumer can
     /// track which flush it has acknowledged.
     flush_epoch: Arc<AtomicU64>,
+    /// Condvar notified by the consumer when flush is acknowledged.
+    /// Allows `signal_flush` to sleep instead of spinning with `yield_now`.
+    flush_done: Arc<(Mutex<()>, Condvar)>,
 }
 
 impl AudioProducer {
@@ -295,19 +317,20 @@ impl AudioProducer {
     /// After a seek, signal the consumer to drain stale samples.
     ///
     /// R6: Increments the flush epoch and waits (with a bounded timeout) for
-    /// the ring buffer to drain. This prevents the producer from pushing
-    /// post-seek samples that the consumer would then discard as stale.
+    /// the ring buffer to drain. Uses a condvar instead of `yield_now` spin
+    /// to avoid busy-waiting while giving the realtime thread priority.
     pub fn signal_flush(&self) {
         self.flush_epoch.fetch_add(1, Ordering::Relaxed);
         self.needs_flush.store(true, Ordering::Relaxed);
 
-        // Wait for the consumer to drain stale samples. The consumer checks
-        // needs_flush on every audio callback (~10ms). We spin with yield_now
-        // to avoid busy-waiting while giving the realtime thread priority.
-        let deadline = Instant::now() + Duration::from_millis(100);
-        while self.prod.occupied_len() > 0 && Instant::now() < deadline {
-            std::thread::yield_now();
-        }
+        // Wait for the consumer to drain stale samples via condvar.
+        // The consumer calls `acknowledge_flush` on the audio callback
+        // (~10ms) and notifies this condvar after draining.
+        let (lock, cvar) = &*self.flush_done;
+        let guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = cvar.wait_timeout_while(guard, Duration::from_millis(100), |_| {
+            self.prod.occupied_len() > 0
+        });
     }
 
     /// Get the shared seek target.
@@ -399,6 +422,7 @@ pub fn create_stream_pair(sample_rate: u32, channels: usize) -> (AudioProducer, 
     let needs_flush = Arc::new(AtomicBool::new(false));
     let seek_target = Arc::new(SeekTarget::new());
     let flush_epoch = Arc::new(AtomicU64::new(0));
+    let flush_done = Arc::new((Mutex::new(()), Condvar::new()));
 
     (
         AudioProducer {
@@ -407,15 +431,18 @@ pub fn create_stream_pair(sample_rate: u32, channels: usize) -> (AudioProducer, 
             needs_flush: Arc::clone(&needs_flush),
             seek_target: Arc::clone(&seek_target),
             flush_epoch: Arc::clone(&flush_epoch),
+            flush_done: Arc::clone(&flush_done),
         },
         AudioConsumer {
             cons,
-            pending_samples: Vec::new(),
+            pending_samples: VecDeque::new(),
             sample_rate,
             channels,
             is_eof,
             needs_flush,
             seek_target,
+            flush_scratch: Vec::new(),
+            flush_done,
         },
     )
 }
@@ -804,9 +831,18 @@ fn decode_mss_into_producer(
             continue;
         }
 
-        let decoded = decoder
-            .decode(&packet)
-            .map_err(|e| DecodeError::DecodeFailed(format!("from {label}: {e}")))?;
+        let decoded = match decoder.decode(&packet) {
+            Ok(decoded) => decoded,
+            Err(SymphoniaError::DecodeError(_)) => {
+                // Tolerate malformed packets — skip and continue decoding.
+                eprintln!(
+                    "warning: skipping malformed audio packet at offset {} in {label}",
+                    packet.ts()
+                );
+                continue;
+            }
+            Err(e) => return Err(DecodeError::DecodeFailed(format!("from {label}: {e}"))),
+        };
 
         let mut sample_buffer =
             SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
@@ -1119,12 +1155,14 @@ mod tests {
         let device_channels = 2;
         let buffer_frames = 512;
         let mut output = vec![0.0f32; buffer_frames * device_channels];
+        let mut rc = crate::audio::output::ResamplerCache::new();
         let rendered = render_output_buffer(
             &mut controller,
             &mut output,
             &mut Vec::new(),
             device_rate,
             device_channels,
+            &mut rc,
         );
 
         assert!(rendered > 0, "should render audio from m4a streaming");
@@ -1168,6 +1206,7 @@ mod tests {
         let mut callbacks_with_audio = 0u32;
 
         // Simulate cpal callback loop until track finishes
+        let mut rc = crate::audio::output::ResamplerCache::new();
         for _ in 0..10_000 {
             let snapshot = controller.snapshot();
             if !snapshot.is_playing {
@@ -1180,6 +1219,7 @@ mod tests {
                 &mut Vec::new(),
                 device_rate,
                 device_channels,
+                &mut rc,
             );
             if rendered > 0 {
                 total_rendered += rendered as u64;

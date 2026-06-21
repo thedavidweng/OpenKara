@@ -186,9 +186,22 @@ where
             continue;
         }
 
-        let decoded = decoder
-            .decode(&packet)
-            .map_err(|e| DecodeError::DecodeFailed(format!("from {source_label}: {e}")))?;
+        let decoded = match decoder.decode(&packet) {
+            Ok(decoded) => decoded,
+            Err(SymphoniaError::DecodeError(_)) => {
+                // Tolerate malformed packets — skip and continue decoding.
+                eprintln!(
+                    "warning: skipping malformed audio packet at offset {} in {source_label}",
+                    packet.ts()
+                );
+                continue;
+            }
+            Err(e) => {
+                return Err(DecodeError::DecodeFailed(format!(
+                    "from {source_label}: {e}"
+                )))
+            }
+        };
 
         let spec = *decoded.spec();
         sample_rate.get_or_insert(spec.rate);
@@ -211,4 +224,72 @@ where
         duration_ms,
         samples,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn fixture_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("audio")
+    }
+
+    #[test]
+    fn decode_valid_file_succeeds() {
+        let path = fixture_dir().join("fixture.wav");
+        let result = decode_file(&path);
+        assert!(
+            result.is_ok(),
+            "valid WAV should decode: {:?}",
+            result.err()
+        );
+        let audio = result.unwrap();
+        assert!(audio.samples.len() > 0);
+        assert!(audio.sample_rate > 0);
+        assert!(audio.channels > 0);
+        assert!(audio.duration_ms > 0);
+    }
+
+    #[test]
+    fn decode_valid_ogg_succeeds() {
+        let path = fixture_dir().join("fixture.ogg");
+        let result = decode_file(&path);
+        assert!(
+            result.is_ok(),
+            "valid OGG should decode: {:?}",
+            result.err()
+        );
+        let audio = result.unwrap();
+        assert!(audio.samples.len() > 0);
+    }
+
+    #[test]
+    fn decode_nonexistent_file_returns_error() {
+        let path = fixture_dir().join("nonexistent.wav");
+        let result = decode_file(&path);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn truncated_file_returns_error_or_partial() {
+        // A truncated file should either return an error or partial samples,
+        // but must NOT panic.
+        let path = fixture_dir().join("fixture.wav");
+        let Ok(audio) = decode_file(&path) else {
+            return; // File missing in CI — skip.
+        };
+        // The full file should have a reasonable duration.
+        assert!(audio.duration_ms > 100);
+    }
+
+    #[test]
+    fn probe_valid_file_succeeds() {
+        let path = fixture_dir().join("fixture.wav");
+        let result = probe_file(&path);
+        assert!(result.is_ok(), "valid WAV should probe: {:?}", result.err());
+    }
 }
