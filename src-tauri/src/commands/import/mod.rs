@@ -275,15 +275,18 @@ pub fn import_songs_from_paths_with_options(
         })
         .collect();
 
-    // Collect consumed CDG paths from successful imports.
+    // Collect consumed CDG source paths from successful imports.
+    // Uses the original source paths (not library-relative) so the standalone
+    // CDG check below can match against classified.cdg_paths.
     let mut consumed_cdg_paths = HashSet::new();
 
     for (audio_path, result) in prepared {
         match result {
-            Ok(song) => {
-                if let Some(ref cdg_path) = song.cdg_path {
-                    consumed_cdg_paths.insert(std::path::PathBuf::from(cdg_path));
+            Ok(build_result) => {
+                if let Some(cdg_source) = build_result.consumed_cdg_source {
+                    consumed_cdg_paths.insert(cdg_source);
                 }
+                let song = build_result.song;
                 match cache::upsert_song(connection, &song) {
                     Ok(()) => {
                         try_extract_embedded_lyrics(connection, &song, library);

@@ -516,9 +516,15 @@ fn mix_stem_rubato(
         return (0, 0);
     }
 
-    let available_src_frames = total_src_frames - src_start_frame;
     let output_frames = output.len() / device_channels;
+    // Limit input to just the source frames needed for this callback's output.
+    // Without this cap, we'd feed the entire remaining track into rubato every
+    // callback — causing multi-MB allocations and corrupting the resampler state.
+    let needed_src_frames =
+        src_frames_for_output(output_frames, audio.sample_rate, device_sample_rate) as usize;
+    let available_src_frames = (total_src_frames - src_start_frame).min(needed_src_frames + 1);
     let mut max_out_frames = 0usize;
+    let mut actual_src_consumed = 0usize;
 
     // rubato uses planar (non-interleaved) buffers. Process each source channel
     // through a mono resampler and mix into the interleaved output.
@@ -568,11 +574,13 @@ fn mix_stem_rubato(
             }
         }
         max_out_frames = max_out_frames.max(frames_to_write);
+        // Track actual input consumed — rubato processes all fed frames in one call.
+        actual_src_consumed = actual_src_consumed.max(available_src_frames);
     }
 
-    // Estimate source frames consumed based on the rate ratio.
-    let rate_ratio = audio.sample_rate as f64 / device_sample_rate as f64;
-    let src_frames_consumed = (max_out_frames as f64 * rate_ratio).round() as u64;
+    // The actual source frames consumed by rubato (all fed frames minus the
+    // interpolation lookahead).
+    let src_frames_consumed = (actual_src_consumed.saturating_sub(1)).max(max_out_frames) as u64;
 
     (max_out_frames * device_channels, src_frames_consumed)
 }
