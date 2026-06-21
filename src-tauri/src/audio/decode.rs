@@ -248,7 +248,7 @@ mod tests {
             result.err()
         );
         let audio = result.unwrap();
-        assert!(audio.samples.len() > 0);
+        assert!(!audio.samples.is_empty());
         assert!(audio.sample_rate > 0);
         assert!(audio.channels > 0);
         assert!(audio.duration_ms > 0);
@@ -264,7 +264,7 @@ mod tests {
             result.err()
         );
         let audio = result.unwrap();
-        assert!(audio.samples.len() > 0);
+        assert!(!audio.samples.is_empty());
     }
 
     #[test]
