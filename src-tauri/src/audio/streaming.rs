@@ -443,7 +443,10 @@ pub fn create_stream_pair(sample_rate: u32, channels: usize) -> (AudioProducer, 
             is_eof,
             needs_flush,
             seek_target,
-            flush_scratch: Vec::new(),
+            // Pre-allocate to ring buffer capacity so the first seek's
+            // acknowledge_flush does not trigger a heap allocation on the
+            // realtime audio thread.
+            flush_scratch: Vec::with_capacity(capacity),
             flush_done,
         },
     )

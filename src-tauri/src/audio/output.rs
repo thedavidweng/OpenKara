@@ -523,26 +523,37 @@ fn mix_stem_rubato(
     let needed_src_frames =
         src_frames_for_output(output_frames, audio.sample_rate, device_sample_rate) as usize;
     let available_src_frames = (total_src_frames - src_start_frame).min(needed_src_frames + 1);
+
+    // rubato's FixedAsync::Input processes exactly chunk_size frames per call.
+    // We must always feed at least chunk_size frames — pad with zeros if we have
+    // fewer available (end-of-track). We then clip the output to the number of
+    // valid frames derived from the actual (non-padded) input count.
+    let resampler = resampler_cache.get_or_create(audio.sample_rate, device_sample_rate);
+    let chunk_size = resampler.input_frames_next();
+    let actual_input = available_src_frames;
+    let feed_frames = actual_input.max(chunk_size);
+
+    // Expected output frames from the actual (non-padded) input, for clipping.
+    let ratio = audio.sample_rate as f64 / device_sample_rate as f64;
+    let expected_out = (actual_input as f64 / ratio).ceil() as usize;
+
     let mut max_out_frames = 0usize;
-    let mut actual_src_consumed = 0usize;
 
     // rubato uses planar (non-interleaved) buffers. Process each source channel
     // through a mono resampler and mix into the interleaved output.
     for src_ch in 0..src_channels {
-        // De-interleave source frames for this channel into a Vec.
-        let mut channel_input: Vec<f32> = Vec::with_capacity(available_src_frames);
-        for frame in 0..available_src_frames {
-            channel_input.push(audio.samples[(src_start_frame + frame) * src_channels + src_ch]);
+        // De-interleave source frames for this channel, padding to chunk_size.
+        let mut channel_input = vec![0.0f32; feed_frames];
+        for (frame, slot) in channel_input.iter_mut().enumerate().take(actual_input) {
+            *slot = audio.samples[(src_start_frame + frame) * src_channels + src_ch];
         }
 
-        let resampler = resampler_cache.get_or_create(audio.sample_rate, device_sample_rate);
-
-        // Construct a planar adapter for rubato: 1 channel, N frames.
+        // Construct a planar adapter for rubato: 1 channel, feed_frames.
         let input_vecs = vec![channel_input];
         let input_adapter = match rubato::audioadapter_buffers::direct::SequentialSliceOfVecs::new(
             &input_vecs,
             1,
-            available_src_frames,
+            feed_frames,
         ) {
             Ok(adapter) => adapter,
             Err(_) => continue,
@@ -556,10 +567,11 @@ fn mix_stem_rubato(
 
         // For mono (1 channel), interleaved = sequential. take_data() gives Vec<f32>.
         let out_data = output_adapter.take_data();
-        let out_frames = out_data.len();
 
-        // Mix resampled samples into the interleaved output.
-        let frames_to_write = out_frames.min(output_frames);
+        // Clip output to the expected frame count from actual input.
+        // The zero-padded tail produces spurious output frames we must discard.
+        let valid_out = out_data.len().min(expected_out);
+        let frames_to_write = valid_out.min(output_frames);
         for out_frame in 0..frames_to_write {
             let sample = out_data[out_frame];
             for out_ch in 0..device_channels {
@@ -574,13 +586,10 @@ fn mix_stem_rubato(
             }
         }
         max_out_frames = max_out_frames.max(frames_to_write);
-        // Track actual input consumed — rubato processes all fed frames in one call.
-        actual_src_consumed = actual_src_consumed.max(available_src_frames);
     }
 
-    // The actual source frames consumed by rubato (all fed frames minus the
-    // interpolation lookahead).
-    let src_frames_consumed = (actual_src_consumed.saturating_sub(1)).max(max_out_frames) as u64;
+    // Actual source frames consumed = the non-padded input count.
+    let src_frames_consumed = actual_input as u64;
 
     (max_out_frames * device_channels, src_frames_consumed)
 }
