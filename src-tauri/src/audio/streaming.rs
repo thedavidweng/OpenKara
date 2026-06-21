@@ -361,11 +361,13 @@ pub enum StreamingTrack {
         accompaniment: AudioConsumer,
     },
     /// Four-stem mode: vocals, drums, bass, other.
+    /// Boxed to keep the enum size reasonable — `AudioConsumer` carries
+    /// pre-allocated scratch buffers and sync primitives that add up.
     FourStem {
-        vocals: AudioConsumer,
-        drums: AudioConsumer,
-        bass: AudioConsumer,
-        other: AudioConsumer,
+        vocals: Box<AudioConsumer>,
+        drums: Box<AudioConsumer>,
+        bass: Box<AudioConsumer>,
+        other: Box<AudioConsumer>,
     },
 }
 
@@ -383,7 +385,7 @@ impl StreamingTrack {
                 drums,
                 bass,
                 other,
-            } => vec![vocals, drums, bass, other],
+            } => vec![&mut **vocals, &mut **drums, &mut **bass, &mut **other],
         }
     }
 
@@ -400,7 +402,7 @@ impl StreamingTrack {
                 drums,
                 bass,
                 other,
-            } => vec![vocals, drums, bass, other],
+            } => vec![&**vocals, &**drums, &**bass, &**other],
         }
     }
 
@@ -708,10 +710,10 @@ pub fn spawn_multi_stem_decode_producers_with_proxy(
         _ => {
             let mut iter = consumers.into_iter();
             StreamingTrack::FourStem {
-                vocals: iter.next().unwrap(),
-                drums: iter.next().unwrap(),
-                bass: iter.next().unwrap(),
-                other: iter.next().unwrap(),
+                vocals: Box::new(iter.next().unwrap()),
+                drums: Box::new(iter.next().unwrap()),
+                bass: Box::new(iter.next().unwrap()),
+                other: Box::new(iter.next().unwrap()),
             }
         }
     };

@@ -18,15 +18,14 @@ use std::{
 /// Cache for rubato resamplers keyed by (src_rate, dst_rate).
 /// Resamplers maintain internal state (filter coefficients, buffer history)
 /// so they must be reused across consecutive audio callbacks for the same rate pair.
+#[derive(Default)]
 pub struct ResamplerCache {
     cache: HashMap<(u32, u32), Async<f32>>,
 }
 
 impl ResamplerCache {
     pub fn new() -> Self {
-        Self {
-            cache: HashMap::new(),
-        }
+        Self::default()
     }
 
     /// Get or create a resampler for the given rate pair.

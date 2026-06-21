@@ -718,7 +718,7 @@ fn estimate_prefetch_bytes(cache: &ChunkedCache, position: u64, monitor: &Bandwi
 
     // Adaptive: prefetch ≈ factor × latency × throughput.
     let adaptive = (PREFETCH_FACTOR * latency_secs * throughput as f64) as u64;
-    remaining.min(adaptive.max(MIN_PREFETCH_BYTES).min(MAX_PREFETCH_BYTES))
+    remaining.min(adaptive.clamp(MIN_PREFETCH_BYTES, MAX_PREFETCH_BYTES))
 }
 
 fn fetch_range_with_retry(
