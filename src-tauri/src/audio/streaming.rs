@@ -231,7 +231,10 @@ impl AudioConsumer {
         let _ = self.cons.pop_slice(&mut self.flush_scratch);
         // Notify the producer (waiting in `signal_flush`) that the flush
         // is complete so it can resume pushing post-seek samples.
-        let (_, cvar) = &*self.flush_done;
+        // Lock the mutex before notifying to ensure the condvar signal is not
+        // lost if the producer enters `wait` between our store and notify.
+        let (lock, cvar) = &*self.flush_done;
+        let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
         cvar.notify_one();
     }
 

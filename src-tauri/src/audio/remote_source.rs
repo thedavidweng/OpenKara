@@ -451,9 +451,15 @@ impl DownloadSemaphore {
             .is_ok()
     }
 
-    /// Release a previously acquired slot.
+    /// Release a previously acquired slot.  No-op if no slot is held (prevents
+    /// underflow from wrapping to `usize::MAX` and permanently blocking
+    /// downloads).
     pub fn release(&self) {
-        self.active.fetch_sub(1, Ordering::Release);
+        let _ = self
+            .active
+            .fetch_update(Ordering::Release, Ordering::Relaxed, |current| {
+                current.checked_sub(1)
+            });
     }
 
     /// Default max concurrent downloads.
@@ -1428,8 +1434,21 @@ mod tests {
         let sem = super::DownloadSemaphore::new(1);
         assert!(sem.try_acquire());
         sem.release();
-        // Extra release shouldn't go negative (wraps to usize::MAX).
+        // Extra release is a no-op — doesn't underflow to usize::MAX.
         // The semaphore should still work correctly.
+        sem.release();
+        assert!(sem.try_acquire());
+        sem.release();
+    }
+
+    #[test]
+    fn download_semaphore_spurious_release_does_not_block() {
+        let sem = super::DownloadSemaphore::new(1);
+        // Multiple spurious releases without any acquire.
+        sem.release();
+        sem.release();
+        sem.release();
+        // Semaphore should still allow acquisition.
         assert!(sem.try_acquire());
         sem.release();
     }

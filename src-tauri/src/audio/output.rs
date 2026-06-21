@@ -20,7 +20,7 @@ use std::{
 /// so they must be reused across consecutive audio callbacks for the same rate pair.
 #[derive(Default)]
 pub struct ResamplerCache {
-    cache: HashMap<(u32, u32), Async<f32>>,
+    cache: HashMap<(u32, u32, usize), Async<f32>>,
 }
 
 impl ResamplerCache {
@@ -28,30 +28,35 @@ impl ResamplerCache {
         Self::default()
     }
 
-    /// Get or create a resampler for the given rate pair.
-    fn get_or_create(&mut self, src_rate: u32, dst_rate: u32) -> &mut Async<f32> {
-        self.cache.entry((src_rate, dst_rate)).or_insert_with(|| {
-            // High-quality sinc interpolation parameters.
-            // 128 taps, 256× oversampling — good quality with reasonable CPU cost.
-            let params = SincInterpolationParameters {
-                sinc_len: 128,
-                f_cutoff: rubato::calculate_cutoff(128, rubato::WindowFunction::Blackman2),
-                interpolation: SincInterpolationType::Quadratic,
-                oversampling_factor: 256,
-                window: rubato::WindowFunction::Blackman2,
-            };
-            // Use chunk_size=1024; the resampler handles partial chunks.
-            // Process mono per call (channels=1), de-interleave externally.
-            Async::<f32>::new_sinc(
-                src_rate as f64 / dst_rate as f64,
-                1.1, // max relative ratio
-                &params,
-                1024, // chunk_size
-                1,    // channels (mono; we de-interleave per channel)
-                FixedAsync::Input,
-            )
-            .expect("failed to create rubato resampler")
-        })
+    /// Get or create a resampler for the given rate pair and channel index.
+    /// Each channel needs its own resampler because rubato maintains per-channel
+    /// filter state — sharing one resampler across channels produces phase-blurred
+    /// output.
+    fn get_or_create(&mut self, src_rate: u32, dst_rate: u32, channel: usize) -> &mut Async<f32> {
+        self.cache
+            .entry((src_rate, dst_rate, channel))
+            .or_insert_with(|| {
+                // High-quality sinc interpolation parameters.
+                // 128 taps, 256× oversampling — good quality with reasonable CPU cost.
+                let params = SincInterpolationParameters {
+                    sinc_len: 128,
+                    f_cutoff: rubato::calculate_cutoff(128, rubato::WindowFunction::Blackman2),
+                    interpolation: SincInterpolationType::Quadratic,
+                    oversampling_factor: 256,
+                    window: rubato::WindowFunction::Blackman2,
+                };
+                // Process mono per call (channels=1), de-interleave externally.
+                // Each channel gets its own resampler to maintain independent filter state.
+                Async::<f32>::new_sinc(
+                    src_rate as f64 / dst_rate as f64,
+                    1.1, // max relative ratio
+                    &params,
+                    1024, // chunk_size
+                    1,    // channels (mono; we de-interleave per channel)
+                    FixedAsync::Input,
+                )
+                .expect("failed to create rubato resampler")
+            })
     }
 }
 
@@ -130,8 +135,15 @@ pub fn render_output_buffer(
 
         if below_low {
             playback.is_buffering = true;
-            // Clear any active fade — buffer underrun means we can't produce audio.
-            playback.fade = crate::audio::playback::FadeState::None;
+            // Clear fade-out/pause fades — buffer underrun means we can't produce
+            // audio.  Preserve FadingAfterSeek so the seek click-prevention fade
+            // resumes once buffering completes.
+            if !matches!(
+                playback.fade,
+                crate::audio::playback::FadeState::FadingAfterSeek { .. }
+            ) {
+                playback.fade = crate::audio::playback::FadeState::None;
+            }
         } else if playback.is_buffering && all_above_high {
             playback.is_buffering = false;
         }
@@ -528,8 +540,12 @@ fn mix_stem_rubato(
     // We must always feed at least chunk_size frames — pad with zeros if we have
     // fewer available (end-of-track). We then clip the output to the number of
     // valid frames derived from the actual (non-padded) input count.
-    let resampler = resampler_cache.get_or_create(audio.sample_rate, device_sample_rate);
-    let chunk_size = resampler.input_frames_next();
+    // NOTE: We read chunk_size from channel 0's resampler (all channels share
+    // the same rate pair so chunk_size is identical), then get each channel's
+    // own resampler inside the loop below.
+    let chunk_size = resampler_cache
+        .get_or_create(audio.sample_rate, device_sample_rate, 0)
+        .input_frames_next();
     let actual_input = available_src_frames;
     let feed_frames = actual_input.max(chunk_size);
 
@@ -540,7 +556,8 @@ fn mix_stem_rubato(
     let mut max_out_frames = 0usize;
 
     // rubato uses planar (non-interleaved) buffers. Process each source channel
-    // through a mono resampler and mix into the interleaved output.
+    // through its own mono resampler (independent filter state) and mix into the
+    // interleaved output.
     for src_ch in 0..src_channels {
         // De-interleave source frames for this channel, padding to chunk_size.
         let mut channel_input = vec![0.0f32; feed_frames];
@@ -558,6 +575,10 @@ fn mix_stem_rubato(
             Ok(adapter) => adapter,
             Err(_) => continue,
         };
+
+        // Each channel gets its own resampler to maintain independent filter state.
+        let resampler =
+            resampler_cache.get_or_create(audio.sample_rate, device_sample_rate, src_ch);
 
         // Process through rubato. Returns an interleaved owned buffer.
         let output_adapter = match resampler.process(&input_adapter, 0, None) {
