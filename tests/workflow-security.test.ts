@@ -89,7 +89,11 @@ function stepsNamed(workflow: string, stepName: string) {
 
 describe("workflow security", () => {
   test("does not persist checkout credentials in workflow worktrees", () => {
+    // dependabot-sync.yml needs persist-credentials: true to push commits back to PR branches
+    const allowlist = new Set(["dependabot-sync.yml"]);
+
     for (const filename of workflowFiles()) {
+      if (allowlist.has(filename)) continue;
       const workflow = readFileSync(join(workflowDir, filename), "utf8");
 
       for (const step of checkoutSteps(workflow)) {
