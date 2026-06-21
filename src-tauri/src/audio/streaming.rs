@@ -5,7 +5,7 @@ use std::fs::File;
 use std::path::Path;
 use std::sync::{
     atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
-    Arc, Condvar, Mutex,
+    Arc,
 };
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -160,9 +160,9 @@ pub struct AudioConsumer {
     /// Pre-allocated scratch buffer for `acknowledge_flush` to avoid heap
     /// allocation on the realtime audio thread.
     flush_scratch: Vec<f32>,
-    /// Condvar notified when flush is acknowledged. Wakes the producer
-    /// in `signal_flush` so it doesn't spin-wait.
-    flush_done: Arc<(Mutex<()>, Condvar)>,
+    /// Atomic flag set by the consumer when flush is acknowledged.
+    /// Lock-free — safe to set from the realtime audio callback thread.
+    flush_done: Arc<AtomicBool>,
 }
 
 impl std::fmt::Debug for AudioConsumer {
@@ -229,13 +229,10 @@ impl AudioConsumer {
         let occupied = self.cons.occupied_len();
         self.flush_scratch.resize(occupied, 0.0);
         let _ = self.cons.pop_slice(&mut self.flush_scratch);
-        // Notify the producer (waiting in `signal_flush`) that the flush
-        // is complete so it can resume pushing post-seek samples.
-        // Lock the mutex before notifying to ensure the condvar signal is not
-        // lost if the producer enters `wait` between our store and notify.
-        let (lock, cvar) = &*self.flush_done;
-        let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
-        cvar.notify_one();
+        // Signal the producer (polling in `signal_flush`) that the flush
+        // is complete. Uses an atomic store — no mutex, no blocking on
+        // the realtime audio callback thread.
+        self.flush_done.store(true, Ordering::Release);
     }
 
     /// Get the shared seek target for setting seek positions.
@@ -290,9 +287,9 @@ pub struct AudioProducer {
     /// R6: Shared flush epoch — incremented on each flush so the consumer can
     /// track which flush it has acknowledged.
     flush_epoch: Arc<AtomicU64>,
-    /// Condvar notified by the consumer when flush is acknowledged.
-    /// Allows `signal_flush` to sleep instead of spinning with `yield_now`.
-    flush_done: Arc<(Mutex<()>, Condvar)>,
+    /// Atomic flag set by the consumer when flush is acknowledged.
+    /// Lock-free — avoids mutex acquisition on the realtime audio callback.
+    flush_done: Arc<AtomicBool>,
 }
 
 impl AudioProducer {
@@ -319,21 +316,26 @@ impl AudioProducer {
 
     /// After a seek, signal the consumer to drain stale samples.
     ///
-    /// R6: Increments the flush epoch and waits (with a bounded timeout) for
-    /// the ring buffer to drain. Uses a condvar instead of `yield_now` spin
-    /// to avoid busy-waiting while giving the realtime thread priority.
+    /// R6: Increments the flush epoch and polls (with bounded timeout) for
+    /// the ring buffer to drain. Uses an atomic flag + short sleeps instead
+    /// of a condvar to keep the realtime audio callback lock-free.
     pub fn signal_flush(&self) {
         self.flush_epoch.fetch_add(1, Ordering::Relaxed);
         self.needs_flush.store(true, Ordering::Relaxed);
+        self.flush_done.store(false, Ordering::Release);
 
-        // Wait for the consumer to drain stale samples via condvar.
+        // Poll for the consumer to acknowledge the flush.
         // The consumer calls `acknowledge_flush` on the audio callback
-        // (~10ms) and notifies this condvar after draining.
-        let (lock, cvar) = &*self.flush_done;
-        let guard = lock.lock().unwrap_or_else(|e| e.into_inner());
-        let _ = cvar.wait_timeout_while(guard, Duration::from_millis(100), |_| {
-            self.prod.occupied_len() > 0
-        });
+        // (~10ms) and sets the atomic flag after draining.
+        // Sleep in short intervals to avoid busy-waiting while staying
+        // responsive. Total timeout is 100ms (matches the old condvar timeout).
+        let deadline = std::time::Instant::now() + Duration::from_millis(100);
+        while std::time::Instant::now() < deadline {
+            if self.flush_done.load(Ordering::Acquire) && self.prod.occupied_len() == 0 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 
     /// Get the shared seek target.
@@ -427,7 +429,7 @@ pub fn create_stream_pair(sample_rate: u32, channels: usize) -> (AudioProducer, 
     let needs_flush = Arc::new(AtomicBool::new(false));
     let seek_target = Arc::new(SeekTarget::new());
     let flush_epoch = Arc::new(AtomicU64::new(0));
-    let flush_done = Arc::new((Mutex::new(()), Condvar::new()));
+    let flush_done = Arc::new(AtomicBool::new(false));
 
     (
         AudioProducer {
