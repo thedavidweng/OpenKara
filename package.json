@@ -57,7 +57,7 @@
     "@vitejs/plugin-react": "^6.0.2",
     "@vitest/coverage-v8": "4.1.9",
     "jsdom": "^29.1.1",
-    "knip": "^5.61.0",
+    "knip": "^6.17.2",
     "lefthook": "^2.1.9",
     "oxfmt": "^0.55.0",
     "oxlint": "^1.70.0",
