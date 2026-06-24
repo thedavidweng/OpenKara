@@ -148,13 +148,13 @@ jobs:
         run: pnpm audit --audit-level=high
 
       - name: Verify formatting
-        run: pnpm format
+        run: node --run format
 
       - name: Lint frontend
-        run: pnpm lint
+        run: node --run lint
 
       - name: Check i18n keys
-        run: pnpm check:i18n
+        run: node --run check:i18n
 
       - name: Check db-schema drift
         run: |
@@ -162,17 +162,17 @@ jobs:
           git diff --exit-code docs/references/generated/db-schema.md
 
       - name: knip (unused exports / dependencies)
-        run: pnpm knip --no-progress
+        run: node --run knip -- --no-progress
 
       - name: Build frontend
-        run: pnpm build
+        run: node --run build
 
       - name: Typecheck with tsgo
-        run: pnpm tsgo --noEmit --project tsconfig.json
+        run: node --run tsgo -- --noEmit --project tsconfig.json
         continue-on-error: true
 
       - name: Run frontend tests with coverage
-        run: pnpm vitest run --coverage --reporter=junit --outputFile=test-results.junit.xml
+        run: node --run vitest -- run --coverage --reporter=junit --outputFile=test-results.junit.xml
 
       - name: Upload test results to Codecov
         if: always()
@@ -595,7 +595,7 @@ jobs:
         run: pnpm exec playwright install chromium --with-deps
 
       - name: Run Playwright UI smoke tests
-        run: pnpm test:ui-smoke
+        run: node --run test:ui-smoke
 
       - name: Upload Playwright report
         if: always()
