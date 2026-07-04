@@ -8,7 +8,7 @@ import {
   LoaderCircle,
 } from "lucide-react";
 import { Tooltip } from "@/components/Overlay/Tooltip";
-import { useLyricsAutoScroll } from "@/hooks/use-lyrics-auto-scroll";
+import { useLyricsEngine } from "@/hooks/use-lyrics-engine";
 import { useAudiencePlainTextPaging } from "@/hooks/use-audience-plain-text-paging";
 import { useAirPlayPendingGuard } from "@/hooks/use-airplay-pending-guard";
 import { APP_SHORTCUTS, getShortcutDisplay } from "@/lib/app-shortcuts";
@@ -29,7 +29,7 @@ import {
 } from "@/lib/audience-presentation";
 import { Spring } from "@/lib/spring";
 import { useLyricsStore } from "@/stores/lyrics-store";
-import { selectCurrentPositionMs, usePlayerStore } from "@/stores/player-store";
+import { usePlayerStore } from "@/stores/player-store";
 interface LyricsPanelProps {
   presentation?: "standard" | "audience";
 }
@@ -58,9 +58,6 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
   const showRomanized = useLyricsStore((s) => s.showRomanized);
   const toggleRomanized = useLyricsStore((s) => s.toggleRomanized);
   const songId = usePlayerStore((s) => s.snapshot?.song_id);
-  const playerSnapshot = usePlayerStore((s) => s.snapshot);
-  const basePositionMs = usePlayerStore((s) => s.positionMs);
-  const playingSinceMs = usePlayerStore((s) => s.playingSinceMs);
   const airPlayOutput = usePlayerStore((s) => s.airPlayOutput);
   const [playbackClockMs, setPlaybackClockMs] = useState(() =>
     readStableDisplayPositionMs({
@@ -110,15 +107,22 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
       pageIdentity,
       audiencePresentationSpec,
     });
+  const scrollContentRef = useRef<HTMLDivElement | null>(null);
 
-  useLyricsAutoScroll(
+  const handlePlaybackClockMs = useCallback((ms: number) => {
+    setPlaybackClockMs((current) => (current === ms ? current : ms));
+  }, []);
+
+  useLyricsEngine({
     containerRef,
+    scrollContentRef,
     isPlainText,
     lyricsFontStep,
     presentation,
     songId,
-    lyricsLayoutVersion,
-  );
+    layoutVersion: lyricsLayoutVersion,
+    onPlaybackClockMs: handlePlaybackClockMs,
+  });
 
   useAirPlayPendingGuard(
     songId,
@@ -137,39 +141,8 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
   useEffect(() => {
     if (airPlayOutput.active && airPlayOutput.displayedPositionMs !== null) {
       setPlaybackClockMs(airPlayOutput.displayedPositionMs);
-      return;
     }
-
-    const state = {
-      snapshot: playerSnapshot,
-      positionMs: basePositionMs,
-      playingSinceMs,
-    };
-    setPlaybackClockMs(selectCurrentPositionMs(state));
-
-    if (
-      !playerSnapshot?.is_playing ||
-      playerSnapshot.state === "buffering" ||
-      playingSinceMs === null
-    ) {
-      return;
-    }
-
-    let rafId = 0;
-    const tick = (now: number) => {
-      setPlaybackClockMs(selectCurrentPositionMs(state, () => now));
-      rafId = requestAnimationFrame(tick);
-    };
-
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, [
-    airPlayOutput.active,
-    airPlayOutput.displayedPositionMs,
-    basePositionMs,
-    playerSnapshot,
-    playingSinceMs,
-  ]);
+  }, [airPlayOutput.active, airPlayOutput.displayedPositionMs]);
 
   if (springSongIdRef.current !== songId) {
     // Reset before line springs are read during render so a song change cannot
@@ -420,6 +393,7 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
         }}
       >
         <div
+          ref={scrollContentRef}
           className={`mx-auto flex w-full flex-col items-center ${
             isAudience
               ? shouldRenderAudiencePlainTextPages
