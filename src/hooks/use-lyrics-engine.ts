@@ -2,32 +2,23 @@ import { useEffect, useRef, type RefObject } from "react";
 import { Spring } from "@/lib/spring";
 import {
   createUserScrollGuard,
-  readLyricsPlaybackClockMs,
   syncLyricsActiveLine,
   shouldRunLyricsEngineLoop,
   tickLyricsEngineFrame,
   USER_SCROLL_PAUSE_MS,
   type LyricsEngineScrollState,
 } from "@/lib/lyrics-engine";
+import {
+  lyricsLineRuntime,
+  type LyricsLineRuntime,
+} from "@/lib/lyrics-line-runtime";
 import { usePlayerStore } from "@/stores/player-store";
 
 const SCROLL_SPRING = { stiffness: 170, damping: 28, mass: 1 };
 
-export {
-  computeLineChangeLyricsScrollTop,
-  createUserScrollGuard,
-  readLyricsAdjustedPlaybackMs,
-  syncLyricsActiveLine,
-  USER_SCROLL_PAUSE_MS,
-} from "@/lib/lyrics-engine";
-
-function readStableDisplayPositionMs(): number {
-  return readLyricsPlaybackClockMs();
-}
-
 /**
- * Unified lyrics runtime: one requestAnimationFrame loop drives playback clock,
- * active-line sync, and auto-scroll so the three paths cannot drift apart.
+ * Unified lyrics runtime: one requestAnimationFrame loop drives active-line
+ * sync, karaoke fill, line springs, and auto-scroll.
  */
 export function useLyricsEngine(input: {
   containerRef: RefObject<HTMLDivElement | null>;
@@ -37,7 +28,7 @@ export function useLyricsEngine(input: {
   presentation: "standard" | "audience";
   songId: string | null | undefined;
   layoutVersion?: string;
-  onPlaybackClockMs: (ms: number) => void;
+  lineRuntime?: LyricsLineRuntime;
 }): void {
   const {
     containerRef,
@@ -47,7 +38,7 @@ export function useLyricsEngine(input: {
     presentation,
     songId,
     layoutVersion = "",
-    onPlaybackClockMs,
+    lineRuntime = lyricsLineRuntime,
   } = input;
 
   const guardRef = useRef<ReturnType<typeof createUserScrollGuard> | null>(
@@ -60,8 +51,7 @@ export function useLyricsEngine(input: {
     prevActiveIndexRef: { current: -1 },
   });
   const prevActiveLineRef = useRef(-1);
-  const onPlaybackClockMsRef = useRef(onPlaybackClockMs);
-  onPlaybackClockMsRef.current = onPlaybackClockMs;
+  const prevActiveWordIndexRef = useRef(-1);
 
   useEffect(() => {
     if (isPlainText) return;
@@ -78,12 +68,15 @@ export function useLyricsEngine(input: {
   }, [containerRef, isPlainText, songId]);
 
   useEffect(() => {
+    lineRuntime.clear();
+    prevActiveLineRef.current = -1;
+    prevActiveWordIndexRef.current = -1;
+  }, [lineRuntime, songId]);
+
+  useEffect(() => {
     if (isPlainText || !songId) {
-      onPlaybackClockMsRef.current(readStableDisplayPositionMs());
       return;
     }
-
-    onPlaybackClockMsRef.current(readStableDisplayPositionMs());
 
     const playerState = usePlayerStore.getState();
     if (!shouldRunLyricsEngineLoop(playerState)) {
@@ -91,7 +84,6 @@ export function useLyricsEngine(input: {
     }
 
     const syncNow = () => {
-      onPlaybackClockMsRef.current(readStableDisplayPositionMs());
       syncLyricsActiveLine(prevActiveLineRef);
     };
     window.addEventListener("focus", syncNow);
@@ -105,7 +97,6 @@ export function useLyricsEngine(input: {
     scrollSpring.jumpTo(0);
     scrollState.targetScrollTopRef.current = null;
     scrollState.prevActiveIndexRef.current = -1;
-    prevActiveLineRef.current = -1;
 
     const container = containerRef.current;
     const scrollContent = scrollContentRef.current;
@@ -130,10 +121,11 @@ export function useLyricsEngine(input: {
         scrollState,
         userScrollGuard: guardRef.current,
         prevActiveLineRef,
+        prevActiveWordIndexRef,
+        lineRuntime,
         reducedMotion,
         dt,
         nowMs: now,
-        onPlaybackClockMs: (ms) => onPlaybackClockMsRef.current(ms),
       });
 
       rafId = requestAnimationFrame(tick);
@@ -152,22 +144,6 @@ export function useLyricsEngine(input: {
     presentation,
     songId,
     layoutVersion,
-  ]);
-
-  const isPlaying = usePlayerStore((s) => s.snapshot?.is_playing ?? false);
-  const playingSinceMs = usePlayerStore((s) => s.playingSinceMs);
-  const airPlayDisplayedPositionMs = usePlayerStore(
-    (s) => s.airPlayOutput.displayedPositionMs,
-  );
-  const airPlayActive = usePlayerStore((s) => s.airPlayOutput.active);
-
-  useEffect(() => {
-    onPlaybackClockMsRef.current(readStableDisplayPositionMs());
-  }, [
-    isPlaying,
-    playingSinceMs,
-    airPlayActive,
-    airPlayDisplayedPositionMs,
-    songId,
+    lineRuntime,
   ]);
 }

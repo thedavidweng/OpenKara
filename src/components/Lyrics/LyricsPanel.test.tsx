@@ -61,6 +61,7 @@ const {
       }),
     ],
     activeLineIndex: 0,
+    activeWordIndex: -1,
     offsetMs: 0,
     isLoading: false,
     rawLrc: "[00:00.00]line one",
@@ -73,6 +74,7 @@ const {
   } as {
     lines: LyricLine[];
     activeLineIndex: number;
+    activeWordIndex: number;
     offsetMs: number;
     isLoading: boolean;
     rawLrc: string;
@@ -355,7 +357,7 @@ describe("LyricsPanel contextual reveal", () => {
     expect(markup).toContain('data-lyrics-line-index="1"');
   });
 
-  test("initializes line springs for timed lyrics", () => {
+  test("registers timed lyric line wrappers for the unified engine", () => {
     mockLyricsState.lines = [
       line({
         time_ms: 1000,
@@ -374,10 +376,9 @@ describe("LyricsPanel contextual reveal", () => {
 
     expect(markup).toContain('data-lyrics-line-index="0"');
     expect(markup).toContain('data-lyrics-line-index="1"');
-    expect(markup).toContain("transform:scale(");
   });
 
-  test("restarts the spring RAF loop when the song changes without active line movement", async () => {
+  test("restarts the unified lyrics engine when the song changes without active line movement", async () => {
     mockLyricsState.lines = [
       line({
         time_ms: 1000,
@@ -435,9 +436,7 @@ describe("LyricsPanel contextual reveal", () => {
     });
   });
 
-  test("uses the extrapolated playback clock for standard word highlighting", async () => {
-    mockPlayerState.positionMs = 1000;
-    mockSelectCurrentPositionMs.mockReturnValue(1600);
+  test("renders word-level states from activeWordIndex for the active line", async () => {
     mockLyricsState.lines = [
       line({
         time_ms: 1000,
@@ -450,6 +449,7 @@ describe("LyricsPanel contextual reveal", () => {
       }),
     ];
     mockLyricsState.activeLineIndex = 0;
+    mockLyricsState.activeWordIndex = 1;
 
     const container = document.createElement("div");
     document.body.appendChild(container);

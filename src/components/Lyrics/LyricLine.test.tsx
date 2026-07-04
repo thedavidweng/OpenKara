@@ -75,8 +75,8 @@ describe("LyricLine", () => {
           bg_words: null,
           section: null,
         }}
+        lineIndex={0}
         state="plain"
-        adjustedMs={0}
         lyricsFontStep={0}
       />,
     );
@@ -95,8 +95,8 @@ describe("LyricLine", () => {
           bg_words: null,
           section: null,
         }}
+        lineIndex={0}
         state="future"
-        adjustedMs={0}
         lyricsFontStep={0}
       />,
     );
@@ -110,6 +110,7 @@ describe("LyricLine", () => {
   test("renders word-level states for the active line without changing lyric timing behavior", () => {
     const markup = renderToStaticMarkup(
       <LyricLine
+        lineIndex={0}
         line={{
           time_ms: 1000,
           text: "alpha beta gamma",
@@ -122,7 +123,7 @@ describe("LyricLine", () => {
           section: null,
         }}
         state="active"
-        adjustedMs={1600}
+        activeWordIndex={1}
         lyricsFontStep={0}
       />,
     );
@@ -135,6 +136,7 @@ describe("LyricLine", () => {
   test("uses the configured font scale without changing the lyric state logic", () => {
     const markup = renderToStaticMarkup(
       <LyricLine
+        lineIndex={0}
         line={{
           time_ms: 1000,
           text: "scaled line",
@@ -143,7 +145,6 @@ describe("LyricLine", () => {
           section: null,
         }}
         state="active"
-        adjustedMs={1000}
         presentation="audience"
         lyricsFontStep={2}
       />,
@@ -156,6 +157,7 @@ describe("LyricLine", () => {
   test("renders bg_words with slide-in styles when line is active", () => {
     const markup = renderToStaticMarkup(
       <LyricLine
+        lineIndex={0}
         line={{
           time_ms: 1000,
           text: "main line",
@@ -170,7 +172,7 @@ describe("LyricLine", () => {
           section: null,
         }}
         state="active"
-        adjustedMs={1500}
+        activeWordIndex={1}
         lyricsFontStep={0}
       />,
     );
@@ -193,8 +195,8 @@ describe("LyricLine", () => {
           bg_words: [{ text: "bg", time_ms: 1200, end_ms: 1800 }],
           section: null,
         }}
+        lineIndex={0}
         state="future"
-        adjustedMs={0}
         lyricsFontStep={0}
       />,
     );
@@ -205,6 +207,7 @@ describe("LyricLine", () => {
   test("does not render duplicate main text for bg-only lines", () => {
     const markup = renderToStaticMarkup(
       <LyricLine
+        lineIndex={0}
         line={{
           time_ms: 1000,
           text: "Back Up",
@@ -216,7 +219,6 @@ describe("LyricLine", () => {
           section: null,
         }}
         state="active"
-        adjustedMs={1200}
         lyricsFontStep={0}
       />,
     );
@@ -233,6 +235,7 @@ describe("LyricLine", () => {
     await act(async () => {
       root.render(
         <LyricLine
+          lineIndex={0}
           line={{
             time_ms: 1000,
             text: "alpha beta",
@@ -244,7 +247,6 @@ describe("LyricLine", () => {
             section: null,
           }}
           state="active"
-          adjustedMs={1200}
           lyricsFontStep={0}
         />,
       );
@@ -284,9 +286,9 @@ describe("LyricLine", () => {
     await act(async () => {
       root.render(
         <LyricLine
+          lineIndex={0}
           line={line}
           state="active"
-          adjustedMs={1200}
           lyricsFontStep={0}
         />,
       );
@@ -295,57 +297,13 @@ describe("LyricLine", () => {
 
     await act(async () => {
       root.render(
-        <LyricLine
-          line={line}
-          state="past"
-          adjustedMs={2500}
-          lyricsFontStep={0}
-        />,
+        <LyricLine lineIndex={0} line={line} state="past" lyricsFontStep={0} />,
       );
     });
 
     expect(mockControllerInstances).toHaveLength(1);
     expect(controller.destroy).not.toHaveBeenCalled();
     expect(controller.setCurrentAlpha).toHaveBeenLastCalledWith(1.0, 1.0);
-
-    await act(async () => {
-      root.unmount();
-    });
-    container.remove();
-  });
-
-  test("pauses karaoke fill updates when playback is paused", async () => {
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    const line = {
-      time_ms: 1000,
-      text: "alpha beta",
-      words: [
-        { text: "alpha", time_ms: 1000, end_ms: 1500 },
-        { text: "beta", time_ms: 1500, end_ms: 2000 },
-      ],
-      bg_words: null,
-      section: null,
-    };
-
-    mockPlayerState.snapshot.is_playing = false;
-
-    await act(async () => {
-      root.render(
-        <LyricLine
-          line={line}
-          state="active"
-          adjustedMs={1200}
-          lyricsFontStep={0}
-        />,
-      );
-    });
-
-    expect(mockControllerInstances[0].update).toHaveBeenLastCalledWith(
-      1200,
-      false,
-    );
 
     await act(async () => {
       root.unmount();
@@ -371,9 +329,9 @@ describe("LyricLine", () => {
     await act(async () => {
       root.render(
         <LyricLine
+          lineIndex={0}
           line={line}
           state="active"
-          adjustedMs={1200}
           lyricsFontStep={0}
         />,
       );
@@ -383,9 +341,9 @@ describe("LyricLine", () => {
     await act(async () => {
       root.render(
         <LyricLine
+          lineIndex={0}
           line={line}
           state="active"
-          adjustedMs={1200}
           presentation="audience"
           lyricsFontStep={0}
         />,
@@ -419,9 +377,10 @@ describe("LyricLine", () => {
     await act(async () => {
       root.render(
         <LyricLine
+          lineIndex={0}
           line={line}
           state="active"
-          adjustedMs={1200}
+          activeWordIndex={0}
           lyricsFontStep={0}
         />,
       );
@@ -431,9 +390,10 @@ describe("LyricLine", () => {
     await act(async () => {
       root.render(
         <LyricLine
+          lineIndex={0}
           line={line}
           state="active"
-          adjustedMs={2600}
+          activeWordIndex={1}
           lyricsFontStep={0}
         />,
       );
@@ -465,9 +425,9 @@ describe("LyricLine", () => {
     await act(async () => {
       root.render(
         <LyricLine
+          lineIndex={0}
           line={makeLine()}
           state="active"
-          adjustedMs={1200}
           lyricsFontStep={0}
         />,
       );
@@ -477,9 +437,9 @@ describe("LyricLine", () => {
     await act(async () => {
       root.render(
         <LyricLine
+          lineIndex={0}
           line={makeLine()}
           state="active"
-          adjustedMs={1300}
           lyricsFontStep={0}
         />,
       );
@@ -497,6 +457,7 @@ describe("LyricLine", () => {
   test("renders emphasis words as per-character spans with glow animation", () => {
     const markup = renderToStaticMarkup(
       <LyricLine
+        lineIndex={0}
         line={{
           time_ms: 1000,
           text: "你好世界",
@@ -508,7 +469,7 @@ describe("LyricLine", () => {
           section: null,
         }}
         state="active"
-        adjustedMs={1200}
+        activeWordIndex={0}
         lyricsFontStep={0}
       />,
     );
@@ -521,6 +482,7 @@ describe("LyricLine", () => {
   test("renders last word with amplified glow animation", () => {
     const markup = renderToStaticMarkup(
       <LyricLine
+        lineIndex={0}
         line={{
           time_ms: 1000,
           text: "你好世界",
@@ -532,7 +494,7 @@ describe("LyricLine", () => {
           section: null,
         }}
         state="active"
-        adjustedMs={1600}
+        activeWordIndex={1}
         lyricsFontStep={0}
       />,
     );
@@ -544,6 +506,7 @@ describe("LyricLine", () => {
   test("renders past line words with dimmer text color", () => {
     const markup = renderToStaticMarkup(
       <LyricLine
+        lineIndex={0}
         line={{
           time_ms: 1000,
           text: "past line",
@@ -555,7 +518,6 @@ describe("LyricLine", () => {
           section: null,
         }}
         state="past"
-        adjustedMs={3000}
         lyricsFontStep={0}
       />,
     );
@@ -576,8 +538,8 @@ describe("LyricLine", () => {
           bg_words: null,
           section: null,
         }}
+        lineIndex={0}
         state="future"
-        adjustedMs={0}
         lyricsFontStep={0}
       />,
     );
@@ -588,6 +550,7 @@ describe("LyricLine", () => {
   test("renders audience presentation with bg_words", () => {
     const markup = renderToStaticMarkup(
       <LyricLine
+        lineIndex={0}
         line={{
           time_ms: 1000,
           text: "main",
@@ -596,7 +559,6 @@ describe("LyricLine", () => {
           section: null,
         }}
         state="active"
-        adjustedMs={1200}
         presentation="audience"
         lyricsFontStep={0}
       />,
@@ -609,6 +571,7 @@ describe("LyricLine", () => {
   test("renders non-emphasis active word with amplified glow as last word", () => {
     const markup = renderToStaticMarkup(
       <LyricLine
+        lineIndex={0}
         line={{
           time_ms: 1000,
           text: "hello friend",
@@ -620,7 +583,7 @@ describe("LyricLine", () => {
           section: null,
         }}
         state="active"
-        adjustedMs={1300}
+        activeWordIndex={1}
         lyricsFontStep={0}
       />,
     );

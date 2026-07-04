@@ -1,5 +1,9 @@
 import { getScrollTopForLineIndex } from "@/components/Lyrics/lyrics-scroll";
-import { findActiveLyricLineIndex } from "@/lib/lyrics-timing";
+import {
+  findActiveLyricLineIndex,
+  findActiveWordIndex,
+} from "@/lib/lyrics-timing";
+import type { LyricsLineRuntime } from "@/lib/lyrics-line-runtime";
 import { selectCurrentPositionMs } from "@/stores/player-store";
 import { useLyricsStore } from "@/stores/lyrics-store";
 import { usePlayerStore } from "@/stores/player-store";
@@ -222,10 +226,11 @@ export interface LyricsEngineFrameInput {
   scrollState: LyricsEngineScrollState;
   userScrollGuard: { isActive: () => boolean } | null;
   prevActiveLineRef: { current: number };
+  prevActiveWordIndexRef: { current: number };
+  lineRuntime: LyricsLineRuntime;
   reducedMotion: boolean;
   dt: number;
   nowMs: number;
-  onPlaybackClockMs: (ms: number) => void;
 }
 
 export function tickLyricsEngineFrame(input: LyricsEngineFrameInput): void {
@@ -236,13 +241,15 @@ export function tickLyricsEngineFrame(input: LyricsEngineFrameInput): void {
     scrollState,
     userScrollGuard,
     prevActiveLineRef,
+    prevActiveWordIndexRef,
+    lineRuntime,
     reducedMotion,
     dt,
     nowMs,
-    onPlaybackClockMs,
   } = input;
 
   const playerState = usePlayerStore.getState();
+  const lyricsState = useLyricsStore.getState();
   const playbackClockMs =
     playerState.airPlayOutput.active &&
     playerState.airPlayOutput.displayedPositionMs !== null
@@ -255,18 +262,37 @@ export function tickLyricsEngineFrame(input: LyricsEngineFrameInput): void {
           },
           () => nowMs,
         );
-
-  onPlaybackClockMs(playbackClockMs);
+  const adjustedMs = playbackClockMs - lyricsState.offsetMs;
 
   if (playerState.snapshot?.song_id) {
     syncLyricsActiveLine(prevActiveLineRef);
+
+    const activeLine = lyricsState.lines[lyricsState.activeLineIndex];
+    if (activeLine?.words && activeLine.words.length > 0) {
+      const activeWordIndex = findActiveWordIndex(activeLine.words, adjustedMs);
+      if (activeWordIndex !== prevActiveWordIndexRef.current) {
+        prevActiveWordIndexRef.current = activeWordIndex;
+        lyricsState.setActiveWordIndex(activeWordIndex);
+      }
+    } else if (prevActiveWordIndexRef.current !== -1) {
+      prevActiveWordIndexRef.current = -1;
+      lyricsState.setActiveWordIndex(-1);
+    }
   }
+
+  lineRuntime.tick({
+    activeLineIndex: lyricsState.activeLineIndex,
+    adjustedMs,
+    isPlaying: playerState.snapshot?.is_playing ?? false,
+    dt,
+    isPlainText,
+  });
 
   if (
     isPlainText ||
     !container ||
     !scrollContent ||
-    useLyricsStore.getState().lines.length === 0
+    lyricsState.lines.length === 0
   ) {
     return;
   }
@@ -274,8 +300,8 @@ export function tickLyricsEngineFrame(input: LyricsEngineFrameInput): void {
   tickLyricsEngineScroll({
     container,
     scrollContent,
-    lines: useLyricsStore.getState().lines,
-    adjustedMs: playbackClockMs - useLyricsStore.getState().offsetMs,
+    lines: lyricsState.lines,
+    adjustedMs,
     scrollState,
     userScrollGuard,
     reducedMotion,

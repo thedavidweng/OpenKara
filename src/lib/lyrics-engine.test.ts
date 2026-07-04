@@ -1,10 +1,24 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
+
+vi.mock("@/stores/player-store", () => ({
+  usePlayerStore: { getState: vi.fn() },
+  selectCurrentPositionMs: vi.fn(),
+}));
+
+vi.mock("@/stores/lyrics-store", () => ({
+  useLyricsStore: { getState: vi.fn() },
+}));
+
 import { Spring } from "@/lib/spring";
+import { usePlayerStore, selectCurrentPositionMs } from "@/stores/player-store";
+import { useLyricsStore } from "@/stores/lyrics-store";
 import {
   computeLineChangeLyricsScrollTop,
   createUserScrollGuard,
+  readLyricsAdjustedPlaybackMs,
+  syncLyricsActiveLine,
   tickLyricsEngineScroll,
   USER_SCROLL_PAUSE_MS,
 } from "./lyrics-engine";
@@ -181,5 +195,50 @@ describe("tickLyricsEngineScroll", () => {
     expect(container.scrollTop).toBe(0);
     expect(scrollSpring.getPosition()).toBe(180);
     expect(scrollContent.style.transform).toBe("translateY(-180px)");
+  });
+});
+
+describe("syncLyricsActiveLine", () => {
+  test("updates the active line while playing", () => {
+    const setActiveLineIndex = vi.fn();
+    vi.mocked(useLyricsStore.getState).mockReturnValue({
+      lines: [
+        { time_ms: 0, text: "Intro" },
+        { time_ms: 1000, text: "Line one" },
+        { time_ms: 2000, text: "Line two" },
+        { time_ms: 3000, text: "Line three" },
+      ],
+      offsetMs: 0,
+      setActiveLineIndex,
+    } as unknown as ReturnType<(typeof useLyricsStore)["getState"]>);
+    vi.mocked(usePlayerStore.getState).mockReturnValue({
+      snapshot: { song_id: "song-1", is_playing: true },
+      positionMs: 2500,
+      playingSinceMs: 1000,
+    } as ReturnType<(typeof usePlayerStore)["getState"]>);
+    vi.mocked(selectCurrentPositionMs).mockReturnValue(2500);
+
+    const ref = { current: -1 };
+    syncLyricsActiveLine(ref);
+
+    expect(setActiveLineIndex).toHaveBeenCalledWith(2);
+    expect(ref.current).toBe(2);
+  });
+});
+
+describe("readLyricsAdjustedPlaybackMs", () => {
+  test("returns positionMs - offsetMs when not in AirPlay mode", () => {
+    vi.mocked(usePlayerStore.getState).mockReturnValue({
+      snapshot: null,
+      positionMs: 5000,
+      playingSinceMs: null,
+      airPlayOutput: { active: false, displayedPositionMs: null },
+    } as ReturnType<(typeof usePlayerStore)["getState"]>);
+    vi.mocked(selectCurrentPositionMs).mockReturnValue(5000);
+    vi.mocked(useLyricsStore.getState).mockReturnValue({
+      offsetMs: 200,
+    } as ReturnType<(typeof useLyricsStore)["getState"]>);
+
+    expect(readLyricsAdjustedPlaybackMs()).toBe(4800);
   });
 });
