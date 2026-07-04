@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 
-import { act, useEffect } from "react";
+import { act, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   useTooltipDelayCoordinator,
   type TooltipDelayCoordinator,
 } from "./Tooltip.context";
+import { Tooltip } from "./Tooltip";
 import { TooltipProvider, type TooltipProviderProps } from "./TooltipProvider";
 
 describe("TooltipProvider", () => {
@@ -31,6 +32,13 @@ describe("TooltipProvider", () => {
   });
 
   function renderProvider(props?: Omit<TooltipProviderProps, "children">) {
+    return renderProviderTree(null, props);
+  }
+
+  function renderProviderTree(
+    children: ReactNode,
+    props?: Omit<TooltipProviderProps, "children">,
+  ) {
     function Probe() {
       const value = useTooltipDelayCoordinator();
       useEffect(() => {
@@ -43,6 +51,7 @@ describe("TooltipProvider", () => {
     act(() => {
       root.render(
         <TooltipProvider {...props}>
+          {children}
           <Probe />
         </TooltipProvider>,
       );
@@ -153,6 +162,60 @@ describe("TooltipProvider", () => {
 
     act(() => {
       vi.advanceTimersByTime(100);
+    });
+
+    const remounted = renderProvider({ skipDelayDuration: 100 });
+    expect(coordinator?.isSkipDelayActive()).toBe(false);
+
+    act(() => {
+      remounted.unmount();
+    });
+  });
+
+  test("resets skip-delay when a visible tooltip unmounts", () => {
+    vi.useFakeTimers();
+
+    function RemovableTooltip() {
+      const [mounted, setMounted] = useState(true);
+
+      return (
+        <>
+          <button type="button" onClick={() => setMounted(false)}>
+            Remove
+          </button>
+          {mounted ? (
+            <Tooltip label="Temporary">
+              <button type="button">Trigger</button>
+            </Tooltip>
+          ) : null}
+        </>
+      );
+    }
+
+    const root = renderProviderTree(<RemovableTooltip />, {
+      skipDelayDuration: 100,
+    });
+
+    const trigger = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Trigger",
+    );
+    act(() => {
+      trigger?.focus();
+    });
+    expect(coordinator?.isSkipDelayActive()).toBe(true);
+
+    act(() => {
+      container.querySelector("button")?.click();
+    });
+    expect(container.querySelector('[role="tooltip"]')).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(coordinator?.isSkipDelayActive()).toBe(false);
+
+    act(() => {
+      root.unmount();
     });
   });
 });

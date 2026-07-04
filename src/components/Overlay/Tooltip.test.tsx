@@ -101,6 +101,34 @@ describe("Tooltip", () => {
     expect(getTooltip()?.textContent).toContain("Offline tooltip");
   });
 
+  test("keeps a pending hover timer across parent re-renders without a provider", async () => {
+    function Host({ label }: { label: string }) {
+      return (
+        <Tooltip label="Delayed" delayDuration={30}>
+          <button type="button">{label}</button>
+        </Tooltip>
+      );
+    }
+
+    act(() => {
+      root.render(<Host label="First" />);
+    });
+
+    const wrapper = getTriggerWrappers()[0] as HTMLElement;
+    await user.hover(wrapper);
+    expect(getTooltip()).toBeNull();
+
+    act(() => {
+      root.render(<Host label="Second" />);
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 35));
+    });
+
+    expect(getTooltip()?.textContent).toContain("Delayed");
+  });
+
   test("shows after hover delay and hides after pointer leave", async () => {
     renderTooltip(
       <Tooltip label="Import files" delayDuration={20}>

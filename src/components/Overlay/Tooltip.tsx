@@ -188,6 +188,9 @@ export function Tooltip({
     return () => {
       coordinator.unregisterTooltip(tooltipId);
       scheduleRef.current?.cancelAll();
+      if (openRef.current) {
+        coordinator.markClosed();
+      }
     };
   }, [coordinator, disabled, forceHideTooltip, tooltipId]);
 
