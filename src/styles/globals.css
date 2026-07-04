@@ -99,9 +99,12 @@
     color-scheme: dark;
   }
 
-  /* Standard scrollbar props (WebView2 121+, Firefox). CSS layers on native appearance. */
+  /* Standard scrollbar props (WebView2 121+, Firefox). CSS layers on native appearance.
+     scrollbar-width/color do not inherit, and AppLayout is overflow-hidden — lists and
+     panels scroll on nested overflow-y-auto nodes, so descendants must set these too. */
   @supports (scrollbar-width: thin) {
-    [data-window-chrome-platform="desktop"] {
+    [data-window-chrome-platform="desktop"],
+    [data-window-chrome-platform="desktop"] * {
       scrollbar-width: thin;
       scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
     }
