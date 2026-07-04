@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Tooltip hover UX: 600ms first-show delay, instant switching between adjacent triggers, and extended hit areas for gap bridging. Play/pause transport controls no longer show redundant tooltips.
+
 ### Fixed
 
 - Style Windows and Linux scrollbars to match the dark desktop shell instead of showing light WebView2/WebKitGTK tracks ([#51](https://github.com/thedavidweng/OpenKara/issues/51)): Windows uses Tauri `scrollBarStyle: fluentOverlay` (WebView2 overlay scrollbars) plus scoped dark `scrollbar-*` / `::-webkit-scrollbar` CSS; Linux keeps CSS-only styling.

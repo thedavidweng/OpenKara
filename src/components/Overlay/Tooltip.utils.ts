@@ -1,8 +1,6 @@
 type TooltipVisibilityAction =
-  | { type: "pointer-enter" }
-  | { type: "pointer-leave" }
-  | { type: "focus" }
-  | { type: "blur" }
+  | { type: "show" }
+  | { type: "hide" }
   | { type: "escape" };
 
 interface TooltipRect {
@@ -32,11 +30,9 @@ export function tooltipVisibilityReducer(
   action: TooltipVisibilityAction,
 ): boolean {
   switch (action.type) {
-    case "pointer-enter":
-    case "focus":
+    case "show":
       return true;
-    case "pointer-leave":
-    case "blur":
+    case "hide":
     case "escape":
       return false;
   }
@@ -67,4 +63,72 @@ export function getTooltipPosition(
         );
 
   return { left, top };
+}
+
+export interface TooltipScheduleOptions {
+  delayDuration: number;
+  hideGraceDuration: number;
+  skipDelay: boolean;
+}
+
+export interface TooltipScheduleController {
+  scheduleShow: (onShow: () => void) => void;
+  scheduleHide: (onHide: () => void) => void;
+  cancelAll: () => void;
+}
+
+export function createTooltipScheduleController(
+  options: TooltipScheduleOptions,
+): TooltipScheduleController {
+  let showTimer: ReturnType<typeof setTimeout> | null = null;
+  let hideTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const clearShowTimer = () => {
+    if (showTimer) {
+      clearTimeout(showTimer);
+      showTimer = null;
+    }
+  };
+
+  const clearHideTimer = () => {
+    if (hideTimer) {
+      clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+  };
+
+  return {
+    scheduleShow(onShow) {
+      clearShowTimer();
+      clearHideTimer();
+
+      if (options.skipDelay || options.delayDuration <= 0) {
+        onShow();
+        return;
+      }
+
+      showTimer = setTimeout(() => {
+        showTimer = null;
+        onShow();
+      }, options.delayDuration);
+    },
+    scheduleHide(onHide) {
+      clearShowTimer();
+      clearHideTimer();
+
+      if (options.hideGraceDuration <= 0) {
+        onHide();
+        return;
+      }
+
+      hideTimer = setTimeout(() => {
+        hideTimer = null;
+        onHide();
+      }, options.hideGraceDuration);
+    },
+    cancelAll() {
+      clearShowTimer();
+      clearHideTimer();
+    },
+  };
 }
