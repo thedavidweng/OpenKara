@@ -26,6 +26,7 @@ describe("TooltipProvider", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     container.remove();
   });
 
@@ -80,6 +81,59 @@ describe("TooltipProvider", () => {
 
     coordinator?.markOpened("tooltip-b");
     expect(forceHide).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  test("resets skip-delay after the configured close window", () => {
+    vi.useFakeTimers();
+    const root = renderProvider({ skipDelayDuration: 100 });
+
+    coordinator?.markOpened("tooltip-a");
+    expect(coordinator?.isSkipDelayActive()).toBe(true);
+
+    coordinator?.markClosed();
+    expect(coordinator?.isSkipDelayActive()).toBe(true);
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(coordinator?.isSkipDelayActive()).toBe(false);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  test("cancelClose keeps skip-delay active while moving between triggers", () => {
+    vi.useFakeTimers();
+    const root = renderProvider({ skipDelayDuration: 100 });
+
+    coordinator?.markOpened("tooltip-a");
+    coordinator?.markClosed();
+    coordinator?.cancelClose();
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(coordinator?.isSkipDelayActive()).toBe(true);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  test("unregisters tooltip force-hide handlers", () => {
+    const root = renderProvider();
+    const forceHide = vi.fn();
+
+    coordinator?.registerTooltip("tooltip-a", forceHide);
+    coordinator?.unregisterTooltip("tooltip-a");
+    coordinator?.markOpened("tooltip-b");
+
+    expect(forceHide).not.toHaveBeenCalled();
 
     act(() => {
       root.unmount();

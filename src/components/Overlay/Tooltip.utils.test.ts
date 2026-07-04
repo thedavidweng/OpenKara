@@ -166,4 +166,16 @@ describe("createTooltipScheduleController", () => {
     vi.advanceTimersByTime(1000);
     expect(onHide).not.toHaveBeenCalled();
   });
+
+  test("hides immediately when hideGraceDuration is zero", () => {
+    const onHide = vi.fn();
+    const controller = createTooltipScheduleController({
+      delayDuration: 600,
+      hideGraceDuration: 0,
+      skipDelay: false,
+    });
+
+    controller.scheduleHide(onHide);
+    expect(onHide).toHaveBeenCalledTimes(1);
+  });
 });
