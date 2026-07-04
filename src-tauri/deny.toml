@@ -1,6 +1,14 @@
 [advisories]
 unmaintained = "workspace"
 yanked = "warn"
+ignore = [
+    # plist (via tauri-utils) pins quick-xml ^0.39 for Info.plist parsing at
+    # build/bundle time only. OpenKara's runtime TTML parser shares the same
+    # crate version until plist widens its requirement.
+    { id = "RUSTSEC-2026-0190", reason = "transitive via plist ^0.39 until upstream widens" },
+    { id = "RUSTSEC-2026-0194", reason = "transitive via plist ^0.39 until upstream widens" },
+    { id = "RUSTSEC-2026-0195", reason = "transitive via plist ^0.39 until upstream widens" },
+]
 
 [licenses]
 version = 2
