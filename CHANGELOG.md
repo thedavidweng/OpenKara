@@ -13,7 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Security
 
-- Bump direct `quick-xml` to 0.41 and document a scoped `cargo-deny` ignore for the residual Tauri/plist 0.39.x chain (RUSTSEC-2026-0195).
+- Bump direct `quick-xml` to 0.41 and document scoped `cargo-deny` ignores for the residual Tauri/plist 0.39.x chain (RUSTSEC-2026-0194/0195).
+- Bump `anyhow` to 1.0.103 (RUSTSEC-2026-0190).
 
 ## [0.9.0] - 2026-06-14
 

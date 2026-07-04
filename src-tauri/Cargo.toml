@@ -23,7 +23,7 @@ cc = "1.2.61"
 tauri-build = { version = "2.6.0", features = [] }
 
 [dependencies]
-anyhow = "1.0.102"
+anyhow = "1.0.103"
 thiserror = "2"
 audioadapter-buffers = "3.0.0"
 base64 = "0.22.1"
