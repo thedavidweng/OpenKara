@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Style Windows and Linux scrollbars to match the dark desktop shell instead of showing light WebView2/WebKitGTK tracks ([#51](https://github.com/thedavidweng/OpenKara/issues/51)).
 
+### Security
+
+- Bump direct `quick-xml` to 0.41 and document a scoped `cargo-deny` ignore for the residual Tauri/plist 0.39.x chain (RUSTSEC-2026-0195).
+
 ## [0.9.0] - 2026-06-14
 
 ### 📝 Documentation

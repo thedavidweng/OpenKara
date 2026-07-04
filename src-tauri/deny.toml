@@ -1,6 +1,11 @@
 [advisories]
 unmaintained = "workspace"
 yanked = "warn"
+ignore = [
+    # Transitive via tauri/plist (^0.39). OpenKara's TTML parser uses quick-xml 0.41;
+    # plist parsing uses Reader on trusted Apple plist XML, not NsReader on untrusted input.
+    { id = "RUSTSEC-2026-0195", reason = "Residual quick-xml 0.39.x from tauri/plist until upstream bumps; direct openkara dep is 0.41." },
+]
 
 [licenses]
 version = 2
