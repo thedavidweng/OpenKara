@@ -2,12 +2,10 @@
 unmaintained = "workspace"
 yanked = "warn"
 ignore = [
-    # plist (via tauri-utils) pins quick-xml ^0.39 for Info.plist parsing at
-    # build/bundle time only. OpenKara's runtime TTML parser shares the same
-    # crate version until plist widens its requirement.
-    { id = "RUSTSEC-2026-0190", reason = "transitive via plist ^0.39 until upstream widens" },
-    { id = "RUSTSEC-2026-0194", reason = "transitive via plist ^0.39 until upstream widens" },
-    { id = "RUSTSEC-2026-0195", reason = "transitive via plist ^0.39 until upstream widens" },
+    # Transitive via tauri/plist (^0.39). OpenKara's TTML parser uses quick-xml 0.41;
+    # plist parsing uses Reader on trusted Apple plist XML, not NsReader on untrusted input.
+    { id = "RUSTSEC-2026-0194", reason = "Residual quick-xml 0.39.x from tauri/plist until upstream bumps; direct openkara dep is 0.41." },
+    { id = "RUSTSEC-2026-0195", reason = "Residual quick-xml 0.39.x from tauri/plist until upstream bumps; direct openkara dep is 0.41." },
 ]
 
 [licenses]
