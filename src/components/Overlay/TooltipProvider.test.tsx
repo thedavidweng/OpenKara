@@ -139,4 +139,20 @@ describe("TooltipProvider", () => {
       root.unmount();
     });
   });
+
+  test("resets bookkeeping when the provider unmounts", () => {
+    vi.useFakeTimers();
+    const root = renderProvider({ skipDelayDuration: 100 });
+
+    coordinator?.markOpened("tooltip-a");
+    expect(coordinator?.isSkipDelayActive()).toBe(true);
+
+    act(() => {
+      root.unmount();
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+  });
 });

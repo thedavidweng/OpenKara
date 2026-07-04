@@ -45,7 +45,10 @@ describe("Tooltip", () => {
     ui: ReactNode,
     options?: {
       withProvider?: boolean;
-      providerProps?: React.ComponentProps<typeof TooltipProvider>;
+      providerProps?: Omit<
+        React.ComponentProps<typeof TooltipProvider>,
+        "children"
+      >;
     },
   ) {
     const withProvider = options?.withProvider ?? true;
@@ -312,11 +315,11 @@ describe("Tooltip", () => {
       x: 200,
       y: 120,
       toJSON: () => ({}),
-    } as DOMRect;
+    };
 
     Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", {
       configurable: true,
-      value: () => rect,
+      value: () => rect as DOMRect,
     });
     Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
       configurable: true,
@@ -379,11 +382,11 @@ describe("Tooltip", () => {
       x: 200,
       y: 120,
       toJSON: () => ({}),
-    } as DOMRect;
+    };
 
     Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", {
       configurable: true,
-      value: () => rect,
+      value: () => rect as DOMRect,
     });
     Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
       configurable: true,

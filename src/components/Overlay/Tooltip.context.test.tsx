@@ -7,6 +7,11 @@ import {
   useTooltipDelayCoordinator,
   type TooltipDelayCoordinator,
 } from "./Tooltip.context";
+import {
+  DEFAULT_DELAY_DURATION_MS,
+  DEFAULT_HIDE_GRACE_DURATION_MS,
+  DEFAULT_SKIP_DELAY_DURATION_MS,
+} from "./Tooltip.constants";
 
 describe("useTooltipDelayCoordinator", () => {
   let container: HTMLDivElement;
@@ -43,9 +48,9 @@ describe("useTooltipDelayCoordinator", () => {
     });
 
     expect(coordinator?.config).toEqual({
-      delayDuration: 600,
-      skipDelayDuration: 300,
-      hideGraceDuration: 120,
+      delayDuration: DEFAULT_DELAY_DURATION_MS,
+      skipDelayDuration: DEFAULT_SKIP_DELAY_DURATION_MS,
+      hideGraceDuration: DEFAULT_HIDE_GRACE_DURATION_MS,
     });
     expect(coordinator?.isSkipDelayActive()).toBe(false);
 
@@ -58,6 +63,32 @@ describe("useTooltipDelayCoordinator", () => {
     }).not.toThrow();
 
     expect(coordinator?.isSkipDelayActive()).toBe(false);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  test("returns the same fallback coordinator across re-renders", () => {
+    function Probe() {
+      const value = useTooltipDelayCoordinator();
+      useEffect(() => {
+        coordinator = value;
+      }, [value]);
+      return null;
+    }
+
+    const root = createRoot(container);
+    act(() => {
+      root.render(<Probe />);
+    });
+    const firstCoordinator = coordinator;
+
+    act(() => {
+      root.render(<Probe />);
+    });
+
+    expect(coordinator).toBe(firstCoordinator);
 
     act(() => {
       root.unmount();

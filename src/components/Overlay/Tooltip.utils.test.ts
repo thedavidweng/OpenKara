@@ -178,4 +178,66 @@ describe("createTooltipScheduleController", () => {
     controller.scheduleHide(onHide);
     expect(onHide).toHaveBeenCalledTimes(1);
   });
+
+  test("waits for delayDuration before showing", () => {
+    const onShow = vi.fn();
+    const controller = createTooltipScheduleController({
+      delayDuration: 600,
+      hideGraceDuration: 120,
+      skipDelay: false,
+    });
+
+    controller.scheduleShow(onShow);
+    expect(onShow).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(599);
+    expect(onShow).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    expect(onShow).toHaveBeenCalledTimes(1);
+  });
+
+  test("shows immediately when skipDelay is active", () => {
+    const onShow = vi.fn();
+    const controller = createTooltipScheduleController({
+      delayDuration: 600,
+      hideGraceDuration: 120,
+      skipDelay: true,
+    });
+
+    controller.scheduleShow(onShow);
+    expect(onShow).toHaveBeenCalledTimes(1);
+  });
+
+  test("waits for hideGraceDuration before hiding", () => {
+    const onHide = vi.fn();
+    const controller = createTooltipScheduleController({
+      delayDuration: 600,
+      hideGraceDuration: 120,
+      skipDelay: false,
+    });
+
+    controller.scheduleHide(onHide);
+    expect(onHide).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(120);
+    expect(onHide).toHaveBeenCalledTimes(1);
+  });
+
+  test("cancels a pending show when hide is scheduled", () => {
+    const onShow = vi.fn();
+    const onHide = vi.fn();
+    const controller = createTooltipScheduleController({
+      delayDuration: 600,
+      hideGraceDuration: 120,
+      skipDelay: false,
+    });
+
+    controller.scheduleShow(onShow);
+    controller.scheduleHide(onHide);
+
+    vi.advanceTimersByTime(600);
+    expect(onShow).not.toHaveBeenCalled();
+    expect(onHide).toHaveBeenCalledTimes(1);
+  });
 });

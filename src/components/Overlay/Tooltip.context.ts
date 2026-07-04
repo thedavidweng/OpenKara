@@ -1,4 +1,9 @@
 import { createContext, useContext } from "react";
+import {
+  DEFAULT_DELAY_DURATION_MS,
+  DEFAULT_HIDE_GRACE_DURATION_MS,
+  DEFAULT_SKIP_DELAY_DURATION_MS,
+} from "./Tooltip.constants";
 
 export interface TooltipProviderConfig {
   delayDuration: number;
@@ -16,29 +21,24 @@ export interface TooltipDelayCoordinator {
   unregisterTooltip: (id: string) => void;
 }
 
-const DEFAULT_DELAY_DURATION_MS = 600;
-const DEFAULT_SKIP_DELAY_DURATION_MS = 300;
-const DEFAULT_HIDE_GRACE_DURATION_MS = 120;
+const FALLBACK_TOOLTIP_COORDINATOR: TooltipDelayCoordinator = {
+  config: {
+    delayDuration: DEFAULT_DELAY_DURATION_MS,
+    skipDelayDuration: DEFAULT_SKIP_DELAY_DURATION_MS,
+    hideGraceDuration: DEFAULT_HIDE_GRACE_DURATION_MS,
+  },
+  isSkipDelayActive: () => false,
+  registerTooltip: () => {},
+  unregisterTooltip: () => {},
+  markOpened: () => {},
+  markClosed: () => {},
+  cancelClose: () => {},
+};
 
 export const TooltipDelayContext =
   createContext<TooltipDelayCoordinator | null>(null);
 
 export function useTooltipDelayCoordinator(): TooltipDelayCoordinator {
   const coordinator = useContext(TooltipDelayContext);
-  if (!coordinator) {
-    return {
-      config: {
-        delayDuration: DEFAULT_DELAY_DURATION_MS,
-        skipDelayDuration: DEFAULT_SKIP_DELAY_DURATION_MS,
-        hideGraceDuration: DEFAULT_HIDE_GRACE_DURATION_MS,
-      },
-      isSkipDelayActive: () => false,
-      registerTooltip: () => {},
-      unregisterTooltip: () => {},
-      markOpened: () => {},
-      markClosed: () => {},
-      cancelClose: () => {},
-    };
-  }
-  return coordinator;
+  return coordinator ?? FALLBACK_TOOLTIP_COORDINATOR;
 }

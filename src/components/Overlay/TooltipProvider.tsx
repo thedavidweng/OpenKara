@@ -1,9 +1,14 @@
-import { useCallback, useMemo, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import {
   TooltipDelayContext,
   type TooltipDelayCoordinator,
   type TooltipProviderConfig,
 } from "./Tooltip.context";
+import {
+  DEFAULT_DELAY_DURATION_MS,
+  DEFAULT_HIDE_GRACE_DURATION_MS,
+  DEFAULT_SKIP_DELAY_DURATION_MS,
+} from "./Tooltip.constants";
 
 export interface TooltipProviderProps {
   children: ReactNode;
@@ -14,10 +19,6 @@ export interface TooltipProviderProps {
   /** Brief grace before hiding so the pointer can cross gaps between adjacent triggers. */
   hideGraceDuration?: number;
 }
-
-const DEFAULT_DELAY_DURATION_MS = 600;
-const DEFAULT_SKIP_DELAY_DURATION_MS = 300;
-const DEFAULT_HIDE_GRACE_DURATION_MS = 120;
 
 export function TooltipProvider({
   children,
@@ -89,6 +90,17 @@ export function TooltipProvider({
     }),
     [clearSkipDelayTimer, config, scheduleSkipDelayReset],
   );
+
+  useEffect(() => {
+    const tooltipRegistry = tooltipRegistryRef;
+    return () => {
+      clearSkipDelayTimer();
+      // Child tooltips unregister on unmount but may not call markClosed first.
+      openCountRef.current = 0;
+      skipDelayActiveRef.current = false;
+      tooltipRegistry.current.clear();
+    };
+  }, [clearSkipDelayTimer]);
 
   return (
     <TooltipDelayContext.Provider value={coordinator}>
