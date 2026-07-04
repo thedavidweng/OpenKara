@@ -92,6 +92,41 @@
     --color-control-primary-foreground: #17191d;
     --color-ghost-hover: rgba(255, 255, 255, 0.06);
     --panel-blur: 12px;
+    /* WebView2 / WebKitGTK default to light classic scrollbars; align with dark chrome. */
+    color-scheme: dark;
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-light) transparent;
+  }
+
+  [data-window-chrome-platform="desktop"] ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  [data-window-chrome-platform="desktop"] ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  [data-window-chrome-platform="desktop"] ::-webkit-scrollbar-thumb {
+    background-color: var(--color-border-light);
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-clip: padding-box;
+  }
+
+  [data-window-chrome-platform="desktop"] ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-active);
+  }
+
+  [data-window-chrome-platform="desktop"] ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Windows classic scrollbar arrows clash with the dark shell — hide them. */
+  [data-window-chrome-platform="desktop"] ::-webkit-scrollbar-button {
+    display: none;
+    height: 0;
+    width: 0;
   }
 
   [data-window-shell-tier="mac"] {
