@@ -135,6 +135,14 @@ export function useLyricsEngine(input: {
     return () => {
       window.removeEventListener("focus", syncNow);
       cancelAnimationFrame(rafId);
+      // Reset the auto-scroll transform so a stale translateY offset doesn't
+      // persist when the loop tears down (e.g. editing the playing song's
+      // lyrics to strip timestamps switches isPlainText true mid-playback,
+      // and without this reset the plain-text view renders clipped by the
+      // last timed-mode offset).
+      if (scrollContent) {
+        scrollContent.style.transform = "translateY(0px)";
+      }
     };
   }, [
     containerRef,
