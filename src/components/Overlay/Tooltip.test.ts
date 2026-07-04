@@ -1,19 +1,17 @@
-import { describe, expect, test } from "vitest";
-import { getTooltipPosition, tooltipVisibilityReducer } from "./Tooltip.utils";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+  createTooltipScheduleController,
+  getTooltipPosition,
+  tooltipVisibilityReducer,
+} from "./Tooltip.utils";
 
 describe("tooltipVisibilityReducer", () => {
-  test("opens immediately on pointer and focus interactions", () => {
-    expect(tooltipVisibilityReducer(false, { type: "pointer-enter" })).toBe(
-      true,
-    );
-    expect(tooltipVisibilityReducer(false, { type: "focus" })).toBe(true);
+  test("opens on show", () => {
+    expect(tooltipVisibilityReducer(false, { type: "show" })).toBe(true);
   });
 
-  test("closes on pointer leave, blur, and escape", () => {
-    expect(tooltipVisibilityReducer(true, { type: "pointer-leave" })).toBe(
-      false,
-    );
-    expect(tooltipVisibilityReducer(true, { type: "blur" })).toBe(false);
+  test("closes on hide and escape", () => {
+    expect(tooltipVisibilityReducer(true, { type: "hide" })).toBe(false);
     expect(tooltipVisibilityReducer(true, { type: "escape" })).toBe(false);
   });
 });
@@ -51,5 +49,77 @@ describe("getTooltipPosition", () => {
         { width: 200, height: 120 },
       ),
     ).toEqual({ left: 8, top: 48 });
+  });
+});
+
+describe("createTooltipScheduleController", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("waits for delayDuration before showing", () => {
+    const onShow = vi.fn();
+    const controller = createTooltipScheduleController({
+      delayDuration: 600,
+      hideGraceDuration: 120,
+      skipDelay: false,
+    });
+
+    controller.scheduleShow(onShow);
+    expect(onShow).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(599);
+    expect(onShow).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    expect(onShow).toHaveBeenCalledTimes(1);
+  });
+
+  test("shows immediately when skipDelay is active", () => {
+    const onShow = vi.fn();
+    const controller = createTooltipScheduleController({
+      delayDuration: 600,
+      hideGraceDuration: 120,
+      skipDelay: true,
+    });
+
+    controller.scheduleShow(onShow);
+    expect(onShow).toHaveBeenCalledTimes(1);
+  });
+
+  test("waits for hideGraceDuration before hiding", () => {
+    const onHide = vi.fn();
+    const controller = createTooltipScheduleController({
+      delayDuration: 600,
+      hideGraceDuration: 120,
+      skipDelay: false,
+    });
+
+    controller.scheduleHide(onHide);
+    expect(onHide).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(120);
+    expect(onHide).toHaveBeenCalledTimes(1);
+  });
+
+  test("cancels a pending show when hide is scheduled", () => {
+    const onShow = vi.fn();
+    const onHide = vi.fn();
+    const controller = createTooltipScheduleController({
+      delayDuration: 600,
+      hideGraceDuration: 120,
+      skipDelay: false,
+    });
+
+    controller.scheduleShow(onShow);
+    controller.scheduleHide(onHide);
+
+    vi.advanceTimersByTime(600);
+    expect(onShow).not.toHaveBeenCalled();
+    expect(onHide).toHaveBeenCalledTimes(1);
   });
 });

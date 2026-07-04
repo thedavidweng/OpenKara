@@ -27,10 +27,6 @@ vi.mock("@/stores/player-store", () => ({
     selector(mockPlayerState),
 }));
 
-vi.mock("@/components/Overlay/Tooltip", () => ({
-  Tooltip: ({ children }: { children: React.ReactNode }) => children,
-}));
-
 describe("PlayControls", () => {
   test("disables the main transport button while a selected song is loading", () => {
     mockPlayerState.snapshot = {

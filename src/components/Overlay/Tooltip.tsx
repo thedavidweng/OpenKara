@@ -1,5 +1,6 @@
 import {
   cloneElement,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useReducer,
@@ -11,23 +12,83 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { getTooltipPosition, tooltipVisibilityReducer } from "./Tooltip.utils";
+import {
+  createTooltipScheduleController,
+  getTooltipPosition,
+  tooltipVisibilityReducer,
+} from "./Tooltip.utils";
+import { useTooltipDelayCoordinator } from "./Tooltip.context";
 
 interface TooltipProps {
   children: ReactNode;
   label: string;
   shortcut?: string;
+  /** Override provider delay for low-frequency explanatory tooltips. */
+  delayDuration?: number;
+  /** When true, the trigger renders without a tooltip. */
+  disabled?: boolean;
 }
 
-export function Tooltip({ children, label, shortcut }: TooltipProps) {
+export function Tooltip({
+  children,
+  label,
+  shortcut,
+  delayDuration,
+  disabled = false,
+}: TooltipProps) {
+  const coordinator = useTooltipDelayCoordinator();
   const anchorRef = useRef<HTMLSpanElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
+  const scheduleRef = useRef<ReturnType<
+    typeof createTooltipScheduleController
+  > | null>(null);
+  const openRef = useRef(false);
   const [open, dispatch] = useReducer(tooltipVisibilityReducer, false);
   const tooltipId = useId();
   const [position, setPosition] = useState<{
     left: number;
     top: number;
   } | null>(null);
+
+  openRef.current = open;
+
+  const resolvedDelayDuration =
+    delayDuration ?? coordinator.config.delayDuration;
+
+  const showTooltip = useCallback(() => {
+    if (openRef.current) {
+      return;
+    }
+    dispatch({ type: "show" });
+    coordinator.markOpened(tooltipId);
+  }, [coordinator, tooltipId]);
+
+  const hideTooltip = useCallback(() => {
+    if (!openRef.current) {
+      return;
+    }
+    dispatch({ type: "hide" });
+    coordinator.markClosed();
+  }, [coordinator]);
+
+  const forceHideTooltip = useCallback(() => {
+    scheduleRef.current?.cancelAll();
+    if (!openRef.current) {
+      return;
+    }
+    dispatch({ type: "hide" });
+    coordinator.markClosed();
+  }, [coordinator]);
+
+  const getScheduleController = useCallback(() => {
+    scheduleRef.current?.cancelAll();
+    scheduleRef.current = createTooltipScheduleController({
+      delayDuration: resolvedDelayDuration,
+      hideGraceDuration: coordinator.config.hideGraceDuration,
+      skipDelay: coordinator.isSkipDelayActive(),
+    });
+    return scheduleRef.current;
+  }, [coordinator, resolvedDelayDuration]);
 
   const describedChildren = (() => {
     if (!open) {
@@ -57,6 +118,7 @@ export function Tooltip({ children, label, shortcut }: TooltipProps) {
 
   useLayoutEffect(() => {
     if (
+      disabled ||
       !open ||
       !anchorRef.current ||
       !tooltipRef.current ||
@@ -93,16 +155,21 @@ export function Tooltip({ children, label, shortcut }: TooltipProps) {
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [open]);
+  }, [disabled, open]);
 
   useEffect(() => {
-    if (!open) {
+    if (disabled || !open) {
       return;
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        scheduleRef.current?.cancelAll();
+        if (!openRef.current) {
+          return;
+        }
         dispatch({ type: "escape" });
+        coordinator.markClosed();
       }
     };
 
@@ -110,21 +177,46 @@ export function Tooltip({ children, label, shortcut }: TooltipProps) {
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [open]);
+  }, [coordinator, disabled, open]);
+
+  useEffect(() => {
+    if (disabled) {
+      return;
+    }
+
+    coordinator.registerTooltip(tooltipId, forceHideTooltip);
+    return () => {
+      coordinator.unregisterTooltip(tooltipId);
+      scheduleRef.current?.cancelAll();
+    };
+  }, [coordinator, disabled, forceHideTooltip, tooltipId]);
+
+  if (disabled) {
+    return <>{children}</>;
+  }
 
   return (
     <>
       <span
         ref={anchorRef}
-        className="inline-flex"
-        onMouseEnter={() => dispatch({ type: "pointer-enter" })}
-        onMouseLeave={() => dispatch({ type: "pointer-leave" })}
-        onFocusCapture={() => dispatch({ type: "focus" })}
+        className="-m-1 inline-flex p-1"
+        onMouseEnter={() => {
+          coordinator.cancelClose();
+          getScheduleController().scheduleShow(showTooltip);
+        }}
+        onMouseLeave={() => {
+          getScheduleController().scheduleHide(hideTooltip);
+        }}
+        onFocusCapture={() => {
+          scheduleRef.current?.cancelAll();
+          showTooltip();
+        }}
         onBlurCapture={(event) => {
           if (anchorRef.current?.contains(event.relatedTarget as Node)) {
             return;
           }
-          dispatch({ type: "blur" });
+          scheduleRef.current?.cancelAll();
+          hideTooltip();
         }}
       >
         {describedChildren}
@@ -160,3 +252,5 @@ export function Tooltip({ children, label, shortcut }: TooltipProps) {
     </>
   );
 }
+
+export { TooltipProvider } from "./TooltipProvider";
