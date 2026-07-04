@@ -135,7 +135,7 @@ jobs:
           sudo apt-get install -y appstream flatpak-builder
 
       - name: Validate Flatpak packaging invariants
-        run: pnpm test tests/flatpak-packaging.test.ts
+        run: node --run test -- tests/flatpak-packaging.test.ts
 
       - name: Validate upstream AppStream metadata
         run: |
