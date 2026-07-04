@@ -17,10 +17,11 @@ use std::{
 
 /// Cache for rubato resamplers keyed by (src_rate, dst_rate).
 /// Resamplers maintain internal state (filter coefficients, buffer history)
-/// so they must be reused across consecutive audio callbacks for the same rate pair.
+/// so they must be reused across consecutive audio callbacks for the same rate
+/// pair and output frame count.
 #[derive(Default)]
 pub struct ResamplerCache {
-    cache: HashMap<(u32, u32, usize), Async<f32>>,
+    cache: HashMap<(u32, u32, usize, usize), Async<f32>>,
 }
 
 impl ResamplerCache {
@@ -28,13 +29,24 @@ impl ResamplerCache {
         Self::default()
     }
 
-    /// Get or create a resampler for the given rate pair and channel index.
-    /// Each channel needs its own resampler because rubato maintains per-channel
-    /// filter state — sharing one resampler across channels produces phase-blurred
-    /// output.
-    fn get_or_create(&mut self, src_rate: u32, dst_rate: u32, channel: usize) -> &mut Async<f32> {
+    /// Get or create a resampler for the given rate pair, channel index, and
+    /// output chunk size. Each channel needs its own resampler because rubato
+    /// maintains per-channel filter state — sharing one resampler across
+    /// channels produces phase-blurred output.
+    ///
+    /// The output chunk size is included in the key because `FixedAsync::Output`
+    /// fixes the output frame count at creation time. If the callback buffer
+    /// size changes a new resampler is created; in practice cpal uses a stable
+    /// buffer size so the resampler is reused across callbacks.
+    fn get_or_create(
+        &mut self,
+        src_rate: u32,
+        dst_rate: u32,
+        channel: usize,
+        output_chunk: usize,
+    ) -> &mut Async<f32> {
         self.cache
-            .entry((src_rate, dst_rate, channel))
+            .entry((src_rate, dst_rate, channel, output_chunk))
             .or_insert_with(|| {
                 // High-quality sinc interpolation parameters.
                 // 128 taps, 256× oversampling — good quality with reasonable CPU cost.
@@ -47,13 +59,22 @@ impl ResamplerCache {
                 };
                 // Process mono per call (channels=1), de-interleave externally.
                 // Each channel gets its own resampler to maintain independent filter state.
+                //
+                // FixedAsync::Output: each process() call produces exactly
+                // `output_chunk` output frames and consumes `input_frames_next()`
+                // input frames (variable, ~output_chunk * src_rate / dst_rate).
+                // This avoids zero-padding on every callback — the previous
+                // FixedAsync::Input with chunk_size=1024 forced padding ~472 real
+                // frames up to 1024, corrupting the 128-tap sinc delay line with
+                // trailing zeros on every call and producing repeating phase
+                // artifacts at callback boundaries.
                 Async::<f32>::new_sinc(
                     src_rate as f64 / dst_rate as f64,
                     1.1, // max relative ratio
                     &params,
-                    1024, // chunk_size
-                    1,    // channels (mono; we de-interleave per channel)
-                    FixedAsync::Input,
+                    output_chunk, // chunk_size = output frames per call
+                    1,            // channels (mono; we de-interleave per channel)
+                    FixedAsync::Output,
                 )
                 .expect("failed to create rubato resampler")
             })
@@ -529,29 +550,19 @@ fn mix_stem_rubato(
     }
 
     let output_frames = output.len() / device_channels;
-    // Limit input to just the source frames needed for this callback's output.
-    // Without this cap, we'd feed the entire remaining track into rubato every
-    // callback — causing multi-MB allocations and corrupting the resampler state.
-    let needed_src_frames =
-        src_frames_for_output(output_frames, audio.sample_rate, device_sample_rate) as usize;
-    let available_src_frames = (total_src_frames - src_start_frame).min(needed_src_frames + 1);
 
-    // rubato's FixedAsync::Input processes exactly chunk_size frames per call.
-    // We must always feed at least chunk_size frames — pad with zeros if we have
-    // fewer available (end-of-track). We then clip the output to the number of
-    // valid frames derived from the actual (non-padded) input count.
-    // NOTE: We read chunk_size from channel 0's resampler (all channels share
-    // the same rate pair so chunk_size is identical), then get each channel's
-    // own resampler inside the loop below.
-    let chunk_size = resampler_cache
-        .get_or_create(audio.sample_rate, device_sample_rate, 0)
+    // With FixedAsync::Output, each process() call produces exactly
+    // `output_frames` output frames and consumes `input_frames_next()` input
+    // frames (the variable number needed for this rate pair and filter state).
+    // We feed exactly that many frames — real source frames, zero-padded only
+    // at end-of-track. This avoids the per-callback zero-padding that corrupted
+    // the sinc delay line when using FixedAsync::Input with a large chunk_size.
+    let input_needed = resampler_cache
+        .get_or_create(audio.sample_rate, device_sample_rate, 0, output_frames)
         .input_frames_next();
-    let actual_input = available_src_frames;
-    let feed_frames = actual_input.max(chunk_size);
-
-    // Expected output frames from the actual (non-padded) input, for clipping.
-    let ratio = audio.sample_rate as f64 / device_sample_rate as f64;
-    let expected_out = (actual_input as f64 / ratio).ceil() as usize;
+    let real_available = total_src_frames - src_start_frame;
+    let frames_from_source = real_available.min(input_needed);
+    let feed_frames = input_needed;
 
     let mut max_out_frames = 0usize;
 
@@ -559,9 +570,14 @@ fn mix_stem_rubato(
     // through its own mono resampler (independent filter state) and mix into the
     // interleaved output.
     for src_ch in 0..src_channels {
-        // De-interleave source frames for this channel, padding to chunk_size.
+        // De-interleave source frames for this channel, zero-padding the tail
+        // only when we're at end-of-track (real_available < input_needed).
         let mut channel_input = vec![0.0f32; feed_frames];
-        for (frame, slot) in channel_input.iter_mut().enumerate().take(actual_input) {
+        for (frame, slot) in channel_input
+            .iter_mut()
+            .enumerate()
+            .take(frames_from_source)
+        {
             *slot = audio.samples[(src_start_frame + frame) * src_channels + src_ch];
         }
 
@@ -577,10 +593,15 @@ fn mix_stem_rubato(
         };
 
         // Each channel gets its own resampler to maintain independent filter state.
-        let resampler =
-            resampler_cache.get_or_create(audio.sample_rate, device_sample_rate, src_ch);
+        let resampler = resampler_cache.get_or_create(
+            audio.sample_rate,
+            device_sample_rate,
+            src_ch,
+            output_frames,
+        );
 
         // Process through rubato. Returns an interleaved owned buffer.
+        // FixedAsync::Output guarantees exactly output_frames output frames.
         let output_adapter = match resampler.process(&input_adapter, 0, None) {
             Ok(out) => out,
             Err(_) => continue,
@@ -589,10 +610,10 @@ fn mix_stem_rubato(
         // For mono (1 channel), interleaved = sequential. take_data() gives Vec<f32>.
         let out_data = output_adapter.take_data();
 
-        // Clip output to the expected frame count from actual input.
-        // The zero-padded tail produces spurious output frames we must discard.
-        let valid_out = out_data.len().min(expected_out);
-        let frames_to_write = valid_out.min(output_frames);
+        // Write all produced output frames (capped to the callback's output).
+        // At end-of-track the tail may contain flushed filter output plus silence
+        // from zero-padding — the silence is harmless and the track ends here.
+        let frames_to_write = out_data.len().min(output_frames);
         for out_frame in 0..frames_to_write {
             let sample = out_data[out_frame];
             for out_ch in 0..device_channels {
@@ -609,8 +630,8 @@ fn mix_stem_rubato(
         max_out_frames = max_out_frames.max(frames_to_write);
     }
 
-    // Actual source frames consumed = the non-padded input count.
-    let src_frames_consumed = actual_input as u64;
+    // Source frames consumed = the real (non-padded) frames we fed.
+    let src_frames_consumed = frames_from_source as u64;
 
     (max_out_frames * device_channels, src_frames_consumed)
 }
