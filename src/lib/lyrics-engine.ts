@@ -203,10 +203,9 @@ export function tickLyricsEngineScroll(input: {
     activeIndex !== prevActiveIndexRef.current ||
     target !== targetScrollTopRef.current
   ) {
-    const currentOffset = bakeUserScrollIntoTransform(container, scrollSpring);
-    if (currentOffset !== scrollSpring.getPosition()) {
-      scrollSpring.jumpTo(currentOffset);
-    }
+    // bakeUserScrollIntoTransform already jumpTo's the spring to the baked
+    // offset internally, so no follow-up jumpTo is needed here.
+    bakeUserScrollIntoTransform(container, scrollSpring);
     prevActiveIndexRef.current = activeIndex;
     targetScrollTopRef.current = target;
     scrollSpring.setTarget(target);
@@ -267,21 +266,28 @@ export function tickLyricsEngineFrame(input: LyricsEngineFrameInput): void {
   if (playerState.snapshot?.song_id) {
     syncLyricsActiveLine(prevActiveLineRef);
 
-    const activeLine = lyricsState.lines[lyricsState.activeLineIndex];
+    // Re-read the store after syncLyricsActiveLine: setActiveLineIndex resets
+    // activeWordIndex to -1 on a line change, and the stale `lyricsState`
+    // captured above would still point at the previous line's words, causing
+    // findActiveWordIndex to compute against the old line and overwrite the
+    // just-reset -1 with a stale value for one rAF frame.
+    const syncedLyricsState = useLyricsStore.getState();
+    const activeLine =
+      syncedLyricsState.lines[syncedLyricsState.activeLineIndex];
     if (activeLine?.words && activeLine.words.length > 0) {
       const activeWordIndex = findActiveWordIndex(activeLine.words, adjustedMs);
       if (activeWordIndex !== prevActiveWordIndexRef.current) {
         prevActiveWordIndexRef.current = activeWordIndex;
-        lyricsState.setActiveWordIndex(activeWordIndex);
+        syncedLyricsState.setActiveWordIndex(activeWordIndex);
       }
     } else if (prevActiveWordIndexRef.current !== -1) {
       prevActiveWordIndexRef.current = -1;
-      lyricsState.setActiveWordIndex(-1);
+      syncedLyricsState.setActiveWordIndex(-1);
     }
   }
 
   lineRuntime.tick({
-    activeLineIndex: lyricsState.activeLineIndex,
+    activeLineIndex: useLyricsStore.getState().activeLineIndex,
     adjustedMs,
     isPlaying: playerState.snapshot?.is_playing ?? false,
     dt,
