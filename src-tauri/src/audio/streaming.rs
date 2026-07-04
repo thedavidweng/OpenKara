@@ -321,8 +321,15 @@ impl AudioProducer {
     /// of a condvar to keep the realtime audio callback lock-free.
     pub fn signal_flush(&self) {
         self.flush_epoch.fetch_add(1, Ordering::Relaxed);
-        self.needs_flush.store(true, Ordering::Relaxed);
+        // Clear flush_done before publishing needs_flush. If needs_flush is set
+        // first, a concurrent audio callback can see it, run acknowledge_flush
+        // (setting flush_done = true), and return before we reset flush_done to
+        // false here — the producer would then poll a flag that never flips,
+        // time out, and push post-seek samples before the ring buffer drains.
+        // Release ordering on needs_flush guarantees the consumer observes
+        // flush_done = false before it acts on needs_flush = true.
         self.flush_done.store(false, Ordering::Release);
+        self.needs_flush.store(true, Ordering::Release);
 
         // Poll for the consumer to acknowledge the flush.
         // The consumer calls `acknowledge_flush` on the audio callback
