@@ -94,7 +94,7 @@
     --panel-blur: 12px;
     /* WebView2 / WebKitGTK default to light classic scrollbars; align with dark chrome. */
     --scrollbar-thumb: var(--color-border-light);
-    --scrollbar-thumb-hover: var(--color-active);
+    --scrollbar-thumb-hover: var(--color-text-dimmer);
     --scrollbar-track: transparent;
     color-scheme: dark;
   }
