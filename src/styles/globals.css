@@ -92,6 +92,56 @@
     --color-control-primary-foreground: #17191d;
     --color-ghost-hover: rgba(255, 255, 255, 0.06);
     --panel-blur: 12px;
+    /* WebView2 / WebKitGTK default to light classic scrollbars; align with dark chrome. */
+    --scrollbar-thumb: var(--color-border-light);
+    --scrollbar-thumb-hover: var(--color-text-dimmer);
+    --scrollbar-track: transparent;
+    color-scheme: dark;
+  }
+
+  /* Standard scrollbar props (WebView2 121+, Firefox). CSS layers on native appearance.
+     scrollbar-width/color do not inherit, and AppLayout is overflow-hidden — lists and
+     panels scroll on nested overflow-y-auto nodes, so descendants must set these too. */
+  @supports (scrollbar-width: thin) {
+    [data-window-chrome-platform="desktop"],
+    [data-window-chrome-platform="desktop"] * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+    }
+  }
+
+  /* WebKit fallback for engines without scrollbar-color (older WebView2, WebKitGTK). */
+  @supports not (scrollbar-color: auto) {
+    [data-window-chrome-platform="desktop"] ::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+
+    [data-window-chrome-platform="desktop"] ::-webkit-scrollbar-track {
+      background: var(--scrollbar-track);
+    }
+
+    [data-window-chrome-platform="desktop"] ::-webkit-scrollbar-thumb {
+      background-color: var(--scrollbar-thumb);
+      border: 2px solid transparent;
+      border-radius: 9999px;
+      background-clip: padding-box;
+    }
+
+    [data-window-chrome-platform="desktop"] ::-webkit-scrollbar-thumb:hover {
+      background-color: var(--scrollbar-thumb-hover);
+    }
+
+    [data-window-chrome-platform="desktop"] ::-webkit-scrollbar-corner {
+      background: var(--scrollbar-track);
+    }
+
+    /* Windows classic scrollbar arrows clash with the dark shell — hide them. */
+    [data-window-chrome-platform="desktop"] ::-webkit-scrollbar-button {
+      display: none;
+      height: 0;
+      width: 0;
+    }
   }
 
   [data-window-shell-tier="mac"] {

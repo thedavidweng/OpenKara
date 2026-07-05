@@ -7,6 +7,11 @@ use std::time::{Duration, Instant};
 /// Duration of the fade-in/fade-out envelope applied to play/pause transitions.
 const FADE_DURATION: Duration = Duration::from_millis(50);
 
+/// Duration of the fade-in applied after a seek to prevent audible clicks.
+/// 8ms is short enough to be perceptually transparent while masking any
+/// amplitude discontinuity at the new playback position.
+const SEEK_FADE_DURATION: Duration = Duration::from_millis(8);
+
 pub const PLAYBACK_POSITION_EVENT: &str = "playback-position";
 pub const PLAYBACK_ENDED_EVENT: &str = "playback-ended";
 pub const PLAYBACK_ERROR_EVENT: &str = "playback-error";
@@ -124,6 +129,8 @@ pub(crate) enum FadeState {
     FadingIn { start: Instant },
     /// Fading out (volume ramping down) after a pause command.
     FadingOut { start: Instant },
+    /// Short fade-in after a seek to mask amplitude discontinuity.
+    FadingAfterSeek { start: Instant },
 }
 
 #[derive(Debug)]
@@ -257,9 +264,12 @@ impl PlaybackController {
         target_ms: u64,
         _now_ms: u64,
     ) -> Result<PlaybackStateSnapshot, PlaybackError> {
-        // Cancel any active fade — seek should restart audio cleanly.
+        // Cancel any active fade and start a short seek fade to mask
+        // the amplitude discontinuity at the new position.
         self.bump_transport_generation();
-        self.fade = FadeState::None;
+        self.fade = FadeState::FadingAfterSeek {
+            start: Instant::now(),
+        };
         let track = self
             .current_track
             .as_mut()
@@ -589,6 +599,15 @@ impl PlaybackController {
                     Some(1.0 - elapsed.as_secs_f32() / FADE_DURATION.as_secs_f32())
                 }
             }
+            FadeState::FadingAfterSeek { start } => {
+                let elapsed = start.elapsed();
+                if elapsed >= SEEK_FADE_DURATION {
+                    self.fade = FadeState::None;
+                    Some(1.0)
+                } else {
+                    Some(elapsed.as_secs_f32() / SEEK_FADE_DURATION.as_secs_f32())
+                }
+            }
         }
     }
 }
@@ -795,6 +814,87 @@ mod tests {
         let snap = controller.snapshot();
         assert_eq!(snap.state, "playing");
         assert!(snap.is_playing);
+    }
+
+    #[test]
+    fn seek_activates_fade_to_prevent_click() {
+        use super::DecodedAudio;
+        use super::FadeState;
+
+        let mut controller = super::PlaybackController::default();
+        let decoded = DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        controller.play(0).unwrap();
+
+        // Before seek, fade should be None (play fade already completed).
+        controller.fade = FadeState::None;
+
+        // Seek should activate FadingAfterSeek.
+        controller.seek(2_000, 0).unwrap();
+        assert!(
+            matches!(controller.fade, FadeState::FadingAfterSeek { .. }),
+            "seek should activate FadingAfterSeek, got {:?}",
+            controller.fade
+        );
+
+        // take_fade_gain should return a value < 1.0 immediately after seek.
+        let gain = controller.take_fade_gain();
+        assert!(gain.is_some(), "fade gain should be active after seek");
+        let gain = gain.unwrap();
+        assert!(
+            gain < 1.0,
+            "gain immediately after seek should be < 1.0, got {gain}"
+        );
+    }
+
+    #[test]
+    fn seek_fade_is_shorter_than_play_fade() {
+        use super::DecodedAudio;
+        use super::FadeState;
+
+        let mut controller = super::PlaybackController::default();
+        let decoded = DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+
+        // Play fade starts
+        controller.play(0).unwrap();
+        assert!(matches!(controller.fade, FadeState::FadingIn { .. }));
+
+        // Seek should override play fade with seek fade.
+        controller.seek(1_000, 0).unwrap();
+        assert!(matches!(controller.fade, FadeState::FadingAfterSeek { .. }));
+    }
+
+    #[test]
+    fn seek_does_not_report_paused() {
+        use super::DecodedAudio;
+
+        let mut controller = super::PlaybackController::default();
+        let decoded = DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        controller.play(0).unwrap();
+
+        // Seek should keep is_playing = true (unlike pause which sets it to false).
+        let snap = controller.seek(2_000, 0).unwrap();
+        assert!(
+            snap.is_playing,
+            "seek should keep is_playing = true, got false"
+        );
     }
 
     #[test]
