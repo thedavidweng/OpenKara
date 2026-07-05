@@ -2,8 +2,8 @@ use crate::{
     cache,
     commands::error::{database_error, CommandError, CommandResult},
     config::RegisteredLibrary,
-    library::{error::LibraryError, Song},
-    library_root::LibraryRoot,
+    library::error::LibraryError,
+    library::Song,
     AppState,
 };
 use std::collections::HashMap;
@@ -25,39 +25,6 @@ pub(crate) fn remote_delete_relative_path(
 ) -> CommandResult<()> {
     let provider = create_provider(app_data_dir, library)?;
     provider.delete_path(relative_path)
-}
-
-fn delete_remote_song_from_mirror(
-    app_data_dir: &std::path::Path,
-    remote_library: &RegisteredLibrary,
-    remote_root: &LibraryRoot,
-    remote_connection: &rusqlite::Connection,
-    song: &Song,
-) -> CommandResult<()> {
-    if let Some(file_path) = song.file_path.as_deref() {
-        remote_delete_relative_path(app_data_dir, remote_library, file_path)?;
-    }
-    if let Some(cdg_path) = song.cdg_path.as_deref() {
-        remote_delete_relative_path(app_data_dir, remote_library, cdg_path)?;
-    }
-    if song.is_remote_stems()
-        || cache::stems::get_cached_stem_entry(remote_connection, &song.hash)
-            .map_err(|error| database_error(error.to_string()))?
-            .is_some()
-    {
-        remote_delete_relative_path(
-            app_data_dir,
-            remote_library,
-            &format!("stems/{}", song.hash),
-        )?;
-    }
-    crate::commands::import::delete::delete_song_from_library(
-        remote_connection,
-        remote_root,
-        &song.hash,
-    )
-    .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
-    Ok(())
 }
 
 pub(crate) fn sync_bound_remote_for_active_local_library<R: tauri::Runtime>(
@@ -86,7 +53,7 @@ fn sync_bound_remote<R: tauri::Runtime>(
     let local_connection = cache::open_database(&local_root.database_path())
         .map_err(|error| database_error(error.to_string()))?;
     let remote_root = load_remote_root(&state.shell.app_data_dir, &remote_library)?;
-    let remote_connection = cache::open_database(&remote_root.database_path())
+    let mut remote_connection = cache::open_database(&remote_root.database_path())
         .map_err(|error| database_error(error.to_string()))?;
     let local_songs =
         cache::list_songs(&local_connection).map_err(|error| database_error(error.to_string()))?;
@@ -101,19 +68,60 @@ fn sync_bound_remote<R: tauri::Runtime>(
         }
     }
 
-    for remote_song in &remote_songs {
-        match desired_kinds.get(&remote_song.hash) {
-            Some(kind) if remote_song.audio_source_kind == *kind => {}
-            Some(_) | None => {
-                delete_remote_song_from_mirror(
-                    &state.shell.app_data_dir,
-                    &remote_library,
-                    &remote_root,
-                    &remote_connection,
-                    remote_song,
-                )?;
-            }
+    // Collect songs to delete from the remote mirror. DB deletes are wrapped
+    // in a transaction so a mid-loop failure rolls back all prior DB deletes,
+    // keeping the remote database consistent. Cloud file deletes happen after
+    // the transaction commits — if they fail, the result is orphaned cloud
+    // files (wasted storage) rather than DB entries pointing at missing files.
+    let songs_to_delete: Vec<&Song> = remote_songs
+        .iter()
+        .filter(|remote_song| match desired_kinds.get(&remote_song.hash) {
+            Some(kind) if remote_song.audio_source_kind == *kind => false,
+            Some(_) | None => true,
+        })
+        .collect();
+
+    // Phase 1: transactional DB deletes.
+    if !songs_to_delete.is_empty() {
+        let tx = remote_connection
+            .transaction()
+            .map_err(|error| database_error(error.to_string()))?;
+        for song in &songs_to_delete {
+            crate::commands::import::delete::delete_song_rows_from_database(
+                &tx,
+                &remote_root,
+                &song.hash,
+            )
+            .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
         }
+        tx.commit()
+            .map_err(|error| database_error(error.to_string()))?;
+    }
+
+    // Phase 2: best-effort cloud + working-copy file deletes (after DB
+    // transaction commits). Failures here leave orphaned files (wasted
+    // storage) but don't corrupt the database — the next sync will retry.
+    for song in &songs_to_delete {
+        if let Some(file_path) = song.file_path.as_deref() {
+            let _ =
+                remote_delete_relative_path(&state.shell.app_data_dir, &remote_library, file_path);
+        }
+        if let Some(cdg_path) = song.cdg_path.as_deref() {
+            let _ =
+                remote_delete_relative_path(&state.shell.app_data_dir, &remote_library, cdg_path);
+        }
+        if song.is_remote_stems() {
+            let _ = remote_delete_relative_path(
+                &state.shell.app_data_dir,
+                &remote_library,
+                &format!("stems/{}", song.hash),
+            );
+        }
+        // Best-effort working-copy file cleanup.
+        let _ = crate::commands::import::delete::delete_song_files_from_working_copy(
+            &remote_root,
+            song,
+        );
     }
 
     let desired_song_ids: Vec<String> = local_songs
