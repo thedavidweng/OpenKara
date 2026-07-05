@@ -38,7 +38,7 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Regenerate Flatpak node sources
-        run: pnpm generate:flatpak-node-sources
+        run: node --run generate:flatpak-node-sources
 
       - name: Commit changes if any
         run: |
