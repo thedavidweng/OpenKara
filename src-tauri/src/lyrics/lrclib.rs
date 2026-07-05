@@ -32,6 +32,7 @@ pub struct LrcLibLyrics {
 pub struct LrcLibClient {
     base_url: String,
     http: reqwest::blocking::Client,
+    http_async: reqwest::Client,
 }
 
 impl LrcLibClient {
@@ -44,6 +45,12 @@ impl LrcLibClient {
                 .timeout(Duration::from_secs(6))
                 .build()
                 .expect("reqwest blocking client should build"),
+            http_async: reqwest::Client::builder()
+                .user_agent(USER_AGENT)
+                .connect_timeout(Duration::from_secs(3))
+                .timeout(Duration::from_secs(6))
+                .build()
+                .expect("reqwest async client should build"),
         }
     }
 
@@ -80,6 +87,46 @@ impl LrcLibClient {
             LyricsError::NetworkUnavailable(format!("LRCLIB returned a non-success response: {e}"))
         })?;
         let lyrics = response.json::<LrcLibLyrics>().map_err(|e| {
+            LyricsError::NetworkUnavailable(format!(
+                "failed to deserialize LRCLIB lyrics response: {e}"
+            ))
+        })?;
+
+        Ok(Some(lyrics))
+    }
+
+    /// Async variant of `fetch_by_track` for use in async Tauri commands.
+    /// Avoids occupying a `spawn_blocking` thread for the duration of the
+    /// network request.
+    pub async fn fetch_by_track_async(
+        &self,
+        query: &LyricsLookupQuery,
+    ) -> Result<Option<LrcLibLyrics>, LyricsError> {
+        let url = format!("{}/api/get", self.base_url);
+        let mut request = self.http_async.get(url).query(&[
+            ("track_name", query.track_name.as_str()),
+            ("artist_name", query.artist_name.as_str()),
+        ]);
+
+        if let Some(album_name) = query.album_name.as_deref() {
+            request = request.query(&[("album_name", album_name)]);
+        }
+
+        if let Some(duration_seconds) = query.duration_seconds {
+            request = request.query(&[("duration", duration_seconds)]);
+        }
+
+        let response = request.send().await.map_err(|e| {
+            LyricsError::NetworkUnavailable(format!("failed to request lyrics from LRCLIB: {e}"))
+        })?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+
+        let response = response.error_for_status().map_err(|e| {
+            LyricsError::NetworkUnavailable(format!("LRCLIB returned a non-success response: {e}"))
+        })?;
+        let lyrics = response.json::<LrcLibLyrics>().await.map_err(|e| {
             LyricsError::NetworkUnavailable(format!(
                 "failed to deserialize LRCLIB lyrics response: {e}"
             ))

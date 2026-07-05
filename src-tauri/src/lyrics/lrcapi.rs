@@ -35,6 +35,7 @@ enum LrcApiResponse {
 pub struct LrcApiClient {
     base_url: String,
     http: reqwest::blocking::Client,
+    http_async: reqwest::Client,
 }
 
 impl LrcApiClient {
@@ -47,6 +48,12 @@ impl LrcApiClient {
                 .timeout(Duration::from_secs(6))
                 .build()
                 .expect("reqwest blocking client should build"),
+            http_async: reqwest::Client::builder()
+                .user_agent(USER_AGENT)
+                .connect_timeout(Duration::from_secs(3))
+                .timeout(Duration::from_secs(6))
+                .build()
+                .expect("reqwest async client should build"),
         }
     }
 
@@ -75,6 +82,51 @@ impl LrcApiClient {
             LyricsError::NetworkUnavailable(format!("LrcAPI returned a non-success response: {e}"))
         })?;
         let response = response.json::<LrcApiResponse>().map_err(|e| {
+            LyricsError::NetworkUnavailable(format!(
+                "failed to deserialize LrcAPI lyrics response: {e}"
+            ))
+        })?;
+
+        Ok(match response {
+            LrcApiResponse::Hits(entries) => entries
+                .into_iter()
+                .filter(|entry| !entry.lrc.trim().is_empty())
+                .max_by(|left, right| left.score.total_cmp(&right.score)),
+            LrcApiResponse::Miss(miss) => {
+                if miss.message.trim() == "未找到歌词" {
+                    None
+                } else {
+                    return Err(LyricsError::NetworkUnavailable(format!(
+                        "LrcAPI returned an unexpected response: {}",
+                        miss.message
+                    )));
+                }
+            }
+        })
+    }
+
+    /// Async variant of `fetch_by_track` for use in async Tauri commands.
+    pub async fn fetch_by_track_async(
+        &self,
+        query: &LyricsLookupQuery,
+    ) -> Result<Option<LrcApiLyrics>, LyricsError> {
+        let url = format!("{}/jsonapi", self.base_url);
+        let mut request = self.http_async.get(url).query(&[
+            ("title", query.track_name.as_str()),
+            ("artist", query.artist_name.as_str()),
+        ]);
+
+        if let Some(album_name) = query.album_name.as_deref() {
+            request = request.query(&[("album", album_name)]);
+        }
+
+        let response = request.send().await.map_err(|e| {
+            LyricsError::NetworkUnavailable(format!("failed to request lyrics from LrcAPI: {e}"))
+        })?;
+        let response = response.error_for_status().map_err(|e| {
+            LyricsError::NetworkUnavailable(format!("LrcAPI returned a non-success response: {e}"))
+        })?;
+        let response = response.json::<LrcApiResponse>().await.map_err(|e| {
             LyricsError::NetworkUnavailable(format!(
                 "failed to deserialize LrcAPI lyrics response: {e}"
             ))

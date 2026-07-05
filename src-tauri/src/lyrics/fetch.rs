@@ -89,6 +89,31 @@ pub fn fetch_lyrics_for_song(
     }
 
     // Local-first: embedded and sidecar lyrics must not wait on network timeouts.
+    if let Some(local) = fetch_lyrics_for_song_local(song, resolved_audio_path)? {
+        return Ok(Some(local));
+    }
+
+    if let Some(query) = lookup_query_from_song(song) {
+        if let Ok(Some(lyrics)) = fetch_online_timed_lyrics(providers, &query) {
+            return Ok(Some(lyrics));
+        }
+    }
+
+    Ok(None)
+}
+
+/// Local-only lyrics fetch: reads embedded tags and sidecar files without any
+/// network calls. Used by async IPC commands that handle the online fetch
+/// separately via `fetch_online_timed_lyrics_async`.
+pub fn fetch_lyrics_for_song_local(
+    song: &Song,
+    resolved_audio_path: &Path,
+) -> Result<Option<LyricsFetchResult>> {
+    if song.is_media_g_zip() {
+        return Ok(None);
+    }
+
+    // Local-first: embedded and sidecar lyrics must not wait on network timeouts.
     if let Some(embedded_lyrics) = read_embedded_lyrics(resolved_audio_path)? {
         return Ok(Some(LyricsFetchResult {
             source: LyricsSource::Embedded,
@@ -101,12 +126,6 @@ pub fn fetch_lyrics_for_song(
             source: sidecar_source,
             raw_lrc: sidecar_lyrics,
         }));
-    }
-
-    if let Some(query) = lookup_query_from_song(song) {
-        if let Ok(Some(lyrics)) = fetch_online_timed_lyrics(providers, &query) {
-            return Ok(Some(lyrics));
-        }
     }
 
     Ok(None)
@@ -141,6 +160,107 @@ pub fn fetch_online_timed_lyrics(
                 };
 
                 // Verify it has timed content
+                let has_timed = if source == LyricsSource::LrcApiTtml {
+                    ttml_parser::parse_ttml(&raw)
+                        .map(|lines| !lines.is_empty())
+                        .unwrap_or(false)
+                } else {
+                    has_timed_lines(&raw)
+                };
+
+                if has_timed {
+                    return Ok(Some(LyricsFetchResult {
+                        source,
+                        raw_lrc: raw,
+                    }));
+                }
+            }
+            Ok(None) => {}
+            Err(error) => {
+                last_error = Some(error);
+            }
+        }
+    }
+
+    if let Some(error) = last_error {
+        Err(error)
+    } else {
+        Ok(None)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Async variants — used by async Tauri commands so network I/O does not occupy
+// a `spawn_blocking` worker thread for the full request duration.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy)]
+pub enum TimedLyricsProviderAsync<'a> {
+    LrcLib(&'a LrcLibClient),
+    LrcApi(&'a LrcApiClient),
+}
+
+impl TimedLyricsProviderAsync<'_> {
+    fn source(self) -> LyricsSource {
+        match self {
+            Self::LrcLib(_) => LyricsSource::LrcLib,
+            Self::LrcApi(_) => LyricsSource::LrcApi,
+        }
+    }
+
+    async fn fetch_timed_lrc(self, query: &LyricsLookupQuery) -> Result<Option<String>> {
+        match self {
+            Self::LrcLib(client) => client
+                .fetch_by_track_async(query)
+                .await
+                .map(|result| {
+                    result.and_then(|lyrics| {
+                        lyrics
+                            .synced_lyrics
+                            .filter(|lyrics| !lyrics.trim().is_empty())
+                    })
+                })
+                .map_err(Into::into),
+            Self::LrcApi(client) => client
+                .fetch_by_track_async(query)
+                .await
+                .map(|result| {
+                    result.and_then(|lyrics| {
+                        // Prefer LRC, fall back to TTML
+                        let lrc = lyrics.lrc.trim();
+                        if !lrc.is_empty() {
+                            Some(lyrics.lrc)
+                        } else {
+                            lyrics.lrc_ttml.filter(|ttml| !ttml.trim().is_empty())
+                        }
+                    })
+                })
+                .map_err(Into::into),
+        }
+    }
+}
+
+/// Async variant of `fetch_online_timed_lyrics` for use in async Tauri
+/// commands. Avoids occupying a `spawn_blocking` thread for the duration of
+/// the network request.
+pub async fn fetch_online_timed_lyrics_async(
+    providers: &[TimedLyricsProviderAsync<'_>],
+    query: &LyricsLookupQuery,
+) -> Result<Option<LyricsFetchResult>> {
+    let mut last_error: Option<anyhow::Error> = None;
+
+    for provider in providers {
+        match (*provider).fetch_timed_lrc(query).await {
+            Ok(Some(raw)) => {
+                let trimmed = raw.trim();
+                let source = if (*provider).source() == LyricsSource::LrcApi
+                    && (trimmed.starts_with("<?xml") || trimmed.starts_with("<tt"))
+                {
+                    LyricsSource::LrcApiTtml
+                } else {
+                    (*provider).source()
+                };
+
                 let has_timed = if source == LyricsSource::LrcApiTtml {
                     ttml_parser::parse_ttml(&raw)
                         .map(|lines| !lines.is_empty())
