@@ -143,6 +143,60 @@ impl RangeSet {
     pub fn total_bytes(&self) -> u64 {
         self.ranges.iter().map(|r| r.length).sum()
     }
+
+    /// Subtract a byte range [start, start+length) from this set.
+    /// Existing ranges that overlap with the subtracted range are trimmed
+    /// or split as needed.
+    pub fn subtract_range(&mut self, start: u64, length: u64) {
+        if length == 0 {
+            return;
+        }
+        let sub_end = start + length;
+        let mut i = 0;
+        while i < self.ranges.len() {
+            let r = &self.ranges[i];
+            if r.end() <= start {
+                // Range is entirely before the subtraction — skip.
+                i += 1;
+                continue;
+            }
+            if r.start >= sub_end {
+                // Range is entirely after the subtraction — done.
+                break;
+            }
+            // There is overlap. Determine what remains.
+            let has_left = r.start < start;
+            let has_right = r.end() > sub_end;
+
+            if has_left && has_right {
+                // Subtracting a hole in the middle — split into two ranges.
+                let left = ByteRange::new(r.start, start - r.start);
+                let right = ByteRange::new(sub_end, r.end() - sub_end);
+                self.ranges[i] = left;
+                self.ranges.insert(i + 1, right);
+                i += 2; // Skip the right part.
+            } else if has_left {
+                // Keep the left portion.
+                self.ranges[i] = ByteRange::new(r.start, start - r.start);
+                i += 1;
+            } else if has_right {
+                // Keep the right portion.
+                self.ranges[i] = ByteRange::new(sub_end, r.end() - sub_end);
+                i += 1;
+            } else {
+                // Fully enclosed — remove.
+                self.ranges.remove(i);
+                // Don't increment i — the next range shifted into this position.
+            }
+        }
+    }
+
+    /// Subtract all ranges in `other` from this set.
+    pub fn subtract_range_set(&mut self, other: &RangeSet) {
+        for range in &other.ranges {
+            self.subtract_range(range.start, range.length);
+        }
+    }
 }
 
 impl Default for RangeSet {
@@ -306,5 +360,86 @@ mod tests {
         let json = serde_json::to_string(&rs).unwrap();
         let deserialized: RangeSet = serde_json::from_str(&json).unwrap();
         assert_eq!(rs, deserialized);
+    }
+
+    #[test]
+    fn subtract_range_from_middle_splits() {
+        let mut rs = RangeSet::new();
+        rs.add_range(0, 200); // [0, 200)
+        rs.subtract_range(50, 100); // remove [50, 150)
+        assert_eq!(rs.len(), 2);
+        assert_eq!(rs.ranges()[0], ByteRange::new(0, 50));
+        assert_eq!(rs.ranges()[1], ByteRange::new(150, 50));
+        assert_eq!(rs.total_bytes(), 100);
+    }
+
+    #[test]
+    fn subtract_range_from_start() {
+        let mut rs = RangeSet::new();
+        rs.add_range(100, 100); // [100, 200)
+        rs.subtract_range(100, 50); // remove [100, 150)
+        assert_eq!(rs.len(), 1);
+        assert_eq!(rs.ranges()[0], ByteRange::new(150, 50));
+    }
+
+    #[test]
+    fn subtract_range_from_end() {
+        let mut rs = RangeSet::new();
+        rs.add_range(0, 100); // [0, 100)
+        rs.subtract_range(50, 100); // remove [50, 150) — only [50, 100) overlaps
+        assert_eq!(rs.len(), 1);
+        assert_eq!(rs.ranges()[0], ByteRange::new(0, 50));
+    }
+
+    #[test]
+    fn subtract_range_fully_enclosed() {
+        let mut rs = RangeSet::new();
+        rs.add_range(0, 200); // [0, 200)
+        rs.subtract_range(50, 50); // remove [50, 100)
+        assert_eq!(rs.len(), 2);
+        assert_eq!(rs.ranges()[0], ByteRange::new(0, 50));
+        assert_eq!(rs.ranges()[1], ByteRange::new(100, 100));
+    }
+
+    #[test]
+    fn subtract_range_no_overlap() {
+        let mut rs = RangeSet::new();
+        rs.add_range(0, 50);
+        rs.add_range(100, 50);
+        rs.subtract_range(60, 30); // [60, 90) — in the gap
+        assert_eq!(rs.len(), 2);
+        assert_eq!(rs.total_bytes(), 100);
+    }
+
+    #[test]
+    fn subtract_range_entire_range() {
+        let mut rs = RangeSet::new();
+        rs.add_range(0, 100);
+        rs.subtract_range(0, 100);
+        assert_eq!(rs.len(), 0);
+        assert!(rs.is_empty());
+    }
+
+    #[test]
+    fn subtract_range_set() {
+        let mut rs = RangeSet::new();
+        rs.add_range(0, 300); // [0, 300)
+        let mut other = RangeSet::new();
+        other.add_range(50, 50); // [50, 100)
+        other.add_range(200, 50); // [200, 250)
+        rs.subtract_range_set(&other);
+        assert_eq!(rs.len(), 3);
+        assert_eq!(rs.ranges()[0], ByteRange::new(0, 50));
+        assert_eq!(rs.ranges()[1], ByteRange::new(100, 100));
+        assert_eq!(rs.ranges()[2], ByteRange::new(250, 50));
+    }
+
+    #[test]
+    fn subtract_zero_length_is_noop() {
+        let mut rs = RangeSet::new();
+        rs.add_range(0, 100);
+        rs.subtract_range(50, 0);
+        assert_eq!(rs.len(), 1);
+        assert_eq!(rs.total_bytes(), 100);
     }
 }

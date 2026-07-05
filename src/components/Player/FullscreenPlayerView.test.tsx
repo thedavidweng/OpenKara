@@ -39,10 +39,6 @@ vi.mock("@/hooks/use-cdg-frame-receiver", () => ({
   useCdgFrameReceiver: () => {},
 }));
 
-vi.mock("@/hooks/use-lyrics-sync", () => ({
-  useLyricsSync: () => {},
-}));
-
 vi.mock("@/hooks/use-playback-runtime", () => ({
   useFullscreenPlaybackRuntime: () => {},
   useLyricsAutoFetch: () => {},

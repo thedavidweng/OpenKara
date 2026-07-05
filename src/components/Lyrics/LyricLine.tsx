@@ -4,13 +4,15 @@ import {
   buildAudiencePresentationSpec,
   colorToCss,
 } from "@/lib/audience-presentation";
+import { lyricsLineRuntime } from "@/lib/lyrics-line-runtime";
 import { usePlayerStore } from "@/stores/player-store";
-import type { LyricLine as LyricLineType, WordToken } from "@/types/ipc";
+import type { LyricLine as LyricLineType } from "@/types/ipc";
 
 interface LyricLineProps {
+  lineIndex: number;
   line: LyricLineType;
   state: "active" | "past" | "future" | "plain";
-  adjustedMs: number;
+  activeWordIndex?: number;
   presentation?: "standard" | "audience";
   lyricsFontStep: number;
   romanizedText?: string;
@@ -51,19 +53,6 @@ function getLyricsTextSizeClass(
     : STANDARD_TEXT_SIZE_CLASSES[clampedStep];
 }
 
-function getActiveWordIndex(words: WordToken[], adjustedMs: number): number {
-  let activeIndex = -1;
-
-  for (let index = 0; index < words.length; index += 1) {
-    if (words[index].time_ms > adjustedMs) {
-      break;
-    }
-    activeIndex = index;
-  }
-
-  return activeIndex;
-}
-
 function shouldEmphasize(word: {
   text: string;
   time_ms: number;
@@ -91,6 +80,7 @@ function areLyricLinePropsEqual(
   next: LyricLineProps,
 ): boolean {
   if (
+    previous.lineIndex !== next.lineIndex ||
     previous.line !== next.line ||
     previous.state !== next.state ||
     previous.presentation !== next.presentation ||
@@ -104,19 +94,19 @@ function areLyricLinePropsEqual(
     return true;
   }
 
-  return previous.adjustedMs === next.adjustedMs;
+  return (previous.activeWordIndex ?? -1) === (next.activeWordIndex ?? -1);
 }
 
 export const LyricLine = memo(function LyricLine({
+  lineIndex,
   line,
   state,
-  adjustedMs,
+  activeWordIndex = -1,
   presentation = "standard",
   lyricsFontStep,
   romanizedText,
 }: LyricLineProps) {
   const seek = usePlayerStore((s) => s.seek);
-  const isPlaying = usePlayerStore((s) => s.snapshot?.is_playing ?? false);
   const isSeekable = state !== "plain";
   const textSizeClass = getLyricsTextSizeClass(presentation, lyricsFontStep);
   const audiencePresentationSpec =
@@ -132,8 +122,6 @@ export const LyricLine = memo(function LyricLine({
   const hasOnlyBackgroundWords = !hasWords && hasBackgroundWords(line);
   const shouldUseKaraokeFill =
     state === "active" && hasWords && presentation !== "audience";
-  const activeWordIndex =
-    hasWords && state === "active" ? getActiveWordIndex(words, adjustedMs) : -1;
   const hoverClass = isSeekable ? SEEKABLE_HOVER_CLASS : "";
 
   const karaokeRef = useRef<KaraokeFillController | null>(null);
@@ -141,8 +129,6 @@ export const LyricLine = memo(function LyricLine({
   const wordsRef = useRef(words);
   wordsRef.current = words;
 
-  // Word DOM nodes can swap when emphasis rendering turns into plain text.
-  // Keep this render-synchronized; KaraokeFillController skips unchanged bindings.
   useEffect(() => {
     if (shouldUseKaraokeFill) {
       if (!karaokeRef.current) {
@@ -156,34 +142,31 @@ export const LyricLine = memo(function LyricLine({
           currentWords!,
           wordElsRef.current,
         );
-        karaokeRef.current.setTargetAlpha(0.2, 1.0); // keep active sweep contrast
+        karaokeRef.current.setTargetAlpha(0.2, 1.0);
       }
+      lyricsLineRuntime.registerKaraoke(lineIndex, karaokeRef.current);
       return;
     }
+
+    lyricsLineRuntime.unregisterKaraoke(lineIndex);
 
     if (state === "past") {
-      karaokeRef.current?.setCurrentAlpha(1.0, 1.0); // fully filled when past
+      karaokeRef.current?.setCurrentAlpha(1.0, 1.0);
       return;
     }
 
-    karaokeRef.current?.setTargetAlpha(0.2, 1.0); // dim when future
+    karaokeRef.current?.setTargetAlpha(0.2, 1.0);
     karaokeRef.current?.deactivateLine();
-  }, [shouldUseKaraokeFill, state, adjustedMs]);
+  }, [lineIndex, shouldUseKaraokeFill, state, activeWordIndex]);
 
   useEffect(
     () => () => {
+      lyricsLineRuntime.unregisterKaraoke(lineIndex);
       karaokeRef.current?.destroy();
       karaokeRef.current = null;
     },
-    [],
+    [lineIndex],
   );
-
-  // Update karaoke fill progress each frame
-  useEffect(() => {
-    if (state === "active") {
-      karaokeRef.current?.update(adjustedMs, isPlaying);
-    }
-  }, [adjustedMs, isPlaying, state]);
 
   return (
     <div
@@ -236,7 +219,6 @@ export const LyricLine = memo(function LyricLine({
 
             const isActiveWord = wordState === "active";
 
-            // Per-character glow for emphasis words (non-audience only)
             if (
               shouldEmphasize(word) &&
               isActiveWord &&

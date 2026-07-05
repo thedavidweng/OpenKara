@@ -22,6 +22,13 @@ use std::{
 
 use crate::lyrics::fetch::LyricsSource;
 
+/// Result of building and storing a song, optionally tracking a consumed CDG path.
+pub(super) struct SongBuildResult {
+    pub song: Song,
+    /// The original source CDG path that was consumed by this song, if any.
+    pub consumed_cdg_source: Option<PathBuf>,
+}
+
 pub(super) fn build_and_store_song(
     source: &Path,
     library: &LibraryRoot,
@@ -29,7 +36,7 @@ pub(super) fn build_and_store_song(
     explicit_cdg_by_audio_path: &HashMap<String, String>,
     skip_cdg_for_audio_paths: &[String],
     consumed_cdg_paths: &mut HashSet<PathBuf>,
-) -> Result<Song> {
+) -> Result<SongBuildResult> {
     if let Some(cdg_source) = match_cdg_source(
         source,
         selected_cdg_by_stem,
@@ -37,7 +44,11 @@ pub(super) fn build_and_store_song(
         skip_cdg_for_audio_paths,
     ) {
         consumed_cdg_paths.insert(cdg_source.clone());
-        return build_and_store_media_g_pair(source, &cdg_source, library);
+        let song = build_and_store_media_g_pair(source, &cdg_source, library)?;
+        return Ok(SongBuildResult {
+            song,
+            consumed_cdg_source: Some(cdg_source),
+        });
     }
 
     let metadata = metadata::read_from_path(source)?;
@@ -65,22 +76,25 @@ pub(super) fn build_and_store_song(
             .map(|stem| stem.to_string_lossy().into_owned())
     });
 
-    Ok(Song {
-        hash,
-        file_path: Some(relative_path),
-        cdg_path: None,
-        media_g_container: None,
-        instrumental: false,
-        language: None,
-        audio_source_kind: "original".to_owned(),
-        title,
-        artist: metadata.artist,
-        album: metadata.album,
-        duration_ms: metadata.duration_ms,
-        has_cover_art: metadata.cover_art.is_some(),
-        cover_art: metadata.cover_art,
-        imported_at,
-        original_ext: Some(ext.to_owned()),
+    Ok(SongBuildResult {
+        song: Song {
+            hash,
+            file_path: Some(relative_path),
+            cdg_path: None,
+            media_g_container: None,
+            instrumental: false,
+            language: None,
+            audio_source_kind: "original".to_owned(),
+            title,
+            artist: metadata.artist,
+            album: metadata.album,
+            duration_ms: metadata.duration_ms,
+            has_cover_art: metadata.cover_art.is_some(),
+            cover_art: metadata.cover_art,
+            imported_at,
+            original_ext: Some(ext.to_owned()),
+        },
+        consumed_cdg_source: None,
     })
 }
 
