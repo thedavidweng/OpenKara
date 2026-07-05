@@ -215,8 +215,11 @@ impl AudioConsumer {
     }
 
     /// Whether the producer has signaled a flush is needed after a seek.
+    /// Uses Acquire to pair with the producer's Release store in signal_flush,
+    /// ensuring the consumer observes flush_done = false before acting on
+    /// needs_flush = true on weakly-ordered hardware (ARM).
     pub fn needs_flush(&self) -> bool {
-        self.needs_flush.load(Ordering::Relaxed)
+        self.needs_flush.load(Ordering::Acquire)
     }
 
     /// Acknowledge the flush — clears the flag and drains stale samples.

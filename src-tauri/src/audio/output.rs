@@ -610,7 +610,12 @@ fn mix_stem_rubato(
 
         // De-interleave source frames into the reusable buffer, zero-padding
         // the tail only at end-of-track (real_available < input_needed).
+        // resize() fills new elements with 0.0 but leaves existing elements
+        // untouched, so we must explicitly zero the tail region — otherwise
+        // stale audio from the previous callback feeds the sinc filter on the
+        // last callback.
         entry.channel_input.resize(feed_frames, 0.0);
+        entry.channel_input[frames_from_source..].fill(0.0);
         for (frame, slot) in entry
             .channel_input
             .iter_mut()
