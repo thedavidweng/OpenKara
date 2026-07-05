@@ -125,9 +125,17 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
   },
 
   adjustOffset: async (songId, deltaMs) => {
+    // Optimistic update: set the new offset synchronously before the await
+    // so rapid consecutive calls don't read a stale offsetMs and lose deltas.
     const newOffset = get().offsetMs + deltaMs;
-    await api.setLyricsOffset(songId, newOffset);
     set({ offsetMs: newOffset });
+    try {
+      await api.setLyricsOffset(songId, newOffset);
+    } catch (e) {
+      // Rollback on failure so the UI stays consistent with the backend.
+      set({ offsetMs: get().offsetMs - deltaMs });
+      notifyError(e);
+    }
   },
 
   saveManualLyrics: async (songId, text) => {
