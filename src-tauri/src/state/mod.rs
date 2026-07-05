@@ -12,6 +12,8 @@ pub use shell::AppShell;
 
 use crate::commands::error::CommandError;
 use crate::library_root::LibraryRoot;
+use crate::lyrics::lrcapi::LrcApiClient;
+use crate::lyrics::lrclib::LrcLibClient;
 use std::path::PathBuf;
 
 #[derive(Clone)]
@@ -21,6 +23,12 @@ pub struct AppState {
     pub separation: SeparationState,
     pub remote: RemoteState,
     pub shell: AppShell,
+    /// Shared HTTP clients for lyrics providers. Cloning a reqwest::Client
+    /// shares its internal connection pool, so cloning AppState per command
+    /// call reuses TLS connections across song switches instead of paying a
+    /// fresh handshake on every fetch.
+    pub lrclib_client: LrcLibClient,
+    pub lrcapi_client: LrcApiClient,
 }
 
 impl AppState {
@@ -31,6 +39,8 @@ impl AppState {
             separation: SeparationState::test_fixture(),
             remote: RemoteState::test_fixture(),
             shell: AppShell::test_fixture(),
+            lrclib_client: LrcLibClient::new_default(),
+            lrcapi_client: LrcApiClient::new_default(),
         }
     }
 
