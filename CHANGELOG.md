@@ -7,13 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Tooltip hover UX: 600ms first-show delay, instant switching between adjacent triggers, and extended hit areas for gap bridging. Play/pause transport controls no longer show redundant tooltips.
+
 ### Fixed
 
-- Timed lyrics no longer freeze during transient buffering states or when consecutive lines resolve to the same scroll target. A unified lyrics engine now drives highlight sync, karaoke fill, line springs, and auto-scroll from a single `requestAnimationFrame` loop using `translateY` transforms instead of competing `scrollTop` mutations or per-frame React state updates.
+- Style Windows and Linux scrollbars to match the dark desktop shell instead of showing light WebView2/WebKitGTK tracks ([#51](https://github.com/thedavidweng/OpenKara/issues/51)): Windows uses Tauri `scrollBarStyle: fluentOverlay` (WebView2 overlay scrollbars) plus scoped dark `scrollbar-*` / `::-webkit-scrollbar` CSS; Linux keeps CSS-only styling.
 
-### Removed
+### Security
 
-- Deprecated `useLyricsSync`, `useLyricsAutoScroll`, and `lyrics-playback-clock` shims after migrating all lyrics runtime behavior into `useLyricsEngine` / `lyrics-engine.ts`.
+- Bump direct `quick-xml` to 0.41 and document scoped `cargo-deny` ignores for the residual Tauri/plist 0.39.x chain (RUSTSEC-2026-0194/0195).
+- Bump `anyhow` to 1.0.103 (RUSTSEC-2026-0190).
+
+## [0.9.0] - 2026-06-14
 
 ### 📝 Documentation
 
