@@ -29,6 +29,7 @@ interface LyricsState {
   offsetMs: number;
   rawLrc: string;
   activeLineIndex: number;
+  activeWordIndex: number;
   isLoading: boolean;
 
   romanizedLines: string[];
@@ -40,6 +41,7 @@ interface LyricsState {
   adjustOffset: (songId: string, deltaMs: number) => Promise<void>;
   saveManualLyrics: (songId: string, text: string) => Promise<boolean>;
   setActiveLineIndex: (index: number) => void;
+  setActiveWordIndex: (index: number) => void;
   toggleRomanized: () => void;
   romanizeCurrentLyrics: () => Promise<void>;
   clear: () => void;
@@ -52,6 +54,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
   offsetMs: 0,
   rawLrc: "",
   activeLineIndex: -1,
+  activeWordIndex: -1,
   isLoading: false,
   romanizedLines: [],
   isRomanizing: false,
@@ -65,6 +68,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
       source: null,
       rawLrc: "",
       activeLineIndex: -1,
+      activeWordIndex: -1,
       romanizedLines: [],
       showRomanized: false,
     });
@@ -145,7 +149,13 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
 
   setActiveLineIndex: (index) => {
     if (index !== get().activeLineIndex) {
-      set({ activeLineIndex: index });
+      set({ activeLineIndex: index, activeWordIndex: -1 });
+    }
+  },
+
+  setActiveWordIndex: (index) => {
+    if (index !== get().activeWordIndex) {
+      set({ activeWordIndex: index });
     }
   },
 
@@ -192,6 +202,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
       offsetMs: 0,
       rawLrc: "",
       activeLineIndex: -1,
+      activeWordIndex: -1,
       romanizedLines: [],
       isRomanizing: false,
       showRomanized: false,

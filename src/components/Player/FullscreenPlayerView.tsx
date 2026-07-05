@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { PlaybackStage } from "@/components/Playback/PlaybackStage";
 import { useCdgFrameReceiver } from "@/hooks/use-cdg-frame-receiver";
-import { useLyricsSync } from "@/hooks/use-lyrics-sync";
 import {
   useFullscreenPlaybackRuntime,
   useLyricsAutoFetch,
@@ -20,7 +19,6 @@ export function FullscreenPlayerView() {
 
   useFullscreenPlaybackRuntime();
   useLyricsAutoFetch();
-  useLyricsSync();
   useCdgFrameReceiver();
 
   useEffect(() => {

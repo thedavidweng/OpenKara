@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
@@ -8,7 +8,7 @@ import {
   LoaderCircle,
 } from "lucide-react";
 import { Tooltip } from "@/components/Overlay/Tooltip";
-import { useLyricsAutoScroll } from "@/hooks/use-lyrics-auto-scroll";
+import { useLyricsEngine } from "@/hooks/use-lyrics-engine";
 import { useAudiencePlainTextPaging } from "@/hooks/use-audience-plain-text-paging";
 import { useAirPlayPendingGuard } from "@/hooks/use-airplay-pending-guard";
 import { APP_SHORTCUTS, getShortcutDisplay } from "@/lib/app-shortcuts";
@@ -17,6 +17,7 @@ import {
   resolvePlainTextRemoteTarget,
   type PlainTextPageDirection,
 } from "@/lib/plain-text-page-controls";
+import { lyricsLineRuntime } from "@/lib/lyrics-line-runtime";
 import { useSettingsStore } from "@/stores/settings-store";
 import { LyricLine } from "./LyricLine";
 import { LyricsFontSizeControl } from "./LyricsFontSizeControl";
@@ -27,29 +28,18 @@ import {
   buildAudiencePresentationSpec,
   colorToCss,
 } from "@/lib/audience-presentation";
-import { Spring } from "@/lib/spring";
 import { useLyricsStore } from "@/stores/lyrics-store";
-import { selectCurrentPositionMs, usePlayerStore } from "@/stores/player-store";
+import { usePlayerStore } from "@/stores/player-store";
+
 interface LyricsPanelProps {
   presentation?: "standard" | "audience";
-}
-
-function readStableDisplayPositionMs({
-  airPlayOutput,
-  positionMs,
-}: Pick<
-  ReturnType<(typeof usePlayerStore)["getState"]>,
-  "airPlayOutput" | "positionMs"
->): number {
-  return airPlayOutput.active && airPlayOutput.displayedPositionMs !== null
-    ? airPlayOutput.displayedPositionMs
-    : positionMs;
 }
 
 export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
   const { t } = useTranslation();
   const lines = useLyricsStore((s) => s.lines);
   const activeLineIndex = useLyricsStore((s) => s.activeLineIndex);
+  const activeWordIndex = useLyricsStore((s) => s.activeWordIndex);
   const offsetMs = useLyricsStore((s) => s.offsetMs);
   const isLoading = useLyricsStore((s) => s.isLoading);
   const rawLrc = useLyricsStore((s) => s.rawLrc);
@@ -58,16 +48,7 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
   const showRomanized = useLyricsStore((s) => s.showRomanized);
   const toggleRomanized = useLyricsStore((s) => s.toggleRomanized);
   const songId = usePlayerStore((s) => s.snapshot?.song_id);
-  const playerSnapshot = usePlayerStore((s) => s.snapshot);
-  const basePositionMs = usePlayerStore((s) => s.positionMs);
-  const playingSinceMs = usePlayerStore((s) => s.playingSinceMs);
   const airPlayOutput = usePlayerStore((s) => s.airPlayOutput);
-  const [playbackClockMs, setPlaybackClockMs] = useState(() =>
-    readStableDisplayPositionMs({
-      airPlayOutput: usePlayerStore.getState().airPlayOutput,
-      positionMs: usePlayerStore.getState().positionMs,
-    }),
-  );
   const localAudienceOutputActive = usePlayerStore(
     (s) => s.localAudienceOutputActive,
   );
@@ -78,7 +59,6 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
     (s) => s.airPlayPlainTextPagePendingDirection,
   );
   const lyricsFontStep = useSettingsStore((s) => s.lyricsFontStep);
-  const adjustedMs = playbackClockMs - offsetMs;
   const [editOpen, setEditOpen] = useState(false);
   const utilityControlsPinned = offsetMs !== 0 || lyricsFontStep !== 0;
   const isAudience = presentation === "audience";
@@ -110,15 +90,18 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
       pageIdentity,
       audiencePresentationSpec,
     });
+  const scrollContentRef = useRef<HTMLDivElement | null>(null);
 
-  useLyricsAutoScroll(
+  useLyricsEngine({
     containerRef,
+    scrollContentRef,
     isPlainText,
     lyricsFontStep,
     presentation,
     songId,
-    lyricsLayoutVersion,
-  );
+    layoutVersion: lyricsLayoutVersion,
+    lineRuntime: lyricsLineRuntime,
+  });
 
   useAirPlayPendingGuard(
     songId,
@@ -128,117 +111,16 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
     airPlayPlainTextPagePending,
   );
 
-  // Spring physics for line transitions
-  const springsRef = useRef<
-    Map<number, { scale: Spring; opacity: Spring; blur: Spring }>
-  >(new Map());
-  const springSongIdRef = useRef<string | null | undefined>(songId);
-
-  useEffect(() => {
-    if (airPlayOutput.active && airPlayOutput.displayedPositionMs !== null) {
-      setPlaybackClockMs(airPlayOutput.displayedPositionMs);
-      return;
-    }
-
-    const state = {
-      snapshot: playerSnapshot,
-      positionMs: basePositionMs,
-      playingSinceMs,
-    };
-    setPlaybackClockMs(selectCurrentPositionMs(state));
-
-    if (
-      !playerSnapshot?.is_playing ||
-      playerSnapshot.state === "buffering" ||
-      playingSinceMs === null
-    ) {
-      return;
-    }
-
-    let rafId = 0;
-    const tick = (now: number) => {
-      setPlaybackClockMs(selectCurrentPositionMs(state, () => now));
-      rafId = requestAnimationFrame(tick);
-    };
-
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, [
-    airPlayOutput.active,
-    airPlayOutput.displayedPositionMs,
-    basePositionMs,
-    playerSnapshot,
-    playingSinceMs,
-  ]);
-
-  if (springSongIdRef.current !== songId) {
-    // Reset before line springs are read during render so a song change cannot
-    // leave the next RAF loop with an empty spring map.
-    springsRef.current.clear();
-    springSongIdRef.current = songId;
-  }
-
-  function getLineVisualTargets(distance: number) {
-    const targetScale =
-      distance === 0
-        ? 1
-        : distance === 1
-          ? 0.98
-          : Math.max(0.94, 1 - distance * 0.018);
-    const targetOpacity =
-      distance === 0 ? 1 : Math.max(0.38, 1 - distance * 0.16);
-    return { targetScale, targetOpacity };
-  }
-
-  const getLineSprings = useCallback((index: number) => {
-    let springs = springsRef.current.get(index);
-    if (!springs) {
-      springs = {
-        scale: new Spring(1, { stiffness: 96, damping: 22 }),
-        opacity: new Spring(1, { stiffness: 80, damping: 20 }),
-        blur: new Spring(0, { stiffness: 80, damping: 20 }),
-      };
-      springsRef.current.set(index, springs);
-    }
-    return springs;
-  }, []);
-
-  const [, forceRender] = useState(0);
-  useEffect(() => {
-    if (isPlainText || !songId) return;
-
-    let rafId = 0;
-    let lastTime = performance.now();
-
-    const tick = (now: number) => {
-      const dt = Math.min((now - lastTime) / 1000, 0.05);
-      lastTime = now;
-
-      const lines = useLyricsStore.getState().lines;
-      const currentActiveLineIndex = useLyricsStore.getState().activeLineIndex;
-
-      for (const [index, springs] of springsRef.current) {
-        const { targetScale, targetOpacity } = getLineVisualTargets(
-          Math.abs(index - currentActiveLineIndex),
-        );
-        springs.scale.setTarget(targetScale);
-        springs.opacity.setTarget(targetOpacity);
-        springs.blur.setTarget(0);
-        springs.scale.update(dt);
-        springs.opacity.update(dt);
-        springs.blur.update(dt);
+  const registerLineWrapper = useCallback(
+    (lineIndex: number, node: HTMLDivElement | null) => {
+      if (node) {
+        lyricsLineRuntime.registerWrapper(lineIndex, node);
+        return;
       }
-
-      if (lines.length > 0) {
-        forceRender((n) => n + 1);
-      }
-
-      rafId = requestAnimationFrame(tick);
-    };
-
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, [isPlainText, songId, lyricsLayoutVersion]);
+      lyricsLineRuntime.unregisterWrapper(lineIndex);
+    },
+    [],
+  );
 
   const handleRemotePageStep = (direction: PlainTextPageDirection) => {
     void stepPlainTextRemotePage(
@@ -420,6 +302,7 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
         }}
       >
         <div
+          ref={scrollContentRef}
           className={`mx-auto flex w-full flex-col items-center ${
             isAudience
               ? shouldRenderAudiencePlainTextPages
@@ -443,22 +326,15 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
               ? currentPageStart + idx
               : idx;
 
-            const springs = getLineSprings(absoluteIndex);
-
             return (
               <div
                 key={`${absoluteIndex}-${line.time_ms}-${line.text}`}
+                ref={(node) => registerLineWrapper(absoluteIndex, node)}
                 data-lyrics-line-index={absoluteIndex}
                 className="w-full"
-                style={{
-                  transform: `scale(${springs.scale.getPosition().toFixed(4)})`,
-                  opacity: springs.opacity.getPosition(),
-                  filter: `blur(${springs.blur.getPosition().toFixed(1)}px)`,
-                  willChange: "transform, opacity, filter",
-                  contain: "layout style paint",
-                }}
               >
                 <LyricLine
+                  lineIndex={absoluteIndex}
                   line={line}
                   state={
                     isPlainText
@@ -469,11 +345,13 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
                           ? "past"
                           : "future"
                   }
-                  adjustedMs={isPlainText ? 0 : adjustedMs}
                   presentation={presentation}
                   lyricsFontStep={lyricsFontStep}
                   romanizedText={
                     showRomanized ? romanizedLines[absoluteIndex] : undefined
+                  }
+                  activeWordIndex={
+                    absoluteIndex === activeLineIndex ? activeWordIndex : -1
                   }
                 />
               </div>
@@ -509,9 +387,9 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
                   className="w-full"
                 >
                   <LyricLine
+                    lineIndex={idx}
                     line={line}
                     state="plain"
-                    adjustedMs={0}
                     presentation={presentation}
                     lyricsFontStep={lyricsFontStep}
                     romanizedText={
