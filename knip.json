@@ -4,5 +4,5 @@
   "project": ["src/**/*.{ts,tsx}"],
   "exclude": ["exports", "types"],
   "ignoreDependencies": ["tailwindcss"],
-  "ignoreBinaries": ["git-cliff"]
+  "ignoreBinaries": ["xcrun"]
 }
