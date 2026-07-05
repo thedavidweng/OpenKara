@@ -4,6 +4,8 @@ use crate::audio::error::PlaybackError;
 use crate::audio::playback::{LoadedStems, PlaybackController, StemVolumes};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Sample, SampleFormat, SizedSample, Stream};
+use rubato::{Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType};
+use std::collections::HashMap;
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -12,6 +14,88 @@ use std::{
     thread,
     time::Duration,
 };
+
+/// Cache for rubato resamplers keyed by (src_rate, dst_rate, channel, output_chunk).
+/// Resamplers maintain internal state (filter coefficients, buffer history)
+/// so they must be reused across consecutive audio callbacks for the same rate
+/// pair and output frame count. Pre-allocated scratch buffers are stored
+/// alongside each resampler to avoid per-callback heap allocation on the
+/// realtime audio thread.
+#[derive(Default)]
+pub struct ResamplerCache {
+    cache: HashMap<(u32, u32, usize, usize), ResamplerEntry>,
+}
+
+/// A cached resampler plus reusable scratch buffers for its input/output.
+struct ResamplerEntry {
+    resampler: Async<f32>,
+    /// Reusable planar input buffer (1 channel, resized per callback).
+    channel_input: Vec<f32>,
+    /// Reusable outer Vec for the SequentialSliceOfVecs adapter (always 1 element).
+    input_vecs: Vec<Vec<f32>>,
+}
+
+impl ResamplerCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Get or create a resampler entry for the given rate pair, channel index,
+    /// and output chunk size. Each channel needs its own resampler because
+    /// rubato maintains per-channel filter state — sharing one resampler across
+    /// channels produces phase-blurred output.
+    ///
+    /// The output chunk size is included in the key because `FixedAsync::Output`
+    /// fixes the output frame count at creation time. If the callback buffer
+    /// size changes a new resampler is created; in practice cpal uses a stable
+    /// buffer size so the resampler is reused across callbacks.
+    fn get_or_create_mut(
+        &mut self,
+        src_rate: u32,
+        dst_rate: u32,
+        channel: usize,
+        output_chunk: usize,
+    ) -> &mut ResamplerEntry {
+        self.cache
+            .entry((src_rate, dst_rate, channel, output_chunk))
+            .or_insert_with(|| {
+                // High-quality sinc interpolation parameters.
+                // 128 taps, 256× oversampling — good quality with reasonable CPU cost.
+                let params = SincInterpolationParameters {
+                    sinc_len: 128,
+                    f_cutoff: rubato::calculate_cutoff(128, rubato::WindowFunction::Blackman2),
+                    interpolation: SincInterpolationType::Quadratic,
+                    oversampling_factor: 256,
+                    window: rubato::WindowFunction::Blackman2,
+                };
+                // Process mono per call (channels=1), de-interleave externally.
+                // Each channel gets its own resampler to maintain independent filter state.
+                //
+                // FixedAsync::Output: each process() call produces exactly
+                // `output_chunk` output frames and consumes `input_frames_next()`
+                // input frames (variable, ~output_chunk * src_rate / dst_rate).
+                // This avoids zero-padding on every callback — the previous
+                // FixedAsync::Input with chunk_size=1024 forced padding ~472 real
+                // frames up to 1024, corrupting the 128-tap sinc delay line with
+                // trailing zeros on every call and producing repeating phase
+                // artifacts at callback boundaries.
+                let resampler = Async::<f32>::new_sinc(
+                    src_rate as f64 / dst_rate as f64,
+                    1.1, // max relative ratio
+                    &params,
+                    output_chunk, // chunk_size = output frames per call
+                    1,            // channels (mono; we de-interleave per channel)
+                    FixedAsync::Output,
+                )
+                .expect("failed to create rubato resampler");
+                ResamplerEntry {
+                    resampler,
+                    channel_input: Vec::new(),
+                    input_vecs: vec![Vec::new()],
+                }
+            })
+    }
+}
 
 pub fn ensure_output_thread(
     started: &Arc<AtomicBool>,
@@ -64,6 +148,7 @@ pub fn render_output_buffer(
     stem_scratch: &mut Vec<f32>,
     device_sample_rate: u32,
     device_channels: usize,
+    resampler_cache: &mut ResamplerCache,
 ) -> usize {
     output.fill(0.0);
 
@@ -87,10 +172,29 @@ pub fn render_output_buffer(
 
         if below_low {
             playback.is_buffering = true;
-            // Clear any active fade — buffer underrun means we can't produce audio.
-            playback.fade = crate::audio::playback::FadeState::None;
+            // Clear fade-out/pause fades — buffer underrun means we can't produce
+            // audio.  Preserve FadingAfterSeek so the seek click-prevention fade
+            // resumes once buffering completes.
+            if !matches!(
+                playback.fade,
+                crate::audio::playback::FadeState::FadingAfterSeek { .. }
+            ) {
+                playback.fade = crate::audio::playback::FadeState::None;
+            }
         } else if playback.is_buffering && all_above_high {
             playback.is_buffering = false;
+            // Reset the seek fade timer when buffering clears. FadingAfterSeek
+            // uses a wall-clock Instant, so real time keeps advancing during the
+            // buffering pause even though no audio is being rendered. Without
+            // this reset, the 8 ms seek fade would have already expired by the
+            // time audio resumes, and take_fade_gain() would return 1.0
+            // immediately — defeating the click-prevention mask for every
+            // streaming seek that triggers a buffer underrun.
+            if let crate::audio::playback::FadeState::FadingAfterSeek { .. } = playback.fade {
+                playback.fade = crate::audio::playback::FadeState::FadingAfterSeek {
+                    start: std::time::Instant::now(),
+                };
+            }
         }
     }
 
@@ -202,6 +306,7 @@ pub fn render_output_buffer(
                     master * sv.vocals,
                     device_sample_rate,
                     device_channels,
+                    Some(resampler_cache),
                 );
                 let (r2, f2) = mix_stem_resampled(
                     output,
@@ -210,6 +315,7 @@ pub fn render_output_buffer(
                     master * accomp_gain,
                     device_sample_rate,
                     device_channels,
+                    Some(resampler_cache),
                 );
                 (r1.max(r2), f1.max(f2))
             }
@@ -221,6 +327,7 @@ pub fn render_output_buffer(
                     master * sv.vocals,
                     device_sample_rate,
                     device_channels,
+                    Some(resampler_cache),
                 );
                 let (r2, f2) = mix_stem_resampled(
                     output,
@@ -229,6 +336,7 @@ pub fn render_output_buffer(
                     master * sv.drums,
                     device_sample_rate,
                     device_channels,
+                    Some(resampler_cache),
                 );
                 let (r3, f3) = mix_stem_resampled(
                     output,
@@ -237,6 +345,7 @@ pub fn render_output_buffer(
                     master * sv.bass,
                     device_sample_rate,
                     device_channels,
+                    Some(resampler_cache),
                 );
                 let (r4, f4) = mix_stem_resampled(
                     output,
@@ -245,6 +354,7 @@ pub fn render_output_buffer(
                     master * sv.other,
                     device_sample_rate,
                     device_channels,
+                    Some(resampler_cache),
                 );
                 (r1.max(r2).max(r3).max(r4), f1.max(f2).max(f3).max(f4))
             }
@@ -267,6 +377,7 @@ pub fn render_output_buffer(
             master,
             device_sample_rate,
             device_channels,
+            Some(resampler_cache),
         );
 
         // Clamp to prevent clipping
@@ -309,6 +420,7 @@ fn mix_stem_resampled(
     gain: f32,
     device_sample_rate: u32,
     device_channels: usize,
+    resampler_cache: Option<&mut ResamplerCache>,
 ) -> (usize, u64) {
     if gain == 0.0 {
         return (0, 0);
@@ -321,6 +433,20 @@ fn mix_stem_resampled(
         return mix_stem_same_rate(output, audio, start_frame, gain, device_channels);
     }
 
+    // Use rubato sinc interpolation when a cache is available (preferred).
+    if let Some(cache) = resampler_cache {
+        return mix_stem_rubato(
+            output,
+            audio,
+            start_frame,
+            gain,
+            device_sample_rate,
+            device_channels,
+            cache,
+        );
+    }
+
+    // Fallback to linear interpolation.
     mix_stem_linearly_resampled(
         output,
         audio,
@@ -428,6 +554,134 @@ fn mix_stem_linearly_resampled(
     let src_frames_consumed = (rendered_out_frames as f64 * rate_ratio).round() as u64;
 
     (written, src_frames_consumed)
+}
+
+/// Mix a single audio source into the output buffer using rubato sinc resampling.
+/// Higher quality than linear interpolation — uses windowed-sinc with 128 taps.
+///
+/// Returns `(written_output_samples, source_frames_consumed)`.
+fn mix_stem_rubato(
+    output: &mut [f32],
+    audio: &DecodedAudio,
+    start_frame: u64,
+    gain: f32,
+    device_sample_rate: u32,
+    device_channels: usize,
+    resampler_cache: &mut ResamplerCache,
+) -> (usize, u64) {
+    let src_channels = audio.channels;
+    let total_src_frames = audio.samples.len() / src_channels;
+    let src_start_frame = start_frame as usize;
+
+    if src_start_frame >= total_src_frames {
+        return (0, 0);
+    }
+
+    let output_frames = output.len() / device_channels;
+
+    // With FixedAsync::Output, each process() call produces exactly
+    // `output_frames` output frames and consumes `input_frames_next()` input
+    // frames (the variable number needed for this rate pair and filter state).
+    // We feed exactly that many frames — real source frames, zero-padded only
+    // at end-of-track. This avoids the per-callback zero-padding that corrupted
+    // the sinc delay line when using FixedAsync::Input with a large chunk_size.
+    let input_needed = resampler_cache
+        .get_or_create_mut(audio.sample_rate, device_sample_rate, 0, output_frames)
+        .resampler
+        .input_frames_next();
+    let real_available = total_src_frames - src_start_frame;
+    let frames_from_source = real_available.min(input_needed);
+    let feed_frames = input_needed;
+
+    let mut max_out_frames = 0usize;
+
+    // rubato uses planar (non-interleaved) buffers. Process each source channel
+    // through its own mono resampler (independent filter state) and mix into the
+    // interleaved output. Scratch buffers (channel_input, input_vecs) are reused
+    // from the cache to avoid per-callback heap allocation on the realtime
+    // audio thread.
+    for src_ch in 0..src_channels {
+        let entry = resampler_cache.get_or_create_mut(
+            audio.sample_rate,
+            device_sample_rate,
+            src_ch,
+            output_frames,
+        );
+
+        // De-interleave source frames into the reusable buffer, zero-padding
+        // the tail only at end-of-track (real_available < input_needed).
+        // resize() fills new elements with 0.0 but leaves existing elements
+        // untouched, so we must explicitly zero the tail region — otherwise
+        // stale audio from the previous callback feeds the sinc filter on the
+        // last callback.
+        entry.channel_input.resize(feed_frames, 0.0);
+        entry.channel_input[frames_from_source..].fill(0.0);
+        for (frame, slot) in entry
+            .channel_input
+            .iter_mut()
+            .enumerate()
+            .take(frames_from_source)
+        {
+            *slot = audio.samples[(src_start_frame + frame) * src_channels + src_ch];
+        }
+
+        // Construct a planar adapter for rubato: 1 channel, feed_frames.
+        // input_vecs always has exactly 1 element (mono); reuse the allocation.
+        entry.input_vecs[0] = std::mem::take(&mut entry.channel_input);
+        let input_adapter = match rubato::audioadapter_buffers::direct::SequentialSliceOfVecs::new(
+            &entry.input_vecs,
+            1,
+            feed_frames,
+        ) {
+            Ok(adapter) => adapter,
+            Err(_) => {
+                // Reclaim channel_input for the next callback.
+                entry.channel_input = std::mem::take(&mut entry.input_vecs[0]);
+                continue;
+            }
+        };
+
+        // Process through rubato. Returns an interleaved owned buffer.
+        // FixedAsync::Output guarantees exactly output_frames output frames.
+        let output_adapter = match entry.resampler.process(&input_adapter, 0, None) {
+            Ok(out) => out,
+            Err(_) => {
+                entry.channel_input = std::mem::take(&mut entry.input_vecs[0]);
+                continue;
+            }
+        };
+
+        // Reclaim the input buffer for the next callback. take_data() consumed
+        // the adapter's internal Vec, but input_vecs[0] still owns the input.
+        entry.channel_input = std::mem::take(&mut entry.input_vecs[0]);
+
+        // For mono (1 channel), interleaved = sequential. take_data() gives Vec<f32>.
+        let out_data = output_adapter.take_data();
+
+        // Write all produced output frames (capped to the callback's output).
+        // At end-of-track the tail may contain flushed filter output plus silence
+        // from zero-padding — the silence is harmless and the track ends here.
+        let frames_to_write = out_data.len().min(output_frames);
+        for out_frame in 0..frames_to_write {
+            let sample = out_data[out_frame];
+            for out_ch in 0..device_channels {
+                let target_ch = if out_ch < src_channels {
+                    out_ch
+                } else {
+                    out_ch % src_channels
+                };
+                if target_ch == src_ch {
+                    output[out_frame * device_channels + out_ch] += sample * gain;
+                }
+            }
+        }
+        max_out_frames = max_out_frames.max(frames_to_write);
+    }
+
+    // Source frames consumed = the real (non-padded) frames we fed.
+    let src_frames_consumed = frames_from_source as u64;
+
+    (max_out_frames * device_channels, src_frames_consumed)
 }
 
 /// Source frames needed to fill `output_frames` device frames at the given rates.
@@ -808,6 +1062,9 @@ where
     // R1: Pre-allocated scratch buffer for AirPlay downmix. Eliminates the
     // per-callback heap allocation that `downmix_for_airplay` previously caused.
     let mut airplay_scratch = Vec::<f32>::new();
+    // Cached rubato resamplers for sample-rate conversion. Resamplers maintain
+    // internal state so they must be reused across consecutive callbacks.
+    let mut resampler_cache = ResamplerCache::new();
 
     let stream = device
         .build_output_stream(
@@ -830,6 +1087,7 @@ where
                         &mut stem_scratch,
                         sample_rate,
                         channels,
+                        &mut resampler_cache,
                     );
                 } else {
                     scratch.fill(0.0);
@@ -1074,12 +1332,14 @@ mod tests {
         // 1st callback: buffer is empty → below low water → is_buffering = true.
         let device_channels = 2;
         let mut output = vec![0.0f32; 512 * device_channels];
+        let mut rc = super::ResamplerCache::new();
         let rendered = render_output_buffer(
             &mut controller,
             &mut output,
             &mut Vec::new(),
             sample_rate,
             device_channels,
+            &mut rc,
         );
         assert_eq!(rendered, 0);
         assert!(
@@ -1096,6 +1356,7 @@ mod tests {
             &mut Vec::new(),
             sample_rate,
             device_channels,
+            &mut rc,
         );
         assert_eq!(rendered, 0);
 
@@ -1112,6 +1373,7 @@ mod tests {
             &mut Vec::new(),
             sample_rate,
             device_channels,
+            &mut rc,
         );
         assert!(
             !controller.is_buffering,
@@ -1334,12 +1596,14 @@ mod tests {
 
         let device_channels = 2;
         let mut output = vec![0.0f32; 512 * device_channels];
+        let mut rc = super::ResamplerCache::new();
         let rendered = super::render_output_buffer(
             &mut controller,
             &mut output,
             &mut Vec::new(),
             sample_rate,
             device_channels,
+            &mut rc,
         );
 
         // Accompaniment is empty → below low water → must enter buffering.
