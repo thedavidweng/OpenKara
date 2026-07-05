@@ -454,13 +454,21 @@ impl DownloadSemaphore {
 
     /// Try to acquire a slot. Returns `true` if a slot was acquired, `false` if
     /// at capacity. Call `release()` when the download completes.
+    ///
+    /// Uses `fetch_update` so the check-and-increment is atomic and retries on
+    /// CAS contention. A single non-retrying compare_exchange can spuriously
+    /// fail (and deny an available slot) when another thread acquires between
+    /// the load and the CAS — fetch_update keeps retrying as long as the
+    /// condition is still satisfiable.
     pub fn try_acquire(&self) -> bool {
-        let current = self.active.load(Ordering::Relaxed);
-        if current >= self.max_concurrent {
-            return false;
-        }
         self.active
-            .compare_exchange(current, current + 1, Ordering::AcqRel, Ordering::Relaxed)
+            .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |current| {
+                if current >= self.max_concurrent {
+                    None
+                } else {
+                    Some(current + 1)
+                }
+            })
             .is_ok()
     }
 
