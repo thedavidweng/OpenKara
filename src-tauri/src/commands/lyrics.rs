@@ -133,17 +133,24 @@ fn fetch_lyrics_phase1(state: &AppState, song_id: &str) -> CommandResult<FetchLy
         .ok_or(LyricsError::SongNotFound(song_id.to_string()))?;
 
     // Cache hit — return immediately (no DB write, no remote sync needed).
+    // Negative cache (Absent) entries expire after NEGATIVE_CACHE_TTL_SECS so
+    // lyrics added to LRCLIB/LrcAPI later can be discovered on re-fetch.
     if let Some(cached) = cache::lyrics::get_lyrics_cache_entry(&connection, song_id)
         .map_err(|e| database_error(e.to_string()))?
     {
         if cached.source == LyricsSource::Absent {
-            return Ok(FetchLyricsPhase1::Ready(empty_lyrics_payload(song.hash)));
+            if is_negative_cache_expired(&cached) {
+                // Fall through to local + online fetch below.
+            } else {
+                return Ok(FetchLyricsPhase1::Ready(empty_lyrics_payload(song.hash)));
+            }
+        } else {
+            let payload = payload_from_cached_entry(song.hash, cached)?;
+            return Ok(FetchLyricsPhase1::Ready(payload));
         }
-        let payload = payload_from_cached_entry(song.hash, cached)?;
-        return Ok(FetchLyricsPhase1::Ready(payload));
     }
 
-    // No cache — try local sources (embedded + sidecar) first.
+    // No cache (or expired negative cache) — try local sources first.
     // The cache write is deferred to phase 3 so it goes through
     // run_song_database_mutation (prepare → sync_db → publish_song).
     if let Some(song_path) = song.file_path.as_deref() {
@@ -266,13 +273,16 @@ pub fn fetch_lyrics_from_connection(
 
     // Lyrics are cached by the stable song hash so repeat fetches can skip both
     // network and filesystem fallbacks once a synced source has been resolved.
+    // Negative cache (Absent) entries expire after NEGATIVE_CACHE_TTL_SECS.
     if let Some(cached) = cache::lyrics::get_lyrics_cache_entry(connection, song_id)
         .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?
     {
-        if cached.source == LyricsSource::Absent {
+        if cached.source == LyricsSource::Absent && !is_negative_cache_expired(&cached) {
             return Ok(empty_lyrics_payload(song.hash));
         }
-        return payload_from_cached_entry(song.hash, cached);
+        if cached.source != LyricsSource::Absent {
+            return payload_from_cached_entry(song.hash, cached);
+        }
     }
 
     let Some(song_path) = song.file_path.as_deref() else {
@@ -846,3 +856,55 @@ fn cache_negative_lyrics_lookup(
 }
 
 use super::error::current_unix_timestamp;
+
+/// Negative cache TTL: how long an Absent entry suppresses online re-lookup.
+/// LRCLIB and LrcAPI are community-edited, so lyrics may appear later. A 7-day
+/// TTL balances re-discovery against hammering the APIs on every song change.
+const NEGATIVE_CACHE_TTL_SECS: i64 = 7 * 24 * 60 * 60;
+
+/// Returns true if an Absent cache entry is older than the negative cache TTL
+/// and should be re-fetched from the network.
+fn is_negative_cache_expired(entry: &LyricsCacheEntry) -> bool {
+    match current_unix_timestamp() {
+        Ok(now) => now - entry.fetched_at > NEGATIVE_CACHE_TTL_SECS,
+        Err(_) => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn absent_entry(fetched_at: i64) -> LyricsCacheEntry {
+        LyricsCacheEntry {
+            song_hash: "test".to_owned(),
+            lrc: String::new(),
+            source: LyricsSource::Absent,
+            offset_ms: 0,
+            fetched_at,
+        }
+    }
+
+    #[test]
+    fn negative_cache_expired_after_ttl() {
+        let now = current_unix_timestamp().unwrap();
+        // 8 days ago — past the 7-day TTL.
+        let entry = absent_entry(now - 8 * 24 * 60 * 60);
+        assert!(is_negative_cache_expired(&entry));
+    }
+
+    #[test]
+    fn negative_cache_not_expired_within_ttl() {
+        let now = current_unix_timestamp().unwrap();
+        // 1 day ago — within the 7-day TTL.
+        let entry = absent_entry(now - 24 * 60 * 60);
+        assert!(!is_negative_cache_expired(&entry));
+    }
+
+    #[test]
+    fn negative_cache_not_expired_when_fresh() {
+        let now = current_unix_timestamp().unwrap();
+        let entry = absent_entry(now);
+        assert!(!is_negative_cache_expired(&entry));
+    }
+}
