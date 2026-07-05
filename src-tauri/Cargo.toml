@@ -23,7 +23,7 @@ cc = "1.2.61"
 tauri-build = { version = "2.6.0", features = [] }
 
 [dependencies]
-anyhow = "1.0.102"
+anyhow = "1.0.103"
 thiserror = "2"
 audioadapter-buffers = "3.0.0"
 base64 = "0.22.1"
@@ -49,7 +49,7 @@ tiny_http = "0.12.0"
 tracing = "0.1"
 vorbis_rs = "0.5.5"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
-quick-xml = "0.39"
+quick-xml = "0.41"
 regex-lite = "0.1"
 flate2 = "1"
 tar = "0.4"

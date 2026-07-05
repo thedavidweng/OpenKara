@@ -2,6 +2,26 @@ export interface TimedLyricLine {
   time_ms: number;
 }
 
+export interface TimedLyricWord {
+  time_ms: number;
+}
+
+export function findActiveWordIndex(
+  words: TimedLyricWord[],
+  adjustedMs: number,
+): number {
+  let activeIndex = -1;
+
+  for (let index = 0; index < words.length; index += 1) {
+    if (words[index].time_ms > adjustedMs) {
+      break;
+    }
+    activeIndex = index;
+  }
+
+  return activeIndex;
+}
+
 export function findActiveLyricLineIndex(
   lines: TimedLyricLine[],
   adjustedMs: number,
