@@ -57,13 +57,26 @@ impl BandwidthMonitor {
         let threshold = self.slow_threshold.load(Ordering::Relaxed);
         self.is_slow.store(new_bps < threshold, Ordering::Relaxed);
 
-        // Track request latency (EWMA, alpha=0.3).
-        let latency = elapsed.as_micros() as u64;
+        // Estimate network RTT by subtracting transfer time from total elapsed.
+        // Using the previous throughput EWMA as the transfer-rate estimate:
+        //   rtt ≈ elapsed − bytes / prev_bps
+        // This separates network latency from bulk transfer time. Without this,
+        // latency_us tracks total fetch duration (which grows with fetch size)
+        // and the adaptive prefetch formula converges to the ceiling on any
+        // non-trivial connection, defeating the adaptivity.
+        let prev_bps = prev as f64;
+        let transfer_secs = if prev_bps > 0.0 {
+            bytes as f64 / prev_bps
+        } else {
+            0.0
+        };
+        let rtt_secs = (secs - transfer_secs).max(0.0);
+        let rtt_us = (rtt_secs * 1_000_000.0) as u64;
         let prev_latency = self.latency_us.load(Ordering::Relaxed);
         let new_latency = if prev_latency == 0 {
-            latency
+            rtt_us
         } else {
-            (prev_latency as f64 * 0.7 + latency as f64 * 0.3) as u64
+            (prev_latency as f64 * 0.7 + rtt_us as f64 * 0.3) as u64
         };
         self.latency_us.store(new_latency, Ordering::Relaxed);
     }
