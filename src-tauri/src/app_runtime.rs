@@ -99,6 +99,24 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
             app_data_dir.display()
         )
     })?;
+
+    // Crash recovery: if a mirror operation was interrupted mid-sync, the
+    // config's active_library_id may still point at the remote library.
+    // Restore the original from the pending marker before proceeding.
+    let app_config = if let Some(mut config) = app_config {
+        if let Some(original_id) = config.pending_mirror_restore_active_library_id.take() {
+            eprintln!(
+                "recovering from interrupted mirror: restoring active_library_id to {original_id}"
+            );
+            config.active_library_id = Some(original_id);
+            if let Err(e) = config::save_config(&app_data_dir, &config) {
+                eprintln!("warning: failed to persist mirror recovery config: {e}");
+            }
+        }
+        Some(config)
+    } else {
+        None
+    };
     let configured_window_count = app.webview_windows().len();
     if configured_window_count == 0 {
         eprintln!("warning: no Tauri webview windows were created during startup");
