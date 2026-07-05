@@ -7,7 +7,6 @@ import {
   useEventListeners,
   useLyricsAutoFetch,
 } from "@/hooks/use-playback-runtime";
-import { useLyricsSync } from "@/hooks/use-lyrics-sync";
 import { useCdgSync } from "@/hooks/use-cdg-sync";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { useFileDrop } from "@/hooks/use-file-drop";
@@ -98,7 +97,6 @@ export function useAppRuntime(enabled: boolean) {
   // library exists.
   useEventListeners(enabled);
   useLyricsAutoFetch(enabled);
-  useLyricsSync(enabled);
   useCdgSync(enabled);
   useAirPlayAudienceSync(enabled);
   useLocalAudienceOutputState(enabled);

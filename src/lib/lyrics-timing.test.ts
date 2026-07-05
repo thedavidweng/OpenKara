@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { findActiveLyricLineIndex } from "./lyrics-timing";
+import { findActiveLyricLineIndex, findActiveWordIndex } from "./lyrics-timing";
 
 const lines = [
   { time_ms: 0 },
@@ -21,5 +21,13 @@ describe("lyrics-timing", () => {
     expect(findActiveLyricLineIndex(lines, 2000)).toBe(1);
     expect(findActiveLyricLineIndex(lines, 2999)).toBe(1);
     expect(findActiveLyricLineIndex(lines, 3000)).toBe(2);
+  });
+
+  test("findActiveWordIndex returns the latest started word", () => {
+    const words = [{ time_ms: 1000 }, { time_ms: 1500 }, { time_ms: 2000 }];
+
+    expect(findActiveWordIndex(words, 1200)).toBe(0);
+    expect(findActiveWordIndex(words, 1600)).toBe(1);
+    expect(findActiveWordIndex(words, 2500)).toBe(2);
   });
 });
