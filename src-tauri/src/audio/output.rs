@@ -15,13 +15,24 @@ use std::{
     time::Duration,
 };
 
-/// Cache for rubato resamplers keyed by (src_rate, dst_rate).
+/// Cache for rubato resamplers keyed by (src_rate, dst_rate, channel, output_chunk).
 /// Resamplers maintain internal state (filter coefficients, buffer history)
 /// so they must be reused across consecutive audio callbacks for the same rate
-/// pair and output frame count.
+/// pair and output frame count. Pre-allocated scratch buffers are stored
+/// alongside each resampler to avoid per-callback heap allocation on the
+/// realtime audio thread.
 #[derive(Default)]
 pub struct ResamplerCache {
-    cache: HashMap<(u32, u32, usize, usize), Async<f32>>,
+    cache: HashMap<(u32, u32, usize, usize), ResamplerEntry>,
+}
+
+/// A cached resampler plus reusable scratch buffers for its input/output.
+struct ResamplerEntry {
+    resampler: Async<f32>,
+    /// Reusable planar input buffer (1 channel, resized per callback).
+    channel_input: Vec<f32>,
+    /// Reusable outer Vec for the SequentialSliceOfVecs adapter (always 1 element).
+    input_vecs: Vec<Vec<f32>>,
 }
 
 impl ResamplerCache {
@@ -29,22 +40,22 @@ impl ResamplerCache {
         Self::default()
     }
 
-    /// Get or create a resampler for the given rate pair, channel index, and
-    /// output chunk size. Each channel needs its own resampler because rubato
-    /// maintains per-channel filter state — sharing one resampler across
+    /// Get or create a resampler entry for the given rate pair, channel index,
+    /// and output chunk size. Each channel needs its own resampler because
+    /// rubato maintains per-channel filter state — sharing one resampler across
     /// channels produces phase-blurred output.
     ///
     /// The output chunk size is included in the key because `FixedAsync::Output`
     /// fixes the output frame count at creation time. If the callback buffer
     /// size changes a new resampler is created; in practice cpal uses a stable
     /// buffer size so the resampler is reused across callbacks.
-    fn get_or_create(
+    fn get_or_create_mut(
         &mut self,
         src_rate: u32,
         dst_rate: u32,
         channel: usize,
         output_chunk: usize,
-    ) -> &mut Async<f32> {
+    ) -> &mut ResamplerEntry {
         self.cache
             .entry((src_rate, dst_rate, channel, output_chunk))
             .or_insert_with(|| {
@@ -68,7 +79,7 @@ impl ResamplerCache {
                 // frames up to 1024, corrupting the 128-tap sinc delay line with
                 // trailing zeros on every call and producing repeating phase
                 // artifacts at callback boundaries.
-                Async::<f32>::new_sinc(
+                let resampler = Async::<f32>::new_sinc(
                     src_rate as f64 / dst_rate as f64,
                     1.1, // max relative ratio
                     &params,
@@ -76,7 +87,12 @@ impl ResamplerCache {
                     1,            // channels (mono; we de-interleave per channel)
                     FixedAsync::Output,
                 )
-                .expect("failed to create rubato resampler")
+                .expect("failed to create rubato resampler");
+                ResamplerEntry {
+                    resampler,
+                    channel_input: Vec::new(),
+                    input_vecs: vec![Vec::new()],
+                }
             })
     }
 }
@@ -167,6 +183,18 @@ pub fn render_output_buffer(
             }
         } else if playback.is_buffering && all_above_high {
             playback.is_buffering = false;
+            // Reset the seek fade timer when buffering clears. FadingAfterSeek
+            // uses a wall-clock Instant, so real time keeps advancing during the
+            // buffering pause even though no audio is being rendered. Without
+            // this reset, the 8 ms seek fade would have already expired by the
+            // time audio resumes, and take_fade_gain() would return 1.0
+            // immediately — defeating the click-prevention mask for every
+            // streaming seek that triggers a buffer underrun.
+            if let crate::audio::playback::FadeState::FadingAfterSeek { .. } = playback.fade {
+                playback.fade = crate::audio::playback::FadeState::FadingAfterSeek {
+                    start: std::time::Instant::now(),
+                };
+            }
         }
     }
 
@@ -558,7 +586,8 @@ fn mix_stem_rubato(
     // at end-of-track. This avoids the per-callback zero-padding that corrupted
     // the sinc delay line when using FixedAsync::Input with a large chunk_size.
     let input_needed = resampler_cache
-        .get_or_create(audio.sample_rate, device_sample_rate, 0, output_frames)
+        .get_or_create_mut(audio.sample_rate, device_sample_rate, 0, output_frames)
+        .resampler
         .input_frames_next();
     let real_available = total_src_frames - src_start_frame;
     let frames_from_source = real_available.min(input_needed);
@@ -568,12 +597,22 @@ fn mix_stem_rubato(
 
     // rubato uses planar (non-interleaved) buffers. Process each source channel
     // through its own mono resampler (independent filter state) and mix into the
-    // interleaved output.
+    // interleaved output. Scratch buffers (channel_input, input_vecs) are reused
+    // from the cache to avoid per-callback heap allocation on the realtime
+    // audio thread.
     for src_ch in 0..src_channels {
-        // De-interleave source frames for this channel, zero-padding the tail
-        // only when we're at end-of-track (real_available < input_needed).
-        let mut channel_input = vec![0.0f32; feed_frames];
-        for (frame, slot) in channel_input
+        let entry = resampler_cache.get_or_create_mut(
+            audio.sample_rate,
+            device_sample_rate,
+            src_ch,
+            output_frames,
+        );
+
+        // De-interleave source frames into the reusable buffer, zero-padding
+        // the tail only at end-of-track (real_available < input_needed).
+        entry.channel_input.resize(feed_frames, 0.0);
+        for (frame, slot) in entry
+            .channel_input
             .iter_mut()
             .enumerate()
             .take(frames_from_source)
@@ -582,30 +621,34 @@ fn mix_stem_rubato(
         }
 
         // Construct a planar adapter for rubato: 1 channel, feed_frames.
-        let input_vecs = vec![channel_input];
+        // input_vecs always has exactly 1 element (mono); reuse the allocation.
+        entry.input_vecs[0] = std::mem::take(&mut entry.channel_input);
         let input_adapter = match rubato::audioadapter_buffers::direct::SequentialSliceOfVecs::new(
-            &input_vecs,
+            &entry.input_vecs,
             1,
             feed_frames,
         ) {
             Ok(adapter) => adapter,
-            Err(_) => continue,
+            Err(_) => {
+                // Reclaim channel_input for the next callback.
+                entry.channel_input = std::mem::take(&mut entry.input_vecs[0]);
+                continue;
+            }
         };
-
-        // Each channel gets its own resampler to maintain independent filter state.
-        let resampler = resampler_cache.get_or_create(
-            audio.sample_rate,
-            device_sample_rate,
-            src_ch,
-            output_frames,
-        );
 
         // Process through rubato. Returns an interleaved owned buffer.
         // FixedAsync::Output guarantees exactly output_frames output frames.
-        let output_adapter = match resampler.process(&input_adapter, 0, None) {
+        let output_adapter = match entry.resampler.process(&input_adapter, 0, None) {
             Ok(out) => out,
-            Err(_) => continue,
+            Err(_) => {
+                entry.channel_input = std::mem::take(&mut entry.input_vecs[0]);
+                continue;
+            }
         };
+
+        // Reclaim the input buffer for the next callback. take_data() consumed
+        // the adapter's internal Vec, but input_vecs[0] still owns the input.
+        entry.channel_input = std::mem::take(&mut entry.input_vecs[0]);
 
         // For mono (1 channel), interleaved = sequential. take_data() gives Vec<f32>.
         let out_data = output_adapter.take_data();
