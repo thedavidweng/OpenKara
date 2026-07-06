@@ -880,7 +880,11 @@ fn render_streaming_two_stem(
     // Use the actual consumed source frames, not the pre-computed budget.
     // The budget uses ceil()+1 while the resampler consumes round() frames,
     // so advancing by budget would drift ~1-2 src frames per callback.
-    (r1.max(r2), f1.max(f2))
+    // Use min across stems: when a stem is muted (gain=0), the drain path
+    // returns budget (ceil()+1) instead of round(), so max would pick the
+    // over-counted value and reintroduce the drift. min selects the
+    // resampler's round() value from the non-muted stems.
+    (r1.max(r2), f1.min(f2))
 }
 
 /// Render four streaming stems.
@@ -945,7 +949,11 @@ fn render_streaming_four_stem(
     // Use the actual consumed source frames, not the pre-computed budget.
     // The budget uses ceil()+1 while the resampler consumes round() frames,
     // so advancing by budget would drift ~1-2 src frames per callback.
-    (r1.max(r2).max(r3).max(r4), f1.max(f2).max(f3).max(f4))
+    // Use min across stems: when a stem is muted (gain=0), the drain path
+    // returns budget (ceil()+1) instead of round(), so max would pick the
+    // over-counted value and reintroduce the drift. min selects the
+    // resampler's round() value from the non-muted stems.
+    (r1.max(r2).max(r3).max(r4), f1.min(f2).min(f3).min(f4))
 }
 
 fn acknowledge_flush_if_needed(streaming: &mut crate::audio::streaming::StreamingTrack) {
