@@ -139,11 +139,10 @@ fn fetch_lyrics_phase1(state: &AppState, song_id: &str) -> CommandResult<FetchLy
         .map_err(|e| database_error(e.to_string()))?
     {
         if cached.source == LyricsSource::Absent {
-            if is_negative_cache_expired(&cached) {
-                // Fall through to local + online fetch below.
-            } else {
+            if !is_negative_cache_expired(&cached) {
                 return Ok(FetchLyricsPhase1::Ready(empty_lyrics_payload(song.hash)));
             }
+            // Expired negative cache — fall through to local + online fetch below.
         } else {
             let payload = payload_from_cached_entry(song.hash, cached)?;
             return Ok(FetchLyricsPhase1::Ready(payload));
