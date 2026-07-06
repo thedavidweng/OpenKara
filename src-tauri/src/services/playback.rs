@@ -847,6 +847,8 @@ mod tests {
                     },
                 )),
             ),
+            lrclib_client: crate::lyrics::lrclib::LrcLibClient::new_default(),
+            lrcapi_client: crate::lyrics::lrcapi::LrcApiClient::new_default(),
         }
     }
 
