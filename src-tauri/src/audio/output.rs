@@ -859,7 +859,7 @@ fn render_streaming_two_stem(
     }
     let max_frames = Some(budget);
     let accomp_gain = sv.drums.max(sv.bass).max(sv.other);
-    let (r1, _) = render_streaming_single(
+    let (r1, f1) = render_streaming_single(
         output,
         vocals,
         scratch,
@@ -868,7 +868,7 @@ fn render_streaming_two_stem(
         device_channels,
         max_frames,
     );
-    let (r2, _) = render_streaming_single(
+    let (r2, f2) = render_streaming_single(
         output,
         accompaniment,
         scratch,
@@ -877,7 +877,14 @@ fn render_streaming_two_stem(
         device_channels,
         max_frames,
     );
-    (r1.max(r2), budget)
+    // Use the actual consumed source frames, not the pre-computed budget.
+    // The budget uses ceil()+1 while the resampler consumes round() frames,
+    // so advancing by budget would drift ~1-2 src frames per callback.
+    // Use min across stems: when a stem is muted (gain=0), the drain path
+    // returns budget (ceil()+1) instead of round(), so max would pick the
+    // over-counted value and reintroduce the drift. min selects the
+    // resampler's round() value from the non-muted stems.
+    (r1.max(r2), f1.min(f2))
 }
 
 /// Render four streaming stems.
@@ -903,7 +910,7 @@ fn render_streaming_four_stem(
         return (0, 0);
     }
     let max_frames = Some(budget);
-    let (r1, _) = render_streaming_single(
+    let (r1, f1) = render_streaming_single(
         output,
         vocals,
         scratch,
@@ -912,7 +919,7 @@ fn render_streaming_four_stem(
         device_channels,
         max_frames,
     );
-    let (r2, _) = render_streaming_single(
+    let (r2, f2) = render_streaming_single(
         output,
         drums,
         scratch,
@@ -921,7 +928,7 @@ fn render_streaming_four_stem(
         device_channels,
         max_frames,
     );
-    let (r3, _) = render_streaming_single(
+    let (r3, f3) = render_streaming_single(
         output,
         bass,
         scratch,
@@ -930,7 +937,7 @@ fn render_streaming_four_stem(
         device_channels,
         max_frames,
     );
-    let (r4, _) = render_streaming_single(
+    let (r4, f4) = render_streaming_single(
         output,
         other,
         scratch,
@@ -939,7 +946,14 @@ fn render_streaming_four_stem(
         device_channels,
         max_frames,
     );
-    (r1.max(r2).max(r3).max(r4), budget)
+    // Use the actual consumed source frames, not the pre-computed budget.
+    // The budget uses ceil()+1 while the resampler consumes round() frames,
+    // so advancing by budget would drift ~1-2 src frames per callback.
+    // Use min across stems: when a stem is muted (gain=0), the drain path
+    // returns budget (ceil()+1) instead of round(), so max would pick the
+    // over-counted value and reintroduce the drift. min selects the
+    // resampler's round() value from the non-muted stems.
+    (r1.max(r2).max(r3).max(r4), f1.min(f2).min(f3).min(f4))
 }
 
 fn acknowledge_flush_if_needed(streaming: &mut crate::audio::streaming::StreamingTrack) {
