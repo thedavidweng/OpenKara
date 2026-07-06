@@ -40,7 +40,10 @@ pub(crate) fn delete_song_from_library(
         }
     }
 
+    // Delete DB rows (lyrics, play_history, stems, song).
     delete_song_rows_from_database(connection, library, song_id)?;
+    // Clean up the on-disk stem directory (not handled by the DB-only delete).
+    delete_stem_files_from_working_copy(library, song_id)?;
     Ok(())
 }
 
