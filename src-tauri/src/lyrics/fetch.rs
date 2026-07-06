@@ -10,7 +10,10 @@ use crate::{
 use anyhow::{Context, Result};
 use lofty::{file::TaggedFileExt, tag::ItemKey};
 use serde::Serialize;
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -321,23 +324,78 @@ fn read_sidecar_lyrics(path: &Path) -> Result<Option<(String, LyricsSource)>> {
     // Priority: .ttml > .lys > .lrc
     // Validate each sidecar by attempting to parse; skip malformed files and
     // fall through to the next format so a valid lower-priority sidecar is used.
-    for (ext, source) in &[
-        ("ttml", LyricsSource::SidecarTtml),
-        ("lys", LyricsSource::SidecarLys),
-        ("lrc", LyricsSource::Sidecar),
-    ] {
-        let sidecar_path = path.with_extension(ext);
-        if sidecar_path.exists() {
-            let contents = fs::read_to_string(&sidecar_path).with_context(|| {
-                format!(
-                    "failed to read sidecar lyrics from {}",
-                    sidecar_path.display()
-                )
-            })?;
-            let contents = contents.trim().to_owned();
-            if !contents.is_empty() && parse_lyrics_auto(&contents).is_ok_and(|l| !l.is_empty()) {
-                return Ok(Some((contents, source.clone())));
+    //
+    // Extension matching is case-insensitive to support Windows-originated
+    // libraries on case-sensitive filesystems (Linux), where `song.LRC` and
+    // `song.lrc` are distinct files.
+    let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) else {
+        return Ok(None);
+    };
+    let Some(parent) = path.parent() else {
+        return Ok(None);
+    };
+
+    // Collect matching sidecar paths by scanning the directory once.
+    // Falls back to exact-extension probes if the directory can't be read.
+    // Use PathBuf (not String) to preserve byte-exact paths on Linux where
+    // paths may contain non-UTF-8 bytes.
+    let mut candidates: Vec<(PathBuf, LyricsSource)> = Vec::new();
+    if let Ok(entries) = fs::read_dir(parent) {
+        for entry in entries.flatten() {
+            let entry_path = entry.path();
+            let Some(stem) = entry_path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if stem != file_stem {
+                continue;
             }
+            let Some(ext) = entry_path.extension().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            match ext.to_ascii_lowercase().as_str() {
+                "ttml" => candidates.push((entry_path, LyricsSource::SidecarTtml)),
+                "lys" => candidates.push((entry_path, LyricsSource::SidecarLys)),
+                "lrc" => candidates.push((entry_path, LyricsSource::Sidecar)),
+                _ => {}
+            }
+        }
+    } else {
+        // Fallback: probe common case variants directly.
+        for (ext_lower, source) in &[
+            ("ttml", LyricsSource::SidecarTtml),
+            ("lys", LyricsSource::SidecarLys),
+            ("lrc", LyricsSource::Sidecar),
+        ] {
+            for ext in [*ext_lower, &ext_lower.to_ascii_uppercase()] {
+                let sidecar_path = path.with_extension(ext);
+                if sidecar_path.exists() {
+                    candidates.push((sidecar_path, source.clone()));
+                }
+            }
+        }
+    }
+
+    // Sort by priority: ttml > lys > lrc.
+    fn priority(source: &LyricsSource) -> u8 {
+        match source {
+            LyricsSource::SidecarTtml => 0,
+            LyricsSource::SidecarLys => 1,
+            LyricsSource::Sidecar => 2,
+            _ => 3,
+        }
+    }
+    candidates.sort_by_key(|(_, source)| priority(source));
+
+    for (sidecar_path, source) in &candidates {
+        let contents = fs::read_to_string(sidecar_path).with_context(|| {
+            format!(
+                "failed to read sidecar lyrics from {}",
+                sidecar_path.display()
+            )
+        })?;
+        let contents = contents.trim().to_owned();
+        if !contents.is_empty() && parse_lyrics_auto(&contents).is_ok_and(|l| !l.is_empty()) {
+            return Ok(Some((contents, source.clone())));
         }
     }
     Ok(None)
@@ -491,5 +549,56 @@ mod tests {
         let song = test_song("Title", "Artist", 195_000);
         let query = lookup_query_from_song(&song).expect("query should exist");
         assert_eq!(query.duration_seconds, Some(195));
+    }
+
+    #[test]
+    fn read_sidecar_lyrics_finds_uppercase_extension() {
+        let dir = std::env::temp_dir().join(format!(
+            "openkara_sidecar_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let audio_path = dir.join("song.mp3");
+        std::fs::write(&audio_path, b"fake audio").unwrap();
+        let lrc_path = dir.join("song.LRC");
+        std::fs::write(&lrc_path, "[00:10.00]Hello world\n").unwrap();
+
+        let result = read_sidecar_lyrics(&audio_path).expect("should not error");
+        let (content, source) = result.expect("should find sidecar");
+        assert_eq!(source, LyricsSource::Sidecar);
+        assert!(content.contains("Hello world"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn read_sidecar_lyrics_priority_ttml_over_lrc() {
+        let dir = std::env::temp_dir().join(format!(
+            "openkara_sidecar_prio_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let audio_path = dir.join("song.mp3");
+        std::fs::write(&audio_path, b"fake audio").unwrap();
+        std::fs::write(dir.join("song.lrc"), "[00:10.00]LRC content\n").unwrap();
+        std::fs::write(
+            dir.join("song.ttml"),
+            r#"<?xml version="1.0"?><tt xmlns="http://www.w3.org/ns/ttml"><body><div><p begin="00:05.000" end="00:07.000">TTML content</p></div></body></tt>"#,
+        )
+        .unwrap();
+
+        let result = read_sidecar_lyrics(&audio_path).expect("should not error");
+        let (_, source) = result.expect("should find sidecar");
+        assert_eq!(source, LyricsSource::SidecarTtml);
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
