@@ -73,6 +73,8 @@ fn sync_bound_remote<R: tauri::Runtime>(
     // keeping the remote database consistent. Cloud file deletes happen after
     // the transaction commits — if they fail, the result is orphaned cloud
     // files (wasted storage) rather than DB entries pointing at missing files.
+    // We also pre-collect which songs have stem entries so we can delete cloud
+    // stem files in phase 2 (the DB row will be gone by then).
     let songs_to_delete: Vec<&Song> = remote_songs
         .iter()
         .filter(|remote_song| match desired_kinds.get(&remote_song.hash) {
@@ -80,6 +82,20 @@ fn sync_bound_remote<R: tauri::Runtime>(
             Some(_) | None => true,
         })
         .collect();
+
+    // Pre-collect which songs have stem cache entries (before the transaction
+    // deletes the DB rows). Used in phase 2 to decide whether to delete cloud
+    // stem directories.
+    let mut has_stem_entry: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for song in &songs_to_delete {
+        if song.is_remote_stems()
+            || cache::stems::get_cached_stem_entry(&remote_connection, &song.hash)
+                .map_err(|error| database_error(error.to_string()))?
+                .is_some()
+        {
+            has_stem_entry.insert(song.hash.clone());
+        }
+    }
 
     // Phase 1: transactional DB deletes.
     if !songs_to_delete.is_empty() {
@@ -110,17 +126,24 @@ fn sync_bound_remote<R: tauri::Runtime>(
             let _ =
                 remote_delete_relative_path(&state.shell.app_data_dir, &remote_library, cdg_path);
         }
-        if song.is_remote_stems() {
+        // Delete cloud stems if the song had a stem entry (pre-collected
+        // before the transaction deleted the DB row).
+        if has_stem_entry.contains(&song.hash) {
             let _ = remote_delete_relative_path(
                 &state.shell.app_data_dir,
                 &remote_library,
                 &format!("stems/{}", song.hash),
             );
         }
-        // Best-effort working-copy file cleanup.
+        // Best-effort working-copy file cleanup (audio, CDG, media_g).
         let _ = crate::commands::import::delete::delete_song_files_from_working_copy(
             &remote_root,
             song,
+        );
+        // Best-effort working-copy stem directory cleanup.
+        let _ = crate::commands::import::delete::delete_stem_files_from_working_copy(
+            &remote_root,
+            &song.hash,
         );
     }
 
