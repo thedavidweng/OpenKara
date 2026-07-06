@@ -136,7 +136,14 @@ pub fn lookup_query_from_song(song: &Song) -> Option<LyricsLookupQuery> {
         track_name: song.title.clone()?,
         artist_name: song.artist.clone()?,
         album_name: song.album.clone(),
-        duration_seconds: Some((song.duration_ms / 1_000).max(0) as u64),
+        // A duration of 0 means "unknown" — sending duration=0 to LRCLIB
+        // skews matching, so omit it and let artist/title/album drive the
+        // lookup instead.
+        duration_seconds: if song.duration_ms > 0 {
+            Some((song.duration_ms / 1_000) as u64)
+        } else {
+            None
+        },
     })
 }
 
@@ -450,5 +457,39 @@ mod tests {
     #[test]
     fn has_timed_lines_returns_false_for_metadata_only() {
         assert!(!has_timed_lines("[ar:Artist]\n[ti:Title]\n"));
+    }
+
+    fn test_song(title: &str, artist: &str, duration_ms: i64) -> Song {
+        Song {
+            hash: "test-hash".to_owned(),
+            file_path: Some("media/test.mp3".to_owned()),
+            cdg_path: None,
+            media_g_container: None,
+            instrumental: false,
+            language: None,
+            audio_source_kind: "original".to_owned(),
+            title: Some(title.to_owned()),
+            artist: Some(artist.to_owned()),
+            album: None,
+            duration_ms,
+            cover_art: None,
+            has_cover_art: false,
+            imported_at: 0,
+            original_ext: None,
+        }
+    }
+
+    #[test]
+    fn lookup_query_omits_duration_when_unknown() {
+        let song = test_song("Title", "Artist", 0);
+        let query = lookup_query_from_song(&song).expect("query should exist");
+        assert_eq!(query.duration_seconds, None);
+    }
+
+    #[test]
+    fn lookup_query_includes_duration_when_known() {
+        let song = test_song("Title", "Artist", 195_000);
+        let query = lookup_query_from_song(&song).expect("query should exist");
+        assert_eq!(query.duration_seconds, Some(195));
     }
 }
