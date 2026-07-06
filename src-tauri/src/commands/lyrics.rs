@@ -74,11 +74,14 @@ pub async fn fetch_lyrics(
         }
         FetchLyricsPhase1::NeedOnline { query, song_hash } => {
             // Phase 2: online fetch (async — no spawn_blocking thread occupied).
-            let lrclib_client = LrcLibClient::new_default();
-            let lrcapi_client = LrcApiClient::new_default();
+            // Reuse the shared HTTP clients from AppState so connection pools
+            // persist across song switches instead of a fresh TLS handshake
+            // per fetch.
+            let lrclib_client = &state.inner().lrclib_client;
+            let lrcapi_client = &state.inner().lrcapi_client;
             let providers = [
-                TimedLyricsProviderAsync::LrcLib(&lrclib_client),
-                TimedLyricsProviderAsync::LrcApi(&lrcapi_client),
+                TimedLyricsProviderAsync::LrcLib(lrclib_client),
+                TimedLyricsProviderAsync::LrcApi(lrcapi_client),
             ];
             let online_result = fetch_online_timed_lyrics_async(&providers, &query)
                 .await
@@ -684,11 +687,13 @@ pub async fn fetch_lyrics_online(
         FetchOnlinePhase1::NoQuery(payload) => Ok(payload),
         FetchOnlinePhase1::Fetch { query, song_hash } => {
             // Phase 2: online fetch (async — no spawn_blocking thread occupied).
-            let lrclib_client = LrcLibClient::new_default();
-            let lrcapi_client = LrcApiClient::new_default();
+            // Reuse the shared HTTP clients from AppState for connection pool
+            // reuse across calls.
+            let lrclib_client = &state.inner().lrclib_client;
+            let lrcapi_client = &state.inner().lrcapi_client;
             let providers = [
-                TimedLyricsProviderAsync::LrcLib(&lrclib_client),
-                TimedLyricsProviderAsync::LrcApi(&lrcapi_client),
+                TimedLyricsProviderAsync::LrcLib(lrclib_client),
+                TimedLyricsProviderAsync::LrcApi(lrcapi_client),
             ];
             let online_result = fetch_online_timed_lyrics_async(&providers, &query)
                 .await
