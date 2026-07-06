@@ -558,7 +558,14 @@ fn import_lyrics_files_on_thread(
                         fetched_at,
                     };
 
-                    let _ = cache::lyrics::upsert_lyrics_cache_entry(&connection, &entry);
+                    if let Err(e) = cache::lyrics::upsert_lyrics_cache_entry(&connection, &entry) {
+                        eprintln!(
+                            "failed to cache lyrics for {} ({}): {e}",
+                            song.hash, path_str
+                        );
+                        unmatched.push(path_str.clone());
+                        continue;
+                    }
 
                     matched.push(LyricsMatch {
                         song_id: song.hash.clone(),
