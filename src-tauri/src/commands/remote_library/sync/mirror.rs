@@ -68,8 +68,19 @@ pub(crate) fn sync_bound_remote_for_active_local_library<R: tauri::Runtime>(
     let Some(remote_library) = resolve_active_remote(&config) else {
         return Ok(());
     };
+    sync_bound_remote(state, app_handle, &remote_library)
+}
+
+/// Core mirror sync logic. Takes the remote library directly so callers don't
+/// need to mutate `active_library_id` in the config — avoiding a crash-window
+/// where the config is left pointing at the remote library.
+fn sync_bound_remote<R: tauri::Runtime>(
+    state: &AppState,
+    app_handle: &AppHandle<R>,
+    remote_library: &RegisteredLibrary,
+) -> CommandResult<()> {
     let remote_library =
-        prepare_remote_database_for_mutation(&state.shell.app_data_dir, &remote_library)?;
+        prepare_remote_database_for_mutation(&state.shell.app_data_dir, remote_library)?;
 
     let local_root = state.library_root()?;
     let local_connection = cache::open_database(&local_root.database_path())
@@ -153,14 +164,26 @@ pub fn mirror_local_library_to_remote<R: tauri::Runtime>(
         )));
     }
 
+    // Temporarily swap active_library_id to the remote library so that
+    // resolve_active_remote (used by publish_song_internal) finds it during
+    // the sync. Store the original in pending_mirror_restore_active_library_id
+    // and set pending_mirror_restore=true so startup can recover if the app
+    // crashes mid-sync. The boolean flag is necessary because the original
+    // active_library_id may be None (unset), which would be
+    // indistinguishable from "no pending operation" without the flag.
     let original_active_library_id = config.active_library_id.clone();
     config.active_library_id = Some(remote_library_id.to_owned());
+    config.pending_mirror_restore = true;
+    config.pending_mirror_restore_active_library_id = original_active_library_id.clone();
     persist_app_config(&state.shell.app_data_dir, &config)?;
 
     let sync_result = sync_bound_remote_for_active_local_library(state, app_handle);
 
+    // Restore the original active_library_id and clear the pending marker.
     let mut restore_config = load_app_config(&state.shell.app_data_dir)?;
     restore_config.active_library_id = original_active_library_id;
+    restore_config.pending_mirror_restore = false;
+    restore_config.pending_mirror_restore_active_library_id = None;
     persist_app_config(&state.shell.app_data_dir, &restore_config)?;
 
     sync_result
