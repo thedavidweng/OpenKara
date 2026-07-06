@@ -189,18 +189,19 @@
 
 ### Shared type: `LyricsSource`
 
-| Serialized value | Meaning                          |
-| ---------------- | -------------------------------- |
-| `lrc_lib`        | LRCLIB timed LRC                 |
-| `lrc_api`        | LrcApi timed LRC                 |
-| `lrc_api_ttml`   | LrcApi TTML payload              |
-| `embedded`       | Audio tag embedded lyrics        |
-| `sidecar`        | Same-name `.lrc` sidecar         |
-| `sidecar_ttml`   | Same-name `.ttml` sidecar        |
-| `sidecar_lys`    | Same-name `.lys` sidecar         |
-| `manual`         | User-saved manual LRC/plain text |
-| `manual_ttml`    | User-saved manual TTML           |
-| `manual_lys`     | User-saved manual LYS            |
+| Serialized value | Meaning                                      |
+| ---------------- | -------------------------------------------- |
+| `lrc_lib`        | LRCLIB timed LRC                             |
+| `lrc_api`        | LrcApi timed LRC                             |
+| `lrc_api_ttml`   | LrcApi TTML payload                          |
+| `embedded`       | Audio tag embedded lyrics                    |
+| `sidecar`        | Same-name `.lrc` sidecar                     |
+| `sidecar_ttml`   | Same-name `.ttml` sidecar                    |
+| `sidecar_lys`    | Same-name `.lys` sidecar                     |
+| `manual`         | User-saved manual LRC/plain text             |
+| `manual_ttml`    | User-saved manual TTML                       |
+| `manual_lys`     | User-saved manual LYS                        |
+| `absent`         | Negative cache (all sources miss, 7-day TTL) |
 
 ### Shared type: `LyricLine`
 
@@ -232,8 +233,10 @@
    - `source`
    - `offset_ms`
    - `fetched_at`
-2. 当前不会为 miss 结果写入空缓存行；只有真实命中的歌词才会落库
-3. `source` 序列化值固定为：
+2. 当所有来源（LRCLIB、LrcApi、embedded、sidecar）都 miss 时，后端会写入一条 `source = absent` 的负缓存行，避免在短期内重复发起网络请求
+3. 负缓存行有 7 天 TTL（`NEGATIVE_CACHE_TTL_SECS`）。超过 TTL 后，`fetch_lyrics` / `fetch_lyrics_online` 会跳过缓存重新执行完整查找链，以便发现后续被添加到 LRCLIB/LrcAPI 的歌词
+4. 网络错误（非 definitive miss）不会写入负缓存
+5. `source` 序列化值固定为：
    - `lrc_lib`
    - `lrc_api`
    - `lrc_api_ttml`
@@ -244,6 +247,7 @@
    - `manual`
    - `manual_ttml`
    - `manual_lys`
+   - `absent`（负缓存，7 天 TTL）
 
 ## Required dependencies
 
