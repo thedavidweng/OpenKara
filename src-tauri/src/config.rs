@@ -381,9 +381,16 @@ pub struct AppConfig {
     pub remote_cache_bytes_limit: Option<u64>,
     /// Crash-recovery marker for mirror operations. `mirror_local_library_to_remote`
     /// temporarily swaps `active_library_id` to the remote library for the sync
-    /// duration. If the app crashes mid-sync, this field holds the original
-    /// `active_library_id` so startup can restore it. Cleared after a successful
-    /// sync or on startup recovery.
+    /// duration. If the app crashes mid-sync, this flag is true so startup
+    /// knows to restore `pending_mirror_restore_active_library_id` (which may
+    /// be None if the original active library was unset). Cleared after a
+    /// successful sync or on startup recovery.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pending_mirror_restore: bool,
+    /// The original `active_library_id` to restore after a mirror sync.
+    /// Only meaningful when `pending_mirror_restore` is true. May be None
+    /// if the original active library was unset — that is a valid restore
+    /// target, not an absence of a pending operation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pending_mirror_restore_active_library_id: Option<String>,
 }
@@ -538,6 +545,7 @@ mod tests {
             execution_provider: None,
             library_path: None,
             remote_cache_bytes_limit: None,
+            pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
         };
 
@@ -569,6 +577,7 @@ mod tests {
             lyrics_font_step: None,
             execution_provider: None,
             remote_cache_bytes_limit: None,
+            pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
         };
         let json = serde_json::to_string(&config).unwrap();
@@ -595,6 +604,7 @@ mod tests {
             lyrics_font_step: None,
             execution_provider: None,
             remote_cache_bytes_limit: None,
+            pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
         };
         let json = serde_json::to_string(&config).unwrap();
@@ -615,6 +625,7 @@ mod tests {
             lyrics_font_step: None,
             execution_provider: None,
             remote_cache_bytes_limit: None,
+            pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
         };
         let json = serde_json::to_string(&config).unwrap();
@@ -650,6 +661,7 @@ mod tests {
             libraries: vec![],
             active_library_id: None,
             remote_cache_bytes_limit: None,
+            pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
         };
 

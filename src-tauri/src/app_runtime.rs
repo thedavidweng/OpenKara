@@ -103,12 +103,17 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
     // Crash recovery: if a mirror operation was interrupted mid-sync, the
     // config's active_library_id may still point at the remote library.
     // Restore the original from the pending marker before proceeding.
+    // The pending_mirror_restore flag distinguishes "interrupted sync with
+    // original active_library_id = None" from "no pending sync at all".
     let app_config = if let Some(mut config) = app_config {
-        if let Some(original_id) = config.pending_mirror_restore_active_library_id.take() {
+        if config.pending_mirror_restore {
+            let original_id = config.pending_mirror_restore_active_library_id.take();
             eprintln!(
-                "recovering from interrupted mirror: restoring active_library_id to {original_id}"
+                "recovering from interrupted mirror: restoring active_library_id to {:?}",
+                original_id
             );
-            config.active_library_id = Some(original_id);
+            config.active_library_id = original_id;
+            config.pending_mirror_restore = false;
             if let Err(e) = config::save_config(&app_data_dir, &config) {
                 eprintln!("warning: failed to persist mirror recovery config: {e}");
             }
