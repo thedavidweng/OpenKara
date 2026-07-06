@@ -147,7 +147,12 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
       } catch {
         // If re-fetch also fails, fall back to arithmetic rollback as a
         // last resort so the UI at least moves in the right direction.
-        set({ offsetMs: get().offsetMs - deltaMs });
+        // Guard against song navigation: if the user switched songs while
+        // both the primary call and re-fetch were in-flight, don't corrupt
+        // the new song's offset with the old song's delta.
+        if (get().songId === songId) {
+          set({ offsetMs: get().offsetMs - deltaMs });
+        }
       }
       notifyError(e);
     }
