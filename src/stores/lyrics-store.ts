@@ -132,8 +132,23 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
     try {
       await api.setLyricsOffset(songId, newOffset);
     } catch (e) {
-      // Rollback on failure so the UI stays consistent with the backend.
-      set({ offsetMs: get().offsetMs - deltaMs });
+      // Re-fetch the authoritative offset from the backend instead of
+      // reconstructing it arithmetically. When concurrent adjustOffset
+      // calls overlap, the arithmetic rollback (offsetMs - deltaMs) can
+      // diverge from the backend's ground truth because get().offsetMs
+      // may already include a later optimistic update from another call.
+      // fetchLyrics returns the persisted offset_ms, guaranteeing the UI
+      // matches the backend after a failure.
+      try {
+        const payload = await api.fetchLyrics(songId);
+        if (get().songId === songId) {
+          set({ offsetMs: payload.offset_ms });
+        }
+      } catch {
+        // If re-fetch also fails, fall back to arithmetic rollback as a
+        // last resort so the UI at least moves in the right direction.
+        set({ offsetMs: get().offsetMs - deltaMs });
+      }
       notifyError(e);
     }
   },
