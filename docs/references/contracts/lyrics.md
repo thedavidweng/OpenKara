@@ -1,6 +1,6 @@
 # 歌词契约
 
-覆盖歌词 IPC：LRCLIB client、LrcApi client、LRC/TTML/LYS parser、抓取优先链、SQLite cache，以及 `fetch_lyrics / fetch_lyrics_online / set_lyrics_offset` 命令。
+覆盖歌词 IPC：LRCLIB client、LrcApi client、LRC/TTML/LYS parser、抓取优先链、SQLite cache，以及 `fetch_lyrics / fetch_lyrics_online / set_lyrics_offset / import_lyrics_files` 命令。
 
 ## 接口
 
@@ -97,6 +97,38 @@
 3. 如果两个 provider 都 miss，命令返回空 payload，而不是写入缓存
 4. 如果任一 provider 命中，返回的 `LyricsPayload` 与 `fetch_lyrics` 保持一致，并将结果写入 SQLite cache
 5. 如果所有在线 provider 都因为请求或响应错误而无法返回 timed lyrics，命令返回 `CommandError`
+
+### Command: `import_lyrics_files`
+
+**Input**
+
+```json
+{
+  "paths": ["/path/to/song.lrc", "/path/to/another.txt"]
+}
+```
+
+**Output**
+
+```json
+{
+  "matched": [
+    {
+      "song_id": "sha256 hash string",
+      "lrc_path": "/path/to/song.lrc"
+    }
+  ],
+  "unmatched": ["/path/to/not_found.txt"]
+}
+```
+
+**Semantics**
+
+1. 逐个读取 `paths` 中的文件，尝试用文件名（去扩展名）或 LRC 元数据中的 `[ti:]`/`[ar:]` 匹配本地库中的歌曲
+2. 匹配成功且缓存写入成功 → 加入 `matched`；匹配失败或缓存写入失败 → 加入 `unmatched`
+3. 缓存写入失败（SQLite 错误）时，文件会被加入 `unmatched` 并在 stderr 记录错误（包含 song hash 和文件路径），不会静默丢弃
+4. 该命令不发起网络请求，只写本地 SQLite cache
+5. `source` 固定为 `manual`（或 `manual_ttml` / `manual_lys`，取决于文件内容格式）
 
 ### Command: `set_lyrics_offset`
 

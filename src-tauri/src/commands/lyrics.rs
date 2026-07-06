@@ -559,7 +559,10 @@ fn import_lyrics_files_on_thread(
                     };
 
                     if let Err(e) = cache::lyrics::upsert_lyrics_cache_entry(&connection, &entry) {
-                        eprintln!("failed to cache lyrics for {}: {e}", song.hash);
+                        eprintln!(
+                            "failed to cache lyrics for {} ({}): {e}",
+                            song.hash, path_str
+                        );
                         unmatched.push(path_str.clone());
                         continue;
                     }
