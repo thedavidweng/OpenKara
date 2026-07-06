@@ -10,7 +10,10 @@ use crate::{
 use anyhow::{Context, Result};
 use lofty::{file::TaggedFileExt, tag::ItemKey};
 use serde::Serialize;
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -334,7 +337,9 @@ fn read_sidecar_lyrics(path: &Path) -> Result<Option<(String, LyricsSource)>> {
 
     // Collect matching sidecar paths by scanning the directory once.
     // Falls back to exact-extension probes if the directory can't be read.
-    let mut candidates: Vec<(String, LyricsSource)> = Vec::new();
+    // Use PathBuf (not String) to preserve byte-exact paths on Linux where
+    // paths may contain non-UTF-8 bytes.
+    let mut candidates: Vec<(PathBuf, LyricsSource)> = Vec::new();
     if let Ok(entries) = fs::read_dir(parent) {
         for entry in entries.flatten() {
             let entry_path = entry.path();
@@ -348,18 +353,9 @@ fn read_sidecar_lyrics(path: &Path) -> Result<Option<(String, LyricsSource)>> {
                 continue;
             };
             match ext.to_ascii_lowercase().as_str() {
-                "ttml" => candidates.push((
-                    entry_path.to_string_lossy().into_owned(),
-                    LyricsSource::SidecarTtml,
-                )),
-                "lys" => candidates.push((
-                    entry_path.to_string_lossy().into_owned(),
-                    LyricsSource::SidecarLys,
-                )),
-                "lrc" => candidates.push((
-                    entry_path.to_string_lossy().into_owned(),
-                    LyricsSource::Sidecar,
-                )),
+                "ttml" => candidates.push((entry_path, LyricsSource::SidecarTtml)),
+                "lys" => candidates.push((entry_path, LyricsSource::SidecarLys)),
+                "lrc" => candidates.push((entry_path, LyricsSource::Sidecar)),
                 _ => {}
             }
         }
@@ -373,7 +369,7 @@ fn read_sidecar_lyrics(path: &Path) -> Result<Option<(String, LyricsSource)>> {
             for ext in [*ext_lower, &ext_lower.to_ascii_uppercase()] {
                 let sidecar_path = path.with_extension(ext);
                 if sidecar_path.exists() {
-                    candidates.push((sidecar_path.to_string_lossy().into_owned(), source.clone()));
+                    candidates.push((sidecar_path, source.clone()));
                 }
             }
         }
@@ -390,8 +386,7 @@ fn read_sidecar_lyrics(path: &Path) -> Result<Option<(String, LyricsSource)>> {
     }
     candidates.sort_by_key(|(_, source)| priority(source));
 
-    for (sidecar_path_str, source) in &candidates {
-        let sidecar_path = Path::new(sidecar_path_str);
+    for (sidecar_path, source) in &candidates {
         let contents = fs::read_to_string(sidecar_path).with_context(|| {
             format!(
                 "failed to read sidecar lyrics from {}",
