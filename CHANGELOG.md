@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Bump direct `quick-xml` to 0.41 and document scoped `cargo-deny` ignores for the residual Tauri/plist 0.39.x chain (RUSTSEC-2026-0194/0195).
 - Bump `anyhow` to 1.0.103 (RUSTSEC-2026-0190).
+- Bump transitive `crossbeam-epoch` to 0.9.20 (RUSTSEC-2026-0204): the `fmt::Pointer`/`fmt::Display` impls on `Atomic`/`Shared` dereferenced the underlying pointer, causing a null-pointer dereference for `Atomic::null`/`Shared::null`. Pulled in via `rayon` → `rayon-core` → `crossbeam-deque`; updated with `cargo update -p crossbeam-epoch` (semver-compatible patch, no `Cargo.toml` change).
 
 ## [0.9.0] - 2026-06-14
 
