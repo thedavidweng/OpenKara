@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Move stem-separation lifecycle orchestration out of Tauri command handlers into `services::separation` (status DTOs, bootstrap prerequisites, single/batch job launching, terminal publish). Command modules are thin IPC adapters; IPC names and event payloads are unchanged.
 - Tooltip hover UX: 600ms first-show delay, instant switching between adjacent triggers, and extended hit areas for gap bridging. Play/pause transport controls no longer show redundant tooltips.
 
 ### Fixed
