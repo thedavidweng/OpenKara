@@ -194,13 +194,16 @@ fn fetch_lyrics_phase3(
                     .map_err(|e| LyricsError::LyricsNotReady(e.to_string()))?;
                 let raw_lrc = fetched.raw_lrc.clone();
                 let source = fetched.source.clone();
+                let offset_ms = lyrics::parser::parse_lrc_metadata(&raw_lrc)
+                    .offset_ms
+                    .unwrap_or(0);
                 cache::lyrics::upsert_lyrics_cache_entry(
                     &connection,
                     &LyricsCacheEntry {
                         song_hash: song_hash.to_owned(),
                         lrc: fetched.raw_lrc,
                         source: source.clone(),
-                        offset_ms: 0,
+                        offset_ms,
                         fetched_at: current_unix_timestamp()
                             .map_err(|e| LyricsError::Internal(e.to_string()))?,
                     },
@@ -211,7 +214,7 @@ fn fetch_lyrics_phase3(
                     song_id: song_hash.to_owned(),
                     lines,
                     source: Some(source),
-                    offset_ms: 0,
+                    offset_ms,
                     raw_lrc,
                 })
             }
@@ -312,13 +315,16 @@ pub fn fetch_lyrics_from_connection(
         .map_err(|e| LyricsError::LyricsNotReady(e.to_string()))?;
     let source = fetched.source;
     let raw_lrc = fetched.raw_lrc.clone();
+    let offset_ms = lyrics::parser::parse_lrc_metadata(&raw_lrc)
+        .offset_ms
+        .unwrap_or(0);
     cache::lyrics::upsert_lyrics_cache_entry(
         connection,
         &LyricsCacheEntry {
             song_hash: song.hash.clone(),
             lrc: fetched.raw_lrc,
             source: source.clone(),
-            offset_ms: 0,
+            offset_ms,
             fetched_at: current_unix_timestamp()
                 .map_err(|e| LyricsError::Internal(e.to_string()))?,
         },
@@ -329,7 +335,7 @@ pub fn fetch_lyrics_from_connection(
         song_id: song.hash,
         lines,
         source: Some(source),
-        offset_ms: 0,
+        offset_ms,
         raw_lrc,
     })
 }
@@ -436,6 +442,10 @@ fn save_manual_lyrics_on_thread(
 
         let raw_lrc = text.clone();
 
+        let offset_ms = lyrics::parser::parse_lrc_metadata(&raw_lrc)
+            .offset_ms
+            .unwrap_or(0);
+
         let fetched_at =
             current_unix_timestamp().map_err(|e| LyricsError::Internal(e.to_string()))?;
 
@@ -445,7 +455,7 @@ fn save_manual_lyrics_on_thread(
                 song_hash: publish_song_id.clone(),
                 lrc: text,
                 source: source.clone(),
-                offset_ms: 0,
+                offset_ms,
                 fetched_at,
             },
         )
@@ -455,7 +465,7 @@ fn save_manual_lyrics_on_thread(
             song_id: publish_song_id,
             lines,
             source: Some(source),
-            offset_ms: 0,
+            offset_ms,
             raw_lrc,
         })
     })
@@ -651,6 +661,10 @@ fn extract_embedded_lyrics_on_thread(
 
         let raw_lrc = embedded.clone();
 
+        let offset_ms = lyrics::parser::parse_lrc_metadata(&raw_lrc)
+            .offset_ms
+            .unwrap_or(0);
+
         let fetched_at =
             current_unix_timestamp().map_err(|e| LyricsError::Internal(e.to_string()))?;
 
@@ -660,7 +674,7 @@ fn extract_embedded_lyrics_on_thread(
                 song_hash: publish_song_id.clone(),
                 lrc: embedded,
                 source: LyricsSource::Embedded,
-                offset_ms: 0,
+                offset_ms,
                 fetched_at,
             },
         )
@@ -670,7 +684,7 @@ fn extract_embedded_lyrics_on_thread(
             song_id: publish_song_id,
             lines,
             source: Some(LyricsSource::Embedded),
-            offset_ms: 0,
+            offset_ms,
             raw_lrc,
         })
     })
@@ -775,6 +789,9 @@ fn fetch_lyrics_online_phase3(
                         .map_err(|e| LyricsError::LyricsNotReady(e.to_string()))?;
                     let raw_lrc = fetched.raw_lrc.clone();
                     let source = fetched.source.clone();
+                    let offset_ms = lyrics::parser::parse_lrc_metadata(&raw_lrc)
+                        .offset_ms
+                        .unwrap_or(0);
                     let fetched_at = current_unix_timestamp()
                         .map_err(|e| LyricsError::Internal(e.to_string()))?;
 
@@ -784,7 +801,7 @@ fn fetch_lyrics_online_phase3(
                             song_hash: song_hash.to_owned(),
                             lrc: fetched.raw_lrc,
                             source: source.clone(),
-                            offset_ms: 0,
+                            offset_ms,
                             fetched_at,
                         },
                     )
@@ -794,7 +811,7 @@ fn fetch_lyrics_online_phase3(
                         song_id: song_hash.to_owned(),
                         lines,
                         source: Some(source),
-                        offset_ms: 0,
+                        offset_ms,
                         raw_lrc,
                     })
                 }
