@@ -1,4 +1,4 @@
-use crate::commands::separation::SeparationStatusSnapshot;
+use crate::services::separation::SeparationStatusSnapshot;
 use crate::separator::model::LoadedModel;
 use crate::separator::model_cache::ModelCache;
 use std::collections::HashMap;

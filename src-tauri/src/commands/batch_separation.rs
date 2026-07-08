@@ -1,33 +1,24 @@
+//! IPC adapters for batch stem separation.
+//!
+//! Planning, prerequisite bootstrap, sequential job loop, and per-song status
+//! emission live in `services::separation` so single and batch paths share one
+//! orchestration layer.
+
 use crate::{
     cache,
-    commands::error::{database_error, CommandError, CommandResult},
-    commands::separation::{
-        completed_status, failed_status, running_status, SeparationCompleteEvent,
-        SeparationErrorEvent, SeparationProgressEvent, SEPARATION_COMPLETE_EVENT,
-        SEPARATION_ERROR_EVENT, SEPARATION_PROGRESS_EVENT,
-    },
-    config::{self, StemMode},
-    remote,
-    separator::{self, error::SeparationError, model::LoadedModel, model_cache::ModelCache},
+    commands::error::CommandResult,
+    separator::error::SeparationError,
+    services::separation,
     AppState,
 };
-use serde::Serialize;
-use std::sync::{atomic::Ordering, Arc, Mutex};
-use tauri::{AppHandle, Emitter, Manager, State};
+use std::sync::{atomic::Ordering, Arc};
+use tauri::{AppHandle, State};
 
-pub const BATCH_SEPARATION_PROGRESS_EVENT: &str = "batch-separation-progress";
-pub const BATCH_SEPARATION_COMPLETE_EVENT: &str = "batch-separation-complete";
-pub const BATCH_SEPARATION_CANCELLED_EVENT: &str = "batch-separation-cancelled";
-
-#[derive(Debug, Clone, Serialize)]
-pub struct BatchSeparationProgress {
-    pub total: usize,
-    pub completed: usize,
-    pub skipped: usize,
-    pub failed: usize,
-    pub current_song_id: Option<String>,
-    pub current_percent: u8,
-}
+// Re-export batch event contract for external callers/tests.
+pub use crate::services::separation::{
+    BatchSeparationProgress, BATCH_SEPARATION_CANCELLED_EVENT, BATCH_SEPARATION_COMPLETE_EVENT,
+    BATCH_SEPARATION_PROGRESS_EVENT,
+};
 
 /// Batch separate songs. If `song_ids` is empty, separate all songs in the library.
 /// Songs are processed sequentially (ONNX Runtime is memory-heavy).
@@ -44,331 +35,28 @@ pub fn batch_separate(
         );
     }
 
-    let library_root = state.library_root()?;
-    let app_data_dir = state.shell.app_data_dir.clone();
-    let runtime_bootstrap_status = Arc::clone(&state.shell.runtime_bootstrap_status);
-    let model_bootstrap_status = Arc::clone(&state.shell.model_bootstrap_status);
-    let separation_statuses = Arc::clone(&state.separation.separation_statuses);
-    let model_cache: Arc<Mutex<ModelCache<LoadedModel>>> =
-        Arc::clone(&state.separation.separator_model_cache);
-    let batch_running = Arc::clone(&state.separation.batch_running);
-    let batch_cancel = Arc::clone(&state.separation.batch_cancel);
-
-    let app_config = config::load_config(&state.shell.app_data_dir)
-        .ok()
-        .flatten();
-    let stem_mode = app_config
-        .as_ref()
-        .map(|c| c.effective_stem_mode())
-        .unwrap_or_default();
-    let model_variant_str = app_config
-        .as_ref()
-        .map(|c| c.effective_model_variant())
-        .unwrap_or_default()
-        .as_str()
-        .to_owned();
-    let ep_preference = app_config
-        .as_ref()
-        .map(|c| c.effective_execution_provider())
-        .unwrap_or_default();
+    let execution_context = separation::build_execution_context(&state)?;
+    let stem_mode = execution_context.stem_mode;
 
     // Open database connection once for all queries.
-    let connection = cache::open_database(&library_root.database_path())
-        .map_err(|e| database_error(e.to_string()))?;
+    let connection = cache::open_database(&execution_context.library_root.database_path())
+        .map_err(|e| crate::commands::error::database_error(e.to_string()))?;
 
-    // Resolve the list of song hashes to process.
-    let hashes: Vec<String> = if song_ids.is_empty() {
-        let songs = cache::list_songs(&connection).map_err(|e| database_error(e.to_string()))?;
-        songs
-            .into_iter()
-            .filter(|song| song.is_separable())
-            .map(|s| s.hash)
-            .collect()
-    } else {
-        song_ids
-            .into_iter()
-            .filter(|song_id| {
-                cache::get_song_by_hash(&connection, song_id)
-                    .ok()
-                    .flatten()
-                    .map(|song| song.is_separable())
-                    .unwrap_or(false)
-            })
-            .collect()
-    };
-
-    // Filter out already-separated songs.
-    let mut to_separate = Vec::new();
-    let mut skipped: usize = 0;
-    for hash in &hashes {
-        if let Ok(Some(entry)) = cache::stems::get_cached_stem_entry(&connection, hash) {
-            let already_done = match stem_mode {
-                StemMode::TwoStem => true, // any cached entry is sufficient
-                StemMode::FourStem => entry.has_individual_stems(),
-            };
-            if already_done && cache::stems::cache_entry_files_valid(&library_root, &entry) {
-                skipped += 1;
-                continue;
-            }
-        }
-        to_separate.push(hash.clone());
-    }
+    let plan = separation::plan_batch(
+        &connection,
+        &execution_context.library_root,
+        song_ids,
+        stem_mode,
+    )?;
     drop(connection);
 
-    let total = to_separate.len();
-
-    // Mark batch as running.
-    batch_running.store(true, Ordering::Relaxed);
-    batch_cancel.store(false, Ordering::Relaxed);
-
-    // Emit initial progress.
-    let _ = app_handle.emit(
-        BATCH_SEPARATION_PROGRESS_EVENT,
-        BatchSeparationProgress {
-            total,
-            completed: 0,
-            skipped,
-            failed: 0,
-            current_song_id: None,
-            current_percent: 0,
-        },
+    separation::start_batch_job(
+        app_handle,
+        execution_context,
+        plan,
+        Arc::clone(&state.separation.batch_running),
+        Arc::clone(&state.separation.batch_cancel),
     );
-
-    tauri::async_runtime::spawn(async move {
-        let mut completed: usize = 0;
-        let mut failed_count: usize = 0;
-
-        let prerequisite_result = {
-            let app_data_dir = app_data_dir.clone();
-            let app_handle = app_handle.clone();
-            let runtime_status = Arc::clone(&runtime_bootstrap_status);
-            let model_status = Arc::clone(&model_bootstrap_status);
-            tauri::async_runtime::spawn_blocking(move || {
-                let mut emit_runtime = |event, snapshot| {
-                    let _ = app_handle.emit(event, snapshot);
-                };
-                crate::commands::runtime_bootstrap::ensure_runtime_ready_or_install_blocking(
-                    &app_data_dir,
-                    &runtime_status,
-                    &mut emit_runtime,
-                )?;
-
-                let mut emit_model = |event, snapshot| {
-                    let _ = app_handle.emit(event, snapshot);
-                };
-                crate::commands::bootstrap::ensure_active_model_ready_or_install_blocking(
-                    &app_data_dir,
-                    &model_status,
-                    &mut emit_model,
-                )
-            })
-            .await
-        };
-
-        let model_path = match prerequisite_result {
-            Ok(Ok(path)) => path,
-            Ok(Err(error)) => {
-                let _ = app_handle.emit(
-                    BATCH_SEPARATION_COMPLETE_EVENT,
-                    BatchSeparationProgress {
-                        total,
-                        completed,
-                        skipped,
-                        failed: total.saturating_sub(completed + skipped),
-                        current_song_id: None,
-                        current_percent: 0,
-                    },
-                );
-                batch_running.store(false, Ordering::Relaxed);
-                eprintln!("batch separation prerequisites failed: {}", error.message);
-                return;
-            }
-            Err(error) => {
-                let _ = app_handle.emit(
-                    BATCH_SEPARATION_COMPLETE_EVENT,
-                    BatchSeparationProgress {
-                        total,
-                        completed,
-                        skipped,
-                        failed: total.saturating_sub(completed + skipped),
-                        current_song_id: None,
-                        current_percent: 0,
-                    },
-                );
-                batch_running.store(false, Ordering::Relaxed);
-                eprintln!("batch separation prerequisites task failed: {error}");
-                return;
-            }
-        };
-
-        for song_id in &to_separate {
-            // Check cancellation.
-            if batch_cancel.load(Ordering::Relaxed) {
-                let _ = app_handle.emit(
-                    BATCH_SEPARATION_CANCELLED_EVENT,
-                    BatchSeparationProgress {
-                        total,
-                        completed,
-                        skipped,
-                        failed: failed_count,
-                        current_song_id: None,
-                        current_percent: 0,
-                    },
-                );
-                batch_running.store(false, Ordering::Relaxed);
-                return;
-            }
-
-            // Mark song as running.
-            {
-                if let Ok(mut statuses) = separation_statuses.lock() {
-                    statuses.insert(song_id.clone(), running_status(song_id, 0));
-                }
-            }
-
-            // Emit batch progress with current song.
-            let _ = app_handle.emit(
-                BATCH_SEPARATION_PROGRESS_EVENT,
-                BatchSeparationProgress {
-                    total,
-                    completed,
-                    skipped,
-                    failed: failed_count,
-                    current_song_id: Some(song_id.clone()),
-                    current_percent: 0,
-                },
-            );
-
-            let worker_library_root = library_root.clone();
-            let worker_model_path = model_path.clone();
-            let worker_song_id = song_id.clone();
-            let worker_statuses = Arc::clone(&separation_statuses);
-            let worker_model_cache = Arc::clone(&model_cache);
-            let progress_song_id = song_id.clone();
-            let progress_app_handle = app_handle.clone();
-            let batch_progress_app_handle = app_handle.clone();
-            let batch_total = total;
-            let batch_completed = completed;
-            let batch_skipped = skipped;
-            let batch_failed = failed_count;
-
-            let worker_model_variant = model_variant_str.clone();
-            let result = tauri::async_runtime::spawn_blocking(move || {
-                let connection = cache::open_database(&worker_library_root.database_path())?;
-                separator::job::separate_song_into_cache(
-                    &connection,
-                    &worker_library_root,
-                    &worker_model_cache,
-                    &worker_model_path,
-                    &worker_song_id,
-                    stem_mode,
-                    &worker_model_variant,
-                    ep_preference,
-                    |percent| {
-                        let snapshot = running_status(&progress_song_id, percent);
-                        if let Ok(mut statuses) = worker_statuses.lock() {
-                            statuses.insert(progress_song_id.clone(), snapshot);
-                        }
-                        let _ = progress_app_handle.emit(
-                            SEPARATION_PROGRESS_EVENT,
-                            SeparationProgressEvent {
-                                song_id: progress_song_id.clone(),
-                                percent,
-                            },
-                        );
-                        // Also emit batch progress update with per-song percent.
-                        let _ = batch_progress_app_handle.emit(
-                            BATCH_SEPARATION_PROGRESS_EVENT,
-                            BatchSeparationProgress {
-                                total: batch_total,
-                                completed: batch_completed,
-                                skipped: batch_skipped,
-                                failed: batch_failed,
-                                current_song_id: Some(progress_song_id.clone()),
-                                current_percent: percent,
-                            },
-                        );
-                    },
-                )
-            })
-            .await;
-
-            match result {
-                Ok(Ok(artifacts)) => {
-                    let status = completed_status(
-                        song_id,
-                        artifacts.vocals_path,
-                        artifacts.accomp_path,
-                        artifacts.cache_hit,
-                        artifacts.drums_path,
-                        artifacts.bass_path,
-                        artifacts.other_path,
-                    );
-                    if let Ok(mut statuses) = separation_statuses.lock() {
-                        statuses.insert(song_id.clone(), status.clone());
-                    }
-                    let _ = app_handle.emit(
-                        SEPARATION_COMPLETE_EVENT,
-                        SeparationCompleteEvent {
-                            song_id: song_id.clone(),
-                            status: status.clone(),
-                        },
-                    );
-                    let state = app_handle.state::<AppState>();
-                    let _ = remote::publish_song_to_active_remote_if_ready(
-                        &state,
-                        &app_handle,
-                        song_id,
-                    );
-                    completed += 1;
-                }
-                Ok(Err(error)) => {
-                    let cmd_error: CommandError = SeparationError::Failed(error.to_string()).into();
-                    let status = failed_status(song_id, cmd_error.clone());
-                    if let Ok(mut statuses) = separation_statuses.lock() {
-                        statuses.insert(song_id.clone(), status);
-                    }
-                    let _ = app_handle.emit(
-                        SEPARATION_ERROR_EVENT,
-                        SeparationErrorEvent {
-                            song_id: song_id.clone(),
-                            error: cmd_error,
-                        },
-                    );
-                    failed_count += 1;
-                }
-                Err(error) => {
-                    let cmd_error: CommandError = SeparationError::Failed(error.to_string()).into();
-                    let status = failed_status(song_id, cmd_error.clone());
-                    if let Ok(mut statuses) = separation_statuses.lock() {
-                        statuses.insert(song_id.clone(), status);
-                    }
-                    let _ = app_handle.emit(
-                        SEPARATION_ERROR_EVENT,
-                        SeparationErrorEvent {
-                            song_id: song_id.clone(),
-                            error: cmd_error,
-                        },
-                    );
-                    failed_count += 1;
-                }
-            }
-        }
-
-        // Batch complete.
-        let _ = app_handle.emit(
-            BATCH_SEPARATION_COMPLETE_EVENT,
-            BatchSeparationProgress {
-                total,
-                completed,
-                skipped,
-                failed: failed_count,
-                current_song_id: None,
-                current_percent: 0,
-            },
-        );
-        batch_running.store(false, Ordering::Relaxed);
-    });
 
     Ok(())
 }
