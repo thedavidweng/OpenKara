@@ -270,6 +270,18 @@ pub struct UploadStatusSnapshot {
     pub error: Option<CommandError>,
 }
 
+/// Provider-specific session data carried by an in-progress Remote Auth session.
+///
+/// Replaces an Option-triple (google_drive/dropbox/webdav) so exactly one
+/// provider's credentials/tokens are present — the same shape used when binding
+/// Repository Credentials during Register / Reauthorize.
+#[derive(Debug, Clone)]
+pub(crate) enum ProviderSessionData {
+    GoogleDrive(GoogleDriveSessionData),
+    Dropbox(DropboxSessionData),
+    WebDav(WebDavSessionData),
+}
+
 #[derive(Debug, Clone)]
 pub struct RemoteAuthSession {
     pub provider: RemoteLibraryProvider,
@@ -278,9 +290,8 @@ pub struct RemoteAuthSession {
     pub display_name: Option<String>,
     pub account_id: String,
     pub error: Option<CommandError>,
-    pub(crate) google_drive: Option<GoogleDriveSessionData>,
-    pub(crate) dropbox: Option<DropboxSessionData>,
-    pub(crate) webdav: Option<WebDavSessionData>,
+    /// Exactly one provider's auth material (tokens / WebDAV password, etc.).
+    pub(crate) session: ProviderSessionData,
 }
 
 #[derive(Debug, Clone, Serialize)]

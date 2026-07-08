@@ -2,7 +2,6 @@ use crate::{
     cache,
     cache::lyrics::LyricsCacheEntry,
     commands::error::{database_error, internal_error, CommandResult},
-    commands::remote_library,
     library::Song,
     library_root::LibraryRoot,
     lyrics::{
@@ -16,7 +15,7 @@ use crate::{
         lrclib::{LrcLibClient, LyricsLookupQuery},
         parser::LyricLine,
     },
-    AppState,
+    remote, AppState,
 };
 use rusqlite::Connection;
 use serde::Serialize;
@@ -187,7 +186,7 @@ fn fetch_lyrics_phase3(
     let library_root = state.library_root()?;
     let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
 
-    remote_library::run_song_database_mutation(state, app_handle, song_id, || {
+    remote::run_song_database_mutation(state, app_handle, song_id, || {
         let result: Result<LyricsPayload, LyricsError> = match online_result {
             Ok(Some(fetched)) => {
                 let lines = lyrics::fetch::parse_lyrics_auto(&fetched.raw_lrc)
@@ -257,7 +256,7 @@ fn set_lyrics_offset_on_thread(
     let library = state.library_root()?;
     let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
 
-    remote_library::run_song_database_mutation(state, app_handle, song_id, || {
+    remote::run_song_database_mutation(state, app_handle, song_id, || {
         set_lyrics_offset_in_connection(&connection, song_id, ms).map_err(Into::into)
     })
 }
@@ -411,7 +410,7 @@ fn save_manual_lyrics_on_thread(
     let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
 
     let publish_song_id = song_id.to_owned();
-    remote_library::run_song_database_mutation(state, app_handle, song_id, || {
+    remote::run_song_database_mutation(state, app_handle, song_id, || {
         // Try parsing with auto-detection
         let lines = match lyrics::fetch::parse_lyrics_auto(&text) {
             Ok(parsed) if !parsed.is_empty() => parsed,
@@ -506,7 +505,7 @@ fn import_lyrics_files_on_thread(
     let library = state.library_root()?;
     let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
 
-    remote_library::run_songs_database_mutation(
+    remote::run_songs_database_mutation(
         state,
         app_handle,
         || {
@@ -634,7 +633,7 @@ fn extract_embedded_lyrics_on_thread(
     let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
 
     let publish_song_id = song_id.to_owned();
-    remote_library::run_song_database_mutation(state, app_handle, song_id, || {
+    remote::run_song_database_mutation(state, app_handle, song_id, || {
         let song = cache::get_song_by_hash(&connection, &publish_song_id)
             .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?
             .ok_or(LyricsError::SongNotFound(publish_song_id.clone()))?;
@@ -779,7 +778,7 @@ fn fetch_lyrics_online_phase3(
     let library_root = state.library_root()?;
     let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
 
-    remote_library::run_song_database_mutation_with_result(
+    remote::run_song_database_mutation_with_result(
         state,
         app_handle,
         || {

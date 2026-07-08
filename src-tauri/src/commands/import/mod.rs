@@ -17,11 +17,10 @@ use crate::{
     commands::error::{
         database_error, internal_error, state_lock_error, CommandError, CommandResult,
     },
-    commands::remote_library,
     library::{error::LibraryError, ImportFailure, ImportSongsResult, Song},
     library_root::LibraryRoot,
     media_g::{self, MEDIA_G_PAIRED, MEDIA_G_ZIP},
-    AppState,
+    remote, AppState,
 };
 use rusqlite::Connection;
 use std::collections::HashSet;
@@ -46,7 +45,7 @@ pub fn import_songs(
     let library = state.library_root()?;
     let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
 
-    remote_library::run_imported_songs_mutation(&state, &app_handle, || {
+    remote::run_imported_songs_mutation(&state, &app_handle, || {
         import_songs_from_paths_with_options(
             &connection,
             &library,
@@ -224,7 +223,7 @@ pub fn extract_embedded_cover_art(
     let library = state.library_root()?;
     let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
 
-    remote_library::run_updated_songs_mutation(
+    remote::run_updated_songs_mutation(
         &state,
         &app_handle,
         || {
@@ -234,7 +233,7 @@ pub fn extract_embedded_cover_art(
                 &song_ids,
             ))
         },
-        |result| remote_library::song_ids_from_songs(&result.updated_songs),
+        |result| remote::song_ids_from_songs(&result.updated_songs),
     )
 }
 
@@ -353,7 +352,7 @@ pub fn update_song_metadata(
     let library = state.library_root()?;
     let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
 
-    remote_library::run_song_database_mutation(&state, &app_handle, &hash, || {
+    remote::run_song_database_mutation(&state, &app_handle, &hash, || {
         cache::update_song_title_artist(&connection, &hash, title.as_deref(), artist.as_deref())
             .map_err(|e| database_error(e.to_string()))?;
 
@@ -373,7 +372,7 @@ pub fn set_songs_instrumental(
     let library = state.library_root()?;
     let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
 
-    remote_library::run_database_then_library_mirror_mutation(&state, &app_handle, || {
+    remote::run_database_then_library_mirror_mutation(&state, &app_handle, || {
         set_songs_instrumental_in_connection(&connection, &song_ids, instrumental)
     })
 }
@@ -413,7 +412,7 @@ pub fn set_songs_language(
     let library = state.library_root()?;
     let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
 
-    remote_library::run_database_then_library_mirror_mutation(&state, &app_handle, || {
+    remote::run_database_then_library_mirror_mutation(&state, &app_handle, || {
         set_songs_language_in_connection(&connection, &song_ids, language.as_deref())
     })
 }
@@ -462,9 +461,9 @@ pub fn get_song_properties(
         ))));
     };
     if song.is_remote() {
-        remote_library::ensure_remote_file_cached(&state.shell.app_data_dir, song_path)?;
+        remote::ensure_remote_file_cached(&state.shell.app_data_dir, song_path)?;
         if let Some(cdg_path) = song.cdg_path.as_deref() {
-            remote_library::ensure_remote_file_cached(&state.shell.app_data_dir, cdg_path)?;
+            remote::ensure_remote_file_cached(&state.shell.app_data_dir, cdg_path)?;
         }
     }
     let file_path = library.resolve(song_path);

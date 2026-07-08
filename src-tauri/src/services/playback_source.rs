@@ -8,10 +8,10 @@ use crate::{
         streaming::{self, StreamMetadata, StreamingTrack},
     },
     cache,
-    commands::remote_library,
     library::Song,
     library_root::LibraryRoot,
     media_g::{self, MEDIA_G_ZIP},
+    remote,
 };
 use anyhow::{Context, Result};
 use rusqlite::Connection;
@@ -228,12 +228,12 @@ fn load_remote_streaming_source(
         resolve_song_file_path(song).map_err(|e| PlaybackError::Internal(e.to_string()))?;
 
     // Create provider and check Range support.
-    let library = remote_library::active_remote_library(app_data_dir)
+    let library = remote::active_remote_library(app_data_dir)
         .map_err(|e| PlaybackError::Internal(e.message.clone()))?;
     let Some(library) = library else {
         return Ok(None);
     };
-    let provider = remote_library::provider::create_provider(app_data_dir, &library)
+    let provider = remote::provider::create_provider(app_data_dir, &library)
         .map_err(|e| PlaybackError::Internal(e.message.clone()))?;
 
     let fetcher = match provider.create_range_fetcher(song_path) {
@@ -397,11 +397,11 @@ pub(crate) fn ensure_remote_song_files_cached(
         return Ok(());
     };
     if let Some(file_path) = song.file_path.as_deref() {
-        remote_library::ensure_remote_file_cached(app_data_dir, file_path)
+        remote::ensure_remote_file_cached(app_data_dir, file_path)
             .map_err(|error| anyhow::anyhow!(error.message.clone()))?;
     }
     if let Some(cdg_path) = song.cdg_path.as_deref() {
-        remote_library::ensure_remote_file_cached(app_data_dir, cdg_path)
+        remote::ensure_remote_file_cached(app_data_dir, cdg_path)
             .map_err(|error| anyhow::anyhow!(error.message.clone()))?;
     }
     Ok(())
@@ -421,20 +421,20 @@ pub(crate) fn ensure_remote_stem_files_cached(
         return Ok(());
     };
 
-    remote_library::ensure_remote_file_cached(app_data_dir, &cached.vocals_path)
+    remote::ensure_remote_file_cached(app_data_dir, &cached.vocals_path)
         .map_err(|error| anyhow::anyhow!(error.message.clone()))?;
-    remote_library::ensure_remote_file_cached(app_data_dir, &cached.accomp_path)
+    remote::ensure_remote_file_cached(app_data_dir, &cached.accomp_path)
         .map_err(|error| anyhow::anyhow!(error.message.clone()))?;
     if let Some(drums_path) = cached.drums_path.as_deref() {
-        remote_library::ensure_remote_file_cached(app_data_dir, drums_path)
+        remote::ensure_remote_file_cached(app_data_dir, drums_path)
             .map_err(|error| anyhow::anyhow!(error.message.clone()))?;
     }
     if let Some(bass_path) = cached.bass_path.as_deref() {
-        remote_library::ensure_remote_file_cached(app_data_dir, bass_path)
+        remote::ensure_remote_file_cached(app_data_dir, bass_path)
             .map_err(|error| anyhow::anyhow!(error.message.clone()))?;
     }
     if let Some(other_path) = cached.other_path.as_deref() {
-        remote_library::ensure_remote_file_cached(app_data_dir, other_path)
+        remote::ensure_remote_file_cached(app_data_dir, other_path)
             .map_err(|error| anyhow::anyhow!(error.message.clone()))?;
     }
     Ok(())

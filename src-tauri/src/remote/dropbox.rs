@@ -1,9 +1,7 @@
 use crate::{
-    cache,
     commands::error::{CommandError, CommandResult},
     config::RegisteredLibrary,
     library::error::LibraryError,
-    library_root::LibraryRoot,
 };
 use reqwest::{Method, StatusCode, Url};
 use std::{
@@ -441,14 +439,15 @@ pub(crate) fn spawn_dropbox_auth_worker(
                 update_remote_auth_session(&sessions, &session_id, |state| {
                     state.state = RemoteAuthState::Ready;
                     state.account_id = account_id;
-                    state.dropbox = Some(DropboxSessionData {
-                        access_token: Some(tokens.access_token.clone()),
-                        refresh_token: tokens.refresh_token.clone(),
-                        access_token_expires_at_ms: tokens
-                            .expires_in
-                            .map(|seconds| current_unix_time_ms() + seconds * 1000),
-                        ..worker_session.clone()
-                    });
+                    state.session =
+                        super::types::ProviderSessionData::Dropbox(DropboxSessionData {
+                            access_token: Some(tokens.access_token.clone()),
+                            refresh_token: tokens.refresh_token.clone(),
+                            access_token_expires_at_ms: tokens
+                                .expires_in
+                                .map(|seconds| current_unix_time_ms() + seconds * 1000),
+                            ..worker_session.clone()
+                        });
                     state.error = None;
                 });
             }
@@ -795,89 +794,119 @@ pub(crate) fn dropbox_upload_directory_to_remote(
     Ok(())
 }
 
+/// Dropbox HTTP/path adapter for the shared bootstrap protocol.
+struct DropboxBootstrapStorage<'a> {
+    app_data_dir: &'a Path,
+    library: &'a RegisteredLibrary,
+    secret: DropboxSecret,
+    remote_root_path: &'a str,
+}
+
+impl<'a> DropboxBootstrapStorage<'a> {
+    fn new(
+        app_data_dir: &'a Path,
+        library: &'a RegisteredLibrary,
+        secret: &DropboxSecret,
+    ) -> CommandResult<Self> {
+        let remote_root_path = library.remote_root_locator().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "remote repository is missing a remote locator".to_owned(),
+            ))
+        })?;
+        Ok(Self {
+            app_data_dir,
+            library,
+            secret: secret.clone(),
+            remote_root_path,
+        })
+    }
+}
+
+impl super::bootstrap::RemoteBootstrapStorage for DropboxBootstrapStorage<'_> {
+    fn location_label(&self) -> &'static str {
+        "Dropbox folder"
+    }
+
+    fn ensure_layout(&mut self) -> CommandResult<()> {
+        dropbox_ensure_folder(self.app_data_dir, &mut self.secret, self.remote_root_path)?;
+        for directory in ["media", "media-g", "stems"] {
+            dropbox_ensure_folder(
+                self.app_data_dir,
+                &mut self.secret,
+                &dropbox_join_path(self.remote_root_path, directory),
+            )?;
+        }
+        Ok(())
+    }
+
+    fn marker_exists(&mut self) -> CommandResult<bool> {
+        let marker_remote_path = dropbox_join_path(self.remote_root_path, ".openkara-library");
+        Ok(
+            dropbox_get_metadata(self.app_data_dir, &mut self.secret, &marker_remote_path)?
+                .is_some(),
+        )
+    }
+
+    fn upload_marker(&mut self, _marker_bytes: &[u8]) -> CommandResult<()> {
+        dropbox_upload_relative_file_to_remote(
+            self.app_data_dir,
+            self.library,
+            &self.secret,
+            ".openkara-library",
+            self.remote_root_path,
+        )
+    }
+
+    fn probe_remote_database(&mut self) -> CommandResult<Option<Option<String>>> {
+        let database_remote_path = dropbox_join_path(self.remote_root_path, "openkara.db");
+        Ok(
+            dropbox_get_metadata(self.app_data_dir, &mut self.secret, &database_remote_path)?
+                .map(|metadata| dropbox_metadata_revision(&metadata)),
+        )
+    }
+
+    fn download_database(&mut self, destination: &Path) -> CommandResult<()> {
+        let database_remote_path = dropbox_join_path(self.remote_root_path, "openkara.db");
+        dropbox_download_file(
+            self.app_data_dir,
+            &mut self.secret,
+            &database_remote_path,
+            destination,
+        )
+    }
+
+    fn upload_database(&mut self, _source: &Path) -> CommandResult<Option<String>> {
+        dropbox_upload_relative_file_to_remote(
+            self.app_data_dir,
+            self.library,
+            &self.secret,
+            "openkara.db",
+            self.remote_root_path,
+        )?;
+        let database_remote_path = dropbox_join_path(self.remote_root_path, "openkara.db");
+        let metadata =
+            dropbox_get_metadata(self.app_data_dir, &mut self.secret, &database_remote_path)?
+                .ok_or_else(|| {
+                    CommandError::from(LibraryError::Internal(
+                        "Dropbox database upload succeeded but the file was not found afterwards"
+                            .to_owned(),
+                    ))
+                })?;
+        Ok(dropbox_metadata_revision(&metadata))
+    }
+}
+
 pub(crate) fn initialize_or_sync_dropbox_library(
     app_data_dir: &Path,
     library: &RegisteredLibrary,
     secret: &DropboxSecret,
 ) -> CommandResult<Option<String>> {
-    let root_path = library.working_copy_root().ok_or_else(|| {
-        CommandError::from(LibraryError::Internal(
-            "remote repository is missing a cached working copy".to_string(),
-        ))
-    })?;
-    let root = if root_path.join(".openkara-library").exists() {
-        LibraryRoot::open(&root_path)
-            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
-    } else {
-        LibraryRoot::create(&root_path)
-            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
-    };
-    cache::initialize_library_database(&root.database_path())
-        .map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
-
-    let remote_root_path = library.remote_root_locator().ok_or_else(|| {
-        CommandError::from(LibraryError::Internal(
-            "remote repository is missing a remote locator".to_owned(),
-        ))
-    })?;
-    let mut secret = secret.clone();
-    dropbox_ensure_folder(app_data_dir, &mut secret, remote_root_path)?;
-    for directory in ["media", "media-g", "stems"] {
-        dropbox_ensure_folder(
-            app_data_dir,
-            &mut secret,
-            &dropbox_join_path(remote_root_path, directory),
-        )?;
-    }
-
-    let marker_remote_path = dropbox_join_path(remote_root_path, ".openkara-library");
-    if dropbox_get_metadata(app_data_dir, &mut secret, &marker_remote_path)?.is_none() {
-        let marker_path = root.resolve(".openkara-library");
-        fs::write(&marker_path, b"openkara remote repository\n").map_err(|error| {
-            CommandError::from(LibraryError::Internal(format!(
-                "failed to write {}: {error}",
-                marker_path.display()
-            )))
-        })?;
-        dropbox_upload_relative_file_to_remote(
-            app_data_dir,
-            library,
-            &secret,
-            ".openkara-library",
-            remote_root_path,
-        )?;
-    }
-
-    let database_remote_path = dropbox_join_path(remote_root_path, "openkara.db");
-    let revision = if let Some(metadata) =
-        dropbox_get_metadata(app_data_dir, &mut secret, &database_remote_path)?
-    {
-        dropbox_download_file(
-            app_data_dir,
-            &mut secret,
-            &database_remote_path,
-            &root.database_path(),
-        )?;
-        dropbox_metadata_revision(&metadata)
-    } else {
-        dropbox_upload_relative_file_to_remote(
-            app_data_dir,
-            library,
-            &secret,
-            "openkara.db",
-            remote_root_path,
-        )?;
-        let metadata = dropbox_get_metadata(app_data_dir, &mut secret, &database_remote_path)?
-            .ok_or_else(|| {
-                CommandError::from(LibraryError::Internal(
-                    "Dropbox database upload succeeded but the file was not found afterwards"
-                        .to_owned(),
-                ))
-            })?;
-        dropbox_metadata_revision(&metadata)
-    };
-
-    Ok(revision)
+    let mut storage = DropboxBootstrapStorage::new(app_data_dir, library, secret)?;
+    super::bootstrap::bootstrap_remote_library(
+        super::bootstrap::BootstrapMode::CreateOrOpen,
+        library,
+        &mut storage,
+    )
 }
 
 pub(crate) fn refresh_existing_dropbox_library(
@@ -885,47 +914,12 @@ pub(crate) fn refresh_existing_dropbox_library(
     library: &RegisteredLibrary,
     secret: &DropboxSecret,
 ) -> CommandResult<Option<String>> {
-    let root_path = library.working_copy_root().ok_or_else(|| {
-        CommandError::from(LibraryError::Internal(
-            "remote repository is missing a cached working copy".to_string(),
-        ))
-    })?;
-    let root = if root_path.join(".openkara-library").exists() {
-        LibraryRoot::open(&root_path)
-            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
-    } else {
-        LibraryRoot::create(&root_path)
-            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
-    };
-    cache::initialize_library_database(&root.database_path())
-        .map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
-
-    let remote_root_path = library.remote_root_locator().ok_or_else(|| {
-        CommandError::from(LibraryError::Internal(
-            "remote repository is missing a remote locator".to_owned(),
-        ))
-    })?;
-    let mut secret = secret.clone();
-    let marker_remote_path = dropbox_join_path(remote_root_path, ".openkara-library");
-    if dropbox_get_metadata(app_data_dir, &mut secret, &marker_remote_path)?.is_none() {
-        return Err(CommandError::from(LibraryError::Internal(
-            "The selected Dropbox folder is not an OpenKara remote repository.".to_owned(),
-        )));
-    }
-    let database_remote_path = dropbox_join_path(remote_root_path, "openkara.db");
-    let metadata = dropbox_get_metadata(app_data_dir, &mut secret, &database_remote_path)?
-        .ok_or_else(|| {
-            CommandError::from(LibraryError::Internal(
-                "The selected Dropbox folder is missing openkara.db.".to_owned(),
-            ))
-        })?;
-    dropbox_download_file(
-        app_data_dir,
-        &mut secret,
-        &database_remote_path,
-        &root.database_path(),
-    )?;
-    Ok(dropbox_metadata_revision(&metadata))
+    let mut storage = DropboxBootstrapStorage::new(app_data_dir, library, secret)?;
+    super::bootstrap::bootstrap_remote_library(
+        super::bootstrap::BootstrapMode::RequireExisting,
+        library,
+        &mut storage,
+    )
 }
 
 pub(crate) fn dropbox_delete_path(

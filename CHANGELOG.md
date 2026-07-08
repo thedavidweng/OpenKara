@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Deepen Remote Repository domain architecture (maintainer-visible): lift domain body from `commands/remote_library` into crate-root `remote/` with thin IPC adapters; close the auth/registry Remote Provider seam via `ProviderSessionData` + shared credential binding for Register/Reauthorize; collapse triplicated initialize/refresh bootstrap into one `bootstrap_remote_library` protocol (`CreateOrOpen` | `RequireExisting`) with provider HTTP/path adapters. Public Tauri command names and IPC contracts are unchanged.
 - Tooltip hover UX: 600ms first-show delay, instant switching between adjacent triggers, and extended hit areas for gap bridging. Play/pause transport controls no longer show redundant tooltips.
 
 ### Fixed
