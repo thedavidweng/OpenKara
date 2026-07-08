@@ -329,9 +329,7 @@ pub fn delete_stem_cache_entry(
     song_hash: &str,
 ) -> Result<()> {
     // Delete the row from the database.
-    connection
-        .execute("DELETE FROM stems WHERE song_hash = ?1", params![song_hash])
-        .context("failed to delete stem cache entry from database")?;
+    delete_stem_cache_entry_db_only(connection, song_hash)?;
 
     // Remove the stem files from disk.
     let dir = stem_directory(&library_root.stems_dir(), song_hash);
@@ -341,6 +339,17 @@ pub fn delete_stem_cache_entry(
         })?;
     }
 
+    Ok(())
+}
+
+/// Delete only the database row for a stem cache entry. Safe to call inside
+/// a SQLite transaction — does NOT touch the filesystem. The caller is
+/// responsible for removing stem files separately after the transaction
+/// commits.
+pub fn delete_stem_cache_entry_db_only(connection: &Connection, song_hash: &str) -> Result<()> {
+    connection
+        .execute("DELETE FROM stems WHERE song_hash = ?1", params![song_hash])
+        .context("failed to delete stem cache entry from database")?;
     Ok(())
 }
 
