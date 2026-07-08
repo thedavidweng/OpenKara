@@ -62,15 +62,8 @@ vi.mock("@/stores/queue-store", () => ({
   },
 }));
 
-vi.mock("./playback-workflow", () => ({
-  createPlaybackWorkflow: vi.fn(() => ({
-    playSong: vi.fn(),
-    playNow: vi.fn(),
-    playNextFromQueue: vi.fn(),
-    skipForward: vi.fn(),
-    skipBack: vi.fn(),
-  })),
-}));
+// Session is the real implementation under the player-store adapter.
+// Transport is mocked via @/lib/tauri above; queue/library seams are stubbed.
 
 interface FakeChannel {
   onmessage: ((event: { data: unknown }) => void) | null;
@@ -737,7 +730,7 @@ describe("seek", () => {
   });
 
   test("clamps negative ms to 0 and calls api.seek", async () => {
-    player.store.setState({ snapshot: playbackSnapshot() });
+    player.store.getState().updateSnapshot(playbackSnapshot());
     const snap = playbackSnapshot({ position_ms: 0, is_playing: true });
     mockSeek.mockResolvedValue(snap);
 
@@ -749,7 +742,7 @@ describe("seek", () => {
   });
 
   test("passes through positive values to api.seek", async () => {
-    player.store.setState({ snapshot: playbackSnapshot() });
+    player.store.getState().updateSnapshot(playbackSnapshot());
     const snap = playbackSnapshot({ position_ms: 1500, is_playing: true });
     mockSeek.mockResolvedValue(snap);
 
@@ -761,7 +754,7 @@ describe("seek", () => {
   });
 
   test("sets playingSinceMs to null when seek returns paused snapshot", async () => {
-    player.store.setState({ snapshot: playbackSnapshot() });
+    player.store.getState().updateSnapshot(playbackSnapshot());
     const snap = playbackSnapshot({ is_playing: false, position_ms: 800 });
     mockSeek.mockResolvedValue(snap);
 
