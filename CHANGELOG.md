@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Deepen the Rust `library` module write path: import, delete, song metadata/flags, and playlist/rotation logic now live under `src-tauri/src/library/` (`import/`, `delete`, `songs`, `playlist`). `commands/import` and `commands/playlist` are thin IPC adapters that open the DB and wrap remote `run_*_mutation` hooks. Remote mirror sync calls `library::delete_*` instead of `commands::import::delete`.
 - Tooltip hover UX: 600ms first-show delay, instant switching between adjacent triggers, and extended hit areas for gap bridging. Play/pause transport controls no longer show redundant tooltips.
 
 ### Fixed

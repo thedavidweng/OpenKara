@@ -1,5 +1,5 @@
 use crate::{
-    commands::import::import_songs_from_paths,
+    library::import_songs_from_paths,
     config::StemMode,
     perf::build_backend_performance_report,
     separator::{bootstrap, job, model, model_cache::ModelCache},
