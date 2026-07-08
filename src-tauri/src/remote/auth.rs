@@ -18,156 +18,39 @@ use tiny_http::Response as TinyHttpResponse;
 use super::{
     dropbox, google_drive,
     types::{
-        current_unix_time_ms, session_id_for_provider, RemoteAuthSession, RemoteAuthStart,
-        RemoteAuthState, RemoteAuthStatus,
+        current_unix_time_ms, session_id_for_provider, ProviderSessionData, RemoteAuthSession,
+        RemoteAuthStart, RemoteAuthState, RemoteAuthStatus,
     },
     webdav,
 };
 
+/// Begin a Remote Provider auth session.
+///
+/// Each adapter owns how credentials are collected (OAuth browser flow vs
+/// WebDAV password check). The resulting session stores a single
+/// [`ProviderSessionData`] variant rather than an Option-triple.
 pub(crate) fn begin_remote_auth(
     state: &AppState,
     provider: RemoteLibraryProvider,
     payload: Option<serde_json::Value>,
 ) -> CommandResult<RemoteAuthStart> {
     let session_id = session_id_for_provider(provider);
-    let mut google_drive_session = None;
-    let mut dropbox_session = None;
-    let webdav_session = match provider {
-        RemoteLibraryProvider::GoogleDrive => {
-            let google =
-                google_drive::parse_google_drive_payload(&state.shell.app_resource_dir, payload)?;
-            google_drive_session = Some(google_drive::spawn_google_drive_auth_worker(
-                Arc::clone(&state.remote.remote_auth_sessions),
-                session_id.clone(),
-                google,
-            )?);
-            None
-        }
-        RemoteLibraryProvider::Dropbox => {
-            let dropbox = dropbox::parse_dropbox_payload(&state.shell.app_resource_dir, payload)?;
-            dropbox_session = Some(dropbox::spawn_dropbox_auth_worker(
-                Arc::clone(&state.remote.remote_auth_sessions),
-                session_id.clone(),
-                dropbox,
-            )?);
-            None
-        }
-        RemoteLibraryProvider::WebDav => {
-            let session = webdav::parse_webdav_payload(payload)?;
-            let client = webdav::webdav_client()?;
-            let response = webdav::webdav_send(
-                &client,
-                Method::HEAD,
-                &session.server_url,
-                &session.username,
-                &session.password,
-                None,
-                None,
-            )?;
-            match response.status() {
-                StatusCode::OK
-                | StatusCode::NO_CONTENT
-                | StatusCode::METHOD_NOT_ALLOWED
-                | StatusCode::FOUND
-                | StatusCode::MOVED_PERMANENTLY => Some(session),
-                StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
-                    return Err(CommandError::from(LibraryError::Internal("WebDAV authentication failed. Double-check the server URL, username, and password."
-                            .to_owned(),)))
-                }
-                status => {
-                    return Err(CommandError::from(LibraryError::Internal(format!(
-                        "WebDAV server check failed with status {status}"
-                    ))))
-                }
-            }
-        }
-    };
-
-    if provider == RemoteLibraryProvider::GoogleDrive {
-        let google = google_drive_session.clone().ok_or_else(|| {
-            CommandError::from(LibraryError::Internal(
-                "missing Google Drive session state".to_owned(),
-            ))
-        })?;
-        let session = RemoteAuthSession {
-            provider,
-            state: RemoteAuthState::Pending,
-            remote_root_locator: None,
-            display_name: None,
-            account_id: session_id.clone(),
-            error: None,
-            google_drive: Some(google.clone()),
-            dropbox: None,
-            webdav: None,
-        };
-        state
-            .remote
-            .remote_auth_sessions
-            .lock()
-            .map_err(|_| state_lock_error("remote auth session lock was poisoned"))?
-            .insert(session_id.clone(), session);
-
-        return Ok(RemoteAuthStart {
-            session_id,
-            provider,
-            authorization_url: Some(google_drive::build_google_drive_authorization_url(&google)?),
-            expires_at_ms: Some(current_unix_time_ms() + 15 * 60 * 1000),
-        });
-    }
-
-    if provider == RemoteLibraryProvider::Dropbox {
-        let dropbox = dropbox_session.clone().ok_or_else(|| {
-            CommandError::from(LibraryError::Internal(
-                "missing Dropbox session state".to_owned(),
-            ))
-        })?;
-        let session = RemoteAuthSession {
-            provider,
-            state: RemoteAuthState::Pending,
-            remote_root_locator: None,
-            display_name: None,
-            account_id: session_id.clone(),
-            error: None,
-            google_drive: None,
-            dropbox: Some(dropbox.clone()),
-            webdav: None,
-        };
-        state
-            .remote
-            .remote_auth_sessions
-            .lock()
-            .map_err(|_| state_lock_error("remote auth session lock was poisoned"))?
-            .insert(session_id.clone(), session);
-
-        return Ok(RemoteAuthStart {
-            session_id,
-            provider,
-            authorization_url: Some(dropbox::build_dropbox_authorization_url(&dropbox)?),
-            expires_at_ms: Some(current_unix_time_ms() + 15 * 60 * 1000),
-        });
-    }
+    let started = start_provider_auth_session(
+        &state.shell.app_resource_dir,
+        Arc::clone(&state.remote.remote_auth_sessions),
+        &session_id,
+        provider,
+        payload,
+    )?;
 
     let session = RemoteAuthSession {
-        provider,
+        provider: started.provider,
         state: RemoteAuthState::Pending,
         remote_root_locator: None,
         display_name: None,
-        account_id: if let Some(webdav) = &webdav_session {
-            format!(
-                "{}@{}",
-                webdav.username,
-                Url::parse(&webdav.server_url)
-                    .ok()
-                    .and_then(|url| url.host_str().map(str::to_owned))
-                    .unwrap_or_else(|| "webdav".to_owned())
-            )
-        } else {
-            session_id.clone()
-        },
+        account_id: started.account_id,
         error: None,
-        google_drive: None,
-        dropbox: None,
-        webdav: webdav_session,
+        session: started.session,
     };
 
     state
@@ -179,10 +62,103 @@ pub(crate) fn begin_remote_auth(
 
     Ok(RemoteAuthStart {
         session_id,
-        provider,
-        authorization_url: None,
+        provider: started.provider,
+        authorization_url: started.authorization_url,
         expires_at_ms: Some(current_unix_time_ms() + 15 * 60 * 1000),
     })
+}
+
+/// Outcome of starting provider-owned auth (before the session is stored).
+struct StartedProviderAuth {
+    provider: RemoteLibraryProvider,
+    session: ProviderSessionData,
+    account_id: String,
+    authorization_url: Option<String>,
+}
+
+/// Adapter-owned auth start: spawn OAuth workers or validate WebDAV credentials.
+fn start_provider_auth_session(
+    app_resource_dir: &std::path::Path,
+    sessions: Arc<Mutex<HashMap<String, RemoteAuthSession>>>,
+    session_id: &str,
+    provider: RemoteLibraryProvider,
+    payload: Option<serde_json::Value>,
+) -> CommandResult<StartedProviderAuth> {
+    match provider {
+        RemoteLibraryProvider::GoogleDrive => {
+            let google = google_drive::parse_google_drive_payload(app_resource_dir, payload)?;
+            let google = google_drive::spawn_google_drive_auth_worker(
+                sessions,
+                session_id.to_owned(),
+                google,
+            )?;
+            let authorization_url =
+                Some(google_drive::build_google_drive_authorization_url(&google)?);
+            Ok(StartedProviderAuth {
+                provider,
+                session: ProviderSessionData::GoogleDrive(google),
+                account_id: session_id.to_owned(),
+                authorization_url,
+            })
+        }
+        RemoteLibraryProvider::Dropbox => {
+            let dropbox = dropbox::parse_dropbox_payload(app_resource_dir, payload)?;
+            let dropbox =
+                dropbox::spawn_dropbox_auth_worker(sessions, session_id.to_owned(), dropbox)?;
+            let authorization_url = Some(dropbox::build_dropbox_authorization_url(&dropbox)?);
+            Ok(StartedProviderAuth {
+                provider,
+                session: ProviderSessionData::Dropbox(dropbox),
+                account_id: session_id.to_owned(),
+                authorization_url,
+            })
+        }
+        RemoteLibraryProvider::WebDav => {
+            let webdav_session = webdav::parse_webdav_payload(payload)?;
+            let client = webdav::webdav_client()?;
+            let response = webdav::webdav_send(
+                &client,
+                Method::HEAD,
+                &webdav_session.server_url,
+                &webdav_session.username,
+                &webdav_session.password,
+                None,
+                None,
+            )?;
+            match response.status() {
+                StatusCode::OK
+                | StatusCode::NO_CONTENT
+                | StatusCode::METHOD_NOT_ALLOWED
+                | StatusCode::FOUND
+                | StatusCode::MOVED_PERMANENTLY => {}
+                StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+                    return Err(CommandError::from(LibraryError::Internal(
+                        "WebDAV authentication failed. Double-check the server URL, username, and password."
+                            .to_owned(),
+                    )));
+                }
+                status => {
+                    return Err(CommandError::from(LibraryError::Internal(format!(
+                        "WebDAV server check failed with status {status}"
+                    ))));
+                }
+            }
+            let account_id = format!(
+                "{}@{}",
+                webdav_session.username,
+                Url::parse(&webdav_session.server_url)
+                    .ok()
+                    .and_then(|url| url.host_str().map(str::to_owned))
+                    .unwrap_or_else(|| "webdav".to_owned())
+            );
+            Ok(StartedProviderAuth {
+                provider,
+                session: ProviderSessionData::WebDav(webdav_session),
+                account_id,
+                authorization_url: None,
+            })
+        }
+    }
 }
 
 pub(crate) fn poll_remote_auth(

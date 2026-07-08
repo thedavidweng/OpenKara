@@ -1,57 +1,18 @@
-mod auth;
-mod dropbox;
-mod google_drive;
-mod mutation;
-pub(crate) mod provider;
-mod registry;
-mod sync;
-mod types;
-mod webdav;
+//! Thin IPC adapters for the Remote Repository domain.
+//!
+//! Domain logic lives in `crate::remote`. This module only binds Tauri command
+//! signatures and app-data path resolution to those domain entry points.
 
 use crate::{
     commands::error::{CommandError, CommandResult},
-    config::{RegisteredLibrary, RemoteLibraryProvider},
+    config::RemoteLibraryProvider,
     library::error::LibraryError,
-    AppState,
+    remote, AppState,
 };
 use tauri::{AppHandle, Manager, State};
 
-/// Extension trait for `reqwest::RequestBuilder` that wraps `.send()` with
-/// safe error handling: error details are logged at trace level for debugging,
-/// while the user-facing error message is static and contains no sensitive data.
-pub(crate) trait RequestSendExt {
-    type Response;
-    fn send_network(
-        self,
-        op: &'static str,
-    ) -> std::result::Result<Self::Response, crate::commands::error::CommandError>;
-}
-
-impl RequestSendExt for reqwest::blocking::RequestBuilder {
-    type Response = reqwest::blocking::Response;
-    fn send_network(
-        self,
-        op: &'static str,
-    ) -> std::result::Result<reqwest::blocking::Response, crate::commands::error::CommandError>
-    {
-        self.send().map_err(|_error| {
-            tracing::trace!("{op} request failed");
-            crate::commands::error::CommandError::from(LibraryError::Internal(format!(
-                "{op} could not be completed"
-            )))
-        })
-    }
-}
-
-pub(crate) use mutation::{
-    publish_song_to_active_remote_if_ready, run_active_library_mirror_mutation,
-    run_database_then_library_mirror_mutation, run_imported_songs_mutation,
-    run_song_database_mutation, run_song_database_mutation_with_result,
-    run_songs_database_mutation, run_updated_songs_mutation, song_ids_from_songs,
-};
-pub(crate) use registry::remove_remote_library_credentials;
-pub(crate) use sync::{active_remote_library, ensure_remote_file_cached};
-pub use types::{
+// Re-export IPC-facing domain types (same public surface as before the lift).
+pub use remote::{
     RemoteAuthSession, RemoteAuthStart, RemoteAuthState, RemoteAuthStatus, RemoteLibraryCandidate,
     UploadState, UploadStatusSnapshot,
 };
@@ -62,7 +23,7 @@ pub fn begin_remote_auth(
     provider: RemoteLibraryProvider,
     payload: Option<serde_json::Value>,
 ) -> CommandResult<RemoteAuthStart> {
-    auth::begin_remote_auth(&state, provider, payload)
+    remote::begin_remote_auth(&state, provider, payload)
 }
 
 #[tauri::command]
@@ -70,17 +31,17 @@ pub fn poll_remote_auth(
     state: State<'_, AppState>,
     session_id: String,
 ) -> CommandResult<RemoteAuthStatus> {
-    auth::poll_remote_auth(&state, session_id)
+    remote::poll_remote_auth(&state, session_id)
 }
 
 #[tauri::command]
 pub fn cancel_remote_auth(state: State<'_, AppState>, session_id: String) -> CommandResult<()> {
-    auth::cancel_remote_auth(&state, session_id)
+    remote::cancel_remote_auth(&state, session_id)
 }
 
 #[tauri::command]
 pub fn open_external_url(url: String) -> CommandResult<()> {
-    auth::open_external_url(url)
+    remote::open_external_url(url)
 }
 
 #[tauri::command]
@@ -88,7 +49,7 @@ pub fn list_remote_library_roots(
     state: State<'_, AppState>,
     session_id: String,
 ) -> CommandResult<Vec<RemoteLibraryCandidate>> {
-    registry::list_remote_library_roots(&state, session_id)
+    remote::list_remote_library_roots(&state, session_id)
 }
 
 #[tauri::command]
@@ -97,7 +58,7 @@ pub fn create_remote_library(
     session_id: String,
     display_name: String,
 ) -> CommandResult<RemoteLibraryCandidate> {
-    registry::create_remote_library(&state, session_id, display_name)
+    remote::create_remote_library(&state, session_id, display_name)
 }
 
 #[tauri::command]
@@ -106,7 +67,7 @@ pub fn resolve_remote_library_candidate(
     session_id: String,
     display_name: String,
 ) -> CommandResult<RemoteLibraryCandidate> {
-    registry::resolve_remote_library_candidate(&state, session_id, display_name)
+    remote::resolve_remote_library_candidate(&state, session_id, display_name)
 }
 
 #[tauri::command]
@@ -121,7 +82,7 @@ pub fn register_remote_library(
         .path()
         .app_data_dir()
         .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
-    registry::register_remote_library(
+    remote::register_remote_library(
         &state,
         &app_data_dir,
         session_id,
@@ -144,7 +105,7 @@ pub fn reauthorize_remote_library(
         .path()
         .app_data_dir()
         .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
-    registry::reauthorize_remote_library(
+    remote::reauthorize_remote_library(
         &state,
         &app_data_dir,
         library_id,
@@ -162,12 +123,17 @@ pub fn mirror_local_library_to_remote(
     local_library_id: String,
     remote_library_id: String,
 ) -> CommandResult<()> {
-    sync::mirror_local_library_to_remote(&state, &app_handle, &local_library_id, &remote_library_id)
+    remote::mirror_local_library_to_remote(
+        &state,
+        &app_handle,
+        &local_library_id,
+        &remote_library_id,
+    )
 }
 
 #[tauri::command]
 pub fn sync_active_remote_library(state: State<'_, AppState>) -> CommandResult<()> {
-    sync::sync_active_remote_library(&state)
+    remote::sync_active_remote_library(&state)
 }
 
 #[tauri::command]
@@ -176,7 +142,7 @@ pub fn publish_song_to_remote(
     app_handle: AppHandle,
     song_id: String,
 ) -> CommandResult<UploadStatusSnapshot> {
-    sync::publish_song_to_remote(&state, &app_handle, song_id)
+    remote::publish_song_to_remote(&state, &app_handle, song_id)
 }
 
 #[tauri::command]
@@ -185,20 +151,12 @@ pub fn publish_songs_to_remote(
     app_handle: AppHandle,
     song_ids: Vec<String>,
 ) -> CommandResult<Vec<UploadStatusSnapshot>> {
-    sync::publish_songs_to_remote(&state, &app_handle, song_ids)
+    remote::publish_songs_to_remote(&state, &app_handle, song_ids)
 }
 
 #[tauri::command]
 pub fn get_all_upload_statuses(
     state: State<'_, AppState>,
 ) -> CommandResult<Vec<UploadStatusSnapshot>> {
-    sync::get_all_upload_statuses(&state)
-}
-
-pub(crate) fn delete_remote_library_root(
-    app_data_dir: &std::path::Path,
-    library: &RegisteredLibrary,
-) -> CommandResult<()> {
-    let provider = provider::create_provider(app_data_dir, library)?;
-    provider.delete_path("")
+    remote::get_all_upload_statuses(&state)
 }

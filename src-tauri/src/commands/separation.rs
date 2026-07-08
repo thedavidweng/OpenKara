@@ -1,8 +1,8 @@
 use crate::{
     cache,
     commands::error::{state_lock_error, CommandError, CommandResult},
-    commands::remote_library,
     config::{self, ExecutionProviderPreference, StemMode},
+    remote,
     separator::{self, error::SeparationError, model::LoadedModel, model_cache::ModelCache},
     AppState,
 };
@@ -284,9 +284,7 @@ fn emit_terminal_status(
                 },
             );
             let state = app_handle.state::<AppState>();
-            let _ = remote_library::publish_song_to_active_remote_if_ready(
-                &state, app_handle, &song_id,
-            );
+            let _ = remote::publish_song_to_active_remote_if_ready(&state, app_handle, &song_id);
         }
         SeparationState::Failed => {
             if let Some(error) = error {
@@ -419,7 +417,7 @@ pub fn downgrade_single_to_two_stem(
             status: completed.clone(),
         },
     );
-    remote_library::publish_song_to_active_remote_if_ready(&state, &app_handle, &song_id)?;
+    remote::publish_song_to_active_remote_if_ready(&state, &app_handle, &song_id)?;
 
     Ok(completed)
 }

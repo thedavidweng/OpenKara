@@ -1,13 +1,13 @@
 use crate::{
     cache,
     commands::error::{database_error, CommandError, CommandResult},
-    commands::remote_library,
     commands::separation::{
         completed_status, failed_status, running_status, SeparationCompleteEvent,
         SeparationErrorEvent, SeparationProgressEvent, SEPARATION_COMPLETE_EVENT,
         SEPARATION_ERROR_EVENT, SEPARATION_PROGRESS_EVENT,
     },
     config::{self, StemMode},
+    remote,
     separator::{self, error::SeparationError, model::LoadedModel, model_cache::ModelCache},
     AppState,
 };
@@ -315,7 +315,7 @@ pub fn batch_separate(
                         },
                     );
                     let state = app_handle.state::<AppState>();
-                    let _ = remote_library::publish_song_to_active_remote_if_ready(
+                    let _ = remote::publish_song_to_active_remote_if_ready(
                         &state,
                         &app_handle,
                         song_id,

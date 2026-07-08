@@ -84,7 +84,7 @@ fn delete_library_data(app_data_dir: &Path, library: &RegisteredLibrary) -> Comm
             }
         }
         RegisteredLibrary::Remote { .. } => {
-            crate::commands::remote_library::delete_remote_library_root(app_data_dir, library)?;
+            crate::remote::delete_remote_library_root(app_data_dir, library)?;
             if let Some(working_copy_root) = library.working_copy_root() {
                 if working_copy_root.exists() {
                     fs::remove_dir_all(&working_copy_root).map_err(|error| {
@@ -332,7 +332,7 @@ pub fn remove_library(
         .retain(|library| library.id() != library_id);
 
     for library in &removed_libraries {
-        crate::commands::remote_library::remove_remote_library_credentials(&app_data_dir, library)?;
+        crate::remote::remove_remote_library_credentials(&app_data_dir, library)?;
     }
 
     if removed_active {

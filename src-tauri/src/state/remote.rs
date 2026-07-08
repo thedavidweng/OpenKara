@@ -1,5 +1,5 @@
 use crate::audio::chunked_cache::CacheManager;
-use crate::commands::remote_library::{RemoteAuthSession, UploadStatusSnapshot};
+use crate::remote::{RemoteAuthSession, UploadStatusSnapshot};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
