@@ -103,7 +103,7 @@ fn sync_bound_remote<R: tauri::Runtime>(
             .transaction()
             .map_err(|error| database_error(error.to_string()))?;
         for song in &songs_to_delete {
-            crate::commands::import::delete::delete_song_rows_from_database(
+            crate::library::delete_song_rows_from_database(
                 &tx,
                 &remote_root,
                 &song.hash,
@@ -136,15 +136,9 @@ fn sync_bound_remote<R: tauri::Runtime>(
             );
         }
         // Best-effort working-copy file cleanup (audio, CDG, media_g).
-        let _ = crate::commands::import::delete::delete_song_files_from_working_copy(
-            &remote_root,
-            song,
-        );
+        let _ = crate::library::delete_song_files_from_working_copy(&remote_root, song);
         // Best-effort working-copy stem directory cleanup.
-        let _ = crate::commands::import::delete::delete_stem_files_from_working_copy(
-            &remote_root,
-            &song.hash,
-        );
+        let _ = crate::library::delete_stem_files_from_working_copy(&remote_root, &song.hash);
     }
 
     let desired_song_ids: Vec<String> = local_songs

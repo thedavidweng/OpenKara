@@ -1,4 +1,20 @@
 # library
 
-Stable song data shapes shared by the SQLite cache and Tauri command layer.
-Keep this module focused on types the frontend can consume.
+Deep library module: song domain model plus local write path.
+
+## Layout
+
+- `Song` / import result types — stable shapes shared with the SQLite cache and IPC layer
+- `import/` — path expand, media ingest into `LibraryRoot`, cover extraction
+- `delete` — song row + working-copy / stem file removal (also used by remote mirror)
+- `songs` — metadata, instrumental/language flags, properties probe, batch delete
+- `playlist` — playlists and singer rotation
+
+## Seams
+
+- **Storage adapter:** `crate::cache` (SQL only)
+- **Portable paths:** all file I/O goes through `LibraryRoot` relative paths
+- **Remote mutations:** Pre-Mutation Refresh / Publish Song / mirror wrappers stay in
+  `commands::remote_library`; IPC adapters call `run_*_mutation` around these APIs
+
+Keep command handlers thin: open connection, optionally wrap remote hooks, call into this module.

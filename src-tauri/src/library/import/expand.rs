@@ -41,7 +41,7 @@ pub(super) fn classify_import_paths(paths: &[String]) -> ClassifiedImportPaths {
     classified
 }
 
-pub(super) fn collect_expandable_import_paths(raw_paths: &[String]) -> ExpandedImportPaths {
+pub fn collect_expandable_import_paths(raw_paths: &[String]) -> ExpandedImportPaths {
     let mut paths = Vec::new();
     let mut seen = HashSet::new();
     let mut song_count = 0;

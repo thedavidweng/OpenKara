@@ -1,5 +1,6 @@
 # commands
 
-Tauri command handlers and the thin service functions that back them. Keep the
-pure import/query logic testable without spinning up a Tauri window, and keep
-the command wrappers limited to state access and error translation.
+Tauri IPC adapters. Domain write path for the local library lives in `crate::library`
+(import, delete, song metadata, playlists). Command modules bind `AppState`, open the
+DB via `cache`, and wrap remote Pre-Mutation Refresh / Publish Song hooks from
+`remote_library::run_*_mutation`. Keep pure library logic out of this layer.
