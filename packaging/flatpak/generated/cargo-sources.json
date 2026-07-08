@@ -886,14 +886,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/crossbeam-epoch/crossbeam-epoch-0.9.18.crate",
-    "sha256": "5b82ac4a3c2ca9c3460964f020e1402edd5753411d7737aa39c3714ad1b5420e",
-    "dest": "cargo/vendor/crossbeam-epoch-0.9.18"
+    "url": "https://static.crates.io/crates/crossbeam-epoch/crossbeam-epoch-0.9.20.crate",
+    "sha256": "2d6914041f254d6e9176c01941b21115dcfb7089e55135a35411081bd106ef3f",
+    "dest": "cargo/vendor/crossbeam-epoch-0.9.20"
   },
   {
     "type": "inline",
-    "contents": "{\"package\":\"5b82ac4a3c2ca9c3460964f020e1402edd5753411d7737aa39c3714ad1b5420e\",\"files\":{}}",
-    "dest": "cargo/vendor/crossbeam-epoch-0.9.18",
+    "contents": "{\"package\":\"2d6914041f254d6e9176c01941b21115dcfb7089e55135a35411081bd106ef3f\",\"files\":{}}",
+    "dest": "cargo/vendor/crossbeam-epoch-0.9.20",
     "dest-filename": ".cargo-checksum.json"
   },
   {
