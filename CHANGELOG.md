@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Bump direct `quick-xml` to 0.41 and document scoped `cargo-deny` ignores for the residual Tauri/plist 0.39.x chain (RUSTSEC-2026-0194/0195).
 - Bump `anyhow` to 1.0.103 (RUSTSEC-2026-0190).
 - Bump transitive `crossbeam-epoch` to 0.9.20 (RUSTSEC-2026-0204): the `fmt::Pointer`/`fmt::Display` impls on `Atomic`/`Shared` dereferenced the underlying pointer, causing a null-pointer dereference for `Atomic::null`/`Shared::null`. Pulled in via `rayon` → `rayon-core` → `crossbeam-deque`; updated with `cargo update -p crossbeam-epoch` (semver-compatible patch, no `Cargo.toml` change).
+- Resolve all 72 open `zizmor` code-scanning alerts on `main`: pin SHA-pinned actions to tagged versions (`codecov/codecov-action` v5.5.5, `dtolnay/rust-toolchain` v1, `taiki-e/install-action` v2.73.0), add version comments to all SHA pins, disable cache saves in the release workflow (`lookup-only: true`, `package-manager-cache: false`) to prevent cache poisoning, move `contents: write` to job-level in `dependabot-sync.yml`, use `github.event.pull_request.user.login` instead of spoofable `github.actor` for the Dependabot bot check, add `concurrency` blocks to `mirror.yml` and `dependabot-sync.yml`, document all `contents: write` permissions, and add a 7-day Dependabot cooldown.
 
 ## [0.9.0] - 2026-06-14
 
