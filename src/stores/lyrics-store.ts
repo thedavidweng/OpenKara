@@ -125,9 +125,37 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
   },
 
   adjustOffset: async (songId, deltaMs) => {
+    // Optimistic update: set the new offset synchronously before the await
+    // so rapid consecutive calls don't read a stale offsetMs and lose deltas.
     const newOffset = get().offsetMs + deltaMs;
-    await api.setLyricsOffset(songId, newOffset);
     set({ offsetMs: newOffset });
+    try {
+      await api.setLyricsOffset(songId, newOffset);
+    } catch (e) {
+      // Re-fetch the authoritative offset from the backend instead of
+      // reconstructing it arithmetically. When concurrent adjustOffset
+      // calls overlap, the arithmetic rollback (offsetMs - deltaMs) can
+      // diverge from the backend's ground truth because get().offsetMs
+      // may already include a later optimistic update from another call.
+      // fetchLyrics returns the persisted offset_ms, guaranteeing the UI
+      // matches the backend after a failure.
+      try {
+        const payload = await api.fetchLyrics(songId);
+        if (get().songId === songId) {
+          set({ offsetMs: payload.offset_ms });
+        }
+      } catch {
+        // If re-fetch also fails, fall back to arithmetic rollback as a
+        // last resort so the UI at least moves in the right direction.
+        // Guard against song navigation: if the user switched songs while
+        // both the primary call and re-fetch were in-flight, don't corrupt
+        // the new song's offset with the old song's delta.
+        if (get().songId === songId) {
+          set({ offsetMs: get().offsetMs - deltaMs });
+        }
+      }
+      notifyError(e);
+    }
   },
 
   saveManualLyrics: async (songId, text) => {
