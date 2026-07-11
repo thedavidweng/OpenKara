@@ -89,3 +89,7 @@ blob-report/
 .sisyphus/
 .omx/
 .pnpm-store/
+.superpowers/
+
+# Ephemeral macOS Liquid Glass icon compile staging (actool output)
+src-tauri/icons/.liquid-glass-staging/
