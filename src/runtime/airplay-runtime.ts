@@ -5,10 +5,7 @@ import { getShortcutPlatform } from "@/lib/app-shortcuts";
 import { closeFullscreenPlayer } from "@/lib/fullscreen-player";
 import { LOCAL_AUDIENCE_OUTPUT_STATE_EVENT } from "@/lib/plain-text-page-controls";
 import { songHasCdgMedia } from "@/lib/song-media";
-import {
-  projectAudienceState,
-  type AudienceProjectorInput,
-} from "@/playback/audience-projector";
+import { projectAudienceState, type AudienceProjectorInput } from "@/playback";
 import * as api from "@/lib/tauri";
 import { useCdgStore } from "@/stores/cdg-store";
 import { useLibraryStore } from "@/stores/library-store";

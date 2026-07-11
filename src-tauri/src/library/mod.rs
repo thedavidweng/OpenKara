@@ -75,8 +75,8 @@ pub struct ImportSongsResult {
 
 // Re-export the main write-path entry points for locality at the module root.
 pub use delete::{
-    delete_song_files_from_working_copy, delete_song_from_library,
-    delete_song_rows_from_database, delete_stem_files_from_working_copy,
+    delete_song_files_from_working_copy, delete_song_from_library, delete_song_rows_from_database,
+    delete_stem_files_from_working_copy,
 };
 pub use import::{
     extract_embedded_cover_art_from_connection, get_library_from_connection,

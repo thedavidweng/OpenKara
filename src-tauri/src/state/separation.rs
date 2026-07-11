@@ -1,6 +1,6 @@
-use crate::services::separation::SeparationStatusSnapshot;
 use crate::separator::model::LoadedModel;
 use crate::separator::model_cache::ModelCache;
+use crate::services::separation::SeparationStatusSnapshot;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};

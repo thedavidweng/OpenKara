@@ -103,12 +103,8 @@ fn sync_bound_remote<R: tauri::Runtime>(
             .transaction()
             .map_err(|error| database_error(error.to_string()))?;
         for song in &songs_to_delete {
-            crate::library::delete_song_rows_from_database(
-                &tx,
-                &remote_root,
-                &song.hash,
-            )
-            .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
+            crate::library::delete_song_rows_from_database(&tx, &remote_root, &song.hash)
+                .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
         }
         tx.commit()
             .map_err(|error| database_error(error.to_string()))?;

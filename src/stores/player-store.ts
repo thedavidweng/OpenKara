@@ -8,7 +8,7 @@ import {
   type PlaybackSession,
   type PlaybackTransport,
   type PositionClockState,
-} from "@/playback/session";
+} from "@/playback";
 import {
   createWebviewSyncChannel,
   type WebviewSyncChannel,

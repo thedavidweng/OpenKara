@@ -13,7 +13,8 @@ pub use crate::library::import::{
     ImportSongsOptions, SongProperties,
 };
 pub use crate::library::songs::{
-    delete_songs as delete_songs_in_library, set_songs_instrumental as set_songs_instrumental_in_connection,
+    delete_songs as delete_songs_in_library,
+    set_songs_instrumental as set_songs_instrumental_in_connection,
     set_songs_language as set_songs_language_in_connection,
     update_song_metadata as update_song_metadata_in_connection,
 };
@@ -21,9 +22,8 @@ pub use crate::library::songs::{
 use crate::{
     cache,
     commands::error::{database_error, state_lock_error, CommandError, CommandResult},
-    remote,
     library::{error::LibraryError, ImportSongsResult, Song},
-    AppState,
+    remote, AppState,
 };
 use tauri::{AppHandle, State};
 
@@ -173,10 +173,12 @@ pub fn delete_songs(
 
     let result = delete_songs_in_library(&connection, &library, &song_ids);
 
-    if current_song_id
-        .as_deref()
-        .is_some_and(|song_id| result.deleted_song_ids.iter().any(|deleted| deleted == song_id))
-    {
+    if current_song_id.as_deref().is_some_and(|song_id| {
+        result
+            .deleted_song_ids
+            .iter()
+            .any(|deleted| deleted == song_id)
+    }) {
         {
             let mut playback = state
                 .playback
@@ -231,12 +233,7 @@ pub fn update_song_metadata(
     let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
 
     remote::run_song_database_mutation(&state, &app_handle, &hash, || {
-        update_song_metadata_in_connection(
-            &connection,
-            &hash,
-            title.as_deref(),
-            artist.as_deref(),
-        )
+        update_song_metadata_in_connection(&connection, &hash, title.as_deref(), artist.as_deref())
     })
 }
 

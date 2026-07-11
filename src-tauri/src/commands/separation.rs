@@ -55,12 +55,7 @@ pub fn upgrade_to_four_stem(
         separation::reserve_running_status(&state.separation.separation_statuses, &song_id, true)?;
     let execution_context = separation::build_execution_context(&state)?;
 
-    separation::start_job(
-        app_handle,
-        execution_context,
-        song_id,
-        StemMode::FourStem,
-    );
+    separation::start_job(app_handle, execution_context, song_id, StemMode::FourStem);
 
     Ok(initial_status)
 }

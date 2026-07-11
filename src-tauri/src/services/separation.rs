@@ -9,10 +9,10 @@ use crate::{
     cache,
     commands::bootstrap::{self, ModelBootstrapStatusSnapshot},
     commands::error::{database_error, state_lock_error, CommandError, CommandResult},
-    remote,
     commands::runtime_bootstrap::{self, RuntimeBootstrapStatusSnapshot},
     config::{self, ExecutionProviderPreference, StemMode},
     library_root::LibraryRoot,
+    remote,
     separator::{
         self, error::SeparationError, job::SeparationArtifacts, model::LoadedModel,
         model_cache::ModelCache,
@@ -418,7 +418,10 @@ pub fn ensure_song_can_be_separated(state: &AppState, song_id: &str) -> CommandR
     validate_song_can_be_separated(&song, song_id)
 }
 
-pub fn validate_song_can_be_separated(song: &crate::library::Song, song_id: &str) -> CommandResult<()> {
+pub fn validate_song_can_be_separated(
+    song: &crate::library::Song,
+    song_id: &str,
+) -> CommandResult<()> {
     if song.is_media_g() {
         // Media+G songs already carry karaoke graphics and intentionally skip
         // the stem pipeline, which is designed for plain audio assets only.
