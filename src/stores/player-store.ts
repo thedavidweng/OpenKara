@@ -156,7 +156,8 @@ export function createPlayerStore(
 ) {
   let airPlayPlainTextPagePendingTimer: ReturnType<typeof setTimeout> | null =
     null;
-  let sessionRef: PlaybackSession | null = null;
+  // Assigned synchronously inside create() before any subscriber can run.
+  let sessionRef!: PlaybackSession;
 
   const store = create<PlayerState>((set, get) => {
     const syncPatch = (patch: Partial<PlayerState>) => {
@@ -337,11 +338,7 @@ export function createPlayerStore(
   });
 
   const unsubscribe = syncChannel.subscribe((payload) => {
-    const session = sessionRef;
-    if (!session) {
-      return;
-    }
-    applyPlayerSyncSnapshot(store.setState, session, payload);
+    applyPlayerSyncSnapshot(store.setState, sessionRef, payload);
   });
 
   return {

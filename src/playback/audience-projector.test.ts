@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   AIRPLAY_AUDIENCE_VIEWPORT,
+  buildAirPlayAudienceState,
   projectAudienceState,
 } from "./audience-projector";
 
@@ -160,5 +161,27 @@ describe("projectAudienceState", () => {
     expect(result.mode).toBe("lyrics");
     expect(result.lines).toEqual([]);
     expect(result.isLoading).toBe(true);
+  });
+});
+
+describe("buildAirPlayAudienceState", () => {
+  test("delegates to projectAudienceState", () => {
+    expect(
+      buildAirPlayAudienceState({
+        playbackSnapshot: null,
+        lyricsSongId: null,
+        lines: [],
+        offsetMs: 0,
+        isLoading: false,
+        lyricsFontStep: 0,
+        hasCdg: false,
+        currentSongHasCdg: false,
+        messages,
+      }),
+    ).toMatchObject({
+      mode: "idle",
+      songId: null,
+      viewport: AIRPLAY_AUDIENCE_VIEWPORT,
+    });
   });
 });

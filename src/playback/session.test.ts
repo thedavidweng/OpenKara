@@ -399,6 +399,71 @@ describe("createPlaybackSession", () => {
   });
 });
 
+describe("volume updates ignore stale transport generations", () => {
+  test("setVolume does not publish when the response is stale", async () => {
+    const onClockChange = vi.fn();
+    const deps = mockDeps({
+      onClockChange,
+      transport: {
+        play: vi.fn().mockResolvedValue(
+          snapshot({
+            song_id: "song-1",
+            is_playing: true,
+            transport_generation: 2,
+          }),
+        ),
+        setVolume: vi.fn().mockResolvedValue(
+          snapshot({
+            song_id: "song-1",
+            volume: 0.5,
+            transport_generation: 1,
+          }),
+        ),
+      },
+    });
+    const session = createPlaybackSession(deps);
+    await session.play("song-1");
+    onClockChange.mockClear();
+
+    await session.setVolume(0.5);
+
+    expect(deps.transport.setVolume).toHaveBeenCalledWith(0.5);
+    expect(onClockChange).not.toHaveBeenCalled();
+    expect(session.getPositionClock().snapshot?.volume).toBe(1);
+  });
+
+  test("setStemVolume does not publish when the response is stale", async () => {
+    const onClockChange = vi.fn();
+    const deps = mockDeps({
+      onClockChange,
+      transport: {
+        play: vi.fn().mockResolvedValue(
+          snapshot({
+            song_id: "song-1",
+            is_playing: true,
+            transport_generation: 2,
+          }),
+        ),
+        setStemVolume: vi.fn().mockResolvedValue(
+          snapshot({
+            song_id: "song-1",
+            transport_generation: 1,
+            stem_volumes: { vocals: 0.2, drums: 1, bass: 1, other: 1 },
+          }),
+        ),
+      },
+    });
+    const session = createPlaybackSession(deps);
+    await session.play("song-1");
+    onClockChange.mockClear();
+
+    await session.setStemVolume("vocals", 0.2);
+
+    expect(deps.transport.setStemVolume).toHaveBeenCalledWith("vocals", 0.2);
+    expect(onClockChange).not.toHaveBeenCalled();
+  });
+});
+
 describe("F6: guards against stale loadStems after song change", () => {
   test("skips stems apply when song changed during loadStems()", async () => {
     const onClockChange = vi.fn();

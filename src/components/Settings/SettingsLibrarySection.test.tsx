@@ -91,4 +91,30 @@ describe("SettingsLibrarySection", () => {
     expect(markup).not.toContain("Reconnect provider");
     expect(markup).not.toContain("Update credentials");
   });
+
+  test("renders libraryError with the destructive text token", () => {
+    const value = createSettingsOverlayTestContextValue({
+      state: {
+        libraries: [
+          {
+            id: "local:/karaoke",
+            kind: "local",
+            display_name: "Main Library",
+            root_path: "/karaoke",
+          },
+        ],
+        activeLibraryId: "local:/karaoke",
+        libraryError: "Failed to switch library",
+      },
+    });
+
+    const markup = renderToStaticMarkup(
+      <SettingsOverlayContext value={value}>
+        <SettingsLibrarySection />
+      </SettingsOverlayContext>,
+    );
+
+    expect(markup).toContain("Failed to switch library");
+    expect(markup).toContain("text-[var(--color-destructive)]");
+  });
 });
