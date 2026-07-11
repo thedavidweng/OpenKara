@@ -16,17 +16,13 @@ export function SettingsSectionCard({
   const isDanger = tone === "danger";
 
   return (
-    <section
-      className={`space-y-3 rounded-lg border p-5 ${
-        isDanger
-          ? "border-red-500/30 bg-[var(--color-sidebar)]"
-          : "border-[var(--color-border)] bg-[var(--color-sidebar)]"
-      }`}
-    >
+    <section className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-sidebar)] p-5">
       <div className="space-y-1">
         <label
-          className={`text-[12px] font-medium uppercase ${
-            isDanger ? "text-red-400" : "text-[var(--color-text-dim)]"
+          className={`text-[12px] font-medium ${
+            isDanger
+              ? "text-[var(--color-destructive)]"
+              : "text-[var(--color-text-dim)]"
           }`}
         >
           {title}

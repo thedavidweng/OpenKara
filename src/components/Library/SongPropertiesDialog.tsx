@@ -164,7 +164,9 @@ export function SongPropertiesDialog({
           )}
 
           {error && (
-            <p className="py-4 text-center text-[12px] text-red-400">{error}</p>
+            <p className="py-4 text-center text-[12px] text-[var(--color-destructive)]">
+              {error}
+            </p>
           )}
 
           {properties && (

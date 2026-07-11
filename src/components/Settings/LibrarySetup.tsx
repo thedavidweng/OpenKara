@@ -300,7 +300,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
         {step === "language" && (
           <>
             <div className="flex flex-col items-center gap-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--color-accent)]/15">
+              <div className="flex items-center justify-center">
                 <Globe size={32} className="text-[var(--color-accent)]" />
               </div>
               <h1 className="text-2xl font-bold text-white">
@@ -343,7 +343,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
         {step === "library" && (
           <>
             <div className="flex flex-col items-center gap-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--color-accent)]/15">
+              <div className="flex items-center justify-center">
                 <Music size={32} className="text-[var(--color-accent)]" />
               </div>
               <h1 className="text-2xl font-bold text-white">
@@ -409,7 +409,11 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
               })}
             </div>
 
-            {error && <p className="text-[13px] text-red-400">{error}</p>}
+            {error && (
+              <p className="text-[13px] text-[var(--color-destructive)]">
+                {error}
+              </p>
+            )}
 
             {loading && (
               <p className="text-[13px] text-[var(--color-text-dim)]">
@@ -431,7 +435,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
         {step === "remoteProvider" && (
           <>
             <div className="flex flex-col items-center gap-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--color-accent)]/15">
+              <div className="flex items-center justify-center">
                 <Cloud size={32} className="text-[var(--color-accent)]" />
               </div>
               <h1 className="text-2xl font-bold text-white">
@@ -727,7 +731,11 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
               </p>
             )}
 
-            {error && <p className="text-[13px] text-red-400">{error}</p>}
+            {error && (
+              <p className="text-[13px] text-[var(--color-destructive)]">
+                {error}
+              </p>
+            )}
 
             <button
               onClick={() => {
@@ -749,7 +757,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
         {step === "stemMode" && (
           <>
             <div className="flex flex-col items-center gap-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--color-accent)]/15">
+              <div className="flex items-center justify-center">
                 <Layers size={32} className="text-[var(--color-accent)]" />
               </div>
               <h1 className="text-2xl font-bold text-white">

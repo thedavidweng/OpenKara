@@ -18,23 +18,19 @@ hero:
       link: /zh/faq
 
 features:
-  - icon: 🎤
-    title: AI 人声分离
+  - title: AI 人声分离
     details: >-
       在本地完成歌曲的人声与伴奏分离。支持双轨或四轨模式，
       各乐器独立音量控制。
-  - icon: 📝
-    title: 同步歌词
+  - title: 同步歌词
     details: >-
       可从在线来源、内嵌标签或 .lrc 伴随文件加载时间同步歌词。
       支持 CD+G 图形渲染。
-  - icon: 📂
-    title: 可移植曲库
+  - title: 可移植曲库
     details: >-
       自包含的曲库目录，可放置在 NAS、USB 硬盘上，
       跨 macOS、Windows 和 Linux 共享。
-  - icon: ▶️
-    title: 断点续传
+  - title: 断点续传
     details: >-
       逐块检查点机制，中途关闭应用后重启
       会自动从上次进度继续。

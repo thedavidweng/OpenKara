@@ -253,7 +253,7 @@ export function SettingsLibrarySection() {
                     title={t("settings.library.deleteLibrary", {
                       defaultValue: "Delete repository",
                     })}
-                    className="rounded-md border border-red-500/40 bg-red-600/10 p-1.5 text-red-400 transition-colors hover:bg-red-600/20 hover:text-red-300 disabled:opacity-50"
+                    className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 text-[var(--color-destructive)] transition-colors hover:bg-[var(--color-destructive)] hover:text-[var(--color-destructive-foreground)] hover:border-[var(--color-destructive)] disabled:opacity-50"
                   >
                     <Trash2 size={12} />
                   </button>
@@ -294,7 +294,9 @@ export function SettingsLibrarySection() {
       </div>
 
       {state.libraryError && (
-        <p className="text-[12px] text-red-400">{state.libraryError}</p>
+        <p className="text-[12px] text-[var(--color-destructive)]">
+          {state.libraryError}
+        </p>
       )}
 
       {remoteWizard && (

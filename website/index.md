@@ -19,23 +19,19 @@ hero:
       link: /faq
 
 features:
-  - icon: 🎤
-    title: AI Stem Separation
+  - title: AI Stem Separation
     details: >-
       Separate vocals and accompaniment on-device. 2-stem or 4-stem mode
       with individual instrument volume controls.
-  - icon: 📝
-    title: Synced Lyrics
+  - title: Synced Lyrics
     details: >-
       Automatic timed lyrics from online sources, embedded tags, or sidecar
       .lrc files. CD+G graphics rendering included.
-  - icon: 📂
-    title: Portable Library
+  - title: Portable Library
     details: >-
       Self-contained library directory works on NAS, USB drives, and across
       macOS, Windows, and Linux.
-  - icon: ▶️
-    title: Resumable Processing
+  - title: Resumable Processing
     details: >-
       Per-chunk checkpointing means separation resumes from where it left
       off if the app is closed mid-process.
