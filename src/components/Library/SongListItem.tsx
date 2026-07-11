@@ -193,10 +193,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
           <div className="flex min-w-0 items-center gap-2 overflow-hidden">
             {isCurrentPlaying ? (
               <div className="flex w-3 shrink-0 justify-center">
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
-                </span>
+                <span className="inline-flex h-2 w-2 rounded-full bg-white" />
               </div>
             ) : isCurrentLoading ? (
               <div className="flex w-3 shrink-0 justify-center">
@@ -266,7 +263,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
             {sepState === "failed" && canSeparateSong && (
               <button
                 onClick={handleSeparate}
-                className="text-[10px] text-red-400"
+                className="text-[10px] text-[var(--color-destructive)]"
               >
                 {t("common.retry")}
               </button>

@@ -2,10 +2,10 @@ import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
 import { getShortcutPlatform } from "@/lib/app-shortcuts";
-import { buildAudiencePresentationSpec } from "@/lib/audience-presentation";
 import { closeFullscreenPlayer } from "@/lib/fullscreen-player";
 import { LOCAL_AUDIENCE_OUTPUT_STATE_EVENT } from "@/lib/plain-text-page-controls";
 import { songHasCdgMedia } from "@/lib/song-media";
+import { projectAudienceState, type AudienceProjectorInput } from "@/playback";
 import * as api from "@/lib/tauri";
 import { useCdgStore } from "@/stores/cdg-store";
 import { useLibraryStore } from "@/stores/library-store";
@@ -15,81 +15,15 @@ import { useSettingsStore } from "@/stores/settings-store";
 import type {
   AirPlayAudienceStatePayload,
   AirPlayOutputStateEvent,
-  PlaybackStateSnapshot,
 } from "@/types/ipc";
 
 const AIRPLAY_OUTPUT_STATE_EVENT = "openkara://airplay-output-state";
-const AIRPLAY_VIEWPORT = {
-  widthPx: 1280,
-  heightPx: 720,
-  bottomInsetPx: 0,
-} as const;
 
-interface BuildAirPlayAudienceStateOptions {
-  playbackSnapshot: PlaybackStateSnapshot | null;
-  lyricsSongId: string | null;
-  lines: AirPlayAudienceStatePayload["lines"];
-  offsetMs: number;
-  isLoading: boolean;
-  lyricsFontStep: number;
-  hasCdg: boolean;
-  currentSongHasCdg: boolean;
-  messages: AirPlayAudienceStatePayload["messages"];
-}
-
-export function buildAirPlayAudienceState({
-  playbackSnapshot,
-  lyricsSongId,
-  lines,
-  offsetMs,
-  isLoading,
-  lyricsFontStep,
-  hasCdg,
-  currentSongHasCdg,
-  messages,
-}: BuildAirPlayAudienceStateOptions): AirPlayAudienceStatePayload {
-  const songId = playbackSnapshot?.song_id ?? null;
-  const lyricsBelongToCurrentSong = lyricsSongId === songId;
-
-  if (!songId) {
-    return {
-      mode: "idle",
-      songId: null,
-      lines: [],
-      offsetMs: 0,
-      isLoading,
-      lyricsFontStep,
-      messages,
-      viewport: AIRPLAY_VIEWPORT,
-      presentationSpec: buildAudiencePresentationSpec(lyricsFontStep),
-    };
-  }
-
-  if (hasCdg || currentSongHasCdg) {
-    return {
-      mode: "cdg",
-      songId,
-      lines: [],
-      offsetMs: 0,
-      isLoading,
-      lyricsFontStep,
-      messages,
-      viewport: AIRPLAY_VIEWPORT,
-      presentationSpec: buildAudiencePresentationSpec(lyricsFontStep),
-    };
-  }
-
-  return {
-    mode: "lyrics",
-    songId,
-    lines: lyricsBelongToCurrentSong ? lines : [],
-    offsetMs,
-    isLoading: isLoading || !lyricsBelongToCurrentSong,
-    lyricsFontStep,
-    messages,
-    viewport: AIRPLAY_VIEWPORT,
-    presentationSpec: buildAudiencePresentationSpec(lyricsFontStep),
-  };
+/** AirPlay adapter: pure projector + fixed TV viewport. */
+export function buildAirPlayAudienceState(
+  input: AudienceProjectorInput,
+): AirPlayAudienceStatePayload {
+  return projectAudienceState(input);
 }
 
 export function useAirPlayAudienceSync(enabled = true): void {

@@ -151,12 +151,15 @@ describe("PlaybackBar", () => {
     expect(markup).toContain("audio-level-slider w-10");
   });
 
-  test("keeps one shared structure for the floating playback bar chrome", () => {
+  test("keeps one shared structure for the flush playback bar chrome", () => {
     const markup = renderToStaticMarkup(
       <PlaybackBar densityOverride="relaxed" />,
     );
 
     expect(markup).toContain('data-playback-bar-visual-variant="unified"');
+    expect(markup).toContain("bg-[var(--color-sidebar)]");
+    expect(markup).not.toContain("mx-3");
+    expect(markup).not.toContain("mb-3");
     expect(markup).toContain('data-playback-zone="left"');
     expect(markup).toContain('data-playback-zone="center"');
     expect(markup).toContain('data-playback-zone="right"');

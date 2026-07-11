@@ -11,6 +11,7 @@ import {
 } from "./player-store";
 
 const {
+  mockPlay,
   mockResume,
   mockPause,
   mockSeek,
@@ -19,7 +20,12 @@ const {
   mockLoadStems,
   mockGetPlaybackState,
   mockNotifyError,
+  mockAddToQueue,
+  mockDequeue,
+  mockPushToHistory,
+  mockPopFromHistory,
 } = vi.hoisted(() => ({
+  mockPlay: vi.fn(),
   mockResume: vi.fn(),
   mockPause: vi.fn(),
   mockSeek: vi.fn(),
@@ -28,10 +34,14 @@ const {
   mockLoadStems: vi.fn(),
   mockGetPlaybackState: vi.fn(),
   mockNotifyError: vi.fn(),
+  mockAddToQueue: vi.fn(),
+  mockDequeue: vi.fn(),
+  mockPushToHistory: vi.fn(),
+  mockPopFromHistory: vi.fn(),
 }));
 
 vi.mock("@/lib/tauri", () => ({
-  play: vi.fn(),
+  play: mockPlay,
   resume: mockResume,
   pause: mockPause,
   seek: mockSeek,
@@ -54,23 +64,16 @@ vi.mock("@/stores/library-store", () => ({
 vi.mock("@/stores/queue-store", () => ({
   useQueueStore: {
     getState: () => ({
-      addToQueue: vi.fn(),
-      dequeue: vi.fn(),
-      pushToHistory: vi.fn(),
-      popFromHistory: vi.fn(),
+      addToQueue: mockAddToQueue,
+      dequeue: mockDequeue,
+      pushToHistory: mockPushToHistory,
+      popFromHistory: mockPopFromHistory,
     }),
   },
 }));
 
-vi.mock("./playback-workflow", () => ({
-  createPlaybackWorkflow: vi.fn(() => ({
-    playSong: vi.fn(),
-    playNow: vi.fn(),
-    playNextFromQueue: vi.fn(),
-    skipForward: vi.fn(),
-    skipBack: vi.fn(),
-  })),
-}));
+// Session is the real implementation under the player-store adapter.
+// Transport is mocked via @/lib/tauri above; queue/library seams are stubbed.
 
 interface FakeChannel {
   onmessage: ((event: { data: unknown }) => void) | null;
@@ -605,6 +608,138 @@ describe("selectSyncDisplayPositionMs", () => {
   });
 });
 
+describe("playSong / playNow / skip / onEnded", () => {
+  let player: ReturnType<typeof createPlayerStore>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    player = createPlayerStore();
+    mockPlay.mockReset();
+    mockSeek.mockReset();
+    mockNotifyError.mockReset();
+    mockAddToQueue.mockReset();
+    mockDequeue.mockReset();
+    mockPushToHistory.mockReset();
+    mockPopFromHistory.mockReset();
+    mockDequeue.mockReturnValue(null);
+    mockPopFromHistory.mockReturnValue(null);
+  });
+
+  afterEach(() => {
+    player.dispose();
+    vi.useRealTimers();
+  });
+
+  test("playSong plays through transport when idle", async () => {
+    const snap = playbackSnapshot({ song_id: "song-1", is_playing: true });
+    mockPlay.mockResolvedValue(snap);
+
+    await player.store.getState().playSong("song-1");
+
+    expect(mockPlay).toHaveBeenCalledWith("song-1");
+    expect(player.store.getState().snapshot).toEqual(snap);
+  });
+
+  test("playSong enqueues when another song is already loaded", async () => {
+    player.store
+      .getState()
+      .updateSnapshot(playbackSnapshot({ song_id: "song-1" }));
+
+    await player.store.getState().playSong("song-2");
+
+    expect(mockAddToQueue).toHaveBeenCalledWith("song-2");
+    expect(mockPlay).not.toHaveBeenCalled();
+  });
+
+  test("playNow replaces the current song and pushes history", async () => {
+    player.store
+      .getState()
+      .updateSnapshot(playbackSnapshot({ song_id: "song-1" }));
+    const snap = playbackSnapshot({ song_id: "song-2", is_playing: true });
+    mockPlay.mockResolvedValue(snap);
+
+    await player.store.getState().playNow("song-2");
+
+    expect(mockPushToHistory).toHaveBeenCalledWith("song-1");
+    expect(mockPlay).toHaveBeenCalledWith("song-2");
+    expect(player.store.getState().snapshot).toEqual(snap);
+  });
+
+  test("playNextFromQueue dequeues and plays the next song", async () => {
+    player.store
+      .getState()
+      .updateSnapshot(playbackSnapshot({ song_id: "song-1" }));
+    mockDequeue.mockReturnValue("song-2");
+    const snap = playbackSnapshot({ song_id: "song-2", is_playing: true });
+    mockPlay.mockResolvedValue(snap);
+
+    await player.store.getState().playNextFromQueue("song-1");
+
+    expect(mockDequeue).toHaveBeenCalled();
+    expect(mockPushToHistory).toHaveBeenCalledWith("song-1");
+    expect(mockPlay).toHaveBeenCalledWith("song-2");
+  });
+
+  test("skipForward dequeues the next song through the queue adapter", async () => {
+    player.store
+      .getState()
+      .updateSnapshot(playbackSnapshot({ song_id: "song-1" }));
+    mockDequeue.mockReturnValue("song-2");
+    mockPlay.mockResolvedValue(
+      playbackSnapshot({ song_id: "song-2", is_playing: true }),
+    );
+
+    await player.store.getState().skipForward();
+
+    expect(mockDequeue).toHaveBeenCalled();
+    expect(mockPushToHistory).toHaveBeenCalledWith("song-1");
+    expect(mockPlay).toHaveBeenCalledWith("song-2");
+  });
+
+  test("skipBack seeks to start when history is empty and position is past threshold", async () => {
+    player.store.getState().updateSnapshot(
+      playbackSnapshot({
+        song_id: "song-1",
+        position_ms: 5000,
+        is_playing: true,
+      }),
+    );
+    mockPopFromHistory.mockReturnValue(null);
+    mockSeek.mockResolvedValue(
+      playbackSnapshot({ song_id: "song-1", position_ms: 0 }),
+    );
+
+    await player.store.getState().skipBack();
+
+    expect(mockPopFromHistory).toHaveBeenCalled();
+    expect(mockSeek).toHaveBeenCalledWith(0);
+  });
+
+  test("skipBack plays the previous history song when available", async () => {
+    player.store
+      .getState()
+      .updateSnapshot(playbackSnapshot({ song_id: "song-2" }));
+    mockPopFromHistory.mockReturnValue("song-1");
+    mockPlay.mockResolvedValue(
+      playbackSnapshot({ song_id: "song-1", is_playing: true }),
+    );
+
+    await player.store.getState().skipBack();
+
+    expect(mockPopFromHistory).toHaveBeenCalled();
+    expect(mockPlay).toHaveBeenCalledWith("song-1");
+  });
+
+  test("calls notifyError when playSong rejects", async () => {
+    const error = new Error("play failed");
+    mockPlay.mockRejectedValue(error);
+
+    await player.store.getState().playSong("song-1");
+
+    expect(mockNotifyError).toHaveBeenCalledWith(error, expect.any(Function));
+  });
+});
+
 describe("resume", () => {
   let player: ReturnType<typeof createPlayerStore>;
 
@@ -737,7 +872,7 @@ describe("seek", () => {
   });
 
   test("clamps negative ms to 0 and calls api.seek", async () => {
-    player.store.setState({ snapshot: playbackSnapshot() });
+    player.store.getState().updateSnapshot(playbackSnapshot());
     const snap = playbackSnapshot({ position_ms: 0, is_playing: true });
     mockSeek.mockResolvedValue(snap);
 
@@ -749,7 +884,7 @@ describe("seek", () => {
   });
 
   test("passes through positive values to api.seek", async () => {
-    player.store.setState({ snapshot: playbackSnapshot() });
+    player.store.getState().updateSnapshot(playbackSnapshot());
     const snap = playbackSnapshot({ position_ms: 1500, is_playing: true });
     mockSeek.mockResolvedValue(snap);
 
@@ -761,7 +896,7 @@ describe("seek", () => {
   });
 
   test("sets playingSinceMs to null when seek returns paused snapshot", async () => {
-    player.store.setState({ snapshot: playbackSnapshot() });
+    player.store.getState().updateSnapshot(playbackSnapshot());
     const snap = playbackSnapshot({ is_playing: false, position_ms: 800 });
     mockSeek.mockResolvedValue(snap);
 

@@ -67,7 +67,7 @@ export function SingerPickerDialog({
           <button
             type="button"
             onClick={onRemove}
-            className="mt-2 w-full rounded-md border border-red-500/40 bg-red-600/10 px-3 py-2 text-[12px] text-red-400 transition-colors hover:bg-red-600/20 hover:text-red-300"
+            className="mt-2 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[12px] text-[var(--color-destructive)] transition-colors hover:bg-[var(--color-destructive)] hover:text-[var(--color-destructive-foreground)] hover:border-[var(--color-destructive)]"
           >
             {t("rotation.removeSinger")}
           </button>

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Deepen frontend Playback Session architecture (maintainer-visible): extract `src/playback/` session module (play/skip/onEnded/clock) with thin player-store adapter; pure audience projector for AirPlay assembly. No user-visible playback behavior change intended.
+- Deepen the Rust `library` module write path: import, delete, song metadata/flags, and playlist/rotation logic now live under `src-tauri/src/library/` (`import/`, `delete`, `songs`, `playlist`). `commands/import` and `commands/playlist` are thin IPC adapters that open the DB and wrap remote `run_*_mutation` hooks. Remote mirror sync calls `library::delete_*` instead of `commands::import::delete`.
+- Deepen Remote Repository domain architecture (maintainer-visible): lift domain body from `commands/remote_library` into crate-root `remote/` with thin IPC adapters; close the auth/registry Remote Provider seam via `ProviderSessionData` + shared credential binding for Register/Reauthorize; collapse triplicated initialize/refresh bootstrap into one `bootstrap_remote_library` protocol (`CreateOrOpen` | `RequireExisting`) with provider HTTP/path adapters. Public Tauri command names and IPC contracts are unchanged.
+- Move stem-separation lifecycle orchestration out of Tauri command handlers into `services::separation` (status DTOs, bootstrap prerequisites, single/batch job launching, terminal publish). Command modules are thin IPC adapters; IPC names and event payloads are unchanged.
 - Tooltip hover UX: 600ms first-show delay, instant switching between adjacent triggers, and extended hit areas for gap bridging. Play/pause transport controls no longer show redundant tooltips.
 
 ### Fixed

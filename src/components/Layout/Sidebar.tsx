@@ -100,7 +100,7 @@ export function Sidebar({ header }: SidebarProps = {}) {
 
   return (
     <div
-      className="app-panel-surface flex h-full w-[var(--window-shell-sidebar-width)] shrink-0 flex-col border-r border-[color-mix(in_srgb,var(--color-border)_86%,transparent)] bg-[color-mix(in_srgb,var(--color-sidebar)_94%,transparent)] shadow-[1px_0_0_rgba(255,255,255,0.02)]"
+      className="flex h-full w-[var(--window-shell-sidebar-width)] shrink-0 flex-col bg-[var(--color-sidebar)]"
       data-window-shell-section="sidebar"
       data-sidebar-visual-variant="unified"
     >

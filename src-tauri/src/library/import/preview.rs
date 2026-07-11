@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use super::types::ImportCandidateDetails;
 
-pub(super) fn inspect_import_candidate(path: &str) -> Result<ImportCandidateDetails> {
+pub fn inspect_import_candidate(path: &str) -> Result<ImportCandidateDetails> {
     let source = PathBuf::from(path);
     let metadata = metadata::read_from_path(&source)?;
     let file_size = std::fs::metadata(&source)
@@ -27,7 +27,7 @@ pub(super) fn inspect_import_candidate(path: &str) -> Result<ImportCandidateDeta
     })
 }
 
-pub(super) fn display_audio_format(ext: &str) -> &str {
+pub fn display_audio_format(ext: &str) -> &str {
     match ext.to_lowercase().as_str() {
         "mp3" => "MP3",
         "flac" => "FLAC",

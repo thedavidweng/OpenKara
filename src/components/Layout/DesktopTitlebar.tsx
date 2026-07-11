@@ -220,7 +220,7 @@ export function DesktopTitlebar({
   return (
     <>
       <div
-        className="app-panel-surface flex h-11 shrink-0 items-center gap-3 border-b border-[color-mix(in_srgb,var(--color-border)_88%,transparent)] bg-[color-mix(in_srgb,var(--color-toolbar)_96%,transparent)] px-3 shadow-[0_1px_0_rgba(255,255,255,0.02)]"
+        className="app-panel-surface flex h-11 shrink-0 items-center gap-3 bg-[color-mix(in_srgb,var(--color-toolbar)_96%,transparent)] px-3"
         data-maximized={isMaximized}
       >
         <div className="flex shrink-0 items-center gap-3">
