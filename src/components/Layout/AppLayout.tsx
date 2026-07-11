@@ -48,7 +48,7 @@ export function AppLayout({ initialWindowShellState }: AppLayoutProps) {
 
   return (
     <div
-      className="flex h-screen w-full flex-col overflow-hidden font-sans"
+      className="flex h-screen w-full flex-col overflow-hidden bg-[var(--color-sidebar)] font-sans"
       onContextMenu={(e) => e.preventDefault()}
       data-window-chrome-platform={windowShellState.chromeVariant}
       data-window-shell-tier={windowShellState.tier}

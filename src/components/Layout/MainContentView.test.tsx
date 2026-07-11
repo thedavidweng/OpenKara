@@ -58,6 +58,9 @@ describe("MainContentView", () => {
     const markup = renderToStaticMarkup(<MainContentView />);
 
     expect(markup).toContain('data-main-content-visual-variant="unified"');
+    expect(markup).toContain('data-shell-content-pocket="true"');
+    expect(markup).not.toContain("m-3");
+    expect(markup).not.toContain("border-r");
     expect(markup).toContain('data-playback-stage="true"');
     expect(markup).toContain('data-playback-bar="true"');
   });

@@ -45,8 +45,7 @@ describe("SettingsSectionCard", () => {
       </SettingsSectionCard>,
     );
 
-    expect(markup).toContain("border-red-500/30");
-    expect(markup).toContain("text-red-400");
+    expect(markup).toContain("text-[var(--color-destructive)]");
   });
 
   test("applies default styling when tone is default", () => {
@@ -58,8 +57,7 @@ describe("SettingsSectionCard", () => {
 
     expect(markup).toContain("border-[var(--color-border)]");
     expect(markup).toContain("text-[var(--color-text-dim)]");
-    expect(markup).not.toContain("border-red-500/30");
-    expect(markup).not.toContain("text-red-400");
+    expect(markup).not.toContain("text-[var(--color-destructive)]");
   });
 
   test("defaults to the default tone when tone is not specified", () => {
@@ -70,6 +68,6 @@ describe("SettingsSectionCard", () => {
     );
 
     expect(markup).toContain("border-[var(--color-border)]");
-    expect(markup).not.toContain("border-red-500/30");
+    expect(markup).not.toContain("text-[var(--color-destructive)]");
   });
 });

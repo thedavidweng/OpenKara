@@ -122,7 +122,7 @@ export function SongEditDialog({ song, onClose }: SongEditDialogProps) {
             <p
               id={errorId}
               role="alert"
-              className="break-words rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-[12px] text-red-300"
+              className="break-words rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[12px] text-[var(--color-destructive)]"
             >
               {saveError}
             </p>

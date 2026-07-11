@@ -51,7 +51,7 @@ export function SettingsGeneralSection() {
         </div>
 
         <div className="space-y-2 border-t border-[var(--color-border)] pt-4">
-          <label className="text-[12px] font-medium uppercase text-[var(--color-text-dim)]">
+          <label className="text-[12px] font-medium text-[var(--color-text-dim)]">
             {t("settings.outputDevice.label")}
           </label>
           <select className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-2 py-1.5 text-[13px] text-white focus:border-[var(--color-accent)] focus:outline-none">
@@ -60,7 +60,7 @@ export function SettingsGeneralSection() {
         </div>
 
         <div className="space-y-2 border-t border-[var(--color-border)] pt-4">
-          <label className="text-[12px] font-medium uppercase text-[var(--color-text-dim)]">
+          <label className="text-[12px] font-medium text-[var(--color-text-dim)]">
             {t("settings.language.label")}
           </label>
           <select

@@ -19,6 +19,8 @@
   --color-accent: #007aff;
   --color-control-primary: #ebebf5;
   --color-control-primary-foreground: #121212;
+  --color-destructive: #ff3b30;
+  --color-destructive-foreground: #f5f5f7;
   --color-ghost-hover: rgba(255, 255, 255, 0.04);
   --panel-blur: 20px;
 }
@@ -26,7 +28,7 @@
 @layer base {
   :root {
     color: var(--color-text);
-    background-color: var(--color-surface);
+    background-color: var(--color-sidebar);
     font-family: var(--font-sans);
     font-synthesis: none;
     text-rendering: optimizeLegibility;
@@ -46,6 +48,8 @@
     --window-shell-toolbar-height: 48px;
     --window-shell-leading-controls-space: 0px;
     --window-shell-sidebar-width: 260px;
+    /* Main stage pocket radius — Spotify-like soft arc, no hairline frame. */
+    --shell-content-radius: 12px;
     --sidebar-item-radius: 6px;
     /* Unified chrome tokens (formerly split between “classic” vs native-only names). */
     --sidebar-row-overlay-bg: rgba(255, 255, 255, 0.045);
@@ -61,15 +65,8 @@
     );
     --sidebar-control-border: rgba(255, 255, 255, 0.08);
     --sidebar-control-bg: rgba(255, 255, 255, 0.045);
-    --chrome-panel-shadow: 0 20px 42px rgba(0, 0, 0, 0.24);
     --chrome-floating-bg: rgba(255, 255, 255, 0.09);
     --chrome-floating-border: rgba(255, 255, 255, 0.11);
-    --playback-bar-surface-bg: linear-gradient(
-      180deg,
-      rgba(34, 34, 39, 0.82),
-      rgba(27, 27, 31, 0.88)
-    );
-    --playback-bar-surface-border: rgba(255, 255, 255, 0.1);
   }
 
   [data-window-chrome-platform="desktop"] {
@@ -181,6 +178,16 @@
 
   .sidebar-source-list-row {
     border-radius: var(--sidebar-item-radius);
+  }
+
+  /* Flush shell stage pocket: soft arc against chrome, never a stroked frame. */
+  [data-shell-content-pocket="true"] {
+    border: 0;
+    border-radius: var(--shell-content-radius);
+    box-shadow: none;
+    outline: none;
+    /* Continuous/squircle when supported; circular border-radius otherwise. */
+    corner-shape: squircle;
   }
 
   /* Animations */
