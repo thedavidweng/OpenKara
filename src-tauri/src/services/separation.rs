@@ -571,6 +571,11 @@ pub struct BatchPlan {
     pub skipped: usize,
 }
 
+/// Failures among the `to_separate` pool. `total` already excludes skipped songs.
+fn batch_failed_among_candidates(total: usize, completed: usize) -> usize {
+    total.saturating_sub(completed)
+}
+
 /// Resolve which song hashes still need separation for the given stem mode.
 pub fn plan_batch(
     connection: &rusqlite::Connection,
@@ -691,13 +696,14 @@ pub fn start_batch_job<R: Runtime>(
         let model_path = match prerequisite_result {
             Ok(Ok(path)) => path,
             Ok(Err(error)) => {
+                // `total` is already plan.to_separate.len() (skipped excluded).
                 let _ = app_handle.emit(
                     BATCH_SEPARATION_COMPLETE_EVENT,
                     BatchSeparationProgress {
                         total,
                         completed,
                         skipped,
-                        failed: total.saturating_sub(completed + skipped),
+                        failed: batch_failed_among_candidates(total, completed),
                         current_song_id: None,
                         current_percent: 0,
                     },
@@ -713,7 +719,7 @@ pub fn start_batch_job<R: Runtime>(
                         total,
                         completed,
                         skipped,
-                        failed: total.saturating_sub(completed + skipped),
+                        failed: batch_failed_among_candidates(total, completed),
                         current_song_id: None,
                         current_percent: 0,
                     },
@@ -982,6 +988,15 @@ pub fn downgrade_to_two_stem_and_publish<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn batch_failed_count_excludes_skipped_from_candidate_total() {
+        // 20 library songs, 5 already separated → total candidates = 15.
+        // Prerequisite failure with zero completions must report 15 failures,
+        // not 15 - 5 (which would double-subtract skipped).
+        assert_eq!(batch_failed_among_candidates(15, 0), 15);
+        assert_eq!(batch_failed_among_candidates(15, 3), 12);
+    }
 
     #[test]
     fn status_lookup_defaults_to_idle_when_song_has_not_started_separation() {
