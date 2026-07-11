@@ -1,6 +1,6 @@
 use crate::{
-    commands::import::import_songs_from_paths,
     config::StemMode,
+    library::import_songs_from_paths,
     perf::build_backend_performance_report,
     separator::{bootstrap, job, model, model_cache::ModelCache},
 };

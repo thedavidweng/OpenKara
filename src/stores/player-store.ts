@@ -2,6 +2,14 @@ import { create } from "zustand";
 import * as api from "@/lib/tauri";
 import { notifyError } from "@/lib/errors";
 import {
+  createPlaybackSession,
+  selectCurrentPositionMs as selectSessionPositionMs,
+  selectSyncDisplayPositionMs as selectSessionSyncDisplayPositionMs,
+  type PlaybackSession,
+  type PlaybackTransport,
+  type PositionClockState,
+} from "@/playback";
+import {
   createWebviewSyncChannel,
   type WebviewSyncChannel,
 } from "@/runtime/webview-sync";
@@ -13,7 +21,6 @@ import type {
   PlaybackStateSnapshot,
   StemName,
 } from "@/types/ipc";
-import { createPlaybackWorkflow } from "./playback-workflow";
 
 export const DEFAULT_AIRPLAY_OUTPUT_STATE: AirPlayOutputStateEvent = {
   active: false,
@@ -86,6 +93,7 @@ function createPlayerSyncSnapshot(state: PlayerState): PlayerSyncSnapshot {
 
 function applyPlayerSyncSnapshot(
   set: (partial: Partial<PlayerState>) => void,
+  session: PlaybackSession,
   payload: PlayerSyncSnapshot,
 ) {
   // RATIONALE: playingSinceMs is tied to this webview's performance.now() clock.
@@ -96,6 +104,14 @@ function applyPlayerSyncSnapshot(
       : payload.snapshot?.is_playing
         ? performance.now()
         : null;
+
+  const clock: PositionClockState = {
+    snapshot: payload.snapshot,
+    positionMs: payload.positionMs,
+    playingSinceMs,
+  };
+  // Keep session clock aligned with peer sync without re-publishing.
+  session.replaceClock(clock);
 
   set({
     snapshot: payload.snapshot,
@@ -109,92 +125,29 @@ function applyPlayerSyncSnapshot(
   });
 }
 
-// RATIONALE: Once AirPlay is active, the audience surface must follow the TV's
-// displayed clock rather than the local playback clock. That keeps the
-// standard UI synchronized with the remote audience surface without changing
-// which window is allowed to render audience styling.
 export function selectSyncDisplayPositionMs(
   state: Pick<PlayerState, "positionMs" | "airPlayOutput">,
 ): number {
-  return state.airPlayOutput.active &&
-    state.airPlayOutput.displayedPositionMs !== null
-    ? state.airPlayOutput.displayedPositionMs
-    : state.positionMs;
+  return selectSessionSyncDisplayPositionMs(state);
 }
 
-// RATIONALE: IPC events for playback position are asynchronous and can be
-// delayed, dropped, or delivered out-of-order during window focus changes and
-// Tauri event-loop pressure. Instead of depending on event-driven position
-// updates for smooth UI, the frontend extrapolates from the last known
-// authoritative position (set by play/resume/seek command responses and
-// playback-position events) using a local monotonic clock. This guarantees
-// smooth position advancement for lyrics sync and progress display without
-// any polling or retry logic on the IPC layer.
 export function selectCurrentPositionMs(
   state: Pick<PlayerState, "snapshot" | "positionMs" | "playingSinceMs">,
   nowMs = () => performance.now(),
 ): number {
-  const { snapshot, positionMs, playingSinceMs } = state;
-  // Do not extrapolate during buffer underrun — backend position is frozen even
-  // though is_playing still reflects transport intent.
-  if (
-    snapshot?.is_playing &&
-    snapshot.state !== "buffering" &&
-    playingSinceMs !== null
-  ) {
-    return positionMs + (nowMs() - playingSinceMs);
-  }
-  return positionMs;
+  return selectSessionPositionMs(state, nowMs);
 }
 
-function shouldAnchorPlayingSinceMs(snapshot: PlaybackStateSnapshot): boolean {
-  return snapshot.is_playing && snapshot.state !== "buffering";
-}
-
-function resolvePlayingSinceMs(
-  prev: Pick<PlayerState, "snapshot" | "playingSinceMs">,
-  nextSnapshot: PlaybackStateSnapshot,
-): number | null {
-  if (!shouldAnchorPlayingSinceMs(nextSnapshot)) {
-    return null;
-  }
-  if (
-    prev.playingSinceMs !== null &&
-    prev.snapshot?.is_playing === nextSnapshot.is_playing &&
-    prev.snapshot?.state === nextSnapshot.state
-  ) {
-    return prev.playingSinceMs;
-  }
-  return performance.now();
-}
-
-function shouldReplaceSnapshotFromPositionEvent(
-  current: PlaybackStateSnapshot | null,
-  next: PlaybackStateSnapshot,
-): boolean {
-  return (
-    current?.song_id !== next.song_id ||
-    current.state !== next.state ||
-    current.is_playing !== next.is_playing ||
-    current.duration_ms !== next.duration_ms ||
-    current.volume !== next.volume ||
-    current.has_stems !== next.has_stems ||
-    current.stem_mode !== next.stem_mode ||
-    current.stem_volumes.vocals !== next.stem_volumes.vocals ||
-    current.stem_volumes.drums !== next.stem_volumes.drums ||
-    current.stem_volumes.bass !== next.stem_volumes.bass ||
-    current.stem_volumes.other !== next.stem_volumes.other
-  );
-}
-
-function isStaleTransportSnapshot(
-  current: PlaybackStateSnapshot | null,
-  next: PlaybackStateSnapshot,
-): boolean {
-  return (
-    current !== null && next.transport_generation < current.transport_generation
-  );
-}
+const sessionTransport: PlaybackTransport = {
+  play: api.play,
+  resume: api.resume,
+  pause: api.pause,
+  seek: api.seek,
+  setVolume: api.setVolume,
+  setStemVolume: api.setStemVolume,
+  loadStems: api.loadStems,
+  getPlaybackState: api.getPlaybackState,
+};
 
 export function createPlayerStore(
   syncChannel: WebviewSyncChannel<PlayerSyncSnapshot> = createWebviewSyncChannel<PlayerSyncSnapshot>(
@@ -203,36 +156,35 @@ export function createPlayerStore(
 ) {
   let airPlayPlainTextPagePendingTimer: ReturnType<typeof setTimeout> | null =
     null;
+  // Assigned synchronously inside create() before any subscriber can run.
+  let sessionRef!: PlaybackSession;
 
   const store = create<PlayerState>((set, get) => {
     const syncPatch = (patch: Partial<PlayerState>) => {
       set(patch);
       syncChannel.publish(createPlayerSyncSnapshot(get()));
     };
-    const applySnapshot = (nextSnapshot: PlaybackStateSnapshot) => {
-      if (isStaleTransportSnapshot(get().snapshot, nextSnapshot)) {
-        return;
-      }
-      syncPatch({
-        snapshot: nextSnapshot,
-        positionMs: nextSnapshot.position_ms,
-        playingSinceMs: resolvePlayingSinceMs(get(), nextSnapshot),
-      });
-    };
 
-    const workflow = createPlaybackWorkflow({
-      getPlayerSnapshot: () => get().snapshot,
-      play: api.play,
-      loadStems: api.loadStems,
+    // Reactive adapter: session owns lifecycle + clock; store mirrors for UI.
+    const session = createPlaybackSession({
+      transport: sessionTransport,
+      queue: {
+        addToQueue: (id) => useQueueStore.getState().addToQueue(id),
+        dequeue: () => useQueueStore.getState().dequeue() ?? null,
+        pushToHistory: (id) => useQueueStore.getState().pushToHistory(id),
+        popFromHistory: () => useQueueStore.getState().popFromHistory() ?? null,
+      },
       getSeparationStatus: (songId) =>
         useLibraryStore.getState().separationStatuses[songId],
-      applySnapshot,
-      seek: api.seek,
-      addToQueue: (id) => useQueueStore.getState().addToQueue(id),
-      dequeue: () => useQueueStore.getState().dequeue() ?? null,
-      pushToHistory: (id) => useQueueStore.getState().pushToHistory(id),
-      popFromHistory: () => useQueueStore.getState().popFromHistory() ?? null,
+      onClockChange: (clock) => {
+        syncPatch({
+          snapshot: clock.snapshot,
+          positionMs: clock.positionMs,
+          playingSinceMs: clock.playingSinceMs,
+        });
+      },
     });
+    sessionRef = session;
 
     return {
       snapshot: null,
@@ -245,7 +197,7 @@ export function createPlayerStore(
 
       playSong: async (songId) => {
         try {
-          await workflow.playSong(songId);
+          await session.play(songId);
         } catch (e) {
           notifyError(e, () => get().playSong(songId));
         }
@@ -253,7 +205,7 @@ export function createPlayerStore(
 
       playNow: async (songId) => {
         try {
-          await workflow.playNow(songId);
+          await session.playNow(songId);
         } catch (e) {
           notifyError(e, () => get().playNow(songId));
         }
@@ -261,21 +213,7 @@ export function createPlayerStore(
 
       resume: async () => {
         try {
-          const snapshot = await api.resume();
-          const authoritative = {
-            ...snapshot,
-            is_playing: true,
-          };
-          if (isStaleTransportSnapshot(get().snapshot, authoritative)) {
-            return;
-          }
-          syncPatch({
-            snapshot: authoritative,
-            positionMs: authoritative.position_ms,
-            playingSinceMs: shouldAnchorPlayingSinceMs(authoritative)
-              ? performance.now()
-              : null,
-          });
+          await session.resume();
         } catch (e) {
           notifyError(e);
         }
@@ -283,40 +221,15 @@ export function createPlayerStore(
 
       pause: async () => {
         try {
-          const snapshot = await api.pause();
-          const authoritative = {
-            ...snapshot,
-            is_playing: false,
-          };
-          if (isStaleTransportSnapshot(get().snapshot, authoritative)) {
-            return;
-          }
-          syncPatch({
-            snapshot: authoritative,
-            positionMs: authoritative.position_ms,
-            playingSinceMs: null,
-          });
+          await session.pause();
         } catch (e) {
           notifyError(e);
         }
       },
 
       seek: async (ms) => {
-        const current = get().snapshot;
-        if (!current?.song_id) return;
         try {
-          const clamped = Math.max(0, ms);
-          const snapshot = await api.seek(clamped);
-          if (isStaleTransportSnapshot(get().snapshot, snapshot)) {
-            return;
-          }
-          syncPatch({
-            snapshot,
-            positionMs: snapshot.position_ms,
-            playingSinceMs: shouldAnchorPlayingSinceMs(snapshot)
-              ? performance.now()
-              : null,
-          });
+          await session.seek(ms);
         } catch (e) {
           notifyError(e);
         }
@@ -324,12 +237,7 @@ export function createPlayerStore(
 
       setVolume: async (level) => {
         try {
-          const clamped = Math.max(0, Math.min(1, level));
-          const snapshot = await api.setVolume(clamped);
-          if (isStaleTransportSnapshot(get().snapshot, snapshot)) {
-            return;
-          }
-          syncPatch({ snapshot });
+          await session.setVolume(level);
         } catch (e) {
           notifyError(e);
         }
@@ -337,12 +245,7 @@ export function createPlayerStore(
 
       setStemVolume: async (stem, level) => {
         try {
-          const clamped = Math.max(0, Math.min(1, level));
-          const snapshot = await api.setStemVolume(stem, clamped);
-          if (isStaleTransportSnapshot(get().snapshot, snapshot)) {
-            return;
-          }
-          syncPatch({ snapshot });
+          await session.setStemVolume(stem, level);
         } catch (e) {
           notifyError(e);
         }
@@ -350,81 +253,23 @@ export function createPlayerStore(
 
       loadStems: async () => {
         try {
-          const snapshot = await api.loadStems();
-          if (isStaleTransportSnapshot(get().snapshot, snapshot)) {
-            return;
-          }
-          syncPatch({
-            snapshot,
-            positionMs: snapshot.position_ms,
-            playingSinceMs: resolvePlayingSinceMs(get(), snapshot),
-          });
+          await session.loadStems();
         } catch (e) {
           notifyError(e, () => get().loadStems());
         }
       },
 
       applyPlaybackPositionEvent: (event) => {
-        const current = get();
-        const currentSnapshot = current.snapshot;
-        const nextSnapshot = event.snapshot;
-        if (event.transport_generation !== nextSnapshot.transport_generation) {
-          return;
-        }
-        if (isStaleTransportSnapshot(currentSnapshot, nextSnapshot)) {
-          return;
-        }
-        if (
-          shouldReplaceSnapshotFromPositionEvent(currentSnapshot, nextSnapshot)
-        ) {
-          syncPatch({
-            snapshot: nextSnapshot,
-            positionMs: nextSnapshot.position_ms,
-            playingSinceMs: resolvePlayingSinceMs(current, nextSnapshot),
-          });
-          return;
-        }
-
-        syncPatch({
-          positionMs: nextSnapshot.position_ms,
-          playingSinceMs: resolvePlayingSinceMs(current, nextSnapshot),
-          snapshot:
-            currentSnapshot &&
-            (nextSnapshot.is_playing !== currentSnapshot.is_playing ||
-              nextSnapshot.state !== currentSnapshot.state ||
-              nextSnapshot.buffered_ms !== currentSnapshot.buffered_ms)
-              ? {
-                  ...currentSnapshot,
-                  is_playing: nextSnapshot.is_playing,
-                  state: nextSnapshot.state,
-                  buffered_ms: nextSnapshot.buffered_ms,
-                }
-              : (currentSnapshot ?? nextSnapshot),
-        });
+        session.applyPosition(event);
       },
 
       updateSnapshot: (snapshot) => {
-        if (isStaleTransportSnapshot(get().snapshot, snapshot)) {
-          return;
-        }
-        syncPatch({
-          snapshot,
-          positionMs: snapshot.position_ms,
-          playingSinceMs: resolvePlayingSinceMs(get(), snapshot),
-        });
+        session.applySnapshot(snapshot);
       },
 
       loadState: async () => {
         try {
-          const snapshot = await api.getPlaybackState();
-          if (isStaleTransportSnapshot(get().snapshot, snapshot)) {
-            return;
-          }
-          syncPatch({
-            snapshot,
-            positionMs: snapshot.position_ms,
-            playingSinceMs: resolvePlayingSinceMs(get(), snapshot),
-          });
+          await session.loadState();
         } catch (e) {
           notifyError(e);
         }
@@ -432,7 +277,7 @@ export function createPlayerStore(
 
       playNextFromQueue: async (endedSongId) => {
         try {
-          await workflow.playNextFromQueue(endedSongId);
+          await session.onEnded(endedSongId);
         } catch (e) {
           notifyError(e);
         }
@@ -440,7 +285,7 @@ export function createPlayerStore(
 
       skipForward: async () => {
         try {
-          await workflow.skipForward();
+          await session.skipForward();
         } catch (e) {
           notifyError(e);
         }
@@ -448,7 +293,7 @@ export function createPlayerStore(
 
       skipBack: async () => {
         try {
-          await workflow.skipBack();
+          await session.skipBack();
         } catch (e) {
           notifyError(e);
         }
@@ -493,7 +338,7 @@ export function createPlayerStore(
   });
 
   const unsubscribe = syncChannel.subscribe((payload) => {
-    applyPlayerSyncSnapshot(store.setState, payload);
+    applyPlayerSyncSnapshot(store.setState, sessionRef, payload);
   });
 
   return {

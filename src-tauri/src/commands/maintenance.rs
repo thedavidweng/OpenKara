@@ -1,8 +1,7 @@
 use crate::{
     cache,
     commands::error::{database_error, internal_error, CommandResult},
-    commands::remote_library,
-    AppState,
+    remote, AppState,
 };
 use serde::Serialize;
 use tauri::{AppHandle, State};
@@ -27,19 +26,17 @@ pub fn delete_all_stems(
     let connection = cache::open_database(&library_root.database_path())
         .map_err(|e| database_error(e.to_string()))?;
 
-    let deleted_count =
-        remote_library::run_active_library_mirror_mutation(&state, &app_handle, || {
-            let deleted_count =
-                cache::stems::delete_all_stem_cache_entries(&connection, &library_root)
-                    .map_err(|e| internal_error(format!("failed to delete all stems: {e}")))?;
+    let deleted_count = remote::run_active_library_mirror_mutation(&state, &app_handle, || {
+        let deleted_count = cache::stems::delete_all_stem_cache_entries(&connection, &library_root)
+            .map_err(|e| internal_error(format!("failed to delete all stems: {e}")))?;
 
-            // Clear in-memory separation statuses so the frontend reflects the change.
-            if let Ok(mut statuses) = state.separation.separation_statuses.lock() {
-                statuses.clear();
-            }
+        // Clear in-memory separation statuses so the frontend reflects the change.
+        if let Ok(mut statuses) = state.separation.separation_statuses.lock() {
+            statuses.clear();
+        }
 
-            Ok(deleted_count)
-        })?;
+        Ok(deleted_count)
+    })?;
 
     Ok(DeleteStemsResult {
         deleted_count,
@@ -70,7 +67,7 @@ pub fn downgrade_all_to_two_stem(
         .map_err(|e| database_error(e.to_string()))?;
 
     let (downgraded_count, freed_bytes) =
-        remote_library::run_active_library_mirror_mutation(&state, &app_handle, || {
+        remote::run_active_library_mirror_mutation(&state, &app_handle, || {
             let (downgraded_count, freed_bytes) =
                 cache::stems::batch_downgrade_to_two_stem(&connection, &library_root)
                     .map_err(|e| internal_error(format!("failed to downgrade stems: {e}")))?;
@@ -115,7 +112,7 @@ pub fn delete_all_cached_lyrics(
     let connection = cache::open_database(&library_root.database_path())
         .map_err(|e| database_error(e.to_string()))?;
 
-    let deleted = remote_library::run_active_library_mirror_mutation(&state, &app_handle, || {
+    let deleted = remote::run_active_library_mirror_mutation(&state, &app_handle, || {
         cache::lyrics::delete_all_lyrics_cache_entries(&connection)
             .map_err(|e| database_error(e.to_string()))
     })?;

@@ -24,7 +24,8 @@ pub(crate) trait RemoteProvider {
     /// Delete a remote path.
     fn delete_path(&self, relative_path: &str) -> CommandResult<()>;
 
-    /// Initialize or sync the library (ensure folders exist, download DB if needed).
+    /// Register / first open: shared bootstrap `CreateOrOpen` mode (create
+    /// layout/marker when empty, seed or pull `openkara.db`).
     fn initialize_or_sync(&self) -> CommandResult<Option<String>>;
 
     /// Create an `HttpFetcher` for streaming byte ranges from a remote file.
@@ -43,7 +44,9 @@ pub(crate) trait RemoteProvider {
         Ok(None)
     }
 
-    /// Refresh an existing remote library (verify marker, re-download DB).
+    /// Reauthorize open: shared bootstrap `RequireExisting` mode — marker + DB
+    /// must already exist (never silently create a new empty remote library).
+    /// Distinct from Refresh Repository (revision pull with existing credentials).
     fn refresh_existing(&self) -> CommandResult<Option<String>>;
 }
 

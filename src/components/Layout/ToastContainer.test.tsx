@@ -52,8 +52,8 @@ describe("ToastContainer", () => {
 
     expect(markup).toContain("Import Failed");
     expect(markup).toContain("Could not read file");
-    expect(markup).toContain("text-red-400");
-    expect(markup).toContain("border-red-400/30");
+    expect(markup).toContain("text-[var(--color-destructive)]");
+    expect(markup).toContain("border-[var(--color-border)]");
   });
 
   test("renders a success notification with green styling", () => {
@@ -70,8 +70,8 @@ describe("ToastContainer", () => {
     const markup = renderToStaticMarkup(<ToastContainer />);
 
     expect(markup).toContain("Song Imported");
-    expect(markup).toContain("text-green-400");
-    expect(markup).toContain("border-green-400/30");
+    expect(markup).toContain("text-[var(--color-text)]");
+    expect(markup).toContain("border-[var(--color-border)]");
   });
 
   test("renders a warning notification with yellow styling", () => {
@@ -88,7 +88,7 @@ describe("ToastContainer", () => {
     const markup = renderToStaticMarkup(<ToastContainer />);
 
     expect(markup).toContain("Slow Network");
-    expect(markup).toContain("text-yellow-400");
+    expect(markup).toContain("text-[var(--color-text)]");
   });
 
   test("renders an info notification with blue styling", () => {
@@ -105,7 +105,7 @@ describe("ToastContainer", () => {
     const markup = renderToStaticMarkup(<ToastContainer />);
 
     expect(markup).toContain("Tip");
-    expect(markup).toContain("text-blue-400");
+    expect(markup).toContain("text-[var(--color-text)]");
   });
 
   test("shows a retry button when the notification is retryable", () => {

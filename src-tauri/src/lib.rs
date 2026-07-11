@@ -15,6 +15,7 @@ pub mod lyrics;
 pub mod media_g;
 pub mod metadata;
 pub mod perf;
+pub mod remote;
 pub mod separator;
 pub mod services;
 pub mod smoke;

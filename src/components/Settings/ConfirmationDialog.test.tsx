@@ -84,7 +84,7 @@ describe("ConfirmationDialog", () => {
       />,
     );
 
-    expect(markup).toContain("bg-red-600");
-    expect(markup).toContain("hover:bg-red-500");
+    expect(markup).toContain("bg-[var(--color-destructive)]");
+    expect(markup).toContain("text-[var(--color-destructive-foreground)]");
   });
 });

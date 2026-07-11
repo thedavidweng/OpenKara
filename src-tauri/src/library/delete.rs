@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use rusqlite::{params, Connection};
 use std::fs;
 
-pub(crate) fn delete_song_from_library(
+pub fn delete_song_from_library(
     connection: &Connection,
     library: &LibraryRoot,
     song_id: &str,
@@ -51,7 +51,7 @@ pub(crate) fn delete_song_from_library(
 /// Unlike `delete_song_from_library`, this does NOT touch the filesystem —
 /// safe to call inside a SQLite transaction. The caller is responsible for
 /// deleting any working-copy or cloud files separately.
-pub(crate) fn delete_song_rows_from_database(
+pub fn delete_song_rows_from_database(
     connection: &Connection,
     _library: &LibraryRoot,
     song_id: &str,
@@ -79,10 +79,7 @@ pub(crate) fn delete_song_rows_from_database(
 /// Does NOT touch the database — safe to call after a DB transaction has
 /// already committed. Used by mirror sync to clean up the remote working
 /// copy after transactional DB deletes.
-pub(crate) fn delete_song_files_from_working_copy(
-    library: &LibraryRoot,
-    song: &Song,
-) -> Result<()> {
+pub fn delete_song_files_from_working_copy(library: &LibraryRoot, song: &Song) -> Result<()> {
     if let Some(container) = song.media_g_container.as_deref() {
         match container {
             MEDIA_G_PAIRED => {
@@ -110,10 +107,7 @@ pub(crate) fn delete_song_files_from_working_copy(
 
 /// Delete the stem directory for a song from the working copy filesystem.
 /// Does NOT touch the database — safe to call after a DB transaction.
-pub(crate) fn delete_stem_files_from_working_copy(
-    library: &LibraryRoot,
-    song_hash: &str,
-) -> Result<()> {
+pub fn delete_stem_files_from_working_copy(library: &LibraryRoot, song_hash: &str) -> Result<()> {
     let dir = crate::cache::stems::stem_directory(&library.stems_dir(), song_hash);
     if dir.exists() {
         fs::remove_dir_all(&dir)

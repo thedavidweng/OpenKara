@@ -77,8 +77,7 @@ export function PlaybackStage({
                   : undefined
               }
             />
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,0,0,0.35),rgba(0,0,0,0.55)_36%,rgba(0,0,0,0.72)_100%)]" />
-            <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(8,10,14,0.45),rgba(8,10,14,0.62)_58%,rgba(10,12,16,0.78))]" />
+            <div className="absolute inset-0 bg-black/50" />
           </div>
           <div className="relative z-10 flex min-h-0 flex-1 overflow-hidden">
             <LyricsPanel presentation={presentation} />

@@ -52,7 +52,7 @@ export function ModelBootstrapBanner() {
 
       {status.state === "failed" && (
         <div className="flex items-center justify-between">
-          <span className="text-[12px] text-red-400">
+          <span className="text-[12px] text-[var(--color-destructive)]">
             {t("bootstrap.downloadFailed", {
               error: status.error?.message || t("bootstrap.unknownError"),
             })}

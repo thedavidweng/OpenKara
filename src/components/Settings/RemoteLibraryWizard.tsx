@@ -481,7 +481,9 @@ export function RemoteLibraryWizard({
             </a>
           )}
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && (
+            <p className="text-sm text-[var(--color-destructive)]">{error}</p>
+          )}
           {message && (
             <p className="text-sm text-[var(--color-text-dim)]">{message}</p>
           )}
@@ -489,7 +491,7 @@ export function RemoteLibraryWizard({
 
         {remoteLibraries.length > 0 && (
           <div className="mt-4 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-surface)] p-4">
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--color-text-dim)]">
+            <p className="mb-2 text-xs font-medium text-[var(--color-text-dim)]">
               {t("settings.library.existingRemoteLibraries", {
                 defaultValue: "Existing Remote Libraries",
               })}

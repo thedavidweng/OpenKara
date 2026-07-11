@@ -73,7 +73,7 @@ export function ConfirmationDialog({
           </button>
           <button
             onClick={onConfirm}
-            className="rounded-md bg-red-600 px-4 py-2 text-[13px] text-white transition-colors hover:bg-red-500 focus:outline-none focus:ring-2 focus:ring-red-400/40"
+            className="rounded-md bg-[var(--color-destructive)] px-4 py-2 text-[13px] text-[var(--color-destructive-foreground)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-destructive)_90%,white)] focus:outline-none focus:ring-2 focus:ring-[var(--color-destructive)]/40"
           >
             {confirmLabel}
           </button>

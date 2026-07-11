@@ -14,7 +14,7 @@ export function QueueButton() {
       <button
         onClick={togglePanel}
         aria-label={t("queue.title")}
-        className={`motion-icon-button relative flex shrink-0 items-center rounded-[14px] p-2.5 transition-colors ${
+        className={`motion-icon-button relative flex min-h-11 min-w-11 shrink-0 items-center rounded-[14px] p-2.5 transition-colors ${
           isOpen
             ? "bg-[color-mix(in_srgb,var(--color-hover)_86%,transparent)] text-[var(--color-accent)] shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
             : "text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-white"

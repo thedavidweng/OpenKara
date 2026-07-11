@@ -1,9 +1,7 @@
 use crate::{
-    cache,
     commands::error::{CommandError, CommandResult},
     config::RegisteredLibrary,
     library::error::LibraryError,
-    library_root::LibraryRoot,
 };
 use base64::Engine;
 use reqwest::{
@@ -395,79 +393,131 @@ pub(crate) fn webdav_database_url(root_url: &str) -> CommandResult<String> {
     join_url(root_url, "openkara.db")
 }
 
+/// WebDAV HTTP/path adapter for the shared bootstrap protocol.
+struct WebDavBootstrapStorage<'a> {
+    library: &'a RegisteredLibrary,
+    secret: &'a WebDavSecret,
+    client: Client,
+}
+
+impl<'a> WebDavBootstrapStorage<'a> {
+    fn new(library: &'a RegisteredLibrary, secret: &'a WebDavSecret) -> CommandResult<Self> {
+        Ok(Self {
+            library,
+            secret,
+            client: webdav_client()?,
+        })
+    }
+}
+
+impl super::bootstrap::RemoteBootstrapStorage for WebDavBootstrapStorage<'_> {
+    fn location_label(&self) -> &'static str {
+        "WebDAV path"
+    }
+
+    fn ensure_layout(&mut self) -> CommandResult<()> {
+        let server_url = stored_webdav_server_url(self.library)?;
+        ensure_webdav_collection_chain(
+            &self.client,
+            &server_url,
+            &self.secret.root_url,
+            &self.secret.username,
+            &self.secret.password,
+        )?;
+        for directory in ["media", "media-g", "stems"] {
+            let directory_url = join_url(&self.secret.root_url, &format!("{directory}/"))?;
+            ensure_webdav_collection_chain(
+                &self.client,
+                &server_url,
+                &directory_url,
+                &self.secret.username,
+                &self.secret.password,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn marker_exists(&mut self) -> CommandResult<bool> {
+        let marker_url = webdav_marker_url(&self.secret.root_url)?;
+        webdav_exists(
+            &self.client,
+            &marker_url,
+            &self.secret.username,
+            &self.secret.password,
+        )
+    }
+
+    fn upload_marker(&mut self, marker_bytes: &[u8]) -> CommandResult<()> {
+        let marker_url = webdav_marker_url(&self.secret.root_url)?;
+        upload_webdav_bytes(
+            &self.client,
+            &marker_url,
+            marker_bytes.to_vec(),
+            &self.secret.username,
+            &self.secret.password,
+        )?;
+        Ok(())
+    }
+
+    fn probe_remote_database(&mut self) -> CommandResult<Option<Option<String>>> {
+        let database_url = webdav_database_url(&self.secret.root_url)?;
+        if !webdav_exists(
+            &self.client,
+            &database_url,
+            &self.secret.username,
+            &self.secret.password,
+        )? {
+            return Ok(None);
+        }
+        let etag = webdav_get_etag(
+            &self.client,
+            &database_url,
+            &self.secret.username,
+            &self.secret.password,
+        )?;
+        Ok(Some(etag))
+    }
+
+    fn download_database(&mut self, destination: &Path) -> CommandResult<()> {
+        let database_url = webdav_database_url(&self.secret.root_url)?;
+        download_webdav_file(
+            &self.client,
+            &database_url,
+            destination,
+            &self.secret.username,
+            &self.secret.password,
+        )?
+        .ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "WebDAV database download failed: file not found".to_owned(),
+            ))
+        })?;
+        Ok(())
+    }
+
+    fn upload_database(&mut self, source: &Path) -> CommandResult<Option<String>> {
+        let database_url = webdav_database_url(&self.secret.root_url)?;
+        upload_webdav_file(
+            &self.client,
+            &database_url,
+            source,
+            &self.secret.username,
+            &self.secret.password,
+        )
+    }
+}
+
 pub(crate) fn initialize_or_sync_webdav_library(
-    app_data_dir: &Path,
+    _app_data_dir: &Path,
     library: &RegisteredLibrary,
     secret: &WebDavSecret,
 ) -> CommandResult<Option<String>> {
-    let root_path = library.working_copy_root().ok_or_else(|| {
-        CommandError::from(LibraryError::Internal(
-            "remote repository is missing a cached working copy".to_string(),
-        ))
-    })?;
-    let root = if root_path.join(".openkara-library").exists() {
-        LibraryRoot::open(&root_path)
-            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
-    } else {
-        LibraryRoot::create(&root_path)
-            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
-    };
-    cache::initialize_library_database(&root.database_path())
-        .map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
-
-    let client = webdav_client()?;
-    let server_url = stored_webdav_server_url(library)?;
-    ensure_webdav_collection_chain(
-        &client,
-        &server_url,
-        &secret.root_url,
-        &secret.username,
-        &secret.password,
-    )?;
-
-    for directory in ["media", "media-g", "stems"] {
-        let directory_url = join_url(&secret.root_url, &format!("{directory}/"))?;
-        ensure_webdav_collection_chain(
-            &client,
-            &server_url,
-            &directory_url,
-            &secret.username,
-            &secret.password,
-        )?;
-    }
-
-    let marker_url = webdav_marker_url(&secret.root_url)?;
-    if !webdav_exists(&client, &marker_url, &secret.username, &secret.password)? {
-        upload_webdav_bytes(
-            &client,
-            &marker_url,
-            b"openkara remote repository\n".to_vec(),
-            &secret.username,
-            &secret.password,
-        )?;
-    }
-
-    let database_url = webdav_database_url(&secret.root_url)?;
-    let etag = if webdav_exists(&client, &database_url, &secret.username, &secret.password)? {
-        download_webdav_file(
-            &client,
-            &database_url,
-            &root.database_path(),
-            &secret.username,
-            &secret.password,
-        )?
-    } else {
-        upload_webdav_file(
-            &client,
-            &database_url,
-            &root.database_path(),
-            &secret.username,
-            &secret.password,
-        )?
-    };
-
-    let _ = app_data_dir;
-    Ok(etag)
+    let mut storage = WebDavBootstrapStorage::new(library, secret)?;
+    super::bootstrap::bootstrap_remote_library(
+        super::bootstrap::BootstrapMode::CreateOrOpen,
+        library,
+        &mut storage,
+    )
 }
 
 pub(crate) fn refresh_existing_webdav_library(
@@ -475,43 +525,12 @@ pub(crate) fn refresh_existing_webdav_library(
     library: &RegisteredLibrary,
     secret: &WebDavSecret,
 ) -> CommandResult<Option<String>> {
-    let root_path = library.working_copy_root().ok_or_else(|| {
-        CommandError::from(LibraryError::Internal(
-            "remote repository is missing a cached working copy".to_string(),
-        ))
-    })?;
-    let root = if root_path.join(".openkara-library").exists() {
-        LibraryRoot::open(&root_path)
-            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
-    } else {
-        LibraryRoot::create(&root_path)
-            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
-    };
-    cache::initialize_library_database(&root.database_path())
-        .map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
-
-    let client = webdav_client()?;
-    let marker_url = webdav_marker_url(&secret.root_url)?;
-    if !webdav_exists(&client, &marker_url, &secret.username, &secret.password)? {
-        return Err(CommandError::from(LibraryError::Internal(
-            "The selected WebDAV path is not an OpenKara remote repository.".to_owned(),
-        )));
-    }
-
-    let database_url = webdav_database_url(&secret.root_url)?;
-    download_webdav_file(
-        &client,
-        &database_url,
-        &root.database_path(),
-        &secret.username,
-        &secret.password,
-    )?
-    .ok_or_else(|| {
-        CommandError::from(LibraryError::Internal(
-            "The selected WebDAV path is missing openkara.db.".to_owned(),
-        ))
-    })
-    .map(Some)
+    let mut storage = WebDavBootstrapStorage::new(library, secret)?;
+    super::bootstrap::bootstrap_remote_library(
+        super::bootstrap::BootstrapMode::RequireExisting,
+        library,
+        &mut storage,
+    )
 }
 
 pub(crate) fn upload_relative_file_to_remote(
@@ -740,6 +759,7 @@ mod tests {
         cache,
         config::{RemoteLibraryConnectionConfig, RemoteLibraryProvider},
         library::Song,
+        library_root::LibraryRoot,
     };
     use std::{
         collections::{HashMap, HashSet},

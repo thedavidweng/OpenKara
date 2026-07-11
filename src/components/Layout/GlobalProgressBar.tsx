@@ -206,7 +206,7 @@ export function GlobalProgressBar() {
   if (tasks.length === 0) return null;
 
   return (
-    <div className="app-panel-surface shrink-0 space-y-2 border-t border-[color-mix(in_srgb,var(--color-border)_86%,transparent)] bg-[color-mix(in_srgb,var(--color-sidebar)_94%,transparent)] px-3 py-2">
+    <div className="z-10 space-y-2 bg-[var(--color-sidebar)] px-3 py-2">
       {tasks.map(({ key, ...task }) => (
         <TaskProgressBar key={key} {...task} />
       ))}

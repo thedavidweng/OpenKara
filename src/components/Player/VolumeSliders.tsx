@@ -262,7 +262,7 @@ export function VolumeSliders({
             }}
             disabled={!stemsAvailable}
             aria-label={triggerLabel}
-            className={`motion-icon-button flex rounded-xl p-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
+            className={`motion-icon-button flex min-h-11 min-w-11 rounded-xl p-2.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
               stemsAvailable
                 ? "text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-white"
                 : "text-[var(--color-text-dimmer)]"

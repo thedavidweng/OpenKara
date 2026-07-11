@@ -1,6 +1,6 @@
 # 分离契约
 
-`separate`、`upgrade_to_four_stem`、`re_separate` 的后台编排收口到共享 helper，命令名、事件名和状态快照契约保持不变。
+`separate`、`upgrade_to_four_stem`、`re_separate`、`batch_separate` 的后台编排收口到 `services::separation`（命令层仅为 IPC 适配器），命令名、事件名和状态快照契约保持不变。
 
 ## 接口
 
