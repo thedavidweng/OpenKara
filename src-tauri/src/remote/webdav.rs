@@ -486,7 +486,12 @@ impl super::bootstrap::RemoteBootstrapStorage for WebDavBootstrapStorage<'_> {
             destination,
             &self.secret.username,
             &self.secret.password,
-        )?;
+        )?
+        .ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "WebDAV database download failed: file not found".to_owned(),
+            ))
+        })?;
         Ok(())
     }
 
