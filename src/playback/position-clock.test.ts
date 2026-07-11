@@ -58,4 +58,34 @@ describe("reducePositionEvent", () => {
       ),
     ).toBeNull();
   });
+
+  test("patches buffered_ms without replacing the full snapshot", () => {
+    const prev = {
+      snapshot: snapshot({ buffered_ms: 1000, position_ms: 500 }),
+      positionMs: 500,
+      playingSinceMs: 1000,
+    };
+
+    const next = reducePositionEvent(
+      prev,
+      {
+        ms: 600,
+        transport_generation: 1,
+        snapshot: snapshot({
+          buffered_ms: 2500,
+          position_ms: 600,
+        }),
+      },
+      1500,
+    );
+
+    expect(next).toEqual({
+      positionMs: 600,
+      playingSinceMs: 1000,
+      snapshot: {
+        ...prev.snapshot,
+        buffered_ms: 2500,
+      },
+    });
+  });
 });
