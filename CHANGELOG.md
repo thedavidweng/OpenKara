@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Drop stale pre-seek `playback-position` events after a generation bump: position-event snapshot replacement now includes `transport_generation`, so a delayed generation-N-1 stream cannot yank the clock (and lyrics) back after seek/resume/pause.
+- Idle lyrics re-follow now re-anchors scrollTop to the playing line (not only hide the Follow button): the user-scroll guard’s 4s timeout bumps the auto-scroll resume generation so long active lines / instrumental gaps resume follow without waiting for the next line change.
 - Align lyrics runtime with AMLL’s setCurrentTime model: host pushes playback time each frame via `setLyricsCurrentTime` / `sampleLyricsTimeFrame`, seeks go through explicit `markLyricsSeek` (line click, scrub, keyboard) with jump-inference as fallback — a stable foundation for word-level karaoke without inventing a second clock or hard-coded device latency.
 - Clarify the lyrics Follow control: tooltip/aria now reads “Follow playing lyric” / “跟随正在播放的歌词”, and the icon moves to top-center so it no longer stacks over the bottom offset/font controls.
 - Fix timed-lyrics scroll drifting mid-line and only snapping correct on pause: auto-follow now anchors `scrollTop` once per active line instead of re-targeting whenever layout measurements jitter, and emphasis glow animates the whole word instead of swapping in per-character `inline-block` spans that reflow the line on every active-word change.

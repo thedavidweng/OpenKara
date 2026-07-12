@@ -19,18 +19,28 @@ import {
   createUserScrollGuard,
   endLyricsAutoScrollUnlockSuppress,
   isLyricsPlaybackSeekJump,
+  peekLyricsAutoScrollResumeGeneration,
   readLyricsAdjustedPlaybackMs,
   requestLyricsAutoScrollResume,
+  resetLyricsEngineScrollControlForTests,
   syncLyricsActiveLine,
   tickLyricsEngineScroll,
   USER_SCROLL_PAUSE_MS,
 } from "./lyrics-engine";
+import { resetLyricsPlaybackTimeForTests } from "./lyrics-playback-time";
 
 const PAUSE_MS = USER_SCROLL_PAUSE_MS;
 
 function makeContainer(): HTMLDivElement {
   return document.createElement("div");
 }
+
+beforeEach(() => {
+  // Module-level resume generation / unlock suppress / seek latch leak across
+  // cases and can make a later test pass via the wrong (explicit-resume) path.
+  resetLyricsEngineScrollControlForTests();
+  resetLyricsPlaybackTimeForTests();
+});
 
 describe("createUserScrollGuard", () => {
   beforeEach(() => {
@@ -49,8 +59,10 @@ describe("createUserScrollGuard", () => {
   test("unlocks on wheel and re-locks after the idle timeout", () => {
     const container = makeContainer();
     const onActiveChange = vi.fn();
+    const onIdleRelock = vi.fn();
     const guard = createUserScrollGuard(container, PAUSE_MS, {
       onActiveChange,
+      onIdleRelock,
     });
 
     container.dispatchEvent(new WheelEvent("wheel", { deltaY: 40 }));
@@ -60,6 +72,25 @@ describe("createUserScrollGuard", () => {
     vi.advanceTimersByTime(PAUSE_MS);
     expect(guard.isActive()).toBe(false);
     expect(onActiveChange).toHaveBeenCalledWith(false);
+    expect(onIdleRelock).toHaveBeenCalledTimes(1);
+
+    guard.destroy();
+  });
+
+  test("idle relock requests auto-scroll resume so viewport re-anchors", () => {
+    // REGRESSION: clearing unlocked alone hid the Follow button while the
+    // spring stayed parked at the user's browse offset until the next line
+    // change (long lines / instrumental gaps). Idle must bump resume gen.
+    const container = makeContainer();
+    const before = peekLyricsAutoScrollResumeGeneration();
+    const guard = createUserScrollGuard(container, PAUSE_MS);
+
+    container.dispatchEvent(new WheelEvent("wheel", { deltaY: 40 }));
+    expect(guard.isActive()).toBe(true);
+
+    vi.advanceTimersByTime(PAUSE_MS);
+    expect(guard.isActive()).toBe(false);
+    expect(peekLyricsAutoScrollResumeGeneration()).toBe(before + 1);
 
     guard.destroy();
   });
@@ -521,6 +552,56 @@ describe("tickLyricsEngineScroll", () => {
     // Unlocked: leave the user's scroll position alone even if the playing
     // line would target a different offset.
     expect(container.scrollTop).toBe(180);
+  });
+
+  test("idle relock resume snaps scrollTop back while the active line is unchanged", () => {
+    // Long active line (same index across the idle window): after the user
+    // browses away and the pause expires, resume must re-anchor even though
+    // activeIndex === prevActiveIndexRef.
+    const { container, scrollSpring, scrollState } = makeScrollFixture();
+    const lines = [{ time_ms: 0 }, { time_ms: 30_000 }];
+
+    // Playing line 0; spring already settled on the correct target.
+    scrollSpring.jumpTo(0);
+    scrollState.targetScrollTopRef.current = 0;
+    scrollState.prevActiveIndexRef.current = 0;
+    scrollState.prevAdjustedMsRef.current = 1000;
+    scrollState.lastResumeGenerationRef.current =
+      peekLyricsAutoScrollResumeGeneration();
+    container.scrollTop = 0;
+
+    // User browses far away while still on line 0.
+    container.scrollTop = 180;
+    scrollSpring.jumpTo(180);
+    scrollState.targetScrollTopRef.current = 180;
+
+    let guardActive = true;
+    const guard = {
+      isActive: () => guardActive,
+      clear: () => {
+        guardActive = false;
+      },
+      withProgrammatic: (fn: () => void) => fn(),
+      destroy: () => {},
+    };
+
+    // Idle timeout → re-lock + resume generation (what createUserScrollGuard does).
+    guardActive = false;
+    requestLyricsAutoScrollResume();
+
+    tickLyricsEngineScroll({
+      container,
+      lines,
+      adjustedMs: 2000, // still line 0
+      scrollState,
+      userScrollGuard: guard,
+      reducedMotion: true, // snap without spring settle loop
+      dt: 0.016,
+    });
+
+    expect(guardActive).toBe(false);
+    expect(container.scrollTop).toBe(0);
+    expect(scrollSpring.getPosition()).toBe(0);
   });
 
   test("continues scrolling after a seek snap on subsequent line changes", () => {

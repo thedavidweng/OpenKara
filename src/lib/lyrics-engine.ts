@@ -51,6 +51,12 @@ export function endLyricsAutoScrollUnlockSuppress(): void {
   autoScrollUnlockSuppressed = false;
 }
 
+/** Test-only: reset module-level resume / suppress latches between cases. */
+export function resetLyricsEngineScrollControlForTests(): void {
+  autoScrollResumeGeneration = 0;
+  autoScrollUnlockSuppressed = false;
+}
+
 export interface UserScrollGuard {
   /** True while the user has unlocked auto-follow (browsing lyrics freely). */
   isActive: () => boolean;
@@ -81,10 +87,19 @@ export function createUserScrollGuard(
       clearTimeout: typeof globalThis.clearTimeout;
     };
     onActiveChange?: (active: boolean) => void;
+    /**
+     * Fired after idle re-lock. Defaults to {@link requestLyricsAutoScrollResume}
+     * so the engine re-anchors scrollTop to the playing line — clearing
+     * `unlocked` alone only hides the Follow button while the spring stays
+     * parked at the user's browse offset until the next line change.
+     */
+    onIdleRelock?: () => void;
   } = {},
 ): UserScrollGuard {
   const timers = options.timers ?? { setTimeout, clearTimeout };
   const onActiveChange = options.onActiveChange;
+  const onIdleRelock =
+    options.onIdleRelock ?? (() => requestLyricsAutoScrollResume());
 
   let unlocked = false;
   let programmaticDepth = 0;
@@ -103,7 +118,12 @@ export function createUserScrollGuard(
     if (timer !== null) timers.clearTimeout(timer);
     timer = timers.setTimeout(() => {
       timer = null;
+      // Was unlocked: re-lock UI and force a resume snap to the playing line.
+      // Without the resume generation, the engine sees activeIndex unchanged
+      // and leaves scrollTop at the user's browse position while the Follow
+      // button already claims follow has resumed.
       setUnlocked(false);
+      onIdleRelock();
     }, pauseMs);
   };
 

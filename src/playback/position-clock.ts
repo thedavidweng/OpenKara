@@ -54,8 +54,14 @@ export function shouldReplaceSnapshotFromPositionEvent(
   current: PlaybackStateSnapshot | null,
   next: PlaybackStateSnapshot,
 ): boolean {
+  // RATIONALE: transport_generation is part of the snapshot identity. Seek /
+  // resume / pause bump it on the backend. If we only patch positionMs and
+  // keep an older generation on the stored snapshot, delayed pre-seek
+  // position events fail the stale check (their gen is not *less* than the
+  // still-stale stored gen) and yank the clock back before the seek.
   return (
     current?.song_id !== next.song_id ||
+    current.transport_generation !== next.transport_generation ||
     current.state !== next.state ||
     current.is_playing !== next.is_playing ||
     current.duration_ms !== next.duration_ms ||

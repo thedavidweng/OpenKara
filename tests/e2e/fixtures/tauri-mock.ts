@@ -49,9 +49,27 @@ export const TAURI_MOCK_SCRIPT = `
   let nextEventId = 1;
   let nextMenuRid = 1;
   let lastNativeMenu = null;
+  // Matches Rust PlaybackStateSnapshot.transport_generation — load / resume /
+  // pause / seek bump it so frontend stale-event filtering can be exercised.
+  let transportGeneration = 0;
   let rotationState = {
     singer_names: [], current_index: 0, mode: "round_robin", active: false,
   };
+
+  function bumpTransportGeneration() {
+    transportGeneration += 1;
+    return transportGeneration;
+  }
+
+  function playbackSnapshot(fields) {
+    return {
+      transport_generation: transportGeneration,
+      stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
+      has_stems: false,
+      stem_mode: null,
+      ...fields,
+    };
+  }
 
   function clone(value) {
     return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -193,55 +211,52 @@ export const TAURI_MOCK_SCRIPT = `
     get_all_separation_statuses: {},
     get_all_upload_statuses: {},
 
-    // Playback
-    get_playback_state: {
+    // Playback — every snapshot carries transport_generation (IPC contract).
+    get_playback_state: () => playbackSnapshot({
       song_id: null, state: "idle", is_playing: false,
       position_ms: 0, duration_ms: 0, buffered_ms: 0, volume: 0.8,
-      stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
-      has_stems: false, stem_mode: null,
-    },
+    }),
     play: (args) => {
       const songId = (args && (args.songId || args.song_id)) || "aaa111";
       const song = MOCK_SONGS.find((s) => s.hash === songId);
-      return {
+      bumpTransportGeneration();
+      return playbackSnapshot({
         song_id: songId,
         state: "playing", is_playing: true, position_ms: 0,
         duration_ms: song ? song.duration_ms : 300000, buffered_ms: 0, volume: 0.8,
-        stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
-        has_stems: false, stem_mode: null,
-      };
+      });
     },
-    resume: {
-      song_id: "aaa111", state: "playing", is_playing: true,
-      position_ms: 0, duration_ms: 354000, buffered_ms: 0, volume: 0.8,
-      stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
-      has_stems: false, stem_mode: null,
+    resume: () => {
+      bumpTransportGeneration();
+      return playbackSnapshot({
+        song_id: "aaa111", state: "playing", is_playing: true,
+        position_ms: 0, duration_ms: 354000, buffered_ms: 0, volume: 0.8,
+      });
     },
-    pause: {
-      song_id: "aaa111", state: "idle", is_playing: false,
-      position_ms: 5000, duration_ms: 354000, buffered_ms: 0, volume: 0.8,
-      stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
-      has_stems: false, stem_mode: null,
+    pause: () => {
+      bumpTransportGeneration();
+      return playbackSnapshot({
+        song_id: "aaa111", state: "idle", is_playing: false,
+        position_ms: 5000, duration_ms: 354000, buffered_ms: 0, volume: 0.8,
+      });
     },
-    seek: (args) => ({
-      song_id: "aaa111", state: "playing", is_playing: true,
-      position_ms: (args && args.ms) || 0, duration_ms: 354000, buffered_ms: 0, volume: 0.8,
-      stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
-      has_stems: false, stem_mode: null,
-    }),
-    set_volume: (args) => ({
+    seek: (args) => {
+      bumpTransportGeneration();
+      return playbackSnapshot({
+        song_id: "aaa111", state: "playing", is_playing: true,
+        position_ms: (args && args.ms) || 0, duration_ms: 354000, buffered_ms: 0, volume: 0.8,
+      });
+    },
+    set_volume: (args) => playbackSnapshot({
       song_id: "aaa111", state: "playing", is_playing: true,
       position_ms: 0, duration_ms: 354000, buffered_ms: 0,
       volume: (args && args.level) || 0.8,
-      stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
-      has_stems: false, stem_mode: null,
     }),
-    set_stem_volume: {
+    set_stem_volume: () => playbackSnapshot({
       song_id: "aaa111", state: "playing", is_playing: true,
       position_ms: 0, duration_ms: 354000, buffered_ms: 0, volume: 0.8,
-      stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
       has_stems: true, stem_mode: "two_stem",
-    },
+    }),
 
     // Lyrics
     fetch_lyrics: {

@@ -155,4 +155,54 @@ describe("reducePositionEvent", () => {
     // 20ms of pure client extrapolation after the last event — no 2× drift.
     expect(selectCurrentPositionMs(clock, () => now + 20)).toBe(300 * 33 + 20);
   });
+
+  test("promotes transport_generation on position events so delayed pre-seek events are dropped", () => {
+    // REGRESSION: seek bumps generation on the backend. If the position-event
+    // reducer only patched positionMs and left snapshot.transport_generation
+    // at the pre-seek value, a late generation-1 event looked non-stale and
+    // yanked the clock (and lyrics) back before the seek.
+    let clock: PositionClockState = {
+      snapshot: snapshot({
+        transport_generation: 1,
+        position_ms: 1000,
+      }),
+      positionMs: 1000,
+      playingSinceMs: 1000,
+    };
+
+    // Post-seek stream: generation 2, otherwise identical transport fields.
+    const afterSeek = reducePositionEvent(
+      clock,
+      {
+        ms: 10_000,
+        transport_generation: 2,
+        snapshot: snapshot({
+          transport_generation: 2,
+          position_ms: 10_000,
+        }),
+      },
+      2000,
+    );
+    expect(afterSeek).not.toBeNull();
+    clock = afterSeek!;
+    expect(clock.snapshot?.transport_generation).toBe(2);
+    expect(clock.positionMs).toBe(10_000);
+
+    // Delayed pre-seek event must be ignored.
+    const late = reducePositionEvent(
+      clock,
+      {
+        ms: 1100,
+        transport_generation: 1,
+        snapshot: snapshot({
+          transport_generation: 1,
+          position_ms: 1100,
+        }),
+      },
+      2100,
+    );
+    expect(late).toBeNull();
+    expect(clock.positionMs).toBe(10_000);
+    expect(clock.snapshot?.transport_generation).toBe(2);
+  });
 });

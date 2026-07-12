@@ -73,8 +73,12 @@ test.describe("Lyrics auto-follow", () => {
     // stream reproduces the production failure mode.
     await page.evaluate(() => {
       const startedAt = performance.now();
+      // transport_generation must match the post-play snapshot so the stream
+      // is accepted; contract requires top-level generation === snapshot gen.
+      const transportGeneration = 1;
       const snapshot = {
         song_id: "aaa111",
+        transport_generation: transportGeneration,
         state: "playing",
         is_playing: true,
         position_ms: 0,
@@ -89,6 +93,7 @@ test.describe("Lyrics auto-follow", () => {
         const positionMs = Math.round(performance.now() - startedAt);
         window.__OPENKARA_E2E__.emitEvent("playback-position", {
           ms: positionMs,
+          transport_generation: transportGeneration,
           snapshot: { ...snapshot, position_ms: positionMs },
         });
       }, 33);
@@ -171,5 +176,34 @@ test.describe("Lyrics auto-follow", () => {
     await page.waitForTimeout(300);
     const relockedTop = await readScrollTop(page);
     expect(relockedTop).toBeLessThan(stillTop - 200);
+  });
+
+  test("idle timeout re-locks follow and returns scrollTop to the playing line", async ({
+    page,
+  }) => {
+    // Dense lyrics start at 1s; stay early so the active line does not change
+    // across the 4s idle window (would mask a missing resume snap).
+    await page.waitForTimeout(1500);
+
+    const viewport = page.locator(VIEWPORT);
+    const box = await viewport.boundingBox();
+    if (!box) throw new Error("viewport not visible");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, 900);
+    await page.waitForTimeout(150);
+    await page.mouse.wheel(0, 900);
+
+    const followButton = page.locator("[data-testid='lyrics-follow-playing']");
+    await expect(followButton).toHaveAttribute("data-visible", "true");
+
+    await page.waitForTimeout(500);
+    const unlockedTop = await readScrollTop(page);
+    expect(unlockedTop).toBeGreaterThan(400);
+
+    // USER_SCROLL_PAUSE_MS is 4000 — wait past idle without changing the line.
+    await page.waitForTimeout(4500);
+    await expect(followButton).toHaveAttribute("data-visible", "false");
+    const relockedTop = await readScrollTop(page);
+    expect(relockedTop).toBeLessThan(unlockedTop - 200);
   });
 });
