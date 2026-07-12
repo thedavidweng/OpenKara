@@ -10,7 +10,7 @@ use std::{
     fs,
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64},
         Arc, Mutex,
     },
     thread,
@@ -217,11 +217,7 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         Arc::clone(&airplay_stream_generation),
         Arc::clone(&shutdown),
     );
-    spawn_playback_position_emitter(
-        app.handle().clone(),
-        playback,
-        Arc::clone(&airplay_audience_active),
-    );
+    spawn_playback_position_emitter(app.handle().clone(), playback);
 
     if model_bootstrap.should_spawn_bootstrap_worker {
         spawn_model_bootstrap_worker(
@@ -299,7 +295,6 @@ fn load_library(app_config: Option<&config::AppConfig>) -> Option<LibraryRoot> {
 fn spawn_playback_position_emitter<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     playback: Arc<Mutex<PlaybackController>>,
-    airplay_audience_active: Arc<AtomicBool>,
 ) {
     thread::spawn(move || {
         let mut last_emitted_position = None;
@@ -344,24 +339,21 @@ fn spawn_playback_position_emitter<R: Runtime>(
                 continue;
             }
 
-            if airplay_audience_active.load(Ordering::SeqCst) {
-                last_emitted_position = Some(snapshot.position_ms);
-                last_emitted_state = Some(snapshot.state.clone());
-                last_emitted_is_playing = Some(snapshot.is_playing);
-                continue;
-            }
+            // AirPlay scene content and local playback telemetry are separate
+            // concerns. `airplay_audience_active` previously meant merely that
+            // the projected scene mode was lyrics/CDG, which is true whenever a
+            // song is loaded on macOS even with no AirPlay route selected. Using
+            // it to suppress this emitter removed the local WebView's only
+            // post-seek `buffering` -> `playing` clock update and froze lyrics.
+            // Always publish local transport position/state; AirPlay surfaces
+            // consume their own displayed-position clock independently.
 
-            let position_delta_ms = last_emitted_position
-                .map(|last| snapshot.position_ms.abs_diff(last))
-                .unwrap_or(u64::MAX);
-
-            // Emit when transport fields change even if the position delta is small.
-            // Without this, the frontend can remain stuck with a stale is_playing
-            // after pause/resume or seek while state stays "playing".
-            let state_changed = last_emitted_state.as_deref() != Some(&snapshot.state);
-            let is_playing_changed = last_emitted_is_playing != Some(snapshot.is_playing);
-
-            if position_delta_ms > 16 || state_changed || is_playing_changed {
+            if should_emit_playback_position(
+                last_emitted_position,
+                last_emitted_state.as_deref(),
+                last_emitted_is_playing,
+                &snapshot,
+            ) {
                 let _ = app_handle.emit(
                     audio::playback::PLAYBACK_POSITION_EVENT,
                     audio::playback::playback_position_event(&snapshot),
@@ -372,6 +364,25 @@ fn spawn_playback_position_emitter<R: Runtime>(
             }
         }
     });
+}
+
+fn should_emit_playback_position(
+    last_position_ms: Option<u64>,
+    last_state: Option<&str>,
+    last_is_playing: Option<bool>,
+    snapshot: &audio::playback::PlaybackStateSnapshot,
+) -> bool {
+    let position_delta_ms = last_position_ms
+        .map(|last| snapshot.position_ms.abs_diff(last))
+        .unwrap_or(u64::MAX);
+    let state_changed = last_state != Some(snapshot.state.as_str());
+    let is_playing_changed = last_is_playing != Some(snapshot.is_playing);
+
+    // State transitions must be emitted even at an unchanged position. A
+    // streaming seek intentionally holds position while buffering; the
+    // buffering -> playing edge is what lets the frontend resume its local
+    // monotonic clock without running lyrics ahead of silent audio.
+    position_delta_ms > 16 || state_changed || is_playing_changed
 }
 
 pub(crate) fn spawn_model_bootstrap_worker<R: Runtime>(
@@ -439,4 +450,59 @@ pub(crate) fn spawn_model_bootstrap_worker<R: Runtime>(
         };
         let _ = app_handle.emit(event, snapshot);
     });
+}
+
+#[cfg(test)]
+mod playback_position_emitter_tests {
+    use super::should_emit_playback_position;
+    use crate::audio::playback::{PlaybackStateSnapshot, StemVolumes};
+
+    fn snapshot(state: &str, is_playing: bool, position_ms: u64) -> PlaybackStateSnapshot {
+        PlaybackStateSnapshot {
+            song_id: Some("song-1".to_owned()),
+            transport_generation: 2,
+            state: state.to_owned(),
+            is_playing,
+            position_ms,
+            duration_ms: Some(60_000),
+            buffered_ms: position_ms,
+            volume: 1.0,
+            stem_volumes: StemVolumes::default(),
+            has_stems: false,
+            stem_mode: None,
+        }
+    }
+
+    #[test]
+    fn emits_buffering_recovery_without_position_delta() {
+        let recovered = snapshot("playing", true, 15_000);
+        assert!(should_emit_playback_position(
+            Some(15_000),
+            Some("buffering"),
+            Some(true),
+            &recovered,
+        ));
+    }
+
+    #[test]
+    fn emits_normal_position_progress() {
+        let progressed = snapshot("playing", true, 15_033);
+        assert!(should_emit_playback_position(
+            Some(15_000),
+            Some("playing"),
+            Some(true),
+            &progressed,
+        ));
+    }
+
+    #[test]
+    fn suppresses_unchanged_duplicate_snapshot() {
+        let duplicate = snapshot("playing", true, 15_000);
+        assert!(!should_emit_playback_position(
+            Some(15_000),
+            Some("playing"),
+            Some(true),
+            &duplicate,
+        ));
+    }
 }

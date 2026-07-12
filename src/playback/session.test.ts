@@ -448,6 +448,82 @@ describe("createPlaybackSession", () => {
       await expect(session.seek(15_000)).resolves.toBe(false);
       expect(session.getPositionClock().positionMs).toBe(0);
     });
+
+    test("does not let a late buffering response overwrite a newer same-generation playing event", async () => {
+      let resolveSeek!: (value: PlaybackStateSnapshot) => void;
+      const seekResponse = new Promise<PlaybackStateSnapshot>((resolve) => {
+        resolveSeek = resolve;
+      });
+      let now = 1000;
+      const deps = mockDeps({
+        nowMs: () => now,
+        transport: {
+          seek: vi.fn().mockReturnValue(seekResponse),
+        },
+      });
+      const session = createPlaybackSession(deps);
+      session.applySnapshot(
+        snapshot({
+          song_id: "song-1",
+          transport_generation: 1,
+          state: "playing",
+          is_playing: true,
+          position_ms: 1000,
+        }),
+      );
+
+      const pending = session.seek(15_000);
+
+      // Real streaming seek: the command first emits a buffering target. The
+      // audio thread can then recover and emit playing before the invoke
+      // response is delivered to JavaScript.
+      now = 1100;
+      session.applyPosition({
+        ms: 15_000,
+        transport_generation: 2,
+        snapshot: snapshot({
+          song_id: "song-1",
+          transport_generation: 2,
+          state: "buffering",
+          is_playing: true,
+          position_ms: 15_000,
+        }),
+      });
+      now = 1200;
+      session.applyPosition({
+        ms: 15_050,
+        transport_generation: 2,
+        snapshot: snapshot({
+          song_id: "song-1",
+          transport_generation: 2,
+          state: "playing",
+          is_playing: true,
+          position_ms: 15_050,
+        }),
+      });
+
+      // The older command response arrives last with the same generation.
+      resolveSeek(
+        snapshot({
+          song_id: "song-1",
+          transport_generation: 2,
+          state: "buffering",
+          is_playing: true,
+          position_ms: 15_000,
+        }),
+      );
+
+      await expect(pending).resolves.toBe(true);
+      expect(session.getPositionClock()).toMatchObject({
+        positionMs: 15_050,
+        playingSinceMs: 1200,
+        snapshot: {
+          transport_generation: 2,
+          state: "playing",
+          position_ms: 15_050,
+        },
+      });
+    });
   });
 });
 

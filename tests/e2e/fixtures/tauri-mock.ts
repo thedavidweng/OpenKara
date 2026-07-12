@@ -255,21 +255,37 @@ export const TAURI_MOCK_SCRIPT = `
     },
     seek: (args) => {
       bumpTransportGeneration();
-      const nextSnapshot = playbackSnapshot({
-        song_id: "aaa111", state: "playing", is_playing: true,
-        position_ms: (args && args.ms) || 0, duration_ms: 354000, buffered_ms: 0, volume: 0.8,
+      const targetMs = (args && args.ms) || 0;
+      const bufferingSnapshot = playbackSnapshot({
+        song_id: "aaa111", state: "buffering", is_playing: true,
+        position_ms: targetMs, duration_ms: 354000, buffered_ms: targetMs, volume: 0.8,
       });
-      // Match the Rust service: playback-position is emitted before the Tauri
-      // command response resolves. Delaying only the response exposes the
-      // production seek race instead of turning seek into a synchronous mock.
+      const playingSnapshot = {
+        ...bufferingSnapshot,
+        state: "playing",
+        position_ms: targetMs + 50,
+        buffered_ms: 354000,
+      };
+      // Match the streaming Rust path, not the old optimistic browser fixture:
+      // seek first publishes the target as buffering. The audio thread can
+      // recover and publish playing before a delayed invoke response arrives.
+      // The session must keep that newer same-generation event rather than
+      // replaying the older buffering response and freezing the lyrics clock.
       queueMicrotask(() => {
         emitMockEvent("playback-position", {
-          ms: nextSnapshot.position_ms,
-          transport_generation: nextSnapshot.transport_generation,
-          snapshot: nextSnapshot,
+          ms: bufferingSnapshot.position_ms,
+          transport_generation: bufferingSnapshot.transport_generation,
+          snapshot: bufferingSnapshot,
         });
       });
-      return nextSnapshot;
+      setTimeout(() => {
+        emitMockEvent("playback-position", {
+          ms: playingSnapshot.position_ms,
+          transport_generation: playingSnapshot.transport_generation,
+          snapshot: playingSnapshot,
+        });
+      }, 80);
+      return bufferingSnapshot;
     },
     set_volume: (args) => playbackSnapshot({
       song_id: "aaa111", state: "playing", is_playing: true,

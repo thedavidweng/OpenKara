@@ -217,6 +217,22 @@ export function createPlaybackSession(
       if (!clock.snapshot?.song_id) return false;
       const clamped = Math.max(0, ms);
       const snapshot = await deps.transport.seek(clamped);
+
+      // The Rust seek command emits playback-position before returning its
+      // snapshot. The audio thread can leave seek buffering quickly, so a
+      // newer same-generation `playing` event may already be installed by the
+      // time the older command response reaches JavaScript. Treat the current
+      // clock as authoritative once it has adopted this seek generation;
+      // replaying the response would regress state back to `buffering`, clear
+      // playingSinceMs, and freeze lyrics until another command re-anchors it.
+      const current = clock.snapshot;
+      if (
+        current?.song_id === snapshot.song_id &&
+        current.transport_generation === snapshot.transport_generation
+      ) {
+        return true;
+      }
+
       return tryApplyAuthoritative(snapshot);
     },
 

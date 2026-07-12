@@ -956,6 +956,58 @@ describe("seek", () => {
     expect(player.store.getState().seekRevision).toBe(2);
   });
 
+  test("keeps a newer playing event when the delayed seek response still says buffering", async () => {
+    player.store.getState().updateSnapshot(
+      playbackSnapshot({
+        transport_generation: 1,
+        state: "playing",
+        is_playing: true,
+        position_ms: 1200,
+      }),
+    );
+
+    let resolveSeek!: (snapshot: PlaybackStateSnapshot) => void;
+    mockSeek.mockReturnValue(
+      new Promise<PlaybackStateSnapshot>((resolve) => {
+        resolveSeek = resolve;
+      }),
+    );
+
+    const pendingSeek = player.store.getState().seek(15_000);
+    const buffering = playbackSnapshot({
+      transport_generation: 2,
+      state: "buffering",
+      is_playing: true,
+      position_ms: 15_000,
+    });
+    const recovered = playbackSnapshot({
+      transport_generation: 2,
+      state: "playing",
+      is_playing: true,
+      position_ms: 15_050,
+    });
+
+    player.store
+      .getState()
+      .applyPlaybackPositionEvent(playbackPositionEvent(buffering));
+    player.store
+      .getState()
+      .applyPlaybackPositionEvent(playbackPositionEvent(recovered));
+    resolveSeek(buffering);
+    await pendingSeek;
+
+    expect(player.store.getState()).toMatchObject({
+      positionMs: 15_050,
+      seekRevision: 2,
+      snapshot: {
+        transport_generation: 2,
+        state: "playing",
+        position_ms: 15_050,
+      },
+    });
+    expect(player.store.getState().playingSinceMs).not.toBeNull();
+  });
+
   test("does not publish a seek edge when the seek response is rejected", async () => {
     player.store.getState().updateSnapshot(playbackSnapshot());
     const error = new Error("seek failed");

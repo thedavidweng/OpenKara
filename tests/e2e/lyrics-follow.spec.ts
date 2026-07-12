@@ -142,7 +142,8 @@ test.describe("Lyrics auto-follow", () => {
 
     await page.getByText("Lyric line 20 ").click();
 
-    // Mock seek returns position_ms = 21000; clock keeps extrapolating.
+    // Mock streaming seek publishes buffering at 21000, then playing at
+    // 21050; the clock keeps extrapolating after recovery.
     await page.waitForTimeout(1000);
     const afterSeek = await readScrollTop(page);
     expect(afterSeek).toBeGreaterThan(100);
