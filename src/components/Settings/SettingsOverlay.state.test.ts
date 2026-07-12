@@ -460,3 +460,183 @@ describe("createSettingsOverlayActions - initialize", () => {
     expect(harness.getSnapshot().meta.isInitializing).toBe(false);
   });
 });
+
+describe("createSettingsOverlayActions - setEqEnabled", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("calls api.setEqEnabled and patches state with the result", async () => {
+    const harness = createHarness({
+      initialSettings: { eqEnabled: false },
+    });
+
+    vi.mocked(harness.dependencies.api.setEqEnabled).mockResolvedValue({
+      stem_mode: "two_stem",
+      model_variant: "htdemucs",
+      language: "en",
+      hide_batch_separate: false,
+      cover_art_backdrop: true,
+      lyrics_font_step: 0,
+      execution_provider: "cpu",
+      available_execution_providers: ["cpu"],
+      eq_enabled: true,
+      eq_gains_db: [0, 0, 0, 0, 0],
+    });
+
+    await harness.actions.setEqEnabled(true);
+
+    expect(harness.dependencies.api.setEqEnabled).toHaveBeenCalledWith(true);
+    expect(
+      harness.dependencies.settingsStore.hydrateAppSettings,
+    ).toHaveBeenCalledWith(expect.objectContaining({ eq_enabled: true }));
+    expect(harness.getSnapshot().state.eqEnabled).toBe(true);
+  });
+
+  test("rolls back state on API error", async () => {
+    const harness = createHarness({
+      initialSettings: { eqEnabled: false },
+    });
+
+    vi.mocked(harness.dependencies.api.setEqEnabled).mockRejectedValue(
+      new Error("eq enable fail"),
+    );
+
+    await harness.actions.setEqEnabled(true);
+
+    expect(harness.dependencies.api.setEqEnabled).toHaveBeenCalledWith(true);
+    expect(harness.dependencies.notifyError).toHaveBeenCalledWith(
+      expect.any(Error),
+    );
+    // State rolled back to the previous value.
+    expect(harness.getSnapshot().state.eqEnabled).toBe(false);
+  });
+
+  test("is a no-op when the value hasn't changed", async () => {
+    const harness = createHarness({
+      initialSettings: { eqEnabled: true },
+    });
+
+    await harness.actions.setEqEnabled(true);
+
+    expect(harness.dependencies.api.setEqEnabled).not.toHaveBeenCalled();
+    expect(
+      harness.dependencies.settingsStore.hydrateAppSettings,
+    ).not.toHaveBeenCalled();
+    expect(harness.getSnapshot().state.eqEnabled).toBe(true);
+  });
+});
+
+describe("createSettingsOverlayActions - setEqGains", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("calls api.setEqGains and patches state with the result", async () => {
+    const harness = createHarness({
+      initialSettings: { eqEnabled: true, eqGainsDb: [0, 0, 0, 0, 0] },
+    });
+
+    vi.mocked(harness.dependencies.api.setEqGains).mockResolvedValue({
+      stem_mode: "two_stem",
+      model_variant: "htdemucs",
+      language: "en",
+      hide_batch_separate: false,
+      cover_art_backdrop: true,
+      lyrics_font_step: 0,
+      execution_provider: "cpu",
+      available_execution_providers: ["cpu"],
+      eq_enabled: true,
+      eq_gains_db: [6, 0, 0, 0, 0],
+    });
+
+    await harness.actions.setEqGains([6, 0, 0, 0, 0]);
+
+    expect(harness.dependencies.api.setEqGains).toHaveBeenCalledWith([
+      6, 0, 0, 0, 0,
+    ]);
+    expect(
+      harness.dependencies.settingsStore.hydrateAppSettings,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ eq_gains_db: [6, 0, 0, 0, 0] }),
+    );
+    expect(harness.getSnapshot().state.eqGainsDb).toEqual([6, 0, 0, 0, 0]);
+  });
+
+  test("rolls back state on API error", async () => {
+    const harness = createHarness({
+      initialSettings: { eqEnabled: true, eqGainsDb: [0, 0, 0, 0, 0] },
+    });
+
+    vi.mocked(harness.dependencies.api.setEqGains).mockRejectedValue(
+      new Error("eq gains fail"),
+    );
+
+    await harness.actions.setEqGains([3, 0, 0, 0, 0]);
+
+    expect(harness.dependencies.api.setEqGains).toHaveBeenCalledWith([
+      3, 0, 0, 0, 0,
+    ]);
+    expect(harness.dependencies.notifyError).toHaveBeenCalledWith(
+      expect.any(Error),
+    );
+    // State rolled back to the previous value.
+    expect(harness.getSnapshot().state.eqGainsDb).toEqual([0, 0, 0, 0, 0]);
+  });
+});
+
+describe("createSettingsOverlayActions - resetEqGains", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("calls api.setEqGains with flat gains and patches state", async () => {
+    const harness = createHarness({
+      initialSettings: { eqEnabled: true, eqGainsDb: [3, -1, 0, 2, -5] },
+    });
+
+    vi.mocked(harness.dependencies.api.setEqGains).mockResolvedValue({
+      stem_mode: "two_stem",
+      model_variant: "htdemucs",
+      language: "en",
+      hide_batch_separate: false,
+      cover_art_backdrop: true,
+      lyrics_font_step: 0,
+      execution_provider: "cpu",
+      available_execution_providers: ["cpu"],
+      eq_enabled: true,
+      eq_gains_db: [0, 0, 0, 0, 0],
+    });
+
+    await harness.actions.resetEqGains();
+
+    expect(harness.dependencies.api.setEqGains).toHaveBeenCalledWith([
+      0, 0, 0, 0, 0,
+    ]);
+    expect(
+      harness.dependencies.settingsStore.hydrateAppSettings,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ eq_gains_db: [0, 0, 0, 0, 0] }),
+    );
+    expect(harness.getSnapshot().state.eqGainsDb).toEqual([0, 0, 0, 0, 0]);
+  });
+
+  test("notifies error on API failure", async () => {
+    const harness = createHarness({
+      initialSettings: { eqEnabled: true, eqGainsDb: [3, -1, 0, 2, -5] },
+    });
+
+    vi.mocked(harness.dependencies.api.setEqGains).mockRejectedValue(
+      new Error("reset fail"),
+    );
+
+    await harness.actions.resetEqGains();
+
+    expect(harness.dependencies.api.setEqGains).toHaveBeenCalledWith([
+      0, 0, 0, 0, 0,
+    ]);
+    expect(harness.dependencies.notifyError).toHaveBeenCalledWith(
+      expect.any(Error),
+    );
+  });
+});

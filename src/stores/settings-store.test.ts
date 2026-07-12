@@ -6,13 +6,27 @@ import {
   useSettingsStore,
 } from "./settings-store";
 
-const { mockSetLyricsFontStep, mockNotifyError } = vi.hoisted(() => ({
+const {
+  mockSetLyricsFontStep,
+  mockSetEqEnabled,
+  mockSetEqGains,
+  mockNotifyError,
+} = vi.hoisted(() => ({
   mockSetLyricsFontStep: vi.fn<(step: number) => Promise<AppSettings>>(),
+  mockSetEqEnabled: vi.fn<(enabled: boolean) => Promise<AppSettings>>(),
+  mockSetEqGains:
+    vi.fn<
+      (
+        gainsDb: [number, number, number, number, number],
+      ) => Promise<AppSettings>
+    >(),
   mockNotifyError: vi.fn(),
 }));
 
 vi.mock("@/lib/tauri", () => ({
   setLyricsFontStep: mockSetLyricsFontStep,
+  setEqEnabled: mockSetEqEnabled,
+  setEqGains: mockSetEqGains,
 }));
 
 vi.mock("@/lib/errors", () => ({
@@ -128,6 +142,8 @@ describe("settings-store actions", () => {
       eqGainsDb: [0, 0, 0, 0, 0],
     });
     mockSetLyricsFontStep.mockReset();
+    mockSetEqEnabled.mockReset();
+    mockSetEqGains.mockReset();
     mockNotifyError.mockReset();
   });
 
@@ -369,5 +385,79 @@ describe("settings-store actions", () => {
     expect(snapshot).not.toHaveProperty("resetLyricsFontStep");
     expect(snapshot).not.toHaveProperty("hydrateAppSettings");
     expect(snapshot).not.toHaveProperty("patchAppSettings");
+  });
+
+  // ── setEqEnabled ────────────────────────────────────────────────────────
+
+  test("setEqEnabled calls api.setEqEnabled and syncs the result", async () => {
+    const returned = makeAppSettings({ eq_enabled: true });
+    mockSetEqEnabled.mockResolvedValue(returned);
+
+    await store.getState().setEqEnabled(true);
+
+    expect(mockSetEqEnabled).toHaveBeenCalledWith(true);
+    expect(store.getState().eqEnabled).toBe(true);
+    expect(store.getState().hydrated).toBe(true);
+  });
+
+  test("setEqEnabled rolls back on API error", async () => {
+    store.setState({ eqEnabled: false });
+    const error = new Error("invoke failed");
+    mockSetEqEnabled.mockRejectedValue(error);
+
+    await store.getState().setEqEnabled(true);
+
+    expect(mockSetEqEnabled).toHaveBeenCalledWith(true);
+    expect(mockNotifyError).toHaveBeenCalledWith(error);
+    // State rolled back to the previous value.
+    expect(store.getState().eqEnabled).toBe(false);
+  });
+
+  test("setEqEnabled is a no-op when value hasn't changed", async () => {
+    store.setState({ eqEnabled: true });
+
+    await store.getState().setEqEnabled(true);
+
+    expect(mockSetEqEnabled).not.toHaveBeenCalled();
+    expect(store.getState().eqEnabled).toBe(true);
+  });
+
+  // ── setEqGains ──────────────────────────────────────────────────────────
+
+  test("setEqGains calls api.setEqGains and syncs the result", async () => {
+    const returned = makeAppSettings({ eq_gains_db: [6, 0, 0, 0, 0] });
+    mockSetEqGains.mockResolvedValue(returned);
+
+    await store.getState().setEqGains([6, 0, 0, 0, 0]);
+
+    expect(mockSetEqGains).toHaveBeenCalledWith([6, 0, 0, 0, 0]);
+    expect(store.getState().eqGainsDb).toEqual([6, 0, 0, 0, 0]);
+    expect(store.getState().hydrated).toBe(true);
+  });
+
+  test("setEqGains rolls back on API error", async () => {
+    store.setState({ eqGainsDb: [0, 0, 0, 0, 0] });
+    const error = new Error("invoke failed");
+    mockSetEqGains.mockRejectedValue(error);
+
+    await store.getState().setEqGains([3, 0, 0, 0, 0]);
+
+    expect(mockSetEqGains).toHaveBeenCalledWith([3, 0, 0, 0, 0]);
+    expect(mockNotifyError).toHaveBeenCalledWith(error);
+    // State rolled back to the previous value.
+    expect(store.getState().eqGainsDb).toEqual([0, 0, 0, 0, 0]);
+  });
+
+  // ── resetEqGains ────────────────────────────────────────────────────────
+
+  test("resetEqGains calls api.setEqGains with flat gains", async () => {
+    store.setState({ eqGainsDb: [3, -1, 0, 2, -5] });
+    const returned = makeAppSettings({ eq_gains_db: [0, 0, 0, 0, 0] });
+    mockSetEqGains.mockResolvedValue(returned);
+
+    await store.getState().resetEqGains();
+
+    expect(mockSetEqGains).toHaveBeenCalledWith([0, 0, 0, 0, 0]);
+    expect(store.getState().eqGainsDb).toEqual([0, 0, 0, 0, 0]);
   });
 });

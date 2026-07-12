@@ -239,4 +239,135 @@ describe("SettingsEqSection", () => {
     expect(screen.getByText("+1.0 dB")).toBeInTheDocument();
     expect(screen.getByText("-3.0 dB")).toBeInTheDocument();
   });
+
+  test("formatGainDb prefixes positive gains with + and shows negatives without", () => {
+    const value = createSettingsOverlayTestContextValue({
+      state: { eqEnabled: true, eqGainsDb: [6, -3, 0, 0, 0] },
+      meta: { isInitializing: false },
+    });
+
+    renderWithContext(value);
+
+    // Positive gain gets a "+" prefix; negative does not.
+    expect(screen.getByText("+6.0 dB")).toBeInTheDocument();
+    expect(screen.getByText("-3.0 dB")).toBeInTheDocument();
+  });
+
+  test("onPointerUp on a slider flushes the gains immediately", () => {
+    const setEqGains = vi.fn();
+    const value = createSettingsOverlayTestContextValue(
+      {
+        state: { eqEnabled: true, eqGainsDb: [0, 0, 0, 0, 0] },
+        meta: { isInitializing: false },
+      },
+      { setEqGains },
+    );
+
+    renderWithContext(value);
+
+    const [firstSlider] = screen.getAllByRole("slider");
+
+    // Change the slider value (starts the debounce timer).
+    fireEvent.change(firstSlider, { target: { value: "5" } });
+    expect(setEqGains).not.toHaveBeenCalled();
+
+    // Releasing the pointer flushes immediately without waiting for debounce.
+    fireEvent.pointerUp(firstSlider);
+    expect(setEqGains).toHaveBeenCalledWith([5, 0, 0, 0, 0]);
+
+    // The debounce timer should have been cleared — advancing time must not
+    // trigger a second call.
+    act(() => {
+      vi.advanceTimersByTime(75);
+    });
+    expect(setEqGains).toHaveBeenCalledTimes(1);
+  });
+
+  test("onKeyUp on a slider flushes the gains immediately", () => {
+    const setEqGains = vi.fn();
+    const value = createSettingsOverlayTestContextValue(
+      {
+        state: { eqEnabled: true, eqGainsDb: [0, 0, 0, 0, 0] },
+        meta: { isInitializing: false },
+      },
+      { setEqGains },
+    );
+
+    renderWithContext(value);
+
+    const [firstSlider] = screen.getAllByRole("slider");
+
+    // Change the slider value (starts the debounce timer).
+    fireEvent.change(firstSlider, { target: { value: "4" } });
+    expect(setEqGains).not.toHaveBeenCalled();
+
+    // Releasing the key flushes immediately without waiting for debounce.
+    fireEvent.keyUp(firstSlider);
+    expect(setEqGains).toHaveBeenCalledWith([4, 0, 0, 0, 0]);
+
+    // The debounce timer should have been cleared — advancing time must not
+    // trigger a second call.
+    act(() => {
+      vi.advanceTimersByTime(75);
+    });
+    expect(setEqGains).toHaveBeenCalledTimes(1);
+  });
+
+  test("unmount clears the pending debounce timer so setEqGains is not called", () => {
+    const setEqGains = vi.fn();
+    const value = createSettingsOverlayTestContextValue(
+      {
+        state: { eqEnabled: true, eqGainsDb: [0, 0, 0, 0, 0] },
+        meta: { isInitializing: false },
+      },
+      { setEqGains },
+    );
+
+    const utils = renderWithContext(value);
+
+    const [firstSlider] = screen.getAllByRole("slider");
+
+    // Change the slider value (starts the debounce timer).
+    fireEvent.change(firstSlider, { target: { value: "7" } });
+    expect(setEqGains).not.toHaveBeenCalled();
+
+    // Unmount before the debounce fires — the cleanup effect should clear
+    // the pending timer.
+    utils.unmount();
+
+    act(() => {
+      vi.advanceTimersByTime(75);
+    });
+    expect(setEqGains).not.toHaveBeenCalled();
+  });
+
+  test("changing a slider twice quickly clears the previous debounce timer", () => {
+    const setEqGains = vi.fn();
+    const value = createSettingsOverlayTestContextValue(
+      {
+        state: { eqEnabled: true, eqGainsDb: [0, 0, 0, 0, 0] },
+        meta: { isInitializing: false },
+      },
+      { setEqGains },
+    );
+
+    renderWithContext(value);
+
+    const [firstSlider] = screen.getAllByRole("slider");
+
+    // First change starts a debounce timer.
+    fireEvent.change(firstSlider, { target: { value: "3" } });
+
+    // Second change before the debounce fires should clear the first timer
+    // and start a new one.
+    fireEvent.change(firstSlider, { target: { value: "6" } });
+
+    // Advance time by the debounce delay — only the second value should be
+    // persisted (a single call with the latest gains).
+    act(() => {
+      vi.advanceTimersByTime(75);
+    });
+    expect(setEqGains).toHaveBeenCalledTimes(1);
+    expect(setEqGains).toHaveBeenCalledWith([6, 0, 0, 0, 0]);
+  });
 });
