@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("@/stores/player-store", () => ({
   usePlayerStore: { getState: vi.fn() },
@@ -47,6 +47,10 @@ describe("createUserScrollGuard", () => {
     vi.useFakeTimers();
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   test("is inactive before any user interaction", () => {
     const container = makeContainer();
     const guard = createUserScrollGuard(container, PAUSE_MS);
@@ -54,6 +58,30 @@ describe("createUserScrollGuard", () => {
     expect(guard.isActive()).toBe(false);
 
     guard.destroy();
+  });
+
+  test("default global timers are bound (no browser Illegal invocation)", () => {
+    // REGRESSION: `{ setTimeout, clearTimeout }` called as timers.setTimeout
+    // throws "Illegal invocation" in Chromium because `this` is the bag.
+    // Fake timers hide that. Exercise the default timer path with real timers.
+    vi.useRealTimers();
+    const container = makeContainer();
+    const onIdleRelock = vi.fn();
+    const guard = createUserScrollGuard(container, 30, { onIdleRelock });
+
+    expect(() => {
+      container.dispatchEvent(new WheelEvent("wheel", { deltaY: 40 }));
+    }).not.toThrow();
+    expect(guard.isActive()).toBe(true);
+
+    return new Promise<void>((resolve) => {
+      setTimeout(() => {
+        expect(guard.isActive()).toBe(false);
+        expect(onIdleRelock).toHaveBeenCalledTimes(1);
+        guard.destroy();
+        resolve();
+      }, 80);
+    });
   });
 
   test("unlocks on wheel and re-locks after the idle timeout", () => {

@@ -20,6 +20,7 @@
     "check:i18n": "node scripts/check-i18n.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "check:patch-coverage": "node scripts/check-patch-coverage.mjs",
     "test:ui-smoke": "playwright test",
     "test:ui-smoke:ui": "playwright test --ui",
     "test:ui-smoke:webkit": "playwright test --config=playwright.webkit.config.ts",

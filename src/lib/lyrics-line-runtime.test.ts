@@ -44,6 +44,32 @@ describe("LyricsLineRuntime", () => {
     expect(wrapper.style.opacity).not.toBe("");
   });
 
+  test("skips plain-text ticks and wrappers without a DOM node", () => {
+    const runtime = new LyricsLineRuntime();
+    const wrapper = document.createElement("div");
+    runtime.registerWrapper(0, wrapper);
+    runtime.unregisterWrapper(0); // leaves springs, clears wrapperEl
+
+    runtime.tick({
+      activeLineIndex: 0,
+      adjustedMs: 0,
+      isPlaying: true,
+      dt: 0.016,
+      isPlainText: true,
+    });
+    expect(wrapper.style.transform).toBe("");
+
+    runtime.tick({
+      activeLineIndex: 0,
+      adjustedMs: 0,
+      isPlaying: true,
+      dt: 0.016,
+      isPlainText: false,
+    });
+    // null wrapperEl must not throw; element was unregistered.
+    expect(wrapper.style.transform).toBe("");
+  });
+
   test("re-registering an existing wrapper only updates the element pointer", () => {
     const runtime = new LyricsLineRuntime();
     const first = document.createElement("div");

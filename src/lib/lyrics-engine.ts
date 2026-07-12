@@ -87,7 +87,16 @@ export function createUserScrollGuard(
     onIdleRelock?: () => void;
   } = {},
 ): UserScrollGuard {
-  const timers = options.timers ?? { setTimeout, clearTimeout };
+  // RATIONALE: Must bind to the global object. Extracting `setTimeout` into a
+  // plain `{ setTimeout, clearTimeout }` bag and calling `timers.setTimeout(...)`
+  // makes `this` the bag, which throws "Illegal invocation" in browsers. The
+  // idle re-lock then never schedules, so Follow stays stuck unlocked forever
+  // after the first user wheel (Node/fake timers hide this — they do not check
+  // `this`).
+  const timers = options.timers ?? {
+    setTimeout: globalThis.setTimeout.bind(globalThis),
+    clearTimeout: globalThis.clearTimeout.bind(globalThis),
+  };
   const onActiveChange = options.onActiveChange;
   const onIdleRelock =
     options.onIdleRelock ?? (() => requestLyricsAutoScrollResume());
