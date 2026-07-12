@@ -1001,11 +1001,20 @@ describe("ImportLyricsResult shape matches Rust ImportLyricsResult", () => {
 
   test("LyricsMatch has song_id and lrc_path fields", () => {
     const result: ImportLyricsResult = {
-      matched: [{ song_id: "abc", lrc_path: "/path/to/lyrics.lrc" }],
+      matched: [
+        {
+          song_id: "abc",
+          lrc_path: "/path/to/lyrics.lrc",
+          song_title: "Test Song",
+          song_artist: "Test Artist",
+        },
+      ],
       unmatched: [],
     };
     expect(result.matched[0]).toHaveProperty("song_id");
     expect(result.matched[0]).toHaveProperty("lrc_path");
+    expect(result.matched[0]).toHaveProperty("song_title");
+    expect(result.matched[0]).toHaveProperty("song_artist");
   });
 });
 

@@ -216,7 +216,9 @@
     "fontSizeIncrease": "增大歌词字号",
     "fontSizeReset": "重置歌词字号",
     "fontSizeResetShort": "重置",
-    "followPlaying": "跟随正在播放的歌词"
+    "followPlaying": "跟随正在播放的歌词",
+    "matchedToast": "歌词已匹配到「{{song}}」",
+    "unmatchedToast": "歌词文件无法匹配到歌曲：{{file}}"
   },
   "songEdit": {
     "title": "编辑歌曲信息",

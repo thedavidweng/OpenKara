@@ -197,6 +197,8 @@ export interface ExtractEmbeddedCoverArtResult {
 export interface LyricsMatch {
   song_id: string;
   lrc_path: string;
+  song_title: string | null;
+  song_artist: string | null;
 }
 
 export interface ImportLyricsResult {

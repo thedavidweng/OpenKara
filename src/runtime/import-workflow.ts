@@ -1,5 +1,7 @@
 import type { TFunction } from "i18next";
-import type { ImportFailure, Song } from "@/types/ipc";
+import i18next from "@/lib/i18n";
+import { notifySuccess } from "@/lib/errors";
+import type { ImportFailure, LyricsMatch, Song } from "@/types/ipc";
 import {
   buildAmbiguousCdgChoiceRequests,
   buildImportSongsOptions,
@@ -24,6 +26,15 @@ export interface RunImportWorkflowOptions {
   setSongs: (songs: Song[]) => void;
   publishLibraryInvalidation: () => void;
   t?: TFunction;
+}
+
+function songDisplayName(match: LyricsMatch): string {
+  const title = match.song_title ?? "";
+  const artist = match.song_artist ?? "";
+  if (title && artist) {
+    return `${title} — ${artist}`;
+  }
+  return title || artist || match.song_id.slice(0, 8);
 }
 
 export async function runImportWorkflow({
@@ -74,10 +85,17 @@ export async function runImportWorkflow({
 
   if (lrcPaths.length > 0) {
     const lrcResult = await api.importLyricsFiles(lrcPaths);
-    if (lrcResult.unmatched.length > 0) {
-      for (const path of lrcResult.unmatched) {
-        notifyError(`Lyrics file could not be matched to a song: ${path}`);
-      }
+    for (const match of lrcResult.matched) {
+      const fileName = match.lrc_path.split(/[/\\]/).pop() ?? match.lrc_path;
+      notifySuccess(
+        i18next.t("lyrics.matchedToast", {
+          song: songDisplayName(match),
+        }),
+        fileName,
+      );
+    }
+    for (const path of lrcResult.unmatched) {
+      notifyError(i18next.t("lyrics.unmatchedToast", { file: path }));
     }
   }
 
