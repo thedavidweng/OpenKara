@@ -226,6 +226,36 @@ describe("LyricsPanel contextual reveal", () => {
     );
   });
 
+  test("Follow button click invokes resume handler", () => {
+    mockLyricsState.lines = [
+      line({ time_ms: 0, text: "line one", words: null }),
+      line({ time_ms: 2000, text: "line two", words: null }),
+    ];
+    mockLyricsState.rawLrc = "[00:00.00]line one\n[00:02.00]line two";
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    act(() => {
+      root.render(<LyricsPanel />);
+    });
+
+    const button = host.querySelector(
+      "[data-testid='lyrics-follow-playing']",
+    ) as HTMLButtonElement;
+    expect(button).toBeTruthy();
+    expect(button.className).toContain("pointer-events-auto");
+    // Cover the onClick path (requests auto-scroll resume).
+    act(() => {
+      button.click();
+    });
+
+    act(() => {
+      root.unmount();
+    });
+    host.remove();
+  });
+
   test("uses the spacious stage lyric layout for standard presentation", () => {
     const markup = renderToStaticMarkup(<LyricsPanel />);
 

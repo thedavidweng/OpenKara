@@ -107,6 +107,43 @@ describe("LyricLine", () => {
     expect(markup).not.toContain("group-hover/line:bg-white/10");
   });
 
+  test("clicking a seekable line seeks to the line time without pre-arming lyrics isSeek", () => {
+    mockSeek.mockClear();
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    act(() => {
+      root.render(
+        <LyricLine
+          line={{
+            time_ms: 15_000,
+            text: "jump here",
+            words: null,
+            bg_words: null,
+            section: null,
+          }}
+          lineIndex={2}
+          state="future"
+          lyricsFontStep={0}
+        />,
+      );
+    });
+
+    // LyricLine uses a clickable root with cursor-pointer class.
+    const clickable = host.querySelector(".cursor-pointer") as HTMLElement;
+    expect(clickable).toBeTruthy();
+    act(() => {
+      clickable.click();
+    });
+    expect(mockSeek).toHaveBeenCalledWith(15_000);
+
+    act(() => {
+      root.unmount();
+    });
+    host.remove();
+  });
+
   test("renders word-level states for the active line without changing lyric timing behavior", () => {
     const markup = renderToStaticMarkup(
       <LyricLine

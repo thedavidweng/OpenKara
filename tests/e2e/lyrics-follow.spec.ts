@@ -263,26 +263,26 @@ test.describe("Lyrics auto-follow", () => {
     // across the 4s idle window (would mask a missing resume snap).
     await page.waitForTimeout(1500);
 
-    const viewport = page.locator(VIEWPORT);
-    const box = await viewport.boundingBox();
-    if (!box) throw new Error("viewport not visible");
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.wheel(0, 900);
-    await page.waitForTimeout(150);
-    await page.mouse.wheel(0, 900);
-    // Leave the viewport so hover/trackpad inertia is less likely to re-arm.
-    await page.mouse.move(0, 0);
+    // One synthetic wheel + scrollTop write — no browser wheel inertia stream
+    // that would keep re-arming USER_SCROLL_PAUSE_MS in CI.
+    await page.locator(VIEWPORT).evaluate((el) => {
+      el.scrollTop = 900;
+      el.dispatchEvent(
+        new WheelEvent("wheel", {
+          deltaY: 240,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
 
     const followButton = page.locator("[data-testid='lyrics-follow-playing']");
     await expect(followButton).toHaveAttribute("data-visible", "true");
-
-    const unlockedTop = await waitForScrollSettle(page);
+    const unlockedTop = await readScrollTop(page);
     expect(unlockedTop).toBeGreaterThan(400);
 
-    // Idle timer is re-armed by each wheel event — start the pause clock only
-    // after scrollTop is stable, then wait past USER_SCROLL_PAUSE_MS.
     await expect(followButton).toHaveAttribute("data-visible", "false", {
-      timeout: USER_SCROLL_PAUSE_MS + 2500,
+      timeout: USER_SCROLL_PAUSE_MS + 1500,
     });
     const relockedTop = await readScrollTop(page);
     expect(relockedTop).toBeLessThan(unlockedTop - 200);

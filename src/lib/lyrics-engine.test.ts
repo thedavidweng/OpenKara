@@ -166,6 +166,48 @@ describe("createUserScrollGuard", () => {
 
     guard.destroy();
   });
+
+  test("ignores zero-delta wheel and no-op scroll noise", () => {
+    const container = makeContainer();
+    const guard = createUserScrollGuard(container, PAUSE_MS);
+
+    container.dispatchEvent(new WheelEvent("wheel", { deltaY: 0, deltaX: 0 }));
+    expect(guard.isActive()).toBe(false);
+
+    container.scrollTop = 0;
+    container.dispatchEvent(new Event("scroll"));
+    expect(guard.isActive()).toBe(false);
+
+    // Second clear while already locked is a no-op for onActiveChange.
+    const onActiveChange = vi.fn();
+    const guard2 = createUserScrollGuard(container, PAUSE_MS, {
+      onActiveChange,
+    });
+    guard2.clear();
+    expect(onActiveChange).not.toHaveBeenCalled();
+    guard2.destroy();
+
+    guard.destroy();
+  });
+
+  test("re-arms idle when wheel continues after an earlier unlock", () => {
+    const onIdleRelock = vi.fn();
+    const container = makeContainer();
+    const guard = createUserScrollGuard(container, PAUSE_MS, { onIdleRelock });
+
+    container.dispatchEvent(new WheelEvent("wheel", { deltaY: 20 }));
+    vi.advanceTimersByTime(PAUSE_MS - 100);
+    container.dispatchEvent(new WheelEvent("wheel", { deltaY: 20 }));
+    vi.advanceTimersByTime(PAUSE_MS - 100);
+    expect(guard.isActive()).toBe(true);
+    expect(onIdleRelock).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(100);
+    expect(guard.isActive()).toBe(false);
+    expect(onIdleRelock).toHaveBeenCalledTimes(1);
+
+    guard.destroy();
+  });
 });
 
 describe("isLyricsPlaybackSeekJump", () => {

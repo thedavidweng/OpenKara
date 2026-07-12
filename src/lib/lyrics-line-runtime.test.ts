@@ -44,6 +44,26 @@ describe("LyricsLineRuntime", () => {
     expect(wrapper.style.opacity).not.toBe("");
   });
 
+  test("re-registering an existing wrapper only updates the element pointer", () => {
+    const runtime = new LyricsLineRuntime();
+    const first = document.createElement("div");
+    const second = document.createElement("div");
+    runtime.registerWrapper(0, first);
+    runtime.registerWrapper(0, second);
+
+    runtime.tick({
+      activeLineIndex: 0,
+      adjustedMs: 0,
+      isPlaying: true,
+      dt: 0.05,
+      isPlainText: false,
+    });
+
+    // New element receives transforms; springs were not reset by re-register.
+    expect(second.style.transform).toContain("scale(");
+    expect(first.style.transform).toBe("");
+  });
+
   test("preserves spring progress across unregister/register churn", () => {
     // React 19 re-runs inline ref callbacks on every parent re-render
     // (detach null → attach node). Unregister must not reset springs to 1,
