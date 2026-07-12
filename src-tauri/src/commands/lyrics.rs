@@ -474,6 +474,8 @@ fn save_manual_lyrics_on_thread(
 pub struct LyricsMatch {
     pub song_id: String,
     pub lrc_path: String,
+    pub song_title: Option<String>,
+    pub song_artist: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -591,6 +593,8 @@ fn import_lyrics_files_on_thread(
                     matched.push(LyricsMatch {
                         song_id: song.hash.clone(),
                         lrc_path: path_str.clone(),
+                        song_title: song.title.clone(),
+                        song_artist: song.artist.clone(),
                     });
                 } else {
                     unmatched.push(path_str.clone());

@@ -1,4 +1,22 @@
 import { describe, expect, test, vi } from "vitest";
+
+const { mockNotifySuccess, mockT } = vi.hoisted(() => ({
+  mockNotifySuccess: vi.fn(),
+  mockT: vi.fn((key: string, opts?: Record<string, unknown>) => {
+    if (!opts) return key;
+    return key;
+  }),
+}));
+
+vi.mock("@/lib/i18n", () => ({
+  default: { t: mockT },
+}));
+
+vi.mock("@/lib/errors", () => ({
+  notifyError: vi.fn(),
+  notifySuccess: mockNotifySuccess,
+}));
+
 import { runImportWorkflow, type ImportWorkflowApi } from "./import-workflow";
 
 function workflowApi(): ImportWorkflowApi {
@@ -104,8 +122,36 @@ describe("import workflow", () => {
 
     expect(setImportErrors).toHaveBeenCalledWith([failure]);
     expect(notifyError).toHaveBeenCalledWith(failure.error);
-    expect(notifyError).toHaveBeenCalledWith(
-      "Lyrics file could not be matched to a song: /tmp/missing.lrc",
+    expect(notifyError).toHaveBeenCalledWith("lyrics.unmatchedToast");
+  });
+
+  test("shows success toast with song name for matched lyrics", async () => {
+    const api = workflowApi();
+    vi.mocked(api.importLyricsFiles).mockResolvedValue({
+      matched: [
+        {
+          song_id: "abc123",
+          lrc_path: "/tmp/All for Nothing.lrc",
+          song_title: "All for Nothing",
+          song_artist: "Linkin Park",
+        },
+      ],
+      unmatched: [],
+    });
+
+    await runImportWorkflow({
+      paths: ["/tmp/All for Nothing.lrc"],
+      api,
+      promptForCdgChoice: vi.fn(),
+      notifyError: vi.fn(),
+      setImportErrors: vi.fn(),
+      setSongs: vi.fn(),
+      publishLibraryInvalidation: vi.fn(),
+    });
+
+    expect(mockNotifySuccess).toHaveBeenCalledWith(
+      "lyrics.matchedToast",
+      "All for Nothing.lrc",
     );
   });
 });

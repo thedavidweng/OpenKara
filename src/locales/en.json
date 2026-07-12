@@ -216,7 +216,9 @@
     "fontSizeIncrease": "Increase lyrics size",
     "fontSizeReset": "Reset lyrics size",
     "fontSizeResetShort": "Reset",
-    "followPlaying": "Follow playing lyric"
+    "followPlaying": "Follow playing lyric",
+    "matchedToast": "Lyrics matched to \"{{song}}\"",
+    "unmatchedToast": "Lyrics file could not be matched to a song: {{file}}"
   },
   "songEdit": {
     "title": "Edit Song Info",

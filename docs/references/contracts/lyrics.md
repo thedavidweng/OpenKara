@@ -115,7 +115,9 @@
   "matched": [
     {
       "song_id": "sha256 hash string",
-      "lrc_path": "/path/to/song.lrc"
+      "lrc_path": "/path/to/song.lrc",
+      "song_title": "All for Nothing",
+      "song_artist": "Linkin Park"
     }
   ],
   "unmatched": ["/path/to/not_found.txt"]
