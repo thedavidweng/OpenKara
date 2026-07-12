@@ -869,11 +869,16 @@ describe("seek", () => {
     await player.store.getState().seek(1000);
 
     expect(mockSeek).not.toHaveBeenCalled();
+    expect(player.store.getState().seekRevision).toBe(0);
   });
 
   test("clamps negative ms to 0 and calls api.seek", async () => {
     player.store.getState().updateSnapshot(playbackSnapshot());
-    const snap = playbackSnapshot({ position_ms: 0, is_playing: true });
+    const snap = playbackSnapshot({
+      transport_generation: 2,
+      position_ms: 0,
+      is_playing: true,
+    });
     mockSeek.mockResolvedValue(snap);
 
     await player.store.getState().seek(-500);
@@ -881,11 +886,16 @@ describe("seek", () => {
     expect(mockSeek).toHaveBeenCalledWith(0);
     expect(player.store.getState().snapshot).toEqual(snap);
     expect(player.store.getState().positionMs).toBe(0);
+    expect(player.store.getState().seekRevision).toBe(2);
   });
 
   test("passes through positive values to api.seek", async () => {
     player.store.getState().updateSnapshot(playbackSnapshot());
-    const snap = playbackSnapshot({ position_ms: 1500, is_playing: true });
+    const snap = playbackSnapshot({
+      transport_generation: 2,
+      position_ms: 1500,
+      is_playing: true,
+    });
     mockSeek.mockResolvedValue(snap);
 
     await player.store.getState().seek(1500);
@@ -893,16 +903,151 @@ describe("seek", () => {
     expect(mockSeek).toHaveBeenCalledWith(1500);
     expect(player.store.getState().snapshot).toEqual(snap);
     expect(player.store.getState().positionMs).toBe(1500);
+    expect(player.store.getState().seekRevision).toBe(2);
   });
 
   test("sets playingSinceMs to null when seek returns paused snapshot", async () => {
     player.store.getState().updateSnapshot(playbackSnapshot());
-    const snap = playbackSnapshot({ is_playing: false, position_ms: 800 });
+    const snap = playbackSnapshot({
+      transport_generation: 2,
+      is_playing: false,
+      position_ms: 800,
+    });
     mockSeek.mockResolvedValue(snap);
 
     await player.store.getState().seek(800);
 
     expect(player.store.getState().playingSinceMs).toBeNull();
+    expect(player.store.getState().seekRevision).toBe(2);
+  });
+
+  test("publishes the seek edge only after the authoritative target is applied", async () => {
+    player.store.getState().updateSnapshot(playbackSnapshot());
+
+    let resolveSeek!: (snapshot: PlaybackStateSnapshot) => void;
+    mockSeek.mockReturnValue(
+      new Promise<PlaybackStateSnapshot>((resolve) => {
+        resolveSeek = resolve;
+      }),
+    );
+
+    const pendingSeek = player.store.getState().seek(15_000);
+
+    expect(player.store.getState().positionMs).toBe(1200);
+    expect(player.store.getState().seekRevision).toBe(0);
+
+    const targetSnapshot = playbackSnapshot({
+      transport_generation: 2,
+      position_ms: 15_000,
+    });
+    // Match the Rust service: it emits playback-position before the invoke
+    // response resolves. The target can already be visible while the seek edge
+    // must remain pending until the command confirms the authoritative seek.
+    player.store
+      .getState()
+      .applyPlaybackPositionEvent(playbackPositionEvent(targetSnapshot));
+    expect(player.store.getState().positionMs).toBe(15_000);
+    expect(player.store.getState().seekRevision).toBe(0);
+
+    resolveSeek(targetSnapshot);
+    await pendingSeek;
+
+    expect(player.store.getState().positionMs).toBe(15_000);
+    expect(player.store.getState().seekRevision).toBe(2);
+  });
+
+  test("keeps a newer playing event when the delayed seek response still says buffering", async () => {
+    player.store.getState().updateSnapshot(
+      playbackSnapshot({
+        transport_generation: 1,
+        state: "playing",
+        is_playing: true,
+        position_ms: 1200,
+      }),
+    );
+
+    let resolveSeek!: (snapshot: PlaybackStateSnapshot) => void;
+    mockSeek.mockReturnValue(
+      new Promise<PlaybackStateSnapshot>((resolve) => {
+        resolveSeek = resolve;
+      }),
+    );
+
+    const pendingSeek = player.store.getState().seek(15_000);
+    const buffering = playbackSnapshot({
+      transport_generation: 2,
+      state: "buffering",
+      is_playing: true,
+      position_ms: 15_000,
+    });
+    const recovered = playbackSnapshot({
+      transport_generation: 2,
+      state: "playing",
+      is_playing: true,
+      position_ms: 15_050,
+    });
+
+    player.store
+      .getState()
+      .applyPlaybackPositionEvent(playbackPositionEvent(buffering));
+    player.store
+      .getState()
+      .applyPlaybackPositionEvent(playbackPositionEvent(recovered));
+    resolveSeek(buffering);
+    await pendingSeek;
+
+    expect(player.store.getState()).toMatchObject({
+      positionMs: 15_050,
+      seekRevision: 2,
+      snapshot: {
+        transport_generation: 2,
+        state: "playing",
+        position_ms: 15_050,
+      },
+    });
+    expect(player.store.getState().playingSinceMs).not.toBeNull();
+  });
+
+  test("does not publish a seek edge when the seek response is rejected", async () => {
+    player.store.getState().updateSnapshot(playbackSnapshot());
+    const error = new Error("seek failed");
+    mockSeek.mockRejectedValue(error);
+
+    await player.store.getState().seek(1500);
+
+    expect(player.store.getState().seekRevision).toBe(0);
+    expect(mockNotifyError).toHaveBeenCalledWith(error);
+  });
+
+  test("does not publish a stale seek edge after the song changes", async () => {
+    player.store.getState().updateSnapshot(playbackSnapshot());
+
+    let resolveSeek!: (snapshot: PlaybackStateSnapshot) => void;
+    mockSeek.mockReturnValue(
+      new Promise<PlaybackStateSnapshot>((resolve) => {
+        resolveSeek = resolve;
+      }),
+    );
+
+    const pendingSeek = player.store.getState().seek(1500);
+    player.store.getState().updateSnapshot(
+      playbackSnapshot({
+        song_id: "song-2",
+        transport_generation: 3,
+        position_ms: 0,
+      }),
+    );
+    resolveSeek(
+      playbackSnapshot({
+        song_id: "song-1",
+        transport_generation: 2,
+        position_ms: 1500,
+      }),
+    );
+    await pendingSeek;
+
+    expect(player.store.getState().snapshot?.song_id).toBe("song-2");
+    expect(player.store.getState().seekRevision).toBe(0);
   });
 });
 

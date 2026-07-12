@@ -75,7 +75,7 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
     const handleMouseUp = (e: MouseEvent) => {
       const percent = getPercentFromEvent(e.clientX);
       const targetMs = (percent / 100) * durationMs;
-      seek(targetMs);
+      void seek(targetMs);
       setIsDragging(false);
     };
 

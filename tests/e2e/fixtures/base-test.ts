@@ -71,6 +71,8 @@ declare global {
         parentLabel: string,
         label: string,
       ) => Promise<void>;
+      emitEvent: (eventName: string, payload: unknown) => void;
+      setCommandDelayMs: (cmd: string, delayMs: number) => void;
       getInvokeCalls: () => TauriInvokeCall[];
       getLastNativeMenu: () => NativeMenuSnapshot | null;
     };

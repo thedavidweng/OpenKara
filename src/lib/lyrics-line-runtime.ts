@@ -21,7 +21,7 @@ function getLineVisualTargets(distance: number): {
 }
 
 interface RegisteredLineWrapper {
-  wrapperEl: HTMLElement;
+  wrapperEl: HTMLElement | null;
   scale: Spring;
   opacity: Spring;
   blur: Spring;
@@ -47,7 +47,15 @@ export class LyricsLineRuntime {
   }
 
   unregisterWrapper(lineIndex: number): void {
-    this.wrappers.delete(lineIndex);
+    // RATIONALE: React 19 re-runs inline ref callbacks on every parent
+    // re-render (cleanup/detach then attach). Deleting the spring entry here
+    // would reset scale/opacity to 1 and replay the song-start "gather"
+    // animation on every active-line change. Keep springs; only drop the DOM
+    // pointer. clear() still wipes everything on song change.
+    const existing = this.wrappers.get(lineIndex);
+    if (existing) {
+      existing.wrapperEl = null;
+    }
   }
 
   registerKaraoke(lineIndex: number, controller: KaraokeFillController): void {
@@ -84,11 +92,16 @@ export class LyricsLineRuntime {
       entry.opacity.update(input.dt);
       entry.blur.update(input.dt);
 
-      entry.wrapperEl.style.transform = `scale(${entry.scale.getPosition().toFixed(4)})`;
-      entry.wrapperEl.style.opacity = String(entry.opacity.getPosition());
-      entry.wrapperEl.style.filter = `blur(${entry.blur.getPosition().toFixed(1)}px)`;
-      entry.wrapperEl.style.willChange = "transform, opacity, filter";
-      entry.wrapperEl.style.contain = "layout style paint";
+      const wrapperEl = entry.wrapperEl;
+      if (!wrapperEl) {
+        continue;
+      }
+
+      wrapperEl.style.transform = `scale(${entry.scale.getPosition().toFixed(4)})`;
+      wrapperEl.style.opacity = String(entry.opacity.getPosition());
+      wrapperEl.style.filter = `blur(${entry.blur.getPosition().toFixed(1)}px)`;
+      wrapperEl.style.willChange = "transform, opacity, filter";
+      wrapperEl.style.contain = "layout style paint";
     }
 
     const karaoke = this.karaokeByLine.get(input.activeLineIndex);

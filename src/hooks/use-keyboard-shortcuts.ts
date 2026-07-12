@@ -149,7 +149,7 @@ export function handleAppKeyDown(
         positionMs,
         playingSinceMs,
       });
-      seek(extrapolated - 5000);
+      void seek(extrapolated - 5000);
       return true;
     }
     case "ArrowRight": {
@@ -159,7 +159,7 @@ export function handleAppKeyDown(
         positionMs,
         playingSinceMs,
       });
-      seek(extrapolated + 5000);
+      void seek(extrapolated + 5000);
       return true;
     }
     case "ArrowUp": {

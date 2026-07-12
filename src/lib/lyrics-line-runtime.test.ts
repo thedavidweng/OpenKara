@@ -43,4 +43,84 @@ describe("LyricsLineRuntime", () => {
     expect(wrapper.style.transform).toContain("scale(");
     expect(wrapper.style.opacity).not.toBe("");
   });
+
+  test("skips plain-text ticks and wrappers without a DOM node", () => {
+    const runtime = new LyricsLineRuntime();
+    const wrapper = document.createElement("div");
+    runtime.registerWrapper(0, wrapper);
+    runtime.unregisterWrapper(0); // leaves springs, clears wrapperEl
+
+    runtime.tick({
+      activeLineIndex: 0,
+      adjustedMs: 0,
+      isPlaying: true,
+      dt: 0.016,
+      isPlainText: true,
+    });
+    expect(wrapper.style.transform).toBe("");
+
+    runtime.tick({
+      activeLineIndex: 0,
+      adjustedMs: 0,
+      isPlaying: true,
+      dt: 0.016,
+      isPlainText: false,
+    });
+    // null wrapperEl must not throw; element was unregistered.
+    expect(wrapper.style.transform).toBe("");
+  });
+
+  test("re-registering an existing wrapper only updates the element pointer", () => {
+    const runtime = new LyricsLineRuntime();
+    const first = document.createElement("div");
+    const second = document.createElement("div");
+    runtime.registerWrapper(0, first);
+    runtime.registerWrapper(0, second);
+
+    runtime.tick({
+      activeLineIndex: 0,
+      adjustedMs: 0,
+      isPlaying: true,
+      dt: 0.05,
+      isPlainText: false,
+    });
+
+    // New element receives transforms; springs were not reset by re-register.
+    expect(second.style.transform).toContain("scale(");
+    expect(first.style.transform).toBe("");
+  });
+
+  test("preserves spring progress across unregister/register churn", () => {
+    // React 19 re-runs inline ref callbacks on every parent re-render
+    // (detach null → attach node). Unregister must not reset springs to 1,
+    // or every active-line change replays the song-start "gather" animation.
+    const runtime = new LyricsLineRuntime();
+    const wrapper = document.createElement("div");
+    runtime.registerWrapper(0, wrapper);
+
+    for (let i = 0; i < 40; i++) {
+      runtime.tick({
+        activeLineIndex: 5,
+        adjustedMs: 0,
+        isPlaying: true,
+        dt: 0.05,
+        isPlainText: false,
+      });
+    }
+
+    const settledOpacity = wrapper.style.opacity;
+    expect(Number(settledOpacity)).toBeLessThan(0.95);
+
+    runtime.unregisterWrapper(0);
+    runtime.registerWrapper(0, wrapper);
+    runtime.tick({
+      activeLineIndex: 5,
+      adjustedMs: 0,
+      isPlaying: true,
+      dt: 0.016,
+      isPlainText: false,
+    });
+
+    expect(wrapper.style.opacity).toBe(settledOpacity);
+  });
 });

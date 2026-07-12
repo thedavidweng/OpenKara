@@ -40,6 +40,11 @@ interface PlayerState {
   /** monotonic-ms timestamp of the last authoritative position update;
    * null when playback is paused/stopped so extrapolation halts. */
   playingSinceMs: number | null;
+  /**
+   * Monotonic host-owned seek edge. Lyrics consume this only after the
+   * authoritative Tauri seek response has been applied to the playback clock.
+   */
+  seekRevision: number;
   airPlayOutput: AirPlayOutputStateEvent;
   localAudienceOutputActive: boolean;
   airPlayPlainTextPagePending: boolean;
@@ -72,6 +77,7 @@ export interface PlayerSyncSnapshot {
   snapshot: PlaybackStateSnapshot | null;
   positionMs: number;
   playingSinceMs: number | null;
+  seekRevision: number;
   airPlayOutput: AirPlayOutputStateEvent;
   localAudienceOutputActive: boolean;
   airPlayPlainTextPagePending: boolean;
@@ -83,6 +89,7 @@ function createPlayerSyncSnapshot(state: PlayerState): PlayerSyncSnapshot {
     snapshot: state.snapshot,
     positionMs: state.positionMs,
     playingSinceMs: state.playingSinceMs,
+    seekRevision: state.seekRevision,
     airPlayOutput: state.airPlayOutput,
     localAudienceOutputActive: state.localAudienceOutputActive,
     airPlayPlainTextPagePending: state.airPlayPlainTextPagePending,
@@ -93,6 +100,7 @@ function createPlayerSyncSnapshot(state: PlayerState): PlayerSyncSnapshot {
 
 function applyPlayerSyncSnapshot(
   set: (partial: Partial<PlayerState>) => void,
+  get: () => PlayerState,
   session: PlaybackSession,
   payload: PlayerSyncSnapshot,
 ) {
@@ -117,6 +125,8 @@ function applyPlayerSyncSnapshot(
     snapshot: payload.snapshot,
     positionMs: payload.positionMs,
     playingSinceMs,
+    // Delayed BroadcastChannel messages must never replay an older seek edge.
+    seekRevision: Math.max(get().seekRevision, payload.seekRevision ?? 0),
     airPlayOutput: payload.airPlayOutput,
     localAudienceOutputActive: payload.localAudienceOutputActive,
     airPlayPlainTextPagePending: payload.airPlayPlainTextPagePending,
@@ -190,6 +200,7 @@ export function createPlayerStore(
       snapshot: null,
       positionMs: 0,
       playingSinceMs: null,
+      seekRevision: 0,
       airPlayOutput: DEFAULT_AIRPLAY_OUTPUT_STATE,
       localAudienceOutputActive: false,
       airPlayPlainTextPagePending: false,
@@ -228,8 +239,34 @@ export function createPlayerStore(
       },
 
       seek: async (ms) => {
+        const beforeSeek = get().snapshot;
+        if (!beforeSeek?.song_id) {
+          return;
+        }
+
         try {
-          await session.seek(ms);
+          const applied = await session.seek(ms);
+          if (!applied) {
+            return;
+          }
+
+          const snapshot = get().snapshot;
+          if (
+            snapshot?.song_id === beforeSeek.song_id &&
+            snapshot.transport_generation > beforeSeek.transport_generation
+          ) {
+            // RATIONALE: Tauri seek is asynchronous. Publishing a seek edge
+            // from the click/mouseup handler lets the lyrics rAF consume
+            // resetScroll against the old playhead. Publish only after the
+            // authoritative seek snapshot is installed, so the same lyrics
+            // frame sees both the target time and isSeek=true.
+            syncPatch({
+              seekRevision: Math.max(
+                get().seekRevision + 1,
+                snapshot.transport_generation,
+              ),
+            });
+          }
         } catch (e) {
           notifyError(e);
         }
@@ -338,7 +375,12 @@ export function createPlayerStore(
   });
 
   const unsubscribe = syncChannel.subscribe((payload) => {
-    applyPlayerSyncSnapshot(store.setState, sessionRef, payload);
+    applyPlayerSyncSnapshot(
+      store.setState,
+      store.getState,
+      sessionRef,
+      payload,
+    );
   });
 
   return {

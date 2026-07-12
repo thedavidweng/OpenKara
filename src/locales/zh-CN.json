@@ -215,7 +215,8 @@
     "fontSizeDecrease": "减小歌词字号",
     "fontSizeIncrease": "增大歌词字号",
     "fontSizeReset": "重置歌词字号",
-    "fontSizeResetShort": "重置"
+    "fontSizeResetShort": "重置",
+    "followPlaying": "跟随正在播放的歌词"
   },
   "songEdit": {
     "title": "编辑歌曲信息",

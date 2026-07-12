@@ -10,3 +10,9 @@ pre-commit:
       glob: "*.rs"
       run: cd src-tauri && cargo fmt
       stage_fixed: true
+
+# Mirrors Codecov patch status (codecov.yml target 80%) before the push reaches CI.
+pre-push:
+  commands:
+    patch-coverage:
+      run: pnpm test:coverage && pnpm check:patch-coverage
