@@ -59,6 +59,8 @@ function makeAppSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     available_execution_providers: ["cpu"],
     eq_enabled: false,
     eq_gains_db: [0, 0, 0, 0, 0],
+    crossfade_enabled: false,
+    crossfade_duration_ms: 3000,
     ...overrides,
   };
 }
@@ -354,6 +356,8 @@ describe("settings-store actions", () => {
       availableExecutionProviders: ["cpu", "xnnpack"],
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
+      crossfadeEnabled: false,
+      crossfadeDurationMs: 3000,
     });
 
     const snapshot = store.getState().getAppSettingsSnapshot();
@@ -370,6 +374,8 @@ describe("settings-store actions", () => {
       availableExecutionProviders: ["cpu", "xnnpack"],
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
+      crossfadeEnabled: false,
+      crossfadeDurationMs: 3000,
     });
     expect(snapshot).not.toHaveProperty("isOpen");
   });

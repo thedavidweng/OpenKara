@@ -16,9 +16,9 @@ use crate::{
         output,
         output_format::{self, OutputFormatState},
         playback::{
-            monotonic_now_ms, playback_position_event, LoadedStems, PlaybackController,
-            PlaybackStateSnapshot, PreparedTrack, StemName, PLAYBACK_ERROR_EVENT,
-            PLAYBACK_POSITION_EVENT,
+            monotonic_now_ms, playback_position_event, CrossfadeState, LoadedStems,
+            PlaybackController, PlaybackStateSnapshot, PreparedTrack, StemName,
+            PLAYBACK_ERROR_EVENT, PLAYBACK_POSITION_EVENT,
         },
         streaming::StreamingTrack,
     },
@@ -103,6 +103,16 @@ pub enum PlaybackCommand {
     },
     SetEqGains {
         gains_db: [f32; 5],
+        reply: SnapshotReply,
+    },
+    /// #89: Set crossfade enabled/disabled.
+    SetCrossfadeEnabled {
+        enabled: bool,
+        reply: SnapshotReply,
+    },
+    /// #89: Set crossfade duration in ms.
+    SetCrossfadeDuration {
+        duration_ms: u32,
         reply: SnapshotReply,
     },
     /// #88: Install a prepared next track for gapless transition. The preload
@@ -199,6 +209,12 @@ fn handle_command<R: Runtime>(runtime: &CoordinatorRuntime<R>, command: Playback
         }
         PlaybackCommand::SetEqGains { gains_db, reply } => {
             handle_set_eq_gains(runtime, gains_db, reply)
+        }
+        PlaybackCommand::SetCrossfadeEnabled { enabled, reply } => {
+            handle_set_crossfade_enabled(runtime, enabled, reply)
+        }
+        PlaybackCommand::SetCrossfadeDuration { duration_ms, reply } => {
+            handle_set_crossfade_duration(runtime, duration_ms, reply)
         }
         PlaybackCommand::PrepareNext { prepared } => handle_prepare_next(runtime, *prepared),
         PlaybackCommand::CancelPreparedNext {
@@ -600,6 +616,42 @@ fn handle_set_stem_volume<R: Runtime>(
     };
 
     increment_airplay_refresh_token_if_audience_active(&runtime.airplay);
+    let _ = reply.send(Ok(snapshot));
+}
+
+// ── #89: Crossfade command handlers ──────────────────────────────────────
+
+fn handle_set_crossfade_enabled<R: Runtime>(
+    runtime: &CoordinatorRuntime<R>,
+    enabled: bool,
+    reply: SnapshotReply,
+) {
+    let snapshot = {
+        let Ok(mut playback) = runtime.playback.lock() else {
+            let _ = reply.send(Err(PlaybackError::Internal(
+                "playback controller lock was poisoned".to_owned(),
+            )));
+            return;
+        };
+        playback.set_crossfade_enabled(enabled)
+    };
+    let _ = reply.send(Ok(snapshot));
+}
+
+fn handle_set_crossfade_duration<R: Runtime>(
+    runtime: &CoordinatorRuntime<R>,
+    duration_ms: u32,
+    reply: SnapshotReply,
+) {
+    let snapshot = {
+        let Ok(mut playback) = runtime.playback.lock() else {
+            let _ = reply.send(Err(PlaybackError::Internal(
+                "playback controller lock was poisoned".to_owned(),
+            )));
+            return;
+        };
+        playback.set_crossfade_duration(duration_ms)
+    };
     let _ = reply.send(Ok(snapshot));
 }
 

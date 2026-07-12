@@ -452,6 +452,21 @@ pub struct AppConfig {
     /// target, not an absence of a pending operation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pending_mirror_restore_active_library_id: Option<String>,
+    /// Whether the 5-band EQ is enabled at startup. Defaults to false when
+    /// absent (e.g. older config files that predate the EQ feature).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eq_enabled: Option<bool>,
+    /// Per-band EQ gains in dB, range [-12, 12]. Index 0 = 60 Hz, 4 = 14 kHz.
+    /// Defaults to all-zero (flat) when absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eq_gains_db: Option<[f32; 5]>,
+    /// #89: Whether crossfade is enabled at startup. Defaults to false.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crossfade_enabled: Option<bool>,
+    /// #89: Crossfade duration in milliseconds, range [500, 10_000].
+    /// Defaults to 3000 when absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crossfade_duration_ms: Option<u32>,
 }
 
 impl AppConfig {
@@ -529,6 +544,19 @@ impl AppConfig {
 
     pub fn effective_remote_cache_bytes_limit(&self) -> Option<u64> {
         self.remote_cache_bytes_limit
+    }
+
+    /// #89: Effective crossfade enabled flag, defaulting to false.
+    pub fn effective_crossfade_enabled(&self) -> bool {
+        self.crossfade_enabled.unwrap_or(false)
+    }
+
+    /// #89: Effective crossfade duration in ms, clamped to [500, 10_000],
+    /// defaulting to 3000.
+    pub fn effective_crossfade_duration_ms(&self) -> u32 {
+        const MIN: u32 = 500;
+        const MAX: u32 = 10_000;
+        self.crossfade_duration_ms.unwrap_or(3_000).clamp(MIN, MAX)
     }
 }
 
@@ -639,6 +667,10 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
+            eq_enabled: None,
+            eq_gains_db: None,
+            crossfade_enabled: None,
+            crossfade_duration_ms: None,
         };
 
         save_config(tmp.path(), &config).unwrap();
@@ -673,6 +705,10 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
+            eq_enabled: None,
+            eq_gains_db: None,
+            crossfade_enabled: None,
+            crossfade_duration_ms: None,
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("stem_mode"));
@@ -702,6 +738,10 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
+            eq_enabled: None,
+            eq_gains_db: None,
+            crossfade_enabled: None,
+            crossfade_duration_ms: None,
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("lyrics_font_step"));
@@ -725,6 +765,10 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
+            eq_enabled: None,
+            eq_gains_db: None,
+            crossfade_enabled: None,
+            crossfade_duration_ms: None,
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("execution_provider"));
@@ -763,6 +807,10 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
+            eq_enabled: None,
+            eq_gains_db: None,
+            crossfade_enabled: None,
+            crossfade_duration_ms: None,
         };
 
         save_config(tmp.path(), &legacy).unwrap();

@@ -2,7 +2,7 @@
 
 播放命令层收口为 thin Tauri command，具体编排在 backend playback service / CDG helper，对外 IPC 契约保持不变。
 
-控制面变更（pause / resume / seek / set_volume / set_stem_volume / set_eq_enabled / set_eq_gains / load_stems / install_track / fail_load / prepare_next / cancel_prepared_next）由 `PlaybackCoordinator` 独立线程串行处理；后台 decode/fetch 线程只产出 `ReadyTrack` 并发送命令，不直接修改 `PlaybackController`。
+控制面变更（pause / resume / seek / set_volume / set_stem_volume / set_eq_enabled / set_eq_gains / set_crossfade_enabled / set_crossfade_duration_ms / load_stems / install_track / fail_load / prepare_next / cancel_prepared_next）由 `PlaybackCoordinator` 独立线程串行处理；后台 decode/fetch 线程只产出 `ReadyTrack` 并发送命令，不直接修改 `PlaybackController`。
 
 ## 接口
 
@@ -39,6 +39,60 @@
 设置命令执行顺序：验证输入 → 读取旧值 → 发送 coordinator 更新并等待确认 → 持久化 config → 持久化失败则回滚 coordinator → 返回 `settings_from_config`。
 
 `PlaybackController` 在 `setup_app()` 中从持久化 config 初始化 EQ 状态（`eq_enabled` / `eq_gains_db`），在 coordinator/output 线程启动前生效。
+
+### Crossfade 设置命令（通过 settings 接口）
+
+Crossfade 设置不走 `PlaybackStateSnapshot` 返回值，而是返回完整的 `AppSettings` 快照。内部通过 `PlaybackCoordinator` 的 `SetCrossfadeEnabled` / `SetCrossfadeDuration` 命令更新 `PlaybackController` 中的 `crossfade_config`（`enabled` / `duration_ms` / `revision`），coordinator 回复 `CrossfadeState { enabled, duration_ms }`。
+
+- `set_crossfade_enabled(enabled: bool) -> AppSettings` — 启用/禁用等功率交叉淡入淡出
+- `set_crossfade_duration_ms(duration_ms: u32) -> AppSettings` — 设置淡入淡出时长（ms），范围 [500, 10_000]，拒绝越界值而非截断
+
+设置命令执行顺序与 EQ 一致：验证输入 → 读取旧值 → 发送 coordinator 更新并等待确认 → 持久化 config → 持久化失败则回滚 coordinator → 返回 `settings_from_config`。
+
+`PlaybackController` 在 `setup_app()` 中从持久化 config 初始化 crossfade 配置（`crossfade_config.enabled` / `crossfade_config.duration_ms`），在 coordinator/output 线程启动前生效。
+
+#### 资格条件
+
+Crossfade 仅在以下条件全部满足时启动重叠区：
+
+1. 当前曲目为完全解码（非流式）的本地曲目
+2. 无 stems 附加、无 CDG
+3. 当前曲目与已准备曲目时长已知
+4. 已准备曲目存在（由 #88 preload scheduler 产出）
+5. 计算出的有效重叠帧数 ≥ 500 ms 等效帧数
+
+不满足时回退到 #88 的 gapless 切换。
+
+#### 等功率增益
+
+对 `N` 帧重叠区，零基索引 `i`：
+
+```text
+t = i / (N - 1)
+outgoing_gain = cos(t * π/2)
+incoming_gain = sin(t * π/2)
+```
+
+首帧 outgoing=1 / incoming=0，末帧 outgoing=0 / incoming=1，全程满足 cos²+sin²=1。
+
+#### 有效时长计算
+
+```text
+configured_frames = round(duration_ms * output_sample_rate / 1000)
+effective_frames = min(
+  configured_frames,
+  floor(outgoing_total_frames / 2),
+  floor(incoming_total_frames / 2),
+  outgoing_frames_remaining
+)
+```
+
+若 `effective_frames` < 500 ms 等效帧数，回退到 gapless。
+
+#### 中断行为
+
+- Seek：中止活动 crossfade，将 incoming payload 恢复到 `prepared_track`（frame 0），outgoing track 正常 seek
+- 手动 play / attach_stems / output-device recreation：取消活动 crossfade 与 prepared track
 
 ### 渲染管线
 
@@ -322,7 +376,7 @@ playing ↔ playing（pause/resume，通过 isPlaying 区分）
 1. `symphonia` 负责解码支持格式
 2. `cpal` 负责设备输出
 3. `PlaybackController` 负责状态推进与位置计算
-4. `PlaybackCoordinator` 负责串行处理所有控制面命令（pause / resume / seek / set_volume / set_stem_volume / set_eq_enabled / set_eq_gains / install_track / fail_load / attach_stems / prepare_next / cancel_prepared_next），保证 FIFO 顺序与 latest-request-wins
+4. `PlaybackCoordinator` 负责串行处理所有控制面命令（pause / resume / seek / set_volume / set_stem_volume / set_eq_enabled / set_eq_gains / set_crossfade_enabled / set_crossfade_duration / install_track / fail_load / attach_stems / prepare_next / cancel_prepared_next），保证 FIFO 顺序与 latest-request-wins
 5. backend playback service 负责 latest-request-wins、output thread 启动和 stale decode 忽略
 6. backend CDG helper 负责 sidecar / explicit path / Media+G ZIP 的 CDG 状态加载与 backward seek reset
 7. `stems` cache 为 `load_stems` 提供已缓存路径

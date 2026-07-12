@@ -60,6 +60,8 @@ function createControllerHarness() {
       setStemMode: vi.fn(),
       setEqEnabled: vi.fn(),
       setEqGains: vi.fn(),
+      setCrossfadeEnabled: vi.fn(),
+      setCrossfadeDurationMs: vi.fn(),
     },
     notifyError: vi.fn(),
     openDirectory: vi.fn(),
@@ -94,6 +96,8 @@ function createControllerHarness() {
           availableExecutionProviders: ["cpu", "xnnpack"],
           eqEnabled: false,
           eqGainsDb: [0, 0, 0, 0, 0],
+          crossfadeEnabled: false,
+          crossfadeDurationMs: 3000,
         }),
       ),
       hydrateAppSettings: vi.fn(),
@@ -148,6 +152,8 @@ describe("SettingsOverlay controller", () => {
       available_execution_providers: ["cpu", "xnnpack"],
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: false,
+      crossfade_duration_ms: 3000,
     });
     vi.mocked(harness.dependencies.api.getModelStatus)
       .mockResolvedValueOnce({
@@ -181,6 +187,8 @@ describe("SettingsOverlay controller", () => {
       available_execution_providers: ["cpu", "xnnpack"],
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: false,
+      crossfade_duration_ms: 3000,
     });
     expect(harness.getSnapshot()).toMatchObject({
       state: {
@@ -564,6 +572,8 @@ describe("SettingsOverlay controller", () => {
       available_execution_providers: ["cpu", "xnnpack"],
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: false,
+      crossfade_duration_ms: 3000,
     });
 
     await harness.actions.selectModelVariant("htdemucs");
@@ -695,6 +705,8 @@ describe("SettingsOverlay controller", () => {
       available_execution_providers: ["cpu", "xnnpack"],
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: false,
+      crossfade_duration_ms: 3000,
     });
 
     await harness.actions.toggleHideBatchSeparate(true);

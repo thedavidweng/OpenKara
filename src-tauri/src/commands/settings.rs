@@ -1,5 +1,6 @@
 use crate::audio::coordinator::PlaybackCommand;
 use crate::audio::eq::validate_gains_db;
+use crate::audio::playback::CrossfadeState;
 use crate::commands::error::{internal_error, invalid_playback_state, CommandResult};
 use crate::config::{self, AppConfig, ExecutionProviderPreference, ModelVariant, StemMode};
 use crate::AppState;
@@ -20,6 +21,8 @@ pub struct AppSettings {
     pub available_execution_providers: Vec<&'static str>,
     pub eq_enabled: bool,
     pub eq_gains_db: [f32; 5],
+    pub crossfade_enabled: bool,
+    pub crossfade_duration_ms: u32,
 }
 
 fn settings_from_config(config: &AppConfig) -> AppSettings {
@@ -41,6 +44,8 @@ fn settings_from_config(config: &AppConfig) -> AppSettings {
         ),
         eq_enabled: config.effective_eq_enabled(),
         eq_gains_db: config.effective_eq_gains_db(),
+        crossfade_enabled: config.effective_crossfade_enabled(),
+        crossfade_duration_ms: config.effective_crossfade_duration_ms(),
     }
 }
 
@@ -337,6 +342,135 @@ pub async fn set_eq_gains(
         .map_err(|e| internal_error(format!("failed to get app data dir: {e}")))?;
     let config =
         apply_eq_gains_atomically(&app_data_dir, &state.playback.command_tx, gains_db).await?;
+    Ok(settings_from_config(&config))
+}
+
+// ── #89: Crossfade settings commands ─────────────────────────────────────
+
+/// Accepted crossfade duration range in milliseconds.
+const CROSSFADE_MIN_MS: u32 = 500;
+const CROSSFADE_MAX_MS: u32 = 10_000;
+
+fn validate_crossfade_duration(duration_ms: u32) -> CommandResult<()> {
+    if !(CROSSFADE_MIN_MS..=CROSSFADE_MAX_MS).contains(&duration_ms) {
+        return Err(internal_error(format!(
+            "invalid crossfade duration: {duration_ms} ms out of range [{CROSSFADE_MIN_MS}, {CROSSFADE_MAX_MS}]"
+        )));
+    }
+    Ok(())
+}
+
+/// Send a crossfade coordinator command and await its reply.
+async fn send_crossfade_command(
+    state: &AppState,
+    make_command: impl FnOnce(
+        tokio::sync::oneshot::Sender<Result<CrossfadeState, crate::audio::error::PlaybackError>>,
+    ) -> PlaybackCommand,
+) -> CommandResult<CrossfadeState> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let command = make_command(tx);
+    state
+        .playback
+        .command_tx
+        .send(command)
+        .map_err(|_| internal_error("playback coordinator disconnected"))?;
+    rx.await
+        .map_err(|_| internal_error("playback coordinator dropped reply"))?
+        .map_err(Into::into)
+}
+
+fn current_runtime_crossfade_state(state: &AppState) -> CrossfadeState {
+    let Ok(playback) = state.playback.playback.lock() else {
+        return CrossfadeState {
+            enabled: false,
+            duration_ms: 3_000,
+        };
+    };
+    playback.crossfade_state()
+}
+
+async fn rollback_crossfade_state(state: &AppState, previous: CrossfadeState) {
+    if let Err(e) = send_crossfade_command(state, |reply| PlaybackCommand::SetCrossfadeEnabled {
+        enabled: previous.enabled,
+        reply,
+    })
+    .await
+    {
+        eprintln!(
+            "settings: failed to rollback crossfade_enabled: {}",
+            e.message
+        );
+    }
+    if let Err(e) = send_crossfade_command(state, |reply| PlaybackCommand::SetCrossfadeDuration {
+        duration_ms: previous.duration_ms,
+        reply,
+    })
+    .await
+    {
+        eprintln!(
+            "settings: failed to rollback crossfade_duration: {}",
+            e.message
+        );
+    }
+}
+
+#[tauri::command]
+pub async fn set_crossfade_enabled(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> CommandResult<AppSettings> {
+    let previous = current_runtime_crossfade_state(state.inner());
+
+    send_crossfade_command(state.inner(), |reply| {
+        PlaybackCommand::SetCrossfadeEnabled { enabled, reply }
+    })
+    .await?;
+
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| internal_error(format!("failed to get app data dir: {e}")))?;
+    let mut config = config::load_config(&app_data_dir)
+        .map_err(|e| internal_error(format!("failed to load config: {e}")))?
+        .unwrap_or_default();
+    config.crossfade_enabled = Some(enabled);
+    if let Err(e) = config::save_config(&app_data_dir, &config) {
+        rollback_crossfade_state(state.inner(), previous).await;
+        return Err(internal_error(format!("failed to save config: {e}")));
+    }
+
+    Ok(settings_from_config(&config))
+}
+
+#[tauri::command]
+pub async fn set_crossfade_duration_ms(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    duration_ms: u32,
+) -> CommandResult<AppSettings> {
+    validate_crossfade_duration(duration_ms)?;
+
+    let previous = current_runtime_crossfade_state(state.inner());
+
+    send_crossfade_command(state.inner(), |reply| {
+        PlaybackCommand::SetCrossfadeDuration { duration_ms, reply }
+    })
+    .await?;
+
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| internal_error(format!("failed to get app data dir: {e}")))?;
+    let mut config = config::load_config(&app_data_dir)
+        .map_err(|e| internal_error(format!("failed to load config: {e}")))?
+        .unwrap_or_default();
+    config.crossfade_duration_ms = Some(duration_ms);
+    if let Err(e) = config::save_config(&app_data_dir, &config) {
+        rollback_crossfade_state(state.inner(), previous).await;
+        return Err(internal_error(format!("failed to save config: {e}")));
+    }
+
     Ok(settings_from_config(&config))
 }
 

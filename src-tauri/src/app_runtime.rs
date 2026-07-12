@@ -139,6 +139,9 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
             let eq_gains_db = config.effective_eq_gains_db();
             controller.set_eq_enabled(eq_enabled);
             controller.set_eq_gains(eq_gains_db);
+            // #89: Initialize crossfade config from persisted settings.
+            controller.crossfade_config.enabled = config.effective_crossfade_enabled();
+            controller.crossfade_config.duration_ms = config.effective_crossfade_duration_ms();
         }
         controller
     }));

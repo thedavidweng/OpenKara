@@ -152,6 +152,33 @@ pub struct CompletedTransition {
     pub to_song_id: String,
 }
 
+/// #89: Active crossfade state owned by the realtime callback.
+/// The callback creates this when the overlap begins, advances it each
+/// frame, and promotes the incoming track when the overlap completes.
+#[derive(Debug)]
+pub struct ActiveCrossfade {
+    pub prepared: PreparedTrack,
+    /// Total number of overlap frames captured at start time.
+    pub total_frames: u64,
+    /// Number of overlap frames already rendered.
+    pub rendered_frames: u64,
+}
+
+/// #89: Crossfade configuration with a revision for change detection.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CrossfadeConfig {
+    pub enabled: bool,
+    pub duration_ms: u32,
+    pub revision: u64,
+}
+
+/// #89: Crossfade state snapshot returned to settings commands.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct CrossfadeState {
+    pub enabled: bool,
+    pub duration_ms: u32,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum FadeState {
     /// No fade active.
@@ -203,6 +230,13 @@ pub struct PlaybackController {
     /// passed its shutdown check before the flag was set but sends after the
     /// cancel) are rejected by `install_prepared_track`.
     pub(crate) expected_preload_request_generation: u64,
+    /// #89: Crossfade configuration. The output callback reads this while
+    /// holding the playback lock to decide whether to start an overlap.
+    pub(crate) crossfade_config: CrossfadeConfig,
+    /// #89: Active crossfade state. Owned by the realtime callback —
+    /// created when the overlap begins, advanced each frame, and
+    /// consumed when the overlap completes (promoting the incoming track).
+    pub(crate) active_crossfade: Option<ActiveCrossfade>,
 }
 
 impl Default for PlaybackController {
@@ -220,6 +254,12 @@ impl Default for PlaybackController {
             transition_serial: 0,
             pending_transition_out: None,
             expected_preload_request_generation: 0,
+            crossfade_config: CrossfadeConfig {
+                enabled: false,
+                duration_ms: 3_000,
+                revision: 0,
+            },
+            active_crossfade: None,
         }
     }
 }
@@ -335,6 +375,11 @@ impl PlaybackController {
         // Cancel any active fade and start a short seek fade to mask
         // the amplitude discontinuity at the new position.
         self.bump_transport_generation();
+        // #89: Seek during an active crossfade aborts the overlap, restoring
+        // the incoming payload to prepared_track at frame zero. The outgoing
+        // track is then seeked normally, and a fresh crossfade may start
+        // later if the remaining time permits.
+        self.abort_active_crossfade();
         self.fade = FadeState::FadingAfterSeek {
             start: Instant::now(),
         };
@@ -417,7 +462,63 @@ impl PlaybackController {
         self.eq_config
     }
 
+    // ── #89: Crossfade configuration ─────────────────────────────────────
+
+    /// Set crossfade enabled. Bumps the config revision so the output
+    /// callback picks up the change. Does not alter an active crossfade.
+    pub fn set_crossfade_enabled(
+        &mut self,
+        enabled: bool,
+    ) -> Result<CrossfadeState, PlaybackError> {
+        if self.crossfade_config.enabled != enabled {
+            self.crossfade_config.enabled = enabled;
+            self.crossfade_config.revision = self.crossfade_config.revision.saturating_add(1);
+        }
+        Ok(self.crossfade_state())
+    }
+
+    /// Set crossfade duration in ms. The caller validates the range
+    /// (500..=10_000). Bumps the config revision only when the value
+    /// actually changes. Does not alter an active crossfade.
+    pub fn set_crossfade_duration(
+        &mut self,
+        duration_ms: u32,
+    ) -> Result<CrossfadeState, PlaybackError> {
+        if self.crossfade_config.duration_ms != duration_ms {
+            self.crossfade_config.duration_ms = duration_ms;
+            self.crossfade_config.revision = self.crossfade_config.revision.saturating_add(1);
+        }
+        Ok(self.crossfade_state())
+    }
+
+    /// Snapshot of the current crossfade configuration.
+    pub fn crossfade_state(&self) -> CrossfadeState {
+        CrossfadeState {
+            enabled: self.crossfade_config.enabled,
+            duration_ms: self.crossfade_config.duration_ms,
+        }
+    }
+
+    /// #89: Abort an active crossfade, restoring the incoming payload to
+    /// `prepared_track` at frame zero. Called when a seek occurs during
+    /// an active overlap. The outgoing track is seeked separately by the
+    /// caller.
+    pub(crate) fn abort_active_crossfade(&mut self) {
+        if let Some(active) = self.active_crossfade.take() {
+            self.prepared_track = Some(active.prepared);
+        }
+    }
+
+    /// #89: Cancel both active crossfade and prepared track. Called by
+    /// manual play, stem attachment, and output-device recreation.
+    pub(crate) fn cancel_crossfade_and_prepared(&mut self) {
+        self.active_crossfade = None;
+        self.prepared_track = None;
+    }
+
     pub fn attach_stems(&mut self, song_id: &str, stems: LoadedStems) -> Result<(), PlaybackError> {
+        // #89: Attaching stems cancels both active crossfade and prepared track.
+        self.cancel_crossfade_and_prepared();
         let track = self
             .current_track
             .as_mut()
@@ -606,7 +707,8 @@ impl PlaybackController {
         // #88: Clearing the current track also invalidates any prepared
         // gapless successor — it was prepared relative to the track that is
         // now being replaced by an explicit user action.
-        self.prepared_track = None;
+        // #89: Also cancel any active crossfade.
+        self.cancel_crossfade_and_prepared();
     }
 
     /// #88: Install a prepared next track for gapless transition. Called by

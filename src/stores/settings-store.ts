@@ -24,6 +24,8 @@ export interface AppSettingsSnapshot {
   availableExecutionProviders: ExecutionProvider[];
   eqEnabled: boolean;
   eqGainsDb: [number, number, number, number, number];
+  crossfadeEnabled: boolean;
+  crossfadeDurationMs: number;
 }
 
 interface SettingsState {
@@ -39,6 +41,8 @@ interface SettingsState {
   availableExecutionProviders: AppSettingsSnapshot["availableExecutionProviders"];
   eqEnabled: AppSettingsSnapshot["eqEnabled"];
   eqGainsDb: AppSettingsSnapshot["eqGainsDb"];
+  crossfadeEnabled: AppSettingsSnapshot["crossfadeEnabled"];
+  crossfadeDurationMs: AppSettingsSnapshot["crossfadeDurationMs"];
   toggle: () => void;
   close: () => void;
   open: () => void;
@@ -53,6 +57,8 @@ interface SettingsState {
   ) => Promise<void>;
   setEqBandGain: (band: number, gainDb: number) => Promise<void>;
   resetEqGains: () => Promise<void>;
+  setCrossfadeEnabled: (enabled: boolean) => Promise<void>;
+  setCrossfadeDurationMs: (durationMs: number) => Promise<void>;
   getAppSettingsSnapshot: () => AppSettingsSnapshot;
 }
 
@@ -68,6 +74,8 @@ const DEFAULT_APP_SETTINGS: AppSettingsSnapshot = {
   availableExecutionProviders: ["cpu"],
   eqEnabled: false,
   eqGainsDb: [0, 0, 0, 0, 0],
+  crossfadeEnabled: false,
+  crossfadeDurationMs: 3000,
 };
 
 function toAppSettingsSnapshot(settings: AppSettings): AppSettingsSnapshot {
@@ -84,6 +92,8 @@ function toAppSettingsSnapshot(settings: AppSettings): AppSettingsSnapshot {
     // Defensive defaults: incomplete IPC payloads must not leave eqGainsDb undefined.
     eqEnabled: settings.eq_enabled ?? false,
     eqGainsDb: settings.eq_gains_db ?? [0, 0, 0, 0, 0],
+    crossfadeEnabled: settings.crossfade_enabled,
+    crossfadeDurationMs: settings.crossfade_duration_ms,
   };
 }
 
@@ -102,6 +112,8 @@ function selectAppSettingsSnapshot(
     availableExecutionProviders: state.availableExecutionProviders,
     eqEnabled: state.eqEnabled,
     eqGainsDb: state.eqGainsDb,
+    crossfadeEnabled: state.crossfadeEnabled,
+    crossfadeDurationMs: state.crossfadeDurationMs,
   };
 }
 
@@ -133,6 +145,8 @@ function applySettingsSyncSnapshot(
     availableExecutionProviders: snapshot.availableExecutionProviders,
     eqEnabled: snapshot.eqEnabled,
     eqGainsDb: snapshot.eqGainsDb,
+    crossfadeEnabled: snapshot.crossfadeEnabled,
+    crossfadeDurationMs: snapshot.crossfadeDurationMs,
   });
 }
 
@@ -220,6 +234,34 @@ export function createSettingsStore(
       },
       resetEqGains: async () => {
         await get().setEqGains([0, 0, 0, 0, 0]);
+      },
+      setCrossfadeEnabled: async (enabled) => {
+        const previous = get().crossfadeEnabled;
+        if (previous === enabled) {
+          return;
+        }
+        syncPatch({ crossfadeEnabled: enabled });
+        try {
+          const settings = await api.setCrossfadeEnabled(enabled);
+          syncPatch(toAppSettingsSnapshot(settings));
+        } catch (error) {
+          syncPatch({ crossfadeEnabled: previous });
+          notifyError(error);
+        }
+      },
+      setCrossfadeDurationMs: async (durationMs) => {
+        const previous = get().crossfadeDurationMs;
+        if (previous === durationMs) {
+          return;
+        }
+        syncPatch({ crossfadeDurationMs: durationMs });
+        try {
+          const settings = await api.setCrossfadeDurationMs(durationMs);
+          syncPatch(toAppSettingsSnapshot(settings));
+        } catch (error) {
+          syncPatch({ crossfadeDurationMs: previous });
+          notifyError(error);
+        }
       },
       getAppSettingsSnapshot: () => selectAppSettingsSnapshot(get()),
     };

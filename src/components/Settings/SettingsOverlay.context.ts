@@ -66,6 +66,8 @@ export function createSettingsOverlayTestContextValue(
       setEqEnabled: async () => {},
       setEqGains: async () => {},
       resetEqGains: async () => {},
+      setCrossfadeEnabled: async () => {},
+      setCrossfadeDurationMs: async () => {},
       openDeleteStemsDialog: async () => {},
       confirmDeleteStems: async () => {},
       openDowngradeDialog: async () => {},

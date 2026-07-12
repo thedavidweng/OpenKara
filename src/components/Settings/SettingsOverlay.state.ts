@@ -54,6 +54,8 @@ export function createInitialSettingsOverlaySnapshot(
       availableExecutionProviders: initialSettings.availableExecutionProviders,
       eqEnabled: initialSettings.eqEnabled,
       eqGainsDb: initialSettings.eqGainsDb,
+      crossfadeEnabled: initialSettings.crossfadeEnabled,
+      crossfadeDurationMs: initialSettings.crossfadeDurationMs,
     },
     meta: {
       isInitializing: true,
@@ -264,6 +266,8 @@ export function createSettingsOverlayActions(
             settingsResult.value.available_execution_providers,
           eqEnabled: settingsResult.value.eq_enabled,
           eqGainsDb: settingsResult.value.eq_gains_db,
+          crossfadeEnabled: settingsResult.value.crossfade_enabled,
+          crossfadeDurationMs: settingsResult.value.crossfade_duration_ms,
         });
       } else {
         dependencies.notifyError(settingsResult.reason);
@@ -285,6 +289,89 @@ export function createSettingsOverlayActions(
     ...createLibrarySettingsActions(actionContext),
     ...createModelSettingsActions(actionContext),
     ...createMaintenanceSettingsActions(actionContext),
+    setEqEnabled: async (enabled) => {
+      const previous = controls.getSnapshot().state.eqEnabled;
+      if (previous === enabled) {
+        return;
+      }
+      patchState({ eqEnabled: enabled });
+      try {
+        const settings = await dependencies.api.setEqEnabled(enabled);
+        dependencies.settingsStore.hydrateAppSettings(settings);
+        patchState({
+          eqEnabled: settings.eq_enabled,
+          eqGainsDb: settings.eq_gains_db,
+        });
+      } catch (error) {
+        patchState({ eqEnabled: previous });
+        dependencies.notifyError(error);
+      }
+    },
+    setEqGains: async (gainsDb) => {
+      const previous = controls.getSnapshot().state.eqGainsDb;
+      patchState({ eqGainsDb: gainsDb });
+      try {
+        const settings = await dependencies.api.setEqGains(gainsDb);
+        dependencies.settingsStore.hydrateAppSettings(settings);
+        patchState({
+          eqEnabled: settings.eq_enabled,
+          eqGainsDb: settings.eq_gains_db,
+        });
+      } catch (error) {
+        patchState({ eqGainsDb: previous });
+        dependencies.notifyError(error);
+      }
+    },
+    resetEqGains: async () => {
+      const flat: [number, number, number, number, number] = [0, 0, 0, 0, 0];
+      try {
+        const settings = await dependencies.api.setEqGains(flat);
+        dependencies.settingsStore.hydrateAppSettings(settings);
+        patchState({
+          eqEnabled: settings.eq_enabled,
+          eqGainsDb: settings.eq_gains_db,
+        });
+      } catch (error) {
+        dependencies.notifyError(error);
+      }
+    },
+    setCrossfadeEnabled: async (enabled) => {
+      const previous = controls.getSnapshot().state.crossfadeEnabled;
+      if (previous === enabled) {
+        return;
+      }
+      patchState({ crossfadeEnabled: enabled });
+      try {
+        const settings = await dependencies.api.setCrossfadeEnabled(enabled);
+        dependencies.settingsStore.hydrateAppSettings(settings);
+        patchState({
+          crossfadeEnabled: settings.crossfade_enabled,
+          crossfadeDurationMs: settings.crossfade_duration_ms,
+        });
+      } catch (error) {
+        patchState({ crossfadeEnabled: previous });
+        dependencies.notifyError(error);
+      }
+    },
+    setCrossfadeDurationMs: async (durationMs) => {
+      const previous = controls.getSnapshot().state.crossfadeDurationMs;
+      if (previous === durationMs) {
+        return;
+      }
+      patchState({ crossfadeDurationMs: durationMs });
+      try {
+        const settings =
+          await dependencies.api.setCrossfadeDurationMs(durationMs);
+        dependencies.settingsStore.hydrateAppSettings(settings);
+        patchState({
+          crossfadeEnabled: settings.crossfade_enabled,
+          crossfadeDurationMs: settings.crossfade_duration_ms,
+        });
+      } catch (error) {
+        patchState({ crossfadeDurationMs: previous });
+        dependencies.notifyError(error);
+      }
+    },
     closeDialog,
   };
 }

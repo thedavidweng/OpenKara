@@ -52,6 +52,8 @@ export interface SettingsOverlayState {
   availableExecutionProviders: ExecutionProvider[];
   eqEnabled: boolean;
   eqGainsDb: [number, number, number, number, number];
+  crossfadeEnabled: boolean;
+  crossfadeDurationMs: number;
 }
 
 export interface SettingsOverlayMeta {
@@ -92,6 +94,8 @@ export interface SettingsOverlayActions {
     gainsDb: [number, number, number, number, number],
   ) => Promise<void>;
   resetEqGains: () => Promise<void>;
+  setCrossfadeEnabled: (enabled: boolean) => Promise<void>;
+  setCrossfadeDurationMs: (durationMs: number) => Promise<void>;
   openDeleteStemsDialog: () => Promise<void>;
   confirmDeleteStems: () => Promise<void>;
   openDowngradeDialog: () => Promise<void>;
@@ -139,11 +143,13 @@ export interface SettingsOverlayControllerDependencies {
     | "setExecutionProvider"
     | "setHideBatchSeparate"
     | "setCoverArtBackdrop"
+    | "setEqEnabled"
+    | "setEqGains"
+    | "setCrossfadeEnabled"
+    | "setCrossfadeDurationMs"
     | "setLanguage"
     | "setModelVariant"
     | "setStemMode"
-    | "setEqEnabled"
-    | "setEqGains"
   >;
   notifyError: (error: unknown) => void;
   openDirectory: typeof open;

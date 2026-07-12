@@ -77,6 +77,8 @@ function createAppSettings() {
     available_execution_providers: ["cpu", "xnnpack"] as const,
     eq_enabled: false,
     eq_gains_db: [0, 0, 0, 0, 0],
+    crossfade_enabled: false,
+    crossfade_duration_ms: 3000,
   };
 }
 
@@ -110,6 +112,8 @@ function createHarness(overrides?: {
       availableExecutionProviders: ["cpu", "xnnpack"],
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
+      crossfadeEnabled: false,
+      crossfadeDurationMs: 3000,
     },
     meta: {
       isInitializing: false,
@@ -159,6 +163,8 @@ function createHarness(overrides?: {
       setModelVariant: vi.fn(),
       setEqEnabled: vi.fn(),
       setEqGains: vi.fn(),
+      setCrossfadeEnabled: vi.fn(),
+      setCrossfadeDurationMs: vi.fn(),
     },
     notifyError: vi.fn(),
     openDirectory: vi.fn(),
