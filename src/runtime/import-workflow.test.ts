@@ -154,4 +154,64 @@ describe("import workflow", () => {
       "All for Nothing.lrc",
     );
   });
+
+  test("songDisplayName falls back to title-only when artist is null", async () => {
+    const api = workflowApi();
+    vi.mocked(api.importLyricsFiles).mockResolvedValue({
+      matched: [
+        {
+          song_id: "abc123",
+          lrc_path: "/tmp/track.lrc",
+          song_title: "Track Title",
+          song_artist: null,
+        },
+      ],
+      unmatched: [],
+    });
+
+    await runImportWorkflow({
+      paths: ["/tmp/track.lrc"],
+      api,
+      promptForCdgChoice: vi.fn(),
+      notifyError: vi.fn(),
+      setImportErrors: vi.fn(),
+      setSongs: vi.fn(),
+      publishLibraryInvalidation: vi.fn(),
+    });
+
+    expect(mockNotifySuccess).toHaveBeenCalledWith(
+      "lyrics.matchedToast",
+      "track.lrc",
+    );
+  });
+
+  test("songDisplayName falls back to song_id when both title and artist are null", async () => {
+    const api = workflowApi();
+    vi.mocked(api.importLyricsFiles).mockResolvedValue({
+      matched: [
+        {
+          song_id: "deadbeefdeadbeef",
+          lrc_path: "/tmp/unknown.lrc",
+          song_title: null,
+          song_artist: null,
+        },
+      ],
+      unmatched: [],
+    });
+
+    await runImportWorkflow({
+      paths: ["/tmp/unknown.lrc"],
+      api,
+      promptForCdgChoice: vi.fn(),
+      notifyError: vi.fn(),
+      setImportErrors: vi.fn(),
+      setSongs: vi.fn(),
+      publishLibraryInvalidation: vi.fn(),
+    });
+
+    expect(mockNotifySuccess).toHaveBeenCalledWith(
+      "lyrics.matchedToast",
+      "unknown.lrc",
+    );
+  });
 });
