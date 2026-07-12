@@ -17,14 +17,37 @@ function getCanvas(container: HTMLElement): HTMLCanvasElement {
   return canvas as HTMLCanvasElement;
 }
 
+// Mock canvas 2D context so the drawing path is exercised in jsdom.
+function mockCanvasContext() {
+  const ctx = {
+    setTransform: vi.fn(),
+    clearRect: vi.fn(),
+    fillRect: vi.fn(),
+    fillStyle: "",
+    canvas: null as HTMLCanvasElement | null,
+  };
+  const origGetContext = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue(ctx) as any;
+  return {
+    ctx,
+    restore: () => {
+      HTMLCanvasElement.prototype.getContext = origGetContext;
+    },
+  };
+}
+
 describe("PeakMeter", () => {
+  let canvasMock: ReturnType<typeof mockCanvasContext>;
+
   beforeEach(() => {
     vi.useFakeTimers();
     mockGetAudioPeaks.mockReset();
+    canvasMock = mockCanvasContext();
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    canvasMock.restore();
   });
 
   it("renders a canvas element with data-peak-meter attribute", () => {
@@ -74,8 +97,69 @@ describe("PeakMeter", () => {
     const { container } = render(<PeakMeter width={120} height={24} />);
     await vi.advanceTimersByTimeAsync(100);
     const canvas = getCanvas(container);
-    // The canvas backing store should have been sized (DPR-aware).
     expect(canvas.width).toBeGreaterThan(0);
     expect(canvas.height).toBeGreaterThan(0);
+    // The drawing path should have called canvas context methods.
+    expect(canvasMock.ctx.fillRect).toHaveBeenCalled();
+  });
+
+  it("draws flat baseline when no peaks are available", async () => {
+    mockGetAudioPeaks.mockResolvedValue({ writeIndex: 0, peaks: [] });
+    const { container } = render(<PeakMeter width={120} height={24} />);
+    await vi.advanceTimersByTimeAsync(100);
+    // Even with no peaks, the baseline fillRect should be called.
+    expect(canvasMock.ctx.fillRect).toHaveBeenCalled();
+  });
+
+  it("skips redraw when writeIndex has not changed", async () => {
+    mockGetAudioPeaks.mockResolvedValue({
+      writeIndex: 5,
+      peaks: [[0.3, 0.4]],
+    });
+    render(<PeakMeter width={120} height={24} />);
+    await vi.advanceTimersByTimeAsync(100);
+    const firstCallCount = canvasMock.ctx.fillRect.mock.calls.length;
+    // Advance past one poll cycle — writeIndex is the same so no redraw.
+    await vi.advanceTimersByTimeAsync(34);
+    const secondCallCount = canvasMock.ctx.fillRect.mock.calls.length;
+    expect(secondCallCount).toBe(firstCallCount);
+  });
+
+  it("redraws when writeIndex changes", async () => {
+    mockGetAudioPeaks.mockResolvedValue({
+      writeIndex: 5,
+      peaks: [[0.3, 0.4]],
+    });
+    render(<PeakMeter width={120} height={24} />);
+    await vi.advanceTimersByTimeAsync(100);
+    const firstCallCount = canvasMock.ctx.fillRect.mock.calls.length;
+    // Change the mock to return a new writeIndex.
+    mockGetAudioPeaks.mockResolvedValue({
+      writeIndex: 6,
+      peaks: [
+        [0.3, 0.4],
+        [0.5, 0.6],
+      ],
+    });
+    await vi.advanceTimersByTimeAsync(34);
+    const secondCallCount = canvasMock.ctx.fillRect.mock.calls.length;
+    expect(secondCallCount).toBeGreaterThan(firstCallCount);
+  });
+
+  it("renders multiple peak bars", async () => {
+    const peaks: Array<[number, number]> = [];
+    for (let i = 0; i < 10; i++) {
+      peaks.push([i * 0.1, 1.0 - i * 0.1]);
+    }
+    mockGetAudioPeaks.mockResolvedValue({
+      writeIndex: 10,
+      peaks,
+    });
+    render(<PeakMeter width={300} height={40} />);
+    await vi.advanceTimersByTimeAsync(100);
+    // Each peak pair produces 2 fillRect calls (left + right).
+    expect(canvasMock.ctx.fillRect.mock.calls.length).toBeGreaterThanOrEqual(
+      20,
+    );
   });
 });
