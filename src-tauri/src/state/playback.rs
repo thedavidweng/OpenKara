@@ -1,4 +1,5 @@
 use crate::audio::coordinator::PlaybackCommand;
+use crate::audio::peaks::PeakRing;
 use crate::audio::playback::PlaybackController;
 use crate::commands::cdg::CdgPlaybackState;
 use std::sync::atomic::{AtomicBool, AtomicU64};
@@ -19,6 +20,10 @@ pub struct PlaybackState {
     /// Sender for the PlaybackCoordinator command queue. The coordinator worker
     /// owns the receiver; all control-plane mutations go through this channel.
     pub command_tx: mpsc::Sender<PlaybackCommand>,
+    /// Process-wide lock-free peak ring shared between the CPAL output callback
+    /// (single writer) and the `get_audio_peaks` command (any reader). The
+    /// command reads only the ring and must not lock `PlaybackController`.
+    pub peak_ring: Arc<PeakRing>,
 }
 
 impl PlaybackState {
@@ -38,6 +43,7 @@ impl PlaybackState {
                 audio_output_start_lock: Arc::new(Mutex::new(())),
                 background_shutdown: Arc::new(Mutex::new(Arc::new(AtomicBool::new(false)))),
                 command_tx,
+                peak_ring: Arc::new(PeakRing::new()),
             },
             command_rx,
         )
@@ -56,6 +62,7 @@ impl PlaybackState {
             audio_output_start_lock: Arc::new(Mutex::new(())),
             background_shutdown: Arc::new(Mutex::new(Arc::new(AtomicBool::new(false)))),
             command_tx,
+            peak_ring: Arc::new(PeakRing::new()),
         }
     }
 }

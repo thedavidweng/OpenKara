@@ -1177,6 +1177,8 @@ mod tests {
         let mut output = vec![0.0f32; buffer_frames * device_channels];
         let mut rc = crate::audio::output::ResamplerCache::new();
         let mut eq = crate::audio::eq::EqProcessor::new(device_rate, device_channels);
+        let peak_ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
         let rendered = render_output_buffer(
             &mut controller,
             &mut output,
@@ -1185,6 +1187,8 @@ mod tests {
             device_channels,
             &mut rc,
             &mut eq,
+            &mut peak_acc,
+            &peak_ring,
         );
 
         assert!(rendered > 0, "should render audio from m4a streaming");
@@ -1230,6 +1234,8 @@ mod tests {
         // Simulate cpal callback loop until track finishes
         let mut rc = crate::audio::output::ResamplerCache::new();
         let mut eq = crate::audio::eq::EqProcessor::new(device_rate, device_channels);
+        let peak_ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
         for _ in 0..10_000 {
             let snapshot = controller.snapshot();
             if !snapshot.is_playing {
@@ -1244,6 +1250,8 @@ mod tests {
                 device_channels,
                 &mut rc,
                 &mut eq,
+                &mut peak_acc,
+                &peak_ring,
             );
             if rendered > 0 {
                 total_rendered += rendered as u64;

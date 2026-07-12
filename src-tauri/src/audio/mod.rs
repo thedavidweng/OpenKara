@@ -5,6 +5,7 @@ pub mod encode;
 pub mod eq;
 pub mod error;
 pub mod output;
+pub mod peaks;
 pub mod playback;
 pub mod range_set;
 pub mod remote_source;

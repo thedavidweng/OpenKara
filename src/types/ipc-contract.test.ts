@@ -105,6 +105,12 @@ const PLAYBACK_COMMANDS: CommandContract[] = [
     frontendFn: "getPlaybackState",
     hasArgs: false,
   },
+  {
+    command: "get_audio_peaks",
+    frontendFile: "src/lib/tauri/playback.ts",
+    frontendFn: "getAudioPeaks",
+    hasArgs: false,
+  },
 ];
 
 const LIBRARY_COMMANDS: CommandContract[] = [
@@ -322,6 +328,7 @@ describe("IPC command registry", () => {
       "set_stem_volume",
       "load_stems",
       "get_playback_state",
+      "get_audio_peaks",
     ];
     const registered = PLAYBACK_COMMANDS.map((c) => c.command);
     expect(registered.sort()).toEqual(expectedPlaybackCommands.sort());

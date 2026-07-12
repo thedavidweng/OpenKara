@@ -1,6 +1,7 @@
 use crate::{
     audio::{
         coordinator::PlaybackCommand,
+        peaks::AudioPeakSnapshot,
         playback::{PlaybackStateSnapshot, StemName},
     },
     commands::error::{internal_error, CommandResult},
@@ -116,4 +117,13 @@ pub async fn load_stems(state: State<'_, AppState>) -> CommandResult<PlaybackSta
 #[tauri::command]
 pub fn get_playback_state(state: State<'_, AppState>) -> CommandResult<PlaybackStateSnapshot> {
     Ok(services::playback::get_state(&state)?)
+}
+
+/// Read-only command: copy the current peak ring snapshot without taking the
+/// playback mutex. The ring is a lossy observability channel; playback must
+/// never wait for a reader.
+#[tauri::command]
+pub fn get_audio_peaks(state: State<'_, AppState>) -> AudioPeakSnapshot {
+    let (write_index, peaks) = state.playback.peak_ring.snapshot();
+    AudioPeakSnapshot { write_index, peaks }
 }

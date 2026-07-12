@@ -118,6 +118,7 @@ pub struct CoordinatorRuntime<R: Runtime> {
     pub output_start_lock: Arc<Mutex<()>>,
     pub airplay: AirPlayState,
     pub shutdown: Arc<AtomicBool>,
+    pub peak_ring: Arc<crate::audio::peaks::PeakRing>,
 }
 
 /// Spawn the coordinator worker thread. Returns the `JoinHandle` so the caller
@@ -209,6 +210,7 @@ fn ensure_output(runtime: &CoordinatorRuntime<impl Runtime>) -> Result<(), Playb
         runtime.airplay.airplay_audio_tap.clone(),
         runtime.airplay.airplay_local_output_suppressed.clone(),
         runtime.shutdown.clone(),
+        runtime.peak_ring.clone(),
     )
 }
 
@@ -697,6 +699,7 @@ mod tests {
                 output_start_lock: Arc::clone(&output_start_lock),
                 airplay: airplay.clone(),
                 shutdown: Arc::clone(&shutdown),
+                peak_ring: Arc::new(crate::audio::peaks::PeakRing::new()),
             });
             let handle = spawn_coordinator(
                 CoordinatorRuntime {
@@ -708,6 +711,7 @@ mod tests {
                     output_start_lock: Arc::clone(&runtime.output_start_lock),
                     airplay: runtime.airplay.clone(),
                     shutdown: Arc::clone(&runtime.shutdown),
+                    peak_ring: runtime.peak_ring.clone(),
                 },
                 rx,
             );
@@ -1232,6 +1236,7 @@ mod tests {
             audio_output_start_lock: Arc::new(Mutex::new(())),
             background_shutdown: Arc::new(Mutex::new(Arc::new(AtomicBool::new(false)))),
             command_tx: tx,
+            peak_ring: Arc::new(crate::audio::peaks::PeakRing::new()),
         };
 
         let (reply_tx, _reply_rx) = tokio::sync::oneshot::channel();

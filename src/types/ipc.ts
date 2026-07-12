@@ -287,6 +287,11 @@ export interface PlaybackEndedEvent {
   song_id: string;
 }
 
+export interface AudioPeakSnapshot {
+  writeIndex: number;
+  peaks: Array<[left: number, right: number]>;
+}
+
 export interface PlaybackErrorEvent {
   song_id: string;
   error: CommandError;
