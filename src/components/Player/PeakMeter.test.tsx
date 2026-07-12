@@ -105,7 +105,7 @@ describe("PeakMeter", () => {
 
   it("draws flat baseline when no peaks are available", async () => {
     mockGetAudioPeaks.mockResolvedValue({ writeIndex: 0, peaks: [] });
-    const { container } = render(<PeakMeter width={120} height={24} />);
+    render(<PeakMeter width={120} height={24} />);
     await vi.advanceTimersByTimeAsync(100);
     // Even with no peaks, the baseline fillRect should be called.
     expect(canvasMock.ctx.fillRect).toHaveBeenCalled();
