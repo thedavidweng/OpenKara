@@ -24,6 +24,7 @@ const {
     },
     positionMs: 4000,
     playingSinceMs: null,
+    seekRevision: 0,
     airPlayOutput: {
       active: false,
       audioActive: false,

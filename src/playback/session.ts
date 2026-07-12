@@ -34,7 +34,8 @@ export interface PlaybackSession {
 
   resume(): Promise<void>;
   pause(): Promise<void>;
-  seek(ms: number): Promise<void>;
+  /** Returns true when the authoritative seek snapshot was accepted. */
+  seek(ms: number): Promise<boolean>;
   setVolume(level: number): Promise<void>;
   setStemVolume(stem: StemName, level: number): Promise<void>;
   loadStems(): Promise<void>;
@@ -89,14 +90,8 @@ export function createPlaybackSession(
 
   const tryApplyAuthoritative = (
     nextSnapshot: PlaybackStateSnapshot,
-    options?: { forcePlayingSinceAnchor?: boolean },
   ): boolean => {
-    const reduced = reduceAuthoritativeSnapshot(
-      clock,
-      nextSnapshot,
-      nowMs(),
-      options,
-    );
+    const reduced = reduceAuthoritativeSnapshot(clock, nextSnapshot, nowMs());
     if (!reduced) {
       return false;
     }
@@ -206,7 +201,7 @@ export function createPlaybackSession(
         ...snapshot,
         is_playing: true,
       };
-      tryApplyAuthoritative(authoritative, { forcePlayingSinceAnchor: true });
+      tryApplyAuthoritative(authoritative);
     },
 
     pause: async () => {
@@ -215,14 +210,30 @@ export function createPlaybackSession(
         ...snapshot,
         is_playing: false,
       };
-      tryApplyAuthoritative(authoritative, { forcePlayingSinceAnchor: true });
+      tryApplyAuthoritative(authoritative);
     },
 
     seek: async (ms) => {
-      if (!clock.snapshot?.song_id) return;
+      if (!clock.snapshot?.song_id) return false;
       const clamped = Math.max(0, ms);
       const snapshot = await deps.transport.seek(clamped);
-      tryApplyAuthoritative(snapshot, { forcePlayingSinceAnchor: true });
+
+      // The Rust seek command emits playback-position before returning its
+      // snapshot. The audio thread can leave seek buffering quickly, so a
+      // newer same-generation `playing` event may already be installed by the
+      // time the older command response reaches JavaScript. Treat the current
+      // clock as authoritative once it has adopted this seek generation;
+      // replaying the response would regress state back to `buffering`, clear
+      // playingSinceMs, and freeze lyrics until another command re-anchors it.
+      const current = clock.snapshot;
+      if (
+        current?.song_id === snapshot.song_id &&
+        current.transport_generation === snapshot.transport_generation
+      ) {
+        return true;
+      }
+
+      return tryApplyAuthoritative(snapshot);
     },
 
     setVolume: async (level) => {

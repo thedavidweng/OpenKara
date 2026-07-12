@@ -107,6 +107,43 @@ describe("LyricLine", () => {
     expect(markup).not.toContain("group-hover/line:bg-white/10");
   });
 
+  test("clicking a seekable line seeks to the line time without pre-arming lyrics isSeek", () => {
+    mockSeek.mockClear();
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    act(() => {
+      root.render(
+        <LyricLine
+          line={{
+            time_ms: 15_000,
+            text: "jump here",
+            words: null,
+            bg_words: null,
+            section: null,
+          }}
+          lineIndex={2}
+          state="future"
+          lyricsFontStep={0}
+        />,
+      );
+    });
+
+    // LyricLine uses a clickable root with cursor-pointer class.
+    const clickable = host.querySelector(".cursor-pointer") as HTMLElement;
+    expect(clickable).toBeTruthy();
+    act(() => {
+      clickable.click();
+    });
+    expect(mockSeek).toHaveBeenCalledWith(15_000);
+
+    act(() => {
+      root.unmount();
+    });
+    host.remove();
+  });
+
   test("renders word-level states for the active line without changing lyric timing behavior", () => {
     const markup = renderToStaticMarkup(
       <LyricLine
@@ -454,7 +491,7 @@ describe("LyricLine", () => {
     container.remove();
   });
 
-  test("renders emphasis words as per-character spans with glow animation", () => {
+  test("renders emphasis words with whole-word glow animation", () => {
     const markup = renderToStaticMarkup(
       <LyricLine
         lineIndex={0}
@@ -477,6 +514,8 @@ describe("LyricLine", () => {
     // "你好" is active with duration 1500ms (>=1000) and CJK → emphasis
     expect(markup).toContain("lyric-char-glow");
     expect(markup).toContain("inline-block");
+    // Must stay one box — per-character splits reflow mid-line and yank scroll.
+    expect(markup).not.toMatch(/animation-delay/);
   });
 
   test("renders last word with amplified glow animation", () => {

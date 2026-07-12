@@ -37,6 +37,7 @@ const {
     },
     positionMs: 4000,
     playingSinceMs: 1000,
+    seekRevision: 0,
     airPlayOutput: {
       active: false,
       audioActive: false,
@@ -206,6 +207,53 @@ describe("LyricsPanel contextual reveal", () => {
     expect(markup).toContain("contextual-reveal absolute right-4 top-4");
     expect(markup).toContain("absolute inset-x-0 bottom-0");
     expect(markup).not.toContain('data-visible="true"');
+  });
+
+  test("Follow control restores pointer-events inside the none overlay", () => {
+    // Timed lines only — plain-text lyrics omit the Follow control.
+    mockLyricsState.lines = [
+      line({ time_ms: 0, text: "line one", words: null }),
+      line({ time_ms: 2000, text: "line two", words: null }),
+    ];
+    mockLyricsState.rawLrc = "[00:00.00]line one\n[00:02.00]line two";
+
+    // Parent overlay is pointer-events-none so lyrics stay scrollable; the
+    // Follow button must re-enable hit testing like the bottom utility controls.
+    const markup = renderToStaticMarkup(<LyricsPanel />);
+    expect(markup).toContain('data-testid="lyrics-follow-playing"');
+    expect(markup).toMatch(
+      /data-testid="lyrics-follow-playing"[^>]*pointer-events-auto/,
+    );
+  });
+
+  test("Follow button click invokes resume handler", () => {
+    mockLyricsState.lines = [
+      line({ time_ms: 0, text: "line one", words: null }),
+      line({ time_ms: 2000, text: "line two", words: null }),
+    ];
+    mockLyricsState.rawLrc = "[00:00.00]line one\n[00:02.00]line two";
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    act(() => {
+      root.render(<LyricsPanel />);
+    });
+
+    const button = host.querySelector(
+      "[data-testid='lyrics-follow-playing']",
+    ) as HTMLButtonElement;
+    expect(button).toBeTruthy();
+    expect(button.className).toContain("pointer-events-auto");
+    // Cover the onClick path (requests auto-scroll resume).
+    act(() => {
+      button.click();
+    });
+
+    act(() => {
+      root.unmount();
+    });
+    host.remove();
   });
 
   test("uses the spacious stage lyric layout for standard presentation", () => {

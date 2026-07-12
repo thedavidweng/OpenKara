@@ -215,7 +215,8 @@
     "fontSizeDecrease": "Decrease lyrics size",
     "fontSizeIncrease": "Increase lyrics size",
     "fontSizeReset": "Reset lyrics size",
-    "fontSizeResetShort": "Reset"
+    "fontSizeResetShort": "Reset",
+    "followPlaying": "Follow playing lyric"
   },
   "songEdit": {
     "title": "Edit Song Info",

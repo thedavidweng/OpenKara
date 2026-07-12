@@ -6,6 +6,8 @@ use std::sync::{Arc, Mutex};
 pub struct AirPlayState {
     pub airplay_audio_tap: Arc<AirPlayAudioTap>,
     pub airplay_stream_generation: Arc<AtomicU64>,
+    /// True when the projected audience payload is lyrics/CDG. This describes
+    /// available scene content; it does not prove that an AirPlay route is active.
     pub airplay_audience_active: Arc<AtomicBool>,
     pub airplay_control_refresh_token: Arc<AtomicU64>,
     pub airplay_http_server: Arc<Mutex<Option<AirPlayHttpServer>>>,

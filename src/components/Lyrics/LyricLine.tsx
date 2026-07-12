@@ -114,7 +114,9 @@ export const LyricLine = memo(function LyricLine({
 
   const handleClick = () => {
     if (!isSeekable) return;
-    seek(line.time_ms);
+    // The player store publishes the lyrics seek edge after the asynchronous
+    // Tauri command installs its authoritative target snapshot.
+    void seek(line.time_ms);
   };
 
   const words = line.words;
@@ -226,6 +228,11 @@ export const LyricLine = memo(function LyricLine({
             ) {
               const wordDuration = word.end_ms - word.time_ms;
               const last = isLastWord(idx, line.words!.length);
+              // RATIONALE: Animate the whole word. Splitting into per-character
+              // inline-block spans reflows the line on every active-word change
+              // (metrics/wrapping shift), which used to yank the scroll target
+              // mid-line. Transform/text-shadow on one inline-block word keeps
+              // the same box model as the non-emphasis path.
               return (
                 <span
                   key={idx}
@@ -233,23 +240,15 @@ export const LyricLine = memo(function LyricLine({
                     if (el) wordElsRef.current[idx] = el;
                   }}
                   className="motion-surface relative inline-block text-white"
+                  style={{
+                    textShadow:
+                      "0 0 12px rgba(255,255,255,0.5), 0 0 4px rgba(255,255,255,0.4)",
+                    animation: last
+                      ? `lyric-char-glow-last ${wordDuration * 1.2}ms ease-in-out`
+                      : `lyric-char-glow ${wordDuration}ms ease-in-out`,
+                  }}
                 >
-                  {word.text.split("").map((char, charIdx) => (
-                    <span
-                      key={charIdx}
-                      style={{
-                        display: "inline-block",
-                        textShadow:
-                          "0 0 12px rgba(255,255,255,0.5), 0 0 4px rgba(255,255,255,0.4)",
-                        animation: last
-                          ? `lyric-char-glow-last ${wordDuration * 1.2}ms ease-in-out`
-                          : `lyric-char-glow ${wordDuration}ms ease-in-out`,
-                        animationDelay: `${charIdx * 20}ms`,
-                      }}
-                    >
-                      {char}
-                    </span>
-                  ))}
+                  {word.text}
                   {idx < line.words!.length - 1 ? " " : ""}
                 </span>
               );

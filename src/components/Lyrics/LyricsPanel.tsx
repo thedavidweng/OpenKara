@@ -6,6 +6,7 @@ import {
   Edit2,
   Languages,
   LoaderCircle,
+  LocateFixed,
 } from "lucide-react";
 import { Tooltip } from "@/components/Overlay/Tooltip";
 import { useLyricsEngine } from "@/hooks/use-lyrics-engine";
@@ -17,6 +18,7 @@ import {
   resolvePlainTextRemoteTarget,
   type PlainTextPageDirection,
 } from "@/lib/plain-text-page-controls";
+import { requestLyricsAutoScrollResume } from "@/lib/lyrics-engine";
 import { lyricsLineRuntime } from "@/lib/lyrics-line-runtime";
 import { useSettingsStore } from "@/stores/settings-store";
 import { LyricLine } from "./LyricLine";
@@ -60,6 +62,8 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
   );
   const lyricsFontStep = useSettingsStore((s) => s.lyricsFontStep);
   const [editOpen, setEditOpen] = useState(false);
+  // Spotify-style: true while the user has scrolled away from auto-follow.
+  const [userScrollUnlocked, setUserScrollUnlocked] = useState(false);
   const utilityControlsPinned = offsetMs !== 0 || lyricsFontStep !== 0;
   const isAudience = presentation === "audience";
   const spaciousStageLayout = !isAudience;
@@ -90,17 +94,20 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
       pageIdentity,
       audiencePresentationSpec,
     });
-  const scrollContentRef = useRef<HTMLDivElement | null>(null);
 
   useLyricsEngine({
     containerRef,
-    scrollContentRef,
     isPlainText,
     lyricsFontStep,
     presentation,
     songId,
+    // Must be true only when the scroll viewport is actually mounted. Loading /
+    // empty early-returns omit the container; without this the follow guard
+    // never attaches and every rAF fights the user's scrollTop.
+    viewportActive: Boolean(songId) && !isLoading && lines.length > 0,
     layoutVersion: lyricsLayoutVersion,
     lineRuntime: lyricsLineRuntime,
+    onUserScrollActiveChange: setUserScrollUnlocked,
   });
 
   useAirPlayPendingGuard(
@@ -111,16 +118,34 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
     airPlayPlainTextPagePending,
   );
 
-  const registerLineWrapper = useCallback(
-    (lineIndex: number, node: HTMLDivElement | null) => {
-      if (node) {
-        lyricsLineRuntime.registerWrapper(lineIndex, node);
+  // Cache one stable ref callback per line index. Inline refs change identity
+  // every render; React 19 then detaches/attaches, and without spring-preserving
+  // unregister that replays the song-start gather animation on every line change.
+  const lineRefCallbacksRef = useRef(
+    new Map<number, (node: HTMLDivElement | null) => (() => void) | void>(),
+  );
+  const prevSongIdForRefsRef = useRef(songId);
+  if (prevSongIdForRefsRef.current !== songId) {
+    lineRefCallbacksRef.current.clear();
+    prevSongIdForRefsRef.current = songId;
+  }
+  const registerLineWrapper = useCallback((lineIndex: number) => {
+    const cached = lineRefCallbacksRef.current.get(lineIndex);
+    if (cached) {
+      return cached;
+    }
+    const callback = (node: HTMLDivElement | null) => {
+      if (!node) {
         return;
       }
-      lyricsLineRuntime.unregisterWrapper(lineIndex);
-    },
-    [],
-  );
+      lyricsLineRuntime.registerWrapper(lineIndex, node);
+      return () => {
+        lyricsLineRuntime.unregisterWrapper(lineIndex);
+      };
+    };
+    lineRefCallbacksRef.current.set(lineIndex, callback);
+    return callback;
+  }, []);
 
   const handleRemotePageStep = (direction: PlainTextPageDirection) => {
     void stepPlainTextRemotePage(
@@ -294,6 +319,9 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
           isAudience ? "" : spaciousStageLayout ? "px-16 py-10" : "px-12 py-8"
         }`}
         style={{
+          // RATIONALE: Native scrollTop auto-follow; overflow anchoring must not
+          // silently mutate scrollTop when line heights change on activate.
+          overflowAnchor: "none",
           ...(isAudience
             ? {
                 padding: `${audiencePresentationSpec.verticalPaddingPx}px ${audiencePresentationSpec.horizontalPaddingPx}px`,
@@ -302,7 +330,6 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
         }}
       >
         <div
-          ref={scrollContentRef}
           className={`mx-auto flex w-full flex-col items-center ${
             isAudience
               ? shouldRenderAudiencePlainTextPages
@@ -329,7 +356,7 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
             return (
               <div
                 key={`${absoluteIndex}-${line.time_ms}-${line.text}`}
-                ref={(node) => registerLineWrapper(absoluteIndex, node)}
+                ref={registerLineWrapper(absoluteIndex)}
                 data-lyrics-line-index={absoluteIndex}
                 className="w-full"
               >
@@ -400,6 +427,24 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
               ))}
             </div>
           </div>
+        </div>
+      ) : null}
+      {!isAudience && !isPlainText ? (
+        <div className="pointer-events-none absolute inset-x-0 top-4 z-10 flex justify-center px-6">
+          {/* Top-center keeps Follow clear of the bottom offset/font controls
+              and the top-right romanize/edit cluster. Same reveal mechanics. */}
+          <Tooltip label={t("lyrics.followPlaying")}>
+            <button
+              type="button"
+              data-testid="lyrics-follow-playing"
+              data-visible={userScrollUnlocked}
+              onClick={() => requestLyricsAutoScrollResume()}
+              aria-label={t("lyrics.followPlaying")}
+              className="contextual-reveal pointer-events-auto motion-icon-button rounded-full border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-2 text-[var(--color-text-dim)] hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[var(--color-hover)] hover:text-[var(--color-control-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
+            >
+              <LocateFixed size={14} />
+            </button>
+          </Tooltip>
         </div>
       ) : null}
       {!isAudience ? (

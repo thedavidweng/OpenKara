@@ -42,6 +42,7 @@ export const TAURI_MOCK_SCRIPT = `
   ];
 
   const invokeCalls = [];
+  const commandDelayMs = new Map();
   const playlists = [];
   const playlistSongs = new Map();
   const menuResources = new Map();
@@ -49,12 +50,42 @@ export const TAURI_MOCK_SCRIPT = `
   let nextEventId = 1;
   let nextMenuRid = 1;
   let lastNativeMenu = null;
+  // Matches Rust PlaybackStateSnapshot.transport_generation — load / resume /
+  // pause / seek bump it so frontend stale-event filtering can be exercised.
+  let transportGeneration = 0;
   let rotationState = {
     singer_names: [], current_index: 0, mode: "round_robin", active: false,
   };
 
+  function bumpTransportGeneration() {
+    transportGeneration += 1;
+    return transportGeneration;
+  }
+
+  function playbackSnapshot(fields) {
+    return {
+      transport_generation: transportGeneration,
+      stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
+      has_stems: false,
+      stem_mode: null,
+      ...fields,
+    };
+  }
+
   function clone(value) {
     return value == null ? value : JSON.parse(JSON.stringify(value));
+  }
+
+  function resolveCommandResult(cmd, result) {
+    return Promise.resolve(result)
+      .then((value) => clone(value))
+      .then((value) => {
+        const delayMs = commandDelayMs.get(cmd) || 0;
+        if (delayMs <= 0) return value;
+        return new Promise((resolve) => {
+          setTimeout(() => resolve(value), delayMs);
+        });
+      });
   }
 
   function playlistSnapshot() {
@@ -92,18 +123,42 @@ export const TAURI_MOCK_SCRIPT = `
     };
   }
 
-  function handleTauriEventCommand(cmd) {
+  // Backend → frontend event bridge. Tests use __OPENKARA_E2E__.emitEvent to
+  // simulate Rust-emitted events (e.g. the 33ms playback-position stream).
+  const eventListeners = new Map();
+
+  function handleTauriEventCommand(cmd, args) {
     if (cmd === "plugin:event|listen") {
-      return Promise.resolve(nextEventId++);
+      const id = nextEventId++;
+      if (args && args.event && typeof args.handler === "number") {
+        const handlers = eventListeners.get(args.event) || new Map();
+        handlers.set(id, args.handler);
+        eventListeners.set(args.event, handlers);
+      }
+      return Promise.resolve(id);
     }
-    if (
-      cmd === "plugin:event|emit" ||
-      cmd === "plugin:event|emit_to" ||
-      cmd === "plugin:event|unlisten"
-    ) {
+    if (cmd === "plugin:event|unlisten") {
+      if (args && args.event) {
+        const handlers = eventListeners.get(args.event);
+        if (handlers) handlers.delete(args.eventId);
+      }
+      return Promise.resolve(undefined);
+    }
+    if (cmd === "plugin:event|emit" || cmd === "plugin:event|emit_to") {
       return Promise.resolve(undefined);
     }
     return null;
+  }
+
+  function emitMockEvent(eventName, payload) {
+    const handlers = eventListeners.get(eventName);
+    if (!handlers) return;
+    for (const [id, callbackId] of handlers) {
+      const callback = callbacks.get(callbackId);
+      if (typeof callback === "function") {
+        callback({ event: eventName, id, payload: clone(payload) });
+      }
+    }
   }
 
   function handleTauriResourceCommand(cmd, args) {
@@ -169,55 +224,79 @@ export const TAURI_MOCK_SCRIPT = `
     get_all_separation_statuses: {},
     get_all_upload_statuses: {},
 
-    // Playback
-    get_playback_state: {
+    // Playback — every snapshot carries transport_generation (IPC contract).
+    get_playback_state: () => playbackSnapshot({
       song_id: null, state: "idle", is_playing: false,
       position_ms: 0, duration_ms: 0, buffered_ms: 0, volume: 0.8,
-      stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
-      has_stems: false, stem_mode: null,
-    },
+    }),
     play: (args) => {
       const songId = (args && (args.songId || args.song_id)) || "aaa111";
       const song = MOCK_SONGS.find((s) => s.hash === songId);
-      return {
+      bumpTransportGeneration();
+      return playbackSnapshot({
         song_id: songId,
         state: "playing", is_playing: true, position_ms: 0,
         duration_ms: song ? song.duration_ms : 300000, buffered_ms: 0, volume: 0.8,
-        stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
-        has_stems: false, stem_mode: null,
+      });
+    },
+    resume: () => {
+      bumpTransportGeneration();
+      return playbackSnapshot({
+        song_id: "aaa111", state: "playing", is_playing: true,
+        position_ms: 0, duration_ms: 354000, buffered_ms: 0, volume: 0.8,
+      });
+    },
+    pause: () => {
+      bumpTransportGeneration();
+      return playbackSnapshot({
+        song_id: "aaa111", state: "idle", is_playing: false,
+        position_ms: 5000, duration_ms: 354000, buffered_ms: 0, volume: 0.8,
+      });
+    },
+    seek: (args) => {
+      bumpTransportGeneration();
+      const targetMs = (args && args.ms) || 0;
+      const bufferingSnapshot = playbackSnapshot({
+        song_id: "aaa111", state: "buffering", is_playing: true,
+        position_ms: targetMs, duration_ms: 354000, buffered_ms: targetMs, volume: 0.8,
+      });
+      const playingSnapshot = {
+        ...bufferingSnapshot,
+        state: "playing",
+        position_ms: targetMs + 50,
+        buffered_ms: 354000,
       };
+      // Match the streaming Rust path, not the old optimistic browser fixture:
+      // seek first publishes the target as buffering. The audio thread can
+      // recover and publish playing before a delayed invoke response arrives.
+      // The session must keep that newer same-generation event rather than
+      // replaying the older buffering response and freezing the lyrics clock.
+      queueMicrotask(() => {
+        emitMockEvent("playback-position", {
+          ms: bufferingSnapshot.position_ms,
+          transport_generation: bufferingSnapshot.transport_generation,
+          snapshot: bufferingSnapshot,
+        });
+      });
+      setTimeout(() => {
+        emitMockEvent("playback-position", {
+          ms: playingSnapshot.position_ms,
+          transport_generation: playingSnapshot.transport_generation,
+          snapshot: playingSnapshot,
+        });
+      }, 80);
+      return bufferingSnapshot;
     },
-    resume: {
-      song_id: "aaa111", state: "playing", is_playing: true,
-      position_ms: 0, duration_ms: 354000, buffered_ms: 0, volume: 0.8,
-      stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
-      has_stems: false, stem_mode: null,
-    },
-    pause: {
-      song_id: "aaa111", state: "idle", is_playing: false,
-      position_ms: 5000, duration_ms: 354000, buffered_ms: 0, volume: 0.8,
-      stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
-      has_stems: false, stem_mode: null,
-    },
-    seek: (args) => ({
-      song_id: "aaa111", state: "playing", is_playing: true,
-      position_ms: (args && args.ms) || 0, duration_ms: 354000, buffered_ms: 0, volume: 0.8,
-      stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
-      has_stems: false, stem_mode: null,
-    }),
-    set_volume: (args) => ({
+    set_volume: (args) => playbackSnapshot({
       song_id: "aaa111", state: "playing", is_playing: true,
       position_ms: 0, duration_ms: 354000, buffered_ms: 0,
       volume: (args && args.level) || 0.8,
-      stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
-      has_stems: false, stem_mode: null,
     }),
-    set_stem_volume: {
+    set_stem_volume: () => playbackSnapshot({
       song_id: "aaa111", state: "playing", is_playing: true,
       position_ms: 0, duration_ms: 354000, buffered_ms: 0, volume: 0.8,
-      stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
       has_stems: true, stem_mode: "two_stem",
-    },
+    }),
 
     // Lyrics
     fetch_lyrics: {
@@ -353,7 +432,7 @@ export const TAURI_MOCK_SCRIPT = `
 
   function invoke(cmd, args) {
     invokeCalls.push({ cmd, args: clone(args) });
-    const eventResult = handleTauriEventCommand(cmd);
+    const eventResult = handleTauriEventCommand(cmd, args);
     if (eventResult) {
       return eventResult;
     }
@@ -403,11 +482,11 @@ export const TAURI_MOCK_SCRIPT = `
           playlists.push(result);
           playlistSongs.set(result.id, []);
         }
-        return Promise.resolve(clone(result));
+        return resolveCommandResult(cmd, result);
       }
       catch (e) { return Promise.reject(e); }
     }
-    return Promise.resolve(clone(handler));
+    return resolveCommandResult(cmd, handler);
   }
 
   let callbackId = 0;
@@ -460,6 +539,10 @@ export const TAURI_MOCK_SCRIPT = `
   };
 
   window.__OPENKARA_E2E__ = {
+    emitEvent: (eventName, payload) => emitMockEvent(eventName, payload),
+    setCommandDelayMs: (cmd, delayMs) => {
+      commandDelayMs.set(cmd, Math.max(0, delayMs));
+    },
     getInvokeCalls: () => clone(invokeCalls),
     getLastNativeMenu: () => lastNativeMenu ? menuSnapshot(lastNativeMenu) : null,
     clickNativeMenuItem: async (label) => {
