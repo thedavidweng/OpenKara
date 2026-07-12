@@ -666,3 +666,157 @@ describe("createSettingsOverlayActions - resetEqGains", () => {
     );
   });
 });
+
+describe("createSettingsOverlayActions - setCrossfadeEnabled", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("calls api.setCrossfadeEnabled and patches state with the result", async () => {
+    const harness = createHarness({
+      initialSettings: {
+        crossfadeEnabled: false,
+        crossfadeDurationMs: 3000,
+      },
+    });
+
+    vi.mocked(harness.dependencies.api.setCrossfadeEnabled).mockResolvedValue({
+      stem_mode: "two_stem",
+      model_variant: "htdemucs",
+      language: "en",
+      hide_batch_separate: false,
+      cover_art_backdrop: true,
+      lyrics_font_step: 0,
+      execution_provider: "cpu",
+      available_execution_providers: ["cpu"],
+      eq_enabled: false,
+      eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: true,
+      crossfade_duration_ms: 3000,
+    });
+
+    await harness.actions.setCrossfadeEnabled(true);
+
+    expect(harness.dependencies.api.setCrossfadeEnabled).toHaveBeenCalledWith(
+      true,
+    );
+    expect(
+      harness.dependencies.settingsStore.hydrateAppSettings,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ crossfade_enabled: true }),
+    );
+    expect(harness.getSnapshot().state.crossfadeEnabled).toBe(true);
+  });
+
+  test("skips the API call when the value is unchanged", async () => {
+    const harness = createHarness({
+      initialSettings: {
+        crossfadeEnabled: true,
+        crossfadeDurationMs: 3000,
+      },
+    });
+
+    await harness.actions.setCrossfadeEnabled(true);
+
+    expect(harness.dependencies.api.setCrossfadeEnabled).not.toHaveBeenCalled();
+  });
+
+  test("rolls back state on API failure", async () => {
+    const harness = createHarness({
+      initialSettings: {
+        crossfadeEnabled: false,
+        crossfadeDurationMs: 3000,
+      },
+    });
+
+    vi.mocked(harness.dependencies.api.setCrossfadeEnabled).mockRejectedValue(
+      new Error("network fail"),
+    );
+
+    await harness.actions.setCrossfadeEnabled(true);
+
+    expect(harness.getSnapshot().state.crossfadeEnabled).toBe(false);
+    expect(harness.dependencies.notifyError).toHaveBeenCalledWith(
+      expect.any(Error),
+    );
+  });
+});
+
+describe("createSettingsOverlayActions - setCrossfadeDurationMs", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("calls api.setCrossfadeDurationMs and patches state with the result", async () => {
+    const harness = createHarness({
+      initialSettings: {
+        crossfadeEnabled: true,
+        crossfadeDurationMs: 3000,
+      },
+    });
+
+    vi.mocked(
+      harness.dependencies.api.setCrossfadeDurationMs,
+    ).mockResolvedValue({
+      stem_mode: "two_stem",
+      model_variant: "htdemucs",
+      language: "en",
+      hide_batch_separate: false,
+      cover_art_backdrop: true,
+      lyrics_font_step: 0,
+      execution_provider: "cpu",
+      available_execution_providers: ["cpu"],
+      eq_enabled: false,
+      eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: true,
+      crossfade_duration_ms: 5000,
+    });
+
+    await harness.actions.setCrossfadeDurationMs(5000);
+
+    expect(
+      harness.dependencies.api.setCrossfadeDurationMs,
+    ).toHaveBeenCalledWith(5000);
+    expect(
+      harness.dependencies.settingsStore.hydrateAppSettings,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ crossfade_duration_ms: 5000 }),
+    );
+    expect(harness.getSnapshot().state.crossfadeDurationMs).toBe(5000);
+  });
+
+  test("skips the API call when the value is unchanged", async () => {
+    const harness = createHarness({
+      initialSettings: {
+        crossfadeEnabled: true,
+        crossfadeDurationMs: 3000,
+      },
+    });
+
+    await harness.actions.setCrossfadeDurationMs(3000);
+
+    expect(
+      harness.dependencies.api.setCrossfadeDurationMs,
+    ).not.toHaveBeenCalled();
+  });
+
+  test("rolls back state on API failure", async () => {
+    const harness = createHarness({
+      initialSettings: {
+        crossfadeEnabled: true,
+        crossfadeDurationMs: 3000,
+      },
+    });
+
+    vi.mocked(
+      harness.dependencies.api.setCrossfadeDurationMs,
+    ).mockRejectedValue(new Error("network fail"));
+
+    await harness.actions.setCrossfadeDurationMs(5000);
+
+    expect(harness.getSnapshot().state.crossfadeDurationMs).toBe(3000);
+    expect(harness.dependencies.notifyError).toHaveBeenCalledWith(
+      expect.any(Error),
+    );
+  });
+});

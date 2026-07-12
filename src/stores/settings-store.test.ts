@@ -10,6 +10,8 @@ const {
   mockSetLyricsFontStep,
   mockSetEqEnabled,
   mockSetEqGains,
+  mockSetCrossfadeEnabled,
+  mockSetCrossfadeDurationMs,
   mockNotifyError,
 } = vi.hoisted(() => ({
   mockSetLyricsFontStep: vi.fn<(step: number) => Promise<AppSettings>>(),
@@ -20,6 +22,9 @@ const {
         gainsDb: [number, number, number, number, number],
       ) => Promise<AppSettings>
     >(),
+  mockSetCrossfadeEnabled: vi.fn<(enabled: boolean) => Promise<AppSettings>>(),
+  mockSetCrossfadeDurationMs:
+    vi.fn<(durationMs: number) => Promise<AppSettings>>(),
   mockNotifyError: vi.fn(),
 }));
 
@@ -27,6 +32,8 @@ vi.mock("@/lib/tauri", () => ({
   setLyricsFontStep: mockSetLyricsFontStep,
   setEqEnabled: mockSetEqEnabled,
   setEqGains: mockSetEqGains,
+  setCrossfadeEnabled: mockSetCrossfadeEnabled,
+  setCrossfadeDurationMs: mockSetCrossfadeDurationMs,
 }));
 
 vi.mock("@/lib/errors", () => ({
@@ -142,10 +149,14 @@ describe("settings-store actions", () => {
       availableExecutionProviders: ["cpu"],
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
+      crossfadeEnabled: false,
+      crossfadeDurationMs: 3000,
     });
     mockSetLyricsFontStep.mockReset();
     mockSetEqEnabled.mockReset();
     mockSetEqGains.mockReset();
+    mockSetCrossfadeEnabled.mockReset();
+    mockSetCrossfadeDurationMs.mockReset();
     mockNotifyError.mockReset();
   });
 
@@ -479,5 +490,73 @@ describe("settings-store actions", () => {
 
     expect(mockSetEqGains).toHaveBeenCalledWith(flat);
     expect(store.getState().eqGainsDb).toEqual(flat);
+  });
+
+  // ── setCrossfadeEnabled ─────────────────────────────────────────────────
+
+  test("setCrossfadeEnabled calls api.setCrossfadeEnabled and syncs the result", async () => {
+    const returned = makeAppSettings({ crossfade_enabled: true });
+    mockSetCrossfadeEnabled.mockResolvedValue(returned);
+
+    await store.getState().setCrossfadeEnabled(true);
+
+    expect(mockSetCrossfadeEnabled).toHaveBeenCalledWith(true);
+    expect(store.getState().crossfadeEnabled).toBe(true);
+    expect(store.getState().hydrated).toBe(true);
+  });
+
+  test("setCrossfadeEnabled rolls back on API error", async () => {
+    store.setState({ crossfadeEnabled: false });
+    const error = new Error("invoke failed");
+    mockSetCrossfadeEnabled.mockRejectedValue(error);
+
+    await store.getState().setCrossfadeEnabled(true);
+
+    expect(mockSetCrossfadeEnabled).toHaveBeenCalledWith(true);
+    expect(mockNotifyError).toHaveBeenCalledWith(error);
+    expect(store.getState().crossfadeEnabled).toBe(false);
+  });
+
+  test("setCrossfadeEnabled is a no-op when value hasn't changed", async () => {
+    store.setState({ crossfadeEnabled: true });
+
+    await store.getState().setCrossfadeEnabled(true);
+
+    expect(mockSetCrossfadeEnabled).not.toHaveBeenCalled();
+    expect(store.getState().crossfadeEnabled).toBe(true);
+  });
+
+  // ── setCrossfadeDurationMs ──────────────────────────────────────────────
+
+  test("setCrossfadeDurationMs calls api.setCrossfadeDurationMs and syncs the result", async () => {
+    const returned = makeAppSettings({ crossfade_duration_ms: 5000 });
+    mockSetCrossfadeDurationMs.mockResolvedValue(returned);
+
+    await store.getState().setCrossfadeDurationMs(5000);
+
+    expect(mockSetCrossfadeDurationMs).toHaveBeenCalledWith(5000);
+    expect(store.getState().crossfadeDurationMs).toBe(5000);
+    expect(store.getState().hydrated).toBe(true);
+  });
+
+  test("setCrossfadeDurationMs rolls back on API error", async () => {
+    store.setState({ crossfadeDurationMs: 3000 });
+    const error = new Error("invoke failed");
+    mockSetCrossfadeDurationMs.mockRejectedValue(error);
+
+    await store.getState().setCrossfadeDurationMs(5000);
+
+    expect(mockSetCrossfadeDurationMs).toHaveBeenCalledWith(5000);
+    expect(mockNotifyError).toHaveBeenCalledWith(error);
+    expect(store.getState().crossfadeDurationMs).toBe(3000);
+  });
+
+  test("setCrossfadeDurationMs is a no-op when value hasn't changed", async () => {
+    store.setState({ crossfadeDurationMs: 3000 });
+
+    await store.getState().setCrossfadeDurationMs(3000);
+
+    expect(mockSetCrossfadeDurationMs).not.toHaveBeenCalled();
+    expect(store.getState().crossfadeDurationMs).toBe(3000);
   });
 });
