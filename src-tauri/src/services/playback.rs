@@ -532,20 +532,6 @@ pub(crate) fn ensure_output_thread_inner(
     Ok(())
 }
 
-pub fn emit_playback_position<R: Runtime>(
-    app_handle: &AppHandle<R>,
-    snapshot: &PlaybackStateSnapshot,
-) -> tauri::Result<()> {
-    if snapshot.song_id.is_none() {
-        return Ok(());
-    }
-
-    app_handle.emit(
-        crate::audio::playback::PLAYBACK_POSITION_EVENT,
-        crate::audio::playback::playback_position_event(snapshot),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -234,22 +234,35 @@ fn is_latest_request(runtime: &CoordinatorRuntime<impl Runtime>, request_id: u64
 
 // ── Failure reporting for InstallReady output failures ───────────────────
 
-fn report_latest_request_failure<R: Runtime>(
+/// Report a failure for the latest request after `InstallReady` has already
+/// installed the track. Unlike `handle_fail_load` (which clears a pending
+/// load via `cancel_loading_if_matching`), this clears the *installed* track
+/// via `clear_track_if_matching` — `start_track` / `start_track_streaming`
+/// already cleared `loading_song_id`, so the loading-state guard would
+/// silently no-op and leave the UI in a silent `playing` state with no output
+/// device.
+fn report_install_output_failure<R: Runtime>(
     runtime: &CoordinatorRuntime<R>,
     song_id: &str,
     request_id: u64,
     error: PlaybackError,
 ) {
+    // Defensive latest-request guard at the function boundary. The only
+    // caller (`handle_install_ready`) already checks `is_latest_request`
+    // before reaching this point, and the coordinator is single-threaded so
+    // the id cannot change in between. The guard is kept as a safety net so
+    // that a stale request can never clear a newer track if this helper is
+    // ever called from an additional path in the future.
     if !is_latest_request(runtime, request_id) {
         return;
     }
 
     let snapshot = {
         let Ok(mut playback) = runtime.playback.lock() else {
-            eprintln!("coordinator: playback lock poisoned in failure reporting");
+            eprintln!("coordinator: playback lock poisoned in install output failure");
             return;
         };
-        if !playback.cancel_loading_if_matching(song_id) {
+        if !playback.clear_track_if_matching(song_id) {
             return;
         }
         playback.snapshot()
@@ -362,10 +375,13 @@ fn handle_install_ready<R: Runtime>(
         }
     }
 
-    // Ensure output thread is running. On failure, report the error for the
-    // latest request and do not emit a position event.
+    // Ensure output thread is running. On failure, clear the just-installed
+    // track and emit playback-error for the latest request. The track was
+    // already installed by start_track above, so we use the install-failure
+    // path (clear_track_if_matching) rather than the loading-failure path
+    // (cancel_loading_if_matching).
     if let Err(e) = ensure_output(runtime) {
-        report_latest_request_failure(runtime, song_id, request_id, e);
+        report_install_output_failure(runtime, song_id, request_id, e);
         return;
     }
 
@@ -672,6 +688,21 @@ mod tests {
                 .snapshot()
         }
 
+        /// Force `ensure_output_thread` to fail deterministically by poisoning
+        /// the `output_start_lock`. The coordinator's `ensure_output` helper
+        /// will receive a `PoisonError` and return
+        /// `PlaybackError::AudioOutputUnavailable`.
+        fn poison_output_lock(&self) {
+            // Lock and explicitly leak the guard so the mutex becomes poisoned.
+            // We do this by panicking while holding the lock.
+            let lock = Arc::clone(&self.runtime.output_start_lock);
+            let _ = std::thread::spawn(move || {
+                let _guard = lock.lock().unwrap();
+                panic!("intentional panic to poison output_start_lock");
+            })
+            .join();
+        }
+
         fn shutdown(self) {
             self.runtime.shutdown.store(true, Ordering::Relaxed);
             // Send a dummy command to wake the coordinator so it checks shutdown.
@@ -697,6 +728,12 @@ mod tests {
             vocals: dummy_audio(),
             accompaniment: dummy_audio(),
         }
+    }
+
+    /// Create a minimal `StreamingTrack::Single` for tests.
+    fn dummy_streaming_track() -> StreamingTrack {
+        let (_producer, consumer) = crate::audio::streaming::create_stream_pair(44_100, 2);
+        StreamingTrack::Single { consumer }
     }
 
     /// Helper: install a decoded track via InstallReady so the controller
@@ -1207,6 +1244,182 @@ mod tests {
         });
 
         assert!(result.is_err(), "stale BeginLoad should return error");
+
+        harness.shutdown();
+    }
+
+    // ── Output failure on InstallReady ───────────────────────────────────
+
+    #[test]
+    fn install_ready_output_failure_clears_track_and_emits_error() {
+        let harness = Harness::with_request_id(1);
+        // Poison the output start lock so ensure_output fails deterministically.
+        harness.poison_output_lock();
+
+        // Send InstallReady — the coordinator will install the track, then
+        // fail to start the output thread, then clear the track and emit
+        // playback-error for the latest request.
+        harness.send(PlaybackCommand::InstallReady {
+            request_id: 1,
+            song_id: "song-a".to_owned(),
+            ready: Box::new(ReadyTrack::Decoded {
+                audio: dummy_audio(),
+                stems: None,
+                cdg: None,
+            }),
+        });
+        // Barrier: send a sync command and wait for its reply to ensure the
+        // InstallReady has been fully processed.
+        let _ = harness.send_and_recv(|reply| PlaybackCommand::SetVolume { level: 0.5, reply });
+
+        // The track must have been cleared — the controller should be idle.
+        let snapshot = harness.snapshot();
+        assert!(
+            snapshot.song_id.is_none(),
+            "output failure must clear the installed track, got song_id={:?}",
+            snapshot.song_id
+        );
+
+        harness.shutdown();
+    }
+
+    #[test]
+    fn install_ready_output_failure_does_not_clear_newer_track() {
+        let harness = Harness::with_request_id(2);
+        // Install a track for request 2 (latest) with working output.
+        install_track(&harness, 2, "song-b");
+        assert_eq!(harness.snapshot().song_id.as_deref(), Some("song-b"));
+
+        // Directly invoke the install-output-failure helper with a stale
+        // request_id (1) and a different song_id. The `is_latest_request`
+        // guard inside `report_install_output_failure` must reject it so
+        // the newer track (song-b) is not cleared.
+        //
+        // At the command level, a stale `InstallReady` is already blocked
+        // by `handle_install_ready`'s first guard and never reaches the
+        // failure path. This unit test exercises the defensive guard at
+        // the helper boundary directly.
+        report_install_output_failure(
+            &harness.runtime,
+            "song-a",
+            1, // stale
+            PlaybackError::AudioOutputUnavailable("test".to_owned()),
+        );
+
+        // song-b must still be loaded — the stale failure was a no-op.
+        assert_eq!(
+            harness.snapshot().song_id.as_deref(),
+            Some("song-b"),
+            "stale output failure must not clear the newer track"
+        );
+
+        harness.shutdown();
+    }
+
+    // ── Stale streaming InstallReady ─────────────────────────────────────
+
+    #[test]
+    fn stale_streaming_install_ready_is_ignored() {
+        let harness = Harness::with_request_id(2);
+        // Install a decoded track for request 2 (latest).
+        install_track(&harness, 2, "song-b");
+        assert_eq!(harness.snapshot().song_id.as_deref(), Some("song-b"));
+
+        // Send a stale streaming InstallReady for request 1.
+        harness.send(PlaybackCommand::InstallReady {
+            request_id: 1,
+            song_id: "song-a".to_owned(),
+            ready: Box::new(ReadyTrack::Streaming {
+                sample_rate: 44_100,
+                channels: 2,
+                duration_ms: 5_000,
+                original: dummy_streaming_track(),
+                stems: None,
+                cdg: None,
+            }),
+        });
+        // Barrier.
+        let _ = harness.send_and_recv(|reply| PlaybackCommand::SetVolume { level: 0.6, reply });
+
+        // song-b should still be loaded, not song-a.
+        assert_eq!(harness.snapshot().song_id.as_deref(), Some("song-b"));
+
+        harness.shutdown();
+    }
+
+    // ── BeginLoad → InstallReady full flow ───────────────────────────────
+
+    #[test]
+    fn begin_load_then_install_ready_transitions_loading_to_playing() {
+        let harness = Harness::with_request_id(1);
+
+        // Step 1: BeginLoad returns a loading snapshot.
+        let loading = harness
+            .send_and_recv(|reply| PlaybackCommand::BeginLoad {
+                request_id: 1,
+                song_id: "song-a".to_owned(),
+                reply,
+            })
+            .expect("BeginLoad should succeed");
+        assert_eq!(loading.song_id.as_deref(), Some("song-a"));
+        assert_eq!(loading.state, "loading");
+        assert!(!loading.is_playing);
+
+        // Step 2: InstallReady transitions to playing.
+        // The request id is still 1 (the latest), so the guard passes.
+        harness.send(PlaybackCommand::InstallReady {
+            request_id: 1,
+            song_id: "song-a".to_owned(),
+            ready: Box::new(ReadyTrack::Decoded {
+                audio: dummy_audio(),
+                stems: None,
+                cdg: None,
+            }),
+        });
+        // Barrier.
+        let _ = harness.send_and_recv(|reply| PlaybackCommand::Pause { reply });
+
+        let snapshot = harness.snapshot();
+        assert_eq!(snapshot.song_id.as_deref(), Some("song-a"));
+        assert_ne!(
+            snapshot.state, "loading",
+            "InstallReady must transition out of loading state"
+        );
+
+        harness.shutdown();
+    }
+
+    // ── Lock poisoning ───────────────────────────────────────────────────
+
+    #[test]
+    fn poisoned_playback_lock_returns_error_and_worker_stays_alive() {
+        let harness = Harness::with_request_id(1);
+
+        // Poison the playback mutex by panicking while holding it.
+        let playback = Arc::clone(&harness.runtime.playback);
+        let _ = std::thread::spawn(move || {
+            let _guard = playback.lock().unwrap();
+            panic!("intentional panic to poison playback lock");
+        })
+        .join();
+
+        // A Pause command should return an internal error, not hang.
+        let result = harness.send_and_recv(|reply| PlaybackCommand::Pause { reply });
+        assert!(
+            result.is_err(),
+            "poisoned lock must return an error, not hang"
+        );
+
+        // The coordinator must still be alive — send a SetVolume command.
+        // It uses the same (still-poisoned) playback mutex, so it will also
+        // return an error. The key assertion is that the coordinator
+        // *responds* at all (doesn't hang or terminate the worker thread).
+        let result2 =
+            harness.send_and_recv(|reply| PlaybackCommand::SetVolume { level: 0.5, reply });
+        assert!(
+            result2.is_err(),
+            "coordinator must still respond after poisoned lock"
+        );
 
         harness.shutdown();
     }

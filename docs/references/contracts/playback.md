@@ -227,8 +227,8 @@ playing ↔ playing（pause/resume，通过 isPlaying 区分）
 **Semantics**
 
 1. 当 `play` 已返回 `loading` 快照，但后台 decode/换轨失败且该请求仍为 latest 时发出
-2. 输出设备启动失败时也发出此事件（`InstallReady` 在 coordinator 中完成轨道安装后尝试启动输出线程，若失败则清除 loading 并发出 `playback-error`）
-3. 发出前先通过 `playback-position` 推送 idle snapshot（清除 loading 状态）
+2. 输出设备启动失败时也发出此事件（`InstallReady` 在 coordinator 中完成轨道安装后尝试启动输出线程，若失败则通过 `clear_track_if_matching` 清除已安装的轨道并发出 `playback-error`）
+3. 发出前先通过 `playback-position` 推送 idle snapshot（清除已安装的轨道）
 4. 前端应调用 `notifyError` 并根据 `error.retryable` 提供重试（通常重试 `play(song_id)`）
 
 ### Shared error type: `CommandError`

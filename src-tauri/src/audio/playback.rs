@@ -517,6 +517,24 @@ impl PlaybackController {
         false
     }
 
+    /// Clear an installed track when output-device startup fails after
+    /// `InstallReady` has already called `start_track` / `start_track_streaming`.
+    /// Unlike `cancel_loading_if_matching`, this handles the post-install case
+    /// where `loading_song_id` is already `None` but `current_track` holds the
+    /// song that cannot play without an output device. Returns `true` when the
+    /// installed track matched and was cleared.
+    pub fn clear_track_if_matching(&mut self, song_id: &str) -> bool {
+        if self
+            .current_track
+            .as_ref()
+            .is_some_and(|t| t.song_id == song_id)
+        {
+            self.clear_track();
+            return true;
+        }
+        false
+    }
+
     fn idle_snapshot(&self) -> PlaybackStateSnapshot {
         PlaybackStateSnapshot {
             volume: self.volume,
