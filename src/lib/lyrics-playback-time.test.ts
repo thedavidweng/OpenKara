@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, test } from "vitest";
 import {
-  markLyricsSeekFlag,
   resetLyricsPlaybackTimeForTests,
   sampleLyricsTimeFrame,
   setLyricsCurrentTime,
@@ -29,16 +28,6 @@ describe("lyrics playback time feed (AMLL setCurrentTime)", () => {
     expect(sampleLyricsTimeFrame()).toEqual({
       positionMs: 5016,
       isSeek: false,
-    });
-  });
-
-  test("markLyricsSeekFlag arms isSeek for the next sample", () => {
-    setLyricsCurrentTime(1000);
-    markLyricsSeekFlag();
-    setLyricsCurrentTime(8000);
-    expect(sampleLyricsTimeFrame()).toEqual({
-      positionMs: 8000,
-      isSeek: true,
     });
   });
 });

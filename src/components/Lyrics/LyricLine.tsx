@@ -4,7 +4,6 @@ import {
   buildAudiencePresentationSpec,
   colorToCss,
 } from "@/lib/audience-presentation";
-import { markLyricsSeek } from "@/lib/lyrics-engine";
 import { lyricsLineRuntime } from "@/lib/lyrics-line-runtime";
 import { usePlayerStore } from "@/stores/player-store";
 import type { LyricLine as LyricLineType } from "@/types/ipc";
@@ -115,8 +114,8 @@ export const LyricLine = memo(function LyricLine({
 
   const handleClick = () => {
     if (!isSeekable) return;
-    // AMLL: setCurrentTime(..., isSeek) + resetScroll before transport seek.
-    markLyricsSeek();
+    // The player store publishes the lyrics seek edge after the asynchronous
+    // Tauri command installs its authoritative target snapshot.
     void seek(line.time_ms);
   };
 

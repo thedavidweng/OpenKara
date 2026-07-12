@@ -4,7 +4,6 @@ import {
   resolvePlainTextRemoteTarget,
   type PlainTextPageDirection,
 } from "@/lib/plain-text-page-controls";
-import { markLyricsSeek } from "@/lib/lyrics-engine";
 import { usePlayerStore, selectCurrentPositionMs } from "@/stores/player-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useLibraryStore } from "@/stores/library-store";
@@ -150,8 +149,7 @@ export function handleAppKeyDown(
         positionMs,
         playingSinceMs,
       });
-      markLyricsSeek();
-      seek(extrapolated - 5000);
+      void seek(extrapolated - 5000);
       return true;
     }
     case "ArrowRight": {
@@ -161,8 +159,7 @@ export function handleAppKeyDown(
         positionMs,
         playingSinceMs,
       });
-      markLyricsSeek();
-      seek(extrapolated + 5000);
+      void seek(extrapolated + 5000);
       return true;
     }
     case "ArrowUp": {

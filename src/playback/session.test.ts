@@ -397,6 +397,58 @@ describe("createPlaybackSession", () => {
       expect(deps.transport.seek).not.toHaveBeenCalled();
     });
   });
+
+  describe("seek", () => {
+    test("returns false when no song is loaded", async () => {
+      const deps = mockDeps();
+      const session = createPlaybackSession(deps);
+
+      await expect(session.seek(1500)).resolves.toBe(false);
+      expect(deps.transport.seek).not.toHaveBeenCalled();
+    });
+
+    test("returns true after applying the authoritative target", async () => {
+      const deps = mockDeps({
+        transport: {
+          seek: vi.fn().mockResolvedValue(
+            snapshot({
+              song_id: "song-1",
+              transport_generation: 2,
+              position_ms: 15_000,
+            }),
+          ),
+        },
+      });
+      const session = createPlaybackSession(deps);
+      session.applySnapshot(
+        snapshot({ song_id: "song-1", transport_generation: 1 }),
+      );
+
+      await expect(session.seek(15_000)).resolves.toBe(true);
+      expect(session.getPositionClock().positionMs).toBe(15_000);
+    });
+
+    test("returns false when a stale seek response is rejected", async () => {
+      const deps = mockDeps({
+        transport: {
+          seek: vi.fn().mockResolvedValue(
+            snapshot({
+              song_id: "song-1",
+              transport_generation: 1,
+              position_ms: 15_000,
+            }),
+          ),
+        },
+      });
+      const session = createPlaybackSession(deps);
+      session.applySnapshot(
+        snapshot({ song_id: "song-1", transport_generation: 2 }),
+      );
+
+      await expect(session.seek(15_000)).resolves.toBe(false);
+      expect(session.getPositionClock().positionMs).toBe(0);
+    });
+  });
 });
 
 describe("volume updates ignore stale transport generations", () => {

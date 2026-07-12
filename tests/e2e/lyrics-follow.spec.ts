@@ -43,6 +43,15 @@ async function readScrollTop(page: import("@playwright/test").Page) {
   return page.locator(VIEWPORT).evaluate((el) => el.scrollTop);
 }
 
+async function emitLayoutDrivenScroll(page: import("@playwright/test").Page) {
+  await page.locator(VIEWPORT).evaluate((el) => {
+    // Model the bare scroll event WKWebView can emit when active-line layout
+    // changes after a seek. It has no wheel/touch/pointer user intent.
+    el.scrollTop += 2;
+    el.dispatchEvent(new Event("scroll"));
+  });
+}
+
 test.describe("Lyrics auto-follow", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(DENSE_LYRICS_SCRIPT);
@@ -142,6 +151,53 @@ test.describe("Lyrics auto-follow", () => {
     await page.waitForTimeout(3000);
     const later = await readScrollTop(page);
     expect(later).toBeGreaterThan(afterSeek);
+  });
+
+  test("delayed Tauri line seek keeps following after WebKit layout scroll", async ({
+    page,
+  }) => {
+    await page.evaluate(() => {
+      window.__OPENKARA_E2E__.setCommandDelayMs("seek", 350);
+    });
+    await page.waitForTimeout(1200);
+
+    await page.getByText("Lyric line 20 ").click();
+    // Rust emits the target position before the delayed invoke response. Let
+    // WebKit's layout scroll land inside that real production timing window.
+    await page.waitForTimeout(120);
+    await emitLayoutDrivenScroll(page);
+    await page.waitForTimeout(430);
+
+    const afterSeek = await readScrollTop(page);
+    expect(afterSeek).toBeGreaterThan(100);
+
+    await page.waitForTimeout(2500);
+    const later = await readScrollTop(page);
+    expect(later).toBeGreaterThan(afterSeek + 20);
+  });
+
+  test("delayed Tauri seek-bar seek keeps following after WebKit layout scroll", async ({
+    page,
+  }) => {
+    await page.evaluate(() => {
+      window.__OPENKARA_E2E__.setCommandDelayMs("seek", 250);
+    });
+
+    const seekBar = page.locator("[role='slider']");
+    const box = await seekBar.boundingBox();
+    if (!box) throw new Error("seek bar not visible");
+    await page.mouse.click(box.x + box.width * 0.05, box.y + box.height / 2);
+
+    await page.waitForTimeout(80);
+    await emitLayoutDrivenScroll(page);
+    await page.waitForTimeout(370);
+
+    const afterSeek = await readScrollTop(page);
+    expect(afterSeek).toBeGreaterThan(100);
+
+    await page.waitForTimeout(2500);
+    const later = await readScrollTop(page);
+    expect(later).toBeGreaterThan(afterSeek + 20);
   });
 
   test("user wheel unlocks follow and Follow button re-locks", async ({

@@ -34,7 +34,8 @@ export interface PlaybackSession {
 
   resume(): Promise<void>;
   pause(): Promise<void>;
-  seek(ms: number): Promise<void>;
+  /** Returns true when the authoritative seek snapshot was accepted. */
+  seek(ms: number): Promise<boolean>;
   setVolume(level: number): Promise<void>;
   setStemVolume(stem: StemName, level: number): Promise<void>;
   loadStems(): Promise<void>;
@@ -213,10 +214,10 @@ export function createPlaybackSession(
     },
 
     seek: async (ms) => {
-      if (!clock.snapshot?.song_id) return;
+      if (!clock.snapshot?.song_id) return false;
       const clamped = Math.max(0, ms);
       const snapshot = await deps.transport.seek(clamped);
-      tryApplyAuthoritative(snapshot);
+      return tryApplyAuthoritative(snapshot);
     },
 
     setVolume: async (level) => {

@@ -95,7 +95,7 @@ describe("createUserScrollGuard", () => {
     guard.destroy();
   });
 
-  test("unlocks on native scroll events but ignores programmatic writes", () => {
+  test("ignores layout-driven scroll events and unlocks during a pointer scroll", () => {
     const container = makeContainer();
     const guard = createUserScrollGuard(container, PAUSE_MS);
 
@@ -105,8 +105,30 @@ describe("createUserScrollGuard", () => {
     });
     expect(guard.isActive()).toBe(false);
 
+    // WKWebView can emit a bare scroll event after active-line layout changes.
+    // It carries no user intent and must not disable follow.
     container.scrollTop = 200;
     container.dispatchEvent(new Event("scroll"));
+    expect(guard.isActive()).toBe(false);
+
+    // Native scrollbar drag: scroll while the pointer is held is user intent.
+    container.dispatchEvent(new Event("pointerdown"));
+    container.scrollTop = 260;
+    container.dispatchEvent(new Event("scroll"));
+    expect(guard.isActive()).toBe(true);
+    window.dispatchEvent(new Event("pointerup"));
+
+    guard.destroy();
+  });
+
+  test("unlocks on touchmove without treating touchstart as a scroll", () => {
+    const container = makeContainer();
+    const guard = createUserScrollGuard(container, PAUSE_MS);
+
+    container.dispatchEvent(new Event("touchstart"));
+    expect(guard.isActive()).toBe(false);
+
+    container.dispatchEvent(new Event("touchmove"));
     expect(guard.isActive()).toBe(true);
 
     guard.destroy();
@@ -125,12 +147,13 @@ describe("createUserScrollGuard", () => {
     guard.destroy();
   });
 
-  test("does not unlock from touchstart or while resume is suppressed", () => {
+  test("does not unlock from touch input while resume is suppressed", () => {
     const container = makeContainer();
     const guard = createUserScrollGuard(container, PAUSE_MS);
 
     requestLyricsAutoScrollResume();
     container.dispatchEvent(new Event("touchstart"));
+    container.dispatchEvent(new Event("touchmove"));
     container.scrollTop = 80;
     container.dispatchEvent(new Event("scroll"));
     expect(guard.isActive()).toBe(false);

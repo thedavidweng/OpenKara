@@ -4,6 +4,7 @@ import {
   createUserScrollGuard,
   peekLyricsAutoScrollResumeGeneration,
   readLyricsPlaybackClockMs,
+  requestLyricsAutoScrollResume,
   syncLyricsActiveLine,
   shouldRunLyricsEngineLoop,
   tickLyricsEngineFrame,
@@ -68,6 +69,7 @@ export function useLyricsEngine(input: {
   });
   const prevActiveLineRef = useRef(-1);
   const prevActiveWordIndexRef = useRef(-1);
+  const lastSeekRevisionRef = useRef(usePlayerStore.getState().seekRevision);
 
   // RATIONALE: LyricsPanel early-returns a loading/empty state before the scroll
   // viewport mounts. An effect keyed only on songId would run while
@@ -135,6 +137,7 @@ export function useLyricsEngine(input: {
     scrollState.prevAdjustedMsRef.current = null;
     scrollState.lastResumeGenerationRef.current =
       peekLyricsAutoScrollResumeGeneration();
+    lastSeekRevisionRef.current = usePlayerStore.getState().seekRevision;
 
     const container = containerRef.current;
     if (container) {
@@ -155,8 +158,20 @@ export function useLyricsEngine(input: {
       const dt = Math.min((now - lastTime) / 1000, 0.05);
       lastTime = now;
 
-      // Host clock → AMLL setCurrentTime → engine sample.
-      setLyricsCurrentTime(readLyricsPlaybackClockMs(() => now));
+      // Host clock → AMLL setCurrentTime → engine sample. The player store
+      // publishes seekRevision only after Tauri's authoritative target
+      // snapshot is applied, so resetScroll cannot be consumed against the
+      // pre-seek playhead while the async command is still in flight.
+      const playerState = usePlayerStore.getState();
+      const isSeek = playerState.seekRevision !== lastSeekRevisionRef.current;
+      if (isSeek) {
+        lastSeekRevisionRef.current = playerState.seekRevision;
+        requestLyricsAutoScrollResume();
+      }
+      setLyricsCurrentTime(
+        readLyricsPlaybackClockMs(() => now),
+        { isSeek },
+      );
       const frame = sampleLyricsTimeFrame();
 
       tickLyricsEngineFrame({

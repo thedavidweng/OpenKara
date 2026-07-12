@@ -4,7 +4,6 @@ import {
   findActiveWordIndex,
 } from "@/lib/lyrics-timing";
 import type { LyricsLineRuntime } from "@/lib/lyrics-line-runtime";
-import { markLyricsSeekFlag } from "@/lib/lyrics-playback-time";
 import { selectCurrentPositionMs } from "@/stores/player-store";
 import { useLyricsStore } from "@/stores/lyrics-store";
 import { usePlayerStore } from "@/stores/player-store";
@@ -32,15 +31,6 @@ export function requestLyricsAutoScrollResume(): void {
   // Stay suppressed until the engine consumes the resume and writes scrollTop
   // through withProgrammatic — otherwise click scroll-into-view unlocks follow.
   autoScrollUnlockSuppressed = true;
-}
-
-/**
- * AMLL seek entry: latch isSeek for the next lyrics frame and resetScroll
- * (re-lock follow). Call before line-click / scrub / keyboard seek.
- */
-export function markLyricsSeek(): void {
-  markLyricsSeekFlag();
-  requestLyricsAutoScrollResume();
 }
 
 export function peekLyricsAutoScrollResumeGeneration(): number {
@@ -75,8 +65,9 @@ export interface UserScrollGuard {
 /**
  * Spotify / Apple Music lyrics follow controller.
  *
- * Unlock only on real scroll movement (scroll event) or wheel deltas — not on
- * touchstart/click, which would unlock follow right after line-click seek.
+ * Unlock from explicit wheel/touch movement or a pointer-owned native
+ * scrollbar change — not touchstart/click/bare layout scroll events, which
+ * can fire around line-click seek without user browsing intent.
  */
 export function createUserScrollGuard(
   container: HTMLElement,
@@ -103,6 +94,7 @@ export function createUserScrollGuard(
 
   let unlocked = false;
   let programmaticDepth = 0;
+  let pointerDown = false;
   let lastProgrammaticScrollTop = container.scrollTop;
   let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -143,7 +135,14 @@ export function createUserScrollGuard(
     if (Math.abs(container.scrollTop - lastProgrammaticScrollTop) < 1) {
       return;
     }
-    unlockFromUser();
+    // RATIONALE: WKWebView can emit scroll events for scroll anchoring/layout
+    // corrections after the active lyric changes. A bare scroll event does
+    // not prove user intent and used to re-unlock follow immediately after a
+    // seek. Wheel/touchmove are explicit; scroll is accepted only while the
+    // user is holding a pointer (native scrollbar drag).
+    if (pointerDown) {
+      unlockFromUser();
+    }
   };
 
   const onWheel = (event: WheelEvent) => {
@@ -153,8 +152,24 @@ export function createUserScrollGuard(
     unlockFromUser();
   };
 
+  const onTouchMove = () => {
+    unlockFromUser();
+  };
+
+  const onPointerDown = () => {
+    pointerDown = true;
+  };
+
+  const onPointerUp = () => {
+    pointerDown = false;
+  };
+
   container.addEventListener("scroll", onScroll, { passive: true });
   container.addEventListener("wheel", onWheel, { passive: true });
+  container.addEventListener("touchmove", onTouchMove, { passive: true });
+  container.addEventListener("pointerdown", onPointerDown, { passive: true });
+  window.addEventListener("pointerup", onPointerUp, { passive: true });
+  window.addEventListener("pointercancel", onPointerUp, { passive: true });
 
   return {
     isActive: () => unlocked,
@@ -175,7 +190,12 @@ export function createUserScrollGuard(
     destroy: () => {
       container.removeEventListener("scroll", onScroll);
       container.removeEventListener("wheel", onWheel);
+      container.removeEventListener("touchmove", onTouchMove);
+      container.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
       if (timer !== null) timers.clearTimeout(timer);
+      pointerDown = false;
       unlocked = false;
     },
   };
@@ -331,8 +351,8 @@ export function tickLyricsEngineScroll(input: {
     lastResumeGenerationRef,
   } = scrollState;
 
-  // Infer seek jumps as a safety net when the host forgot markLyricsSeek
-  // (e.g. backend-driven position snaps). Prefer the explicit isSeek latch.
+  // Infer backend-driven position snaps that did not pass through the player
+  // store. Normal UI seeks arrive through the host-owned explicit isSeek edge.
   const seekJump = isLyricsPlaybackSeekJump(
     prevAdjustedMsRef.current,
     adjustedMs,

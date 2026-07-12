@@ -7,8 +7,9 @@
  * scroll. OpenKara mirrors that contract so word-level timing has one stable
  * clock source and seeks are explicit instead of only inferred from jumps.
  *
- * Pair {@link markLyricsSeekFlag} with `requestLyricsAutoScrollResume()` (or
- * use the wrapper `markLyricsSeek` in lyrics-engine) so seek also resetScrolls.
+ * Set `isSeek: true` only on the frame carrying the authoritative post-seek
+ * position. UI handlers must not arm this latch before an asynchronous Tauri
+ * seek, because the next rAF would consume it against the old playhead.
  */
 
 export interface LyricsTimeFrame {
@@ -26,8 +27,7 @@ let pendingIsSeek = false;
 
 /**
  * Push the host clock into the lyrics feed (call once per animation frame).
- * Prefer {@link markLyricsSeekFlag} before async seeks; use `isSeek: true` when
- * the discontinuous time is known synchronously.
+ * Use `isSeek: true` when the discontinuous host time has been committed.
  */
 export function setLyricsCurrentTime(
   positionMs: number,
@@ -37,11 +37,6 @@ export function setLyricsCurrentTime(
   if (options.isSeek) {
     pendingIsSeek = true;
   }
-}
-
-/** Latch isSeek for the next {@link sampleLyricsTimeFrame} (does not resetScroll). */
-export function markLyricsSeekFlag(): void {
-  pendingIsSeek = true;
 }
 
 /** Take one frame sample for the lyrics engine; clears the isSeek latch. */
