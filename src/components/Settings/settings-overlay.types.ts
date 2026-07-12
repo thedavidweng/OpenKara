@@ -13,6 +13,7 @@ import type {
   RuntimeBootstrapState,
   StemMode,
 } from "@/types/ipc";
+import type { EqGains } from "@/stores/settings-store";
 
 export type DangerDialog =
   | "delete_stems"
@@ -50,6 +51,8 @@ export interface SettingsOverlayState {
   coverArtBackdrop: boolean;
   executionProvider: ExecutionProvider;
   availableExecutionProviders: ExecutionProvider[];
+  eqEnabled: boolean;
+  eqGainsDb: EqGains;
 }
 
 export interface SettingsOverlayMeta {
@@ -85,6 +88,9 @@ export interface SettingsOverlayActions {
   deleteModel: (variant: ModelVariant) => Promise<void>;
   toggleHideBatchSeparate: (value: boolean) => Promise<void>;
   toggleCoverArtBackdrop: (value: boolean) => Promise<void>;
+  setEqEnabled: (enabled: boolean) => Promise<void>;
+  setEqGains: (gainsDb: EqGains) => Promise<void>;
+  resetEqGains: () => Promise<void>;
   openDeleteStemsDialog: () => Promise<void>;
   confirmDeleteStems: () => Promise<void>;
   openDowngradeDialog: () => Promise<void>;
@@ -132,6 +138,8 @@ export interface SettingsOverlayControllerDependencies {
     | "setExecutionProvider"
     | "setHideBatchSeparate"
     | "setCoverArtBackdrop"
+    | "setEqEnabled"
+    | "setEqGains"
     | "setLanguage"
     | "setModelVariant"
     | "setStemMode"

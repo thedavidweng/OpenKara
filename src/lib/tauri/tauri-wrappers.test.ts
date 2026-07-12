@@ -351,6 +351,8 @@ describe("settings", () => {
     lyrics_font_step: 0,
     execution_provider: "cpu" as const,
     available_execution_providers: ["cpu" as const],
+    eq_enabled: false,
+    eq_gains_db: [0, 0, 0, 0, 0] as [number, number, number, number, number],
   };
 
   test("getModelBootstrapStatus invokes get_model_bootstrap_status", async () => {
@@ -502,6 +504,25 @@ describe("settings", () => {
     const returned = await settings.setLyricsFontStep(2);
     expect(mockInvoke).toHaveBeenCalledWith("set_lyrics_font_step", {
       step: 2,
+    });
+    expect(returned).toBe(appSettings);
+  });
+
+  test("setEqEnabled invokes set_eq_enabled", async () => {
+    mockInvoke.mockResolvedValueOnce(appSettings);
+    const returned = await settings.setEqEnabled(true);
+    expect(mockInvoke).toHaveBeenCalledWith("set_eq_enabled", {
+      enabled: true,
+    });
+    expect(returned).toBe(appSettings);
+  });
+
+  test("setEqGains invokes set_eq_gains", async () => {
+    mockInvoke.mockResolvedValueOnce(appSettings);
+    const gains = [1, 2, 3, 4, 5] as [number, number, number, number, number];
+    const returned = await settings.setEqGains(gains);
+    expect(mockInvoke).toHaveBeenCalledWith("set_eq_gains", {
+      gainsDb: gains,
     });
     expect(returned).toBe(appSettings);
   });

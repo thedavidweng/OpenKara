@@ -58,6 +58,8 @@ function createControllerHarness() {
       setLanguage: vi.fn(),
       setModelVariant: vi.fn(),
       setStemMode: vi.fn(),
+      setEqEnabled: vi.fn(),
+      setEqGains: vi.fn(),
     },
     notifyError: vi.fn(),
     openDirectory: vi.fn(),
@@ -90,6 +92,8 @@ function createControllerHarness() {
           lyricsFontStep: 0,
           executionProvider: "xnnpack",
           availableExecutionProviders: ["cpu", "xnnpack"],
+          eqEnabled: false,
+          eqGainsDb: [0, 0, 0, 0, 0],
         }),
       ),
       hydrateAppSettings: vi.fn(),
@@ -142,6 +146,8 @@ describe("SettingsOverlay controller", () => {
       lyrics_font_step: 0,
       execution_provider: "xnnpack",
       available_execution_providers: ["cpu", "xnnpack"],
+      eq_enabled: false,
+      eq_gains_db: [0, 0, 0, 0, 0],
     });
     vi.mocked(harness.dependencies.api.getModelStatus)
       .mockResolvedValueOnce({
@@ -173,6 +179,8 @@ describe("SettingsOverlay controller", () => {
       lyrics_font_step: 0,
       execution_provider: "xnnpack",
       available_execution_providers: ["cpu", "xnnpack"],
+      eq_enabled: false,
+      eq_gains_db: [0, 0, 0, 0, 0],
     });
     expect(harness.getSnapshot()).toMatchObject({
       state: {
@@ -554,6 +562,8 @@ describe("SettingsOverlay controller", () => {
       lyrics_font_step: 0,
       execution_provider: "xnnpack",
       available_execution_providers: ["cpu", "xnnpack"],
+      eq_enabled: false,
+      eq_gains_db: [0, 0, 0, 0, 0],
     });
 
     await harness.actions.selectModelVariant("htdemucs");
@@ -683,6 +693,8 @@ describe("SettingsOverlay controller", () => {
       lyrics_font_step: 0,
       execution_provider: "xnnpack",
       available_execution_providers: ["cpu", "xnnpack"],
+      eq_enabled: false,
+      eq_gains_db: [0, 0, 0, 0, 0],
     });
 
     await harness.actions.toggleHideBatchSeparate(true);

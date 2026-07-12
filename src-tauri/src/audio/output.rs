@@ -1,5 +1,6 @@
 use crate::airplay_stream::AirPlayAudioTap;
 use crate::audio::decode::DecodedAudio;
+use crate::audio::eq::EqProcessor;
 use crate::audio::error::PlaybackError;
 use crate::audio::playback::{LoadedStems, PlaybackController, StemVolumes};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -149,6 +150,7 @@ pub fn render_output_buffer(
     device_sample_rate: u32,
     device_channels: usize,
     resampler_cache: &mut ResamplerCache,
+    eq_processor: &mut EqProcessor,
 ) -> usize {
     output.fill(0.0);
 
@@ -283,10 +285,16 @@ pub fn render_output_buffer(
             ),
         };
 
-        // Clamp to prevent clipping
-        for sample in output.iter_mut() {
-            *sample = sample.clamp(-1.0, 1.0);
-        }
+        // EQ + soft limiter replaces the previous hard clamp. The EQ processor
+        // applies the 5-band peaking EQ (if enabled), auto preamp, and the
+        // continuous soft limiter. It only touches `rendered` samples so
+        // trailing callback padding is left untouched.
+        eq_processor.apply_config(
+            playback.eq_enabled,
+            playback.eq_gains_db,
+            playback.eq_revision,
+        );
+        eq_processor.process(output, result.0);
 
         result
     } else if has_stems {
@@ -360,10 +368,13 @@ pub fn render_output_buffer(
             }
         };
 
-        // Clamp to prevent clipping
-        for sample in output.iter_mut() {
-            *sample = sample.clamp(-1.0, 1.0);
-        }
+        // EQ + soft limiter (see comment in streaming path above).
+        eq_processor.apply_config(
+            playback.eq_enabled,
+            playback.eq_gains_db,
+            playback.eq_revision,
+        );
+        eq_processor.process(output, result.0);
 
         result
     } else {
@@ -380,10 +391,13 @@ pub fn render_output_buffer(
             Some(resampler_cache),
         );
 
-        // Clamp to prevent clipping
-        for sample in output.iter_mut() {
-            *sample = sample.clamp(-1.0, 1.0);
-        }
+        // EQ + soft limiter (see comment in streaming path above).
+        eq_processor.apply_config(
+            playback.eq_enabled,
+            playback.eq_gains_db,
+            playback.eq_revision,
+        );
+        eq_processor.process(output, result.0);
 
         result
     };
@@ -1079,6 +1093,11 @@ where
     // Cached rubato resamplers for sample-rate conversion. Resamplers maintain
     // internal state so they must be reused across consecutive callbacks.
     let mut resampler_cache = ResamplerCache::new();
+    // 5-band EQ processor with auto preamp and soft limiter. Owned by the
+    // output closure beside ResamplerCache — NOT behind the playback mutex.
+    // A new stream constructs a new processor so per-channel filter state
+    // always matches the active device sample rate / channel count.
+    let mut eq_processor = EqProcessor::new(sample_rate, channels);
 
     let stream = device
         .build_output_stream(
@@ -1102,6 +1121,7 @@ where
                         sample_rate,
                         channels,
                         &mut resampler_cache,
+                        &mut eq_processor,
                     );
                 } else {
                     scratch.fill(0.0);
@@ -1269,6 +1289,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::EqProcessor;
     use super::{forward_rendered_audio_to_airplay, render_output_buffer, write_output_samples};
     use crate::airplay_stream::AirPlayAudioTap;
 
@@ -1354,6 +1375,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut EqProcessor::new(sample_rate, device_channels),
         );
         assert_eq!(rendered, 0);
         assert!(
@@ -1371,6 +1393,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut EqProcessor::new(sample_rate, device_channels),
         );
         assert_eq!(rendered, 0);
 
@@ -1388,6 +1411,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut EqProcessor::new(sample_rate, device_channels),
         );
         assert!(
             !controller.is_buffering,
@@ -1618,6 +1642,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut EqProcessor::new(sample_rate, device_channels),
         );
 
         // Accompaniment is empty → below low water → must enter buffering.

@@ -43,6 +43,8 @@ function makeAppSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     lyrics_font_step: 0,
     execution_provider: "cpu",
     available_execution_providers: ["cpu"],
+    eq_enabled: false,
+    eq_gains_db: [0, 0, 0, 0, 0],
     ...overrides,
   };
 }
@@ -122,6 +124,8 @@ describe("settings-store actions", () => {
       lyricsFontStep: 0,
       executionProvider: "cpu",
       availableExecutionProviders: ["cpu"],
+      eqEnabled: false,
+      eqGainsDb: [0, 0, 0, 0, 0],
     });
     mockSetLyricsFontStep.mockReset();
     mockNotifyError.mockReset();
@@ -332,6 +336,8 @@ describe("settings-store actions", () => {
       lyricsFontStep: 1,
       executionProvider: "xnnpack",
       availableExecutionProviders: ["cpu", "xnnpack"],
+      eqEnabled: false,
+      eqGainsDb: [0, 0, 0, 0, 0],
     });
 
     const snapshot = store.getState().getAppSettingsSnapshot();
@@ -346,6 +352,8 @@ describe("settings-store actions", () => {
       lyricsFontStep: 1,
       executionProvider: "xnnpack",
       availableExecutionProviders: ["cpu", "xnnpack"],
+      eqEnabled: false,
+      eqGainsDb: [0, 0, 0, 0, 0],
     });
     expect(snapshot).not.toHaveProperty("isOpen");
   });

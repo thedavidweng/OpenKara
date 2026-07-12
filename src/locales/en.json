@@ -357,6 +357,12 @@
       "label": "Output Device",
       "systemDefault": "System Default"
     },
+    "eq": {
+      "label": "Equalizer",
+      "description": "5-band equalizer with automatic preamp and soft limiter.",
+      "enable": "Enable equalizer",
+      "reset": "Reset all bands to 0 dB"
+    },
     "language": {
       "label": "Language"
     },

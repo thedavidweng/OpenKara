@@ -29,4 +29,4 @@ pub use playlist::{
     set_queue_entry_singer, set_rotation_state,
 };
 pub use separation::{get_separation_status, separate, upgrade_to_four_stem};
-pub use settings::{get_settings, set_stem_mode};
+pub use settings::{get_settings, set_eq_enabled, set_eq_gains, set_stem_mode};

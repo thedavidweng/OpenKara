@@ -2,7 +2,7 @@
 
 播放命令层收口为 thin Tauri command，具体编排在 backend playback service / CDG helper，对外 IPC 契约保持不变。
 
-控制面变更（pause / resume / seek / set_volume / set_stem_volume / load_stems / install_track / fail_load）由 `PlaybackCoordinator` 独立线程串行处理；后台 decode/fetch 线程只产出 `ReadyTrack` 并发送命令，不直接修改 `PlaybackController`。
+控制面变更（pause / resume / seek / set_volume / set_stem_volume / set_eq_enabled / set_eq_gains / load_stems / install_track / fail_load）由 `PlaybackCoordinator` 独立线程串行处理；后台 decode/fetch 线程只产出 `ReadyTrack` 并发送命令，不直接修改 `PlaybackController`。
 
 ## 接口
 
@@ -15,6 +15,29 @@
 7. `load_stems() -> PlaybackStateSnapshot`
 8. `get_playback_state() -> PlaybackStateSnapshot`
 9. `playback-position` 事件 payload 为 `{ ms: u64, transport_generation: u64, snapshot: PlaybackStateSnapshot }`
+
+### EQ 设置命令（通过 settings 接口）
+
+EQ 设置不走 `PlaybackStateSnapshot` 返回值，而是返回完整的 `AppSettings` 快照。内部通过 `PlaybackCoordinator` 的 `SetEqEnabled` / `SetEqGains` 命令更新 `PlaybackController` 中的 `eq_enabled` / `eq_gains_db` / `eq_revision`，coordinator 回复 `EqState { enabled, gains_db }`。
+
+- `set_eq_enabled(enabled: bool) -> AppSettings` — 启用/禁用五段均衡器
+- `set_eq_gains(gains_db: [f32; 5]) -> AppSettings` — 设置五个频段增益（dB），范围 [-12, 12]，拒绝越界值而非截断
+
+设置命令执行顺序：验证输入 → 读取旧值 → 发送 coordinator 更新并等待确认 → 持久化 config → 持久化失败则回滚 coordinator → 返回 `settings_from_config`。
+
+`PlaybackController` 在 `setup_app()` 中从持久化 config 初始化 EQ 状态（`eq_enabled` / `eq_gains_db`），在 coordinator/output 线程启动前生效。
+
+### 渲染管线
+
+```text
+existing source/stem mix + master/stem gains
+→ EQ dry/wet processor + auto preamp
+→ soft limiter
+→ existing play/pause/seek fade
+→ output/AirPlay forwarding
+```
+
+`EqProcessor` 由 CPAL output 闭包拥有（与 `ResamplerCache` 并列），不存储在 playback mutex 后面。回调在已持有 controller 锁时比较 `eq_revision`，通过 `apply_config` 将配置同步到本地 processor。增益、前置增益和 dry/wet 过渡按渲染帧数平滑推进（50 ms EQ / 20 ms bypass），零长度/buffering 回调不推进状态。
 
 ## Inputs / outputs / required dependencies
 
@@ -240,7 +263,7 @@ playing ↔ playing（pause/resume，通过 isPlaying 区分）
 1. `symphonia` 负责解码支持格式
 2. `cpal` 负责设备输出
 3. `PlaybackController` 负责状态推进与位置计算
-4. `PlaybackCoordinator` 负责串行处理所有控制面命令（pause / resume / seek / set_volume / set_stem_volume / install_track / fail_load / attach_stems），保证 FIFO 顺序与 latest-request-wins
+4. `PlaybackCoordinator` 负责串行处理所有控制面命令（pause / resume / seek / set_volume / set_stem_volume / set_eq_enabled / set_eq_gains / install_track / fail_load / attach_stems），保证 FIFO 顺序与 latest-request-wins
 5. backend playback service 负责 latest-request-wins、output thread 启动和 stale decode 忽略
 6. backend CDG helper 负责 sidecar / explicit path / Media+G ZIP 的 CDG 状态加载与 backward seek reset
 7. `stems` cache 为 `load_stems` 提供已缓存路径

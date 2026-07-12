@@ -121,6 +121,12 @@ pub(crate) struct LoadedTrack {
     pub(crate) streaming: Option<super::streaming::StreamingTrack>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct EqState {
+    pub enabled: bool,
+    pub gains_db: [f32; 5],
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum FadeState {
     /// No fade active.
@@ -146,6 +152,16 @@ pub struct PlaybackController {
     pub(crate) is_buffering: bool,
     /// Active fade envelope for play/pause transitions.
     pub(crate) fade: FadeState,
+    /// Whether the 5-band EQ is enabled. Polled by the output callback while
+    /// it already holds the playback lock; the EqProcessor mirrors this into
+    /// its dry/wet crossfade target.
+    pub(crate) eq_enabled: bool,
+    /// Per-band EQ gains in dB, range [-12, 12]. Index 0 = 60 Hz, 4 = 14 kHz.
+    pub(crate) eq_gains_db: [f32; 5],
+    /// Monotonic revision bumped on every EQ config change. The EqProcessor
+    /// compares this against its `applied_revision` to detect stale→new
+    /// transitions without per-callback work when nothing changed.
+    pub(crate) eq_revision: u64,
 }
 
 impl Default for PlaybackController {
@@ -158,6 +174,9 @@ impl Default for PlaybackController {
             stem_volumes: StemVolumes::default(),
             is_buffering: false,
             fade: FadeState::None,
+            eq_enabled: false,
+            eq_gains_db: [0.0; 5],
+            eq_revision: 0,
         }
     }
 }
@@ -318,6 +337,42 @@ impl PlaybackController {
             StemName::Other => self.stem_volumes.other = level,
         }
         Ok(self.snapshot())
+    }
+
+    /// Enable or disable the 5-band EQ. Bumps `eq_revision` so the output
+    /// callback's EqProcessor picks up the change on its next invocation.
+    /// Returns the resulting `EqState` for the coordinator reply.
+    pub fn set_eq_enabled(&mut self, enabled: bool) -> Result<EqState, PlaybackError> {
+        if self.eq_enabled != enabled {
+            self.eq_enabled = enabled;
+            self.eq_revision = self.eq_revision.saturating_add(1);
+        }
+        Ok(self.eq_state())
+    }
+
+    /// Set the 5-band EQ gains in dB. Each value is clamped to [-12, 12].
+    /// Bumps `eq_revision` only when a gain actually changes.
+    /// Returns the resulting `EqState` for the coordinator reply.
+    pub fn set_eq_gains(&mut self, gains_db: [f32; 5]) -> Result<EqState, PlaybackError> {
+        let clamped = gains_db.map(|g| {
+            g.clamp(
+                crate::audio::eq::EQ_MIN_GAIN_DB,
+                crate::audio::eq::EQ_MAX_GAIN_DB,
+            )
+        });
+        if clamped != self.eq_gains_db {
+            self.eq_gains_db = clamped;
+            self.eq_revision = self.eq_revision.saturating_add(1);
+        }
+        Ok(self.eq_state())
+    }
+
+    /// Snapshot of the current EQ configuration for coordinator replies.
+    pub fn eq_state(&self) -> EqState {
+        EqState {
+            enabled: self.eq_enabled,
+            gains_db: self.eq_gains_db,
+        }
     }
 
     pub fn attach_stems(&mut self, song_id: &str, stems: LoadedStems) -> Result<(), PlaybackError> {

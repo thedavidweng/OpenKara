@@ -75,6 +75,8 @@ function createAppSettings() {
     lyrics_font_step: 0,
     execution_provider: "xnnpack" as const,
     available_execution_providers: ["cpu", "xnnpack"] as const,
+    eq_enabled: false,
+    eq_gains_db: [0, 0, 0, 0, 0],
   };
 }
 
@@ -106,6 +108,8 @@ function createHarness(overrides?: {
       coverArtBackdrop: false,
       executionProvider: "xnnpack",
       availableExecutionProviders: ["cpu", "xnnpack"],
+      eqEnabled: false,
+      eqGainsDb: [0, 0, 0, 0, 0],
     },
     meta: {
       isInitializing: false,
@@ -153,6 +157,8 @@ function createHarness(overrides?: {
       mirrorLocalLibraryToRemote: vi.fn(),
       reauthorizeRemoteLibrary: vi.fn(),
       setModelVariant: vi.fn(),
+      setEqEnabled: vi.fn(),
+      setEqGains: vi.fn(),
     },
     notifyError: vi.fn(),
     openDirectory: vi.fn(),

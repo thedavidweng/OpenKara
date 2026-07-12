@@ -15,7 +15,7 @@ use crate::{
         error::PlaybackError,
         output,
         playback::{
-            monotonic_now_ms, playback_position_event, LoadedStems, PlaybackController,
+            monotonic_now_ms, playback_position_event, EqState, LoadedStems, PlaybackController,
             PlaybackStateSnapshot, StemName, PLAYBACK_ERROR_EVENT, PLAYBACK_POSITION_EVENT,
         },
         streaming::StreamingTrack,
@@ -89,6 +89,14 @@ pub enum PlaybackCommand {
         level: f32,
         reply: SnapshotReply,
     },
+    SetEqEnabled {
+        enabled: bool,
+        reply: EqReply,
+    },
+    SetEqGains {
+        gains_db: [f32; 5],
+        reply: EqReply,
+    },
     AttachStems {
         request_id: u64,
         song_id: String,
@@ -98,6 +106,7 @@ pub enum PlaybackCommand {
 }
 
 type SnapshotReply = tokio::sync::oneshot::Sender<Result<PlaybackStateSnapshot, PlaybackError>>;
+type EqReply = tokio::sync::oneshot::Sender<Result<EqState, PlaybackError>>;
 
 /// Runtime dependencies the coordinator worker needs. Generic over `R:
 /// tauri::Runtime` so mock-runtime tests compile.
@@ -157,6 +166,12 @@ fn handle_command<R: Runtime>(runtime: &CoordinatorRuntime<R>, command: Playback
         PlaybackCommand::SetVolume { level, reply } => handle_set_volume(runtime, level, reply),
         PlaybackCommand::SetStemVolume { stem, level, reply } => {
             handle_set_stem_volume(runtime, stem, level, reply)
+        }
+        PlaybackCommand::SetEqEnabled { enabled, reply } => {
+            handle_set_eq_enabled(runtime, enabled, reply)
+        }
+        PlaybackCommand::SetEqGains { gains_db, reply } => {
+            handle_set_eq_gains(runtime, gains_db, reply)
         }
         PlaybackCommand::AttachStems {
             request_id,
@@ -559,6 +574,56 @@ fn handle_set_stem_volume<R: Runtime>(
 
     increment_airplay_refresh_token_if_audience_active(&runtime.airplay);
     let _ = reply.send(Ok(snapshot));
+}
+
+fn handle_set_eq_enabled<R: Runtime>(
+    runtime: &CoordinatorRuntime<R>,
+    enabled: bool,
+    reply: EqReply,
+) {
+    let eq_state = {
+        let Ok(mut playback) = runtime.playback.lock() else {
+            let _ = reply.send(Err(PlaybackError::Internal(
+                "playback controller lock was poisoned".to_owned(),
+            )));
+            return;
+        };
+        match playback.set_eq_enabled(enabled) {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = reply.send(Err(e));
+                return;
+            }
+        }
+    };
+
+    increment_airplay_refresh_token_if_audience_active(&runtime.airplay);
+    let _ = reply.send(Ok(eq_state));
+}
+
+fn handle_set_eq_gains<R: Runtime>(
+    runtime: &CoordinatorRuntime<R>,
+    gains_db: [f32; 5],
+    reply: EqReply,
+) {
+    let eq_state = {
+        let Ok(mut playback) = runtime.playback.lock() else {
+            let _ = reply.send(Err(PlaybackError::Internal(
+                "playback controller lock was poisoned".to_owned(),
+            )));
+            return;
+        };
+        match playback.set_eq_gains(gains_db) {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = reply.send(Err(e));
+                return;
+            }
+        }
+    };
+
+    increment_airplay_refresh_token_if_audience_active(&runtime.airplay);
+    let _ = reply.send(Ok(eq_state));
 }
 
 fn handle_attach_stems<R: Runtime>(
@@ -1420,6 +1485,102 @@ mod tests {
             result2.is_err(),
             "coordinator must still respond after poisoned lock"
         );
+
+        harness.shutdown();
+    }
+
+    // ── EQ commands ──────────────────────────────────────────────────────
+
+    fn send_eq_and_recv(
+        harness: &Harness,
+        make_command: impl FnOnce(EqReply) -> PlaybackCommand,
+    ) -> Result<EqState, PlaybackError> {
+        let (tx_reply, rx_reply) = tokio::sync::oneshot::channel();
+        harness.send(make_command(tx_reply));
+        rx_reply.blocking_recv().expect("coordinator should reply")
+    }
+
+    #[test]
+    fn set_eq_enabled_updates_controller_and_returns_eq_state() {
+        let harness = Harness::with_request_id(1);
+
+        let result = send_eq_and_recv(&harness, |reply| PlaybackCommand::SetEqEnabled {
+            enabled: true,
+            reply,
+        });
+        let eq_state = result.expect("SetEqEnabled should succeed");
+        assert!(eq_state.enabled);
+
+        let controller = harness.runtime.playback.lock().unwrap();
+        assert!(controller.eq_enabled);
+        assert!(controller.eq_revision > 0);
+
+        drop(controller);
+        harness.shutdown();
+    }
+
+    #[test]
+    fn set_eq_gains_updates_controller_and_returns_eq_state() {
+        let harness = Harness::with_request_id(1);
+
+        let gains = [0.0, 3.0, -6.0, 9.0, -12.0];
+        let result = send_eq_and_recv(&harness, |reply| PlaybackCommand::SetEqGains {
+            gains_db: gains,
+            reply,
+        });
+        let eq_state = result.expect("SetEqGains should succeed");
+        assert_eq!(eq_state.gains_db, gains);
+
+        let controller = harness.runtime.playback.lock().unwrap();
+        assert_eq!(controller.eq_gains_db, gains);
+        assert!(controller.eq_revision > 0);
+
+        drop(controller);
+        harness.shutdown();
+    }
+
+    #[test]
+    fn set_eq_enabled_no_op_does_not_bump_revision() {
+        let harness = Harness::with_request_id(1);
+
+        // First call — bumps revision.
+        let _ = send_eq_and_recv(&harness, |reply| PlaybackCommand::SetEqEnabled {
+            enabled: true,
+            reply,
+        });
+        let rev_after_first = {
+            let controller = harness.runtime.playback.lock().unwrap();
+            controller.eq_revision
+        };
+
+        // Second call with same value — should not bump.
+        let _ = send_eq_and_recv(&harness, |reply| PlaybackCommand::SetEqEnabled {
+            enabled: true,
+            reply,
+        });
+        let rev_after_second = {
+            let controller = harness.runtime.playback.lock().unwrap();
+            controller.eq_revision
+        };
+
+        assert_eq!(rev_after_first, rev_after_second);
+        harness.shutdown();
+    }
+
+    #[test]
+    fn set_eq_gains_clamps_out_of_range_values() {
+        let harness = Harness::with_request_id(1);
+
+        let gains = [20.0, -20.0, 0.0, 0.0, 0.0];
+        let result = send_eq_and_recv(&harness, |reply| PlaybackCommand::SetEqGains {
+            gains_db: gains,
+            reply,
+        });
+        let eq_state = result.expect("SetEqGains should succeed");
+
+        // The controller clamps to [-12, 12].
+        assert_eq!(eq_state.gains_db[0], 12.0);
+        assert_eq!(eq_state.gains_db[1], -12.0);
 
         harness.shutdown();
     }

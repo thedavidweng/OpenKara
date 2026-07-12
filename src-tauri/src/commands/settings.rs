@@ -1,3 +1,6 @@
+use crate::audio::coordinator::PlaybackCommand;
+use crate::audio::eq::{EQ_MAX_GAIN_DB, EQ_MIN_GAIN_DB};
+use crate::audio::playback::EqState;
 use crate::commands::error::{internal_error, CommandResult};
 use crate::config::{self, AppConfig, ExecutionProviderPreference, ModelVariant, StemMode};
 use serde::Serialize;
@@ -16,6 +19,8 @@ pub struct AppSettings {
     pub lyrics_font_step: i8,
     pub execution_provider: String,
     pub available_execution_providers: Vec<&'static str>,
+    pub eq_enabled: bool,
+    pub eq_gains_db: [f32; 5],
 }
 
 fn settings_from_config(config: &AppConfig) -> AppSettings {
@@ -35,6 +40,8 @@ fn settings_from_config(config: &AppConfig) -> AppSettings {
         execution_provider: ep.as_str().to_owned(),
         available_execution_providers: ExecutionProviderPreference::available_for_current_platform(
         ),
+        eq_enabled: config.effective_eq_enabled(),
+        eq_gains_db: config.effective_eq_gains_db(),
     }
 }
 
@@ -193,6 +200,150 @@ pub fn set_execution_provider(
     Ok(settings_from_config(&config))
 }
 
+/// Validate an EQ gains array: every value must be finite and within
+/// [-12, 12]. Rejects the whole request instead of clamping, per the issue
+/// spec.
+fn validate_eq_gains(gains_db: &[f32; 5]) -> CommandResult<()> {
+    for (i, &g) in gains_db.iter().enumerate() {
+        if !g.is_finite() {
+            return Err(internal_error(format!(
+                "invalid eq gain at index {i}: not finite ({g})"
+            )));
+        }
+        if !(EQ_MIN_GAIN_DB..=EQ_MAX_GAIN_DB).contains(&g) {
+            return Err(internal_error(format!(
+                "invalid eq gain at index {i}: {g} dB out of range [{EQ_MIN_GAIN_DB}, {EQ_MAX_GAIN_DB}]"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Send an EQ coordinator command and await its `EqState` reply.
+async fn send_eq_command(
+    state: &AppState,
+    make_command: impl FnOnce(
+        tokio::sync::oneshot::Sender<Result<EqState, crate::audio::error::PlaybackError>>,
+    ) -> PlaybackCommand,
+) -> CommandResult<EqState> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let command = make_command(tx);
+    state
+        .playback
+        .command_tx
+        .send(command)
+        .map_err(|_| internal_error("playback coordinator disconnected"))?;
+    rx.await
+        .map_err(|_| internal_error("playback coordinator dropped reply"))?
+        .map_err(Into::into)
+}
+
+/// Read the current runtime EQ state (enabled + gains) for rollback purposes.
+fn current_runtime_eq_state(state: &AppState) -> EqState {
+    let Ok(playback) = state.playback.playback.lock() else {
+        return EqState {
+            enabled: false,
+            gains_db: [0.0; 5],
+        };
+    };
+    playback.eq_state()
+}
+
+/// Best-effort rollback of the coordinator EQ state after a persistence
+/// failure. Logs but does not propagate the rollback error — the caller
+/// already has a persistence error to return.
+async fn rollback_eq_state(state: &AppState, previous: EqState) {
+    if let Err(e) = send_eq_command(state, |reply| PlaybackCommand::SetEqEnabled {
+        enabled: previous.enabled,
+        reply,
+    })
+    .await
+    {
+        eprintln!("settings: failed to rollback eq_enabled: {}", e.message);
+    }
+    if let Err(e) = send_eq_command(state, |reply| PlaybackCommand::SetEqGains {
+        gains_db: previous.gains_db,
+        reply,
+    })
+    .await
+    {
+        eprintln!("settings: failed to rollback eq_gains: {}", e.message);
+    }
+}
+
+#[tauri::command]
+pub async fn set_eq_enabled(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> CommandResult<AppSettings> {
+    // 2. Read previous runtime values for rollback.
+    let previous = current_runtime_eq_state(state.inner());
+
+    // 3. Send coordinator update and await acknowledgement.
+    send_eq_command(state.inner(), |reply| PlaybackCommand::SetEqEnabled {
+        enabled,
+        reply,
+    })
+    .await?;
+
+    // 4. Persist config.
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| internal_error(format!("failed to get app data dir: {e}")))?;
+    let mut config = config::load_config(&app_data_dir)
+        .map_err(|e| internal_error(format!("failed to load config: {e}")))?
+        .unwrap_or_default();
+    config.eq_enabled = Some(enabled);
+    if let Err(e) = config::save_config(&app_data_dir, &config) {
+        // 5. Persistence failed — best-effort rollback.
+        rollback_eq_state(state.inner(), previous).await;
+        return Err(internal_error(format!("failed to save config: {e}")));
+    }
+
+    // 6. Return settings_from_config.
+    Ok(settings_from_config(&config))
+}
+
+#[tauri::command]
+pub async fn set_eq_gains(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    gains_db: [f32; 5],
+) -> CommandResult<AppSettings> {
+    // 1. Validate input — reject the whole request instead of clamping.
+    validate_eq_gains(&gains_db)?;
+
+    // 2. Read previous runtime values for rollback.
+    let previous = current_runtime_eq_state(state.inner());
+
+    // 3. Send coordinator update and await acknowledgement.
+    send_eq_command(state.inner(), |reply| PlaybackCommand::SetEqGains {
+        gains_db,
+        reply,
+    })
+    .await?;
+
+    // 4. Persist config.
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| internal_error(format!("failed to get app data dir: {e}")))?;
+    let mut config = config::load_config(&app_data_dir)
+        .map_err(|e| internal_error(format!("failed to load config: {e}")))?
+        .unwrap_or_default();
+    config.eq_gains_db = Some(gains_db);
+    if let Err(e) = config::save_config(&app_data_dir, &config) {
+        // 5. Persistence failed — best-effort rollback.
+        rollback_eq_state(state.inner(), previous).await;
+        return Err(internal_error(format!("failed to save config: {e}")));
+    }
+
+    // 6. Return settings_from_config.
+    Ok(settings_from_config(&config))
+}
+
 #[tauri::command]
 pub fn restart_app(app_handle: AppHandle) {
     app_handle.request_restart();
@@ -253,5 +404,50 @@ mod tests {
             settings.execution_provider,
             ExecutionProviderPreference::default_for_current_platform().as_str()
         );
+    }
+
+    #[test]
+    fn settings_snapshot_includes_eq_defaults() {
+        let settings = settings_from_config(&AppConfig::default());
+        assert!(!settings.eq_enabled);
+        assert_eq!(settings.eq_gains_db, [0.0; 5]);
+    }
+
+    #[test]
+    fn settings_snapshot_includes_eq_from_config() {
+        let settings = settings_from_config(&AppConfig {
+            eq_enabled: Some(true),
+            eq_gains_db: Some([3.0, -6.0, 0.0, 9.0, -12.0]),
+            ..AppConfig::default()
+        });
+        assert!(settings.eq_enabled);
+        assert_eq!(settings.eq_gains_db, [3.0, -6.0, 0.0, 9.0, -12.0]);
+    }
+
+    #[test]
+    fn validate_eq_gains_accepts_in_range_values() {
+        let gains = [-12.0, -6.0, 0.0, 6.0, 12.0];
+        assert!(validate_eq_gains(&gains).is_ok());
+    }
+
+    #[test]
+    fn validate_eq_gains_rejects_out_of_range_values() {
+        let gains = [12.5, 0.0, 0.0, 0.0, 0.0];
+        let error = validate_eq_gains(&gains).expect_err("out of range gain should fail");
+        assert!(error.message.contains("out of range"));
+    }
+
+    #[test]
+    fn validate_eq_gains_rejects_non_finite_values() {
+        let gains = [f32::NAN, 0.0, 0.0, 0.0, 0.0];
+        let error = validate_eq_gains(&gains).expect_err("non-finite gain should fail");
+        assert!(error.message.contains("not finite"));
+    }
+
+    #[test]
+    fn validate_eq_gains_rejects_infinity() {
+        let gains = [f32::INFINITY, 0.0, 0.0, 0.0, 0.0];
+        let error = validate_eq_gains(&gains).expect_err("infinity gain should fail");
+        assert!(error.message.contains("not finite"));
     }
 }

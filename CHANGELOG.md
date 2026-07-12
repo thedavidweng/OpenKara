@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Add 5-band EQ equalizer (60 Hz, 230 Hz, 910 Hz, 3.6 kHz, 14 kHz) with Q=0.707, gain range ±12 dB, click-free enable/gain transitions, conservative automatic preamp, and a continuous threshold-based soft limiter. The EQ processor lives in the CPAL output closure beside `ResamplerCache` (not behind the playback mutex), applies config changes via a revision-checked `apply_config` call, and replaces the previous per-branch hard-clamp loops with a single soft-limiter pass. Settings persist to `config.json` (`eq_enabled`, `eq_gains_db`) and hydrate before audio startup. New IPC commands `set_eq_enabled` / `set_eq_gains` return `AppSettings` and use the coordinator for live updates with best-effort rollback on persistence failure. A new Settings UI section (`SettingsEqSection`) provides accessible sliders with 75 ms debounced batch persistence, a reset button, and en/zh-CN localization.
+
 ### Changed
 
 - Introduce `PlaybackCoordinator` as an independent control thread that serializes all control-plane mutations of `PlaybackController` (pause / resume / seek / set_volume / set_stem_volume / install_track / fail_load / attach_stems). Background decode/fetch threads now produce immutable `ReadyTrack` payloads and send `PlaybackCommand` messages to the coordinator instead of directly mutating the controller. The coordinator guarantees FIFO ordering, latest-request-wins guards, AirPlay epoch/generation bumps, CDG seek-reset, and output-thread startup — all on a single thread. Public Tauri command names, arguments, response shapes, and event names are unchanged.

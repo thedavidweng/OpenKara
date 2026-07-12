@@ -357,6 +357,12 @@
       "label": "输出设备",
       "systemDefault": "系统默认"
     },
+    "eq": {
+      "label": "均衡器",
+      "description": "五段均衡器，带自动前置增益和软限幅器。",
+      "enable": "启用均衡器",
+      "reset": "重置所有频段至 0 dB"
+    },
     "language": {
       "label": "语言"
     },

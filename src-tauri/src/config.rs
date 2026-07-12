@@ -393,6 +393,14 @@ pub struct AppConfig {
     /// target, not an absence of a pending operation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pending_mirror_restore_active_library_id: Option<String>,
+    /// Whether the 5-band EQ is enabled at startup. Defaults to false when
+    /// absent (e.g. older config files that predate the EQ feature).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eq_enabled: Option<bool>,
+    /// Per-band EQ gains in dB, range [-12, 12]. Index 0 = 60 Hz, 4 = 14 kHz.
+    /// Defaults to all-zero (flat) when absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eq_gains_db: Option<[f32; 5]>,
 }
 
 impl AppConfig {
@@ -439,6 +447,20 @@ impl AppConfig {
 
     pub fn effective_remote_cache_bytes_limit(&self) -> Option<u64> {
         self.remote_cache_bytes_limit
+    }
+
+    /// Effective EQ enabled flag, defaulting to false when unset.
+    pub fn effective_eq_enabled(&self) -> bool {
+        self.eq_enabled.unwrap_or(false)
+    }
+
+    /// Effective EQ gains in dB, clamped to [-12, 12], defaulting to flat.
+    pub fn effective_eq_gains_db(&self) -> [f32; 5] {
+        const MIN: f32 = crate::audio::eq::EQ_MIN_GAIN_DB;
+        const MAX: f32 = crate::audio::eq::EQ_MAX_GAIN_DB;
+        self.eq_gains_db
+            .unwrap_or([0.0; 5])
+            .map(|g| g.clamp(MIN, MAX))
     }
 }
 
@@ -547,6 +569,8 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
+            eq_enabled: None,
+            eq_gains_db: None,
         };
 
         save_config(tmp.path(), &config).unwrap();
@@ -579,6 +603,8 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
+            eq_enabled: None,
+            eq_gains_db: None,
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("stem_mode"));
@@ -606,6 +632,8 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
+            eq_enabled: None,
+            eq_gains_db: None,
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("lyrics_font_step"));
@@ -627,6 +655,8 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
+            eq_enabled: None,
+            eq_gains_db: None,
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("execution_provider"));
@@ -663,6 +693,8 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
+            eq_enabled: None,
+            eq_gains_db: None,
         };
 
         save_config(tmp.path(), &legacy).unwrap();
@@ -729,5 +761,44 @@ mod tests {
             config.effective_execution_provider(),
             ExecutionProviderPreference::Xnnpack
         );
+    }
+
+    #[test]
+    fn eq_defaults_to_disabled_and_flat() {
+        let config = AppConfig::default();
+        assert!(!config.effective_eq_enabled());
+        assert_eq!(config.effective_eq_gains_db(), [0.0; 5]);
+    }
+
+    #[test]
+    fn eq_enabled_round_trips_through_json() {
+        let config = AppConfig {
+            eq_enabled: Some(true),
+            eq_gains_db: Some([3.0, -6.0, 0.0, 9.0, -12.0]),
+            ..AppConfig::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let loaded: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded.eq_enabled, Some(true));
+        assert_eq!(loaded.eq_gains_db, Some([3.0, -6.0, 0.0, 9.0, -12.0]));
+    }
+
+    #[test]
+    fn eq_none_is_omitted_from_json() {
+        let config = AppConfig::default();
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(!json.contains("eq_enabled"));
+        assert!(!json.contains("eq_gains_db"));
+    }
+
+    #[test]
+    fn effective_eq_gains_clamps_out_of_range_values() {
+        let config = AppConfig {
+            eq_gains_db: Some([20.0, -20.0, 0.0, 0.0, 0.0]),
+            ..AppConfig::default()
+        };
+        let gains = config.effective_eq_gains_db();
+        assert_eq!(gains[0], 12.0);
+        assert_eq!(gains[1], -12.0);
     }
 }

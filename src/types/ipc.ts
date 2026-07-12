@@ -221,6 +221,8 @@ export interface AppSettings {
   lyrics_font_step: number;
   execution_provider: ExecutionProvider;
   available_execution_providers: ExecutionProvider[];
+  eq_enabled: boolean;
+  eq_gains_db: [number, number, number, number, number];
 }
 
 export interface ModelStatusSnapshot {

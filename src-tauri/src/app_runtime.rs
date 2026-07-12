@@ -129,7 +129,16 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
     }
     let window_shell_state = crate::window_shell::initialize_main_window(app, app_config.as_ref());
 
-    let playback = Arc::new(Mutex::new(PlaybackController::default()));
+    // Initialize the playback controller from persisted config so the EQ
+    // (and any future config-driven audio settings) are active before the
+    // coordinator/output thread starts. Tests and `PlaybackController::default()`
+    // remain EQ-off/flat.
+    let mut playback_controller = PlaybackController::default();
+    if let Some(config) = app_config.as_ref() {
+        playback_controller.eq_enabled = config.effective_eq_enabled();
+        playback_controller.eq_gains_db = config.effective_eq_gains_db();
+    }
+    let playback = Arc::new(Mutex::new(playback_controller));
     let cdg_state: Arc<Mutex<Option<commands::cdg::CdgPlaybackState>>> = Arc::new(Mutex::new(None));
     let airplay_audio_tap = Arc::new(airplay_stream::AirPlayAudioTap::new(12));
     let airplay_stream_generation = Arc::new(AtomicU64::new(1));
