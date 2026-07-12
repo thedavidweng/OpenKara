@@ -72,6 +72,11 @@ jobs:
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          # Authenticate GitHub API calls inside release-metadata.mjs so the
+          # unauthenticated rate limit (60 req/h per IP) is not exhausted on
+          # shared GitHub Actions runners. Without this the render step fails
+          # with "403 rate limit exceeded".
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           node scripts/render-winget-manifests.mjs --version "$env:RELEASE_VERSION" --output "$env:GITHUB_WORKSPACE/dist/winget"
 
