@@ -38,9 +38,30 @@ const DENSE_LYRICS_SCRIPT = `
 `;
 
 const VIEWPORT = "[data-testid='lyrics-scroll-viewport']";
+/** Must match `USER_SCROLL_PAUSE_MS` in lyrics-engine. */
+const USER_SCROLL_PAUSE_MS = 4000;
 
 async function readScrollTop(page: import("@playwright/test").Page) {
   return page.locator(VIEWPORT).evaluate((el) => el.scrollTop);
+}
+
+/**
+ * Wait until wheel/trackpad inertia finishes. Each wheel event re-arms the
+ * follow idle timer, so measuring the pause from mid-inertia falsely fails.
+ */
+async function waitForScrollSettle(
+  page: import("@playwright/test").Page,
+): Promise<number> {
+  let last = -1;
+  for (let i = 0; i < 40; i++) {
+    const top = await readScrollTop(page);
+    if (last >= 0 && Math.abs(top - last) < 1) {
+      return top;
+    }
+    last = top;
+    await page.waitForTimeout(100);
+  }
+  return last;
 }
 
 async function emitLayoutDrivenScroll(page: import("@playwright/test").Page) {
@@ -220,14 +241,14 @@ test.describe("Lyrics auto-follow", () => {
     await expect(followButton).toHaveAttribute("data-visible", "true");
 
     // Wait for wheel momentum to finish before sampling the resting position.
-    await page.waitForTimeout(800);
-    const unlockedTop = await readScrollTop(page);
+    const unlockedTop = await waitForScrollSettle(page);
     expect(unlockedTop).toBeGreaterThan(400);
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(800);
     const stillTop = await readScrollTop(page);
     expect(Math.abs(stillTop - unlockedTop)).toBeLessThan(2);
 
     // Clicking Follow re-locks to the playing line (far above) and unpins it.
+    // Requires pointer-events-auto on the control (parent overlay is none).
     await followButton.click();
     await expect(followButton).toHaveAttribute("data-visible", "false");
     await page.waitForTimeout(300);
@@ -249,17 +270,20 @@ test.describe("Lyrics auto-follow", () => {
     await page.mouse.wheel(0, 900);
     await page.waitForTimeout(150);
     await page.mouse.wheel(0, 900);
+    // Leave the viewport so hover/trackpad inertia is less likely to re-arm.
+    await page.mouse.move(0, 0);
 
     const followButton = page.locator("[data-testid='lyrics-follow-playing']");
     await expect(followButton).toHaveAttribute("data-visible", "true");
 
-    await page.waitForTimeout(500);
-    const unlockedTop = await readScrollTop(page);
+    const unlockedTop = await waitForScrollSettle(page);
     expect(unlockedTop).toBeGreaterThan(400);
 
-    // USER_SCROLL_PAUSE_MS is 4000 — wait past idle without changing the line.
-    await page.waitForTimeout(4500);
-    await expect(followButton).toHaveAttribute("data-visible", "false");
+    // Idle timer is re-armed by each wheel event — start the pause clock only
+    // after scrollTop is stable, then wait past USER_SCROLL_PAUSE_MS.
+    await expect(followButton).toHaveAttribute("data-visible", "false", {
+      timeout: USER_SCROLL_PAUSE_MS + 2500,
+    });
     const relockedTop = await readScrollTop(page);
     expect(relockedTop).toBeLessThan(unlockedTop - 200);
   });

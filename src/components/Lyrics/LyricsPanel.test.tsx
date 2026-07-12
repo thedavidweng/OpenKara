@@ -209,6 +209,23 @@ describe("LyricsPanel contextual reveal", () => {
     expect(markup).not.toContain('data-visible="true"');
   });
 
+  test("Follow control restores pointer-events inside the none overlay", () => {
+    // Timed lines only — plain-text lyrics omit the Follow control.
+    mockLyricsState.lines = [
+      line({ time_ms: 0, text: "line one", words: null }),
+      line({ time_ms: 2000, text: "line two", words: null }),
+    ];
+    mockLyricsState.rawLrc = "[00:00.00]line one\n[00:02.00]line two";
+
+    // Parent overlay is pointer-events-none so lyrics stay scrollable; the
+    // Follow button must re-enable hit testing like the bottom utility controls.
+    const markup = renderToStaticMarkup(<LyricsPanel />);
+    expect(markup).toContain('data-testid="lyrics-follow-playing"');
+    expect(markup).toMatch(
+      /data-testid="lyrics-follow-playing"[^>]*pointer-events-auto/,
+    );
+  });
+
   test("uses the spacious stage lyric layout for standard presentation", () => {
     const markup = renderToStaticMarkup(<LyricsPanel />);
 

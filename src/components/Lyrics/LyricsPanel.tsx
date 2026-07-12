@@ -440,7 +440,7 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
               data-visible={userScrollUnlocked}
               onClick={() => requestLyricsAutoScrollResume()}
               aria-label={t("lyrics.followPlaying")}
-              className="contextual-reveal motion-icon-button rounded-full border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-2 text-[var(--color-text-dim)] hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[var(--color-hover)] hover:text-[var(--color-control-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
+              className="contextual-reveal pointer-events-auto motion-icon-button rounded-full border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-2 text-[var(--color-text-dim)] hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[var(--color-hover)] hover:text-[var(--color-control-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
             >
               <LocateFixed size={14} />
             </button>
