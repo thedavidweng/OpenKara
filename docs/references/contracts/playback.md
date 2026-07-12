@@ -2,6 +2,8 @@
 
 播放命令层收口为 thin Tauri command，具体编排在 backend playback service / CDG helper，对外 IPC 契约保持不变。
 
+控制面变更（pause / resume / seek / set_volume / set_stem_volume / load_stems / install_track / fail_load）由 `PlaybackCoordinator` 独立线程串行处理；后台 decode/fetch 线程只产出 `ReadyTrack` 并发送命令，不直接修改 `PlaybackController`。
+
 ## 接口
 
 1. `play(song_id: String) -> PlaybackStateSnapshot`
@@ -225,8 +227,9 @@ playing ↔ playing（pause/resume，通过 isPlaying 区分）
 **Semantics**
 
 1. 当 `play` 已返回 `loading` 快照，但后台 decode/换轨失败且该请求仍为 latest 时发出
-2. 发出前先通过 `playback-position` 推送 idle snapshot（清除 loading 状态）
-3. 前端应调用 `notifyError` 并根据 `error.retryable` 提供重试（通常重试 `play(song_id)`）
+2. 输出设备启动失败时也发出此事件（`InstallReady` 在 coordinator 中完成轨道安装后尝试启动输出线程，若失败则清除 loading 并发出 `playback-error`）
+3. 发出前先通过 `playback-position` 推送 idle snapshot（清除 loading 状态）
+4. 前端应调用 `notifyError` 并根据 `error.retryable` 提供重试（通常重试 `play(song_id)`）
 
 ### Shared error type: `CommandError`
 
@@ -237,9 +240,10 @@ playing ↔ playing（pause/resume，通过 isPlaying 区分）
 1. `symphonia` 负责解码支持格式
 2. `cpal` 负责设备输出
 3. `PlaybackController` 负责状态推进与位置计算
-4. backend playback service 负责 latest-request-wins、output thread 启动和 stale decode 忽略
-5. backend CDG helper 负责 sidecar / explicit path / Media+G ZIP 的 CDG 状态加载与 backward seek reset
-6. `stems` cache 为 `load_stems` 提供已缓存路径
+4. `PlaybackCoordinator` 负责串行处理所有控制面命令（pause / resume / seek / set_volume / set_stem_volume / install_track / fail_load / attach_stems），保证 FIFO 顺序与 latest-request-wins
+5. backend playback service 负责 latest-request-wins、output thread 启动和 stale decode 忽略
+6. backend CDG helper 负责 sidecar / explicit path / Media+G ZIP 的 CDG 状态加载与 backward seek reset
+7. `stems` cache 为 `load_stems` 提供已缓存路径
 
 ## Verification commands
 
