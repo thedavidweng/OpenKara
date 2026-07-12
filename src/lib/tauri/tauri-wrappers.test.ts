@@ -527,7 +527,14 @@ describe("lyrics", () => {
 
   test("importLyricsFiles invokes import_lyrics_files", async () => {
     const result = {
-      matched: [{ song_id: "song-1", lrc_path: "/a.lrc" }],
+      matched: [
+        {
+          song_id: "song-1",
+          lrc_path: "/a.lrc",
+          song_title: "Test Song",
+          song_artist: "Test Artist",
+        },
+      ],
       unmatched: [],
     };
     mockInvoke.mockResolvedValueOnce(result);

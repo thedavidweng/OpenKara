@@ -9,6 +9,7 @@ const {
   mockSetSongsInstrumental,
   mockInvalidateCoverArtUrl,
   mockNotifyError,
+  mockNotifySuccess,
   mockGetActiveLibrary,
   mockRefreshRemoteRepository,
   mockGetAllSeparationStatuses,
@@ -25,6 +26,7 @@ const {
   mockSetSongsInstrumental: vi.fn(),
   mockInvalidateCoverArtUrl: vi.fn(),
   mockNotifyError: vi.fn(),
+  mockNotifySuccess: vi.fn(),
   mockGetActiveLibrary: vi.fn(),
   mockRefreshRemoteRepository: vi.fn(),
   mockGetAllSeparationStatuses: vi.fn(),
@@ -59,6 +61,11 @@ vi.mock("@/lib/cover-art", () => ({
 
 vi.mock("@/lib/errors", () => ({
   notifyError: mockNotifyError,
+  notifySuccess: mockNotifySuccess,
+}));
+
+vi.mock("@/lib/i18n", () => ({
+  default: { t: (key: string) => key },
 }));
 
 vi.mock("@/runtime/import-workflow", async () => {
