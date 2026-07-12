@@ -93,7 +93,9 @@ export function useLyricsEngine(input: {
     onUserScrollActiveChangeRef.current?.(false);
 
     return () => {
-      guard.destroy();
+      // Null-safe: createUserScrollGuard always returns a guard in production,
+      // but tests may mock it to null to exercise the no-guard engine path.
+      guard?.destroy();
       guardRef.current = null;
       onUserScrollActiveChangeRef.current?.(false);
     };

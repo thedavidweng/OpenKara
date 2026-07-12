@@ -4,6 +4,7 @@ import { act, useLayoutEffect, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { useLyricsEngine } from "./use-lyrics-engine";
+import * as lyricsEngine from "@/lib/lyrics-engine";
 import {
   peekLyricsAutoScrollResumeGeneration,
   resetLyricsEngineScrollControlForTests,
@@ -17,8 +18,14 @@ const {
   mockSelectCurrentPositionMs,
   mockLineRuntime,
 } = vi.hoisted(() => {
+  // Call through nowMs so the rAF host sample `() => now` is covered.
   const mockSelectCurrentPositionMs = vi.fn(
-    (state: { positionMs: number }) => state.positionMs,
+    (state: { positionMs: number }, nowMs?: () => number) => {
+      if (typeof nowMs === "function") {
+        nowMs();
+      }
+      return state.positionMs;
+    },
   );
   return {
     mockPlayerState: {
@@ -176,7 +183,12 @@ describe("useLyricsEngine", () => {
       displayedPositionMs: null,
     };
     mockSelectCurrentPositionMs.mockImplementation(
-      (state: { positionMs: number }) => state.positionMs,
+      (state: { positionMs: number }, nowMs?: () => number) => {
+        if (typeof nowMs === "function") {
+          nowMs();
+        }
+        return state.positionMs;
+      },
     );
     mockLyricsState.activeLineIndex = 0;
     mockLyricsState.activeWordIndex = -1;
@@ -307,21 +319,29 @@ describe("useLyricsEngine", () => {
     expect(rafCb).toBeNull();
   });
 
-  test("writes scrollTop without a guard when layout attaches before the guard effect", () => {
-    // Cover the branch where container exists but guardRef is still null.
+  test("resets scrollTop directly when the user-scroll guard is unavailable", () => {
+    // Engine effect has a container but guardRef is null (layout skipped /
+    // failed to attach). Must still zero scrollTop without withProgrammatic.
+    vi.spyOn(lyricsEngine, "createUserScrollGuard").mockReturnValue(
+      null as unknown as ReturnType<typeof lyricsEngine.createUserScrollGuard>,
+    );
+
     act(() => {
       root.render(<Harness />);
     });
-    // Force a remount of the engine effect without remounting the guard by
-    // changing layoutVersion is not exposed; instead clear guardRef via
-    // inactive then active while keeping a container.
+
+    const viewport = host.querySelector(
+      "[data-testid='harness-viewport']",
+    ) as HTMLDivElement;
+    expect(viewport).toBeTruthy();
+    viewport.scrollTop = 120;
+    // Re-trigger the engine effect (songId change) so the null-guard write runs.
     act(() => {
-      root.render(<Harness viewportActive={false} />);
+      root.render(<Harness songId="song-2" />);
     });
-    act(() => {
-      root.render(<Harness viewportActive />);
-    });
-    expect(rafCb).not.toBeNull();
+    expect(viewport.scrollTop).toBe(0);
+
+    vi.mocked(lyricsEngine.createUserScrollGuard).mockRestore();
   });
 
   test("focus resync updates active line without consuming a seek latch", () => {

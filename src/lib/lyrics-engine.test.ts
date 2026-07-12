@@ -697,6 +697,34 @@ describe("tickLyricsEngineScroll", () => {
     expect(scrollSpring.getPosition()).toBe(0);
   });
 
+  test("anchors spring target once when the active line changes without a seek", () => {
+    // Cover the non-reduced-motion line-change path (bindSpringToViewport +
+    // setTarget) — seek jumps and reducedMotion take a different early return.
+    const { container, scrollSpring, scrollState } = makeScrollFixture();
+    scrollState.prevActiveIndexRef.current = 0;
+    scrollState.prevAdjustedMsRef.current = 900;
+    scrollState.targetScrollTopRef.current = 0;
+    scrollSpring.jumpTo(0);
+    container.scrollTop = 0;
+
+    const setTargetSpy = vi.spyOn(scrollSpring, "setTarget");
+
+    tickLyricsEngineScroll({
+      container,
+      lines: [{ time_ms: 0 }, { time_ms: 1000 }],
+      adjustedMs: 1000,
+      scrollState,
+      userScrollGuard: null,
+      reducedMotion: false,
+      // Large enough that a 100ms advance is still "natural", not a seek jump.
+      dt: 0.05,
+    });
+
+    expect(scrollState.prevActiveIndexRef.current).toBe(1);
+    expect(scrollState.targetScrollTopRef.current).toBe(170);
+    expect(setTargetSpy).toHaveBeenCalledWith(170);
+  });
+
   test("continues scrolling after a seek snap on subsequent line changes", () => {
     const container = document.createElement("div");
     Object.defineProperty(container, "clientHeight", { value: 100 });
