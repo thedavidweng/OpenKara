@@ -205,6 +205,7 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         output_start_lock: Arc::clone(&playback_state.audio_output_start_lock),
         airplay: airplay_state.clone(),
         shutdown: Arc::clone(&shutdown),
+        peak_ring: Arc::clone(&playback_state.peak_ring),
     };
 
     app.manage(playback_state);
@@ -228,6 +229,7 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
             .airplay_local_output_suppressed
             .clone(),
         Arc::clone(&shutdown),
+        playback_state_for_output.peak_ring.clone(),
     ) {
         eprintln!("warning: failed to pre-warm audio output: {err:#}");
     }

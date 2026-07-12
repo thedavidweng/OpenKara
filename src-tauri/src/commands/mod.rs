@@ -21,7 +21,7 @@ pub use error::{current_unix_timestamp, CommandError, CommandResult, ErrorCode, 
 pub use import::{delete_songs, get_library, import_songs, search_library};
 pub use lyrics::{fetch_lyrics, set_lyrics_offset};
 pub use playback::{
-    get_playback_state, load_stems, pause, play, seek, set_stem_volume, set_volume,
+    get_audio_peaks, get_playback_state, load_stems, pause, play, seek, set_stem_volume, set_volume,
 };
 pub use playlist::{
     add_songs_to_playlist, advance_rotation, create_playlist, delete_playlist, get_playlist_songs,

@@ -139,6 +139,7 @@ pub fn run() {
             commands::playback::set_stem_volume,
             commands::playback::load_stems,
             commands::playback::get_playback_state,
+            commands::playback::get_audio_peaks,
             commands::cdg::get_cdg_frame,
             commands::airplay::sync_airplay_route_picker,
             commands::airplay::sync_airplay_audience_state,

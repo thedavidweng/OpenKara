@@ -14,14 +14,42 @@
 6. `set_stem_volume(stem: StemName, level: f32) -> PlaybackStateSnapshot`
 7. `load_stems() -> PlaybackStateSnapshot`
 8. `get_playback_state() -> PlaybackStateSnapshot`
-9. `playback-position` 事件 payload 为 `{ ms: u64, transport_generation: u64, snapshot: PlaybackStateSnapshot }`
+9. `get_audio_peaks() -> AudioPeakSnapshot` — 只读命令，拷贝 lock-free peak ring 快照（不持 playback mutex）
+10. `playback-position` 事件 payload 为 `{ ms: u64, transport_generation: u64, snapshot: PlaybackStateSnapshot }`
+
+### Peak envelope 可视化（#87）
+
+`get_audio_peaks` 返回 `AudioPeakSnapshot { writeIndex: u64, peaks: [[f32; 2]; N] }`。
+
+- CPAL 输出回调每 512 帧发布一对 stereo peak（取窗口内 |sample| 最大值，sanitize 后 clamp 到 `[0, 1]`）。
+- Ring buffer 容量固定 256 对（约 5.8 s @ 44.1 kHz），单写多读，全原子操作。
+- 命令只读 ring，不持 `PlaybackController` mutex，不影响播放实时性。
+- 前端以 30 Hz 轮询，DPR-aware canvas 渲染，`writeIndex` 不变时跳过重绘。
 
 ### EQ 命令（通过 settings 命令面下发）
 
 10. `set_eq_enabled(enabled: bool) -> AppSettings`
 11. `set_eq_gains(gains_db: [f32; 5]) -> AppSettings`
 
-EQ 命令同时持久化到 config 并通过 `PlaybackCoordinator` 推送到 `PlaybackController`，实时输出回调在持有 controller 锁时轮询 EQ config revision 并更新本地 `EqProcessor`。
+- `set_eq_enabled(enabled: bool) -> AppSettings` — 启用/禁用五段均衡器
+- `set_eq_gains(gains_db: [f32; 5]) -> AppSettings` — 设置五个频段增益（dB），范围 [-12, 12]，拒绝越界值而非截断
+
+设置命令执行顺序：验证输入 → 读取旧值 → 发送 coordinator 更新并等待确认 → 持久化 config → 持久化失败则回滚 coordinator → 返回 `settings_from_config`。
+
+`PlaybackController` 在 `setup_app()` 中从持久化 config 初始化 EQ 状态（`eq_enabled` / `eq_gains_db`），在 coordinator/output 线程启动前生效。
+
+### 渲染管线
+
+```text
+existing source/stem mix + master/stem gains
+→ EQ dry/wet processor + auto preamp
+→ soft limiter
+→ existing play/pause/seek fade
+→ peak envelope accumulator (512-frame window → lock-free ring)
+→ output/AirPlay forwarding
+```
+
+`EqProcessor` 由 CPAL output 闭包拥有（与 `ResamplerCache` 并列），不存储在 playback mutex 后面。回调在已持有 controller 锁时比较 `eq_revision`，通过 `apply_config` 将配置同步到本地 processor。增益、前置增益和 dry/wet 过渡按渲染帧数平滑推进（50 ms EQ / 20 ms bypass），零长度/buffering 回调不推进状态。
 
 ## Inputs / outputs / required dependencies
 

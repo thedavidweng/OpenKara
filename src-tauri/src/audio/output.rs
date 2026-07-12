@@ -2,6 +2,7 @@ use crate::airplay_stream::AirPlayAudioTap;
 use crate::audio::decode::DecodedAudio;
 use crate::audio::eq::{soft_limit, EqProcessor};
 use crate::audio::error::PlaybackError;
+use crate::audio::peaks::{PeakAccumulator, PeakRing};
 use crate::audio::playback::{LoadedStems, PlaybackController, StemVolumes};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Sample, SampleFormat, SizedSample, Stream};
@@ -105,6 +106,7 @@ pub fn ensure_output_thread(
     airplay_audio_tap: Arc<AirPlayAudioTap>,
     airplay_local_output_suppressed: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
+    peak_ring: Arc<PeakRing>,
 ) -> Result<(), PlaybackError> {
     if started.load(Ordering::SeqCst) {
         return Ok(());
@@ -125,6 +127,7 @@ pub fn ensure_output_thread(
             airplay_local_output_suppressed,
             startup_tx,
             shutdown,
+            peak_ring,
         ) {
             eprintln!("audio output thread failed to start: {error:#}");
         }
@@ -151,6 +154,8 @@ pub fn render_output_buffer(
     device_channels: usize,
     resampler_cache: &mut ResamplerCache,
     eq_processor: &mut EqProcessor,
+    peak_accumulator: &mut PeakAccumulator,
+    peak_ring: &PeakRing,
 ) -> usize {
     output.fill(0.0);
 
@@ -402,6 +407,12 @@ pub fn render_output_buffer(
         // When fade_gain reaches 0.0 (fade-out complete), take_fade_gain already
         // set is_playing = false, so the next callback will return 0 immediately.
     }
+
+    // #87: Peak accumulation happens after EQ, limiter and fade — the final
+    // post-processing stage before CPAL output / AirPlay forwarding. Only
+    // fully rendered samples participate; trailing zero padding is ignored.
+    let rendered_sample_count = rendered * device_channels;
+    peak_accumulator.process(output, rendered_sample_count, device_channels, peak_ring);
 
     // Advance the render frame counter so the next callback continues seamlessly
     playback.advance_render_frame(src_frames_advanced);
@@ -1065,6 +1076,7 @@ fn build_output_stream<T>(
     playback: Arc<Mutex<PlaybackController>>,
     airplay_audio_tap: Arc<AirPlayAudioTap>,
     airplay_local_output_suppressed: Arc<AtomicBool>,
+    peak_ring: Arc<PeakRing>,
 ) -> Result<Stream, PlaybackError>
 where
     T: SizedSample + Sample + cpal::FromSample<f32>,
@@ -1088,6 +1100,9 @@ where
     // gains + monotonically increasing revision) and the callback compares
     // revisions while it already holds the controller lock.
     let mut eq_processor = EqProcessor::new(sample_rate, channels);
+    // #87: Peak accumulator owned by the output closure. A device restart
+    // starts a fresh partial window while retaining the process-wide ring.
+    let mut peak_accumulator = PeakAccumulator::new();
 
     let stream = device
         .build_output_stream(
@@ -1122,6 +1137,8 @@ where
                         channels,
                         &mut resampler_cache,
                         &mut eq_processor,
+                        &mut peak_accumulator,
+                        &peak_ring,
                     );
                 } else {
                     scratch.fill(0.0);
@@ -1161,6 +1178,7 @@ fn start_output_thread(
     airplay_local_output_suppressed: Arc<AtomicBool>,
     startup_tx: mpsc::SyncSender<Result<(), PlaybackError>>,
     shutdown: Arc<AtomicBool>,
+    peak_ring: Arc<PeakRing>,
 ) -> Result<(), PlaybackError> {
     let host = cpal::default_host();
     let device = host.default_output_device().ok_or_else(|| {
@@ -1180,6 +1198,7 @@ fn start_output_thread(
             playback,
             airplay_audio_tap,
             airplay_local_output_suppressed,
+            peak_ring,
         )?,
         SampleFormat::I16 => build_output_stream::<i16>(
             &device,
@@ -1187,6 +1206,7 @@ fn start_output_thread(
             playback,
             airplay_audio_tap,
             airplay_local_output_suppressed,
+            peak_ring,
         )?,
         SampleFormat::U16 => build_output_stream::<u16>(
             &device,
@@ -1194,6 +1214,7 @@ fn start_output_thread(
             playback,
             airplay_audio_tap,
             airplay_local_output_suppressed,
+            peak_ring,
         )?,
         sample_format => {
             return Err(PlaybackError::AudioOutputUnavailable(format!(
@@ -1368,6 +1389,8 @@ mod tests {
         let mut output = vec![0.0f32; 512 * device_channels];
         let mut rc = super::ResamplerCache::new();
         let mut eq = crate::audio::eq::EqProcessor::new(sample_rate, device_channels);
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
         let rendered = render_output_buffer(
             &mut controller,
             &mut output,
@@ -1376,6 +1399,8 @@ mod tests {
             device_channels,
             &mut rc,
             &mut eq,
+            &mut peak_acc,
+            &ring,
         );
         assert_eq!(rendered, 0);
         assert!(
@@ -1394,6 +1419,8 @@ mod tests {
             device_channels,
             &mut rc,
             &mut eq,
+            &mut peak_acc,
+            &ring,
         );
         assert_eq!(rendered, 0);
 
@@ -1412,6 +1439,8 @@ mod tests {
             device_channels,
             &mut rc,
             &mut eq,
+            &mut peak_acc,
+            &ring,
         );
         assert!(
             !controller.is_buffering,
@@ -1636,6 +1665,8 @@ mod tests {
         let mut output = vec![0.0f32; 512 * device_channels];
         let mut rc = super::ResamplerCache::new();
         let mut eq = crate::audio::eq::EqProcessor::new(sample_rate, device_channels);
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
         let rendered = super::render_output_buffer(
             &mut controller,
             &mut output,
@@ -1644,6 +1675,8 @@ mod tests {
             device_channels,
             &mut rc,
             &mut eq,
+            &mut peak_acc,
+            &ring,
         );
 
         // Accompaniment is empty → below low water → must enter buffering.
