@@ -454,7 +454,7 @@ describe("LyricLine", () => {
     container.remove();
   });
 
-  test("renders emphasis words as per-character spans with glow animation", () => {
+  test("renders emphasis words with whole-word glow animation", () => {
     const markup = renderToStaticMarkup(
       <LyricLine
         lineIndex={0}
@@ -477,6 +477,8 @@ describe("LyricLine", () => {
     // "你好" is active with duration 1500ms (>=1000) and CJK → emphasis
     expect(markup).toContain("lyric-char-glow");
     expect(markup).toContain("inline-block");
+    // Must stay one box — per-character splits reflow mid-line and yank scroll.
+    expect(markup).not.toMatch(/animation-delay/);
   });
 
   test("renders last word with amplified glow animation", () => {

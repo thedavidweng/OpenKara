@@ -1,6 +1,11 @@
 import { describe, expect, test, vi } from "vitest";
 import type { PlaybackStateSnapshot } from "@/types/ipc";
-import { reducePositionEvent, selectCurrentPositionMs } from "./position-clock";
+import {
+  reduceAuthoritativeSnapshot,
+  reducePositionEvent,
+  selectCurrentPositionMs,
+  type PositionClockState,
+} from "./position-clock";
 
 function snapshot(
   overrides: Partial<PlaybackStateSnapshot> = {},
@@ -81,11 +86,73 @@ describe("reducePositionEvent", () => {
 
     expect(next).toEqual({
       positionMs: 600,
-      playingSinceMs: 1000,
+      // Fresh position ⇒ fresh anchor. A kept anchor would double-count time.
+      playingSinceMs: 1500,
       snapshot: {
         ...prev.snapshot,
         buffered_ms: 2500,
       },
     });
+  });
+
+  test("keeps absolute position events paired with their arrival-time anchor", () => {
+    // REGRESSION: keeping the play-start anchor while adopting each event's
+    // fresh absolute position made selectCurrentPositionMs run at ~2× real
+    // time. After ~30s the displayed clock was ~60s, racing past the last
+    // lyric line (looked like "scroll freeze"); pause/seek re-anchored and
+    // briefly looked correct. Continuous 33ms events are required to catch this.
+    let clock: PositionClockState = {
+      snapshot: snapshot({ position_ms: 0 }),
+      positionMs: 0,
+      playingSinceMs: 0,
+    };
+
+    for (let nowMs = 33; nowMs <= 330; nowMs += 33) {
+      clock = reducePositionEvent(
+        clock,
+        {
+          ms: nowMs,
+          transport_generation: 1,
+          snapshot: snapshot({ position_ms: nowMs }),
+        },
+        nowMs,
+      )!;
+    }
+
+    // (positionMs, playingSinceMs) must be one sync point — not a kept anchor.
+    expect(clock.positionMs).toBe(330);
+    expect(clock.playingSinceMs).toBe(330);
+    expect(selectCurrentPositionMs(clock, () => 330)).toBe(330);
+    expect(selectCurrentPositionMs(clock, () => 350)).toBe(350);
+  });
+
+  test("re-anchors playingSinceMs across a long 33ms position stream", () => {
+    // Longer stream (~10s) so drift would be multi-second if the anchor leaked.
+    let now = 1_000;
+    let clock: PositionClockState = reduceAuthoritativeSnapshot(
+      { snapshot: null, positionMs: 0, playingSinceMs: null },
+      snapshot({ position_ms: 0 }),
+      now,
+    )!;
+
+    for (let i = 1; i <= 300; i++) {
+      now = 1_000 + i * 33;
+      const next = reducePositionEvent(
+        clock,
+        {
+          ms: i * 33,
+          transport_generation: 1,
+          snapshot: snapshot({ position_ms: i * 33 }),
+        },
+        now,
+      );
+      if (next) clock = next;
+    }
+
+    expect(clock.playingSinceMs).toBe(now);
+    const displayed = selectCurrentPositionMs(clock, () => now);
+    expect(Math.abs(displayed - 300 * 33)).toBeLessThan(50);
+    // 20ms of pure client extrapolation after the last event — no 2× drift.
+    expect(selectCurrentPositionMs(clock, () => now + 20)).toBe(300 * 33 + 20);
   });
 });

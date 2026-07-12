@@ -1,71 +1,101 @@
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import { Spring } from "@/lib/spring";
 import {
   createUserScrollGuard,
+  peekLyricsAutoScrollResumeGeneration,
+  readLyricsPlaybackClockMs,
   syncLyricsActiveLine,
   shouldRunLyricsEngineLoop,
   tickLyricsEngineFrame,
   USER_SCROLL_PAUSE_MS,
   type LyricsEngineScrollState,
+  type UserScrollGuard,
 } from "@/lib/lyrics-engine";
+import {
+  setLyricsCurrentTime,
+  sampleLyricsTimeFrame,
+} from "@/lib/lyrics-playback-time";
 import {
   lyricsLineRuntime,
   type LyricsLineRuntime,
 } from "@/lib/lyrics-line-runtime";
+import { useLyricsStore } from "@/stores/lyrics-store";
 import { usePlayerStore } from "@/stores/player-store";
 
 const SCROLL_SPRING = { stiffness: 170, damping: 28, mass: 1 };
 
 /**
- * Unified lyrics runtime: one requestAnimationFrame loop drives active-line
- * sync, karaoke fill, line springs, and auto-scroll.
+ * Unified lyrics runtime (AMLL LyricPlayer shape):
+ * each rAF the host pushes setCurrentTime from the playback clock, then the
+ * engine updates line/word sync, karaoke fill, springs, and auto-scroll.
  */
 export function useLyricsEngine(input: {
   containerRef: RefObject<HTMLDivElement | null>;
-  scrollContentRef: RefObject<HTMLDivElement | null>;
   isPlainText: boolean;
   lyricsFontStep: number;
   presentation: "standard" | "audience";
   songId: string | null | undefined;
+  /** True when the scroll viewport is in the DOM (not loading/empty). */
+  viewportActive: boolean;
   layoutVersion?: string;
   lineRuntime?: LyricsLineRuntime;
+  /** Fires when the user unlocks/re-locks auto-follow (for the Follow button). */
+  onUserScrollActiveChange?: (active: boolean) => void;
 }): void {
   const {
     containerRef,
-    scrollContentRef,
     isPlainText,
     lyricsFontStep,
     presentation,
     songId,
+    viewportActive,
     layoutVersion = "",
     lineRuntime = lyricsLineRuntime,
+    onUserScrollActiveChange,
   } = input;
 
-  const guardRef = useRef<ReturnType<typeof createUserScrollGuard> | null>(
-    null,
-  );
+  const guardRef = useRef<UserScrollGuard | null>(null);
+  const onUserScrollActiveChangeRef = useRef(onUserScrollActiveChange);
+  onUserScrollActiveChangeRef.current = onUserScrollActiveChange;
+
   const scrollSpringRef = useRef(new Spring(0, SCROLL_SPRING));
   const scrollStateRef = useRef<LyricsEngineScrollState>({
     scrollSpring: scrollSpringRef.current,
     targetScrollTopRef: { current: null },
     prevActiveIndexRef: { current: -1 },
+    prevAdjustedMsRef: { current: null },
+    lastResumeGenerationRef: { current: 0 },
   });
   const prevActiveLineRef = useRef(-1);
   const prevActiveWordIndexRef = useRef(-1);
 
-  useEffect(() => {
-    if (isPlainText) return;
+  // RATIONALE: LyricsPanel early-returns a loading/empty state before the scroll
+  // viewport mounts. An effect keyed only on songId would run while
+  // containerRef.current is null, skip guard setup, then never retry — leaving
+  // auto-follow writing scrollTop every frame with no way for the user to unlock.
+  useLayoutEffect(() => {
+    if (isPlainText || !viewportActive) {
+      return;
+    }
     const container = containerRef.current;
-    if (!container) return;
+    if (!container) {
+      return;
+    }
 
-    const guard = createUserScrollGuard(container, USER_SCROLL_PAUSE_MS);
+    const guard = createUserScrollGuard(container, USER_SCROLL_PAUSE_MS, {
+      onActiveChange: (active) => {
+        onUserScrollActiveChangeRef.current?.(active);
+      },
+    });
     guardRef.current = guard;
+    onUserScrollActiveChangeRef.current?.(false);
 
     return () => {
       guard.destroy();
       guardRef.current = null;
+      onUserScrollActiveChangeRef.current?.(false);
     };
-  }, [containerRef, isPlainText, songId]);
+  }, [containerRef, isPlainText, songId, viewportActive]);
 
   useEffect(() => {
     lineRuntime.clear();
@@ -74,7 +104,7 @@ export function useLyricsEngine(input: {
   }, [lineRuntime, songId]);
 
   useEffect(() => {
-    if (isPlainText || !songId) {
+    if (isPlainText || !songId || !viewportActive) {
       return;
     }
 
@@ -84,7 +114,12 @@ export function useLyricsEngine(input: {
     }
 
     const syncNow = () => {
-      syncLyricsActiveLine(prevActiveLineRef);
+      // Focus resync must not sample/consume the isSeek latch — only the rAF
+      // tick should take the frame (AMLL host still owns discontinuous seeks).
+      const positionMs = readLyricsPlaybackClockMs();
+      setLyricsCurrentTime(positionMs);
+      const adjustedMs = positionMs - useLyricsStore.getState().offsetMs;
+      syncLyricsActiveLine(prevActiveLineRef, adjustedMs);
     };
     window.addEventListener("focus", syncNow);
 
@@ -97,14 +132,20 @@ export function useLyricsEngine(input: {
     scrollSpring.jumpTo(0);
     scrollState.targetScrollTopRef.current = null;
     scrollState.prevActiveIndexRef.current = -1;
+    scrollState.prevAdjustedMsRef.current = null;
+    scrollState.lastResumeGenerationRef.current =
+      peekLyricsAutoScrollResumeGeneration();
 
     const container = containerRef.current;
-    const scrollContent = scrollContentRef.current;
     if (container) {
-      container.scrollTop = 0;
-    }
-    if (scrollContent) {
-      scrollContent.style.transform = "translateY(0px)";
+      const write = () => {
+        container.scrollTop = 0;
+      };
+      if (guardRef.current) {
+        guardRef.current.withProgrammatic(write);
+      } else {
+        write();
+      }
     }
 
     let rafId = 0;
@@ -114,9 +155,12 @@ export function useLyricsEngine(input: {
       const dt = Math.min((now - lastTime) / 1000, 0.05);
       lastTime = now;
 
+      // Host clock → AMLL setCurrentTime → engine sample.
+      setLyricsCurrentTime(readLyricsPlaybackClockMs(() => now));
+      const frame = sampleLyricsTimeFrame();
+
       tickLyricsEngineFrame({
         container: containerRef.current,
-        scrollContent: scrollContentRef.current,
         isPlainText,
         scrollState,
         userScrollGuard: guardRef.current,
@@ -125,7 +169,8 @@ export function useLyricsEngine(input: {
         lineRuntime,
         reducedMotion,
         dt,
-        nowMs: now,
+        positionMs: frame.positionMs,
+        isSeek: frame.isSeek,
       });
 
       rafId = requestAnimationFrame(tick);
@@ -135,22 +180,14 @@ export function useLyricsEngine(input: {
     return () => {
       window.removeEventListener("focus", syncNow);
       cancelAnimationFrame(rafId);
-      // Reset the auto-scroll transform so a stale translateY offset doesn't
-      // persist when the loop tears down (e.g. editing the playing song's
-      // lyrics to strip timestamps switches isPlainText true mid-playback,
-      // and without this reset the plain-text view renders clipped by the
-      // last timed-mode offset).
-      if (scrollContent) {
-        scrollContent.style.transform = "translateY(0px)";
-      }
     };
   }, [
     containerRef,
-    scrollContentRef,
     isPlainText,
     lyricsFontStep,
     presentation,
     songId,
+    viewportActive,
     layoutVersion,
     lineRuntime,
   ]);

@@ -92,18 +92,42 @@ export const TAURI_MOCK_SCRIPT = `
     };
   }
 
-  function handleTauriEventCommand(cmd) {
+  // Backend → frontend event bridge. Tests use __OPENKARA_E2E__.emitEvent to
+  // simulate Rust-emitted events (e.g. the 33ms playback-position stream).
+  const eventListeners = new Map();
+
+  function handleTauriEventCommand(cmd, args) {
     if (cmd === "plugin:event|listen") {
-      return Promise.resolve(nextEventId++);
+      const id = nextEventId++;
+      if (args && args.event && typeof args.handler === "number") {
+        const handlers = eventListeners.get(args.event) || new Map();
+        handlers.set(id, args.handler);
+        eventListeners.set(args.event, handlers);
+      }
+      return Promise.resolve(id);
     }
-    if (
-      cmd === "plugin:event|emit" ||
-      cmd === "plugin:event|emit_to" ||
-      cmd === "plugin:event|unlisten"
-    ) {
+    if (cmd === "plugin:event|unlisten") {
+      if (args && args.event) {
+        const handlers = eventListeners.get(args.event);
+        if (handlers) handlers.delete(args.eventId);
+      }
+      return Promise.resolve(undefined);
+    }
+    if (cmd === "plugin:event|emit" || cmd === "plugin:event|emit_to") {
       return Promise.resolve(undefined);
     }
     return null;
+  }
+
+  function emitMockEvent(eventName, payload) {
+    const handlers = eventListeners.get(eventName);
+    if (!handlers) return;
+    for (const [id, callbackId] of handlers) {
+      const callback = callbacks.get(callbackId);
+      if (typeof callback === "function") {
+        callback({ event: eventName, id, payload: clone(payload) });
+      }
+    }
   }
 
   function handleTauriResourceCommand(cmd, args) {
@@ -353,7 +377,7 @@ export const TAURI_MOCK_SCRIPT = `
 
   function invoke(cmd, args) {
     invokeCalls.push({ cmd, args: clone(args) });
-    const eventResult = handleTauriEventCommand(cmd);
+    const eventResult = handleTauriEventCommand(cmd, args);
     if (eventResult) {
       return eventResult;
     }
@@ -460,6 +484,7 @@ export const TAURI_MOCK_SCRIPT = `
   };
 
   window.__OPENKARA_E2E__ = {
+    emitEvent: (eventName, payload) => emitMockEvent(eventName, payload),
     getInvokeCalls: () => clone(invokeCalls),
     getLastNativeMenu: () => lastNativeMenu ? menuSnapshot(lastNativeMenu) : null,
     clickNativeMenuItem: async (label) => {

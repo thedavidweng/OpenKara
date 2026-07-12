@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { markLyricsSeek } from "@/lib/lyrics-engine";
 import { usePlayerStore, selectCurrentPositionMs } from "@/stores/player-store";
 import { formatDuration } from "@/lib/format";
 import {
@@ -75,6 +76,7 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
     const handleMouseUp = (e: MouseEvent) => {
       const percent = getPercentFromEvent(e.clientX);
       const targetMs = (percent / 100) * durationMs;
+      markLyricsSeek();
       seek(targetMs);
       setIsDragging(false);
     };

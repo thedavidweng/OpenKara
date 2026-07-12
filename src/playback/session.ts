@@ -89,14 +89,8 @@ export function createPlaybackSession(
 
   const tryApplyAuthoritative = (
     nextSnapshot: PlaybackStateSnapshot,
-    options?: { forcePlayingSinceAnchor?: boolean },
   ): boolean => {
-    const reduced = reduceAuthoritativeSnapshot(
-      clock,
-      nextSnapshot,
-      nowMs(),
-      options,
-    );
+    const reduced = reduceAuthoritativeSnapshot(clock, nextSnapshot, nowMs());
     if (!reduced) {
       return false;
     }
@@ -206,7 +200,7 @@ export function createPlaybackSession(
         ...snapshot,
         is_playing: true,
       };
-      tryApplyAuthoritative(authoritative, { forcePlayingSinceAnchor: true });
+      tryApplyAuthoritative(authoritative);
     },
 
     pause: async () => {
@@ -215,14 +209,14 @@ export function createPlaybackSession(
         ...snapshot,
         is_playing: false,
       };
-      tryApplyAuthoritative(authoritative, { forcePlayingSinceAnchor: true });
+      tryApplyAuthoritative(authoritative);
     },
 
     seek: async (ms) => {
       if (!clock.snapshot?.song_id) return;
       const clamped = Math.max(0, ms);
       const snapshot = await deps.transport.seek(clamped);
-      tryApplyAuthoritative(snapshot, { forcePlayingSinceAnchor: true });
+      tryApplyAuthoritative(snapshot);
     },
 
     setVolume: async (level) => {

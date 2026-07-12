@@ -25,22 +25,20 @@ export function shouldAnchorPlayingSinceMs(
   return snapshot.is_playing && snapshot.state !== "buffering";
 }
 
+/**
+ * RATIONALE: (positionMs, playingSinceMs) must be a consistent pair —
+ * positionMs as measured at monotonic time playingSinceMs. Every reducer that
+ * replaces positionMs with a fresh backend position must re-anchor to nowMs.
+ * Keeping a stale anchor while adopting a fresh position makes
+ * selectCurrentPositionMs double-count elapsed time: the displayed clock runs
+ * at ~2× real speed and races past the last lyric line, which froze lyric
+ * auto-scroll mid-song and shortly after every click-to-seek.
+ */
 export function resolvePlayingSinceMs(
-  prev: Pick<PositionClockState, "snapshot" | "playingSinceMs">,
   nextSnapshot: PlaybackStateSnapshot,
   nowMs: number,
 ): number | null {
-  if (!shouldAnchorPlayingSinceMs(nextSnapshot)) {
-    return null;
-  }
-  if (
-    prev.playingSinceMs !== null &&
-    prev.snapshot?.is_playing === nextSnapshot.is_playing &&
-    prev.snapshot?.state === nextSnapshot.state
-  ) {
-    return prev.playingSinceMs;
-  }
-  return nowMs;
+  return shouldAnchorPlayingSinceMs(nextSnapshot) ? nowMs : null;
 }
 
 export function isStaleTransportSnapshot(
@@ -108,22 +106,15 @@ export function reduceAuthoritativeSnapshot(
   prev: PositionClockState,
   nextSnapshot: PlaybackStateSnapshot,
   nowMs: number,
-  options: { forcePlayingSinceAnchor?: boolean } = {},
 ): PositionClockState | null {
   if (isStaleTransportSnapshot(prev.snapshot, nextSnapshot)) {
     return null;
   }
 
-  const playingSinceMs = options.forcePlayingSinceAnchor
-    ? shouldAnchorPlayingSinceMs(nextSnapshot)
-      ? nowMs
-      : null
-    : resolvePlayingSinceMs(prev, nextSnapshot, nowMs);
-
   return {
     snapshot: nextSnapshot,
     positionMs: nextSnapshot.position_ms,
-    playingSinceMs,
+    playingSinceMs: resolvePlayingSinceMs(nextSnapshot, nowMs),
   };
 }
 
@@ -146,13 +137,13 @@ export function reducePositionEvent(
     return {
       snapshot: nextSnapshot,
       positionMs: nextSnapshot.position_ms,
-      playingSinceMs: resolvePlayingSinceMs(prev, nextSnapshot, nowMs),
+      playingSinceMs: resolvePlayingSinceMs(nextSnapshot, nowMs),
     };
   }
 
   return {
     positionMs: nextSnapshot.position_ms,
-    playingSinceMs: resolvePlayingSinceMs(prev, nextSnapshot, nowMs),
+    playingSinceMs: resolvePlayingSinceMs(nextSnapshot, nowMs),
     snapshot:
       currentSnapshot &&
       (nextSnapshot.is_playing !== currentSnapshot.is_playing ||

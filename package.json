@@ -22,6 +22,7 @@
     "test:coverage": "vitest run --coverage",
     "test:ui-smoke": "playwright test",
     "test:ui-smoke:ui": "playwright test --ui",
+    "test:ui-smoke:webkit": "playwright test --config=playwright.webkit.config.ts",
     "test:e2e": "pnpm test:ui-smoke",
     "test:e2e:ui": "pnpm test:ui-smoke:ui",
     "tauri": "pnpm version:sync && tauri",

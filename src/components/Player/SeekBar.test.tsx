@@ -18,6 +18,10 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
+vi.mock("@/lib/lyrics-engine", () => ({
+  markLyricsSeek: vi.fn(),
+}));
+
 vi.mock("@/stores/player-store", () => ({
   usePlayerStore: (selector: (state: typeof mockPlayerState) => unknown) =>
     selector(mockPlayerState),
