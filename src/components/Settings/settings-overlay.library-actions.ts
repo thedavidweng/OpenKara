@@ -329,6 +329,7 @@ export function createLibrarySettingsActions(
     },
 
     setEqEnabled: async (enabled) => {
+      const previous = controls.getSnapshot().state.eqEnabled;
       patchState({ eqEnabled: enabled });
       dependencies.settingsStore.patchAppSettings({ eqEnabled: enabled });
 
@@ -337,6 +338,9 @@ export function createLibrarySettingsActions(
         dependencies.settingsStore.hydrateAppSettings(settings);
         patchState({ eqEnabled: settings.eq_enabled });
       } catch (error) {
+        // Revert to the previous authoritative values on failure.
+        patchState({ eqEnabled: previous });
+        dependencies.settingsStore.patchAppSettings({ eqEnabled: previous });
         dependencies.notifyError(error);
       }
     },
@@ -370,6 +374,7 @@ export function createLibrarySettingsActions(
 
     resetEqGains: async () => {
       const flat = [0, 0, 0, 0, 0] as [number, number, number, number, number];
+      const current = controls.getSnapshot().state.eqGainsDb;
       patchState({ eqGainsDb: flat });
       dependencies.settingsStore.patchAppSettings({ eqGainsDb: flat });
 
@@ -378,6 +383,9 @@ export function createLibrarySettingsActions(
         dependencies.settingsStore.hydrateAppSettings(settings);
         patchState({ eqGainsDb: settings.eq_gains_db });
       } catch (error) {
+        // Revert to the previous authoritative values on failure.
+        patchState({ eqGainsDb: current });
+        dependencies.settingsStore.patchAppSettings({ eqGainsDb: current });
         dependencies.notifyError(error);
       }
     },

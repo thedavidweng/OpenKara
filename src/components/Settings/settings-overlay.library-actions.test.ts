@@ -790,7 +790,7 @@ describe("createLibrarySettingsActions", () => {
       ).toHaveBeenCalledWith(appSettings);
     });
 
-    test("calls notifyError on failure", async () => {
+    test("reverts optimistic state and notifies on failure", async () => {
       const harness = createHarness();
       harness.dependencies.api.setEqEnabled.mockRejectedValue(
         new Error("eq fail"),
@@ -799,6 +799,11 @@ describe("createLibrarySettingsActions", () => {
       await harness.actions.setEqEnabled(false);
 
       expect(harness.dependencies.notifyError).toHaveBeenCalled();
+      // Should revert to the previous authoritative values.
+      expect(harness.patchState).toHaveBeenCalledWith({ eqEnabled: false });
+      expect(
+        harness.dependencies.settingsStore.patchAppSettings,
+      ).toHaveBeenCalledWith({ eqEnabled: false });
     });
   });
 
@@ -863,6 +868,9 @@ describe("createLibrarySettingsActions", () => {
       expect(harness.patchState).toHaveBeenCalledWith({
         eqGainsDb: [0, 0, 0, 0, 0],
       });
+      expect(
+        harness.dependencies.settingsStore.patchAppSettings,
+      ).toHaveBeenCalledWith({ eqGainsDb: [0, 0, 0, 0, 0] });
     });
   });
 
@@ -882,6 +890,34 @@ describe("createLibrarySettingsActions", () => {
         harness.dependencies.settingsStore.patchAppSettings,
       ).toHaveBeenCalledWith({ eqGainsDb: flat });
       expect(harness.dependencies.api.setEqGains).toHaveBeenCalledWith(flat);
+    });
+
+    test("reverts optimistic state and notifies on failure", async () => {
+      const harness = createHarness();
+      const previous = [6, 0, 0, 0, 0] as [
+        number,
+        number,
+        number,
+        number,
+        number,
+      ];
+      // Seed the snapshot with non-flat gains so rollback is observable.
+      harness.context.controls.setSnapshot((s) => ({
+        ...s,
+        state: { ...s.state, eqGainsDb: previous },
+      }));
+      harness.dependencies.api.setEqGains.mockRejectedValue(
+        new Error("eq reset fail"),
+      );
+
+      await harness.actions.resetEqGains();
+
+      expect(harness.dependencies.notifyError).toHaveBeenCalled();
+      // Should revert to the previous authoritative values.
+      expect(harness.patchState).toHaveBeenCalledWith({ eqGainsDb: previous });
+      expect(
+        harness.dependencies.settingsStore.patchAppSettings,
+      ).toHaveBeenCalledWith({ eqGainsDb: previous });
     });
   });
 });
