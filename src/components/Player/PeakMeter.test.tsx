@@ -163,6 +163,17 @@ describe("PeakMeter", () => {
     );
   });
 
+  it("cleans up timer and cancels polling on unmount", async () => {
+    mockGetAudioPeaks.mockResolvedValue({ writeIndex: 0, peaks: [] });
+    const { unmount } = render(<PeakMeter width={120} height={24} />);
+    await vi.advanceTimersByTimeAsync(100);
+    const callsBefore = mockGetAudioPeaks.mock.calls.length;
+    unmount();
+    // Advance past several poll cycles — no more calls should happen.
+    await vi.advanceTimersByTimeAsync(200);
+    expect(mockGetAudioPeaks.mock.calls.length).toBe(callsBefore);
+  });
+
   it("falls back to flat-line when peaks go stale after playback stops", async () => {
     // Simulate playback that was active (writeIndex > 0, non-empty peaks) but
     // has now stopped — the backend keeps returning the same snapshot.
