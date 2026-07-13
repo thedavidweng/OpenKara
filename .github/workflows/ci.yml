@@ -405,27 +405,24 @@ jobs:
         working-directory: src-tauri
         shell: pwsh
         run: |
-          # Find the test binary that cargo test --lib would run.
+          $ortDir = Join-Path $env:GITHUB_WORKSPACE "src-tauri\generated\onnxruntime"
+          Write-Host "=== ONNX Runtime dir: $ortDir ==="
+          Get-ChildItem -Path $ortDir -Filter "*.dll" | Format-Table Name, Length
+
           $testBin = Get-ChildItem -Path "target\debug\deps" -Filter "openkara_lib-*.exe" |
             Sort-Object LastWriteTime -Descending |
             Select-Object -First 1
           if (-not $testBin) {
-            Write-Error "openkara_lib test binary not found in target\debug\deps"
+            Write-Error "openkara_lib test binary not found"
             exit 1
           }
           Write-Host "=== Test binary: $($testBin.FullName) ==="
 
-          # List the ONNX Runtime DLLs we have.
-          Write-Host "`n=== Generated ONNX Runtime DLLs ==="
-          Get-ChildItem -Path "..\generated\onnxruntime" -Filter "*.dll" | Format-Table Name, Length
-
-          # Show the test binary's imported DLLs and which entry points are unresolved.
           Write-Host "`n=== dumpbin /dependents ==="
-          & dumpbin /dependents "$($testBin.FullName)" 2>&1 | Select-Object -First 60
+          & dumpbin /dependents "$($testBin.FullName)" 2>&1 | Select-Object -First 80
 
-          # Try running the test binary directly to capture the loader error.
-          Write-Host "`n=== Direct test binary launch (expect failure) ==="
-          $env:PATH = "$env:GITHUB_WORKSPACE\src-tauri\generated\onnxruntime;$env:PATH"
+          Write-Host "`n=== Direct launch (expect failure) ==="
+          $env:PATH = "$ortDir;$env:PATH"
           & "$($testBin.FullName)" execution_provider --quiet 2>&1
           Write-Host "Exit code: $LASTEXITCODE"
 
