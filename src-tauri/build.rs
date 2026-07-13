@@ -39,5 +39,27 @@ fn main() {
         println!("cargo:rustc-link-lib=framework=UniformTypeIdentifiers");
     }
 
-    tauri_build::build()
+    tauri_build::build();
+
+    // Tauri's build script links the Common Controls v6 manifest into [[bin]]
+    // targets only (via rustc-link-arg-bins). Test binaries ([lib] tests,
+    // integration tests) do not receive the manifest, so on Windows the loader
+    // fails with STATUS_ENTRYPOINT_NOT_FOUND (0xC0000139) because comctl32.dll
+    // requires the v6 activation context to expose the entry points that tao
+    // imports. Embed the manifest into every target, then suppress it for bins
+    // to avoid a duplicate manifest resource.
+    // See https://github.com/tauri-apps/tauri/issues/13419
+    #[cfg(target_os = "windows")]
+    {
+        let manifest_path = std::path::PathBuf::from(
+            std::env::var("CARGO_MANIFEST_DIR").expect("missing CARGO_MANIFEST_DIR"),
+        )
+        .join("common-controls.manifest");
+        let manifest_arg = format!("/MANIFESTINPUT:{}", manifest_path.display());
+
+        println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+        println!("cargo:rustc-link-arg={}", manifest_arg);
+        println!("cargo:rustc-link-arg-bins=/MANIFEST:NO");
+        println!("cargo:rerun-if-changed={}", manifest_path.display());
+    }
 }
