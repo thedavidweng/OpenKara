@@ -459,6 +459,8 @@ function StemSlider({
         <button
           onClick={onIconClick}
           disabled={disabled || !onIconClick}
+          aria-pressed={isOperational ? isMuted : undefined}
+          data-active={isOperational && isMuted ? "true" : undefined}
           className={`motion-icon-button rounded-full p-1 ${
             !disabled && value > 0
               ? "text-[var(--color-control-primary)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-text)]"
