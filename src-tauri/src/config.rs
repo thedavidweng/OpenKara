@@ -425,6 +425,14 @@ pub struct AppConfig {
     pub lyrics_font_step: Option<i8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub execution_provider: Option<ExecutionProviderPreference>,
+    /// Whether the 5-band EQ is enabled. When absent, defaults to disabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eq_enabled: Option<bool>,
+    /// Per-band EQ gains in dB for the five fixed bands
+    /// (60, 230, 910, 3600, 14000 Hz). When absent, defaults to all-zero
+    /// (flat). Each gain is clamped to -12.0..=12.0 dB on read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eq_gains_db: Option<[f32; 5]>,
     /// Remote file cache cap in bytes. When set, the cache directory is
     /// trimmed to stay under this limit, deleting the least-recently-used
     /// files. When absent the cache grows unbounded.
@@ -500,6 +508,23 @@ impl AppConfig {
 
     pub fn effective_execution_provider(&self) -> ExecutionProviderPreference {
         self.effective_execution_provider_for(ExecutionProviderPlatform::current())
+    }
+
+    pub fn effective_eq_enabled(&self) -> bool {
+        self.eq_enabled.unwrap_or(false)
+    }
+
+    /// Returns the per-band EQ gains, clamped to -12.0..=12.0 dB. Non-finite
+    /// values are replaced with 0.0. Defaults to flat (all zeros) when unset.
+    pub fn effective_eq_gains_db(&self) -> [f32; 5] {
+        let mut gains = self.eq_gains_db.unwrap_or([0.0; 5]);
+        for g in gains.iter_mut() {
+            if !g.is_finite() {
+                *g = 0.0;
+            }
+            *g = g.clamp(-12.0, 12.0);
+        }
+        gains
     }
 
     pub fn effective_remote_cache_bytes_limit(&self) -> Option<u64> {
@@ -609,6 +634,8 @@ mod tests {
             lyrics_font_step: Some(1),
             execution_provider: None,
             library_path: None,
+            eq_enabled: None,
+            eq_gains_db: None,
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
@@ -641,6 +668,8 @@ mod tests {
             model_variant: None,
             lyrics_font_step: None,
             execution_provider: None,
+            eq_enabled: None,
+            eq_gains_db: None,
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
@@ -668,6 +697,8 @@ mod tests {
             model_variant: None,
             lyrics_font_step: None,
             execution_provider: None,
+            eq_enabled: None,
+            eq_gains_db: None,
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
@@ -689,6 +720,8 @@ mod tests {
             model_variant: None,
             lyrics_font_step: None,
             execution_provider: None,
+            eq_enabled: None,
+            eq_gains_db: None,
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
@@ -723,6 +756,8 @@ mod tests {
             model_variant: Some(ModelVariant::HtdemucsFt),
             lyrics_font_step: Some(1),
             execution_provider: None,
+            eq_enabled: None,
+            eq_gains_db: None,
             libraries: vec![],
             active_library_id: None,
             remote_cache_bytes_limit: None,

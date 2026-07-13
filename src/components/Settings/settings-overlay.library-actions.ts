@@ -67,6 +67,9 @@ export function createLibrarySettingsActions(
   | "setExecutionProvider"
   | "toggleHideBatchSeparate"
   | "toggleCoverArtBackdrop"
+  | "setEqEnabled"
+  | "setEqBandGain"
+  | "resetEqGains"
 > {
   const {
     dependencies,
@@ -320,6 +323,53 @@ export function createLibrarySettingsActions(
       try {
         const settings = await dependencies.api.setCoverArtBackdrop(value);
         dependencies.settingsStore.hydrateAppSettings(settings);
+      } catch (error) {
+        dependencies.notifyError(error);
+      }
+    },
+
+    setEqEnabled: async (enabled) => {
+      patchState({ eqEnabled: enabled });
+      dependencies.settingsStore.patchAppSettings({ eqEnabled: enabled });
+
+      try {
+        const settings = await dependencies.api.setEqEnabled(enabled);
+        dependencies.settingsStore.hydrateAppSettings(settings);
+        patchState({ eqEnabled: settings.eq_enabled });
+      } catch (error) {
+        dependencies.notifyError(error);
+      }
+    },
+
+    setEqBandGain: async (band, gainDb) => {
+      const clamped = Math.max(-12, Math.min(12, gainDb));
+      const current = controls.getSnapshot().state.eqGainsDb;
+      if (current[band] === clamped) {
+        return;
+      }
+      const next = [...current] as [number, number, number, number, number];
+      next[band] = clamped;
+      patchState({ eqGainsDb: next });
+      dependencies.settingsStore.patchAppSettings({ eqGainsDb: next });
+
+      try {
+        const settings = await dependencies.api.setEqGains(next);
+        dependencies.settingsStore.hydrateAppSettings(settings);
+        patchState({ eqGainsDb: settings.eq_gains_db });
+      } catch (error) {
+        dependencies.notifyError(error);
+      }
+    },
+
+    resetEqGains: async () => {
+      const flat = [0, 0, 0, 0, 0] as [number, number, number, number, number];
+      patchState({ eqGainsDb: flat });
+      dependencies.settingsStore.patchAppSettings({ eqGainsDb: flat });
+
+      try {
+        const settings = await dependencies.api.setEqGains(flat);
+        dependencies.settingsStore.hydrateAppSettings(settings);
+        patchState({ eqGainsDb: settings.eq_gains_db });
       } catch (error) {
         dependencies.notifyError(error);
       }

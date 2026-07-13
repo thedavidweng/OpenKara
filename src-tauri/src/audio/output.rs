@@ -1,5 +1,6 @@
 use crate::airplay_stream::AirPlayAudioTap;
 use crate::audio::decode::DecodedAudio;
+use crate::audio::eq::{soft_limit, EqProcessor};
 use crate::audio::error::PlaybackError;
 use crate::audio::playback::{LoadedStems, PlaybackController, StemVolumes};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -149,6 +150,7 @@ pub fn render_output_buffer(
     device_sample_rate: u32,
     device_channels: usize,
     resampler_cache: &mut ResamplerCache,
+    eq_processor: &mut EqProcessor,
 ) -> usize {
     output.fill(0.0);
 
@@ -387,6 +389,22 @@ pub fn render_output_buffer(
 
         result
     };
+
+    // EQ + auto preamp + soft limiter. The render order is:
+    //   source/stem mix + master/stem gains (above)
+    //   → EQ dry/wet processor + auto preamp
+    //   → soft limiter
+    //   → existing play/pause/seek fade (below)
+    //   → output/AirPlay forwarding
+    // EQ smoothing advances only on rendered samples; trailing callback
+    // padding (zero-filled above) must not advance filter state.
+    eq_processor.process(output, rendered);
+
+    // Soft limiter: bound peaks to prevent clipping after EQ boost. Samples
+    // below the threshold pass through unchanged.
+    for sample in output[..rendered].iter_mut() {
+        *sample = soft_limit(*sample);
+    }
 
     // Apply fade-in/fade-out envelope if active.
     if let Some(fade_gain) = playback.take_fade_gain() {
@@ -1079,6 +1097,11 @@ where
     // Cached rubato resamplers for sample-rate conversion. Resamplers maintain
     // internal state so they must be reused across consecutive callbacks.
     let mut resampler_cache = ResamplerCache::new();
+    // EQ processor owned by the callback. A new stream constructs a new
+    // processor; the controller publishes an `EqConfig` snapshot (enabled +
+    // gains + monotonically increasing revision) and the callback compares
+    // revisions while it already holds the controller lock.
+    let mut eq_processor = EqProcessor::new(sample_rate, channels);
 
     let stream = device
         .build_output_stream(
@@ -1095,6 +1118,16 @@ where
                 // tick rather than stalling the device callback.
                 let mut rendered_samples = 0;
                 if let Ok(mut controller) = playback.try_lock() {
+                    // Poll the controller's EQ config and push updates into the
+                    // local processor. The revision comparison happens while we
+                    // already hold the controller lock — no second mutex.
+                    let eq_config = controller.eq_config();
+                    if eq_config.revision != eq_processor.last_eq_revision() {
+                        eq_processor.set_enabled(eq_config.enabled);
+                        eq_processor.set_gains(eq_config.gains_db);
+                        eq_processor.set_last_eq_revision(eq_config.revision);
+                    }
+
                     rendered_samples = render_output_buffer(
                         &mut controller,
                         &mut scratch,
@@ -1102,6 +1135,7 @@ where
                         sample_rate,
                         channels,
                         &mut resampler_cache,
+                        &mut eq_processor,
                     );
                 } else {
                     scratch.fill(0.0);
@@ -1347,6 +1381,7 @@ mod tests {
         let device_channels = 2;
         let mut output = vec![0.0f32; 512 * device_channels];
         let mut rc = super::ResamplerCache::new();
+        let mut eq = crate::audio::eq::EqProcessor::new(sample_rate, device_channels);
         let rendered = render_output_buffer(
             &mut controller,
             &mut output,
@@ -1354,6 +1389,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut eq,
         );
         assert_eq!(rendered, 0);
         assert!(
@@ -1371,6 +1407,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut eq,
         );
         assert_eq!(rendered, 0);
 
@@ -1388,6 +1425,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut eq,
         );
         assert!(
             !controller.is_buffering,
@@ -1611,6 +1649,7 @@ mod tests {
         let device_channels = 2;
         let mut output = vec![0.0f32; 512 * device_channels];
         let mut rc = super::ResamplerCache::new();
+        let mut eq = crate::audio::eq::EqProcessor::new(sample_rate, device_channels);
         let rendered = super::render_output_buffer(
             &mut controller,
             &mut output,
@@ -1618,6 +1657,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut eq,
         );
 
         // Accompaniment is empty → below low water → must enter buffering.

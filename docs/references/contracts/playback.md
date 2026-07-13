@@ -16,6 +16,13 @@
 8. `get_playback_state() -> PlaybackStateSnapshot`
 9. `playback-position` 事件 payload 为 `{ ms: u64, transport_generation: u64, snapshot: PlaybackStateSnapshot }`
 
+### EQ 命令（通过 settings 命令面下发）
+
+10. `set_eq_enabled(enabled: bool) -> AppSettings`
+11. `set_eq_gains(gains_db: [f32; 5]) -> AppSettings`
+
+EQ 命令同时持久化到 config 并通过 `PlaybackCoordinator` 推送到 `PlaybackController`，实时输出回调在持有 controller 锁时轮询 EQ config revision 并更新本地 `EqProcessor`。
+
 ## Inputs / outputs / required dependencies
 
 ### Command: `play`
@@ -240,10 +247,26 @@ playing ↔ playing（pause/resume，通过 isPlaying 区分）
 1. `symphonia` 负责解码支持格式
 2. `cpal` 负责设备输出
 3. `PlaybackController` 负责状态推进与位置计算
-4. `PlaybackCoordinator` 负责串行处理所有控制面命令（pause / resume / seek / set_volume / set_stem_volume / install_track / fail_load / attach_stems），保证 FIFO 顺序与 latest-request-wins
+4. `PlaybackCoordinator` 负责串行处理所有控制面命令（pause / resume / seek / set_volume / set_stem_volume / install_track / fail_load / attach_stems / set_eq_enabled / set_eq_gains），保证 FIFO 顺序与 latest-request-wins
 5. backend playback service 负责 latest-request-wins、output thread 启动和 stale decode 忽略
 6. backend CDG helper 负责 sidecar / explicit path / Media+G ZIP 的 CDG 状态加载与 backward seek reset
 7. `stems` cache 为 `load_stems` 提供已缓存路径
+8. `biquad` crate 提供五段 peaking EQ biquad 滤波器系数
+9. `EqProcessor` 在实时输出回调中执行 EQ dry/wet 混合 + auto preamp + soft limiter
+
+### Render order
+
+实时输出回调的渲染顺序：
+
+```text
+existing source/stem mix + master/stem gains
+→ EQ dry/wet processor + auto preamp
+→ soft limiter
+→ existing play/pause/seek fade
+→ output/AirPlay forwarding
+```
+
+EQ 平滑（gain、preamp、bypass dry/wet）仅在已渲染样本上推进，trailing padding 不推进滤波器状态。
 
 ## Verification commands
 

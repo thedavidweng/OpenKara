@@ -1,10 +1,10 @@
+use crate::audio::eq::validate_gains_db;
 use crate::commands::error::{internal_error, CommandResult};
 use crate::config::{self, AppConfig, ExecutionProviderPreference, ModelVariant, StemMode};
+use crate::AppState;
 use serde::Serialize;
 use std::path::Path;
 use tauri::{AppHandle, Manager, State};
-
-use crate::AppState;
 
 #[derive(Debug, Serialize)]
 pub struct AppSettings {
@@ -16,6 +16,8 @@ pub struct AppSettings {
     pub lyrics_font_step: i8,
     pub execution_provider: String,
     pub available_execution_providers: Vec<&'static str>,
+    pub eq_enabled: bool,
+    pub eq_gains_db: [f32; 5],
 }
 
 fn settings_from_config(config: &AppConfig) -> AppSettings {
@@ -35,6 +37,8 @@ fn settings_from_config(config: &AppConfig) -> AppSettings {
         execution_provider: ep.as_str().to_owned(),
         available_execution_providers: ExecutionProviderPreference::available_for_current_platform(
         ),
+        eq_enabled: config.effective_eq_enabled(),
+        eq_gains_db: config.effective_eq_gains_db(),
     }
 }
 
@@ -209,6 +213,77 @@ pub fn set_execution_provider(
     config.execution_provider = Some(ep);
     config::save_config(&app_data_dir, &config)
         .map_err(|e| internal_error(format!("failed to save config: {e}")))?;
+    Ok(settings_from_config(&config))
+}
+
+#[tauri::command]
+pub fn set_eq_enabled(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> CommandResult<AppSettings> {
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| internal_error(format!("failed to get app data dir: {e}")))?;
+    let mut config = config::load_config(&app_data_dir)
+        .map_err(|e| internal_error(format!("failed to load config: {e}")))?
+        .unwrap_or_default();
+    config.eq_enabled = Some(enabled);
+    config::save_config(&app_data_dir, &config)
+        .map_err(|e| internal_error(format!("failed to save config: {e}")))?;
+
+    // Push the change to the playback coordinator so the realtime output
+    // callback picks it up via the controller's EQ config revision.
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let command = crate::audio::coordinator::PlaybackCommand::SetEqEnabled { enabled, reply: tx };
+    state
+        .playback
+        .command_tx
+        .send(command)
+        .map_err(|_| internal_error("playback coordinator disconnected"))?;
+    let _ = rx
+        .blocking_recv()
+        .map_err(|_| internal_error("playback coordinator dropped reply"))?;
+
+    Ok(settings_from_config(&config))
+}
+
+#[tauri::command]
+pub fn set_eq_gains(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    gains_db: [f32; 5],
+) -> CommandResult<AppSettings> {
+    validate_gains_db(&gains_db).map_err(|e| internal_error(format!("invalid eq gains: {e}")))?;
+
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| internal_error(format!("failed to get app data dir: {e}")))?;
+    let mut config = config::load_config(&app_data_dir)
+        .map_err(|e| internal_error(format!("failed to load config: {e}")))?
+        .unwrap_or_default();
+    config.eq_gains_db = Some(gains_db);
+    config::save_config(&app_data_dir, &config)
+        .map_err(|e| internal_error(format!("failed to save config: {e}")))?;
+
+    // Push the change to the playback coordinator so the realtime output
+    // callback picks it up via the controller's EQ config revision.
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let command = crate::audio::coordinator::PlaybackCommand::SetEqGains {
+        gains_db,
+        reply: tx,
+    };
+    state
+        .playback
+        .command_tx
+        .send(command)
+        .map_err(|_| internal_error("playback coordinator disconnected"))?;
+    let _ = rx
+        .blocking_recv()
+        .map_err(|_| internal_error("playback coordinator dropped reply"))?;
+
     Ok(settings_from_config(&config))
 }
 

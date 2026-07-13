@@ -1029,6 +1029,8 @@ describe("AppSettings shape matches Rust AppSettings", () => {
       lyrics_font_step: 0,
       execution_provider: "cpu",
       available_execution_providers: ["cpu", "xnnpack"],
+      eq_enabled: false,
+      eq_gains_db: [0, 0, 0, 0, 0],
     };
     expect(settings).toHaveProperty("stem_mode");
     expect(settings).toHaveProperty("model_variant");

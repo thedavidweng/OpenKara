@@ -146,6 +146,11 @@ pub struct PlaybackController {
     pub(crate) is_buffering: bool,
     /// Active fade envelope for play/pause transitions.
     pub(crate) fade: FadeState,
+    /// EQ config snapshot published by the controller and polled by the
+    /// realtime output callback via `eq_config()`. The revision is bumped on
+    /// every successful setter so the callback can detect changes without
+    /// comparing the full struct each tick.
+    pub(crate) eq_config: crate::audio::eq::EqConfig,
 }
 
 impl Default for PlaybackController {
@@ -158,6 +163,7 @@ impl Default for PlaybackController {
             stem_volumes: StemVolumes::default(),
             is_buffering: false,
             fade: FadeState::None,
+            eq_config: crate::audio::eq::EqConfig::flat(),
         }
     }
 }
@@ -318,6 +324,35 @@ impl PlaybackController {
             StemName::Other => self.stem_volumes.other = level,
         }
         Ok(self.snapshot())
+    }
+
+    /// Update the EQ enabled flag and bump the config revision so the realtime
+    /// output callback picks up the change. Returns the current snapshot.
+    pub fn set_eq_enabled(&mut self, enabled: bool) -> PlaybackStateSnapshot {
+        if self.eq_config.enabled != enabled {
+            self.eq_config.enabled = enabled;
+            self.eq_config.revision = self.eq_config.revision.saturating_add(1);
+        }
+        self.snapshot()
+    }
+
+    /// Update the per-band EQ gains (dB) and bump the config revision so the
+    /// realtime output callback picks up the change. Returns the current
+    /// snapshot. The caller is expected to have validated the gains via
+    /// `eq::validate_gains_db` before dispatching the command.
+    pub fn set_eq_gains(&mut self, gains_db: [f32; 5]) -> PlaybackStateSnapshot {
+        if self.eq_config.gains_db != gains_db {
+            self.eq_config.gains_db = gains_db;
+            self.eq_config.revision = self.eq_config.revision.saturating_add(1);
+        }
+        self.snapshot()
+    }
+
+    /// Current EQ config snapshot. The realtime output callback polls this
+    /// while it already holds the controller lock and compares the revision
+    /// with the processor's last-applied revision.
+    pub fn eq_config(&self) -> crate::audio::eq::EqConfig {
+        self.eq_config
     }
 
     pub fn attach_stems(&mut self, song_id: &str, stems: LoadedStems) -> Result<(), PlaybackError> {
