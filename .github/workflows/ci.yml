@@ -401,13 +401,40 @@ jobs:
         working-directory: src-tauri
         run: cargo test -q --no-run
 
-      # Note: We cannot run the execution_provider test binary on Windows CI
-      # because the ort crate links onnxruntime.dll at build time (even with
-      # load-dynamic), and the headless Windows Server runner lacks the
-      # desktop DLL APIs the DirectML ORT package needs at process startup
-      # (STATUS_ENTRYPOINT_NOT_FOUND). The pure-logic config tests are
-      # already covered by the macOS and Linux Rust test jobs. Compilation
-      # verification (--no-run above) is sufficient for Windows.
+      - name: Diagnose execution-provider test binary DLL dependencies
+        working-directory: src-tauri
+        shell: pwsh
+        run: |
+          # Find the test binary that cargo test --lib would run.
+          $testBin = Get-ChildItem -Path "target\debug\deps" -Filter "openkara_lib-*.exe" |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $testBin) {
+            Write-Error "openkara_lib test binary not found in target\debug\deps"
+            exit 1
+          }
+          Write-Host "=== Test binary: $($testBin.FullName) ==="
+
+          # List the ONNX Runtime DLLs we have.
+          Write-Host "`n=== Generated ONNX Runtime DLLs ==="
+          Get-ChildItem -Path "..\generated\onnxruntime" -Filter "*.dll" | Format-Table Name, Length
+
+          # Show the test binary's imported DLLs and which entry points are unresolved.
+          Write-Host "`n=== dumpbin /dependents ==="
+          & dumpbin /dependents "$($testBin.FullName)" 2>&1 | Select-Object -First 60
+
+          # Try running the test binary directly to capture the loader error.
+          Write-Host "`n=== Direct test binary launch (expect failure) ==="
+          $env:PATH = "$env:GITHUB_WORKSPACE\src-tauri\generated\onnxruntime;$env:PATH"
+          & "$($testBin.FullName)" execution_provider --quiet 2>&1
+          Write-Host "Exit code: $LASTEXITCODE"
+
+      - name: Verify execution-provider platform contract
+        working-directory: src-tauri
+        shell: pwsh
+        env:
+          PATH: ${{ github.workspace }}\src-tauri\generated\onnxruntime;${{ env.PATH }}
+        run: cargo test -q --lib execution_provider
 
   tauri-build:
     name: Tauri build (${{ matrix.name }})
