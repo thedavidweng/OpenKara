@@ -607,8 +607,8 @@ mod tests {
         for sr in [32_000u32, 44_100] {
             let proc = EqProcessor::new(sr, 2);
             let nyq = sr as f32 * NYQUIST_RATIO_LIMIT;
-            for band in 0..5 {
-                let present = EQ_BAND_FREQUENCIES_HZ[band] < nyq;
+            for (band, &freq) in EQ_BAND_FREQUENCIES_HZ.iter().enumerate() {
+                let present = freq < nyq;
                 for ch in 0..2 {
                     assert_eq!(
                         proc.filters[ch][band].is_some(),

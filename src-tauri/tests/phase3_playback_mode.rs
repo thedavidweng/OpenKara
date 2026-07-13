@@ -1,5 +1,6 @@
 use openkara_lib::audio::{
     decode::DecodedAudio,
+    eq::EqProcessor,
     output::{render_output_buffer, ResamplerCache},
     playback::{LoadedStems, PlaybackController, StemName, StemSet},
 };
@@ -45,6 +46,7 @@ fn render_output_mixes_stems_with_individual_volumes() {
     let mut output = vec![0.0; 4];
     let mut stem_scratch = Vec::new();
     let mut rc = ResamplerCache::default();
+    let mut eq = EqProcessor::new(TEST_SAMPLE_RATE, TEST_CHANNELS);
     let rendered = render_output_buffer(
         &mut controller,
         &mut output,
@@ -52,6 +54,7 @@ fn render_output_mixes_stems_with_individual_volumes() {
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
         &mut rc,
+        &mut eq,
     );
 
     assert_eq!(rendered, 4);
@@ -80,6 +83,7 @@ fn render_output_falls_back_to_original_when_no_stems() {
     let mut output = vec![0.0; 4];
     let mut stem_scratch = Vec::new();
     let mut rc = ResamplerCache::default();
+    let mut eq = EqProcessor::new(TEST_SAMPLE_RATE, TEST_CHANNELS);
     let rendered = render_output_buffer(
         &mut controller,
         &mut output,
@@ -87,6 +91,7 @@ fn render_output_falls_back_to_original_when_no_stems() {
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
         &mut rc,
+        &mut eq,
     );
 
     assert_eq!(rendered, 4);

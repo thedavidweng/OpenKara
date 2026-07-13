@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use openkara_lib::audio::{
     decode,
+    eq::EqProcessor,
     output::{render_output_buffer, ResamplerCache},
     playback::PlaybackController,
 };
@@ -24,6 +25,7 @@ fn render_output_buffer_returns_silence_without_an_active_track() {
     let mut output = vec![1.0; 128];
     let mut stem_scratch = Vec::new();
     let mut rc = ResamplerCache::default();
+    let mut eq = EqProcessor::new(TEST_SAMPLE_RATE, TEST_CHANNELS);
 
     let rendered_samples = render_output_buffer(
         &mut controller,
@@ -32,6 +34,7 @@ fn render_output_buffer_returns_silence_without_an_active_track() {
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
         &mut rc,
+        &mut eq,
     );
 
     assert_eq!(rendered_samples, 0);
@@ -45,6 +48,7 @@ fn render_output_buffer_writes_audio_when_playing_and_silence_when_paused() {
     controller.start_track("song-a".into(), decoded, 0);
     let mut stem_scratch = Vec::new();
     let mut rc = ResamplerCache::default();
+    let mut eq = EqProcessor::new(TEST_SAMPLE_RATE, TEST_CHANNELS);
 
     let mut playing_output = vec![0.0; 256];
     let rendered_samples = render_output_buffer(
@@ -54,6 +58,7 @@ fn render_output_buffer_writes_audio_when_playing_and_silence_when_paused() {
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
         &mut rc,
+        &mut eq,
     );
     assert!(rendered_samples > 0);
     assert!(playing_output.iter().any(|sample| *sample != 0.0));
@@ -69,6 +74,7 @@ fn render_output_buffer_writes_audio_when_playing_and_silence_when_paused() {
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
         &mut rc,
+        &mut eq,
     );
     assert!(
         rendered_during_fade > 0,
@@ -85,6 +91,7 @@ fn render_output_buffer_writes_audio_when_playing_and_silence_when_paused() {
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
         &mut rc,
+        &mut eq,
     );
     assert_eq!(rendered_after_pause, 0);
     assert!(paused_output.iter().all(|sample| *sample == 0.0));
@@ -97,6 +104,7 @@ fn render_output_buffer_advances_render_frame_for_original_audio() {
     controller.start_track("song-a".into(), decoded, 0);
     let mut stem_scratch = Vec::new();
     let mut rc = ResamplerCache::default();
+    let mut eq = EqProcessor::new(TEST_SAMPLE_RATE, TEST_CHANNELS);
 
     let mut first_output = vec![0.0; 128];
     let rendered_first = render_output_buffer(
@@ -106,6 +114,7 @@ fn render_output_buffer_advances_render_frame_for_original_audio() {
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
         &mut rc,
+        &mut eq,
     );
 
     let after_first = controller.current_render_frame();
@@ -120,6 +129,7 @@ fn render_output_buffer_advances_render_frame_for_original_audio() {
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
         &mut rc,
+        &mut eq,
     );
 
     assert_eq!(rendered_second, 128);
