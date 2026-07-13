@@ -211,6 +211,8 @@ export interface ImportLyricsResult {
 export type StemMode = "two_stem" | "four_stem";
 export type ModelVariant = "htdemucs" | "htdemucs_ft";
 export type ExecutionProvider = "cpu" | "xnnpack" | "directml";
+export type ThemePreference = "system" | "light" | "dark";
+export type ResolvedTheme = "light" | "dark";
 
 export interface AppSettings {
   stem_mode: StemMode;
@@ -221,6 +223,7 @@ export interface AppSettings {
   lyrics_font_step: number;
   execution_provider: ExecutionProvider;
   available_execution_providers: ExecutionProvider[];
+  theme_preference: ThemePreference;
 }
 
 export interface ModelStatusSnapshot {

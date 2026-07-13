@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Light mode theming (#96): add `dark`/`light`/`system` appearance preference with semantic CSS tokens, a `theme-runtime` hook that applies the resolved theme before first paint and syncs the Tauri native window theme, and an Appearance radio in Settings. The audience/fullscreen stage stays explicitly dark regardless of the primary preference. New IPC command `set_theme_preference` and `ThemePreference` type round-trip the persisted choice.
+
 ### Fixed
 
 - Remove unnecessary `pnpm install` from the Dependabot auto-sync workflow: both Flatpak source generators use only Node built-ins and checked-in lockfiles, so running `pnpm install --no-frozen-lockfile` in a job with `contents: write` and push access needlessly executed third-party lifecycle scripts with write credentials. The workflow now runs the generators directly with `node`, stages `pnpm-lock.yaml` / `node-sources.0.json` / `cargo-sources.json`, and commits/pushes when the staged diff is non-empty. The staleness/idempotence verification lives in the read-only PR test (`tests/flatpak-packaging.test.ts`) instead of between regeneration and the auto-commit — a verify step placed there would exit before the commit and block valid future syncs (a Dependabot Cargo update is _supposed_ to change `cargo-sources.json`). The Cargo source generator now exports pure rendering functions (`parseCargoLockfile`, `generateCargoSources`, `renderCargoSources`) and accepts optional input/output path arguments, so the test compares rendered text against the committed manifest without writing into the real checkout (the old test ran `git checkout -- cargo-sources.json` on mismatch, which could discard a developer's intentional uncommitted edit).

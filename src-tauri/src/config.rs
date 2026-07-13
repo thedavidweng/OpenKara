@@ -17,6 +17,39 @@ pub enum StemMode {
     FourStem,
 }
 
+/// Persisted appearance preference for the primary application WebView.
+///
+/// The fullscreen/AirPlay audience stage retains its explicit dark
+/// presentation regardless of this value. `Dark` is the default so existing
+/// installs keep their current appearance on upgrade.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemePreference {
+    System,
+    Light,
+    #[default]
+    Dark,
+}
+
+impl ThemePreference {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::System => "system",
+            Self::Light => "light",
+            Self::Dark => "dark",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "system" => Some(Self::System),
+            "light" => Some(Self::Light),
+            "dark" => Some(Self::Dark),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelVariant {
@@ -430,6 +463,10 @@ pub struct AppConfig {
     /// files. When absent the cache grows unbounded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote_cache_bytes_limit: Option<u64>,
+    /// Persisted appearance preference for the primary application WebView.
+    /// Defaults to `Dark` when absent so upgrades preserve the current look.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme_preference: Option<ThemePreference>,
     /// Crash-recovery marker for mirror operations. `mirror_local_library_to_remote`
     /// temporarily swaps `active_library_id` to the remote library for the sync
     /// duration. If the app crashes mid-sync, this flag is true so startup
@@ -504,6 +541,10 @@ impl AppConfig {
 
     pub fn effective_remote_cache_bytes_limit(&self) -> Option<u64> {
         self.remote_cache_bytes_limit
+    }
+
+    pub fn effective_theme_preference(&self) -> ThemePreference {
+        self.theme_preference.unwrap_or_default()
     }
 }
 
@@ -612,6 +653,7 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
+            theme_preference: None,
         };
 
         save_config(tmp.path(), &config).unwrap();
@@ -644,6 +686,7 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
+            theme_preference: None,
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("stem_mode"));
@@ -671,6 +714,7 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
+            theme_preference: None,
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("lyrics_font_step"));
@@ -692,6 +736,7 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
+            theme_preference: None,
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("execution_provider"));
@@ -728,6 +773,7 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
+            theme_preference: None,
         };
 
         save_config(tmp.path(), &legacy).unwrap();
@@ -856,6 +902,36 @@ mod tests {
     }
 
     #[test]
+    fn effective_theme_preference_defaults_to_dark() {
+        let config = AppConfig::default();
+        assert_eq!(config.effective_theme_preference(), ThemePreference::Dark);
+    }
+
+    #[test]
+    fn theme_preference_none_is_omitted_from_json() {
+        let config = AppConfig::default();
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(!json.contains("theme_preference"));
+    }
+
+    #[test]
+    fn theme_preference_round_trips_through_json() {
+        for preference in [
+            ThemePreference::System,
+            ThemePreference::Light,
+            ThemePreference::Dark,
+        ] {
+            let config = AppConfig {
+                theme_preference: Some(preference),
+                ..AppConfig::default()
+            };
+            let json = serde_json::to_string(&config).unwrap();
+            let loaded: AppConfig = serde_json::from_str(&json).unwrap();
+            assert_eq!(loaded.theme_preference, Some(preference));
+        }
+    }
+
+    #[test]
     fn every_target_default_is_a_member_of_its_list() {
         use ExecutionProviderPlatform::*;
         for &platform in &[Macos, Windows, Linux, Other] {
@@ -941,5 +1017,19 @@ mod tests {
         assert_eq!(current, Linux);
         #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         assert_eq!(current, Other);
+    }
+
+    #[test]
+    fn invalid_theme_preference_string_is_rejected() {
+        let json = r#"{"theme_preference": "high_contrast"}"#;
+        let result: Result<AppConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn missing_theme_preference_field_defaults_to_dark() {
+        let json = r#"{"libraries": []}"#;
+        let loaded: AppConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(loaded.effective_theme_preference(), ThemePreference::Dark);
     }
 }

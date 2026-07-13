@@ -6,13 +6,17 @@ import {
   useSettingsStore,
 } from "./settings-store";
 
-const { mockSetLyricsFontStep, mockNotifyError } = vi.hoisted(() => ({
-  mockSetLyricsFontStep: vi.fn<(step: number) => Promise<AppSettings>>(),
-  mockNotifyError: vi.fn(),
-}));
+const { mockSetLyricsFontStep, mockSetThemePreference, mockNotifyError } =
+  vi.hoisted(() => ({
+    mockSetLyricsFontStep: vi.fn<(step: number) => Promise<AppSettings>>(),
+    mockSetThemePreference:
+      vi.fn<(preference: string) => Promise<AppSettings>>(),
+    mockNotifyError: vi.fn(),
+  }));
 
 vi.mock("@/lib/tauri", () => ({
   setLyricsFontStep: mockSetLyricsFontStep,
+  setThemePreference: mockSetThemePreference,
 }));
 
 vi.mock("@/lib/errors", () => ({
@@ -43,6 +47,7 @@ function makeAppSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     lyrics_font_step: 0,
     execution_provider: "cpu",
     available_execution_providers: ["cpu"],
+    theme_preference: "dark",
     ...overrides,
   };
 }
@@ -122,8 +127,10 @@ describe("settings-store actions", () => {
       lyricsFontStep: 0,
       executionProvider: "cpu",
       availableExecutionProviders: ["cpu"],
+      themePreference: "dark",
     });
     mockSetLyricsFontStep.mockReset();
+    mockSetThemePreference.mockReset();
     mockNotifyError.mockReset();
   });
 
@@ -182,6 +189,7 @@ describe("settings-store actions", () => {
       lyrics_font_step: 1,
       execution_provider: "xnnpack",
       available_execution_providers: ["cpu", "xnnpack"],
+      theme_preference: "dark",
     });
 
     store.getState().hydrateAppSettings(settings);
@@ -332,6 +340,7 @@ describe("settings-store actions", () => {
       lyricsFontStep: 1,
       executionProvider: "xnnpack",
       availableExecutionProviders: ["cpu", "xnnpack"],
+      themePreference: "dark",
     });
 
     const snapshot = store.getState().getAppSettingsSnapshot();
@@ -346,6 +355,7 @@ describe("settings-store actions", () => {
       lyricsFontStep: 1,
       executionProvider: "xnnpack",
       availableExecutionProviders: ["cpu", "xnnpack"],
+      themePreference: "dark",
     });
     expect(snapshot).not.toHaveProperty("isOpen");
   });
@@ -361,5 +371,56 @@ describe("settings-store actions", () => {
     expect(snapshot).not.toHaveProperty("resetLyricsFontStep");
     expect(snapshot).not.toHaveProperty("hydrateAppSettings");
     expect(snapshot).not.toHaveProperty("patchAppSettings");
+  });
+
+  // ── setThemePreference ──────────────────────────────────────────────────
+
+  test("setThemePreference updates state on success", async () => {
+    const returned = makeAppSettings({ theme_preference: "light" });
+    mockSetThemePreference.mockResolvedValue(returned);
+
+    await store.getState().setThemePreference("light");
+
+    expect(mockSetThemePreference).toHaveBeenCalledWith("light");
+    expect(store.getState().themePreference).toBe("light");
+  });
+
+  test("setThemePreference is a no-op when preference is unchanged", async () => {
+    store.setState({ themePreference: "dark" });
+
+    await store.getState().setThemePreference("dark");
+
+    expect(mockSetThemePreference).not.toHaveBeenCalled();
+  });
+
+  test("setThemePreference rolls back and notifies on failure", async () => {
+    const error = new Error("ipc failure");
+    mockSetThemePreference.mockRejectedValue(error);
+
+    await store.getState().setThemePreference("light");
+
+    expect(store.getState().themePreference).toBe("dark");
+    expect(mockNotifyError).toHaveBeenCalledWith(error);
+  });
+
+  test("setThemePreference does not roll back if a newer mutation superseded it", async () => {
+    // Start a mutation to "light"
+    mockSetThemePreference.mockResolvedValue(
+      makeAppSettings({ theme_preference: "light" }),
+    );
+    const firstPromise = store.getState().setThemePreference("light");
+
+    // Before it resolves, start a second mutation to "system"
+    mockSetThemePreference.mockResolvedValue(
+      makeAppSettings({ theme_preference: "system" }),
+    );
+    const secondPromise = store.getState().setThemePreference("system");
+
+    await firstPromise;
+    await secondPromise;
+
+    // The second mutation wins; the first's syncPatch is skipped because the
+    // generation no longer matches.
+    expect(store.getState().themePreference).toBe("system");
   });
 });

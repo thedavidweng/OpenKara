@@ -252,6 +252,16 @@ const LYRICS_COMMANDS: CommandContract[] = [
   },
 ];
 
+const SETTINGS_COMMANDS: CommandContract[] = [
+  {
+    command: "set_theme_preference",
+    frontendFile: "src/lib/tauri/settings.ts",
+    frontendFn: "setThemePreference",
+    hasArgs: true,
+    rustParams: ["preference"],
+  },
+];
+
 const SEPARATION_COMMANDS: CommandContract[] = [
   {
     command: "separate",
@@ -294,6 +304,7 @@ const ALL_COMMANDS = [
   ...LIBRARY_COMMANDS,
   ...LYRICS_COMMANDS,
   ...SEPARATION_COMMANDS,
+  ...SETTINGS_COMMANDS,
 ];
 
 // ─── Command Name Registry Tests ───────────────────────────────────────
@@ -361,6 +372,12 @@ describe("IPC command registry", () => {
     ];
     const registered = LYRICS_COMMANDS.map((c) => c.command);
     expect(registered.sort()).toEqual(expectedLyricsCommands.sort());
+  });
+
+  test("settings commands match contract documentation", () => {
+    const expectedSettingsCommands = ["set_theme_preference"];
+    const registered = SETTINGS_COMMANDS.map((c) => c.command);
+    expect(registered.sort()).toEqual(expectedSettingsCommands.sort());
   });
 
   test("separation commands match contract documentation", () => {
@@ -1029,6 +1046,7 @@ describe("AppSettings shape matches Rust AppSettings", () => {
       lyrics_font_step: 0,
       execution_provider: "cpu",
       available_execution_providers: ["cpu", "xnnpack"],
+      theme_preference: "dark",
     };
     expect(settings).toHaveProperty("stem_mode");
     expect(settings).toHaveProperty("model_variant");

@@ -63,6 +63,7 @@ export function createSettingsOverlayTestContextValue(
       deleteModel: async () => {},
       toggleHideBatchSeparate: async () => {},
       toggleCoverArtBackdrop: async () => {},
+      setThemePreference: async () => {},
       openDeleteStemsDialog: async () => {},
       confirmDeleteStems: async () => {},
       openDowngradeDialog: async () => {},

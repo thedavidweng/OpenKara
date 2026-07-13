@@ -31,6 +31,7 @@ vi.mock("@/stores/settings-store", () => ({
         lyricsFontStep: 0,
         executionProvider: "xnnpack",
         availableExecutionProviders: ["cpu", "xnnpack"],
+        themePreference: "dark",
       }),
     }),
   },
@@ -80,6 +81,7 @@ function createDependencies(): SettingsOverlayControllerDependencies {
       setLanguage: vi.fn(),
       setModelVariant: vi.fn(),
       setStemMode: vi.fn(),
+      setThemePreference: vi.fn(),
     },
     notifyError: vi.fn(),
     openDirectory: vi.fn(),
@@ -112,10 +114,12 @@ function createDependencies(): SettingsOverlayControllerDependencies {
           lyricsFontStep: 0,
           executionProvider: "xnnpack",
           availableExecutionProviders: ["cpu", "xnnpack"],
+          themePreference: "dark",
         }),
       ),
       hydrateAppSettings: vi.fn(),
       patchAppSettings: vi.fn(),
+      setThemePreference: vi.fn(),
     },
   };
 }
@@ -135,6 +139,7 @@ function createHarness(overrides?: {
           lyricsFontStep: 0,
           executionProvider: "xnnpack",
           availableExecutionProviders: ["cpu", "xnnpack"],
+          themePreference: "dark",
           ...overrides.initialSettings,
         }
       : undefined,
@@ -180,6 +185,7 @@ describe("createInitialSettingsOverlaySnapshot", () => {
         coverArtBackdrop: true,
         executionProvider: "xnnpack",
         availableExecutionProviders: ["cpu", "xnnpack"],
+        themePreference: "dark",
       },
       meta: {
         isInitializing: true,
@@ -204,6 +210,7 @@ describe("createInitialSettingsOverlaySnapshot", () => {
       lyricsFontStep: 0,
       executionProvider: "cpu",
       availableExecutionProviders: ["cpu"],
+      themePreference: "dark",
     });
 
     expect(snapshot.state.language).toBe("en");
@@ -223,6 +230,7 @@ describe("createInitialSettingsOverlaySnapshot", () => {
       lyricsFontStep: 3,
       executionProvider: "xnnpack",
       availableExecutionProviders: ["cpu", "xnnpack"],
+      themePreference: "dark",
     });
 
     expect(snapshot.state.language).toBe("ko");
@@ -258,6 +266,7 @@ describe("createSettingsOverlayActions - initialize", () => {
       lyrics_font_step: 1,
       execution_provider: "cpu",
       available_execution_providers: ["cpu"],
+      theme_preference: "dark",
     });
     vi.mocked(harness.dependencies.api.getModelStatus)
       .mockResolvedValueOnce({
@@ -296,6 +305,7 @@ describe("createSettingsOverlayActions - initialize", () => {
       lyrics_font_step: 1,
       execution_provider: "cpu",
       available_execution_providers: ["cpu"],
+      theme_preference: "dark",
     });
     expect(harness.getSnapshot().state.libraryPath).toBe("/music");
     expect(harness.getSnapshot().state.stemMode).toBe("two_stem");
@@ -320,6 +330,7 @@ describe("createSettingsOverlayActions - initialize", () => {
       lyrics_font_step: 0,
       execution_provider: "xnnpack",
       available_execution_providers: ["cpu", "xnnpack"],
+      theme_preference: "dark",
     });
     vi.mocked(harness.dependencies.api.getModelStatus)
       .mockResolvedValueOnce({

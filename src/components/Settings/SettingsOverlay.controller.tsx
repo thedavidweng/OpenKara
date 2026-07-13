@@ -83,6 +83,7 @@ export function SettingsOverlayProvider({
           useSettingsStore.getState().getAppSettingsSnapshot,
         hydrateAppSettings: useSettingsStore.getState().hydrateAppSettings,
         patchAppSettings: useSettingsStore.getState().patchAppSettings,
+        setThemePreference: useSettingsStore.getState().setThemePreference,
       },
     }),
     [i18n],

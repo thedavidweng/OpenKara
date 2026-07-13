@@ -11,7 +11,7 @@ export function EmptyLibrary() {
         {t("library.noTracks")}
       </p>
       <ImportButton>
-        <span className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-hover)] px-3 py-1 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-active)] hover:text-white">
+        <span className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-hover)] px-3 py-1 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-active)] hover:text-[var(--color-text)]">
           {t("library.importMusic")}
         </span>
       </ImportButton>

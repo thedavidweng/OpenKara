@@ -58,6 +58,7 @@ function createControllerHarness() {
       setLanguage: vi.fn(),
       setModelVariant: vi.fn(),
       setStemMode: vi.fn(),
+      setThemePreference: vi.fn(),
     },
     notifyError: vi.fn(),
     openDirectory: vi.fn(),
@@ -90,10 +91,12 @@ function createControllerHarness() {
           lyricsFontStep: 0,
           executionProvider: "xnnpack",
           availableExecutionProviders: ["cpu", "xnnpack"],
+          themePreference: "dark",
         }),
       ),
       hydrateAppSettings: vi.fn(),
       patchAppSettings: vi.fn(),
+      setThemePreference: vi.fn(),
     },
   };
 
@@ -142,6 +145,7 @@ describe("SettingsOverlay controller", () => {
       lyrics_font_step: 0,
       execution_provider: "xnnpack",
       available_execution_providers: ["cpu", "xnnpack"],
+      theme_preference: "dark",
     });
     vi.mocked(harness.dependencies.api.getModelStatus)
       .mockResolvedValueOnce({
@@ -173,6 +177,7 @@ describe("SettingsOverlay controller", () => {
       lyrics_font_step: 0,
       execution_provider: "xnnpack",
       available_execution_providers: ["cpu", "xnnpack"],
+      theme_preference: "dark",
     });
     expect(harness.getSnapshot()).toMatchObject({
       state: {
@@ -554,6 +559,7 @@ describe("SettingsOverlay controller", () => {
       lyrics_font_step: 0,
       execution_provider: "xnnpack",
       available_execution_providers: ["cpu", "xnnpack"],
+      theme_preference: "dark",
     });
 
     await harness.actions.selectModelVariant("htdemucs");
@@ -683,6 +689,7 @@ describe("SettingsOverlay controller", () => {
       lyrics_font_step: 0,
       execution_provider: "xnnpack",
       available_execution_providers: ["cpu", "xnnpack"],
+      theme_preference: "dark",
     });
 
     await harness.actions.toggleHideBatchSeparate(true);

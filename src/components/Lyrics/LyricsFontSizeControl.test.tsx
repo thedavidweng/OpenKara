@@ -64,7 +64,7 @@ describe("LyricsFontSizeControl", () => {
 
     const markup = renderToStaticMarkup(<LyricsFontSizeControl />);
 
-    expect(markup).toContain("text-white");
+    expect(markup).toContain("text-[var(--color-text)]");
   });
 
   test("uses dimmer text for the step label at default", () => {

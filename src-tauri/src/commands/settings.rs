@@ -1,5 +1,7 @@
 use crate::commands::error::{internal_error, CommandResult};
-use crate::config::{self, AppConfig, ExecutionProviderPreference, ModelVariant, StemMode};
+use crate::config::{
+    self, AppConfig, ExecutionProviderPreference, ModelVariant, StemMode, ThemePreference,
+};
 use serde::Serialize;
 use std::path::Path;
 use tauri::{AppHandle, Manager, State};
@@ -16,6 +18,7 @@ pub struct AppSettings {
     pub lyrics_font_step: i8,
     pub execution_provider: String,
     pub available_execution_providers: Vec<&'static str>,
+    pub theme_preference: String,
 }
 
 fn settings_from_config(config: &AppConfig) -> AppSettings {
@@ -35,6 +38,7 @@ fn settings_from_config(config: &AppConfig) -> AppSettings {
         execution_provider: ep.as_str().to_owned(),
         available_execution_providers: ExecutionProviderPreference::available_for_current_platform(
         ),
+        theme_preference: config.effective_theme_preference().as_str().to_owned(),
     }
 }
 
@@ -213,6 +217,26 @@ pub fn set_execution_provider(
 }
 
 #[tauri::command]
+pub fn set_theme_preference(
+    app_handle: AppHandle,
+    preference: String,
+) -> CommandResult<AppSettings> {
+    let theme = ThemePreference::parse(&preference)
+        .ok_or_else(|| internal_error(format!("invalid theme preference: {preference}")))?;
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| internal_error(format!("failed to get app data dir: {e}")))?;
+    let mut config = config::load_config(&app_data_dir)
+        .map_err(|e| internal_error(format!("failed to load config: {e}")))?
+        .unwrap_or_default();
+    config.theme_preference = Some(theme);
+    config::save_config(&app_data_dir, &config)
+        .map_err(|e| internal_error(format!("failed to save config: {e}")))?;
+    Ok(settings_from_config(&config))
+}
+
+#[tauri::command]
 pub fn restart_app(app_handle: AppHandle) {
     app_handle.request_restart();
 }
@@ -347,5 +371,26 @@ mod tests {
                 .is_none(),
             "rejected validation must not create a config file",
         );
+    }
+
+    #[test]
+    fn settings_snapshot_defaults_theme_preference_to_dark() {
+        let settings = settings_from_config(&AppConfig::default());
+        assert_eq!(settings.theme_preference, "dark");
+    }
+
+    #[test]
+    fn settings_snapshot_reflects_persisted_theme_preference() {
+        for (preference, expected) in [
+            (ThemePreference::System, "system"),
+            (ThemePreference::Light, "light"),
+            (ThemePreference::Dark, "dark"),
+        ] {
+            let settings = settings_from_config(&AppConfig {
+                theme_preference: Some(preference),
+                ..AppConfig::default()
+            });
+            assert_eq!(settings.theme_preference, expected);
+        }
     }
 }

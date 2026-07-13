@@ -58,7 +58,7 @@ describe("LyricsOffsetControl", () => {
 
     const markup = renderToStaticMarkup(<LyricsOffsetControl />);
 
-    expect(markup).toContain("text-white");
+    expect(markup).toContain("text-[var(--color-text)]");
   });
 
   test("uses dimmer text when offset is zero", () => {

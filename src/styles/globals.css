@@ -5,23 +5,6 @@
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
     "PingFang SC", "Hiragino Sans", "Noto Sans CJK JP", "Noto Sans CJK SC",
     "Microsoft YaHei", "WenQuanYi Micro Hei", Ubuntu, sans-serif;
-  --color-surface: #121212;
-  --color-surface-muted: #171719;
-  --color-sidebar: #1c1c1e;
-  --color-toolbar: #1c1c1e;
-  --color-border: #2c2c2e;
-  --color-border-light: #38383a;
-  --color-hover: #2c2c2e;
-  --color-active: #3a3a3c;
-  --color-text: #d1d1d6;
-  --color-text-dim: #8e8e93;
-  --color-text-dimmer: #48484a;
-  --color-accent: #007aff;
-  --color-control-primary: #ebebf5;
-  --color-control-primary-foreground: #121212;
-  --color-destructive: #ff3b30;
-  --color-destructive-foreground: #f5f5f7;
-  --color-ghost-hover: rgba(255, 255, 255, 0.04);
   --panel-blur: 20px;
 }
 
@@ -51,7 +34,47 @@
     /* Main stage pocket radius — Spotify-like soft arc, no hairline frame. */
     --shell-content-radius: 12px;
     --sidebar-item-radius: 6px;
-    /* Unified chrome tokens (formerly split between “classic” vs native-only names). */
+  }
+
+  /* ── Dark theme tokens (default) ────────────────────────── */
+  :root,
+  :root[data-theme="dark"] {
+    --color-surface: #121212;
+    --color-surface-muted: #171719;
+    --color-sidebar: #1c1c1e;
+    --color-toolbar: #1c1c1e;
+    --color-border: #2c2c2e;
+    --color-border-light: #38383a;
+    --color-hover: #2c2c2e;
+    --color-active: #3a3a3c;
+    --color-text: #d1d1d6;
+    --color-text-dim: #8e8e93;
+    --color-text-dimmer: #48484a;
+    --color-accent: #007aff;
+    --color-control-primary: #ebebf5;
+    --color-control-primary-foreground: #121212;
+    --color-destructive: #ff3b30;
+    --color-destructive-foreground: #f5f5f7;
+    --color-ghost-hover: rgba(255, 255, 255, 0.04);
+    /* Semantic tokens consumed by audited components. */
+    --color-on-accent: #ffffff;
+    --color-on-media: #ffffff;
+    --color-scrim: rgba(0, 0, 0, 0.5);
+    --color-focus-ring: rgba(0, 122, 255, 0.6);
+    --color-control-selected-bg: color-mix(
+      in srgb,
+      var(--color-accent) 24%,
+      rgba(255, 255, 255, 0.03)
+    );
+    --color-control-selected-border: color-mix(
+      in srgb,
+      var(--color-accent) 40%,
+      rgba(255, 255, 255, 0.12)
+    );
+    --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --shadow-dialog: 0 16px 48px rgba(0, 0, 0, 0.6);
+    --shadow-control-selected: 0 0 0 1px var(--color-control-selected-border);
+    /* Unified chrome tokens (formerly split between "classic" vs native-only names). */
     --sidebar-row-overlay-bg: rgba(255, 255, 255, 0.045);
     --sidebar-row-selected-bg: color-mix(
       in srgb,
@@ -69,13 +92,90 @@
     --chrome-floating-border: rgba(255, 255, 255, 0.11);
     /*
      * Semantic scrollbar tokens — neutral gray dark-theme defaults shared by every
-     * platform. #96 overrides these per resolved theme. Components never use
-     * platform-specific literal scrollbar colors; descendants consume these vars.
+     * platform. Components never use platform-specific literal scrollbar colors;
+     * descendants consume these vars.
      */
     --scrollbar-thumb: #6e6e73;
     --scrollbar-thumb-hover: #8e8e93;
     --scrollbar-thumb-active: #aeaeb2;
     --scrollbar-track: transparent;
+  }
+
+  /* ── Light theme tokens ─────────────────────────────────── */
+  :root[data-theme="light"] {
+    --color-surface: #ffffff;
+    --color-surface-muted: #f5f5f7;
+    --color-sidebar: #ececf0;
+    --color-toolbar: #f2f2f5;
+    --color-border: #d1d1d6;
+    --color-border-light: #c7c7cc;
+    --color-hover: #e5e5ea;
+    --color-active: #d8d8dc;
+    --color-text: #1c1c1e;
+    --color-text-dim: #5f5f64;
+    --color-text-dimmer: #7c7c80;
+    --color-accent: #007aff;
+    --color-control-primary: #1c1c1e;
+    --color-control-primary-foreground: #ffffff;
+    --color-destructive: #d70015;
+    --color-destructive-foreground: #ffffff;
+    --color-ghost-hover: rgba(0, 0, 0, 0.055);
+    --color-on-accent: #ffffff;
+    --color-on-media: #ffffff;
+    --color-scrim: rgba(0, 0, 0, 0.3);
+    --color-focus-ring: rgba(0, 122, 255, 0.6);
+    --color-control-selected-bg: color-mix(
+      in srgb,
+      var(--color-accent) 18%,
+      rgba(0, 0, 0, 0.03)
+    );
+    --color-control-selected-border: color-mix(
+      in srgb,
+      var(--color-accent) 35%,
+      rgba(0, 0, 0, 0.08)
+    );
+    --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.15);
+    --shadow-dialog: 0 16px 48px rgba(0, 0, 0, 0.2);
+    --shadow-control-selected: 0 0 0 1px var(--color-control-selected-border);
+    --sidebar-row-overlay-bg: rgba(0, 0, 0, 0.04);
+    --sidebar-row-selected-bg: color-mix(
+      in srgb,
+      var(--color-accent) 18%,
+      rgba(0, 0, 0, 0.03)
+    );
+    --sidebar-row-selected-border: color-mix(
+      in srgb,
+      var(--color-accent) 35%,
+      rgba(0, 0, 0, 0.08)
+    );
+    --sidebar-control-border: rgba(0, 0, 0, 0.08);
+    --sidebar-control-bg: rgba(0, 0, 0, 0.04);
+    --chrome-floating-bg: rgba(255, 255, 255, 0.8);
+    --chrome-floating-border: rgba(0, 0, 0, 0.1);
+    --scrollbar-thumb: #a0a0a5;
+    --scrollbar-thumb-hover: #7c7c80;
+    --scrollbar-thumb-active: #636366;
+    --scrollbar-track: transparent;
+  }
+
+  /*
+   * Audience/fullscreen presentation stays explicitly dark regardless of the
+   * primary theme preference. Tauri's native application theme is process-wide
+   * on some platforms, so the CSS marker is the authoritative isolation.
+   */
+  :root[data-presentation-mode="audience"],
+  :root[data-presentation-mode="audience"] body {
+    color-scheme: dark;
+    /* Audience stage tokens remain the current dark/black set. */
+    --color-surface: #000000;
+    --color-sidebar: #000000;
+    --color-toolbar: #000000;
+    --color-text: #ffffff;
+    --color-text-dim: rgba(255, 255, 255, 0.6);
+    --color-text-dimmer: rgba(255, 255, 255, 0.4);
+    --color-border: rgba(255, 255, 255, 0.1);
+    --color-border-light: rgba(255, 255, 255, 0.15);
+    --color-on-media: #ffffff;
   }
 
   /*
@@ -89,13 +189,18 @@
     color-scheme: dark;
   }
 
+  :root[data-theme="light"][data-window-chrome-platform="mac"] {
+    color-scheme: light;
+  }
+
   [data-window-chrome-platform="mac"],
   [data-window-chrome-platform="mac"] * {
     scrollbar-color: auto;
     scrollbar-width: auto;
   }
 
-  [data-window-chrome-platform="desktop"] {
+  /* ── Desktop (Windows/Linux) dark overrides ─────────────── */
+  :root[data-theme="dark"] [data-window-chrome-platform="desktop"] {
     --font-sans:
       "Segoe UI Variable Text", "Segoe UI", "Noto Sans", "Liberation Sans",
       "PingFang SC", "Microsoft YaHei", Ubuntu, sans-serif;
@@ -116,6 +221,30 @@
     --color-ghost-hover: rgba(255, 255, 255, 0.06);
     --panel-blur: 12px;
     color-scheme: dark;
+  }
+
+  /* ── Desktop (Windows/Linux) light overrides ────────────── */
+  :root[data-theme="light"] [data-window-chrome-platform="desktop"] {
+    --font-sans:
+      "Segoe UI Variable Text", "Segoe UI", "Noto Sans", "Liberation Sans",
+      "PingFang SC", "Microsoft YaHei", Ubuntu, sans-serif;
+    --color-surface: #f9f9fb;
+    --color-surface-muted: #f0f0f3;
+    --color-sidebar: #e8e8ec;
+    --color-toolbar: #f2f2f5;
+    --color-border: #d1d1d6;
+    --color-border-light: #c7c7cc;
+    --color-hover: #e5e5ea;
+    --color-active: #d8d8dc;
+    --color-text: #1c1c1e;
+    --color-text-dim: #5f5f64;
+    --color-text-dimmer: #7c7c80;
+    --color-accent: #3f8cff;
+    --color-control-primary: #1c1c1e;
+    --color-control-primary-foreground: #ffffff;
+    --color-ghost-hover: rgba(0, 0, 0, 0.055);
+    --panel-blur: 12px;
+    color-scheme: light;
   }
 
   /*
@@ -190,7 +319,7 @@
     }
   }
 
-  [data-window-shell-tier="mac"] {
+  :root[data-theme="dark"] [data-window-shell-tier="mac"] {
     --color-surface: #161618;
     --color-surface-muted: #1a1a1d;
     --color-sidebar: #1d1d20;
@@ -206,6 +335,26 @@
     --color-control-primary: #f5f5f7;
     --color-control-primary-foreground: #18181b;
     --color-ghost-hover: rgba(255, 255, 255, 0.06);
+    --panel-blur: 8px;
+    --sidebar-item-radius: 10px;
+  }
+
+  :root[data-theme="light"] [data-window-shell-tier="mac"] {
+    --color-surface: #ffffff;
+    --color-surface-muted: #f5f5f7;
+    --color-sidebar: #ececf0;
+    --color-toolbar: #f2f2f5;
+    --color-border: #d1d1d6;
+    --color-border-light: #c7c7cc;
+    --color-hover: #e5e5ea;
+    --color-active: #d8d8dc;
+    --color-text: #1c1c1e;
+    --color-text-dim: #5f5f64;
+    --color-text-dimmer: #7c7c80;
+    --color-accent: #0a84ff;
+    --color-control-primary: #1c1c1e;
+    --color-control-primary-foreground: #ffffff;
+    --color-ghost-hover: rgba(0, 0, 0, 0.055);
     --panel-blur: 8px;
     --sidebar-item-radius: 10px;
   }

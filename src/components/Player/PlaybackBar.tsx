@@ -144,7 +144,7 @@ export function PlaybackBar({ densityOverride }: PlaybackBarProps = {}) {
                 onClick={handleMasterMuteToggle}
                 className={`motion-icon-button min-h-11 min-w-11 rounded-full p-1.5 hover:bg-[var(--color-ghost-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
                   volume > 0
-                    ? "text-[var(--color-control-primary)] hover:text-white"
+                    ? "text-[var(--color-control-primary)] hover:text-[var(--color-text)]"
                     : "text-[var(--color-text-dimmer)]"
                 }`}
                 aria-label={

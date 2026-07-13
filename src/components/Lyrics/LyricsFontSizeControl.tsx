@@ -28,7 +28,7 @@ export function LyricsFontSizeControl({
     >
       <button
         onClick={() => void adjustLyricsFontStep(-1)}
-        className="motion-surface rounded-full border border-[var(--color-border-light)] px-2.5 py-1 font-medium hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[color-mix(in_srgb,var(--color-hover)_72%,transparent)] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
+        className="motion-surface rounded-full border border-[var(--color-border-light)] px-2.5 py-1 font-medium hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[color-mix(in_srgb,var(--color-hover)_72%,transparent)] hover:text-[var(--color-text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
         aria-label={t("lyrics.fontSizeDecrease")}
       >
         A-
@@ -36,7 +36,9 @@ export function LyricsFontSizeControl({
       <div className="min-w-[3.25rem] text-center">
         <div
           className={`font-[tabular-nums] text-[12px] font-medium ${
-            lyricsFontStep === 0 ? "text-[var(--color-text)]" : "text-white"
+            lyricsFontStep === 0
+              ? "text-[var(--color-text)]"
+              : "text-[var(--color-text)]"
           }`}
         >
           {FONT_STEP_LABELS[lyricsFontStep] ?? "M"}
@@ -44,14 +46,14 @@ export function LyricsFontSizeControl({
       </div>
       <button
         onClick={() => void adjustLyricsFontStep(1)}
-        className="motion-surface rounded-full border border-[var(--color-border-light)] px-2.5 py-1 font-medium hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[color-mix(in_srgb,var(--color-hover)_72%,transparent)] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
+        className="motion-surface rounded-full border border-[var(--color-border-light)] px-2.5 py-1 font-medium hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[color-mix(in_srgb,var(--color-hover)_72%,transparent)] hover:text-[var(--color-text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
         aria-label={t("lyrics.fontSizeIncrease")}
       >
         A+
       </button>
       <button
         onClick={() => void resetLyricsFontStep()}
-        className="motion-surface rounded-full border border-[var(--color-border-light)] px-2.5 py-1 font-medium hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[color-mix(in_srgb,var(--color-hover)_72%,transparent)] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
+        className="motion-surface rounded-full border border-[var(--color-border-light)] px-2.5 py-1 font-medium hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[color-mix(in_srgb,var(--color-hover)_72%,transparent)] hover:text-[var(--color-text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
         aria-label={t("lyrics.fontSizeReset")}
       >
         {t("lyrics.fontSizeResetShort")}

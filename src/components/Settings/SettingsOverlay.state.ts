@@ -52,6 +52,7 @@ export function createInitialSettingsOverlaySnapshot(
       coverArtBackdrop: initialSettings.coverArtBackdrop,
       executionProvider: initialSettings.executionProvider,
       availableExecutionProviders: initialSettings.availableExecutionProviders,
+      themePreference: initialSettings.themePreference,
     },
     meta: {
       isInitializing: true,
@@ -260,6 +261,7 @@ export function createSettingsOverlayActions(
           executionProvider: settingsResult.value.execution_provider,
           availableExecutionProviders:
             settingsResult.value.available_execution_providers,
+          themePreference: settingsResult.value.theme_preference,
         });
       } else {
         dependencies.notifyError(settingsResult.reason);

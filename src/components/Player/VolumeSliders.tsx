@@ -264,11 +264,11 @@ export function VolumeSliders({
             aria-label={triggerLabel}
             className={`motion-icon-button flex min-h-11 min-w-11 rounded-xl p-2.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
               stemsAvailable
-                ? "text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-white"
+                ? "text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-text)]"
                 : "text-[var(--color-text-dimmer)]"
             } ${
               isExpanded
-                ? "bg-[color-mix(in_srgb,var(--color-hover)_86%,transparent)] text-white shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
+                ? "bg-[color-mix(in_srgb,var(--color-hover)_86%,transparent)] text-[var(--color-text)] shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
                 : ""
             }`}
           >
@@ -402,7 +402,7 @@ function StemSlider({
           disabled={disabled || !onIconClick}
           className={`motion-icon-button rounded-full p-1 ${
             !disabled && value > 0
-              ? "text-[var(--color-control-primary)] hover:bg-[var(--color-ghost-hover)] hover:text-white"
+              ? "text-[var(--color-control-primary)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-text)]"
               : "text-[var(--color-text-dimmer)]"
           }`}
           aria-label={onIconClick ? muteLabel : label}

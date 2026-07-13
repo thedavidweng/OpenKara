@@ -35,7 +35,7 @@ export class ErrorBoundary extends Component<
     if (this.state.hasError) {
       return (
         <div className="flex h-screen flex-col items-center justify-center gap-4 bg-[var(--color-bg)] p-8 text-center">
-          <h1 className="text-xl font-semibold text-white">
+          <h1 className="text-xl font-semibold text-[var(--color-text)]">
             Something went wrong
           </h1>
           <p className="max-w-md text-[13px] text-[var(--color-text-dim)]">
@@ -43,7 +43,7 @@ export class ErrorBoundary extends Component<
           </p>
           <button
             onClick={this.handleReload}
-            className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-[13px] text-white transition-colors hover:bg-[var(--color-accent-hover)]"
+            className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-[13px] text-[var(--color-on-accent)] transition-colors hover:bg-[var(--color-accent-hover)]"
           >
             Reload
           </button>

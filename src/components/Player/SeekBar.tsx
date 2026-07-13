@@ -117,14 +117,14 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
         <div
           className={`relative h-full rounded-full transition-colors ${
             isDragging
-              ? "bg-white"
-              : "bg-[var(--color-text-dim)] group-hover:bg-white"
+              ? "bg-[var(--color-control-primary)]"
+              : "bg-[var(--color-text-dim)] group-hover:bg-[var(--color-control-primary)]"
           }`}
           style={{ width: `${displayPercent}%` }}
         >
           {/* Playhead dot — visible on hover and during drag */}
           <div
-            className={`absolute -right-1.5 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-white shadow-sm transition-opacity ${
+            className={`absolute -right-1.5 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-[var(--color-control-primary)] shadow-sm transition-opacity ${
               isDragging ? "opacity-100" : "opacity-0 group-hover:opacity-100"
             }`}
           />

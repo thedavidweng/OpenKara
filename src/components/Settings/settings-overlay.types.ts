@@ -12,6 +12,7 @@ import type {
   RegisteredLibrary,
   RuntimeBootstrapState,
   StemMode,
+  ThemePreference,
 } from "@/types/ipc";
 
 export type DangerDialog =
@@ -50,6 +51,7 @@ export interface SettingsOverlayState {
   coverArtBackdrop: boolean;
   executionProvider: ExecutionProvider;
   availableExecutionProviders: ExecutionProvider[];
+  themePreference: ThemePreference;
 }
 
 export interface SettingsOverlayMeta {
@@ -85,6 +87,7 @@ export interface SettingsOverlayActions {
   deleteModel: (variant: ModelVariant) => Promise<void>;
   toggleHideBatchSeparate: (value: boolean) => Promise<void>;
   toggleCoverArtBackdrop: (value: boolean) => Promise<void>;
+  setThemePreference: (preference: ThemePreference) => Promise<void>;
   openDeleteStemsDialog: () => Promise<void>;
   confirmDeleteStems: () => Promise<void>;
   openDowngradeDialog: () => Promise<void>;
@@ -135,6 +138,7 @@ export interface SettingsOverlayControllerDependencies {
     | "setLanguage"
     | "setModelVariant"
     | "setStemMode"
+    | "setThemePreference"
   >;
   notifyError: (error: unknown) => void;
   openDirectory: typeof open;
@@ -152,7 +156,10 @@ export interface SettingsOverlayControllerDependencies {
   lyricsStore: Pick<ReturnType<typeof useLyricsStore.getState>, "clear">;
   settingsStore: Pick<
     ReturnType<typeof useSettingsStore.getState>,
-    "getAppSettingsSnapshot" | "hydrateAppSettings" | "patchAppSettings"
+    | "getAppSettingsSnapshot"
+    | "hydrateAppSettings"
+    | "patchAppSettings"
+    | "setThemePreference"
   >;
 }
 

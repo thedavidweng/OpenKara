@@ -106,6 +106,7 @@ function createHarness(overrides?: {
       coverArtBackdrop: false,
       executionProvider: "xnnpack",
       availableExecutionProviders: ["cpu", "xnnpack"],
+      themePreference: "dark",
     },
     meta: {
       isInitializing: false,
@@ -131,6 +132,7 @@ function createHarness(overrides?: {
       setLanguage: vi.fn(),
       restartApp: vi.fn().mockResolvedValue(undefined),
       setStemMode: vi.fn(),
+      setThemePreference: vi.fn(),
       setExecutionProvider: vi.fn(),
       setHideBatchSeparate: vi.fn(),
       setCoverArtBackdrop: vi.fn(),
@@ -171,6 +173,7 @@ function createHarness(overrides?: {
       getAppSettingsSnapshot: vi.fn(),
       hydrateAppSettings: vi.fn(),
       patchAppSettings: vi.fn(),
+      setThemePreference: vi.fn(),
     },
   };
 
@@ -758,6 +761,52 @@ describe("createLibrarySettingsActions", () => {
       await harness.actions.toggleCoverArtBackdrop(false);
 
       expect(harness.dependencies.notifyError).toHaveBeenCalled();
+    });
+  });
+
+  // ---- setThemePreference ----
+
+  describe("setThemePreference", () => {
+    test("patches overlay state and delegates to settings store", async () => {
+      const harness = createHarness();
+      harness.dependencies.settingsStore.setThemePreference.mockResolvedValue(
+        undefined,
+      );
+      harness.dependencies.settingsStore.getAppSettingsSnapshot.mockReturnValue(
+        {
+          themePreference: "light",
+        },
+      );
+
+      await harness.actions.setThemePreference("light");
+
+      expect(harness.patchState).toHaveBeenCalledWith({
+        themePreference: "light",
+      });
+      expect(
+        harness.dependencies.settingsStore.setThemePreference,
+      ).toHaveBeenCalledWith("light");
+    });
+
+    test("mirrors the final store snapshot after the store action resolves", async () => {
+      const harness = createHarness();
+      harness.dependencies.settingsStore.setThemePreference.mockResolvedValue(
+        undefined,
+      );
+      // Simulate a rollback: the user picked "light" but the store rolled
+      // back to "dark".
+      harness.dependencies.settingsStore.getAppSettingsSnapshot.mockReturnValue(
+        {
+          themePreference: "dark",
+        },
+      );
+
+      await harness.actions.setThemePreference("light");
+
+      // The final patchState call should mirror the rolled-back store value.
+      expect(harness.patchState).toHaveBeenLastCalledWith({
+        themePreference: "dark",
+      });
     });
   });
 });

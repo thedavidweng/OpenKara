@@ -10,6 +10,7 @@ import type {
   ExecutionProvider,
   ModelVariant,
   StemMode,
+  ThemePreference,
 } from "@/types/ipc";
 
 export interface AppSettingsSnapshot {
@@ -22,6 +23,7 @@ export interface AppSettingsSnapshot {
   lyricsFontStep: number;
   executionProvider: ExecutionProvider;
   availableExecutionProviders: ExecutionProvider[];
+  themePreference: ThemePreference;
 }
 
 interface SettingsState {
@@ -35,6 +37,9 @@ interface SettingsState {
   lyricsFontStep: AppSettingsSnapshot["lyricsFontStep"];
   executionProvider: AppSettingsSnapshot["executionProvider"];
   availableExecutionProviders: AppSettingsSnapshot["availableExecutionProviders"];
+  themePreference: AppSettingsSnapshot["themePreference"];
+  /** Monotonic generation for optimistic theme-preference mutations. */
+  themePreferenceMutationGeneration: number;
   toggle: () => void;
   close: () => void;
   open: () => void;
@@ -43,10 +48,11 @@ interface SettingsState {
   setLyricsFontStep: (step: number) => Promise<void>;
   adjustLyricsFontStep: (delta: number) => Promise<void>;
   resetLyricsFontStep: () => Promise<void>;
+  setThemePreference: (preference: ThemePreference) => Promise<void>;
   getAppSettingsSnapshot: () => AppSettingsSnapshot;
 }
 
-const DEFAULT_APP_SETTINGS: AppSettingsSnapshot = {
+export const DEFAULT_APP_SETTINGS: AppSettingsSnapshot = {
   hydrated: false,
   stemMode: "two_stem",
   modelVariant: "htdemucs",
@@ -56,6 +62,7 @@ const DEFAULT_APP_SETTINGS: AppSettingsSnapshot = {
   lyricsFontStep: 0,
   executionProvider: "cpu",
   availableExecutionProviders: ["cpu"],
+  themePreference: "dark",
 };
 
 function toAppSettingsSnapshot(settings: AppSettings): AppSettingsSnapshot {
@@ -69,6 +76,7 @@ function toAppSettingsSnapshot(settings: AppSettings): AppSettingsSnapshot {
     lyricsFontStep: settings.lyrics_font_step,
     executionProvider: settings.execution_provider,
     availableExecutionProviders: settings.available_execution_providers,
+    themePreference: settings.theme_preference,
   };
 }
 
@@ -85,6 +93,7 @@ function selectAppSettingsSnapshot(
     lyricsFontStep: state.lyricsFontStep,
     executionProvider: state.executionProvider,
     availableExecutionProviders: state.availableExecutionProviders,
+    themePreference: state.themePreference,
   };
 }
 
@@ -110,9 +119,11 @@ function applySettingsSyncSnapshot(
     modelVariant: snapshot.modelVariant,
     language: snapshot.language,
     hideBatchSeparate: snapshot.hideBatchSeparate,
+    coverArtBackdrop: snapshot.coverArtBackdrop,
     lyricsFontStep: snapshot.lyricsFontStep,
     executionProvider: snapshot.executionProvider,
     availableExecutionProviders: snapshot.availableExecutionProviders,
+    themePreference: snapshot.themePreference,
   });
 }
 
@@ -130,6 +141,7 @@ export function createSettingsStore(
     return {
       isOpen: false,
       ...DEFAULT_APP_SETTINGS,
+      themePreferenceMutationGeneration: 0,
       toggle: () => syncPatch({ isOpen: !get().isOpen }),
       close: () => syncPatch({ isOpen: false }),
       open: () => syncPatch({ isOpen: true }),
@@ -157,6 +169,34 @@ export function createSettingsStore(
           return;
         }
         await get().setLyricsFontStep(0);
+      },
+      setThemePreference: async (preference) => {
+        if (get().themePreference === preference) {
+          return;
+        }
+
+        const generation = get().themePreferenceMutationGeneration + 1;
+        const previousSnapshot = selectAppSettingsSnapshot(get());
+
+        syncPatch({
+          themePreference: preference,
+          themePreferenceMutationGeneration: generation,
+        });
+
+        try {
+          const settings = await api.setThemePreference(preference);
+          if (get().themePreferenceMutationGeneration === generation) {
+            syncPatch(toAppSettingsSnapshot(settings));
+          }
+        } catch (error) {
+          if (get().themePreferenceMutationGeneration === generation) {
+            syncPatch({
+              ...previousSnapshot,
+              themePreferenceMutationGeneration: generation,
+            });
+            notifyError(error);
+          }
+        }
       },
       getAppSettingsSnapshot: () => selectAppSettingsSnapshot(get()),
     };

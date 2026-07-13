@@ -351,6 +351,7 @@ describe("settings", () => {
     lyrics_font_step: 0,
     execution_provider: "cpu" as const,
     available_execution_providers: ["cpu" as const],
+    theme_preference: "dark" as const,
   };
 
   test("getModelBootstrapStatus invokes get_model_bootstrap_status", async () => {
@@ -502,6 +503,15 @@ describe("settings", () => {
     const returned = await settings.setLyricsFontStep(2);
     expect(mockInvoke).toHaveBeenCalledWith("set_lyrics_font_step", {
       step: 2,
+    });
+    expect(returned).toBe(appSettings);
+  });
+
+  test("setThemePreference invokes set_theme_preference", async () => {
+    mockInvoke.mockResolvedValueOnce(appSettings);
+    const returned = await settings.setThemePreference("light");
+    expect(mockInvoke).toHaveBeenCalledWith("set_theme_preference", {
+      preference: "light",
     });
     expect(returned).toBe(appSettings);
   });
