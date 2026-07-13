@@ -162,4 +162,25 @@ describe("PeakMeter", () => {
       20,
     );
   });
+
+  it("falls back to flat-line when peaks go stale after playback stops", async () => {
+    // Simulate playback that was active (writeIndex > 0, non-empty peaks) but
+    // has now stopped — the backend keeps returning the same snapshot.
+    mockGetAudioPeaks.mockResolvedValue({
+      writeIndex: 5,
+      peaks: [[0.3, 0.4]],
+    });
+    render(<PeakMeter width={120} height={24} />);
+    // Let the initial poll land and record the advance time.
+    await vi.advanceTimersByTimeAsync(100);
+    const initialCount = canvasMock.ctx.clearRect.mock.calls.length;
+    // Advance well past the 500 ms staleness grace period.
+    await vi.advanceTimersByTimeAsync(600);
+    // The flat-line fallback should have triggered additional redraws
+    // (clearRect + fillRect for the baseline).
+    expect(canvasMock.ctx.clearRect.mock.calls.length).toBeGreaterThan(
+      initialCount,
+    );
+    expect(canvasMock.ctx.fillRect).toHaveBeenCalled();
+  });
 });

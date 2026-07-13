@@ -23,6 +23,10 @@ export function PeakMeter({
 } = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const lastWriteIndexRef = useRef(0);
+  // Timestamp of the last writeIndex advance. When the index stops moving
+  // (playback paused/stopped) the backend keeps returning the same non-empty
+  // snapshot, so we use elapsed time to fall back to the flat-line state.
+  const lastAdvanceRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,13 +95,25 @@ export function PeakMeter({
       try {
         const snapshot = await getAudioPeaks();
         if (cancelled) return;
-        // Only redraw if new data has been published.
-        if (
-          snapshot.writeIndex !== lastWriteIndexRef.current ||
-          snapshot.peaks.length === 0
-        ) {
+        const now = performance.now();
+        const advanced = snapshot.writeIndex !== lastWriteIndexRef.current;
+        if (advanced) {
           lastWriteIndexRef.current = snapshot.writeIndex;
+          lastAdvanceRef.current = now;
           draw(snapshot);
+        } else if (snapshot.peaks.length === 0) {
+          // Flat baseline when no audio has been published yet.
+          draw(snapshot);
+        } else {
+          // writeIndex unchanged with non-empty peaks: playback has likely
+          // stopped or paused. After a grace period, fall back to the flat-line
+          // state so the canvas does not freeze on the last waveform.
+          const stale =
+            lastAdvanceRef.current !== null &&
+            now - lastAdvanceRef.current > 500;
+          if (stale) {
+            draw({ ...snapshot, peaks: [] });
+          }
         }
       } catch {
         // Backend may be unavailable during startup — silently skip.
