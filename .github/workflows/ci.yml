@@ -403,6 +403,10 @@ jobs:
 
       - name: Verify execution-provider platform contract
         working-directory: src-tauri
+        env:
+          # The ort crate links onnxruntime.dll at build time even with
+          # load-dynamic; the test binary needs the DLL on PATH at startup.
+          PATH: ${{ github.workspace }}\src-tauri\generated\onnxruntime;${{ env.PATH }}
         run: cargo test -q --lib execution_provider
 
   tauri-build:
