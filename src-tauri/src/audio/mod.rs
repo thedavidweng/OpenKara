@@ -1,4 +1,5 @@
 pub mod chunked_cache;
+pub mod coordinator;
 pub mod decode;
 pub mod encode;
 pub mod error;

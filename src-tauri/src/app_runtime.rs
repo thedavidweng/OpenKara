@@ -1,3 +1,4 @@
+use crate::audio::coordinator::{spawn_coordinator, CoordinatorRuntime};
 use crate::library_root::LibraryRoot;
 use crate::state::{AirPlayState, AppShell, PlaybackState, RemoteState, SeparationState};
 use crate::{
@@ -143,14 +144,7 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
 
     // Construct domain states first — they are the source of truth for shared Arc references.
     let library = Arc::new(Mutex::new(load_library(app_config.as_ref())));
-    let playback_state = PlaybackState {
-        playback: Arc::clone(&playback),
-        cdg_state: Arc::clone(&cdg_state),
-        playback_request_id: Arc::new(AtomicU64::new(0)),
-        audio_output_started: Arc::new(AtomicBool::new(false)),
-        audio_output_start_lock: Arc::new(Mutex::new(())),
-        background_shutdown: Arc::new(Mutex::new(Arc::new(AtomicBool::new(false)))),
-    };
+    let (playback_state, command_rx) = PlaybackState::new(Arc::clone(&playback));
     let airplay_state = AirPlayState {
         airplay_audio_tap: Arc::clone(&airplay_audio_tap),
         airplay_stream_generation: Arc::clone(&airplay_stream_generation),
@@ -189,12 +183,29 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         lrcapi_client: crate::lyrics::lrcapi::LrcApiClient::new_default(),
     };
 
+    // Extract coordinator runtime Arcs before managing moves the states.
+    let coordinator_runtime = CoordinatorRuntime {
+        app_handle: app.handle().clone(),
+        playback: Arc::clone(&playback),
+        cdg_state: Arc::clone(&cdg_state),
+        latest_request_id: Arc::clone(&playback_state.playback_request_id),
+        output_started: Arc::clone(&playback_state.audio_output_started),
+        output_start_lock: Arc::clone(&playback_state.audio_output_start_lock),
+        airplay: airplay_state.clone(),
+        shutdown: Arc::clone(&shutdown),
+    };
+
     app.manage(playback_state);
     app.manage(airplay_state);
     app.manage(separation_state);
     app.manage(remote_state);
     app.manage(shell_state);
     app.manage(app_state);
+
+    // Spawn the PlaybackCoordinator before pre-warming the output thread.
+    // The coordinator serializes all control-plane mutations; the receiver
+    // is moved into the worker and only the sender remains in managed state.
+    spawn_coordinator(coordinator_runtime, command_rx);
 
     if let Err(err) = crate::services::playback::ensure_output_thread_inner(
         &playback_state_for_output.audio_output_started,
