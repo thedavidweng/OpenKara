@@ -509,8 +509,8 @@
     background-color: transparent;
   }
 
-  .playback-bar-action-button:hover:not(:disabled),
-  .playback-bar-action-button:focus-visible {
+  .playback-bar-action-button:hover:not(:disabled):not([data-active="true"]),
+  .playback-bar-action-button:focus-visible:not([data-active="true"]) {
     background-color: var(--color-ghost-hover);
   }
 
