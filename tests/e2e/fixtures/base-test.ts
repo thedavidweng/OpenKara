@@ -14,6 +14,24 @@ export interface NativeMenuSnapshot {
   popupPosition: { x: number; y: number } | null;
 }
 
+/**
+ * Patch accepted by `setPlaybackSnapshot`. Nested `stem_volumes` are merged
+ * per-stem rather than replaced wholesale.
+ */
+export interface PlaybackSnapshotPatch {
+  song_id?: string | null;
+  state?: string;
+  is_playing?: boolean;
+  position_ms?: number;
+  duration_ms?: number;
+  buffered_ms?: number;
+  volume?: number;
+  has_stems?: boolean;
+  stem_mode?: string | null;
+  stem_volumes?: Partial<Record<string, number>>;
+  transport_generation?: number;
+}
+
 export interface TauriMockHelpers {
   getInvokeCalls: () => Promise<TauriInvokeCall[]>;
   getLastNativeMenu: () => Promise<NativeMenuSnapshot | null>;
@@ -21,6 +39,11 @@ export interface TauriMockHelpers {
   clickNativeSubmenuItem: (parentLabel: string, label: string) => Promise<void>;
   setMockSongs: (songs: unknown[]) => Promise<void>;
   setMockLyrics: (lyrics: unknown) => Promise<void>;
+  setPlaybackSnapshot: (
+    patch: PlaybackSnapshotPatch,
+  ) => Promise<Record<string, unknown>>;
+  setSeparationCompleted: (songHash: string) => Promise<void>;
+  getPlaybackSnapshot: () => Promise<Record<string, unknown>>;
 }
 
 /**
@@ -57,6 +80,18 @@ export const test = base.extend<{ tauriMock: TauriMockHelpers }>({
         page.evaluate((s) => window.__OPENKARA_E2E__.setMockSongs(s), songs),
       setMockLyrics: (lyrics) =>
         page.evaluate((l) => window.__OPENKARA_E2E__.setMockLyrics(l), lyrics),
+      setPlaybackSnapshot: (patch) =>
+        page.evaluate(
+          (p) => window.__OPENKARA_E2E__.setPlaybackSnapshot(p),
+          patch,
+        ),
+      setSeparationCompleted: (songHash) =>
+        page.evaluate(
+          (hash) => window.__OPENKARA_E2E__.setSeparationCompleted(hash),
+          songHash,
+        ),
+      getPlaybackSnapshot: () =>
+        page.evaluate(() => window.__OPENKARA_E2E__.getPlaybackSnapshot()),
     });
   },
 });
@@ -83,6 +118,9 @@ declare global {
       setMockLyrics: (lyrics: unknown) => void;
       getInvokeCalls: () => TauriInvokeCall[];
       getLastNativeMenu: () => NativeMenuSnapshot | null;
+      setPlaybackSnapshot: (patch: unknown) => Record<string, unknown>;
+      setSeparationCompleted: (songHash: string) => void;
+      getPlaybackSnapshot: () => Record<string, unknown>;
     };
   }
 }

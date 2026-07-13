@@ -129,9 +129,21 @@ describe("PlaybackBar", () => {
   test("renders the active master volume icon with the same control brightness as stem icons", () => {
     const markup = renderToStaticMarkup(<PlaybackBar />);
 
-    expect(markup).toMatch(
-      /<button[^>]*class="[^"]*text-\[var\(--color-control-primary\)\][^"]*"[^>]*aria-label="Mute"/,
-    );
+    expect(markup).toContain('data-playback-action="master-mute"');
+    expect(markup).toContain('aria-label="Mute"');
+    expect(markup).toContain("text-[var(--color-control-primary)]");
+    expect(markup).not.toContain('data-active="true"');
+  });
+
+  test("renders the muted master volume button with active chrome and aria-pressed", () => {
+    mockPlayerState.snapshot.volume = 0;
+    const markup = renderToStaticMarkup(<PlaybackBar />);
+
+    expect(markup).toContain('aria-pressed="true"');
+    expect(markup).toContain('data-active="true"');
+    expect(markup).toContain('aria-label="Unmute"');
+    expect(markup).toContain("text-[var(--color-accent)]");
+    mockPlayerState.snapshot.volume = 0.72;
   });
 
   test("forwards the tight density to the responsive children", () => {

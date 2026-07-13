@@ -482,6 +482,54 @@
       box-shadow var(--motion-duration-standard) var(--motion-ease-soft-out);
   }
 
+  /*
+   * Shared geometry + interaction chrome for the five primary right-side
+   * playback-bar action buttons (queue, vocals mute, accompaniment mute,
+   * master mute, tight-density stem mixer trigger). The class is the sole
+   * geometry source — consumers must not add conflicting h/w/min/padding/
+   * rounded/flex-basis classes. Use together with `motion-icon-button`.
+   *
+   * Popup-row stem controls (Drums/Bass/Other, popup Vocals/Accompaniment)
+   * and the four-stem disclosure chevron stay compact and never receive
+   * this class.
+   */
+  .playback-bar-action-button {
+    display: inline-flex;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    flex: 0 0 44px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 14px;
+    background-color: transparent;
+  }
+
+  .playback-bar-action-button:hover:not(:disabled),
+  .playback-bar-action-button:focus-visible {
+    background-color: var(--color-ghost-hover);
+  }
+
+  .playback-bar-action-button[data-active="true"] {
+    color: var(--color-accent);
+    background-color: var(--color-control-selected-bg);
+    box-shadow: var(--shadow-control-selected);
+  }
+
+  .playback-bar-action-button:focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 2px;
+  }
+
+  .playback-bar-action-button:disabled {
+    background-color: transparent;
+    box-shadow: none;
+  }
+
   .motion-icon-button:hover,
   .motion-icon-button:focus-visible {
     /* Native buttons do not translate on hover — keep transform unset. */

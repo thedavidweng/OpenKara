@@ -63,6 +63,7 @@ export const TAURI_MOCK_SCRIPT = `
   const playlists = [];
   const playlistSongs = new Map();
   const menuResources = new Map();
+  const separationStatuses = {};
   let nextPlaylistId = 1;
   let nextEventId = 1;
   let nextMenuRid = 1;
@@ -74,19 +75,31 @@ export const TAURI_MOCK_SCRIPT = `
     singer_names: [], current_index: 0, mode: "round_robin", active: false,
   };
 
+  // Mutable playback snapshot — every get/set command reads or updates this
+  // single source of truth so geometry/pressed E2E tests can exercise real
+  // vocals/accompaniment mute transitions by patching stem volumes.
+  let currentPlaybackSnapshot = {
+    transport_generation: transportGeneration,
+    song_id: null,
+    state: "idle",
+    is_playing: false,
+    position_ms: 0,
+    duration_ms: 0,
+    buffered_ms: 0,
+    volume: 0.8,
+    stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
+    has_stems: false,
+    stem_mode: null,
+  };
+
   function bumpTransportGeneration() {
     transportGeneration += 1;
+    currentPlaybackSnapshot.transport_generation = transportGeneration;
     return transportGeneration;
   }
 
   function playbackSnapshot(fields) {
-    return {
-      transport_generation: transportGeneration,
-      stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
-      has_stems: false,
-      stem_mode: null,
-      ...fields,
-    };
+    return { ...currentPlaybackSnapshot, ...fields };
   }
 
   function clone(value) {
@@ -239,50 +252,63 @@ export const TAURI_MOCK_SCRIPT = `
         (s) => s.title.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q)
       );
     },
-    get_all_separation_statuses: {},
+    get_all_separation_statuses: () => clone(separationStatuses),
     get_all_upload_statuses: {},
 
     // Playback — every snapshot carries transport_generation (IPC contract).
-    get_playback_state: () => playbackSnapshot({
-      song_id: null, state: "idle", is_playing: false,
-      position_ms: 0, duration_ms: 0, buffered_ms: 0, volume: 0.8,
-    }),
+    // The mock owns one mutable currentPlaybackSnapshot; get_* returns a
+    // clone and set_* updates the source so E2E tests can exercise real
+    // volume/stem transitions by clicking actual buttons.
+    get_playback_state: () => clone(currentPlaybackSnapshot),
     play: (args) => {
       const songId = (args && (args.songId || args.song_id)) || "aaa111";
       const song = mockSongs.find((s) => s.hash === songId);
       bumpTransportGeneration();
-      return playbackSnapshot({
+      currentPlaybackSnapshot = {
+        ...currentPlaybackSnapshot,
         song_id: songId,
-        state: "playing", is_playing: true, position_ms: 0,
-        duration_ms: song ? song.duration_ms : 300000, buffered_ms: 0, volume: 0.8,
-      });
+        state: "playing",
+        is_playing: true,
+        position_ms: 0,
+        duration_ms: song ? song.duration_ms : 300000,
+        buffered_ms: 0,
+      };
+      return clone(currentPlaybackSnapshot);
     },
     resume: () => {
       bumpTransportGeneration();
-      return playbackSnapshot({
-        song_id: "aaa111", state: "playing", is_playing: true,
-        position_ms: 0, duration_ms: 354000, buffered_ms: 0, volume: 0.8,
-      });
+      currentPlaybackSnapshot = {
+        ...currentPlaybackSnapshot,
+        state: "playing",
+        is_playing: true,
+      };
+      return clone(currentPlaybackSnapshot);
     },
     pause: () => {
       bumpTransportGeneration();
-      return playbackSnapshot({
-        song_id: "aaa111", state: "idle", is_playing: false,
-        position_ms: 5000, duration_ms: 354000, buffered_ms: 0, volume: 0.8,
-      });
+      currentPlaybackSnapshot = {
+        ...currentPlaybackSnapshot,
+        state: "idle",
+        is_playing: false,
+      };
+      return clone(currentPlaybackSnapshot);
     },
     seek: (args) => {
       bumpTransportGeneration();
       const targetMs = (args && args.ms) || 0;
-      const bufferingSnapshot = playbackSnapshot({
-        song_id: "aaa111", state: "buffering", is_playing: true,
-        position_ms: targetMs, duration_ms: 354000, buffered_ms: targetMs, volume: 0.8,
-      });
+      const bufferingSnapshot = {
+        ...currentPlaybackSnapshot,
+        state: "buffering",
+        is_playing: true,
+        position_ms: targetMs,
+        buffered_ms: targetMs,
+      };
+      currentPlaybackSnapshot = bufferingSnapshot;
       const playingSnapshot = {
         ...bufferingSnapshot,
         state: "playing",
         position_ms: targetMs + 50,
-        buffered_ms: 354000,
+        buffered_ms: currentPlaybackSnapshot.duration_ms || 354000,
       };
       // Match the streaming Rust path, not the old optimistic browser fixture:
       // seek first publishes the target as buffering. The audio thread can
@@ -293,28 +319,45 @@ export const TAURI_MOCK_SCRIPT = `
         emitMockEvent("playback-position", {
           ms: bufferingSnapshot.position_ms,
           transport_generation: bufferingSnapshot.transport_generation,
-          snapshot: bufferingSnapshot,
+          snapshot: clone(bufferingSnapshot),
         });
       });
       setTimeout(() => {
+        currentPlaybackSnapshot = playingSnapshot;
         emitMockEvent("playback-position", {
           ms: playingSnapshot.position_ms,
           transport_generation: playingSnapshot.transport_generation,
-          snapshot: playingSnapshot,
+          snapshot: clone(playingSnapshot),
         });
       }, 80);
-      return bufferingSnapshot;
+      return clone(bufferingSnapshot);
     },
-    set_volume: (args) => playbackSnapshot({
-      song_id: "aaa111", state: "playing", is_playing: true,
-      position_ms: 0, duration_ms: 354000, buffered_ms: 0,
-      volume: (args && args.level) || 0.8,
-    }),
-    set_stem_volume: () => playbackSnapshot({
-      song_id: "aaa111", state: "playing", is_playing: true,
-      position_ms: 0, duration_ms: 354000, buffered_ms: 0, volume: 0.8,
-      has_stems: true, stem_mode: "two_stem",
-    }),
+    set_volume: (args) => {
+      // Use nullish handling so volume=0 is preserved (not replaced by 0.8).
+      const level = args && args.level != null ? args.level : 0.8;
+      currentPlaybackSnapshot = {
+        ...currentPlaybackSnapshot,
+        volume: level,
+      };
+      return clone(currentPlaybackSnapshot);
+    },
+    set_stem_volume: (args) => {
+      // Update the named stem, preserving has_stems/stem_mode so the frontend
+      // keeps its operational state across real mute/unmute transitions.
+      const stem = args && args.stem;
+      const level = args && args.level != null ? args.level : 1;
+      if (stem && currentPlaybackSnapshot.stem_volumes) {
+        currentPlaybackSnapshot = {
+          ...currentPlaybackSnapshot,
+          stem_volumes: {
+            ...currentPlaybackSnapshot.stem_volumes,
+            [stem]: level,
+          },
+        };
+      }
+      return clone(currentPlaybackSnapshot);
+    },
+    load_stems: () => clone(currentPlaybackSnapshot),
 
     // Lyrics — mutable so tests can override with larger fixtures (e.g. the
     // scrollbar spec needs enough lines to produce real overflow).
@@ -568,6 +611,39 @@ export const TAURI_MOCK_SCRIPT = `
       if (!lastNativeMenu) throw new Error("No native menu has been opened");
       await clickSubmenuItem(lastNativeMenu, parentLabel, label);
     },
+    // Merge a patch into the mutable playback snapshot and emit an
+    // authoritative playback-position event so the frontend store picks up
+    // the new state. Nested stem_volumes are merged per-stem.
+    setPlaybackSnapshot: (patch) => {
+      const next = { ...currentPlaybackSnapshot, ...patch };
+      if (patch && patch.stem_volumes && currentPlaybackSnapshot.stem_volumes) {
+        next.stem_volumes = {
+          ...currentPlaybackSnapshot.stem_volumes,
+          ...patch.stem_volumes,
+        };
+      }
+      currentPlaybackSnapshot = next;
+      emitMockEvent("playback-position", {
+        ms: next.position_ms,
+        transport_generation: next.transport_generation,
+        snapshot: clone(next),
+      });
+      return clone(next);
+    },
+    // Mark a song as having completed stem separation so the frontend's
+    // stemsAvailable gate opens when has_stems is also set. Emits a
+    // separation-complete event so useSeparationEvents updates the store.
+    setSeparationCompleted: (songHash) => {
+      separationStatuses[songHash] = {
+        song_id: songHash,
+        state: "completed",
+      };
+      emitMockEvent("separation-complete", {
+        song_id: songHash,
+        status: { song_id: songHash, state: "completed" },
+      });
+    },
+    getPlaybackSnapshot: () => clone(currentPlaybackSnapshot),
   };
 })();
 `;
