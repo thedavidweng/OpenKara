@@ -631,7 +631,10 @@ mod tests {
             let playback = Arc::new(Mutex::new(PlaybackController::default()));
             let cdg_state = Arc::new(Mutex::new(None));
             let latest_request_id = Arc::new(AtomicU64::new(initial_request_id));
-            let output_started = Arc::new(AtomicBool::new(false));
+            // Pretend the output thread is already started so `ensure_output`
+            // is a no-op. Tests exercise coordinator command logic, not CPAL
+            // device initialization, which is unavailable on headless CI.
+            let output_started = Arc::new(AtomicBool::new(true));
             let output_start_lock = Arc::new(Mutex::new(()));
             let airplay = AirPlayState::test_fixture();
             let shutdown = Arc::new(AtomicBool::new(false));
@@ -692,7 +695,12 @@ mod tests {
         /// the `output_start_lock`. The coordinator's `ensure_output` helper
         /// will receive a `PoisonError` and return
         /// `PlaybackError::AudioOutputUnavailable`.
+        ///
+        /// Also flips `output_started` to `false` so `ensure_output` actually
+        /// enters the lock-acquisition path (the harness defaults to `true`
+        /// to skip CPAL initialization on headless CI).
         fn poison_output_lock(&self) {
+            self.runtime.output_started.store(false, Ordering::SeqCst);
             // Lock and explicitly leak the guard so the mutex becomes poisoned.
             // We do this by panicking while holding the lock.
             let lock = Arc::clone(&self.runtime.output_start_lock);
@@ -1140,7 +1148,9 @@ mod tests {
     #[test]
     fn non_output_commands_complete_without_output_device() {
         let harness = Harness::with_request_id(1);
-        // output_started is false — no output device.
+        // The harness pretends the output thread is already started so
+        // InstallReady succeeds without CPAL. Non-output commands (Pause,
+        // SetVolume, Seek) never call ensure_output and thus work regardless.
         install_track(&harness, 1, "song-a");
 
         // Pause and SetVolume should work without an output device.
