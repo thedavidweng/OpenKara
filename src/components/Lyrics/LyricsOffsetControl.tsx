@@ -29,8 +29,8 @@ export function LyricsOffsetControl({
         <div
           className={`font-[tabular-nums] text-[12px] font-medium ${
             offsetMs === 0
-              ? "text-[var(--color-text)]"
-              : "text-[var(--color-text)]"
+              ? "text-[var(--color-text-dim)]"
+              : "text-[var(--color-accent)]"
           }`}
         >
           {offsetMs >= 0 ? "+" : ""}

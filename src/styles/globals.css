@@ -189,7 +189,7 @@
     color-scheme: dark;
   }
 
-  :root[data-theme="light"][data-window-chrome-platform="mac"] {
+  :root[data-theme="light"] [data-window-chrome-platform="mac"] {
     color-scheme: light;
   }
 

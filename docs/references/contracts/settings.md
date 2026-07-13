@@ -42,10 +42,12 @@ The frontend `ThemePreference` type mirrors this in `src/types/ipc.ts`.
 
 ## Effective Theme Resolution
 
-`AppConfig::effective_theme_preference()` resolves `System` against the OS
-appearance at call time, returning `Light` or `Dark`. The frontend
-`theme-runtime.ts` performs the same resolution via `matchMedia` and applies
-the `data-theme` attribute to the document root.
+`AppConfig::effective_theme_preference()` returns the persisted preference
+(defaulting to `Dark` when unset) as a raw `ThemePreference` string — it does
+**not** resolve `System` against the OS appearance. The frontend
+`theme-runtime.ts` is solely responsible for resolving `System` to `Light` or
+`Dark` via `matchMedia("(prefers-color-scheme: dark)")` and applying the
+`data-theme` attribute to the document root.
 
 ## AppSettings Snapshot
 

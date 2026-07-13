@@ -23,13 +23,22 @@ export function resolveThemePreference(
 /**
  * Apply the resolved theme to the document root so semantic CSS tokens and
  * `color-scheme` match before the browser paints a hydrated frame.
+ *
+ * The audience/fullscreen presentation stage stays explicitly dark regardless
+ * of the primary theme preference. When the `data-presentation-mode="audience"`
+ * marker is present, `color-scheme` is kept dark so native controls (scrollbars,
+ * form elements) render correctly against the dark audience backdrop.
  */
 export function applyResolvedTheme(
   theme: ResolvedTheme,
   root: HTMLElement = document.documentElement,
 ): void {
   root.dataset.theme = theme;
-  root.style.colorScheme = theme;
+  // Preserve the audience dark color-scheme when the presentation marker is
+  // set — the stylesheet rule at globals.css forces audience tokens to dark,
+  // and an inline colorScheme would override that.
+  const isAudience = root.dataset.presentationMode === "audience";
+  root.style.colorScheme = isAudience ? "dark" : theme;
 }
 
 interface MediaQueryLike {
