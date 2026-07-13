@@ -401,30 +401,41 @@ jobs:
         working-directory: src-tauri
         run: cargo test -q --no-run
 
-      - name: Diagnose execution-provider test binary DLL dependencies
+      - name: Diagnose execution-provider test binary DLL failure
         working-directory: src-tauri
         shell: pwsh
         run: |
           $ortDir = Join-Path $env:GITHUB_WORKSPACE "src-tauri\generated\onnxruntime"
-          Write-Host "=== ONNX Runtime dir: $ortDir ==="
+          Write-Host "=== ONNX Runtime DLLs ==="
           Get-ChildItem -Path $ortDir -Filter "*.dll" | Format-Table Name, Length
 
           $testBin = Get-ChildItem -Path "target\debug\deps" -Filter "openkara_lib-*.exe" |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1
-          if (-not $testBin) {
-            Write-Error "openkara_lib test binary not found"
-            exit 1
-          }
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
           Write-Host "=== Test binary: $($testBin.FullName) ==="
 
-          Write-Host "`n=== dumpbin /dependents ==="
-          & dumpbin /dependents "$($testBin.FullName)" 2>&1 | Select-Object -First 80
+          # Try to locate dumpbin via vswhere.
+          $vswhere = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vswhere) {
+            $dumpbin = & $vswhere -latest -find "**\Hostx64\x64\dumpbin.exe" 2>$null | Select-Object -First 1
+            if ($dumpbin) {
+              Write-Host "`n=== dumpbin /dependents ==="
+              & $dumpbin /dependents "$($testBin.FullName)" 2>&1 | Select-Object -First 80
+            }
+          }
 
-          Write-Host "`n=== Direct launch (expect failure) ==="
+          # Run 1: with ONNX Runtime on PATH
+          Write-Host "`n=== Direct launch (ORT on PATH) ==="
           $env:PATH = "$ortDir;$env:PATH"
-          & "$($testBin.FullName)" execution_provider --quiet 2>&1
-          Write-Host "Exit code: $LASTEXITCODE"
+          $p = Start-Process -FilePath $testBin.FullName -ArgumentList "execution_provider","--quiet" -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP\test_out.txt" -RedirectStandardError "$env:RUNNER_TEMP\test_err.txt"
+          Write-Host "Exit code: $($p.ExitCode)"
+          Get-Content "$env:RUNNER_TEMP\test_out.txt","$env:RUNNER_TEMP\test_err.txt" -ErrorAction SilentlyContinue
+
+          # Run 2: without ONNX Runtime on PATH (to see if error differs)
+          Write-Host "`n=== Direct launch (ORT NOT on PATH) ==="
+          $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -ne $ortDir }) -join ';'
+          $p2 = Start-Process -FilePath $testBin.FullName -ArgumentList "execution_provider","--quiet" -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP\test_out2.txt" -RedirectStandardError "$env:RUNNER_TEMP\test_err2.txt"
+          Write-Host "Exit code: $($p2.ExitCode)"
+          Get-Content "$env:RUNNER_TEMP\test_out2.txt","$env:RUNNER_TEMP\test_err2.txt" -ErrorAction SilentlyContinue
 
       - name: Verify execution-provider platform contract
         working-directory: src-tauri
