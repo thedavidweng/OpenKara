@@ -50,9 +50,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Overhaul CD+G playback architecture for correctness, efficiency, and robustness across local, fullscreen, and AirPlay timelines:
+  - Split CDG state into per-timeline (`Local` / `AirPlay`) mutable state with shared immutable packet storage (`Arc<[CdgPacket]>`), so AirPlay cannot rewind or corrupt local playback.
+  - Replace raw RGBA IPC with a binary frame protocol: 32-byte little-endian header (`"OKCG"` magic, version, flags, transport generation, frame version, packet index) + optional RGBA payload. The frontend parses the envelope to skip redundant redraws and discard stale frames.
+  - Add `get_cdg_status` IPC command exposing availability (`none` / `loading` / `ready` / `error`), error codes, and packet count.
+  - Make transport lifecycle helpers authoritative: `mark_cdg_loading`, `attach_cdg_for_song`, `mark_cdg_error`, `clear_cdg_for_transport_change`, `update_cdg_transport_generation`, `mark_cdg_seek` — all routed through the `PlaybackCoordinator`.
+  - Gate AirPlay CDG decoding by native output phase (`route_selected` / `buffering` / `playing`); `sync_airplay_audience_state` no longer calls CDG render functions (config sync only).
+  - Add `CdgRendererSnapshot` for checkpoint save/restore; checkpoint policy moved to `CdgTimelineState` (30s interval, max 256, never evict during playback).
+  - Add parser diagnostics (`CdgParseDiagnostic` for trailing bytes).
+  - `get_cdg_frame` now accepts `songId`, `transportGeneration`, `positionMs`, and `lastFrameVersion`; stale song/generation returns 0 bytes without mutating decoder state.
+  - BroadcastChannel bumped to `openkara-cdg-sync-v2` to carry frame version and transport generation.
 - Upgrade pnpm 10.33.2 → 11.13.0: npm retired the legacy `/-/npm/v1/security/audits{,/quick}` endpoints, breaking `pnpm audit` (and thus CI) on the entire pnpm 10.x line. pnpm 11 uses the replacement `/-/npm/v1/security/advisories/bulk` endpoint. The `pnpm` field in `package.json` is no longer read by pnpm 11, so `overrides`, `onlyBuiltDependencies`, and `patchedDependencies` migrated to a new `pnpm-workspace.yaml` (with `allowBuilds` replacing the old implicit build approval). All CI workflows and `mise.toml` updated to pin `11.13.0`. The `--ignore-registry-errors` workaround added in the previous hotfix is removed now that audit works correctly.
 - Introduce `PlaybackCoordinator` as an independent control thread that serializes all control-plane mutations of `PlaybackController` (pause / resume / seek / set_volume / set_stem_volume / install_track / fail_load / attach_stems). Background decode/fetch threads now produce immutable `ReadyTrack` payloads and send `PlaybackCommand` messages to the coordinator instead of directly mutating the controller. The coordinator guarantees FIFO ordering, latest-request-wins guards, AirPlay epoch/generation bumps, CDG seek-reset, and output-thread startup — all on a single thread. Public Tauri command names, arguments, response shapes, and event names are unchanged.
 - Fix macOS being left outside the application's native-control color scheme and unify scrollbar visibility across platforms: `AppLayout` emits `data-window-chrome-platform="mac"` while the scrollbar/color-scheme rules only matched `desktop`, so the mac WebView received neither the intended dark native-control environment nor scrollbar variables. macOS now keeps its native overlay/autohide scrollbar under a dark `color-scheme` (`scrollbar-color/width: auto`, no author `::-webkit-scrollbar` geometry); Windows/Linux descendants get a thin semantic scrollbar from shared root tokens (`--scrollbar-thumb`/`-hover`/`-active`/`-track`) with a scoped `@supports not (scrollbar-color: auto)` WebKit fallback; and forced-colors returns scrollbar control to the system on every platform.
+
+### Fixed
+
+- Implement CD+G decoder correctness fixes:
+  - Instruction 28 (Define Transparent Color): pixels using the transparent palette index get alpha 0 in RGBA output; transparency survives palette reloads and is cleared on reset.
+  - Clamp scroll fine offsets to FFmpeg/VLC/PyKaraoke bounds (horizontal 0..=5, vertical 0..=11).
+  - Fix scroll-copy wrap with explicit modular arithmetic for both horizontal and vertical directions.
+  - `process_packet` returns `true` only on visible state change (invalid tiles, duplicate palette values, and no-op scroll packets report no change).
+  - Add golden fixture tests for deterministic regression detection.
 
 ### Fixed
 

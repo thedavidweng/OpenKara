@@ -35,7 +35,7 @@ describe("createCdgSyncChannel", () => {
 
     const result = createCdgSyncChannel(factory);
 
-    expect(factory).toHaveBeenCalledWith("openkara-cdg-sync-v1");
+    expect(factory).toHaveBeenCalledWith("openkara-cdg-sync-v2");
     expect(result).toBe(mockChannel);
   });
 
@@ -85,13 +85,17 @@ describe("postCdgStatus", () => {
 describe("postCdgFrame", () => {
   test("posts {type:'frame', payload} to channel", () => {
     const channel = createMockChannel();
-    const buf = new ArrayBuffer(8);
+    const payload = {
+      rgba: new Uint8Array(8),
+      frameVersion: 3,
+      transportGeneration: 1,
+    };
 
-    postCdgFrame(channel, buf);
+    postCdgFrame(channel, payload);
 
     expect(channel.postMessage).toHaveBeenCalledWith({
       type: "frame",
-      payload: buf,
+      payload,
     });
   });
 });
@@ -109,7 +113,11 @@ describe("postCdgClear", () => {
 describe("startCdgSyncRequestListener", () => {
   test("on 'request-sync' message, calls getSnapshot and posts status + frame", () => {
     const channel = createMockChannel();
-    const frame = new ArrayBuffer(16);
+    const frame = {
+      rgba: new Uint8Array(16),
+      frameVersion: 1,
+      transportGeneration: 1,
+    };
     const status = { songId: "s1", hasCdg: true };
     const getSnapshot = vi.fn().mockReturnValue({ status, frame });
 
@@ -140,7 +148,16 @@ describe("startCdgSyncRequestListener", () => {
     listener(
       makeEvent({ type: "status", payload: { songId: null, hasCdg: false } }),
     );
-    listener(makeEvent({ type: "frame", payload: new ArrayBuffer(0) }));
+    listener(
+      makeEvent({
+        type: "frame",
+        payload: {
+          rgba: new Uint8Array(0),
+          frameVersion: 0,
+          transportGeneration: 0,
+        },
+      }),
+    );
 
     expect(getSnapshot).not.toHaveBeenCalled();
     expect(channel.postMessage).not.toHaveBeenCalled();
@@ -157,9 +174,13 @@ describe("startCdgSyncReceiver", () => {
     startCdgSyncReceiver({ channel, onFrame, onClear, onStatus });
     const listener = extractListener(channel);
 
-    const buf = new ArrayBuffer(4);
-    listener(makeEvent({ type: "frame", payload: buf }));
-    expect(onFrame).toHaveBeenCalledWith(buf);
+    const framePayload = {
+      rgba: new Uint8Array(4),
+      frameVersion: 2,
+      transportGeneration: 1,
+    };
+    listener(makeEvent({ type: "frame", payload: framePayload }));
+    expect(onFrame).toHaveBeenCalledWith(framePayload);
 
     listener(makeEvent({ type: "clear" }));
     expect(onClear).toHaveBeenCalled();

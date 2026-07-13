@@ -12,8 +12,10 @@ import {
   postCdgFrame,
   postCdgStatus,
   startCdgSyncRequestListener,
+  type CdgSyncFramePayload,
   type CdgSyncStatusPayload,
 } from "@/lib/cdg-sync-channel";
+import { ensureArrayBuffer, parseCdgFrameResponse } from "@/lib/cdg-protocol";
 import { songHasCdgMedia } from "@/lib/song-media";
 import * as api from "@/lib/tauri";
 
@@ -30,35 +32,15 @@ import * as api from "@/lib/tauri";
  */
 const MIN_INTERVAL_MS = 33;
 
-let lastFrame: ArrayBuffer | null = null;
+let lastFrame: CdgSyncFramePayload | null = null;
 let lastStatus: CdgSyncStatusPayload = {
   songId: null,
   hasCdg: false,
 };
 
-/**
- * Normalize the IPC response to an ArrayBuffer.
- *
- * PERF: The backend returns raw bytes via `tauri::ipc::Response`, which
- * **should** arrive as an `ArrayBuffer` on desktop platforms. However, Tauri's
- * IPC bridge may occasionally deliver it as a `number[]` (JSON-serialized
- * Vec<u8>) depending on the protocol path. This function handles both cases
- * so CDG rendering is robust regardless of IPC serialization behavior.
- */
-export function ensureArrayBuffer(result: unknown): ArrayBuffer {
-  if (result instanceof ArrayBuffer) return result;
-  if (ArrayBuffer.isView(result)) {
-    return Uint8Array.from(
-      new Uint8Array(result.buffer, result.byteOffset, result.byteLength),
-    ).buffer;
-  }
-  if (Array.isArray(result)) return Uint8Array.from(result).buffer;
-  return new ArrayBuffer(0);
-}
-
-function emitCdgFrame(buffer: ArrayBuffer): void {
-  lastFrame = buffer;
-  postCdgFrame(getCdgSyncChannel(), buffer);
+function emitCdgFrame(payload: CdgSyncFramePayload): void {
+  lastFrame = payload;
+  postCdgFrame(getCdgSyncChannel(), payload);
 }
 
 function emitCdgClear(): void {
@@ -90,11 +72,15 @@ export function startCdgPositionSync(
 
 export function useCdgSync(enabled = true): void {
   const songId = usePlayerStore((s) => s.snapshot?.song_id ?? null);
+  const transportGeneration = usePlayerStore(
+    (s) => s.snapshot?.transport_generation ?? 0,
+  );
   const currentSong = useLibraryStore(
     (s) => s.songs.find((song) => song.hash === songId) ?? null,
   );
   const setSong = useCdgStore((s) => s.setSong);
   const clear = useCdgStore((s) => s.clear);
+  const setFrameVersion = useCdgStore((s) => s.setFrameVersion);
   const pendingRef = useRef(false);
   const currentSongHasCdg = songHasCdgMedia(currentSong);
 
@@ -151,15 +137,21 @@ export function useCdgSync(enabled = true): void {
     }
 
     api
-      .getCdgFrame(probePositionMs)
+      .getCdgFrame(songId, transportGeneration, probePositionMs, 0)
       .then((result) => {
         if (cancelled) return;
         const buffer = ensureArrayBuffer(result);
+        const envelope = parseCdgFrameResponse(buffer);
 
-        if (buffer.byteLength > 0) {
+        if (envelope && envelope.hasRgba && envelope.rgba) {
           setSong(songId, true);
-          drawFrame(buffer);
-          emitCdgFrame(buffer);
+          setFrameVersion(envelope.frameVersion, envelope.transportGeneration);
+          drawFrame(envelope.rgba);
+          emitCdgFrame({
+            rgba: envelope.rgba,
+            frameVersion: envelope.frameVersion,
+            transportGeneration: envelope.transportGeneration,
+          });
           emitCdgStatus(songId, true);
           return;
         }
@@ -176,7 +168,15 @@ export function useCdgSync(enabled = true): void {
     return () => {
       cancelled = true;
     };
-  }, [clear, currentSongHasCdg, enabled, setSong, songId]);
+  }, [
+    clear,
+    currentSongHasCdg,
+    enabled,
+    setFrameVersion,
+    setSong,
+    songId,
+    transportGeneration,
+  ]);
 
   // RATIONALE: Do not replace this with setInterval/requestAnimationFrame.
   // The real regression was macOS throttling front-end scheduling in windows
@@ -190,30 +190,50 @@ export function useCdgSync(enabled = true): void {
       () => {
         const state = usePlayerStore.getState();
         const { snapshot } = state;
-        const { hasCdg } = useCdgStore.getState();
+        const { hasCdg, frameVersion } = useCdgStore.getState();
 
         if (!hasCdg || !snapshot?.is_playing || pendingRef.current) {
           return;
         }
         pendingRef.current = true;
         const positionMs = selectSyncDisplayPositionMs(state);
-        // F5: Capture songId at request time so stale frames are discarded.
+        // F5: Capture songId and generation at request time so stale frames are discarded.
         const requestSongId = snapshot?.song_id;
+        const requestGeneration = snapshot?.transport_generation ?? 0;
 
         // PERF: The hot frame path stays out of React state. The IPC returns a
         // raw ArrayBuffer (no base64), and drawFrame() paints it to a pre-
         // allocated ImageData — no string decoding, no per-frame allocation.
         api
-          .getCdgFrame(positionMs)
+          .getCdgFrame(
+            requestSongId ?? "",
+            requestGeneration,
+            positionMs,
+            frameVersion,
+          )
           .then((result) => {
-            // F5: Discard stale frames if the song changed during the IPC call.
-            if (requestSongId !== usePlayerStore.getState().snapshot?.song_id) {
+            // F5: Discard stale frames if the song or generation changed during the IPC call.
+            const currentState = usePlayerStore.getState();
+            if (
+              requestSongId !== currentState.snapshot?.song_id ||
+              requestGeneration !==
+                (currentState.snapshot?.transport_generation ?? 0)
+            ) {
               return;
             }
             const buffer = ensureArrayBuffer(result);
-            if (buffer.byteLength > 0) {
-              drawFrame(buffer);
-              emitCdgFrame(buffer);
+            const envelope = parseCdgFrameResponse(buffer);
+            if (envelope && envelope.hasRgba && envelope.rgba) {
+              setFrameVersion(
+                envelope.frameVersion,
+                envelope.transportGeneration,
+              );
+              drawFrame(envelope.rgba);
+              emitCdgFrame({
+                rgba: envelope.rgba,
+                frameVersion: envelope.frameVersion,
+                transportGeneration: envelope.transportGeneration,
+              });
             }
           })
           .catch(() => {
@@ -235,5 +255,5 @@ export function useCdgSync(enabled = true): void {
     return () => {
       stopSync();
     };
-  }, [enabled]);
+  }, [enabled, setFrameVersion]);
 }

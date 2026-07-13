@@ -1,9 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
-import {
-  ensureArrayBuffer,
-  getCdgSyncBucket,
-  startCdgPositionSync,
-} from "./use-cdg-sync";
+import { ensureArrayBuffer } from "@/lib/cdg-protocol";
+import { getCdgSyncBucket, startCdgPositionSync } from "./use-cdg-sync";
 
 describe("ensureArrayBuffer", () => {
   test("returns ArrayBuffer as-is", () => {
@@ -211,30 +208,32 @@ describe("startCdgPositionSync", () => {
   });
 });
 
-// ─── F5: CDG frame IPC songId guard ─────────────────────────
+// ─── F5: CDG frame IPC songId/generation guard ─────────────────────────
 
 describe("F5: CDG frame IPC validates against current song before drawFrame", () => {
-  test("hot frame path captures songId at request time and compares before draw", async () => {
+  test("hot frame path captures songId and generation at request time and compares before draw", async () => {
     const { default: src } = await import("./use-cdg-sync.ts?raw");
 
     // In the hot frame path (the second useEffect that calls getCdgFrame
     // in a loop), the fix must:
-    // 1. Capture the current songId before the IPC call
-    // 2. After the IPC resolves, compare against current songId
-    // 3. Skip drawFrame/emitCdgFrame if song changed
+    // 1. Capture the current songId and transport generation before the IPC call
+    // 2. After the IPC resolves, compare against current songId and generation
+    // 3. Skip drawFrame/emitCdgFrame if song or generation changed
 
     // Find the hot frame getCdgFrame call (the one inside startCdgPositionSync)
     const hotFrameSection = src.slice(src.indexOf("startCdgPositionSync"));
 
-    // The songId must be captured before getCdgFrame
-    // (verified indirectly by checking the guard after IPC)
+    // The songId and generation must be captured before getCdgFrame
+    expect(hotFrameSection).toContain("requestSongId");
+    expect(hotFrameSection).toContain("requestGeneration");
 
-    // After the IPC resolves, there must be a songId comparison
+    // After the IPC resolves, there must be a songId and generation comparison
     const afterIpc = hotFrameSection.slice(
-      hotFrameSection.indexOf(".getCdgFrame(positionMs)"),
+      hotFrameSection.indexOf(".getCdgFrame("),
     );
 
-    // The guard should check that the current song still matches
+    // The guard should check that the current song and generation still match
     expect(afterIpc).toContain("snapshot?.song_id");
+    expect(afterIpc).toContain("transport_generation");
   });
 });

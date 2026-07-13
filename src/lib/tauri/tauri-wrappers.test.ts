@@ -1300,12 +1300,15 @@ describe("remote-repository", () => {
 // ─── cdg.ts ─────────────────────────────────────────────
 
 describe("cdg", () => {
-  test("getCdgFrame invokes get_cdg_frame with rounded positionMs", async () => {
+  test("getCdgFrame invokes get_cdg_frame with all parameters", async () => {
     const buffer = new ArrayBuffer(288 * 192 * 4);
     mockInvoke.mockResolvedValueOnce(buffer);
-    const returned = await cdg.getCdgFrame(1234.6);
+    const returned = await cdg.getCdgFrame("song-1", 1, 1234.6, 5);
     expect(mockInvoke).toHaveBeenCalledWith("get_cdg_frame", {
+      songId: "song-1",
+      transportGeneration: 1,
       positionMs: 1235,
+      lastFrameVersion: 5,
     });
     expect(returned).toBe(buffer);
   });
@@ -1313,9 +1316,29 @@ describe("cdg", () => {
   test("getCdgFrame rounds down for fractional ms", async () => {
     const buffer = new ArrayBuffer(0);
     mockInvoke.mockResolvedValueOnce(buffer);
-    await cdg.getCdgFrame(100.2);
+    await cdg.getCdgFrame("song-1", 1, 100.2, 0);
     expect(mockInvoke).toHaveBeenCalledWith("get_cdg_frame", {
+      songId: "song-1",
+      transportGeneration: 1,
       positionMs: 100,
+      lastFrameVersion: 0,
     });
+  });
+
+  test("getCdgStatus invokes get_cdg_status with songId and generation", async () => {
+    const status = {
+      availability: "ready",
+      songId: "s1",
+      transportGeneration: 1,
+      packetCount: 100,
+      errorCode: null,
+    };
+    mockInvoke.mockResolvedValueOnce(status);
+    const returned = await cdg.getCdgStatus("s1", 1);
+    expect(mockInvoke).toHaveBeenCalledWith("get_cdg_status", {
+      songId: "s1",
+      transportGeneration: 1,
+    });
+    expect(returned).toBe(status);
   });
 });

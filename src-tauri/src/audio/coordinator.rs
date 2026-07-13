@@ -22,8 +22,16 @@ use crate::{
         },
         streaming::StreamingTrack,
     },
-    commands::{cdg::CdgPlaybackState, error::CommandError},
-    services::{cdg::mark_cdg_reset_for_seek, playback::PlaybackErrorEvent},
+    cdg::CdgPacket,
+    commands::cdg::CdgPlaybackSlot,
+    commands::error::CommandError,
+    services::{
+        cdg::{
+            attach_cdg_for_song, clear_cdg_for_transport_change, mark_cdg_loading, mark_cdg_seek,
+            update_cdg_transport_generation,
+        },
+        playback::PlaybackErrorEvent,
+    },
     state::AirPlayState,
 };
 use std::sync::{
@@ -40,7 +48,7 @@ pub enum ReadyTrack {
     Decoded {
         audio: DecodedAudio,
         stems: Option<LoadedStems>,
-        cdg: Option<CdgPlaybackState>,
+        cdg: Option<Arc<[CdgPacket]>>,
     },
     /// Streaming track (low-latency byte-range playback).
     Streaming {
@@ -49,7 +57,7 @@ pub enum ReadyTrack {
         duration_ms: u64,
         original: StreamingTrack,
         stems: Option<Box<StreamingTrack>>,
-        cdg: Option<CdgPlaybackState>,
+        cdg: Option<Arc<[CdgPacket]>>,
     },
 }
 
@@ -129,7 +137,7 @@ type SnapshotReply = tokio::sync::oneshot::Sender<Result<PlaybackStateSnapshot, 
 pub struct CoordinatorRuntime<R: Runtime> {
     pub app_handle: tauri::AppHandle<R>,
     pub playback: Arc<Mutex<PlaybackController>>,
-    pub cdg_state: Arc<Mutex<Option<CdgPlaybackState>>>,
+    pub cdg_state: Arc<Mutex<Option<CdgPlaybackSlot>>>,
     pub latest_request_id: Arc<AtomicU64>,
     pub output_started: Arc<AtomicBool>,
     pub output_start_lock: Arc<Mutex<()>>,
@@ -339,6 +347,17 @@ fn handle_begin_load<R: Runtime>(
         playback.start_track_loading(song_id)
     };
 
+    // Clear the old CDG slot immediately so the previous frame cannot
+    // survive while decode/import work continues, then mark loading.
+    {
+        let Ok(mut cdg_state) = runtime.cdg_state.lock() else {
+            eprintln!("coordinator: CDG state lock poisoned in BeginLoad");
+            let _ = reply.send(Ok(snapshot));
+            return;
+        };
+        mark_cdg_loading(&mut cdg_state, song_id, snapshot.transport_generation);
+    }
+
     bump_airplay_epoch_and_generation(&runtime.airplay);
 
     if let Err(e) = emit_position(&runtime.app_handle, &snapshot) {
@@ -411,7 +430,17 @@ fn handle_install_ready<R: Runtime>(
     // Replace CDG state only if this song still owns the player.
     if snapshot.song_id.as_deref() == Some(song_id) {
         if let Ok(mut cdg_state) = runtime.cdg_state.lock() {
-            *cdg_state = cdg;
+            if let Some(packets) = cdg {
+                attach_cdg_for_song(
+                    &mut cdg_state,
+                    song_id,
+                    snapshot.transport_generation,
+                    packets,
+                );
+            } else {
+                // No CDG for this song — clear the loading status.
+                clear_cdg_for_transport_change(&mut cdg_state);
+            }
         } else {
             eprintln!("coordinator: CDG state lock poisoned in InstallReady");
         }
@@ -451,6 +480,17 @@ fn handle_fail_load<R: Runtime>(
         playback.snapshot()
     };
 
+    // Clear CDG state — the track failed to load.
+    {
+        let Ok(mut cdg_state) = runtime.cdg_state.lock() else {
+            eprintln!("coordinator: CDG state lock poisoned in FailLoad");
+            let _ = emit_position(&runtime.app_handle, &snapshot);
+            emit_playback_error(&runtime.app_handle, song_id, error);
+            return;
+        };
+        clear_cdg_for_transport_change(&mut cdg_state);
+    }
+
     let _ = emit_position(&runtime.app_handle, &snapshot);
     emit_playback_error(&runtime.app_handle, song_id, error);
 }
@@ -473,6 +513,16 @@ fn handle_resume<R: Runtime>(runtime: &CoordinatorRuntime<R>, reply: SnapshotRep
     };
 
     bump_airplay_epoch_and_generation(&runtime.airplay);
+
+    // Update CDG transport generation without resetting renderer pixels or cursor.
+    {
+        let Ok(mut cdg_state) = runtime.cdg_state.lock() else {
+            eprintln!("coordinator: CDG state lock poisoned in Resume");
+            let _ = reply.send(Ok(snapshot));
+            return;
+        };
+        update_cdg_transport_generation(&mut cdg_state, snapshot.transport_generation);
+    }
 
     if let Err(e) = ensure_output(runtime) {
         let _ = reply.send(Err(e));
@@ -506,6 +556,16 @@ fn handle_pause<R: Runtime>(runtime: &CoordinatorRuntime<R>, reply: SnapshotRepl
 
     bump_airplay_epoch_and_generation(&runtime.airplay);
 
+    // Update CDG transport generation without resetting renderer pixels or cursor.
+    {
+        let Ok(mut cdg_state) = runtime.cdg_state.lock() else {
+            eprintln!("coordinator: CDG state lock poisoned in Pause");
+            let _ = reply.send(Ok(snapshot));
+            return;
+        };
+        update_cdg_transport_generation(&mut cdg_state, snapshot.transport_generation);
+    }
+
     if let Err(e) = emit_position(&runtime.app_handle, &snapshot) {
         let _ = reply.send(Err(e));
         return;
@@ -515,16 +575,15 @@ fn handle_pause<R: Runtime>(runtime: &CoordinatorRuntime<R>, reply: SnapshotRepl
 }
 
 fn handle_seek<R: Runtime>(runtime: &CoordinatorRuntime<R>, target_ms: u64, reply: SnapshotReply) {
-    let (previous_position_ms, snapshot) = {
+    let snapshot = {
         let Ok(mut playback) = runtime.playback.lock() else {
             let _ = reply.send(Err(PlaybackError::Internal(
                 "playback controller lock was poisoned".to_owned(),
             )));
             return;
         };
-        let previous_position_ms = playback.snapshot().position_ms;
         match playback.seek(target_ms, monotonic_now_ms()) {
-            Ok(s) => (previous_position_ms, s),
+            Ok(s) => s,
             Err(e) => {
                 let _ = reply.send(Err(e));
                 return;
@@ -534,14 +593,16 @@ fn handle_seek<R: Runtime>(runtime: &CoordinatorRuntime<R>, target_ms: u64, repl
 
     bump_airplay_epoch_and_generation(&runtime.airplay);
 
-    // CDG reset must happen after releasing the playback lock.
+    // Mark both CDG timelines for repositioning on their next authorized
+    // advance. Seek in either direction updates generation, clears cached
+    // IPC version visibility, and marks both timelines for repositioning.
     {
         let Ok(mut cdg_state) = runtime.cdg_state.lock() else {
             eprintln!("coordinator: CDG state lock poisoned in Seek");
             let _ = reply.send(Ok(snapshot));
             return;
         };
-        mark_cdg_reset_for_seek(&mut cdg_state, previous_position_ms, snapshot.position_ms);
+        mark_cdg_seek(&mut cdg_state, snapshot.transport_generation);
     }
 
     if let Err(e) = emit_position(&runtime.app_handle, &snapshot) {
@@ -746,7 +807,6 @@ mod tests {
     use super::*;
     use crate::{
         audio::decode::DecodedAudio,
-        commands::cdg::CdgPlaybackState,
         state::{AirPlayState, PlaybackState},
     };
     use std::sync::atomic::Ordering;
@@ -1229,55 +1289,63 @@ mod tests {
     // ── CDG seek behavior ────────────────────────────────────────────────
 
     #[test]
-    fn backward_seek_marks_cdg_for_reset() {
+    fn seek_marks_both_cdg_timelines_for_repositioning() {
+        use crate::cdg::CdgPacket;
+
         let harness = Harness::with_request_id(1);
-        // Install a track with CDG state.
-        let cdg = Some(CdgPlaybackState::new(Vec::new()));
+        // Install a track with CDG packets.
+        let packets: Arc<[CdgPacket]> = Arc::from(
+            vec![CdgPacket {
+                command: 0x09,
+                instruction: 0x01,
+                data: [0u8; 16],
+            }]
+            .into_boxed_slice(),
+        );
         harness.send(PlaybackCommand::InstallReady {
             request_id: 1,
             song_id: "song-a".to_owned(),
             ready: Box::new(ReadyTrack::Decoded {
                 audio: dummy_audio(),
                 stems: None,
-                cdg,
+                cdg: Some(packets),
             }),
         });
         // Barrier.
         let _ = harness.send_and_recv(|reply| PlaybackCommand::Pause { reply });
         let _ = harness.send_and_recv(|reply| PlaybackCommand::Resume { reply });
 
-        // Set CDG state to non-reset.
-        {
-            let mut cdg_state = harness.runtime.cdg_state.lock().unwrap();
-            if let Some(ref mut cdg) = *cdg_state {
-                cdg.needs_reset = false;
-                cdg.cached_frame = Some(vec![0xAA]);
-            }
-        }
-
-        // Forward seek — should NOT reset CDG.
-        let _ = harness.send_and_recv(|reply| PlaybackCommand::Seek {
-            target_ms: 2_000,
-            reply,
-        });
+        // CDG slot should be attached and ready.
         {
             let cdg_state = harness.runtime.cdg_state.lock().unwrap();
-            let cdg = cdg_state.as_ref().expect("cdg state should exist");
-            assert!(!cdg.needs_reset, "forward seek must not reset CDG");
+            let slot = cdg_state.as_ref().expect("cdg slot should exist");
+            assert!(slot.playback.is_some(), "playback state should be attached");
         }
 
-        // Backward seek — should reset CDG.
+        // Seek — should mark both timelines for repositioning.
         let _ = harness.send_and_recv(|reply| PlaybackCommand::Seek {
             target_ms: 500,
             reply,
         });
         {
             let cdg_state = harness.runtime.cdg_state.lock().unwrap();
-            let cdg = cdg_state.as_ref().expect("cdg state should exist");
-            assert!(cdg.needs_reset, "backward seek must reset CDG");
+            let slot = cdg_state.as_ref().expect("cdg slot should exist");
+            let cdg = slot.playback.as_ref().expect("playback should exist");
             assert!(
-                cdg.cached_frame.is_none(),
-                "backward seek must clear cached frame"
+                cdg.local.needs_reset,
+                "seek must mark local for repositioning"
+            );
+            assert!(
+                cdg.airplay.needs_reset,
+                "seek must mark airplay for repositioning"
+            );
+            assert!(
+                cdg.local.cached_frame.is_none(),
+                "seek must clear local cache"
+            );
+            assert!(
+                cdg.airplay.cached_frame.is_none(),
+                "seek must clear airplay cache"
             );
         }
 

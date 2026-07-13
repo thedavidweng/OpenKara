@@ -53,4 +53,31 @@ describe("cdg canvas painter", () => {
     expect(imageData.data[2]).toBe(51);
     expect(imageData.data[3]).toBe(255);
   });
+
+  test("accepts Uint8Array directly (zero-copy from binary protocol)", () => {
+    const rgba = new Uint8Array(CDG_WIDTH * CDG_HEIGHT * 4);
+    rgba[0] = 100;
+    rgba[1] = 200;
+    rgba[2] = 50;
+    rgba[3] = 255;
+
+    const ctx = {
+      putImageData: vi.fn(),
+      clearRect: vi.fn(),
+    } as unknown as CanvasRenderingContext2D;
+    const canvas = {
+      getContext: vi.fn(() => ctx),
+    } as unknown as HTMLCanvasElement;
+    setCdgCanvas(canvas);
+
+    drawFrame(rgba);
+
+    expect(ctx.putImageData).toHaveBeenCalledOnce();
+    const imageData = vi.mocked(ctx.putImageData).mock
+      .calls[0]?.[0] as MockImageData;
+    expect(imageData.data[0]).toBe(100);
+    expect(imageData.data[1]).toBe(200);
+    expect(imageData.data[2]).toBe(50);
+    expect(imageData.data[3]).toBe(255);
+  });
 });

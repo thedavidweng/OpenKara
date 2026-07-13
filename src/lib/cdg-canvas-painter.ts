@@ -51,8 +51,11 @@ export function setCdgCanvas(canvas: HTMLCanvasElement | null): void {
 }
 
 /**
- * Paint a raw RGBA frame (as `ArrayBuffer` from the Tauri IPC binary path)
- * directly onto the CDG canvas.
+ * Paint a raw RGBA frame onto the CDG canvas.
+ *
+ * Accepts either an `ArrayBuffer` (legacy path) or a `Uint8Array` view into
+ * the RGBA payload of the binary protocol envelope (preferred path). When a
+ * `Uint8Array` is passed, it is a zero-copy view into the IPC response buffer.
  *
  * PERF: This is the **performance-critical rendering path** for the main
  * window. The backend returns raw bytes via `tauri::ipc::Response` and the
@@ -65,8 +68,17 @@ export function setCdgCanvas(canvas: HTMLCanvasElement | null): void {
  * Do not revert to base64 string input or per-frame `new ImageData()` —
  * both were the primary CDG performance bottlenecks before this optimization.
  */
-export function drawFrame(buffer: ArrayBuffer): void {
-  lastFrameBytes = new Uint8ClampedArray(buffer);
+export function drawFrame(frame: ArrayBuffer | Uint8Array): void {
+  if (frame instanceof Uint8Array) {
+    // Zero-copy view into the binary protocol's RGBA payload.
+    lastFrameBytes = new Uint8ClampedArray(
+      frame.buffer,
+      frame.byteOffset,
+      frame.byteLength,
+    );
+  } else {
+    lastFrameBytes = new Uint8ClampedArray(frame);
+  }
   paintBytes(lastFrameBytes);
 }
 

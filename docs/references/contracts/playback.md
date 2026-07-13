@@ -324,7 +324,7 @@ playing ↔ playing（pause/resume，通过 isPlaying 区分）
 3. `PlaybackController` 负责状态推进与位置计算
 4. `PlaybackCoordinator` 负责串行处理所有控制面命令（pause / resume / seek / set_volume / set_stem_volume / set_eq_enabled / set_eq_gains / install_track / fail_load / attach_stems / prepare_next / cancel_prepared_next），保证 FIFO 顺序与 latest-request-wins
 5. backend playback service 负责 latest-request-wins、output thread 启动和 stale decode 忽略
-6. backend CDG helper 负责 sidecar / explicit path / Media+G ZIP 的 CDG 状态加载与 backward seek reset
+6. backend CDG helper 负责 sidecar / explicit path / Media+G ZIP 的 CDG packet 加载、transport lifecycle（loading / ready / error / seek reset）和 parser diagnostics
 7. `stems` cache 为 `load_stems` 提供已缓存路径
 8. `biquad` crate 提供五段 peaking EQ biquad 滤波器系数
 9. `EqProcessor` 在实时输出回调中执行 EQ dry/wet 混合 + auto preamp + soft limiter
@@ -343,6 +343,65 @@ existing source/stem mix + master/stem gains
 ```
 
 EQ 平滑（gain、preamp、bypass dry/wet）仅在已渲染样本上推进，trailing padding 不推进滤波器状态。Peak 累加在 fade 之后、输出转发之前执行，只统计已渲染样本。
+
+## CDG IPC
+
+### `get_cdg_frame`
+
+**Input**
+
+```json
+{
+  "songId": "sha256 hash string",
+  "transportGeneration": 42,
+  "positionMs": 33000,
+  "lastFrameVersion": 7
+}
+```
+
+**Output:** Binary `ArrayBuffer` (32-byte header + optional RGBA payload).
+
+- 0 bytes: no active CDG, stale song/generation, or error state.
+- 32 bytes (header only, no RGBA flag): active CDG but caller already has current frame.
+- 32 + 221,184 bytes: caller needs the current frame (RGBA payload present).
+
+Header layout (little-endian):
+
+| Offset | Size | Field                        |
+| ------ | ---- | ---------------------------- |
+| 0      | 4    | Magic `"OKCG"`               |
+| 4      | 2    | Protocol version (u16)       |
+| 6      | 2    | Flags (bit 0 = RGBA present) |
+| 8      | 8    | Transport generation (u64)   |
+| 16     | 8    | Frame version (u64)          |
+| 24     | 8    | Packet index (u64)           |
+
+A mismatch in `songId` or `transportGeneration` returns 0 bytes and does not mutate any decoder state. `lastFrameVersion` allows the backend to skip RGBA conversion when the caller already has the current frame.
+
+### `get_cdg_status`
+
+**Input**
+
+```json
+{
+  "songId": "sha256 hash string",
+  "transportGeneration": 42
+}
+```
+
+**Output**
+
+```json
+{
+  "availability": "none | loading | ready | error",
+  "songId": "sha256 hash string | null",
+  "transportGeneration": 42,
+  "packetCount": 12345,
+  "errorCode": "missing | empty | invalid | read_failed | zip_failed | null"
+}
+```
+
+Returns `{ availability: "none" }` if no CDG is active or the song/generation doesn't match the backend's current CDG slot.
 
 ## Verification commands
 

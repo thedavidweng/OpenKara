@@ -10,7 +10,7 @@ use crate::{
     library,
     library_root::LibraryRoot,
     services::{
-        cdg::load_cdg_state_for_song,
+        cdg::{load_cdg_packets_for_song, CdgLoadResult},
         playback_source::{
             self, ensure_remote_stem_files_cached, load_cached_stems_for_song,
             load_playback_source, PlaybackSourceLoad,
@@ -34,6 +34,28 @@ use tauri::{AppHandle, Emitter, Runtime};
 pub struct PlaybackErrorEvent {
     pub song_id: String,
     pub error: CommandError,
+}
+
+/// Load CDG packets for a song and return them as a shared `Arc<[CdgPacket]>`.
+/// Returns `None` when no CDG file exists or loading fails (CDG is optional).
+/// Load failures are logged by the CDG service; audio playback continues.
+fn load_cdg_packets_as_arc(
+    library_root: &LibraryRoot,
+    song: &library::Song,
+) -> Option<Arc<[crate::cdg::CdgPacket]>> {
+    match load_cdg_packets_for_song(library_root, song) {
+        CdgLoadResult::Loaded(result) => {
+            if let Some(diag) = &result.diagnostic {
+                eprintln!(
+                    "warning: CDG parse diagnostic for {}: {:?}",
+                    song.hash, diag
+                );
+            }
+            Some(Arc::from(result.packets.into_boxed_slice()))
+        }
+        CdgLoadResult::Missing => None,
+        CdgLoadResult::ReadFailed | CdgLoadResult::ZipFailed => None,
+    }
 }
 
 pub(crate) fn spawn_airplay_control_refresh_worker(
@@ -243,8 +265,8 @@ fn play_track_background<R: Runtime>(
             }
         };
 
-        // Load CDG state for this song.
-        let cdg = load_cdg_state_for_song(library_root, song);
+        // Load CDG packets for this song (optional graphics sidecar).
+        let cdg = load_cdg_packets_as_arc(library_root, song);
 
         let ready = ReadyTrack::Streaming {
             sample_rate: streaming_source.metadata.sample_rate,
@@ -356,8 +378,8 @@ fn play_track_background<R: Runtime>(
         return Ok(());
     }
 
-    // Load CDG state for this song.
-    let cdg = load_cdg_state_for_song(library_root, song);
+    // Load CDG packets for this song (optional graphics sidecar).
+    let cdg = load_cdg_packets_as_arc(library_root, song);
 
     let ready = ReadyTrack::Decoded {
         audio: decoded_audio,
@@ -401,7 +423,7 @@ fn fallback_remote_playback_to_full_file(
         stems,
     } = load_playback_source(Some(app_data_dir), &connection, library_root, &song)?;
 
-    let cdg = load_cdg_state_for_song(library_root, &song);
+    let cdg = load_cdg_packets_as_arc(library_root, &song);
 
     let ready = ReadyTrack::Decoded {
         audio: decoded_audio,

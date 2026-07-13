@@ -199,7 +199,7 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
     let coordinator_runtime = CoordinatorRuntime {
         app_handle: app.handle().clone(),
         playback: Arc::clone(&playback),
-        cdg_state: Arc::clone(&cdg_state),
+        cdg_state: Arc::clone(&playback_state.cdg_state),
         latest_request_id: Arc::clone(&playback_state.playback_request_id),
         output_started: Arc::clone(&playback_state.audio_output_started),
         output_start_lock: Arc::clone(&playback_state.audio_output_start_lock),
