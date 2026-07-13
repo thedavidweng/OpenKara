@@ -76,19 +76,14 @@ impl Default for CdgTimelineState {
 // ── CDG availability status ───────────────────────────────────────────────
 
 /// CDG availability for the current song and generation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum CdgAvailability {
+    #[default]
     None,
     Loading,
     Ready,
     Error,
-}
-
-impl Default for CdgAvailability {
-    fn default() -> Self {
-        CdgAvailability::None
-    }
 }
 
 /// Error code for CDG parse/load failures.
@@ -103,7 +98,7 @@ pub enum CdgErrorCode {
 }
 
 /// Explicit CDG status payload exposed to the frontend.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct CdgStatus {
     pub availability: CdgAvailability,
@@ -113,31 +108,11 @@ pub struct CdgStatus {
     pub error_code: Option<CdgErrorCode>,
 }
 
-impl Default for CdgStatus {
-    fn default() -> Self {
-        CdgStatus {
-            availability: CdgAvailability::None,
-            song_id: None,
-            transport_generation: None,
-            packet_count: None,
-            error_code: None,
-        }
-    }
-}
-
 /// Slot holding status plus optional playback state.
+#[derive(Default)]
 pub struct CdgPlaybackSlot {
     pub status: CdgStatus,
     pub playback: Option<CdgPlaybackState>,
-}
-
-impl Default for CdgPlaybackSlot {
-    fn default() -> Self {
-        CdgPlaybackSlot {
-            status: CdgStatus::default(),
-            playback: None,
-        }
-    }
 }
 
 /// Holds shared immutable packets plus per-timeline mutable state.
@@ -714,14 +689,11 @@ mod tests {
             let position_ms = (i as u64) * 33;
             let update = advance_cdg_timeline(&mut state, CdgTimelineKind::Local, position_ms);
             poll_count += 1;
-            match update {
-                CdgFrameUpdate::Frame { frame_version, .. } => {
-                    if frame_version != current_version {
-                        rgba_conversion_count += 1;
-                        current_version = frame_version;
-                    }
+            if let CdgFrameUpdate::Frame { frame_version, .. } = update {
+                if frame_version != current_version {
+                    rgba_conversion_count += 1;
+                    current_version = frame_version;
                 }
-                _ => {}
             }
         }
 
