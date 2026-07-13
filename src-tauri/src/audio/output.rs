@@ -418,7 +418,49 @@ pub fn render_output_buffer(
         finalize_streaming_natural_end(playback);
     }
 
-    rendered
+    // #88: Gapless transition. After advancing the render frame, check if the
+    // current track has reached EOF. If a prepared track is available, swap it
+    // in immediately and render the remaining buffer from the new track so
+    // there is no silence gap when EOF lands mid-callback. Without this tail
+    // fill, a track ending before the end of a CPAL callback would leave a
+    // zero-filled tail (up to ~10-20 ms at typical buffer sizes) before the
+    // next callback starts the new track.
+    //
+    // Only decoded (non-streaming) tracks participate in gapless preload.
+    // Streaming tracks use `finalize_streaming_natural_end` above and rely on
+    // the frontend to call `play()` for the next song.
+    let mut total_rendered = rendered;
+    if !has_streaming && playback.current_track_reached_eof() {
+        if playback.perform_gapless_swap() {
+            // The swap set render_frame = 0 on the new track. Render the
+            // remaining buffer from the new track's original audio (stems are
+            // not preloaded for gapless — the swap creates a plain track).
+            let remaining = &mut output[rendered..];
+            if !remaining.is_empty() {
+                let track = playback.current_track.as_ref().unwrap();
+                let original = &track.original_audio;
+                let (extra_rendered, extra_frames) = mix_stem_resampled(
+                    remaining,
+                    original,
+                    0,
+                    master,
+                    device_sample_rate,
+                    device_channels,
+                    Some(resampler_cache),
+                );
+                // Apply EQ + soft limiter to the transition tail.
+                eq_processor.process(remaining, extra_rendered);
+                // Accumulate peaks for the tail so the visualizer stays live.
+                peak_accumulator.process(remaining, extra_rendered, device_channels, peak_ring);
+                // Advance the new track's render frame by the frames we just
+                // rendered so the next callback continues seamlessly.
+                playback.advance_render_frame(extra_frames);
+                total_rendered += extra_rendered;
+            }
+        }
+    }
+
+    total_rendered
 }
 
 /// Mix a single audio source into the output buffer with sample-rate conversion
@@ -1688,5 +1730,101 @@ mod tests {
             snapshot.position_ms, 0,
             "position must not advance during buffering"
         );
+    }
+
+    /// #88: When the current track reaches EOF mid-callback, the gapless swap
+    /// must fill the remaining buffer with samples from the new track so there
+    /// is no silence gap at the transition point.
+    #[test]
+    fn gapless_swap_fills_remaining_buffer_from_next_track() {
+        use crate::audio::decode::DecodedAudio;
+        use crate::audio::output_format::OutputFormatSnapshot;
+        use crate::audio::playback::{PlaybackController, PreparedTrack};
+
+        let sample_rate: u32 = 44_100;
+        let channels: usize = 2;
+        let device_channels = 2;
+
+        // Track A: 100 frames of 0.1, then EOF. Buffer is 512 frames, so
+        // track A ends mid-callback and the remaining 412 frames should be
+        // filled from track B.
+        let track_a_samples = vec![0.1_f32; 100 * channels];
+        let track_a = DecodedAudio {
+            sample_rate,
+            channels,
+            duration_ms: (100 * 1000 / sample_rate as usize) as u64,
+            samples: track_a_samples,
+        };
+
+        let mut controller = PlaybackController::default();
+        controller.start_track("song-a".to_owned(), track_a, 0);
+        controller.play(0).unwrap();
+        // Clear the fade-in so the test measures raw sample values.
+        controller.fade = crate::audio::playback::FadeState::None;
+
+        // Prepare track B: 512 frames of 0.5, distinguishable from track A.
+        let fmt = OutputFormatSnapshot::new(1, sample_rate, channels as u16);
+        let track_b_samples = vec![0.5_f32; 512 * channels];
+        let prepared = PreparedTrack {
+            preload_request_generation: 0,
+            preload_generation: fmt.generation,
+            song_id: "song-b".to_owned(),
+            output_format: fmt,
+            audio: DecodedAudio {
+                sample_rate,
+                channels,
+                duration_ms: (512 * 1000 / sample_rate as usize) as u64,
+                samples: track_b_samples,
+            },
+        };
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+
+        // Render one buffer. Track A fills the first 100 frames; the gapless
+        // swap should fill the remaining 412 frames from track B.
+        let mut output = vec![0.0f32; 512 * device_channels];
+        let mut rc = super::ResamplerCache::new();
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        let rendered = render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            sample_rate,
+            device_channels,
+            &mut rc,
+            &mut EqProcessor::new(sample_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        // The entire buffer should be filled — no silence gap.
+        assert_eq!(
+            rendered,
+            512 * device_channels,
+            "gapless swap should fill the entire buffer"
+        );
+
+        // First 100 frames are from track A (0.1).
+        for i in 0..100 * device_channels {
+            assert!(
+                (output[i] - 0.1).abs() < 1e-6,
+                "frame {i} should be from track A: got {}",
+                output[i]
+            );
+        }
+
+        // Remaining 412 frames are from track B (0.5), not zeros.
+        for i in 100 * device_channels..512 * device_channels {
+            assert!(
+                (output[i] - 0.5).abs() < 1e-6,
+                "frame {i} should be from track B: got {}",
+                output[i]
+            );
+        }
+
+        // The new track's render frame should have advanced by 412.
+        let track = controller.current_track.as_ref().unwrap();
+        assert_eq!(track.song_id, "song-b");
+        assert_eq!(track.render_frame, 412);
     }
 }
