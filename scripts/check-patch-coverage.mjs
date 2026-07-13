@@ -28,6 +28,7 @@ const IGNORE_PREFIXES = [
   "src/main.tsx",
   "src/workers/romanize.worker.ts",
   "src/runtime/window-shell-runtime.ts",
+  "src/runtime/theme-runtime.ts",
   "src/lib/native-context-menu.ts",
   "src/components/Library/ImportCdgChoiceDialog.tsx",
   "src/components/Library/SongEditDialog.tsx",

@@ -32,6 +32,7 @@ coverage:
     # Deep Tauri native API dependencies — require actual Tauri runtime
     # for meaningful coverage; unit-test mocks only test the mock.
     - src/runtime/window-shell-runtime.ts
+    - src/runtime/theme-runtime.ts
     - src/lib/native-context-menu.ts
     # Heavy Tauri-dependent UI — tested by Playwright E2E, not vitest.
     - src/components/Library/ImportCdgChoiceDialog.tsx
