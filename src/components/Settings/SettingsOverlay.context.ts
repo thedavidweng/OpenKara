@@ -64,7 +64,7 @@ export function createSettingsOverlayTestContextValue(
       toggleHideBatchSeparate: async () => {},
       toggleCoverArtBackdrop: async () => {},
       setEqEnabled: async () => {},
-      setEqBandGain: async () => {},
+      setEqGains: async () => {},
       resetEqGains: async () => {},
       openDeleteStemsDialog: async () => {},
       confirmDeleteStems: async () => {},

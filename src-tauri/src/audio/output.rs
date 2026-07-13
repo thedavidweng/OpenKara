@@ -241,7 +241,7 @@ pub fn render_output_buffer(
         let track = playback.current_track.as_mut().unwrap();
         let streaming = track.streaming.as_mut().unwrap();
 
-        let result = match streaming {
+        match streaming {
             crate::audio::streaming::StreamingTrack::Single { consumer } => {
                 render_streaming_single(
                     output,
@@ -283,19 +283,12 @@ pub fn render_output_buffer(
                 device_sample_rate,
                 device_channels,
             ),
-        };
-
-        // Clamp to prevent clipping
-        for sample in output.iter_mut() {
-            *sample = sample.clamp(-1.0, 1.0);
         }
-
-        result
     } else if has_stems {
         // Stem mode: mix from pre-decoded stem buffers
         let track = playback.current_track.as_ref().unwrap();
         let loaded_stems = track.stems.as_ref().unwrap();
-        let result = match loaded_stems {
+        match loaded_stems {
             LoadedStems::TwoStem {
                 vocals,
                 accompaniment,
@@ -360,19 +353,12 @@ pub fn render_output_buffer(
                 );
                 (r1.max(r2).max(r3).max(r4), f1.max(f2).max(f3).max(f4))
             }
-        };
-
-        // Clamp to prevent clipping
-        for sample in output.iter_mut() {
-            *sample = sample.clamp(-1.0, 1.0);
         }
-
-        result
     } else {
         // Fallback: play original audio with master volume
         let track = playback.current_track.as_ref().unwrap();
         let original = &track.original_audio;
-        let result = mix_stem_resampled(
+        mix_stem_resampled(
             output,
             original,
             render_frame,
@@ -380,14 +366,7 @@ pub fn render_output_buffer(
             device_sample_rate,
             device_channels,
             Some(resampler_cache),
-        );
-
-        // Clamp to prevent clipping
-        for sample in output.iter_mut() {
-            *sample = sample.clamp(-1.0, 1.0);
-        }
-
-        result
+        )
     };
 
     // EQ + auto preamp + soft limiter. The render order is:

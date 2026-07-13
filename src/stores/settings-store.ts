@@ -190,11 +190,14 @@ export function createSettingsStore(
       },
       setEqGains: async (gainsDb) => {
         // Optimistically update local state so sliders reflect immediately.
+        const previous = get().eqGainsDb;
         syncPatch({ eqGainsDb: gainsDb });
         try {
           const settings = await api.setEqGains(gainsDb);
           syncPatch(toAppSettingsSnapshot(settings));
         } catch (error) {
+          // Revert to the previous authoritative values on failure.
+          syncPatch({ eqGainsDb: previous });
           notifyError(error);
         }
       },

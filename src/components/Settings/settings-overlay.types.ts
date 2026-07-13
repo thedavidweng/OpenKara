@@ -88,7 +88,9 @@ export interface SettingsOverlayActions {
   toggleHideBatchSeparate: (value: boolean) => Promise<void>;
   toggleCoverArtBackdrop: (value: boolean) => Promise<void>;
   setEqEnabled: (enabled: boolean) => Promise<void>;
-  setEqBandGain: (band: number, gainDb: number) => Promise<void>;
+  setEqGains: (
+    gainsDb: [number, number, number, number, number],
+  ) => Promise<void>;
   resetEqGains: () => Promise<void>;
   openDeleteStemsDialog: () => Promise<void>;
   confirmDeleteStems: () => Promise<void>;

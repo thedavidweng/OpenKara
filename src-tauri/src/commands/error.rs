@@ -84,6 +84,15 @@ pub fn internal_error(message: impl ToString) -> CommandError {
     )
 }
 
+pub fn invalid_playback_state(message: impl ToString) -> CommandError {
+    CommandError::new(
+        ErrorCode::InvalidPlaybackState,
+        message.to_string(),
+        false,
+        FallbackAction::KeepCurrentState,
+    )
+}
+
 pub fn model_bootstrap_error(message: impl ToString) -> CommandError {
     CommandError::new(
         ErrorCode::ModelUnavailable,

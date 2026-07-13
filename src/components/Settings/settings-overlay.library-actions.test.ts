@@ -802,10 +802,10 @@ describe("createLibrarySettingsActions", () => {
     });
   });
 
-  // ---- setEqBandGain ----
+  // ---- setEqGains ----
 
-  describe("setEqBandGain", () => {
-    test("patches state, updates settings store, and calls api with full gains array", async () => {
+  describe("setEqGains", () => {
+    test("patches state, updates settings store, and calls api", async () => {
       const harness = createHarness();
       const appSettings = {
         ...createAppSettings(),
@@ -813,7 +813,7 @@ describe("createLibrarySettingsActions", () => {
       };
       harness.dependencies.api.setEqGains.mockResolvedValue(appSettings);
 
-      await harness.actions.setEqBandGain(2, 6);
+      await harness.actions.setEqGains([0, 0, 6, 0, 0]);
 
       expect(harness.patchState).toHaveBeenCalledWith({
         eqGainsDb: [0, 0, 6, 0, 0],
@@ -829,36 +829,40 @@ describe("createLibrarySettingsActions", () => {
       ).toHaveBeenCalledWith(appSettings);
     });
 
-    test("clamps gain to ±12 dB", async () => {
+    test("clamps each gain to ±12 dB", async () => {
       const harness = createHarness();
       harness.dependencies.api.setEqGains.mockResolvedValue(
         createAppSettings(),
       );
 
-      await harness.actions.setEqBandGain(0, 20);
+      await harness.actions.setEqGains([20, -20, 0, 0, 0]);
 
       expect(harness.dependencies.api.setEqGains).toHaveBeenCalledWith([
-        12, 0, 0, 0, 0,
+        12, -12, 0, 0, 0,
       ]);
     });
 
-    test("skips api call when value is unchanged", async () => {
+    test("skips api call when values are unchanged", async () => {
       const harness = createHarness();
 
-      await harness.actions.setEqBandGain(0, 0);
+      await harness.actions.setEqGains([0, 0, 0, 0, 0]);
 
       expect(harness.dependencies.api.setEqGains).not.toHaveBeenCalled();
     });
 
-    test("calls notifyError on failure", async () => {
+    test("reverts optimistic state and notifies on failure", async () => {
       const harness = createHarness();
       harness.dependencies.api.setEqGains.mockRejectedValue(
         new Error("eq gains fail"),
       );
 
-      await harness.actions.setEqBandGain(1, 3);
+      await harness.actions.setEqGains([1, 3, 0, 0, 0]);
 
       expect(harness.dependencies.notifyError).toHaveBeenCalled();
+      // Should revert to the previous authoritative values.
+      expect(harness.patchState).toHaveBeenCalledWith({
+        eqGainsDb: [0, 0, 0, 0, 0],
+      });
     });
   });
 

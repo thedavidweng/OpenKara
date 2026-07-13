@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { SettingsEqSection } from "./SettingsEqSection";
@@ -126,14 +132,14 @@ describe("SettingsEqSection", () => {
     expect(setEqEnabled).toHaveBeenCalledWith(true);
   });
 
-  test("calls setEqBandGain when a slider is changed", () => {
-    const setEqBandGain = vi.fn().mockResolvedValue(undefined);
+  test("updates local draft immediately on slider change without IPC call", () => {
+    const setEqGains = vi.fn().mockResolvedValue(undefined);
     const value = createSettingsOverlayTestContextValue(
       {
         state: { eqEnabled: true, eqGainsDb: [0, 0, 0, 0, 0] },
         meta: { isInitializing: false },
       },
-      { setEqBandGain },
+      { setEqGains },
     );
 
     const { container } = render(
@@ -145,7 +151,103 @@ describe("SettingsEqSection", () => {
     const sliders = container.querySelectorAll('input[type="range"]');
     fireEvent.change(sliders[2], { target: { value: "6" } });
 
-    expect(setEqBandGain).toHaveBeenCalledWith(2, 6);
+    // Local draft updates immediately — the slider's value attribute reflects 6.
+    expect((sliders[2] as HTMLInputElement).value).toBe("6");
+    // IPC call is debounced — not fired synchronously.
+    expect(setEqGains).not.toHaveBeenCalled();
+  });
+
+  test("flushes pending debounced commit on pointer release", async () => {
+    vi.useFakeTimers();
+    const setEqGains = vi.fn().mockResolvedValue(undefined);
+    const value = createSettingsOverlayTestContextValue(
+      {
+        state: { eqEnabled: true, eqGainsDb: [0, 0, 0, 0, 0] },
+        meta: { isInitializing: false },
+      },
+      { setEqGains },
+    );
+
+    const { container } = render(
+      <SettingsOverlayContext value={value}>
+        <SettingsEqSection />
+      </SettingsOverlayContext>,
+    );
+
+    const sliders = container.querySelectorAll('input[type="range"]');
+    fireEvent.change(sliders[1], { target: { value: "3" } });
+    // Before the debounce window elapses, flush via pointer release.
+    fireEvent.pointerUp(sliders[1]);
+
+    expect(setEqGains).toHaveBeenCalledTimes(1);
+    expect(setEqGains).toHaveBeenCalledWith([0, 3, 0, 0, 0]);
+    vi.useRealTimers();
+  });
+
+  test("fires one IPC call after 75ms debounce quiet period", async () => {
+    vi.useFakeTimers();
+    const setEqGains = vi.fn().mockResolvedValue(undefined);
+    const value = createSettingsOverlayTestContextValue(
+      {
+        state: { eqEnabled: true, eqGainsDb: [0, 0, 0, 0, 0] },
+        meta: { isInitializing: false },
+      },
+      { setEqGains },
+    );
+
+    const { container } = render(
+      <SettingsOverlayContext value={value}>
+        <SettingsEqSection />
+      </SettingsOverlayContext>,
+    );
+
+    const sliders = container.querySelectorAll('input[type="range"]');
+    // Simulate dragging through several values rapidly.
+    fireEvent.change(sliders[0], { target: { value: "2" } });
+    fireEvent.change(sliders[0], { target: { value: "4" } });
+    fireEvent.change(sliders[0], { target: { value: "6" } });
+
+    expect(setEqGains).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(75);
+    });
+
+    expect(setEqGains).toHaveBeenCalledTimes(1);
+    expect(setEqGains).toHaveBeenCalledWith([6, 0, 0, 0, 0]);
+    vi.useRealTimers();
+  });
+
+  test("cancels pending debounced commit on unmount", () => {
+    vi.useFakeTimers();
+    const setEqGains = vi.fn().mockResolvedValue(undefined);
+    const value = createSettingsOverlayTestContextValue(
+      {
+        state: { eqEnabled: true, eqGainsDb: [0, 0, 0, 0, 0] },
+        meta: { isInitializing: false },
+      },
+      { setEqGains },
+    );
+
+    const { container, unmount } = render(
+      <SettingsOverlayContext value={value}>
+        <SettingsEqSection />
+      </SettingsOverlayContext>,
+    );
+
+    const sliders = container.querySelectorAll('input[type="range"]');
+    fireEvent.change(sliders[0], { target: { value: "5" } });
+
+    // Unmount before the debounce window elapses.
+    unmount();
+
+    act(() => {
+      vi.advanceTimersByTime(75);
+    });
+
+    // The pending commit should have been cancelled, not flushed.
+    expect(setEqGains).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
   test("calls resetEqGains when reset button is clicked", () => {

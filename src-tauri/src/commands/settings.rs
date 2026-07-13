@@ -1,5 +1,5 @@
 use crate::audio::eq::validate_gains_db;
-use crate::commands::error::{internal_error, CommandResult};
+use crate::commands::error::{internal_error, invalid_playback_state, CommandResult};
 use crate::config::{self, AppConfig, ExecutionProviderPreference, ModelVariant, StemMode};
 use crate::AppState;
 use serde::Serialize;
@@ -255,7 +255,8 @@ pub fn set_eq_gains(
     state: State<'_, AppState>,
     gains_db: [f32; 5],
 ) -> CommandResult<AppSettings> {
-    validate_gains_db(&gains_db).map_err(|e| internal_error(format!("invalid eq gains: {e}")))?;
+    validate_gains_db(&gains_db)
+        .map_err(|e| invalid_playback_state(format!("invalid eq gains: {e}")))?;
 
     let app_data_dir = app_handle
         .path()

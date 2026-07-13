@@ -916,6 +916,36 @@ mod tests {
         );
     }
 
+    // ── EQ config hydration ────────────────────────────────────────────────
+
+    #[test]
+    fn effective_eq_defaults_to_disabled_flat() {
+        let config = AppConfig::default();
+        assert!(!config.effective_eq_enabled());
+        assert_eq!(config.effective_eq_gains_db(), [0.0; 5]);
+    }
+
+    #[test]
+    fn effective_eq_enabled_hydrates_from_persisted_value() {
+        let config = AppConfig {
+            eq_enabled: Some(true),
+            ..Default::default()
+        };
+        assert!(config.effective_eq_enabled());
+    }
+
+    #[test]
+    fn effective_eq_gains_hydrates_from_persisted_values() {
+        let config = AppConfig {
+            eq_gains_db: Some([3.0, -6.0, 0.0, 12.0, -12.0]),
+            ..Default::default()
+        };
+        assert_eq!(
+            config.effective_eq_gains_db(),
+            [3.0, -6.0, 0.0, 12.0, -12.0]
+        );
+    }
+
     #[test]
     fn effective_execution_provider_for_falls_back_for_stale_cross_platform_value() {
         use ExecutionProviderPlatform::*;
@@ -940,6 +970,21 @@ mod tests {
         assert_eq!(
             config.effective_execution_provider_for(Windows),
             ExecutionProviderPreference::DirectMl
+        );
+    }
+
+    #[test]
+    fn effective_eq_gains_clamps_out_of_range_persisted_values() {
+        // A manually-edited config file could contain values outside the
+        // valid range. The effective accessor clamps them rather than
+        // panicking, so the app stays usable.
+        let config = AppConfig {
+            eq_gains_db: Some([20.0, -20.0, 0.0, 100.0, -100.0]),
+            ..Default::default()
+        };
+        assert_eq!(
+            config.effective_eq_gains_db(),
+            [12.0, -12.0, 0.0, 12.0, -12.0]
         );
     }
 
@@ -976,5 +1021,15 @@ mod tests {
         assert_eq!(current, Linux);
         #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         assert_eq!(current, Other);
+    }
+
+    #[test]
+    fn effective_eq_gains_replaces_non_finite_persisted_values_with_zero() {
+        let config = AppConfig {
+            eq_gains_db: Some([f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.0, 6.0]),
+            ..Default::default()
+        };
+        let gains = config.effective_eq_gains_db();
+        assert_eq!(gains, [0.0, 0.0, 0.0, 0.0, 6.0]);
     }
 }

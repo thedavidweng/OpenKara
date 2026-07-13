@@ -68,7 +68,7 @@ export function createLibrarySettingsActions(
   | "toggleHideBatchSeparate"
   | "toggleCoverArtBackdrop"
   | "setEqEnabled"
-  | "setEqBandGain"
+  | "setEqGains"
   | "resetEqGains"
 > {
   const {
@@ -341,22 +341,29 @@ export function createLibrarySettingsActions(
       }
     },
 
-    setEqBandGain: async (band, gainDb) => {
-      const clamped = Math.max(-12, Math.min(12, gainDb));
+    setEqGains: async (gainsDb) => {
+      const clamped = gainsDb.map((g) => Math.max(-12, Math.min(12, g))) as [
+        number,
+        number,
+        number,
+        number,
+        number,
+      ];
       const current = controls.getSnapshot().state.eqGainsDb;
-      if (current[band] === clamped) {
+      if (current.every((g, i) => g === clamped[i])) {
         return;
       }
-      const next = [...current] as [number, number, number, number, number];
-      next[band] = clamped;
-      patchState({ eqGainsDb: next });
-      dependencies.settingsStore.patchAppSettings({ eqGainsDb: next });
+      patchState({ eqGainsDb: clamped });
+      dependencies.settingsStore.patchAppSettings({ eqGainsDb: clamped });
 
       try {
-        const settings = await dependencies.api.setEqGains(next);
+        const settings = await dependencies.api.setEqGains(clamped);
         dependencies.settingsStore.hydrateAppSettings(settings);
         patchState({ eqGainsDb: settings.eq_gains_db });
       } catch (error) {
+        // Revert to the previous authoritative values on failure.
+        patchState({ eqGainsDb: current });
+        dependencies.settingsStore.patchAppSettings({ eqGainsDb: current });
         dependencies.notifyError(error);
       }
     },

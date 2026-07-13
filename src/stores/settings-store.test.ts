@@ -422,13 +422,16 @@ describe("settings-store actions", () => {
     expect(store.getState().eqGainsDb).toEqual(gains);
   });
 
-  test("setEqGains calls notifyError on failure", async () => {
+  test("setEqGains reverts optimistic state and calls notifyError on failure", async () => {
     const error = new Error("invoke failed");
     mockSetEqGains.mockRejectedValue(error);
+    store.setState({ eqGainsDb: [1, 2, 3, 4, 5] });
 
     await store.getState().setEqGains([0, 0, 6, 0, 0]);
 
     expect(mockNotifyError).toHaveBeenCalledWith(error);
+    // Should revert to the previous authoritative values.
+    expect(store.getState().eqGainsDb).toEqual([1, 2, 3, 4, 5]);
   });
 
   // ── setEqBandGain ───────────────────────────────────────────────────────
