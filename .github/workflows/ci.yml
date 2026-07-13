@@ -404,9 +404,9 @@ jobs:
       - name: Verify execution-provider platform contract
         working-directory: src-tauri
         shell: pwsh
-        env:
-          PATH: ${{ github.workspace }}\src-tauri\generated\onnxruntime;${{ env.PATH }}
-        run: cargo test -q --lib execution_provider
+        run: |
+          $env:PATH = "$env:GITHUB_WORKSPACE\src-tauri\generated\onnxruntime;$env:PATH"
+          cargo test -q --lib execution_provider
 
   tauri-build:
     name: Tauri build (${{ matrix.name }})
