@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createWebviewSyncChannel } from "@/runtime/webview-sync";
-import type { PlaybackPositionEvent, PlaybackStateSnapshot } from "@/types/ipc";
+import type {
+  PlaybackPositionEvent,
+  PlaybackStateSnapshot,
+  TrackTransitionedEvent,
+} from "@/types/ipc";
 import {
   createPlayerStore,
   DEFAULT_AIRPLAY_OUTPUT_STATE,
@@ -25,7 +29,7 @@ const {
   mockDequeue,
   mockPushToHistory,
   mockPopFromHistory,
-  mockRemoveSongIds,
+  mockReconcileGaplessTransition,
 } = vi.hoisted(() => ({
   mockPlay: vi.fn(),
   mockResume: vi.fn(),
@@ -41,7 +45,7 @@ const {
   mockDequeue: vi.fn(),
   mockPushToHistory: vi.fn(),
   mockPopFromHistory: vi.fn(),
-  mockRemoveSongIds: vi.fn(),
+  mockReconcileGaplessTransition: vi.fn(),
 }));
 
 vi.mock("@/lib/tauri", () => ({
@@ -73,7 +77,8 @@ vi.mock("@/stores/queue-store", () => ({
       dequeue: mockDequeue,
       pushToHistory: mockPushToHistory,
       popFromHistory: mockPopFromHistory,
-      removeSongIds: mockRemoveSongIds,
+      reconcileGaplessTransition: mockReconcileGaplessTransition,
+      queue: [] as string[],
     }),
   },
 }));
@@ -752,8 +757,9 @@ describe("onTrackTransitioned", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     player = createPlayerStore();
-    mockPushToHistory.mockReset();
-    mockRemoveSongIds.mockReset();
+    mockReconcileGaplessTransition.mockReset();
+    mockSetPreloadCandidate.mockReset();
+    mockSetPreloadCandidate.mockResolvedValue(undefined);
     mockGetPlaybackState.mockReset();
     mockGetPlaybackState.mockResolvedValue(playbackSnapshot());
   });
@@ -763,37 +769,49 @@ describe("onTrackTransitioned", () => {
     vi.useRealTimers();
   });
 
-  test("reconciles the queue when the clock holds the from-song", () => {
+  test("reconciles queue and updates preload candidate via the queue adapter", () => {
+    // #88: The player-store adapter wires reconcileGaplessTransition and
+    // peekHead to the queue-store. onTrackTransitioned must invoke both
+    // through the session, covering the adapter arrow-function bodies.
     player.store
       .getState()
-      .updateSnapshot(playbackSnapshot({ song_id: "song-1" }));
+      .updateSnapshot(playbackSnapshot({ song_id: "old-song" }));
 
-    player.store.getState().onTrackTransitioned("song-1", "song-2");
+    const event: TrackTransitionedEvent = {
+      transitionSerial: 1,
+      preloadGeneration: 1,
+      fromSongId: "old-song",
+      toSongId: "new-song",
+      state: playbackSnapshot({ song_id: "new-song", is_playing: true }),
+    };
 
-    expect(mockPushToHistory).toHaveBeenCalledWith("song-1");
-    expect(mockRemoveSongIds).toHaveBeenCalledWith(["song-1", "song-2"]);
+    player.store.getState().onTrackTransitioned(event);
+
+    expect(mockReconcileGaplessTransition).toHaveBeenCalledWith(
+      "old-song",
+      "new-song",
+    );
+    // peekHead returns queue[0] — empty queue yields null.
+    expect(mockSetPreloadCandidate).toHaveBeenCalledWith(null);
   });
 
-  test("reconciles the queue when the clock holds the to-song", () => {
+  test("dedups transition serials so the same serial is applied once", () => {
     player.store
       .getState()
-      .updateSnapshot(playbackSnapshot({ song_id: "song-2" }));
+      .updateSnapshot(playbackSnapshot({ song_id: "old-song" }));
 
-    player.store.getState().onTrackTransitioned("song-1", "song-2");
+    const event: TrackTransitionedEvent = {
+      transitionSerial: 2,
+      preloadGeneration: 1,
+      fromSongId: "old-song",
+      toSongId: "new-song",
+      state: playbackSnapshot({ song_id: "new-song", is_playing: true }),
+    };
 
-    expect(mockPushToHistory).toHaveBeenCalledWith("song-1");
-    expect(mockRemoveSongIds).toHaveBeenCalledWith(["song-1", "song-2"]);
-  });
+    player.store.getState().onTrackTransitioned(event);
+    player.store.getState().onTrackTransitioned(event);
 
-  test("skips reconciliation when the clock holds a different song", () => {
-    player.store
-      .getState()
-      .updateSnapshot(playbackSnapshot({ song_id: "song-3" }));
-
-    player.store.getState().onTrackTransitioned("song-1", "song-2");
-
-    expect(mockPushToHistory).not.toHaveBeenCalled();
-    expect(mockRemoveSongIds).not.toHaveBeenCalled();
+    expect(mockReconcileGaplessTransition).toHaveBeenCalledTimes(1);
   });
 });
 

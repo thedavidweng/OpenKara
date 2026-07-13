@@ -148,6 +148,16 @@ describe("PeakMeter", () => {
     expect(secondCallCount).toBeGreaterThan(firstCallCount);
   });
 
+  it("cleans up timer and cancels polling on unmount", async () => {
+    mockGetAudioPeaks.mockResolvedValue({ writeIndex: 0, peaks: [] });
+    const { unmount } = render(<PeakMeter width={120} height={24} />);
+    await vi.advanceTimersByTimeAsync(100);
+    const callsBefore = mockGetAudioPeaks.mock.calls.length;
+    unmount();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(mockGetAudioPeaks.mock.calls.length).toBe(callsBefore);
+  });
+
   it("renders multiple peak bars", async () => {
     const peaks: Array<[number, number]> = [];
     for (let i = 0; i < 10; i++) {

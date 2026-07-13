@@ -77,8 +77,6 @@ export interface PlaybackQueueOps {
   dequeue: () => string | null;
   pushToHistory: (songId: string) => void;
   popFromHistory: () => string | null;
-  /** #88: Remove songs from the queue by ID (used by gapless reconciliation). */
-  removeSongIds: (songIds: string[]) => void;
   /** #88: Reconcile queue and history after a gapless transition. */
   reconcileGaplessTransition: (fromSongId: string, toSongId: string) => void;
   /** #88: Peek at the current queue head without removing it. Returns

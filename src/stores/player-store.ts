@@ -187,7 +187,6 @@ export function createPlayerStore(
         dequeue: () => useQueueStore.getState().dequeue() ?? null,
         pushToHistory: (id) => useQueueStore.getState().pushToHistory(id),
         popFromHistory: () => useQueueStore.getState().popFromHistory() ?? null,
-        removeSongIds: (ids) => useQueueStore.getState().removeSongIds(ids),
         reconcileGaplessTransition: (fromId, toId) =>
           useQueueStore.getState().reconcileGaplessTransition(fromId, toId),
         peekHead: () => useQueueStore.getState().queue[0] ?? null,

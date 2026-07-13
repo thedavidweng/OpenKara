@@ -99,7 +99,6 @@ function mockDeps(
       dequeue: vi.fn().mockReturnValue(null),
       pushToHistory: vi.fn(),
       popFromHistory: vi.fn().mockReturnValue(null),
-      removeSongIds: vi.fn(),
       reconcileGaplessTransition: vi.fn(),
       peekHead: vi.fn().mockReturnValue(null),
       ...overrides.queue,

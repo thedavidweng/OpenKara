@@ -819,7 +819,7 @@ fn render_crossfade_overlap(
             Some(resampler_cache),
         );
 
-// `mix_stem_resampled` returns interleaved samples (frames × channels);
+        // `mix_stem_resampled` returns interleaved samples (frames × channels);
         // convert to frames to match the unit of `rendered_output_frames`.
         // Without this division the caller would multiply by `device_channels`
         // again, inflating the rendered total and causing the EQ processor,
@@ -2194,8 +2194,7 @@ mod tests {
         let mut rc = super::ResamplerCache::new();
         let ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
-        let mut crossfade_scratch =
-            vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
         let rendered = render_output_buffer(
             &mut controller,
             &mut output,
