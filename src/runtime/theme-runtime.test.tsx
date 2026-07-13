@@ -18,11 +18,17 @@ const mockConsoleWarn = vi.fn();
 // Module-level state the mock store reads from.
 let mockThemePreference: ThemePreference = "dark";
 let mockHydrated = false;
+// When true, the mocked getCurrentWindow throws to exercise the
+// createNativeThemeBridge catch path (no Tauri runtime available).
+let mockNativeBridgeThrows = false;
 
 vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => ({
-    setTheme: mockSetTheme,
-  }),
+  getCurrentWindow: () => {
+    if (mockNativeBridgeThrows) {
+      throw new Error("no native window");
+    }
+    return { setTheme: mockSetTheme };
+  },
 }));
 
 vi.mock("@/stores/settings-store", () => ({
@@ -46,6 +52,31 @@ function createMockMedia(matches: boolean): MediaQueryList {
     removeEventListener: vi.fn(),
     addListener: vi.fn(),
     removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  } as unknown as MediaQueryList;
+}
+
+// Legacy media object that only exposes the deprecated addListener/
+// removeListener API (no addEventListener), exercising the fallback branch
+// in subscribeMediaChange.
+function createLegacyMockMedia(matches: boolean): MediaQueryList {
+  return {
+    matches,
+    media: "(prefers-color-scheme: dark)",
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  } as unknown as MediaQueryList;
+}
+
+// Media object exposing neither addEventListener nor addListener, exercising
+// the no-op unsubscribe fallback in subscribeMediaChange.
+function createNoopMockMedia(matches: boolean): MediaQueryList {
+  return {
+    matches,
+    media: "(prefers-color-scheme: dark)",
+    onchange: null,
     dispatchEvent: vi.fn(),
   } as unknown as MediaQueryList;
 }
@@ -135,6 +166,7 @@ describe("useThemeRuntime", () => {
     mockSetTheme.mockResolvedValue(undefined);
     mockThemePreference = "dark";
     mockHydrated = true;
+    mockNativeBridgeThrows = false;
     vi.useFakeTimers();
     // Stub console.warn after fake timers are enabled
     vi.spyOn(console, "warn").mockImplementation(mockConsoleWarn);
@@ -294,6 +326,124 @@ describe("useThemeRuntime", () => {
 
     expect(mockSetTheme).not.toHaveBeenCalled();
     expect(document.documentElement.dataset.theme).toBe("");
+    unmount();
+  });
+
+  // ── Defensive/edge paths ───────────────────────────────────────────
+
+  test("defaults system preference to dark when matchMedia is unavailable", () => {
+    // matchMedia is not a function → getSystemPrefersDarkMedia returns null,
+    // and the effect falls back to assuming dark.
+    vi.stubGlobal("matchMedia", undefined);
+    setStoreState("system", true);
+
+    const { result, unmount } = renderHook(() => {
+      return useThemeRuntime();
+    });
+
+    expect(result.current.resolvedTheme).toBe("dark");
+    unmount();
+    vi.stubGlobal("matchMedia", mockMatchMedia);
+  });
+
+  test("defaults system preference to dark when matchMedia throws", () => {
+    mockMatchMedia.mockImplementation(() => {
+      throw new Error("matchMedia unavailable");
+    });
+    setStoreState("system", true);
+
+    const { result, unmount } = renderHook(() => {
+      return useThemeRuntime();
+    });
+
+    expect(result.current.resolvedTheme).toBe("dark");
+    unmount();
+  });
+
+  test("subscribes via the legacy addListener API when addEventListener is absent", () => {
+    const media = createLegacyMockMedia(false);
+    mockMatchMedia.mockReturnValue(media);
+    setStoreState("system", true);
+
+    const { unmount } = renderHook(() => {
+      return useThemeRuntime();
+    });
+
+    expect(media.addListener).toHaveBeenCalledWith(expect.any(Function));
+    unmount();
+  });
+
+  test("returns a no-op unsubscribe when the media object has no listener API", () => {
+    const media = createNoopMockMedia(false);
+    mockMatchMedia.mockReturnValue(media);
+    setStoreState("system", true);
+
+    // Should not throw when the effect cleans up with no listener API.
+    const { unmount } = renderHook(() => {
+      return useThemeRuntime();
+    });
+
+    unmount();
+  });
+
+  test("updates resolved theme when the system color-scheme media query changes", () => {
+    const media = createMockMedia(false);
+    mockMatchMedia.mockReturnValue(media);
+    setStoreState("system", true);
+
+    const { result, unmount } = renderHook(() => {
+      return useThemeRuntime();
+    });
+
+    expect(result.current.resolvedTheme).toBe("light");
+
+    // Simulate the OS switching to dark: invoke the registered change handler.
+    const changeHandler = (media.addEventListener as ReturnType<typeof vi.fn>)
+      .mock.calls[0][1] as () => void;
+    (media as { matches: boolean }).matches = true;
+    act(() => {
+      changeHandler();
+    });
+
+    expect(result.current.resolvedTheme).toBe("dark");
+    unmount();
+  });
+
+  test("marks startup ready immediately when the native bridge is unavailable", () => {
+    mockMatchMedia.mockReturnValue(createMockMedia(true));
+    setStoreState("dark", true);
+    mockNativeBridgeThrows = true;
+
+    const { result, unmount } = renderHook(() => {
+      return useThemeRuntime();
+    });
+
+    expect(mockSetTheme).not.toHaveBeenCalled();
+    expect(result.current.startupThemeReady).toBe(true);
+    unmount();
+  });
+
+  test("sanitizes non-Error rejection reasons from native setTheme", async () => {
+    mockMatchMedia.mockReturnValue(createMockMedia(true));
+    setStoreState("dark", true);
+
+    // Reject with a non-Error value to exercise the String(error) branch of
+    // sanitizeError.
+    mockSetTheme.mockRejectedValue("string failure");
+
+    const { result, unmount } = renderHook(() => {
+      return useThemeRuntime();
+    });
+
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    expect(result.current.startupThemeReady).toBe(true);
+    expect(mockConsoleWarn).toHaveBeenCalledWith(
+      "[theme] native setTheme rejected",
+      "string failure",
+    );
     unmount();
   });
 });
