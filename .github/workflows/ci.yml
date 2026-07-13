@@ -401,6 +401,10 @@ jobs:
         working-directory: src-tauri
         run: cargo test -q --no-run
 
+      - name: Verify execution-provider platform contract
+        working-directory: src-tauri
+        run: cargo test -q --lib execution_provider
+
   tauri-build:
     name: Tauri build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}

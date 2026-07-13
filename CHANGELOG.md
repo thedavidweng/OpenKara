@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Enforce platform-scoped execution-provider choices ([#115](https://github.com/thedavidweng/OpenKara/issues/115)): the Hardware Acceleration settings section now exposes only providers valid for the running binary. macOS and Linux show CPU and XNNPACK; Windows shows CPU, XNNPACK, and DirectML. A single Rust policy table drives the available list, default, stale-config normalization, and write validation. `set_execution_provider` rejects known-but-unavailable providers (e.g. `directml` on macOS) before any config mutation, and `get_settings` normalizes a stale persisted cross-platform value to the platform default without writing to disk. The separation execution context uses the same normalized value. Windows CI now runs the filtered library tests (`cargo test --lib execution_provider`).
+
 ### Changed
 
 - Introduce `PlaybackCoordinator` as an independent control thread that serializes all control-plane mutations of `PlaybackController` (pause / resume / seek / set_volume / set_stem_volume / install_track / fail_load / attach_stems). Background decode/fetch threads now produce immutable `ReadyTrack` payloads and send `PlaybackCommand` messages to the coordinator instead of directly mutating the controller. The coordinator guarantees FIFO ordering, latest-request-wins guards, AirPlay epoch/generation bumps, CDG seek-reset, and output-thread startup — all on a single thread. Public Tauri command names, arguments, response shapes, and event names are unchanged.
