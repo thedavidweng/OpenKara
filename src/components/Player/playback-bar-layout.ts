@@ -11,11 +11,13 @@ const PLAYBACK_BAR_COVER_ART_COLLAPSE_WIDTH = 780;
 
 interface PlaybackBarLayoutTokens {
   leftMaxWidth: number;
+  inlineStemVolumeWidthClass: string;
   masterVolumeWidth: number;
   masterVolumeWidthClass: string;
   outerPadding: number;
   zoneGap: number;
   rightZoneGap: number;
+  masterVolumeGap: number;
   barHeightClass: string;
 }
 
@@ -25,30 +27,37 @@ const PLAYBACK_BAR_LAYOUT_TOKENS: Record<
   PlaybackBarLayoutTokens
 > = {
   relaxed: {
-    leftMaxWidth: 268,
-    masterVolumeWidth: 72,
-    masterVolumeWidthClass: "w-[4.5rem]",
-    outerPadding: 18,
-    zoneGap: 18,
-    rightZoneGap: 10,
+    leftMaxWidth: 180,
+    inlineStemVolumeWidthClass: "w-[88px]",
+    masterVolumeWidth: 104,
+    masterVolumeWidthClass: "w-[104px]",
+    outerPadding: 24,
+    zoneGap: 16,
+    rightZoneGap: 8,
+    masterVolumeGap: 8,
     barHeightClass: "h-[86px]",
   },
   compact: {
-    leftMaxWidth: 218,
-    masterVolumeWidth: 52,
-    masterVolumeWidthClass: "w-[3.25rem]",
-    outerPadding: 14,
-    zoneGap: 14,
-    rightZoneGap: 8,
+    leftMaxWidth: 152,
+    inlineStemVolumeWidthClass: "w-[72px]",
+    masterVolumeWidth: 80,
+    masterVolumeWidthClass: "w-[80px]",
+    outerPadding: 16,
+    zoneGap: 12,
+    rightZoneGap: 6,
+    masterVolumeGap: 6,
     barHeightClass: "h-[78px]",
   },
   tight: {
-    leftMaxWidth: 160,
-    masterVolumeWidth: 40,
-    masterVolumeWidthClass: "w-10",
-    outerPadding: 12,
+    leftMaxWidth: 148,
+    // Unused inline (stems hide behind the mixer trigger); popup rows keep w-16.
+    inlineStemVolumeWidthClass: "w-[64px]",
+    masterVolumeWidth: 64,
+    masterVolumeWidthClass: "w-[64px]",
+    outerPadding: 16,
     zoneGap: 10,
     rightZoneGap: 6,
+    masterVolumeGap: 6,
     barHeightClass: "h-[70px]",
   },
 };

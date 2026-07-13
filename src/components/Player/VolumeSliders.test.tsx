@@ -86,6 +86,32 @@ describe("VolumeSliders", () => {
     expect(markup).not.toContain('data-state="open"');
   });
 
+  test("relaxed inline rails use the shared 88px token class", () => {
+    const markup = renderToStaticMarkup(<VolumeSliders density="relaxed" />);
+
+    // Two inline sliders (Vocals, Accompaniment) use w-[88px]
+    const relaxedRailCount = (
+      markup.match(/audio-level-slider shrink-0 w-\[88px\]/g) ?? []
+    ).length;
+    expect(relaxedRailCount).toBe(2);
+  });
+
+  test("compact inline rails use the shared 72px token class", () => {
+    const markup = renderToStaticMarkup(<VolumeSliders density="compact" />);
+
+    const compactRailCount = (
+      markup.match(/audio-level-slider shrink-0 w-\[72px\]/g) ?? []
+    ).length;
+    expect(compactRailCount).toBe(2);
+  });
+
+  test("tight density renders no inline audio slider and popup rows keep w-16", () => {
+    const markup = renderToStaticMarkup(<VolumeSliders density="tight" />);
+
+    // No inline audio-level-slider in tight mode
+    expect(markup).not.toContain("audio-level-slider");
+  });
+
   test("inline vocals/accompaniment use the shared 44px variant with 18px icons", () => {
     const markup = renderToStaticMarkup(<VolumeSliders />);
 

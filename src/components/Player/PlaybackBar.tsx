@@ -135,7 +135,7 @@ export function PlaybackBar({ densityOverride }: PlaybackBarProps = {}) {
 
           <div
             className="flex shrink-0 items-center"
-            style={{ gap: density === "relaxed" ? 8 : 6 }}
+            style={{ gap: layoutTokens.masterVolumeGap }}
           >
             <Tooltip
               label={volume === 0 ? t("player.unmute") : t("player.mute")}

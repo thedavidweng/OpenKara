@@ -54,7 +54,7 @@ export function AudioLevelSlider({
         onChange={(e) => onChange(Number(e.target.value) / 100)}
         onPointerDown={() => setIsDragging(true)}
         onBlur={() => setIsDragging(false)}
-        className={`native-slider audio-level-slider ${widthClass}`}
+        className={`native-slider audio-level-slider shrink-0 ${widthClass}`}
         disabled={disabled}
         data-dragging={isDragging ? "true" : undefined}
         aria-label={ariaLabel ?? label}

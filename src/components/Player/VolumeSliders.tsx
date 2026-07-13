@@ -19,7 +19,10 @@ import {
 import { usePlayerStore } from "@/stores/player-store";
 import { useLibraryStore } from "@/stores/library-store";
 import type { StemName } from "@/types/ipc";
-import type { PlaybackBarDensity } from "./playback-bar-layout";
+import {
+  getPlaybackBarLayoutTokens,
+  type PlaybackBarDensity,
+} from "./playback-bar-layout";
 
 interface VolumeSlidersProps {
   density?: PlaybackBarDensity;
@@ -186,7 +189,8 @@ export function VolumeSliders({
     }
   }, [stemVolumes.other, setStemVolume]);
 
-  const inlineSliderWidthClass = density === "compact" ? "w-14" : "w-16";
+  const inlineSliderWidthClass =
+    getPlaybackBarLayoutTokens(density).inlineStemVolumeWidthClass;
   const collapsedMode = density === "tight";
   const triggerLabel = isExpanded
     ? t("stems.collapseStems")
