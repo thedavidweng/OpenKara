@@ -716,9 +716,13 @@ fn render_crossfade_overlap(
         );
 
         // Render incoming into scratch buffer (with master gain).
+        // Zero the scratch slice first — mix_stem_resampled uses additive
+        // mixing (+=), so stale samples from the previous callback would
+        // corrupt the incoming audio.
         let active = playback.active_crossfade.as_ref().unwrap();
         let incoming_render_frame = active.rendered_frames;
         let incoming_buf = &mut crossfade_scratch[..chunk_samples];
+        incoming_buf.fill(0.0);
         let (inc_rendered, _inc_consumed) = mix_stem_resampled(
             incoming_buf,
             &active.prepared.audio,
@@ -815,12 +819,11 @@ fn render_crossfade_overlap(
             Some(resampler_cache),
         );
 
-        // `mix_stem_resampled` returns interleaved samples (frames × channels);
+// `mix_stem_resampled` returns interleaved samples (frames × channels);
         // convert to frames to match the unit of `rendered_output_frames`.
-        // Without this division the caller (line 275) would multiply by
-        // `device_channels` again, inflating the rendered total and causing
-        // the EQ processor, peak accumulator, and CPAL output to read past
-        // valid data.
+        // Without this division the caller would multiply by `device_channels`
+        // again, inflating the rendered total and causing the EQ processor,
+        // peak accumulator, and CPAL output to read past valid data.
         rendered_output_frames += rem_rendered / device_channels;
         src_frames_advanced += rem_consumed;
     }
