@@ -19,6 +19,7 @@ const {
   mockSetStemVolume,
   mockLoadStems,
   mockGetPlaybackState,
+  mockSetPreloadCandidate,
   mockNotifyError,
   mockAddToQueue,
   mockDequeue,
@@ -34,6 +35,7 @@ const {
   mockSetStemVolume: vi.fn(),
   mockLoadStems: vi.fn(),
   mockGetPlaybackState: vi.fn(),
+  mockSetPreloadCandidate: vi.fn(),
   mockNotifyError: vi.fn(),
   mockAddToQueue: vi.fn(),
   mockDequeue: vi.fn(),
@@ -51,6 +53,7 @@ vi.mock("@/lib/tauri", () => ({
   setStemVolume: mockSetStemVolume,
   loadStems: mockLoadStems,
   getPlaybackState: mockGetPlaybackState,
+  setPreloadCandidate: mockSetPreloadCandidate,
 }));
 
 vi.mock("@/lib/errors", () => ({

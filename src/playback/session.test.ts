@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import type {
   PlaybackStateSnapshot,
   SeparationStatusSnapshot,
+  TrackTransitionedEvent,
 } from "@/types/ipc";
 import {
   createPlaybackSession,
@@ -29,6 +30,19 @@ function snapshot(
     stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
     has_stems: false,
     stem_mode: null,
+    ...overrides,
+  };
+}
+
+function transitionEvent(
+  overrides: Partial<TrackTransitionedEvent> = {},
+): TrackTransitionedEvent {
+  return {
+    transitionSerial: 1,
+    preloadGeneration: 1,
+    fromSongId: "old-song",
+    toSongId: "new-song",
+    state: snapshot({ song_id: "new-song", is_playing: true }),
     ...overrides,
   };
 }
@@ -77,6 +91,7 @@ function mockDeps(
           snapshot({ song_id: "song-1", is_playing: true, has_stems: true }),
         ),
       getPlaybackState: vi.fn().mockResolvedValue(snapshot()),
+      setPreloadCandidate: vi.fn().mockResolvedValue(undefined),
       ...overrides.transport,
     },
     queue: {
@@ -85,6 +100,8 @@ function mockDeps(
       pushToHistory: vi.fn(),
       popFromHistory: vi.fn().mockReturnValue(null),
       removeSongIds: vi.fn(),
+      reconcileGaplessTransition: vi.fn(),
+      peekHead: vi.fn().mockReturnValue(null),
       ...overrides.queue,
     },
     getSeparationStatus: overrides.getSeparationStatus ?? (() => undefined),
@@ -318,47 +335,196 @@ describe("createPlaybackSession", () => {
   });
 
   describe("onTrackTransitioned", () => {
-    test("reconciles queue when clock holds from-song", () => {
-      // #88: The backend emits track-transitioned BEFORE the next
-      // playback-position event, so the clock may still hold the
-      // from-song. The handler must still reconcile.
+    test("reconciles queue and applies authoritative state", () => {
+      // #88: The backend emits track-transitioned with the authoritative
+      // post-transition snapshot. The handler applies the snapshot and
+      // reconciles the queue via the named store action.
       const deps = mockDeps();
       const session = createPlaybackSession(deps);
       session.applySnapshot(snapshot({ song_id: "old-song" }));
 
-      session.onTrackTransitioned("old-song", "new-song");
+      session.onTrackTransitioned(transitionEvent());
 
-      expect(deps.queue.pushToHistory).toHaveBeenCalledWith("old-song");
-      expect(deps.queue.removeSongIds).toHaveBeenCalledWith([
+      expect(deps.queue.reconcileGaplessTransition).toHaveBeenCalledWith(
         "old-song",
         "new-song",
-      ]);
+      );
     });
 
-    test("reconciles queue when clock already holds to-song", () => {
-      // The position event may have arrived first and updated the clock.
+    test("ignores duplicate transition by serial", () => {
+      // #88: Idempotent serial dedup — the same serial must not advance
+      // the queue twice.
       const deps = mockDeps();
       const session = createPlaybackSession(deps);
-      session.applySnapshot(snapshot({ song_id: "new-song" }));
 
-      session.onTrackTransitioned("old-song", "new-song");
+      session.onTrackTransitioned(transitionEvent({ transitionSerial: 5 }));
+      session.onTrackTransitioned(transitionEvent({ transitionSerial: 5 }));
 
-      expect(deps.queue.pushToHistory).toHaveBeenCalledWith("old-song");
-      expect(deps.queue.removeSongIds).toHaveBeenCalledWith([
+      expect(deps.queue.reconcileGaplessTransition).toHaveBeenCalledTimes(1);
+    });
+
+    test("ignores stale transition with lower serial", () => {
+      const deps = mockDeps();
+      const session = createPlaybackSession(deps);
+
+      session.onTrackTransitioned(transitionEvent({ transitionSerial: 5 }));
+      session.onTrackTransitioned(transitionEvent({ transitionSerial: 3 }));
+
+      expect(deps.queue.reconcileGaplessTransition).toHaveBeenCalledTimes(1);
+      expect(deps.queue.reconcileGaplessTransition).toHaveBeenCalledWith(
         "old-song",
         "new-song",
-      ]);
+      );
     });
 
-    test("ignores stale transition when clock holds a different song", () => {
+    test("applies authoritative snapshot from event state", () => {
+      // #88: The event's `state` field is the authoritative post-transition
+      // snapshot. The handler must apply it so the clock holds `toSongId`.
       const deps = mockDeps();
       const session = createPlaybackSession(deps);
-      session.applySnapshot(snapshot({ song_id: "user-picked-song" }));
+      session.applySnapshot(snapshot({ song_id: "old-song" }));
 
-      session.onTrackTransitioned("old-song", "new-song");
+      session.onTrackTransitioned(
+        transitionEvent({
+          state: snapshot({
+            song_id: "new-song",
+            is_playing: true,
+            position_ms: 42,
+          }),
+        }),
+      );
 
-      expect(deps.queue.pushToHistory).not.toHaveBeenCalled();
-      expect(deps.queue.removeSongIds).not.toHaveBeenCalled();
+      expect(session.getPositionClock().snapshot?.song_id).toBe("new-song");
+      expect(session.getPositionClock().positionMs).toBe(42);
+    });
+
+    test("never calls play() in response to transition event", () => {
+      const deps = mockDeps();
+      const session = createPlaybackSession(deps);
+
+      session.onTrackTransitioned(transitionEvent());
+
+      expect(deps.transport.play).not.toHaveBeenCalled();
+    });
+
+    test("updates preload candidate from the resulting queue head", () => {
+      // #88: After reconciliation, the session must update the preload
+      // candidate to the new queue head so the backend can decode the
+      // next track for a future gapless/crossfade transition.
+      const deps = mockDeps({
+        queue: {
+          peekHead: vi.fn().mockReturnValue("song-c"),
+        },
+      });
+      const session = createPlaybackSession(deps);
+
+      session.onTrackTransitioned(transitionEvent());
+
+      expect(deps.queue.peekHead).toHaveBeenCalledTimes(1);
+      expect(deps.transport.setPreloadCandidate).toHaveBeenCalledWith("song-c");
+    });
+
+    test("clears preload candidate when queue is empty after reconciliation", () => {
+      // #88: An empty queue after reconciliation clears the preload
+      // candidate (null) so the backend does not hold a stale preparation.
+      const deps = mockDeps({
+        queue: {
+          peekHead: vi.fn().mockReturnValue(null),
+        },
+      });
+      const session = createPlaybackSession(deps);
+
+      session.onTrackTransitioned(transitionEvent());
+
+      expect(deps.transport.setPreloadCandidate).toHaveBeenCalledWith(null);
+    });
+
+    test("does not update preload candidate on duplicate serial", () => {
+      // #88: A duplicate transition must not re-trigger the preload
+      // candidate update — the queue head has not changed since the
+      // first application.
+      const deps = mockDeps({
+        queue: {
+          peekHead: vi.fn().mockReturnValue("song-c"),
+        },
+      });
+      const session = createPlaybackSession(deps);
+
+      session.onTrackTransitioned(transitionEvent({ transitionSerial: 5 }));
+      session.onTrackTransitioned(transitionEvent({ transitionSerial: 5 }));
+
+      expect(deps.transport.setPreloadCandidate).toHaveBeenCalledTimes(1);
+    });
+
+    test("skips reconciliation when user manually switched tracks (stale generation)", () => {
+      // #89: If the user manually started a different track during the
+      // ~33ms window between the backend's gapless swap and the position
+      // emitter draining the transition, the clock holds a newer
+      // transport_generation. The transition event's snapshot has the
+      // old generation, so `tryApplyAuthoritative` rejects it. The
+      // handler must NOT reconcile the queue — the user has already
+      // moved to an unrelated track and removing `toSongId` / pushing
+      // `fromSongId` to history would corrupt the queue.
+      const deps = mockDeps();
+      const session = createPlaybackSession(deps);
+      // Clock holds a manually-started track with generation 10.
+      session.applySnapshot(
+        snapshot({ song_id: "user-picked-song", transport_generation: 10 }),
+      );
+
+      // Transition event has generation 5 (stale — the gapless swap
+      // happened before the manual track change).
+      session.onTrackTransitioned(
+        transitionEvent({
+          state: snapshot({
+            song_id: "new-song",
+            transport_generation: 5,
+            is_playing: true,
+          }),
+        }),
+      );
+
+      // The stale snapshot must not be applied.
+      expect(session.getPositionClock().snapshot?.song_id).toBe(
+        "user-picked-song",
+      );
+      // Reconciliation must NOT happen — the queue belongs to the
+      // user's manually-started track, not the gapless transition.
+      expect(deps.queue.reconcileGaplessTransition).not.toHaveBeenCalled();
+      // Preload candidate must NOT be updated from the stale transition.
+      expect(deps.transport.setPreloadCandidate).not.toHaveBeenCalled();
+    });
+
+    test("reconciles when position event arrived first with same generation", () => {
+      // #89: A position event with the same transport_generation as the
+      // transition may arrive first (the gapless swap does not bump
+      // transport_generation). The transition snapshot is not stale, so
+      // `tryApplyAuthoritative` accepts it and reconciliation proceeds.
+      const deps = mockDeps();
+      const session = createPlaybackSession(deps);
+      // Clock holds the from-song with generation 5 (same as the
+      // transition event's generation).
+      session.applySnapshot(
+        snapshot({ song_id: "old-song", transport_generation: 5 }),
+      );
+
+      session.onTrackTransitioned(
+        transitionEvent({
+          state: snapshot({
+            song_id: "new-song",
+            transport_generation: 5,
+            is_playing: true,
+          }),
+        }),
+      );
+
+      // The snapshot must be applied (toSongId is now current).
+      expect(session.getPositionClock().snapshot?.song_id).toBe("new-song");
+      // Reconciliation must happen.
+      expect(deps.queue.reconcileGaplessTransition).toHaveBeenCalledWith(
+        "old-song",
+        "new-song",
+      );
     });
   });
 

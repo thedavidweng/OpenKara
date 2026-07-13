@@ -3,6 +3,7 @@ import type {
   PlaybackStateSnapshot,
   SeparationStatusSnapshot,
   StemName,
+  TrackTransitionedEvent,
 } from "@/types/ipc";
 import {
   type PositionClockState,
@@ -29,10 +30,12 @@ export interface PlaybackSession {
   /** #88: Reconcile queue head after a gapless `track-transitioned` event.
    * The backend already swapped to the new song; the frontend must remove
    * the old song from the queue and push it to history so the queue head
-   * matches the backend's current track. Also restores separated stems for
-   * the new song — the gapless swap creates a plain track, so vocal-removal
-   * / karaoke stem mode must be reloaded. */
-  onTrackTransitioned(fromSongId: string, toSongId: string): Promise<void>;
+   * matches the backend's current track. The event includes an authoritative
+   * post-transition snapshot and a monotonic serial for idempotent handling.
+   * Also restores separated stems for the new song — the gapless swap
+   * creates a plain track, so vocal-removal / karaoke stem mode must be
+   * reloaded. */
+  onTrackTransitioned(event: TrackTransitionedEvent): Promise<void>;
   applyPosition(event: PlaybackPositionEvent): void;
   applySnapshot(snapshot: PlaybackStateSnapshot): void;
   getPositionClock(): PositionClockState;
@@ -62,6 +65,10 @@ export interface PlaybackTransport {
   ) => Promise<PlaybackStateSnapshot>;
   loadStems: () => Promise<PlaybackStateSnapshot>;
   getPlaybackState: () => Promise<PlaybackStateSnapshot>;
+  /** #88: Set or clear the gapless preload candidate. Called by the
+   * session after a gapless transition reconciles the queue so the
+   * backend starts decoding the new queue head. */
+  setPreloadCandidate: (songId: string | null) => Promise<void>;
 }
 
 /** Queue/history seam — not part of the public session API. */
@@ -72,6 +79,12 @@ export interface PlaybackQueueOps {
   popFromHistory: () => string | null;
   /** #88: Remove songs from the queue by ID (used by gapless reconciliation). */
   removeSongIds: (songIds: string[]) => void;
+  /** #88: Reconcile queue and history after a gapless transition. */
+  reconcileGaplessTransition: (fromSongId: string, toSongId: string) => void;
+  /** #88: Peek at the current queue head without removing it. Returns
+   * `null` when the queue is empty. Used by `onTrackTransitioned` to
+   * update the preload candidate after reconciliation. */
+  peekHead: () => string | null;
 }
 
 export interface PlaybackSessionDeps {
@@ -91,6 +104,10 @@ export function createPlaybackSession(
     positionMs: 0,
     playingSinceMs: null,
   };
+  // #88: Monotonic serial of the last applied gapless transition. Used for
+  // idempotent dedup — the backend may emit duplicate events and the
+  // frontend must not advance the queue twice. Resets on process restart.
+  let lastAppliedTransitionSerial = 0;
 
   const publish = (next: PositionClockState) => {
     clock = next;
@@ -176,28 +193,53 @@ export function createPlaybackSession(
       await playSongWithOptionalStems(nextId);
     },
 
-    onTrackTransitioned: async (fromSongId, toSongId) => {
-      // #88: The backend already swapped to `toSongId` via a gapless
-      // transition. Reconcile the queue: remove `fromSongId` if it is
-      // still the queue head (it was the song that just finished), push
-      // it to history, and remove `toSongId` from the queue if present
-      // (it was the prepared candidate and is now playing).
+    onTrackTransitioned: async (event) => {
+      // #88: Idempotent serial dedup — ignore transitions we have already
+      // applied. The serial resets on process restart, so this only needs
+      // to persist for the WebView lifetime.
+      if (event.transitionSerial <= lastAppliedTransitionSerial) {
+        return;
+      }
+      lastAppliedTransitionSerial = event.transitionSerial;
+
+      const { fromSongId, toSongId, state } = event;
+
+      // #88: Apply the authoritative post-transition snapshot before
+      // subsequent position events. This ensures the clock holds
+      // `toSongId` immediately, even if a position event arrives later
+      // with stale data.
       //
-      // The backend emits `track-transitioned` BEFORE the next
-      // `playback-position` event, so the clock may still hold
-      // `fromSongId` (the old song). Accept both `fromSongId` and
-      // `toSongId` as valid current states; only skip if the clock holds
-      // a completely different song (stale transition after the user
-      // manually started another track).
-      const snapshot = clock.snapshot;
-      if (snapshot?.song_id !== fromSongId && snapshot?.song_id !== toSongId) {
+      // #89: Gate queue/history reconciliation on the snapshot being
+      // accepted. If the user manually started a different track during
+      // the ~33ms window between the backend's gapless swap and the
+      // position emitter draining the transition, the clock will hold a
+      // newer transport_generation and `tryApplyAuthoritative` rejects
+      // the stale transition snapshot. In that race, the queue must NOT
+      // be reconciled — the user has already moved to an unrelated track
+      // and removing `toSongId` / pushing `fromSongId` to history would
+      // corrupt the queue. The gapless swap does not bump
+      // transport_generation, so a position event that arrived first
+      // with the same generation will not trigger this rejection.
+      const accepted = tryApplyAuthoritative(state);
+      if (!accepted) {
         return;
       }
 
-      deps.queue.pushToHistory(fromSongId);
-      // Remove the from-song from the queue if it's still there (it may
-      // have already been dequeued by the preload scheduler's caller).
-      deps.queue.removeSongIds([fromSongId, toSongId]);
+      // #88: Reconcile queue and history via the named store action.
+      // This removes the first queue entry matching `toSongId` and pushes
+      // `fromSongId` to history exactly once. A missing `toSongId` still
+      // applies player state and history; it is not an error.
+      deps.queue.reconcileGaplessTransition(fromSongId, toSongId);
+
+      // #88: Update the preload candidate from the resulting queue head.
+      // The backend already swapped to `toSongId`; the new queue head is
+      // the next song to preload for a future gapless/crossfade transition.
+      // Errors are swallowed — a failed preload must not surface as a
+      // playback error; the normal `playback-ended` fallback still applies.
+      const nextCandidate = deps.queue.peekHead();
+      deps.transport.setPreloadCandidate(nextCandidate).catch(() => {
+        /* best-effort: preload failure is silent per #88 */
+      });
 
       // #88: The gapless swap creates a plain track (stems are not
       // preloaded), so vocal-removal / karaoke stem mode is lost. Mirror

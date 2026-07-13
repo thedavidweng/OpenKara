@@ -63,8 +63,12 @@ pub fn effective_overlap_frames(
     if output_sample_rate == 0 {
         return None;
     }
+    // #89: `configured_frames = round(duration_ms * output_sample_rate / 1000)`.
+    // Use round-half-up via `(numerator + denominator / 2) / denominator` so
+    // the configured duration matches the spec exactly (e.g. 750 ms @ 44.1 kHz
+    // = 33075, not 33076 as `div_ceil` would produce).
     let configured_frames =
-        (configured_duration_ms as u64 * output_sample_rate as u64).div_ceil(1000);
+        (configured_duration_ms as u64 * output_sample_rate as u64 + 500) / 1000;
 
     let half_outgoing = outgoing_total_frames / 2;
     let half_incoming = incoming_total_frames / 2;
@@ -74,8 +78,9 @@ pub fn effective_overlap_frames(
         .min(half_incoming)
         .min(outgoing_frames_remaining);
 
-    // Sub-500ms floor: fall back to gapless.
-    let min_frames = (CROSSFADE_MIN_MS as u64 * output_sample_rate as u64).div_ceil(1000);
+    // Sub-500ms floor: fall back to gapless. Use the same rounding so the
+    // floor comparison is consistent with the configured-duration rounding.
+    let min_frames = (CROSSFADE_MIN_MS as u64 * output_sample_rate as u64 + 500) / 1000;
     if effective < min_frames {
         return None;
     }

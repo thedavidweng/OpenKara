@@ -24,6 +24,10 @@ interface QueueState {
   popFromHistory: () => string | undefined;
   clearHistory: () => void;
   togglePanel: () => void;
+  /** #88: Reconcile queue and history after a gapless transition.
+   * Removes the first queue entry matching `toSongId`, pushes `fromSongId`
+   * to history exactly once, and preserves all unrelated queue entries. */
+  reconcileGaplessTransition: (fromSongId: string, toSongId: string) => void;
 }
 
 interface QueueSyncSnapshot {
@@ -162,6 +166,29 @@ export function createQueueStore(
       },
 
       togglePanel: () => set((state) => ({ isOpen: !state.isOpen })),
+
+      reconcileGaplessTransition: (fromSongId, toSongId) => {
+        const { queue, playHistory } = get();
+        // #88: Remove the first queue entry whose song hash equals
+        // `toSongId`. Duplicate hashes after that first entry remain in
+        // their current relative order.
+        let removed = false;
+        const nextQueue = queue.filter((songId) => {
+          if (!removed && songId === toSongId) {
+            removed = true;
+            return false;
+          }
+          return true;
+        });
+        // Push `fromSongId` to history exactly once (deduped).
+        const deduped = playHistory.filter((id) => id !== fromSongId);
+        const nextHistory = [...deduped, fromSongId];
+        const capped =
+          nextHistory.length > MAX_PLAY_HISTORY
+            ? nextHistory.slice(nextHistory.length - MAX_PLAY_HISTORY)
+            : nextHistory;
+        syncQueue(nextQueue, capped);
+      },
     };
   });
 

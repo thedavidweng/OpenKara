@@ -341,8 +341,17 @@ fn spawn_playback_position_emitter<R: Runtime>(
             // after a gapless swap; we emit `track-transitioned` here so the
             // frontend can reconcile its queue head before the next position
             // event arrives with the new song_id.
-            let pending_transition = match playback.lock() {
-                Ok(mut controller) => controller.drain_pending_transition(),
+            // #88: Drain any completed gapless transition and capture the
+            // authoritative post-transition snapshot in the same lock so the
+            // event's `state` field reflects the new song. Emit
+            // `track-transitioned` with the full payload, then the normal
+            // position event.
+            let (pending_transition, snapshot) = match playback.lock() {
+                Ok(mut controller) => {
+                    let transition = controller.drain_pending_transition();
+                    let snapshot = controller.snapshot();
+                    (transition, snapshot)
+                }
                 Err(_) => break,
             };
             if let Some(transition) = pending_transition {
@@ -350,8 +359,10 @@ fn spawn_playback_position_emitter<R: Runtime>(
                     audio::playback::TRACK_TRANSITIONED_EVENT,
                     audio::playback::TrackTransitionedEvent {
                         transition_serial: transition.transition_serial,
+                        preload_generation: transition.preload_generation,
                         from_song_id: transition.from_song_id,
                         to_song_id: transition.to_song_id,
+                        state: snapshot.clone(),
                     },
                 );
                 // Force the next position event to emit regardless of delta —
@@ -361,11 +372,6 @@ fn spawn_playback_position_emitter<R: Runtime>(
                 last_emitted_state = None;
                 last_emitted_is_playing = None;
             }
-
-            let snapshot = match playback.lock() {
-                Ok(mut controller) => controller.snapshot(),
-                Err(_) => break,
-            };
 
             if was_playing
                 && !snapshot.is_playing

@@ -307,6 +307,57 @@ describe("queue-store", () => {
     instance.dispose();
     expect(closed.value).toBe(true);
   });
+
+  // ── reconcileGaplessTransition (#88) ──────────────────────────────────────
+
+  test("reconcileGaplessTransition removes first toSongId and pushes fromSongId to history", () => {
+    store.store.setState({
+      queue: ["song-b", "song-c", "song-b"],
+      playHistory: ["song-x"],
+    });
+
+    store.store.getState().reconcileGaplessTransition("song-a", "song-b");
+
+    // Only the first "song-b" is removed; the duplicate remains.
+    expect(store.store.getState().queue).toEqual(["song-c", "song-b"]);
+    expect(store.store.getState().playHistory).toEqual(["song-x", "song-a"]);
+  });
+
+  test("reconcileGaplessTransition pushes fromSongId to history exactly once", () => {
+    store.store.setState({
+      queue: ["song-b"],
+      playHistory: ["song-a", "song-y"],
+    });
+
+    store.store.getState().reconcileGaplessTransition("song-a", "song-b");
+
+    // "song-a" is deduped from history then appended once.
+    expect(store.store.getState().playHistory).toEqual(["song-y", "song-a"]);
+  });
+
+  test("reconcileGaplessTransition preserves unrelated queue entries", () => {
+    store.store.setState({
+      queue: ["song-b", "song-d", "song-e"],
+      playHistory: [],
+    });
+
+    store.store.getState().reconcileGaplessTransition("song-a", "song-b");
+
+    expect(store.store.getState().queue).toEqual(["song-d", "song-e"]);
+  });
+
+  test("reconcileGaplessTransition with absent toSongId still pushes history", () => {
+    store.store.setState({
+      queue: ["song-c", "song-d"],
+      playHistory: [],
+    });
+
+    store.store.getState().reconcileGaplessTransition("song-a", "song-b");
+
+    // toSongId not in queue — queue unchanged, fromSongId still goes to history.
+    expect(store.store.getState().queue).toEqual(["song-c", "song-d"]);
+    expect(store.store.getState().playHistory).toEqual(["song-a"]);
+  });
 });
 
 describe("queue-store webview sync", () => {

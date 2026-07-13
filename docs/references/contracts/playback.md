@@ -17,7 +17,7 @@
 9. `get_audio_peaks() -> AudioPeakSnapshot` — 只读命令，拷贝 lock-free peak ring 快照（不持 playback mutex）
 10. `set_preload_candidate(song_id: Option<String>) -> ()` — #88 无缝播放预加载命令（见下）
 11. `playback-position` 事件 payload 为 `{ ms: u64, transport_generation: u64, snapshot: PlaybackStateSnapshot }`
-12. `track-transitioned` 事件 payload 为 `{ transition_serial: u64, from_song_id: String, to_song_id: String }` — #88 无缝换轨通知（见下）
+12. `track-transitioned` 事件 payload 为 `{ transitionSerial: u64, preloadGeneration: u64, fromSongId: String, toSongId: String, state: PlaybackStateSnapshot }` — #88/#89 无缝换轨通知（见下）
 
 ### Peak envelope 可视化（#87）
 
@@ -345,27 +345,32 @@ playing ↔ playing（pause/resume，通过 isPlaying 区分）
 3. 发出前先通过 `playback-position` 推送 idle snapshot（清除已安装的轨道）
 4. 前端应调用 `notifyError` 并根据 `error.retryable` 提供重试（通常重试 `play(song_id)`）
 
-### Event: `track-transitioned` (#88)
+### Event: `track-transitioned` (#88/#89)
 
 **Payload**
 
 ```json
 {
-  "transition_serial": 1,
-  "from_song_id": "sha256 hash string",
-  "to_song_id": "sha256 hash string"
+  "transitionSerial": 1,
+  "preloadGeneration": 1,
+  "fromSongId": "sha256 hash string",
+  "toSongId": "sha256 hash string",
+  "state": {
+    /* PlaybackStateSnapshot with songId === toSongId */
+  }
 }
 ```
 
 **Semantics**
 
-1. 当音频回调检测到当前轨道到达 EOF 且有 prepared track 可用时，执行无缝换轨并 stamp 一个 `CompletedTransition`
-2. position emitter 线程在下一次轮询时 drain 该 transition，发出 `track-transitioned` 事件，然后发出携带新 `song_id` 的 `playback-position` 事件
-3. 事件在 `playback-position` 之前发出，所以前端 clock 可能仍持有 `from_song_id`——前端 reconciliation 必须接受 `from_song_id` 或 `to_song_id` 作为当前歌曲
-4. 前端收到事件后：将 `from_song_id` 推入播放历史，从队列中移除 `from_song_id` 和 `to_song_id`
-5. `transition_serial` 单调递增，可用于去重或调试
-6. 如果前端 clock 持有的 `song_id` 既不是 `from_song_id` 也不是 `to_song_id`（用户手动切换了歌曲），则忽略该事件
-7. 无缝换轨时 `transport_generation` 递增，使前端 generation 过滤器丢弃旧歌的延迟 `playback-position` 事件（#103）
+1. 当音频回调检测到当前轨道到达 EOF 且有 prepared track 可用时，执行无缝换轨（#88）或 crossfade overlap 完成（#89）并 stamp 一个 `CompletedTransition`
+2. position emitter 线程在下一次轮询时 drain 该 transition，在同一 playback lock 内捕获权威 post-transition snapshot，发出 `track-transitioned` 事件（携带该 snapshot 作为 `state`），然后发出携带新 `song_id` 的 `playback-position` 事件
+3. `state` 是权威 post-transition snapshot，`songId === toSongId`，position ≥ 0；前端必须通过既有 authoritative snapshot 路径应用它，使 clock 立即持有 `toSongId`
+4. 前端收到事件后：忽略 `transitionSerial <= lastAppliedTransitionSerial` 的重复事件；应用 `state`（通过 `tryApplyAuthoritative`）；**仅当 `state` 被接受时**才通过 `reconcileGaplessTransition(fromSongId, toSongId)` 移除队列中第一个匹配 `toSongId` 的条目并将 `fromSongId` 推入历史（去重一次）并更新下一首预加载候选为新的队列头
+5. `transitionSerial` 单调递增，用于幂等去重；进程重启后重置，前端仅需在 WebView 生命周期内持久化
+6. 前端绝不在响应该事件时调用 `play()`；后端已完成换轨，前端只做 queue/history/state 对账
+7. 缺失的 `toSongId`（队列中不存在）仍应用 player state 和 history，不视为错误
+8. **竞态保护**：若用户在 backend gapless swap 与 position emitter drain 之间（~33ms 窗口）手动切换了歌曲，clock 持有更新的 `transport_generation`，`tryApplyAuthoritative` 拒绝过期的 transition snapshot，前端跳过 queue/history 对账——用户已切换到无关歌曲，不应移除 `toSongId` 或推入 `fromSongId`。gapless swap 不 bump `transport_generation`，因此先到的同 generation position event 不会触发此拒绝。
 
 ### Shared error type: `CommandError`
 

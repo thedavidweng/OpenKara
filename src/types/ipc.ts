@@ -290,9 +290,12 @@ export interface PlaybackEndedEvent {
 }
 
 export interface TrackTransitionedEvent {
-  transition_serial: number;
-  from_song_id: string;
-  to_song_id: string;
+  transitionSerial: number;
+  preloadGeneration: number;
+  fromSongId: string;
+  toSongId: string;
+  /** Authoritative post-transition snapshot with songId === toSongId. */
+  state: PlaybackStateSnapshot;
 }
 
 export interface AudioPeakSnapshot {

@@ -265,9 +265,7 @@ function useTrackTransitionedQueueReconcile(enabled: boolean) {
         event: "track-transitioned",
         handler: (payload) => {
           const event = payload as TrackTransitionedEvent;
-          usePlayerStore
-            .getState()
-            .onTrackTransitioned(event.from_song_id, event.to_song_id);
+          usePlayerStore.getState().onTrackTransitioned(event);
         },
       },
     ],

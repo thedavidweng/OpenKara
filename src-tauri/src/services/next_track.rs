@@ -43,19 +43,19 @@ use std::{
 /// The preload scheduler uses this so the prepared track's PCM exactly
 /// matches what the render callback expects, avoiding a resampler cache
 /// miss on the first gapless frame.
+///
+/// Returns `None` if the channel layout is unsupported per the #88 rules:
+/// matching, mono→N, N→mono (N≥2), and stereo→N (N>2) are supported; any
+/// other layout (e.g. 3→5, 5→2) returns `None` so the caller falls back.
 fn normalize_to_output_format(
     mut audio: crate::audio::decode::DecodedAudio,
     target_sample_rate: u32,
     target_channels: usize,
-) -> crate::audio::decode::DecodedAudio {
+) -> Option<crate::audio::decode::DecodedAudio> {
     // Channel remap if needed.
     if audio.channels != target_channels {
-        audio.samples = remap_channels(
-            &audio.samples,
-            audio.channels,
-            target_channels,
-            audio.samples.len() / audio.channels.max(1),
-        );
+        let frames = audio.samples.len() / audio.channels.max(1);
+        audio.samples = remap_channels(&audio.samples, audio.channels, target_channels, frames)?;
         audio.channels = target_channels;
     }
 
@@ -80,48 +80,54 @@ fn normalize_to_output_format(
         }
     }
 
-    audio
+    Some(audio)
 }
 
-/// Remap interleaved samples from `src_channels` to `dst_channels`.
-/// Mono→stereo duplicates; stereo→mono averages; other mappings use
-/// modulo replication.
+/// Remap interleaved samples from `src_channels` to `dst_channels` following
+/// the deterministic #88 channel mapping rules:
+/// - matching channel count: preserve channels (caller skips this case)
+/// - mono to two or more: duplicate mono to every output channel
+/// - two or more to mono: average channels 0 and 1 with 0.5 each
+/// - stereo to more than two: left/right to 0/1 and zeros to remaining
+/// - any unsupported layout returns `None`
 fn remap_channels(
     samples: &[f32],
     src_channels: usize,
     dst_channels: usize,
     frames: usize,
-) -> Vec<f32> {
+) -> Option<Vec<f32>> {
     if src_channels == 0 || dst_channels == 0 {
-        return Vec::new();
+        return None;
     }
     let mut out = Vec::with_capacity(frames * dst_channels);
     for frame in 0..frames {
         let src_base = frame * src_channels;
         match (src_channels, dst_channels) {
-            (1, 2) => {
+            (1, _) => {
+                // mono to two or more: duplicate mono to every output channel
                 let s = samples[src_base];
-                out.push(s);
-                out.push(s);
+                for _ in 0..dst_channels {
+                    out.push(s);
+                }
             }
-            (2, 1) => {
+            (_, 1) if src_channels >= 2 => {
+                // two or more to mono: average channels 0 and 1 with 0.5 each
                 let l = samples[src_base];
                 let r = samples[src_base + 1];
                 out.push((l + r) * 0.5);
             }
-            _ => {
-                for dst_ch in 0..dst_channels {
-                    let src_ch = if dst_ch < src_channels {
-                        dst_ch
-                    } else {
-                        dst_ch % src_channels
-                    };
-                    out.push(samples[src_base + src_ch]);
-                }
+            (2, _) if dst_channels > 2 => {
+                // stereo to more than two: left/right to 0/1, zeros to rest
+                out.push(samples[src_base]);
+                out.push(samples[src_base + 1]);
+                out.extend(std::iter::repeat_n(0.0, dst_channels - 2));
             }
+            // matching or unsupported layouts should not reach here (caller
+            // skips matching; unsupported returns None)
+            _ => return None,
         }
     }
-    out
+    Some(out)
 }
 
 /// Linear-interpolation resampling for interleaved samples.
@@ -156,6 +162,11 @@ fn linear_resample(samples: &[f32], src_rate: u32, dst_rate: u32, channels: usiz
     }
     out
 }
+
+/// Maximum decoded PCM size (bytes) for gapless preparation. 512 MiB
+/// covers ~50 minutes of stereo 96 kHz / ~3 hours of stereo 44.1 kHz.
+/// Tracks exceeding this cap fall back to the normal `play()` path.
+const PREPARATION_CAP_BYTES: usize = 512 * 1024 * 1024;
 
 /// Check whether a song is eligible for gapless preload. Only local,
 /// non-streaming, non-Media+G songs are eligible — the preload scheduler
@@ -196,6 +207,17 @@ fn prepare_next_track(
     let load =
         playback_source::load_playback_source(Some(app_data_dir), connection, library_root, song)?;
 
+    // #88: Reject oversized PCM — decoded audio plus metadata must fit the
+    // 512 MiB preparation cap. `samples.len() * size_of::<f32>()` is the
+    // dominant memory cost; metadata is negligible by comparison.
+    let pcm_bytes = load.decoded_audio.samples.len() * std::mem::size_of::<f32>();
+    if pcm_bytes > PREPARATION_CAP_BYTES {
+        return Err(PlaybackError::Internal(format!(
+            "decoded PCM ({} bytes) exceeds 512 MiB preparation cap",
+            pcm_bytes
+        )));
+    }
+
     // Normalize the decoded audio to the output format. Stems are not
     // preloaded for gapless — the new track starts in base-audio mode and
     // the frontend can call `load_stems()` after the transition.
@@ -203,7 +225,10 @@ fn prepare_next_track(
         load.decoded_audio,
         output_format.sample_rate,
         output_format.channels as usize,
-    );
+    )
+    .ok_or_else(|| {
+        PlaybackError::Internal("unsupported channel layout for gapless preload".to_owned())
+    })?;
 
     Ok(PreparedTrack {
         preload_request_generation,
@@ -334,7 +359,7 @@ mod tests {
     #[test]
     fn normalize_same_format_returns_unchanged() {
         let audio = make_audio(44_100, 2, 1000);
-        let normalized = normalize_to_output_format(audio.clone(), 44_100, 2);
+        let normalized = normalize_to_output_format(audio.clone(), 44_100, 2).unwrap();
         assert_eq!(normalized.sample_rate, 44_100);
         assert_eq!(normalized.channels, 2);
         // Samples should be identical (no resampling needed).
@@ -344,7 +369,7 @@ mod tests {
     #[test]
     fn normalize_remaps_mono_to_stereo() {
         let audio = make_audio(44_100, 1, 100);
-        let normalized = normalize_to_output_format(audio, 44_100, 2);
+        let normalized = normalize_to_output_format(audio, 44_100, 2).unwrap();
         assert_eq!(normalized.channels, 2);
         assert_eq!(normalized.samples.len(), 200);
         // Each mono sample should be duplicated.
@@ -356,7 +381,7 @@ mod tests {
     #[test]
     fn normalize_remaps_stereo_to_mono() {
         let audio = make_audio(44_100, 2, 100);
-        let normalized = normalize_to_output_format(audio, 44_100, 1);
+        let normalized = normalize_to_output_format(audio, 44_100, 1).unwrap();
         assert_eq!(normalized.channels, 1);
         assert_eq!(normalized.samples.len(), 100);
     }
@@ -364,7 +389,7 @@ mod tests {
     #[test]
     fn normalize_resamples_44100_to_48000() {
         let audio = make_audio(44_100, 2, 4410); // 0.1s at 44.1kHz
-        let normalized = normalize_to_output_format(audio, 48_000, 2);
+        let normalized = normalize_to_output_format(audio, 48_000, 2).unwrap();
         assert_eq!(normalized.sample_rate, 48_000);
         assert_eq!(normalized.channels, 2);
         // 0.1s at 48kHz = 4800 frames
@@ -379,7 +404,7 @@ mod tests {
     #[test]
     fn normalize_recomputes_duration_ms() {
         let audio = make_audio(44_100, 2, 44_100); // 1s
-        let normalized = normalize_to_output_format(audio, 48_000, 2);
+        let normalized = normalize_to_output_format(audio, 48_000, 2).unwrap();
         // Duration should be ~1000ms after resampling.
         assert!(
             (normalized.duration_ms as i64 - 1000).abs() <= 2,
@@ -444,7 +469,7 @@ mod tests {
     #[test]
     fn remap_channels_mono_to_stereo_doubles_length() {
         let samples = vec![0.1, 0.2, 0.3]; // 3 mono frames
-        let out = remap_channels(&samples, 1, 2, 3);
+        let out = remap_channels(&samples, 1, 2, 3).unwrap();
         assert_eq!(out.len(), 6);
         assert_eq!(out, vec![0.1, 0.1, 0.2, 0.2, 0.3, 0.3]);
     }
@@ -452,12 +477,50 @@ mod tests {
     #[test]
     fn remap_channels_stereo_to_mono_halves_length() {
         let samples = vec![0.2_f32, 0.4, 0.6, 0.8]; // 2 stereo frames
-        let out = remap_channels(&samples, 2, 1, 2);
+        let out = remap_channels(&samples, 2, 1, 2).unwrap();
         assert_eq!(out.len(), 2);
         // (0.2+0.4)*0.5 and (0.6+0.8)*0.5 — use approximate comparison
         // because f32 arithmetic does not produce exactly 0.3 / 0.7.
         assert!((out[0] - 0.3).abs() < 1e-5);
         assert!((out[1] - 0.7).abs() < 1e-5);
+    }
+
+    #[test]
+    fn remap_channels_stereo_to_surround_pads_zeros() {
+        // stereo to 4 channels: L/R to 0/1, zeros to 2/3
+        let samples = vec![0.1_f32, 0.2, 0.3, 0.4]; // 2 stereo frames
+        let out = remap_channels(&samples, 2, 4, 2).unwrap();
+        assert_eq!(out.len(), 8);
+        assert_eq!(out, vec![0.1, 0.2, 0.0, 0.0, 0.3, 0.4, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn remap_channels_mono_to_six_channels() {
+        let samples = vec![0.5_f32, 0.7]; // 2 mono frames
+        let out = remap_channels(&samples, 1, 6, 2).unwrap();
+        assert_eq!(out.len(), 12);
+        // Every channel should be the mono value
+        assert!(out.iter().all(|&s| s == 0.5 || s == 0.7));
+        assert_eq!(out[0], 0.5);
+        assert_eq!(out[5], 0.5);
+        assert_eq!(out[6], 0.7);
+        assert_eq!(out[11], 0.7);
+    }
+
+    #[test]
+    fn remap_channels_unsupported_layout_returns_none() {
+        // 3-channel to 5-channel is not in the supported mapping rules
+        let samples = vec![0.1_f32, 0.2, 0.3, 0.4, 0.5, 0.6]; // 2 frames × 3 ch
+        let out = remap_channels(&samples, 3, 5, 2);
+        assert!(out.is_none());
+    }
+
+    #[test]
+    fn remap_channels_five_to_two_returns_none() {
+        // 5-channel to 2-channel is not a supported mapping
+        let samples = vec![0.1_f32; 10]; // 2 frames × 5 ch
+        let out = remap_channels(&samples, 5, 2, 2);
+        assert!(out.is_none());
     }
 
     #[test]
@@ -478,7 +541,7 @@ mod tests {
     fn normalize_to_output_format_with_zero_sample_rate_does_not_panic() {
         let audio = make_audio(0, 2, 100);
         // Should not panic even though sample_rate is 0.
-        let normalized = normalize_to_output_format(audio, 44_100, 2);
+        let normalized = normalize_to_output_format(audio, 44_100, 2).unwrap();
         assert_eq!(normalized.sample_rate, 44_100);
     }
 }

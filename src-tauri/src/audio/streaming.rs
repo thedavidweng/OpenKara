@@ -1179,10 +1179,13 @@ mod tests {
         let mut eq = crate::audio::eq::EqProcessor::new(device_rate, device_channels);
         let peak_ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        let mut crossfade_scratch =
+            vec![0.0f32; crate::audio::crossfade::CROSSFADE_SCRATCH_FRAMES * device_channels];
         let rendered = render_output_buffer(
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut crossfade_scratch,
             device_rate,
             device_channels,
             &mut rc,
@@ -1236,6 +1239,8 @@ mod tests {
         let mut eq = crate::audio::eq::EqProcessor::new(device_rate, device_channels);
         let peak_ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        let mut crossfade_scratch =
+            vec![0.0f32; crate::audio::crossfade::CROSSFADE_SCRATCH_FRAMES * device_channels];
         for _ in 0..10_000 {
             let snapshot = controller.snapshot();
             if !snapshot.is_playing {
@@ -1246,6 +1251,7 @@ mod tests {
                 &mut controller,
                 &mut output,
                 &mut Vec::new(),
+                &mut crossfade_scratch,
                 device_rate,
                 device_channels,
                 &mut rc,

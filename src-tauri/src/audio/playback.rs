@@ -278,7 +278,10 @@ impl PlaybackController {
         self.loading_song_id = None;
         // #88: An explicit track install cancels any pending gapless
         // successor — the new track is not the prepared one.
-        self.prepared_track = None;
+        // #89: Also cancel any active crossfade — a manual load during an
+        // active overlap must not leave a stale crossfade mixing the new
+        // track with the old prepared payload.
+        self.cancel_crossfade_and_prepared();
         self.current_track = Some(LoadedTrack {
             song_id,
             original_audio: decoded_audio,
@@ -305,7 +308,8 @@ impl PlaybackController {
         self.loading_song_id = None;
         // #88: An explicit track install cancels any pending gapless
         // successor — the new track is not the prepared one.
-        self.prepared_track = None;
+        // #89: Also cancel any active crossfade — see `start_track`.
+        self.cancel_crossfade_and_prepared();
         self.current_track = Some(LoadedTrack {
             song_id,
             original_audio: DecodedAudio {
@@ -329,6 +333,11 @@ impl PlaybackController {
         self.bump_transport_generation();
         self.current_track = None;
         self.loading_song_id = Some(song_id.to_owned());
+        // #89: A new load request cancels any active crossfade and prepared
+        // track — the incoming track is not the prepared one, and a stale
+        // crossfade must not mix against the about-to-be-replaced current
+        // track.
+        self.cancel_crossfade_and_prepared();
         self.snapshot()
     }
 
@@ -793,7 +802,7 @@ impl PlaybackController {
     /// #88: Bump the transition serial and stamp it onto a new
     /// `CompletedTransition`. Called by the realtime callback after a
     /// gapless swap.
-    fn stamp_transition(
+    pub(crate) fn stamp_transition(
         &mut self,
         from_song_id: String,
         to_song_id: String,
@@ -938,6 +947,21 @@ impl PlaybackController {
             return false;
         };
 
+        // #88: Only eligible outgoing tracks may transition gaplessly.
+        // A fully decoded plain track or a `StreamingTrack::Single` with
+        // no attached stems is eligible. Multi-stem streaming tracks are
+        // excluded because the prepared incoming track is always a plain
+        // decoded track — swapping would lose the stem mix.
+        let outgoing_eligible = match &current.streaming {
+            None => true, // decoded plain track
+            Some(crate::audio::streaming::StreamingTrack::Single { .. }) => current.stems.is_none(),
+            Some(_) => false, // multi-stem streaming
+        };
+        if !outgoing_eligible {
+            self.prepared_track = Some(prepared);
+            return false;
+        }
+
         // The prepared track's audio was already normalized to the output
         // format by the preload scheduler, so sample_rate and channels match
         // the current track. We construct a new LoadedTrack with the
@@ -978,6 +1002,41 @@ impl PlaybackController {
         self.stamp_transition(from_song_id, to_song_id, preload_generation);
 
         true
+    }
+
+    /// #89: Promote the incoming track from an active crossfade to the
+    /// current track. Called by the realtime callback when the overlap
+    /// completes. The incoming track starts at `render_frame =
+    /// incoming_frame_offset` (the number of overlap frames already
+    /// consumed), so subsequent callbacks continue seamlessly from the
+    /// promoted source. A `CompletedTransition` is stamped for the position
+    /// emitter to drain.
+    pub(crate) fn promote_crossfade_track(
+        &mut self,
+        prepared: PreparedTrack,
+        incoming_frame_offset: u64,
+    ) {
+        let from_song_id = self
+            .current_track
+            .as_ref()
+            .map(|t| t.song_id.clone())
+            .unwrap_or_default();
+        let to_song_id = prepared.song_id.clone();
+        let preload_generation = prepared.preload_generation;
+
+        self.current_track = Some(LoadedTrack {
+            song_id: prepared.song_id,
+            original_audio: prepared.audio,
+            stems: None,
+            is_playing: true,
+            render_frame: incoming_frame_offset,
+            streaming: None,
+        });
+
+        self.fade = FadeState::None;
+        self.is_buffering = false;
+
+        self.stamp_transition(from_song_id, to_song_id, preload_generation);
     }
 
     /// If a fade-out has elapsed past `FADE_DURATION`, finalize it: set
@@ -1078,10 +1137,14 @@ pub struct PlaybackEndedEvent {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TrackTransitionedEvent {
     pub transition_serial: u64,
+    pub preload_generation: u64,
     pub from_song_id: String,
     pub to_song_id: String,
+    /// Authoritative post-transition snapshot with `song_id === to_song_id`.
+    pub state: PlaybackStateSnapshot,
 }
 
 pub fn playback_position_event(snapshot: &PlaybackStateSnapshot) -> PlaybackPositionEvent {
@@ -1591,6 +1654,112 @@ mod tests {
         assert!(controller.prepared_track.is_none());
     }
 
+    // ── #89: Manual load cancels active crossfade tests ────────────────
+
+    fn make_decoded() -> super::DecodedAudio {
+        super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        }
+    }
+
+    #[test]
+    fn start_track_cancels_active_crossfade() {
+        // #89: A manual track load during an active crossfade must cancel
+        // both the active crossfade and the prepared track. A stale
+        // crossfade must not mix the new track against the old prepared
+        // payload on the next callback.
+        let mut controller = super::PlaybackController::default();
+        controller.start_track("song-a".to_owned(), make_decoded(), 0);
+        controller.play(0).unwrap();
+
+        // Simulate an active crossfade and a prepared track.
+        controller.active_crossfade = Some(make_crossfade_active("song-b", 44_100));
+        controller.prepared_track = None; // consumed by the active crossfade
+
+        // Manual load of a different track.
+        controller.start_track("song-c".to_owned(), make_decoded(), 0);
+
+        assert!(
+            controller.active_crossfade.is_none(),
+            "start_track must cancel active crossfade"
+        );
+        assert!(
+            controller.prepared_track.is_none(),
+            "start_track must cancel prepared track"
+        );
+        assert_eq!(
+            controller.current_track.as_ref().unwrap().song_id,
+            "song-c",
+            "current track must be the newly loaded track"
+        );
+    }
+
+    #[test]
+    fn start_track_streaming_cancels_active_crossfade() {
+        // #89: A streaming track load must also cancel an active crossfade.
+        use crate::audio::streaming::{self, StreamingTrack};
+
+        let mut controller = super::PlaybackController::default();
+        controller.start_track("song-a".to_owned(), make_decoded(), 0);
+        controller.play(0).unwrap();
+
+        controller.active_crossfade = Some(make_crossfade_active("song-b", 44_100));
+
+        let (_prod, consumer) = streaming::create_stream_pair(44_100, 2);
+        controller.start_track_streaming(
+            "song-c".to_owned(),
+            44_100,
+            2,
+            5_000,
+            StreamingTrack::Single { consumer },
+            0,
+        );
+
+        assert!(
+            controller.active_crossfade.is_none(),
+            "start_track_streaming must cancel active crossfade"
+        );
+        assert_eq!(
+            controller.current_track.as_ref().unwrap().song_id,
+            "song-c",
+            "current track must be the newly loaded streaming track"
+        );
+    }
+
+    #[test]
+    fn start_track_loading_cancels_active_crossfade() {
+        // #89: A new load request must cancel an active crossfade — the
+        // incoming track is not the prepared one, and a stale crossfade
+        // must not mix against the about-to-be-replaced current track.
+        let mut controller = super::PlaybackController::default();
+        controller.start_track("song-a".to_owned(), make_decoded(), 0);
+        controller.play(0).unwrap();
+
+        controller.active_crossfade = Some(make_crossfade_active("song-b", 44_100));
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+        let prepared = make_prepared("song-d", 0, fmt);
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+
+        controller.start_track_loading("song-c");
+
+        assert!(
+            controller.active_crossfade.is_none(),
+            "start_track_loading must cancel active crossfade"
+        );
+        assert!(
+            controller.prepared_track.is_none(),
+            "start_track_loading must cancel prepared track"
+        );
+        assert_eq!(
+            controller.loading_song_id.as_deref(),
+            Some("song-c"),
+            "loading song must be set"
+        );
+    }
+
     #[test]
     fn clear_track_clears_prepared_track() {
         let mut controller = super::PlaybackController::default();
@@ -1604,13 +1773,6 @@ mod tests {
         assert!(controller.prepared_track.is_none());
     }
 
-    // ── #103: current_track_is_playing regression tests ───────────────
-    //
-    // The gapless swap path in the realtime callback checks
-    // `current_track_is_playing()` before advancing to the prepared next
-    // track. This helper returns false when `is_playing` is false or a
-    // `FadingOut` is in progress, so a track reaching EOF during a
-    // user-initiated pause does not auto-advance.
 
     #[test]
     fn current_track_is_playing_true_when_playing_no_fade() {
@@ -1692,5 +1854,159 @@ mod tests {
             controller.current_track_is_playing(),
             "should be playing after resume (FadingIn is not FadingOut)"
         );
+
+
+    // ── #89: Crossfade state tests ──────────────────────────────────────
+
+    fn make_crossfade_active(song_id: &str, total_frames: u64) -> super::ActiveCrossfade {
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+        super::ActiveCrossfade {
+            prepared: make_prepared(song_id, 0, fmt),
+            total_frames,
+            rendered_frames: 0,
+        }
+    }
+
+    #[test]
+    fn seek_aborts_active_crossfade_and_restores_prepared_track() {
+        let mut controller = super::PlaybackController::default();
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        controller.play(0).unwrap();
+
+        // Simulate an active crossfade.
+        controller.active_crossfade = Some(make_crossfade_active("song-b", 44_100));
+        assert!(controller.active_crossfade.is_some());
+        assert!(controller.prepared_track.is_none());
+
+        // Seek aborts the crossfade and restores the prepared track.
+        controller.seek(1_000, 0).unwrap();
+
+        assert!(
+            controller.active_crossfade.is_none(),
+            "seek must abort active crossfade"
+        );
+        assert!(
+            controller.prepared_track.is_some(),
+            "seek must restore the incoming payload to prepared_track"
+        );
+        let prepared = controller.prepared_track.as_ref().unwrap();
+        assert_eq!(prepared.song_id, "song-b");
+    }
+
+    #[test]
+    fn pause_preserves_active_crossfade() {
+        let mut controller = super::PlaybackController::default();
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        controller.play(0).unwrap();
+
+        // Simulate an active crossfade partway through.
+        let mut active = make_crossfade_active("song-b", 44_100);
+        active.rendered_frames = 22_050;
+        controller.active_crossfade = Some(active);
+
+        // Pause must NOT abort the crossfade.
+        controller.pause(0).unwrap();
+
+        assert!(
+            controller.active_crossfade.is_some(),
+            "pause must preserve active crossfade state"
+        );
+        let active = controller.active_crossfade.as_ref().unwrap();
+        assert_eq!(
+            active.rendered_frames, 22_050,
+            "pause must not reset crossfade progress"
+        );
+    }
+
+    #[test]
+    fn cancel_crossfade_and_prepared_clears_both() {
+        let mut controller = super::PlaybackController::default();
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+        let prepared = make_prepared("song-b", 0, fmt);
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+        assert!(controller.prepared_track.is_some());
+
+        controller.active_crossfade = Some(make_crossfade_active("song-c", 44_100));
+
+        controller.cancel_crossfade_and_prepared();
+
+        assert!(
+            controller.active_crossfade.is_none(),
+            "cancel must clear active crossfade"
+        );
+        assert!(
+            controller.prepared_track.is_none(),
+            "cancel must clear prepared track"
+        );
+    }
+
+    #[test]
+    fn promote_crossfade_track_stamps_transition_and_promotes_incoming() {
+        let mut controller = super::PlaybackController::default();
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        controller.play(0).unwrap();
+
+        let initial_serial = controller.transition_serial;
+        let prepared = make_prepared("song-b", 0, super::OutputFormatSnapshot::new(1, 44_100, 2));
+
+        // Promote at frame offset 44_100 (full overlap consumed).
+        controller.promote_crossfade_track(prepared, 44_100);
+
+        // Current track is now the promoted incoming track.
+        let track = controller.current_track.as_ref().unwrap();
+        assert_eq!(track.song_id, "song-b");
+        assert_eq!(track.render_frame, 44_100);
+
+        // Transition serial was bumped and pending transition stamped.
+        assert!(controller.transition_serial > initial_serial);
+        let pending = controller.pending_transition_out.as_ref().unwrap();
+        assert_eq!(pending.from_song_id, "song-a");
+        assert_eq!(pending.to_song_id, "song-b");
+    }
+
+    #[test]
+    fn promote_crossfade_track_clears_fade_and_buffering() {
+        let mut controller = super::PlaybackController::default();
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        controller.play(0).unwrap();
+
+        // Set fade and buffering state.
+        controller.fade = super::FadeState::FadingIn {
+            start: std::time::Instant::now(),
+        };
+        controller.is_buffering = true;
+
+        let prepared = make_prepared("song-b", 0, super::OutputFormatSnapshot::new(1, 44_100, 2));
+        controller.promote_crossfade_track(prepared, 0);
+
+        assert!(
+            matches!(controller.fade, super::FadeState::None),
+            "promote must clear fade"
+        );
+        assert!(!controller.is_buffering, "promote must clear buffering");
     }
 }

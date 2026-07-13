@@ -20,6 +20,7 @@ import type {
   PlaybackPositionEvent,
   PlaybackStateSnapshot,
   StemName,
+  TrackTransitionedEvent,
 } from "@/types/ipc";
 
 export const DEFAULT_AIRPLAY_OUTPUT_STATE: AirPlayOutputStateEvent = {
@@ -63,7 +64,7 @@ interface PlayerState {
   loadState: () => Promise<void>;
   playNextFromQueue: (endedSongId: string) => Promise<void>;
   /** #88: Reconcile queue after a gapless track-transitioned event. */
-  onTrackTransitioned: (fromSongId: string, toSongId: string) => void;
+  onTrackTransitioned: (event: TrackTransitionedEvent) => void;
   skipForward: () => Promise<void>;
   skipBack: () => Promise<void>;
   updateAirPlayOutput: (airPlayOutput: AirPlayOutputStateEvent) => void;
@@ -159,6 +160,7 @@ const sessionTransport: PlaybackTransport = {
   setStemVolume: api.setStemVolume,
   loadStems: api.loadStems,
   getPlaybackState: api.getPlaybackState,
+  setPreloadCandidate: api.setPreloadCandidate,
 };
 
 export function createPlayerStore(
@@ -186,6 +188,9 @@ export function createPlayerStore(
         pushToHistory: (id) => useQueueStore.getState().pushToHistory(id),
         popFromHistory: () => useQueueStore.getState().popFromHistory() ?? null,
         removeSongIds: (ids) => useQueueStore.getState().removeSongIds(ids),
+        reconcileGaplessTransition: (fromId, toId) =>
+          useQueueStore.getState().reconcileGaplessTransition(fromId, toId),
+        peekHead: () => useQueueStore.getState().queue[0] ?? null,
       },
       getSeparationStatus: (songId) =>
         useLibraryStore.getState().separationStatuses[songId],
@@ -323,8 +328,8 @@ export function createPlayerStore(
         }
       },
 
-      onTrackTransitioned: (fromSongId, toSongId) => {
-        session.onTrackTransitioned(fromSongId, toSongId).catch((e) => {
+      onTrackTransitioned: (event) => {
+        session.onTrackTransitioned(event).catch((e) => {
           notifyError(e);
         });
       },
