@@ -132,6 +132,12 @@ pub fn mark_cdg_seek(cdg_state: &mut Option<CdgPlaybackSlot>, transport_generati
     if let Some(slot) = cdg_state.as_mut() {
         slot.status.transport_generation = Some(transport_generation);
         if let Some(cdg) = slot.playback.as_mut() {
+            // Update the playback state's own generation counter so that
+            // get_cdg_frame's stale song/generation guard (which compares
+            // cdg.transport_generation) accepts the post-seek caller.
+            // Without this, the guard rejects the caller and the CDG
+            // graphics freeze after any seek.
+            cdg.update_transport_generation(transport_generation);
             cdg.mark_seek();
         }
     }
@@ -383,6 +389,10 @@ mod tests {
         let slot = cdg_state.as_ref().unwrap();
         assert_eq!(slot.status.transport_generation, Some(2));
         let cdg = slot.playback.as_ref().unwrap();
+        // The playback state's own generation counter must be updated so
+        // get_cdg_frame's stale song/generation guard accepts post-seek
+        // callers. Without this, CDG graphics freeze after any seek.
+        assert_eq!(cdg.transport_generation, 2);
         assert!(cdg.local.needs_reset);
         assert!(cdg.airplay.needs_reset);
     }
