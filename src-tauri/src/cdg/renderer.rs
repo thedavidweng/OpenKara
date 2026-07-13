@@ -335,8 +335,9 @@ impl CdgRenderer {
         changed
     }
 
-    /// Scroll the framebuffer horizontally by 6 pixels using explicit modular
-    /// arithmetic for the copy-wrap path. `direction` is -1 (left) or +1 (right).
+    /// Scroll the framebuffer horizontally by 6 pixels. `direction` is -1
+    /// (left) or +1 (right). In copy mode, vacated columns wrap around from
+    /// the opposite edge; in preset mode, they are filled with `color`.
     fn scroll_horizontal(&mut self, direction: i32, copy: bool, color: u8) {
         let mut new_pixels = vec![0u8; FULL_WIDTH * FULL_HEIGHT];
         for y in 0..FULL_HEIGHT {
@@ -344,25 +345,30 @@ impl CdgRenderer {
                 let dst = y * FULL_WIDTH + x;
                 // Source is 6 pixels in the opposite direction of the scroll.
                 let src_x = if direction < 0 {
-                    x + 6
-                } else {
-                    // x - 6 with modular wrap for usize safety.
-                    (x + FULL_WIDTH - 6) % FULL_WIDTH
-                };
-                if src_x < FULL_WIDTH {
-                    new_pixels[dst] = self.pixels[y * FULL_WIDTH + src_x];
-                } else if copy {
-                    // Wrap around: source wraps to the other side.
-                    let wrapped = if direction < 0 {
-                        src_x - FULL_WIDTH
+                    // Left scroll: source is x + 6. Vacated columns are on the
+                    // right edge (x >= FULL_WIDTH - 6).
+                    if x + 6 < FULL_WIDTH {
+                        Some(x + 6)
+                    } else if copy {
+                        // Wrap around from the left edge.
+                        Some(x + 6 - FULL_WIDTH)
                     } else {
-                        src_x + FULL_WIDTH
-                    };
-                    if wrapped < FULL_WIDTH {
-                        new_pixels[dst] = self.pixels[y * FULL_WIDTH + wrapped];
-                    } else {
-                        new_pixels[dst] = color;
+                        None
                     }
+                } else {
+                    // Right scroll: source is x - 6. Vacated columns are on the
+                    // left edge (x < 6).
+                    if x >= 6 {
+                        Some(x - 6)
+                    } else if copy {
+                        // Wrap around from the right edge.
+                        Some(x + FULL_WIDTH - 6)
+                    } else {
+                        None
+                    }
+                };
+                if let Some(sx) = src_x {
+                    new_pixels[dst] = self.pixels[y * FULL_WIDTH + sx];
                 } else {
                     new_pixels[dst] = color;
                 }
@@ -371,33 +377,40 @@ impl CdgRenderer {
         self.pixels = new_pixels;
     }
 
-    /// Scroll the framebuffer vertically by 12 pixels using explicit modular
-    /// arithmetic for the copy-wrap path. `direction` is -1 (up) or +1 (down).
+    /// Scroll the framebuffer vertically by 12 pixels. `direction` is -1
+    /// (up) or +1 (down). In copy mode, vacated rows wrap around from the
+    /// opposite edge; in preset mode, they are filled with `color`.
     fn scroll_vertical(&mut self, direction: i32, copy: bool, color: u8) {
         let mut new_pixels = vec![0u8; FULL_WIDTH * FULL_HEIGHT];
         for y in 0..FULL_HEIGHT {
             // Source is 12 rows in the opposite direction of the scroll.
             let src_y = if direction < 0 {
-                y + 12
+                // Up scroll: source is y + 12. Vacated rows are at the bottom
+                // (y >= FULL_HEIGHT - 12).
+                if y + 12 < FULL_HEIGHT {
+                    Some(y + 12)
+                } else if copy {
+                    // Wrap around from the top.
+                    Some(y + 12 - FULL_HEIGHT)
+                } else {
+                    None
+                }
             } else {
-                // y - 12 with modular wrap for usize safety.
-                (y + FULL_HEIGHT - 12) % FULL_HEIGHT
+                // Down scroll: source is y - 12. Vacated rows are at the top
+                // (y < 12).
+                if y >= 12 {
+                    Some(y - 12)
+                } else if copy {
+                    // Wrap around from the bottom.
+                    Some(y + FULL_HEIGHT - 12)
+                } else {
+                    None
+                }
             };
             for x in 0..FULL_WIDTH {
                 let dst = y * FULL_WIDTH + x;
-                if src_y < FULL_HEIGHT {
-                    new_pixels[dst] = self.pixels[src_y * FULL_WIDTH + x];
-                } else if copy {
-                    let wrapped = if direction < 0 {
-                        src_y - FULL_HEIGHT
-                    } else {
-                        src_y + FULL_HEIGHT
-                    };
-                    if wrapped < FULL_HEIGHT {
-                        new_pixels[dst] = self.pixels[wrapped * FULL_WIDTH + x];
-                    } else {
-                        new_pixels[dst] = color;
-                    }
+                if let Some(sy) = src_y {
+                    new_pixels[dst] = self.pixels[sy * FULL_WIDTH + x];
                 } else {
                     new_pixels[dst] = color;
                 }

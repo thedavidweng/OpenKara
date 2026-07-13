@@ -424,6 +424,36 @@ pub fn get_cdg_frame(
             );
             return Ok(Response::new(header.to_vec()));
         }
+        CdgFrameUpdate::NoChange {
+            frame_version,
+            packet_index,
+        } => {
+            // Stale caller: frame_version differs from last_frame_version,
+            // meaning the caller missed a frame update (e.g. dropped IPC
+            // response or remounted receiver with lastFrameVersion = 0).
+            // Send the cached RGBA frame so the caller can recover without
+            // waiting for the position to advance.
+            if let Some(rgba) = cdg.local.cached_frame.as_ref() {
+                let mut buf = Vec::with_capacity(PROTOCOL_HEADER_SIZE + rgba.len());
+                let header = build_header(
+                    cdg.transport_generation,
+                    *frame_version,
+                    *packet_index as u64,
+                    true,
+                );
+                buf.extend_from_slice(&header);
+                buf.extend_from_slice(rgba);
+                return Ok(Response::new(buf));
+            }
+            // No cached frame — fall through to header-only response.
+            let header = build_header(
+                cdg.transport_generation,
+                *frame_version,
+                *packet_index as u64,
+                false,
+            );
+            return Ok(Response::new(header.to_vec()));
+        }
         _ => {}
     }
 

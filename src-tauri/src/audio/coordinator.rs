@@ -23,12 +23,12 @@ use crate::{
         streaming::StreamingTrack,
     },
     cdg::CdgPacket,
-    commands::cdg::CdgPlaybackSlot,
+    commands::cdg::{CdgErrorCode, CdgPlaybackSlot},
     commands::error::CommandError,
     services::{
         cdg::{
-            attach_cdg_for_song, clear_cdg_for_transport_change, mark_cdg_loading, mark_cdg_seek,
-            update_cdg_transport_generation,
+            attach_cdg_for_song, clear_cdg_for_transport_change, mark_cdg_error, mark_cdg_loading,
+            mark_cdg_seek, update_cdg_transport_generation,
         },
         playback::PlaybackErrorEvent,
     },
@@ -49,6 +49,10 @@ pub enum ReadyTrack {
         audio: DecodedAudio,
         stems: Option<LoadedStems>,
         cdg: Option<Arc<[CdgPacket]>>,
+        /// CDG load error (when cdg is None but a CDG file existed and failed
+        /// to load). The coordinator uses this to mark the CDG slot with the
+        /// appropriate error code instead of clearing it silently.
+        cdg_error: Option<CdgErrorCode>,
     },
     /// Streaming track (low-latency byte-range playback).
     Streaming {
@@ -58,6 +62,7 @@ pub enum ReadyTrack {
         original: StreamingTrack,
         stems: Option<Box<StreamingTrack>>,
         cdg: Option<Arc<[CdgPacket]>>,
+        cdg_error: Option<CdgErrorCode>,
     },
 }
 
@@ -381,7 +386,7 @@ fn handle_install_ready<R: Runtime>(
 
     // Install the track and extract CDG in one match — `ready` is consumed
     // and `cdg` is moved out alongside the install.
-    let (snapshot, cdg) = {
+    let (snapshot, cdg, cdg_error) = {
         let Ok(mut playback) = runtime.playback.lock() else {
             eprintln!("coordinator: playback lock poisoned in InstallReady");
             return;
@@ -392,14 +397,19 @@ fn handle_install_ready<R: Runtime>(
         }
 
         match ready {
-            ReadyTrack::Decoded { audio, stems, cdg } => {
+            ReadyTrack::Decoded {
+                audio,
+                stems,
+                cdg,
+                cdg_error,
+            } => {
                 let snapshot = playback.start_track(song_id.to_owned(), audio, monotonic_now_ms());
                 if let Some(stems) = stems {
                     if let Err(e) = playback.attach_stems(song_id, stems) {
                         eprintln!("coordinator: failed to attach decoded stems: {e}");
                     }
                 }
-                (snapshot, cdg)
+                (snapshot, cdg, cdg_error)
             }
             ReadyTrack::Streaming {
                 sample_rate,
@@ -408,6 +418,7 @@ fn handle_install_ready<R: Runtime>(
                 original,
                 stems,
                 cdg,
+                cdg_error,
             } => {
                 let snapshot = playback.start_track_streaming(
                     song_id.to_owned(),
@@ -422,7 +433,7 @@ fn handle_install_ready<R: Runtime>(
                         eprintln!("coordinator: failed to attach streaming stems: {e}");
                     }
                 }
-                (snapshot, cdg)
+                (snapshot, cdg, cdg_error)
             }
         }
     };
@@ -437,8 +448,16 @@ fn handle_install_ready<R: Runtime>(
                     snapshot.transport_generation,
                     packets,
                 );
+            } else if let Some(error_code) = cdg_error {
+                // CDG file existed but failed to load — report the error.
+                mark_cdg_error(
+                    &mut cdg_state,
+                    song_id,
+                    snapshot.transport_generation,
+                    error_code,
+                );
             } else {
-                // No CDG for this song — clear the loading status.
+                // No CDG file for this song — clear the loading status.
                 clear_cdg_for_transport_change(&mut cdg_state);
             }
         } else {
@@ -955,6 +974,7 @@ mod tests {
                 audio: dummy_audio(),
                 stems: None,
                 cdg: None,
+                cdg_error: None,
             }),
         });
         // Give the coordinator time to process the fire-and-forget command.
@@ -1043,6 +1063,7 @@ mod tests {
                 audio: dummy_audio(),
                 stems: None,
                 cdg: None,
+                cdg_error: None,
             }),
         });
         // Use a sync command as a barrier.
@@ -1309,6 +1330,7 @@ mod tests {
                 audio: dummy_audio(),
                 stems: None,
                 cdg: Some(packets),
+                cdg_error: None,
             }),
         });
         // Barrier.
@@ -1489,6 +1511,7 @@ mod tests {
                 audio: dummy_audio(),
                 stems: None,
                 cdg: None,
+                cdg_error: None,
             }),
         });
         // Barrier: send a sync command and wait for its reply to ensure the
@@ -1559,6 +1582,7 @@ mod tests {
                 original: dummy_streaming_track(),
                 stems: None,
                 cdg: None,
+                cdg_error: None,
             }),
         });
         // Barrier.
@@ -1597,6 +1621,7 @@ mod tests {
                 audio: dummy_audio(),
                 stems: None,
                 cdg: None,
+                cdg_error: None,
             }),
         });
         // Barrier.
