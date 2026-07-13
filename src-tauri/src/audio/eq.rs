@@ -107,8 +107,8 @@ impl EqProcessor {
                     // updates coefficients from the smoothed gain each tick.
                     if let Ok(coeffs) = Coefficients::<f32>::from_params(
                         Type::PeakingEQ(0.0),
-                        Hertz::from_hz(sr).unwrap_or_else(|_| Hertz::from_hz(1.0).unwrap()),
-                        Hertz::from_hz(freq).unwrap_or_else(|_| Hertz::from_hz(1.0).unwrap()),
+                        Hertz::from_hz(sr).unwrap_or_else(|_| Hertz::from_hz(1.0_f32).unwrap()),
+                        Hertz::from_hz(freq).unwrap_or_else(|_| Hertz::from_hz(1.0_f32).unwrap()),
                         EQ_Q,
                     ) {
                         bands[i] = Some(DirectForm1::new(coeffs));
@@ -201,9 +201,9 @@ impl EqProcessor {
                 let Ok(coeffs) = Coefficients::<f32>::from_params(
                     Type::PeakingEQ(gain),
                     Hertz::from_hz(self.sample_rate)
-                        .unwrap_or_else(|_| Hertz::from_hz(1.0).unwrap()),
+                        .unwrap_or_else(|_| Hertz::from_hz(1.0_f32).unwrap()),
                     Hertz::from_hz(EQ_BAND_FREQUENCIES_HZ[band])
-                        .unwrap_or_else(|_| Hertz::from_hz(1.0).unwrap()),
+                        .unwrap_or_else(|_| Hertz::from_hz(1.0_f32).unwrap()),
                     EQ_Q,
                 ) else {
                     continue;
