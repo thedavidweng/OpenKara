@@ -411,8 +411,12 @@ pub fn render_output_buffer(
     // #87: Peak accumulation happens after EQ, limiter and fade — the final
     // post-processing stage before CPAL output / AirPlay forwarding. Only
     // fully rendered samples participate; trailing zero padding is ignored.
-    let rendered_sample_count = rendered * device_channels;
-    peak_accumulator.process(output, rendered_sample_count, device_channels, peak_ring);
+    //
+    // `rendered` is already an interleaved sample count (frames × channels)
+    // returned by every mix path — do not multiply by `device_channels` again
+    // or the peak meter would process `channels`× too many frames, publishing
+    // envelope pairs far too frequently and distorting the visualizer timeline.
+    peak_accumulator.process(output, rendered, device_channels, peak_ring);
 
     // Advance the render frame counter so the next callback continues seamlessly
     playback.advance_render_frame(src_frames_advanced);
