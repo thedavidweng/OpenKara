@@ -185,6 +185,7 @@
     [data-window-chrome-platform],
     [data-window-chrome-platform] * {
       scrollbar-color: auto;
+      scrollbar-width: auto;
       forced-color-adjust: auto;
     }
   }

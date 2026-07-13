@@ -102,8 +102,11 @@ describe("scrollbar platform contract", () => {
     expect(desktopThin.test(GLOBALS_CSS)).toBe(true);
 
     // The @supports not fallback must not be combined with the mac selector.
+    // Match the full @supports not block, including nested braces, by
+    // capturing until the closing brace at the same indentation as the
+    // opening @supports line.
     const fallbackBlock =
-      /@supports\s*not\s*\(scrollbar-color:\s*auto\)\s*\{([\s\S]*?)\n\s*\}/;
+      /@supports\s*not\s*\(scrollbar-color:\s*auto\)\s*\{([\s\S]*?)\n  \}/;
     const match = GLOBALS_CSS.match(fallbackBlock);
     expect(
       match,
