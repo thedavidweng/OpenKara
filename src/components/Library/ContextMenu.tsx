@@ -154,7 +154,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
                   }
                 : undefined
             }
-            className="flex w-full items-center px-3 py-1.5 text-left text-[13px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
+            className="flex w-full items-center px-3 py-1.5 text-left text-[13px] text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
           >
             <span
               className="mr-2 flex h-4 w-4 shrink-0 items-center justify-center text-[10px] text-[var(--color-accent)]"
@@ -254,7 +254,7 @@ function SubMenu({
             item.onClick?.();
             onClose();
           }}
-          className="flex w-full items-center px-3 py-1.5 text-left text-[13px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
+          className="flex w-full items-center px-3 py-1.5 text-left text-[13px] text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
         >
           <span
             className="mr-2 flex h-4 w-4 shrink-0 items-center justify-center text-[10px] text-[var(--color-accent)]"

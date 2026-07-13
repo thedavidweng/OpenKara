@@ -108,6 +108,22 @@ describe("applyResolvedTheme", () => {
     expect(root.dataset.theme).toBe("dark");
     expect(root.style.colorScheme).toBe("dark");
   });
+
+  test("forces dark color-scheme when the audience presentation marker is set", () => {
+    const root = document.createElement("html");
+    root.dataset.presentationMode = "audience";
+    applyResolvedTheme("light", root);
+    expect(root.dataset.theme).toBe("light");
+    // color-scheme must stay dark so native controls render against the dark
+    // audience backdrop, even with a saved light preference.
+    expect(root.style.colorScheme).toBe("dark");
+  });
+
+  test("uses the resolved theme color-scheme when no audience marker is set", () => {
+    const root = document.createElement("html");
+    applyResolvedTheme("light", root);
+    expect(root.style.colorScheme).toBe("light");
+  });
 });
 
 // ── Hook tests ─────────────────────────────────────────────────────────
