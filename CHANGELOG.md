@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Introduce `PlaybackCoordinator` as an independent control thread that serializes all control-plane mutations of `PlaybackController` (pause / resume / seek / set_volume / set_stem_volume / install_track / fail_load / attach_stems). Background decode/fetch threads now produce immutable `ReadyTrack` payloads and send `PlaybackCommand` messages to the coordinator instead of directly mutating the controller. The coordinator guarantees FIFO ordering, latest-request-wins guards, AirPlay epoch/generation bumps, CDG seek-reset, and output-thread startup — all on a single thread. Public Tauri command names, arguments, response shapes, and event names are unchanged.
+
+### Fixed
+
+- Fix output-device startup failure not emitting `playback-error`: when `InstallReady` completes track installation but the output thread fails to start, the coordinator now clears the installed track (via `clear_track_if_matching`) and emits `playback-error` for the latest request instead of silently leaving the player in a `playing` state with no output device.
 - Show a success toast naming the matched song when .lrc lyrics are imported via drag-and-drop or file dialog: `import_lyrics_files` now returns `song_title` and `song_artist` in each `LyricsMatch` entry, and the import workflow displays a toast per matched file so users can see which song the lyrics were bound to — especially useful when multiple songs share the same title (e.g. instrumental and regular versions) and filename/metadata matching silently picks the first one.
 - Deepen frontend Playback Session architecture (maintainer-visible): extract `src/playback/` session module (play/skip/onEnded/clock) with thin player-store adapter; pure audience projector for AirPlay assembly. No user-visible playback behavior change intended.
 - Deepen the Rust `library` module write path: import, delete, song metadata/flags, and playlist/rotation logic now live under `src-tauri/src/library/` (`import/`, `delete`, `songs`, `playlist`). `commands/import` and `commands/playlist` are thin IPC adapters that open the DB and wrap remote `run_*_mutation` hooks. Remote mirror sync calls `library::delete_*` instead of `commands::import::delete`.

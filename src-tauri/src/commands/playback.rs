@@ -1,5 +1,8 @@
 use crate::{
-    audio::playback::{PlaybackStateSnapshot, StemName},
+    audio::{
+        coordinator::PlaybackCommand,
+        playback::{PlaybackStateSnapshot, StemName},
+    },
     commands::error::{internal_error, CommandResult},
     services,
     state::AppState,
@@ -7,6 +10,28 @@ use crate::{
 use tauri::{AppHandle, State};
 
 pub use crate::services::playback::play_song_from_library;
+
+/// Send a synchronous command to the coordinator and await its reply.
+/// Maps channel and reply errors to `CommandError`.
+async fn send_and_await(
+    state: &AppState,
+    make_command: impl FnOnce(
+        tokio::sync::oneshot::Sender<
+            Result<PlaybackStateSnapshot, crate::audio::error::PlaybackError>,
+        >,
+    ) -> PlaybackCommand,
+) -> CommandResult<PlaybackStateSnapshot> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let command = make_command(tx);
+    state
+        .playback
+        .command_tx
+        .send(command)
+        .map_err(|_| internal_error("playback coordinator disconnected"))?;
+    rx.await
+        .map_err(|_| internal_error("playback coordinator dropped reply"))?
+        .map_err(Into::into)
+}
 
 #[tauri::command]
 pub async fn play(
@@ -24,42 +49,58 @@ pub async fn play(
 }
 
 #[tauri::command]
-pub fn resume(
+pub async fn resume(
     state: State<'_, AppState>,
-    app_handle: AppHandle,
+    _app_handle: AppHandle,
 ) -> CommandResult<PlaybackStateSnapshot> {
-    Ok(services::playback::resume(&state, &app_handle)?)
+    send_and_await(state.inner(), |reply| PlaybackCommand::Resume { reply }).await
 }
 
 #[tauri::command]
-pub fn pause(
+pub async fn pause(
     state: State<'_, AppState>,
-    app_handle: AppHandle,
+    _app_handle: AppHandle,
 ) -> CommandResult<PlaybackStateSnapshot> {
-    Ok(services::playback::pause(&state, &app_handle)?)
+    send_and_await(state.inner(), |reply| PlaybackCommand::Pause { reply }).await
 }
 
 #[tauri::command]
-pub fn seek(
+pub async fn seek(
     state: State<'_, AppState>,
-    app_handle: AppHandle,
+    _app_handle: AppHandle,
     ms: u64,
 ) -> CommandResult<PlaybackStateSnapshot> {
-    Ok(services::playback::seek(&state, &app_handle, ms)?)
+    send_and_await(state.inner(), |reply| PlaybackCommand::Seek {
+        target_ms: ms,
+        reply,
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn set_volume(state: State<'_, AppState>, level: f32) -> CommandResult<PlaybackStateSnapshot> {
-    Ok(services::playback::set_volume(&state, level)?)
+pub async fn set_volume(
+    state: State<'_, AppState>,
+    level: f32,
+) -> CommandResult<PlaybackStateSnapshot> {
+    send_and_await(state.inner(), |reply| PlaybackCommand::SetVolume {
+        level,
+        reply,
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn set_stem_volume(
+pub async fn set_stem_volume(
     state: State<'_, AppState>,
     stem: StemName,
     level: f32,
 ) -> CommandResult<PlaybackStateSnapshot> {
-    Ok(services::playback::set_stem_volume(&state, stem, level)?)
+    send_and_await(state.inner(), |reply| PlaybackCommand::SetStemVolume {
+        stem,
+        level,
+        reply,
+    })
+    .await
 }
 
 #[tauri::command]
