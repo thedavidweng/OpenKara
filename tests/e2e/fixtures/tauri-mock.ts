@@ -218,6 +218,7 @@ export const TAURI_MOCK_SCRIPT = `
       hide_batch_separate: false, cover_art_backdrop: false,
       lyrics_font_step: 0, execution_provider: "cpu",
       available_execution_providers: ["cpu"],
+      theme_preference: "dark",
     },
     get_window_shell_state: {
       chrome_variant: "desktop", tier: "desktop", toolbar_height: 48,
