@@ -94,6 +94,8 @@ describe("VolumeSliders expanded mixer trigger", () => {
       'button[aria-label="Expand stems"]',
     ) as HTMLButtonElement;
     expect(trigger).not.toBeNull();
+    // Closed + stems-available state uses the theme text hover token.
+    expect(trigger.className).toContain("hover:text-[var(--color-text)]");
 
     act(() => {
       trigger.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -104,5 +106,26 @@ describe("VolumeSliders expanded mixer trigger", () => {
     ) as HTMLButtonElement;
     expect(collapse).not.toBeNull();
     expect(collapse.className).toContain("text-[var(--color-text)]");
+  });
+
+  test("inline mute buttons use theme control-primary + text hover tokens", () => {
+    act(() => {
+      root.render(<VolumeSliders density="relaxed" />);
+    });
+
+    const muteButtons = Array.from(
+      container.querySelectorAll("button[aria-label^='Mute ']"),
+    ) as HTMLButtonElement[];
+    expect(muteButtons.length).toBeGreaterThan(0);
+    expect(
+      muteButtons.some((button) =>
+        button.className.includes("text-[var(--color-control-primary)]"),
+      ),
+    ).toBe(true);
+    expect(
+      muteButtons.some((button) =>
+        button.className.includes("hover:text-[var(--color-text)]"),
+      ),
+    ).toBe(true);
   });
 });

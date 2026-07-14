@@ -4,7 +4,7 @@ import { QueueButton } from "./QueueButton";
 
 const { mockQueueState } = vi.hoisted(() => ({
   mockQueueState: {
-    queue: [],
+    queue: [] as string[],
     togglePanel: vi.fn(),
     isOpen: false,
   },
@@ -35,7 +35,7 @@ describe("QueueButton", () => {
 });
 
 test("shows queue count badge with on-accent token when queue has items", () => {
-  mockQueueState.queue = [{ id: "1" }, { id: "2" }];
+  mockQueueState.queue = ["song-1", "song-2"];
   mockQueueState.isOpen = false;
   const markup = renderToStaticMarkup(<QueueButton />);
   expect(markup).toContain("text-[var(--color-on-accent)]");
