@@ -33,3 +33,18 @@ describe("QueueButton", () => {
     expect(markup).toContain('aria-label="queue.title"');
   });
 });
+
+test("shows queue count badge with on-accent token when queue has items", () => {
+  mockQueueState.queue = [{ id: "1" }, { id: "2" }];
+  mockQueueState.isOpen = false;
+  const markup = renderToStaticMarkup(<QueueButton />);
+  expect(markup).toContain("text-[var(--color-on-accent)]");
+  expect(markup).toContain(">2<");
+  mockQueueState.queue = [];
+});
+
+test("uses closed-state hover text token", () => {
+  mockQueueState.isOpen = false;
+  const markup = renderToStaticMarkup(<QueueButton />);
+  expect(markup).toContain("hover:text-[var(--color-text)]");
+});

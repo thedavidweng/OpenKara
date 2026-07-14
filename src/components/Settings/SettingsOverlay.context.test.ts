@@ -131,6 +131,19 @@ describe("createSettingsOverlayTestContextValue", () => {
   });
 });
 
+test("default action stubs are callable no-ops", async () => {
+  const value = createSettingsOverlayTestContextValue();
+  await expect(
+    value.actions.setThemePreference("dark"),
+  ).resolves.toBeUndefined();
+  await expect(
+    value.actions.setThemePreference("light"),
+  ).resolves.toBeUndefined();
+  await expect(
+    value.actions.setThemePreference("system"),
+  ).resolves.toBeUndefined();
+});
+
 describe("useSettingsOverlay", () => {
   test("throws when called outside provider", () => {
     mockReactUse.mockReturnValue(null);
