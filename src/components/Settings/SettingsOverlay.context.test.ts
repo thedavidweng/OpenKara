@@ -131,6 +131,15 @@ describe("createSettingsOverlayTestContextValue", () => {
   });
 });
 
+test("default action stubs are callable no-ops", async () => {
+  const value = createSettingsOverlayTestContextValue();
+  await expect(value.actions.setEqEnabled(true)).resolves.toBeUndefined();
+  await expect(
+    value.actions.setEqGains([0, 0, 0, 0, 0]),
+  ).resolves.toBeUndefined();
+  await expect(value.actions.resetEqGains()).resolves.toBeUndefined();
+});
+
 describe("useSettingsOverlay", () => {
   test("throws when called outside provider", () => {
     mockReactUse.mockReturnValue(null);
