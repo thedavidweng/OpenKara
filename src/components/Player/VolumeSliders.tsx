@@ -466,8 +466,11 @@ function StemSlider({
           aria-pressed={isOperational ? isMuted : undefined}
           data-active={isOperational && isMuted ? "true" : undefined}
           className={`motion-icon-button rounded-full p-1 ${
-            !disabled && value > 0
-              ? "text-[var(--color-control-primary)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-text)]"
+            isOperational
+              ? isMuted
+                ? // Muted-but-clickable: use accent so it reads as active, not disabled.
+                  "text-[var(--color-accent)] hover:bg-[var(--color-ghost-hover)]"
+                : "text-[var(--color-control-primary)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-text)]"
               : "text-[var(--color-text-dimmer)]"
           }`}
           aria-label={onIconClick ? muteLabel : label}
