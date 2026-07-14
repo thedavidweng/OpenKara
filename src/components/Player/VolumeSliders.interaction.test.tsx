@@ -65,7 +65,7 @@ vi.mock("@/components/Overlay/Tooltip", () => ({
   ),
 }));
 
-describe("VolumeSliders expanded mixer trigger", () => {
+describe("VolumeSliders panel stem controls", () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
 
@@ -78,6 +78,13 @@ describe("VolumeSliders expanded mixer trigger", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
+    mockPlayerState.snapshot.stem_volumes = {
+      vocals: 0.45,
+      drums: 0.8,
+      bass: 0.35,
+      other: 0.55,
+    };
+    mockPlayerState.snapshot.has_stems = true;
   });
 
   afterEach(() => {
@@ -85,47 +92,67 @@ describe("VolumeSliders expanded mixer trigger", () => {
     container.remove();
   });
 
-  test("expanded tight-density trigger uses theme text token class", () => {
+  test("expanded tight mixer renders panel mute chrome with aria-pressed", () => {
     act(() => {
       root.render(<VolumeSliders density="tight" />);
     });
 
     const trigger = container.querySelector(
-      'button[aria-label="Expand stems"]',
+      'button[data-playback-action="stem-mixer"]',
     ) as HTMLButtonElement;
     expect(trigger).not.toBeNull();
-    // Closed + stems-available state uses the theme text hover token.
-    expect(trigger.className).toContain("hover:text-[var(--color-text)]");
+    expect(trigger.getAttribute("aria-pressed")).toBe("false");
 
     act(() => {
       trigger.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    const collapse = container.querySelector(
-      'button[aria-label="Collapse stems"]',
-    ) as HTMLButtonElement;
-    expect(collapse).not.toBeNull();
-    expect(collapse.className).toContain("text-[var(--color-text)]");
-  });
+    expect(trigger.getAttribute("aria-pressed")).toBe("true");
+    expect(trigger.getAttribute("data-active")).toBe("true");
 
-  test("inline mute buttons use theme control-primary + text hover tokens", () => {
-    act(() => {
-      root.render(<VolumeSliders density="relaxed" />);
-    });
-
+    // Panel-variant stem mute buttons (no playback-bar class) are rendered.
     const muteButtons = Array.from(
       container.querySelectorAll("button[aria-label^='Mute ']"),
     ) as HTMLButtonElement[];
-    expect(muteButtons.length).toBeGreaterThan(0);
-    expect(
-      muteButtons.some((button) =>
-        button.className.includes("text-[var(--color-control-primary)]"),
-      ),
-    ).toBe(true);
-    expect(
-      muteButtons.some((button) =>
-        button.className.includes("hover:text-[var(--color-text)]"),
-      ),
-    ).toBe(true);
+    expect(muteButtons.length).toBeGreaterThanOrEqual(4);
+    const panelMute = muteButtons.find(
+      (button) => !button.className.includes("playback-bar-action-button"),
+    );
+    expect(panelMute).toBeDefined();
+    expect(panelMute?.getAttribute("aria-pressed")).toBe("false");
+    expect(panelMute?.className).toContain(
+      "text-[var(--color-control-primary)]",
+    );
+  });
+
+  test("panel mute button shows accent active chrome when stem is muted", () => {
+    mockPlayerState.snapshot.stem_volumes = {
+      vocals: 0,
+      drums: 0,
+      bass: 0.35,
+      other: 0.55,
+    };
+
+    act(() => {
+      root.render(<VolumeSliders density="tight" />);
+    });
+
+    const trigger = container.querySelector(
+      'button[data-playback-action="stem-mixer"]',
+    ) as HTMLButtonElement;
+    act(() => {
+      trigger.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const unmuteButtons = Array.from(
+      container.querySelectorAll("button[aria-label^='Unmute ']"),
+    ) as HTMLButtonElement[];
+    expect(unmuteButtons.length).toBeGreaterThan(0);
+    const panelUnmute = unmuteButtons.find(
+      (button) => !button.className.includes("playback-bar-action-button"),
+    );
+    expect(panelUnmute).toBeDefined();
+    expect(panelUnmute?.getAttribute("aria-pressed")).toBe("true");
+    expect(panelUnmute?.getAttribute("data-active")).toBe("true");
   });
 });
