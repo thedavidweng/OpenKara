@@ -28,8 +28,8 @@
 
 ### EQ 命令（通过 settings 命令面下发）
 
-10. `set_eq_enabled(enabled: bool) -> AppSettings`
-11. `set_eq_gains(gains_db: [f32; 5]) -> AppSettings`
+11. `set_eq_enabled(enabled: bool) -> AppSettings`
+12. `set_eq_gains(gains_db: [f32; 5]) -> AppSettings`
 
 - `set_eq_enabled(enabled: bool) -> AppSettings` — 启用/禁用五段均衡器
 - `set_eq_gains(gains_db: [f32; 5]) -> AppSettings` — 设置五个频段增益（dB），范围 [-12, 12]，拒绝越界值而非截断
@@ -291,10 +291,11 @@ existing source/stem mix + master/stem gains
 → EQ dry/wet processor + auto preamp
 → soft limiter
 → existing play/pause/seek fade
+→ peak envelope accumulator (512-frame window → lock-free ring)
 → output/AirPlay forwarding
 ```
 
-EQ 平滑（gain、preamp、bypass dry/wet）仅在已渲染样本上推进，trailing padding 不推进滤波器状态。
+EQ 平滑（gain、preamp、bypass dry/wet）仅在已渲染样本上推进，trailing padding 不推进滤波器状态。Peak 累加在 fade 之后、输出转发之前执行，只统计已渲染样本。
 
 ## Verification commands
 
