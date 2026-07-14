@@ -3,7 +3,14 @@ import { describe, expect, test, vi } from "vitest";
 import { Mic2 } from "lucide-react";
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, options?: { stem?: string }) =>
+      key === "stems.mute"
+        ? `Mute ${options?.stem ?? ""}`.trim()
+        : key === "stems.unmute"
+          ? `Unmute ${options?.stem ?? ""}`.trim()
+          : key,
+  }),
 }));
 
 vi.mock("@/stores/player-store", () => ({
@@ -22,7 +29,6 @@ vi.mock("./AudioLevelSlider", () => ({
   AudioLevelSlider: () => <div data-testid="slider" />,
 }));
 
-// Import after mocks
 import { StemSlider } from "./VolumeSliders";
 
 describe("StemSlider panel chrome", () => {
@@ -34,7 +40,6 @@ describe("StemSlider panel chrome", () => {
         value={0.5}
         onChange={() => {}}
         disabled
-        muteLabel="Mute Vocals"
       />,
     );
     expect(markup).toContain("text-[var(--color-text-dimmer)]");
@@ -48,7 +53,6 @@ describe("StemSlider panel chrome", () => {
         value={0}
         onChange={() => {}}
         onIconClick={() => {}}
-        muteLabel="Unmute Vocals"
       />,
     );
     expect(markup).toContain("text-[var(--color-accent)]");
