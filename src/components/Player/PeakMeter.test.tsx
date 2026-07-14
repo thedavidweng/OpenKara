@@ -27,7 +27,9 @@ function mockCanvasContext() {
     canvas: null as HTMLCanvasElement | null,
   };
   const origGetContext = HTMLCanvasElement.prototype.getContext;
-  HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue(ctx) as any;
+  const getContextMock = vi.fn().mockReturnValue(ctx);
+  HTMLCanvasElement.prototype.getContext =
+    getContextMock as typeof HTMLCanvasElement.prototype.getContext;
   return {
     ctx,
     restore: () => {
