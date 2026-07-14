@@ -114,7 +114,12 @@ export function useThemeRuntime(): {
   const themePreference = useSettingsStore((s) => s.themePreference);
   const hydrated = useSettingsStore((s) => s.hydrated);
 
-  const [systemPrefersDark, setSystemPrefersDark] = useState(true);
+  // Read the OS preference synchronously so the first paint matches the
+  // system appearance when preference is "system" (avoids a dark→light flash).
+  const [systemPrefersDark, setSystemPrefersDark] = useState(() => {
+    const media = getSystemPrefersDarkMedia();
+    return media ? media.matches : true;
+  });
   const [startupThemeReady, setStartupThemeReady] = useState(false);
 
   const resolvedTheme = resolveThemePreference(
