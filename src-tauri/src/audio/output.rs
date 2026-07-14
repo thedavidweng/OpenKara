@@ -312,31 +312,24 @@ pub fn render_output_buffer(
             // remaining buffer from the new track so EOF mid-callback does
             // not leave a silence gap.
             let mut total_rendered = rendered_samples;
-            if playback.current_track_reached_eof() {
-                if playback.perform_gapless_swap() {
-                    let remaining = &mut output[rendered_samples..];
-                    if !remaining.is_empty() {
-                        let track = playback.current_track.as_ref().unwrap();
-                        let original = &track.original_audio;
-                        let (extra_rendered, extra_frames) = mix_stem_resampled(
-                            remaining,
-                            original,
-                            0,
-                            master,
-                            device_sample_rate,
-                            device_channels,
-                            Some(resampler_cache),
-                        );
-                        eq_processor.process(remaining, extra_rendered);
-                        peak_accumulator.process(
-                            remaining,
-                            extra_rendered,
-                            device_channels,
-                            peak_ring,
-                        );
-                        playback.advance_render_frame(extra_frames);
-                        total_rendered += extra_rendered;
-                    }
+            if playback.current_track_reached_eof() && playback.perform_gapless_swap() {
+                let remaining = &mut output[rendered_samples..];
+                if !remaining.is_empty() {
+                    let track = playback.current_track.as_ref().unwrap();
+                    let original = &track.original_audio;
+                    let (extra_rendered, extra_frames) = mix_stem_resampled(
+                        remaining,
+                        original,
+                        0,
+                        master,
+                        device_sample_rate,
+                        device_channels,
+                        Some(resampler_cache),
+                    );
+                    eq_processor.process(remaining, extra_rendered);
+                    peak_accumulator.process(remaining, extra_rendered, device_channels, peak_ring);
+                    playback.advance_render_frame(extra_frames);
+                    total_rendered += extra_rendered;
                 }
             }
 
