@@ -16,7 +16,8 @@ use crate::{
         output,
         playback::{
             monotonic_now_ms, playback_position_event, LoadedStems, PlaybackController,
-            PlaybackStateSnapshot, StemName, PLAYBACK_ERROR_EVENT, PLAYBACK_POSITION_EVENT,
+            PlaybackStateSnapshot, PreparedTrack, StemName, PLAYBACK_ERROR_EVENT,
+            PLAYBACK_POSITION_EVENT,
         },
         streaming::StreamingTrack,
     },

@@ -430,33 +430,31 @@ pub fn render_output_buffer(
     // Streaming tracks use `finalize_streaming_natural_end` above and rely on
     // the frontend to call `play()` for the next song.
     let mut total_rendered = rendered;
-    if !has_streaming && playback.current_track_reached_eof() {
-        if playback.perform_gapless_swap() {
-            // The swap set render_frame = 0 on the new track. Render the
-            // remaining buffer from the new track's original audio (stems are
-            // not preloaded for gapless — the swap creates a plain track).
-            let remaining = &mut output[rendered..];
-            if !remaining.is_empty() {
-                let track = playback.current_track.as_ref().unwrap();
-                let original = &track.original_audio;
-                let (extra_rendered, extra_frames) = mix_stem_resampled(
-                    remaining,
-                    original,
-                    0,
-                    master,
-                    device_sample_rate,
-                    device_channels,
-                    Some(resampler_cache),
-                );
-                // Apply EQ + soft limiter to the transition tail.
-                eq_processor.process(remaining, extra_rendered);
-                // Accumulate peaks for the tail so the visualizer stays live.
-                peak_accumulator.process(remaining, extra_rendered, device_channels, peak_ring);
-                // Advance the new track's render frame by the frames we just
-                // rendered so the next callback continues seamlessly.
-                playback.advance_render_frame(extra_frames);
-                total_rendered += extra_rendered;
-            }
+    if !has_streaming && playback.current_track_reached_eof() && playback.perform_gapless_swap() {
+        // The swap set render_frame = 0 on the new track. Render the
+        // remaining buffer from the new track's original audio (stems are
+        // not preloaded for gapless — the swap creates a plain track).
+        let remaining = &mut output[rendered..];
+        if !remaining.is_empty() {
+            let track = playback.current_track.as_ref().unwrap();
+            let original = &track.original_audio;
+            let (extra_rendered, extra_frames) = mix_stem_resampled(
+                remaining,
+                original,
+                0,
+                master,
+                device_sample_rate,
+                device_channels,
+                Some(resampler_cache),
+            );
+            // Apply EQ + soft limiter to the transition tail.
+            eq_processor.process(remaining, extra_rendered);
+            // Accumulate peaks for the tail so the visualizer stays live.
+            peak_accumulator.process(remaining, extra_rendered, device_channels, peak_ring);
+            // Advance the new track's render frame by the frames we just
+            // rendered so the next callback continues seamlessly.
+            playback.advance_render_frame(extra_frames);
+            total_rendered += extra_rendered;
         }
     }
 
@@ -1351,6 +1349,7 @@ where
 mod tests {
     use super::{forward_rendered_audio_to_airplay, render_output_buffer, write_output_samples};
     use crate::airplay_stream::AirPlayAudioTap;
+    use crate::audio::eq::EqProcessor;
 
     #[test]
     fn write_output_samples_preserves_rendered_audio_when_not_suppressed() {
@@ -1805,20 +1804,23 @@ mod tests {
         );
 
         // First 100 frames are from track A (0.1).
-        for i in 0..100 * device_channels {
+        for (i, sample) in output.iter().enumerate().take(100 * device_channels) {
             assert!(
-                (output[i] - 0.1).abs() < 1e-6,
-                "frame {i} should be from track A: got {}",
-                output[i]
+                (*sample - 0.1).abs() < 1e-6,
+                "frame {i} should be from track A: got {sample}"
             );
         }
 
         // Remaining 412 frames are from track B (0.5), not zeros.
-        for i in 100 * device_channels..512 * device_channels {
+        for (i, sample) in output
+            .iter()
+            .enumerate()
+            .take(512 * device_channels)
+            .skip(100 * device_channels)
+        {
             assert!(
-                (output[i] - 0.5).abs() < 1e-6,
-                "frame {i} should be from track B: got {}",
-                output[i]
+                (*sample - 0.5).abs() < 1e-6,
+                "frame {i} should be from track B: got {sample}"
             );
         }
 

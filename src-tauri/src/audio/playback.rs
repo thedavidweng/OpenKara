@@ -121,6 +121,35 @@ pub(crate) struct LoadedTrack {
     pub(crate) streaming: Option<super::streaming::StreamingTrack>,
 }
 
+/// A fully decoded, normalized next track ready for gapless transition.
+/// The audio callback is the only code allowed to consume this.
+#[derive(Debug)]
+pub struct PreparedTrack {
+    /// Monotonic generation of the `set_preload_candidate` call that
+    /// initiated this preload. The coordinator increments its expected
+    /// generation on every `CancelPreparedNext` and rejects `PrepareNext`
+    /// commands whose generation is stale — this closes the race where an
+    /// old preload thread passes its shutdown check before the flag is set
+    /// but sends `PrepareNext` after the cancel has been processed.
+    pub preload_request_generation: u64,
+    /// Output-format generation captured at prepare time. Used for the
+    /// `CompletedTransition` event and for stale-format rejection.
+    pub preload_generation: u64,
+    pub song_id: String,
+    pub output_format: OutputFormatSnapshot,
+    pub audio: DecodedAudio,
+}
+
+/// Completed gapless transition metadata, drained by the position emitter
+/// to emit `track-transitioned` before the next position event.
+#[derive(Debug, Clone)]
+pub struct CompletedTransition {
+    pub transition_serial: u64,
+    pub preload_generation: u64,
+    pub from_song_id: String,
+    pub to_song_id: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum FadeState {
     /// No fade active.
