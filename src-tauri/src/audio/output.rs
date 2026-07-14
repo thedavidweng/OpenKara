@@ -285,11 +285,12 @@ pub fn render_output_buffer(
             let rendered_samples = rendered * device_channels;
 
             // Apply EQ + soft limiter to the mixed output.
-            eq_processor.apply_config(
-                playback.eq_enabled,
-                playback.eq_gains_db,
-                playback.eq_revision,
-            );
+            let eq_config = playback.eq_config();
+            if eq_config.revision != eq_processor.last_eq_revision() {
+                eq_processor.set_enabled(eq_config.enabled);
+                eq_processor.set_gains(eq_config.gains_db);
+                eq_processor.set_last_eq_revision(eq_config.revision);
+            }
             eq_processor.process(output, rendered_samples);
 
             // Apply fade envelope.

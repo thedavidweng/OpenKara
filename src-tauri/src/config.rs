@@ -452,14 +452,6 @@ pub struct AppConfig {
     /// target, not an absence of a pending operation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pending_mirror_restore_active_library_id: Option<String>,
-    /// Whether the 5-band EQ is enabled at startup. Defaults to false when
-    /// absent (e.g. older config files that predate the EQ feature).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub eq_enabled: Option<bool>,
-    /// Per-band EQ gains in dB, range [-12, 12]. Index 0 = 60 Hz, 4 = 14 kHz.
-    /// Defaults to all-zero (flat) when absent.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub eq_gains_db: Option<[f32; 5]>,
     /// #89: Whether crossfade is enabled at startup. Defaults to false.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub crossfade_enabled: Option<bool>,
@@ -667,8 +659,6 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
-            eq_enabled: None,
-            eq_gains_db: None,
             crossfade_enabled: None,
             crossfade_duration_ms: None,
         };
@@ -705,8 +695,6 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
-            eq_enabled: None,
-            eq_gains_db: None,
             crossfade_enabled: None,
             crossfade_duration_ms: None,
         };
@@ -738,8 +726,6 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
-            eq_enabled: None,
-            eq_gains_db: None,
             crossfade_enabled: None,
             crossfade_duration_ms: None,
         };
@@ -765,8 +751,6 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
-            eq_enabled: None,
-            eq_gains_db: None,
             crossfade_enabled: None,
             crossfade_duration_ms: None,
         };
@@ -807,8 +791,6 @@ mod tests {
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
-            eq_enabled: None,
-            eq_gains_db: None,
             crossfade_enabled: None,
             crossfade_duration_ms: None,
         };

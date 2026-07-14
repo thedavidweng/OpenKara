@@ -364,9 +364,14 @@ fn validate_crossfade_duration(duration_ms: u32) -> CommandResult<()> {
 async fn send_crossfade_command(
     state: &AppState,
     make_command: impl FnOnce(
-        tokio::sync::oneshot::Sender<Result<CrossfadeState, crate::audio::error::PlaybackError>>,
+        tokio::sync::oneshot::Sender<
+            Result<
+                crate::audio::playback::PlaybackStateSnapshot,
+                crate::audio::error::PlaybackError,
+            >,
+        >,
     ) -> PlaybackCommand,
-) -> CommandResult<CrossfadeState> {
+) -> CommandResult<crate::audio::playback::PlaybackStateSnapshot> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     let command = make_command(tx);
     state

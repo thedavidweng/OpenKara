@@ -16,9 +16,9 @@ use crate::{
         output,
         output_format::{self, OutputFormatState},
         playback::{
-            monotonic_now_ms, playback_position_event, CrossfadeState, LoadedStems,
-            PlaybackController, PlaybackStateSnapshot, PreparedTrack, StemName,
-            PLAYBACK_ERROR_EVENT, PLAYBACK_POSITION_EVENT,
+            monotonic_now_ms, playback_position_event, LoadedStems, PlaybackController,
+            PlaybackStateSnapshot, PreparedTrack, StemName, PLAYBACK_ERROR_EVENT,
+            PLAYBACK_POSITION_EVENT,
         },
         streaming::StreamingTrack,
     },
@@ -633,7 +633,11 @@ fn handle_set_crossfade_enabled<R: Runtime>(
             )));
             return;
         };
-        playback.set_crossfade_enabled(enabled)
+        if let Err(e) = playback.set_crossfade_enabled(enabled) {
+            let _ = reply.send(Err(e));
+            return;
+        }
+        playback.snapshot()
     };
     let _ = reply.send(Ok(snapshot));
 }
@@ -650,7 +654,11 @@ fn handle_set_crossfade_duration<R: Runtime>(
             )));
             return;
         };
-        playback.set_crossfade_duration(duration_ms)
+        if let Err(e) = playback.set_crossfade_duration(duration_ms) {
+            let _ = reply.send(Err(e));
+            return;
+        }
+        playback.snapshot()
     };
     let _ = reply.send(Ok(snapshot));
 }

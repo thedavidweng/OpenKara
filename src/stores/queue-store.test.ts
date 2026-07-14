@@ -358,6 +358,19 @@ describe("queue-store", () => {
     expect(store.store.getState().queue).toEqual(["song-c", "song-d"]);
     expect(store.store.getState().playHistory).toEqual(["song-a"]);
   });
+
+  test("reconcileGaplessTransition caps history at 500 entries", () => {
+    const history = Array.from({ length: 500 }, (_, i) => `old-${i}`);
+    store.store.setState({
+      queue: ["song-b"],
+      playHistory: history,
+    });
+    store.store.getState().reconcileGaplessTransition("song-a", "song-b");
+    const next = store.store.getState().playHistory;
+    expect(next).toHaveLength(500);
+    expect(next[next.length - 1]).toBe("song-a");
+    expect(next[0]).toBe("old-1");
+  });
 });
 
 describe("queue-store webview sync", () => {

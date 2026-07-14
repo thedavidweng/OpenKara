@@ -563,7 +563,6 @@ describe("settings", () => {
     expect(returned).toBe(appSettings);
   });
 
-
   test("restartApp invokes restart_app", async () => {
     mockInvoke.mockResolvedValueOnce(undefined);
     const returned = await settings.restartApp();
