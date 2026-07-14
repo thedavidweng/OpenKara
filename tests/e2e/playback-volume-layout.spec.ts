@@ -10,9 +10,12 @@ import { expect, test } from "./fixtures/base-test";
  *
  * Density is selected by the playback-bar CONTAINER width (viewport minus
  * sidebar), not the viewport itself. With a default 260px sidebar:
- *   relaxed  container >= 1120  → viewport >= ~1380
- *   compact  container 960..1119 → viewport ~1220..1379
- *   tight    container < 960     → viewport < ~1220
+ *   relaxed  container >= 1120  → viewport >= 1380
+ *   compact  container 960..1119 → viewport 1220..1379
+ *   tight    container < 960     → viewport < 1220
+ *
+ * Boundary tests exercise the exact 1120/960/760/759 container-width
+ * thresholds specified in issue #116.
  */
 
 const TOLERANCE = 0.5;
@@ -50,6 +53,38 @@ async function readBarRect(page: import("@playwright/test").Page) {
   });
 }
 
+async function assertNoHorizontalOverflow(
+  page: import("@playwright/test").Page,
+) {
+  const overflow = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+  expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
+}
+
+async function assertZonesDoNotIntersect(
+  page: import("@playwright/test").Page,
+) {
+  const zones = await page.evaluate(() => {
+    const center = document.querySelector(
+      '[data-playback-zone="center"]',
+    ) as HTMLElement | null;
+    const right = document.querySelector(
+      '[data-playback-zone="right"]',
+    ) as HTMLElement | null;
+    if (!center || !right) return null;
+    return {
+      centerRight: center.getBoundingClientRect().right,
+      rightLeft: right.getBoundingClientRect().left,
+    };
+  });
+  expect(zones).not.toBeNull();
+  if (zones) {
+    expect(zones.centerRight).toBeLessThanOrEqual(zones.rightLeft + TOLERANCE);
+  }
+}
+
 test.describe("Playback volume rail layout geometry", () => {
   test.beforeEach(async ({ page, tauriMock }) => {
     await page.goto("/");
@@ -75,8 +110,11 @@ test.describe("Playback volume rail layout geometry", () => {
     await tauriMock.setSeparationCompleted("aaa111");
   });
 
-  test.describe("relaxed density (1440px viewport)", () => {
-    test.use({ viewport: { width: 1440, height: 800 } });
+  // -------------------------------------------------------------------------
+  // Relaxed density — rails are 88/88/104 px, 24px Master right inset.
+  // -------------------------------------------------------------------------
+  test.describe("relaxed density (1380px viewport → 1120px container boundary)", () => {
+    test.use({ viewport: { width: 1380, height: 800 } });
 
     test("rails are 88/88/104 px with flex-shrink:0 and 24px Master right inset", async ({
       page,
@@ -115,36 +153,16 @@ test.describe("Playback volume rail layout geometry", () => {
     test("no horizontal overflow and zones do not intersect", async ({
       page,
     }) => {
-      const overflow = await page.evaluate(() => ({
-        scrollWidth: document.documentElement.scrollWidth,
-        clientWidth: document.documentElement.clientWidth,
-      }));
-      expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
-
-      const zones = await page.evaluate(() => {
-        const center = document.querySelector(
-          '[data-playback-zone="center"]',
-        ) as HTMLElement | null;
-        const right = document.querySelector(
-          '[data-playback-zone="right"]',
-        ) as HTMLElement | null;
-        if (!center || !right) return null;
-        return {
-          centerRight: center.getBoundingClientRect().right,
-          rightLeft: right.getBoundingClientRect().left,
-        };
-      });
-      expect(zones).not.toBeNull();
-      if (zones) {
-        expect(zones.centerRight).toBeLessThanOrEqual(
-          zones.rightLeft + TOLERANCE,
-        );
-      }
+      await assertNoHorizontalOverflow(page);
+      await assertZonesDoNotIntersect(page);
     });
   });
 
-  test.describe("compact density (1280px viewport)", () => {
-    test.use({ viewport: { width: 1280, height: 800 } });
+  // -------------------------------------------------------------------------
+  // Compact density — rails are 72/72/80 px, 16px Master right inset.
+  // -------------------------------------------------------------------------
+  test.describe("compact density (1220px viewport → 960px container boundary)", () => {
+    test.use({ viewport: { width: 1220, height: 800 } });
 
     test("rails are 72/72/80 px with flex-shrink:0 and 16px Master right inset", async ({
       page,
@@ -179,17 +197,19 @@ test.describe("Playback volume rail layout geometry", () => {
       expect(barRect.right - master.right).toBeCloseTo(16, 5);
     });
 
-    test("no horizontal overflow", async ({ page }) => {
-      const overflow = await page.evaluate(() => ({
-        scrollWidth: document.documentElement.scrollWidth,
-        clientWidth: document.documentElement.clientWidth,
-      }));
-      expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
+    test("no horizontal overflow and zones do not intersect", async ({
+      page,
+    }) => {
+      await assertNoHorizontalOverflow(page);
+      await assertZonesDoNotIntersect(page);
     });
   });
 
-  test.describe("tight density with metadata (1100px viewport)", () => {
-    test.use({ viewport: { width: 1100, height: 800 } });
+  // -------------------------------------------------------------------------
+  // Tight density with metadata (1020px viewport → 760px container boundary).
+  // -------------------------------------------------------------------------
+  test.describe("tight density with metadata (1020px viewport → 760px container)", () => {
+    test.use({ viewport: { width: 1020, height: 800 } });
 
     test("no inline stem sliders, Master is 64px with 16px right inset", async ({
       page,
@@ -218,17 +238,24 @@ test.describe("Playback volume rail layout geometry", () => {
       expect(barRect.right - master.right).toBeCloseTo(16, 5);
     });
 
-    test("no horizontal overflow", async ({ page }) => {
-      const overflow = await page.evaluate(() => ({
-        scrollWidth: document.documentElement.scrollWidth,
-        clientWidth: document.documentElement.clientWidth,
-      }));
-      expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
+    test("left zone is visible at 760px boundary", async ({ page }) => {
+      // At exactly 760px container, metadata should NOT collapse (threshold is < 760).
+      await expect(page.locator('[data-playback-zone="left"]')).toBeVisible();
+    });
+
+    test("no horizontal overflow and zones do not intersect", async ({
+      page,
+    }) => {
+      await assertNoHorizontalOverflow(page);
+      await assertZonesDoNotIntersect(page);
     });
   });
 
-  test.describe("tight density with metadata collapsed (900px viewport)", () => {
-    test.use({ viewport: { width: 900, height: 800 } });
+  // -------------------------------------------------------------------------
+  // Tight density with metadata collapsed (1019px → 759px container boundary).
+  // -------------------------------------------------------------------------
+  test.describe("tight density with metadata collapsed (1019px viewport → 759px container)", () => {
+    test.use({ viewport: { width: 1019, height: 800 } });
 
     test("left zone collapses, Master is 64px, no overlap or overflow", async ({
       page,
@@ -238,7 +265,7 @@ test.describe("Playback volume rail layout geometry", () => {
         "tight",
       );
 
-      // Metadata collapsed — no left zone.
+      // Metadata collapsed — no left zone (threshold is < 760).
       await expect(page.locator('[data-playback-zone="left"]')).toHaveCount(0);
 
       const master = await readRailGeometry(
@@ -251,38 +278,16 @@ test.describe("Playback volume rail layout geometry", () => {
       const barRect = await readBarRect(page);
       expect(barRect.right - master.right).toBeCloseTo(16, 5);
 
-      // No horizontal overflow.
-      const overflow = await page.evaluate(() => ({
-        scrollWidth: document.documentElement.scrollWidth,
-        clientWidth: document.documentElement.clientWidth,
-      }));
-      expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
-
-      // Center and right zones do not intersect.
-      const zones = await page.evaluate(() => {
-        const center = document.querySelector(
-          '[data-playback-zone="center"]',
-        ) as HTMLElement | null;
-        const right = document.querySelector(
-          '[data-playback-zone="right"]',
-        ) as HTMLElement | null;
-        if (!center || !right) return null;
-        return {
-          centerRight: center.getBoundingClientRect().right,
-          rightLeft: right.getBoundingClientRect().left,
-        };
-      });
-      expect(zones).not.toBeNull();
-      if (zones) {
-        expect(zones.centerRight).toBeLessThanOrEqual(
-          zones.rightLeft + TOLERANCE,
-        );
-      }
+      await assertNoHorizontalOverflow(page);
+      await assertZonesDoNotIntersect(page);
     });
   });
 
+  // -------------------------------------------------------------------------
+  // Slider interaction — keyboard, pointer drag, tooltip text, IPC calls.
+  // -------------------------------------------------------------------------
   test.describe("relaxed density — slider interaction", () => {
-    test.use({ viewport: { width: 1440, height: 800 } });
+    test.use({ viewport: { width: 1380, height: 800 } });
 
     test("master volume slider responds to keyboard and calls set_volume", async ({
       page,
@@ -327,6 +332,64 @@ test.describe("Playback volume rail layout geometry", () => {
         (c) => c.cmd === "set_stem_volume",
       );
       expect(setStemVolumeCalls.length).toBeGreaterThan(0);
+    });
+
+    test("master volume slider responds to pointer drag and calls set_volume", async ({
+      page,
+      tauriMock,
+    }) => {
+      await expect(page.locator("[data-playback-bar-density]")).toHaveAttribute(
+        "data-playback-bar-density",
+        "relaxed",
+      );
+
+      const slider = page.getByRole("slider", { name: "Volume" });
+      await expect(slider).toBeVisible();
+
+      const box = await slider.boundingBox();
+      expect(box).not.toBeNull();
+      if (!box) return;
+
+      // Drag from center to near the right edge to increase volume.
+      const startX = box.x + box.width * 0.5;
+      const startY = box.y + box.height / 2;
+      const endX = box.x + box.width * 0.9;
+
+      await page.mouse.move(startX, startY);
+      await page.mouse.down();
+      await page.mouse.move(endX, startY, { steps: 5 });
+      await page.mouse.up();
+
+      const calls = await tauriMock.getInvokeCalls();
+      const setVolumeCalls = calls.filter((c) => c.cmd === "set_volume");
+      expect(setVolumeCalls.length).toBeGreaterThan(0);
+    });
+
+    test("tooltip shows current volume percentage on hover", async ({
+      page,
+    }) => {
+      await expect(page.locator("[data-playback-bar-density]")).toHaveAttribute(
+        "data-playback-bar-density",
+        "relaxed",
+      );
+
+      const slider = page.getByRole("slider", { name: "Volume" });
+      await expect(slider).toBeVisible();
+
+      // Hover over the slider to trigger the tooltip.
+      const box = await slider.boundingBox();
+      expect(box).not.toBeNull();
+      if (!box) return;
+
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+
+      // The tooltip has a 600ms show delay — wait for it.
+      const tooltip = page.locator('[role="tooltip"]');
+      await expect(tooltip).toBeVisible({ timeout: 2000 });
+
+      // Volume is 100% in the test fixture, so the tooltip should show "100%".
+      await expect(tooltip).toContainText("Volume");
+      await expect(tooltip).toContainText("100%");
     });
   });
 });
