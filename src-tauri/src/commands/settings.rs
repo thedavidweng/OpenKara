@@ -242,9 +242,9 @@ pub fn set_eq_enabled(
         .command_tx
         .send(command)
         .map_err(|_| internal_error("playback coordinator disconnected"))?;
-    let _ = rx
-        .blocking_recv()
-        .map_err(|_| internal_error("playback coordinator dropped reply"))?;
+    rx.blocking_recv()
+        .map_err(|_| internal_error("playback coordinator dropped reply"))?
+        .map_err(|e| internal_error(format!("failed to apply eq enabled: {e}")))?;
 
     Ok(settings_from_config(&config))
 }
@@ -281,9 +281,9 @@ pub fn set_eq_gains(
         .command_tx
         .send(command)
         .map_err(|_| internal_error("playback coordinator disconnected"))?;
-    let _ = rx
-        .blocking_recv()
-        .map_err(|_| internal_error("playback coordinator dropped reply"))?;
+    rx.blocking_recv()
+        .map_err(|_| internal_error("playback coordinator dropped reply"))?
+        .map_err(|e| internal_error(format!("failed to apply eq gains: {e}")))?;
 
     Ok(settings_from_config(&config))
 }
