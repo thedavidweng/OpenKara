@@ -400,7 +400,7 @@ interface StemSliderProps {
   sliderWidthClass?: string;
 }
 
-function StemSlider({
+export function StemSlider({
   icon: Icon,
   iconButtonVariant = "panel",
   playbackActionName,
