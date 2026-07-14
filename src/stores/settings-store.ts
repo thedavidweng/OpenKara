@@ -189,9 +189,12 @@ export function createSettingsStore(
             syncPatch(toAppSettingsSnapshot(settings));
           }
         } catch (error) {
+          // Only roll back the theme preference that failed. Restoring the full
+          // pre-attempt snapshot would wipe concurrent settings edits that
+          // landed while the IPC call was in flight.
           if (get().themePreferenceMutationGeneration === generation) {
             syncPatch({
-              ...previousSnapshot,
+              themePreference: previousSnapshot.themePreference,
               themePreferenceMutationGeneration: generation,
             });
             notifyError(error);
