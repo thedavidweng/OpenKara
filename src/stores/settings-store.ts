@@ -81,8 +81,9 @@ function toAppSettingsSnapshot(settings: AppSettings): AppSettingsSnapshot {
     lyricsFontStep: settings.lyrics_font_step,
     executionProvider: settings.execution_provider,
     availableExecutionProviders: settings.available_execution_providers,
-    eqEnabled: settings.eq_enabled,
-    eqGainsDb: settings.eq_gains_db,
+    // Defensive defaults: incomplete IPC payloads must not leave eqGainsDb undefined.
+    eqEnabled: settings.eq_enabled ?? false,
+    eqGainsDb: settings.eq_gains_db ?? [0, 0, 0, 0, 0],
   };
 }
 

@@ -148,12 +148,8 @@ test.describe("scrollbar platform contract", () => {
 
     // Open the settings overlay — it has many sections and scrolls.
     await page.getByRole("button", { name: "Settings" }).click();
-    const heading = page.getByRole("heading", { name: "Preferences" });
-    await expect(heading).toBeVisible();
-    // The overlay root is the overflow-y-auto ancestor of the title.
-    const overlay = page
-      .locator("div.overflow-y-auto")
-      .filter({ has: heading });
+    // Prefer stable test id over i18n heading text (en: Preferences / zh: 偏好设置).
+    const overlay = page.getByTestId("settings-overlay");
     await expect(overlay).toBeVisible();
 
     const overflow = await overlay.evaluate((el) => ({
