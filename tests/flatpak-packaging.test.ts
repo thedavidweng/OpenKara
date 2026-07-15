@@ -201,7 +201,12 @@ describe("Flatpak packaging", () => {
     expect(packagingWorkflow).toContain(
       "image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50@sha256:",
     );
-    expect(packagingWorkflow).toContain("options: --privileged");
+    expect(packagingWorkflow).toMatch(/options:\s*>-?[\s\S]*?--privileged/);
+    // Free-disk must not bind-mount the entire host root into the privileged
+    // container — only specific unused toolchain paths under /host-cleanup.
+    expect(packagingWorkflow).toContain("/host-cleanup/");
+    expect(packagingWorkflow).not.toMatch(/-v\s+\/:\/host(?:\s|$)/);
+
     expect(packagingWorkflow).toMatch(
       /uses: flatpak\/flatpak-github-actions\/flatpak-builder@[a-f0-9]{40}/,
     );
