@@ -447,8 +447,15 @@ pub fn render_output_buffer(
                 device_channels,
                 Some(resampler_cache),
             );
-            // Apply EQ + soft limiter to the transition tail.
+            // Apply EQ + soft limiter to the transition tail. The main render
+            // path (above) runs EQ then soft_limit; the transition tail must
+            // apply the same two stages so EQ-boosted audio cannot clip at the
+            // gapless crossover. Without this, the limiter is skipped for the
+            // tail samples and listeners with EQ boost hear brief distortion.
             eq_processor.process(remaining, extra_rendered);
+            for sample in remaining[..extra_rendered].iter_mut() {
+                *sample = soft_limit(*sample);
+            }
             // Accumulate peaks for the tail so the visualizer stays live.
             peak_accumulator.process(remaining, extra_rendered, device_channels, peak_ring);
             // Advance the new track's render frame by the frames we just
