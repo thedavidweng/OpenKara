@@ -186,31 +186,36 @@ jobs:
     # in flathub-infra/actions-images' own test workflow.
     #
     # Disk headroom: Flatpak SDK + cargo + node sources overflow the default
-    # GHA runner disk on PR builds. Mount the host root at /host so we can
-    # delete unused preinstalled toolchains, and disable the action's ccache
+    # GHA runner disk on PR builds. We bind-mount ONLY the host toolchain
+    # directories we intend to delete (not the whole host root), reclaim that
+    # space inside the job container, and disable flatpak-builder ccache
     # restore/upload (unique-per-SHA keys are cache misses that only waste
-    # space).
+    # space). `--privileged` remains required for bubblewrap in this image.
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50@sha256:5767ab6266c0680cbe827f17b41a8120ac02c6a09bf5feced438831e57425c68
-      options: --privileged -v /:/host
+      options: >-
+        --privileged
+        -v /usr/share/dotnet:/host-cleanup/dotnet
+        -v /usr/local/lib/android:/host-cleanup/android
+        -v /usr/local/share/powershell:/host-cleanup/powershell
+        -v /opt/ghc:/host-cleanup/ghc
+        -v /usr/local/.ghcup:/host-cleanup/ghcup
+        -v /opt/hostedtoolcache/CodeQL:/host-cleanup/codeql
+        -v /usr/share/swift:/host-cleanup/swift
+        -v /usr/local/share/chromium:/host-cleanup/chromium
 
     steps:
       - name: Free host disk space
         run: |
-          # GHA runners ship many toolchains we never use; reclaim space on the
-          # host (visible here via -v /:/host) before flatpak-builder fills /tmp.
+          # Reclaim only the bind-mounted unused host toolchains listed in
+          # container.options. Paths are intentionally narrow — never mount /.
+          set -euo pipefail
           echo "=== disk before free ==="
           df -h
-          rm -rf /host/usr/share/dotnet || true
-          rm -rf /host/usr/local/lib/android || true
-          rm -rf /host/usr/local/share/powershell || true
-          rm -rf /host/opt/ghc || true
-          rm -rf /host/usr/local/.ghcup || true
-          rm -rf /host/opt/hostedtoolcache/CodeQL || true
-          rm -rf /host/usr/share/swift || true
-          rm -rf /host/usr/lib/jvm/graalvm* || true
-          rm -rf /host/usr/local/graalvm* || true
-          rm -rf /host/usr/local/share/chromium || true
+          if [ -d /host-cleanup ]; then
+            # Delete contents, not the mount points themselves.
+            find /host-cleanup -mindepth 1 -maxdepth 1 -exec rm -rf {} + || true
+          fi
           echo "=== disk after free ==="
           df -h
 
