@@ -176,6 +176,50 @@ describe("PeakMeter", () => {
     expect(mockGetAudioPeaks.mock.calls.length).toBe(callsBefore);
   });
 
+  it("discards a slow getAudioPeaks response when a newer poll has started", async () => {
+    // Overlapping polls: first call stays pending while a second poll starts;
+    // when the older response finally resolves it must not draw (generation gate).
+    type Resolver = (value: {
+      writeIndex: number;
+      peaks: Array<[number, number]>;
+    }) => void;
+    const resolvers: Resolver[] = [];
+    mockGetAudioPeaks.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+
+    render(<PeakMeter width={120} height={24} />);
+    // First poll is scheduled on mount (void poll()).
+    await vi.advanceTimersByTimeAsync(0);
+    expect(resolvers.length).toBe(1);
+
+    // Second poll while first is still in flight.
+    await vi.advanceTimersByTimeAsync(34);
+    expect(resolvers.length).toBe(2);
+
+    // Resolve newer poll first with a distinctive writeIndex — should draw.
+    resolvers[1]!({
+      writeIndex: 20,
+      peaks: [[0.9, 0.9]],
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    const afterNewer = canvasMock.ctx.fillRect.mock.calls.length;
+    expect(afterNewer).toBeGreaterThan(0);
+
+    // Late older response with a different writeIndex must be ignored.
+    resolvers[0]!({
+      writeIndex: 99,
+      peaks: [[0.1, 0.1]],
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(canvasMock.ctx.fillRect.mock.calls.length).toBe(afterNewer);
+  });
+
   it("falls back to flat-line when peaks go stale after playback stops", async () => {
     // Simulate playback that was active (writeIndex > 0, non-empty peaks) but
     // has now stopped — the backend keeps returning the same snapshot.
