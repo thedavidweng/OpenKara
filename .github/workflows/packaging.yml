@@ -195,6 +195,7 @@ jobs:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50@sha256:5767ab6266c0680cbe827f17b41a8120ac02c6a09bf5feced438831e57425c68
       options: >-
         --privileged
+        --network host
         --dns 8.8.8.8
         --dns 1.1.1.1
         -v /usr/share/dotnet:/host-cleanup/dotnet
