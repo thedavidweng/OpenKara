@@ -103,7 +103,10 @@ const manifestSource = {
   dest: "flatpak-node",
   contents: JSON.stringify(
     {
-      store_version: "v10",
+      // pnpm 11 stores packages under store-dir/v11 (see `pnpm store path`).
+      // Populate must use the same version directory or offline install fails
+      // with ERR_PNPM_NO_OFFLINE_TARBALL despite intact tarballs.
+      store_version: "v11",
       packages: Object.fromEntries(
         lockfilePackages.map((pkg) => [
           pkg.filename,

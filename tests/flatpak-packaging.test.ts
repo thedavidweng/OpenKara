@@ -177,6 +177,25 @@ describe("Flatpak packaging", () => {
     );
   });
 
+  test("flatpak-node offline store targets pnpm 11 store version directory", () => {
+    // pnpm 11 looks under store-dir/v11. Populate writing v10 makes every
+    // offline install fail with ERR_PNPM_NO_OFFLINE_TARBALL.
+    const nodeSources = JSON.parse(
+      readProjectFile("packaging/flatpak/generated/node-sources.0.json"),
+    ) as Array<{ "dest-filename"?: string; contents?: string }>;
+    const manifest = nodeSources.find(
+      (s) => s["dest-filename"] === "pnpm-manifest.json",
+    );
+    expect(manifest?.contents).toBeDefined();
+    const parsed = JSON.parse(manifest!.contents!) as { store_version: string };
+    expect(parsed.store_version).toBe("v11");
+
+    const generator = readProjectFile(
+      "scripts/generate-flatpak-node-sources.mjs",
+    );
+    expect(generator).toContain('store_version: "v11"');
+  });
+
   test("ships a pnpm tarball matching the packageManager pin in package.json", () => {
     // The Flatpak build installs pnpm from a tarball archive source in the
     // manifest template. If this tarball drifts from the packageManager version
@@ -341,7 +360,8 @@ describe("Flatpak packaging", () => {
         .map((source) => [source["dest-filename"], source.sha512]),
     );
 
-    expect(manifest.store_version).toBe("v10");
+    // pnpm 11 resolves from store-dir/v11; v10 left offline installs blind.
+    expect(manifest.store_version).toBe("v11");
     expect(
       nodeSources.filter(
         (source) =>
