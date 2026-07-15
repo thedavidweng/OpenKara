@@ -293,6 +293,13 @@ pub fn render_output_buffer(
             }
             eq_processor.process(output, rendered_samples);
 
+            // Soft limiter: bound peaks to prevent clipping after EQ boost.
+            // Mirrors the normal render path so crossfade output cannot clip
+            // the DAC when EQ bands have positive gain.
+            for sample in output[..rendered_samples].iter_mut() {
+                *sample = soft_limit(*sample);
+            }
+
             // Apply fade envelope.
             if let Some(fade_gain) = playback.take_fade_gain() {
                 if fade_gain < 1.0 {
@@ -328,6 +335,9 @@ pub fn render_output_buffer(
                         Some(resampler_cache),
                     );
                     eq_processor.process(remaining, extra_rendered);
+                    for sample in remaining[..extra_rendered].iter_mut() {
+                        *sample = soft_limit(*sample);
+                    }
                     peak_accumulator.process(remaining, extra_rendered, device_channels, peak_ring);
                     playback.advance_render_frame(extra_frames);
                     total_rendered += extra_rendered;
