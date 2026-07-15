@@ -79,10 +79,16 @@ pub struct EqProcessor {
     enabled: bool,
     target_gains_db: [f32; 5],
     current_gains_db: [f32; 5],
+    /// Per-band dB step applied once per rendered frame. Recomputed only when
+    /// targets change so the 50 ms linear ramp is wall-clock accurate and
+    /// independent of CPAL callback size.
+    gain_steps_db: [f32; 5],
     target_preamp: f32,
     current_preamp: f32,
+    preamp_step: f32,
     wet_mix: f32,
     target_wet_mix: f32,
+    wet_step: f32,
     /// Last controller `eq_revision` applied to this processor. The callback
     /// compares this with the controller's current revision to detect config
     /// changes without polling on every callback.
@@ -125,10 +131,13 @@ impl EqProcessor {
             enabled: false,
             target_gains_db: [0.0; 5],
             current_gains_db: [0.0; 5],
+            gain_steps_db: [0.0; 5],
             target_preamp: 1.0,
             current_preamp: 1.0,
+            preamp_step: 0.0,
             wet_mix: 0.0,
             target_wet_mix: 0.0,
+            wet_step: 0.0,
             last_eq_revision: 0,
         }
     }
@@ -139,6 +148,7 @@ impl EqProcessor {
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
         self.target_wet_mix = if enabled { 1.0 } else { 0.0 };
+        self.recompute_wet_step();
         self.update_preamp_target();
     }
 
@@ -146,6 +156,7 @@ impl EqProcessor {
     /// the next callback from the smoothed gain.
     pub fn set_gains(&mut self, gains_db: [f32; 5]) {
         self.target_gains_db = gains_db;
+        self.recompute_gain_steps();
         self.update_preamp_target();
     }
 
@@ -159,6 +170,45 @@ impl EqProcessor {
                 .copied()
                 .fold(0.0f32, |acc, g| if g > acc { g } else { acc });
         self.target_preamp = db_to_linear(-max_positive.max(0.0));
+        self.recompute_preamp_step();
+    }
+
+    /// Fixed per-frame step for a linear ramp of `duration_ms` at the current
+    /// sample rate. Recalculated only when a target changes — never from the
+    /// remaining distance each callback (that would make the ramp exponential
+    /// and buffer-size dependent).
+    fn linear_step(current: f32, target: f32, sample_rate: f32, duration_ms: f32) -> f32 {
+        let frames = (duration_ms * sample_rate / 1000.0).max(1.0);
+        (target - current) / frames
+    }
+
+    fn recompute_gain_steps(&mut self) {
+        for band in 0..5 {
+            self.gain_steps_db[band] = Self::linear_step(
+                self.current_gains_db[band],
+                self.target_gains_db[band],
+                self.sample_rate,
+                EQ_SMOOTH_MS,
+            );
+        }
+    }
+
+    fn recompute_preamp_step(&mut self) {
+        self.preamp_step = Self::linear_step(
+            self.current_preamp,
+            self.target_preamp,
+            self.sample_rate,
+            EQ_SMOOTH_MS,
+        );
+    }
+
+    fn recompute_wet_step(&mut self) {
+        self.wet_step = Self::linear_step(
+            self.wet_mix,
+            self.target_wet_mix,
+            self.sample_rate,
+            BYPASS_SMOOTH_MS,
+        );
     }
 
     /// Last controller revision applied to this processor.
@@ -212,48 +262,33 @@ impl EqProcessor {
             }
         }
 
-        let smooth_samples = (EQ_SMOOTH_MS * self.sample_rate / 1000.0).max(1.0);
-        let bypass_samples = (BYPASS_SMOOTH_MS * self.sample_rate / 1000.0).max(1.0);
-
-        // Linear smoothing: compute a fixed per-frame step from the current
-        // value to the target at the start of this callback. The step is
-        // capped so the final frame lands exactly on the target without
-        // overshoot. This avoids the exponential-decay behavior of
-        // `diff * (1/N)` smoothing, which never actually reaches the target.
-        let gain_steps: [f32; 5] = {
-            let mut steps = [0.0f32; 5];
-            for (band, step) in steps.iter_mut().enumerate() {
-                let diff = self.target_gains_db[band] - self.current_gains_db[band];
-                *step = diff / smooth_samples;
-            }
-            steps
-        };
-        let preamp_step = (self.target_preamp - self.current_preamp) / smooth_samples;
-        let wet_step = (self.target_wet_mix - self.wet_mix) / bypass_samples;
-
+        // Advance stored per-frame steps (fixed at last target change). Do not
+        // recompute step from remaining distance here — that would restart a
+        // fresh 50 ms ramp every callback and become buffer-size dependent.
         for frame in 0..frames {
-            // Advance smoothing by one rendered frame. Each scalar moves
-            // linearly toward its target; clamp to the target so the final
-            // step does not overshoot.
-            for (band, &step) in gain_steps.iter().enumerate() {
+            for band in 0..5 {
+                let step = self.gain_steps_db[band];
                 let diff = self.target_gains_db[band] - self.current_gains_db[band];
-                if step.abs() >= diff.abs() {
+                if step == 0.0 || step.abs() >= diff.abs() {
                     self.current_gains_db[band] = self.target_gains_db[band];
+                    self.gain_steps_db[band] = 0.0;
                 } else {
                     self.current_gains_db[band] += step;
                 }
             }
             let preamp_diff = self.target_preamp - self.current_preamp;
-            if preamp_step.abs() >= preamp_diff.abs() {
+            if self.preamp_step == 0.0 || self.preamp_step.abs() >= preamp_diff.abs() {
                 self.current_preamp = self.target_preamp;
+                self.preamp_step = 0.0;
             } else {
-                self.current_preamp += preamp_step;
+                self.current_preamp += self.preamp_step;
             }
             let wet_diff = self.target_wet_mix - self.wet_mix;
-            if wet_step.abs() >= wet_diff.abs() {
+            if self.wet_step == 0.0 || self.wet_step.abs() >= wet_diff.abs() {
                 self.wet_mix = self.target_wet_mix;
+                self.wet_step = 0.0;
             } else {
-                self.wet_mix += wet_step;
+                self.wet_mix += self.wet_step;
             }
 
             // Snapshot the per-frame scalar gains so the inner channel loop
@@ -481,6 +516,36 @@ mod tests {
             "preamp should reach target after 50ms, current={}, target={}",
             proc.current_preamp,
             proc.target_preamp
+        );
+    }
+
+    #[test]
+    fn gain_ramp_is_linear_across_small_callbacks() {
+        // Recalculating step from remaining/smooth each callback would make a
+        // 50 ms ramp take far longer when processed in 256-frame chunks.
+        let mut proc = EqProcessor::new(48_000, 2);
+        proc.set_enabled(true);
+        // Settle wet_mix before measuring gain-only ramp.
+        let mut settle = vec![0.0f32; 48_000 * 2];
+        let settle_len = settle.len();
+        proc.process(&mut settle, settle_len);
+        proc.set_gains([12.0, 0.0, 0.0, 0.0, 0.0]);
+
+        let chunk = 256;
+        let channels = 2;
+        let total_frames = 2400; // exactly 50 ms @ 48 kHz
+        let mut processed = 0usize;
+        while processed < total_frames {
+            let frames = (total_frames - processed).min(chunk);
+            let mut buf = vec![0.0f32; frames * channels];
+            let len = buf.len();
+            proc.process(&mut buf, len);
+            processed += frames;
+        }
+        assert!(
+            (proc.current_gains_db[0] - 12.0).abs() < 1e-2,
+            "band0 gain should reach +12 dB after 50 ms of 256-frame callbacks, got {}",
+            proc.current_gains_db[0]
         );
     }
 
