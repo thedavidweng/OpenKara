@@ -44,8 +44,8 @@ modules:
         strip-components: 1
       - cargo-sources.json
       - type: archive
-        url: https://registry.npmjs.org/pnpm/-/pnpm-10.33.2.tgz
-        sha256: 7a7bcf13d7f6ceb3946c03978373d99be9fde1cafc3000bdfed4c4f791167610
+        url: https://registry.npmjs.org/pnpm/-/pnpm-11.13.0.tgz
+        sha256: 865c76bd9111a45ca41f6eeed4067ff0ecdfee9eac83aad24179c83ffebe7599
         dest: pnpm-package
       - type: archive
         url: https://github.com/microsoft/onnxruntime/releases/download/v1.26.0/onnxruntime-linux-x64-1.26.0.tgz
