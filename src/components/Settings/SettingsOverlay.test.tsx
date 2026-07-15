@@ -278,3 +278,76 @@ describe("SettingsOverlay sections", () => {
     expect(markup).not.toContain("pointer-events-none");
   });
 });
+
+describe("SettingsExecutionProviderSection rendering", () => {
+  test("non-Windows provider list renders exactly CPU and XNNPACK", () => {
+    const value = createSettingsOverlayTestContextValue({
+      state: {
+        executionProvider: "xnnpack",
+        availableExecutionProviders: ["cpu", "xnnpack"],
+      },
+    });
+
+    const markup = renderWithSettingsContext(
+      <SettingsExecutionProviderSection />,
+      value,
+    );
+
+    expect(markup).toContain("settings.executionProvider.cpu");
+    expect(markup).toContain("settings.executionProvider.xnnpack");
+    // Never render foreign/unsupported providers.
+    expect(markup).not.toContain("settings.executionProvider.directml");
+    expect(markup).not.toContain("settings.executionProvider.coreml");
+    expect(markup).not.toContain("settings.executionProvider.metal");
+    expect(markup).not.toContain("settings.executionProvider.auto");
+  });
+
+  test("Windows provider list renders DirectML once and can mark it selected", () => {
+    const value = createSettingsOverlayTestContextValue({
+      state: {
+        executionProvider: "directml",
+        availableExecutionProviders: ["cpu", "xnnpack", "directml"],
+      },
+    });
+
+    const markup = renderWithSettingsContext(
+      <SettingsExecutionProviderSection />,
+      value,
+    );
+
+    // DirectML title appears exactly once (one option button). The
+    // description key shares the prefix, so match the title followed by `<`.
+    expect(markup).toContain("settings.executionProvider.directml");
+    expect(
+      (markup.match(/settings\.executionProvider\.directml</g) ?? []).length,
+    ).toBe(1);
+    expect(markup).toContain("settings.executionProvider.cpu");
+    expect(markup).toContain("settings.executionProvider.xnnpack");
+  });
+
+  test("safe fallback selection renders exactly one selected option from the list", () => {
+    const value = createSettingsOverlayTestContextValue({
+      state: {
+        // Stale directml normalized to xnnpack by the backend.
+        executionProvider: "xnnpack",
+        availableExecutionProviders: ["cpu", "xnnpack"],
+      },
+    });
+
+    const markup = renderWithSettingsContext(
+      <SettingsExecutionProviderSection />,
+      value,
+    );
+
+    // The selected class marker appears exactly once.
+    const selectedCount = (
+      markup.match(
+        /border-\[var\(--color-accent\)\] bg-\[var\(--color-accent\)\]/g,
+      ) ?? []
+    ).length;
+    expect(selectedCount).toBe(1);
+    // The selected option belongs to the supplied list (xnnpack), not directml.
+    expect(markup).toContain("settings.executionProvider.xnnpack");
+    expect(markup).not.toContain("settings.executionProvider.directml");
+  });
+});
