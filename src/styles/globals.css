@@ -67,6 +67,32 @@
     --sidebar-control-bg: rgba(255, 255, 255, 0.045);
     --chrome-floating-bg: rgba(255, 255, 255, 0.09);
     --chrome-floating-border: rgba(255, 255, 255, 0.11);
+    /*
+     * Semantic scrollbar tokens — neutral gray dark-theme defaults shared by every
+     * platform. #96 overrides these per resolved theme. Components never use
+     * platform-specific literal scrollbar colors; descendants consume these vars.
+     */
+    --scrollbar-thumb: #6e6e73;
+    --scrollbar-thumb-hover: #8e8e93;
+    --scrollbar-thumb-active: #aeaeb2;
+    --scrollbar-track: transparent;
+  }
+
+  /*
+   * macOS: let WKWebView render its native overlay scrollbar under the correct
+   * dark color-scheme. The explicit `auto` values are intentional — opting into
+   * author styling (::-webkit-scrollbar, scrollbar-width: thin, or a custom
+   * scrollbar-color) would change native overlay/autohide behavior. Do not add
+   * ::-webkit-scrollbar geometry under the mac selector.
+   */
+  [data-window-chrome-platform="mac"] {
+    color-scheme: dark;
+  }
+
+  [data-window-chrome-platform="mac"],
+  [data-window-chrome-platform="mac"] * {
+    scrollbar-color: auto;
+    scrollbar-width: auto;
   }
 
   [data-window-chrome-platform="desktop"] {
@@ -89,25 +115,30 @@
     --color-control-primary-foreground: #17191d;
     --color-ghost-hover: rgba(255, 255, 255, 0.06);
     --panel-blur: 12px;
-    /* WebView2 / WebKitGTK default to light classic scrollbars; align with dark chrome. */
-    --scrollbar-thumb: var(--color-border-light);
-    --scrollbar-thumb-hover: var(--color-text-dimmer);
-    --scrollbar-track: transparent;
     color-scheme: dark;
   }
 
-  /* Standard scrollbar props (WebView2 121+, Firefox). CSS layers on native appearance.
-     scrollbar-width/color do not inherit, and AppLayout is overflow-hidden — lists and
-     panels scroll on nested overflow-y-auto nodes, so descendants must set these too. */
-  @supports (scrollbar-width: thin) {
+  /*
+   * Windows/Linux: standard scrollbar properties (WebView2 121+, Firefox).
+   * scrollbar-width/color do not inherit, and AppLayout is overflow-hidden —
+   * lists and panels scroll on nested overflow-y-auto nodes, so descendants
+   * must set these too. Scoped only to desktop; never combine @supports not
+   * with the mac selector.
+   */
+  @supports (scrollbar-color: auto) {
     [data-window-chrome-platform="desktop"],
     [data-window-chrome-platform="desktop"] * {
-      scrollbar-width: thin;
       scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+      scrollbar-width: thin;
     }
   }
 
-  /* WebKit fallback for engines without scrollbar-color (older WebView2, WebKitGTK). */
+  /*
+   * WebKit fallback for engines without scrollbar-color (older WebView2,
+   * WebKitGTK). Scoped only to desktop. Hover/active/track/corner/button
+   * fallback states are complete; disabled/unsupported pseudo states degrade
+   * to the default thumb.
+   */
   @supports not (scrollbar-color: auto) {
     [data-window-chrome-platform="desktop"] ::-webkit-scrollbar {
       width: 10px;
@@ -129,6 +160,10 @@
       background-color: var(--scrollbar-thumb-hover);
     }
 
+    [data-window-chrome-platform="desktop"] ::-webkit-scrollbar-thumb:active {
+      background-color: var(--scrollbar-thumb-active);
+    }
+
     [data-window-chrome-platform="desktop"] ::-webkit-scrollbar-corner {
       background: var(--scrollbar-track);
     }
@@ -138,6 +173,20 @@
       display: none;
       height: 0;
       width: 0;
+    }
+  }
+
+  /*
+   * System high-contrast (forced-colors) always wins: return scrollbar control
+   * to the system and let forced-color-adjust apply. Applies to every platform
+   * marker so neither mac nor desktop author styling overrides the system.
+   */
+  @media (forced-colors: active) {
+    [data-window-chrome-platform],
+    [data-window-chrome-platform] * {
+      scrollbar-color: auto;
+      scrollbar-width: auto;
+      forced-color-adjust: auto;
     }
   }
 

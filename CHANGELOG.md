@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - Introduce `PlaybackCoordinator` as an independent control thread that serializes all control-plane mutations of `PlaybackController` (pause / resume / seek / set_volume / set_stem_volume / install_track / fail_load / attach_stems). Background decode/fetch threads now produce immutable `ReadyTrack` payloads and send `PlaybackCommand` messages to the coordinator instead of directly mutating the controller. The coordinator guarantees FIFO ordering, latest-request-wins guards, AirPlay epoch/generation bumps, CDG seek-reset, and output-thread startup — all on a single thread. Public Tauri command names, arguments, response shapes, and event names are unchanged.
+- Fix macOS being left outside the application's native-control color scheme and unify scrollbar visibility across platforms: `AppLayout` emits `data-window-chrome-platform="mac"` while the scrollbar/color-scheme rules only matched `desktop`, so the mac WebView received neither the intended dark native-control environment nor scrollbar variables. macOS now keeps its native overlay/autohide scrollbar under a dark `color-scheme` (`scrollbar-color/width: auto`, no author `::-webkit-scrollbar` geometry); Windows/Linux descendants get a thin semantic scrollbar from shared root tokens (`--scrollbar-thumb`/`-hover`/`-active`/`-track`) with a scoped `@supports not (scrollbar-color: auto)` WebKit fallback; and forced-colors returns scrollbar control to the system on every platform.
 
 ### Fixed
 
