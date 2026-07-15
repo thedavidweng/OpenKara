@@ -218,8 +218,13 @@ describe("Flatpak packaging", () => {
 
     // Shell source only wires store-dir / headers; it must not run the old
     // Python JSON-index populate (pnpm 11 cannot read that layout).
+    // store-dir MUST be relative: absolute $PWD paths from shell sources point
+    // at the host build tree, which is invisible under --nofilesystem=host:reset.
     const shell = nodeSources.find((s) => s.type === "shell");
-    expect(shell?.commands?.join("\n")).toContain("store-dir=");
+    expect(shell?.commands?.join("\n")).toContain(
+      "store-dir=flatpak-node/pnpm-store",
+    );
+    expect(shell?.commands?.join("\n")).not.toContain("store-dir=$PWD");
     expect(shell?.commands?.join("\n")).not.toContain("populate_pnpm_store.py");
   });
 

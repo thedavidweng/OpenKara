@@ -201,6 +201,14 @@ async function populateStore(manifestPath, tarballDir, storeDir, workerPath) {
     }
   } finally {
     await pool.close();
+    // Ensure index.db is fully durable before pnpm opens it (possibly read-only).
+    try {
+      db.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+    } catch {
+      // ignore if not in WAL mode
+    }
+    const count = db.prepare("SELECT COUNT(*) AS n FROM package_index").get();
+    console.log(`pnpm store index entries: ${count?.n ?? 0} at ${dbPath}`);
     db.close();
   }
 }
