@@ -1960,6 +1960,86 @@ mod tests {
         );
     }
 
+    fn dummy_two_stem() -> super::LoadedStems {
+        let audio = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 1_000,
+            samples: vec![0.0; 44_100 * 2],
+        };
+        super::LoadedStems::TwoStem {
+            vocals: audio.clone(),
+            accompaniment: audio,
+        }
+    }
+
+    #[test]
+    fn attach_stems_wrong_song_preserves_active_crossfade_and_prepared() {
+        let mut controller = super::PlaybackController::default();
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+        let prepared = make_prepared("song-b", 0, fmt);
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+        controller.active_crossfade = Some(make_crossfade_active("song-c", 44_100));
+        // Active crossfade owns the incoming payload; prepared is empty after take.
+        // Seed prepared again so both fields are non-None under the error path.
+        let prepared_again = make_prepared("song-d", 0, fmt);
+        assert!(controller
+            .install_prepared_track(prepared_again, fmt)
+            .is_ok());
+
+        let err = controller
+            .attach_stems("other-song", dummy_two_stem())
+            .expect_err("mismatched song must reject");
+        let _ = err;
+
+        assert!(
+            controller.active_crossfade.is_some(),
+            "rejected attach must not destroy active crossfade"
+        );
+        assert!(
+            controller.prepared_track.is_some(),
+            "rejected attach must not destroy prepared track"
+        );
+        assert!(
+            controller.current_track.as_ref().unwrap().stems.is_none(),
+            "rejected attach must not install stems"
+        );
+    }
+
+    #[test]
+    fn attach_stems_same_song_cancels_crossfade_and_installs() {
+        let mut controller = super::PlaybackController::default();
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        controller.active_crossfade = Some(make_crossfade_active("song-b", 44_100));
+
+        controller
+            .attach_stems("song-a", dummy_two_stem())
+            .expect("same-song attach must succeed");
+
+        assert!(
+            controller.active_crossfade.is_none(),
+            "successful attach cancels active crossfade"
+        );
+        assert!(
+            controller.current_track.as_ref().unwrap().stems.is_some(),
+            "successful attach installs stems"
+        );
+    }
+
     #[test]
     fn promote_crossfade_track_stamps_transition_and_promotes_incoming() {
         let mut controller = super::PlaybackController::default();
