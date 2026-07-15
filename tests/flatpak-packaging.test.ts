@@ -206,6 +206,11 @@ describe("Flatpak packaging", () => {
     // container — only specific unused toolchain paths under /host-cleanup.
     expect(packagingWorkflow).toContain("/host-cleanup/");
     expect(packagingWorkflow).not.toMatch(/-v\s+\/:\/host(?:\s|$)/);
+    // Reclaim contents *inside* each /host-cleanup/* mount, not the bind root
+    // (rm -rf on the mount-point dir itself yields "Device or resource busy").
+    expect(packagingWorkflow).toMatch(
+      /for mount in \/host-cleanup\/\*;[\s\S]*?find "\$mount" -mindepth 1/,
+    );
 
     expect(packagingWorkflow).toMatch(
       /uses: flatpak\/flatpak-github-actions\/flatpak-builder@[a-f0-9]{40}/,

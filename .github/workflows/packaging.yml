@@ -195,6 +195,8 @@ jobs:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50@sha256:5767ab6266c0680cbe827f17b41a8120ac02c6a09bf5feced438831e57425c68
       options: >-
         --privileged
+        --dns 8.8.8.8
+        --dns 1.1.1.1
         -v /usr/share/dotnet:/host-cleanup/dotnet
         -v /usr/local/lib/android:/host-cleanup/android
         -v /usr/local/share/powershell:/host-cleanup/powershell
@@ -209,12 +211,17 @@ jobs:
         run: |
           # Reclaim only the bind-mounted unused host toolchains listed in
           # container.options. Paths are intentionally narrow — never mount /.
+          # Delete *inside* each mount (not the mount-point dir itself) so we
+          # avoid "Device or resource busy" on the bind root while still
+          # reclaiming multi-GB toolchain trees.
           set -euo pipefail
           echo "=== disk before free ==="
           df -h
           if [ -d /host-cleanup ]; then
-            # Delete contents, not the mount points themselves.
-            find /host-cleanup -mindepth 1 -maxdepth 1 -exec rm -rf {} + || true
+            for mount in /host-cleanup/*; do
+              [ -d "$mount" ] || continue
+              find "$mount" -mindepth 1 -maxdepth 1 -exec rm -rf {} + || true
+            done
           fi
           echo "=== disk after free ==="
           df -h
