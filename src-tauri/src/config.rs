@@ -57,6 +57,40 @@ pub enum ExecutionProviderPreference {
     DirectMl,
 }
 
+/// Platform seam used to test the execution-provider policy table without
+/// depending on the host running the test. Private: not an IPC type.
+/// Variants for platforms other than the compile target are only constructed
+/// in tests, so silence the non-test dead-code warning.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+enum ExecutionProviderPlatform {
+    Macos,
+    Windows,
+    Linux,
+    Other,
+}
+
+impl ExecutionProviderPlatform {
+    fn current() -> Self {
+        #[cfg(target_os = "macos")]
+        {
+            Self::Macos
+        }
+        #[cfg(target_os = "windows")]
+        {
+            Self::Windows
+        }
+        #[cfg(target_os = "linux")]
+        {
+            Self::Linux
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+        {
+            Self::Other
+        }
+    }
+}
+
 impl Default for ExecutionProviderPreference {
     fn default() -> Self {
         Self::default_for_current_platform()
@@ -64,17 +98,32 @@ impl Default for ExecutionProviderPreference {
 }
 
 impl ExecutionProviderPreference {
-    pub fn default_for_current_platform() -> Self {
-        // Windows prefers the DirectML GPU path; other platforms use XNNPACK SIMD.
-        #[cfg(target_os = "windows")]
-        {
-            return Self::DirectMl;
+    /// Providers valid for `platform`, in canonical display order.
+    /// DirectML is Windows-only; CPU and XNNPACK are available everywhere.
+    fn available_for(platform: ExecutionProviderPlatform) -> &'static [Self] {
+        match platform {
+            ExecutionProviderPlatform::Windows => &[Self::Cpu, Self::Xnnpack, Self::DirectMl],
+            ExecutionProviderPlatform::Macos
+            | ExecutionProviderPlatform::Linux
+            | ExecutionProviderPlatform::Other => &[Self::Cpu, Self::Xnnpack],
         }
+    }
 
-        #[cfg(not(target_os = "windows"))]
-        {
-            Self::Xnnpack
+    fn default_for(platform: ExecutionProviderPlatform) -> Self {
+        match platform {
+            ExecutionProviderPlatform::Windows => Self::DirectMl,
+            ExecutionProviderPlatform::Macos
+            | ExecutionProviderPlatform::Linux
+            | ExecutionProviderPlatform::Other => Self::Xnnpack,
         }
+    }
+
+    fn is_available_for(self, platform: ExecutionProviderPlatform) -> bool {
+        Self::available_for(platform).contains(&self)
+    }
+
+    pub fn default_for_current_platform() -> Self {
+        Self::default_for(ExecutionProviderPlatform::current())
     }
 
     pub fn as_str(self) -> &'static str {
@@ -97,12 +146,14 @@ impl ExecutionProviderPreference {
     /// Returns the execution provider options valid for the current platform.
     /// Used by the frontend to populate the settings dropdown.
     pub fn available_for_current_platform() -> Vec<&'static str> {
-        // XNNPACK is available on all platforms and built into the ORT shared library.
-        let mut options = vec!["cpu", "xnnpack"];
-        if cfg!(target_os = "windows") {
-            options.push("directml");
-        }
-        options
+        Self::available_for(ExecutionProviderPlatform::current())
+            .iter()
+            .map(|ep| ep.as_str())
+            .collect()
+    }
+
+    pub fn is_available_for_current_platform(self) -> bool {
+        self.is_available_for(ExecutionProviderPlatform::current())
     }
 }
 
@@ -433,8 +484,22 @@ impl AppConfig {
         self.lyrics_font_step.unwrap_or(0)
     }
 
+    /// Returns the saved execution provider only when it is valid for
+    /// `platform`; otherwise falls back to that platform's default.
+    /// A stale known cross-platform value (e.g. `directml` on macOS) is
+    /// normalized without writing to disk.
+    fn effective_execution_provider_for(
+        &self,
+        platform: ExecutionProviderPlatform,
+    ) -> ExecutionProviderPreference {
+        match self.execution_provider {
+            Some(ep) if ep.is_available_for(platform) => ep,
+            _ => ExecutionProviderPreference::default_for(platform),
+        }
+    }
+
     pub fn effective_execution_provider(&self) -> ExecutionProviderPreference {
-        self.execution_provider.unwrap_or_default()
+        self.effective_execution_provider_for(ExecutionProviderPlatform::current())
     }
 
     pub fn effective_remote_cache_bytes_limit(&self) -> Option<u64> {
@@ -729,5 +794,152 @@ mod tests {
             config.effective_execution_provider(),
             ExecutionProviderPreference::Xnnpack
         );
+    }
+
+    // --- execution-provider platform policy table tests ---
+    // These exercise the pure platform parameter so they pass on every host.
+
+    #[test]
+    fn execution_provider_available_table_is_exact_and_ordered() {
+        use ExecutionProviderPlatform::*;
+
+        assert_eq!(
+            ExecutionProviderPreference::available_for(Macos),
+            &[
+                ExecutionProviderPreference::Cpu,
+                ExecutionProviderPreference::Xnnpack
+            ]
+        );
+        assert_eq!(
+            ExecutionProviderPreference::available_for(Linux),
+            &[
+                ExecutionProviderPreference::Cpu,
+                ExecutionProviderPreference::Xnnpack
+            ]
+        );
+        assert_eq!(
+            ExecutionProviderPreference::available_for(Other),
+            &[
+                ExecutionProviderPreference::Cpu,
+                ExecutionProviderPreference::Xnnpack
+            ]
+        );
+        assert_eq!(
+            ExecutionProviderPreference::available_for(Windows),
+            &[
+                ExecutionProviderPreference::Cpu,
+                ExecutionProviderPreference::Xnnpack,
+                ExecutionProviderPreference::DirectMl,
+            ]
+        );
+    }
+
+    #[test]
+    fn directml_is_present_only_for_windows() {
+        use ExecutionProviderPlatform::*;
+        for &platform in &[Macos, Linux, Other] {
+            assert!(!ExecutionProviderPreference::available_for(platform)
+                .contains(&ExecutionProviderPreference::DirectMl));
+        }
+        assert!(ExecutionProviderPreference::available_for(Windows)
+            .contains(&ExecutionProviderPreference::DirectMl));
+    }
+
+    #[test]
+    fn cpu_and_xnnpack_are_present_for_every_target() {
+        use ExecutionProviderPlatform::*;
+        for &platform in &[Macos, Windows, Linux, Other] {
+            let list = ExecutionProviderPreference::available_for(platform);
+            assert!(list.contains(&ExecutionProviderPreference::Cpu));
+            assert!(list.contains(&ExecutionProviderPreference::Xnnpack));
+        }
+    }
+
+    #[test]
+    fn every_target_default_is_a_member_of_its_list() {
+        use ExecutionProviderPlatform::*;
+        for &platform in &[Macos, Windows, Linux, Other] {
+            let default = ExecutionProviderPreference::default_for(platform);
+            assert!(default.is_available_for(platform));
+        }
+    }
+
+    #[test]
+    fn effective_execution_provider_for_preserves_valid_saved_value() {
+        use ExecutionProviderPlatform::*;
+        let config = AppConfig {
+            execution_provider: Some(ExecutionProviderPreference::Cpu),
+            ..AppConfig::default()
+        };
+        assert_eq!(
+            config.effective_execution_provider_for(Macos),
+            ExecutionProviderPreference::Cpu
+        );
+        assert_eq!(
+            config.effective_execution_provider_for(Windows),
+            ExecutionProviderPreference::Cpu
+        );
+    }
+
+    #[test]
+    fn effective_execution_provider_for_falls_back_for_stale_cross_platform_value() {
+        use ExecutionProviderPlatform::*;
+        // directml persisted but running on macOS/Linux/Other -> xnnpack
+        let config = AppConfig {
+            execution_provider: Some(ExecutionProviderPreference::DirectMl),
+            ..AppConfig::default()
+        };
+        assert_eq!(
+            config.effective_execution_provider_for(Macos),
+            ExecutionProviderPreference::Xnnpack
+        );
+        assert_eq!(
+            config.effective_execution_provider_for(Linux),
+            ExecutionProviderPreference::Xnnpack
+        );
+        assert_eq!(
+            config.effective_execution_provider_for(Other),
+            ExecutionProviderPreference::Xnnpack
+        );
+        // directml is valid on Windows and is preserved
+        assert_eq!(
+            config.effective_execution_provider_for(Windows),
+            ExecutionProviderPreference::DirectMl
+        );
+    }
+
+    #[test]
+    fn effective_execution_provider_for_falls_back_when_unset() {
+        use ExecutionProviderPlatform::*;
+        let config = AppConfig {
+            execution_provider: None,
+            ..AppConfig::default()
+        };
+        assert_eq!(
+            config.effective_execution_provider_for(Macos),
+            ExecutionProviderPreference::Xnnpack
+        );
+        assert_eq!(
+            config.effective_execution_provider_for(Windows),
+            ExecutionProviderPreference::DirectMl
+        );
+        assert_eq!(
+            config.effective_execution_provider_for(Linux),
+            ExecutionProviderPreference::Xnnpack
+        );
+    }
+
+    #[test]
+    fn current_target_wrappers_agree_with_compile_target() {
+        use ExecutionProviderPlatform::*;
+        let current = ExecutionProviderPlatform::current();
+        #[cfg(target_os = "macos")]
+        assert_eq!(current, Macos);
+        #[cfg(target_os = "windows")]
+        assert_eq!(current, Windows);
+        #[cfg(target_os = "linux")]
+        assert_eq!(current, Linux);
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+        assert_eq!(current, Other);
     }
 }

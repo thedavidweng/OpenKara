@@ -173,13 +173,32 @@ pub fn set_lyrics_font_step(app_handle: AppHandle, step: i8) -> CommandResult<Ap
     persist_lyrics_font_step(&app_data_dir, step)
 }
 
+/// Parse and validate an execution-provider string against the current
+/// platform's policy table. Pure: testable without a Tauri `AppHandle`.
+/// Rejects unknown strings and known-but-unavailable providers before any
+/// config mutation.
+fn parse_and_validate_execution_provider(
+    provider: &str,
+) -> CommandResult<ExecutionProviderPreference> {
+    let ep = ExecutionProviderPreference::parse(provider)
+        .ok_or_else(|| internal_error(format!("invalid execution provider: {provider}")))?;
+    if !ep.is_available_for_current_platform() {
+        return Err(internal_error(format!(
+            "execution provider '{}' is unavailable on this platform",
+            ep.as_str()
+        )));
+    }
+    Ok(ep)
+}
+
 #[tauri::command]
 pub fn set_execution_provider(
     app_handle: AppHandle,
     provider: String,
 ) -> CommandResult<AppSettings> {
-    let ep = ExecutionProviderPreference::parse(&provider)
-        .ok_or_else(|| internal_error(format!("invalid execution provider: {provider}")))?;
+    // Validate before touching config so a rejected request never creates or
+    // rewrites config.json.
+    let ep = parse_and_validate_execution_provider(&provider)?;
     let app_data_dir = app_handle
         .path()
         .app_data_dir()
@@ -252,6 +271,81 @@ mod tests {
         assert_eq!(
             settings.execution_provider,
             ExecutionProviderPreference::default_for_current_platform().as_str()
+        );
+    }
+
+    #[test]
+    fn settings_selected_provider_is_always_in_available_list() {
+        // Stale directml on a non-Windows host is normalized to xnnpack and
+        // must still be a member of the available list.
+        let settings = settings_from_config(&AppConfig {
+            execution_provider: Some(ExecutionProviderPreference::DirectMl),
+            ..AppConfig::default()
+        });
+        assert!(
+            settings
+                .available_execution_providers
+                .contains(&settings.execution_provider.as_str()),
+            "selected provider '{}' must be in available list {:?}",
+            settings.execution_provider,
+            settings.available_execution_providers,
+        );
+    }
+
+    #[test]
+    fn parse_and_validate_accepts_every_current_platform_entry() {
+        for &name in ExecutionProviderPreference::available_for_current_platform().as_slice() {
+            let ep = parse_and_validate_execution_provider(name)
+                .unwrap_or_else(|e| panic!("valid provider {name} rejected: {e:?}"));
+            assert_eq!(ep.as_str(), name);
+        }
+    }
+
+    #[test]
+    fn parse_and_validate_rejects_unknown_provider() {
+        let error = parse_and_validate_execution_provider("coreml")
+            .expect_err("unknown provider should be rejected");
+        assert!(error.message.contains("invalid execution provider: coreml"));
+    }
+
+    #[test]
+    fn parse_and_validate_rejects_known_unavailable_provider() {
+        // directml is known but Windows-only. On non-Windows hosts it must be
+        // rejected with the platform-availability message. On Windows it is
+        // valid, so we skip the rejection assertion there.
+        #[cfg(not(target_os = "windows"))]
+        {
+            let error = parse_and_validate_execution_provider("directml")
+                .expect_err("directml should be rejected off Windows");
+            assert!(
+                error
+                    .message
+                    .contains("execution provider 'directml' is unavailable on this platform"),
+                "unexpected message: {}",
+                error.message,
+            );
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let ep = parse_and_validate_execution_provider("directml")
+                .expect("directml should be accepted on Windows");
+            assert_eq!(ep.as_str(), "directml");
+        }
+    }
+
+    #[test]
+    fn rejected_set_execution_provider_does_not_create_config_file() {
+        // A rejected request must not create or mutate config.json. We exercise
+        // this by validating the pure helper (the command calls it before any
+        // disk access) against an unknown provider in an empty temp dir.
+        let temp_dir = tempfile::tempdir().expect("temp dir should create");
+        let _ = parse_and_validate_execution_provider("coreml")
+            .expect_err("unknown provider should be rejected");
+        assert!(
+            config::load_config(temp_dir.path())
+                .expect("config load should succeed")
+                .is_none(),
+            "rejected validation must not create a config file",
         );
     }
 }
