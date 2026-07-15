@@ -1,0 +1,15 @@
+overrides:
+  esbuild: 0.28.1
+  undici: ">=7.28.0 <8.0.0"
+  vitepress>vite: ">=6.4.3"
+
+onlyBuiltDependencies:
+  - esbuild
+  - lefthook
+
+patchedDependencies:
+  "@romanize/korean@0.1.3": patches/@romanize__korean@0.1.3.patch
+
+allowBuilds:
+  esbuild: true
+  lefthook: true
