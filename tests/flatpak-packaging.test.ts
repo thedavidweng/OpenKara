@@ -164,6 +164,22 @@ describe("Flatpak packaging", () => {
     expect(manifestTemplate).not.toContain("--bundles none");
   });
 
+  test("ships a pnpm tarball matching the packageManager pin in package.json", () => {
+    // The Flatpak build installs pnpm from a tarball archive source in the
+    // manifest template. If this tarball drifts from the packageManager version
+    // in package.json, the offline Flatpak build will install a pnpm that
+    // cannot read the migrated pnpm-workspace.yaml or the lockfile.
+    const manifestTemplate = readProjectFile(
+      "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
+    );
+    const packageJson = JSON.parse(readProjectFile("package.json")) as {
+      packageManager: string;
+    };
+    const pinnedVersion = packageJson.packageManager.replace(/^pnpm@/, "");
+
+    expect(manifestTemplate).toContain(`pnpm/-/pnpm-${pinnedVersion}.tgz`);
+  });
+
   test("uses the Flathub container image and official flatpak-builder action for Flatpak builds", () => {
     const packagingWorkflow = readProjectFile(
       ".github/workflows/packaging.yml",
