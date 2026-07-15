@@ -28,6 +28,7 @@ fn render_output_buffer_returns_silence_without_an_active_track() {
     let mut stem_scratch = Vec::new();
     let mut crossfade_scratch = vec![0.0f32; CROSSFADE_SCRATCH_FRAMES * TEST_CHANNELS];
     let mut rc = ResamplerCache::default();
+    let mut rc_in = ResamplerCache::default();
     let mut eq = EqProcessor::new(TEST_SAMPLE_RATE, TEST_CHANNELS);
     let peak_ring = PeakRing::new();
     let mut peak_acc = PeakAccumulator::new();
@@ -40,6 +41,7 @@ fn render_output_buffer_returns_silence_without_an_active_track() {
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
         &mut rc,
+        &mut rc_in,
         &mut eq,
         &mut peak_acc,
         &peak_ring,
@@ -57,6 +59,7 @@ fn render_output_buffer_writes_audio_when_playing_and_silence_when_paused() {
     let mut stem_scratch = Vec::new();
     let mut crossfade_scratch = vec![0.0f32; CROSSFADE_SCRATCH_FRAMES * TEST_CHANNELS];
     let mut rc = ResamplerCache::default();
+    let mut rc_in = ResamplerCache::default();
     let mut eq = EqProcessor::new(TEST_SAMPLE_RATE, TEST_CHANNELS);
     let peak_ring = PeakRing::new();
     let mut peak_acc = PeakAccumulator::new();
@@ -70,6 +73,7 @@ fn render_output_buffer_writes_audio_when_playing_and_silence_when_paused() {
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
         &mut rc,
+        &mut rc_in,
         &mut eq,
         &mut peak_acc,
         &peak_ring,
@@ -89,6 +93,7 @@ fn render_output_buffer_writes_audio_when_playing_and_silence_when_paused() {
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
         &mut rc,
+        &mut rc_in,
         &mut eq,
         &mut peak_acc,
         &peak_ring,
@@ -109,6 +114,7 @@ fn render_output_buffer_writes_audio_when_playing_and_silence_when_paused() {
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
         &mut rc,
+        &mut rc_in,
         &mut eq,
         &mut peak_acc,
         &peak_ring,
@@ -125,6 +131,7 @@ fn render_output_buffer_advances_render_frame_for_original_audio() {
     let mut stem_scratch = Vec::new();
     let mut crossfade_scratch = vec![0.0f32; CROSSFADE_SCRATCH_FRAMES * TEST_CHANNELS];
     let mut rc = ResamplerCache::default();
+    let mut rc_in = ResamplerCache::default();
     let mut eq = EqProcessor::new(TEST_SAMPLE_RATE, TEST_CHANNELS);
     let peak_ring = PeakRing::new();
     let mut peak_acc = PeakAccumulator::new();
@@ -138,6 +145,7 @@ fn render_output_buffer_advances_render_frame_for_original_audio() {
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
         &mut rc,
+        &mut rc_in,
         &mut eq,
         &mut peak_acc,
         &peak_ring,
@@ -156,6 +164,7 @@ fn render_output_buffer_advances_render_frame_for_original_audio() {
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
         &mut rc,
+        &mut rc_in,
         &mut eq,
         &mut peak_acc,
         &peak_ring,
