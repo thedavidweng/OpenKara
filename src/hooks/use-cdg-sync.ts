@@ -70,6 +70,125 @@ export function startCdgPositionSync(
   });
 }
 
+/**
+ * Shared in-flight coordinator for probe + hot-loop CDG frame IPC.
+ * At most one `getCdgFrame` is outstanding for the local timeline; a newer
+ * desired request is coalesced and issued when the in-flight one completes.
+ * A monotonic serial invalidates late results after song/generation change.
+ */
+export type CdgFrameRequest = {
+  songId: string;
+  transportGeneration: number;
+  positionMs: number;
+  lastFrameVersion: number;
+  /** Monotonic serial at request enqueue time. */
+  serial: number;
+};
+
+export type CdgFrameCoordinator = {
+  /** Enqueue a desired frame request; returns false if dropped as identical/noop. */
+  request: (req: Omit<CdgFrameRequest, "serial">) => void;
+  /** Invalidate outstanding work (song change / unmount). */
+  invalidate: () => void;
+  /** Test helper: is a request currently in flight? */
+  isInFlight: () => boolean;
+  /** Test helper: current serial. */
+  currentSerial: () => number;
+};
+
+export function createCdgFrameCoordinator(deps: {
+  getCdgFrame: typeof api.getCdgFrame;
+  onFrame: (args: {
+    songId: string;
+    transportGeneration: number;
+    frameVersion: number;
+    rgba: Uint8ClampedArray | Uint8Array;
+  }) => void;
+  onProbeResolved: (args: {
+    songId: string;
+    transportGeneration: number;
+    hasFrame: boolean;
+  }) => void;
+  onError: (args: { songId: string; transportGeneration: number }) => void;
+  /** Optional: is this request still relevant? */
+  isCurrent: (req: CdgFrameRequest) => boolean;
+}): CdgFrameCoordinator {
+  let serial = 0;
+  let inFlight = false;
+  let pending: CdgFrameRequest | null = null;
+
+  const pump = () => {
+    if (inFlight || !pending) return;
+    const req = pending;
+    pending = null;
+    inFlight = true;
+    deps
+      .getCdgFrame(
+        req.songId,
+        req.transportGeneration,
+        req.positionMs,
+        req.lastFrameVersion,
+      )
+      .then((result) => {
+        if (req.serial !== serial || !deps.isCurrent(req)) {
+          return;
+        }
+        const buffer = ensureArrayBuffer(result);
+        const envelope = parseCdgFrameResponse(buffer);
+        if (envelope && envelope.hasRgba && envelope.rgba) {
+          deps.onFrame({
+            songId: req.songId,
+            transportGeneration: envelope.transportGeneration,
+            frameVersion: envelope.frameVersion,
+            rgba: envelope.rgba,
+          });
+          deps.onProbeResolved({
+            songId: req.songId,
+            transportGeneration: req.transportGeneration,
+            hasFrame: true,
+          });
+        } else {
+          deps.onProbeResolved({
+            songId: req.songId,
+            transportGeneration: req.transportGeneration,
+            hasFrame: false,
+          });
+        }
+      })
+      .catch(() => {
+        if (req.serial !== serial || !deps.isCurrent(req)) {
+          return;
+        }
+        deps.onError({
+          songId: req.songId,
+          transportGeneration: req.transportGeneration,
+        });
+      })
+      .finally(() => {
+        inFlight = false;
+        // Drop if invalidated while in flight.
+        if (pending && pending.serial !== serial) {
+          pending = null;
+        }
+        pump();
+      });
+  };
+
+  return {
+    request: (partial) => {
+      serial += 1;
+      pending = { ...partial, serial };
+      pump();
+    },
+    invalidate: () => {
+      serial += 1;
+      pending = null;
+    },
+    isInFlight: () => inFlight,
+    currentSerial: () => serial,
+  };
+}
+
 export function useCdgSync(enabled = true): void {
   const songId = usePlayerStore((s) => s.snapshot?.song_id ?? null);
   const transportGeneration = usePlayerStore(
@@ -81,8 +200,70 @@ export function useCdgSync(enabled = true): void {
   const setSong = useCdgStore((s) => s.setSong);
   const clear = useCdgStore((s) => s.clear);
   const setFrameVersion = useCdgStore((s) => s.setFrameVersion);
-  const pendingRef = useRef(false);
   const currentSongHasCdg = songHasCdgMedia(currentSong);
+
+  const coordinatorRef = useRef<CdgFrameCoordinator | null>(null);
+
+  // Build / rebuild coordinator when enabled; invalidate on cleanup.
+  useEffect(() => {
+    if (!enabled) {
+      coordinatorRef.current = null;
+      return;
+    }
+
+    const coordinator = createCdgFrameCoordinator({
+      getCdgFrame: api.getCdgFrame,
+      isCurrent: (req) => {
+        const snap = usePlayerStore.getState().snapshot;
+        return (
+          req.songId === (snap?.song_id ?? null) &&
+          req.transportGeneration === (snap?.transport_generation ?? 0)
+        );
+      },
+      onFrame: ({
+        songId: sid,
+        transportGeneration: gen,
+        frameVersion,
+        rgba,
+      }) => {
+        setFrameVersion(frameVersion, gen);
+        drawFrame(rgba);
+        emitCdgFrame({
+          rgba,
+          frameVersion,
+          transportGeneration: gen,
+        });
+        // Ensure store marks CDG present after a successful frame.
+        if (
+          useCdgStore.getState().songId !== sid ||
+          !useCdgStore.getState().hasCdg
+        ) {
+          setSong(sid, true);
+        }
+      },
+      onProbeResolved: ({ songId: sid, hasFrame }) => {
+        if (!hasFrame) {
+          // Soft-confirm status without clearing an already-drawn frame.
+          emitCdgStatus(sid, true);
+        } else {
+          emitCdgStatus(sid, true);
+        }
+      },
+      onError: ({ songId: sid }) => {
+        setSong(sid, false);
+        clearFrame();
+        emitCdgStatus(sid, false);
+      },
+    });
+    coordinatorRef.current = coordinator;
+
+    return () => {
+      coordinator.invalidate();
+      if (coordinatorRef.current === coordinator) {
+        coordinatorRef.current = null;
+      }
+    };
+  }, [enabled, setFrameVersion, setSong]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -102,10 +283,13 @@ export function useCdgSync(enabled = true): void {
   }, [enabled]);
 
   // Song detection: probe whether the new track has CDG graphics.
+  // Shares the single coordinator with the hot path so probe + tick cannot
+  // issue concurrent getCdgFrame calls.
   useEffect(() => {
     if (!enabled) return;
 
     if (!songId) {
+      coordinatorRef.current?.invalidate();
       clear();
       clearFrame();
       emitCdgClear();
@@ -114,6 +298,7 @@ export function useCdgSync(enabled = true): void {
     }
 
     if (!currentSongHasCdg) {
+      coordinatorRef.current?.invalidate();
       clear();
       clearFrame();
       emitCdgClear();
@@ -121,7 +306,6 @@ export function useCdgSync(enabled = true): void {
       return;
     }
 
-    let cancelled = false;
     const probePositionMs = selectSyncDisplayPositionMs(
       usePlayerStore.getState(),
     );
@@ -136,47 +320,13 @@ export function useCdgSync(enabled = true): void {
       emitCdgStatus(songId, true);
     }
 
-    api
-      .getCdgFrame(songId, transportGeneration, probePositionMs, 0)
-      .then((result) => {
-        if (cancelled) return;
-        const buffer = ensureArrayBuffer(result);
-        const envelope = parseCdgFrameResponse(buffer);
-
-        if (envelope && envelope.hasRgba && envelope.rgba) {
-          setSong(songId, true);
-          setFrameVersion(envelope.frameVersion, envelope.transportGeneration);
-          drawFrame(envelope.rgba);
-          emitCdgFrame({
-            rgba: envelope.rgba,
-            frameVersion: envelope.frameVersion,
-            transportGeneration: envelope.transportGeneration,
-          });
-          emitCdgStatus(songId, true);
-          return;
-        }
-
-        emitCdgStatus(songId, true);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setSong(songId, false);
-        clearFrame();
-        emitCdgStatus(songId, false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    clear,
-    currentSongHasCdg,
-    enabled,
-    setFrameVersion,
-    setSong,
-    songId,
-    transportGeneration,
-  ]);
+    coordinatorRef.current?.request({
+      songId,
+      transportGeneration,
+      positionMs: probePositionMs,
+      lastFrameVersion: 0,
+    });
+  }, [clear, currentSongHasCdg, enabled, setSong, songId, transportGeneration]);
 
   // RATIONALE: Do not replace this with setInterval/requestAnimationFrame.
   // The real regression was macOS throttling front-end scheduling in windows
@@ -192,56 +342,24 @@ export function useCdgSync(enabled = true): void {
         const { snapshot } = state;
         const { hasCdg, frameVersion } = useCdgStore.getState();
 
-        if (!hasCdg || !snapshot?.is_playing || pendingRef.current) {
+        if (!hasCdg || !snapshot?.is_playing) {
           return;
         }
-        pendingRef.current = true;
         const positionMs = selectSyncDisplayPositionMs(state);
-        // F5: Capture songId and generation at request time so stale frames are discarded.
         const requestSongId = snapshot?.song_id;
+        if (!requestSongId) return;
         const requestGeneration = snapshot?.transport_generation ?? 0;
 
         // PERF: The hot frame path stays out of React state. The IPC returns a
         // raw ArrayBuffer (no base64), and drawFrame() paints it to a pre-
         // allocated ImageData — no string decoding, no per-frame allocation.
-        api
-          .getCdgFrame(
-            requestSongId ?? "",
-            requestGeneration,
-            positionMs,
-            frameVersion,
-          )
-          .then((result) => {
-            // F5: Discard stale frames if the song or generation changed during the IPC call.
-            const currentState = usePlayerStore.getState();
-            if (
-              requestSongId !== currentState.snapshot?.song_id ||
-              requestGeneration !==
-                (currentState.snapshot?.transport_generation ?? 0)
-            ) {
-              return;
-            }
-            const buffer = ensureArrayBuffer(result);
-            const envelope = parseCdgFrameResponse(buffer);
-            if (envelope && envelope.hasRgba && envelope.rgba) {
-              setFrameVersion(
-                envelope.frameVersion,
-                envelope.transportGeneration,
-              );
-              drawFrame(envelope.rgba);
-              emitCdgFrame({
-                rgba: envelope.rgba,
-                frameVersion: envelope.frameVersion,
-                transportGeneration: envelope.transportGeneration,
-              });
-            }
-          })
-          .catch(() => {
-            // Silently ignore CDG frame errors — non-critical for playback.
-          })
-          .finally(() => {
-            pendingRef.current = false;
-          });
+        // Concurrency: shared coordinator serializes with the probe path.
+        coordinatorRef.current?.request({
+          songId: requestSongId,
+          transportGeneration: requestGeneration,
+          positionMs,
+          lastFrameVersion: frameVersion,
+        });
       },
       (listener) =>
         usePlayerStore.subscribe((state, previousState) => {
@@ -255,5 +373,5 @@ export function useCdgSync(enabled = true): void {
     return () => {
       stopSync();
     };
-  }, [enabled, setFrameVersion]);
+  }, [enabled]);
 }
