@@ -92,8 +92,8 @@ function toAppSettingsSnapshot(settings: AppSettings): AppSettingsSnapshot {
     // Defensive defaults: incomplete IPC payloads must not leave eqGainsDb undefined.
     eqEnabled: settings.eq_enabled ?? false,
     eqGainsDb: settings.eq_gains_db ?? [0, 0, 0, 0, 0],
-    crossfadeEnabled: settings.crossfade_enabled,
-    crossfadeDurationMs: settings.crossfade_duration_ms,
+    crossfadeEnabled: settings.crossfade_enabled ?? false,
+    crossfadeDurationMs: settings.crossfade_duration_ms ?? 3000,
   };
 }
 

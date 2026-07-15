@@ -526,11 +526,12 @@ impl PlaybackController {
     }
 
     pub fn attach_stems(&mut self, song_id: &str, stems: LoadedStems) -> Result<(), PlaybackError> {
-        // #89: Attaching stems cancels both active crossfade and prepared track.
-        self.cancel_crossfade_and_prepared();
+        // Validate ownership first. Cancelling before the song-id guard would
+        // permanently destroy an in-progress crossfade / prepared next-track
+        // when a stale or misrouted attach arrives for a different song.
         let track = self
             .current_track
-            .as_mut()
+            .as_ref()
             .ok_or_else(|| PlaybackError::InvalidPlaybackState("no track is loaded".to_owned()))?;
         if track.song_id != song_id {
             return Err(PlaybackError::InvalidPlaybackState(format!(
@@ -538,7 +539,14 @@ impl PlaybackController {
                 song_id, track.song_id
             )));
         }
-        track.stems = Some(stems);
+        // #89: Successful attach on the current track cancels both active
+        // crossfade and prepared track — stems change the render path and
+        // make an outgoing plain-track overlap invalid.
+        self.cancel_crossfade_and_prepared();
+        self.current_track
+            .as_mut()
+            .expect("current_track present after ownership check")
+            .stems = Some(stems);
         Ok(())
     }
 

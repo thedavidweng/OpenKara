@@ -202,6 +202,7 @@ export const TAURI_MOCK_SCRIPT = `
       lyrics_font_step: 0, execution_provider: "cpu",
       available_execution_providers: ["cpu"],
       eq_enabled: false, eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: false, crossfade_duration_ms: 3000,
     },
     get_window_shell_state: {
       chrome_variant: "desktop", tier: "desktop", toolbar_height: 48,
@@ -394,6 +395,7 @@ export const TAURI_MOCK_SCRIPT = `
       lyrics_font_step: 0, execution_provider: "cpu",
       available_execution_providers: ["cpu"],
       eq_enabled: false, eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: false, crossfade_duration_ms: 3000,
     }),
     set_stem_mode: (args) => ({
       stem_mode: (args && args.mode) || "two_stem", model_variant: "htdemucs",
@@ -401,6 +403,7 @@ export const TAURI_MOCK_SCRIPT = `
       lyrics_font_step: 0, execution_provider: "cpu",
       available_execution_providers: ["cpu"],
       eq_enabled: false, eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: false, crossfade_duration_ms: 3000,
     }),
     set_lyrics_font_step: (args) => ({
       stem_mode: "two_stem", model_variant: "htdemucs",
@@ -408,6 +411,7 @@ export const TAURI_MOCK_SCRIPT = `
       lyrics_font_step: (args && args.step) || 0, execution_provider: "cpu",
       available_execution_providers: ["cpu"],
       eq_enabled: false, eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: false, crossfade_duration_ms: 3000,
     }),
     set_execution_provider: (args) => ({
       stem_mode: "two_stem", model_variant: "htdemucs",
@@ -415,6 +419,7 @@ export const TAURI_MOCK_SCRIPT = `
       lyrics_font_step: 0, execution_provider: (args && args.provider) || "cpu",
       available_execution_providers: ["cpu"],
       eq_enabled: false, eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: false, crossfade_duration_ms: 3000,
     }),
     set_hide_batch_separate: (args) => ({
       stem_mode: "two_stem", model_variant: "htdemucs",
@@ -422,6 +427,7 @@ export const TAURI_MOCK_SCRIPT = `
       lyrics_font_step: 0, execution_provider: "cpu",
       available_execution_providers: ["cpu"],
       eq_enabled: false, eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: false, crossfade_duration_ms: 3000,
     }),
     set_cover_art_backdrop: (args) => ({
       stem_mode: "two_stem", model_variant: "htdemucs",
@@ -429,6 +435,7 @@ export const TAURI_MOCK_SCRIPT = `
       lyrics_font_step: 0, execution_provider: "cpu",
       available_execution_providers: ["cpu"],
       eq_enabled: false, eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: false, crossfade_duration_ms: 3000,
     }),
     get_audio_peaks: { writeIndex: 0, peaks: [] },
     set_eq_enabled: (args) => ({
@@ -437,6 +444,7 @@ export const TAURI_MOCK_SCRIPT = `
       lyrics_font_step: 0, execution_provider: "cpu",
       available_execution_providers: ["cpu"],
       eq_enabled: !!(args && args.enabled), eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: false, crossfade_duration_ms: 3000,
     }),
     set_eq_gains: (args) => ({
       stem_mode: "two_stem", model_variant: "htdemucs", language: "en",
@@ -445,6 +453,24 @@ export const TAURI_MOCK_SCRIPT = `
       available_execution_providers: ["cpu"],
       eq_enabled: true,
       eq_gains_db: (args && args.gainsDb) || [0, 0, 0, 0, 0],
+      crossfade_enabled: false, crossfade_duration_ms: 3000,
+    }),
+    set_crossfade_enabled: (args) => ({
+      stem_mode: "two_stem", model_variant: "htdemucs", language: "en",
+      hide_batch_separate: false, cover_art_backdrop: false,
+      lyrics_font_step: 0, execution_provider: "cpu",
+      available_execution_providers: ["cpu"],
+      eq_enabled: false, eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: !!(args && args.enabled), crossfade_duration_ms: 3000,
+    }),
+    set_crossfade_duration_ms: (args) => ({
+      stem_mode: "two_stem", model_variant: "htdemucs", language: "en",
+      hide_batch_separate: false, cover_art_backdrop: false,
+      lyrics_font_step: 0, execution_provider: "cpu",
+      available_execution_providers: ["cpu"],
+      eq_enabled: false, eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: true,
+      crossfade_duration_ms: (args && args.durationMs) || 3000,
     }),
     restart_app: undefined,
     create_library: undefined,
