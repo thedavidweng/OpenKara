@@ -160,6 +160,7 @@ pub fn render_output_buffer(
     device_sample_rate: u32,
     device_channels: usize,
     resampler_cache: &mut ResamplerCache,
+    crossfade_incoming_resampler_cache: &mut ResamplerCache,
     eq_processor: &mut EqProcessor,
     peak_accumulator: &mut PeakAccumulator,
     peak_ring: &PeakRing,
@@ -278,6 +279,7 @@ pub fn render_output_buffer(
             device_sample_rate,
             device_channels,
             resampler_cache,
+            crossfade_incoming_resampler_cache,
         );
         if let Some((rendered, src_frames_advanced)) = crossfade_result {
             // `rendered` is in frames; convert to interleaved samples for the
@@ -619,7 +621,8 @@ fn render_crossfade_overlap(
     master: f32,
     device_sample_rate: u32,
     device_channels: usize,
-    resampler_cache: &mut ResamplerCache,
+    outgoing_resampler_cache: &mut ResamplerCache,
+    incoming_resampler_cache: &mut ResamplerCache,
 ) -> Option<(usize, u64)> {
     let output_frames = output.len() / device_channels;
     if output_frames == 0 {
@@ -673,6 +676,7 @@ fn render_crossfade_overlap(
             prepared,
             total_frames: effective,
             rendered_frames: 0,
+            incoming_source_frame: 0,
         });
     }
 
@@ -716,7 +720,7 @@ fn render_crossfade_overlap(
             master,
             device_sample_rate,
             device_channels,
-            Some(resampler_cache),
+            Some(outgoing_resampler_cache),
         );
 
         // Render incoming into scratch buffer (with master gain).
@@ -724,17 +728,18 @@ fn render_crossfade_overlap(
         // mixing (+=), so stale samples from the previous callback would
         // corrupt the incoming audio.
         let active = playback.active_crossfade.as_ref().unwrap();
-        let incoming_render_frame = active.rendered_frames;
+        // Source-frame cursor for the incoming track (not device frames).
+        let incoming_render_frame = active.incoming_source_frame;
         let incoming_buf = &mut crossfade_scratch[..chunk_samples];
         incoming_buf.fill(0.0);
-        let (inc_rendered, _inc_consumed) = mix_stem_resampled(
+        let (inc_rendered, inc_consumed) = mix_stem_resampled(
             incoming_buf,
             &active.prepared.audio,
             incoming_render_frame,
             master,
             device_sample_rate,
             device_channels,
-            Some(resampler_cache),
+            Some(incoming_resampler_cache),
         );
 
         // Mix: for each frame, calculate gains and mix every channel.
@@ -758,9 +763,10 @@ fn render_crossfade_overlap(
         src_frames_advanced += out_consumed;
         outgoing_frames_consumed += out_consumed;
 
-        // Advance the active crossfade rendered frames.
+        // Advance device-frame progress (equal-power) and incoming source cursor.
         if let Some(active) = playback.active_crossfade.as_mut() {
             active.rendered_frames += mix_frames as u64;
+            active.incoming_source_frame += inc_consumed;
         }
 
         chunk_start += chunk_frames;
@@ -820,7 +826,7 @@ fn render_crossfade_overlap(
             master,
             device_sample_rate,
             device_channels,
-            Some(resampler_cache),
+            Some(outgoing_resampler_cache),
         );
 
         // `mix_stem_resampled` returns interleaved samples (frames × channels);
@@ -1517,6 +1523,10 @@ where
     // Cached rubato resamplers for sample-rate conversion. Resamplers maintain
     // internal state so they must be reused across consecutive callbacks.
     let mut resampler_cache = ResamplerCache::new();
+    // Crossfade mixes two independent sources; each needs its own rubato
+    // filter state. Sharing one cache between outgoing and incoming would
+    // corrupt delay lines when rates differ.
+    let mut crossfade_incoming_resampler_cache = ResamplerCache::new();
     // EQ processor owned by the callback. A new stream constructs a new
     // processor; the controller publishes an `EqConfig` snapshot (enabled +
     // gains + monotonically increasing revision) and the callback compares
@@ -1564,6 +1574,7 @@ where
                         sample_rate,
                         channels,
                         &mut resampler_cache,
+                        &mut crossfade_incoming_resampler_cache,
                         &mut eq_processor,
                         &mut peak_accumulator,
                         &peak_ring,
@@ -1834,6 +1845,7 @@ mod tests {
         let device_channels = 2;
         let mut output = vec![0.0f32; 512 * device_channels];
         let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
         let mut eq = crate::audio::eq::EqProcessor::new(sample_rate, device_channels);
         let ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
@@ -1846,6 +1858,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut rc_in,
             &mut eq,
             &mut peak_acc,
             &ring,
@@ -1867,6 +1880,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut rc_in,
             &mut eq,
             &mut peak_acc,
             &ring,
@@ -1888,6 +1902,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut rc_in,
             &mut eq,
             &mut peak_acc,
             &ring,
@@ -2114,6 +2129,7 @@ mod tests {
         let device_channels = 2;
         let mut output = vec![0.0f32; 512 * device_channels];
         let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
         let mut eq = crate::audio::eq::EqProcessor::new(sample_rate, device_channels);
         let ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
@@ -2126,6 +2142,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut rc_in,
             &mut eq,
             &mut peak_acc,
             &ring,
@@ -2196,6 +2213,7 @@ mod tests {
         // swap should fill the remaining 412 frames from track B.
         let mut output = vec![0.0f32; 512 * device_channels];
         let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
         let ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
         let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
@@ -2207,6 +2225,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut rc_in,
             &mut EqProcessor::new(sample_rate, device_channels),
             &mut peak_acc,
             &ring,
@@ -2696,6 +2715,7 @@ mod tests {
 
         let mut output = vec![0.0f32; 512 * device_channels];
         let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
         let ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
         let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
@@ -2708,6 +2728,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut rc_in,
             &mut EqProcessor::new(sample_rate, device_channels),
             &mut peak_acc,
             &ring,
@@ -2752,6 +2773,7 @@ mod tests {
 
         let mut output = vec![0.0f32; 512 * device_channels];
         let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
         let ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
         let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
@@ -2764,6 +2786,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut rc_in,
             &mut EqProcessor::new(sample_rate, device_channels),
             &mut peak_acc,
             &ring,
@@ -2839,6 +2862,7 @@ mod tests {
 
         let mut output = vec![0.0f32; callback_frames * device_channels];
         let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
         let ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
         let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
@@ -2851,6 +2875,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut rc_in,
             &mut EqProcessor::new(sample_rate, device_channels),
             &mut peak_acc,
             &ring,
@@ -2917,6 +2942,7 @@ mod tests {
 
         let mut output = vec![0.0f32; callback_frames * device_channels];
         let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
         let ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
         let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
@@ -2929,6 +2955,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut rc_in,
             &mut EqProcessor::new(sample_rate, device_channels),
             &mut peak_acc,
             &ring,
@@ -3073,6 +3100,7 @@ mod tests {
 
         let mut output = vec![0.0f32; callback_frames * device_channels];
         let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
         let ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
         let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
@@ -3085,6 +3113,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut rc_in,
             &mut EqProcessor::new(sample_rate, device_channels),
             &mut peak_acc,
             &ring,
@@ -3179,6 +3208,7 @@ mod tests {
 
         let mut output = vec![0.0f32; callback_frames * device_channels];
         let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
         let ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
         let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
@@ -3191,6 +3221,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut rc_in,
             &mut EqProcessor::new(sample_rate, device_channels),
             &mut peak_acc,
             &ring,

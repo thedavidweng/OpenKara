@@ -158,10 +158,14 @@ pub struct CompletedTransition {
 #[derive(Debug)]
 pub struct ActiveCrossfade {
     pub prepared: PreparedTrack,
-    /// Total number of overlap frames captured at start time.
+    /// Total overlap length in *device* (output) frames, captured at start.
     pub total_frames: u64,
-    /// Number of overlap frames already rendered.
+    /// Overlap device frames already rendered (for equal-power progress).
     pub rendered_frames: u64,
+    /// Incoming track position in *source* frames. Advanced by
+    /// `mix_stem_resampled`'s source-frame consumption so rate conversion
+    /// cannot be fed a device-frame index.
+    pub incoming_source_frame: u64,
 }
 
 /// #89: Crossfade configuration with a revision for change detection.
@@ -1872,6 +1876,7 @@ mod tests {
             prepared: make_prepared(song_id, 0, fmt),
             total_frames,
             rendered_frames: 0,
+            incoming_source_frame: 0,
         }
     }
 

@@ -1176,6 +1176,7 @@ mod tests {
         let buffer_frames = 512;
         let mut output = vec![0.0f32; buffer_frames * device_channels];
         let mut rc = crate::audio::output::ResamplerCache::new();
+        let mut rc_in = crate::audio::output::ResamplerCache::new();
         let mut eq = crate::audio::eq::EqProcessor::new(device_rate, device_channels);
         let peak_ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
@@ -1189,6 +1190,7 @@ mod tests {
             device_rate,
             device_channels,
             &mut rc,
+            &mut rc_in,
             &mut eq,
             &mut peak_acc,
             &peak_ring,
@@ -1236,6 +1238,7 @@ mod tests {
 
         // Simulate cpal callback loop until track finishes
         let mut rc = crate::audio::output::ResamplerCache::new();
+        let mut rc_in = crate::audio::output::ResamplerCache::new();
         let mut eq = crate::audio::eq::EqProcessor::new(device_rate, device_channels);
         let peak_ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
@@ -1255,6 +1258,7 @@ mod tests {
                 device_rate,
                 device_channels,
                 &mut rc,
+                &mut rc_in,
                 &mut eq,
                 &mut peak_acc,
                 &peak_ring,
