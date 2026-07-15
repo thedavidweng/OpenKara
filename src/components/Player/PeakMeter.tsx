@@ -31,6 +31,9 @@ export function PeakMeter({
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setInterval> | null = null;
+    // Monotonic generation so a slow getAudioPeaks response cannot overwrite
+    // a newer poll (or apply after unmount/interval rebuild).
+    let requestGeneration = 0;
 
     const draw = (snapshot: AudioPeakSnapshot) => {
       const canvas = canvasRef.current;
@@ -92,9 +95,11 @@ export function PeakMeter({
 
     const poll = async () => {
       if (cancelled) return;
+      const generation = ++requestGeneration;
       try {
         const snapshot = await getAudioPeaks();
-        if (cancelled) return;
+        // Drop stale responses: a later poll already started, or we unmounted.
+        if (cancelled || generation !== requestGeneration) return;
         const now = performance.now();
         const advanced = snapshot.writeIndex !== lastWriteIndexRef.current;
         if (advanced) {
