@@ -164,6 +164,19 @@ describe("Flatpak packaging", () => {
     expect(manifestTemplate).not.toContain("--bundles none");
   });
 
+  test("offline pnpm install trusts the integrity-pinned lockfile", () => {
+    // pnpm 11 re-applies supply-chain policy by fetching registry metadata even
+    // with --offline; that requires network and fails inside the Flatpak
+    // sandbox. The lockfile is already integrity-pinned by flatpak-node sources.
+    const manifestTemplate = readProjectFile(
+      "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
+    );
+
+    expect(manifestTemplate).toContain(
+      "pnpm install --offline --frozen-lockfile --trust-lockfile",
+    );
+  });
+
   test("ships a pnpm tarball matching the packageManager pin in package.json", () => {
     // The Flatpak build installs pnpm from a tarball archive source in the
     // manifest template. If this tarball drifts from the packageManager version
