@@ -177,6 +177,52 @@ describe("Flatpak packaging", () => {
     );
   });
 
+  test("populates the offline pnpm 11 store via pnpm's extract worker", () => {
+    // pnpm 11 indexes packages in store-dir/v11/index.db (SQLite + msgpackr).
+    // Writing only CAFS files or legacy JSON index/ entries leaves packages
+    // invisible (ERR_PNPM_NO_OFFLINE_TARBALL). Populate must run *after* the
+    // pnpm tarball is installed so the worker at dist/worker.js is available.
+    const manifestTemplate = readProjectFile(
+      "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
+    );
+    const populateIdx = manifestTemplate.indexOf(
+      "node flatpak-node/populate_pnpm_store.mjs",
+    );
+    const installIdx = manifestTemplate.indexOf(
+      "pnpm install --offline --frozen-lockfile --trust-lockfile",
+    );
+    const pnpmInstallIdx = manifestTemplate.indexOf(
+      "npm install -g --prefix /run/build/openkara/pnpm-install ./pnpm-package",
+    );
+
+    expect(populateIdx).toBeGreaterThan(-1);
+    expect(installIdx).toBeGreaterThan(-1);
+    expect(pnpmInstallIdx).toBeGreaterThan(-1);
+    expect(pnpmInstallIdx).toBeLessThan(populateIdx);
+    expect(populateIdx).toBeLessThan(installIdx);
+
+    const nodeSources = JSON.parse(
+      readProjectFile("packaging/flatpak/generated/node-sources.0.json"),
+    ) as Array<{
+      type?: string;
+      "dest-filename"?: string;
+      contents?: string;
+      commands?: string[];
+    }>;
+    const populate = nodeSources.find(
+      (s) => s["dest-filename"] === "populate_pnpm_store.mjs",
+    );
+    expect(populate?.contents).toContain("worker_threads");
+    expect(populate?.contents).toContain("index.db");
+    expect(populate?.contents).toContain('type: "extract"');
+
+    // Shell source only wires store-dir / headers; it must not run the old
+    // Python JSON-index populate (pnpm 11 cannot read that layout).
+    const shell = nodeSources.find((s) => s.type === "shell");
+    expect(shell?.commands?.join("\n")).toContain("store-dir=");
+    expect(shell?.commands?.join("\n")).not.toContain("populate_pnpm_store.py");
+  });
+
   test("flatpak-node offline store targets pnpm 11 store version directory", () => {
     // pnpm 11 looks under store-dir/v11. Populate writing v10 makes every
     // offline install fail with ERR_PNPM_NO_OFFLINE_TARBALL.

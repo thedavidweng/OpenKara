@@ -83,3 +83,18 @@ Regenerates Flatpak offline pnpm dependency sources from `pnpm-lock.yaml`.
   `pnpm generate:flatpak-node-sources`
 - **When to run:** after changing JavaScript dependencies or lockfile entries
   used by Flatpak packaging
+
+## `flatpak/populate_pnpm_store.mjs`
+
+Seeds the Flatpak offline pnpm 11 store from downloaded tarballs. Canonical
+copy also lives inline in `node-sources.0.json` as
+`flatpak-node/populate_pnpm_store.mjs` and is invoked from the Flatpak
+manifest **after** the pnpm tarball is installed.
+
+- **Why:** pnpm 11 indexes packages in `store-dir/v11/index.db` (SQLite +
+  msgpackr). Legacy JSON `index/` entries are ignored, which previously
+  produced `ERR_PNPM_NO_OFFLINE_TARBALL` despite intact CAFS blobs.
+- **How:** replays each lockfile tarball through pnpm's own
+  `dist/worker.js` extract path so the store matches a normal install.
+- **Run (inside Flatpak build):**
+  `node flatpak-node/populate_pnpm_store.mjs <manifest.json> <tarball-dir> <store-dir>`
