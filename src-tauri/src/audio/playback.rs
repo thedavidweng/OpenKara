@@ -1785,7 +1785,6 @@ mod tests {
         assert!(controller.prepared_track.is_none());
     }
 
-
     #[test]
     fn current_track_is_playing_true_when_playing_no_fade() {
         let mut controller = super::PlaybackController::default();
@@ -1866,7 +1865,7 @@ mod tests {
             controller.current_track_is_playing(),
             "should be playing after resume (FadingIn is not FadingOut)"
         );
-
+    }
 
     // ── #89: Crossfade state tests ──────────────────────────────────────
 

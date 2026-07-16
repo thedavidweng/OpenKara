@@ -2426,6 +2426,101 @@ mod tests {
         }
     }
 
+    // The peak accumulator runs AFTER the soft limiter in the render
+    // pipeline (EQ → soft limiter → fade → peaks). This test verifies that
+    // the PeakRing captures the post-limiter values, not the pre-limiter
+    // values. Without this, a bug that moves peak_accumulator.process()
+    // before the soft_limit loop would show clamped-to-1.0 peaks instead
+    // of the actual compressed values, hiding the real output levels from
+    // the visualizer.
+
+    #[test]
+    fn peak_ring_captures_post_limiter_values() {
+        use crate::audio::decode::DecodedAudio;
+        use crate::audio::eq::LIMITER_THRESHOLD;
+        use crate::audio::peaks::PeakRing;
+
+        let sample_rate: u32 = 44_100;
+        let channels: usize = 2;
+        let device_channels = 2;
+
+        // Track with samples above the limiter threshold (1.0). The soft
+        // limiter will compress these to < 1.0 but > LIMITER_THRESHOLD.
+        // If peaks are captured pre-limiter, the ring would show 1.0
+        // (clamped by sanitize_peak). If post-limiter, it shows the
+        // actual compressed value (< 1.0). We use 1.0 (not 2.0) because
+        // tanh saturates for large values — soft_limit(2.0) ≈ 1.0, which
+        // would make the post-limiter assertion indistinguishable from
+        // the pre-limiter clamped value.
+        let samples = vec![1.0_f32; 512 * channels];
+        let decoded = DecodedAudio {
+            sample_rate,
+            channels,
+            duration_ms: (512 * 1000 / sample_rate as usize) as u64,
+            samples,
+        };
+
+        let mut controller = crate::audio::playback::PlaybackController::default();
+        controller.start_track("song-loud".to_owned(), decoded, 0);
+        controller.play(0).unwrap();
+        // Clear the fade-in so the test measures raw post-limiter values.
+        controller.fade = crate::audio::playback::FadeState::None;
+
+        let mut output = vec![0.0f32; 512 * device_channels];
+        let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
+        let ring = std::sync::Arc::new(PeakRing::new());
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
+        let _rendered = render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            &mut crossfade_scratch,
+            sample_rate,
+            device_channels,
+            &mut rc,
+            &mut rc_in,
+            &mut EqProcessor::new(sample_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        // The output samples must be soft-limited (< 1.0).
+        for (i, sample) in output.iter().enumerate() {
+            assert!(
+                *sample < 1.0,
+                "output sample {i} must be soft-limited, got {sample}"
+            );
+        }
+
+        // The peak ring must capture the post-limiter values. The 512-frame
+        // window produces exactly one peak pair. The peaks must be < 1.0
+        // (post-limiter), not 1.0 (which would indicate pre-limiter capture
+        // clamped by sanitize_peak).
+        let (_idx, peaks) = ring.snapshot();
+        assert!(
+            !peaks.is_empty(),
+            "peak ring must have at least one entry after rendering 512 frames"
+        );
+        let peak = &peaks[0];
+        assert!(
+            peak[0] < 1.0 && peak[1] < 1.0,
+            "peak ring must capture post-limiter values (< 1.0), got L={} R={}",
+            peak[0],
+            peak[1]
+        );
+        // The post-limiter value must be above the threshold (the limiter
+        // compresses, it does not zero).
+        assert!(
+            peak[0] > LIMITER_THRESHOLD && peak[1] > LIMITER_THRESHOLD,
+            "post-limiter peak must be above threshold {}, got L={} R={}",
+            LIMITER_THRESHOLD,
+            peak[0],
+            peak[1]
+        );
+    }
+
     /// #103: When the user pauses near the end of a track and the track
     /// reaches EOF during the pause fade-out, the gapless swap must NOT
     /// auto-advance to the preloaded next track. The user's intent is to
