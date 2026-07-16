@@ -45,14 +45,13 @@ jobs:
       - name: Regenerate Flatpak Cargo sources
         run: node scripts/generate-flatpak-cargo-sources.mjs
 
-      - name: Verify Cargo sources are in sync
-        run: |
-          if ! git diff --quiet packaging/flatpak/generated/cargo-sources.json; then
-            echo "::error::Cargo sources are stale after regeneration"
-            git diff --stat packaging/flatpak/generated/cargo-sources.json
-            exit 1
-          fi
-
+      # RATIONALE: Stage and commit *before* any verification. For an ordinary
+      # Dependabot Cargo update, regenerating from the changed Cargo.lock is
+      # *supposed* to change cargo-sources.json. A staleness check placed
+      # between regeneration and the auto-commit would exit before the commit
+      # step, so future stale manifests could never be auto-synced. The
+      # idempotence/staleness verification lives in the read-only PR test
+      # (tests/flatpak-packaging.test.ts) instead.
       - name: Commit changes if any
         run: |
           git config user.name "github-actions[bot]"

@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
+import { renderCargoSources } from "../scripts/generate-flatpak-cargo-sources.mjs";
 
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 
@@ -502,40 +502,21 @@ describe("Flatpak packaging", () => {
   });
 
   test("regenerating Cargo sources produces a clean diff (no stale manifest)", () => {
-    // Run the Cargo generator and verify the output matches the committed
-    // file exactly. This catches stale manifests after Cargo.lock changes.
-    const generator = join(
-      projectRoot,
-      "scripts/generate-flatpak-cargo-sources.mjs",
-    );
-    const cargoSourcesPath = join(
-      projectRoot,
+    // Render the Cargo sources from the committed Cargo.lock using the pure
+    // generator function and compare the text against the committed manifest.
+    // This catches stale manifests after Cargo.lock changes.
+    //
+    // Non-destructive: we never write into the real checkout, so a mismatch
+    // cannot discard a developer's intentional uncommitted generated-manifest
+    // edit (the old test ran `git checkout -- cargo-sources.json` on failure).
+    const lockfile = readProjectFile("src-tauri/Cargo.lock");
+    const committed = readProjectFile(
       "packaging/flatpak/generated/cargo-sources.json",
     );
 
-    // Capture the committed file content before regeneration.
-    const before = readFileSync(cargoSourcesPath, "utf8");
+    const rendered = renderCargoSources(lockfile);
 
-    // Run the generator (it writes directly to the output path).
-    execFileSync("node", [generator], { cwd: projectRoot });
-
-    // Read the regenerated content and compare.
-    const after = readFileSync(cargoSourcesPath, "utf8");
-
-    // Restore the original file if the generator changed it (shouldn't happen
-    // in a clean repo, but we don't want to leave test side-effects).
-    if (after !== before) {
-      // Use git to restore the committed version so the working tree stays clean.
-      execFileSync(
-        "git",
-        ["checkout", "--", "packaging/flatpak/generated/cargo-sources.json"],
-        {
-          cwd: projectRoot,
-        },
-      );
-    }
-
-    expect(after).toBe(before);
+    expect(rendered).toBe(committed);
   });
 
   test("release automation never opens initial Flathub submission PRs automatically", () => {

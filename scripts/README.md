@@ -116,8 +116,13 @@ Regenerates Flatpak offline Cargo dependency sources from `src-tauri/Cargo.lock`
 
 - **Input:** `src-tauri/Cargo.lock`
 - **Output:** `packaging/flatpak/generated/cargo-sources.json`
-- **Run:** `node scripts/generate-flatpak-cargo-sources.mjs` or
+- **Run:** `node scripts/generate-flatpak-cargo-sources.mjs [lockfile] [output]` or
   `pnpm generate:flatpak-cargo-sources`
+- **Optional args:** `lockfile` and `output` override the default input/output
+  paths (used by tests to render into a temp directory without touching the
+  checkout)
+- **Exports:** `parseCargoLockfile`, `generateCargoSources`, and
+  `renderCargoSources` (pure rendering for non-destructive tests)
 - **When to run:** after changing Rust dependencies or `Cargo.lock` entries
   used by Flatpak packaging
 - **Idempotent:** two consecutive runs produce zero diff in the output file
