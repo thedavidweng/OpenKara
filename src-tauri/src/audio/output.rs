@@ -289,10 +289,18 @@ pub fn render_output_buffer(
     //
     // The common outgoing streaming path remains gapless-only — streaming
     // tracks are never opportunistically decoded on the realtime thread.
+    //
+    // #104: An already-active crossfade must continue to render even if the
+    // user disabled the crossfade setting mid-overlap. The prepared track was
+    // already moved into `active_crossfade` when the overlap started, so the
+    // normal EOF path has no `prepared_track` to swap to — skipping the
+    // crossfade branch here would stall playback at the outgoing tail.
+    // Disabling the setting should only prevent *initiating* new crossfades,
+    // not abort one already in progress.
     if !has_streaming
         && !has_stems
-        && playback.crossfade_config.enabled
-        && (playback.active_crossfade.is_some() || playback.prepared_track.is_some())
+        && (playback.active_crossfade.is_some()
+            || (playback.crossfade_config.enabled && playback.prepared_track.is_some()))
     {
         let crossfade_result = render_crossfade_overlap(
             playback,
