@@ -830,7 +830,18 @@ fn render_crossfade_overlap(
         .as_ref()
         .is_some_and(|a| a.rendered_frames >= a.total_frames);
 
-    if overlap_complete {
+    // #103: Do not promote when the user is pausing (fade-out in progress).
+    // Unlike the normal gapless path, the crossfade promotion would otherwise
+    // clear `fade` and start the incoming track, so a fade-out pause inside
+    // the overlap window would advance to the next song instead of stopping.
+    // The `current_track_is_playing()` helper returns false during a
+    // `FadingOut`, matching the guard on the normal gapless swap path. The
+    // active crossfade is preserved so a future resume can complete the
+    // promotion; the overlap audio already rendered is faded out by the
+    // caller's fade gain, and any remaining outgoing frames (near EOF) are
+    // rendered and faded out below.
+    let mut promoted = false;
+    if overlap_complete && playback.current_track_is_playing() {
         // Promote the incoming track to current_track.
         let active = playback.active_crossfade.take().unwrap();
         // #89: Promote using the incoming *source* frame cursor, not device
@@ -856,6 +867,7 @@ fn render_crossfade_overlap(
         // in the caller would skip `out_consumed` frames of the incoming
         // track, producing an audible click at the transition seam.
         src_frames_advanced = 0;
+        promoted = true;
     }
 
     // If there are remaining frames in the callback after the overlap,
@@ -863,16 +875,18 @@ fn render_crossfade_overlap(
     if rendered_output_frames < output_frames {
         let remaining_buf = &mut output[rendered_output_frames * device_channels..];
 
-        // If overlap completed, the current track is now the promoted incoming
-        // track at its offset (`render_frame = incoming_frame_offset`), so
-        // `track.render_frame` is the correct start frame.
-        // If overlap didn't complete (incoming exhausted early), the current
-        // track is still the outgoing track and `track.render_frame` has NOT
-        // been advanced by the caller yet — we must offset it by the outgoing
-        // frames already consumed during the overlap phase to avoid
-        // re-reading the same source segment.
+        // If the overlap completed and we promoted, the current track is now
+        // the promoted incoming track at its offset
+        // (`render_frame = incoming_frame_offset`), so `track.render_frame`
+        // is the correct start frame.
+        // If the overlap did not complete (incoming exhausted early), or if
+        // the overlap completed but promotion was suppressed because the user
+        // is pausing, the current track is still the outgoing track and
+        // `track.render_frame` has NOT been advanced by the caller yet — we
+        // must offset it by the outgoing frames already consumed during the
+        // overlap phase to avoid re-reading the same source segment.
         let track = playback.current_track.as_ref().unwrap();
-        let current_render_frame = if overlap_complete {
+        let current_render_frame = if promoted {
             track.render_frame
         } else {
             track.render_frame + outgoing_frames_consumed
@@ -2424,6 +2438,34 @@ mod tests {
                 "frame {i} should be soft-limited, got {sample}"
             );
         }
+
+        // Tail-specific peak regression: the 100-frame A + 412-frame B tail
+        // reaches exactly one 512-frame peak window. The published stereo
+        // pair must be the limited B peak — strictly below 1.0 and above
+        // LIMITER_THRESHOLD, consistent with the rendered B tail above. This
+        // fails if the gapless tail peak accumulator is moved ahead of the
+        // limiter (the ring would then capture the pre-limiter 1.0 value,
+        // clamped by sanitize_peak, instead of the compressed post-limiter
+        // value).
+        let (_idx, peaks) = ring.snapshot();
+        assert!(
+            !peaks.is_empty(),
+            "peak ring must have at least one entry after the 512-frame tail window"
+        );
+        let peak = &peaks[0];
+        assert!(
+            peak[0] < 1.0 && peak[1] < 1.0,
+            "tail peak ring must capture post-limiter values (< 1.0), got L={} R={}",
+            peak[0],
+            peak[1]
+        );
+        assert!(
+            peak[0] > LIMITER_THRESHOLD && peak[1] > LIMITER_THRESHOLD,
+            "tail peak ring must be above threshold {}, got L={} R={}",
+            LIMITER_THRESHOLD,
+            peak[0],
+            peak[1]
+        );
     }
 
     // The peak accumulator runs AFTER the soft limiter in the render
@@ -3245,6 +3287,114 @@ mod tests {
             rendered_samples,
             callback_frames * device_channels,
             "rendered_samples must equal the full callback buffer, not be              inflated by the channel count for the post-overlap section"
+        );
+    }
+
+    // ── #103: Crossfade promotion must respect pause ───────────────────
+    //
+    // The crossfade promotion path (`promote_crossfade_track`) clears `fade`
+    // and starts the incoming track. Unlike the normal gapless path, it did
+    // not check `current_track_is_playing()`, so a fade-out pause inside the
+    // overlap window would advance to the next song instead of stopping.
+    // This test verifies the promotion is suppressed while the user is
+    // pausing, and that a subsequent resume completes the promotion.
+
+    #[test]
+    fn crossfade_promotion_suppressed_during_pause() {
+        let sample_rate: u32 = 44_100;
+        let device_channels = 2;
+        // effective overlap = 22050 frames (500ms floor), callback buffer =
+        // 22050 frames so the overlap completes within this single callback.
+        let callback_frames = 22_050;
+        let effective_frames: u64 = 22_050;
+        let outgoing_total = 2 * effective_frames;
+        let incoming_total = 2 * effective_frames;
+        let render_frame = effective_frames; // remaining = effective
+
+        let mut controller = build_crossfade_controller(
+            render_frame,
+            outgoing_total,
+            incoming_total,
+            500, // 500ms configured → effective = 22050 = callback size
+        );
+        // Clear the fade-in from build_crossfade_controller's play() call so
+        // the test measures the pause behavior directly.
+        controller.fade = crate::audio::playback::FadeState::None;
+        // Simulate a user pause inside the overlap window.
+        controller.pause(0).unwrap();
+        assert!(matches!(
+            controller.fade,
+            crate::audio::playback::FadeState::FadingOut { .. }
+        ));
+
+        let mut output = vec![0.0f32; callback_frames * device_channels];
+        let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
+
+        super::render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            &mut crossfade_scratch,
+            sample_rate,
+            device_channels,
+            &mut rc,
+            &mut rc_in,
+            &mut EqProcessor::new(sample_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        // The overlap completed, but the promotion must be suppressed because
+        // the user is pausing. The current track must still be the outgoing
+        // track, and the active crossfade must be preserved so a future
+        // resume can complete the promotion.
+        assert_eq!(
+            controller.current_track.as_ref().unwrap().song_id,
+            "song-a",
+            "crossfade promotion must not fire during a pause"
+        );
+        assert!(
+            controller.active_crossfade.is_some(),
+            "active crossfade must be preserved during a pause so resume can complete it"
+        );
+
+        // User presses resume (play). current_track_is_playing() must now
+        // return true (FadingIn is not FadingOut).
+        controller.play(0).unwrap();
+        assert!(
+            controller.current_track_is_playing(),
+            "current_track_is_playing must be true after resume"
+        );
+
+        // Render another buffer. The overlap is already complete, so the
+        // promotion should now fire and advance to the incoming track.
+        let mut output2 = vec![0.0f32; callback_frames * device_channels];
+        super::render_output_buffer(
+            &mut controller,
+            &mut output2,
+            &mut Vec::new(),
+            &mut crossfade_scratch,
+            sample_rate,
+            device_channels,
+            &mut rc,
+            &mut rc_in,
+            &mut EqProcessor::new(sample_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        assert_eq!(
+            controller.current_track.as_ref().unwrap().song_id,
+            "song-b",
+            "crossfade promotion must fire after resume from pause"
+        );
+        assert!(
+            controller.active_crossfade.is_none(),
+            "active crossfade must be consumed after resume promotion"
         );
     }
 
