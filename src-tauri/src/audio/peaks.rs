@@ -83,10 +83,12 @@ impl PeakRing {
         if first_index == second_index {
             return (first_index, result);
         }
-        // Retry once from the newer index.
+        // Retry once from the newer index. Return `second_index` — the index
+        // that was actually used for the copy — so the cursor never points
+        // past data that was included in the snapshot. Loading a newer index
+        // after the copy would advertise entries the reader never observed.
         let retry = self.copy_entries(second_index);
-        let third_index = self.write_index.load(Ordering::Acquire);
-        (third_index, retry)
+        (second_index, retry)
     }
 
     fn copy_entries(&self, write_index: u64) -> Vec<[f32; 2]> {
