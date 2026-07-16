@@ -607,6 +607,10 @@ pub fn render_output_buffer(
             // gapless crossover. Without this, the limiter is skipped for the
             // tail samples and listeners with EQ boost hear brief distortion.
             eq_processor.process(remaining, extra_rendered);
+            // Soft limiter: bound peaks to prevent clipping after EQ boost,
+            // mirroring the normal render path and the crossfade fallback
+            // gapless tail above. Without this, a positive EQ band gain on
+            // the transition tail could exceed full-scale and clip.
             for sample in remaining[..extra_rendered].iter_mut() {
                 *sample = soft_limit(*sample);
             }
@@ -2330,6 +2334,97 @@ mod tests {
         assert_eq!(track.render_frame, 412);
     }
 
+    /// limiter after EQ, mirroring the normal render path and the crossfade
+    /// fallback gapless path. Without it, a positive-EQ-boosted tail could
+    /// exceed full-scale and clip. This test feeds track B samples above the
+    /// limiter threshold and asserts the rendered tail is bounded.
+    #[test]
+    fn gapless_swap_tail_applies_soft_limiter() {
+        use crate::audio::decode::DecodedAudio;
+        use crate::audio::eq::LIMITER_THRESHOLD;
+        use crate::audio::output_format::OutputFormatSnapshot;
+        use crate::audio::playback::{PlaybackController, PreparedTrack};
+
+        let sample_rate: u32 = 44_100;
+        let channels: usize = 2;
+        let device_channels = 2;
+
+        // Track A: 100 frames of 0.1, then EOF.
+        let track_a_samples = vec![0.1_f32; 100 * channels];
+        let track_a = DecodedAudio {
+            sample_rate,
+            channels,
+            duration_ms: (100 * 1000 / sample_rate as usize) as u64,
+            samples: track_a_samples,
+        };
+
+        let mut controller = PlaybackController::default();
+        controller.start_track("song-a".to_owned(), track_a, 0);
+        controller.play(0).unwrap();
+        controller.fade = crate::audio::playback::FadeState::None;
+
+        // Track B: 512 frames above the limiter threshold (1.0). If the
+        // limiter is applied, the tail samples must be compressed below 1.0
+        // and above the threshold. If the limiter is skipped, they will be
+        // 1.0 exactly (uncompressed) and the test fails on the upper bound.
+        let fmt = OutputFormatSnapshot::new(1, sample_rate, channels as u16);
+        let track_b_samples = vec![1.0_f32; 512 * channels];
+        let prepared = PreparedTrack {
+            preload_request_generation: 0,
+            preload_generation: fmt.generation,
+            song_id: "song-b".to_owned(),
+            output_format: fmt,
+            audio: DecodedAudio {
+                sample_rate,
+                channels,
+                duration_ms: (512 * 1000 / sample_rate as usize) as u64,
+                samples: track_b_samples,
+            },
+        };
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+
+        let mut output = vec![0.0f32; 512 * device_channels];
+        let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
+        let _rendered = render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            &mut crossfade_scratch,
+            sample_rate,
+            device_channels,
+            &mut rc,
+            &mut rc_in,
+            &mut EqProcessor::new(sample_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        // Track A frames (0.1) are below the threshold and pass through.
+        for (i, sample) in output.iter().enumerate().take(100 * device_channels) {
+            assert!(
+                (*sample - 0.1).abs() < 1e-6,
+                "frame {i} should be from track A: got {sample}"
+            );
+        }
+
+        // Track B tail frames (originally 2.0) must be limited to < 1.0 and
+        // above the threshold (the limiter compresses, it does not zero).
+        for (i, sample) in output
+            .iter()
+            .enumerate()
+            .take(512 * device_channels)
+            .skip(100 * device_channels)
+        {
+            assert!(
+                *sample > LIMITER_THRESHOLD && *sample < 1.0,
+                "frame {i} should be soft-limited, got {sample}"
+            );
+        }
+    }
 
     /// #103: When the user pauses near the end of a track and the track
     /// reaches EOF during the pause fade-out, the gapless swap must NOT
@@ -2393,6 +2488,7 @@ mod tests {
         let mut output = vec![0.0f32; 512 * device_channels];
         let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
         let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
         let ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
         let _rendered = render_output_buffer(
@@ -2403,6 +2499,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut rc_in,
             &mut EqProcessor::new(sample_rate, device_channels),
             &mut peak_acc,
             &ring,
@@ -2497,6 +2594,7 @@ mod tests {
         let mut output = vec![0.0f32; 512 * device_channels];
         let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
         let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
         let ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
         let _rendered = render_output_buffer(
@@ -2507,6 +2605,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut rc_in,
             &mut EqProcessor::new(sample_rate, device_channels),
             &mut peak_acc,
             &ring,
@@ -2552,6 +2651,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut rc_in,
             &mut EqProcessor::new(sample_rate, device_channels),
             &mut peak_acc,
             &ring,
@@ -2661,6 +2761,7 @@ mod tests {
         let mut output = vec![0.0f32; 512 * device_channels];
         let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
         let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
         let ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
         let _rendered = render_output_buffer(
@@ -2671,6 +2772,7 @@ mod tests {
             sample_rate,
             device_channels,
             &mut rc,
+            &mut rc_in,
             &mut EqProcessor::new(sample_rate, device_channels),
             &mut peak_acc,
             &ring,
