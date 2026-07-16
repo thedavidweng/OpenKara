@@ -176,9 +176,8 @@ describe("PeakMeter", () => {
     expect(mockGetAudioPeaks.mock.calls.length).toBe(callsBefore);
   });
 
-  it("discards a slow getAudioPeaks response when a newer poll has started", async () => {
-    // Overlapping polls: first call stays pending while a second poll starts;
-    // when the older response finally resolves it must not draw (generation gate).
+  it("coalesces rapid ticks into at most one concurrent IPC call", async () => {
+    // A slow backend: every getAudioPeaks() stays pending until we resolve it.
     type Resolver = (value: {
       writeIndex: number;
       peaks: Array<[number, number]>;
@@ -192,32 +191,110 @@ describe("PeakMeter", () => {
     );
 
     render(<PeakMeter width={120} height={24} />);
-    // First poll is scheduled on mount (void poll()).
+    // Mount poll starts one in-flight call.
     await vi.advanceTimersByTimeAsync(0);
     expect(resolvers.length).toBe(1);
 
-    // Second poll while first is still in flight.
+    // Advance several timer ticks while the first call is still unresolved.
+    // The single-flight guard must coalesce these into rerunRequested, not
+    // start additional concurrent IPC calls.
     await vi.advanceTimersByTimeAsync(34);
+    await vi.advanceTimersByTimeAsync(34);
+    await vi.advanceTimersByTimeAsync(34);
+    expect(resolvers.length).toBe(1);
+
+    // Resolving the in-flight call clears it; the coalesced rerun fires once.
+    resolvers[0]!({ writeIndex: 1, peaks: [[0.5, 0.5]] });
+    await vi.advanceTimersByTimeAsync(0);
     expect(resolvers.length).toBe(2);
 
-    // Resolve newer poll first with a distinctive writeIndex — should draw.
-    resolvers[1]!({
-      writeIndex: 20,
-      peaks: [[0.9, 0.9]],
-    });
-    await Promise.resolve();
-    await Promise.resolve();
-    const afterNewer = canvasMock.ctx.fillRect.mock.calls.length;
-    expect(afterNewer).toBeGreaterThan(0);
+    // Further ticks while the follow-up is in flight again coalesce.
+    await vi.advanceTimersByTimeAsync(34);
+    await vi.advanceTimersByTimeAsync(34);
+    expect(resolvers.length).toBe(2);
+  });
 
-    // Late older response with a different writeIndex must be ignored.
-    resolvers[0]!({
-      writeIndex: 99,
+  it("draws once for a delayed response rather than perpetually discarding it", async () => {
+    // When IPC takes longer than a tick, the single follow-up poll must still
+    // draw its result once — it is not invalidated by a newer tick because no
+    // newer tick starts a concurrent request.
+    type Resolver = (value: {
+      writeIndex: number;
+      peaks: Array<[number, number]>;
+    }) => void;
+    const resolvers: Resolver[] = [];
+    mockGetAudioPeaks.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+
+    render(<PeakMeter width={120} height={24} />);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(resolvers.length).toBe(1);
+
+    // Ticks arrive while the call is pending — coalesced, no new calls.
+    await vi.advanceTimersByTimeAsync(34);
+    await vi.advanceTimersByTimeAsync(34);
+    expect(resolvers.length).toBe(1);
+
+    const beforeDraw = canvasMock.ctx.fillRect.mock.calls.length;
+    // The delayed response resolves and must draw (writeIndex advanced).
+    resolvers[0]!({ writeIndex: 7, peaks: [[0.8, 0.8]] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(canvasMock.ctx.fillRect.mock.calls.length).toBeGreaterThan(
+      beforeDraw,
+    );
+  });
+
+  it("does not draw a response that resolves after unmount", async () => {
+    type Resolver = (value: {
+      writeIndex: number;
+      peaks: Array<[number, number]>;
+    }) => void;
+    const resolvers: Resolver[] = [];
+    mockGetAudioPeaks.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+
+    const { unmount } = render(<PeakMeter width={120} height={24} />);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(resolvers.length).toBe(1);
+
+    unmount();
+    const beforeDraw = canvasMock.ctx.fillRect.mock.calls.length;
+
+    // A late resolution after unmount must not draw.
+    resolvers[0]!({ writeIndex: 9, peaks: [[0.9, 0.9]] });
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(canvasMock.ctx.fillRect.mock.calls.length).toBe(beforeDraw);
+  });
+
+  it("an older write index cannot replace a newer canvas state", async () => {
+    // The freshness predicate is monotonic (>): a response whose writeIndex is
+    // less than the last drawn index must not redraw, even if it is the active
+    // generation (e.g. a reordered or wrapped backend response).
+    mockGetAudioPeaks.mockResolvedValue({
+      writeIndex: 10,
+      peaks: [[0.5, 0.5]],
+    });
+    render(<PeakMeter width={120} height={24} />);
+    await vi.advanceTimersByTimeAsync(100);
+    const drawnAt10 = canvasMock.ctx.fillRect.mock.calls.length;
+
+    // A subsequent poll returns an older writeIndex — must not redraw.
+    mockGetAudioPeaks.mockResolvedValue({
+      writeIndex: 3,
       peaks: [[0.1, 0.1]],
     });
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(canvasMock.ctx.fillRect.mock.calls.length).toBe(afterNewer);
+    await vi.advanceTimersByTimeAsync(34);
+    expect(canvasMock.ctx.fillRect.mock.calls.length).toBe(drawnAt10);
   });
 
   it("falls back to flat-line when peaks go stale after playback stops", async () => {
