@@ -235,36 +235,14 @@ impl EqProcessor {
             return;
         }
 
-        // Recompute coefficients at most once per callback per band using the
-        // current smoothed gain. `update_coefficients` preserves delay state.
-        // A coefficient error disables only that band for this callback; the
-        // last valid coefficients are retained (no update, no panic).
-        for ch in 0..self.channels {
-            let Some(bands) = self.filters.get_mut(ch) else {
-                continue;
-            };
-            for band in 0..5 {
-                let Some(filter) = bands[band].as_mut() else {
-                    continue;
-                };
-                let gain = self.current_gains_db[band];
-                let Ok(coeffs) = Coefficients::<f32>::from_params(
-                    Type::PeakingEQ(gain),
-                    Hertz::from_hz(self.sample_rate)
-                        .unwrap_or_else(|_| Hertz::from_hz(1.0_f32).unwrap()),
-                    Hertz::from_hz(EQ_BAND_FREQUENCIES_HZ[band])
-                        .unwrap_or_else(|_| Hertz::from_hz(1.0_f32).unwrap()),
-                    EQ_Q,
-                ) else {
-                    continue;
-                };
-                filter.update_coefficients(coeffs);
-            }
-        }
+        let sample_rate = self.sample_rate;
 
         // Advance stored per-frame steps (fixed at last target change). Do not
         // recompute step from remaining distance here — that would restart a
         // fresh 50 ms ramp every callback and become buffer-size dependent.
+        // Coefficients are recomputed per frame from the advanced smoothed
+        // gain so the filter response follows the same deterministic schedule
+        // as the scalar ramps, independent of CPAL callback partition size.
         for frame in 0..frames {
             for band in 0..5 {
                 let step = self.gain_steps_db[band];
@@ -289,6 +267,33 @@ impl EqProcessor {
                 self.wet_step = 0.0;
             } else {
                 self.wet_mix += self.wet_step;
+            }
+
+            // Recompute coefficients for this frame from the advanced smoothed
+            // gain. `update_coefficients` preserves delay state. A coefficient
+            // error disables only that band for this frame; the last valid
+            // coefficients are retained (no update, no panic).
+            let gains_db = self.current_gains_db;
+            for ch in 0..self.channels {
+                let Some(bands) = self.filters.get_mut(ch) else {
+                    continue;
+                };
+                for band in 0..5 {
+                    let Some(filter) = bands[band].as_mut() else {
+                        continue;
+                    };
+                    let Ok(coeffs) = Coefficients::<f32>::from_params(
+                        Type::PeakingEQ(gains_db[band]),
+                        Hertz::from_hz(sample_rate)
+                            .unwrap_or_else(|_| Hertz::from_hz(1.0_f32).unwrap()),
+                        Hertz::from_hz(EQ_BAND_FREQUENCIES_HZ[band])
+                            .unwrap_or_else(|_| Hertz::from_hz(1.0_f32).unwrap()),
+                        EQ_Q,
+                    ) else {
+                        continue;
+                    };
+                    filter.update_coefficients(coeffs);
+                }
             }
 
             // Snapshot the per-frame scalar gains so the inner channel loop
@@ -713,5 +718,230 @@ mod tests {
         assert!(!c.enabled);
         assert_eq!(c.gains_db, [0.0; 5]);
         assert_eq!(c.revision, 0);
+    }
+
+    // ── Callback-chunk invariance ─────────────────────────────────────────
+
+    /// Run a processor over a pre-filled input buffer split into the given
+    /// partition sizes (in frames). Returns the processed output buffer.
+    fn run_partitioned(
+        proc: &mut EqProcessor,
+        input: &[f32],
+        channels: usize,
+        partitions: &[usize],
+    ) -> Vec<f32> {
+        let mut buf = input.to_vec();
+        let mut start = 0usize;
+        let mut pi = 0usize;
+        while start < buf.len() {
+            let frames = if pi < partitions.len() {
+                partitions[pi]
+            } else {
+                // Remainder: drain everything left in one go.
+                (buf.len() - start) / channels
+            };
+            pi += 1;
+            let end = (start + frames * channels).min(buf.len());
+            if end == start {
+                break;
+            }
+            let rendered = end - start;
+            proc.process(&mut buf[start..end], rendered);
+            start = end;
+        }
+        buf
+    }
+
+    /// Snapshot of the parameter state used for chunk-invariance comparison.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    struct ParamSnapshot {
+        current_gains_db: [f32; 5],
+        current_preamp: f32,
+        wet_mix: f32,
+    }
+
+    impl EqProcessor {
+        fn snapshot(&self) -> ParamSnapshot {
+            ParamSnapshot {
+                current_gains_db: self.current_gains_db,
+                current_preamp: self.current_preamp,
+                wet_mix: self.wet_mix,
+            }
+        }
+    }
+
+    /// Build a sine-tone input buffer of `frames` frames for `channels`.
+    fn tone_input(frames: usize, channels: usize, freq: f32, sample_rate: u32) -> Vec<f32> {
+        let mut buf = vec![0.0f32; frames * channels];
+        let phase_step = 2.0 * std::f32::consts::PI * freq / sample_rate as f32;
+        let mut phase: f32 = 0.0;
+        for frame in 0..frames {
+            let s = phase.sin() * 0.5;
+            for ch in 0..channels {
+                buf[frame * channels + ch] = s;
+            }
+            phase += phase_step;
+        }
+        buf
+    }
+
+    #[test]
+    fn audio_output_is_callback_chunk_invariant_at_48khz() {
+        let sample_rate = 48_000u32;
+        let channels = 2;
+        let total_frames = 2_400; // 50 ms @ 48 kHz
+        let partitions = [9usize, 127, 256, 1_024];
+
+        let input = tone_input(total_frames, channels, 910.0, sample_rate);
+
+        // Single 2,400-frame callback.
+        let mut proc_single = EqProcessor::new(sample_rate, channels);
+        proc_single.set_enabled(true);
+        proc_single.set_gains([0.0, 0.0, 12.0, 0.0, 0.0]);
+        let single_out = run_partitioned(&mut proc_single, &input, channels, &[total_frames]);
+        let single_snap = proc_single.snapshot();
+
+        // Uneven partitions summing to 2,400 (9+127+256+1024 = 1416, remainder 984).
+        let mut proc_split = EqProcessor::new(sample_rate, channels);
+        proc_split.set_enabled(true);
+        proc_split.set_gains([0.0, 0.0, 12.0, 0.0, 0.0]);
+        let split_out = run_partitioned(&mut proc_split, &input, channels, &partitions);
+        let split_snap = proc_split.snapshot();
+
+        // Parameter state must match exactly at the same total frame count.
+        assert_eq!(
+            single_snap, split_snap,
+            "parameter state must be chunk-invariant"
+        );
+
+        // Audio output must match within float tolerance at every sample.
+        let tol = 1e-6;
+        let mut max_err = 0.0f32;
+        for i in 0..single_out.len() {
+            let err = (single_out[i] - split_out[i]).abs();
+            if err > max_err {
+                max_err = err;
+            }
+        }
+        assert!(
+            max_err <= tol,
+            "audio output differs by {max_err} (> {tol}) across callback partitions at 48 kHz"
+        );
+    }
+
+    #[test]
+    fn audio_output_is_callback_chunk_invariant_at_44_1khz() {
+        let sample_rate = 44_100u32;
+        let channels = 2;
+        // 50 ms @ 44.1 kHz = 2205 frames. Use 2,400 as a common round number
+        // that exceeds one ramp duration so the full ramp + post-target region
+        // is exercised.
+        let total_frames = 2_400;
+        let partitions = [9usize, 127, 256, 1_024];
+
+        let input = tone_input(total_frames, channels, 910.0, sample_rate);
+
+        let mut proc_single = EqProcessor::new(sample_rate, channels);
+        proc_single.set_enabled(true);
+        proc_single.set_gains([0.0, 0.0, 12.0, 0.0, 0.0]);
+        let single_out = run_partitioned(&mut proc_single, &input, channels, &[total_frames]);
+        let single_snap = proc_single.snapshot();
+
+        let mut proc_split = EqProcessor::new(sample_rate, channels);
+        proc_split.set_enabled(true);
+        proc_split.set_gains([0.0, 0.0, 12.0, 0.0, 0.0]);
+        let split_out = run_partitioned(&mut proc_split, &input, channels, &partitions);
+        let split_snap = proc_split.snapshot();
+
+        assert_eq!(
+            single_snap, split_snap,
+            "parameter state must be chunk-invariant at 44.1 kHz"
+        );
+
+        let tol = 1e-6;
+        let mut max_err = 0.0f32;
+        for i in 0..single_out.len() {
+            let err = (single_out[i] - split_out[i]).abs();
+            if err > max_err {
+                max_err = err;
+            }
+        }
+        assert!(
+            max_err <= tol,
+            "audio output differs by {max_err} (> {tol}) across callback partitions at 44.1 kHz"
+        );
+    }
+
+    #[test]
+    fn gain_reaches_target_at_exact_frame_boundary() {
+        // 50 ms @ 48 kHz = 2400 frames. After exactly 2400 frames the gain
+        // must reach its target with no residual callback-sized delay.
+        let sample_rate = 48_000u32;
+        let channels = 2;
+        let ramp_frames = (EQ_SMOOTH_MS * sample_rate as f32 / 1000.0) as usize;
+        assert_eq!(ramp_frames, 2_400);
+
+        let mut proc = EqProcessor::new(sample_rate, channels);
+        proc.set_enabled(true);
+        // Settle wet_mix so only the gain ramp is measured.
+        let mut settle = vec![0.0f32; 48_000 * channels];
+        let settle_len = settle.len();
+        proc.process(&mut settle, settle_len);
+        proc.set_gains([12.0, 0.0, 0.0, 0.0, 0.0]);
+
+        // Process exactly ramp_frames in one callback.
+        let mut buf = vec![0.5f32; ramp_frames * channels];
+        let len = buf.len();
+        proc.process(&mut buf, len);
+        assert!(
+            (proc.current_gains_db[0] - 12.0).abs() < 1e-2,
+            "gain should reach +12 dB after exactly {ramp_frames} frames, got {}",
+            proc.current_gains_db[0]
+        );
+    }
+
+    #[test]
+    fn auto_preamp_reaches_target_at_exact_frame_boundary() {
+        let sample_rate = 48_000u32;
+        let channels = 2;
+        let ramp_frames = (EQ_SMOOTH_MS * sample_rate as f32 / 1000.0) as usize;
+
+        let mut proc = EqProcessor::new(sample_rate, channels);
+        proc.set_enabled(true);
+        let mut settle = vec![0.0f32; 48_000 * channels];
+        let settle_len = settle.len();
+        proc.process(&mut settle, settle_len);
+        proc.set_gains([12.0, 0.0, 0.0, 0.0, 0.0]);
+
+        let mut buf = vec![0.5f32; ramp_frames * channels];
+        let len = buf.len();
+        proc.process(&mut buf, len);
+        assert!(
+            (proc.current_preamp - proc.target_preamp).abs() < 1e-3,
+            "preamp should reach target after exactly {ramp_frames} frames, current={}, target={}",
+            proc.current_preamp,
+            proc.target_preamp
+        );
+    }
+
+    #[test]
+    fn wet_bypass_reaches_target_at_exact_frame_boundary() {
+        // 20 ms bypass ramp @ 48 kHz = 960 frames.
+        let sample_rate = 48_000u32;
+        let channels = 2;
+        let ramp_frames = (BYPASS_SMOOTH_MS * sample_rate as f32 / 1000.0) as usize;
+        assert_eq!(ramp_frames, 960);
+
+        let mut proc = EqProcessor::new(sample_rate, channels);
+        proc.set_enabled(true);
+
+        let mut buf = vec![0.5f32; ramp_frames * channels];
+        let len = buf.len();
+        proc.process(&mut buf, len);
+        assert!(
+            (proc.wet_mix - 1.0).abs() < 1e-4,
+            "wet_mix should reach 1.0 after exactly {ramp_frames} frames, got {}",
+            proc.wet_mix
+        );
     }
 }
