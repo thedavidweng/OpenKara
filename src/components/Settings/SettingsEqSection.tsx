@@ -150,7 +150,17 @@ export function SettingsEqSection() {
 
           <button
             type="button"
-            onClick={() => void actions.resetEqGains()}
+            // Cancel any pending debounced commit before resetting so a
+            // slider drag still in the 75 ms debounce window cannot fire
+            // afterwards and restore the pre-reset gains.
+            onClick={() => {
+              if (timerRef.current !== null) {
+                clearTimeout(timerRef.current);
+                timerRef.current = null;
+              }
+              pendingRef.current = null;
+              void actions.resetEqGains();
+            }}
             disabled={meta.isInitializing || !state.eqEnabled}
             className="text-[11px] text-[var(--color-text-dim)] underline hover:text-white disabled:opacity-50"
           >

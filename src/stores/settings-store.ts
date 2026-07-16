@@ -178,14 +178,19 @@ export function createSettingsStore(
         await get().setLyricsFontStep(0);
       },
       setEqEnabled: async (enabled) => {
+        // Capture the authoritative value before the optimistic patch so we
+        // revert to it (not the inverse of the requested value) on failure.
+        // Reverting to !enabled would flip the store even when the backend
+        // state was already the requested value.
+        const previous = get().eqEnabled;
         // Optimistically update local state so the toggle reflects immediately.
         syncPatch({ eqEnabled: enabled });
         try {
           const settings = await api.setEqEnabled(enabled);
           syncPatch(toAppSettingsSnapshot(settings));
         } catch (error) {
-          // Revert on failure.
-          syncPatch({ eqEnabled: !enabled });
+          // Revert to the previous authoritative value on failure.
+          syncPatch({ eqEnabled: previous });
           notifyError(error);
         }
       },
