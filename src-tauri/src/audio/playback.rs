@@ -662,11 +662,20 @@ impl PlaybackController {
     /// guard, pausing near the end of a track would still swap to the
     /// preloaded next track once the fade-out renders the final frames,
     /// defeating the user's intent to stop at the current song.
+    ///
+    /// A `FadingIn` state (user just pressed play/resume) also counts as
+    /// playing, even if `snapshot()` has set `is_playing = false` because
+    /// the track is at EOF. Without this, a user who pauses near EOF and
+    /// then resumes would be stuck — the track is at EOF, `is_playing` is
+    /// false, and the gapless swap is permanently suppressed.
     pub(crate) fn current_track_is_playing(&self) -> bool {
         let Some(track) = self.current_track.as_ref() else {
             return false;
         };
-        track.is_playing && !matches!(self.fade, FadeState::FadingOut { .. })
+        if matches!(self.fade, FadeState::FadingOut { .. }) {
+            return false;
+        }
+        track.is_playing || matches!(self.fade, FadeState::FadingIn { .. })
     }
 
     /// #88: Perform a gapless swap from the current track to the prepared
@@ -1084,5 +1093,314 @@ mod tests {
         let snap = controller.snapshot();
         assert_eq!(snap.buffered_ms, 5_000);
         assert_eq!(snap.buffered_ms, snap.duration_ms.unwrap());
+    }
+
+    // ── #88: Gapless prepared-track tests ──────────────────────────────
+
+    fn make_prepared(
+        song_id: &str,
+        preload_request_generation: u64,
+        output_format: super::OutputFormatSnapshot,
+    ) -> super::PreparedTrack {
+        super::PreparedTrack {
+            preload_request_generation,
+            preload_generation: output_format.generation,
+            song_id: song_id.to_owned(),
+            output_format,
+            audio: super::DecodedAudio {
+                sample_rate: output_format.sample_rate,
+                channels: output_format.channels as usize,
+                duration_ms: 5_000,
+                samples: vec![
+                    0.0;
+                    (output_format.sample_rate as usize)
+                        * (output_format.channels as usize)
+                        * 5
+                ],
+            },
+        }
+    }
+
+    #[test]
+    fn install_prepared_track_accepts_matching_generation_and_format() {
+        let mut controller = super::PlaybackController::default();
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+        let prepared = make_prepared("song-b", 0, fmt);
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+        assert!(controller.prepared_track.is_some());
+    }
+
+    #[test]
+    fn install_prepared_track_rejects_stale_preload_request_generation() {
+        // #88 race-condition fix: an old preload thread that passed its
+        // shutdown check before the flag was set but sends PrepareNext after
+        // the coordinator processed CancelPreparedNext must be rejected.
+        let mut controller = super::PlaybackController::default();
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+
+        // Cancel bumps expected generation to 1.
+        assert!(!controller.cancel_prepared_track(1));
+
+        // Old preload thread sends PrepareNext with generation 0 — rejected.
+        let stale = make_prepared("song-old", 0, fmt);
+        assert!(controller.install_prepared_track(stale, fmt).is_err());
+        assert!(controller.prepared_track.is_none());
+
+        // New preload thread sends PrepareNext with generation 1 — accepted.
+        let fresh = make_prepared("song-new", 1, fmt);
+        assert!(controller.install_prepared_track(fresh, fmt).is_ok());
+        assert!(controller.prepared_track.is_some());
+    }
+
+    #[test]
+    fn install_prepared_track_rejects_mismatched_output_format() {
+        let mut controller = super::PlaybackController::default();
+        let prepared_fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+        let current_fmt = super::OutputFormatSnapshot::new(2, 48_000, 2);
+        let prepared = make_prepared("song-b", 0, prepared_fmt);
+        assert!(controller
+            .install_prepared_track(prepared, current_fmt)
+            .is_err());
+        assert!(controller.prepared_track.is_none());
+    }
+
+    #[test]
+    fn install_prepared_track_accepts_when_source_rate_differs_from_output() {
+        // The prepared track is normalized to the OUTPUT format, not the
+        // current track's SOURCE format. This test verifies the fix for the
+        // original bug where the check compared against the current track's
+        // source format instead of the output format.
+        let mut controller = super::PlaybackController::default();
+        // Load a track at 48 kHz source rate.
+        let decoded = super::DecodedAudio {
+            sample_rate: 48_000,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 48_000 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+
+        // Output device runs at 44.1 kHz. Prepared track is normalized to
+        // 44.1 kHz. The old (buggy) check would compare 48000 != 44100 and
+        // reject; the fix compares against the output format (44100 == 44100).
+        let output_fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+        let prepared = make_prepared("song-b", 0, output_fmt);
+        assert!(controller
+            .install_prepared_track(prepared, output_fmt)
+            .is_ok());
+    }
+
+    #[test]
+    fn cancel_prepared_track_stamps_expected_generation() {
+        let mut controller = super::PlaybackController::default();
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+
+        // Install a prepared track at generation 0.
+        let prepared = make_prepared("song-b", 0, fmt);
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+        assert!(controller.prepared_track.is_some());
+
+        // Cancel with generation 1 — should clear the prepared track and
+        // stamp expected generation to 1.
+        assert!(controller.cancel_prepared_track(1));
+        assert!(controller.prepared_track.is_none());
+        assert_eq!(controller.expected_preload_request_generation, 1);
+    }
+
+    #[test]
+    fn perform_gapless_swap_clears_fade_and_buffering() {
+        let mut controller = super::PlaybackController::default();
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+
+        // Load track A at the output format rate.
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        controller.play(0).unwrap();
+        controller.pause(0).unwrap();
+        // Now fade is FadingOut.
+        assert!(matches!(
+            controller.fade,
+            super::FadeState::FadingOut { .. }
+        ));
+        controller.is_buffering = true;
+
+        // Install a prepared track.
+        let prepared = make_prepared("song-b", 0, fmt);
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+
+        // Perform the gapless swap.
+        assert!(controller.perform_gapless_swap());
+
+        // Fade and buffering must be cleared — the new track starts fresh.
+        assert!(matches!(controller.fade, super::FadeState::None));
+        assert!(!controller.is_buffering);
+        assert_eq!(controller.current_track.as_ref().unwrap().song_id, "song-b");
+    }
+
+    #[test]
+    fn perform_gapless_swap_stamps_transition() {
+        let mut controller = super::PlaybackController::default();
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+
+        let prepared = make_prepared("song-b", 0, fmt);
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+
+        assert!(controller.perform_gapless_swap());
+
+        let transition = controller.drain_pending_transition().expect("transition");
+        assert_eq!(transition.from_song_id, "song-a");
+        assert_eq!(transition.to_song_id, "song-b");
+        assert_eq!(transition.transition_serial, 1);
+    }
+
+    #[test]
+    fn perform_gapless_swap_returns_false_without_prepared_track() {
+        let mut controller = super::PlaybackController::default();
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        assert!(!controller.perform_gapless_swap());
+    }
+
+    #[test]
+    fn start_track_clears_prepared_track() {
+        let mut controller = super::PlaybackController::default();
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+
+        // Install a prepared track.
+        let prepared = make_prepared("song-b", 0, fmt);
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+        assert!(controller.prepared_track.is_some());
+
+        // Starting a new track should clear the prepared track — the new
+        // track is not the prepared one.
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-c".to_owned(), decoded, 0);
+        assert!(controller.prepared_track.is_none());
+    }
+
+    #[test]
+    fn clear_track_clears_prepared_track() {
+        let mut controller = super::PlaybackController::default();
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+
+        let prepared = make_prepared("song-b", 0, fmt);
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+        assert!(controller.prepared_track.is_some());
+
+        controller.clear_track();
+        assert!(controller.prepared_track.is_none());
+    }
+
+    // ── #103: current_track_is_playing regression tests ───────────────
+    //
+    // The gapless swap path in the realtime callback checks
+    // `current_track_is_playing()` before advancing to the prepared next
+    // track. This helper returns false when `is_playing` is false or a
+    // `FadingOut` is in progress, so a track reaching EOF during a
+    // user-initiated pause does not auto-advance.
+
+    #[test]
+    fn current_track_is_playing_true_when_playing_no_fade() {
+        let mut controller = super::PlaybackController::default();
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        controller.play(0).unwrap();
+        // Clear the fade-in so we're in a steady playing state.
+        controller.fade = super::FadeState::None;
+
+        assert!(
+            controller.current_track_is_playing(),
+            "should be playing when is_playing=true and no fade-out"
+        );
+    }
+
+    #[test]
+    fn current_track_is_playing_false_during_fade_out() {
+        let mut controller = super::PlaybackController::default();
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        controller.play(0).unwrap();
+        controller.pause(0).unwrap();
+
+        // During the fade-out, is_playing is still true on the track, but
+        // the FadingOut state means the user has paused — the helper must
+        // return false so the gapless swap is suppressed.
+        assert!(
+            !controller.current_track_is_playing(),
+            "should not be playing during a fade-out"
+        );
+    }
+
+    #[test]
+    fn current_track_is_playing_false_when_no_track_loaded() {
+        let controller = super::PlaybackController::default();
+        assert!(
+            !controller.current_track_is_playing(),
+            "should return false when no track is loaded"
+        );
+    }
+
+    #[test]
+    fn current_track_is_playing_true_again_after_resume_from_pause() {
+        // #103: After pausing (fade-out) and then resuming (play), the
+        // helper must return true again so the gapless swap can proceed if
+        // the track is at EOF. Without this, a user who pauses near EOF
+        // and then resumes would be stuck — the track is at EOF but the
+        // gapless swap is permanently suppressed.
+        let mut controller = super::PlaybackController::default();
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        controller.play(0).unwrap();
+        controller.fade = super::FadeState::None;
+
+        // Pause — helper returns false.
+        controller.pause(0).unwrap();
+        assert!(!controller.current_track_is_playing());
+
+        // Resume — play() sets is_playing=true and FadingIn. The helper
+        // must return true (FadingIn is not FadingOut).
+        controller.play(0).unwrap();
+        assert!(
+            controller.current_track_is_playing(),
+            "should be playing after resume (FadingIn is not FadingOut)"
+        );
     }
 }

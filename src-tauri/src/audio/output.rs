@@ -221,10 +221,20 @@ pub fn render_output_buffer(
     }
     // During a fade-out, snapshot reports is_playing=false for UI transport while
     // the render callback still outputs the envelope until finalize_fade_if_complete.
+    // During a fade-in (user just pressed play/resume), snapshot may also report
+    // is_playing=false because the track is at EOF — but the user's intent is to
+    // play, so we must NOT return early. The gapless swap check below will fire
+    // and advance to the prepared next track. Without this FadingIn exception,
+    // a user who pauses near EOF and then resumes would be stuck: the track is
+    // at EOF, is_playing is false, and the gapless swap is never reached.
     if !snapshot.is_playing
         && !matches!(
             playback.fade,
             crate::audio::playback::FadeState::FadingOut { .. }
+        )
+        && !matches!(
+            playback.fade,
+            crate::audio::playback::FadeState::FadingIn { .. }
         )
     {
         return 0;
@@ -1932,6 +1942,236 @@ mod tests {
         assert!(
             controller.prepared_track.is_some(),
             "prepared track must not be consumed during a pause"
+        );
+    }
+
+    // ── #103: Explicit Resume after pause at EOF ──────────────────────
+    //
+    // After pausing near EOF (where the gapless swap is suppressed), the
+    // user presses resume (play). The track is at EOF, but now
+    // `current_track_is_playing()` returns true again (FadingIn, not
+    // FadingOut). The next render callback should perform the gapless swap
+    // and fill the buffer from the prepared next track. Without this
+    // regression test, a bug that permanently suppresses the swap after a
+    // pause/resume cycle would go undetected.
+
+    #[test]
+    fn gapless_swap_proceeds_after_resume_from_pause_at_eof() {
+        use crate::audio::decode::DecodedAudio;
+        use crate::audio::output_format::OutputFormatSnapshot;
+        use crate::audio::playback::{PlaybackController, PreparedTrack};
+
+        let sample_rate: u32 = 44_100;
+        let channels: usize = 2;
+        let device_channels = 2;
+
+        // Track A: 100 frames of 0.1, then EOF.
+        let track_a_samples = vec![0.1_f32; 100 * channels];
+        let track_a = DecodedAudio {
+            sample_rate,
+            channels,
+            duration_ms: (100 * 1000 / sample_rate as usize) as u64,
+            samples: track_a_samples,
+        };
+
+        let mut controller = PlaybackController::default();
+        controller.start_track("song-a".to_owned(), track_a, 0);
+        controller.play(0).unwrap();
+        // Clear the fade-in so the test measures raw sample values.
+        controller.fade = crate::audio::playback::FadeState::None;
+
+        // Prepare track B (0.5 amplitude) so a gapless swap is possible.
+        let fmt = OutputFormatSnapshot::new(1, sample_rate, channels as u16);
+        let track_b_samples = vec![0.5_f32; 512 * channels];
+        let prepared = PreparedTrack {
+            preload_request_generation: 0,
+            preload_generation: fmt.generation,
+            song_id: "song-b".to_owned(),
+            output_format: fmt,
+            audio: DecodedAudio {
+                sample_rate,
+                channels,
+                duration_ms: (512 * 1000 / sample_rate as usize) as u64,
+                samples: track_b_samples,
+            },
+        };
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+
+        // Pause near EOF — the gapless swap is suppressed during the
+        // fade-out. Render one buffer to advance render_frame to EOF.
+        controller.pause(0).unwrap();
+        let mut output = vec![0.0f32; 512 * device_channels];
+        let mut rc = super::ResamplerCache::new();
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        let _rendered = render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            sample_rate,
+            device_channels,
+            &mut rc,
+            &mut EqProcessor::new(sample_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        // Track A should still be current — swap was suppressed.
+        assert_eq!(
+            controller.current_track.as_ref().unwrap().song_id,
+            "song-a",
+            "gapless swap must not fire during pause"
+        );
+        assert!(
+            controller.prepared_track.is_some(),
+            "prepared track must survive the pause"
+        );
+
+        // The track is now at EOF (render_frame >= total_frames). The
+        // fade-out is still in progress (FadingOut) — the render callback
+        // calls finalize_fade_if_complete, but FADE_DURATION has not
+        // elapsed in the test, so is_playing is still true on the track.
+        // However, current_track_is_playing() returns false because of
+        // the FadingOut state.
+
+        // User presses resume (play). This sets fade = FadingIn (overriding
+        // the FadingOut) and is_playing = true. The helper must now return
+        // true because FadingIn is not FadingOut.
+        controller.play(0).unwrap();
+        assert!(
+            controller.current_track_is_playing(),
+            "current_track_is_playing must be true after resume"
+        );
+
+        // Render another buffer. The track is at EOF and the user has
+        // resumed, so the gapless swap should now fire and fill the buffer
+        // from track B.
+        let mut output2 = vec![0.0f32; 512 * device_channels];
+        let _rendered2 = render_output_buffer(
+            &mut controller,
+            &mut output2,
+            &mut Vec::new(),
+            sample_rate,
+            device_channels,
+            &mut rc,
+            &mut EqProcessor::new(sample_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        // The current track must now be song-b — the swap fired after resume.
+        assert_eq!(
+            controller.current_track.as_ref().unwrap().song_id,
+            "song-b",
+            "gapless swap must fire after resume from pause at EOF"
+        );
+        assert!(
+            controller.prepared_track.is_none(),
+            "prepared track must be consumed after resume swap"
+        );
+
+        // The output buffer should contain track B's audio (0.5 amplitude,
+        // attenuated by the fade-in gain which is < 1.0 immediately after
+        // play). Verify at least some non-zero samples in the tail (after
+        // the swap, the new track's audio fills the buffer).
+        // The fade-in gain starts near 0 and ramps to 1 over FADE_DURATION,
+        // so early samples will be attenuated. We just verify the buffer is
+        // not all zeros (the swap filled it with track B audio).
+        let non_zero = output2.iter().filter(|s| s.abs() > 1e-6).count();
+        assert!(
+            non_zero > 0,
+            "output buffer must contain non-zero samples from track B after resume swap"
+        );
+    }
+
+    // ── #103: Post-pause tail is silence, not next track ──────────────
+    //
+    // When the user pauses and the track reaches EOF during the fade-out,
+    // the remaining buffer after EOF must be silence (zeros), not the
+    // prepared next track's audio. This is the "tail" regression: the old
+    // code would fill the tail with the next track even during a pause.
+
+    #[test]
+    fn post_pause_tail_is_silence_not_next_track() {
+        use crate::audio::decode::DecodedAudio;
+        use crate::audio::output_format::OutputFormatSnapshot;
+        use crate::audio::playback::{PlaybackController, PreparedTrack};
+
+        let sample_rate: u32 = 44_100;
+        let channels: usize = 2;
+        let device_channels = 2;
+
+        // Track A: 50 frames of 0.3, then EOF. The buffer is 512 frames,
+        // so 462 frames should be silence after EOF.
+        let track_a_samples = vec![0.3_f32; 50 * channels];
+        let track_a = DecodedAudio {
+            sample_rate,
+            channels,
+            duration_ms: (50 * 1000 / sample_rate as usize) as u64,
+            samples: track_a_samples,
+        };
+
+        let mut controller = PlaybackController::default();
+        controller.start_track("song-a".to_owned(), track_a, 0);
+        controller.play(0).unwrap();
+        // Clear the fade-in so the test measures raw sample values.
+        controller.fade = crate::audio::playback::FadeState::None;
+
+        // Prepare track B with a distinct amplitude (0.9) so we can detect
+        // if any of its audio leaks into the tail.
+        let fmt = OutputFormatSnapshot::new(1, sample_rate, channels as u16);
+        let track_b_samples = vec![0.9_f32; 512 * channels];
+        let prepared = PreparedTrack {
+            preload_request_generation: 0,
+            preload_generation: fmt.generation,
+            song_id: "song-b".to_owned(),
+            output_format: fmt,
+            audio: DecodedAudio {
+                sample_rate,
+                channels,
+                duration_ms: (512 * 1000 / sample_rate as usize) as u64,
+                samples: track_b_samples,
+            },
+        };
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+
+        // Pause — the gapless swap is suppressed.
+        controller.pause(0).unwrap();
+
+        // Render one buffer. Track A fills the first 50 frames (attenuated
+        // by the fade-out gain); the remaining 462 frames must be silence.
+        let mut output = vec![0.0f32; 512 * device_channels];
+        let mut rc = super::ResamplerCache::new();
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        let _rendered = render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            sample_rate,
+            device_channels,
+            &mut rc,
+            &mut EqProcessor::new(sample_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        // The tail (after track A's 50 frames) must be all zeros — not
+        // track B's 0.9 amplitude. The fade-out gain attenuates track A's
+        // samples, but the tail must be pure silence.
+        let tail_start = 50 * device_channels;
+        let tail = &output[tail_start..];
+        let max_tail = tail.iter().fold(0.0f32, |a, &b| a.max(b.abs()));
+        assert!(
+            max_tail < 1e-6,
+            "tail after EOF during pause must be silence, max amplitude {max_tail}"
+        );
+
+        // Track A must still be current — no swap.
+        assert_eq!(
+            controller.current_track.as_ref().unwrap().song_id,
+            "song-a",
+            "no gapless swap during pause"
         );
     }
 }
