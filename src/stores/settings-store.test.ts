@@ -559,4 +559,37 @@ describe("settings-store actions", () => {
     expect(mockSetCrossfadeDurationMs).not.toHaveBeenCalled();
     expect(store.getState().crossfadeDurationMs).toBe(3000);
   });
+
+  test("setCrossfadeDurationMs ignores stale late-arriving response", async () => {
+    // Simulate: user drags to 4000, then to 5000 before the 4000 response
+    // arrives. The 5000 save resolves first; the 4000 response arrives later
+    // but must not revert the store to 4000.
+    store.setState({ crossfadeDurationMs: 3000 });
+
+    let resolve4000: (v: ReturnType<typeof makeAppSettings>) => void;
+    let resolve5000: (v: ReturnType<typeof makeAppSettings>) => void;
+    const p4000 = new Promise((r) => {
+      resolve4000 = r as typeof resolve4000;
+    });
+    const p5000 = new Promise((r) => {
+      resolve5000 = r as typeof resolve5000;
+    });
+
+    mockSetCrossfadeDurationMs.mockImplementation((ms: number) =>
+      ms === 4000 ? p4000 : p5000,
+    );
+
+    const call4000 = store.getState().setCrossfadeDurationMs(4000);
+    const call5000 = store.getState().setCrossfadeDurationMs(5000);
+
+    // 5000 resolves first
+    resolve5000(makeAppSettings({ crossfade_duration_ms: 5000 }));
+    await call5000;
+    expect(store.getState().crossfadeDurationMs).toBe(5000);
+
+    // 4000 resolves later — must not revert
+    resolve4000(makeAppSettings({ crossfade_duration_ms: 4000 }));
+    await call4000;
+    expect(store.getState().crossfadeDurationMs).toBe(5000);
+  });
 });

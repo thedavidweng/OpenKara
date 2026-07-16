@@ -257,9 +257,16 @@ export function createSettingsStore(
         syncPatch({ crossfadeDurationMs: durationMs });
         try {
           const settings = await api.setCrossfadeDurationMs(durationMs);
-          syncPatch(toAppSettingsSnapshot(settings));
+          // Only apply the response if no newer save has superseded this
+          // request — otherwise a stale late-arriving response would revert
+          // the store to an older duration.
+          if (get().crossfadeDurationMs === durationMs) {
+            syncPatch(toAppSettingsSnapshot(settings));
+          }
         } catch (error) {
-          syncPatch({ crossfadeDurationMs: previous });
+          if (get().crossfadeDurationMs === durationMs) {
+            syncPatch({ crossfadeDurationMs: previous });
+          }
           notifyError(error);
         }
       },
