@@ -131,6 +131,12 @@ export function createCdgFrameCoordinator(deps: {
         req.lastFrameVersion,
       )
       .then((result) => {
+        // #113: Check both the serial (for invalidate-driven drops) and
+        // isCurrent (for song/generation changes). The serial is only
+        // incremented by invalidate(), NOT by request(), so a newer request
+        // for the same song does NOT cause the in-flight response to be
+        // dropped. Under slow IPC this prevents every frame from being
+        // dropped when requests arrive faster than responses.
         if (req.serial !== serial || !deps.isCurrent(req)) {
           return;
         }
@@ -177,7 +183,11 @@ export function createCdgFrameCoordinator(deps: {
 
   return {
     request: (partial) => {
-      serial += 1;
+      // #113: Do NOT increment serial on request — only on invalidate.
+      // This ensures in-flight responses are not dropped when a newer
+      // request for the same song is enqueued. The pending request
+      // inherits the current serial, so it will be dropped if an
+      // invalidate() occurs before it is pumped.
       pending = { ...partial, serial };
       pump();
     },

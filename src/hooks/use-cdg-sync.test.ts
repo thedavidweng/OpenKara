@@ -1,6 +1,10 @@
 import { describe, expect, test, vi } from "vitest";
 import { ensureArrayBuffer } from "@/lib/cdg-protocol";
-import { getCdgSyncBucket, startCdgPositionSync } from "./use-cdg-sync";
+import {
+  createCdgFrameCoordinator,
+  getCdgSyncBucket,
+  startCdgPositionSync,
+} from "./use-cdg-sync";
 
 describe("ensureArrayBuffer", () => {
   test("returns ArrayBuffer as-is", () => {
@@ -235,5 +239,126 @@ describe("F5: CDG frame IPC validates against current song before drawFrame", ()
     // The guard should check that the current song and generation still match
     expect(afterIpc).toContain("snapshot?.song_id");
     expect(afterIpc).toContain("transport_generation");
+  });
+});
+
+// ─── #113: CDG coordinator must not drop all in-flight frames under slow IPC ──
+
+describe("#113: createCdgFrameCoordinator under slow IPC", () => {
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((res) => {
+      resolve = res;
+    });
+    return { promise, resolve };
+  }
+
+  test("does not drop frame when a newer request was enqueued during slow IPC", async () => {
+    const first = deferred<ArrayBuffer>();
+    const second = deferred<ArrayBuffer>();
+    let n = 0;
+    const getCdgFrame = vi.fn(() => {
+      n += 1;
+      return n === 1 ? first.promise : second.promise;
+    });
+    const onFrame = vi.fn();
+    const onProbeResolved = vi.fn();
+    const onError = vi.fn();
+
+    const coordinator = createCdgFrameCoordinator({
+      getCdgFrame: getCdgFrame as never,
+      onFrame,
+      onProbeResolved,
+      onError,
+      isCurrent: () => true, // same song/generation throughout
+    });
+
+    // Enqueue request A (position 100).
+    coordinator.request({
+      songId: "song-a",
+      transportGeneration: 1,
+      positionMs: 100,
+      lastFrameVersion: 0,
+    });
+    expect(getCdgFrame).toHaveBeenCalledTimes(1);
+
+    // While A is in flight, enqueue request B (position 200).
+    // Under the old code, request() incremented the serial, so when A
+    // resolved, A's serial no longer matched and the frame was dropped.
+    // With the fix, request() does NOT increment the serial, so A's
+    // response is still processed.
+    coordinator.request({
+      songId: "song-a",
+      transportGeneration: 1,
+      positionMs: 200,
+      lastFrameVersion: 1,
+    });
+    expect(getCdgFrame).toHaveBeenCalledTimes(1);
+
+    // Now resolve A. The serial has not changed (only invalidate changes it),
+    // so A's result is processed.
+    first.resolve(new ArrayBuffer(0));
+    // Drain promise microtasks: then → finally → pump → second getCdgFrame.
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+    }
+
+    // A's response should have been processed (not dropped).
+    expect(onProbeResolved).toHaveBeenCalledTimes(1);
+    expect(onProbeResolved).toHaveBeenCalledWith({
+      songId: "song-a",
+      transportGeneration: 1,
+      hasFrame: false,
+    });
+
+    // After A completes, B should be pumped.
+    expect(getCdgFrame).toHaveBeenCalledTimes(2);
+
+    // Clean up: resolve B and invalidate.
+    second.resolve(new ArrayBuffer(0));
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+    }
+    coordinator.invalidate();
+  });
+
+  test("drops frame when song changes (isCurrent returns false)", async () => {
+    const pending = deferred<ArrayBuffer>();
+    const getCdgFrame = vi.fn(() => pending.promise);
+    const onFrame = vi.fn();
+    const onProbeResolved = vi.fn();
+    const onError = vi.fn();
+
+    let currentSong = "song-a";
+    const coordinator = createCdgFrameCoordinator({
+      getCdgFrame: getCdgFrame as never,
+      onFrame,
+      onProbeResolved,
+      onError,
+      isCurrent: (req) => req.songId === currentSong,
+    });
+
+    // Enqueue request for song-a.
+    coordinator.request({
+      songId: "song-a",
+      transportGeneration: 1,
+      positionMs: 100,
+      lastFrameVersion: 0,
+    });
+
+    // Song changes while request is in flight.
+    currentSong = "song-b";
+
+    // Resolve the in-flight request — should be dropped because isCurrent
+    // returns false.
+    pending.resolve(new ArrayBuffer(0));
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+    }
+
+    expect(onProbeResolved).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+
+    coordinator.invalidate();
   });
 });
