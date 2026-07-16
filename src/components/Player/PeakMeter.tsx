@@ -34,6 +34,12 @@ export function PeakMeter({
     // Monotonic generation so a slow getAudioPeaks response cannot overwrite
     // a newer poll (or apply after unmount/interval rebuild).
     let requestGeneration = 0;
+    // Single-flight coordination: at most one getAudioPeaks() call in flight
+    // per effect lifetime. Ticks that arrive while in flight coalesce into a
+    // single follow-up poll (rerunRequested) instead of stacking concurrent
+    // IPC calls whose responses would all be invalidated by newer ticks.
+    let inFlight = false;
+    let rerunRequested = false;
 
     const draw = (snapshot: AudioPeakSnapshot) => {
       const canvas = canvasRef.current;
@@ -95,13 +101,25 @@ export function PeakMeter({
 
     const poll = async () => {
       if (cancelled) return;
+      // Single-flight guard: if a previous poll is still in flight, coalesce
+      // the tick into a single follow-up poll instead of issuing another IPC
+      // call. Without this, a slow backend causes every timer tick to start a
+      // concurrent request, and each response is invalidated by the next tick,
+      // so the meter can stop rendering entirely while spinning on IPC.
+      if (inFlight) {
+        rerunRequested = true;
+        return;
+      }
+      inFlight = true;
       const generation = ++requestGeneration;
       try {
         const snapshot = await getAudioPeaks();
         // Drop stale responses: a later poll already started, or we unmounted.
         if (cancelled || generation !== requestGeneration) return;
         const now = performance.now();
-        const advanced = snapshot.writeIndex !== lastWriteIndexRef.current;
+        // Monotonic comparison: an older write index (e.g. from a reordered
+        // or wrapped response) must never replace a newer canvas state.
+        const advanced = snapshot.writeIndex > lastWriteIndexRef.current;
         if (advanced) {
           lastWriteIndexRef.current = snapshot.writeIndex;
           lastAdvanceRef.current = now;
@@ -122,6 +140,14 @@ export function PeakMeter({
         }
       } catch {
         // Backend may be unavailable during startup — silently skip.
+      } finally {
+        inFlight = false;
+        // If a tick arrived while this poll was in flight, run exactly one
+        // follow-up poll so we don't lose a cadence cycle to coalescing.
+        if (!cancelled && rerunRequested) {
+          rerunRequested = false;
+          void poll();
+        }
       }
     };
 
