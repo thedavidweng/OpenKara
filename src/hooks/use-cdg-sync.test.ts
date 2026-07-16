@@ -308,6 +308,7 @@ describe("#113: createCdgFrameCoordinator under slow IPC", () => {
     expect(onProbeResolved).toHaveBeenCalledWith({
       songId: "song-a",
       transportGeneration: 1,
+      hasCdg: false,
       hasFrame: false,
     });
 

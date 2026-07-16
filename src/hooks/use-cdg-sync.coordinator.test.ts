@@ -178,6 +178,7 @@ describe("createCdgFrameCoordinator", () => {
     expect(onProbeResolved).toHaveBeenCalledWith({
       songId: "song-2",
       transportGeneration: 2,
+      hasCdg: false,
       hasFrame: false,
     });
   });

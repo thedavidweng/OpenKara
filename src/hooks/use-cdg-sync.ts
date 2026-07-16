@@ -4,7 +4,6 @@ import {
   usePlayerStore,
 } from "@/stores/player-store";
 import { useCdgStore } from "@/stores/cdg-store";
-import { useLibraryStore } from "@/stores/library-store";
 import { drawFrame, clearFrame } from "@/lib/cdg-canvas-painter";
 import {
   getCdgSyncChannel,
@@ -16,7 +15,6 @@ import {
   type CdgSyncStatusPayload,
 } from "@/lib/cdg-sync-channel";
 import { ensureArrayBuffer, parseCdgFrameResponse } from "@/lib/cdg-protocol";
-import { songHasCdgMedia } from "@/lib/song-media";
 import * as api from "@/lib/tauri";
 
 /**
@@ -113,6 +111,8 @@ export function createCdgFrameCoordinator(deps: {
   onProbeResolved: (args: {
     songId: string;
     transportGeneration: number;
+    /** Whether the backend has an active CDG slot for this song. */
+    hasCdg: boolean;
     hasFrame: boolean;
   }) => void;
   onError: (args: { songId: string; transportGeneration: number }) => void;
@@ -157,12 +157,25 @@ export function createCdgFrameCoordinator(deps: {
           deps.onProbeResolved({
             songId: req.songId,
             transportGeneration: req.transportGeneration,
+            hasCdg: true,
             hasFrame: true,
           });
-        } else {
+        } else if (envelope) {
+          // CDG is active but the caller already has the current frame
+          // (header-only response, no RGBA payload).
           deps.onProbeResolved({
             songId: req.songId,
             transportGeneration: req.transportGeneration,
+            hasCdg: true,
+            hasFrame: false,
+          });
+        } else {
+          // No active CDG slot — backend returned 0 bytes. This covers
+          // audio-only songs and sidecar CDG files that were not loaded.
+          deps.onProbeResolved({
+            songId: req.songId,
+            transportGeneration: req.transportGeneration,
+            hasCdg: false,
             hasFrame: false,
           });
         }
@@ -210,13 +223,9 @@ export function useCdgSync(enabled = true): void {
   const transportGeneration = usePlayerStore(
     (s) => s.snapshot?.transport_generation ?? 0,
   );
-  const currentSong = useLibraryStore(
-    (s) => s.songs.find((song) => song.hash === songId) ?? null,
-  );
   const setSong = useCdgStore((s) => s.setSong);
   const clear = useCdgStore((s) => s.clear);
   const setFrameVersion = useCdgStore((s) => s.setFrameVersion);
-  const currentSongHasCdg = songHasCdgMedia(currentSong);
 
   const coordinatorRef = useRef<CdgFrameCoordinator | null>(null);
 
@@ -257,13 +266,27 @@ export function useCdgSync(enabled = true): void {
           setSong(sid, true);
         }
       },
-      onProbeResolved: ({ songId: sid, hasFrame }) => {
-        if (!hasFrame) {
-          // Soft-confirm status without clearing an already-drawn frame.
-          emitCdgStatus(sid, true);
-        } else {
-          emitCdgStatus(sid, true);
+      onProbeResolved: ({ songId: sid, hasCdg }) => {
+        if (!hasCdg) {
+          // Backend has no active CDG slot for this song — this covers
+          // audio-only tracks and songs whose sidecar .cdg was not loaded.
+          // Clear the display and report hasCdg=false so the hot-loop
+          // does not fire. RATIONALE: the previous code used a frontend
+          // songHasCdgMedia() early-return that skipped the probe for
+          // songs without an explicit cdg_path or Media+G container, but
+          // the backend still loads implicit sidecars via
+          // audio_path.with_extension("cdg"). Those songs were wrongly
+          // cleared and reported hasCdg=false. Letting the backend decide
+          // via the probe avoids that false negative.
+          setSong(sid, false);
+          clearFrame();
+          emitCdgClear();
+          emitCdgStatus(sid, false);
+          return;
         }
+        // CDG is active; soft-confirm status without clearing an
+        // already-drawn frame.
+        emitCdgStatus(sid, true);
       },
       onError: ({ songId: sid }) => {
         setSong(sid, false);
@@ -313,15 +336,12 @@ export function useCdgSync(enabled = true): void {
       return;
     }
 
-    if (!currentSongHasCdg) {
-      coordinatorRef.current?.invalidate();
-      clear();
-      clearFrame();
-      emitCdgClear();
-      emitCdgStatus(songId, false);
-      return;
-    }
-
+    // RATIONALE: Do NOT skip the probe based on a frontend songHasCdgMedia()
+    // check. The backend loads implicit sidecar CDG files via
+    // audio_path.with_extension("cdg") when song.cdg_path is absent, so a
+    // song with a colocated .cdg sidecar but no explicit cdg_path would be
+    // wrongly cleared and reported hasCdg=false. Instead, always probe and
+    // let the backend's 0-byte response determine CDG availability.
     const probePositionMs = selectSyncDisplayPositionMs(
       usePlayerStore.getState(),
     );
@@ -342,7 +362,7 @@ export function useCdgSync(enabled = true): void {
       positionMs: probePositionMs,
       lastFrameVersion: 0,
     });
-  }, [clear, currentSongHasCdg, enabled, setSong, songId, transportGeneration]);
+  }, [clear, enabled, setSong, songId, transportGeneration]);
 
   // RATIONALE: Do not replace this with setInterval/requestAnimationFrame.
   // The real regression was macOS throttling front-end scheduling in windows
