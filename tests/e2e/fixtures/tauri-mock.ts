@@ -20,13 +20,25 @@ export const TAURI_MOCK_SCRIPT = `
   // Mutable so tests can override the library with larger fixtures (e.g. the
   // scrollbar spec needs enough rows to produce real overflow in the song
   // list).  get_library is a function that reads the current value.
+  // Minimal 1x1 PNG so cover-art collapse thresholds are observable in E2E
+  // (NowPlayingInfo only renders the thumbnail when has_cover_art is true).
+  const TINY_PNG_BYTES = [
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+    0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+    0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
+    0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x62, 0x00, 0x01, 0x00, 0x00,
+    0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
+    0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+  ];
+
   let mockSongs = [
     {
       hash: "aaa111", file_path: "/music/Bohemian_Rhapsody.mp3",
       audio_source_kind: "original", cdg_path: null, media_g_container: null,
       instrumental: false, language: "en",
       title: "Bohemian Rhapsody", artist: "Queen", album: "A Night at the Opera",
-      duration_ms: 354000, cover_art: null, imported_at: Date.now(), original_ext: ".mp3",
+      duration_ms: 354000, cover_art: TINY_PNG_BYTES, has_cover_art: true,
+      imported_at: Date.now(), original_ext: ".mp3",
     },
     {
       hash: "bbb222", file_path: "/music/Hotel_California.mp3",

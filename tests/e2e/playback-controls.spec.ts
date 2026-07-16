@@ -10,10 +10,21 @@ import { expect, test } from "./fixtures/base-test";
  *   relaxed  container >= 1120  → viewport >= ~1380
  *   compact  container 960..1119 → viewport ~1220..1379
  *   tight    container < 960     → viewport < ~1220
+ *
+ * Review coverage boundaries (CSS px): 1280, 1040, 900, 760, 720.
+ * 1440 is retained as an additional relaxed-density sample. The suite runs
+ * in both Chromium and WebKit (Tauri on macOS renders WKWebView).
  */
 
 const GEOMETRY_TOLERANCE = 0.5;
 const CENTER_Y_TOLERANCE = 0.5;
+
+// Default sidebar width is 260px (see --window-shell-sidebar-width). The
+// playback-bar container width is viewport minus sidebar, so container
+// thresholds map to viewport thresholds as below.
+const SIDEBAR_WIDTH = 260;
+const METADATA_COLLAPSE_CONTAINER = 760;
+const COVER_ART_COLLAPSE_CONTAINER = 780;
 
 interface ButtonGeometry {
   width: number;
@@ -45,6 +56,86 @@ async function readActionButtonGeometry(
   }, selector);
 }
 
+/** Assert a button is a 44x44 non-shrinking footprint with an 18x18 icon. */
+async function expectActionFootprint(
+  page: import("@playwright/test").Page,
+  selector: string,
+): Promise<number> {
+  await expect(page.locator(selector)).toBeVisible();
+  const geo = await readActionButtonGeometry(page, selector);
+  expect(geo.width).toBeCloseTo(44, 5);
+  expect(geo.height).toBeCloseTo(44, 5);
+  expect(geo.flexShrink).toBe("0");
+  expect(parseFloat(geo.svgWidth)).toBeCloseTo(18, 5);
+  expect(parseFloat(geo.svgHeight)).toBeCloseTo(18, 5);
+  return geo.centerY;
+}
+
+/** Assert no center/right-zone intersection and no document overflow. */
+async function expectNoOverflowOrZoneIntersection(
+  page: import("@playwright/test").Page,
+): Promise<void> {
+  const overflow = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+  expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
+
+  const zones = await page.evaluate(() => {
+    const center = document.querySelector('[data-playback-zone="center"]');
+    const right = document.querySelector('[data-playback-zone="right"]');
+    if (!center || !right) return null;
+    const c = center.getBoundingClientRect();
+    const r = right.getBoundingClientRect();
+    // Reject clipping: each zone must retain a positive width (a collapsed
+    // zone indicates the grid overflowed and the browser clipped it).
+    // Extending beyond the viewport is already covered by the
+    // scrollWidth/clientWidth check above.
+    return {
+      centerRight: c.right,
+      rightLeft: r.left,
+      centerWidth: c.width,
+      rightWidth: r.width,
+    };
+  });
+  expect(zones).not.toBeNull();
+  if (zones) {
+    expect(zones.centerRight).toBeLessThanOrEqual(
+      zones.rightLeft + GEOMETRY_TOLERANCE,
+    );
+    expect(zones.centerWidth).toBeGreaterThan(0);
+    expect(zones.rightWidth).toBeGreaterThan(0);
+  }
+}
+
+/** Assert metadata/cover collapse behavior matches the container width. */
+async function expectMetadataCollapse(
+  page: import("@playwright/test").Page,
+  viewportWidth: number,
+): Promise<void> {
+  const containerWidth = viewportWidth - SIDEBAR_WIDTH;
+  const metadataVisible = containerWidth >= METADATA_COLLAPSE_CONTAINER;
+  const coverVisible = containerWidth >= COVER_ART_COLLAPSE_CONTAINER;
+
+  const leftZone = page.locator('[data-playback-zone="left"]');
+  if (metadataVisible) {
+    await expect(leftZone).toBeVisible();
+  } else {
+    await expect(leftZone).toHaveCount(0);
+  }
+
+  // Cover art thumbnail is an <img> inside NowPlayingInfo. It only renders
+  // when has_cover_art is true AND the container is wide enough.
+  const coverImg = page.locator(
+    '[data-playback-zone="left"] img, [data-now-playing-visual-variant] img',
+  );
+  if (coverVisible && metadataVisible) {
+    await expect(coverImg.first()).toBeVisible();
+  } else {
+    await expect(coverImg).toHaveCount(0);
+  }
+}
+
 test.describe("Playback controls geometry and pressed state", () => {
   test.beforeEach(async ({ page, tauriMock }) => {
     await page.goto("/");
@@ -72,6 +163,7 @@ test.describe("Playback controls geometry and pressed state", () => {
     await tauriMock.setSeparationCompleted("aaa111");
   });
 
+  // ── Relaxed density (additional sample) ──────────────────────────────
   test.describe("relaxed density (1440px viewport, ~1180px container)", () => {
     test.use({ viewport: { width: 1440, height: 800 } });
 
@@ -94,19 +186,19 @@ test.describe("Playback controls geometry and pressed state", () => {
       const centers: number[] = [];
       for (const action of actions) {
         const sel = `[data-playback-action="${action}"]`;
-        await expect(page.locator(sel)).toBeVisible();
-        const geo = await readActionButtonGeometry(page, sel);
-        expect(geo.width).toBeCloseTo(44, 5);
-        expect(geo.height).toBeCloseTo(44, 5);
-        expect(geo.flexShrink).toBe("0");
-        expect(parseFloat(geo.svgWidth)).toBeCloseTo(18, 5);
-        expect(parseFloat(geo.svgHeight)).toBeCloseTo(18, 5);
-        centers.push(geo.centerY);
+        centers.push(await expectActionFootprint(page, sel));
       }
       // All center Y values match within 0.5px
       const min = Math.min(...centers);
       const max = Math.max(...centers);
       expect(max - min).toBeLessThanOrEqual(CENTER_Y_TOLERANCE);
+    });
+
+    test("no overflow, no center/right-zone intersection, metadata + cover visible", async ({
+      page,
+    }) => {
+      await expectNoOverflowOrZoneIntersection(page);
+      await expectMetadataCollapse(page, 1440);
     });
 
     test("master mute click toggles aria-pressed and data-active", async ({
@@ -191,8 +283,34 @@ test.describe("Playback controls geometry and pressed state", () => {
       expect(after.width).toBeCloseTo(before.width, 5);
       expect(after.height).toBeCloseTo(before.height, 5);
     });
+
+    test("master mute invokes set_volume and vocals mute invokes set_stem_volume", async ({
+      page,
+      tauriMock,
+    }) => {
+      const masterBtn = page.locator('[data-playback-action="master-mute"]');
+      await masterBtn.click();
+      await expect
+        .poll(async () =>
+          (await tauriMock.getInvokeCalls()).some(
+            (call) => call.cmd === "set_volume",
+          ),
+        )
+        .toBe(true);
+
+      const vocalsBtn = page.locator('[data-playback-action="vocals-mute"]');
+      await vocalsBtn.click();
+      await expect
+        .poll(async () =>
+          (await tauriMock.getInvokeCalls()).some(
+            (call) => call.cmd === "set_stem_volume",
+          ),
+        )
+        .toBe(true);
+    });
   });
 
+  // ── Required boundary: 1280px (compact density) ──────────────────────
   test.describe("compact density (1280px viewport, ~1020px container)", () => {
     test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -203,7 +321,7 @@ test.describe("Playback controls geometry and pressed state", () => {
       );
     });
 
-    test("queue, vocals, accompaniment, master are all 44x44", async ({
+    test("queue, vocals, accompaniment, master are all 44x44 with 18px icons", async ({
       page,
     }) => {
       const actions = [
@@ -212,19 +330,70 @@ test.describe("Playback controls geometry and pressed state", () => {
         "accompaniment-mute",
         "master-mute",
       ];
+      const centers: number[] = [];
       for (const action of actions) {
         const sel = `[data-playback-action="${action}"]`;
-        await expect(page.locator(sel)).toBeVisible();
-        const geo = await readActionButtonGeometry(page, sel);
-        expect(geo.width).toBeCloseTo(44, 5);
-        expect(geo.height).toBeCloseTo(44, 5);
-        expect(geo.flexShrink).toBe("0");
+        centers.push(await expectActionFootprint(page, sel));
       }
+      const min = Math.min(...centers);
+      const max = Math.max(...centers);
+      expect(max - min).toBeLessThanOrEqual(CENTER_Y_TOLERANCE);
+    });
+
+    test("no overflow, no center/right-zone intersection, metadata + cover visible", async ({
+      page,
+    }) => {
+      await expectNoOverflowOrZoneIntersection(page);
+      await expectMetadataCollapse(page, 1280);
+    });
+
+    test("master mute and vocals mute toggles maintain matching aria-pressed/state", async ({
+      page,
+    }) => {
+      const masterBtn = page.locator('[data-playback-action="master-mute"]');
+      await expect(masterBtn).toHaveAttribute("aria-pressed", "false");
+      await expect(masterBtn).not.toHaveAttribute("data-active", "true");
+      await masterBtn.click();
+      await expect(masterBtn).toHaveAttribute("aria-pressed", "true");
+      await expect(masterBtn).toHaveAttribute("data-active", "true");
+
+      const vocalsBtn = page.locator('[data-playback-action="vocals-mute"]');
+      await expect(vocalsBtn).toHaveAttribute("aria-pressed", "false");
+      await vocalsBtn.click();
+      await expect(vocalsBtn).toHaveAttribute("aria-pressed", "true");
+      await expect(vocalsBtn).toHaveAttribute("data-active", "true");
+    });
+
+    test("volume and stem actions invoke the correct commands", async ({
+      page,
+      tauriMock,
+    }) => {
+      await page.locator('[data-playback-action="master-mute"]').click();
+      await expect
+        .poll(async () =>
+          (await tauriMock.getInvokeCalls()).some(
+            (call) => call.cmd === "set_volume",
+          ),
+        )
+        .toBe(true);
+
+      await page.locator('[data-playback-action="vocals-mute"]').click();
+      await expect
+        .poll(async () =>
+          (await tauriMock.getInvokeCalls()).some(
+            (call) => call.cmd === "set_stem_volume",
+          ),
+        )
+        .toBe(true);
     });
   });
 
-  test.describe("tight density (900px viewport)", () => {
-    test.use({ viewport: { width: 900, height: 800 } });
+  // ── Required boundary: 1040px (tight density, cover-art threshold) ───
+  // Container width ~780px sits exactly at the cover-art collapse threshold
+  // (PLAYBACK_BAR_COVER_ART_COLLAPSE_WIDTH = 780). Metadata (760) is still
+  // visible at this width.
+  test.describe("tight density (1040px viewport, ~780px container)", () => {
+    test.use({ viewport: { width: 1040, height: 800 } });
 
     test("playback bar reports tight density", async ({ page }) => {
       await expect(page.locator("[data-playback-bar-density]")).toHaveAttribute(
@@ -236,18 +405,15 @@ test.describe("Playback controls geometry and pressed state", () => {
     test("contains only queue, mixer, master — no inline stem actions", async ({
       page,
     }) => {
-      // Queue and master are always present
       await expect(
         page.locator('[data-playback-action="queue"]'),
       ).toBeVisible();
       await expect(
         page.locator('[data-playback-action="master-mute"]'),
       ).toBeVisible();
-      // Stem mixer trigger is present in tight mode
       await expect(
         page.locator('[data-playback-action="stem-mixer"]'),
       ).toBeVisible();
-      // No inline vocals/accompaniment in tight mode
       await expect(
         page.locator('[data-playback-action="vocals-mute"]'),
       ).toHaveCount(0);
@@ -260,58 +426,208 @@ test.describe("Playback controls geometry and pressed state", () => {
       page,
     }) => {
       const actions = ["queue", "stem-mixer", "master-mute"];
+      const centers: number[] = [];
       for (const action of actions) {
         const sel = `[data-playback-action="${action}"]`;
-        await expect(page.locator(sel)).toBeVisible();
-        const geo = await readActionButtonGeometry(page, sel);
-        expect(geo.width).toBeCloseTo(44, 5);
-        expect(geo.height).toBeCloseTo(44, 5);
-        expect(geo.flexShrink).toBe("0");
-        expect(parseFloat(geo.svgWidth)).toBeCloseTo(18, 5);
-        expect(parseFloat(geo.svgHeight)).toBeCloseTo(18, 5);
+        centers.push(await expectActionFootprint(page, sel));
       }
+      const min = Math.min(...centers);
+      const max = Math.max(...centers);
+      expect(max - min).toBeLessThanOrEqual(CENTER_Y_TOLERANCE);
     });
 
-    test("no horizontal document overflow", async ({ page }) => {
-      const overflow = await page.evaluate(() => {
-        return {
-          scrollWidth: document.documentElement.scrollWidth,
-          clientWidth: document.documentElement.clientWidth,
-        };
-      });
-      expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
+    test("no overflow, no center/right-zone intersection", async ({ page }) => {
+      await expectNoOverflowOrZoneIntersection(page);
     });
 
-    test("center and right zones do not intersect", async ({ page }) => {
-      const zones = await page.evaluate(() => {
-        const center = document.querySelector('[data-playback-zone="center"]');
-        const right = document.querySelector('[data-playback-zone="right"]');
-        if (!center || !right) return null;
-        const c = center.getBoundingClientRect();
-        const r = right.getBoundingClientRect();
-        return { centerRight: c.right, rightLeft: r.left };
-      });
-      expect(zones).not.toBeNull();
-      if (zones) {
-        expect(zones.centerRight).toBeLessThanOrEqual(
-          zones.rightLeft + GEOMETRY_TOLERANCE,
-        );
-      }
+    test("metadata visible and cover art visible at the 780 container threshold", async ({
+      page,
+    }) => {
+      // 1040 - 260 = 780 container; cover collapses at < 780, so it stays.
+      await expectMetadataCollapse(page, 1040);
+    });
+
+    test("master mute toggle maintains matching aria-pressed/state", async ({
+      page,
+    }) => {
+      const masterBtn = page.locator('[data-playback-action="master-mute"]');
+      await expect(masterBtn).toHaveAttribute("aria-pressed", "false");
+      await masterBtn.click();
+      await expect(masterBtn).toHaveAttribute("aria-pressed", "true");
+      await expect(masterBtn).toHaveAttribute("data-active", "true");
+    });
+
+    test("master mute invokes set_volume", async ({ page, tauriMock }) => {
+      await page.locator('[data-playback-action="master-mute"]').click();
+      await expect
+        .poll(async () =>
+          (await tauriMock.getInvokeCalls()).some(
+            (call) => call.cmd === "set_volume",
+          ),
+        )
+        .toBe(true);
     });
   });
 
-  test.describe("narrow width (720px)", () => {
+  // ── Required boundary: 900px (tight density, metadata collapsed) ─────
+  test.describe("tight density (900px viewport, ~640px container)", () => {
+    test.use({ viewport: { width: 900, height: 800 } });
+
+    test("playback bar reports tight density", async ({ page }) => {
+      await expect(page.locator("[data-playback-bar-density]")).toHaveAttribute(
+        "data-playback-bar-density",
+        "tight",
+      );
+    });
+
+    test("contains only queue, mixer, master — no inline stem actions", async ({
+      page,
+    }) => {
+      await expect(
+        page.locator('[data-playback-action="queue"]'),
+      ).toBeVisible();
+      await expect(
+        page.locator('[data-playback-action="master-mute"]'),
+      ).toBeVisible();
+      await expect(
+        page.locator('[data-playback-action="stem-mixer"]'),
+      ).toBeVisible();
+      await expect(
+        page.locator('[data-playback-action="vocals-mute"]'),
+      ).toHaveCount(0);
+      await expect(
+        page.locator('[data-playback-action="accompaniment-mute"]'),
+      ).toHaveCount(0);
+    });
+
+    test("queue, mixer, master are all 44x44 with 18px icons", async ({
+      page,
+    }) => {
+      const actions = ["queue", "stem-mixer", "master-mute"];
+      const centers: number[] = [];
+      for (const action of actions) {
+        const sel = `[data-playback-action="${action}"]`;
+        centers.push(await expectActionFootprint(page, sel));
+      }
+      const min = Math.min(...centers);
+      const max = Math.max(...centers);
+      expect(max - min).toBeLessThanOrEqual(CENTER_Y_TOLERANCE);
+    });
+
+    test("no overflow, no center/right-zone intersection", async ({ page }) => {
+      await expectNoOverflowOrZoneIntersection(page);
+    });
+
+    test("metadata and cover art collapsed below the 760 threshold", async ({
+      page,
+    }) => {
+      // 900 - 260 = 640 container; both metadata (760) and cover (780) collapse.
+      await expectMetadataCollapse(page, 900);
+    });
+
+    test("master mute toggle maintains matching aria-pressed/state", async ({
+      page,
+    }) => {
+      const masterBtn = page.locator('[data-playback-action="master-mute"]');
+      await expect(masterBtn).toHaveAttribute("aria-pressed", "false");
+      await masterBtn.click();
+      await expect(masterBtn).toHaveAttribute("aria-pressed", "true");
+      await expect(masterBtn).toHaveAttribute("data-active", "true");
+    });
+  });
+
+  // ── Required boundary: 760px (tight density, metadata collapsed) ─────
+  test.describe("tight density (760px viewport, ~500px container)", () => {
+    test.use({ viewport: { width: 760, height: 800 } });
+
+    test("playback bar reports tight density", async ({ page }) => {
+      await expect(page.locator("[data-playback-bar-density]")).toHaveAttribute(
+        "data-playback-bar-density",
+        "tight",
+      );
+    });
+
+    test("queue, mixer, master are all 44x44 with 18px icons", async ({
+      page,
+    }) => {
+      const actions = ["queue", "stem-mixer", "master-mute"];
+      const centers: number[] = [];
+      for (const action of actions) {
+        const sel = `[data-playback-action="${action}"]`;
+        centers.push(await expectActionFootprint(page, sel));
+      }
+      const min = Math.min(...centers);
+      const max = Math.max(...centers);
+      expect(max - min).toBeLessThanOrEqual(CENTER_Y_TOLERANCE);
+    });
+
+    test("no overflow, no center/right-zone intersection", async ({ page }) => {
+      await expectNoOverflowOrZoneIntersection(page);
+    });
+
+    test("metadata and cover art collapsed below the 760 threshold", async ({
+      page,
+    }) => {
+      await expectMetadataCollapse(page, 760);
+    });
+
+    test("master mute toggle maintains matching aria-pressed/state", async ({
+      page,
+    }) => {
+      const masterBtn = page.locator('[data-playback-action="master-mute"]');
+      await expect(masterBtn).toHaveAttribute("aria-pressed", "false");
+      await masterBtn.click();
+      await expect(masterBtn).toHaveAttribute("aria-pressed", "true");
+      await expect(masterBtn).toHaveAttribute("data-active", "true");
+    });
+  });
+
+  // ── Required boundary: 720px (tight density, narrowest) ──────────────
+  test.describe("narrow width (720px viewport, ~460px container)", () => {
     test.use({ viewport: { width: 720, height: 800 } });
 
-    test("no horizontal overflow and right zone present", async ({ page }) => {
-      const overflow = await page.evaluate(() => {
-        return {
-          scrollWidth: document.documentElement.scrollWidth,
-          clientWidth: document.documentElement.clientWidth,
-        };
-      });
-      expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
+    test("playback bar reports tight density", async ({ page }) => {
+      await expect(page.locator("[data-playback-bar-density]")).toHaveAttribute(
+        "data-playback-bar-density",
+        "tight",
+      );
+    });
+
+    test("queue, mixer, master are all 44x44 with 18px icons", async ({
+      page,
+    }) => {
+      const actions = ["queue", "stem-mixer", "master-mute"];
+      const centers: number[] = [];
+      for (const action of actions) {
+        const sel = `[data-playback-action="${action}"]`;
+        centers.push(await expectActionFootprint(page, sel));
+      }
+      const min = Math.min(...centers);
+      const max = Math.max(...centers);
+      expect(max - min).toBeLessThanOrEqual(CENTER_Y_TOLERANCE);
+    });
+
+    test("no overflow, no center/right-zone intersection, right zone present", async ({
+      page,
+    }) => {
+      await expectNoOverflowOrZoneIntersection(page);
       await expect(page.locator('[data-playback-zone="right"]')).toBeVisible();
+    });
+
+    test("metadata and cover art collapsed below the 760 threshold", async ({
+      page,
+    }) => {
+      await expectMetadataCollapse(page, 720);
+    });
+
+    test("master mute toggle maintains matching aria-pressed/state", async ({
+      page,
+    }) => {
+      const masterBtn = page.locator('[data-playback-action="master-mute"]');
+      await expect(masterBtn).toHaveAttribute("aria-pressed", "false");
+      await masterBtn.click();
+      await expect(masterBtn).toHaveAttribute("aria-pressed", "true");
+      await expect(masterBtn).toHaveAttribute("data-active", "true");
     });
   });
 });
