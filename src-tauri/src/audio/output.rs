@@ -430,7 +430,17 @@ pub fn render_output_buffer(
     // Streaming tracks use `finalize_streaming_natural_end` above and rely on
     // the frontend to call `play()` for the next song.
     let mut total_rendered = rendered;
-    if !has_streaming && playback.current_track_reached_eof() && playback.perform_gapless_swap() {
+    // #103: Do not gapless-swap when the user has paused (or is pausing via
+    // a fade-out). Without this check, a track reaching EOF during a pause
+    // fade-out would auto-advance to the preloaded next track, defeating the
+    // user's intent to stop at the current song. The `current_track_is_playing`
+    // helper returns false when `is_playing` is false or a `FadingOut` is in
+    // progress, either of which signals a user-initiated pause.
+    if !has_streaming
+        && playback.current_track_reached_eof()
+        && playback.current_track_is_playing()
+        && playback.perform_gapless_swap()
+    {
         // The swap set render_frame = 0 on the new track. Render the
         // remaining buffer from the new track's original audio (stems are
         // not preloaded for gapless — the swap creates a plain track).
@@ -1835,5 +1845,93 @@ mod tests {
         let track = controller.current_track.as_ref().unwrap();
         assert_eq!(track.song_id, "song-b");
         assert_eq!(track.render_frame, 412);
+    }
+
+    /// #103: When the user pauses near the end of a track and the track
+    /// reaches EOF during the pause fade-out, the gapless swap must NOT
+    /// auto-advance to the preloaded next track. The user's intent is to
+    /// stop at the current song, not to skip to the next one.
+    #[test]
+    fn gapless_swap_does_not_advance_when_paused_at_eof() {
+        use crate::audio::decode::DecodedAudio;
+        use crate::audio::output_format::OutputFormatSnapshot;
+        use crate::audio::playback::{PlaybackController, PreparedTrack};
+
+        let sample_rate: u32 = 44_100;
+        let channels: usize = 2;
+        let device_channels = 2;
+
+        // Track A: 100 frames of 0.1, then EOF.
+        let track_a_samples = vec![0.1_f32; 100 * channels];
+        let track_a = DecodedAudio {
+            sample_rate,
+            channels,
+            duration_ms: (100 * 1000 / sample_rate as usize) as u64,
+            samples: track_a_samples,
+        };
+
+        let mut controller = PlaybackController::default();
+        controller.start_track("song-a".to_owned(), track_a, 0);
+        controller.play(0).unwrap();
+        // Clear the fade-in so the test measures raw sample values.
+        controller.fade = crate::audio::playback::FadeState::None;
+
+        // Prepare track B so a gapless swap would be possible if not paused.
+        let fmt = OutputFormatSnapshot::new(1, sample_rate, channels as u16);
+        let track_b_samples = vec![0.5_f32; 512 * channels];
+        let prepared = PreparedTrack {
+            preload_request_generation: 0,
+            preload_generation: fmt.generation,
+            song_id: "song-b".to_owned(),
+            output_format: fmt,
+            audio: DecodedAudio {
+                sample_rate,
+                channels,
+                duration_ms: (512 * 1000 / sample_rate as usize) as u64,
+                samples: track_b_samples,
+            },
+        };
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+
+        // Simulate a user pause: set FadingOut. The render callback still
+        // runs during the fade-out (to ramp the volume down), so
+        // render_frame will advance and reach EOF — but the gapless swap
+        // must not fire because the user intended to pause.
+        controller.pause(0).unwrap();
+        assert!(matches!(
+            controller.fade,
+            crate::audio::playback::FadeState::FadingOut { .. }
+        ));
+
+        // Render one buffer. Track A fills the first 100 frames; the
+        // remaining 412 frames should be silence (zeros) because the
+        // gapless swap is suppressed by the pause.
+        let mut output = vec![0.0f32; 512 * device_channels];
+        let mut rc = super::ResamplerCache::new();
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        let _rendered = render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            sample_rate,
+            device_channels,
+            &mut rc,
+            &mut EqProcessor::new(sample_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        // The current track must still be song-a, not swapped to song-b.
+        let track = controller.current_track.as_ref().unwrap();
+        assert_eq!(
+            track.song_id, "song-a",
+            "gapless swap must not fire during a pause"
+        );
+        // The prepared track must still be available for a future resume.
+        assert!(
+            controller.prepared_track.is_some(),
+            "prepared track must not be consumed during a pause"
+        );
     }
 }

@@ -639,6 +639,89 @@ impl PlaybackController {
         }
     }
 
+    /// #88: Check whether the current decoded (non-streaming) track has
+    /// reached its end. The render callback calls this after advancing
+    /// `render_frame` to decide whether a gapless swap should occur.
+    pub(crate) fn current_track_reached_eof(&self) -> bool {
+        let Some(track) = self.current_track.as_ref() else {
+            return false;
+        };
+        if let Some(streaming) = &track.streaming {
+            // Streaming tracks use `all_eof_and_drained` on the ring buffer.
+            return streaming.all_eof_and_drained();
+        }
+        let total_frames = track.original_audio.samples.len() / track.original_audio.channels;
+        track.render_frame >= total_frames as u64
+    }
+
+    /// #103: Whether the current track is actively playing — i.e. the user
+    /// has not paused and no pause fade-out is in progress. The gapless swap
+    /// path checks this before advancing to the prepared next track so that a
+    /// track reaching EOF during a user-initiated pause (or while paused with
+    /// `render_frame` already at EOF) does not auto-advance. Without this
+    /// guard, pausing near the end of a track would still swap to the
+    /// preloaded next track once the fade-out renders the final frames,
+    /// defeating the user's intent to stop at the current song.
+    pub(crate) fn current_track_is_playing(&self) -> bool {
+        let Some(track) = self.current_track.as_ref() else {
+            return false;
+        };
+        track.is_playing && !matches!(self.fade, FadeState::FadingOut { .. })
+    }
+
+    /// #88: Perform a gapless swap from the current track to the prepared
+    /// track. Called by the realtime callback when the current track reaches
+    /// EOF and a prepared track is available. Returns `true` if the swap
+    /// occurred.
+    ///
+    /// This is the only path that consumes `prepared_track`. The new track
+    /// starts playing immediately at `render_frame = 0` with `is_playing =
+    /// true`, and a `CompletedTransition` is stamped for the position emitter
+    /// to drain.
+    pub(crate) fn perform_gapless_swap(&mut self) -> bool {
+        let Some(prepared) = self.prepared_track.take() else {
+            return false;
+        };
+        let Some(current) = self.current_track.as_ref() else {
+            // No current track — shouldn't happen, but be defensive.
+            self.prepared_track = Some(prepared);
+            return false;
+        };
+
+        // The prepared track's audio was already normalized to the output
+        // format by the preload scheduler, so sample_rate and channels match
+        // the current track. We construct a new LoadedTrack with the
+        // prepared audio.
+        let from_song_id = current.song_id.clone();
+        let to_song_id = prepared.song_id.clone();
+        let preload_generation = prepared.preload_generation;
+
+        self.current_track = Some(LoadedTrack {
+            song_id: prepared.song_id,
+            original_audio: prepared.audio,
+            stems: None,
+            is_playing: true,
+            render_frame: 0,
+            streaming: None,
+        });
+
+        // Clear transport state carried over from the previous track. The
+        // new track starts fresh at frame 0 with no fade and no buffering
+        // flag. Without clearing `fade`, a fade-out in progress when the
+        // previous track reached EOF would be applied to the new track,
+        // briefly attenuating it and then setting is_playing=false when the
+        // fade completes — defeating the gapless transition. `is_buffering`
+        // is only set for streaming tracks, but clearing it defensively
+        // guards against any stale state.
+        self.fade = FadeState::None;
+        self.is_buffering = false;
+
+        // Stamp the transition for the position emitter to drain.
+        self.stamp_transition(from_song_id, to_song_id, preload_generation);
+
+        true
+    }
+
     /// If a fade-out has elapsed past `FADE_DURATION`, finalize it: set
     /// `is_playing = false` and clear the fade state.  Called before
     /// `snapshot()` so the snapshot correctly reports the paused state.
