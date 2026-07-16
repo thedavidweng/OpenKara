@@ -106,6 +106,47 @@ impl PeakRing {
         }
         out
     }
+
+    /// Test-only snapshot variant with two interception points:
+    ///
+    /// 1. `after_first_copy`: called after the first `copy_entries` and before
+    ///    the second `write_index` load. A test pushes here to force the retry
+    ///    path (making `second_index != first_index`).
+    ///
+    /// 2. `after_retry_copy`: called after the retry `copy_entries` and before
+    ///    the return. A test pushes here to advance `write_index` past
+    ///    `second_index`, simulating the "third_index" that the buggy code
+    ///    would have returned.
+    ///
+    /// The returned cursor must equal `second_index` in all cases, proving the
+    /// snapshot does not advertise entries beyond the copied data.
+    #[cfg(test)]
+    fn snapshot_with_intercepts<F1, F2>(
+        &self,
+        after_first_copy: F1,
+        after_retry_copy: F2,
+    ) -> (u64, Vec<[f32; 2]>)
+    where
+        F1: FnOnce(&Self),
+        F2: FnOnce(&Self, u64, &[f32; 2]),
+    {
+        let first_index = self.write_index.load(Ordering::Acquire);
+        let _result = self.copy_entries(first_index);
+        // Intercept 1: test may push here to advance write_index, forcing
+        // the retry path (second_index != first_index).
+        after_first_copy(self);
+        let second_index = self.write_index.load(Ordering::Acquire);
+        if first_index == second_index {
+            return (first_index, _result);
+        }
+        let retry = self.copy_entries(second_index);
+        // Intercept 2: test may push here to advance write_index past
+        // second_index. The return must still use second_index.
+        if !retry.is_empty() {
+            after_retry_copy(self, second_index, retry.last().unwrap());
+        }
+        (second_index, retry)
+    }
 }
 
 impl Default for PeakRing {
@@ -457,5 +498,154 @@ mod tests {
         let _acc = PeakAccumulator::new();
         let (idx_after, _) = ring.snapshot();
         assert_eq!(idx_after, 1, "ring counter retained after restart");
+    }
+
+    // ── Deterministic race regression: cursor must not be ahead of copied data ──
+    //
+    // The original bug: `snapshot()` copied entries for `second_index` but
+    // returned `third_index` (a fresh load after the retry copy). If the
+    // writer advanced between the retry copy and that final load, the
+    // frontend accepted `third_index` while the peaks only reached
+    // `second_index`, causing the visualizer to be one update behind.
+    //
+    // The fix returns `(second_index, retry)` — the index that was actually
+    // used for the copy. These tests deterministically force the exact
+    // interlecing using `snapshot_with_intercepts` (no threads, no sleeps):
+    //   1. Writer pushes N pairs (write_index = N).
+    //   2. Reader starts snapshot: loads first_index = N, copies.
+    //   3. Intercept 1: writer pushes one more pair (write_index = N+1).
+    //   4. Reader loads second_index = N+1, retries copy from N+1.
+    //   5. Intercept 2: writer pushes one more pair (write_index = N+2).
+    //   6. Assert: returned cursor == N+1 (second_index), NOT N+2.
+    //      Assert: last peak in the snapshot is the value at index N
+    //      (the (N+1)th push), NOT the value at N+1.
+
+    #[test]
+    fn test_retry_cursor_not_ahead_of_copied_data() {
+        let ring = PeakRing::new();
+
+        // Push 2 pairs with distinct values.
+        ring.push(0.10, 0.10); // index 0 → write_index 1
+        ring.push(0.20, 0.20); // index 1 → write_index 2
+                               // write_index = 2
+
+        let (cursor, peaks) = ring.snapshot_with_intercepts(
+            // Intercept 1: push after the first copy, before the second load.
+            // This forces the retry path (second_index = 3 != first_index = 2).
+            |ring| {
+                ring.push(0.30, 0.30); // index 2 → write_index 3
+            },
+            // Intercept 2: push after the retry copy, before the return.
+            // This simulates the "third_index" advancement that the buggy
+            // code would have returned.
+            |ring, second_index, last| {
+                // second_index should be 3 (after intercept 1 pushed 0.30).
+                assert_eq!(
+                    second_index, 3,
+                    "second_index should be 3 (after intercept 1 push)",
+                );
+
+                // The last entry in the retry copy should be 0.30 (the
+                // value at index 2, which is the (second_index-1)th entry).
+                assert!(
+                    (last[0] - 0.30).abs() < 1e-6,
+                    "last retry entry should be 0.30, got {}",
+                    last[0],
+                );
+
+                // Push one more pair — the buggy code would have loaded
+                // write_index after this and returned 4 as the cursor.
+                ring.push(0.40, 0.40); // index 3 → write_index 4
+            },
+        );
+
+        // The cursor must be second_index (3), NOT the post-intercept-2
+        // write_index (4). The buggy code would have returned 4.
+        assert_eq!(
+            cursor, 3,
+            "cursor must equal second_index (3), not the post-intercept write_index (4)",
+        );
+
+        // The last peak in the snapshot must be 0.30 (at index 2), not 0.40.
+        assert!(!peaks.is_empty());
+        let last = peaks.last().unwrap();
+        assert!(
+            (last[0] - 0.30).abs() < 1e-6,
+            "last peak must be 0.30 (the value at second_index-1), got {}",
+            last[0],
+        );
+
+        // Verify write_index has indeed advanced to 4 (proving intercept 2
+        // pushed).
+        let final_index = ring.write_index.load(Ordering::Acquire);
+        assert_eq!(
+            final_index, 4,
+            "write_index should be 4 after intercept 2 push",
+        );
+    }
+
+    #[test]
+    fn test_non_retry_path_returns_first_index() {
+        // When the writer does not advance between the first copy and the
+        // second load, the snapshot returns first_index (no retry).
+        let ring = PeakRing::new();
+        ring.push(0.50, 0.50);
+
+        let (cursor, peaks) = ring.snapshot_with_intercepts(
+            |_| {}, // no push → no retry
+            |_, _, _| {
+                panic!("after_retry_copy should not be called on non-retry path");
+            },
+        );
+
+        assert_eq!(cursor, 1);
+        assert_eq!(peaks.len(), 1);
+        assert!((peaks[0][0] - 0.50).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_retry_with_multiple_advancements_cursor_matches_copied_data() {
+        // Larger test: push enough pairs to fill part of the ring, then
+        // force the retry path and a post-retry advancement. Verify the
+        // cursor and the last entry are consistent.
+        let ring = PeakRing::new();
+
+        // Push 5 pairs with distinct values.
+        for i in 0..5u32 {
+            let v = i as f32 * 0.1;
+            ring.push(v, v);
+        }
+        // write_index = 5
+
+        let (cursor, peaks) = ring.snapshot_with_intercepts(
+            |ring| {
+                // Push to force retry: write_index becomes 6.
+                ring.push(0.50, 0.50);
+            },
+            |ring, second_index, last| {
+                // second_index should be 6.
+                assert_eq!(second_index, 6);
+
+                // Last entry should be 0.50 (the value at index 5).
+                assert!((last[0] - 0.50).abs() < 1e-6);
+
+                // Push again: write_index becomes 7.
+                ring.push(0.60, 0.60);
+            },
+        );
+
+        // Cursor must be 6, not 7.
+        assert_eq!(cursor, 6);
+
+        // Last peak must be 0.50, not 0.60.
+        let last = peaks.last().unwrap();
+        assert!((last[0] - 0.50).abs() < 1e-6);
+
+        // All 6 entries should be present (indices 0..5).
+        assert_eq!(peaks.len(), 6);
+        for (i, pair) in peaks.iter().enumerate() {
+            let expected = i as f32 * 0.1;
+            assert!((pair[0] - expected).abs() < 1e-6, "peaks[{i}]");
+        }
     }
 }
