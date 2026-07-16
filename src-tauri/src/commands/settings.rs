@@ -217,7 +217,7 @@ pub fn set_execution_provider(
 }
 
 #[tauri::command]
-pub fn set_eq_enabled(
+pub async fn set_eq_enabled(
     app_handle: AppHandle,
     state: State<'_, AppState>,
     enabled: bool,
@@ -234,7 +234,10 @@ pub fn set_eq_enabled(
         .map_err(|e| internal_error(format!("failed to save config: {e}")))?;
 
     // Push the change to the playback coordinator so the realtime output
-    // callback picks it up via the controller's EQ config revision.
+    // callback picks it up via the controller's EQ config revision. Await
+    // the reply asynchronously instead of blocking the Tauri command thread
+    // — blocking_recv would freeze the UI event loop while the coordinator
+    // processes the command.
     let (tx, rx) = tokio::sync::oneshot::channel();
     let command = crate::audio::coordinator::PlaybackCommand::SetEqEnabled { enabled, reply: tx };
     state
@@ -242,7 +245,7 @@ pub fn set_eq_enabled(
         .command_tx
         .send(command)
         .map_err(|_| internal_error("playback coordinator disconnected"))?;
-    rx.blocking_recv()
+    rx.await
         .map_err(|_| internal_error("playback coordinator dropped reply"))?
         .map_err(|e| internal_error(format!("failed to apply eq enabled: {e}")))?;
 
@@ -250,7 +253,7 @@ pub fn set_eq_enabled(
 }
 
 #[tauri::command]
-pub fn set_eq_gains(
+pub async fn set_eq_gains(
     app_handle: AppHandle,
     state: State<'_, AppState>,
     gains_db: [f32; 5],
@@ -270,7 +273,10 @@ pub fn set_eq_gains(
         .map_err(|e| internal_error(format!("failed to save config: {e}")))?;
 
     // Push the change to the playback coordinator so the realtime output
-    // callback picks it up via the controller's EQ config revision.
+    // callback picks it up via the controller's EQ config revision. Await
+    // the reply asynchronously instead of blocking the Tauri command thread
+    // — blocking_recv would freeze the UI event loop while the coordinator
+    // processes the command.
     let (tx, rx) = tokio::sync::oneshot::channel();
     let command = crate::audio::coordinator::PlaybackCommand::SetEqGains {
         gains_db,
@@ -281,7 +287,7 @@ pub fn set_eq_gains(
         .command_tx
         .send(command)
         .map_err(|_| internal_error("playback coordinator disconnected"))?;
-    rx.blocking_recv()
+    rx.await
         .map_err(|_| internal_error("playback coordinator dropped reply"))?
         .map_err(|e| internal_error(format!("failed to apply eq gains: {e}")))?;
 
