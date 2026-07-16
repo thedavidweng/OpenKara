@@ -15,6 +15,7 @@
     "preview": "vite preview",
     "render:flatpak": "node scripts/render-flatpak-manifest.mjs",
     "generate:flatpak-node-sources": "node scripts/generate-flatpak-node-sources.mjs",
+    "generate:flatpak-cargo-sources": "node scripts/generate-flatpak-cargo-sources.mjs",
     "render:winget": "node scripts/render-winget-manifests.mjs",
     "generate:db-schema": "node scripts/generate-db-schema.mjs",
     "check:i18n": "node scripts/check-i18n.mjs",

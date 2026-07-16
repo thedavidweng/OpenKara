@@ -109,3 +109,15 @@ so each entry has `tarball: file:flatpak-node/pnpm-tarballs/<name>.tgz`.
   The `file:` resolution uses pnpm's localTarball fetcher, which works offline.
 - **Run (inside Flatpak build, before install):**
   `node flatpak-node/rewrite_lockfile_local_tarballs.mjs`
+
+## `generate-flatpak-cargo-sources.mjs`
+
+Regenerates Flatpak offline Cargo dependency sources from `src-tauri/Cargo.lock`.
+
+- **Input:** `src-tauri/Cargo.lock`
+- **Output:** `packaging/flatpak/generated/cargo-sources.json`
+- **Run:** `node scripts/generate-flatpak-cargo-sources.mjs` or
+  `pnpm generate:flatpak-cargo-sources`
+- **When to run:** after changing Rust dependencies or `Cargo.lock` entries
+  used by Flatpak packaging
+- **Idempotent:** two consecutive runs produce zero diff in the output file
