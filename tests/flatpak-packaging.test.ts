@@ -164,6 +164,101 @@ describe("Flatpak packaging", () => {
     expect(manifestTemplate).not.toContain("--bundles none");
   });
 
+  test("offline pnpm install trusts the integrity-pinned lockfile", () => {
+    // pnpm 11 re-applies supply-chain policy by fetching registry metadata even
+    // with --offline; that requires network and fails inside the Flatpak
+    // sandbox. The lockfile is already integrity-pinned by flatpak-node sources.
+    const manifestTemplate = readProjectFile(
+      "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
+    );
+
+    expect(manifestTemplate).toContain(
+      "pnpm install --offline --frozen-lockfile --trust-lockfile",
+    );
+  });
+
+  test("populates the offline pnpm 11 store and rewrites lockfile tarballs to file:", () => {
+    // pnpm 11 indexes packages in store-dir/v11/index.db (SQLite + msgpackr).
+    // Populate must run *after* the pnpm tarball is installed so dist/worker.js
+    // is available. Independently, lockfile resolutions are rewritten to
+    // file:flatpak-node/pnpm-tarballs/… so install uses the localTarball fetcher
+    // when the sandbox cannot reach registry.npmjs.org.
+    const manifestTemplate = readProjectFile(
+      "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
+    );
+    const populateIdx = manifestTemplate.indexOf(
+      "node flatpak-node/populate_pnpm_store.mjs",
+    );
+    const rewriteIdx = manifestTemplate.indexOf(
+      "node flatpak-node/rewrite_lockfile_local_tarballs.mjs",
+    );
+    const installIdx = manifestTemplate.indexOf(
+      "pnpm install --offline --frozen-lockfile --trust-lockfile",
+    );
+    const pnpmInstallIdx = manifestTemplate.indexOf(
+      "npm install -g --prefix /run/build/openkara/pnpm-install ./pnpm-package",
+    );
+
+    expect(populateIdx).toBeGreaterThan(-1);
+    expect(rewriteIdx).toBeGreaterThan(-1);
+    expect(installIdx).toBeGreaterThan(-1);
+    expect(pnpmInstallIdx).toBeGreaterThan(-1);
+    expect(pnpmInstallIdx).toBeLessThan(populateIdx);
+    expect(populateIdx).toBeLessThan(rewriteIdx);
+    expect(rewriteIdx).toBeLessThan(installIdx);
+
+    const nodeSources = JSON.parse(
+      readProjectFile("packaging/flatpak/generated/node-sources.0.json"),
+    ) as Array<{
+      type?: string;
+      "dest-filename"?: string;
+      contents?: string;
+      commands?: string[];
+    }>;
+    const populate = nodeSources.find(
+      (s) => s["dest-filename"] === "populate_pnpm_store.mjs",
+    );
+    expect(populate?.contents).toContain("worker_threads");
+    expect(populate?.contents).toContain("index.db");
+    expect(populate?.contents).toContain('type: "extract"');
+
+    const rewrite = nodeSources.find(
+      (s) => s["dest-filename"] === "rewrite_lockfile_local_tarballs.mjs",
+    );
+    expect(rewrite?.contents).toContain("tarball: file:");
+    expect(rewrite?.contents).toContain("pnpm-tarballs");
+
+    // Shell source only wires store-dir / headers; it must not run the old
+    // Python JSON-index populate (pnpm 11 cannot read that layout).
+    // store-dir MUST be relative: absolute $PWD paths from shell sources point
+    // at the host build tree, which is invisible under --nofilesystem=host:reset.
+    const shell = nodeSources.find((s) => s.type === "shell");
+    expect(shell?.commands?.join("\n")).toContain(
+      "store-dir=flatpak-node/pnpm-store",
+    );
+    expect(shell?.commands?.join("\n")).not.toContain("store-dir=$PWD");
+    expect(shell?.commands?.join("\n")).not.toContain("populate_pnpm_store.py");
+  });
+
+  test("flatpak-node offline store targets pnpm 11 store version directory", () => {
+    // pnpm 11 looks under store-dir/v11. Populate writing v10 makes every
+    // offline install fail with ERR_PNPM_NO_OFFLINE_TARBALL.
+    const nodeSources = JSON.parse(
+      readProjectFile("packaging/flatpak/generated/node-sources.0.json"),
+    ) as Array<{ "dest-filename"?: string; contents?: string }>;
+    const manifest = nodeSources.find(
+      (s) => s["dest-filename"] === "pnpm-manifest.json",
+    );
+    expect(manifest?.contents).toBeDefined();
+    const parsed = JSON.parse(manifest!.contents!) as { store_version: string };
+    expect(parsed.store_version).toBe("v11");
+
+    const generator = readProjectFile(
+      "scripts/generate-flatpak-node-sources.mjs",
+    );
+    expect(generator).toContain('store_version: "v11"');
+  });
+
   test("ships a pnpm tarball matching the packageManager pin in package.json", () => {
     // The Flatpak build installs pnpm from a tarball archive source in the
     // manifest template. If this tarball drifts from the packageManager version
@@ -201,7 +296,17 @@ describe("Flatpak packaging", () => {
     expect(packagingWorkflow).toContain(
       "image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50@sha256:",
     );
-    expect(packagingWorkflow).toContain("options: --privileged");
+    expect(packagingWorkflow).toMatch(/options:\s*>-?[\s\S]*?--privileged/);
+    // Free-disk must not bind-mount the entire host root into the privileged
+    // container — only specific unused toolchain paths under /host-cleanup.
+    expect(packagingWorkflow).toContain("/host-cleanup/");
+    expect(packagingWorkflow).not.toMatch(/-v\s+\/:\/host(?:\s|$)/);
+    // Reclaim contents *inside* each /host-cleanup/* mount, not the bind root
+    // (rm -rf on the mount-point dir itself yields "Device or resource busy").
+    expect(packagingWorkflow).toMatch(
+      /for mount in \/host-cleanup\/\*;[\s\S]*?find "\$mount" -mindepth 1/,
+    );
+
     expect(packagingWorkflow).toMatch(
       /uses: flatpak\/flatpak-github-actions\/flatpak-builder@[a-f0-9]{40}/,
     );
@@ -318,7 +423,8 @@ describe("Flatpak packaging", () => {
         .map((source) => [source["dest-filename"], source.sha512]),
     );
 
-    expect(manifest.store_version).toBe("v10");
+    // pnpm 11 resolves from store-dir/v11; v10 left offline installs blind.
+    expect(manifest.store_version).toBe("v11");
     expect(
       nodeSources.filter(
         (source) =>

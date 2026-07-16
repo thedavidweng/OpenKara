@@ -173,7 +173,7 @@ jobs:
     name: Build Flatpak (x86_64)
     needs: validate-flatpak
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     # Run inside the Flathub-maintained container. This image ships a
     # pre-configured flatpak + flatpak-builder + flatpak-builder-lint + flathub
     # remote + gnome-50 SDK, which is the environment every Flathub-hosted app
@@ -184,11 +184,48 @@ jobs:
     # dir vs build-init visibility mismatches). `--privileged` is required so
     # bubblewrap can operate inside the container. This mirrors the shape used
     # in flathub-infra/actions-images' own test workflow.
+    #
+    # Disk headroom: Flatpak SDK + cargo + node sources overflow the default
+    # GHA runner disk on PR builds. We bind-mount ONLY the host toolchain
+    # directories we intend to delete (not the whole host root), reclaim that
+    # space inside the job container, and disable flatpak-builder ccache
+    # restore/upload (unique-per-SHA keys are cache misses that only waste
+    # space). `--privileged` remains required for bubblewrap in this image.
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50@sha256:5767ab6266c0680cbe827f17b41a8120ac02c6a09bf5feced438831e57425c68
-      options: --privileged
+      options: >-
+        --privileged
+        --dns 8.8.8.8
+        --dns 1.1.1.1
+        -v /usr/share/dotnet:/host-cleanup/dotnet
+        -v /usr/local/lib/android:/host-cleanup/android
+        -v /usr/local/share/powershell:/host-cleanup/powershell
+        -v /opt/ghc:/host-cleanup/ghc
+        -v /usr/local/.ghcup:/host-cleanup/ghcup
+        -v /opt/hostedtoolcache/CodeQL:/host-cleanup/codeql
+        -v /usr/share/swift:/host-cleanup/swift
+        -v /usr/local/share/chromium:/host-cleanup/chromium
 
     steps:
+      - name: Free host disk space
+        run: |
+          # Reclaim only the bind-mounted unused host toolchains listed in
+          # container.options. Paths are intentionally narrow — never mount /.
+          # Delete *inside* each mount (not the mount-point dir itself) so we
+          # avoid "Device or resource busy" on the bind root while still
+          # reclaiming multi-GB toolchain trees.
+          set -euo pipefail
+          echo "=== disk before free ==="
+          df -h
+          if [ -d /host-cleanup ]; then
+            for mount in /host-cleanup/*; do
+              [ -d "$mount" ] || continue
+              find "$mount" -mindepth 1 -maxdepth 1 -exec rm -rf {} + || true
+            done
+          fi
+          echo "=== disk after free ==="
+          df -h
+
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -200,12 +237,16 @@ jobs:
           name: flatpak-manifest
           path: dist/flatpak
 
+      - name: Disk report (pre-build)
+        run: df -h
+
       - name: Build Flatpak
         uses: flatpak/flatpak-github-actions/flatpak-builder@401fe28a8384095fc1531b9d320b292f0ee45adb # v6.7
         with:
           bundle: openkara.flatpak
           manifest-path: dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml
-          cache-key: flatpak-builder-x86_64-${{ hashFiles('dist/flatpak/io.github.thedavidweng.OpenKara/io.github.thedavidweng.OpenKara.yml') }}
+          cache: "false"
+          upload-artifact: "false"
           arch: x86_64
           verbose: true
           # Required for `flatpak-builder-lint builddir/repo` to pass
@@ -220,6 +261,10 @@ jobs:
           # "appstream-external-screenshot-url: Screenshots are not mirrored to
           # https://dl.flathub.org/media".
           mirror-screenshots-url: https://dl.flathub.org/media
+
+      - name: Disk report (post-build)
+        if: always()
+        run: df -h
 
       - name: Run Flatpak builder lint
         run: |
