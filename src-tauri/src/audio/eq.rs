@@ -161,14 +161,23 @@ impl EqProcessor {
     }
 
     /// Auto preamp target supplies headroom for positive gain: it is
-    /// `db_to_linear(-max(0, max_positive_gain))`. Smoothed over the same
-    /// 50 ms interval as the gains.
+    /// `db_to_linear(-max(0, max_positive_gain))` computed over bands that
+    /// are actually active at the current sample rate. Bands at or above the
+    /// Nyquist guard are skipped by the filter, so including their gain
+    /// here would apply unnecessary attenuation (e.g. +12 dB on the 14 kHz
+    /// band at a 22050 Hz sample rate produces no boost but still drops
+    /// overall volume by -12 dB). Smoothed over the same 50 ms interval as
+    /// the gains.
     fn update_preamp_target(&mut self) {
-        let max_positive =
-            self.target_gains_db
-                .iter()
-                .copied()
-                .fold(0.0f32, |acc, g| if g > acc { g } else { acc });
+        let nyquist_limit = self.sample_rate * NYQUIST_RATIO_LIMIT;
+        let max_positive = self
+            .target_gains_db
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|(i, _)| EQ_BAND_FREQUENCIES_HZ[*i] < nyquist_limit)
+            .map(|(_, g)| g)
+            .fold(0.0f32, |acc, g| if g > acc { g } else { acc });
         self.target_preamp = db_to_linear(-max_positive.max(0.0));
         self.recompute_preamp_step();
     }
@@ -237,6 +246,14 @@ impl EqProcessor {
 
         let sample_rate = self.sample_rate;
 
+        // When fully bypassed (wet mix is 0 and not transitioning), the filter
+        // output is inaudible. Skip coefficient updates and filter runs while
+        // still advancing scalar smoothing, so enabling later resumes from
+        // the latest target without a jump. The bypass/enable crossfade masks
+        // the small transient from restarting warm filter delay state.
+        let fully_bypassed =
+            self.wet_mix == 0.0 && self.wet_step == 0.0 && self.target_wet_mix == 0.0;
+
         // Advance stored per-frame steps (fixed at last target change). Do not
         // recompute step from remaining distance here — that would restart a
         // fresh 50 ms ramp every callback and become buffer-size dependent.
@@ -267,6 +284,10 @@ impl EqProcessor {
                 self.wet_step = 0.0;
             } else {
                 self.wet_mix += self.wet_step;
+            }
+
+            if fully_bypassed {
+                continue;
             }
 
             // Recompute coefficients for this frame from the advanced smoothed
@@ -522,6 +543,49 @@ mod tests {
             proc.current_preamp,
             proc.target_preamp
         );
+    }
+
+    #[test]
+    fn auto_preamp_ignores_bands_above_nyquist_guard_at_low_sample_rates() {
+        // 22.05 kHz: the 14 kHz band is skipped by the filter, so boosting it
+        // must not pull down the auto preamp. Only the active bands count.
+        let mut proc = EqProcessor::new(22_050, 2);
+        proc.set_enabled(true);
+        proc.set_gains([0.0, 0.0, 0.0, 0.0, 12.0]);
+        assert!(
+            (proc.target_preamp - 1.0).abs() < 1e-6,
+            "boosting the skipped 14 kHz band at 22.05 kHz should not attenuate, got {}",
+            proc.target_preamp
+        );
+
+        // Boosting an active band at the same sample rate still applies preamp.
+        proc.set_gains([0.0, 0.0, 12.0, 0.0, 0.0]);
+        let expected = db_to_linear(-12.0);
+        assert!(
+            (proc.target_preamp - expected).abs() < 1e-5,
+            "boosting active 910 Hz band should preamp to {expected}, got {}",
+            proc.target_preamp
+        );
+    }
+
+    #[test]
+    fn disabled_eq_does_not_attenuate_when_top_band_is_boosted() {
+        // Even before the preamp fix, a disabled processor should pass the dry
+        // signal through unchanged. Regression guard for the bypass fast-path
+        // and the Nyquist-aware preamp.
+        let mut proc = EqProcessor::new(22_050, 2);
+        proc.set_gains([0.0, 0.0, 0.0, 0.0, 12.0]);
+        let samples = [0.3, -0.5, 0.7, -0.2, 0.0, 0.94, -0.94, 0.1];
+        let mut buf = samples.to_vec();
+        let len = buf.len();
+        proc.process(&mut buf, len);
+        for (i, &orig) in samples.iter().enumerate() {
+            assert!(
+                (buf[i] - orig).abs() <= 1e-6,
+                "disabled EQ with boosted top band changed sample {i}: {orig} -> {}",
+                buf[i]
+            );
+        }
     }
 
     #[test]
