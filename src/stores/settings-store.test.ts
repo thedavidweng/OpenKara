@@ -526,6 +526,38 @@ describe("settings-store actions", () => {
     expect(store.getState().crossfadeEnabled).toBe(true);
   });
 
+  test("setCrossfadeEnabled ignores stale late-arriving response", async () => {
+    // Simulate: user toggles on, then off quickly. The off response arrives
+    // first; the on response arrives later but must not revert to true.
+    store.setState({ crossfadeEnabled: false });
+
+    let resolveOn: (v: ReturnType<typeof makeAppSettings>) => void;
+    let resolveOff: (v: ReturnType<typeof makeAppSettings>) => void;
+    const pOn = new Promise((r) => {
+      resolveOn = r as typeof resolveOn;
+    });
+    const pOff = new Promise((r) => {
+      resolveOff = r as typeof resolveOff;
+    });
+
+    mockSetCrossfadeEnabled.mockImplementation((enabled: boolean) =>
+      enabled ? pOn : pOff,
+    );
+
+    const callOn = store.getState().setCrossfadeEnabled(true);
+    const callOff = store.getState().setCrossfadeEnabled(false);
+
+    // off resolves first
+    resolveOff(makeAppSettings({ crossfade_enabled: false }));
+    await callOff;
+    expect(store.getState().crossfadeEnabled).toBe(false);
+
+    // on resolves later — must not revert
+    resolveOn(makeAppSettings({ crossfade_enabled: true }));
+    await callOn;
+    expect(store.getState().crossfadeEnabled).toBe(false);
+  });
+
   // ── setCrossfadeDurationMs ──────────────────────────────────────────────
 
   test("setCrossfadeDurationMs calls api.setCrossfadeDurationMs and syncs the result", async () => {

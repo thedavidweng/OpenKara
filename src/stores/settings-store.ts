@@ -243,9 +243,16 @@ export function createSettingsStore(
         syncPatch({ crossfadeEnabled: enabled });
         try {
           const settings = await api.setCrossfadeEnabled(enabled);
-          syncPatch(toAppSettingsSnapshot(settings));
+          // Only apply the response if no newer toggle has superseded this
+          // request — otherwise a stale late-arriving response would revert
+          // the store to an older enabled state.
+          if (get().crossfadeEnabled === enabled) {
+            syncPatch(toAppSettingsSnapshot(settings));
+          }
         } catch (error) {
-          syncPatch({ crossfadeEnabled: previous });
+          if (get().crossfadeEnabled === enabled) {
+            syncPatch({ crossfadeEnabled: previous });
+          }
           notifyError(error);
         }
       },
