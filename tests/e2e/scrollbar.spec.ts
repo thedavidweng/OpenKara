@@ -263,22 +263,34 @@ test.describe("scrollbar platform contract", () => {
 
   test("library song list produces real overflow and inherits the platform contract", async ({
     page,
+    tauriMock,
   }) => {
     // Populate enough songs to overflow the virtualized song list. The
     // virtualizer estimates 68px per row + 4px gap, so 60 songs produce
     // ~4316px of content — far beyond a 400px viewport.
     const songs = generateSongs(60);
-    await page.addInitScript(
-      `window.__OPENKARA_E2E__.setMockSongs(${JSON.stringify(songs)});`,
-    );
 
     await page.setViewportSize({ width: 1280, height: 400 });
     await page.goto("/");
     await setPlatformMarker(page, "desktop");
 
+    // Override the mock library after navigation, then trigger a library
+    // reload via the same BroadcastChannel the app uses for cross-webview
+    // sync.  This avoids registering a second addInitScript that depends on
+    // window.__OPENKARA_E2E__ being defined by the fixture's init script —
+    // Playwright does not guarantee init-script evaluation order.
+    await tauriMock.setMockSongs(songs);
+    await page.evaluate(() => {
+      const channel = new BroadcastChannel("openkara.library");
+      channel.postMessage({ revision: 1 });
+      channel.close();
+    });
+
     const songList = page.getByTestId("song-list");
     await expect(songList).toBeVisible();
-    await expect(page.getByText("Test Song 0")).toBeVisible();
+    await expect(page.getByText("Test Song 0")).toBeVisible({
+      timeout: 5000,
+    });
 
     await assertRealOverflow(songList);
     await assertDesktopThinContract(page, songList);
@@ -312,18 +324,31 @@ test.describe("scrollbar platform contract", () => {
 
   test("queue panel produces real overflow and inherits the platform contract", async ({
     page,
+    tauriMock,
   }) => {
     // Populate enough songs so the queue can reference them, then push 40
     // song IDs into the queue store via the same BroadcastChannel the app
     // uses for cross-webview sync.
     const songs = generateSongs(60);
-    await page.addInitScript(
-      `window.__OPENKARA_E2E__.setMockSongs(${JSON.stringify(songs)});`,
-    );
 
     await page.setViewportSize({ width: 1280, height: 400 });
     await page.goto("/");
     await setPlatformMarker(page, "desktop");
+
+    // Override the mock library after navigation, then trigger a library
+    // reload via the same BroadcastChannel the app uses for cross-webview
+    // sync.  This avoids registering a second addInitScript that depends on
+    // window.__OPENKARA_E2E__ being defined by the fixture's init script —
+    // Playwright does not guarantee init-script evaluation order.
+    await tauriMock.setMockSongs(songs);
+    await page.evaluate(() => {
+      const channel = new BroadcastChannel("openkara.library");
+      channel.postMessage({ revision: 1 });
+      channel.close();
+    });
+    await expect(page.getByText("Test Song 0")).toBeVisible({
+      timeout: 5000,
+    });
 
     // Push 40 song hashes into the queue store via BroadcastChannel. The
     // queue store subscribes to "openkara.queue" and accepts messages from
