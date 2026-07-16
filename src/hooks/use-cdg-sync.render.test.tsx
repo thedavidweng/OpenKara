@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const {
   mockGetCdgFrame,
+  mockGetCdgStatus,
   mockDrawFrame,
   mockClearFrame,
   mockPostCdgFrame,
@@ -18,6 +19,13 @@ const {
 } = vi.hoisted(() => {
   return {
     mockGetCdgFrame: vi.fn(),
+    mockGetCdgStatus: vi.fn().mockResolvedValue({
+      availability: "none",
+      songId: null,
+      transportGeneration: null,
+      packetCount: null,
+      errorCode: null,
+    }),
     mockDrawFrame: vi.fn(),
     mockClearFrame: vi.fn(),
     mockPostCdgFrame: vi.fn(),
@@ -33,6 +41,7 @@ vi.mock("@/lib/tauri", async (importOriginal) => {
   return {
     ...actual,
     getCdgFrame: mockGetCdgFrame,
+    getCdgStatus: mockGetCdgStatus,
   };
 });
 

@@ -267,6 +267,13 @@ describe("#113: createCdgFrameCoordinator under slow IPC", () => {
 
     const coordinator = createCdgFrameCoordinator({
       getCdgFrame: getCdgFrame as never,
+      getCdgStatus: vi.fn().mockResolvedValue({
+        availability: "none",
+        songId: null,
+        transportGeneration: null,
+        packetCount: null,
+        errorCode: null,
+      }),
       onFrame,
       onProbeResolved,
       onError,
@@ -310,6 +317,8 @@ describe("#113: createCdgFrameCoordinator under slow IPC", () => {
       transportGeneration: 1,
       hasCdg: false,
       hasFrame: false,
+      availability: "none",
+      errorCode: null,
     });
 
     // After A completes, B should be pumped.
@@ -333,6 +342,13 @@ describe("#113: createCdgFrameCoordinator under slow IPC", () => {
     let currentSong = "song-a";
     const coordinator = createCdgFrameCoordinator({
       getCdgFrame: getCdgFrame as never,
+      getCdgStatus: vi.fn().mockResolvedValue({
+        availability: "none",
+        songId: null,
+        transportGeneration: null,
+        packetCount: null,
+        errorCode: null,
+      }),
       onFrame,
       onProbeResolved,
       onError,

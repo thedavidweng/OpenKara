@@ -55,6 +55,13 @@ describe("createCdgFrameCoordinator", () => {
 
     const coordinator = createCdgFrameCoordinator({
       getCdgFrame: getCdgFrame as never,
+      getCdgStatus: vi.fn().mockResolvedValue({
+        availability: "none",
+        songId: null,
+        transportGeneration: null,
+        packetCount: null,
+        errorCode: null,
+      }),
       onFrame,
       onProbeResolved,
       onError,
@@ -79,7 +86,7 @@ describe("createCdgFrameCoordinator", () => {
     expect(coordinator.isInFlight()).toBe(true);
 
     first.resolve(new ArrayBuffer(0));
-    // Drain promise microtasks: then → finally → pump → second getCdgFrame.
+    // Drain promise microtasks: then → getCdgStatus → complete → pump → second.
     for (let i = 0; i < 10; i++) {
       await Promise.resolve();
     }
@@ -103,6 +110,13 @@ describe("createCdgFrameCoordinator", () => {
 
     const coordinator = createCdgFrameCoordinator({
       getCdgFrame: getCdgFrame as never,
+      getCdgStatus: vi.fn().mockResolvedValue({
+        availability: "none",
+        songId: null,
+        transportGeneration: null,
+        packetCount: null,
+        errorCode: null,
+      }),
       onFrame,
       onProbeResolved,
       onError,
@@ -120,6 +134,7 @@ describe("createCdgFrameCoordinator", () => {
     expect(coordinator.currentSerial()).toBeGreaterThan(serialAtRequest);
 
     pending.resolve(new ArrayBuffer(0));
+    await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
 
@@ -142,6 +157,13 @@ describe("createCdgFrameCoordinator", () => {
 
     const coordinator = createCdgFrameCoordinator({
       getCdgFrame: getCdgFrame as never,
+      getCdgStatus: vi.fn().mockResolvedValue({
+        availability: "none",
+        songId: null,
+        transportGeneration: null,
+        packetCount: null,
+        errorCode: null,
+      }),
       onFrame,
       onProbeResolved,
       onError,
@@ -166,13 +188,15 @@ describe("createCdgFrameCoordinator", () => {
 
     // Resolve older first (stale).
     older.resolve(new ArrayBuffer(0));
-    await Promise.resolve();
-    await Promise.resolve();
+    for (let i = 0; i < 4; i++) {
+      await Promise.resolve();
+    }
     expect(onProbeResolved).not.toHaveBeenCalled();
 
     newer.resolve(new ArrayBuffer(0));
-    await Promise.resolve();
-    await Promise.resolve();
+    for (let i = 0; i < 4; i++) {
+      await Promise.resolve();
+    }
     // Newer may resolve with empty frame → onProbeResolved once.
     expect(onProbeResolved).toHaveBeenCalledTimes(1);
     expect(onProbeResolved).toHaveBeenCalledWith({
@@ -180,6 +204,8 @@ describe("createCdgFrameCoordinator", () => {
       transportGeneration: 2,
       hasCdg: false,
       hasFrame: false,
+      availability: "none",
+      errorCode: null,
     });
   });
 
@@ -191,6 +217,13 @@ describe("createCdgFrameCoordinator", () => {
 
     const coordinator = createCdgFrameCoordinator({
       getCdgFrame: getCdgFrame as never,
+      getCdgStatus: vi.fn().mockResolvedValue({
+        availability: "none",
+        songId: null,
+        transportGeneration: null,
+        packetCount: null,
+        errorCode: null,
+      }),
       onFrame: vi.fn(),
       onProbeResolved,
       onError: vi.fn(),
@@ -205,9 +238,152 @@ describe("createCdgFrameCoordinator", () => {
     });
     current = false;
     pending.resolve(new ArrayBuffer(0));
-    await Promise.resolve();
-    await Promise.resolve();
+    for (let i = 0; i < 4; i++) {
+      await Promise.resolve();
+    }
     expect(onProbeResolved).not.toHaveBeenCalled();
+  });
+
+  test("0-byte probe with backend error state reports availability and errorCode", async () => {
+    const pending = deferred<ArrayBuffer>();
+    const getCdgFrame = vi.fn(() => pending.promise);
+    const getCdgStatus = vi.fn().mockResolvedValue({
+      availability: "error",
+      songId: "song-1",
+      transportGeneration: 1,
+      packetCount: 0,
+      errorCode: "zip_failed",
+    });
+    const onFrame = vi.fn();
+    const onProbeResolved = vi.fn();
+    const onError = vi.fn();
+
+    const coordinator = createCdgFrameCoordinator({
+      getCdgFrame: getCdgFrame as never,
+      getCdgStatus: getCdgStatus as never,
+      onFrame,
+      onProbeResolved,
+      onError,
+      isCurrent: () => true,
+    });
+
+    coordinator.request({
+      songId: "song-1",
+      transportGeneration: 1,
+      positionMs: 0,
+      lastFrameVersion: 0,
+    });
+
+    // Backend returns 0 bytes (no decoder for the error-state slot).
+    pending.resolve(new ArrayBuffer(0));
+    for (let i = 0; i < 6; i++) {
+      await Promise.resolve();
+    }
+
+    // The coordinator must consult getCdgStatus and forward the error state
+    // instead of silently treating the song as audio-only.
+    expect(getCdgStatus).toHaveBeenCalledWith("song-1", 1);
+    expect(onProbeResolved).toHaveBeenCalledTimes(1);
+    expect(onProbeResolved).toHaveBeenCalledWith({
+      songId: "song-1",
+      transportGeneration: 1,
+      hasCdg: false,
+      hasFrame: false,
+      availability: "error",
+      errorCode: "zip_failed",
+    });
+    expect(coordinator.isInFlight()).toBe(false);
+
+    coordinator.invalidate();
+  });
+
+  test("0-byte probe with availability none reports audio-only", async () => {
+    const pending = deferred<ArrayBuffer>();
+    const getCdgFrame = vi.fn(() => pending.promise);
+    const getCdgStatus = vi.fn().mockResolvedValue({
+      availability: "none",
+      songId: null,
+      transportGeneration: null,
+      packetCount: null,
+      errorCode: null,
+    });
+    const onFrame = vi.fn();
+    const onProbeResolved = vi.fn();
+    const onError = vi.fn();
+
+    const coordinator = createCdgFrameCoordinator({
+      getCdgFrame: getCdgFrame as never,
+      getCdgStatus: getCdgStatus as never,
+      onFrame,
+      onProbeResolved,
+      onError,
+      isCurrent: () => true,
+    });
+
+    coordinator.request({
+      songId: "song-1",
+      transportGeneration: 1,
+      positionMs: 0,
+      lastFrameVersion: 0,
+    });
+
+    pending.resolve(new ArrayBuffer(0));
+    for (let i = 0; i < 6; i++) {
+      await Promise.resolve();
+    }
+
+    expect(onProbeResolved).toHaveBeenCalledWith({
+      songId: "song-1",
+      transportGeneration: 1,
+      hasCdg: false,
+      hasFrame: false,
+      availability: "none",
+      errorCode: null,
+    });
+
+    coordinator.invalidate();
+  });
+
+  test("getCdgStatus failure falls back to audio-only treatment", async () => {
+    const pending = deferred<ArrayBuffer>();
+    const getCdgFrame = vi.fn(() => pending.promise);
+    const getCdgStatus = vi.fn().mockRejectedValue(new Error("ipc down"));
+    const onFrame = vi.fn();
+    const onProbeResolved = vi.fn();
+    const onError = vi.fn();
+
+    const coordinator = createCdgFrameCoordinator({
+      getCdgFrame: getCdgFrame as never,
+      getCdgStatus: getCdgStatus as never,
+      onFrame,
+      onProbeResolved,
+      onError,
+      isCurrent: () => true,
+    });
+
+    coordinator.request({
+      songId: "song-1",
+      transportGeneration: 1,
+      positionMs: 0,
+      lastFrameVersion: 0,
+    });
+
+    pending.resolve(new ArrayBuffer(0));
+    for (let i = 0; i < 6; i++) {
+      await Promise.resolve();
+    }
+
+    // Status IPC failed — fall back to the legacy audio-only payload without
+    // availability/errorCode so the hot loop is not blocked.
+    expect(onProbeResolved).toHaveBeenCalledWith({
+      songId: "song-1",
+      transportGeneration: 1,
+      hasCdg: false,
+      hasFrame: false,
+    });
+    expect(coordinator.isInFlight()).toBe(false);
+
+    coordinator.invalidate();
   });
 });
 

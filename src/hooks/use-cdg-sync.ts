@@ -15,6 +15,7 @@ import {
   type CdgSyncStatusPayload,
 } from "@/lib/cdg-sync-channel";
 import { ensureArrayBuffer, parseCdgFrameResponse } from "@/lib/cdg-protocol";
+import type { CdgAvailability, CdgErrorCode } from "@/lib/tauri/cdg";
 import * as api from "@/lib/tauri";
 
 /**
@@ -101,6 +102,13 @@ export type CdgFrameCoordinator = {
 
 export function createCdgFrameCoordinator(deps: {
   getCdgFrame: typeof api.getCdgFrame;
+  /**
+   * Query the backend CDG status for a song/generation. Used to distinguish a
+   * genuine audio-only song (availability "none") from a backend CDG error
+   * state (empty/invalid/unreadable/broken ZIP) when the frame probe returns a
+   * 0-byte response.
+   */
+  getCdgStatus: typeof api.getCdgStatus;
   onFrame: (args: {
     songId: string;
     transportGeneration: number;
@@ -114,6 +122,16 @@ export function createCdgFrameCoordinator(deps: {
     /** Whether the backend has an active CDG slot for this song. */
     hasCdg: boolean;
     hasFrame: boolean;
+    /**
+     * Backend CDG availability, reported when the frame probe consulted
+     * `getCdgStatus` (i.e. on a 0-byte response). Absent on the hasCdg=true
+     * and IPC-failure fallback paths.
+     */
+    availability?: CdgAvailability;
+    /**
+     * Backend CDG error code, reported when `availability` is "error".
+     */
+    errorCode?: CdgErrorCode | null;
   }) => void;
   onError: (args: { songId: string; transportGeneration: number }) => void;
   /** Optional: is this request still relevant? */
@@ -128,6 +146,21 @@ export function createCdgFrameCoordinator(deps: {
     const req = pending;
     pending = null;
     inFlight = true;
+
+    // Called when all follow-up work for this request is done. Clears the
+    // in-flight flag and pumps the next coalesced request. Using a helper
+    // (instead of .finally()) keeps inFlight true while a getCdgStatus
+    // follow-up is outstanding, preserving the "at most one getCdgFrame in
+    // flight" serialization invariant.
+    const complete = () => {
+      inFlight = false;
+      // Drop if invalidated while in flight.
+      if (pending && pending.serial !== serial) {
+        pending = null;
+      }
+      pump();
+    };
+
     deps
       .getCdgFrame(
         req.songId,
@@ -143,6 +176,7 @@ export function createCdgFrameCoordinator(deps: {
         // dropped. Under slow IPC this prevents every frame from being
         // dropped when requests arrive faster than responses.
         if (req.serial !== serial || !deps.isCurrent(req)) {
+          complete();
           return;
         }
         const buffer = ensureArrayBuffer(result);
@@ -160,6 +194,7 @@ export function createCdgFrameCoordinator(deps: {
             hasCdg: true,
             hasFrame: true,
           });
+          complete();
         } else if (envelope) {
           // CDG is active but the caller already has the current frame
           // (header-only response, no RGBA payload).
@@ -169,33 +204,61 @@ export function createCdgFrameCoordinator(deps: {
             hasCdg: true,
             hasFrame: false,
           });
+          complete();
         } else {
-          // No active CDG slot — backend returned 0 bytes. This covers
-          // audio-only songs and sidecar CDG files that were not loaded.
-          deps.onProbeResolved({
-            songId: req.songId,
-            transportGeneration: req.transportGeneration,
-            hasCdg: false,
-            hasFrame: false,
-          });
+          // 0-byte response: the backend has no active CDG decoder for this
+          // song/generation. This covers three cases — a genuine audio-only
+          // song, a stale song/generation, and a backend CDG error state
+          // (empty/invalid/unreadable/broken ZIP). The frame probe alone
+          // cannot distinguish them, so consult getCdgStatus and forward the
+          // backend availability/errorCode to the UI. RATIONALE: the previous
+          // code treated every 0-byte response as hasCdg=false, which silently
+          // hid backend CDG errors as audio-only and never reported the
+          // documented errorCode to the UI.
+          deps
+            .getCdgStatus(req.songId, req.transportGeneration)
+            .then((status) => {
+              if (req.serial !== serial || !deps.isCurrent(req)) {
+                complete();
+                return;
+              }
+              deps.onProbeResolved({
+                songId: req.songId,
+                transportGeneration: req.transportGeneration,
+                hasCdg: false,
+                hasFrame: false,
+                availability: status.availability,
+                errorCode: status.errorCode,
+              });
+              complete();
+            })
+            .catch(() => {
+              // Status query failed — fall back to audio-only treatment so a
+              // status IPC failure does not block the hot loop.
+              if (req.serial !== serial || !deps.isCurrent(req)) {
+                complete();
+                return;
+              }
+              deps.onProbeResolved({
+                songId: req.songId,
+                transportGeneration: req.transportGeneration,
+                hasCdg: false,
+                hasFrame: false,
+              });
+              complete();
+            });
         }
       })
       .catch(() => {
         if (req.serial !== serial || !deps.isCurrent(req)) {
+          complete();
           return;
         }
         deps.onError({
           songId: req.songId,
           transportGeneration: req.transportGeneration,
         });
-      })
-      .finally(() => {
-        inFlight = false;
-        // Drop if invalidated while in flight.
-        if (pending && pending.serial !== serial) {
-          pending = null;
-        }
-        pump();
+        complete();
       });
   };
 
@@ -224,6 +287,7 @@ export function useCdgSync(enabled = true): void {
     (s) => s.snapshot?.transport_generation ?? 0,
   );
   const setSong = useCdgStore((s) => s.setSong);
+  const setStatus = useCdgStore((s) => s.setStatus);
   const clear = useCdgStore((s) => s.clear);
   const setFrameVersion = useCdgStore((s) => s.setFrameVersion);
 
@@ -238,6 +302,7 @@ export function useCdgSync(enabled = true): void {
 
     const coordinator = createCdgFrameCoordinator({
       getCdgFrame: api.getCdgFrame,
+      getCdgStatus: api.getCdgStatus,
       isCurrent: (req) => {
         const snap = usePlayerStore.getState().snapshot;
         return (
@@ -266,18 +331,19 @@ export function useCdgSync(enabled = true): void {
           setSong(sid, true);
         }
       },
-      onProbeResolved: ({ songId: sid, hasCdg }) => {
+      onProbeResolved: ({ songId: sid, hasCdg, availability, errorCode }) => {
         if (!hasCdg) {
-          // Backend has no active CDG slot for this song — this covers
-          // audio-only tracks and songs whose sidecar .cdg was not loaded.
-          // Clear the display and report hasCdg=false so the hot-loop
-          // does not fire. RATIONALE: the previous code used a frontend
-          // songHasCdgMedia() early-return that skipped the probe for
-          // songs without an explicit cdg_path or Media+G container, but
-          // the backend still loads implicit sidecars via
-          // audio_path.with_extension("cdg"). Those songs were wrongly
-          // cleared and reported hasCdg=false. Letting the backend decide
-          // via the probe avoids that false negative.
+          // No active CDG decoder for this song/generation. Forward the
+          // backend availability/errorCode to the store so the UI can
+          // surface error states (empty/invalid/unreadable/broken ZIP CDG)
+          // instead of silently hiding them as audio-only. RATIONALE: the
+          // previous code treated every 0-byte probe response as
+          // hasCdg=false, so a song with a broken ZIP CDG was
+          // indistinguishable from an audio-only track and the documented
+          // errorCode was never reported to the UI. Only availability
+          // "none" represents a genuine audio-only song; "error" carries an
+          // errorCode the UI should display.
+          setStatus(availability ?? "none", errorCode ?? null);
           setSong(sid, false);
           clearFrame();
           emitCdgClear();
@@ -285,11 +351,14 @@ export function useCdgSync(enabled = true): void {
           return;
         }
         // CDG is active; soft-confirm status without clearing an
-        // already-drawn frame.
+        // already-drawn frame. Clear any stale error code left over from a
+        // previous failed load so the UI does not keep showing it.
+        setStatus("ready", null);
         emitCdgStatus(sid, true);
       },
       onError: ({ songId: sid }) => {
         setSong(sid, false);
+        setStatus("none", null);
         clearFrame();
         emitCdgStatus(sid, false);
       },
@@ -302,7 +371,7 @@ export function useCdgSync(enabled = true): void {
         coordinatorRef.current = null;
       }
     };
-  }, [enabled, setFrameVersion, setSong]);
+  }, [enabled, setFrameVersion, setSong, setStatus]);
 
   useEffect(() => {
     if (!enabled) return;
