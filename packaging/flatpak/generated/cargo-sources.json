@@ -5865,6 +5865,19 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
+    "url": "https://static.crates.io/crates/tokio-macros/tokio-macros-2.7.0.crate",
+    "sha256": "385a6cb71ab9ab790c5fe8d67f1645e6c450a7ce006a33de03daa956cf70a496",
+    "dest": "cargo/vendor/tokio-macros-2.7.0"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"package\":\"385a6cb71ab9ab790c5fe8d67f1645e6c450a7ce006a33de03daa956cf70a496\",\"files\":{}}",
+    "dest": "cargo/vendor/tokio-macros-2.7.0",
+    "dest-filename": ".cargo-checksum.json"
+  },
+  {
+    "type": "archive",
+    "archive-type": "tar-gzip",
     "url": "https://static.crates.io/crates/tokio-rustls/tokio-rustls-0.26.4.crate",
     "sha256": "1729aa945f29d91ba541258c8df89027d5792d85a8841fb65e8bf0f4ede4ef61",
     "dest": "cargo/vendor/tokio-rustls-0.26.4"

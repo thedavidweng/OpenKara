@@ -1,5 +1,4 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 
 /**
  * Regenerates Flatpak offline Cargo dependency sources from `src-tauri/Cargo.lock`.
@@ -15,9 +14,8 @@ import { fileURLToPath } from "node:url";
  *   used by Flatpak packaging
  * - **Idempotent:** two consecutive runs produce zero diff in the output file
  */
-const defaultLockfilePath = "src-tauri/Cargo.lock";
-const defaultCargoSourcesPath =
-  "packaging/flatpak/generated/cargo-sources.json";
+const lockfilePath = "src-tauri/Cargo.lock";
+const cargoSourcesPath = "packaging/flatpak/generated/cargo-sources.json";
 
 /**
  * @typedef {Object} CargoLockPackage
@@ -30,7 +28,7 @@ const defaultCargoSourcesPath =
  * @param {string} lockfile
  * @returns {CargoLockPackage[]}
  */
-export function parseCargoLockfile(lockfile) {
+function parseCargoLockfile(lockfile) {
   const packages = [];
 
   for (const packageBlock of lockfile.split(/\n\[\[package\]\]\n/)) {
@@ -65,7 +63,7 @@ export function parseCargoLockfile(lockfile) {
  * @param {CargoLockPackage[]} packages
  * @returns {unknown[]}
  */
-export function generateCargoSources(packages) {
+function generateCargoSources(packages) {
   const sources = [];
 
   for (const pkg of packages) {
@@ -103,33 +101,9 @@ export function generateCargoSources(packages) {
   return sources;
 }
 
-/**
- * Renders the full Cargo sources JSON text from a lockfile string.
- *
- * Exposed as a pure function so tests can compare rendered output against the
- * committed manifest without writing into the real checkout (which risked
- * discarding a developer's intentional uncommitted edits via `git checkout`).
- *
- * @param {string} lockfile - Raw contents of `Cargo.lock`.
- * @returns {string} The serialized `cargo-sources.json` text (with trailing newline).
- */
-export function renderCargoSources(lockfile) {
-  const packages = parseCargoLockfile(lockfile);
-  const sources = generateCargoSources(packages);
-  return `${JSON.stringify(sources, null, 2)}\n`;
-}
+const lockfile = readFileSync(lockfilePath, "utf8");
+const packages = parseCargoLockfile(lockfile);
+const sources = generateCargoSources(packages);
 
-// CLI entry point: read the lockfile and write the generated manifest.
-// Guarded so importing the pure functions above (e.g. from tests) does not
-// trigger filesystem writes.
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const lockfilePath = process.argv[2] ?? defaultLockfilePath;
-  const cargoSourcesPath = process.argv[3] ?? defaultCargoSourcesPath;
-
-  const lockfile = readFileSync(lockfilePath, "utf8");
-  const packages = parseCargoLockfile(lockfile);
-  const sources = generateCargoSources(packages);
-
-  writeFileSync(cargoSourcesPath, `${JSON.stringify(sources, null, 2)}\n`);
-  console.log(`Generated ${cargoSourcesPath} with ${packages.length} crates`);
-}
+writeFileSync(cargoSourcesPath, `${JSON.stringify(sources, null, 2)}\n`);
+console.log(`Generated ${cargoSourcesPath} with ${packages.length} crates`);

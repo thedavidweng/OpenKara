@@ -61,6 +61,7 @@ hound = "3.5.1"
 mockito = "1.7.2"
 tauri = { version = "2.11.1", features = ["test", "unstable"] }
 tempfile = "3.27.0"
+tokio = { version = "1", features = ["sync", "rt", "macros"] }
 
 [profile.release]
 strip = true
