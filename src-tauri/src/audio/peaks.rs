@@ -76,19 +76,12 @@ impl PeakRing {
     ///
     /// If `write_index` advances during the copy, retry once from the newer
     /// index. After one retry, return the best-effort coherent snapshot.
+    ///
+    /// Delegates to the private `snapshot_impl` with no-op hooks, so the
+    /// release hot path shares one implementation with the deterministic
+    /// regression tests (see `snapshot_impl`).
     pub fn snapshot(&self) -> (u64, Vec<[f32; 2]>) {
-        let first_index = self.write_index.load(Ordering::Acquire);
-        let result = self.copy_entries(first_index);
-        let second_index = self.write_index.load(Ordering::Acquire);
-        if first_index == second_index {
-            return (first_index, result);
-        }
-        // Retry once from the newer index. Return `second_index` — the index
-        // that was actually used for the copy — so the cursor never points
-        // past data that was included in the snapshot. Loading a newer index
-        // after the copy would advertise entries the reader never observed.
-        let retry = self.copy_entries(second_index);
-        (second_index, retry)
+        self.snapshot_impl(|_| {}, |_, _, _| {})
     }
 
     fn copy_entries(&self, write_index: u64) -> Vec<[f32; 2]> {
@@ -107,7 +100,12 @@ impl PeakRing {
         out
     }
 
-    /// Test-only snapshot variant with two interception points:
+    /// The single snapshot algorithm shared by production `snapshot()` and the
+    /// deterministic regression tests.
+    ///
+    /// Two interception points let a single-threaded test deterministically
+    /// force the retry path and a post-retry advancement without threads or
+    /// sleeps:
     ///
     /// 1. `after_first_copy`: called after the first `copy_entries` and before
     ///    the second `write_index` load. A test pushes here to force the retry
@@ -118,10 +116,15 @@ impl PeakRing {
     ///    `second_index`, simulating the "third_index" that the buggy code
     ///    would have returned.
     ///
+    /// Production `snapshot()` passes no-op closures. Because they are generic
+    /// and monomorphized, the compiler inlines and eliminates them, so the
+    /// release hot path gains no allocation or synchronization. The lock-free
+    /// / audio-thread contract is unchanged: only `Acquire` loads and `Relaxed`
+    /// slot reads, no locks.
+    ///
     /// The returned cursor must equal `second_index` in all cases, proving the
     /// snapshot does not advertise entries beyond the copied data.
-    #[cfg(test)]
-    fn snapshot_with_intercepts<F1, F2>(
+    fn snapshot_impl<F1, F2>(
         &self,
         after_first_copy: F1,
         after_retry_copy: F2,
@@ -131,17 +134,22 @@ impl PeakRing {
         F2: FnOnce(&Self, u64, &[f32; 2]),
     {
         let first_index = self.write_index.load(Ordering::Acquire);
-        let _result = self.copy_entries(first_index);
-        // Intercept 1: test may push here to advance write_index, forcing
-        // the retry path (second_index != first_index).
+        let result = self.copy_entries(first_index);
+        // Intercept 1: tests may push here to advance write_index, forcing
+        // the retry path (second_index != first_index). No-op in production.
         after_first_copy(self);
         let second_index = self.write_index.load(Ordering::Acquire);
         if first_index == second_index {
-            return (first_index, _result);
+            return (first_index, result);
         }
+        // Retry once from the newer index. Return `second_index` — the index
+        // that was actually used for the copy — so the cursor never points
+        // past data that was included in the snapshot. Loading a newer index
+        // after the copy would advertise entries the reader never observed.
         let retry = self.copy_entries(second_index);
-        // Intercept 2: test may push here to advance write_index past
-        // second_index. The return must still use second_index.
+        // Intercept 2: tests may push here to advance write_index past
+        // second_index. The return must still use second_index. No-op in
+        // production; the guard keeps the `retry.last()` call sound.
         if !retry.is_empty() {
             after_retry_copy(self, second_index, retry.last().unwrap());
         }
@@ -510,7 +518,7 @@ mod tests {
     //
     // The fix returns `(second_index, retry)` — the index that was actually
     // used for the copy. These tests deterministically force the exact
-    // interlecing using `snapshot_with_intercepts` (no threads, no sleeps):
+    // interlecing using `snapshot_impl` (no threads, no sleeps):
     //   1. Writer pushes N pairs (write_index = N).
     //   2. Reader starts snapshot: loads first_index = N, copies.
     //   3. Intercept 1: writer pushes one more pair (write_index = N+1).
@@ -529,7 +537,7 @@ mod tests {
         ring.push(0.20, 0.20); // index 1 → write_index 2
                                // write_index = 2
 
-        let (cursor, peaks) = ring.snapshot_with_intercepts(
+        let (cursor, peaks) = ring.snapshot_impl(
             // Intercept 1: push after the first copy, before the second load.
             // This forces the retry path (second_index = 3 != first_index = 2).
             |ring| {
@@ -591,7 +599,7 @@ mod tests {
         let ring = PeakRing::new();
         ring.push(0.50, 0.50);
 
-        let (cursor, peaks) = ring.snapshot_with_intercepts(
+        let (cursor, peaks) = ring.snapshot_impl(
             |_| {}, // no push → no retry
             |_, _, _| {
                 panic!("after_retry_copy should not be called on non-retry path");
@@ -617,7 +625,7 @@ mod tests {
         }
         // write_index = 5
 
-        let (cursor, peaks) = ring.snapshot_with_intercepts(
+        let (cursor, peaks) = ring.snapshot_impl(
             |ring| {
                 // Push to force retry: write_index becomes 6.
                 ring.push(0.50, 0.50);
