@@ -86,7 +86,12 @@ export type CdgFrameRequest = {
 };
 
 export type CdgFrameCoordinator = {
-  /** Enqueue a desired frame request; returns false if dropped as identical/noop. */
+  /**
+   * Enqueue a desired frame request. The request is coalesced if another
+   * is already in flight — only the latest pending request is pumped when
+   * the in-flight one completes. Returns `void`; callers cannot rely on a
+   * return value to detect drops. Use `isInFlight()` for test assertions.
+   */
   request: (req: Omit<CdgFrameRequest, "serial">) => void;
   /** Invalidate outstanding work (song change / unmount). */
   invalidate: () => void;
