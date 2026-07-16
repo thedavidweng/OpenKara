@@ -98,3 +98,14 @@ manifest **after** the pnpm tarball is installed.
   `dist/worker.js` extract path so the store matches a normal install.
 - **Run (inside Flatpak build):**
   `node flatpak-node/populate_pnpm_store.mjs <manifest.json> <tarball-dir> <store-dir>`
+
+## `flatpak/rewrite_lockfile_local_tarballs.mjs`
+
+Rewrites `pnpm-lock.yaml` package resolutions in the Flatpak build directory
+so each entry has `tarball: file:flatpak-node/pnpm-tarballs/<name>.tgz`.
+
+- **Why:** even with a pre-seeded store, offline install must never hit
+  `registry.npmjs.org` inside the Flatpak sandbox (DNS fails with EAI_AGAIN).
+  The `file:` resolution uses pnpm's localTarball fetcher, which works offline.
+- **Run (inside Flatpak build, before install):**
+  `node flatpak-node/rewrite_lockfile_local_tarballs.mjs`

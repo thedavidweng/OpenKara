@@ -28,10 +28,14 @@ modules:
       - sh -c 'mkdir -p src-tauri/generated/onnxruntime && runtime_path="$(find src-tauri/generated/onnxruntime-source -name "libonnxruntime.so*" ! -name "*providers*" ! -name "*.a" | sort | head -n 1)" && test -n "$runtime_path" && cp -f "$runtime_path" src-tauri/generated/onnxruntime/libonnxruntime.so && printf "{\"version\":\"1.26.0\",\"target\":\"flatpak-linux\",\"sourceArchive\":\"flatpak-builder-source\"}\n" > src-tauri/generated/onnxruntime/manifest.json'
       - npm install -g --prefix /run/build/openkara/pnpm-install ./pnpm-package
       # pnpm 11 indexes the offline store in store-dir/v11/index.db (SQLite +
-      # msgpackr). Populate must run after pnpm is installed so we can reuse
-      # pnpm's extract worker; legacy JSON index/ files leave packages invisible
-      # (ERR_PNPM_NO_OFFLINE_TARBALL) even when CAFS blobs exist.
+      # msgpackr). Populate reuses pnpm's extract worker so CAFS + index.db match
+      # a normal install. Legacy JSON index/ files leave packages invisible.
       - PATH="/run/build/openkara/pnpm-install/bin:$PATH" node flatpak-node/populate_pnpm_store.mjs flatpak-node/pnpm-manifest.json flatpak-node/pnpm-tarballs flatpak-node/pnpm-store
+      # Point every lockfile resolution at the already-downloaded file: tarballs
+      # so install uses the localTarball fetcher. Registry URLs are unreachable
+      # inside the sandbox (EAI_AGAIN); file: works with --offline even if the
+      # pre-seeded store is not consulted for a given package.
+      - node flatpak-node/rewrite_lockfile_local_tarballs.mjs
       # --trust-lockfile: pnpm 11 re-applies supply-chain policy (minimumReleaseAge /
       # trustPolicy) by fetching registry metadata even with --offline; that needs
       # network and fails inside the Flatpak sandbox (EAI_AGAIN). The lockfile is

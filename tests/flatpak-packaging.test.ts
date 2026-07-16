@@ -177,16 +177,20 @@ describe("Flatpak packaging", () => {
     );
   });
 
-  test("populates the offline pnpm 11 store via pnpm's extract worker", () => {
+  test("populates the offline pnpm 11 store and rewrites lockfile tarballs to file:", () => {
     // pnpm 11 indexes packages in store-dir/v11/index.db (SQLite + msgpackr).
-    // Writing only CAFS files or legacy JSON index/ entries leaves packages
-    // invisible (ERR_PNPM_NO_OFFLINE_TARBALL). Populate must run *after* the
-    // pnpm tarball is installed so the worker at dist/worker.js is available.
+    // Populate must run *after* the pnpm tarball is installed so dist/worker.js
+    // is available. Independently, lockfile resolutions are rewritten to
+    // file:flatpak-node/pnpm-tarballs/… so install uses the localTarball fetcher
+    // when the sandbox cannot reach registry.npmjs.org.
     const manifestTemplate = readProjectFile(
       "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
     );
     const populateIdx = manifestTemplate.indexOf(
       "node flatpak-node/populate_pnpm_store.mjs",
+    );
+    const rewriteIdx = manifestTemplate.indexOf(
+      "node flatpak-node/rewrite_lockfile_local_tarballs.mjs",
     );
     const installIdx = manifestTemplate.indexOf(
       "pnpm install --offline --frozen-lockfile --trust-lockfile",
@@ -196,10 +200,12 @@ describe("Flatpak packaging", () => {
     );
 
     expect(populateIdx).toBeGreaterThan(-1);
+    expect(rewriteIdx).toBeGreaterThan(-1);
     expect(installIdx).toBeGreaterThan(-1);
     expect(pnpmInstallIdx).toBeGreaterThan(-1);
     expect(pnpmInstallIdx).toBeLessThan(populateIdx);
-    expect(populateIdx).toBeLessThan(installIdx);
+    expect(populateIdx).toBeLessThan(rewriteIdx);
+    expect(rewriteIdx).toBeLessThan(installIdx);
 
     const nodeSources = JSON.parse(
       readProjectFile("packaging/flatpak/generated/node-sources.0.json"),
@@ -215,6 +221,12 @@ describe("Flatpak packaging", () => {
     expect(populate?.contents).toContain("worker_threads");
     expect(populate?.contents).toContain("index.db");
     expect(populate?.contents).toContain('type: "extract"');
+
+    const rewrite = nodeSources.find(
+      (s) => s["dest-filename"] === "rewrite_lockfile_local_tarballs.mjs",
+    );
+    expect(rewrite?.contents).toContain("tarball: file:");
+    expect(rewrite?.contents).toContain("pnpm-tarballs");
 
     // Shell source only wires store-dir / headers; it must not run the old
     // Python JSON-index populate (pnpm 11 cannot read that layout).
