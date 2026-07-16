@@ -725,6 +725,14 @@ impl PlaybackController {
         self.fade = FadeState::None;
         self.is_buffering = false;
 
+        // #103: Bump the transport generation so the frontend's stale-event
+        // filter rejects any delayed `playback-position` event from the old
+        // song. The frontend only discards events with a *lower* generation,
+        // so without this bump a same-generation position event for song-a
+        // could arrive after the new-song snapshot and be accepted, reverting
+        // the clock and queue reconciliation back to song-a.
+        self.bump_transport_generation();
+
         // Stamp the transition for the position emitter to drain.
         self.stamp_transition(from_song_id, to_song_id, preload_generation);
 
@@ -1264,6 +1272,40 @@ mod tests {
         assert_eq!(transition.from_song_id, "song-a");
         assert_eq!(transition.to_song_id, "song-b");
         assert_eq!(transition.transition_serial, 1);
+    }
+
+    #[test]
+    fn perform_gapless_swap_bumps_transport_generation() {
+        // #103: A gapless swap replaces song-a with song-b but must bump the
+        // transport generation so the frontend's stale-event filter rejects
+        // delayed `playback-position` events from song-a. Without the bump,
+        // a same-generation position event for the old song could arrive
+        // after the new-song snapshot and be accepted, reverting the clock
+        // and queue reconciliation back to song-a.
+        let mut controller = super::PlaybackController::default();
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        let gen_before = controller.transport_generation;
+
+        let prepared = make_prepared("song-b", 0, fmt);
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+
+        assert!(controller.perform_gapless_swap());
+
+        // The generation must have advanced so stale events from song-a are
+        // rejected by the frontend's generation filter.
+        assert!(
+            controller.transport_generation > gen_before,
+            "gapless swap must bump transport_generation (was {gen_before}, is {})",
+            controller.transport_generation
+        );
     }
 
     #[test]

@@ -173,19 +173,19 @@ existing source/stem mix + master/stem gains
 
 ### Shared type: `PlaybackStateSnapshot`
 
-| Field                  | Type                                              | Notes                                                     |
-| ---------------------- | ------------------------------------------------- | --------------------------------------------------------- |
-| `song_id`              | `Option<String>`                                  | 当前未加载轨道时为 `null`                                 |
-| `transport_generation` | `u64`                                             | 单调 transport 代号；新歌加载、resume、pause、seek 时递增 |
-| `state`                | `"idle" \| "loading" \| "playing" \| "buffering"` | 后端 transport 生命周期；暂停由 `is_playing=false` 表示   |
-| `is_playing`           | `bool`                                            | 当前是否处于播放推进状态                                  |
-| `position_ms`          | `u64`                                             | 当前播放位置（由 `render_frame` 推导，非墙钟）            |
-| `duration_ms`          | `Option<u64>`                                     | 未加载轨道时为 `null`                                     |
-| `buffered_ms`          | `u64`                                             | 已缓冲的最大安全播放位置（ms）；整轨模式 = `duration_ms`  |
-| `volume`               | `f32`                                             | `0.0..1.0`                                                |
-| `stem_volumes`         | `{ vocals, drums, bass, other }`                  | 各 stem 音量                                              |
-| `has_stems`            | `bool`                                            | 当前是否已挂载 stems                                      |
-| `stem_mode`            | `"two_stem" \| "four_stem" \| null`               | 当前 stem 模式                                            |
+| Field                  | Type                                              | Notes                                                                              |
+| ---------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `song_id`              | `Option<String>`                                  | 当前未加载轨道时为 `null`                                                          |
+| `transport_generation` | `u64`                                             | 单调 transport 代号；新歌加载、resume、pause、seek、无缝换轨（gapless swap）时递增 |
+| `state`                | `"idle" \| "loading" \| "playing" \| "buffering"` | 后端 transport 生命周期；暂停由 `is_playing=false` 表示                            |
+| `is_playing`           | `bool`                                            | 当前是否处于播放推进状态                                                           |
+| `position_ms`          | `u64`                                             | 当前播放位置（由 `render_frame` 推导，非墙钟）                                     |
+| `duration_ms`          | `Option<u64>`                                     | 未加载轨道时为 `null`                                                              |
+| `buffered_ms`          | `u64`                                             | 已缓冲的最大安全播放位置（ms）；整轨模式 = `duration_ms`                           |
+| `volume`               | `f32`                                             | `0.0..1.0`                                                                         |
+| `stem_volumes`         | `{ vocals, drums, bass, other }`                  | 各 stem 音量                                                                       |
+| `has_stems`            | `bool`                                            | 当前是否已挂载 stems                                                               |
+| `stem_mode`            | `"two_stem" \| "four_stem" \| null`               | 当前 stem 模式                                                                     |
 
 **Transport state 语义：**
 
@@ -265,6 +265,28 @@ playing ↔ playing（pause/resume，通过 isPlaying 区分）
 2. 输出设备启动失败时也发出此事件（`InstallReady` 在 coordinator 中完成轨道安装后尝试启动输出线程，若失败则通过 `clear_track_if_matching` 清除已安装的轨道并发出 `playback-error`）
 3. 发出前先通过 `playback-position` 推送 idle snapshot（清除已安装的轨道）
 4. 前端应调用 `notifyError` 并根据 `error.retryable` 提供重试（通常重试 `play(song_id)`）
+
+### Event: `track-transitioned` (#88)
+
+**Payload**
+
+```json
+{
+  "transition_serial": 1,
+  "from_song_id": "sha256 hash string",
+  "to_song_id": "sha256 hash string"
+}
+```
+
+**Semantics**
+
+1. 当音频回调检测到当前轨道到达 EOF 且有 prepared track 可用时，执行无缝换轨并 stamp 一个 `CompletedTransition`
+2. position emitter 线程在下一次轮询时 drain 该 transition，发出 `track-transitioned` 事件，然后发出携带新 `song_id` 的 `playback-position` 事件
+3. 事件在 `playback-position` 之前发出，所以前端 clock 可能仍持有 `from_song_id`——前端 reconciliation 必须接受 `from_song_id` 或 `to_song_id` 作为当前歌曲
+4. 前端收到事件后：将 `from_song_id` 推入播放历史，从队列中移除 `from_song_id` 和 `to_song_id`
+5. `transition_serial` 单调递增，可用于去重或调试
+6. 如果前端 clock 持有的 `song_id` 既不是 `from_song_id` 也不是 `to_song_id`（用户手动切换了歌曲），则忽略该事件
+7. 无缝换轨时 `transport_generation` 递增，使前端 generation 过滤器丢弃旧歌的延迟 `playback-position` 事件（#103）
 
 ### Shared error type: `CommandError`
 

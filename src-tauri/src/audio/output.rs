@@ -1943,6 +1943,24 @@ mod tests {
             controller.prepared_track.is_some(),
             "prepared track must not be consumed during a pause"
         );
+
+        // #103: No transition must be queued — the swap was suppressed, so
+        // the position emitter must not emit a `track-transitioned` event.
+        assert!(
+            controller.pending_transition_out.is_none(),
+            "no CompletedTransition must be queued while paused at EOF"
+        );
+
+        // #103: The tail (after track A's 100 frames) must contain no
+        // samples from track B (0.5 amplitude). It should be silence.
+        let tail_start = 100 * device_channels;
+        let tail = &output[tail_start..];
+        let max_tail = tail.iter().fold(0.0f32, |a, &b| a.max(b.abs()));
+        assert!(
+            max_tail < 1e-6,
+            "tail after EOF during pause must be silence (no track B samples), \
+             max amplitude {max_tail}"
+        );
     }
 
     // ── #103: Explicit Resume after pause at EOF ──────────────────────
@@ -2070,17 +2088,37 @@ mod tests {
             "prepared track must be consumed after resume swap"
         );
 
-        // The output buffer should contain track B's audio (0.5 amplitude,
-        // attenuated by the fade-in gain which is < 1.0 immediately after
-        // play). Verify at least some non-zero samples in the tail (after
-        // the swap, the new track's audio fills the buffer).
-        // The fade-in gain starts near 0 and ramps to 1 over FADE_DURATION,
-        // so early samples will be attenuated. We just verify the buffer is
-        // not all zeros (the swap filled it with track B audio).
+        // #103: Exactly one transition must have been queued — not zero
+        // (the swap fired) and not more than one (no double-swap). Drain it
+        // and verify a second drain yields None.
+        let transition = controller
+            .drain_pending_transition()
+            .expect("exactly one CompletedTransition after resume swap");
+        assert_eq!(transition.from_song_id, "song-a");
+        assert_eq!(transition.to_song_id, "song-b");
+        assert!(
+            controller.drain_pending_transition().is_none(),
+            "must not queue a second transition after resume swap"
+        );
+
+        // #103: The output buffer must contain track B's audio in the tail
+        // (the swap filled the remaining frames from track B). Track B is
+        // 0.5 amplitude, attenuated by the fade-in gain which ramps from
+        // ~0 to 1 over FADE_DURATION. Verify the tail is not all silence
+        // and that non-silent samples are bounded by track B's amplitude
+        // (0.5) — proving the tail fill came from track B, not track A.
         let non_zero = output2.iter().filter(|s| s.abs() > 1e-6).count();
         assert!(
             non_zero > 0,
             "output buffer must contain non-zero samples from track B after resume swap"
+        );
+        // No sample should exceed track B's 0.5 amplitude (the fade-in only
+        // attenuates further). This proves the tail is filled from track B,
+        // not from track A (0.1) or some leftover state.
+        let max_sample = output2.iter().fold(0.0f32, |a, &b| a.max(b.abs()));
+        assert!(
+            max_sample <= 0.5 + 1e-6,
+            "tail samples must come from track B (<=0.5), got {max_sample}"
         );
     }
 
