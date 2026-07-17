@@ -271,10 +271,10 @@ export function VolumeSliders({
             data-active={isExpanded && stemsAvailable ? "true" : undefined}
             className={`motion-icon-button playback-bar-action-button ${
               stemsAvailable
-                ? // When expanded, leave color to the data-active CSS rule so
-                  // hover does not strip the accent (matches queue/mute buttons).
+                ? // When expanded, show the accent color explicitly (matches
+                  // queue/mute buttons) so hover does not strip it.
                   isExpanded
-                  ? "text-[var(--color-text-dim)]"
+                  ? "text-[var(--color-accent)]"
                   : "text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
                 : "text-[var(--color-text-dimmer)]"
             }`}
