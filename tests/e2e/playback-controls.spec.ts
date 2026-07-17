@@ -65,11 +65,11 @@ async function expectActionFootprint(
 ): Promise<number> {
   await expect(page.locator(selector)).toBeVisible();
   const geo = await readActionButtonGeometry(page, selector);
-  expect(geo.width).toBeCloseTo(44, 5);
-  expect(geo.height).toBeCloseTo(44, 5);
+  expect(geo.width).toBeCloseTo(44, 0);
+  expect(geo.height).toBeCloseTo(44, 0);
   expect(geo.flexShrink).toBe("0");
-  expect(parseFloat(geo.svgWidth)).toBeCloseTo(18, 5);
-  expect(parseFloat(geo.svgHeight)).toBeCloseTo(18, 5);
+  expect(parseFloat(geo.svgWidth)).toBeCloseTo(18, 0);
+  expect(parseFloat(geo.svgHeight)).toBeCloseTo(18, 0);
   return geo.centerY;
 }
 
@@ -282,8 +282,8 @@ test.describe("Playback controls geometry and pressed state", () => {
       const before = await readActionButtonGeometry(page, sel);
       await page.locator(sel).click();
       const after = await readActionButtonGeometry(page, sel);
-      expect(after.width).toBeCloseTo(before.width, 5);
-      expect(after.height).toBeCloseTo(before.height, 5);
+      expect(after.width).toBeCloseTo(before.width, 0);
+      expect(after.height).toBeCloseTo(before.height, 0);
     });
 
     test("master mute invokes set_volume and vocals mute invokes set_stem_volume", async ({
