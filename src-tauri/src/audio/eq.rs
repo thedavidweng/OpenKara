@@ -152,6 +152,16 @@ impl EqProcessor {
         self.update_preamp_target();
     }
 
+    /// Returns true when the EQ is fully bypassed: wet mix is zero and not
+    /// transitioning toward a non-zero target. The soft limiter in
+    /// `render_output_buffer` uses this to skip the compressing curve for the
+    /// common no-EQ single-source path, preserving bit-transparent playback
+    /// for in-range audio. The limiter only needs to run when the EQ (or its
+    /// enable/disable crossfade) could push samples above full scale.
+    pub fn is_fully_bypassed(&self) -> bool {
+        self.wet_mix == 0.0 && self.wet_step == 0.0 && self.target_wet_mix == 0.0
+    }
+
     /// Update the per-band gain target (dB). Coefficients are recomputed on
     /// the next callback from the smoothed gain.
     pub fn set_gains(&mut self, gains_db: [f32; 5]) {
@@ -458,6 +468,37 @@ mod tests {
                 neg_x = -x
             );
         }
+    }
+
+    // ── is_fully_bypassed / limiter gating ────────────────────────────────
+
+    #[test]
+    fn is_fully_bypassed_true_by_default_and_after_disable_settles() {
+        let mut proc = EqProcessor::new(48_000, 2);
+        // Fresh processor: disabled, wet_mix = 0, no ramp.
+        assert!(proc.is_fully_bypassed());
+
+        // Enabling starts a ramp toward wet_mix = 1.0, so not bypassed.
+        proc.set_enabled(true);
+        assert!(!proc.is_fully_bypassed());
+
+        // Process enough frames for the ramp to complete (50 ms at 48 kHz).
+        let mut buf = [0.0f32; 48_000 * 2 / 20];
+        let len = buf.len();
+        proc.process(&mut buf, len);
+
+        // After the ramp completes, wet_mix = 1.0, not bypassed.
+        assert!(!proc.is_fully_bypassed());
+
+        // Disabling starts a ramp back toward 0.0; while ramping, not bypassed.
+        proc.set_enabled(false);
+        assert!(!proc.is_fully_bypassed());
+
+        // Process enough frames for the disable ramp to complete.
+        proc.process(&mut buf, len);
+
+        // After the disable ramp completes, fully bypassed again.
+        assert!(proc.is_fully_bypassed());
     }
 
     // ── EQ band response ──────────────────────────────────────────────────
