@@ -2522,6 +2522,11 @@ mod tests {
         let ring = std::sync::Arc::new(PeakRing::new());
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
         let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
+        // Enable the EQ so the soft limiter is active. The limiter is gated on
+        // EQ activity (is_fully_bypassed), so a default-disabled EqProcessor
+        // would skip the limiter and leave the 1.0 samples unclipped.
+        let mut eq = EqProcessor::new(sample_rate, device_channels);
+        eq.set_enabled(true);
         let _rendered = render_output_buffer(
             &mut controller,
             &mut output,
@@ -2531,7 +2536,7 @@ mod tests {
             device_channels,
             &mut rc,
             &mut rc_in,
-            &mut EqProcessor::new(sample_rate, device_channels),
+            &mut eq,
             &mut peak_acc,
             &ring,
         );
