@@ -1,5 +1,4 @@
 import { expect, test } from "./fixtures/base-test";
-import { MOCK_SIDEBAR_WIDTH } from "./fixtures/tauri-mock";
 
 /**
  * Geometry + pressed-state contract for the five primary right-side
@@ -7,11 +6,10 @@ import { MOCK_SIDEBAR_WIDTH } from "./fixtures/tauri-mock";
  * computed style — class assertions alone are insufficient.
  *
  * Density is selected by the playback-bar CONTAINER width (viewport minus
- * sidebar), not the viewport itself. With the mock's 280px sidebar (see
- * MOCK_SIDEBAR_WIDTH / --window-shell-sidebar-width):
- *   relaxed  container >= 1120  → viewport >= ~1400
- *   compact  container 960..1119 → viewport ~1240..1399
- *   tight    container < 960     → viewport < ~1240
+ * sidebar), not the viewport itself. With a default 260px sidebar:
+ *   relaxed  container >= 1120  → viewport >= ~1380
+ *   compact  container 960..1119 → viewport ~1220..1379
+ *   tight    container < 960     → viewport < ~1220
  *
  * Review coverage boundaries (CSS px): 1280, 1040, 900, 760, 720.
  * 1440 is retained as an additional relaxed-density sample. The suite runs
@@ -21,11 +19,12 @@ import { MOCK_SIDEBAR_WIDTH } from "./fixtures/tauri-mock";
 const GEOMETRY_TOLERANCE = 0.5;
 const CENTER_Y_TOLERANCE = 0.5;
 
-// Sidebar width comes from the Tauri mock's get_window_shell_state payload
-// (MOCK_SIDEBAR_WIDTH) so the spec and mock can never drift apart. The
-// playback-bar container width is viewport minus sidebar, so container
-// thresholds map to viewport thresholds as below.
-const SIDEBAR_WIDTH = MOCK_SIDEBAR_WIDTH;
+// The E2E environment runs on non-mac platforms, so useWindowShellState
+// returns DESKTOP_WINDOW_SHELL_STATE (sidebarWidth: 260) rather than the
+// Tauri mock's get_window_shell_state payload (sidebar_width: 280), which is
+// only fetched on mac. The playback-bar container width is viewport minus
+// sidebar, so container thresholds map to viewport thresholds as below.
+const SIDEBAR_WIDTH = 260;
 const METADATA_COLLAPSE_CONTAINER = 760;
 const COVER_ART_COLLAPSE_CONTAINER = 780;
 
@@ -167,7 +166,7 @@ test.describe("Playback controls geometry and pressed state", () => {
   });
 
   // ── Relaxed density (additional sample) ──────────────────────────────
-  test.describe("relaxed density (1440px viewport, ~1160px container)", () => {
+  test.describe("relaxed density (1440px viewport, ~1180px container)", () => {
     test.use({ viewport: { width: 1440, height: 800 } });
 
     test("playback bar reports relaxed density", async ({ page }) => {
@@ -314,7 +313,7 @@ test.describe("Playback controls geometry and pressed state", () => {
   });
 
   // ── Required boundary: 1280px (compact density) ──────────────────────
-  test.describe("compact density (1280px viewport, ~1000px container)", () => {
+  test.describe("compact density (1280px viewport, ~1020px container)", () => {
     test.use({ viewport: { width: 1280, height: 800 } });
 
     test("playback bar reports compact density", async ({ page }) => {
@@ -391,11 +390,11 @@ test.describe("Playback controls geometry and pressed state", () => {
     });
   });
 
-  // ── Required boundary: 1040px (tight density, metadata threshold) ───
-  // Container width ~760px sits exactly at the metadata collapse threshold
-  // (PLAYBACK_BAR_METADATA_COLLAPSE_WIDTH = 760), so metadata stays visible.
-  // Cover art (780) is already collapsed at this width.
-  test.describe("tight density (1040px viewport, ~760px container)", () => {
+  // ── Required boundary: 1040px (tight density, cover-art threshold) ───
+  // Container width ~780px sits exactly at the cover-art collapse threshold
+  // (PLAYBACK_BAR_COVER_ART_COLLAPSE_WIDTH = 780). Metadata (760) is still
+  // visible at this width.
+  test.describe("tight density (1040px viewport, ~780px container)", () => {
     test.use({ viewport: { width: 1040, height: 800 } });
 
     test("playback bar reports tight density", async ({ page }) => {
@@ -443,11 +442,10 @@ test.describe("Playback controls geometry and pressed state", () => {
       await expectNoOverflowOrZoneIntersection(page);
     });
 
-    test("metadata visible and cover art collapsed at the 760 container threshold", async ({
+    test("metadata visible and cover art visible at the 780 container threshold", async ({
       page,
     }) => {
-      // 1040 - 280 = 760 container; metadata collapses at < 760, so it stays,
-      // but cover art collapses at < 780 and is therefore hidden.
+      // 1040 - 260 = 780 container; cover collapses at < 780, so it stays.
       await expectMetadataCollapse(page, 1040);
     });
 
@@ -474,7 +472,7 @@ test.describe("Playback controls geometry and pressed state", () => {
   });
 
   // ── Required boundary: 900px (tight density, metadata collapsed) ─────
-  test.describe("tight density (900px viewport, ~620px container)", () => {
+  test.describe("tight density (900px viewport, ~640px container)", () => {
     test.use({ viewport: { width: 900, height: 800 } });
 
     test("playback bar reports tight density", async ({ page }) => {
@@ -525,7 +523,7 @@ test.describe("Playback controls geometry and pressed state", () => {
     test("metadata and cover art collapsed below the 760 threshold", async ({
       page,
     }) => {
-      // 900 - 280 = 620 container; both metadata (760) and cover (780) collapse.
+      // 900 - 260 = 640 container; both metadata (760) and cover (780) collapse.
       await expectMetadataCollapse(page, 900);
     });
 
@@ -541,7 +539,7 @@ test.describe("Playback controls geometry and pressed state", () => {
   });
 
   // ── Required boundary: 760px (tight density, metadata collapsed) ─────
-  test.describe("tight density (760px viewport, ~480px container)", () => {
+  test.describe("tight density (760px viewport, ~500px container)", () => {
     test.use({ viewport: { width: 760, height: 800 } });
 
     test("playback bar reports tight density", async ({ page }) => {
@@ -587,7 +585,7 @@ test.describe("Playback controls geometry and pressed state", () => {
   });
 
   // ── Required boundary: 720px (tight density, narrowest) ──────────────
-  test.describe("narrow width (720px viewport, ~440px container)", () => {
+  test.describe("narrow width (720px viewport, ~460px container)", () => {
     test.use({ viewport: { width: 720, height: 800 } });
 
     test("playback bar reports tight density", async ({ page }) => {
