@@ -142,9 +142,17 @@ export function PeakMeter({
           // state so the canvas does not freeze on the last waveform.
           // Draw the flat line only once, then stop repainting until new
           // peaks arrive (idle playback produces no visual change).
-          const stale =
-            lastAdvanceRef.current !== null &&
-            now - lastAdvanceRef.current > 500;
+          //
+          // If the component mounted with non-empty peaks whose writeIndex
+          // never advanced from the initial value (e.g. writeIndex=0 with
+          // data, or a writeIndex equal to the initial lastWriteIndexRef),
+          // lastAdvanceRef stays null and the staleness check below would
+          // never fire. Start the grace period on the first static non-empty
+          // poll so the canvas eventually flat-lines.
+          if (lastAdvanceRef.current === null) {
+            lastAdvanceRef.current = now;
+          }
+          const stale = now - lastAdvanceRef.current > 500;
           if (stale && !flatLineDrawnRef.current) {
             flatLineDrawnRef.current = true;
             draw({ ...snapshot, peaks: [] });

@@ -320,4 +320,30 @@ describe("PeakMeter", () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(canvasMock.ctx.clearRect.mock.calls.length).toBe(afterFlatLine);
   });
+
+  it("flat-lines when mounted with non-empty peaks whose writeIndex never advances", async () => {
+    // The backend returns non-empty peaks with a writeIndex that never
+    // advances from the initial value (writeIndex=0 with data). Without
+    // initializing the staleness grace period on the first static poll,
+    // lastAdvanceRef stays null forever and the flat-line never triggers.
+    mockGetAudioPeaks.mockResolvedValue({
+      writeIndex: 0,
+      peaks: [[0.3, 0.4]],
+    });
+    render(<PeakMeter width={120} height={24} />);
+    // Let the initial poll land — it sees static non-empty peaks and starts
+    // the grace period (lastAdvanceRef := now) but does not flat-line yet.
+    await vi.advanceTimersByTimeAsync(100);
+    const initialCount = canvasMock.ctx.clearRect.mock.calls.length;
+    // Advance well past the 500 ms staleness grace period.
+    await vi.advanceTimersByTimeAsync(600);
+    // The flat-line fallback should have drawn (clearRect + baseline fillRect).
+    const afterFlatLine = canvasMock.ctx.clearRect.mock.calls.length;
+    expect(afterFlatLine).toBeGreaterThan(initialCount);
+    expect(canvasMock.ctx.fillRect).toHaveBeenCalled();
+
+    // Advance further — no additional redraws should occur while idle.
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(canvasMock.ctx.clearRect.mock.calls.length).toBe(afterFlatLine);
+  });
 });
