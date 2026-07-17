@@ -398,9 +398,16 @@ pub fn render_output_buffer(
     eq_processor.process(output, rendered);
 
     // Soft limiter: bound peaks to prevent clipping after EQ boost. Samples
-    // below the threshold pass through unchanged.
-    for sample in output[..rendered].iter_mut() {
-        *sample = soft_limit(*sample);
+    // below the threshold pass through unchanged. Only run when the EQ is
+    // active (or transitioning to/from active) — for the common no-EQ
+    // single-source path the mixed value never exceeds 1.0 (decoded PCM is
+    // in [-1,1] and master/stem gains are <= 1.0), so the limiter would only
+    // attenuate loud-but-unclipped audio and alter fidelity for users who
+    // never enable the EQ.
+    if !eq_processor.is_fully_bypassed() {
+        for sample in output[..rendered].iter_mut() {
+            *sample = soft_limit(*sample);
+        }
     }
 
     // Apply fade-in/fade-out envelope if active.

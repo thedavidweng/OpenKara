@@ -25,7 +25,6 @@
 
 - CPAL 输出回调每 512 帧发布一对 stereo peak（取窗口内 |sample| 最大值，sanitize 后 clamp 到 `[0, 1]`）。
 - Ring buffer 容量固定 256 对（约 3.0 s @ 44.1 kHz），单写多读，全原子操作。
-- Ring buffer 容量固定 256 对（约 3.0 s @ 44.1 kHz），单写多读，全原子操作。
 - 命令只读 ring，不持 `PlaybackController` mutex，不影响播放实时性。
 - 前端以 30 Hz 轮询，DPR-aware canvas 渲染，`writeIndex` 不变时跳过重绘。
 
