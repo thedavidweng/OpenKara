@@ -24,6 +24,17 @@ export default defineConfig({
     ],
     ["link", { rel: "manifest", href: "/img/site.webmanifest" }],
     ["meta", { name: "apple-mobile-web-app-title", content: "OpenKara" }],
+    ["meta", { name: "theme-color", content: "#ffffff" }],
+    ["meta", { property: "og:type", content: "website" }],
+    ["meta", { property: "og:site_name", content: "OpenKara" }],
+    [
+      "meta",
+      {
+        property: "og:image",
+        content: "https://openkara.103279.xyz/img/openkara-player.webp",
+      },
+    ],
+    ["meta", { name: "twitter:card", content: "summary_large_image" }],
   ],
   locales: {
     root: {
