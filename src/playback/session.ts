@@ -215,9 +215,10 @@ export function createPlaybackSession(
       // the stale transition snapshot. In that race, the queue must NOT
       // be reconciled — the user has already moved to an unrelated track
       // and removing `toSongId` / pushing `fromSongId` to history would
-      // corrupt the queue. The gapless swap does not bump
-      // transport_generation, so a position event that arrived first
-      // with the same generation will not trigger this rejection.
+      // corrupt the queue. The backend also clears
+      // `pending_transition_out` in `cancel_crossfade_and_prepared`
+      // (called by `start_track_loading` / `clear_track`), so a
+      // superseded transition is never emitted to the frontend.
       const accepted = tryApplyAuthoritative(state);
       if (!accepted) {
         return;

@@ -527,6 +527,13 @@ impl PlaybackController {
     pub(crate) fn cancel_crossfade_and_prepared(&mut self) {
         self.active_crossfade = None;
         self.prepared_track = None;
+        // #89: Also clear any pending outgoing transition. A manual load,
+        // clear, stem attach, or load failure supersedes the track context
+        // that produced the transition. Without this, the position emitter
+        // could drain a stale transition (A→B) after the user has already
+        // switched to an unrelated song C, causing the frontend to
+        // reconcile the queue with the wrong song IDs.
+        self.pending_transition_out = None;
     }
 
     pub fn attach_stems(&mut self, song_id: &str, stems: LoadedStems) -> Result<(), PlaybackError> {
@@ -1762,6 +1769,8 @@ mod tests {
         let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
         let prepared = make_prepared("song-d", 0, fmt);
         assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+        // Simulate a completed gapless swap that hasn't been drained yet.
+        controller.stamp_transition("song-a".to_owned(), "song-d".to_owned(), 0);
 
         controller.start_track_loading("song-c");
 
@@ -1777,6 +1786,10 @@ mod tests {
             controller.loading_song_id.as_deref(),
             Some("song-c"),
             "loading song must be set"
+        );
+        assert!(
+            controller.pending_transition_out.is_none(),
+            "start_track_loading must clear pending transition to prevent stale queue reconciliation"
         );
     }
 
@@ -1959,6 +1972,8 @@ mod tests {
         assert!(controller.prepared_track.is_some());
 
         controller.active_crossfade = Some(make_crossfade_active("song-c", 44_100));
+        controller.stamp_transition("song-a".to_owned(), "song-b".to_owned(), 0);
+        assert!(controller.pending_transition_out.is_some());
 
         controller.cancel_crossfade_and_prepared();
 
@@ -1969,6 +1984,10 @@ mod tests {
         assert!(
             controller.prepared_track.is_none(),
             "cancel must clear prepared track"
+        );
+        assert!(
+            controller.pending_transition_out.is_none(),
+            "cancel must clear pending transition to prevent stale emission"
         );
     }
 
