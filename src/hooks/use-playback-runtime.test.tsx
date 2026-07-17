@@ -280,13 +280,27 @@ describe("useTrackTransitionedQueueReconcile", () => {
     expect(handler).not.toBeUndefined();
 
     const event: TrackTransitionedEvent = {
-      transition_serial: 1,
-      from_song_id: "song-a",
-      to_song_id: "song-b",
+      transitionSerial: 1,
+      preloadGeneration: 0,
+      fromSongId: "song-a",
+      toSongId: "song-b",
+      state: {
+        song_id: "song-b",
+        transport_generation: 1,
+        state: "playing",
+        is_playing: true,
+        position_ms: 0,
+        duration_ms: null,
+        buffered_ms: 0,
+        volume: 1,
+        stem_volumes: { vocals: 1, instrumental: 1 },
+        has_stems: false,
+        stem_mode: null,
+      },
     };
     handler!({ payload: event });
 
-    expect(onTrackTransitioned).toHaveBeenCalledWith("song-a", "song-b");
+    expect(onTrackTransitioned).toHaveBeenCalledWith(event);
   });
 });
 
