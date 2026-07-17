@@ -19,9 +19,22 @@ import { useRotationStore } from "@/stores/rotation-store";
 
 interface AppLayoutProps {
   initialWindowShellState?: WindowShellState;
+  previewMode?: boolean;
 }
 
-export function AppLayout({ initialWindowShellState }: AppLayoutProps) {
+const PREVIEW_WINDOW_SHELL_STATE: WindowShellState = {
+  chromeVariant: "mac",
+  tier: "mac",
+  toolbarHeight: 48,
+  trafficLightInsetLeading: 24,
+  sidebarHeaderHeight: 0,
+  sidebarWidth: 260,
+};
+
+export function AppLayout({
+  initialWindowShellState,
+  previewMode = false,
+}: AppLayoutProps) {
   const sidebarVisible = useLayoutStore((s) => s.sidebarVisible);
   const sidebarWidth = useLayoutStore((s) => s.sidebarWidth);
   const setSidebarWidth = useLayoutStore((s) => s.setSidebarWidth);
@@ -31,25 +44,42 @@ export function AppLayout({ initialWindowShellState }: AppLayoutProps) {
   const toggleSettings = useSettingsStore((s) => s.toggle);
   const importFiles = useLibraryStore((s) => s.importFiles);
   const platform = getShortcutPlatform();
-  const windowShellState = useWindowShellState(
+  const hydratedWindowShellState = useWindowShellState(
     initialWindowShellState,
-    platform,
+    previewMode ? "windows" : platform,
   );
+  const windowShellState = previewMode
+    ? PREVIEW_WINDOW_SHELL_STATE
+    : hydratedWindowShellState;
 
   const handleImportMenuAction = useCallback(() => {
+    if (previewMode) {
+      return;
+    }
     return promptImportFiles({ importFiles });
-  }, [importFiles]);
+  }, [importFiles, previewMode]);
 
   const loadRotation = useRotationStore((s) => s.loadRotation);
 
   useEffect(() => {
+    if (previewMode) {
+      return;
+    }
     void loadRotation();
-  }, [loadRotation]);
+  }, [loadRotation, previewMode]);
 
   return (
     <div
-      className="flex h-screen w-full flex-col overflow-hidden bg-[var(--color-sidebar)] font-sans"
+      className={`flex w-full flex-col overflow-hidden bg-[var(--color-sidebar)] font-sans ${previewMode ? "h-full" : "h-screen"}`}
       onContextMenu={(e) => e.preventDefault()}
+      onContextMenuCapture={
+        previewMode
+          ? (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          : undefined
+      }
       data-window-chrome-platform={windowShellState.chromeVariant}
       data-window-shell-tier={windowShellState.tier}
       style={createWindowShellStyle({
@@ -61,7 +91,7 @@ export function AppLayout({ initialWindowShellState }: AppLayoutProps) {
         onImportMenuAction={handleImportMenuAction}
         onOpenSettingsMenuAction={openSettings}
         onToggleSidebar={toggleSidebar}
-        onToggleSettings={toggleSettings}
+        onToggleSettings={previewMode ? () => {} : toggleSettings}
         shellState={windowShellState}
         settingsOpen={settingsOpen}
         sidebarVisible={sidebarVisible}
@@ -73,7 +103,7 @@ export function AppLayout({ initialWindowShellState }: AppLayoutProps) {
           width={sidebarWidth}
           onResize={setSidebarWidth}
         >
-          <Sidebar />
+          <Sidebar previewMode={previewMode} />
         </SidebarRail>
 
         <MainContentView />

@@ -21,12 +21,13 @@ import { notifyError } from "@/lib/errors";
 
 interface SidebarProps {
   header?: ReactNode;
+  previewMode?: boolean;
 }
 
 const batchActionClassName =
   "rounded-[12px] border border-[var(--sidebar-control-border)] bg-[var(--sidebar-control-bg)] px-3 py-2 text-[13px] hover:border-[var(--sidebar-control-border)] hover:bg-[var(--sidebar-row-overlay-bg)]";
 
-export function Sidebar({ header }: SidebarProps = {}) {
+export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
   const { t } = useTranslation();
   const songs = useLibraryStore((s) => s.songs);
   const filter = useLibraryStore((s) => s.filter);
@@ -47,8 +48,11 @@ export function Sidebar({ header }: SidebarProps = {}) {
   const setActivePlaylist = usePlaylistStore((s) => s.setActivePlaylist);
 
   useEffect(() => {
+    if (previewMode) {
+      return;
+    }
     loadPlaylists();
-  }, [loadPlaylists]);
+  }, [loadPlaylists, previewMode]);
 
   const handleCreatePlaylist = async (name: string) => {
     try {
@@ -92,6 +96,9 @@ export function Sidebar({ header }: SidebarProps = {}) {
     (allSeparated && allMatchCurrentMode);
 
   const handleSeparateAll = () => {
+    if (previewMode) {
+      return;
+    }
     api.batchSeparate([]).catch(notifyError);
   };
 
@@ -313,7 +320,9 @@ export function Sidebar({ header }: SidebarProps = {}) {
           confirmLabel={t("sidebar.confirmUpgrade.confirm")}
           onConfirm={() => {
             setShowUpgradeConfirm(false);
-            api.batchSeparate([]).catch(notifyError);
+            if (!previewMode) {
+              api.batchSeparate([]).catch(notifyError);
+            }
           }}
           onCancel={() => setShowUpgradeConfirm(false)}
         />

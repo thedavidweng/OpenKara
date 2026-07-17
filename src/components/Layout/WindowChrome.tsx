@@ -34,6 +34,7 @@ export function WindowChrome({
   if (chromeVariant === "mac") {
     return (
       <Toolbar
+        onImportMenuAction={onImportMenuAction}
         onToggleSidebar={onToggleSidebar}
         onToggleSettings={onToggleSettings}
         shellState={shellState}

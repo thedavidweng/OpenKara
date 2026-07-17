@@ -1,7 +1,6 @@
 overrides:
   esbuild: 0.28.1
   undici: ">=7.28.0 <8.0.0"
-  vitepress>vite: ">=6.4.3"
 
 onlyBuiltDependencies:
   - esbuild
