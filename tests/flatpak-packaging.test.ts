@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
+import { renderCargoSources } from "../scripts/generate-flatpak-cargo-sources.mjs";
 
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 
@@ -498,6 +499,24 @@ describe("Flatpak packaging", () => {
       expect(archives.get(pkg.dest)).toBe(pkg.checksum);
       expect(checksumFiles.get(pkg.dest)).toBe(pkg.checksum);
     }
+  });
+
+  test("regenerating Cargo sources produces a clean diff (no stale manifest)", () => {
+    // Render the Cargo sources from the committed Cargo.lock using the pure
+    // generator function and compare the text against the committed manifest.
+    // This catches stale manifests after Cargo.lock changes.
+    //
+    // Non-destructive: we never write into the real checkout, so a mismatch
+    // cannot discard a developer's intentional uncommitted generated-manifest
+    // edit (the old test ran `git checkout -- cargo-sources.json` on failure).
+    const lockfile = readProjectFile("src-tauri/Cargo.lock");
+    const committed = readProjectFile(
+      "packaging/flatpak/generated/cargo-sources.json",
+    );
+
+    const rendered = renderCargoSources(lockfile);
+
+    expect(rendered).toBe(committed);
   });
 
   test("release automation never opens initial Flathub submission PRs automatically", () => {
