@@ -438,6 +438,7 @@ export const TAURI_MOCK_SCRIPT = `
       crossfade_enabled: false, crossfade_duration_ms: 3000,
     }),
     get_audio_peaks: { writeIndex: 0, peaks: [] },
+    set_preload_candidate: undefined,
     set_eq_enabled: (args) => ({
       stem_mode: "two_stem", model_variant: "htdemucs", language: "en",
       hide_batch_separate: false, cover_art_backdrop: false,
