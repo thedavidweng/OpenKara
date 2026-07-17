@@ -531,13 +531,13 @@ describe("settings-store actions", () => {
     // first; the on response arrives later but must not revert to true.
     store.setState({ crossfadeEnabled: false });
 
-    let resolveOn: (v: ReturnType<typeof makeAppSettings>) => void;
-    let resolveOff: (v: ReturnType<typeof makeAppSettings>) => void;
-    const pOn = new Promise((r) => {
-      resolveOn = r as typeof resolveOn;
+    let resolveOn!: (v: AppSettings) => void;
+    let resolveOff!: (v: AppSettings) => void;
+    const pOn = new Promise<AppSettings>((r) => {
+      resolveOn = r;
     });
-    const pOff = new Promise((r) => {
-      resolveOff = r as typeof resolveOff;
+    const pOff = new Promise<AppSettings>((r) => {
+      resolveOff = r;
     });
 
     mockSetCrossfadeEnabled.mockImplementation((enabled: boolean) =>
@@ -598,13 +598,13 @@ describe("settings-store actions", () => {
     // but must not revert the store to 4000.
     store.setState({ crossfadeDurationMs: 3000 });
 
-    let resolve4000: (v: ReturnType<typeof makeAppSettings>) => void;
-    let resolve5000: (v: ReturnType<typeof makeAppSettings>) => void;
-    const p4000 = new Promise((r) => {
-      resolve4000 = r as typeof resolve4000;
+    let resolve4000!: (v: AppSettings) => void;
+    let resolve5000!: (v: AppSettings) => void;
+    const p4000 = new Promise<AppSettings>((r) => {
+      resolve4000 = r;
     });
-    const p5000 = new Promise((r) => {
-      resolve5000 = r as typeof resolve5000;
+    const p5000 = new Promise<AppSettings>((r) => {
+      resolve5000 = r;
     });
 
     mockSetCrossfadeDurationMs.mockImplementation((ms: number) =>
