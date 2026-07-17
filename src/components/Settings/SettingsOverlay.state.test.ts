@@ -800,6 +800,60 @@ describe("createSettingsOverlayActions - setCrossfadeEnabled", () => {
       expect.any(Error),
     );
   });
+
+  test("ignores stale late-arriving response when a newer toggle supersedes it", async () => {
+    const harness = createHarness({
+      initialSettings: {
+        crossfadeEnabled: false,
+        crossfadeDurationMs: 3000,
+      },
+    });
+
+    let resolveFirst: (value: unknown) => void = () => {};
+    const firstPromise = new Promise((resolve) => {
+      resolveFirst = resolve;
+    });
+    vi.mocked(harness.dependencies.api.setCrossfadeEnabled)
+      .mockReturnValueOnce(firstPromise as never)
+      .mockResolvedValueOnce({
+        stem_mode: "two_stem",
+        model_variant: "htdemucs",
+        language: "en",
+        hide_batch_separate: false,
+        cover_art_backdrop: true,
+        lyrics_font_step: 0,
+        execution_provider: "cpu",
+        available_execution_providers: ["cpu"],
+        eq_enabled: false,
+        eq_gains_db: [0, 0, 0, 0, 0],
+        crossfade_enabled: false,
+        crossfade_duration_ms: 3000,
+      });
+
+    const firstCall = harness.actions.setCrossfadeEnabled(true);
+    // While the first call is in flight, a newer toggle flips it back to false.
+    const secondCall = harness.actions.setCrossfadeEnabled(false);
+    await Promise.resolve();
+    // Now resolve the stale first call — it must not overwrite the newer state.
+    resolveFirst({
+      stem_mode: "two_stem",
+      model_variant: "htdemucs",
+      language: "en",
+      hide_batch_separate: false,
+      cover_art_backdrop: true,
+      lyrics_font_step: 0,
+      execution_provider: "cpu",
+      available_execution_providers: ["cpu"],
+      eq_enabled: false,
+      eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: true,
+      crossfade_duration_ms: 3000,
+    });
+    await firstCall;
+    await secondCall;
+
+    expect(harness.getSnapshot().state.crossfadeEnabled).toBe(false);
+  });
 });
 
 describe("createSettingsOverlayActions - setCrossfadeDurationMs", () => {
@@ -878,5 +932,59 @@ describe("createSettingsOverlayActions - setCrossfadeDurationMs", () => {
     expect(harness.dependencies.notifyError).toHaveBeenCalledWith(
       expect.any(Error),
     );
+  });
+
+  test("ignores stale late-arriving response when a newer save supersedes it", async () => {
+    const harness = createHarness({
+      initialSettings: {
+        crossfadeEnabled: true,
+        crossfadeDurationMs: 3000,
+      },
+    });
+
+    let resolveFirst: (value: unknown) => void = () => {};
+    const firstPromise = new Promise((resolve) => {
+      resolveFirst = resolve;
+    });
+    vi.mocked(harness.dependencies.api.setCrossfadeDurationMs)
+      .mockReturnValueOnce(firstPromise as never)
+      .mockResolvedValueOnce({
+        stem_mode: "two_stem",
+        model_variant: "htdemucs",
+        language: "en",
+        hide_batch_separate: false,
+        cover_art_backdrop: true,
+        lyrics_font_step: 0,
+        execution_provider: "cpu",
+        available_execution_providers: ["cpu"],
+        eq_enabled: false,
+        eq_gains_db: [0, 0, 0, 0, 0],
+        crossfade_enabled: true,
+        crossfade_duration_ms: 5000,
+      });
+
+    const firstCall = harness.actions.setCrossfadeDurationMs(4000);
+    // While the first call is in flight, a newer save changes to 5000.
+    const secondCall = harness.actions.setCrossfadeDurationMs(5000);
+    await Promise.resolve();
+    // Now resolve the stale first call — it must not overwrite the newer state.
+    resolveFirst({
+      stem_mode: "two_stem",
+      model_variant: "htdemucs",
+      language: "en",
+      hide_batch_separate: false,
+      cover_art_backdrop: true,
+      lyrics_font_step: 0,
+      execution_provider: "cpu",
+      available_execution_providers: ["cpu"],
+      eq_enabled: false,
+      eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: true,
+      crossfade_duration_ms: 4000,
+    });
+    await firstCall;
+    await secondCall;
+
+    expect(harness.getSnapshot().state.crossfadeDurationMs).toBe(5000);
   });
 });

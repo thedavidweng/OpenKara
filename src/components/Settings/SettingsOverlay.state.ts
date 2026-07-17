@@ -362,13 +362,21 @@ export function createSettingsOverlayActions(
       patchState({ crossfadeEnabled: enabled });
       try {
         const settings = await dependencies.api.setCrossfadeEnabled(enabled);
-        dependencies.settingsStore.hydrateAppSettings(settings);
-        patchState({
-          crossfadeEnabled: settings.crossfade_enabled,
-          crossfadeDurationMs: settings.crossfade_duration_ms,
-        });
+        // Only apply the response if no newer toggle has superseded this
+        // request — otherwise a stale late-arriving response would revert
+        // the overlay state to an older enabled state and the slider would
+        // snap back. Mirrors the guard in settings-store.ts.
+        if (controls.getSnapshot().state.crossfadeEnabled === enabled) {
+          dependencies.settingsStore.hydrateAppSettings(settings);
+          patchState({
+            crossfadeEnabled: settings.crossfade_enabled,
+            crossfadeDurationMs: settings.crossfade_duration_ms,
+          });
+        }
       } catch (error) {
-        patchState({ crossfadeEnabled: previous });
+        if (controls.getSnapshot().state.crossfadeEnabled === enabled) {
+          patchState({ crossfadeEnabled: previous });
+        }
         dependencies.notifyError(error);
       }
     },
@@ -381,13 +389,21 @@ export function createSettingsOverlayActions(
       try {
         const settings =
           await dependencies.api.setCrossfadeDurationMs(durationMs);
-        dependencies.settingsStore.hydrateAppSettings(settings);
-        patchState({
-          crossfadeEnabled: settings.crossfade_enabled,
-          crossfadeDurationMs: settings.crossfade_duration_ms,
-        });
+        // Only apply the response if no newer save has superseded this
+        // request — otherwise a stale late-arriving response would revert
+        // the overlay state to an older duration and the slider would snap
+        // back. Mirrors the guard in settings-store.ts.
+        if (controls.getSnapshot().state.crossfadeDurationMs === durationMs) {
+          dependencies.settingsStore.hydrateAppSettings(settings);
+          patchState({
+            crossfadeEnabled: settings.crossfade_enabled,
+            crossfadeDurationMs: settings.crossfade_duration_ms,
+          });
+        }
       } catch (error) {
-        patchState({ crossfadeDurationMs: previous });
+        if (controls.getSnapshot().state.crossfadeDurationMs === durationMs) {
+          patchState({ crossfadeDurationMs: previous });
+        }
         dependencies.notifyError(error);
       }
     },
