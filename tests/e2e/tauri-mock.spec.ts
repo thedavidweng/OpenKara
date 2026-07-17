@@ -83,10 +83,10 @@ test.describe("Tauri IPC mock contract", () => {
       );
     });
 
-    expect(objectRecord(statuses)?.aaa111).toMatchObject({
-      song_id: "aaa111",
-      state: "completed",
-    });
+    expect(Array.isArray(statuses)).toBe(true);
+    expect(statuses).toContainEqual(
+      expect.objectContaining({ song_id: "aaa111", state: "completed" }),
+    );
   });
 });
 

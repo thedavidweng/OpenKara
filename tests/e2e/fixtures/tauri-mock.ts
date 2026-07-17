@@ -264,7 +264,7 @@ export const TAURI_MOCK_SCRIPT = `
         (s) => s.title.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q)
       );
     },
-    get_all_separation_statuses: () => clone(separationStatuses),
+    get_all_separation_statuses: () => clone(Object.values(separationStatuses)),
     get_all_upload_statuses: {},
 
     // Playback — every snapshot carries transport_generation (IPC contract).
