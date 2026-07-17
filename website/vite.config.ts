@@ -12,6 +12,8 @@ export default defineConfig({
     },
   },
   server: {
+    host: "0.0.0.0",
+    allowedHosts: ["terminal.local"],
     fs: {
       allow: [fileURLToPath(new URL("..", import.meta.url))],
     },
