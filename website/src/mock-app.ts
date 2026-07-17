@@ -6,6 +6,7 @@ import { usePlayerStore } from "@/stores/player-store";
 import { usePlaylistStore } from "@/stores/playlist-store";
 import { useQueueStore } from "@/stores/queue-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import type { PlaylistSong } from "@/lib/tauri/playlist";
 import type { LyricLine, PlaybackStateSnapshot, Song } from "@/types/ipc";
 
 const EMPTY_COVER = Uint8Array.from(
@@ -51,6 +52,28 @@ export const PREVIEW_SONGS = [
   song("cause", "因果", "擦除SKAI ISYOURGOD", 151_000, "zh"),
   song("lover", "爱人错过", "告五人", 292_000, "zh"),
 ];
+
+const PREVIEW_PLAYLISTS = [
+  {
+    id: "favorites",
+    name: "Favorites",
+    song_count: 12,
+    created_at: 1,
+    updated_at: 1,
+  },
+  {
+    id: "party",
+    name: "Friday night",
+    song_count: 28,
+    created_at: 1,
+    updated_at: 1,
+  },
+] as const;
+
+const PREVIEW_PLAYLIST_SONGS: Record<string, string[]> = {
+  favorites: ["hachiko", "aria", "love-like-this", "lover"],
+  party: ["fly-day", "kirari", "matsuri", "cause"],
+};
 
 const LYRICS: LyricLine[] = [
   {
@@ -139,20 +162,6 @@ function snapshot(
   };
 }
 
-function selectSong(songId: string) {
-  const next = snapshot(songId, {
-    position_ms: 0,
-    is_playing: true,
-    state: "playing",
-  });
-  usePlayerStore.setState({
-    snapshot: next,
-    positionMs: 0,
-    playingSinceMs: performance.now(),
-  });
-  useLyricsStore.setState({ songId, activeLineIndex: 0, activeWordIndex: -1 });
-}
-
 let initialized = false;
 
 export function initializeMockApp(language: "en" | "zh-CN") {
@@ -173,54 +182,29 @@ export function initializeMockApp(language: "en" | "zh-CN") {
   });
   useQueueStore.setState({ queue: [], playHistory: [], isOpen: false });
   usePlaylistStore.setState({
-    playlists: [
-      {
-        id: "favorites",
-        name: "Favorites",
-        song_count: 12,
-        created_at: 1,
-        updated_at: 1,
-      },
-      {
-        id: "party",
-        name: "Friday night",
-        song_count: 28,
-        created_at: 1,
-        updated_at: 1,
-      },
-    ],
-    activePlaylistId: null,
+    playlists: [...PREVIEW_PLAYLISTS],
+    activePlaylistId: "favorites",
     isLoading: false,
-    playlistSongSets: new Map(),
+    playlistSongSets: new Map(
+      Object.entries(PREVIEW_PLAYLIST_SONGS).map(([playlistId, songIds]) => [
+        playlistId,
+        new Set(songIds),
+      ]),
+    ),
     loadPlaylists: async () => {},
-    createPlaylist: async (name) => {
-      const playlist = {
-        id: `preview-${Date.now()}`,
-        name,
-        song_count: 0,
-        created_at: Date.now(),
-        updated_at: Date.now(),
-      };
-      usePlaylistStore.setState((state) => ({
-        playlists: [...state.playlists, playlist],
-      }));
-      return playlist;
-    },
-    renamePlaylist: async (playlistId, name) =>
-      usePlaylistStore.setState((state) => ({
-        playlists: state.playlists.map((playlist) =>
-          playlist.id === playlistId ? { ...playlist, name } : playlist,
-        ),
-      })),
-    deletePlaylist: async (playlistId) =>
-      usePlaylistStore.setState((state) => ({
-        playlists: state.playlists.filter(
-          (playlist) => playlist.id !== playlistId,
-        ),
-      })),
+    loadPlaylistSongSets: async () => {},
+    createPlaylist: async () => PREVIEW_PLAYLISTS[0],
+    renamePlaylist: async () => {},
+    deletePlaylist: async () => {},
     addSongsToPlaylist: async () => {},
     removeSongsFromPlaylist: async () => {},
-    getPlaylistSongs: async () => [],
+    getPlaylistSongs: async (playlistId): Promise<PlaylistSong[]> =>
+      (PREVIEW_PLAYLIST_SONGS[playlistId] ?? []).map((song_hash, index) => ({
+        song_hash,
+        added_at: index + 1,
+        sort_order: index,
+        singer: null,
+      })),
   });
   useLibraryStore.setState({
     songs: PREVIEW_SONGS,
@@ -230,28 +214,8 @@ export function initializeMockApp(language: "en" | "zh-CN") {
     lastClickedSongId: "hachiko",
     separationStatuses: {},
     uploadStatuses: {},
-    setSearchQuery: (query) => {
-      const normalized = query.trim().toLowerCase();
-      useLibraryStore.setState({
-        searchQuery: query,
-        songs: normalized
-          ? PREVIEW_SONGS.filter((item) =>
-              `${item.title} ${item.artist}`.toLowerCase().includes(normalized),
-            )
-          : PREVIEW_SONGS,
-      });
-    },
-    searchSongs: async (query) => {
-      const normalized = query.trim().toLowerCase();
-      useLibraryStore.setState({
-        searchQuery: query,
-        songs: normalized
-          ? PREVIEW_SONGS.filter((item) =>
-              `${item.title} ${item.artist}`.toLowerCase().includes(normalized),
-            )
-          : PREVIEW_SONGS,
-      });
-    },
+    setSearchQuery: () => {},
+    searchSongs: async () => {},
     importFiles: async () => {},
   });
   useLyricsStore.setState({
@@ -273,55 +237,14 @@ export function initializeMockApp(language: "en" | "zh-CN") {
     snapshot: snapshot(),
     positionMs: 61_000,
     playingSinceMs: null,
-    playSong: async (songId) => selectSong(songId),
-    playNow: async (songId) => selectSong(songId),
-    resume: async () =>
-      usePlayerStore.setState((state) => ({
-        snapshot: state.snapshot
-          ? { ...state.snapshot, is_playing: true, state: "playing" }
-          : null,
-        playingSinceMs: performance.now(),
-      })),
-    pause: async () =>
-      usePlayerStore.setState((state) => ({
-        snapshot: state.snapshot
-          ? { ...state.snapshot, is_playing: false, state: "playing" }
-          : null,
-        playingSinceMs: null,
-      })),
-    seek: async (ms) =>
-      usePlayerStore.setState((state) => ({
-        positionMs: ms,
-        seekRevision: state.seekRevision + 1,
-        snapshot: state.snapshot
-          ? { ...state.snapshot, position_ms: ms }
-          : null,
-      })),
-    setVolume: async (volume) =>
-      usePlayerStore.setState((state) => ({
-        snapshot: state.snapshot ? { ...state.snapshot, volume } : null,
-      })),
-    setStemVolume: async (stem, level) =>
-      usePlayerStore.setState((state) => ({
-        snapshot: state.snapshot
-          ? {
-              ...state.snapshot,
-              stem_volumes: { ...state.snapshot.stem_volumes, [stem]: level },
-            }
-          : null,
-      })),
-    skipForward: async () => {
-      const currentId = usePlayerStore.getState().snapshot?.song_id;
-      const index = PREVIEW_SONGS.findIndex((item) => item.hash === currentId);
-      selectSong(PREVIEW_SONGS[(index + 1) % PREVIEW_SONGS.length].hash);
-    },
-    skipBack: async () => {
-      const currentId = usePlayerStore.getState().snapshot?.song_id;
-      const index = PREVIEW_SONGS.findIndex((item) => item.hash === currentId);
-      selectSong(
-        PREVIEW_SONGS[(index - 1 + PREVIEW_SONGS.length) % PREVIEW_SONGS.length]
-          .hash,
-      );
-    },
+    playSong: async () => {},
+    playNow: async () => {},
+    resume: async () => {},
+    pause: async () => {},
+    seek: async () => {},
+    setVolume: async () => {},
+    setStemVolume: async () => {},
+    skipForward: async () => {},
+    skipBack: async () => {},
   });
 }

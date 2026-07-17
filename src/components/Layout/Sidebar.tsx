@@ -114,12 +114,14 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
     >
       {header ? <div className="shrink-0 px-3 pb-2 pt-3">{header}</div> : null}
 
-      <div className={`shrink-0 px-3 pb-3 ${header ? "pt-1" : "pt-3"}`}>
-        <SearchBox />
-      </div>
+      {!previewMode && (
+        <div className={`shrink-0 px-3 pb-3 ${header ? "pt-1" : "pt-3"}`}>
+          <SearchBox />
+        </div>
+      )}
 
       {/* Filter tabs */}
-      {activePlaylistId && (
+      {activePlaylistId && !previewMode && (
         <div className="shrink-0 flex items-center gap-2 border-b border-[color-mix(in_srgb,var(--color-border)_86%,transparent)] px-4 py-2">
           <button
             onClick={() => setActivePlaylist(null)}
@@ -133,7 +135,7 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
           </span>
         </div>
       )}
-      {!activePlaylistId && (
+      {!activePlaylistId && !previewMode && (
         <div className="shrink-0 space-y-0.5 px-2">
           <div className="px-2 pb-1 text-[11px] font-semibold tracking-wide text-[var(--color-text-dim)]">
             {t("sidebar.library")}
@@ -185,18 +187,22 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
       )}
 
       {/* PLAYLISTS section */}
-      <div className="shrink-0 space-y-0.5 px-2 mt-4">
+      <div
+        className={`shrink-0 space-y-0.5 px-2 ${previewMode ? "mt-3" : "mt-4"}`}
+      >
         <div className="flex items-center justify-between px-2 pb-1">
           <span className="text-[11px] font-semibold tracking-wide text-[var(--color-text-dim)]">
             {t("playlist.section")}
           </span>
-          <button
-            onClick={() => setShowCreatePlaylist(true)}
-            className="text-[11px] text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors"
-            title={t("playlist.create")}
-          >
-            + {t("playlist.create")}
-          </button>
+          {!previewMode && (
+            <button
+              onClick={() => setShowCreatePlaylist(true)}
+              className="text-[11px] text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors"
+              title={t("playlist.create")}
+            >
+              + {t("playlist.create")}
+            </button>
+          )}
         </div>
         {playlists.length === 0 ? (
           <div className="px-2 py-1 text-[11px] text-[var(--color-text-dim)]">
@@ -208,6 +214,10 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
               <button
                 key={playlist.id}
                 onClick={() => setActivePlaylist(playlist.id)}
+                data-preview-playlist-switch={previewMode ? "true" : undefined}
+                aria-current={
+                  activePlaylistId === playlist.id ? "page" : undefined
+                }
                 className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-[13px] ${
                   activePlaylistId === playlist.id
                     ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-[var(--color-text)] shadow-[var(--shadow-control-selected)]"
@@ -232,7 +242,9 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
 
       {/* Song list */}
       {!activePlaylistId && (
-        <div className="mt-4 flex flex-1 flex-col overflow-hidden px-2">
+        <div
+          className={`mt-4 flex flex-1 flex-col overflow-hidden px-2 ${previewMode ? "pointer-events-none" : ""}`}
+        >
           <div className="flex items-center justify-between px-2 pb-1">
             <span className="text-[11px] font-semibold tracking-wide text-[var(--color-text-dim)]">
               {t("sidebar.localMusic")}
@@ -243,64 +255,67 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
         </div>
       )}
       {activePlaylistId && (
-        <div className="mt-4 flex flex-1 flex-col overflow-hidden px-2">
+        <div
+          className={`mt-4 flex flex-1 flex-col overflow-hidden px-2 ${previewMode ? "pointer-events-none" : ""}`}
+        >
           <SongList />
         </div>
       )}
 
       {/* Batch separation controls */}
-      {!(shouldHideButton && !isBatchRunning && batchSeparation == null) && (
-        <div className="shrink-0 border-t border-[var(--color-border)] px-3 py-3">
-          {isBatchRunning ? (
-            <div className="text-center text-[11px] text-[var(--color-text-dim)]">
-              {t("sidebar.separating", {
-                current: Math.min(
-                  batchSeparation.completed + 1,
-                  batchSeparation.total,
-                ),
-                total: batchSeparation.total,
-              })}
-            </div>
-          ) : batchSeparation != null ? (
-            // Completed/cancelled state (shown briefly before clearing)
-            <div className="text-center text-[11px] text-[var(--color-text-dim)]">
-              {t("sidebar.separationComplete", {
-                done: batchSeparation.completed,
-              })}
-              {batchSeparation.skipped > 0 &&
-                `, ${t("sidebar.skipped", { count: batchSeparation.skipped })}`}
-              {batchSeparation.failed > 0 &&
-                `, ${t("sidebar.failed", { count: batchSeparation.failed })}`}
-            </div>
-          ) : needsUpgrade ? (
-            <button
-              onClick={() => setShowUpgradeConfirm(true)}
-              className={`motion-surface flex w-full items-center justify-center gap-2 ${batchActionClassName} text-[var(--color-text)] hover:text-[var(--color-text)]`}
-            >
-              <Layers size={12} />
-              {t("sidebar.upgradeAll")}
-            </button>
-          ) : (
-            <button
-              onClick={handleSeparateAll}
-              disabled={separableSongs.length === 0}
-              className={`motion-surface flex w-full items-center justify-center gap-2 ${batchActionClassName} text-[var(--color-text)] hover:text-[var(--color-text)] disabled:opacity-40`}
-            >
-              <Layers size={12} />
-              {t("sidebar.separateAll")}
-              <span className="text-[10px] text-[var(--color-text-dimmer)]">
-                (
-                {stemMode === "four_stem"
-                  ? t("sidebar.fourStem")
-                  : t("sidebar.twoStem")}
-                )
-              </span>
-            </button>
-          )}
-        </div>
-      )}
+      {!previewMode &&
+        !(shouldHideButton && !isBatchRunning && batchSeparation == null) && (
+          <div className="shrink-0 border-t border-[var(--color-border)] px-3 py-3">
+            {isBatchRunning ? (
+              <div className="text-center text-[11px] text-[var(--color-text-dim)]">
+                {t("sidebar.separating", {
+                  current: Math.min(
+                    batchSeparation.completed + 1,
+                    batchSeparation.total,
+                  ),
+                  total: batchSeparation.total,
+                })}
+              </div>
+            ) : batchSeparation != null ? (
+              // Completed/cancelled state (shown briefly before clearing)
+              <div className="text-center text-[11px] text-[var(--color-text-dim)]">
+                {t("sidebar.separationComplete", {
+                  done: batchSeparation.completed,
+                })}
+                {batchSeparation.skipped > 0 &&
+                  `, ${t("sidebar.skipped", { count: batchSeparation.skipped })}`}
+                {batchSeparation.failed > 0 &&
+                  `, ${t("sidebar.failed", { count: batchSeparation.failed })}`}
+              </div>
+            ) : needsUpgrade ? (
+              <button
+                onClick={() => setShowUpgradeConfirm(true)}
+                className={`motion-surface flex w-full items-center justify-center gap-2 ${batchActionClassName} text-[var(--color-text)] hover:text-[var(--color-text)]`}
+              >
+                <Layers size={12} />
+                {t("sidebar.upgradeAll")}
+              </button>
+            ) : (
+              <button
+                onClick={handleSeparateAll}
+                disabled={separableSongs.length === 0}
+                className={`motion-surface flex w-full items-center justify-center gap-2 ${batchActionClassName} text-[var(--color-text)] hover:text-[var(--color-text)] disabled:opacity-40`}
+              >
+                <Layers size={12} />
+                {t("sidebar.separateAll")}
+                <span className="text-[10px] text-[var(--color-text-dimmer)]">
+                  (
+                  {stemMode === "four_stem"
+                    ? t("sidebar.fourStem")
+                    : t("sidebar.twoStem")}
+                  )
+                </span>
+              </button>
+            )}
+          </div>
+        )}
 
-      {showCreatePlaylist && (
+      {!previewMode && showCreatePlaylist && (
         <InputDialog
           title={t("playlist.create")}
           placeholder={t("playlist.name")}
@@ -313,7 +328,7 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
         />
       )}
 
-      {showUpgradeConfirm && (
+      {!previewMode && showUpgradeConfirm && (
         <ConfirmationDialog
           title={t("sidebar.confirmUpgrade.title")}
           message={t("sidebar.confirmUpgrade.message")}

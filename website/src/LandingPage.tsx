@@ -31,7 +31,24 @@ const COPY = {
     platform: "For macOS, Windows, and Linux",
     previewLabel: "A live preview built from the OpenKara app itself",
     previewNote:
-      "Choose a song, search the library, or use the playback controls. This is the current React interface running with local mock data—not a screenshot.",
+      "Switch playlists in the left rail. The main window is intentionally read-only, so the product scene stays composed instead of becoming a demo sandbox.",
+    previewModules: [
+      [
+        "Lyrics",
+        "Follow every line",
+        "A lyric-led view keeps the song in focus before you begin singing.",
+      ],
+      [
+        "Stem separation",
+        "Shape the backing track",
+        "Separate vocals, drums, bass, and other parts directly on your computer.",
+      ],
+      [
+        "Mixing",
+        "Tune the moment",
+        "Fine-tune each part when you are ready to perform—not inside the landing preview.",
+      ],
+    ],
     sections: [
       {
         eyebrow: "AI stem separation",
@@ -88,7 +105,24 @@ const COPY = {
     platform: "支持 macOS、Windows 和 Linux",
     previewLabel: "直接由 OpenKara 应用构建的实时预览",
     previewNote:
-      "选择歌曲、搜索曲库或操作播放器。这是当前 React 界面配合本地 mock 数据运行的效果，不是截图。",
+      "可以在左侧切换歌单；主窗口刻意保持只读，让产品画面始终稳定，而不是变成一个可随意操作的演示沙盒。",
+    previewModules: [
+      [
+        "歌词",
+        "跟住每一句",
+        "以歌词为中心的画面，让你开唱前先专注于歌曲本身。",
+      ],
+      [
+        "音轨分离",
+        "塑造伴奏",
+        "直接在你的电脑上分离人声、鼓、贝斯与其他音轨。",
+      ],
+      [
+        "混音",
+        "调出此刻",
+        "真正准备开唱时再精细调整每一轨，而不是在落地页预览里操作。",
+      ],
+    ],
     sections: [
       {
         eyebrow: "AI 音轨分离",
@@ -129,6 +163,8 @@ const featureIcons = [
   Music2,
   Code2,
 ];
+
+const previewModuleIcons = [Music2, Sparkles, SlidersHorizontal];
 
 export function LandingPage() {
   const [language, setLanguage] = useState<Language>(() =>
@@ -224,6 +260,19 @@ export function LandingPage() {
           <div className="preview-caption content-width">
             <span id="preview-title">{copy.previewLabel}</span>
             <p>{copy.previewNote}</p>
+          </div>
+          <div className="preview-modules content-width">
+            {copy.previewModules.map((module, index) => {
+              const Icon = previewModuleIcons[index];
+              return (
+                <article className="preview-module" key={module[0]}>
+                  <Icon size={16} aria-hidden="true" />
+                  <span>{module[0]}</span>
+                  <h3>{module[1]}</h3>
+                  <p>{module[2]}</p>
+                </article>
+              );
+            })}
           </div>
         </section>
 

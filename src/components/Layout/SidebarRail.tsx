@@ -6,6 +6,7 @@ interface SidebarRailProps {
   visible: boolean;
   width: number;
   onResize: (width: number) => void;
+  resizable?: boolean;
   children: ReactNode;
 }
 
@@ -17,6 +18,7 @@ export function SidebarRail({
   visible,
   width,
   onResize,
+  resizable = true,
   children,
 }: SidebarRailProps) {
   const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(
@@ -78,7 +80,7 @@ export function SidebarRail({
         }}
       >
         {children}
-        {visible ? (
+        {visible && resizable ? (
           <div
             role="separator"
             aria-orientation="vertical"

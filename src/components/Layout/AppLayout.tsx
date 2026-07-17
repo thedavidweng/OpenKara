@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, type SyntheticEvent } from "react";
 import { Sidebar } from "./Sidebar";
 import { SidebarRail } from "./SidebarRail";
 import { WindowChrome } from "./WindowChrome";
@@ -31,6 +31,13 @@ const PREVIEW_WINDOW_SHELL_STATE: WindowShellState = {
   sidebarWidth: 260,
 };
 
+function isPreviewPlaylistTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    target.closest("[data-preview-playlist-switch='true']") != null
+  );
+}
+
 export function AppLayout({
   initialWindowShellState,
   previewMode = false,
@@ -61,6 +68,17 @@ export function AppLayout({
 
   const loadRotation = useRotationStore((s) => s.loadRotation);
 
+  // The landing page borrows this shell as a composed product scene, not a
+  // second app. Keep its state deterministic while preserving playlist changes
+  // as the one meaningful way to inspect the mock library.
+  const blockPreviewInteraction = useCallback((event: SyntheticEvent) => {
+    if (isPreviewPlaylistTarget(event.target)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+  }, []);
+
   useEffect(() => {
     if (previewMode) {
       return;
@@ -72,6 +90,10 @@ export function AppLayout({
     <div
       className={`flex w-full flex-col overflow-hidden bg-[var(--color-sidebar)] font-sans ${previewMode ? "h-full" : "h-screen"}`}
       onContextMenu={(e) => e.preventDefault()}
+      onClickCapture={previewMode ? blockPreviewInteraction : undefined}
+      onDoubleClickCapture={previewMode ? blockPreviewInteraction : undefined}
+      onKeyDownCapture={previewMode ? blockPreviewInteraction : undefined}
+      onPointerDownCapture={previewMode ? blockPreviewInteraction : undefined}
       onContextMenuCapture={
         previewMode
           ? (event) => {
@@ -82,6 +104,7 @@ export function AppLayout({
       }
       data-window-chrome-platform={windowShellState.chromeVariant}
       data-window-shell-tier={windowShellState.tier}
+      data-preview-interaction-mode={previewMode ? "playlist-only" : undefined}
       style={createWindowShellStyle({
         ...windowShellState,
         sidebarWidth,
@@ -102,15 +125,16 @@ export function AppLayout({
           visible={sidebarVisible}
           width={sidebarWidth}
           onResize={setSidebarWidth}
+          resizable={!previewMode}
         >
           <Sidebar previewMode={previewMode} />
         </SidebarRail>
 
-        <MainContentView />
+        <MainContentView previewMode={previewMode} />
       </div>
 
-      <ToastContainer />
-      <ImportCdgChoiceDialog />
+      {!previewMode && <ToastContainer />}
+      {!previewMode && <ImportCdgChoiceDialog />}
     </div>
   );
 }
