@@ -38,7 +38,7 @@ export function LyricsFontSizeControl({
           className={`font-[tabular-nums] text-[12px] font-medium ${
             lyricsFontStep === 0
               ? "text-[var(--color-text-dim)]"
-              : "text-[var(--color-accent)]"
+              : "text-[var(--color-control-primary)]"
           }`}
         >
           {FONT_STEP_LABELS[lyricsFontStep] ?? "M"}

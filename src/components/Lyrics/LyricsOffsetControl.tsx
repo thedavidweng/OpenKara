@@ -30,7 +30,7 @@ export function LyricsOffsetControl({
           className={`font-[tabular-nums] text-[12px] font-medium ${
             offsetMs === 0
               ? "text-[var(--color-text-dim)]"
-              : "text-[var(--color-accent)]"
+              : "text-[var(--color-control-primary)]"
           }`}
         >
           {offsetMs >= 0 ? "+" : ""}

@@ -53,19 +53,20 @@ describe("LyricsOffsetControl", () => {
     expect(markup).toContain("-0.5s");
   });
 
-  test("highlights the offset display with the accent color when offset is non-zero", () => {
+  test("highlights the offset display with the control-primary color when offset is non-zero", () => {
     mockLyricsState.offsetMs = 1000;
 
     const markup = renderToStaticMarkup(<LyricsOffsetControl />);
 
-    expect(markup).toContain("text-[var(--color-accent)]");
+    expect(markup).toContain("text-[var(--color-control-primary)]");
   });
 
   test("uses dimmer text when offset is zero", () => {
     const markup = renderToStaticMarkup(<LyricsOffsetControl />);
 
-    // The accent highlight must be absent at zero offset so the display
-    // rests in the dim text color rather than the active accent color.
-    expect(markup).not.toContain("text-[var(--color-accent)]");
+    // The control-primary highlight must be absent at zero offset so the
+    // display rests in the dim text color rather than the active highlight
+    // color.
+    expect(markup).not.toContain("text-[var(--color-control-primary)]");
   });
 });

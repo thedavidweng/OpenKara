@@ -59,20 +59,20 @@ describe("LyricsFontSizeControl", () => {
     expect(markup).toContain(">XL<");
   });
 
-  test("highlights the step label with the accent color when non-default", () => {
+  test("highlights the step label with the control-primary color when non-default", () => {
     mockSettingsState.lyricsFontStep = 1;
 
     const markup = renderToStaticMarkup(<LyricsFontSizeControl />);
 
-    expect(markup).toContain("text-[var(--color-accent)]");
+    expect(markup).toContain("text-[var(--color-control-primary)]");
   });
 
   test("uses dimmer text for the step label at default", () => {
     const markup = renderToStaticMarkup(<LyricsFontSizeControl />);
 
-    // The accent highlight must be absent at the default step so the label
-    // rests in the dim text color rather than the active accent color.
-    expect(markup).not.toContain("text-[var(--color-accent)]");
+    // The control-primary highlight must be absent at the default step so the
+    // label rests in the dim text color rather than the active highlight color.
+    expect(markup).not.toContain("text-[var(--color-control-primary)]");
   });
 
   test("renders accessible labels for the decrease, increase, and reset buttons", () => {
