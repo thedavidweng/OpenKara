@@ -2422,6 +2422,11 @@ mod tests {
         let ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
         let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
+        // Enable the EQ so the soft limiter is active. The limiter is gated on
+        // EQ activity (is_fully_bypassed), so a default-disabled EqProcessor
+        // would skip the limiter and leave the 1.0 tail samples unclipped.
+        let mut eq = EqProcessor::new(sample_rate, device_channels);
+        eq.set_enabled(true);
         let _rendered = render_output_buffer(
             &mut controller,
             &mut output,
@@ -2431,20 +2436,22 @@ mod tests {
             device_channels,
             &mut rc,
             &mut rc_in,
-            &mut EqProcessor::new(sample_rate, device_channels),
+            &mut eq,
             &mut peak_acc,
             &ring,
         );
 
         // Track A frames (0.1) are below the threshold and pass through.
+        // The EQ runs at 0 dB gain (flat) so the output is approximately
+        // unchanged; use a tolerance that accommodates biquad numerical error.
         for (i, sample) in output.iter().enumerate().take(100 * device_channels) {
             assert!(
-                (*sample - 0.1).abs() < 1e-6,
+                (*sample - 0.1).abs() < 1e-4,
                 "frame {i} should be from track A: got {sample}"
             );
         }
 
-        // Track B tail frames (originally 2.0) must be limited to < 1.0 and
+        // Track B tail frames (originally 1.0) must be limited to < 1.0 and
         // above the threshold (the limiter compresses, it does not zero).
         for (i, sample) in output
             .iter()
