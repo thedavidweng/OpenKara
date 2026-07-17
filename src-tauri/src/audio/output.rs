@@ -379,14 +379,22 @@ pub fn render_output_buffer(
     // padding (zero-filled above) must not advance filter state.
     eq_processor.process(output, rendered);
 
-    // Soft limiter: bound peaks to prevent clipping after EQ boost. Samples
-    // below the threshold pass through unchanged. Only run when the EQ is
-    // active (or transitioning to/from active) — for the common no-EQ
-    // single-source path the mixed value never exceeds 1.0 (decoded PCM is
-    // in [-1,1] and master/stem gains are <= 1.0), so the limiter would only
-    // attenuate loud-but-unclipped audio and alter fidelity for users who
-    // never enable the EQ.
-    if !eq_processor.is_fully_bypassed() {
+    // Bound the output to prevent clipping. When the EQ is active (or
+    // transitioning), use the soft limiter — its tanh curve gently compresses
+    // peaks above 0.95 to prevent post-boost clipping without harsh limiting.
+    // When the EQ is fully bypassed (the default), use a hard clamp instead:
+    // for ordinary single-source playback the mixed value never exceeds 1.0
+    // (decoded PCM is in [-1,1] and master/stem gains are <= 1.0), so the
+    // clamp is a no-op and playback stays bit-transparent. The clamp is still
+    // required for multi-stem summation (peaks can exceed full scale when
+    // several decoded stems are mixed) and sinc resampling overshoot (Gibbs
+    // ringing) — on f32 output devices there is no downstream saturation, so
+    // out-of-range samples would hard-clip at the DAC.
+    if eq_processor.is_fully_bypassed() {
+        for sample in output[..rendered].iter_mut() {
+            *sample = sample.clamp(-1.0, 1.0);
+        }
+    } else {
         for sample in output[..rendered].iter_mut() {
             *sample = soft_limit(*sample);
         }
