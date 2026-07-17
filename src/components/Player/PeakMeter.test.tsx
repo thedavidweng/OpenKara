@@ -310,11 +310,14 @@ describe("PeakMeter", () => {
     const initialCount = canvasMock.ctx.clearRect.mock.calls.length;
     // Advance well past the 500 ms staleness grace period.
     await vi.advanceTimersByTimeAsync(600);
-    // The flat-line fallback should have triggered additional redraws
-    // (clearRect + fillRect for the baseline).
-    expect(canvasMock.ctx.clearRect.mock.calls.length).toBeGreaterThan(
-      initialCount,
-    );
+    // The flat-line fallback should have drawn exactly once more
+    // (clearRect + fillRect for the baseline), not on every subsequent tick.
+    const afterFlatLine = canvasMock.ctx.clearRect.mock.calls.length;
+    expect(afterFlatLine).toBeGreaterThan(initialCount);
     expect(canvasMock.ctx.fillRect).toHaveBeenCalled();
+
+    // Advance further — no additional redraws should occur while idle.
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(canvasMock.ctx.clearRect.mock.calls.length).toBe(afterFlatLine);
   });
 });

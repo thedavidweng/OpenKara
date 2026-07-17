@@ -7,7 +7,7 @@ import type { AudioPeakSnapshot } from "@/types/ipc";
  *
  * Polls the Rust `get_audio_peaks` command at 30 Hz and renders the latest
  * peak pairs on a DPR-aware canvas. The backend publishes one pair per 512
- * rendered frames; the ring retains the last 256 pairs (~5.8 s at 44.1 kHz).
+ * rendered frames; the ring retains the last 256 pairs (~3 s at 44.1 kHz).
  *
  * The canvas is purely a visual observability channel — it never blocks
  * playback and degrades gracefully when no audio is playing (flat line).
@@ -27,6 +27,10 @@ export function PeakMeter({
   // (playback paused/stopped) the backend keeps returning the same non-empty
   // snapshot, so we use elapsed time to fall back to the flat-line state.
   const lastAdvanceRef = useRef<number | null>(null);
+  // Whether the flat-line state has already been drawn. Prevents redundant
+  // 30 Hz redraws when playback is idle — the canvas content is static so
+  // there is nothing to repaint until new peaks arrive.
+  const flatLineDrawnRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -123,18 +127,26 @@ export function PeakMeter({
         if (advanced) {
           lastWriteIndexRef.current = snapshot.writeIndex;
           lastAdvanceRef.current = now;
+          flatLineDrawnRef.current = false;
           draw(snapshot);
         } else if (snapshot.peaks.length === 0) {
           // Flat baseline when no audio has been published yet.
-          draw(snapshot);
+          // Only draw once — the canvas content is static until peaks arrive.
+          if (!flatLineDrawnRef.current) {
+            flatLineDrawnRef.current = true;
+            draw(snapshot);
+          }
         } else {
           // writeIndex unchanged with non-empty peaks: playback has likely
           // stopped or paused. After a grace period, fall back to the flat-line
           // state so the canvas does not freeze on the last waveform.
+          // Draw the flat line only once, then stop repainting until new
+          // peaks arrive (idle playback produces no visual change).
           const stale =
             lastAdvanceRef.current !== null &&
             now - lastAdvanceRef.current > 500;
-          if (stale) {
+          if (stale && !flatLineDrawnRef.current) {
+            flatLineDrawnRef.current = true;
             draw({ ...snapshot, peaks: [] });
           }
         }
