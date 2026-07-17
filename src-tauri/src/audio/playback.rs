@@ -1048,6 +1048,14 @@ impl PlaybackController {
         self.fade = FadeState::None;
         self.is_buffering = false;
 
+        // #103/#89: Bump the transport generation so the frontend's stale-event
+        // filter rejects any delayed `playback-position` event from the old
+        // song. Without this bump, a same-generation position event for song-a
+        // could arrive after the new-song snapshot and be accepted, reverting
+        // the clock and queue reconciliation back to song-a. This mirrors the
+        // gapless swap path (`perform_gapless_swap`).
+        self.bump_transport_generation();
+
         self.stamp_transition(from_song_id, to_song_id, preload_generation);
     }
 
@@ -2100,5 +2108,37 @@ mod tests {
             "promote must clear fade"
         );
         assert!(!controller.is_buffering, "promote must clear buffering");
+    }
+
+    #[test]
+    fn promote_crossfade_track_bumps_transport_generation() {
+        // #103/#89: A crossfade promotion replaces song-a with song-b but must
+        // bump the transport generation so the frontend's stale-event filter
+        // rejects delayed `playback-position` events from song-a. Without the
+        // bump, a same-generation position event for the old song could arrive
+        // after the new-song snapshot and be accepted, reverting the clock and
+        // queue reconciliation back to song-a. This mirrors the gapless swap
+        // path (`perform_gapless_swap_bumps_transport_generation`).
+        let mut controller = super::PlaybackController::default();
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        controller.play(0).unwrap();
+        let gen_before = controller.transport_generation;
+
+        let prepared = make_prepared("song-b", 0, super::OutputFormatSnapshot::new(1, 44_100, 2));
+        controller.promote_crossfade_track(prepared, 0);
+
+        // The generation must have advanced so stale events from song-a are
+        // rejected by the frontend's generation filter.
+        assert!(
+            controller.transport_generation > gen_before,
+            "crossfade promotion must bump transport_generation (was {gen_before}, is {})",
+            controller.transport_generation
+        );
     }
 }

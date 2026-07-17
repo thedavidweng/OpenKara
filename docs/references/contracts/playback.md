@@ -252,19 +252,19 @@ existing source/stem mix + master/stem gains
 
 ### Shared type: `PlaybackStateSnapshot`
 
-| Field                  | Type                                              | Notes                                                                              |
-| ---------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `song_id`              | `Option<String>`                                  | 当前未加载轨道时为 `null`                                                          |
-| `transport_generation` | `u64`                                             | 单调 transport 代号；新歌加载、resume、pause、seek、无缝换轨（gapless swap）时递增 |
-| `state`                | `"idle" \| "loading" \| "playing" \| "buffering"` | 后端 transport 生命周期；暂停由 `is_playing=false` 表示                            |
-| `is_playing`           | `bool`                                            | 当前是否处于播放推进状态                                                           |
-| `position_ms`          | `u64`                                             | 当前播放位置（由 `render_frame` 推导，非墙钟）                                     |
-| `duration_ms`          | `Option<u64>`                                     | 未加载轨道时为 `null`                                                              |
-| `buffered_ms`          | `u64`                                             | 已缓冲的最大安全播放位置（ms）；整轨模式 = `duration_ms`                           |
-| `volume`               | `f32`                                             | `0.0..1.0`                                                                         |
-| `stem_volumes`         | `{ vocals, drums, bass, other }`                  | 各 stem 音量                                                                       |
-| `has_stems`            | `bool`                                            | 当前是否已挂载 stems                                                               |
-| `stem_mode`            | `"two_stem" \| "four_stem" \| null`               | 当前 stem 模式                                                                     |
+| Field                  | Type                                              | Notes                                                                                                    |
+| ---------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `song_id`              | `Option<String>`                                  | 当前未加载轨道时为 `null`                                                                                |
+| `transport_generation` | `u64`                                             | 单调 transport 代号；新歌加载、resume、pause、seek、无缝换轨（gapless swap / crossfade promotion）时递增 |
+| `state`                | `"idle" \| "loading" \| "playing" \| "buffering"` | 后端 transport 生命周期；暂停由 `is_playing=false` 表示                                                  |
+| `is_playing`           | `bool`                                            | 当前是否处于播放推进状态                                                                                 |
+| `position_ms`          | `u64`                                             | 当前播放位置（由 `render_frame` 推导，非墙钟）                                                           |
+| `duration_ms`          | `Option<u64>`                                     | 未加载轨道时为 `null`                                                                                    |
+| `buffered_ms`          | `u64`                                             | 已缓冲的最大安全播放位置（ms）；整轨模式 = `duration_ms`                                                 |
+| `volume`               | `f32`                                             | `0.0..1.0`                                                                                               |
+| `stem_volumes`         | `{ vocals, drums, bass, other }`                  | 各 stem 音量                                                                                             |
+| `has_stems`            | `bool`                                            | 当前是否已挂载 stems                                                                                     |
+| `stem_mode`            | `"two_stem" \| "four_stem" \| null`               | 当前 stem 模式                                                                                           |
 
 **Transport state 语义：**
 
@@ -370,7 +370,7 @@ playing ↔ playing（pause/resume，通过 isPlaying 区分）
 5. `transitionSerial` 单调递增，用于幂等去重；进程重启后重置，前端仅需在 WebView 生命周期内持久化
 6. 前端绝不在响应该事件时调用 `play()`；后端已完成换轨，前端只做 queue/history/state 对账
 7. 缺失的 `toSongId`（队列中不存在）仍应用 player state 和 history，不视为错误
-8. **竞态保护**：若用户在 backend gapless swap 与 position emitter drain 之间（~33ms 窗口）手动切换了歌曲，clock 持有更新的 `transport_generation`，`tryApplyAuthoritative` 拒绝过期的 transition snapshot，前端跳过 queue/history 对账——用户已切换到无关歌曲，不应移除 `toSongId` 或推入 `fromSongId`。gapless swap 不 bump `transport_generation`，因此先到的同 generation position event 不会触发此拒绝。
+8. **竞态保护**：若用户在 backend gapless swap / crossfade promotion 与 position emitter drain 之间（~33ms 窗口）手动切换了歌曲，clock 持有更新的 `transport_generation`，`tryApplyAuthoritative` 拒绝过期的 transition snapshot，前端跳过 queue/history 对账——用户已切换到无关歌曲，不应移除 `toSongId` 或推入 `fromSongId`。gapless swap 与 crossfade promotion 均 bump `transport_generation`，因此先到的同 generation position event 不会触发此拒绝。
 
 ### Shared error type: `CommandError`
 
