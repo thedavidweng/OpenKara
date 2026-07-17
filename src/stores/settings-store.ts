@@ -26,6 +26,15 @@ export interface AppSettingsSnapshot {
   eqGainsDb: [number, number, number, number, number];
 }
 
+// Monotonic generation counter for EQ mutations. Each setEqEnabled / setEqGains
+// call bumps the generation before issuing the IPC request; the response is
+// only applied if no newer EQ mutation has started since. This prevents a
+// slower older IPC response from overwriting the store with stale EQ state
+// when the user toggles or drags sliders rapidly. Mirrors the generation-guard
+// pattern used in lyrics-store (fetchGeneration) and library-store
+// (searchGeneration).
+let eqMutationGeneration = 0;
+
 interface SettingsState {
   isOpen: boolean;
   hydrated: AppSettingsSnapshot["hydrated"];
@@ -184,12 +193,20 @@ export function createSettingsStore(
         // Reverting to !enabled would flip the store even when the backend
         // state was already the requested value.
         const previous = get().eqEnabled;
+        // Bump the generation so any in-flight older EQ response is discarded.
+        const gen = ++eqMutationGeneration;
         // Optimistically update local state so the toggle reflects immediately.
         syncPatch({ eqEnabled: enabled });
         try {
           const settings = await api.setEqEnabled(enabled);
+          // A newer EQ mutation started after this one — discard the stale
+          // response so it cannot overwrite the current state.
+          if (gen !== eqMutationGeneration) return;
           syncPatch(toAppSettingsSnapshot(settings));
         } catch (error) {
+          // A newer mutation owns the state — do not revert, as that would
+          // clobber the newer optimistic value.
+          if (gen !== eqMutationGeneration) return;
           // Revert to the previous authoritative value on failure.
           syncPatch({ eqEnabled: previous });
           notifyError(error);
@@ -198,11 +215,15 @@ export function createSettingsStore(
       setEqGains: async (gainsDb) => {
         // Optimistically update local state so sliders reflect immediately.
         const previous = get().eqGainsDb;
+        // Bump the generation so any in-flight older EQ response is discarded.
+        const gen = ++eqMutationGeneration;
         syncPatch({ eqGainsDb: gainsDb });
         try {
           const settings = await api.setEqGains(gainsDb);
+          if (gen !== eqMutationGeneration) return;
           syncPatch(toAppSettingsSnapshot(settings));
         } catch (error) {
+          if (gen !== eqMutationGeneration) return;
           // Revert to the previous authoritative values on failure.
           syncPatch({ eqGainsDb: previous });
           notifyError(error);

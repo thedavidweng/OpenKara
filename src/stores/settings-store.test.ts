@@ -434,6 +434,178 @@ describe("settings-store actions", () => {
     expect(store.getState().eqGainsDb).toEqual([1, 2, 3, 4, 5]);
   });
 
+  // ── EQ out-of-order response guards ─────────────────────────────────────
+  //
+  // Rapid consecutive EQ mutations can have their IPC responses arrive out of
+  // order. A stale older response must not overwrite the store after a newer
+  // mutation has already applied.
+
+  test("setEqEnabled discards stale response when a newer toggle intervenes", async () => {
+    // First call (true) resolves slowly; second call (false) resolves first.
+    let resolveFirst: (value: AppSettings) => void = () => {};
+    let resolveSecond: (value: AppSettings) => void = () => {};
+    mockSetEqEnabled.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+    mockSetEqEnabled.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((resolve) => {
+          resolveSecond = resolve;
+        }),
+    );
+
+    // Fire both without awaiting — the user toggles rapidly.
+    const p1 = store.getState().setEqEnabled(true);
+    const p2 = store.getState().setEqEnabled(false);
+
+    // Optimistic updates applied immediately.
+    expect(store.getState().eqEnabled).toBe(false);
+
+    // Second call resolves first (newer) — state should reflect false.
+    resolveSecond(makeAppSettings({ eq_enabled: false }));
+    await p2;
+    expect(store.getState().eqEnabled).toBe(false);
+
+    // First call resolves last (stale) — must NOT overwrite with true.
+    resolveFirst(makeAppSettings({ eq_enabled: true }));
+    await p1;
+    expect(store.getState().eqEnabled).toBe(false);
+  });
+
+  test("setEqEnabled stale failure does not revert newer state", async () => {
+    let rejectFirst: (error: Error) => void = () => {};
+    mockSetEqEnabled.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((_resolve, reject) => {
+          rejectFirst = reject;
+        }),
+    );
+    // Second call succeeds immediately.
+    mockSetEqEnabled.mockResolvedValueOnce(
+      makeAppSettings({ eq_enabled: false }),
+    );
+
+    const p1 = store.getState().setEqEnabled(true);
+    const p2 = store.getState().setEqEnabled(false);
+
+    // Second call resolves — state is false.
+    await p2;
+    expect(store.getState().eqEnabled).toBe(false);
+
+    // First call fails (stale) — must NOT revert to the old true value.
+    rejectFirst(new Error("stale failure"));
+    await p1;
+    expect(store.getState().eqEnabled).toBe(false);
+    // Stale failure should not call notifyError.
+    expect(mockNotifyError).not.toHaveBeenCalled();
+  });
+
+  test("setEqGains discards stale response when a newer gain change intervenes", async () => {
+    let resolveFirst: (value: AppSettings) => void = () => {};
+    let resolveSecond: (value: AppSettings) => void = () => {};
+    mockSetEqGains.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+    mockSetEqGains.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((resolve) => {
+          resolveSecond = resolve;
+        }),
+    );
+
+    const oldGains: [number, number, number, number, number] = [0, 0, 0, 0, 0];
+    const firstGains: [number, number, number, number, number] = [
+      6, 0, 0, 0, 0,
+    ];
+    const secondGains: [number, number, number, number, number] = [
+      0, 0, 0, 0, 12,
+    ];
+
+    store.setState({ eqGainsDb: oldGains });
+
+    const p1 = store.getState().setEqGains(firstGains);
+    const p2 = store.getState().setEqGains(secondGains);
+
+    // Optimistic update reflects the newest request.
+    expect(store.getState().eqGainsDb).toEqual(secondGains);
+
+    // Second call resolves first (newer).
+    resolveSecond(makeAppSettings({ eq_gains_db: secondGains }));
+    await p2;
+    expect(store.getState().eqGainsDb).toEqual(secondGains);
+
+    // First call resolves last (stale) — must NOT overwrite.
+    resolveFirst(makeAppSettings({ eq_gains_db: firstGains }));
+    await p1;
+    expect(store.getState().eqGainsDb).toEqual(secondGains);
+  });
+
+  test("setEqGains stale failure does not revert newer state", async () => {
+    let rejectFirst: (error: Error) => void = () => {};
+    mockSetEqGains.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((_resolve, reject) => {
+          rejectFirst = reject;
+        }),
+    );
+    mockSetEqGains.mockResolvedValueOnce(
+      makeAppSettings({ eq_gains_db: [0, 0, 0, 0, 12] }),
+    );
+
+    store.setState({ eqGainsDb: [0, 0, 0, 0, 0] });
+
+    const p1 = store.getState().setEqGains([6, 0, 0, 0, 0]);
+    const p2 = store.getState().setEqGains([0, 0, 0, 0, 12]);
+
+    // Second call succeeds.
+    await p2;
+    expect(store.getState().eqGainsDb).toEqual([0, 0, 0, 0, 12]);
+
+    // First call fails (stale) — must NOT revert.
+    rejectFirst(new Error("stale failure"));
+    await p1;
+    expect(store.getState().eqGainsDb).toEqual([0, 0, 0, 0, 12]);
+    expect(mockNotifyError).not.toHaveBeenCalled();
+  });
+
+  test("cross-field stale response is discarded (setEqEnabled then setEqGains)", async () => {
+    // A stale setEqEnabled response must not overwrite gains set by a newer
+    // setEqGains call, and vice versa. Both share the same generation counter.
+    let resolveEnabled: (value: AppSettings) => void = () => {};
+    mockSetEqEnabled.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((resolve) => {
+          resolveEnabled = resolve;
+        }),
+    );
+    mockSetEqGains.mockResolvedValueOnce(
+      makeAppSettings({ eq_enabled: true, eq_gains_db: [0, 3, 0, 0, 0] }),
+    );
+
+    store.setState({ eqEnabled: false, eqGainsDb: [0, 0, 0, 0, 0] });
+
+    const p1 = store.getState().setEqEnabled(true);
+    const p2 = store.getState().setEqGains([0, 3, 0, 0, 0]);
+
+    // Newer setEqGains resolves first.
+    await p2;
+    expect(store.getState().eqGainsDb).toEqual([0, 3, 0, 0, 0]);
+
+    // Stale setEqEnabled resolves — its snapshot must be discarded so the
+    // gains from the newer call are not overwritten.
+    resolveEnabled(
+      makeAppSettings({ eq_enabled: true, eq_gains_db: [0, 0, 0, 0, 0] }),
+    );
+    await p1;
+    expect(store.getState().eqGainsDb).toEqual([0, 3, 0, 0, 0]);
+  });
+
   // ── setEqBandGain ───────────────────────────────────────────────────────
 
   test("setEqBandGain updates a single band and calls setEqGains", async () => {
