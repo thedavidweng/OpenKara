@@ -350,7 +350,20 @@ export function useCdgSync(enabled = true): void {
       },
       onProbeResolved: ({ songId: sid, hasCdg, availability, errorCode }) => {
         if (!hasCdg) {
-          // No active CDG decoder for this song/generation. Forward the
+          if (availability === "loading") {
+            // The backend is still decoding the CDG stream (e.g., Media+G
+            // ZIP or a remote track). Keep hasCdg optimistic (set by the
+            // song-detection effect) so the hot loop continues to re-probe
+            // on subsequent position ticks; once decoding finishes the
+            // backend will return frames and availability transitions to
+            // "ready". RATIONALE: previously a 0-byte probe response while
+            // the track was still loading permanently marked hasCdg=false,
+            // and the hot loop's !hasCdg guard then prevented any further
+            // probes — so graphics never appeared for the rest of the song.
+            setStatus("loading", null);
+            return;
+          }
+          // No active CDG decoder, or a backend CDG error state. Forward the
           // backend availability/errorCode to the store so the UI can
           // surface error states (empty/invalid/unreadable/broken ZIP CDG)
           // instead of silently hiding them as audio-only. RATIONALE: the

@@ -285,4 +285,74 @@ describe("useCdgSync — render coverage", () => {
     expect(mockGetCdgFrame).not.toHaveBeenCalled();
     expect(mockDrawFrame).not.toHaveBeenCalled();
   });
+
+  test("loading availability keeps hasCdg optimistic and retries until frame arrives", async () => {
+    // Simulate a Media+G ZIP that is still decoding: the first getCdgFrame
+    // returns 0 bytes and getCdgStatus reports "loading". Once decoding
+    // finishes, a subsequent getCdgFrame returns a real frame.
+    const loadingFrame = new ArrayBuffer(0);
+    const realFrame = buildBinaryFrame(1, 1);
+    let frameCallCount = 0;
+    mockGetCdgFrame.mockImplementation(() => {
+      frameCallCount += 1;
+      return Promise.resolve(frameCallCount <= 1 ? loadingFrame : realFrame);
+    });
+    mockGetCdgStatus.mockResolvedValue({
+      availability: "loading",
+      songId: "song-1",
+      transportGeneration: 1,
+      packetCount: null,
+      errorCode: null,
+    });
+
+    await act(async () => {
+      root!.render(<TestComponent enabled={true} />);
+    });
+
+    // Wait for the initial probe to resolve (0-byte + loading status).
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(mockGetCdgFrame).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    // hasCdg must stay true (optimistic) so the hot loop keeps probing.
+    // The store should reflect the loading state, not audio-only.
+    expect(useCdgStore.getState().hasCdg).toBe(true);
+    expect(useCdgStore.getState().availability).toBe("loading");
+    // The loading onProbeResolved path must NOT clear the display or emit
+    // a clear to the second window. (clearFrame / postCdgClear may have
+    // been called once during the initial song-change detection, but the
+    // loading path must not add any additional calls.)
+    const clearFrameCallsAfterProbe = mockClearFrame.mock.calls.length;
+    const postCdgClearCallsAfterProbe = mockPostCdgClear.mock.calls.length;
+
+    // Simulate the track starting to play and position advancing, which
+    // triggers the hot loop to re-probe.
+    await act(async () => {
+      usePlayerStore.setState({
+        positionMs: 100,
+        snapshot: makeSnapshot({ position_ms: 100, is_playing: true }),
+      });
+    });
+
+    // The hot loop re-probes; the second getCdgFrame returns a real frame.
+    await act(async () => {
+      await vi.waitFor(
+        () => {
+          expect(mockDrawFrame).toHaveBeenCalled();
+        },
+        { timeout: 2000 },
+      );
+    });
+
+    // Graphics should now be drawn and CDG confirmed.
+    expect(useCdgStore.getState().hasCdg).toBe(true);
+    expect(useCdgStore.getState().availability).toBe("ready");
+    // The loading path must not have cleared the display at any point.
+    expect(mockClearFrame.mock.calls.length).toBe(clearFrameCallsAfterProbe);
+    expect(mockPostCdgClear.mock.calls.length).toBe(
+      postCdgClearCallsAfterProbe,
+    );
+  });
 });

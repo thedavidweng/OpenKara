@@ -385,6 +385,59 @@ describe("createCdgFrameCoordinator", () => {
 
     coordinator.invalidate();
   });
+
+  test("0-byte probe with availability loading forwards loading state", async () => {
+    const pending = deferred<ArrayBuffer>();
+    const getCdgFrame = vi.fn(() => pending.promise);
+    const getCdgStatus = vi.fn().mockResolvedValue({
+      availability: "loading",
+      songId: "song-1",
+      transportGeneration: 1,
+      packetCount: null,
+      errorCode: null,
+    });
+    const onFrame = vi.fn();
+    const onProbeResolved = vi.fn();
+    const onError = vi.fn();
+
+    const coordinator = createCdgFrameCoordinator({
+      getCdgFrame: getCdgFrame as never,
+      getCdgStatus: getCdgStatus as never,
+      onFrame,
+      onProbeResolved,
+      onError,
+      isCurrent: () => true,
+    });
+
+    coordinator.request({
+      songId: "song-1",
+      transportGeneration: 1,
+      positionMs: 0,
+      lastFrameVersion: 0,
+    });
+
+    // Backend returns 0 bytes because the CDG stream is still decoding.
+    pending.resolve(new ArrayBuffer(0));
+    for (let i = 0; i < 6; i++) {
+      await Promise.resolve();
+    }
+
+    // The coordinator must consult getCdgStatus and forward the loading
+    // state so the caller can keep hasCdg optimistic and retry.
+    expect(getCdgStatus).toHaveBeenCalledWith("song-1", 1);
+    expect(onProbeResolved).toHaveBeenCalledTimes(1);
+    expect(onProbeResolved).toHaveBeenCalledWith({
+      songId: "song-1",
+      transportGeneration: 1,
+      hasCdg: false,
+      hasFrame: false,
+      availability: "loading",
+      errorCode: null,
+    });
+    expect(coordinator.isInFlight()).toBe(false);
+
+    coordinator.invalidate();
+  });
 });
 
 // silence unused helper in this file
