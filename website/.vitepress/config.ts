@@ -3,6 +3,7 @@ import { defineConfig } from "vitepress";
 export default defineConfig({
   title: "OpenKara",
   description: "Turn your music library into a karaoke stage.",
+  appearance: "dark",
   head: [
     [
       "link",
@@ -24,7 +25,7 @@ export default defineConfig({
     ],
     ["link", { rel: "manifest", href: "/img/site.webmanifest" }],
     ["meta", { name: "apple-mobile-web-app-title", content: "OpenKara" }],
-    ["meta", { name: "theme-color", content: "#ffffff" }],
+    ["meta", { name: "theme-color", content: "#08090a" }],
     ["meta", { property: "og:type", content: "website" }],
     ["meta", { property: "og:site_name", content: "OpenKara" }],
     [
@@ -88,6 +89,8 @@ export default defineConfig({
     },
   },
   themeConfig: {
+    darkModeSwitchTitle: "Switch to dark theme",
+    lightModeSwitchTitle: "Switch to light theme",
     search: {
       provider: "local",
     },

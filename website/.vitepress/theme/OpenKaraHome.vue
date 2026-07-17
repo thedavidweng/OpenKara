@@ -6,12 +6,26 @@ import {
   onMounted,
   onUnmounted,
   ref,
+  watch,
   type PropType,
 } from "vue";
 import { useData } from "vitepress";
 
-const { lang } = useData();
+const { isDark, lang } = useData();
 const isZh = computed(() => lang.value.toLowerCase().startsWith("zh"));
+const appearanceLabel = computed(() =>
+  isDark.value
+    ? isZh.value
+      ? "切换到浅色主题"
+      : "Switch to light theme"
+    : isZh.value
+      ? "切换到深色主题"
+      : "Switch to dark theme",
+);
+
+function toggleAppearance() {
+  isDark.value = !isDark.value;
+}
 
 const copy = computed(() =>
   isZh.value
@@ -206,23 +220,13 @@ const SmallGrid = defineComponent({
       { class: "feature-grid feature-grid-small" },
       props.items.map((item, index) =>
         h("article", { class: "small-card" }, [
-          props.mode === "bars"
-            ? h("span", { class: "small-icon", "aria-hidden": "true" }, [
-                h("i"),
-                h("i"),
-                h("i"),
-              ])
-            : h(
-                "span",
-                {
-                  class:
-                    props.mode === "platforms"
-                      ? "platform-symbol"
-                      : "small-number",
-                  "aria-hidden": "true",
-                },
-                props.mode === "platforms" ? item[0][0] : `0${index + 1}`,
-              ),
+          h(
+            "span",
+            { class: "small-kicker" },
+            props.mode === "platforms"
+              ? "Desktop"
+              : `${props.mode === "bars" ? "Audio" : "Library"} 0${index + 1}`,
+          ),
           h("h3", item[0]),
           h("p", item[1]),
         ]),
@@ -234,6 +238,16 @@ let observer: IntersectionObserver | undefined;
 const root = ref<HTMLElement>();
 
 onMounted(() => {
+  watch(
+    isDark,
+    (dark) => {
+      document
+        .querySelector('meta[name="theme-color"]')
+        ?.setAttribute("content", dark ? "#08090a" : "#ffffff");
+    },
+    { immediate: true },
+  );
+
   const sections = root.value?.querySelectorAll<HTMLElement>("[data-reveal]");
   if (!sections) return;
   if (!("IntersectionObserver" in window)) {
@@ -277,6 +291,18 @@ onUnmounted(() => observer?.disconnect());
           <a class="language-link" :href="copy.languageLink">{{
             copy.language
           }}</a>
+          <button
+            class="appearance-toggle"
+            type="button"
+            role="switch"
+            :aria-label="appearanceLabel"
+            :title="appearanceLabel"
+            :aria-checked="isDark"
+            @click="toggleAppearance"
+          >
+            <span class="vpi-sun appearance-sun" aria-hidden="true"></span>
+            <span class="vpi-moon appearance-moon" aria-hidden="true"></span>
+          </button>
           <a
             class="button button-dark button-small"
             href="https://github.com/thedavidweng/OpenKara/releases/latest"
@@ -304,9 +330,6 @@ onUnmounted(() => observer?.disconnect());
               target="_blank"
               rel="noopener noreferrer"
             >
-              <svg aria-hidden="true" viewBox="0 0 20 20">
-                <path d="m7.25 5 6 5-6 5V5Z" fill="currentColor" />
-              </svg>
               {{ copy.heroSecondary }}
             </a>
             <span class="platform-note">{{ copy.heroNote }}</span>
@@ -337,7 +360,13 @@ onUnmounted(() => observer?.disconnect());
           <article class="feature-card separation-card">
             <div class="separation-demo" aria-hidden="true">
               <div class="track-card">
-                <span class="track-icon">♪</span>
+                <img
+                  class="track-icon"
+                  src="/img/openkara-app-icon.png"
+                  alt=""
+                  width="38"
+                  height="38"
+                />
                 <div>
                   <strong>Hachikō</strong><small>Fujii Kaze · 4:30</small>
                 </div>
@@ -440,12 +469,13 @@ onUnmounted(() => observer?.disconnect());
             <div class="local-demo" aria-hidden="true">
               <div class="device-shell">
                 <span class="device-dot"></span>
-                <svg viewBox="0 0 64 64">
-                  <path
-                    d="M32 7v10M32 47v10M7 32h10M47 32h10M14.3 14.3l7 7M42.7 42.7l7 7M49.7 14.3l-7 7M21.3 42.7l-7 7"
-                  />
-                  <circle cx="32" cy="32" r="10" />
-                </svg>
+                <img
+                  class="device-mark"
+                  src="/img/openkara-app-icon.png"
+                  alt=""
+                  width="58"
+                  height="58"
+                />
                 <strong>Processing locally</strong
                 ><span>Audio never leaves this device</span>
               </div>
@@ -458,7 +488,7 @@ onUnmounted(() => observer?.disconnect());
 
           <article class="feature-card open-card">
             <div class="open-demo" aria-hidden="true">
-              <span class="repo-mark">&lt;/&gt;</span>
+              <span class="repo-label">Open source</span>
               <div>
                 <small>thedavidweng / OpenKara</small
                 ><strong>Open-source karaoke,<br />built in public.</strong>
@@ -599,6 +629,48 @@ onUnmounted(() => observer?.disconnect());
 .nav-links a:hover,
 .language-link:hover {
   color: var(--muted);
+}
+.appearance-toggle {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--soft);
+  background: var(--panel);
+  cursor: pointer;
+  transition:
+    border-color 0.16s,
+    color 0.16s,
+    background-color 0.16s;
+}
+.appearance-toggle:hover {
+  border-color: #b8b8b4;
+  color: var(--ink);
+}
+.appearance-toggle:focus-visible {
+  outline: 2px solid #6e8dff;
+  outline-offset: 2px;
+}
+.appearance-toggle > span {
+  position: absolute;
+  inset: 7px;
+  transition:
+    opacity 0.16s,
+    transform 0.16s;
+}
+.appearance-moon {
+  opacity: 0;
+  transform: rotate(-18deg) scale(0.75);
+}
+.dark .appearance-sun {
+  opacity: 0;
+  transform: rotate(18deg) scale(0.75);
+}
+.dark .appearance-moon {
+  opacity: 1;
+  transform: none;
 }
 .button {
   min-height: 38px;
@@ -843,53 +915,14 @@ onUnmounted(() => observer?.disconnect());
   padding: 24px;
   border-radius: 9px;
 }
-.small-icon {
-  width: 36px;
-  height: 36px;
-  margin-bottom: 34px;
-  padding: 7px;
-  display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  border: 1px solid #d7d7d4;
-  border-radius: 9px;
-  background: #fff;
-}
-.small-icon i {
-  width: 5px;
-  border-radius: 2px;
-  background: #222;
-}
-.small-icon i:first-child {
-  height: 52%;
-}
-.small-icon i:nth-child(2) {
-  height: 100%;
-}
-.small-icon i:last-child {
-  height: 72%;
-}
-.small-number {
+.small-kicker {
   display: block;
   margin-bottom: 34px;
   color: #7e7e7b;
-  font:
-    12px ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    monospace;
-}
-.platform-symbol {
-  width: 28px;
-  height: 28px;
-  margin-bottom: 26px;
-  display: grid;
-  place-items: center;
-  border: 1px solid #d8d8d5;
-  border-radius: 50%;
-  background: #fff;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 .separation-demo,
 .lyrics-demo,
@@ -917,12 +950,7 @@ onUnmounted(() => observer?.disconnect());
 .track-icon {
   width: 38px;
   height: 38px;
-  display: grid;
-  place-items: center;
   border-radius: 8px;
-  color: #fff;
-  background: linear-gradient(145deg, #ffbb6a, #e46c72 55%, #754b8f);
-  font-size: 20px;
 }
 .track-card div {
   display: flex;
@@ -1160,13 +1188,11 @@ onUnmounted(() => observer?.disconnect());
   box-shadow: 0 24px 54px #00000014;
   text-align: center;
 }
-.device-shell svg {
+.device-mark {
   width: 58px;
+  height: 58px;
   margin: 22px 0;
-  fill: none;
-  stroke: #1e1e1e;
-  stroke-linecap: round;
-  stroke-width: 3;
+  border-radius: 15px;
 }
 .device-shell strong {
   font-size: 14px;
@@ -1201,17 +1227,17 @@ onUnmounted(() => observer?.disconnect());
   color: #fff;
   background: radial-gradient(circle at 80% 15%, #478aca57, transparent 42%);
 }
-.repo-mark {
-  width: 52px;
-  height: 52px;
-  display: grid;
-  place-items: center;
+.repo-label {
+  width: max-content;
+  padding: 7px 10px;
   border: 1px solid #ffffff2e;
-  border-radius: 13px;
+  border-radius: 999px;
   background: #ffffff0f;
-  font:
-    17px ui-monospace,
-    monospace;
+  color: #aebbd0;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 .open-demo div {
   margin-top: 34px;
@@ -1312,6 +1338,250 @@ onUnmounted(() => observer?.disconnect());
 .footer-column span {
   color: #92928e;
 }
+
+/* Linear-inspired dark theme. VitePress owns and persists the `.dark` state. */
+.dark .ok-home {
+  --ink: #f7f8f8;
+  --soft: #a1a1aa;
+  --muted: #6f7178;
+  --line: #232427;
+  --paper: #08090a;
+  --panel: #0d0e10;
+  color-scheme: dark;
+}
+.dark .site-header {
+  border-bottom-color: #202124cc;
+  background: #08090ad9;
+  box-shadow: 0 1px #00000066;
+}
+.dark .nav-links a:hover,
+.dark .language-link:hover {
+  color: #f2f3f5;
+}
+.dark .appearance-toggle {
+  border-color: #2a2b2f;
+  color: #d0d1d4;
+  background: #111214;
+}
+.dark .appearance-toggle:hover {
+  border-color: #45464c;
+  color: #fff;
+  background: #17181b;
+}
+.dark .button {
+  box-shadow: 0 1px 2px #0009;
+}
+.dark .button:hover {
+  box-shadow:
+    0 1px 2px #000c,
+    0 8px 24px #0008;
+}
+.dark .button-dark {
+  color: #111214 !important;
+  background: #f4f4f5;
+}
+.dark .button-dark:hover {
+  background: #fff;
+}
+.dark .button-light {
+  border-color: #2c2d31;
+  color: #e5e5e7 !important;
+  background: #111214e8;
+}
+.dark .button-light:hover {
+  border-color: #424349;
+  background: #17181b;
+}
+.dark .product-stage {
+  border: 1px solid #242529;
+  background:
+    radial-gradient(ellipse 62% 54% at 50% 92%, #29364c66, transparent 72%),
+    radial-gradient(circle at 76% 8%, #32374745, transparent 34%),
+    linear-gradient(180deg, #111316, #0b0c0e 60%, #090a0c);
+  box-shadow:
+    inset 0 1px #ffffff08,
+    0 36px 110px #0008;
+}
+.dark .product-stage:before {
+  inset: 42% 8% -36%;
+  background: #4b5f8130;
+  filter: blur(90px);
+}
+.dark .product-stage:after {
+  opacity: 0.045;
+  mix-blend-mode: screen;
+}
+.dark .stage-grid {
+  opacity: 0.07;
+  background-image:
+    linear-gradient(#ffffff55 1px, transparent 1px),
+    linear-gradient(90deg, #ffffff55 1px, transparent 1px);
+}
+.dark .app-window {
+  padding: 6px;
+  border-color: #3a3c42;
+  background: #1b1d21a6;
+  box-shadow:
+    0 38px 90px #000c,
+    0 0 0 1px #0009,
+    inset 0 1px #ffffff0d;
+}
+.dark .section-heading > span {
+  color: #8a9cff;
+}
+.dark .feature-card,
+.dark .small-card {
+  border-color: #232427;
+  background: #0d0e10;
+  box-shadow: inset 0 1px #ffffff05;
+}
+.dark .feature-card:after {
+  background: linear-gradient(#0d0e1000, #0d0e10 34%);
+}
+.dark .small-kicker {
+  color: #6f7178;
+}
+.dark .separation-demo {
+  background:
+    radial-gradient(circle at 50% 8%, #262931, transparent 58%), #0d0e10;
+}
+.dark .track-card {
+  border-color: #303137;
+  background: #17181be8;
+  box-shadow: 0 18px 44px #0009;
+}
+.dark .track-card small,
+.dark .library-list small {
+  color: #74767d;
+}
+.dark .track-status {
+  color: #9dc9aa;
+  background: #183021;
+}
+.dark .stem-stack {
+  border-color: #292a2e;
+  background: #111214d9;
+}
+.dark .stem-row {
+  border-bottom-color: #28292d;
+  color: #a4a5aa;
+}
+.dark .stem-row b {
+  color: #65676d;
+}
+.dark .stem-row i {
+  background: #303137;
+}
+.dark .stem-row i:before {
+  background: #b9bbc0;
+}
+.dark .stem-row i:after {
+  border-color: #d4d5d8;
+  background: #111214;
+}
+.dark .lyrics-card {
+  border-color: #292a2e;
+  background: #0a0b0c;
+}
+.dark .lyrics-card:after {
+  background: linear-gradient(#0a0b0c00, #0a0b0c 34%);
+}
+.dark .lyrics-demo {
+  color: #414248;
+  background: radial-gradient(circle at 50% 44%, #202227, #0a0b0c 62%);
+}
+.dark .import-demo {
+  background:
+    radial-gradient(circle at 25% 20%, #2b304066, transparent 48%), #0b0c0e;
+}
+.dark .import-demo img {
+  border-color: #303238;
+  box-shadow: 0 24px 60px #000b;
+}
+.dark .library-demo {
+  border-color: #2b2c31;
+  color: #e5e5e7;
+  background: #121315;
+  box-shadow: 0 22px 56px #000a;
+}
+.dark .library-sidebar {
+  border-right-color: #292a2e;
+  background: #0e0f11;
+}
+.dark .library-sidebar span {
+  color: #73757c;
+}
+.dark .library-sidebar span.active {
+  color: #e8e9eb;
+  background: #202125;
+}
+.dark .library-list > div {
+  border-bottom-color: #25262a;
+}
+.dark .library-list > div > b {
+  color: #606269;
+}
+.dark .local-demo {
+  background: radial-gradient(circle at 50% 42%, #24262d, transparent 64%);
+}
+.dark .device-shell {
+  border-color: #303137;
+  background: #141517;
+  box-shadow:
+    0 26px 64px #000a,
+    inset 0 1px #ffffff08;
+}
+.dark .device-shell > span:last-child {
+  color: #777980;
+}
+.dark .device-dot {
+  background: #77c48b;
+  box-shadow: 0 0 0 4px #1b3021;
+}
+.dark .open-card {
+  border-color: #282a30;
+  background: #0b0d11;
+}
+.dark .open-card:after {
+  background: linear-gradient(#0b0d1100, #0b0d11 34%);
+}
+.dark .open-demo {
+  background:
+    radial-gradient(circle at 78% 18%, #384a6a55, transparent 45%),
+    linear-gradient(145deg, #10141c, #0b0d11 62%);
+}
+.dark .repo-label {
+  border-color: #40444d;
+  color: #9da4b2;
+  background: #ffffff08;
+}
+.dark .closing-card {
+  border: 1px solid #28292d;
+  color: #f7f8f8;
+  background:
+    radial-gradient(ellipse at 50% 128%, #27334a80, transparent 54%),
+    linear-gradient(180deg, #101114, #0b0c0e);
+  box-shadow: inset 0 1px #ffffff08;
+}
+.dark .closing-card h2 {
+  text-shadow: none;
+}
+.dark .closing-lines {
+  opacity: 0.06;
+}
+.dark .site-footer {
+  color: #777980;
+}
+.dark .footer-brand p,
+.dark .footer-column span {
+  color: #5f6167;
+}
+.dark .footer-column strong {
+  color: #cfd0d3;
+}
+.dark .footer-column a:hover {
+  color: #f7f8f8;
+}
 .reveal-ready [data-reveal] {
   opacity: 0;
   transform: translateY(14px);
@@ -1362,9 +1632,7 @@ onUnmounted(() => observer?.disconnect());
   .small-card {
     min-height: 154px;
   }
-  .small-icon,
-  .small-number,
-  .platform-symbol {
+  .small-kicker {
     margin-bottom: 24px;
   }
   .site-footer {

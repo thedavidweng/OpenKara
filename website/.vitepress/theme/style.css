@@ -11,6 +11,11 @@ body:has(.ok-home) {
   background: #ffffff;
 }
 
+html.dark:has(.ok-home),
+html.dark body:has(.ok-home) {
+  background: #08090a;
+}
+
 body:has(.ok-home) {
   margin: 0;
 }
