@@ -28,8 +28,8 @@
 
 ### EQ 命令（通过 settings 命令面下发）
 
-11. `set_eq_enabled(enabled: bool) -> AppSettings`
-12. `set_eq_gains(gains_db: [f32; 5]) -> AppSettings`
+13. `set_eq_enabled(enabled: bool) -> AppSettings`
+14. `set_eq_gains(gains_db: [f32; 5]) -> AppSettings`
 
 - `set_eq_enabled(enabled: bool) -> AppSettings` — 启用/禁用五段均衡器
 - `set_eq_gains(gains_db: [f32; 5]) -> AppSettings` — 设置五个频段增益（dB），范围 [-12, 12]，拒绝越界值而非截断
