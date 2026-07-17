@@ -491,7 +491,15 @@ pub fn render_output_buffer(
             // attenuate loud-but-unclipped audio and alter fidelity for users
             // who never enable the EQ.
             eq_processor.process(remaining, extra_rendered);
-            if !eq_processor.is_fully_bypassed() {
+            if eq_processor.is_fully_bypassed() {
+                // Hard clamp only: multi-stem mixing or resampling can push
+                // samples slightly past [-1, 1] even without EQ, so guard
+                // against clipping without attenuating loud-but-unclipped
+                // audio the way the soft limiter would.
+                for sample in remaining[..extra_rendered].iter_mut() {
+                    *sample = sample.clamp(-1.0, 1.0);
+                }
+            } else {
                 for sample in remaining[..extra_rendered].iter_mut() {
                     *sample = soft_limit(*sample);
                 }
