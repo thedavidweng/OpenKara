@@ -375,6 +375,12 @@
       "label": "输出设备",
       "systemDefault": "系统默认"
     },
+    "crossfade": {
+      "label": "淡入淡出",
+      "description": "使用等功率曲线将当前曲目尾部与下一曲目开头重叠过渡。",
+      "enable": "启用淡入淡出",
+      "duration": "时长"
+    },
     "language": {
       "label": "语言"
     },

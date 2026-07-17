@@ -169,6 +169,7 @@ export const TAURI_MOCK_SCRIPT = `
     lyrics_font_step: 0, execution_provider: "cpu",
     available_execution_providers: ["cpu"],
     eq_enabled: false, eq_gains_db: [0, 0, 0, 0, 0],
+    crossfade_enabled: false, crossfade_duration_ms: 3000,
     library_sort_mode: "recently_imported",
     theme_preference: "dark",
   };
@@ -580,6 +581,18 @@ export const TAURI_MOCK_SCRIPT = `
     },
     get_audio_peaks: { writeIndex: 0, peaks: [] },
     set_preload_candidate: undefined,
+    set_crossfade_enabled: (args) => {
+      settingsSnapshot = { ...settingsSnapshot, crossfade_enabled: !!(args && args.enabled) };
+      return settingsSnapshot;
+    },
+    set_crossfade_duration_ms: (args) => {
+      settingsSnapshot = { ...settingsSnapshot, crossfade_duration_ms: (args && args.durationMs) || 3000 };
+      return settingsSnapshot;
+    },
+    get_waveform: (args) => {
+      const buckets = (args && args.buckets) || 200;
+      return Array.from({ length: buckets }, () => 0);
+    },
     restart_app: undefined,
     create_library: undefined,
     open_library: undefined,

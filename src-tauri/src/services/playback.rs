@@ -610,6 +610,7 @@ mod tests {
                 command_tx,
                 peak_ring: Arc::new(crate::audio::peaks::PeakRing::new()),
                 output_format: crate::audio::output_format::create_output_format_state(),
+                waveform_singleflight: crate::state::WaveformSingleflight::new(),
             },
             airplay: AirPlayState {
                 airplay_audio_tap: Arc::new(AirPlayAudioTap::new(4)),

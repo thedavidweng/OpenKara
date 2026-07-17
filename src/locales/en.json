@@ -375,6 +375,12 @@
       "label": "Output Device",
       "systemDefault": "System Default"
     },
+    "crossfade": {
+      "label": "Crossfade",
+      "description": "Overlap the end of one track with the start of the next using an equal-power curve.",
+      "enable": "Enable crossfade",
+      "duration": "Duration"
+    },
     "language": {
       "label": "Language"
     },

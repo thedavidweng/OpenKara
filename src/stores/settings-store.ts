@@ -93,7 +93,8 @@ function toAppSettingsSnapshot(settings: AppSettings): AppSettingsSnapshot {
     lyricsFontStep: settings.lyrics_font_step,
     executionProvider: settings.execution_provider,
     availableExecutionProviders: settings.available_execution_providers,
-    // Defensive defaults: incomplete IPC payloads must not leave eqGainsDb undefined.
+    // Defensive defaults: incomplete IPC payloads (e.g. older e2e mocks) must
+    // not leave eqGainsDb undefined — SettingsEqSection maps over the array.
     eqEnabled: settings.eq_enabled ?? false,
     eqGainsDb: settings.eq_gains_db ?? [0, 0, 0, 0, 0],
     librarySortMode: settings.library_sort_mode,

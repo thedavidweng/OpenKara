@@ -337,6 +337,19 @@ fn spawn_playback_position_emitter<R: Runtime>(
             // after a gapless swap; we emit `track-transitioned` here so the
             // frontend can reconcile its queue head before the next position
             // event arrives with the new song_id.
+            // #88: Drain any completed gapless transition and capture the
+            // authoritative post-transition snapshot in the same lock so the
+            // event's `state` field reflects the new song. Emit
+            // `track-transitioned` with the full payload, then the normal
+            // position event.
+            // #106: The transition carries its own snapshot captured at the
+            // moment the track switched (inside `stamp_transition`). We use
+            // that snapshot for the event's `state` field rather than a fresh
+            // `controller.snapshot()`, so if the listener manually picked a
+            // different song in the brief gap between the swap and this
+            // notification, the event still describes the song that actually
+            // played and the frontend's `transport_generation` guard rejects
+            // it instead of reconciling the queue against the wrong song.
             let pending_transition = match playback.lock() {
                 Ok(mut controller) => controller.drain_pending_transition(),
                 Err(_) => break,
@@ -348,6 +361,7 @@ fn spawn_playback_position_emitter<R: Runtime>(
                         transition_serial: transition.transition_serial,
                         from_song_id: transition.from_song_id,
                         to_song_id: transition.to_song_id,
+                        state: transition.snapshot.clone(),
                     },
                 );
                 // Force the next position event to emit regardless of delta —

@@ -4,15 +4,21 @@ use crate::{
         peaks::AudioPeakSnapshot,
         playback::{PlaybackStateSnapshot, StemName},
     },
-    commands::error::{internal_error, CommandResult},
+    cache::{self, waveforms},
+    commands::error::{internal_error, CommandError, CommandResult, ErrorCode, FallbackAction},
     services,
-    state::AppState,
+    state::{AppState, SingleflightCompletionGuard, WaveformKey, SANITIZED_WAVEFORM_ERROR},
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, State};
 
 pub use crate::services::playback::play_song_from_library;
+
+/// Default bucket count when the frontend does not specify one. Chosen to
+/// match the spec's default and to roughly match a typical seek rail width
+/// divided by 3px per bucket.
+const DEFAULT_WAVEFORM_BUCKETS: usize = 200;
 
 /// Send a synchronous command to the coordinator and await its reply.
 /// Maps channel and reply errors to `CommandError`.
@@ -216,4 +222,123 @@ pub async fn set_preload_candidate(
     );
 
     Ok(())
+}
+
+/// #90: Fetch a cached or freshly-computed waveform for a song.
+///
+/// Returns `Vec<f32>` of length `buckets` (clamped to `24..=1000`) for a
+/// local source, or `[]` for a remote source. Every value is finite and in
+/// `0.0..=1.0`. Unknown songs produce a structured `song_not_found` error;
+/// decode/database failures produce a sanitized internal error with no raw
+/// absolute paths.
+///
+/// The command performs these exact steps:
+/// 1. derive effective buckets;
+/// 2. clone `LibraryRoot` from `AppState` without retaining its mutex;
+/// 3. open the library DB in a short blocking task and fetch the song;
+/// 4. return unknown-song error or `[]` for a remote song;
+/// 5. call `WaveformSingleflight::register(key, library_root)`;
+/// 6. convert the shared slice to `Vec<f32>` only at the IPC boundary.
+///
+/// The singleflight value lives in `PlaybackState` solely for process-wide
+/// sharing; the command never takes the playback-controller lock.
+#[tauri::command]
+pub async fn get_waveform(
+    state: State<'_, AppState>,
+    hash: String,
+    buckets: Option<usize>,
+) -> CommandResult<Vec<f32>> {
+    // 1. Derive effective buckets before constructing the cache/singleflight key.
+    let requested = buckets.unwrap_or(DEFAULT_WAVEFORM_BUCKETS);
+    let effective = waveforms::clamp_buckets(requested);
+    let key = WaveformKey {
+        song_hash: hash.clone(),
+        buckets: effective,
+    };
+
+    // 2. Clone LibraryRoot without retaining its mutex.
+    let library_root = state.library_root()?;
+
+    // 3. Open the library DB in a short blocking task and fetch the song.
+    //    This is separate from the singleflight computation so an unknown
+    //    song or a remote source returns immediately without entering the
+    //    singleflight map.
+    let song_lookup = {
+        let library_root = library_root.clone();
+        let hash = hash.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let connection = cache::open_database(&library_root.database_path())
+                .map_err(|e| internal_error(format!("failed to open library database: {e}")))?;
+            let song = cache::get_song_by_hash(&connection, &hash)
+                .map_err(|e| internal_error(format!("failed to read song: {e}")))?;
+            Ok::<_, CommandError>(song)
+        })
+        .await
+        .map_err(|e| internal_error(format!("song lookup task failed: {e}")))?
+    };
+
+    let song = match song_lookup {
+        Ok(Some(song)) => song,
+        Ok(None) => {
+            return Err(CommandError::new(
+                ErrorCode::SongNotFound,
+                format!("song {hash} not found"),
+                false,
+                FallbackAction::RefreshLibrary,
+            ));
+        }
+        Err(err) => return Err(err),
+    };
+
+    // 4. Remote sources: return [] before path resolution. Do not download,
+    //    decode, enter singleflight, or cache the empty result.
+    if song.is_remote() {
+        return Ok(Vec::new());
+    }
+
+    // 5. Register with the singleflight. If this is the first waiter, spawn
+    //    the owned blocking computation task.
+    let (rx, inserted) = state.playback.waveform_singleflight.register(key.clone());
+
+    if inserted {
+        let library_root = library_root.clone();
+        let key_for_task = key.clone();
+        let singleflight = state.playback.waveform_singleflight.clone();
+        // Spawn the computation task. The task owns completion: it always
+        // removes the key and fan-outs the result (or a sanitized error) to
+        // all waiters, even on panic/JoinError/cancellation. A task-owned
+        // completion guard ensures the key is never permanently stranded:
+        // if the task is dropped before `complete()`, the guard's `Drop`
+        // removes the key and sends a sanitized error to remaining waiters.
+        tauri::async_runtime::spawn(async move {
+            // Create the guard before any await so cancellation at any point
+            // still cleans up the pending-map entry.
+            let mut guard = SingleflightCompletionGuard::new(singleflight, key.clone());
+            let result = tauri::async_runtime::spawn_blocking(move || {
+                services::waveform::compute_waveform_blocking(library_root, key_for_task)
+            })
+            .await;
+            // Take waiters before sending so no send occurs under the map lock.
+            // `complete()` marks the guard as done so its `Drop` is a no-op.
+            let Some(waiters) = guard.complete() else {
+                // No waiters left (all cancelled). The key is already cleared.
+                return;
+            };
+            let payload = match result {
+                Ok(Ok(peaks)) => Ok(peaks),
+                Ok(Err(_)) | Err(_) => Err(SANITIZED_WAVEFORM_ERROR.to_owned()),
+            };
+            for waiter in waiters {
+                // A closed receiver (caller cancelled) is silently ignored.
+                let _ = waiter.send(payload.clone());
+            }
+        });
+    }
+
+    // 6. Await the shared result and convert to Vec<f32> at the IPC boundary.
+    let shared = rx
+        .await
+        .map_err(|_| internal_error("waveform computation was cancelled"))?
+        .map_err(|_| internal_error(SANITIZED_WAVEFORM_ERROR))?;
+    Ok(shared.to_vec())
 }
