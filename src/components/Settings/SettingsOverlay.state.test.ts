@@ -510,12 +510,15 @@ describe("createSettingsOverlayActions - setEqEnabled", () => {
 
     expect(harness.dependencies.api.setEqEnabled).toHaveBeenCalledWith(true);
     expect(
+      harness.dependencies.settingsStore.patchAppSettings,
+    ).toHaveBeenCalledWith({ eqEnabled: true });
+    expect(
       harness.dependencies.settingsStore.hydrateAppSettings,
     ).toHaveBeenCalledWith(expect.objectContaining({ eq_enabled: true }));
     expect(harness.getSnapshot().state.eqEnabled).toBe(true);
   });
 
-  test("rolls back state on API error", async () => {
+  test("rolls back state and settings store on API error", async () => {
     const harness = createHarness({
       initialSettings: { eqEnabled: false },
     });
@@ -530,8 +533,11 @@ describe("createSettingsOverlayActions - setEqEnabled", () => {
     expect(harness.dependencies.notifyError).toHaveBeenCalledWith(
       expect.any(Error),
     );
-    // State rolled back to the previous value.
+    // State and settings store rolled back to the previous value.
     expect(harness.getSnapshot().state.eqEnabled).toBe(false);
+    expect(
+      harness.dependencies.settingsStore.patchAppSettings,
+    ).toHaveBeenCalledWith({ eqEnabled: false });
   });
 
   test("is a no-op when the value hasn't changed", async () => {
@@ -580,6 +586,9 @@ describe("createSettingsOverlayActions - setEqGains", () => {
       6, 0, 0, 0, 0,
     ]);
     expect(
+      harness.dependencies.settingsStore.patchAppSettings,
+    ).toHaveBeenCalledWith({ eqGainsDb: [6, 0, 0, 0, 0] });
+    expect(
       harness.dependencies.settingsStore.hydrateAppSettings,
     ).toHaveBeenCalledWith(
       expect.objectContaining({ eq_gains_db: [6, 0, 0, 0, 0] }),
@@ -587,7 +596,47 @@ describe("createSettingsOverlayActions - setEqGains", () => {
     expect(harness.getSnapshot().state.eqGainsDb).toEqual([6, 0, 0, 0, 0]);
   });
 
-  test("rolls back state on API error", async () => {
+  test("clamps each gain to ±12 dB before calling api", async () => {
+    const harness = createHarness({
+      initialSettings: { eqEnabled: true, eqGainsDb: [0, 0, 0, 0, 0] },
+    });
+
+    vi.mocked(harness.dependencies.api.setEqGains).mockResolvedValue({
+      stem_mode: "two_stem",
+      model_variant: "htdemucs",
+      language: "en",
+      hide_batch_separate: false,
+      cover_art_backdrop: true,
+      lyrics_font_step: 0,
+      execution_provider: "cpu",
+      available_execution_providers: ["cpu"],
+      eq_enabled: true,
+      eq_gains_db: [12, -12, 0, 0, 0],
+      crossfade_enabled: false,
+      crossfade_duration_ms: 3000,
+    });
+
+    await harness.actions.setEqGains([20, -20, 0, 0, 0]);
+
+    expect(harness.dependencies.api.setEqGains).toHaveBeenCalledWith([
+      12, -12, 0, 0, 0,
+    ]);
+  });
+
+  test("skips api call when clamped values are unchanged", async () => {
+    const harness = createHarness({
+      initialSettings: { eqEnabled: true, eqGainsDb: [0, 0, 0, 0, 0] },
+    });
+
+    await harness.actions.setEqGains([0, 0, 0, 0, 0]);
+
+    expect(harness.dependencies.api.setEqGains).not.toHaveBeenCalled();
+    expect(
+      harness.dependencies.settingsStore.patchAppSettings,
+    ).not.toHaveBeenCalled();
+  });
+
+  test("rolls back state and settings store on API error", async () => {
     const harness = createHarness({
       initialSettings: { eqEnabled: true, eqGainsDb: [0, 0, 0, 0, 0] },
     });
@@ -604,8 +653,11 @@ describe("createSettingsOverlayActions - setEqGains", () => {
     expect(harness.dependencies.notifyError).toHaveBeenCalledWith(
       expect.any(Error),
     );
-    // State rolled back to the previous value.
+    // State and settings store rolled back to the previous value.
     expect(harness.getSnapshot().state.eqGainsDb).toEqual([0, 0, 0, 0, 0]);
+    expect(
+      harness.dependencies.settingsStore.patchAppSettings,
+    ).toHaveBeenCalledWith({ eqGainsDb: [0, 0, 0, 0, 0] });
   });
 });
 
@@ -640,6 +692,9 @@ describe("createSettingsOverlayActions - resetEqGains", () => {
       0, 0, 0, 0, 0,
     ]);
     expect(
+      harness.dependencies.settingsStore.patchAppSettings,
+    ).toHaveBeenCalledWith({ eqGainsDb: [0, 0, 0, 0, 0] });
+    expect(
       harness.dependencies.settingsStore.hydrateAppSettings,
     ).toHaveBeenCalledWith(
       expect.objectContaining({ eq_gains_db: [0, 0, 0, 0, 0] }),
@@ -647,7 +702,7 @@ describe("createSettingsOverlayActions - resetEqGains", () => {
     expect(harness.getSnapshot().state.eqGainsDb).toEqual([0, 0, 0, 0, 0]);
   });
 
-  test("notifies error on API failure", async () => {
+  test("rolls back state and settings store on API failure", async () => {
     const harness = createHarness({
       initialSettings: { eqEnabled: true, eqGainsDb: [3, -1, 0, 2, -5] },
     });
@@ -664,6 +719,11 @@ describe("createSettingsOverlayActions - resetEqGains", () => {
     expect(harness.dependencies.notifyError).toHaveBeenCalledWith(
       expect.any(Error),
     );
+    // State and settings store rolled back to the previous value.
+    expect(harness.getSnapshot().state.eqGainsDb).toEqual([3, -1, 0, 2, -5]);
+    expect(
+      harness.dependencies.settingsStore.patchAppSettings,
+    ).toHaveBeenCalledWith({ eqGainsDb: [3, -1, 0, 2, -5] });
   });
 });
 

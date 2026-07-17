@@ -295,6 +295,7 @@ export function createSettingsOverlayActions(
         return;
       }
       patchState({ eqEnabled: enabled });
+      dependencies.settingsStore.patchAppSettings({ eqEnabled: enabled });
       try {
         const settings = await dependencies.api.setEqEnabled(enabled);
         dependencies.settingsStore.hydrateAppSettings(settings);
@@ -304,26 +305,42 @@ export function createSettingsOverlayActions(
         });
       } catch (error) {
         patchState({ eqEnabled: previous });
+        dependencies.settingsStore.patchAppSettings({ eqEnabled: previous });
         dependencies.notifyError(error);
       }
     },
     setEqGains: async (gainsDb) => {
-      const previous = controls.getSnapshot().state.eqGainsDb;
-      patchState({ eqGainsDb: gainsDb });
+      const clamped = gainsDb.map((g) => Math.max(-12, Math.min(12, g))) as [
+        number,
+        number,
+        number,
+        number,
+        number,
+      ];
+      const current = controls.getSnapshot().state.eqGainsDb;
+      if (current.every((g, i) => g === clamped[i])) {
+        return;
+      }
+      patchState({ eqGainsDb: clamped });
+      dependencies.settingsStore.patchAppSettings({ eqGainsDb: clamped });
       try {
-        const settings = await dependencies.api.setEqGains(gainsDb);
+        const settings = await dependencies.api.setEqGains(clamped);
         dependencies.settingsStore.hydrateAppSettings(settings);
         patchState({
           eqEnabled: settings.eq_enabled,
           eqGainsDb: settings.eq_gains_db,
         });
       } catch (error) {
-        patchState({ eqGainsDb: previous });
+        patchState({ eqGainsDb: current });
+        dependencies.settingsStore.patchAppSettings({ eqGainsDb: current });
         dependencies.notifyError(error);
       }
     },
     resetEqGains: async () => {
       const flat: [number, number, number, number, number] = [0, 0, 0, 0, 0];
+      const current = controls.getSnapshot().state.eqGainsDb;
+      patchState({ eqGainsDb: flat });
+      dependencies.settingsStore.patchAppSettings({ eqGainsDb: flat });
       try {
         const settings = await dependencies.api.setEqGains(flat);
         dependencies.settingsStore.hydrateAppSettings(settings);
@@ -332,6 +349,8 @@ export function createSettingsOverlayActions(
           eqGainsDb: settings.eq_gains_db,
         });
       } catch (error) {
+        patchState({ eqGainsDb: current });
+        dependencies.settingsStore.patchAppSettings({ eqGainsDb: current });
         dependencies.notifyError(error);
       }
     },
