@@ -48,15 +48,20 @@ async function readScrollTop(page: import("@playwright/test").Page) {
 /**
  * Wait until wheel/trackpad inertia finishes. Each wheel event re-arms the
  * follow idle timer, so measuring the pause from mid-inertia falsely fails.
+ * Require three consecutive stable readings (300ms) to avoid false positives
+ * when WebKit's smooth-scroll animation briefly pauses between frames.
  */
 async function waitForScrollSettle(
   page: import("@playwright/test").Page,
 ): Promise<number> {
   let last = -1;
-  for (let i = 0; i < 40; i++) {
+  let stable = 0;
+  for (let i = 0; i < 60; i++) {
     const top = await readScrollTop(page);
     if (last >= 0 && Math.abs(top - last) < 1) {
-      return top;
+      if (++stable >= 3) return top;
+    } else {
+      stable = 0;
     }
     last = top;
     await page.waitForTimeout(100);
@@ -161,7 +166,11 @@ test.describe("Lyrics auto-follow", () => {
     // Let playback advance a little first.
     await page.waitForTimeout(1500);
 
-    await page.getByText("Lyric line 20 ").click();
+    // WebKit keeps the lyric-line transform animation mid-flight during
+    // auto-scroll, so Playwright's stability gate can burn the entire 30s
+    // timeout. Call the DOM click directly to fire the React onClick handler
+    // without waiting for animation rest.
+    await page.getByText("Lyric line 20 ").evaluate((el) => el.click());
 
     // Mock streaming seek publishes buffering at 21000, then playing at
     // 21050; the clock keeps extrapolating after recovery.
@@ -183,7 +192,7 @@ test.describe("Lyrics auto-follow", () => {
     });
     await page.waitForTimeout(1200);
 
-    await page.getByText("Lyric line 20 ").click();
+    await page.getByText("Lyric line 20 ").evaluate((el) => el.click());
     // Rust emits the target position before the delayed invoke response. Let
     // WebKit's layout scroll land inside that real production timing window.
     await page.waitForTimeout(120);
