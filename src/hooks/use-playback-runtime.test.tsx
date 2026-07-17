@@ -8,6 +8,7 @@ import { useQueueStore } from "@/stores/queue-store";
 import { useLibraryStore } from "@/stores/library-store";
 import type {
   PlaybackPositionEvent,
+  PlaybackStateSnapshot,
   SeparationCompleteEvent,
   SeparationErrorEvent,
   SeparationProgressEvent,
@@ -279,6 +280,7 @@ describe("useTrackTransitionedQueueReconcile", () => {
     expect(handler).not.toBeUndefined();
 
     const event: TrackTransitionedEvent = {
+      transition_serial: 1,
       from_song_id: "song-a",
       to_song_id: "song-b",
     };
@@ -357,10 +359,23 @@ describe("usePlaybackPositionSubscription", () => {
     const handler = listeners.get("playback-position");
     expect(handler).not.toBeUndefined();
 
-    const event: PlaybackPositionEvent = {
+    const snapshot: PlaybackStateSnapshot = {
       song_id: "song-a",
-      position_ms: 5000,
       transport_generation: 1,
+      state: "playing",
+      is_playing: true,
+      position_ms: 5000,
+      duration_ms: 10000,
+      buffered_ms: 8000,
+      volume: 1,
+      stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
+      has_stems: false,
+      stem_mode: null,
+    };
+    const event: PlaybackPositionEvent = {
+      ms: 5000,
+      transport_generation: 1,
+      snapshot,
     };
     handler!({ payload: event });
 
