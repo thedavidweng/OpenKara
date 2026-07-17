@@ -293,7 +293,7 @@ describe("useTrackTransitionedQueueReconcile", () => {
         duration_ms: null,
         buffered_ms: 0,
         volume: 1,
-        stem_volumes: { vocals: 1, instrumental: 1 },
+        stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
         has_stems: false,
         stem_mode: null,
       },
