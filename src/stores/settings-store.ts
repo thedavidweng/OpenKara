@@ -127,6 +127,7 @@ function applySettingsSyncSnapshot(
     modelVariant: snapshot.modelVariant,
     language: snapshot.language,
     hideBatchSeparate: snapshot.hideBatchSeparate,
+    coverArtBackdrop: snapshot.coverArtBackdrop,
     lyricsFontStep: snapshot.lyricsFontStep,
     executionProvider: snapshot.executionProvider,
     availableExecutionProviders: snapshot.availableExecutionProviders,
