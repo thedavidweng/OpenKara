@@ -2,7 +2,7 @@
 
 播放命令层收口为 thin Tauri command，具体编排在 backend playback service / CDG helper，对外 IPC 契约保持不变。
 
-控制面变更（pause / resume / seek / set_volume / set_stem_volume / load_stems / install_track / fail_load）由 `PlaybackCoordinator` 独立线程串行处理；后台 decode/fetch 线程只产出 `ReadyTrack` 并发送命令，不直接修改 `PlaybackController`。
+控制面变更（pause / resume / seek / set_volume / set_stem_volume / set_eq_enabled / set_eq_gains / load_stems / install_track / fail_load / prepare_next / cancel_prepared_next）由 `PlaybackCoordinator` 独立线程串行处理；后台 decode/fetch 线程只产出 `ReadyTrack` 并发送命令，不直接修改 `PlaybackController`。
 
 ## 接口
 
@@ -15,13 +15,16 @@
 7. `load_stems() -> PlaybackStateSnapshot`
 8. `get_playback_state() -> PlaybackStateSnapshot`
 9. `get_audio_peaks() -> AudioPeakSnapshot` — 只读命令，拷贝 lock-free peak ring 快照（不持 playback mutex）
-10. `playback-position` 事件 payload 为 `{ ms: u64, transport_generation: u64, snapshot: PlaybackStateSnapshot }`
+10. `set_preload_candidate(song_id: Option<String>) -> ()` — #88 无缝播放预加载命令（见下）
+11. `playback-position` 事件 payload 为 `{ ms: u64, transport_generation: u64, snapshot: PlaybackStateSnapshot }`
+12. `track-transitioned` 事件 payload 为 `{ transition_serial: u64, from_song_id: String, to_song_id: String }` — #88 无缝换轨通知（见下）
 
 ### Peak envelope 可视化（#87）
 
 `get_audio_peaks` 返回 `AudioPeakSnapshot { writeIndex: u64, peaks: [[f32; 2]; N] }`。
 
 - CPAL 输出回调每 512 帧发布一对 stereo peak（取窗口内 |sample| 最大值，sanitize 后 clamp 到 `[0, 1]`）。
+- Ring buffer 容量固定 256 对（约 3.0 s @ 44.1 kHz），单写多读，全原子操作。
 - Ring buffer 容量固定 256 对（约 3.0 s @ 44.1 kHz），单写多读，全原子操作。
 - 命令只读 ring，不持 `PlaybackController` mutex，不影响播放实时性。
 - 前端以 30 Hz 轮询，DPR-aware canvas 渲染，`writeIndex` 不变时跳过重绘。
@@ -171,6 +174,29 @@ existing source/stem mix + master/stem gains
 2. 当前歌曲没有缓存 stems 时，命令返回 `CommandError`
 3. stem 解码遵守 stale decode 忽略规则：如果解码完成时当前歌曲已切换，不会把 stems 附着到新歌曲
 
+### Command: `set_preload_candidate` (#88)
+
+**Input**
+
+```json
+{
+  "songId": "sha256 hash string"
+}
+```
+
+传入 `null` 取消当前预加载。
+
+**Output:** `()`（空）
+
+**Semantics**
+
+1. 前端在队列头部或当前歌曲变化时调用此命令，将下一首歌曲预解码为无缝播放候选
+2. 命令立即返回；解码在后台线程完成，完成后向 coordinator 发送 `PrepareNext` 命令
+3. 只有本地、非流式、非 Media+G 的歌曲符合无缝预加载条件；远程歌曲和 Media+G 容器静默跳过，前端回退到 `play()` 路径
+4. 预加载线程使用独立的 `preload_shutdown` 标志，与 `play()` 的 `background_shutdown` 隔离——取消预加载不会中断正在进行的 `play()` 后台解码
+5. 传入 `null` 或新候选时，先发送 `CancelPreparedNext`（携带新的 `expected_generation`）清除已安装的 prepared track 并更新 coordinator 的期望预加载代，再启动新的预加载
+6. coordinator 在安装前验证 output format generation 和 preload request generation：如果输出设备重启/格式变化，或者 prepared payload 来自已被取消的旧预加载线程（竞态：旧线程通过 shutdown 检查后在 cancel 之后才发送），prepared payload 被丢弃
+
 ### Shared type: `PlaybackStateSnapshot`
 
 | Field                  | Type                                              | Notes                                                                              |
@@ -297,7 +323,7 @@ playing ↔ playing（pause/resume，通过 isPlaying 区分）
 1. `symphonia` 负责解码支持格式
 2. `cpal` 负责设备输出
 3. `PlaybackController` 负责状态推进与位置计算
-4. `PlaybackCoordinator` 负责串行处理所有控制面命令（pause / resume / seek / set_volume / set_stem_volume / install_track / fail_load / attach_stems / set_eq_enabled / set_eq_gains），保证 FIFO 顺序与 latest-request-wins
+4. `PlaybackCoordinator` 负责串行处理所有控制面命令（pause / resume / seek / set_volume / set_stem_volume / set_eq_enabled / set_eq_gains / install_track / fail_load / attach_stems / prepare_next / cancel_prepared_next），保证 FIFO 顺序与 latest-request-wins
 5. backend playback service 负责 latest-request-wins、output thread 启动和 stale decode 忽略
 6. backend CDG helper 负责 sidecar / explicit path / Media+G ZIP 的 CDG 状态加载与 backward seek reset
 7. `stems` cache 为 `load_stems` 提供已缓存路径

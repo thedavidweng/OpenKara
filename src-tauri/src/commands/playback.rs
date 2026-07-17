@@ -8,6 +8,8 @@ use crate::{
     services,
     state::AppState,
 };
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tauri::{AppHandle, State};
 
 pub use crate::services::playback::play_song_from_library;

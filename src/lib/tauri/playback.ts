@@ -46,6 +46,10 @@ export function getAudioPeaks(): Promise<AudioPeakSnapshot> {
   return invoke<AudioPeakSnapshot>("get_audio_peaks");
 }
 
+export function setPreloadCandidate(songId: string | null): Promise<void> {
+  return invoke<void>("set_preload_candidate", { songId });
+}
+
 export function syncAirPlayRoutePicker(
   bounds: AirPlayRoutePickerBounds | null,
 ): Promise<void> {

@@ -1,5 +1,6 @@
 use crate::audio::decode::DecodedAudio;
 use crate::audio::error::PlaybackError;
+use crate::audio::output_format::OutputFormatSnapshot;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -15,6 +16,7 @@ const SEEK_FADE_DURATION: Duration = Duration::from_millis(8);
 pub const PLAYBACK_POSITION_EVENT: &str = "playback-position";
 pub const PLAYBACK_ENDED_EVENT: &str = "playback-ended";
 pub const PLAYBACK_ERROR_EVENT: &str = "playback-error";
+pub const TRACK_TRANSITIONED_EVENT: &str = "track-transitioned";
 pub const PLAYBACK_POSITION_POLL_INTERVAL_MS: u64 = 33;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -180,6 +182,27 @@ pub struct PlaybackController {
     /// every successful setter so the callback can detect changes without
     /// comparing the full struct each tick.
     pub(crate) eq_config: crate::audio::eq::EqConfig,
+    /// #88: A fully decoded, normalized next track prepared by the preload
+    /// scheduler. The realtime callback is the only consumer — it swaps this
+    /// into `current_track` when the current track reaches EOF. Stays `None`
+    /// when no candidate is queued, the format changed, or the candidate was
+    /// cancelled.
+    pub(crate) prepared_track: Option<PreparedTrack>,
+    /// #88: Monotonic serial stamped onto each completed transition. Drained
+    /// by the position emitter to emit `track-transitioned` before the next
+    /// position event so the frontend can reconcile its queue head.
+    pub(crate) transition_serial: u64,
+    /// #88: Completed transition metadata produced by the realtime callback
+    /// after a gapless swap. The position emitter drains this (under the
+    /// playback lock) and emits `TRACK_TRANSITIONED_EVENT` before the next
+    /// `PLAYBACK_POSITION_EVENT`.
+    pub(crate) pending_transition_out: Option<CompletedTransition>,
+    /// #88: Monotonic generation of the latest `set_preload_candidate`
+    /// request. Incremented on every `cancel_prepared_track` call so that
+    /// stale `PrepareNext` commands from an older preload thread (which
+    /// passed its shutdown check before the flag was set but sends after the
+    /// cancel) are rejected by `install_prepared_track`.
+    pub(crate) expected_preload_request_generation: u64,
 }
 
 impl Default for PlaybackController {
@@ -193,6 +216,10 @@ impl Default for PlaybackController {
             is_buffering: false,
             fade: FadeState::None,
             eq_config: crate::audio::eq::EqConfig::flat(),
+            prepared_track: None,
+            transition_serial: 0,
+            pending_transition_out: None,
+            expected_preload_request_generation: 0,
         }
     }
 }
@@ -209,6 +236,9 @@ impl PlaybackController {
         _now_ms: u64,
     ) -> PlaybackStateSnapshot {
         self.loading_song_id = None;
+        // #88: An explicit track install cancels any pending gapless
+        // successor — the new track is not the prepared one.
+        self.prepared_track = None;
         self.current_track = Some(LoadedTrack {
             song_id,
             original_audio: decoded_audio,
@@ -233,6 +263,9 @@ impl PlaybackController {
         _now_ms: u64,
     ) -> PlaybackStateSnapshot {
         self.loading_song_id = None;
+        // #88: An explicit track install cancels any pending gapless
+        // successor — the new track is not the prepared one.
+        self.prepared_track = None;
         self.current_track = Some(LoadedTrack {
             song_id,
             original_audio: DecodedAudio {
@@ -570,6 +603,107 @@ impl PlaybackController {
         self.current_track = None;
         self.loading_song_id = None;
         self.fade = FadeState::None;
+        // #88: Clearing the current track also invalidates any prepared
+        // gapless successor — it was prepared relative to the track that is
+        // now being replaced by an explicit user action.
+        self.prepared_track = None;
+    }
+
+    /// #88: Install a prepared next track for gapless transition. Called by
+    /// the coordinator after the preload scheduler decodes and normalizes the
+    /// candidate. Returns `Err` if the output format no longer matches the
+    /// snapshot captured at prepare time (device restart or format change).
+    ///
+    /// `current_output_format` is the output-format snapshot re-captured by
+    /// the coordinator after acquiring the playback lock. The prepared
+    /// track's audio was normalized to the output format at prepare time;
+    /// we validate against the output format (NOT the current track's source
+    /// format, which may differ from the output format when the render
+    /// callback resamples).
+    pub fn install_prepared_track(
+        &mut self,
+        prepared: PreparedTrack,
+        current_output_format: OutputFormatSnapshot,
+    ) -> Result<(), PlaybackError> {
+        // Reject stale preload requests. `cancel_prepared_track` bumps
+        // `expected_preload_request_generation` on every cancel; if the
+        // prepared track's generation doesn't match, it came from an older
+        // preload thread that raced with a newer cancel (the thread passed
+        // its shutdown check before the flag was set but sent PrepareNext
+        // after the coordinator processed the cancel).
+        if prepared.preload_request_generation != self.expected_preload_request_generation {
+            return Err(PlaybackError::Internal(format!(
+                "prepared track from stale preload request (prepared gen={}, expected gen={})",
+                prepared.preload_request_generation, self.expected_preload_request_generation,
+            )));
+        }
+
+        // The coordinator already validates the output format against the
+        // current descriptor before calling this; this controller-level guard
+        // is a defensive check against a stale prepared payload that slipped
+        // through (e.g. format changed between the coordinator check and the
+        // lock acquisition). We compare the prepared track's captured output
+        // format against the re-captured current output format — NOT the
+        // current track's source format, which may differ from the output
+        // format when the render callback resamples (e.g. 48 kHz source on a
+        // 44.1 kHz device).
+        if prepared.output_format.generation != current_output_format.generation
+            || prepared.output_format.sample_rate != current_output_format.sample_rate
+            || prepared.output_format.channels != current_output_format.channels
+        {
+            return Err(PlaybackError::Internal(format!(
+                "prepared track output format does not match current output format \
+                 (prepared gen={}, rate={}, ch={} vs current gen={}, rate={}, ch={})",
+                prepared.output_format.generation,
+                prepared.output_format.sample_rate,
+                prepared.output_format.channels,
+                current_output_format.generation,
+                current_output_format.sample_rate,
+                current_output_format.channels,
+            )));
+        }
+        self.prepared_track = Some(prepared);
+        Ok(())
+    }
+
+    /// #88: Cancel a pending prepared track. Called when the user manually
+    /// skips, seeks, plays a different song, or the queue head changes.
+    /// Returns `true` if a prepared track was present and cancelled.
+    ///
+    /// `expected_generation` is the new preload request generation (bumped
+    /// by `set_preload_candidate` before sending the cancel command). We
+    /// stamp it onto `expected_preload_request_generation` so that any
+    /// `PrepareNext` from an older preload thread (which passed its shutdown
+    /// check before the flag was set but sends after this cancel) is
+    /// rejected by `install_prepared_track` as stale.
+    pub fn cancel_prepared_track(&mut self, expected_generation: u64) -> bool {
+        self.expected_preload_request_generation = expected_generation;
+        self.prepared_track.take().is_some()
+    }
+
+    /// #88: Drain a completed transition produced by the realtime callback.
+    /// The position emitter calls this under the playback lock to emit
+    /// `track-transitioned` before the next position event.
+    pub fn drain_pending_transition(&mut self) -> Option<CompletedTransition> {
+        self.pending_transition_out.take()
+    }
+
+    /// #88: Bump the transition serial and stamp it onto a new
+    /// `CompletedTransition`. Called by the realtime callback after a
+    /// gapless swap.
+    fn stamp_transition(
+        &mut self,
+        from_song_id: String,
+        to_song_id: String,
+        preload_generation: u64,
+    ) {
+        self.transition_serial = self.transition_serial.saturating_add(1);
+        self.pending_transition_out = Some(CompletedTransition {
+            transition_serial: self.transition_serial,
+            preload_generation,
+            from_song_id,
+            to_song_id,
+        });
     }
 
     /// Clear a pending background load when decode/start fails for the given song.
@@ -839,6 +973,13 @@ pub struct PlaybackPositionEvent {
 #[derive(Debug, Clone, Serialize)]
 pub struct PlaybackEndedEvent {
     pub song_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TrackTransitionedEvent {
+    pub transition_serial: u64,
+    pub from_song_id: String,
+    pub to_song_id: String,
 }
 
 pub fn playback_position_event(snapshot: &PlaybackStateSnapshot) -> PlaybackPositionEvent {

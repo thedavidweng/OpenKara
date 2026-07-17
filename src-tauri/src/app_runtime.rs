@@ -206,6 +206,7 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         airplay: airplay_state.clone(),
         shutdown: Arc::clone(&shutdown),
         peak_ring: Arc::clone(&playback_state.peak_ring),
+        output_format: Arc::clone(&playback_state.output_format),
     };
 
     app.manage(playback_state);
@@ -230,6 +231,7 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
             .clone(),
         Arc::clone(&shutdown),
         playback_state_for_output.peak_ring.clone(),
+        playback_state_for_output.output_format.clone(),
     ) {
         eprintln!("warning: failed to pre-warm audio output: {err:#}");
     }
@@ -330,6 +332,32 @@ fn spawn_playback_position_emitter<R: Runtime>(
 
         loop {
             thread::sleep(Duration::from_millis(PLAYBACK_POSITION_POLL_INTERVAL_MS));
+
+            // #88: Drain any completed gapless transition before taking the
+            // snapshot. The realtime callback stamps a `CompletedTransition`
+            // after a gapless swap; we emit `track-transitioned` here so the
+            // frontend can reconcile its queue head before the next position
+            // event arrives with the new song_id.
+            let pending_transition = match playback.lock() {
+                Ok(mut controller) => controller.drain_pending_transition(),
+                Err(_) => break,
+            };
+            if let Some(transition) = pending_transition {
+                let _ = app_handle.emit(
+                    audio::playback::TRACK_TRANSITIONED_EVENT,
+                    audio::playback::TrackTransitionedEvent {
+                        transition_serial: transition.transition_serial,
+                        from_song_id: transition.from_song_id,
+                        to_song_id: transition.to_song_id,
+                    },
+                );
+                // Force the next position event to emit regardless of delta —
+                // the song_id has changed and the frontend needs the new
+                // snapshot immediately.
+                last_emitted_position = None;
+                last_emitted_state = None;
+                last_emitted_is_playing = None;
+            }
 
             let snapshot = match playback.lock() {
                 Ok(mut controller) => controller.snapshot(),

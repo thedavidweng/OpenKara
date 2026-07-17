@@ -111,6 +111,13 @@ const PLAYBACK_COMMANDS: CommandContract[] = [
     frontendFn: "getAudioPeaks",
     hasArgs: false,
   },
+  {
+    command: "set_preload_candidate",
+    frontendFile: "src/lib/tauri/playback.ts",
+    frontendFn: "setPreloadCandidate",
+    hasArgs: true,
+    rustParams: ["song_id"],
+  },
 ];
 
 const LIBRARY_COMMANDS: CommandContract[] = [
@@ -329,6 +336,7 @@ describe("IPC command registry", () => {
       "load_stems",
       "get_playback_state",
       "get_audio_peaks",
+      "set_preload_candidate",
     ];
     const registered = PLAYBACK_COMMANDS.map((c) => c.command);
     expect(registered.sort()).toEqual(expectedPlaybackCommands.sort());
@@ -424,6 +432,13 @@ describe("IPC parameter contracts", () => {
       (c) => c.command === "set_stem_volume",
     )!;
     expect(contract.rustParams).toEqual(["stem", "level"]);
+  });
+
+  test("set_preload_candidate expects song_id parameter (camelCase: songId)", () => {
+    const contract = PLAYBACK_COMMANDS.find(
+      (c) => c.command === "set_preload_candidate",
+    )!;
+    expect(contract.rustParams).toContain("song_id");
   });
 
   test("import_songs expects paths and optional options parameters", () => {

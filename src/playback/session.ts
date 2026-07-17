@@ -70,6 +70,8 @@ export interface PlaybackQueueOps {
   dequeue: () => string | null;
   pushToHistory: (songId: string) => void;
   popFromHistory: () => string | null;
+  /** #88: Remove songs from the queue by ID (used by gapless reconciliation). */
+  removeSongIds: (songIds: string[]) => void;
 }
 
 export interface PlaybackSessionDeps {

@@ -84,6 +84,7 @@ function mockDeps(
       dequeue: vi.fn().mockReturnValue(null),
       pushToHistory: vi.fn(),
       popFromHistory: vi.fn().mockReturnValue(null),
+      removeSongIds: vi.fn(),
       ...overrides.queue,
     },
     getSeparationStatus: overrides.getSeparationStatus ?? (() => undefined),
@@ -313,6 +314,51 @@ describe("createPlaybackSession", () => {
 
       expect(deps.queue.pushToHistory).not.toHaveBeenCalled();
       expect(deps.transport.play).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("onTrackTransitioned", () => {
+    test("reconciles queue when clock holds from-song", () => {
+      // #88: The backend emits track-transitioned BEFORE the next
+      // playback-position event, so the clock may still hold the
+      // from-song. The handler must still reconcile.
+      const deps = mockDeps();
+      const session = createPlaybackSession(deps);
+      session.applySnapshot(snapshot({ song_id: "old-song" }));
+
+      session.onTrackTransitioned("old-song", "new-song");
+
+      expect(deps.queue.pushToHistory).toHaveBeenCalledWith("old-song");
+      expect(deps.queue.removeSongIds).toHaveBeenCalledWith([
+        "old-song",
+        "new-song",
+      ]);
+    });
+
+    test("reconciles queue when clock already holds to-song", () => {
+      // The position event may have arrived first and updated the clock.
+      const deps = mockDeps();
+      const session = createPlaybackSession(deps);
+      session.applySnapshot(snapshot({ song_id: "new-song" }));
+
+      session.onTrackTransitioned("old-song", "new-song");
+
+      expect(deps.queue.pushToHistory).toHaveBeenCalledWith("old-song");
+      expect(deps.queue.removeSongIds).toHaveBeenCalledWith([
+        "old-song",
+        "new-song",
+      ]);
+    });
+
+    test("ignores stale transition when clock holds a different song", () => {
+      const deps = mockDeps();
+      const session = createPlaybackSession(deps);
+      session.applySnapshot(snapshot({ song_id: "user-picked-song" }));
+
+      session.onTrackTransitioned("old-song", "new-song");
+
+      expect(deps.queue.pushToHistory).not.toHaveBeenCalled();
+      expect(deps.queue.removeSongIds).not.toHaveBeenCalled();
     });
   });
 

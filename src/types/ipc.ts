@@ -287,6 +287,12 @@ export interface PlaybackEndedEvent {
   song_id: string;
 }
 
+export interface TrackTransitionedEvent {
+  transition_serial: number;
+  from_song_id: string;
+  to_song_id: string;
+}
+
 export interface AudioPeakSnapshot {
   writeIndex: number;
   peaks: Array<[left: number, right: number]>;

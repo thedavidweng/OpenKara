@@ -2,6 +2,7 @@ use crate::airplay_stream::AirPlayAudioTap;
 use crate::audio::decode::DecodedAudio;
 use crate::audio::eq::{soft_limit, EqProcessor};
 use crate::audio::error::PlaybackError;
+use crate::audio::output_format::{self, OutputFormatState};
 use crate::audio::peaks::{PeakAccumulator, PeakRing};
 use crate::audio::playback::{LoadedStems, PlaybackController, StemVolumes};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -107,6 +108,7 @@ pub fn ensure_output_thread(
     airplay_local_output_suppressed: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
     peak_ring: Arc<PeakRing>,
+    output_format: OutputFormatState,
 ) -> Result<(), PlaybackError> {
     if started.load(Ordering::SeqCst) {
         return Ok(());
@@ -128,6 +130,7 @@ pub fn ensure_output_thread(
             startup_tx,
             shutdown,
             peak_ring,
+            output_format,
         ) {
             eprintln!("audio output thread failed to start: {error:#}");
         }
@@ -1144,12 +1147,23 @@ fn build_output_stream<T>(
     airplay_audio_tap: Arc<AirPlayAudioTap>,
     airplay_local_output_suppressed: Arc<AtomicBool>,
     peak_ring: Arc<PeakRing>,
+    output_format: OutputFormatState,
 ) -> Result<Stream, PlaybackError>
 where
     T: SizedSample + Sample + cpal::FromSample<f32>,
 {
     let channels = config.channels as usize;
     let sample_rate = config.sample_rate;
+
+    // #88: Publish the output format descriptor so the preload scheduler can
+    // capture it and normalize the next track to this format. The generation
+    // increments on every new stream construction (including device restarts),
+    // so stale preparations captured before the restart are rejected by the
+    // coordinator's generation check.
+    let generation = output_format::snapshot(&output_format)
+        .map(|s| s.generation.saturating_add(1))
+        .unwrap_or(1);
+    output_format::publish(&output_format, generation, sample_rate, config.channels);
     let mut scratch = Vec::<f32>::new();
     // Pre-allocated scratch buffer for per-stem pop operations inside the audio
     // callback.  Reusing one buffer across all stems avoids `vec![]` allocations
@@ -1246,6 +1260,7 @@ fn start_output_thread(
     startup_tx: mpsc::SyncSender<Result<(), PlaybackError>>,
     shutdown: Arc<AtomicBool>,
     peak_ring: Arc<PeakRing>,
+    output_format: OutputFormatState,
 ) -> Result<(), PlaybackError> {
     let host = cpal::default_host();
     let device = host.default_output_device().ok_or_else(|| {
@@ -1266,6 +1281,7 @@ fn start_output_thread(
             airplay_audio_tap,
             airplay_local_output_suppressed,
             peak_ring,
+            output_format,
         )?,
         SampleFormat::I16 => build_output_stream::<i16>(
             &device,
@@ -1274,6 +1290,7 @@ fn start_output_thread(
             airplay_audio_tap,
             airplay_local_output_suppressed,
             peak_ring,
+            output_format,
         )?,
         SampleFormat::U16 => build_output_stream::<u16>(
             &device,
@@ -1282,6 +1299,7 @@ fn start_output_thread(
             airplay_audio_tap,
             airplay_local_output_suppressed,
             peak_ring,
+            output_format,
         )?,
         sample_format => {
             return Err(PlaybackError::AudioOutputUnavailable(format!(
