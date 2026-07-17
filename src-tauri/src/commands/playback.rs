@@ -146,35 +146,44 @@ pub async fn set_preload_candidate(
     let inner = state.inner().clone();
     let app_data_dir = inner.shell.app_data_dir.clone();
 
-    // Bump the preload request generation. This generation is captured by
-    // the new preload thread and included in the `PrepareNext` command. The
-    // coordinator stamps it onto `expected_preload_request_generation` via
-    // `CancelPreparedNext`, so any `PrepareNext` from an older preload thread
-    // (which passed its shutdown check before the flag was set but sends
-    // after the cancel) is rejected as stale.
-    let preload_generation = inner
-        .playback
-        .preload_request_generation
-        .fetch_add(1, Ordering::SeqCst)
-        + 1;
-
     // Cancel any existing preload by signalling the old preload shutdown flag
     // and sending CancelPreparedNext to the coordinator. This uses a separate
     // flag from `background_shutdown` (used by `play()`) so that cancelling a
     // preload does not kill an in-flight play() background decode thread.
     //
-    // The shutdown flag replacement and the CancelPreparedNext send are both
-    // performed while holding the `preload_shutdown` lock so that two
-    // concurrent calls serialize atomically. If the cancel send were deferred
-    // until after the lock is released, rapid successive preload requests
-    // could have their CancelPreparedNext commands arrive at the coordinator
-    // out of order, silently dropping the gapless candidate.
-    let shutdown = {
+    // The generation assignment, shutdown flag replacement, and the
+    // CancelPreparedNext send are all performed while holding the
+    // `preload_shutdown` lock so that two concurrent calls serialize
+    // atomically. If the generation were assigned before the lock, two
+    // concurrent invocations could obtain generations in one order (A=1, B=2)
+    // yet acquire the lock in the opposite order (B first), causing the
+    // coordinator to end up with an older expected generation than the newest
+    // request — the newest preload's PrepareNext would be rejected as stale
+    // while an older preload's PrepareNext is accepted. Likewise, if the
+    // cancel send were deferred until after the lock is released, rapid
+    // successive preload requests could have their CancelPreparedNext commands
+    // arrive at the coordinator out of order, silently dropping the gapless
+    // candidate.
+    let (shutdown, preload_generation) = {
         let mut guard = inner
             .playback
             .preload_shutdown
             .lock()
             .map_err(|_| internal_error("preload_shutdown lock was poisoned"))?;
+        // Bump the preload request generation inside the lock so the
+        // generation value and the CancelPreparedNext send are ordered
+        // consistently for concurrent callers. This generation is captured
+        // by the new preload thread and included in the `PrepareNext`
+        // command. The coordinator stamps it onto
+        // `expected_preload_request_generation` via `CancelPreparedNext`, so
+        // any `PrepareNext` from an older preload thread (which passed its
+        // shutdown check before the flag was set but sends after the cancel)
+        // is rejected as stale.
+        let preload_generation = inner
+            .playback
+            .preload_request_generation
+            .fetch_add(1, Ordering::SeqCst)
+            + 1;
         guard.store(true, Ordering::Relaxed);
         let new_shutdown = Arc::new(AtomicBool::new(false));
         *guard = new_shutdown.clone();
@@ -189,7 +198,7 @@ pub async fn set_preload_candidate(
                 expected_generation: preload_generation,
             });
 
-        new_shutdown
+        (new_shutdown, preload_generation)
     };
 
     let Some(song_id) = song_id else {

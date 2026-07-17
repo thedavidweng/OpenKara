@@ -485,9 +485,16 @@ pub fn render_output_buffer(
             // apply the same two stages so EQ-boosted audio cannot clip at the
             // gapless crossover. Without this, the limiter is skipped for the
             // tail samples and listeners with EQ boost hear brief distortion.
+            // The soft limiter is gated on EQ activity for the same reason as
+            // the main path: for the common no-EQ single-source path the mixed
+            // value never exceeds 1.0, so running the limiter would only
+            // attenuate loud-but-unclipped audio and alter fidelity for users
+            // who never enable the EQ.
             eq_processor.process(remaining, extra_rendered);
-            for sample in remaining[..extra_rendered].iter_mut() {
-                *sample = soft_limit(*sample);
+            if !eq_processor.is_fully_bypassed() {
+                for sample in remaining[..extra_rendered].iter_mut() {
+                    *sample = soft_limit(*sample);
+                }
             }
             // Accumulate peaks for the tail so the visualizer stays live.
             peak_accumulator.process(remaining, extra_rendered, device_channels, peak_ring);
