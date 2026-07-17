@@ -46,7 +46,12 @@ export function useAppStartupRuntime(
       // Missing/corrupt/unreadable config must not strand the hidden window.
       // Apply all defaults with hydrated: true so the theme runtime and ready
       // gate can proceed, then report the original settings error once.
-      patchAppSettings({ ...DEFAULT_APP_SETTINGS, hydrated: true });
+      // Guard against wiping already-loaded preferences: loadStartupSettings
+      // hydrates saved settings before attempting the language switch, so a
+      // language failure reaching this catch must not overwrite them.
+      if (!useSettingsStore.getState().hydrated) {
+        patchAppSettings({ ...DEFAULT_APP_SETTINGS, hydrated: true });
+      }
       notifyError(error);
 
       // Fallback system-language setup is independent of settings hydration so
