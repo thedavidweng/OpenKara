@@ -375,6 +375,17 @@
       "label": "Output Device",
       "systemDefault": "System Default"
     },
+    "eq": {
+      "label": "Equalizer",
+      "description": "5-band equalizer with automatic preamp and soft limiter.",
+      "enable": "Enable equalizer",
+      "reset": "Reset all bands to 0 dB",
+      "band60": "60 Hz",
+      "band230": "230 Hz",
+      "band910": "910 Hz",
+      "band3600": "3.6 kHz",
+      "band14000": "14 kHz"
+    },
     "crossfade": {
       "label": "Crossfade",
       "description": "Overlap the end of one track with the start of the next using an equal-power curve.",
@@ -438,17 +449,6 @@
       "directml": "DirectML",
       "directmlDescription": "DirectX 12 GPU acceleration for Windows",
       "note": "Changes take effect on the next separation."
-    },
-    "eq": {
-      "label": "Equalizer",
-      "enable": "Enable 5-band EQ",
-      "description": "Adjusts five frequency bands with automatic preamp and a soft limiter to prevent clipping.",
-      "band60": "60 Hz",
-      "band230": "230 Hz",
-      "band910": "910 Hz",
-      "band3600": "3.6 kHz",
-      "band14000": "14 kHz",
-      "reset": "Reset to flat"
     },
     "integrity": {
       "checkButton": "Check library integrity",
