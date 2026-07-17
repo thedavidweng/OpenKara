@@ -11,9 +11,20 @@
  * executes, so it must be self-contained (no imports).
  */
 
+/**
+ * Sidebar width returned by the mock's `get_window_shell_state`. The app
+ * applies this at runtime via `--window-shell-sidebar-width`, so E2E
+ * geometry helpers must use the same value when deriving the playback-bar
+ * container width (viewport minus sidebar). Exported so specs stay in sync
+ * with the mock instead of hard-coding a separate copy.
+ */
+export const MOCK_SIDEBAR_WIDTH = 280;
+
 // This script text is passed to page.addInitScript().
 // It is intentionally self-contained and contains no imports or
-// JSON.stringify of functions (which would be stripped).
+// JSON.stringify of functions (which would be stripped). The sidebar width
+// is interpolated from MOCK_SIDEBAR_WIDTH so the mock payload and any spec
+// that imports the constant can never drift apart.
 export const TAURI_MOCK_SCRIPT = `
 (() => {
   // ── Fixture songs ──
@@ -247,7 +258,7 @@ export const TAURI_MOCK_SCRIPT = `
     },
     get_window_shell_state: {
       chrome_variant: "desktop", tier: "desktop", toolbar_height: 48,
-      traffic_light_inset_leading: 0, sidebar_header_height: 0, sidebar_width: 280,
+      traffic_light_inset_leading: 0, sidebar_header_height: 0, sidebar_width: ${MOCK_SIDEBAR_WIDTH},
     },
     get_library_path: "/tmp/openkara-test-lib",
 
