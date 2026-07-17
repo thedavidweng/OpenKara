@@ -668,6 +668,11 @@ impl PlaybackController {
     /// the track is at EOF. Without this, a user who pauses near EOF and
     /// then resumes would be stuck — the track is at EOF, `is_playing` is
     /// false, and the gapless swap is permanently suppressed.
+    ///
+    /// #88: The gapless swap site in `output.rs` now checks `FadeState::FadingOut`
+    /// directly instead of calling this helper. The method is retained for the
+    /// regression tests below and as a reusable predicate.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn current_track_is_playing(&self) -> bool {
         let Some(track) = self.current_track.as_ref() else {
             return false;

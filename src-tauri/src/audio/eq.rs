@@ -294,7 +294,29 @@ impl EqProcessor {
             // gain. `update_coefficients` preserves delay state. A coefficient
             // error disables only that band for this frame; the last valid
             // coefficients are retained (no update, no panic).
+            //
+            // #88: The `Coefficients::from_params` result depends only on the
+            // band (gain, frequency, sample rate) — not on the channel — so
+            // compute it once per band in a separate loop before iterating
+            // channels. This avoids redundantly recomputing the same
+            // coefficients for every channel's filter on every frame.
             let gains_db = self.current_gains_db;
+            let band_coeffs: [Option<Coefficients<f32>>; 5] = {
+                let mut arr: [Option<Coefficients<f32>>; 5] = [None; 5];
+                for band in 0..5 {
+                    if let Ok(coeffs) = Coefficients::<f32>::from_params(
+                        Type::PeakingEQ(gains_db[band]),
+                        Hertz::from_hz(sample_rate)
+                            .unwrap_or_else(|_| Hertz::from_hz(1.0_f32).unwrap()),
+                        Hertz::from_hz(EQ_BAND_FREQUENCIES_HZ[band])
+                            .unwrap_or_else(|_| Hertz::from_hz(1.0_f32).unwrap()),
+                        EQ_Q,
+                    ) {
+                        arr[band] = Some(coeffs);
+                    }
+                }
+                arr
+            };
             for ch in 0..self.channels {
                 let Some(bands) = self.filters.get_mut(ch) else {
                     continue;
@@ -303,17 +325,9 @@ impl EqProcessor {
                     let Some(filter) = bands[band].as_mut() else {
                         continue;
                     };
-                    let Ok(coeffs) = Coefficients::<f32>::from_params(
-                        Type::PeakingEQ(gains_db[band]),
-                        Hertz::from_hz(sample_rate)
-                            .unwrap_or_else(|_| Hertz::from_hz(1.0_f32).unwrap()),
-                        Hertz::from_hz(EQ_BAND_FREQUENCIES_HZ[band])
-                            .unwrap_or_else(|_| Hertz::from_hz(1.0_f32).unwrap()),
-                        EQ_Q,
-                    ) else {
-                        continue;
-                    };
-                    filter.update_coefficients(coeffs);
+                    if let Some(coeffs) = band_coeffs[band] {
+                        filter.update_coefficients(coeffs);
+                    }
                 }
             }
 

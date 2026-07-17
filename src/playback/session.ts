@@ -26,6 +26,13 @@ export interface PlaybackSession {
   skipBack(): Promise<void>;
   /** Queue advance on backend `playback-ended` (song_id guarded). */
   onEnded(endedSongId: string): Promise<void>;
+  /** #88: Reconcile queue head after a gapless `track-transitioned` event.
+   * The backend already swapped to the new song; the frontend must remove
+   * the old song from the queue and push it to history so the queue head
+   * matches the backend's current track. Also restores separated stems for
+   * the new song — the gapless swap creates a plain track, so vocal-removal
+   * / karaoke stem mode must be reloaded. */
+  onTrackTransitioned(fromSongId: string, toSongId: string): Promise<void>;
   applyPosition(event: PlaybackPositionEvent): void;
   applySnapshot(snapshot: PlaybackStateSnapshot): void;
   getPositionClock(): PositionClockState;
@@ -165,6 +172,54 @@ export function createPlaybackSession(
 
       deps.queue.pushToHistory(endedSongId);
       await playSongWithOptionalStems(nextId);
+    },
+
+    onTrackTransitioned: async (fromSongId, toSongId) => {
+      // #88: The backend already swapped to `toSongId` via a gapless
+      // transition. Reconcile the queue: remove `fromSongId` if it is
+      // still the queue head (it was the song that just finished), push
+      // it to history, and remove `toSongId` from the queue if present
+      // (it was the prepared candidate and is now playing).
+      //
+      // The backend emits `track-transitioned` BEFORE the next
+      // `playback-position` event, so the clock may still hold
+      // `fromSongId` (the old song). Accept both `fromSongId` and
+      // `toSongId` as valid current states; only skip if the clock holds
+      // a completely different song (stale transition after the user
+      // manually started another track).
+      const snapshot = clock.snapshot;
+      if (snapshot?.song_id !== fromSongId && snapshot?.song_id !== toSongId) {
+        return;
+      }
+
+      deps.queue.pushToHistory(fromSongId);
+      // Remove the from-song from the queue if it's still there (it may
+      // have already been dequeued by the preload scheduler's caller).
+      deps.queue.removeSongIds([fromSongId, toSongId]);
+
+      // #88: The gapless swap creates a plain track (stems are not
+      // preloaded), so vocal-removal / karaoke stem mode is lost. Mirror
+      // `playSongWithOptionalStems`: fetch the current state, check whether
+      // stems should be loaded for the new song, and call `loadStems()`.
+      const currentSnapshot = await deps.transport.getPlaybackState();
+      tryApplyAuthoritative(currentSnapshot);
+
+      if (
+        !shouldLoadSeparatedStems(
+          currentSnapshot,
+          deps.getSeparationStatus(toSongId),
+        )
+      ) {
+        return;
+      }
+
+      const snapshotWithStems = await deps.transport.loadStems();
+      // F6-style guard: skip applying stems if the song changed again
+      // before loadStems() resolved.
+      if (clock.snapshot?.song_id !== toSongId) {
+        return;
+      }
+      tryApplyAuthoritative(snapshotWithStems);
     },
 
     skipForward: async () => {

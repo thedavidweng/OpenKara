@@ -751,6 +751,8 @@ describe("onTrackTransitioned", () => {
     player = createPlayerStore();
     mockPushToHistory.mockReset();
     mockRemoveSongIds.mockReset();
+    mockGetPlaybackState.mockReset();
+    mockGetPlaybackState.mockResolvedValue(playbackSnapshot());
   });
 
   afterEach(() => {

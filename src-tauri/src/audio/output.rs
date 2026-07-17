@@ -443,12 +443,15 @@ pub fn render_output_buffer(
     // #103: Do not gapless-swap when the user has paused (or is pausing via
     // a fade-out). Without this check, a track reaching EOF during a pause
     // fade-out would auto-advance to the preloaded next track, defeating the
-    // user's intent to stop at the current song. The `current_track_is_playing`
-    // helper returns false when `is_playing` is false or a `FadingOut` is in
-    // progress, either of which signals a user-initiated pause.
+    // user's intent to stop at the current song. The explicit `FadingOut`
+    // check guards against the case where the user just pressed pause and a
+    // fade-out envelope is still in progress when EOF is reached.
     if !has_streaming
+        && !matches!(
+            playback.fade,
+            crate::audio::playback::FadeState::FadingOut { .. }
+        )
         && playback.current_track_reached_eof()
-        && playback.current_track_is_playing()
         && playback.perform_gapless_swap()
     {
         // The swap set render_frame = 0 on the new track. Render the

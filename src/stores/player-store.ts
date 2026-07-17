@@ -320,6 +320,12 @@ export function createPlayerStore(
         }
       },
 
+      onTrackTransitioned: (fromSongId, toSongId) => {
+        session.onTrackTransitioned(fromSongId, toSongId).catch((e) => {
+          notifyError(e);
+        });
+      },
+
       skipForward: async () => {
         try {
           await session.skipForward();
