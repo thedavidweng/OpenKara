@@ -11,12 +11,13 @@ import {
   Sparkles,
   Sun,
 } from "lucide-react";
+import { documentHref, type SiteLanguage } from "./document-route";
 
 const AppPreview = lazy(() =>
   import("./AppPreview").then((module) => ({ default: module.AppPreview })),
 );
 
-type Language = "en" | "zh-CN";
+type Language = SiteLanguage;
 type Theme = "dark" | "light";
 
 const COPY = {
@@ -91,6 +92,15 @@ const COPY = {
     ],
     closing: "Turn your music into karaoke tonight.",
     source: "View source",
+    footerProduct: "Product",
+    footerProject: "Project",
+    footerLegal: "Legal",
+    footerFaq: "FAQ",
+    footerSourceCode: "Source code",
+    footerChangelog: "Changelog",
+    footerLicense: "Apache 2.0 License",
+    footerPrivacy: "Privacy Policy",
+    footerTerms: "Terms of Service",
     themeDark: "Switch to dark theme",
     themeLight: "Switch to light theme",
   },
@@ -150,6 +160,15 @@ const COPY = {
     ],
     closing: "今晚就把你的音乐变成 Karaoke。",
     source: "查看源代码",
+    footerProduct: "产品",
+    footerProject: "项目",
+    footerLegal: "法律",
+    footerFaq: "常见问题",
+    footerSourceCode: "源代码",
+    footerChangelog: "更新日志",
+    footerLicense: "Apache 2.0 许可",
+    footerPrivacy: "隐私政策",
+    footerTerms: "服务条款",
     themeDark: "切换到深色主题",
     themeLight: "切换到浅色主题",
   },
@@ -307,29 +326,80 @@ export function LandingPage() {
           );
         })}
 
-        <section className="closing-section content-width">
-          <div>
-            <span>OpenKara</span>
-            <h2>{copy.closing}</h2>
+        <section className="closing-section" aria-labelledby="closing-title">
+          <h2 id="closing-title">{copy.closing}</h2>
+          <div className="closing-actions">
+            <a
+              className="pill pill-primary"
+              href="https://github.com/thedavidweng/OpenKara/releases/latest"
+            >
+              {copy.download}
+            </a>
+            <a
+              className="pill pill-secondary"
+              href="https://github.com/thedavidweng/OpenKara"
+              target="_blank"
+              rel="noreferrer"
+            >
+              {copy.source}
+            </a>
           </div>
-          <a
-            className="pill pill-primary"
-            href="https://github.com/thedavidweng/OpenKara/releases/latest"
-          >
-            <Download size={16} /> {copy.download}
-          </a>
         </section>
       </main>
 
       <footer className="site-footer content-width">
-        <a className="brand" href="#top">
+        <a className="brand footer-brand" href="#top">
           <img src="/img/openkara-app-icon.png" alt="" />
           <span>OpenKara</span>
         </a>
-        <span>Apache 2.0</span>
-        <a href="https://github.com/thedavidweng/OpenKara">
-          <Code2 size={15} /> {copy.source}
-        </a>
+        <nav
+          className="footer-column footer-product"
+          aria-label={copy.footerProduct}
+        >
+          <h2>{copy.footerProduct}</h2>
+          <a href="https://github.com/thedavidweng/OpenKara/releases/latest">
+            {copy.download}
+          </a>
+          <a href={documentHref(language, "faq")}>{copy.footerFaq}</a>
+        </nav>
+        <nav
+          className="footer-column footer-project"
+          aria-label={copy.footerProject}
+        >
+          <h2>{copy.footerProject}</h2>
+          <a
+            href="https://github.com/thedavidweng/OpenKara"
+            target="_blank"
+            rel="noreferrer"
+          >
+            {copy.footerSourceCode}
+          </a>
+          <a
+            href="https://github.com/thedavidweng/OpenKara/blob/main/CHANGELOG.md"
+            target="_blank"
+            rel="noreferrer"
+          >
+            {copy.footerChangelog}
+          </a>
+          <a
+            href="https://github.com/thedavidweng/OpenKara/blob/main/LICENSE"
+            target="_blank"
+            rel="noreferrer"
+          >
+            {copy.footerLicense}
+          </a>
+        </nav>
+        <nav
+          className="footer-column footer-legal"
+          aria-label={copy.footerLegal}
+        >
+          <h2>{copy.footerLegal}</h2>
+          <a href={documentHref(language, "privacy")}>{copy.footerPrivacy}</a>
+          <a href={documentHref(language, "terms")}>{copy.footerTerms}</a>
+        </nav>
+        <div className="footer-meta">
+          <span>© {new Date().getFullYear()} OpenKara</span>
+        </div>
       </footer>
     </div>
   );

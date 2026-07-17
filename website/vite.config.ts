@@ -23,5 +23,24 @@ export default defineConfig({
     emptyOutDir: true,
     target: "es2022",
     chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      input: {
+        home: fileURLToPath(new URL("./index.html", import.meta.url)),
+        faq: fileURLToPath(new URL("./faq/index.html", import.meta.url)),
+        privacy: fileURLToPath(
+          new URL("./privacy/index.html", import.meta.url),
+        ),
+        terms: fileURLToPath(new URL("./terms/index.html", import.meta.url)),
+        "zh-faq": fileURLToPath(
+          new URL("./zh/faq/index.html", import.meta.url),
+        ),
+        "zh-privacy": fileURLToPath(
+          new URL("./zh/privacy/index.html", import.meta.url),
+        ),
+        "zh-terms": fileURLToPath(
+          new URL("./zh/terms/index.html", import.meta.url),
+        ),
+      },
+    },
   },
 });
