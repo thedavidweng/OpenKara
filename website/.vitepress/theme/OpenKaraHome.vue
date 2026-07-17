@@ -338,15 +338,14 @@ onUnmounted(() => observer?.disconnect());
 
         <div class="product-stage" data-reveal>
           <div class="stage-grid" aria-hidden="true"></div>
-          <div class="app-window">
-            <img
-              src="/img/openkara-player.webp"
-              :alt="copy.heroAlt"
-              width="1600"
-              height="1048"
-              fetchpriority="high"
-            />
-          </div>
+          <img
+            class="app-screenshot"
+            src="/img/openkara-player.webp"
+            :alt="copy.heroAlt"
+            width="1600"
+            height="1048"
+            fetchpriority="high"
+          />
         </div>
       </section>
 
@@ -809,20 +808,9 @@ onUnmounted(() => observer?.disconnect());
   background-size: 120px 120px;
   mask-image: linear-gradient(transparent, #000 24%, #000 70%, transparent);
 }
-.app-window {
+.app-screenshot {
   position: relative;
   z-index: 2;
-  width: 100%;
-  padding: 7px;
-  border: 1px solid #ffffffc7;
-  border-radius: 17px;
-  background: #ffffff57;
-  box-shadow:
-    0 34px 80px #15497242,
-    0 3px 12px #112d4424;
-  backdrop-filter: blur(14px);
-}
-.app-window img {
   display: block;
   width: 100%;
   height: auto;
@@ -1417,15 +1405,6 @@ onUnmounted(() => observer?.disconnect());
     linear-gradient(#ffffff55 1px, transparent 1px),
     linear-gradient(90deg, #ffffff55 1px, transparent 1px);
 }
-.dark .app-window {
-  padding: 6px;
-  border-color: #3a3c42;
-  background: #1b1d21a6;
-  box-shadow:
-    0 38px 90px #000c,
-    0 0 0 1px #0009,
-    inset 0 1px #ffffff0d;
-}
 .dark .section-heading > span {
   color: #8a9cff;
 }
@@ -1678,10 +1657,6 @@ onUnmounted(() => observer?.disconnect());
     margin-top: 52px;
     padding: 25px 13px;
     border-radius: 8px;
-  }
-  .app-window {
-    padding: 3px;
-    border-radius: 10px;
   }
   .feature-section,
   .closing-section,
