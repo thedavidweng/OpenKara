@@ -124,6 +124,36 @@ describe("sortSongs / compareSongs", () => {
     expect(sorted.map((s) => s.hash)).toEqual(["b", "a"]);
   });
 
+  test("non-alphabetic titles sort after lettered titles (matches # rail position)", () => {
+    // The alphabet rail places "#" at the bottom (after Z). The sort must
+    // place digit/symbol-leading titles after A–Z titles so clicking the
+    // bottom "#" marker scrolls to the bottom of the list, not the top.
+    const songs = [
+      makeSong({ hash: "num", title: "99 Luftballons" }),
+      makeSong({ hash: "z", title: "Zebra" }),
+      makeSong({ hash: "sym", title: "!!! (Song)" }),
+      makeSong({ hash: "a", title: "Apple" }),
+    ];
+    const sorted = sortSongs(songs, "title_asc");
+    // Lettered titles first (A, Z), then non-alphabetic (99, !!!)
+    expect(sorted[0].hash).toBe("a");
+    expect(sorted[1].hash).toBe("z");
+    expect(sorted.slice(2).map((s) => s.hash)).toContain("num");
+    expect(sorted.slice(2).map((s) => s.hash)).toContain("sym");
+  });
+
+  test("non-alphabetic artist sorts after lettered artist", () => {
+    const songs = [
+      makeSong({ hash: "num", artist: "3 Doors Down", title: "Kryptonite" }),
+      makeSong({ hash: "z", artist: "Ziggy", title: "Star" }),
+      makeSong({ hash: "a", artist: "Abba", title: "Waterloo" }),
+    ];
+    const sorted = sortSongs(songs, "artist_asc");
+    expect(sorted[0].hash).toBe("a");
+    expect(sorted[1].hash).toBe("z");
+    expect(sorted[2].hash).toBe("num");
+  });
+
   test("mixed Simplified Chinese and Latin inputs use the fixed collator", () => {
     const songs = [
       makeSong({ hash: "a", title: "Zoo" }),

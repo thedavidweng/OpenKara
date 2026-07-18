@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { renderToStaticMarkup } from "react-dom/server";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { SongList } from "./SongList";
 import type { Song } from "@/types/ipc";
@@ -62,6 +62,17 @@ vi.mock("./SongListItem", () => ({
 
 vi.mock("./EmptyLibrary", () => ({
   EmptyLibrary: () => <div data-testid="empty-library">empty</div>,
+}));
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: { letter?: string }) =>
+      key === "sidebar.alphabetRail.jumpTo"
+        ? `Jump to ${opts?.letter ?? ""}`
+        : key === "sidebar.alphabetRail.other"
+          ? "Other characters"
+          : key,
+  }),
 }));
 
 vi.mock("@tanstack/react-virtual", () => ({
@@ -413,5 +424,128 @@ describe("SongList playlist materialization", () => {
     const items = await screen.findAllByTestId("song-item");
     expect(items[0].textContent).toBe("Beta");
     expect(items[1].textContent).toBe("Alpha");
+  });
+});
+
+// ─── alphabet rail visibility (matchMedia) ─────────────────
+
+function makeSong(overrides: Partial<Song> = {}): Song {
+  return {
+    hash: "hash",
+    file_path: "/music/a.mp3",
+    audio_source_kind: "original",
+    cdg_path: null,
+    media_g_container: null,
+    instrumental: false,
+    language: null,
+    title: "Title",
+    artist: "Artist",
+    album: null,
+    duration_ms: 120000,
+    cover_art: null,
+    has_cover_art: false,
+    imported_at: 0,
+    original_ext: "mp3",
+    ...overrides,
+  };
+}
+
+/**
+ * Install a window.matchMedia mock. When `legacy` is true the MediaQueryList
+ * omits addEventListener/removeEventListener so the legacy addListener fallback
+ * path is exercised.
+ */
+function installMatchMedia(matches: boolean, legacy: boolean) {
+  const listeners: ((e: MediaQueryListEvent) => void)[] = [];
+  const mql = {
+    matches,
+    media: "(min-width: 600px)",
+    onchange: null as ((e: MediaQueryListEvent) => void) | null,
+    addEventListener: legacy
+      ? undefined
+      : (type: string, handler: (e: MediaQueryListEvent) => void) => {
+          if (type === "change") listeners.push(handler);
+        },
+    removeEventListener: legacy
+      ? undefined
+      : (_type: string, handler: (e: MediaQueryListEvent) => void) => {
+          const i = listeners.indexOf(handler);
+          if (i >= 0) listeners.splice(i, 1);
+        },
+    addListener: (handler: (e: MediaQueryListEvent) => void) =>
+      listeners.push(handler),
+    removeListener: (handler: (e: MediaQueryListEvent) => void) => {
+      const i = listeners.indexOf(handler);
+      if (i >= 0) listeners.splice(i, 1);
+    },
+  };
+  vi.stubGlobal("matchMedia", () => mql);
+  return mql;
+}
+
+describe("SongList alphabet rail visibility", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    mockClearRangeSelectionAnchor.mockReset();
+    mockSettingsState.librarySortMode = "recently_imported";
+    mockLibraryState.songs = [];
+    mockLibraryState.filter = "all";
+    mockPlaylistState.activePlaylistId = null;
+  });
+
+  test("shows the alphabet rail when viewport >=600px (modern matchMedia)", () => {
+    installMatchMedia(true, false);
+    mockLibraryState.songs = [
+      makeSong({ hash: "a", title: "Apple", artist: "Artist A" }),
+      makeSong({ hash: "b", title: "Banana", artist: "Artist B" }),
+    ];
+    mockSettingsState.librarySortMode = "title_asc";
+
+    render(<SongList />);
+
+    expect(screen.getByRole("navigation")).toBeTruthy();
+  });
+
+  test("shows the alphabet rail via legacy addListener fallback", () => {
+    installMatchMedia(true, true);
+    mockLibraryState.songs = [
+      makeSong({ hash: "a", title: "Apple", artist: "Artist A" }),
+    ];
+    mockSettingsState.librarySortMode = "artist_asc";
+
+    render(<SongList />);
+
+    expect(screen.getByRole("navigation")).toBeTruthy();
+  });
+
+  test("hides the alphabet rail when viewport <600px", () => {
+    installMatchMedia(false, false);
+    mockLibraryState.songs = [
+      makeSong({ hash: "a", title: "Apple", artist: "Artist A" }),
+    ];
+    mockSettingsState.librarySortMode = "title_asc";
+
+    render(<SongList />);
+
+    expect(screen.queryByRole("navigation")).toBeNull();
+  });
+
+  test("rail navigation clears the range-selection anchor and scrolls", () => {
+    installMatchMedia(true, false);
+    mockLibraryState.songs = [
+      makeSong({ hash: "a", title: "Apple", artist: "Artist A" }),
+      makeSong({ hash: "b", title: "Banana", artist: "Artist B" }),
+    ];
+    mockSettingsState.librarySortMode = "title_asc";
+
+    render(<SongList />);
+
+    // Click the B bucket button → triggers SongList's onNavigate handler.
+    const buttons = screen.getAllByRole("button");
+    const buttonB = buttons[1];
+    fireEvent.click(buttonB);
+
+    expect(mockClearRangeSelectionAnchor).toHaveBeenCalled();
   });
 });

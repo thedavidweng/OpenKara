@@ -24,7 +24,38 @@ export const TAURI_MOCK_SCRIPT = `
   // deterministic order. The original three rows keep the most recent
   // timestamps so the default recently_imported sort shows them first,
   // preserving existing e2e visibility assertions.
-  let mockSongs = [
+  // Mutable so setLargeLibrary can swap in a synthetic large catalog for
+  // virtualization-at-scale tests without reloading the page.
+  // If a test set window.__OPENKARA_LARGE_LIBRARY_COUNT__ via addInitScript
+  // before this mock runs, eagerly generate the synthetic catalog so the
+  // initial get_library returns it without a reload.
+  let mockSongs = (function initialSongs() {
+    const count = window.__OPENKARA_LARGE_LIBRARY_COUNT__;
+    if (count && count > 0) {
+      const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+      const songs = [];
+      for (let i = 0; i < count; i++) {
+        const letter = letters[i % 26];
+        songs.push({
+          hash: "large-" + i,
+          file_path: "/music/song-" + i + ".mp3",
+          audio_source_kind: "original",
+          cdg_path: null,
+          media_g_container: null,
+          instrumental: false,
+          language: "en",
+          title: letter + " Song " + i,
+          artist: letter + " Artist " + i,
+          album: null,
+          duration_ms: 180000,
+          cover_art: null,
+          imported_at: count - i,
+          original_ext: ".mp3",
+        });
+      }
+      return songs;
+    }
+    return [
     {
       hash: "aaa111", file_path: "/music/Bohemian_Rhapsody.mp3",
       audio_source_kind: "original", cdg_path: null, media_g_container: null,
@@ -75,6 +106,7 @@ export const TAURI_MOCK_SCRIPT = `
       duration_ms: 90000, cover_art: null, imported_at: 100000, original_ext: ".mp3",
     },
   ];
+  })();
 
   // ── Fixture lyrics ──
   // Mutable so tests can override with larger fixtures (e.g. the scrollbar
@@ -267,6 +299,7 @@ export const TAURI_MOCK_SCRIPT = `
       id: "mock-lib-1", kind: "local",
       display_name: "Test Library", root_path: "/tmp/openkara-test-lib",
     },
+    // Function so setLargeLibrary can swap mockSongs after init.
     get_library: () => mockSongs,
     search_library: (args) => {
       const q = ((args && args.query) || "").toLowerCase();
@@ -600,6 +633,36 @@ export const TAURI_MOCK_SCRIPT = `
     setMockSongs: (songs) => { mockSongs = songs; },
     // Override the mock lyrics payload returned by fetch_lyrics.
     setMockLyrics: (lyrics) => { mockLyrics = lyrics; },
+    // Swap the fixture library for a synthetic N-song catalog so virtualized
+    // list and alphabet-rail tests can prove behavior at scale (5k+ rows)
+    // without bloating the default fixture. Titles start with each letter
+    // A–Z then cycle, so title_asc produces a deterministic spread across
+    // every alphabet bucket; artists follow the same pattern so artist_asc
+    // also exercises every rail bucket.
+    setLargeLibrary: (count) => {
+      const songs = [];
+      const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+      for (let i = 0; i < count; i++) {
+        const letter = letters[i % 26];
+        songs.push({
+          hash: "large-" + i,
+          file_path: "/music/song-" + i + ".mp3",
+          audio_source_kind: "original",
+          cdg_path: null,
+          media_g_container: null,
+          instrumental: false,
+          language: "en",
+          title: letter + " Song " + i,
+          artist: letter + " Artist " + i,
+          album: null,
+          duration_ms: 180000,
+          cover_art: null,
+          imported_at: count - i,
+          original_ext: ".mp3",
+        });
+      }
+      mockSongs = songs;
+    },
     getInvokeCalls: () => clone(invokeCalls),
     getLastNativeMenu: () => lastNativeMenu ? menuSnapshot(lastNativeMenu) : null,
     clickNativeMenuItem: async (label) => {
