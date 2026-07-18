@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use std::{
     fs::{self, OpenOptions},
     io::{BufWriter, Cursor, Write},
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
 
@@ -33,7 +33,7 @@ pub enum ArtworkSize {
 }
 
 impl ArtworkSize {
-    fn expected_dimension(self) -> u32 {
+    pub(crate) fn expected_dimension(self) -> u32 {
         match self {
             Self::Thumb => THUMB_SIZE,
             Self::Preview => PREVIEW_SIZE,
@@ -263,7 +263,7 @@ pub(crate) fn copy_artwork_derivative(
     relative_path: &str,
     expected_size: u32,
 ) -> Result<()> {
-    let (source, source_size) = resolve_artwork_path(source_library, relative_path)?;
+    let (source, source_size) = resolve_existing_artwork_path(source_library, relative_path)?;
     if source_size.expected_dimension() != expected_size
         || !validate_derivative_file(&source, expected_size)
     {
@@ -360,6 +360,39 @@ fn unique_temp_path(final_path: &Path) -> PathBuf {
     dir.join(format!(".{name}.{pid}.{counter}.tmp"))
 }
 
+/// Check whether a relative path is a temporary artwork file created by
+/// [`unique_temp_path`]. The temp must be a direct child of `artwork/` and
+/// have the exact `.{name}.{pid}.{counter}.tmp` shape.
+pub(crate) fn is_temp_artwork_file(relative: &str) -> bool {
+    let Some(filename) = relative.strip_prefix("artwork/") else {
+        return false;
+    };
+    !filename.is_empty() && !filename.contains('/') && matches_temp_artwork_filename(filename)
+}
+
+/// Check a bare filename against the convention produced by
+/// [`unique_temp_path`]. Keeping this next to the writer prevents the orphan
+/// scanner from granting a grace period to unrelated hidden files.
+pub(crate) fn matches_temp_artwork_filename(filename: &str) -> bool {
+    let Some(stem) = filename
+        .strip_prefix('.')
+        .and_then(|name| name.strip_suffix(".tmp"))
+    else {
+        return false;
+    };
+    let mut parts = stem.rsplitn(3, '.');
+    let Some(counter) = parts.next() else {
+        return false;
+    };
+    let Some(pid) = parts.next() else {
+        return false;
+    };
+    let Some(name) = parts.next() else {
+        return false;
+    };
+    !name.is_empty() && pid.parse::<u32>().is_ok() && counter.parse::<u64>().is_ok()
+}
+
 /// Resolve a recorded derivative path to an absolute path under the library
 /// root. Only the content-addressed filenames produced by
 /// `derivative_relative_path` are accepted, so a corrupt database cannot turn
@@ -367,6 +400,24 @@ fn unique_temp_path(final_path: &Path) -> PathBuf {
 pub(crate) fn resolve_artwork_path(
     library: &LibraryRoot,
     relative: &str,
+) -> Result<(PathBuf, ArtworkSize)> {
+    resolve_artwork_path_inner(library, relative, true)
+}
+
+/// Resolve and validate a derivative path without creating `artwork/`. Read
+/// paths and integrity audits use this variant so inspection never mutates the
+/// library merely because an expected derivative directory is absent.
+pub(crate) fn resolve_existing_artwork_path(
+    library: &LibraryRoot,
+    relative: &str,
+) -> Result<(PathBuf, ArtworkSize)> {
+    resolve_artwork_path_inner(library, relative, false)
+}
+
+fn resolve_artwork_path_inner(
+    library: &LibraryRoot,
+    relative: &str,
+    create_artwork_directory: bool,
 ) -> Result<(PathBuf, ArtworkSize)> {
     let (parsed, size) = parse_artwork_relative_path(relative)?;
 
@@ -377,7 +428,9 @@ pub(crate) fn resolve_artwork_path(
         )
     })?;
     let artwork_path = root_canonical.join(ARTWORK_DIRECTORY);
-    fs::create_dir_all(&artwork_path).context("failed to ensure artwork directory")?;
+    if create_artwork_directory {
+        fs::create_dir_all(&artwork_path).context("failed to ensure artwork directory")?;
+    }
     let artwork_metadata =
         fs::symlink_metadata(&artwork_path).context("failed to inspect artwork directory")?;
     // `artwork/` must be the direct, real child created by LibraryRoot. This
@@ -401,33 +454,12 @@ pub(crate) fn resolve_artwork_path(
 /// `artwork/thumb_<64 lowercase hex>_80.webp` or
 /// `artwork/preview_<64 lowercase hex>_256.webp`.
 fn parse_artwork_relative_path(relative: &str) -> Result<(PathBuf, ArtworkSize)> {
-    let path = Path::new(relative);
-
-    // Reject absolute paths.
-    if path.is_absolute() {
-        anyhow::bail!("artwork path must be relative");
+    let filename = relative
+        .strip_prefix("artwork/")
+        .context("artwork path must start with artwork/")?;
+    if filename.is_empty() || filename.contains('/') || filename.contains('\\') {
+        anyhow::bail!("artwork path must contain exactly one filename");
     }
-
-    let mut components = path.components();
-    let first = components.next().context("artwork path is empty")?;
-    if first != Component::Normal(std::ffi::OsStr::new(ARTWORK_DIRECTORY)) {
-        anyhow::bail!("artwork path must start with {ARTWORK_DIRECTORY}/");
-    }
-    let filename = components.next().context("artwork path missing filename")?;
-    if !matches!(filename, Component::Normal(_)) {
-        anyhow::bail!("artwork path has invalid filename component");
-    }
-    if components.next().is_some() {
-        anyhow::bail!("artwork path has too many components");
-    }
-
-    // Verify no separators inside the filename (e.g. "artwork/a/b.webp").
-    let filename_str = filename.as_os_str().to_string_lossy();
-    if filename_str.contains('/') || filename_str.contains('\\') {
-        anyhow::bail!("artwork filename must not contain path separators");
-    }
-
-    let filename = filename_str.as_ref();
     for size in [ArtworkSize::Thumb, ArtworkSize::Preview] {
         let Some(digest) = filename
             .strip_prefix(size.filename_prefix())
@@ -440,7 +472,7 @@ fn parse_artwork_relative_path(relative: &str) -> Result<(PathBuf, ArtworkSize)>
                 .bytes()
                 .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'));
         if is_lower_hex_digest {
-            return Ok((path.to_path_buf(), size));
+            return Ok((PathBuf::from(relative), size));
         }
     }
 
@@ -453,7 +485,7 @@ pub fn read_artwork_derivative(
     relative_path: &str,
     expected_size: u32,
 ) -> Result<Option<Vec<u8>>> {
-    let (abs, recorded_size) = resolve_artwork_path(library, relative_path)?;
+    let (abs, recorded_size) = resolve_existing_artwork_path(library, relative_path)?;
     if recorded_size.expected_dimension() != expected_size {
         return Ok(None);
     }
@@ -773,5 +805,51 @@ mod tests {
         assert_ne!(p1, p2);
         assert!(p1.to_string_lossy().contains(".tmp"));
         assert!(p2.to_string_lossy().contains(".tmp"));
+    }
+
+    #[test]
+    fn is_temp_artwork_file_matches_writer_convention() {
+        // Valid writer-produced temp paths: .{name}.{pid}.{counter}.tmp
+        assert!(is_temp_artwork_file("artwork/.thumb_abc.webp.12345.0.tmp"));
+        assert!(is_temp_artwork_file("artwork/.preview_xyz.99999.42.tmp"));
+        assert!(is_temp_artwork_file("artwork/.derivative.1.0.tmp"));
+    }
+
+    #[test]
+    fn is_temp_artwork_file_rejects_invalid_paths() {
+        // Not under artwork/
+        assert!(!is_temp_artwork_file("media/.foo.123.0.tmp"));
+        // No leading dot
+        assert!(!is_temp_artwork_file("artwork/thumb.123.0.tmp"));
+        // No .tmp suffix
+        assert!(!is_temp_artwork_file("artwork/.thumb.123.0.bin"));
+        // Missing pid/counter (too few components)
+        assert!(!is_temp_artwork_file("artwork/.foo.tmp"));
+        assert!(!is_temp_artwork_file("artwork/.foo.bar.tmp"));
+        // Non-numeric pid/counter
+        assert!(!is_temp_artwork_file("artwork/.foo.abc.def.tmp"));
+        assert!(!is_temp_artwork_file("artwork/.thumb.webp.abc.0.tmp"));
+        assert!(!is_temp_artwork_file("artwork/.thumb.webp.123.def.tmp"));
+        // Nested paths — writer never places temp files in subdirectories
+        assert!(!is_temp_artwork_file("artwork/sub/.foo.123.0.tmp"));
+        assert!(!is_temp_artwork_file("artwork/a/b/.thumb.1.0.tmp"));
+        // Arbitrary hidden .tmp files not matching the writer convention
+        assert!(!is_temp_artwork_file("artwork/.notes.tmp"));
+        assert!(!is_temp_artwork_file("artwork/.tmp"));
+    }
+
+    #[test]
+    fn matches_temp_artwork_filename_unit_cases() {
+        assert!(matches_temp_artwork_filename(
+            ".thumb_abc_80.webp.12345.0.tmp"
+        ));
+        assert!(matches_temp_artwork_filename(".x.1.0.tmp"));
+        assert!(!matches_temp_artwork_filename(
+            "thumb_abc_80.webp.12345.0.tmp"
+        ));
+        assert!(!matches_temp_artwork_filename(
+            ".thumb_abc_80.webp.12345.0.bin"
+        ));
+        assert!(!matches_temp_artwork_filename(".tmp"));
     }
 }

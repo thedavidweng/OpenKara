@@ -125,8 +125,22 @@ pub fn apply_migrations(connection: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-fn column_exists(connection: &Connection, table: &str, column: &str) -> rusqlite::Result<bool> {
-    let sql = format!("PRAGMA table_info({})", table);
+pub(crate) fn column_exists(
+    connection: &Connection,
+    table: &str,
+    column: &str,
+) -> rusqlite::Result<bool> {
+    if table.is_empty()
+        || table.chars().next().is_some_and(|c| c.is_ascii_digit())
+        || !table
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
+        return Err(rusqlite::Error::InvalidParameterName(format!(
+            "invalid table identifier: {table}"
+        )));
+    }
+    let sql = format!("PRAGMA table_info(\"{table}\")");
     let mut stmt = connection.prepare(&sql)?;
     let names: Vec<String> = stmt
         .query_map([], |row| row.get::<_, String>(1))?

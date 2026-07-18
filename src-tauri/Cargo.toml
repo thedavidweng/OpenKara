@@ -58,6 +58,7 @@ tokio = { version = "1", features = ["sync"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 
 [dev-dependencies]
+filetime = "0.2.29"
 hound = "3.5.1"
 mockito = "1.7.2"
 tauri = { version = "2.11.1", features = ["test", "unstable"] }

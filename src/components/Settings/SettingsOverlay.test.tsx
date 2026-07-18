@@ -267,6 +267,19 @@ describe("SettingsOverlay sections", () => {
     expect(markup).toContain("settings.modelVariant.ftWarningConfirm");
   });
 
+  test("renders integrity cleanup confirmation dialog with selected count", () => {
+    const value = createSettingsOverlayTestContextValue({
+      state: { integritySelection: new Set(["hash-a", "hash-b", "hash-c"]) },
+      meta: { dangerDialog: "integrity_cleanup_confirm" },
+    });
+
+    const markup = renderWithSettingsContext(<SettingsDialogHost />, value);
+
+    expect(markup).toContain("settings.integrity.confirmCleanupTitle");
+    expect(markup).toContain("settings.integrity.confirmCleanupMessage");
+    expect(markup).toContain("settings.integrity.confirmCleanupButton");
+  });
+
   test("settings overlay renders a close control for mouse users", () => {
     const markup = renderToStaticMarkup(<SettingsOverlay />);
 

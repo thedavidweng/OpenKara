@@ -138,6 +138,13 @@ test("default action stubs are callable no-ops", async () => {
     value.actions.setEqGains([0, 0, 0, 0, 0]),
   ).resolves.toBeUndefined();
   await expect(value.actions.resetEqGains()).resolves.toBeUndefined();
+  await expect(value.actions.checkLibraryIntegrity()).resolves.toBeUndefined();
+  expect(() => value.actions.toggleIntegritySelection("hash")).not.toThrow();
+  await expect(
+    value.actions.confirmIntegrityCleanup(),
+  ).resolves.toBeUndefined();
+  expect(() => value.actions.openIntegrityCleanupConfirmDialog()).not.toThrow();
+  expect(() => value.actions.closeIntegrityReport()).not.toThrow();
 });
 
 describe("useSettingsOverlay", () => {
