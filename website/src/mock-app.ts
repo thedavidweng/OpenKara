@@ -5,9 +5,15 @@ import { useLyricsStore } from "@/stores/lyrics-store";
 import { usePlayerStore } from "@/stores/player-store";
 import { usePlaylistStore } from "@/stores/playlist-store";
 import { useQueueStore } from "@/stores/queue-store";
+import { useRotationStore } from "@/stores/rotation-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import type { PlaylistSong } from "@/lib/tauri/playlist";
-import type { LyricLine, PlaybackStateSnapshot, Song } from "@/types/ipc";
+import type {
+  LyricLine,
+  PlaybackStateSnapshot,
+  SeparationStatusSnapshot,
+  Song,
+} from "@/types/ipc";
 
 const EMPTY_COVER = Uint8Array.from(
   atob(
@@ -162,6 +168,20 @@ function snapshot(
   };
 }
 
+const HACHIKO_SEPARATION: SeparationStatusSnapshot = {
+  song_id: "hachiko",
+  state: "completed",
+  percent: 100,
+  cache_hit: true,
+  vocals_path: "/mock/hachiko/vocals.flac",
+  accomp_path: "/mock/hachiko/accompaniment.flac",
+  drums_path: "/mock/hachiko/drums.flac",
+  bass_path: "/mock/hachiko/bass.flac",
+  other_path: "/mock/hachiko/other.flac",
+  model_variant: "htdemucs_ft",
+  error: null,
+};
+
 let initialized = false;
 
 export function initializeMockApp(language: "en" | "zh-CN") {
@@ -180,7 +200,23 @@ export function initializeMockApp(language: "en" | "zh-CN") {
     hideBatchSeparate: false,
     coverArtBackdrop: false,
   });
-  useQueueStore.setState({ queue: [], playHistory: [], isOpen: false });
+  useQueueStore.setState({
+    queue: ["hachiko", "aria", "fly-day", "kirari"],
+    playHistory: [],
+    isOpen: false,
+  });
+  useRotationStore.setState({
+    active: true,
+    singerNames: ["Mika", "Sora", "Nico"],
+    currentIndex: 1,
+    queueSingers: new Map([
+      ["hachiko", "Mika"],
+      ["aria", "Sora"],
+      ["fly-day", "Nico"],
+      ["kirari", "Mika"],
+    ]),
+    filterSinger: null,
+  });
   usePlaylistStore.setState({
     playlists: [...PREVIEW_PLAYLISTS],
     activePlaylistId: "favorites",
@@ -212,7 +248,7 @@ export function initializeMockApp(language: "en" | "zh-CN") {
     filter: "all",
     selectedSongIds: new Set(["hachiko"]),
     lastClickedSongId: "hachiko",
-    separationStatuses: {},
+    separationStatuses: { hachiko: HACHIKO_SEPARATION },
     uploadStatuses: {},
     setSearchQuery: () => {},
     searchSongs: async () => {},
