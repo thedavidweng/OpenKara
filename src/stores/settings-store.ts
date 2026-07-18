@@ -26,10 +26,12 @@ export interface AppSettingsSnapshot {
   eqGainsDb: [number, number, number, number, number];
 }
 
-// Every EQ mutation receives a monotonically increasing generation. A response
-// may update the whole settings snapshot, so a slow older response must not
-// overwrite a newer toggle or slider change.
-let eqMutationGeneration = 0;
+// EQ commands return a whole settings snapshot, although each command owns
+// only one field. Track each field independently and apply only that field
+// from a response: a slider request must not suppress a failed toggle rollback
+// or let its returned snapshot overwrite the toggle state (and vice versa).
+let eqEnabledMutationGeneration = 0;
+let eqGainsMutationGeneration = 0;
 
 interface SettingsState {
   isOpen: boolean;
@@ -189,17 +191,17 @@ export function createSettingsStore(
         // Reverting to !enabled would flip the store even when the backend
         // state was already the requested value.
         const previous = get().eqEnabled;
-        const generation = ++eqMutationGeneration;
+        const generation = ++eqEnabledMutationGeneration;
         // Optimistically update local state so the toggle reflects immediately.
         syncPatch({ eqEnabled: enabled });
         try {
           const settings = await api.setEqEnabled(enabled);
-          if (generation !== eqMutationGeneration) {
+          if (generation !== eqEnabledMutationGeneration) {
             return;
           }
-          syncPatch(toAppSettingsSnapshot(settings));
+          syncPatch({ eqEnabled: settings.eq_enabled ?? false });
         } catch (error) {
-          if (generation !== eqMutationGeneration) {
+          if (generation !== eqEnabledMutationGeneration) {
             return;
           }
           // Revert to the previous authoritative value on failure.
@@ -210,16 +212,16 @@ export function createSettingsStore(
       setEqGains: async (gainsDb) => {
         // Optimistically update local state so sliders reflect immediately.
         const previous = get().eqGainsDb;
-        const generation = ++eqMutationGeneration;
+        const generation = ++eqGainsMutationGeneration;
         syncPatch({ eqGainsDb: gainsDb });
         try {
           const settings = await api.setEqGains(gainsDb);
-          if (generation !== eqMutationGeneration) {
+          if (generation !== eqGainsMutationGeneration) {
             return;
           }
-          syncPatch(toAppSettingsSnapshot(settings));
+          syncPatch({ eqGainsDb: settings.eq_gains_db ?? [0, 0, 0, 0, 0] });
         } catch (error) {
-          if (generation !== eqMutationGeneration) {
+          if (generation !== eqGainsMutationGeneration) {
             return;
           }
           // Revert to the previous authoritative values on failure.
