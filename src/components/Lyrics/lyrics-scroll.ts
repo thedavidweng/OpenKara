@@ -50,10 +50,17 @@ function getLineScrollMetrics(
 
   // offsetParent is a nested element (e.g. the justify-center inner div).
   // Compute the line's absolute position within the scroll container.
+  // RATIONALE: getBoundingClientRect returns viewport-relative coordinates
+  // that already account for the current scroll position. To get the line's
+  // position relative to the container's content origin (independent of
+  // scrollTop), subtract the container's top edge and add back scrollTop:
+  //   offsetTop = (lineRect.top - containerRect.top) + container.scrollTop
+  // The previous formula (lineRect.top - containerRect.top - scrollTop)
+  // double-subtracted scrollTop, producing negative offsets when scrolled
+  // and clamping getCenteredScrollTop to 0 — freezing auto-follow at the top.
   const containerRect = container.getBoundingClientRect();
   const lineRect = lineEl.getBoundingClientRect();
-  const containerContentTop = containerRect.top + container.scrollTop;
-  const offsetTop = lineRect.top - containerContentTop;
+  const offsetTop = lineRect.top - containerRect.top + container.scrollTop;
 
   return {
     offsetTop,
