@@ -132,9 +132,7 @@ pub(crate) fn column_exists(
 ) -> rusqlite::Result<bool> {
     if table.is_empty()
         || table.chars().next().is_some_and(|c| c.is_ascii_digit())
-        || !table
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        || !table.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
     {
         return Err(rusqlite::Error::InvalidParameterName(format!(
             "invalid table identifier: {table}"
@@ -681,7 +679,13 @@ mod tests {
 
         assert!(column_exists(&connection, "songs", "hash").unwrap());
         assert!(!column_exists(&connection, "songs", "not_a_column").unwrap());
-        for invalid in ["", "1songs", "songs; DROP TABLE songs", "songs\"", "song-name"] {
+        for invalid in [
+            "",
+            "1songs",
+            "songs; DROP TABLE songs",
+            "songs\"",
+            "song-name",
+        ] {
             assert!(column_exists(&connection, invalid, "hash").is_err());
         }
     }

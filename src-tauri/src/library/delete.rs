@@ -167,9 +167,8 @@ pub fn delete_stem_files_from_working_copy(library: &LibraryRoot, song_hash: &st
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(error) => {
-            return Err(error).with_context(|| {
-                format!("failed to inspect stem directory at {}", dir.display())
-            });
+            return Err(error)
+                .with_context(|| format!("failed to inspect stem directory at {}", dir.display()));
         }
     };
 
