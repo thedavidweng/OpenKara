@@ -161,7 +161,11 @@ export interface SettingsOverlayControllerDependencies {
   lyricsStore: Pick<ReturnType<typeof useLyricsStore.getState>, "clear">;
   settingsStore: Pick<
     ReturnType<typeof useSettingsStore.getState>,
-    "getAppSettingsSnapshot" | "hydrateAppSettings" | "patchAppSettings"
+    | "getAppSettingsSnapshot"
+    | "hydrateAppSettings"
+    | "patchAppSettings"
+    | "setEqEnabled"
+    | "setEqGains"
   >;
 }
 
