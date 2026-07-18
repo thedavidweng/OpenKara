@@ -326,9 +326,7 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
         <div
           className={`mx-auto flex w-full flex-col items-center ${
             isAudience
-              ? shouldRenderAudiencePlainTextPages
-                ? "min-h-full justify-start"
-                : "min-h-full justify-center"
+              ? "min-h-full justify-start"
               : spaciousStageLayout
                 ? "max-w-4xl gap-9"
                 : "max-w-2xl gap-7"

@@ -33,8 +33,30 @@ function getLineScrollMetrics(
     return null;
   }
 
+  // RATIONALE: offsetTop is relative to offsetParent, which may be a nested
+  // container with justify-center (audience mode). When the content is
+  // vertically centered, lines above the center have negative offsetTop,
+  // and getCenteredScrollTop clamps to 0 — freezing scroll at the top.
+  // When the line's offsetParent is the scroll container itself (or null in
+  // jsdom tests that mock offsetTop directly), use offsetTop directly.
+  // When offsetParent is a different nested element, use getBoundingClientRect
+  // to compute the position relative to the scroll container.
+  if (lineEl.offsetParent === container || lineEl.offsetParent === null) {
+    return {
+      offsetTop: lineEl.offsetTop,
+      height: lineEl.clientHeight,
+    };
+  }
+
+  // offsetParent is a nested element (e.g. the justify-center inner div).
+  // Compute the line's absolute position within the scroll container.
+  const containerRect = container.getBoundingClientRect();
+  const lineRect = lineEl.getBoundingClientRect();
+  const containerContentTop = containerRect.top + container.scrollTop;
+  const offsetTop = lineRect.top - containerContentTop;
+
   return {
-    offsetTop: lineEl.offsetTop,
+    offsetTop,
     height: lineEl.clientHeight,
   };
 }

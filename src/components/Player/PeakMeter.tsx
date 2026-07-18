@@ -31,6 +31,11 @@ export function PeakMeter({
   // 30 Hz redraws when playback is idle — the canvas content is static so
   // there is nothing to repaint until new peaks arrive.
   const flatLineDrawnRef = useRef(false);
+  // Last non-empty snapshot, captured so we can animate a smooth decay to
+  // the flat line instead of an abrupt jump when playback pauses/stops.
+  const lastPeaksRef = useRef<AudioPeakSnapshot | null>(null);
+  // When decay started (performance.now ms). null while not decaying.
+  const decayStartRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -128,6 +133,8 @@ export function PeakMeter({
           lastWriteIndexRef.current = snapshot.writeIndex;
           lastAdvanceRef.current = now;
           flatLineDrawnRef.current = false;
+          decayStartRef.current = null;
+          lastPeaksRef.current = snapshot;
           draw(snapshot);
         } else if (snapshot.peaks.length === 0) {
           // Flat baseline when no audio has been published yet.
@@ -138,10 +145,10 @@ export function PeakMeter({
           }
         } else {
           // writeIndex unchanged with non-empty peaks: playback has likely
-          // stopped or paused. After a grace period, fall back to the flat-line
-          // state so the canvas does not freeze on the last waveform.
-          // Draw the flat line only once, then stop repainting until new
-          // peaks arrive (idle playback produces no visual change).
+          // stopped or paused. After a grace period, animate a smooth decay
+          // from the last waveform to the flat line so the transition is not
+          // an abrupt jump. The decay runs over 400 ms at the 30 Hz poll
+          // cadence, scaling the last peak values toward zero.
           //
           // If the component mounted with non-empty peaks whose writeIndex
           // never advanced from the initial value (e.g. writeIndex=0 with
@@ -152,10 +159,34 @@ export function PeakMeter({
           if (lastAdvanceRef.current === null) {
             lastAdvanceRef.current = now;
           }
-          const stale = now - lastAdvanceRef.current > 500;
-          if (stale && !flatLineDrawnRef.current) {
-            flatLineDrawnRef.current = true;
-            draw({ ...snapshot, peaks: [] });
+          const elapsed = now - lastAdvanceRef.current;
+          const graceMs = 500;
+          const decayMs = 400;
+          if (elapsed <= graceMs) {
+            // Grace period: keep showing the last waveform as-is.
+            if (!lastPeaksRef.current) lastPeaksRef.current = snapshot;
+          } else if (decayStartRef.current === null) {
+            decayStartRef.current = now;
+          }
+          if (decayStartRef.current !== null) {
+            const decayElapsed = now - decayStartRef.current;
+            if (decayElapsed >= decayMs) {
+              // Decay complete — draw the flat line once and stop.
+              if (!flatLineDrawnRef.current) {
+                flatLineDrawnRef.current = true;
+                draw({ ...snapshot, peaks: [] });
+              }
+            } else {
+              // Animate: scale the last peaks toward zero with an
+              // ease-out curve so the bars settle smoothly.
+              const progress = decayElapsed / decayMs;
+              const factor = 1 - Math.pow(progress, 2);
+              const base = lastPeaksRef.current ?? snapshot;
+              const decayed = base.peaks.map(
+                ([l, r]) => [l * factor, r * factor] as [number, number],
+              );
+              draw({ ...base, peaks: decayed });
+            }
           }
         }
       } catch {

@@ -609,6 +609,84 @@ describe("selectSyncDisplayPositionMs", () => {
     primary.dispose();
     secondary.dispose();
   });
+
+  test("does not regress clock when a stale sync arrives after a seek", () => {
+    // RATIONALE: Both windows receive the same playback-position events. A
+    // delayed BroadcastChannel sync from before a seek must not overwrite the
+    // newer clock state — otherwise the lyrics engine would see the pre-seek
+    // position and never scroll to the new line.
+    const channelsByName = new Map<string, Set<FakeChannel>>();
+    const channelFactory = (name: string) => {
+      const peers = channelsByName.get(name) ?? new Set<FakeChannel>();
+      channelsByName.set(name, peers);
+
+      const channel: FakeChannel = {
+        onmessage: null,
+        postMessage(data: unknown) {
+          for (const peer of peers) {
+            if (peer === channel) continue;
+            peer.onmessage?.({ data });
+          }
+        },
+        close() {
+          peers.delete(channel);
+        },
+      };
+
+      peers.add(channel);
+      return channel;
+    };
+
+    const primary = createPlayerStore(
+      createWebviewSyncChannel<PlayerSyncSnapshot>("player", {
+        channelFactory,
+        originId: "primary",
+      }),
+    );
+    const secondary = createPlayerStore(
+      createWebviewSyncChannel<PlayerSyncSnapshot>("player", {
+        channelFactory,
+        originId: "secondary",
+      }),
+    );
+
+    // Both windows start at gen=1, position=60000.
+    primary.store
+      .getState()
+      .updateSnapshot(
+        playbackSnapshot({ transport_generation: 1, position_ms: 60000 }),
+      );
+    secondary.store
+      .getState()
+      .updateSnapshot(
+        playbackSnapshot({ transport_generation: 1, position_ms: 60000 }),
+      );
+
+    // Secondary seeks to 30s — backend bumps gen to 2.
+    secondary.store
+      .getState()
+      .updateSnapshot(
+        playbackSnapshot({ transport_generation: 2, position_ms: 30000 }),
+      );
+
+    expect(secondary.store.getState().positionMs).toBe(30000);
+    expect(secondary.store.getState().snapshot?.transport_generation).toBe(2);
+
+    // Primary publishes a stale sync (gen=1, position=60000) — e.g. a
+    // delayed BroadcastChannel message from before the seek.
+    primary.store
+      .getState()
+      .updateSnapshot(
+        playbackSnapshot({ transport_generation: 1, position_ms: 60000 }),
+      );
+
+    // The stale sync must not regress the secondary clock.
+    expect(secondary.store.getState().positionMs).toBe(30000);
+    expect(secondary.store.getState().snapshot?.transport_generation).toBe(2);
+
+    primary.dispose();
+    secondary.dispose();
+  });
 });
 
 describe("playSong / playNow / skip / onEnded", () => {
