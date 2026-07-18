@@ -675,6 +675,18 @@ mod tests {
     }
 
     #[test]
+    fn column_exists_quotes_valid_identifiers_and_rejects_invalid_ones() {
+        let connection = Connection::open_in_memory().expect("in-memory database should open");
+        apply_migrations(&connection).expect("migrations should succeed");
+
+        assert!(column_exists(&connection, "songs", "hash").unwrap());
+        assert!(!column_exists(&connection, "songs", "not_a_column").unwrap());
+        for invalid in ["", "1songs", "songs; DROP TABLE songs", "songs\"", "song-name"] {
+            assert!(column_exists(&connection, invalid, "hash").is_err());
+        }
+    }
+
+    #[test]
     fn migrates_legacy_song_schema_to_nullable_file_path_and_audio_source_kind() {
         let connection = Connection::open_in_memory().expect("in-memory database should open");
 
