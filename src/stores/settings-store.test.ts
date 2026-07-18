@@ -486,6 +486,56 @@ describe("settings-store actions", () => {
     expect(mockNotifyError).not.toHaveBeenCalled();
   });
 
+  test("setEqEnabled restores the confirmed value after two rapid failures", async () => {
+    let rejectFirst: (error: Error) => void = () => {};
+    let rejectSecond: (error: Error) => void = () => {};
+    mockSetEqEnabled.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((_resolve, reject) => {
+          rejectFirst = reject;
+        }),
+    );
+    mockSetEqEnabled.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((_resolve, reject) => {
+          rejectSecond = reject;
+        }),
+    );
+
+    const first = store.getState().setEqEnabled(true);
+    const second = store.getState().setEqEnabled(false);
+
+    rejectSecond(new Error("newer request rejected"));
+    await second;
+    // The older request is still pending, so its desired value remains visible.
+    expect(store.getState().eqEnabled).toBe(true);
+
+    const firstError = new Error("older request rejected");
+    rejectFirst(firstError);
+    await first;
+
+    expect(store.getState().eqEnabled).toBe(false);
+    expect(mockNotifyError).toHaveBeenCalledTimes(1);
+  });
+
+  test("setEqEnabled preserves a pending request across a full settings snapshot", async () => {
+    let resolveRequest: (value: AppSettings) => void = () => {};
+    mockSetEqEnabled.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((resolve) => {
+          resolveRequest = resolve;
+        }),
+    );
+
+    const request = store.getState().setEqEnabled(true);
+    store.getState().hydrateAppSettings(makeAppSettings({ eq_enabled: false }));
+    expect(store.getState().eqEnabled).toBe(true);
+    resolveRequest(makeAppSettings({ eq_enabled: true }));
+    await request;
+
+    expect(store.getState().eqEnabled).toBe(true);
+  });
+
   test("setEqGains discards an older successful response", async () => {
     let resolveFirst: (value: AppSettings) => void = () => {};
     let resolveSecond: (value: AppSettings) => void = () => {};
@@ -541,6 +591,44 @@ describe("settings-store actions", () => {
 
     expect(store.getState().eqGainsDb).toEqual(newest);
     expect(mockNotifyError).not.toHaveBeenCalled();
+  });
+
+  test("setEqGains restores the confirmed value after two rapid failures", async () => {
+    const confirmed: [number, number, number, number, number] = [1, 2, 3, 4, 5];
+    const firstGains: [number, number, number, number, number] = [
+      6, 0, 0, 0, 0,
+    ];
+    const secondGains: [number, number, number, number, number] = [
+      0, 0, 0, 0, 12,
+    ];
+    let rejectFirst: (error: Error) => void = () => {};
+    let rejectSecond: (error: Error) => void = () => {};
+    store.setState({ eqGainsDb: confirmed });
+    mockSetEqGains.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((_resolve, reject) => {
+          rejectFirst = reject;
+        }),
+    );
+    mockSetEqGains.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((_resolve, reject) => {
+          rejectSecond = reject;
+        }),
+    );
+
+    const first = store.getState().setEqGains(firstGains);
+    const second = store.getState().setEqGains(secondGains);
+
+    rejectSecond(new Error("newer request rejected"));
+    await second;
+    expect(store.getState().eqGainsDb).toEqual(firstGains);
+
+    rejectFirst(new Error("older request rejected"));
+    await first;
+
+    expect(store.getState().eqGainsDb).toEqual(confirmed);
+    expect(mockNotifyError).toHaveBeenCalledTimes(1);
   });
 
   test("cross-field successful snapshots update only their owned field", async () => {
