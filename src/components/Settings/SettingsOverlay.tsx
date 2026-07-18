@@ -15,7 +15,10 @@ export function SettingsOverlay() {
   const closeSettings = useSettingsStore((s) => s.close);
 
   return (
-    <div className="pointer-events-auto absolute inset-0 z-30 flex flex-1 flex-col overflow-y-auto overscroll-y-contain bg-[var(--color-surface-muted)] p-10">
+    <div
+      data-testid="settings-overlay"
+      className="pointer-events-auto absolute inset-0 z-30 flex flex-1 flex-col overflow-y-auto overscroll-y-contain bg-[var(--color-surface-muted)] p-10"
+    >
       <div className="mx-auto w-full max-w-xl space-y-6">
         <div className="flex items-start justify-between gap-4">
           <h2 className="text-lg font-semibold text-white">
