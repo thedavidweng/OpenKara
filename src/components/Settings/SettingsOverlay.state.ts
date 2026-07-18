@@ -54,6 +54,7 @@ export function createInitialSettingsOverlaySnapshot(
       availableExecutionProviders: initialSettings.availableExecutionProviders,
       eqEnabled: initialSettings.eqEnabled,
       eqGainsDb: initialSettings.eqGainsDb,
+      librarySortMode: initialSettings.librarySortMode,
     },
     meta: {
       isInitializing: true,
@@ -264,6 +265,7 @@ export function createSettingsOverlayActions(
             settingsResult.value.available_execution_providers,
           eqEnabled: settingsResult.value.eq_enabled,
           eqGainsDb: settingsResult.value.eq_gains_db,
+          librarySortMode: settingsResult.value.library_sort_mode,
         });
       } else {
         dependencies.notifyError(settingsResult.reason);

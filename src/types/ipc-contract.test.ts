@@ -1053,6 +1053,7 @@ describe("AppSettings shape matches Rust AppSettings", () => {
       available_execution_providers: ["cpu", "xnnpack"],
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
+      library_sort_mode: "recently_imported",
     };
     expect(settings).toHaveProperty("stem_mode");
     expect(settings).toHaveProperty("model_variant");
@@ -1062,6 +1063,9 @@ describe("AppSettings shape matches Rust AppSettings", () => {
     expect(settings).toHaveProperty("lyrics_font_step");
     expect(settings).toHaveProperty("execution_provider");
     expect(settings).toHaveProperty("available_execution_providers");
+    expect(settings).toHaveProperty("eq_enabled");
+    expect(settings).toHaveProperty("eq_gains_db");
+    expect(settings).toHaveProperty("library_sort_mode");
   });
 
   test("stem_mode values match Rust StemMode enum", () => {
@@ -1089,6 +1093,17 @@ describe("AppSettings shape matches Rust AppSettings", () => {
     ];
     for (const provider of validProviders) {
       expect(["cpu", "xnnpack", "directml"]).toContain(provider);
+    }
+  });
+
+  test("library_sort_mode values match Rust LibrarySortMode enum", () => {
+    const validModes: AppSettings["library_sort_mode"][] = [
+      "recently_imported",
+      "title_asc",
+      "artist_asc",
+    ];
+    for (const mode of validModes) {
+      expect(["recently_imported", "title_asc", "artist_asc"]).toContain(mode);
     }
   });
 });

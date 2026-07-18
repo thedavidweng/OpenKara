@@ -4,6 +4,8 @@ import { SongListItem } from "./SongListItem";
 import { EmptyLibrary } from "./EmptyLibrary";
 import { useLibraryStore } from "@/stores/library-store";
 import { usePlaylistStore } from "@/stores/playlist-store";
+import { useSettingsStore } from "@/stores/settings-store";
+import { sortSongs } from "@/lib/song-sort";
 import type { Song } from "@/types/ipc";
 
 const SONG_ROW_ESTIMATE_PX = 68;
@@ -13,17 +15,25 @@ export function SongList() {
   const songs = useLibraryStore((s) => s.songs);
   const filter = useLibraryStore((s) => s.filter);
   const separationStatuses = useLibraryStore((s) => s.separationStatuses);
+  const clearRangeSelectionAnchor = useLibraryStore(
+    (s) => s.clearRangeSelectionAnchor,
+  );
   const activePlaylistId = usePlaylistStore((s) => s.activePlaylistId);
   const getPlaylistSongs = usePlaylistStore((s) => s.getPlaylistSongs);
   const playlistSongSets = usePlaylistStore((s) => s.playlistSongSets);
+  const librarySortMode = useSettingsStore((s) => s.librarySortMode);
   const [playlistSongs, setPlaylistSongs] = useState<Song[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const loadPlaylistSongsFromLibrary = useCallback(
     async (playlistId: string, librarySongs: Song[]): Promise<Song[]> => {
       const playlistSongEntries = await getPlaylistSongs(playlistId);
-      const hashSet = new Set(playlistSongEntries.map((p) => p.song_hash));
-      return librarySongs.filter((s) => hashSet.has(s.hash));
+      // Preserve the backend-provided sort_order exactly. Build a Map so the
+      // ordered entries map to library songs without inheriting library order.
+      const libraryByHash = new Map(librarySongs.map((s) => [s.hash, s]));
+      return playlistSongEntries
+        .map((entry) => libraryByHash.get(entry.song_hash))
+        .filter((song): song is Song => song != null);
     },
     [getPlaylistSongs],
   );
@@ -57,11 +67,22 @@ export function SongList() {
     [filter, songs, separationStatuses],
   );
 
-  const displaySongs = activePlaylistId
-    ? playlistSongs
-    : filter === "separated"
-      ? (separatedSongs ?? songs)
-      : songs;
+  // Derive the final display order in one memoized step:
+  //   1. Playlists use backend sort_order directly (no library sort).
+  //   2. Otherwise start from library/search songs, apply the separated
+  //      filter when selected, then sort by the current library sort mode.
+  const displaySongs = useMemo(() => {
+    if (activePlaylistId) return playlistSongs;
+    const base = filter === "separated" ? (separatedSongs ?? songs) : songs;
+    return sortSongs(base, librarySortMode);
+  }, [
+    activePlaylistId,
+    playlistSongs,
+    filter,
+    separatedSongs,
+    songs,
+    librarySortMode,
+  ]);
 
   const orderedHashes = displaySongs.map((s) => s.hash);
 
@@ -73,6 +94,30 @@ export function SongList() {
     gap: SONG_ROW_GAP_PX,
     overscan: 8,
   });
+
+  // When the sort mode changes (and no playlist is active), clear only the
+  // range-selection anchor and scroll the virtual list back to the first row.
+  // Metadata/import changes rederive order through memoization without another
+  // fetch, so this effect is keyed only on the sort mode. The virtualizer and
+  // anchor clearer are stable across renders (zustand action identity + TanStack
+  // virtualizer identity tied to the scroll element), so they are intentionally
+  // omitted from the dependency array.
+  const previousSortModeRef = useRef(librarySortMode);
+  useEffect(() => {
+    if (previousSortModeRef.current === librarySortMode) return;
+    previousSortModeRef.current = librarySortMode;
+    if (activePlaylistId) return;
+    clearRangeSelectionAnchor();
+    if (displaySongs.length > 0) {
+      virtualizer.scrollToIndex(0, { align: "start" });
+    }
+  }, [
+    librarySortMode,
+    activePlaylistId,
+    displaySongs.length,
+    clearRangeSelectionAnchor,
+    virtualizer,
+  ]);
 
   if (displaySongs.length === 0) {
     return <EmptyLibrary />;

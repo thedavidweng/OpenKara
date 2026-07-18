@@ -60,6 +60,12 @@
     "allTracks": "全部曲目",
     "separated": "已分离",
     "localMusic": "本地音乐",
+    "sortMode": {
+      "label": "排序方式",
+      "recently_imported": "最近导入",
+      "title_asc": "标题 A–Z",
+      "artist_asc": "艺术家 A–Z"
+    },
     "separateAll": "全部分离",
     "separating": "正在分离 {{current}}/{{total}}",
     "separationComplete": "分离完成：{{done}} 个已完成",

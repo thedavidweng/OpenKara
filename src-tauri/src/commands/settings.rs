@@ -1,7 +1,9 @@
 use crate::audio::coordinator::PlaybackCommand;
 use crate::audio::eq::validate_gains_db;
 use crate::commands::error::{internal_error, invalid_playback_state, CommandResult};
-use crate::config::{self, AppConfig, ExecutionProviderPreference, ModelVariant, StemMode};
+use crate::config::{
+    self, AppConfig, ExecutionProviderPreference, LibrarySortMode, ModelVariant, StemMode,
+};
 use crate::AppState;
 use serde::Serialize;
 use std::path::Path;
@@ -20,12 +22,14 @@ pub struct AppSettings {
     pub available_execution_providers: Vec<&'static str>,
     pub eq_enabled: bool,
     pub eq_gains_db: [f32; 5],
+    pub library_sort_mode: String,
 }
 
 fn settings_from_config(config: &AppConfig) -> AppSettings {
     let mode = config.effective_stem_mode();
     let variant = config.effective_model_variant();
     let ep = config.effective_execution_provider();
+    let sort_mode = config.effective_library_sort_mode();
     AppSettings {
         stem_mode: match mode {
             StemMode::TwoStem => "two_stem".to_owned(),
@@ -41,6 +45,7 @@ fn settings_from_config(config: &AppConfig) -> AppSettings {
         ),
         eq_enabled: config.effective_eq_enabled(),
         eq_gains_db: config.effective_eq_gains_db(),
+        library_sort_mode: sort_mode.as_str().to_owned(),
     }
 }
 
@@ -337,6 +342,24 @@ pub async fn set_eq_gains(
         .map_err(|e| internal_error(format!("failed to get app data dir: {e}")))?;
     let config =
         apply_eq_gains_atomically(&app_data_dir, &state.playback.command_tx, gains_db).await?;
+    Ok(settings_from_config(&config))
+}
+
+#[tauri::command]
+pub fn set_library_sort_mode(
+    app_handle: AppHandle,
+    mode: LibrarySortMode,
+) -> CommandResult<AppSettings> {
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| internal_error(format!("failed to get app data dir: {e}")))?;
+    let mut config = config::load_config(&app_data_dir)
+        .map_err(|e| internal_error(format!("failed to load config: {e}")))?
+        .unwrap_or_default();
+    config.library_sort_mode = Some(mode);
+    config::save_config(&app_data_dir, &config)
+        .map_err(|e| internal_error(format!("failed to save config: {e}")))?;
     Ok(settings_from_config(&config))
 }
 
@@ -846,5 +869,20 @@ mod tests {
             .permissions();
         perms.set_mode(0o644);
         let _ = std::fs::set_permissions(&config_path, perms);
+    }
+
+    #[test]
+    fn settings_snapshot_defaults_library_sort_mode_to_recently_imported() {
+        let settings = settings_from_config(&AppConfig::default());
+        assert_eq!(settings.library_sort_mode, "recently_imported");
+    }
+
+    #[test]
+    fn settings_snapshot_reflects_persisted_library_sort_mode() {
+        let settings = settings_from_config(&AppConfig {
+            library_sort_mode: Some(LibrarySortMode::ArtistAsc),
+            ..AppConfig::default()
+        });
+        assert_eq!(settings.library_sort_mode, "artist_asc");
     }
 }
