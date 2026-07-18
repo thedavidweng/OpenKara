@@ -599,6 +599,14 @@ impl PlaybackController {
             .map(|track| track.song_id.as_str())
     }
 
+    /// Return the song identifier whose decode/load operation is still pending.
+    ///
+    /// The coordinator uses this to invalidate only an in-flight request for a
+    /// song that has just been deleted, without canceling unrelated work.
+    pub fn loading_song_id(&self) -> Option<&str> {
+        self.loading_song_id.as_deref()
+    }
+
     pub fn clear_track(&mut self) {
         self.current_track = None;
         self.loading_song_id = None;
@@ -1099,8 +1107,10 @@ mod tests {
         assert!(controller.current_song_id().is_none());
 
         controller.start_track_loading("song-b");
+        assert_eq!(controller.loading_song_id(), Some("song-b"));
         assert!(controller.invalidate_songs(&[String::from("song-b")]));
         // loading cleared
+        assert!(controller.loading_song_id().is_none());
         assert!(!controller.cancel_loading_if_matching("song-b"));
     }
 
