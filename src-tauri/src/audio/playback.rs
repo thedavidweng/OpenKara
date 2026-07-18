@@ -843,6 +843,11 @@ impl PlaybackController {
         let from_song_id = current.song_id.clone();
         let to_song_id = prepared.song_id.clone();
         let preload_generation = prepared.preload_generation;
+        // A normal transition must discard inherited transport state, but a
+        // user resuming at EOF intentionally has a FadingIn envelope. Keep
+        // that envelope through the swap so the newly rendered tail cannot
+        // jump from silence straight to full amplitude.
+        let preserve_fade_in = matches!(self.fade, FadeState::FadingIn { .. });
 
         self.current_track = Some(LoadedTrack {
             song_id: prepared.song_id,
@@ -853,15 +858,14 @@ impl PlaybackController {
             streaming: None,
         });
 
-        // Clear transport state carried over from the previous track. The
-        // new track starts fresh at frame 0 with no fade and no buffering
-        // flag. Without clearing `fade`, a fade-out in progress when the
-        // previous track reached EOF would be applied to the new track,
-        // briefly attenuating it and then setting is_playing=false when the
-        // fade completes — defeating the gapless transition. `is_buffering`
-        // is only set for streaming tracks, but clearing it defensively
-        // guards against any stale state.
-        self.fade = FadeState::None;
+        // Clear transport state carried over from the previous track. A
+        // FadingOut must never carry into the successor, but preserve the
+        // deliberate fade-in described above. `is_buffering` is only set for
+        // streaming tracks, but clearing it defensively guards against stale
+        // state.
+        if !preserve_fade_in {
+            self.fade = FadeState::None;
+        }
         self.is_buffering = false;
 
         // #103: Bump the transport generation so the frontend's stale-event
