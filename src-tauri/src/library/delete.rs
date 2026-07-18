@@ -175,8 +175,16 @@ pub fn delete_stem_files_from_working_copy(library: &LibraryRoot, song_hash: &st
 
     if metadata.file_type().is_symlink() {
         // Removing the link itself is safe; never recurse through a link.
-        fs::remove_file(&dir)
-            .with_context(|| format!("failed to remove stem symlink at {}", dir.display()))?;
+        // Windows represents a directory symlink differently from a file
+        // symlink, so fall back to `remove_dir` without ever following it.
+        if let Err(remove_file_error) = fs::remove_file(&dir) {
+            fs::remove_dir(&dir).with_context(|| {
+                format!(
+                    "failed to remove stem symlink at {} after remove_file failed: {remove_file_error}",
+                    dir.display()
+                )
+            })?;
+        }
     } else if metadata.is_dir() {
         fs::remove_dir_all(&dir)
             .with_context(|| format!("failed to remove stem directory at {}", dir.display()))?;
