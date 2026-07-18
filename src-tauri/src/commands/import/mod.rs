@@ -22,7 +22,7 @@ pub use crate::library::songs::{
 use crate::{
     cache,
     commands::error::{database_error, state_lock_error, CommandError, CommandResult},
-    library::{error::LibraryError, ImportSongsResult, Song},
+    library::{artwork, error::LibraryError, ImportSongsResult, Song},
     remote, AppState,
 };
 use tauri::{AppHandle, State};
@@ -147,12 +147,177 @@ pub fn search_library(state: State<'_, AppState>, query: String) -> CommandResul
     cache::search_songs(&connection, &query).map_err(|error| database_error(error.to_string()))
 }
 
-#[tauri::command]
-pub fn get_cover_art(state: State<'_, AppState>, hash: String) -> CommandResult<Option<Vec<u8>>> {
-    let library = state.library_root()?;
-    let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
+/// Requested cover art resolution for `get_cover_art`.
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CoverArtSize {
+    Thumb,
+    Preview,
+    Original,
+}
 
-    cache::get_cover_art(&connection, &hash).map_err(|error| database_error(error.to_string()))
+/// Remove a newly generated pair when the conditional DB write did not take
+/// effect. Content-addressed paths can be shared, so removal is always gated
+/// by a fresh reference count rather than by assuming the current request owns
+/// the files.
+fn discard_unpersisted_artwork_derivatives(
+    connection: &rusqlite::Connection,
+    library: &crate::library_root::LibraryRoot,
+    derivatives: &artwork::ArtworkDerivatives,
+) {
+    for path in [&derivatives.thumb_path, &derivatives.preview_path] {
+        let _ = artwork::delete_artwork_derivative_if_unreferenced(connection, library, path);
+    }
+}
+
+#[tauri::command]
+pub async fn get_cover_art(
+    state: State<'_, AppState>,
+    hash: String,
+    size: Option<CoverArtSize>,
+) -> CommandResult<Option<Vec<u8>>> {
+    let library = state.library_root()?;
+    let database_path = library.database_path();
+    let size = size.unwrap_or(CoverArtSize::Original);
+
+    // Disk/decode work runs off the async runtime thread with a freshly
+    // opened library DB connection so the IPC thread is never blocked.
+    let bytes = tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<Option<Vec<u8>>> {
+        let connection = cache::open_database(&database_path)?;
+        // Unknown hash returns None, preserving the current command behavior.
+        let Some(record) = cache::get_artwork_record(&connection, &hash)? else {
+            return Ok(None);
+        };
+
+        match size {
+            CoverArtSize::Original => {
+                // Lazy repair: regenerate missing derivatives when the
+                // original cover art is read. Non-fatal — the original is
+                // authoritative and returned regardless.
+                if let Some(cover_art) = record.cover_art.as_deref() {
+                    let needs_repair = record.artwork_thumb_path.is_none()
+                        || record.artwork_preview_path.is_none();
+                    if needs_repair {
+                        if let Ok(derivatives) =
+                            artwork::generate_artwork_derivatives(&library, cover_art)
+                        {
+                            match cache::update_artwork_derivative_paths_if_cover_matches(
+                                &connection,
+                                &hash,
+                                Some(&derivatives.thumb_path),
+                                Some(&derivatives.preview_path),
+                                cover_art,
+                            ) {
+                                Ok(true) => {}
+                                Ok(false) => discard_unpersisted_artwork_derivatives(
+                                    &connection,
+                                    &library,
+                                    &derivatives,
+                                ),
+                                Err(error) => {
+                                    discard_unpersisted_artwork_derivatives(
+                                        &connection,
+                                        &library,
+                                        &derivatives,
+                                    );
+                                    tracing::warn!(
+                                        "failed to persist lazily repaired artwork for {hash}: {error}"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok(cache::get_cover_art(&connection, &hash)?)
+            }
+            CoverArtSize::Thumb | CoverArtSize::Preview => {
+                let (expected_size, recorded_path) = match size {
+                    CoverArtSize::Thumb => {
+                        (artwork::THUMB_SIZE, record.artwork_thumb_path.as_deref())
+                    }
+                    CoverArtSize::Preview => (
+                        artwork::PREVIEW_SIZE,
+                        record.artwork_preview_path.as_deref(),
+                    ),
+                    _ => unreachable!(),
+                };
+
+                // 1. Validate/read the requested derivative if a path is recorded.
+                if let Some(path) = recorded_path {
+                    if let Ok(Some(bytes)) =
+                        artwork::read_artwork_derivative(&library, path, expected_size)
+                    {
+                        return Ok(Some(bytes));
+                    }
+                }
+
+                // 2. Lazy repair: regenerate both derivatives from the
+                // original bytes, then update paths only if the cover art
+                // BLOB still matches (concurrent replacement safe).
+                let Some(cover_art) = record.cover_art.as_deref() else {
+                    return Ok(None);
+                };
+                match artwork::generate_artwork_derivatives(&library, cover_art) {
+                    Ok(derivatives) => {
+                        let persisted = cache::update_artwork_derivative_paths_if_cover_matches(
+                            &connection,
+                            &hash,
+                            Some(&derivatives.thumb_path),
+                            Some(&derivatives.preview_path),
+                            cover_art,
+                        );
+                        match persisted {
+                            Ok(true) => {}
+                            Ok(false) => discard_unpersisted_artwork_derivatives(
+                                &connection,
+                                &library,
+                                &derivatives,
+                            ),
+                            Err(error) => {
+                                discard_unpersisted_artwork_derivatives(
+                                    &connection,
+                                    &library,
+                                    &derivatives,
+                                );
+                                tracing::warn!(
+                                    "failed to persist lazily repaired artwork for {hash}: {error}"
+                                );
+                            }
+                        }
+                        let target = match size {
+                            CoverArtSize::Thumb => &derivatives.thumb_path,
+                            CoverArtSize::Preview => &derivatives.preview_path,
+                            _ => unreachable!(),
+                        };
+                        if let Ok(Some(bytes)) =
+                            artwork::read_artwork_derivative(&library, target, expected_size)
+                        {
+                            return Ok(Some(bytes));
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("artwork derivative generation failed for {hash}: {e}");
+                    }
+                }
+
+                // 3. Fallback: return the original bytes on generation failure.
+                Ok(cache::get_cover_art(&connection, &hash)?)
+            }
+        }
+    })
+    .await
+    .map_err(|e| {
+        CommandError::from(LibraryError::Internal(format!(
+            "cover art task failed: {e}"
+        )))
+    })?
+    .map_err(|e| {
+        CommandError::from(LibraryError::Internal(format!(
+            "cover art task failed: {e}"
+        )))
+    })?;
+
+    Ok(bytes)
 }
 
 #[tauri::command]

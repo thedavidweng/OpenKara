@@ -167,7 +167,7 @@ const LIBRARY_COMMANDS: CommandContract[] = [
     frontendFile: "src/lib/tauri/library.ts",
     frontendFn: "getCoverArt",
     hasArgs: true,
-    rustParams: ["hash"],
+    rustParams: ["hash", "size"],
   },
   {
     command: "update_song_metadata",

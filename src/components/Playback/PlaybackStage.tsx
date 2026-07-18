@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { LyricsPanel } from "@/components/Lyrics/LyricsPanel";
 import { CdgCanvas } from "@/components/Cdg/CdgCanvas";
 import { useCoverArtUrl } from "@/lib/cover-art";
-import { getCoverArt } from "@/lib/tauri/library";
+import { getCoverArtPreview } from "@/lib/tauri/library";
 import { useCdgStore } from "@/stores/cdg-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { usePlayerStore } from "@/stores/player-store";
@@ -27,6 +27,8 @@ export function PlaybackStage({
   const coverArtBackdrop = useSettingsStore((s) => s.coverArtBackdrop);
 
   // Fetch cover art on-demand for backdrop when not included in list results.
+  // The ambience backdrop requests the 256×256 preview derivative (cheaper
+  // IPC payload + faster decode than the full original) per the size mapping.
   const [fetchedCoverArt, setFetchedCoverArt] = useState<CoverArtBytes | null>(
     null,
   );
@@ -36,7 +38,7 @@ export function PlaybackStage({
       return;
     }
     let cancelled = false;
-    getCoverArt(currentSong.hash)
+    getCoverArtPreview(currentSong.hash)
       .then((data) => {
         if (!cancelled) setFetchedCoverArt(data);
       })
@@ -49,6 +51,7 @@ export function PlaybackStage({
   const nativeBackdropUrl = useCoverArtUrl(
     songId ?? "native-stage-empty",
     currentSong?.cover_art ?? fetchedCoverArt ?? null,
+    "preview",
   );
   const stageAmbience =
     coverArtBackdrop &&

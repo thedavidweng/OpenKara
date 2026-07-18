@@ -29,6 +29,7 @@
 20. `set_queue_entry_singer(playlist_id: String, song_hash: String, singer: Option<String>) -> ()` — 设置队列条目歌手
 21. `playlists` 表和 `playlist_songs` 表通过 `ON DELETE CASCADE` 与 `songs` 表联动；删除歌曲时自动清理关联
 22. `set_library_sort_mode(mode: LibrarySortMode) -> AppSettings` — 持久化资料库排序模式并返回更新后的全局设置
+23. `get_cover_art(hash: String, size?: CoverArtSize) -> Option<Vec<u8>>` — 读取封面图原始字节或派生缩略图/预览图
 
 ## Inputs / outputs / required dependencies
 
@@ -220,6 +221,30 @@
 4. 若文件没有内嵌封面，当前数据库里的 `cover_art` 保持不变，并在 `failed` 中返回结构化错误
 5. 顶层命令只在数据库不可用等整体失败时返回 `CommandError`
 
+### Command: `get_cover_art`
+
+**Input**
+
+```json
+{
+  "hash": "sha256 song hash",
+  "size": "thumb"
+}
+```
+
+`size` 可选，取值 `"thumb"` | `"preview"` | `"original"`，默认 `"original"`。
+
+**Output:** `Option<Vec<u8>>` — 请求尺寸的图片字节（`thumb`/`preview` 为 WebP，`original` 为原始格式）。无封面时返回 `null`。
+
+**Semantics**
+
+1. `async` 命令，磁盘解码在 `spawn_blocking` 线程执行，不阻塞 IPC 线程
+2. `thumb` = 80×80 无损 WebP，`preview` = 256×256 无损 WebP，`original` = 数据库 `cover_art` BLOB 原始字节
+3. 派生图文件名以封面字节的 SHA-256 为标识，存储在 library `artwork/` 目录下
+4. 读取派生图时若文件缺失或损坏，会从原始 `cover_art` 惰性重新生成并写回路径（非致命）
+5. 惰性修复仅在 `cover_art` BLOB 与生成时一致时才更新派生路径，避免并发替换封面后用旧派生路径覆盖新派生路径
+6. 派生图生成失败时回退返回原始 `cover_art` 字节
+
 ### Remote Repository command semantics
 
 远程资料库是 provider-hosted OpenKara repository，不是单纯的登录状态或本地数据库副本。合同术语如下：
@@ -341,6 +366,14 @@
 | `recently_imported` | 按导入时间倒序（默认值） |
 | `title_asc`         | 按标题升序               |
 | `artist_asc`        | 按歌手升序               |
+
+### Shared type: `CoverArtSize`
+
+| Value        | Notes                                    |
+| ------------ | ---------------------------------------- |
+| `"thumb"`    | 80×80 无损 WebP 缩略图                   |
+| `"preview"`  | 256×256 无损 WebP 预览图                 |
+| `"original"` | 数据库 `cover_art` BLOB 原始字节（默认） |
 
 ### Required dependencies
 

@@ -424,7 +424,7 @@ impl super::bootstrap::RemoteBootstrapStorage for WebDavBootstrapStorage<'_> {
             &self.secret.username,
             &self.secret.password,
         )?;
-        for directory in ["media", "media-g", "stems"] {
+        for directory in ["media", "media-g", "stems", "artwork"] {
             let directory_url = join_url(&self.secret.root_url, &format!("{directory}/"))?;
             ensure_webdav_collection_chain(
                 &self.client,

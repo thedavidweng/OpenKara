@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useCoverArtUrl } from "@/lib/cover-art";
-import { getCoverArt } from "@/lib/tauri/library";
+import { getCoverArt, getCoverArtThumbnail } from "@/lib/tauri/library";
 import type { CoverArtBytes } from "@/types/ipc";
 
 interface CoverArtThumbnailProps {
@@ -20,21 +20,33 @@ export function CoverArtThumbnail({
   const effectiveBytes = coverArt ?? fetchedBytes;
 
   // Fetch on-demand when cover art bytes are not provided (list/search results
-  // only carry has_cover_art, not the BLOB itself).
+  // only carry has_cover_art, not the BLOB itself). Prefer the 80×80 WebP
+  // thumbnail derivative (cheaper IPC payload + faster decode); fall back to
+  // the full cover art if the derivative is unavailable.
   useEffect(() => {
     if (coverArt != null) return;
     let cancelled = false;
-    getCoverArt(songHash)
-      .then((data) => {
-        if (!cancelled) setFetchedBytes(data);
-      })
-      .catch(() => {});
+    (async () => {
+      try {
+        const thumb = await getCoverArtThumbnail(songHash);
+        if (cancelled) return;
+        if (thumb) {
+          setFetchedBytes(thumb);
+          return;
+        }
+        const full = await getCoverArt(songHash);
+        if (cancelled) return;
+        setFetchedBytes(full);
+      } catch {
+        // ignore — the placeholder will render
+      }
+    })();
     return () => {
       cancelled = true;
     };
   }, [songHash, coverArt]);
 
-  const url = useCoverArtUrl(songHash, effectiveBytes);
+  const url = useCoverArtUrl(songHash, effectiveBytes, "thumb");
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
 
   return (

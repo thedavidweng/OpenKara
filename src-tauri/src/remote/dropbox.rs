@@ -829,7 +829,7 @@ impl super::bootstrap::RemoteBootstrapStorage for DropboxBootstrapStorage<'_> {
 
     fn ensure_layout(&mut self) -> CommandResult<()> {
         dropbox_ensure_folder(self.app_data_dir, &mut self.secret, self.remote_root_path)?;
-        for directory in ["media", "media-g", "stems"] {
+        for directory in ["media", "media-g", "stems", "artwork"] {
             dropbox_ensure_folder(
                 self.app_data_dir,
                 &mut self.secret,

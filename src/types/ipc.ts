@@ -37,6 +37,11 @@ export interface CommandError {
 // ─── Library ─────────────────────────────────────────────
 
 export type CoverArtBytes = number[] | Uint8Array | ArrayBuffer | null;
+
+// Requested cover art resolution for `get_cover_art`. Mirrors the Rust
+// `CoverArtSize` enum (`#[serde(rename_all = "lowercase")]`).
+export type CoverArtSize = "thumb" | "preview" | "original";
+
 export type RemoteLibraryProvider = "google_drive" | "dropbox" | "webdav";
 
 export interface WebDavRemoteAuthPayload {

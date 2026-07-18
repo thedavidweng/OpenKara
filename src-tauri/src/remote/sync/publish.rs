@@ -1,7 +1,7 @@
 use crate::{
     cache,
     commands::error::{database_error, CommandError, CommandResult},
-    library::{error::LibraryError, Song},
+    library::{artwork, error::LibraryError, Song},
     library_root::LibraryRoot,
     AppState,
 };
@@ -19,6 +19,141 @@ use super::revision::{
 use super::upload_status::{
     emit_upload_complete, emit_upload_error, emit_upload_progress, mark_upload_status,
 };
+
+/// Copy and upload artwork derivative files (thumbnail + preview) to the
+/// remote repository, and persist the derivative paths in the remote DB.
+/// Best-effort: missing/invalid derivatives are regenerated from the local
+/// cover art bytes. Failures are logged but do not abort the publish.
+fn publish_artwork_derivatives(
+    local_connection: &rusqlite::Connection,
+    local_root: &LibraryRoot,
+    remote_root: &LibraryRoot,
+    remote_connection: &rusqlite::Connection,
+    provider: &dyn super::super::provider::RemoteProvider,
+    song_id: &str,
+    same_root: bool,
+) -> CommandResult<()> {
+    let record = cache::get_artwork_record(local_connection, song_id)
+        .map_err(|error| database_error(error.to_string()))?;
+    let Some(record) = record else {
+        return Ok(());
+    };
+    let Some(cover_art) = record.cover_art.as_deref() else {
+        // The original BLOB is the source of truth for a derivative. Do not
+        // propagate DB paths that cannot be tied to an authoritative cover.
+        return Ok(());
+    };
+
+    let digest = artwork::cover_sha256(cover_art);
+    let expected_thumb = artwork::derivative_relative_path(artwork::ArtworkSize::Thumb, &digest);
+    let expected_preview =
+        artwork::derivative_relative_path(artwork::ArtworkSize::Preview, &digest);
+    let recorded_paths_match_cover =
+        record.artwork_thumb_path.as_deref() == Some(expected_thumb.as_str())
+            && record.artwork_preview_path.as_deref() == Some(expected_preview.as_str());
+    let derivatives_are_usable = recorded_paths_match_cover
+        && artwork::read_artwork_derivative(local_root, &expected_thumb, artwork::THUMB_SIZE)
+            .map(|bytes| bytes.is_some())
+            .unwrap_or(false)
+        && artwork::read_artwork_derivative(local_root, &expected_preview, artwork::PREVIEW_SIZE)
+            .map(|bytes| bytes.is_some())
+            .unwrap_or(false);
+
+    // Regenerate if a path is missing, malformed, belongs to different cover
+    // bytes, or points at an invalid WebP. The conditional database update
+    // prevents a stale publisher from overwriting derivatives after concurrent
+    // cover-art replacement.
+    let (thumb_path, preview_path) = if derivatives_are_usable {
+        (expected_thumb, expected_preview)
+    } else {
+        let derivatives = match artwork::generate_artwork_derivatives(local_root, cover_art) {
+            Ok(derivatives) => derivatives,
+            Err(e) => {
+                tracing::warn!("artwork derivative generation failed for {song_id}: {e}");
+                return Ok(());
+            }
+        };
+        match cache::update_artwork_derivative_paths_if_cover_matches(
+            local_connection,
+            song_id,
+            Some(&derivatives.thumb_path),
+            Some(&derivatives.preview_path),
+            cover_art,
+        ) {
+            Ok(true) => (derivatives.thumb_path, derivatives.preview_path),
+            Ok(false) => {
+                // The just-generated deterministic files may have no row left
+                // referencing them. Delete only when reference counting proves
+                // they are not shared by another song.
+                for path in [&derivatives.thumb_path, &derivatives.preview_path] {
+                    let _ = artwork::delete_artwork_derivative_if_unreferenced(
+                        local_connection,
+                        local_root,
+                        path,
+                    );
+                }
+                tracing::debug!("cover art changed while publishing derivatives for {song_id}");
+                return Ok(());
+            }
+            Err(error) => {
+                for path in [&derivatives.thumb_path, &derivatives.preview_path] {
+                    let _ = artwork::delete_artwork_derivative_if_unreferenced(
+                        local_connection,
+                        local_root,
+                        path,
+                    );
+                }
+                tracing::warn!(
+                    "failed to persist regenerated artwork derivatives for {song_id}: {error}"
+                );
+                return Ok(());
+            }
+        }
+    };
+
+    // Copy derivative files to the remote working copy (unless same
+    // root) and upload to cloud storage. Persist the remote DB paths only
+    // after both files are present remotely — never commit DB paths that
+    // reference files omitted from the same publish operation.
+    for (path, expected_size) in [
+        (&thumb_path, artwork::THUMB_SIZE),
+        (&preview_path, artwork::PREVIEW_SIZE),
+    ] {
+        if !same_root {
+            if let Err(e) =
+                artwork::copy_artwork_derivative(local_root, remote_root, path, expected_size)
+            {
+                tracing::warn!(
+                    "failed to copy validated artwork derivative {path} to remote working copy: {e}"
+                );
+                return Ok(());
+            }
+        } else if artwork::read_artwork_derivative(local_root, path, expected_size)
+            .map(|bytes| bytes.is_none())
+            .unwrap_or(true)
+        {
+            tracing::warn!("artwork derivative source missing or invalid locally: {path}");
+            return Ok(());
+        }
+        if let Err(e) = provider.upload_file(path) {
+            tracing::warn!("failed to upload artwork derivative {path}: {}", e.message);
+            return Ok(());
+        }
+    }
+
+    // Both derivative files are present in the remote working copy and cloud —
+    // safe to persist the paths in the remote DB.
+    if let Err(error) = cache::update_artwork_derivative_paths(
+        remote_connection,
+        song_id,
+        Some(&thumb_path),
+        Some(&preview_path),
+    ) {
+        tracing::warn!("failed to persist remote artwork derivatives for {song_id}: {error}");
+    }
+
+    Ok(())
+}
 
 fn delete_remote_stem_cache_if_present(
     remote_connection: &rusqlite::Connection,
@@ -88,15 +223,34 @@ pub(crate) fn sync_song_lyrics_to_remote(
 }
 
 pub(crate) fn update_remote_song(
-    connection: &rusqlite::Connection,
+    connection: &mut rusqlite::Connection,
     mut song: Song,
     remote_mode: &str,
 ) -> CommandResult<()> {
+    let existing_cover = cache::get_artwork_record(connection, &song.hash)
+        .map_err(|error| database_error(error.to_string()))?
+        .and_then(|record| record.cover_art);
+    let cover_changed = existing_cover.as_deref() != song.cover_art.as_deref();
+
     song.audio_source_kind = remote_mode.to_owned();
     if remote_mode == "stems_remote" {
         song.file_path = None;
     }
-    cache::upsert_song(connection, &song).map_err(|error| database_error(error.to_string()))?;
+    // Updating cover_art without updating its paired derivative paths would
+    // leave the remote DB pointing at stale artwork if a later upload fails.
+    // Commit the song update and derivative-path invalidation together; the
+    // paths are repopulated only after both derivative uploads succeed.
+    let transaction = connection
+        .transaction()
+        .map_err(|error| database_error(error.to_string()))?;
+    cache::upsert_song(&transaction, &song).map_err(|error| database_error(error.to_string()))?;
+    if cover_changed {
+        cache::update_artwork_derivative_paths(&transaction, &song.hash, None, None)
+            .map_err(|error| database_error(error.to_string()))?;
+    }
+    transaction
+        .commit()
+        .map_err(|error| database_error(error.to_string()))?;
     Ok(())
 }
 
@@ -166,7 +320,7 @@ fn publish_song_internal<R: tauri::Runtime>(
 
     let local_connection = cache::open_database(&local_root.database_path())
         .map_err(|error| database_error(error.to_string()))?;
-    let remote_connection = cache::open_database(&remote_root.database_path())
+    let mut remote_connection = cache::open_database(&remote_root.database_path())
         .map_err(|error| database_error(error.to_string()))?;
 
     let song = cache::get_song_by_hash(&local_connection, song_id)
@@ -205,8 +359,17 @@ fn publish_song_internal<R: tauri::Runtime>(
         }
         upsert_stem_entry(&remote_connection, &stem_entry)?;
 
-        update_remote_song(&remote_connection, song.clone(), "stems_remote")?;
+        update_remote_song(&mut remote_connection, song.clone(), "stems_remote")?;
         provider.upload_directory(&format!("stems/{song_id}"))?;
+        publish_artwork_derivatives(
+            &local_connection,
+            &local_root,
+            &remote_root,
+            &remote_connection,
+            &*provider,
+            song_id,
+            same_root,
+        )?;
         sync_song_lyrics_to_remote(&local_connection, &remote_connection, song_id)?;
         Ok::<_, CommandError>(())
     } else {
@@ -225,7 +388,16 @@ fn publish_song_internal<R: tauri::Runtime>(
 
         delete_remote_stem_cache_if_present(&remote_connection, &remote_root, song_id)?;
 
-        update_remote_song(&remote_connection, song.clone(), "original_remote")?;
+        update_remote_song(&mut remote_connection, song.clone(), "original_remote")?;
+        publish_artwork_derivatives(
+            &local_connection,
+            &local_root,
+            &remote_root,
+            &remote_connection,
+            &*provider,
+            song_id,
+            same_root,
+        )?;
         sync_song_lyrics_to_remote(&local_connection, &remote_connection, song_id)?;
         Ok(())
     };
