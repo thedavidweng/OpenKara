@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { compareSongs, sortSongs } from "./song-sort";
+import { buildAlphabetIndex, bucketForSortKey } from "./alphabet-index";
 import type { Song } from "@/types/ipc";
 
 function makeSong(overrides: Partial<Song> & { hash: string }): Song {
@@ -154,17 +155,67 @@ describe("sortSongs / compareSongs", () => {
     expect(sorted[2].hash).toBe("num");
   });
 
-  test("mixed Simplified Chinese and Latin inputs use the fixed collator", () => {
+  test("title_asc keeps mixed Simplified Chinese and Latin inputs in rail order", () => {
     const songs = [
       makeSong({ hash: "a", title: "Zoo" }),
       makeSong({ hash: "b", title: "北京之夜" }),
       makeSong({ hash: "c", title: "Apple" }),
     ];
     const sorted = sortSongs(songs, "title_asc");
-    // zh-Hans-CN pinyin: 北京 (Běi) sorts before Latin "Apple" (A) only when
-    // pinyin B > A; the collator orders Chinese before Latin in this locale
-    // list, so 北京之夜 comes first.
-    expect(sorted[0].hash).toBe("b");
+    // The shared collator groups Han text before Latin text, but the rail
+    // groups Han by pinyin initial. The alphabetical primary key must follow
+    // the rail, otherwise A would appear after B and rail jumps regress.
+    expect(sorted.map((song) => song.hash)).toEqual(["c", "b", "a"]);
+  });
+
+  test("title_asc keeps each mixed-script rail bucket contiguous and monotonic", () => {
+    const songs = [
+      makeSong({ hash: "beijing", title: "北京之夜" }),
+      makeSong({ hash: "apple", title: "Apple" }),
+      makeSong({ hash: "banana", title: "Banana" }),
+      makeSong({ hash: "pear", title: "苹果" }),
+      makeSong({ hash: "zoo", title: "Zoo" }),
+    ];
+
+    const sorted = sortSongs(songs, "title_asc");
+    expect(sorted.map((song) => bucketForSortKey(song.title))).toEqual([
+      "A",
+      "B",
+      "B",
+      "P",
+      "Z",
+    ]);
+
+    const index = buildAlphabetIndex(sorted, "title_asc");
+    expect(index.get("A")).toBe(0);
+    expect(index.get("B")).toBe(1);
+    expect(index.get("P")).toBe(3);
+    expect(index.get("Z")).toBe(4);
+  });
+
+  test("artist_asc keeps each mixed-script rail bucket contiguous and monotonic", () => {
+    const songs = [
+      makeSong({ hash: "beijing", artist: "北京之夜", title: "1" }),
+      makeSong({ hash: "apple", artist: "Apple", title: "2" }),
+      makeSong({ hash: "banana", artist: "Banana", title: "3" }),
+      makeSong({ hash: "pear", artist: "苹果", title: "4" }),
+      makeSong({ hash: "zoo", artist: "Zoo", title: "5" }),
+    ];
+
+    const sorted = sortSongs(songs, "artist_asc");
+    expect(sorted.map((song) => bucketForSortKey(song.artist))).toEqual([
+      "A",
+      "B",
+      "B",
+      "P",
+      "Z",
+    ]);
+
+    const index = buildAlphabetIndex(sorted, "artist_asc");
+    expect(index.get("A")).toBe(0);
+    expect(index.get("B")).toBe(1);
+    expect(index.get("P")).toBe(3);
+    expect(index.get("Z")).toBe(4);
   });
 
   test("non-finite imported_at collapses to 0 and sorts last when descending", () => {

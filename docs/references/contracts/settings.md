@@ -30,6 +30,11 @@ Field or command semantic changes must update this document before changing UI c
 | `"title_asc"`         | Sort by title ascending                    |
 | `"artist_asc"`        | Sort by artist ascending                   |
 
+For the two alphabetical modes, the primary order is the A–Z / `#` alphabet
+rail bucket. Han-leading text uses its pinyin initial; locale collation orders
+entries within a bucket. This keeps every rail bucket contiguous and makes the
+rail's target indices monotonically increase from A through `#`.
+
 ### Commands
 
 - `set_library_sort_mode(mode: LibrarySortMode) -> AppSettings` — Persist the
