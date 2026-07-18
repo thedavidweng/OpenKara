@@ -277,7 +277,7 @@ a {
   isolation: isolate;
   width: 100%;
   overflow: clip;
-  padding: clamp(38px, 5.8vw, 84px) 0 clamp(44px, 6vw, 88px);
+  padding: clamp(42px, 3.8vw, 72px) 0 clamp(44px, 6vw, 88px);
   background: linear-gradient(
     180deg,
     var(--preview-stage-top) 0%,
@@ -312,8 +312,8 @@ a {
 .product-preview {
   position: relative;
   z-index: 1;
-  width: min(1880px, 100%);
-  height: clamp(560px, 47vw, 840px);
+  width: min(1880px, calc(100% - clamp(48px, 5vw, 112px)));
+  aspect-ratio: 16 / 9;
   margin-inline: auto;
   overflow: hidden;
   background: #121212;
