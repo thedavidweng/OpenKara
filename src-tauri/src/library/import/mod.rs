@@ -21,7 +21,7 @@ pub use types::{
 use crate::{
     cache,
     commands::error::{database_error, CommandError},
-    library::{error::LibraryError, ImportFailure, ImportSongsResult, Song},
+    library::{artwork, error::LibraryError, ImportFailure, ImportSongsResult, Song},
     library_root::LibraryRoot,
 };
 use rusqlite::Connection;
@@ -30,6 +30,61 @@ use std::collections::HashSet;
 use expand::{build_selected_cdg_lookup, classify_import_paths};
 use ingest::{build_and_store_media_g_zip, build_and_store_song, try_extract_embedded_lyrics};
 use rayon::prelude::*;
+
+/// Generate and persist derivative paths only after the song upsert commits.
+/// If derivative generation fails, clear any paths retained from a previous
+/// cover so an old thumbnail can never be paired with newly imported cover
+/// bytes. Any files generated immediately before a failed path update are
+/// removed only when reference counting proves they are unreferenced.
+fn persist_artwork_derivatives_after_upsert(
+    connection: &Connection,
+    library: &LibraryRoot,
+    song: &Song,
+) {
+    let old_paths = match cache::get_artwork_record(connection, &song.hash) {
+        Ok(Some(record)) => [record.artwork_thumb_path, record.artwork_preview_path]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>(),
+        Ok(None) => Vec::new(),
+        Err(error) => {
+            tracing::warn!(
+                "failed to read existing artwork derivative paths for {}: {error}",
+                song.hash
+            );
+            Vec::new()
+        }
+    };
+    let (thumb_path, preview_path) =
+        ingest::try_generate_artwork_derivatives_for_song(song, library);
+
+    if let Err(error) = cache::update_artwork_derivative_paths(
+        connection,
+        &song.hash,
+        thumb_path.as_deref(),
+        preview_path.as_deref(),
+    ) {
+        for path in [&thumb_path, &preview_path].into_iter().flatten() {
+            let _ = artwork::delete_artwork_derivative_if_unreferenced(connection, library, path);
+        }
+        tracing::warn!(
+            "failed to persist artwork derivative paths for {}: {error}",
+            song.hash
+        );
+        return;
+    }
+
+    let mut seen = HashSet::new();
+    for old_path in old_paths {
+        if !seen.insert(old_path.clone())
+            || thumb_path.as_deref() == Some(old_path.as_str())
+            || preview_path.as_deref() == Some(old_path.as_str())
+        {
+            continue;
+        }
+        let _ = artwork::delete_artwork_derivative_if_unreferenced(connection, library, &old_path);
+    }
+}
 
 /// Import songs from absolute filesystem paths into the library.
 pub fn import_songs_from_paths(
@@ -84,6 +139,7 @@ pub fn import_songs_from_paths_with_options(
                 let song = build_result.song;
                 match cache::upsert_song(connection, &song) {
                     Ok(()) => {
+                        persist_artwork_derivatives_after_upsert(connection, library, &song);
                         try_extract_embedded_lyrics(connection, &song, library);
                         imported.push(song);
                     }
@@ -103,7 +159,10 @@ pub fn import_songs_from_paths_with_options(
     for zip_path in &classified.zip_paths {
         match build_and_store_media_g_zip(zip_path, library) {
             Ok(song) => match cache::upsert_song(connection, &song) {
-                Ok(()) => imported.push(song),
+                Ok(()) => {
+                    persist_artwork_derivatives_after_upsert(connection, library, &song);
+                    imported.push(song);
+                }
                 Err(error) => failed.push(ImportFailure {
                     path: zip_path.display().to_string(),
                     error: database_error(error.to_string()),

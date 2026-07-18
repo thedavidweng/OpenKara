@@ -55,6 +55,7 @@ regex-lite = "0.1"
 flate2 = "1"
 tar = "0.4"
 tokio = { version = "1", features = ["sync"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 
 [dev-dependencies]
 hound = "3.5.1"

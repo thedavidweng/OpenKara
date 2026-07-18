@@ -1,13 +1,14 @@
 use crate::{
     cache,
     commands::error::{database_error, CommandError, ErrorCode, FallbackAction},
-    library::{error::LibraryError, Song},
+    library::{artwork, error::LibraryError, Song},
     library_root::LibraryRoot,
     media_g::{self, MEDIA_G_ZIP},
     metadata,
 };
 use anyhow::{Context, Result};
 use rusqlite::Connection;
+use std::collections::HashSet;
 
 use super::types::{ExtractEmbeddedCoverArtFailure, ExtractEmbeddedCoverArtResult};
 
@@ -41,8 +42,64 @@ pub(super) fn extract_embedded_cover_art_for_song(
         CommandError::from(LibraryError::Internal(message))
     })?;
 
-    cache::update_song_cover_art(connection, &song.hash, Some(&cover_art))
-        .map_err(|e| database_error(e.to_string()))?;
+    // Regenerate artwork derivatives whenever authoritative cover bytes change.
+    // Derivative identity is the SHA-256 of the cover bytes, so a new cover
+    // produces new filenames and cannot serve stale imagery. Failure is
+    // non-fatal: the original cover art is still persisted below, and lazy
+    // repair will regenerate derivatives on the next cover art read.
+    let (thumb_path, preview_path) =
+        match artwork::generate_artwork_derivatives(library, &cover_art) {
+            Ok(derivatives) => (Some(derivatives.thumb_path), Some(derivatives.preview_path)),
+            Err(e) => {
+                tracing::warn!(
+                    "artwork derivative generation failed for song {}: {e}",
+                    song.hash
+                );
+                (None, None)
+            }
+        };
+
+    // Write the original bytes and both derivative paths in one atomic UPDATE
+    // so a crash cannot leave a row with new paths referencing unwritten files
+    // (or new bytes with stale paths). Returns the previous paths so we can
+    // clean up on-disk files whose digest changed after the commit.
+    let (old_thumb, old_preview) = match cache::replace_cover_art_and_derivatives(
+        connection,
+        &song.hash,
+        Some(&cover_art),
+        thumb_path.as_deref(),
+        preview_path.as_deref(),
+    ) {
+        Ok(previous) => previous,
+        Err(error) => {
+            // The original row was not updated, so derivatives just created
+            // for this failed replacement are unreferenced unless another
+            // song already shares their content-addressed paths.
+            for path in [&thumb_path, &preview_path].into_iter().flatten() {
+                let _ = artwork::delete_artwork_derivative_if_unreferenced(
+                    connection, library, path,
+                );
+            }
+            return Err(database_error(error.to_string()));
+        }
+    };
+
+    // After the transaction commits, delete old derivative files whose digest
+    // differs from the new cover and that no other song row references. Two
+    // songs can share the same cover digest, so the reference count is checked.
+    let mut seen: HashSet<String> = HashSet::new();
+    for old_path in [old_thumb, old_preview].into_iter().flatten() {
+        if !seen.insert(old_path.clone()) {
+            continue;
+        }
+        if Some(old_path.as_str()) == thumb_path.as_deref()
+            || Some(old_path.as_str()) == preview_path.as_deref()
+        {
+            // Same digest — the file is still in use by this song.
+            continue;
+        }
+        let _ = artwork::delete_artwork_derivative_if_unreferenced(connection, library, &old_path);
+    }
 
     cache::get_song_by_hash(connection, &song.hash)
         .map_err(|e| database_error(e.to_string()))?

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   CoverArtBytes,
+  CoverArtSize,
   DeleteSongsResult,
   ExpandedImportPaths,
   ImportCandidateDetails,
@@ -75,6 +76,23 @@ export function getSongProperties(songId: string): Promise<SongProperties> {
   return invoke<SongProperties>("get_song_properties", { songId });
 }
 
-export function getCoverArt(hash: string): Promise<CoverArtBytes> {
-  return invoke<CoverArtBytes>("get_cover_art", { hash });
+// `size` defaults to "original" and is omitted from the IPC payload when
+// unset, so older backends that do not accept the parameter remain
+// compatible. Explicit sizes are forwarded as-is.
+export function getCoverArt(
+  hash: string,
+  size?: CoverArtSize,
+): Promise<CoverArtBytes> {
+  return invoke<CoverArtBytes>(
+    "get_cover_art",
+    size === undefined ? { hash } : { hash, size },
+  );
+}
+
+export function getCoverArtThumbnail(hash: string): Promise<CoverArtBytes> {
+  return getCoverArt(hash, "thumb");
+}
+
+export function getCoverArtPreview(hash: string): Promise<CoverArtBytes> {
+  return getCoverArt(hash, "preview");
 }
