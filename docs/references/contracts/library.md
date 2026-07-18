@@ -433,7 +433,7 @@ cargo test
 2. 开启 `BEGIN IMMEDIATE` 事务，逐首重新读取并验证
 3. 仅当 `audio_source_kind == "original"` 且主媒体当前缺失/非常规/无效或零字节时才删除
 4. 使用 `delete_song_rows_from_database` 原子删除（歌词、历史、分轨、播放列表 FK 联动）
-5. 提交后尽力清理可选工作副本资产（`media-g/` 下的 CDG sidecar、分轨目录，以及不再被任何歌曲引用的严格命名封面衍生图）；不删除非空主媒体文件，也不跟随 CDG/分轨/封面路径中的 symlink。提交后的清理失败只记录告警，数据库删除结果仍为权威，残留项将在下次审计中作为 orphan 报告。分轨清理只允许 `stems/` 下的直接子目录名，拒绝空值、`.`、`..`、分隔符、NUL、顶层 `stems/` symlink 和非目录目标；直接子 symlink 只删除链接本身，绝不递归其目标
+5. 提交后尽力清理可选工作副本资产（没有任何存活歌曲引用时才删除 `media-g/` 下的 CDG sidecar、分轨目录，以及不再被任何歌曲引用的严格命名封面衍生图）；不删除非空主媒体文件，也不跟随 CDG/分轨/封面路径中的 symlink。提交后的清理失败只记录告警，数据库删除结果仍为权威，残留项将在下次审计中作为 orphan 报告。分轨清理只允许 `stems/` 下的直接子目录名，拒绝空值、`.`、`..`、分隔符、NUL、顶层 `stems/` symlink 和非目录目标；直接子 symlink 只删除链接本身，绝不递归其目标
 6. 未知/远程/已恢复的 hash 计入 `skipped_song_hashes`
 7. 数据库错误回滚整个批次；失败事务绝不触碰 playback 状态
 8. 成功提交且 `deleted_song_hashes` 非空时，IPC 层尽力向 `PlaybackCoordinator` 发送内部 `InvalidateDeletedSongs`：清除匹配的 current/loading 轨道、仅在清除当前轨道时清空 CDG，并通过 `playback-position` 推送收敛后的 snapshot。协调器不可用或回复丢失仅记录告警，不改变已经提交的清理结果
