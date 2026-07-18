@@ -122,6 +122,8 @@ function createDependencies(): SettingsOverlayControllerDependencies {
       ),
       hydrateAppSettings: vi.fn(),
       patchAppSettings: vi.fn(),
+      setEqEnabled: vi.fn(),
+      setEqGains: vi.fn(),
     },
   };
 }

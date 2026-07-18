@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import type { LibraryRegistrySnapshot, RegisteredLibrary } from "@/types/ipc";
+import type {
+  ExecutionProvider,
+  LibraryRegistrySnapshot,
+  RegisteredLibrary,
+} from "@/types/ipc";
 import type {
   SettingsActionContext,
   SettingsOverlaySnapshot,
@@ -174,9 +178,23 @@ function createHarness(overrides?: {
     playerStore: { loadState: vi.fn().mockResolvedValue(undefined) },
     lyricsStore: { clear: vi.fn() },
     settingsStore: {
-      getAppSettingsSnapshot: vi.fn(),
+      getAppSettingsSnapshot: vi.fn(() => ({
+        hydrated: true,
+        stemMode: "four_stem" as const,
+        modelVariant: "htdemucs_ft" as const,
+        language: "en",
+        hideBatchSeparate: false,
+        coverArtBackdrop: false,
+        lyricsFontStep: 0,
+        executionProvider: "xnnpack" as const,
+        availableExecutionProviders: ["cpu", "xnnpack"] as ExecutionProvider[],
+        eqEnabled: false,
+        eqGainsDb: [0, 0, 0, 0, 0] as [number, number, number, number, number],
+      })),
       hydrateAppSettings: vi.fn(),
       patchAppSettings: vi.fn(),
+      setEqEnabled: vi.fn().mockResolvedValue(undefined),
+      setEqGains: vi.fn().mockResolvedValue(undefined),
     },
   };
 
@@ -770,81 +788,72 @@ describe("createLibrarySettingsActions", () => {
   // ---- setEqEnabled ----
 
   describe("setEqEnabled", () => {
-    test("patches state, updates settings store, and calls api", async () => {
+    test("patches state and delegates mutation ownership to the settings store", async () => {
       const harness = createHarness();
-      const appSettings = {
-        ...createAppSettings(),
-        eq_enabled: true,
-      };
-      harness.dependencies.api.setEqEnabled.mockResolvedValue(appSettings);
+      harness.dependencies.settingsStore.getAppSettingsSnapshot.mockReturnValue(
+        {
+          ...harness.dependencies.settingsStore.getAppSettingsSnapshot(),
+          eqEnabled: true,
+        },
+      );
 
       await harness.actions.setEqEnabled(true);
 
       expect(harness.patchState).toHaveBeenCalledWith({ eqEnabled: true });
       expect(
-        harness.dependencies.settingsStore.patchAppSettings,
-      ).toHaveBeenCalledWith({ eqEnabled: true });
-      expect(harness.dependencies.api.setEqEnabled).toHaveBeenCalledWith(true);
+        harness.dependencies.settingsStore.setEqEnabled,
+      ).toHaveBeenCalledWith(true);
+      expect(harness.dependencies.api.setEqEnabled).not.toHaveBeenCalled();
       expect(
-        harness.dependencies.settingsStore.hydrateAppSettings,
-      ).toHaveBeenCalledWith(appSettings);
+        harness.dependencies.settingsStore.getAppSettingsSnapshot,
+      ).toHaveBeenCalled();
     });
 
-    test("reverts optimistic state and notifies on failure", async () => {
+    test("uses the settings-store rollback value after a failed mutation", async () => {
       const harness = createHarness();
-      harness.dependencies.api.setEqEnabled.mockRejectedValue(
-        new Error("eq fail"),
-      );
 
-      await harness.actions.setEqEnabled(false);
+      await harness.actions.setEqEnabled(true);
 
-      expect(harness.dependencies.notifyError).toHaveBeenCalled();
-      // Should revert to the previous authoritative values.
-      expect(harness.patchState).toHaveBeenCalledWith({ eqEnabled: false });
       expect(
-        harness.dependencies.settingsStore.patchAppSettings,
-      ).toHaveBeenCalledWith({ eqEnabled: false });
+        harness.dependencies.settingsStore.setEqEnabled,
+      ).toHaveBeenCalledWith(true);
+      // The store owns error reporting and returns its committed value.
+      expect(harness.patchState).toHaveBeenCalledWith({ eqEnabled: false });
+      expect(harness.dependencies.notifyError).not.toHaveBeenCalled();
     });
   });
 
   // ---- setEqGains ----
 
   describe("setEqGains", () => {
-    test("patches state, updates settings store, and calls api", async () => {
+    test("patches state and delegates mutation ownership to the settings store", async () => {
       const harness = createHarness();
-      const appSettings = {
-        ...createAppSettings(),
-        eq_gains_db: [0, 0, 6, 0, 0],
-      };
-      harness.dependencies.api.setEqGains.mockResolvedValue(appSettings);
+      const gains: [number, number, number, number, number] = [0, 0, 6, 0, 0];
+      harness.dependencies.settingsStore.getAppSettingsSnapshot.mockReturnValue(
+        {
+          ...harness.dependencies.settingsStore.getAppSettingsSnapshot(),
+          eqGainsDb: gains,
+        },
+      );
 
-      await harness.actions.setEqGains([0, 0, 6, 0, 0]);
+      await harness.actions.setEqGains(gains);
 
       expect(harness.patchState).toHaveBeenCalledWith({
-        eqGainsDb: [0, 0, 6, 0, 0],
+        eqGainsDb: gains,
       });
       expect(
-        harness.dependencies.settingsStore.patchAppSettings,
-      ).toHaveBeenCalledWith({ eqGainsDb: [0, 0, 6, 0, 0] });
-      expect(harness.dependencies.api.setEqGains).toHaveBeenCalledWith([
-        0, 0, 6, 0, 0,
-      ]);
-      expect(
-        harness.dependencies.settingsStore.hydrateAppSettings,
-      ).toHaveBeenCalledWith(appSettings);
+        harness.dependencies.settingsStore.setEqGains,
+      ).toHaveBeenCalledWith(gains);
+      expect(harness.dependencies.api.setEqGains).not.toHaveBeenCalled();
     });
 
     test("clamps each gain to ±12 dB", async () => {
       const harness = createHarness();
-      harness.dependencies.api.setEqGains.mockResolvedValue(
-        createAppSettings(),
-      );
-
       await harness.actions.setEqGains([20, -20, 0, 0, 0]);
 
-      expect(harness.dependencies.api.setEqGains).toHaveBeenCalledWith([
-        12, -12, 0, 0, 0,
-      ]);
+      expect(
+        harness.dependencies.settingsStore.setEqGains,
+      ).toHaveBeenCalledWith([12, -12, 0, 0, 0]);
     });
 
     test("skips api call when values are unchanged", async () => {
@@ -852,47 +861,43 @@ describe("createLibrarySettingsActions", () => {
 
       await harness.actions.setEqGains([0, 0, 0, 0, 0]);
 
-      expect(harness.dependencies.api.setEqGains).not.toHaveBeenCalled();
+      expect(
+        harness.dependencies.settingsStore.setEqGains,
+      ).not.toHaveBeenCalled();
     });
 
-    test("reverts optimistic state and notifies on failure", async () => {
+    test("uses the settings-store rollback value after a failed mutation", async () => {
       const harness = createHarness();
-      harness.dependencies.api.setEqGains.mockRejectedValue(
-        new Error("eq gains fail"),
-      );
 
       await harness.actions.setEqGains([1, 3, 0, 0, 0]);
 
-      expect(harness.dependencies.notifyError).toHaveBeenCalled();
-      // Should revert to the previous authoritative values.
+      expect(
+        harness.dependencies.settingsStore.setEqGains,
+      ).toHaveBeenCalledWith([1, 3, 0, 0, 0]);
       expect(harness.patchState).toHaveBeenCalledWith({
         eqGainsDb: [0, 0, 0, 0, 0],
       });
-      expect(
-        harness.dependencies.settingsStore.patchAppSettings,
-      ).toHaveBeenCalledWith({ eqGainsDb: [0, 0, 0, 0, 0] });
+      expect(harness.dependencies.notifyError).not.toHaveBeenCalled();
     });
   });
 
   // ---- resetEqGains ----
 
   describe("resetEqGains", () => {
-    test("patches state to flat and calls api", async () => {
+    test("patches state to flat and delegates to the settings store", async () => {
       const harness = createHarness();
       const flat = [0, 0, 0, 0, 0] as [number, number, number, number, number];
-      const appSettings = { ...createAppSettings(), eq_gains_db: flat };
-      harness.dependencies.api.setEqGains.mockResolvedValue(appSettings);
 
       await harness.actions.resetEqGains();
 
       expect(harness.patchState).toHaveBeenCalledWith({ eqGainsDb: flat });
       expect(
-        harness.dependencies.settingsStore.patchAppSettings,
-      ).toHaveBeenCalledWith({ eqGainsDb: flat });
-      expect(harness.dependencies.api.setEqGains).toHaveBeenCalledWith(flat);
+        harness.dependencies.settingsStore.setEqGains,
+      ).toHaveBeenCalledWith(flat);
+      expect(harness.dependencies.api.setEqGains).not.toHaveBeenCalled();
     });
 
-    test("reverts optimistic state and notifies on failure", async () => {
+    test("uses the settings-store rollback value after a failed reset", async () => {
       const harness = createHarness();
       const previous = [6, 0, 0, 0, 0] as [
         number,
@@ -906,18 +911,20 @@ describe("createLibrarySettingsActions", () => {
         ...s,
         state: { ...s.state, eqGainsDb: previous },
       }));
-      harness.dependencies.api.setEqGains.mockRejectedValue(
-        new Error("eq reset fail"),
+      harness.dependencies.settingsStore.getAppSettingsSnapshot.mockReturnValue(
+        {
+          ...harness.dependencies.settingsStore.getAppSettingsSnapshot(),
+          eqGainsDb: previous,
+        },
       );
 
       await harness.actions.resetEqGains();
 
-      expect(harness.dependencies.notifyError).toHaveBeenCalled();
-      // Should revert to the previous authoritative values.
-      expect(harness.patchState).toHaveBeenCalledWith({ eqGainsDb: previous });
       expect(
-        harness.dependencies.settingsStore.patchAppSettings,
-      ).toHaveBeenCalledWith({ eqGainsDb: previous });
+        harness.dependencies.settingsStore.setEqGains,
+      ).toHaveBeenCalledWith([0, 0, 0, 0, 0]);
+      expect(harness.patchState).toHaveBeenCalledWith({ eqGainsDb: previous });
+      expect(harness.dependencies.notifyError).not.toHaveBeenCalled();
     });
   });
 });
