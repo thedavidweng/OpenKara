@@ -76,9 +76,8 @@ pub(super) fn extract_embedded_cover_art_for_song(
             // for this failed replacement are unreferenced unless another
             // song already shares their content-addressed paths.
             for path in [&thumb_path, &preview_path].into_iter().flatten() {
-                let _ = artwork::delete_artwork_derivative_if_unreferenced(
-                    connection, library, path,
-                );
+                let _ =
+                    artwork::delete_artwork_derivative_if_unreferenced(connection, library, path);
             }
             return Err(database_error(error.to_string()));
         }

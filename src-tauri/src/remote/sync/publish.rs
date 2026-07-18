@@ -48,9 +48,9 @@ fn publish_artwork_derivatives(
     let expected_thumb = artwork::derivative_relative_path(artwork::ArtworkSize::Thumb, &digest);
     let expected_preview =
         artwork::derivative_relative_path(artwork::ArtworkSize::Preview, &digest);
-    let recorded_paths_match_cover =
-        record.artwork_thumb_path.as_deref() == Some(expected_thumb.as_str())
-            && record.artwork_preview_path.as_deref() == Some(expected_preview.as_str());
+    let recorded_paths_match_cover = record.artwork_thumb_path.as_deref()
+        == Some(expected_thumb.as_str())
+        && record.artwork_preview_path.as_deref() == Some(expected_preview.as_str());
     let derivatives_are_usable = recorded_paths_match_cover
         && artwork::read_artwork_derivative(local_root, &expected_thumb, artwork::THUMB_SIZE)
             .map(|bytes| bytes.is_some())

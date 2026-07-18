@@ -198,8 +198,12 @@ fn write_derivative_bytes(final_abs: &Path, webp_bytes: &[u8], expected_size: u3
         }
         // Invalid existing final (including a symlink) — remove the directory
         // entry, not a target outside artwork, then retry generation.
-        fs::remove_file(&final_abs)
-            .with_context(|| format!("failed to remove invalid derivative at {}", final_abs.display()))?;
+        fs::remove_file(&final_abs).with_context(|| {
+            format!(
+                "failed to remove invalid derivative at {}",
+                final_abs.display()
+            )
+        })?;
     }
 
     let temp_path = unique_temp_path(&final_abs);
@@ -273,8 +277,7 @@ pub(crate) fn copy_artwork_derivative(
         anyhow::bail!("artwork derivative source changed while being copied");
     }
 
-    let (destination, destination_size) =
-        resolve_artwork_path(destination_library, relative_path)?;
+    let (destination, destination_size) = resolve_artwork_path(destination_library, relative_path)?;
     if destination_size != source_size {
         anyhow::bail!("artwork derivative destination size does not match source");
     }
@@ -377,8 +380,8 @@ pub(crate) fn resolve_artwork_path(
     })?;
     let artwork_path = root_canonical.join(ARTWORK_DIRECTORY);
     fs::create_dir_all(&artwork_path).context("failed to ensure artwork directory")?;
-    let artwork_metadata = fs::symlink_metadata(&artwork_path)
-        .context("failed to inspect artwork directory")?;
+    let artwork_metadata =
+        fs::symlink_metadata(&artwork_path).context("failed to inspect artwork directory")?;
     // `artwork/` must be the direct, real child created by LibraryRoot. This
     // rejects an attacker-controlled artwork-directory symlink before any
     // read, write, copy, or delete follows it outside the library root.
@@ -616,7 +619,10 @@ mod tests {
     fn parse_artwork_relative_path_rejects_unrecognized_or_noncanonical_filenames() {
         let digest = "a".repeat(64);
         assert!(parse_artwork_relative_path(&format!("artwork/cover_{digest}.webp")).is_err());
-        assert!(parse_artwork_relative_path(&format!("artwork/thumb_{}_80.webp", "A".repeat(64))).is_err());
+        assert!(
+            parse_artwork_relative_path(&format!("artwork/thumb_{}_80.webp", "A".repeat(64)))
+                .is_err()
+        );
         assert!(parse_artwork_relative_path("artwork/thumb_abc123_80.webp").is_err());
     }
 
