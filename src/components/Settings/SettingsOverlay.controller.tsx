@@ -71,6 +71,7 @@ export function SettingsOverlayProvider({
       },
       queueStore: {
         clearQueue: useQueueStore.getState().clearQueue,
+        removeSongIds: useQueueStore.getState().removeSongIds,
       },
       playerStore: {
         loadState: usePlayerStore.getState().loadState,

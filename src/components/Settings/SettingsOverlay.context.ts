@@ -78,6 +78,11 @@ export function createSettingsOverlayTestContextValue(
       downloadRuntime: async () => {},
       deleteRuntime: async () => {},
       openDeleteRuntimeDialog: () => {},
+      checkLibraryIntegrity: async () => {},
+      toggleIntegritySelection: () => {},
+      confirmIntegrityCleanup: async () => {},
+      openIntegrityCleanupConfirmDialog: () => {},
+      closeIntegrityReport: () => {},
       ...actions,
     },
   };

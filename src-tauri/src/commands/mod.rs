@@ -4,6 +4,7 @@ pub mod bootstrap;
 pub mod cdg;
 pub mod error;
 pub mod import;
+pub mod integrity;
 pub mod library_setup;
 pub mod lyrics;
 pub mod maintenance;

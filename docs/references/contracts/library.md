@@ -395,3 +395,70 @@ cargo test
 1. `phase1_metadata`、`phase1_cache`、`phase1_import` 三个 integration tests 全部通过
 2. `cache` 的 migration 单元测试通过
 3. 无需运行 UI 也能验证导入、搜索、落库语义
+
+## 资料库完整性审计 (Library Integrity Audit)
+
+**I1 完整性审计与清理 (新增):**
+
+22. `check_library_integrity() -> IntegrityReport` — 审计活动本地资料库的缺失/空引用文件和孤立管理文件
+23. `remove_missing_library_entries(hashes: Vec<String>) -> IntegrityCleanupResult` — 在事务中重新验证并删除主媒体仍缺失/空的数据库条目
+
+### Command: `check_library_integrity`
+
+**Input**: 无参数
+
+**Output**: `IntegrityReport`
+
+**Semantics**
+
+1. 在 `spawn_blocking` 中打开新连接，使用 `LEFT JOIN stems` 查询所有歌曲
+2. 本地原始歌曲 (`audio_source_kind == "original"`) 计入 `checked_local_songs`；远程歌曲计入 `skipped_remote_songs`
+3. 主媒体 (`file_path`) 缺失/非常规/无效路径 → `missing_primary_media`；零字节常规文件 → `empty_primary_media`
+4. 可选资产 (CDG、分轨、封面缩略图/预览图) 缺失/空分别归入 `missing_optional_assets` / `empty_optional_assets`
+5. 递归扫描 `media/`、`media-g/`、`stems/`、`artwork/` 目录，不跟随符号链接
+6. 不在引用集中的磁盘文件 → `orphaned_managed_files`（仅报告，不删除）
+7. 所有向量按 `(song_hash, asset_type, path)` 排序去重；孤立路径按字典序排序
+8. 相同文件系统/数据库状态必须跨运行字节级一致
+
+### Command: `remove_missing_library_entries`
+
+**Input**: `{ hashes: Vec<String> }`
+
+**Output**: `IntegrityCleanupResult`
+
+**Semantics**
+
+1. 规范化输入：去空、排序、去重；空输入返回空结果
+2. 开启 `BEGIN IMMEDIATE` 事务，逐首重新读取并验证
+3. 仅当 `audio_source_kind == "original"` 且主媒体当前缺失/非常规/无效或零字节时才删除
+4. 使用 `delete_song_rows_from_database` 原子删除（歌词、历史、分轨、播放列表 FK 联动）
+5. 提交后清理可选工作副本资产（分轨目录）；不删除非空主媒体文件
+6. 未知/远程/已恢复的 hash 计入 `skipped_song_hashes`
+7. 数据库错误回滚整个批次
+
+### Shared type: `IntegrityReport`
+
+| Field                     | Type                     | Notes                  |
+| ------------------------- | ------------------------ | ---------------------- |
+| `checked_local_songs`     | `usize`                  | 已检查的本地原始歌曲数 |
+| `skipped_remote_songs`    | `usize`                  | 已跳过的远程歌曲数     |
+| `missing_primary_media`   | `Vec<ManagedAssetIssue>` | 缺失的主媒体           |
+| `empty_primary_media`     | `Vec<ManagedAssetIssue>` | 空的主媒体             |
+| `missing_optional_assets` | `Vec<ManagedAssetIssue>` | 缺失的可选资产         |
+| `empty_optional_assets`   | `Vec<ManagedAssetIssue>` | 空的可选资产           |
+| `orphaned_managed_files`  | `Vec<String>`            | 孤立的管理文件路径     |
+
+### Shared type: `ManagedAssetIssue`
+
+| Field        | Type     | Notes                                                                                                                             |
+| ------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `song_hash`  | `String` | 歌曲 hash                                                                                                                         |
+| `asset_type` | `String` | 固定值：`primary_media`/`cdg`/`stem_vocals`/`stem_accomp`/`stem_drums`/`stem_bass`/`stem_other`/`artwork_thumb`/`artwork_preview` |
+| `path`       | `String` | 规范化的相对路径                                                                                                                  |
+
+### Shared type: `IntegrityCleanupResult`
+
+| Field                 | Type          | Notes              |
+| --------------------- | ------------- | ------------------ |
+| `deleted_song_hashes` | `Vec<String>` | 已删除的 hash 列表 |
+| `skipped_song_hashes` | `Vec<String>` | 已跳过的 hash 列表 |

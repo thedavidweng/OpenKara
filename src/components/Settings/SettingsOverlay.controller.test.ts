@@ -60,6 +60,8 @@ function createControllerHarness() {
       setStemMode: vi.fn(),
       setEqEnabled: vi.fn(),
       setEqGains: vi.fn(),
+      checkLibraryIntegrity: vi.fn(),
+      removeMissingLibraryEntries: vi.fn(),
     },
     notifyError: vi.fn(),
     openDirectory: vi.fn(),
@@ -73,6 +75,7 @@ function createControllerHarness() {
     },
     queueStore: {
       clearQueue: vi.fn(),
+      removeSongIds: vi.fn(),
     },
     playerStore: {
       loadState: vi.fn(),

@@ -541,3 +541,26 @@ export interface RuntimeBootstrapStatusSnapshot {
   version: string;
   error: CommandError | null;
 }
+
+// ─── Library Integrity ──────────────────────────────────
+
+export interface ManagedAssetIssue {
+  song_hash: string;
+  asset_type: string;
+  path: string;
+}
+
+export interface IntegrityReport {
+  checked_local_songs: number;
+  skipped_remote_songs: number;
+  missing_primary_media: ManagedAssetIssue[];
+  empty_primary_media: ManagedAssetIssue[];
+  missing_optional_assets: ManagedAssetIssue[];
+  empty_optional_assets: ManagedAssetIssue[];
+  orphaned_managed_files: string[];
+}
+
+export interface IntegrityCleanupResult {
+  deleted_song_hashes: string[];
+  skipped_song_hashes: string[];
+}

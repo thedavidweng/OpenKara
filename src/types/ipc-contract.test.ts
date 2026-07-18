@@ -211,6 +211,19 @@ const LIBRARY_COMMANDS: CommandContract[] = [
     hasArgs: true,
     rustParams: ["song_ids"],
   },
+  {
+    command: "check_library_integrity",
+    frontendFile: "src/lib/tauri/library.ts",
+    frontendFn: "checkLibraryIntegrity",
+    hasArgs: false,
+  },
+  {
+    command: "remove_missing_library_entries",
+    frontendFile: "src/lib/tauri/library.ts",
+    frontendFn: "removeMissingLibraryEntries",
+    hasArgs: true,
+    rustParams: ["hashes"],
+  },
 ];
 
 const LYRICS_COMMANDS: CommandContract[] = [
@@ -358,6 +371,8 @@ describe("IPC command registry", () => {
       "set_songs_language",
       "delete_songs",
       "get_song_properties",
+      "check_library_integrity",
+      "remove_missing_library_entries",
     ];
     const registered = LIBRARY_COMMANDS.map((c) => c.command);
     expect(registered.sort()).toEqual(expectedLibraryCommands.sort());

@@ -11,6 +11,7 @@ pub mod artwork;
 pub mod delete;
 pub mod error;
 pub mod import;
+pub mod integrity;
 pub mod playlist;
 pub mod songs;
 

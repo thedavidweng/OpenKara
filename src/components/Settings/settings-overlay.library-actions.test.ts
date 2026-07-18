@@ -116,6 +116,9 @@ function createHarness(overrides?: {
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
       librarySortMode: "recently_imported",
+      integrityReport: null,
+      integritySelection: new Set(),
+      integritySkippedCount: null,
     },
     meta: {
       isInitializing: false,
@@ -125,6 +128,8 @@ function createHarness(overrides?: {
       deletingStemsInProgress: false,
       deletingLyricsInProgress: false,
       downgradingInProgress: false,
+      integrityCheckInProgress: false,
+      integrityCleanupInProgress: false,
     },
   };
 
@@ -165,6 +170,8 @@ function createHarness(overrides?: {
       setModelVariant: vi.fn(),
       setEqEnabled: vi.fn(),
       setEqGains: vi.fn(),
+      checkLibraryIntegrity: vi.fn(),
+      removeMissingLibraryEntries: vi.fn(),
     },
     notifyError: vi.fn(),
     openDirectory: vi.fn(),
@@ -176,7 +183,7 @@ function createHarness(overrides?: {
       loadLibrary: vi.fn().mockResolvedValue(undefined),
       updateSeparationStatus: vi.fn(),
     },
-    queueStore: { clearQueue: vi.fn() },
+    queueStore: { clearQueue: vi.fn(), removeSongIds: vi.fn() },
     playerStore: { loadState: vi.fn().mockResolvedValue(undefined) },
     lyricsStore: { clear: vi.fn() },
     settingsStore: {

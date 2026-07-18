@@ -7,6 +7,8 @@ import type {
   ImportCandidateDetails,
   ImportSongsOptions,
   ImportSongsResult,
+  IntegrityCleanupResult,
+  IntegrityReport,
   Song,
   SongProperties,
 } from "@/types/ipc";
@@ -95,4 +97,16 @@ export function getCoverArtThumbnail(hash: string): Promise<CoverArtBytes> {
 
 export function getCoverArtPreview(hash: string): Promise<CoverArtBytes> {
   return getCoverArt(hash, "preview");
+}
+
+export function checkLibraryIntegrity(): Promise<IntegrityReport> {
+  return invoke<IntegrityReport>("check_library_integrity");
+}
+
+export function removeMissingLibraryEntries(
+  hashes: string[],
+): Promise<IntegrityCleanupResult> {
+  return invoke<IntegrityCleanupResult>("remove_missing_library_entries", {
+    hashes,
+  });
 }

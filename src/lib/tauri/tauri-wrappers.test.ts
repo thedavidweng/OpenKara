@@ -133,6 +133,38 @@ describe("library", () => {
     expect(returned).toBe(result);
   });
 
+  test("checkLibraryIntegrity invokes check_library_integrity", async () => {
+    const result = {
+      checked_local_songs: 5,
+      skipped_remote_songs: 1,
+      missing_primary_media: [],
+      empty_primary_media: [],
+      missing_optional_assets: [],
+      empty_optional_assets: [],
+      orphaned_managed_files: [],
+    };
+    mockInvoke.mockResolvedValueOnce(result);
+    const returned = await library.checkLibraryIntegrity();
+    expect(mockInvoke).toHaveBeenCalledWith("check_library_integrity");
+    expect(returned).toBe(result);
+  });
+
+  test("removeMissingLibraryEntries invokes remove_missing_library_entries", async () => {
+    const result = {
+      deleted_song_hashes: ["hash1"],
+      skipped_song_hashes: ["hash2"],
+    };
+    mockInvoke.mockResolvedValueOnce(result);
+    const returned = await library.removeMissingLibraryEntries([
+      "hash1",
+      "hash2",
+    ]);
+    expect(mockInvoke).toHaveBeenCalledWith("remove_missing_library_entries", {
+      hashes: ["hash1", "hash2"],
+    });
+    expect(returned).toBe(result);
+  });
+
   test("updateSongMetadata invokes update_song_metadata", async () => {
     const result = { hash: "abc", title: "New", artist: "Art" };
     mockInvoke.mockResolvedValueOnce(result);
