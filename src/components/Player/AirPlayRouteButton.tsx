@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
+import { Airplay } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Tooltip } from "@/components/Overlay/Tooltip";
 import { getShortcutPlatform } from "@/lib/app-shortcuts";
@@ -17,17 +18,20 @@ function buildHostBounds(element: HTMLDivElement): AirPlayRoutePickerBounds {
 
 interface AirPlayRouteButtonProps {
   className?: string;
+  /** Landing-page preview: preserve the AirPlay slot without mounting AppKit. */
+  previewMode?: boolean;
 }
 
 export function AirPlayRouteButton({
   className = "h-8 w-8 flex items-center justify-center",
+  previewMode = false,
 }: AirPlayRouteButtonProps) {
   const { t } = useTranslation();
-  const platform = getShortcutPlatform();
+  const platform = previewMode ? "mac" : getShortcutPlatform();
   const hostRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
-    if (platform !== "mac" || !hostRef.current) {
+    if (previewMode || platform !== "mac" || !hostRef.current) {
       return;
     }
 
@@ -66,10 +70,25 @@ export function AirPlayRouteButton({
         // Best effort teardown only.
       });
     };
-  }, [platform]);
+  }, [platform, previewMode]);
 
   if (platform !== "mac") {
     return null;
+  }
+
+  if (previewMode) {
+    return (
+      <Tooltip label={t("player.airPlayOutput")}>
+        <div
+          className={`relative text-[var(--color-text-dim)] ${className}`}
+          data-airplay-route-button="true"
+          data-airplay-preview="true"
+          aria-label={t("player.airPlayOutput")}
+        >
+          <Airplay size={16} aria-hidden="true" />
+        </div>
+      </Tooltip>
+    );
   }
 
   return (

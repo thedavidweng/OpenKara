@@ -40,7 +40,12 @@ vi.mock("@/components/Overlay/Tooltip", () => ({
 }));
 
 vi.mock("@/components/Player/AirPlayRouteButton", () => ({
-  AirPlayRouteButton: () => <div data-airplay-button="true" />,
+  AirPlayRouteButton: ({ previewMode }: { previewMode?: boolean }) => (
+    <div
+      data-airplay-button="true"
+      data-airplay-preview={previewMode ? "true" : undefined}
+    />
+  ),
 }));
 
 describe("Toolbar drag region", () => {
@@ -117,6 +122,22 @@ describe("Toolbar drag region", () => {
 
     expect(markup).toContain('data-window-shell-tier="mac"');
     expect(markup).toContain("--window-shell-leading-controls-space:78px");
+  });
+
+  test("adds browser-only macOS traffic lights and AirPlay fallback to the preview", () => {
+    const markup = renderToStaticMarkup(
+      <Toolbar
+        onToggleSidebar={() => {}}
+        onToggleSettings={() => {}}
+        previewMode
+        shellState={macShellState}
+        settingsOpen={false}
+        sidebarVisible
+      />,
+    );
+
+    expect(markup).toContain('data-preview-traffic-lights="true"');
+    expect(markup).toContain('data-airplay-preview="true"');
   });
 
   test("can omit the leading sidebar/import controls for native split shells", () => {

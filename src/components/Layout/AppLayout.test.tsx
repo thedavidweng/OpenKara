@@ -172,5 +172,6 @@ describe("AppLayout", () => {
 
     expect(markup).toContain('data-preview-interaction-mode="playlist-only"');
     expect(markup).toContain("h-full");
+    expect(markup).toContain('data-shell-inset="78"');
   });
 });

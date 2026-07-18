@@ -17,6 +17,7 @@ interface ToolbarProps {
   onImportMenuAction?: () => void | Promise<void>;
   onToggleSidebar: () => void;
   onToggleSettings: () => void;
+  previewMode?: boolean;
   shellState?: WindowShellState;
   settingsOpen: boolean;
   sidebarVisible: boolean;
@@ -27,6 +28,7 @@ export function Toolbar({
   onImportMenuAction,
   onToggleSidebar,
   onToggleSettings,
+  previewMode = false,
   shellState,
   settingsOpen,
   sidebarVisible,
@@ -38,13 +40,24 @@ export function Toolbar({
   const macWindowChrome = resolvedShellState.chromeVariant === "mac";
   return (
     <div
-      className="flex shrink-0 items-center bg-[var(--color-toolbar)] px-4"
+      className="relative flex shrink-0 items-center bg-[var(--color-toolbar)] px-4"
       data-window-shell-tier={resolvedShellState.tier}
       style={{
         ...createWindowShellStyle(resolvedShellState),
         height: "var(--window-shell-toolbar-height)",
       }}
     >
+      {previewMode && macWindowChrome ? (
+        <div
+          className="pointer-events-none absolute left-[14px] top-1/2 z-10 flex -translate-y-1/2 gap-1.5"
+          data-preview-traffic-lights="true"
+          aria-hidden="true"
+        >
+          <span className="h-3 w-3 rounded-full bg-[#ff5f57] shadow-[inset_0_0_0_1px_rgba(91,0,0,0.2)]" />
+          <span className="h-3 w-3 rounded-full bg-[#febc2e] shadow-[inset_0_0_0_1px_rgba(89,51,0,0.2)]" />
+          <span className="h-3 w-3 rounded-full bg-[#28c840] shadow-[inset_0_0_0_1px_rgba(0,75,20,0.2)]" />
+        </div>
+      ) : null}
       {hideLeadingShellControls ? (
         <div
           className="flex items-center gap-3"
@@ -126,7 +139,7 @@ export function Toolbar({
             <Settings size={16} />
           </button>
         </Tooltip>
-        <AirPlayRouteButton />
+        <AirPlayRouteButton previewMode={previewMode} />
         <div>
           <Tooltip label={t("player.selectMonitor")}>
             <button

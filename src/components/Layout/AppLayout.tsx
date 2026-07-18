@@ -8,6 +8,7 @@ import { ImportCdgChoiceDialog } from "@/components/Library/ImportCdgChoiceDialo
 import { getShortcutPlatform } from "@/lib/app-shortcuts";
 import {
   createWindowShellStyle,
+  getNativeWindowShellState,
   type WindowShellState,
   useWindowShellState,
 } from "@/lib/window-shell";
@@ -22,14 +23,12 @@ interface AppLayoutProps {
   previewMode?: boolean;
 }
 
-const PREVIEW_WINDOW_SHELL_STATE: WindowShellState = {
-  chromeVariant: "mac",
-  tier: "mac",
-  toolbarHeight: 48,
-  trafficLightInsetLeading: 24,
-  sidebarHeaderHeight: 0,
-  sidebarWidth: 260,
-};
+// Keep the landing preview on the same macOS fallback profile as the packaged
+// app. This lets the shared toolbar retain its native traffic-light spacing as
+// the desktop shell evolves, while the browser preview supplies only a visual
+// stand-in for the OS-owned controls.
+const PREVIEW_WINDOW_SHELL_STATE: WindowShellState =
+  getNativeWindowShellState();
 
 function isPreviewPlaylistTarget(target: EventTarget | null): boolean {
   return (
@@ -115,6 +114,7 @@ export function AppLayout({
         onOpenSettingsMenuAction={openSettings}
         onToggleSidebar={toggleSidebar}
         onToggleSettings={previewMode ? () => {} : toggleSettings}
+        previewMode={previewMode}
         shellState={windowShellState}
         settingsOpen={settingsOpen}
         sidebarVisible={sidebarVisible}

@@ -7,11 +7,12 @@
   --landing-line: #202126;
   --landing-soft-line: #17181c;
   --landing-accent: #f2f3f5;
-  --preview-stage-top: #0a0b0e;
-  --preview-stage-bottom: #17202b;
-  --preview-halo: rgba(112, 140, 174, 0.5);
-  --preview-window-edge: rgba(255, 255, 255, 0.1);
-  --preview-window-shadow: rgba(0, 0, 0, 0.58);
+  --preview-stage-top: #08090b;
+  --preview-stage-bottom: #2b3036;
+  --preview-halo: rgba(220, 226, 232, 0.32);
+  --preview-smoke: rgba(132, 144, 156, 0.24);
+  --preview-window-edge: rgba(240, 244, 248, 0.1);
+  --preview-window-shadow: rgba(0, 0, 0, 0.62);
 }
 
 :root[data-theme="light"] {
@@ -23,9 +24,10 @@
   --landing-line: #dedfda;
   --landing-soft-line: #e8e8e4;
   --landing-accent: #111214;
-  --preview-stage-top: #f2f3f3;
-  --preview-stage-bottom: #d8e0e8;
-  --preview-halo: rgba(99, 127, 161, 0.28);
+  --preview-stage-top: #f4f5f6;
+  --preview-stage-bottom: #dfe3e7;
+  --preview-halo: rgba(116, 128, 141, 0.2);
+  --preview-smoke: rgba(109, 120, 132, 0.12);
   --preview-window-edge: rgba(17, 18, 20, 0.15);
   --preview-window-shadow: rgba(54, 72, 94, 0.27);
 }
@@ -294,19 +296,36 @@ a {
 .preview-stage::before {
   position: absolute;
   z-index: 0;
-  right: -20%;
-  bottom: -36%;
-  left: -20%;
-  height: 78%;
+  right: -14%;
+  bottom: -34%;
+  left: -14%;
+  height: 92%;
   content: "";
   pointer-events: none;
   background: radial-gradient(
-    ellipse 58% 58% at 50% 74%,
+    ellipse 63% 58% at 50% 78%,
     var(--preview-halo) 0%,
-    color-mix(in srgb, var(--preview-halo) 44%, transparent) 44%,
-    transparent 76%
+    color-mix(in srgb, var(--preview-halo) 55%, transparent) 36%,
+    transparent 74%
   );
-  filter: blur(22px);
+  filter: blur(34px);
+}
+
+.preview-stage::after {
+  position: absolute;
+  z-index: 0;
+  right: 6%;
+  bottom: 2%;
+  left: 6%;
+  height: 50%;
+  content: "";
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 72% 100% at 50% 100%,
+    var(--preview-smoke) 0%,
+    transparent 68%
+  );
+  filter: blur(30px);
 }
 
 .product-preview {
@@ -316,7 +335,13 @@ a {
   aspect-ratio: 16 / 9;
   margin-inline: auto;
   overflow: hidden;
+  border-radius: clamp(16px, 1.35vw, 22px);
   background: #121212;
+  box-shadow:
+    0 0 0 1px var(--preview-window-edge),
+    0 28px 66px var(--preview-window-shadow),
+    0 40px 110px color-mix(in srgb, var(--preview-halo) 38%, transparent);
+  corner-shape: squircle;
 }
 
 .product-preview > * {
@@ -922,6 +947,7 @@ a {
   .product-preview {
     width: 100%;
     height: 520px;
+    border-radius: 16px;
   }
 
   .product-preview > * {
