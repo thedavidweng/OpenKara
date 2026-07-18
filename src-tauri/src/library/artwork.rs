@@ -120,9 +120,7 @@ fn decode_with_limits(original: &[u8]) -> Result<image::DynamicImage> {
     if width > MAX_INPUT_DIMENSION || height > MAX_INPUT_DIMENSION {
         anyhow::bail!("cover art dimensions exceed maximum");
     }
-    let pixels = u64::from(width)
-        .checked_mul(u64::from(height))
-        .unwrap_or(u64::MAX);
+    let pixels = u64::from(width).saturating_mul(u64::from(height));
     if pixels > MAX_INPUT_PIXELS {
         anyhow::bail!("cover art pixel count exceeds maximum");
     }
@@ -145,7 +143,7 @@ fn decode_with_limits(original: &[u8]) -> Result<image::DynamicImage> {
     if dw > MAX_INPUT_DIMENSION || dh > MAX_INPUT_DIMENSION {
         anyhow::bail!("decoded image dimensions exceed maximum");
     }
-    let dp = u64::from(dw).checked_mul(u64::from(dh)).unwrap_or(u64::MAX);
+    let dp = u64::from(dw).saturating_mul(u64::from(dh));
     if dp > MAX_INPUT_PIXELS {
         anyhow::bail!("decoded image pixel count exceeds maximum");
     }
@@ -192,13 +190,13 @@ fn write_derivative(
 /// removed as a link, never followed as a destination outside `artwork/`.
 fn write_derivative_bytes(final_abs: &Path, webp_bytes: &[u8], expected_size: u32) -> Result<()> {
     // Validate an already-existing final file.
-    if fs::symlink_metadata(&final_abs).is_ok() {
-        if validate_derivative_file(&final_abs, expected_size) {
+    if fs::symlink_metadata(final_abs).is_ok() {
+        if validate_derivative_file(final_abs, expected_size) {
             return Ok(());
         }
         // Invalid existing final (including a symlink) — remove the directory
         // entry, not a target outside artwork, then retry generation.
-        fs::remove_file(&final_abs).with_context(|| {
+        fs::remove_file(final_abs).with_context(|| {
             format!(
                 "failed to remove invalid derivative at {}",
                 final_abs.display()
@@ -206,7 +204,7 @@ fn write_derivative_bytes(final_abs: &Path, webp_bytes: &[u8], expected_size: u3
         })?;
     }
 
-    let temp_path = unique_temp_path(&final_abs);
+    let temp_path = unique_temp_path(final_abs);
 
     // Guard removes the temp file on drop unless disarmed (after a successful
     // rename or after the final file is validated as a race winner). This
@@ -222,7 +220,7 @@ fn write_derivative_bytes(final_abs: &Path, webp_bytes: &[u8], expected_size: u3
             .with_context(|| format!("failed to create temp file at {}", temp_path.display()))?;
         let mut writer = BufWriter::new(file);
         writer
-            .write_all(&webp_bytes)
+            .write_all(webp_bytes)
             .context("failed to write WebP bytes")?;
         writer.flush().context("failed to flush temp file")?;
         let file = writer
@@ -233,7 +231,7 @@ fn write_derivative_bytes(final_abs: &Path, webp_bytes: &[u8], expected_size: u3
     }
 
     // Rename temp → final, with race recovery.
-    match fs::rename(&temp_path, &final_abs) {
+    match fs::rename(&temp_path, final_abs) {
         Ok(()) => {
             // Rename succeeded; the temp path no longer exists.
             guard.disarm();
@@ -242,8 +240,8 @@ fn write_derivative_bytes(final_abs: &Path, webp_bytes: &[u8], expected_size: u3
         Err(_) => {
             // Race: another process may have created the final file. A valid
             // final wins and the temp is removed by the guard.
-            if fs::symlink_metadata(&final_abs).is_ok()
-                && validate_derivative_file(&final_abs, expected_size)
+            if fs::symlink_metadata(final_abs).is_ok()
+                && validate_derivative_file(final_abs, expected_size)
             {
                 guard.disarm();
                 let _ = fs::remove_file(&temp_path);
