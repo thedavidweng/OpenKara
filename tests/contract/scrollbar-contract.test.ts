@@ -102,17 +102,19 @@ describe("scrollbar platform contract", () => {
     expect(desktopThin.test(GLOBALS_CSS)).toBe(true);
 
     // The @supports not fallback must not be combined with the mac selector.
-    // Match the full @supports not block, including nested braces, by
-    // capturing until the closing brace at the same indentation as the
-    // opening @supports line.
-    const fallbackBlock =
-      /@supports\s*not\s*\(scrollbar-color:\s*auto\)\s*\{([\s\S]*?)\n  \}/;
-    const match = GLOBALS_CSS.match(fallbackBlock);
+    // Use brace-depth counting (blockBodyForSelectorAt) rather than a
+    // non-greedy regex, which would stop at the first inner rule's closing
+    // brace and leave the rest of the @supports not block unchecked.
+    const supportsNotIdx = GLOBALS_CSS.indexOf(
+      "@supports not (scrollbar-color: auto)",
+    );
     expect(
-      match,
+      supportsNotIdx,
       "expected a desktop-scoped @supports not fallback",
-    ).not.toBeNull();
-    expect(match?.[1]).not.toContain('data-window-chrome-platform="mac"');
+    ).not.toBe(-1);
+    const fallbackBody = blockBodyForSelectorAt(GLOBALS_CSS, supportsNotIdx);
+    expect(fallbackBody).not.toBe("");
+    expect(fallbackBody).not.toContain('data-window-chrome-platform="mac"');
   });
 
   test("forced-colors returns scrollbar control to the system for every platform", () => {

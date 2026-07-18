@@ -17,7 +17,10 @@
 export const TAURI_MOCK_SCRIPT = `
 (() => {
   // ── Fixture songs ──
-  const MOCK_SONGS = [
+  // Mutable so tests can override the library with larger fixtures (e.g. the
+  // scrollbar spec needs enough rows to produce real overflow in the song
+  // list).  get_library is a function that reads the current value.
+  let mockSongs = [
     {
       hash: "aaa111", file_path: "/music/Bohemian_Rhapsody.mp3",
       audio_source_kind: "original", cdg_path: null, media_g_container: null,
@@ -40,6 +43,20 @@ export const TAURI_MOCK_SCRIPT = `
       duration_ms: 187000, cover_art: null, imported_at: Date.now(), original_ext: ".mp3",
     },
   ];
+
+  // ── Fixture lyrics ──
+  // Mutable so tests can override with larger fixtures (e.g. the scrollbar
+  // spec needs enough lines to produce real overflow in the lyrics panel).
+  let mockLyrics = {
+    raw_lrc: "[00:05.00]Is this the real life?\\n[00:10.00]Is this just fantasy?\\n[00:15.00]Caught in a landslide\\n[00:20.00]No escape from reality",
+    lines: [
+      lyricLine(5000, "Is this the real life?"),
+      lyricLine(10000, "Is this just fantasy?"),
+      lyricLine(15000, "Caught in a landslide"),
+      lyricLine(20000, "No escape from reality"),
+    ],
+    offset_ms: 0, source: "manual",
+  };
 
   const invokeCalls = [];
   const commandDelayMs = new Map();
@@ -214,11 +231,11 @@ export const TAURI_MOCK_SCRIPT = `
       id: "mock-lib-1", kind: "local",
       display_name: "Test Library", root_path: "/tmp/openkara-test-lib",
     },
-    get_library: MOCK_SONGS,
+    get_library: () => mockSongs,
     search_library: (args) => {
       const q = ((args && args.query) || "").toLowerCase();
-      if (!q) return MOCK_SONGS;
-      return MOCK_SONGS.filter(
+      if (!q) return mockSongs;
+      return mockSongs.filter(
         (s) => s.title.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q)
       );
     },
@@ -232,7 +249,7 @@ export const TAURI_MOCK_SCRIPT = `
     }),
     play: (args) => {
       const songId = (args && (args.songId || args.song_id)) || "aaa111";
-      const song = MOCK_SONGS.find((s) => s.hash === songId);
+      const song = mockSongs.find((s) => s.hash === songId);
       bumpTransportGeneration();
       return playbackSnapshot({
         song_id: songId,
@@ -299,17 +316,9 @@ export const TAURI_MOCK_SCRIPT = `
       has_stems: true, stem_mode: "two_stem",
     }),
 
-    // Lyrics
-    fetch_lyrics: {
-      raw_lrc: "[00:05.00]Is this the real life?\\n[00:10.00]Is this just fantasy?\\n[00:15.00]Caught in a landslide\\n[00:20.00]No escape from reality",
-      lines: [
-        lyricLine(5000, "Is this the real life?"),
-        lyricLine(10000, "Is this just fantasy?"),
-        lyricLine(15000, "Caught in a landslide"),
-        lyricLine(20000, "No escape from reality"),
-      ],
-      offset_ms: 0, source: "manual",
-    },
+    // Lyrics — mutable so tests can override with larger fixtures (e.g. the
+    // scrollbar spec needs enough lines to produce real overflow).
+    fetch_lyrics: () => mockLyrics,
     fetch_lyrics_online: {
       raw_lrc: "[00:05.00]Is this the real life?\\n[00:10.00]Is this just fantasy?",
       lines: [
@@ -567,6 +576,11 @@ export const TAURI_MOCK_SCRIPT = `
     setCommandDelayMs: (cmd, delayMs) => {
       commandDelayMs.set(cmd, Math.max(0, delayMs));
     },
+    // Override the mock library songs.  Call before navigating (via
+    // addInitScript) or followed by a library reload to take effect.
+    setMockSongs: (songs) => { mockSongs = songs; },
+    // Override the mock lyrics payload returned by fetch_lyrics.
+    setMockLyrics: (lyrics) => { mockLyrics = lyrics; },
     getInvokeCalls: () => clone(invokeCalls),
     getLastNativeMenu: () => lastNativeMenu ? menuSnapshot(lastNativeMenu) : null,
     clickNativeMenuItem: async (label) => {
