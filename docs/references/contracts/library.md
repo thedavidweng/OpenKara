@@ -413,7 +413,7 @@ cargo test
 
 1. 在 `spawn_blocking` 中打开新连接，使用 `LEFT JOIN stems` 查询所有歌曲
 2. 本地原始歌曲 (`audio_source_kind == "original"`) 计入 `checked_local_songs`；远程歌曲计入 `skipped_remote_songs`（远程歌曲的封面缩略图/预览图仍作为可选资产审计缺失/空）
-3. 数据库相对路径必须使用正斜杠、无空段、`.`、`..`、绝对路径、盘符或反斜杠，并且必须指向该资产类型允许的 managed root 下的资产而不能仅为 `media` / `stems` 等根目录：主媒体只能在 `media/` 或 `media-g/`，CDG 只能在 `media-g/`，分轨只能在 `stems/`，封面衍生图只能在 `artwork/`；无效路径不会掩盖规范路径上的 orphan 或顶层 symlink，并按缺失资产报告
+3. 数据库相对路径必须使用正斜杠、无空段、`.`、`..`、绝对路径、盘符或反斜杠，并且必须指向该资产类型允许的 managed root 下的资产而不能仅为 `media` / `stems` 等根目录：主媒体只能在 `media/` 或 `media-g/`，CDG 只能在 `media-g/`，分轨只能在 `stems/`，封面衍生图只能在 `artwork/`；无效路径不会掩盖规范路径上的 orphan 或顶层 symlink，并按缺失资产报告。绝对、盘符、UNC 或 Windows 根相对路径在报告中统一脱敏为 `<invalid path>`，绝不泄露宿主机路径
 4. 主媒体 (`file_path`) 缺失/非常规/无效路径 → `missing_primary_media`；零字节常规文件 → `empty_primary_media`
 5. 可选资产 (CDG、分轨、封面缩略图/预览图) 缺失/空分别归入 `missing_optional_assets` / `empty_optional_assets`。封面衍生图还必须是严格命名的 `artwork/thumb_<64-lower-hex>_80.webp` 或 `artwork/preview_<64-lower-hex>_256.webp`、常规文件、真实 WebP，且尺寸精确为 80×80 / 256×256；错误格式或尺寸按缺失报告
 6. 用 `symlink_metadata` 扫描 `media/`、`media-g/`、`stems/`、`artwork/`：不跟随任何符号链接。若某个顶层 managed root 本身是 symlink，则把相对根名（如 `media`）记入 `orphaned_managed_files` 并跳过该根；嵌套 symlink 以相对路径记为 orphan，且永不 `read_dir` 其目标
@@ -456,7 +456,7 @@ cargo test
 | ------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `song_hash`  | `String` | 歌曲 hash                                                                                                                         |
 | `asset_type` | `String` | 固定值：`primary_media`/`cdg`/`stem_vocals`/`stem_accomp`/`stem_drums`/`stem_bass`/`stem_other`/`artwork_thumb`/`artwork_preview` |
-| `path`       | `String` | 触发问题的数据库相对路径；非法值按原样回报，合法值为规范路径                                                                      |
+| `path`       | `String` | 触发问题的数据库相对路径；相对非法值按原样回报，绝对/盘符/UNC/Windows 根相对值统一为 `<invalid path>`，合法值为规范路径             |
 
 ### Shared type: `IntegrityCleanupResult`
 
