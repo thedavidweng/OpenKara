@@ -2,14 +2,39 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { SongListItem } from "./SongListItem";
 import { EmptyLibrary } from "./EmptyLibrary";
+import { AlphabetRail } from "./AlphabetRail";
 import { useLibraryStore } from "@/stores/library-store";
 import { usePlaylistStore } from "@/stores/playlist-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { sortSongs } from "@/lib/song-sort";
+import { buildAlphabetIndex } from "@/lib/alphabet-index";
 import type { Song } from "@/types/ipc";
 
 const SONG_ROW_ESTIMATE_PX = 68;
 const SONG_ROW_GAP_PX = 4;
+
+// matchMedia legacy fallback for older WebViews that lack addEventListener.
+function useAtLeast600Px(): boolean {
+  const [matches, setMatches] = useState(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return false;
+    return window.matchMedia("(min-width: 600px)").matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mql = window.matchMedia("(min-width: 600px)");
+    const handler = (e: MediaQueryListEvent) => setMatches(e.matches);
+    if (mql.addEventListener) {
+      mql.addEventListener("change", handler);
+      return () => mql.removeEventListener("change", handler);
+    }
+    // Legacy fallback for older WebKit.
+    mql.addListener(handler);
+    return () => mql.removeListener(handler);
+  }, []);
+
+  return matches;
+}
 
 export function SongList() {
   const songs = useLibraryStore((s) => s.songs);
@@ -95,6 +120,24 @@ export function SongList() {
     overscan: 8,
   });
 
+  const isAtLeast600Px = useAtLeast600Px();
+
+  const railSortMode =
+    librarySortMode === "title_asc" || librarySortMode === "artist_asc"
+      ? librarySortMode
+      : null;
+
+  const indexByBucket = useMemo(() => {
+    if (!railSortMode) return null;
+    return buildAlphabetIndex(displaySongs, railSortMode);
+  }, [displaySongs, railSortMode]);
+
+  const showRail =
+    activePlaylistId == null &&
+    displaySongs.length > 0 &&
+    railSortMode !== null &&
+    isAtLeast600Px;
+
   // When the sort mode changes (and no playlist is active), clear only the
   // range-selection anchor and scroll the virtual list back to the first row.
   // Metadata/import changes rederive order through memoization without another
@@ -111,6 +154,8 @@ export function SongList() {
     if (displaySongs.length > 0) {
       virtualizer.scrollToIndex(0, { align: "start" });
     }
+    // When displaySongs is empty the component renders <EmptyLibrary />, so
+    // there is no scroll container to reset — no else branch is needed.
   }, [
     librarySortMode,
     activePlaylistId,
@@ -124,29 +169,41 @@ export function SongList() {
   }
 
   return (
-    <div
-      ref={scrollRef}
-      className="flex-1 overflow-y-auto"
-      data-testid="song-list"
-      data-song-list-visual-variant="unified"
-    >
+    <div className="relative min-h-0 flex-1">
       <div
-        className="relative w-full"
-        style={{ height: `${virtualizer.getTotalSize()}px` }}
+        ref={scrollRef}
+        className="h-full overflow-y-auto"
+        data-testid="song-list"
+        data-song-list-visual-variant="unified"
+        style={showRail ? { paddingRight: "24px" } : undefined}
       >
-        {virtualizer.getVirtualItems().map((virtualRow) => {
-          const song = displaySongs[virtualRow.index];
-          return (
-            <div
-              key={song.hash}
-              className="absolute left-0 top-0 w-full"
-              style={{ transform: `translateY(${virtualRow.start}px)` }}
-            >
-              <SongListItem song={song} orderedHashes={orderedHashes} />
-            </div>
-          );
-        })}
+        <div
+          className="relative w-full"
+          style={{ height: `${virtualizer.getTotalSize()}px` }}
+        >
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const song = displaySongs[virtualRow.index];
+            return (
+              <div
+                key={song.hash}
+                className="absolute left-0 top-0 w-full"
+                style={{ transform: `translateY(${virtualRow.start}px)` }}
+              >
+                <SongListItem song={song} orderedHashes={orderedHashes} />
+              </div>
+            );
+          })}
+        </div>
       </div>
+      {showRail && indexByBucket && (
+        <AlphabetRail
+          indexByBucket={indexByBucket}
+          onNavigate={(index) => {
+            clearRangeSelectionAnchor();
+            virtualizer.scrollToIndex(index, { align: "start" });
+          }}
+        />
+      )}
     </div>
   );
 }

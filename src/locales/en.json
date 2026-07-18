@@ -66,6 +66,11 @@
       "title_asc": "Title A–Z",
       "artist_asc": "Artist A–Z"
     },
+    "alphabetRail": {
+      "label": "Alphabet navigation",
+      "jumpTo": "Jump to {{letter}}",
+      "other": "Other characters"
+    },
     "separateAll": "Separate All",
     "separating": "Separating {{current}}/{{total}}",
     "separationComplete": "Separation complete: {{done}} done",

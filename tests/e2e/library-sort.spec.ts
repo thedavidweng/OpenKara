@@ -34,11 +34,11 @@ test.describe("Library sort modes", () => {
     const selector = page.getByTestId("sort-mode-selector");
     await selector.selectOption("title_asc");
 
-    // The zh-Hans-CN collator sorts CJK before Latin, so 北京之夜 comes first.
-    // Among Latin titles, Alpha 2 sorts before Alpha 10 (numeric collation).
+    // The list uses the same A-Z/# pinyin-aware bucket order as the alphabet
+    // rail. Alpha comes before the B bucket; numeric collation keeps 2 < 10.
     const songList = page.getByTestId("song-list");
     await expect(songList.locator("[data-song-hash]").first()).toContainText(
-      "北京之夜",
+      "Alpha 2",
     );
 
     // All 7 songs fit in the 800px viewport, so verify full order via hash.
@@ -46,9 +46,9 @@ test.describe("Library sort modes", () => {
       .locator("[data-song-hash]")
       .evaluateAll((els) => els.map((el) => el.getAttribute("data-song-hash")));
     expect(hashes).toEqual([
-      "fff666", // 北京之夜 (CJK first)
       "ddd444", // Alpha 2 (numeric: 2 < 10)
       "eee555", // Alpha 10
+      "fff666", // 北京之夜 (pinyin B)
       "aaa111", // Bohemian Rhapsody
       "bbb222", // Hotel California
       "ccc333", // Imagine
@@ -60,7 +60,8 @@ test.describe("Library sort modes", () => {
     const selector = page.getByTestId("sort-mode-selector");
     await selector.selectOption("artist_asc");
 
-    // 崔健 (CJK artist) sorts first.
+    // 崔健 belongs to the pinyin C bucket, the first mapped artist bucket in
+    // this fixture.
     const songList = page.getByTestId("song-list");
     await expect(songList.locator("[data-song-hash]").first()).toContainText(
       "北京之夜",

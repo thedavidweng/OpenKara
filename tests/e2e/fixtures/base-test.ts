@@ -21,6 +21,7 @@ export interface TauriMockHelpers {
   clickNativeSubmenuItem: (parentLabel: string, label: string) => Promise<void>;
   setMockSongs: (songs: unknown[]) => Promise<void>;
   setMockLyrics: (lyrics: unknown) => Promise<void>;
+  setLargeLibrary: (count: number) => Promise<void>;
 }
 
 /**
@@ -57,6 +58,8 @@ export const test = base.extend<{ tauriMock: TauriMockHelpers }>({
         page.evaluate((s) => window.__OPENKARA_E2E__.setMockSongs(s), songs),
       setMockLyrics: (lyrics) =>
         page.evaluate((l) => window.__OPENKARA_E2E__.setMockLyrics(l), lyrics),
+      setLargeLibrary: (count) =>
+        page.evaluate((n) => window.__OPENKARA_E2E__.setLargeLibrary(n), count),
     });
   },
 });
@@ -81,6 +84,7 @@ declare global {
       setCommandDelayMs: (cmd: string, delayMs: number) => void;
       setMockSongs: (songs: unknown[]) => void;
       setMockLyrics: (lyrics: unknown) => void;
+      setLargeLibrary: (count: number) => void;
       getInvokeCalls: () => TauriInvokeCall[];
       getLastNativeMenu: () => NativeMenuSnapshot | null;
     };

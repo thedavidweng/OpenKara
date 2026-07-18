@@ -81,6 +81,7 @@ function createAppSettings() {
     available_execution_providers: ["cpu", "xnnpack"] as const,
     eq_enabled: false,
     eq_gains_db: [0, 0, 0, 0, 0],
+    library_sort_mode: "recently_imported" as const,
   };
 }
 
