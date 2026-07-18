@@ -74,19 +74,7 @@ const MANAGED_TOP_LEVEL_DIRS: &[&str] = &["media", "media-g", "stems", "artwork"
 /// Uses `symlink_metadata` so dangling symlinks are reported as missing and
 /// never followed.
 fn resolve_safe_path(library: &LibraryRoot, relative: &str) -> Result<PathBuf> {
-    let normalized = normalize_relative_path(relative)?;
-
-    // Check the top-level directory matches the expected prefix.
-    // The path must start with one of the managed top-level directories.
-    let top_level = normalized
-        .split('/')
-        .next()
-        .filter(|s| !s.is_empty())
-        .context("path has no top-level directory")?;
-
-    if !MANAGED_TOP_LEVEL_DIRS.contains(&top_level) {
-        anyhow::bail!("path does not start with a managed top-level directory");
-    }
+    let normalized = normalize_managed_asset_path(relative)?;
 
     let absolute = library.resolve(&normalized);
 
@@ -168,6 +156,26 @@ fn normalize_relative_path(path: &str) -> Result<String> {
     }
 
     Ok(path.to_owned())
+}
+
+/// Validate a canonical relative path that denotes a managed *asset*, rather
+/// than one of the managed root directories themselves. A DB row containing
+/// just `media` or `stems` must not be able to suppress a top-level symlink
+/// from the orphan report.
+fn normalize_managed_asset_path(path: &str) -> Result<String> {
+    let normalized = normalize_relative_path(path)?;
+    let mut components = normalized.split('/');
+    let top_level = components
+        .next()
+        .filter(|component| !component.is_empty())
+        .context("path has no top-level directory")?;
+    if !MANAGED_TOP_LEVEL_DIRS.contains(&top_level) {
+        anyhow::bail!("path does not start with a managed top-level directory");
+    }
+    if components.next().is_none() {
+        anyhow::bail!("path refers to a managed root, not an asset");
+    }
+    Ok(normalized)
 }
 
 /// Check if a file is a regular file (not a directory, symlink, or special file).
@@ -422,7 +430,7 @@ fn run_audit(connection: &Connection, library: &LibraryRoot) -> Result<Integrity
 /// database values are still reported as missing by their classifier, but they
 /// cannot hide a real on-disk file behind a spelling alias.
 fn record_referenced_path(referenced: &mut HashSet<String>, path: &str) {
-    if let Ok(normalized) = normalize_relative_path(path) {
+    if let Ok(normalized) = normalize_managed_asset_path(path) {
         referenced.insert(normalized);
     }
 }
@@ -940,11 +948,43 @@ mod tests {
     }
 
     #[test]
+    fn path_resolver_rejects_a_managed_root_without_an_asset_component() {
+        let (_temp, library) = create_test_library();
+        assert!(resolve_safe_path(&library, "media").is_err());
+        assert!(resolve_safe_path(&library, "stems").is_err());
+    }
+
+    #[test]
     fn path_resolver_rejects_noncanonical_aliases() {
         let (_temp, library) = create_test_library();
         assert!(resolve_safe_path(&library, "media//song.mp3").is_err());
         assert!(resolve_safe_path(&library, "media/./song.mp3").is_err());
         assert!(resolve_safe_path(&library, "media/song.mp3/").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn managed_root_path_in_a_db_row_cannot_hide_a_symlinked_root() {
+        use std::os::unix::fs::symlink;
+
+        let (temp, library) = create_test_library();
+        let outside = temp.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        let sentinel = outside.join("must-remain.mp3");
+        fs::write(&sentinel, b"audio").unwrap();
+        let media_root = library.root().join("media");
+        fs::remove_dir(&media_root).unwrap();
+        symlink(&outside, &media_root).unwrap();
+
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        add_song(&conn, "hash1", Some("media"), "original");
+        drop(conn);
+
+        let report = check_library_integrity(&library).unwrap();
+        assert_eq!(report.missing_primary_media.len(), 1);
+        assert_eq!(report.missing_primary_media[0].path, "media");
+        assert_eq!(report.orphaned_managed_files, vec!["media"]);
+        assert!(sentinel.exists());
     }
 
     #[test]
