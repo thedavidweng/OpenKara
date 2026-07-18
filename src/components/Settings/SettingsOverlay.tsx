@@ -7,24 +7,11 @@ import { SettingsExecutionProviderSection } from "./SettingsExecutionProviderSec
 import { SettingsGeneralSection } from "./SettingsGeneralSection";
 import { SettingsLibrarySection } from "./SettingsLibrarySection";
 import { SettingsModelVariantSection } from "./SettingsModelVariantSection";
-import {
-  SettingsOverlayProvider,
-  type SettingsOverlaySnapshot,
-} from "./SettingsOverlay.controller";
+import { SettingsOverlayProvider } from "./SettingsOverlay.controller";
 import { SettingsStemModeSection } from "./SettingsStemModeSection";
 import { useSettingsStore } from "@/stores/settings-store";
 
-interface SettingsOverlayProps {
-  /** A preloaded state for embedded, read-only product previews. */
-  initialSnapshot?: SettingsOverlaySnapshot;
-  /** Prevents an embedded preview from issuing desktop-runtime reads. */
-  skipInitialize?: boolean;
-}
-
-export function SettingsOverlay({
-  initialSnapshot,
-  skipInitialize = false,
-}: SettingsOverlayProps = {}) {
+export function SettingsOverlay() {
   const { t } = useTranslation();
   const closeSettings = useSettingsStore((s) => s.close);
 
@@ -47,10 +34,7 @@ export function SettingsOverlay({
             <X size={16} />
           </button>
         </div>
-        <SettingsOverlayProvider
-          initialSnapshot={initialSnapshot}
-          skipInitialize={skipInitialize}
-        >
+        <SettingsOverlayProvider>
           <SettingsLibrarySection />
           <SettingsStemModeSection />
           <SettingsModelVariantSection />

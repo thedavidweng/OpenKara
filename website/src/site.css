@@ -523,7 +523,7 @@ a {
 }
 
 .feature-section {
-  padding-block: clamp(104px, 13vw, 174px);
+  padding-block: clamp(72px, 7vw, 104px);
   border-bottom: 1px solid var(--landing-soft-line);
 }
 
@@ -560,7 +560,7 @@ a {
 }
 
 .feature-grid {
-  margin-top: 74px;
+  margin-top: clamp(40px, 4vw, 56px);
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   border-top: 1px solid var(--landing-line);
@@ -568,8 +568,8 @@ a {
 }
 
 .feature-card {
-  min-height: 220px;
-  padding: 28px 30px 32px;
+  min-height: 190px;
+  padding: 24px 30px 28px;
   border-right: 1px solid var(--landing-line);
 }
 
@@ -582,7 +582,7 @@ a {
 }
 
 .feature-card h3 {
-  margin: 64px 0 9px;
+  margin: 42px 0 9px;
   font-size: 16px;
   font-weight: 610;
   letter-spacing: -0.03em;
@@ -593,106 +593,6 @@ a {
   margin: 0;
   color: var(--landing-muted);
   font-size: 13px;
-}
-
-.feature-demo {
-  position: relative;
-  isolation: isolate;
-  min-height: clamp(414px, 47vw, 594px);
-  margin-top: -1px;
-  padding: clamp(34px, 4.8vw, 68px);
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  border-bottom: 1px solid var(--landing-line);
-  background:
-    radial-gradient(
-      ellipse 66% 76% at 50% 100%,
-      rgba(140, 150, 162, 0.12),
-      transparent 72%
-    ),
-    #090a0c;
-}
-
-.feature-demo--loading {
-  background: #090a0c;
-}
-
-.feature-demo-window {
-  position: relative;
-  z-index: 1;
-  width: min(100%, 980px);
-  height: clamp(332px, 38vw, 472px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid rgba(245, 247, 249, 0.1);
-  border-radius: 18px;
-  background: var(--color-sidebar);
-  box-shadow:
-    0 24px 56px rgba(0, 0, 0, 0.54),
-    0 0 58px rgba(210, 217, 224, 0.12);
-  color: var(--color-text);
-  corner-shape: squircle;
-}
-
-.feature-demo-window--settings {
-  width: min(100%, 720px);
-}
-
-.feature-demo-window-content {
-  position: relative;
-  min-height: 0;
-  flex: 1;
-  display: flex;
-  overflow: hidden;
-}
-
-.feature-demo-playback-stage {
-  position: relative;
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-  display: flex;
-  overflow: hidden;
-  background: var(--color-surface);
-}
-
-.feature-demo-mixer-control {
-  position: absolute;
-  z-index: 12;
-  left: clamp(20px, 4vw, 42px);
-  bottom: clamp(20px, 4vw, 42px);
-  max-width: calc(100% - 40px);
-  padding: 14px 16px;
-  border: 1px solid color-mix(in srgb, var(--color-border) 86%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--color-sidebar) 90%, transparent);
-  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.32);
-  backdrop-filter: blur(16px);
-}
-
-.feature-demo-rotation-layout {
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-  display: flex;
-  overflow: hidden;
-}
-
-.feature-demo-settings-stage {
-  position: relative;
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-  overflow: hidden;
-  background: var(--color-surface-muted);
-}
-
-.feature-demo [data-feature-demo-static="true"],
-.feature-demo [data-feature-demo-static="true"] * {
-  user-select: none;
-  pointer-events: none !important;
 }
 
 .closing-section {
@@ -966,7 +866,7 @@ a {
   }
 
   .feature-card {
-    min-height: 180px;
+    min-height: 164px;
     border-right: 0;
     border-bottom: 1px solid var(--landing-line);
   }
@@ -976,21 +876,7 @@ a {
   }
 
   .feature-card h3 {
-    margin-top: 40px;
-  }
-
-  .feature-demo {
-    min-height: 440px;
-    padding: 28px 0;
-  }
-
-  .feature-demo-window {
-    width: 760px;
-    height: 408px;
-  }
-
-  .feature-demo-window--settings {
-    width: 640px;
+    margin-top: 32px;
   }
 
   .preview-caption {
@@ -1070,20 +956,21 @@ a {
     transform-origin: top left;
   }
 
-  .feature-demo {
-    min-height: 396px;
-    padding-block: 20px;
+  .feature-section {
+    padding-block: 64px;
   }
 
-  .feature-demo-window {
-    width: 720px;
-    height: 356px;
-    transform: translateX(-88px);
+  .feature-grid {
+    margin-top: 32px;
   }
 
-  .feature-demo-window--settings {
-    width: 596px;
-    transform: translateX(-122px);
+  .feature-card {
+    min-height: 156px;
+    padding: 22px 20px 24px;
+  }
+
+  .feature-card h3 {
+    margin-top: 30px;
   }
 
   .closing-section {

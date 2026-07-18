@@ -25,20 +25,12 @@ vi.mock("./SettingsOverlay.controller", async () => {
   const actual = await import("./SettingsOverlay.context");
 
   return {
-    SettingsOverlayProvider: ({
-      children,
-      skipInitialize,
-    }: {
-      children: React.ReactNode;
-      skipInitialize?: boolean;
-    }) => (
-      <div data-settings-skip-initialize={skipInitialize ? "true" : undefined}>
-        <actual.SettingsOverlayContext
-          value={actual.createSettingsOverlayTestContextValue()}
-        >
-          {children}
-        </actual.SettingsOverlayContext>
-      </div>
+    SettingsOverlayProvider: ({ children }: { children: React.ReactNode }) => (
+      <actual.SettingsOverlayContext
+        value={actual.createSettingsOverlayTestContextValue()}
+      >
+        {children}
+      </actual.SettingsOverlayContext>
     ),
   };
 });
@@ -308,12 +300,6 @@ describe("SettingsOverlay sections", () => {
     expect(markup).toContain("bg-[var(--color-surface)]");
     expect(markup).not.toContain("text-white");
     expect(markup).not.toContain("hover:text-white");
-  });
-
-  test("can render a static embedded preview without initialization", () => {
-    const markup = renderToStaticMarkup(<SettingsOverlay skipInitialize />);
-
-    expect(markup).toContain('data-settings-skip-initialize="true"');
   });
 });
 

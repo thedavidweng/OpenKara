@@ -16,11 +16,6 @@ import { documentHref, type SiteLanguage } from "./document-route";
 const AppPreview = lazy(() =>
   import("./AppPreview").then((module) => ({ default: module.AppPreview })),
 );
-const FeatureDemo = lazy(() =>
-  import("./FeatureDemos").then((module) => ({
-    default: module.FeatureDemo,
-  })),
-);
 
 type Language = SiteLanguage;
 type Theme = "dark" | "light";
@@ -195,7 +190,6 @@ const featureIcons = [
 ];
 
 const previewModuleIcons = [Music2, Sparkles, SlidersHorizontal];
-const featureDemoKinds = ["mixer", "rotation", "settings"] as const;
 
 const BUILT_WITH_TOOLS = [
   {
@@ -403,19 +397,6 @@ export function LandingPage() {
                     );
                   })}
               </div>
-              <Suspense
-                fallback={
-                  <div
-                    className="feature-demo feature-demo--loading"
-                    aria-hidden="true"
-                  />
-                }
-              >
-                <FeatureDemo
-                  kind={featureDemoKinds[sectionIndex]}
-                  language={appLanguage}
-                />
-              </Suspense>
             </section>
           );
         })}
