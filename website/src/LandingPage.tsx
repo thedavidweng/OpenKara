@@ -50,6 +50,9 @@ const COPY = {
         "Fine-tune each part when you are ready to perform—not inside the landing preview.",
       ],
     ],
+    builtWith: "Built with",
+    builtWithDisclaimer:
+      "Tool names and logos are shown for identification only. No partnership, sponsorship, endorsement, or affiliation is implied.",
     sections: [
       {
         eyebrow: "AI stem separation",
@@ -133,6 +136,9 @@ const COPY = {
         "真正准备开唱时再精细调整每一轨，而不是在落地页预览里操作。",
       ],
     ],
+    builtWith: "构建工具",
+    builtWithDisclaimer:
+      "这些名称与标志仅用于识别；不代表合作、赞助、认可或隶属关系。",
     sections: [
       {
         eyebrow: "AI 音轨分离",
@@ -184,6 +190,51 @@ const featureIcons = [
 ];
 
 const previewModuleIcons = [Music2, Sparkles, SlidersHorizontal];
+
+const BUILT_WITH_TOOLS = [
+  {
+    name: "Claude Code",
+    href: "https://www.anthropic.com/product/claude-code",
+    asset: "/img/built-with/claude-code.svg",
+    slug: "claude-code",
+  },
+  {
+    name: "Cursor",
+    href: "https://cursor.com/",
+    asset: "/img/built-with/cursor.svg",
+    slug: "cursor",
+  },
+  {
+    name: "Devin",
+    href: "https://devin.ai/",
+    asset: "/img/built-with/devin.png",
+    slug: "devin",
+  },
+  {
+    name: "Command Code",
+    href: "https://commandcode.ai/",
+    asset: "/img/built-with/command-code.svg",
+    slug: "command-code",
+  },
+  {
+    name: "Greptile",
+    href: "https://www.greptile.com/",
+    asset: "/img/built-with/greptile.svg",
+    slug: "greptile",
+  },
+  {
+    name: "GitHub Copilot",
+    href: "https://github.com/features/copilot",
+    asset: "/img/built-with/github-copilot.svg",
+    slug: "github-copilot",
+  },
+  {
+    name: "Kilo Code",
+    href: "https://kilo.ai/",
+    asset: "/img/built-with/kilo-code.svg",
+    slug: "kilo-code",
+  },
+] as const;
 
 export function LandingPage() {
   const [language, setLanguage] = useState<Language>(() =>
@@ -272,10 +323,34 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section className="preview-section" aria-labelledby="preview-title">
-          <Suspense fallback={null}>
-            <AppPreview language={appLanguage} />
-          </Suspense>
+        <section className="preview-section" aria-label={copy.previewLabel}>
+          <div className="preview-stage">
+            <Suspense fallback={null}>
+              <AppPreview language={appLanguage} />
+            </Suspense>
+          </div>
+        </section>
+        <section className="built-with-section" aria-label={copy.builtWith}>
+          <div className="content-width">
+            <p className="built-with-label">{copy.builtWith}</p>
+            <div className="built-with-logos">
+              {BUILT_WITH_TOOLS.map((tool) => (
+                <a
+                  className={`built-with-tool built-with-tool--${tool.slug}`}
+                  href={tool.href}
+                  key={tool.name}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={tool.name}
+                >
+                  <img src={tool.asset} alt={tool.name} />
+                </a>
+              ))}
+            </div>
+            <p className="built-with-disclaimer">{copy.builtWithDisclaimer}</p>
+          </div>
+        </section>
+        <section className="preview-details" aria-labelledby="preview-title">
           <div className="preview-caption content-width">
             <span id="preview-title">{copy.previewLabel}</span>
             <p>{copy.previewNote}</p>

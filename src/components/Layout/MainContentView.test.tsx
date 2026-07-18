@@ -77,10 +77,10 @@ describe("MainContentView", () => {
     mockSettingsState.isOpen = false;
   });
 
-  test("removes the transport bar from the stable product preview", () => {
+  test("keeps the real transport bar visible in the stable product preview", () => {
     const markup = renderToStaticMarkup(<MainContentView previewMode />);
 
     expect(markup).toContain('data-playback-stage="true"');
-    expect(markup).not.toContain('data-playback-bar="true"');
+    expect(markup).toContain('data-playback-bar="true"');
   });
 });

@@ -171,13 +171,13 @@ describe("Sidebar", () => {
     expect(markup).toContain(">5<");
   });
 
-  test("limits the preview rail to playlist switching", () => {
+  test("keeps the full app rail visible while marking playlist switches for preview", () => {
     const markup = renderToStaticMarkup(<Sidebar previewMode />);
 
     expect(markup).toContain('data-preview-playlist-switch="true"');
-    expect(markup).not.toContain('data-search-visual-variant="mock"');
-    expect(markup).not.toContain("sidebar.library");
-    expect(markup).not.toContain("sidebar.allTracks");
+    expect(markup).toContain('data-search-visual-variant="mock"');
+    expect(markup).toContain("sidebar.library");
+    expect(markup).toContain("sidebar.allTracks");
     expect(markup).not.toContain("sidebar.separateAll");
     expect(markup).toContain("pointer-events-none");
   });
