@@ -456,7 +456,7 @@ cargo test
 | ------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `song_hash`  | `String` | 歌曲 hash                                                                                                                         |
 | `asset_type` | `String` | 固定值：`primary_media`/`cdg`/`stem_vocals`/`stem_accomp`/`stem_drums`/`stem_bass`/`stem_other`/`artwork_thumb`/`artwork_preview` |
-| `path`       | `String` | 触发问题的数据库相对路径；相对非法值按原样回报，绝对/盘符/UNC/Windows 根相对值统一为 `<invalid path>`，合法值为规范路径             |
+| `path`       | `String` | 触发问题的数据库相对路径；相对非法值按原样回报，绝对/盘符/UNC/Windows 根相对值统一为 `<invalid path>`，合法值为规范路径           |
 
 ### Shared type: `IntegrityCleanupResult`
 

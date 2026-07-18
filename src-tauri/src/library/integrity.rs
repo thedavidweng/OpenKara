@@ -187,10 +187,7 @@ fn report_path(path: &str) -> String {
 /// the specific asset kind being examined. A DB row containing just `media`
 /// or `stems` must not be able to suppress a top-level symlink from the orphan
 /// report.
-fn normalize_managed_asset_path_in(
-    path: &str,
-    allowed_top_level_dirs: &[&str],
-) -> Result<String> {
+fn normalize_managed_asset_path_in(path: &str, allowed_top_level_dirs: &[&str]) -> Result<String> {
     let normalized = normalize_relative_path(path)?;
     let mut components = normalized.split('/');
     let top_level = components
@@ -1063,11 +1060,7 @@ mod tests {
     #[test]
     fn path_resolver_rejects_parent_traversal() {
         let (_temp, library) = create_test_library();
-        let result = resolve_safe_path(
-            &library,
-            "media/../../../etc/passwd",
-            PRIMARY_MEDIA_DIRS,
-        );
+        let result = resolve_safe_path(&library, "media/../../../etc/passwd", PRIMARY_MEDIA_DIRS);
         assert!(result.is_err());
     }
 
@@ -1103,8 +1096,14 @@ mod tests {
     #[test]
     fn report_path_redacts_absolute_host_path_forms() {
         assert_eq!(report_path("/private/user/song.mp3"), REDACTED_INVALID_PATH);
-        assert_eq!(report_path(r"C:\\Users\\user\\song.mp3"), REDACTED_INVALID_PATH);
-        assert_eq!(report_path(r"\\server\\share\\song.cdg"), REDACTED_INVALID_PATH);
+        assert_eq!(
+            report_path(r"C:\\Users\\user\\song.mp3"),
+            REDACTED_INVALID_PATH
+        );
+        assert_eq!(
+            report_path(r"\\server\\share\\song.cdg"),
+            REDACTED_INVALID_PATH
+        );
         assert_eq!(report_path("media/../song.mp3"), "media/../song.mp3");
     }
 
@@ -1117,10 +1116,7 @@ mod tests {
 
         let report = check_library_integrity(&library).unwrap();
         assert_eq!(report.missing_primary_media.len(), 1);
-        assert_eq!(
-            report.missing_primary_media[0].path,
-            REDACTED_INVALID_PATH
-        );
+        assert_eq!(report.missing_primary_media[0].path, REDACTED_INVALID_PATH);
     }
 
     #[cfg(unix)]
@@ -1564,19 +1560,20 @@ mod tests {
     fn primary_media_in_a_wrong_managed_root_is_missing_and_does_not_hide_an_orphan() {
         let (_temp, library) = create_test_library();
         let conn = cache::open_database(&library.database_path()).unwrap();
-        add_song(
-            &conn,
-            "hash1",
-            Some("stems/hash1/vocals.ogg"),
-            "original",
-        );
+        add_song(&conn, "hash1", Some("stems/hash1/vocals.ogg"), "original");
         drop(conn);
         create_media_file(&library, "stems/hash1/vocals.ogg", b"stem");
 
         let report = check_library_integrity(&library).unwrap();
         assert_eq!(report.missing_primary_media.len(), 1);
-        assert_eq!(report.missing_primary_media[0].path, "stems/hash1/vocals.ogg");
-        assert_eq!(report.orphaned_managed_files, vec!["stems/hash1/vocals.ogg"]);
+        assert_eq!(
+            report.missing_primary_media[0].path,
+            "stems/hash1/vocals.ogg"
+        );
+        assert_eq!(
+            report.orphaned_managed_files,
+            vec!["stems/hash1/vocals.ogg"]
+        );
     }
 
     #[test]
