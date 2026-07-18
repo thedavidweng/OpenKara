@@ -237,6 +237,21 @@ fn delete_optional_asset_file(
     Ok(())
 }
 
+/// Return whether a surviving song still owns a CDG path. Although managed
+/// imports conventionally use a per-song hash filename, database contents are
+/// not trusted to preserve that invariant; cleanup must not delete an asset a
+/// remaining row still references.
+fn cdg_path_is_still_referenced(connection: &Connection, relative: &str) -> Result<bool> {
+    let count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM songs WHERE cdg_path = ?1",
+            [relative],
+            |row| row.get(0),
+        )
+        .context("failed to count CDG path references")?;
+    Ok(count > 0)
+}
+
 /// A row from the audit query.
 struct AuditRow {
     hash: String,
@@ -847,12 +862,24 @@ pub fn remove_missing_library_entries(
     cdg_paths_to_clean.sort();
     cdg_paths_to_clean.dedup();
     for path in &cdg_paths_to_clean {
-        if let Err(error) = delete_optional_asset_file(library, path, CDG_DIRS) {
-            tracing::warn!(
-                relative_path = %path,
-                ?error,
-                "library integrity cleanup committed, but CDG cleanup failed"
-            );
+        match cdg_path_is_still_referenced(connection, path) {
+            Ok(true) => continue,
+            Ok(false) => {
+                if let Err(error) = delete_optional_asset_file(library, path, CDG_DIRS) {
+                    tracing::warn!(
+                        relative_path = %path,
+                        ?error,
+                        "library integrity cleanup committed, but CDG cleanup failed"
+                    );
+                }
+            }
+            Err(error) => {
+                tracing::warn!(
+                    relative_path = %path,
+                    ?error,
+                    "library integrity cleanup committed, but CDG reference check failed"
+                );
+            }
         }
     }
 
@@ -1164,6 +1191,29 @@ mod tests {
 
         assert_eq!(result.deleted_song_hashes, vec!["hash1"]);
         assert!(!cdg.exists());
+    }
+
+    #[test]
+    fn cleanup_preserves_a_cdg_sidecar_still_referenced_by_another_song() {
+        let (_temp, library) = create_test_library();
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        add_song(&conn, "hash1", Some("media-g/hash1.mp3"), "original");
+        add_song(&conn, "hash2", Some("media-g/hash2.mp3"), "original");
+        conn.execute(
+            "UPDATE songs SET cdg_path = ?1 WHERE hash IN (?2, ?3)",
+            rusqlite::params!["media-g/shared.cdg", "hash1", "hash2"],
+        )
+        .unwrap();
+        let cdg = library.resolve("media-g/shared.cdg");
+        fs::write(&cdg, b"cdg").unwrap();
+        create_media_file(&library, "media-g/hash2.mp3", b"audio");
+
+        let result =
+            remove_missing_library_entries(&conn, &library, vec!["hash1".to_string()]).unwrap();
+
+        assert_eq!(result.deleted_song_hashes, vec!["hash1"]);
+        assert!(cdg.exists());
+        assert!(cache::get_song_by_hash(&conn, "hash2").unwrap().is_some());
     }
 
     #[cfg(unix)]
