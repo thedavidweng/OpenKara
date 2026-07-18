@@ -26,6 +26,11 @@ export interface AppSettingsSnapshot {
   eqGainsDb: [number, number, number, number, number];
 }
 
+// Every EQ mutation receives a monotonically increasing generation. A response
+// may update the whole settings snapshot, so a slow older response must not
+// overwrite a newer toggle or slider change.
+let eqMutationGeneration = 0;
+
 interface SettingsState {
   isOpen: boolean;
   hydrated: AppSettingsSnapshot["hydrated"];
@@ -184,12 +189,19 @@ export function createSettingsStore(
         // Reverting to !enabled would flip the store even when the backend
         // state was already the requested value.
         const previous = get().eqEnabled;
+        const generation = ++eqMutationGeneration;
         // Optimistically update local state so the toggle reflects immediately.
         syncPatch({ eqEnabled: enabled });
         try {
           const settings = await api.setEqEnabled(enabled);
+          if (generation !== eqMutationGeneration) {
+            return;
+          }
           syncPatch(toAppSettingsSnapshot(settings));
         } catch (error) {
+          if (generation !== eqMutationGeneration) {
+            return;
+          }
           // Revert to the previous authoritative value on failure.
           syncPatch({ eqEnabled: previous });
           notifyError(error);
@@ -198,11 +210,18 @@ export function createSettingsStore(
       setEqGains: async (gainsDb) => {
         // Optimistically update local state so sliders reflect immediately.
         const previous = get().eqGainsDb;
+        const generation = ++eqMutationGeneration;
         syncPatch({ eqGainsDb: gainsDb });
         try {
           const settings = await api.setEqGains(gainsDb);
+          if (generation !== eqMutationGeneration) {
+            return;
+          }
           syncPatch(toAppSettingsSnapshot(settings));
         } catch (error) {
+          if (generation !== eqMutationGeneration) {
+            return;
+          }
           // Revert to the previous authoritative values on failure.
           syncPatch({ eqGainsDb: previous });
           notifyError(error);
