@@ -434,6 +434,284 @@ describe("settings-store actions", () => {
     expect(store.getState().eqGainsDb).toEqual([1, 2, 3, 4, 5]);
   });
 
+  // ── EQ out-of-order response guards ─────────────────────────────────────
+
+  test("setEqEnabled discards an older successful response", async () => {
+    let resolveFirst: (value: AppSettings) => void = () => {};
+    let resolveSecond: (value: AppSettings) => void = () => {};
+    mockSetEqEnabled.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+    mockSetEqEnabled.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((resolve) => {
+          resolveSecond = resolve;
+        }),
+    );
+
+    const first = store.getState().setEqEnabled(true);
+    const second = store.getState().setEqEnabled(false);
+
+    resolveSecond(makeAppSettings({ eq_enabled: false }));
+    await second;
+    resolveFirst(makeAppSettings({ eq_enabled: true }));
+    await first;
+
+    expect(store.getState().eqEnabled).toBe(false);
+  });
+
+  test("setEqEnabled ignores an older failure", async () => {
+    let rejectFirst: (error: Error) => void = () => {};
+    mockSetEqEnabled.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((_resolve, reject) => {
+          rejectFirst = reject;
+        }),
+    );
+    mockSetEqEnabled.mockResolvedValueOnce(
+      makeAppSettings({ eq_enabled: false }),
+    );
+
+    const first = store.getState().setEqEnabled(true);
+    const second = store.getState().setEqEnabled(false);
+
+    await second;
+    rejectFirst(new Error("stale failure"));
+    await first;
+
+    expect(store.getState().eqEnabled).toBe(false);
+    expect(mockNotifyError).not.toHaveBeenCalled();
+  });
+
+  test("setEqEnabled restores the confirmed value after two rapid failures", async () => {
+    let rejectFirst: (error: Error) => void = () => {};
+    let rejectSecond: (error: Error) => void = () => {};
+    mockSetEqEnabled.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((_resolve, reject) => {
+          rejectFirst = reject;
+        }),
+    );
+    mockSetEqEnabled.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((_resolve, reject) => {
+          rejectSecond = reject;
+        }),
+    );
+
+    const first = store.getState().setEqEnabled(true);
+    const second = store.getState().setEqEnabled(false);
+
+    rejectSecond(new Error("newer request rejected"));
+    await second;
+    // The older request is still pending, so its desired value remains visible.
+    expect(store.getState().eqEnabled).toBe(true);
+
+    const firstError = new Error("older request rejected");
+    rejectFirst(firstError);
+    await first;
+
+    expect(store.getState().eqEnabled).toBe(false);
+    expect(mockNotifyError).toHaveBeenCalledTimes(1);
+  });
+
+  test("setEqEnabled preserves a pending request across a full settings snapshot", async () => {
+    let resolveRequest: (value: AppSettings) => void = () => {};
+    mockSetEqEnabled.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((resolve) => {
+          resolveRequest = resolve;
+        }),
+    );
+
+    const request = store.getState().setEqEnabled(true);
+    store.getState().hydrateAppSettings(makeAppSettings({ eq_enabled: false }));
+    expect(store.getState().eqEnabled).toBe(true);
+    resolveRequest(makeAppSettings({ eq_enabled: true }));
+    await request;
+
+    expect(store.getState().eqEnabled).toBe(true);
+  });
+
+  test("setEqGains discards an older successful response", async () => {
+    let resolveFirst: (value: AppSettings) => void = () => {};
+    let resolveSecond: (value: AppSettings) => void = () => {};
+    mockSetEqGains.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+    mockSetEqGains.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((resolve) => {
+          resolveSecond = resolve;
+        }),
+    );
+
+    const firstGains: [number, number, number, number, number] = [
+      6, 0, 0, 0, 0,
+    ];
+    const secondGains: [number, number, number, number, number] = [
+      0, 0, 0, 0, 12,
+    ];
+    const first = store.getState().setEqGains(firstGains);
+    const second = store.getState().setEqGains(secondGains);
+
+    resolveSecond(makeAppSettings({ eq_gains_db: secondGains }));
+    await second;
+    resolveFirst(makeAppSettings({ eq_gains_db: firstGains }));
+    await first;
+
+    expect(store.getState().eqGainsDb).toEqual(secondGains);
+  });
+
+  test("setEqGains ignores an older failure", async () => {
+    let rejectFirst: (error: Error) => void = () => {};
+    mockSetEqGains.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((_resolve, reject) => {
+          rejectFirst = reject;
+        }),
+    );
+    const newest: [number, number, number, number, number] = [0, 0, 0, 0, 12];
+    mockSetEqGains.mockResolvedValueOnce(
+      makeAppSettings({ eq_gains_db: newest }),
+    );
+
+    const first = store.getState().setEqGains([6, 0, 0, 0, 0]);
+    const second = store.getState().setEqGains(newest);
+
+    await second;
+    rejectFirst(new Error("stale failure"));
+    await first;
+
+    expect(store.getState().eqGainsDb).toEqual(newest);
+    expect(mockNotifyError).not.toHaveBeenCalled();
+  });
+
+  test("setEqGains restores the confirmed value after two rapid failures", async () => {
+    const confirmed: [number, number, number, number, number] = [1, 2, 3, 4, 5];
+    const firstGains: [number, number, number, number, number] = [
+      6, 0, 0, 0, 0,
+    ];
+    const secondGains: [number, number, number, number, number] = [
+      0, 0, 0, 0, 12,
+    ];
+    let rejectFirst: (error: Error) => void = () => {};
+    let rejectSecond: (error: Error) => void = () => {};
+    store.setState({ eqGainsDb: confirmed });
+    mockSetEqGains.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((_resolve, reject) => {
+          rejectFirst = reject;
+        }),
+    );
+    mockSetEqGains.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((_resolve, reject) => {
+          rejectSecond = reject;
+        }),
+    );
+
+    const first = store.getState().setEqGains(firstGains);
+    const second = store.getState().setEqGains(secondGains);
+
+    rejectSecond(new Error("newer request rejected"));
+    await second;
+    expect(store.getState().eqGainsDb).toEqual(firstGains);
+
+    rejectFirst(new Error("older request rejected"));
+    await first;
+
+    expect(store.getState().eqGainsDb).toEqual(confirmed);
+    expect(mockNotifyError).toHaveBeenCalledTimes(1);
+  });
+
+  test("cross-field successful snapshots update only their owned field", async () => {
+    let resolveEnabled: (value: AppSettings) => void = () => {};
+    mockSetEqEnabled.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((resolve) => {
+          resolveEnabled = resolve;
+        }),
+    );
+    const newest: [number, number, number, number, number] = [0, 3, 0, 0, 0];
+    mockSetEqGains.mockResolvedValueOnce(
+      makeAppSettings({ eq_enabled: false, eq_gains_db: newest }),
+    );
+
+    const toggle = store.getState().setEqEnabled(true);
+    const gains = store.getState().setEqGains(newest);
+
+    await gains;
+    resolveEnabled(
+      makeAppSettings({ eq_enabled: true, eq_gains_db: [0, 0, 0, 0, 0] }),
+    );
+    await toggle;
+
+    expect(store.getState().eqEnabled).toBe(true);
+    expect(store.getState().eqGainsDb).toEqual(newest);
+  });
+
+  test("a failed EQ toggle rolls back after a newer gains request", async () => {
+    const error = new Error("toggle rejected");
+    let rejectEnabled: (error: Error) => void = () => {};
+    mockSetEqEnabled.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((_resolve, reject) => {
+          rejectEnabled = reject;
+        }),
+    );
+    const newest: [number, number, number, number, number] = [0, 3, 0, 0, 0];
+    mockSetEqGains.mockResolvedValueOnce(
+      makeAppSettings({ eq_enabled: false, eq_gains_db: newest }),
+    );
+
+    const toggle = store.getState().setEqEnabled(true);
+    const gains = store.getState().setEqGains(newest);
+
+    await gains;
+    rejectEnabled(error);
+    await toggle;
+
+    expect(store.getState().eqEnabled).toBe(false);
+    expect(store.getState().eqGainsDb).toEqual(newest);
+    expect(mockNotifyError).toHaveBeenCalledWith(error);
+  });
+
+  test("a failed EQ gains mutation rolls back after a newer toggle", async () => {
+    const error = new Error("gains rejected");
+    const previous: [number, number, number, number, number] = [1, 2, 3, 4, 5];
+    const requested: [number, number, number, number, number] = [6, 0, 0, 0, 0];
+    store.setState({ eqGainsDb: previous });
+
+    let rejectGains: (error: Error) => void = () => {};
+    mockSetEqGains.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((_resolve, reject) => {
+          rejectGains = reject;
+        }),
+    );
+    mockSetEqEnabled.mockResolvedValueOnce(
+      makeAppSettings({ eq_enabled: true, eq_gains_db: [0, 0, 0, 0, 0] }),
+    );
+
+    const gains = store.getState().setEqGains(requested);
+    const toggle = store.getState().setEqEnabled(true);
+
+    await toggle;
+    rejectGains(error);
+    await gains;
+
+    expect(store.getState().eqEnabled).toBe(true);
+    expect(store.getState().eqGainsDb).toEqual(previous);
+    expect(mockNotifyError).toHaveBeenCalledWith(error);
+  });
+
   // ── setEqBandGain ───────────────────────────────────────────────────────
 
   test("setEqBandGain updates a single band and calls setEqGains", async () => {

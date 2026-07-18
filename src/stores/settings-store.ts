@@ -136,15 +136,114 @@ function applySettingsSyncSnapshot(
   });
 }
 
+interface OptimisticField<T> {
+  begin: (currentValue: T, nextValue: T) => number;
+  confirm: (generation: number, value: T) => T;
+  reject: (generation: number) => { value: T; shouldNotify: boolean };
+  reconcileSnapshot: (value: T) => T;
+}
+
+/**
+ * Tracks a field's committed backend value alongside its locally pending
+ * mutations. A later request starts from an optimistic value, so it cannot
+ * safely use that value as its failure rollback target. Instead, render the
+ * newest still-pending value and otherwise fall back to the last confirmed
+ * value. This preserves the user's most recent intent without ever settling
+ * on a rejected optimistic value.
+ */
+function createOptimisticField<T>(initialValue: T): OptimisticField<T> {
+  let latestGeneration = 0;
+  let confirmedGeneration = 0;
+  let confirmedValue = initialValue;
+  const pending = new Map<number, T>();
+
+  const visibleValue = () => {
+    let latestPendingGeneration = confirmedGeneration;
+    let value = confirmedValue;
+
+    for (const [generation, pendingValue] of pending) {
+      if (generation > latestPendingGeneration) {
+        latestPendingGeneration = generation;
+        value = pendingValue;
+      }
+    }
+
+    return value;
+  };
+
+  return {
+    begin: (currentValue, nextValue) => {
+      // Zustand's setState and cross-webview sync can update this field while
+      // no local request is pending. At that point the displayed value is the
+      // best authoritative baseline for the next local mutation.
+      if (pending.size === 0) {
+        confirmedGeneration = latestGeneration;
+        confirmedValue = currentValue;
+      }
+
+      const generation = ++latestGeneration;
+      pending.set(generation, nextValue);
+      return generation;
+    },
+    confirm: (generation, value) => {
+      pending.delete(generation);
+
+      if (generation > confirmedGeneration) {
+        confirmedGeneration = generation;
+        confirmedValue = value;
+
+        // A newer accepted command supersedes every older in-flight command
+        // for this field. Their late results must not reintroduce stale state.
+        for (const pendingGeneration of pending.keys()) {
+          if (pendingGeneration <= generation) {
+            pending.delete(pendingGeneration);
+          }
+        }
+      }
+
+      return visibleValue();
+    },
+    reject: (generation) => {
+      pending.delete(generation);
+      return {
+        value: visibleValue(),
+        // Do not surface an error for an older request that has already been
+        // superseded by a newer user action.
+        shouldNotify: generation === latestGeneration,
+      };
+    },
+    reconcileSnapshot: (value) => {
+      confirmedValue = value;
+      // An unrelated settings command also returns a full snapshot. It may
+      // arrive while this field's own command is still in flight, so retain
+      // that newer local intent until it is accepted or rejected.
+      if (pending.size === 0) {
+        confirmedGeneration = latestGeneration;
+      }
+      return visibleValue();
+    },
+  };
+}
+
 export function createSettingsStore(
   syncChannel: WebviewSyncChannel<SettingsSyncSnapshot> = createWebviewSyncChannel<SettingsSyncSnapshot>(
     "openkara.settings",
   ),
 ) {
+  const eqEnabledField = createOptimisticField(DEFAULT_APP_SETTINGS.eqEnabled);
+  const eqGainsField = createOptimisticField(DEFAULT_APP_SETTINGS.eqGainsDb);
+
   const store = create<SettingsState>((set, get) => {
     const syncPatch = (patch: Partial<SettingsState>) => {
       set(patch);
       syncChannel.publish(toSettingsSyncSnapshot(get()));
+    };
+
+    const syncAppSettings = (settings: AppSettings) => {
+      const snapshot = toAppSettingsSnapshot(settings);
+      snapshot.eqEnabled = eqEnabledField.reconcileSnapshot(snapshot.eqEnabled);
+      snapshot.eqGainsDb = eqGainsField.reconcileSnapshot(snapshot.eqGainsDb);
+      syncPatch(snapshot);
     };
 
     return {
@@ -153,13 +252,12 @@ export function createSettingsStore(
       toggle: () => syncPatch({ isOpen: !get().isOpen }),
       close: () => syncPatch({ isOpen: false }),
       open: () => syncPatch({ isOpen: true }),
-      hydrateAppSettings: (settings) =>
-        syncPatch(toAppSettingsSnapshot(settings)),
+      hydrateAppSettings: (settings) => syncAppSettings(settings),
       patchAppSettings: (patch) => syncPatch(patch),
       setLyricsFontStep: async (step) => {
         try {
           const settings = await api.setLyricsFontStep(step);
-          syncPatch(toAppSettingsSnapshot(settings));
+          syncAppSettings(settings);
         } catch (error) {
           notifyError(error);
         }
@@ -179,33 +277,47 @@ export function createSettingsStore(
         await get().setLyricsFontStep(0);
       },
       setEqEnabled: async (enabled) => {
-        // Capture the authoritative value before the optimistic patch so we
-        // revert to it (not the inverse of the requested value) on failure.
-        // Reverting to !enabled would flip the store even when the backend
-        // state was already the requested value.
-        const previous = get().eqEnabled;
+        const generation = eqEnabledField.begin(get().eqEnabled, enabled);
         // Optimistically update local state so the toggle reflects immediately.
         syncPatch({ eqEnabled: enabled });
         try {
           const settings = await api.setEqEnabled(enabled);
-          syncPatch(toAppSettingsSnapshot(settings));
+          // Each EQ command returns a full snapshot, but this command owns
+          // only eqEnabled. Applying the other field would race a slider edit.
+          syncPatch({
+            eqEnabled: eqEnabledField.confirm(
+              generation,
+              settings.eq_enabled ?? false,
+            ),
+          });
         } catch (error) {
-          // Revert to the previous authoritative value on failure.
-          syncPatch({ eqEnabled: previous });
-          notifyError(error);
+          const result = eqEnabledField.reject(generation);
+          syncPatch({ eqEnabled: result.value });
+          if (result.shouldNotify) {
+            notifyError(error);
+          }
         }
       },
       setEqGains: async (gainsDb) => {
         // Optimistically update local state so sliders reflect immediately.
-        const previous = get().eqGainsDb;
+        const generation = eqGainsField.begin(get().eqGainsDb, gainsDb);
         syncPatch({ eqGainsDb: gainsDb });
         try {
           const settings = await api.setEqGains(gainsDb);
-          syncPatch(toAppSettingsSnapshot(settings));
+          // Each EQ command returns a full snapshot, but this command owns
+          // only eqGainsDb. Applying the other field would race a toggle edit.
+          syncPatch({
+            eqGainsDb: eqGainsField.confirm(
+              generation,
+              settings.eq_gains_db ?? [0, 0, 0, 0, 0],
+            ),
+          });
         } catch (error) {
-          // Revert to the previous authoritative values on failure.
-          syncPatch({ eqGainsDb: previous });
-          notifyError(error);
+          const result = eqGainsField.reject(generation);
+          syncPatch({ eqGainsDb: result.value });
+          if (result.shouldNotify) {
+            notifyError(error);
+          }
         }
       },
       setEqBandGain: async (band, gainDb) => {
@@ -226,7 +338,11 @@ export function createSettingsStore(
   });
 
   const unsubscribe = syncChannel.subscribe((snapshot) => {
-    applySettingsSyncSnapshot(store.setState, snapshot);
+    applySettingsSyncSnapshot(store.setState, {
+      ...snapshot,
+      eqEnabled: eqEnabledField.reconcileSnapshot(snapshot.eqEnabled),
+      eqGainsDb: eqGainsField.reconcileSnapshot(snapshot.eqGainsDb),
+    });
   });
 
   return {

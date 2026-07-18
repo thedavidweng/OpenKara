@@ -83,6 +83,8 @@ export function SettingsOverlayProvider({
           useSettingsStore.getState().getAppSettingsSnapshot,
         hydrateAppSettings: useSettingsStore.getState().hydrateAppSettings,
         patchAppSettings: useSettingsStore.getState().patchAppSettings,
+        setEqEnabled: useSettingsStore.getState().setEqEnabled,
+        setEqGains: useSettingsStore.getState().setEqGains,
       },
     }),
     [i18n],
