@@ -329,20 +329,15 @@ export function createLibrarySettingsActions(
     },
 
     setEqEnabled: async (enabled) => {
-      const previous = controls.getSnapshot().state.eqEnabled;
       patchState({ eqEnabled: enabled });
-      dependencies.settingsStore.patchAppSettings({ eqEnabled: enabled });
-
-      try {
-        const settings = await dependencies.api.setEqEnabled(enabled);
-        dependencies.settingsStore.hydrateAppSettings(settings);
-        patchState({ eqEnabled: settings.eq_enabled });
-      } catch (error) {
-        // Revert to the previous authoritative values on failure.
-        patchState({ eqEnabled: previous });
-        dependencies.settingsStore.patchAppSettings({ eqEnabled: previous });
-        dependencies.notifyError(error);
-      }
+      // The settings store owns the committed value and all in-flight EQ
+      // mutations. Duplicating optimistic rollback here would let rapid slider
+      // or toggle requests settle on an already-rejected value.
+      await dependencies.settingsStore.setEqEnabled(enabled);
+      patchState({
+        eqEnabled:
+          dependencies.settingsStore.getAppSettingsSnapshot().eqEnabled,
+      });
     },
 
     setEqGains: async (gainsDb) => {
@@ -358,36 +353,21 @@ export function createLibrarySettingsActions(
         return;
       }
       patchState({ eqGainsDb: clamped });
-      dependencies.settingsStore.patchAppSettings({ eqGainsDb: clamped });
-
-      try {
-        const settings = await dependencies.api.setEqGains(clamped);
-        dependencies.settingsStore.hydrateAppSettings(settings);
-        patchState({ eqGainsDb: settings.eq_gains_db });
-      } catch (error) {
-        // Revert to the previous authoritative values on failure.
-        patchState({ eqGainsDb: current });
-        dependencies.settingsStore.patchAppSettings({ eqGainsDb: current });
-        dependencies.notifyError(error);
-      }
+      await dependencies.settingsStore.setEqGains(clamped);
+      patchState({
+        eqGainsDb:
+          dependencies.settingsStore.getAppSettingsSnapshot().eqGainsDb,
+      });
     },
 
     resetEqGains: async () => {
       const flat = [0, 0, 0, 0, 0] as [number, number, number, number, number];
-      const current = controls.getSnapshot().state.eqGainsDb;
       patchState({ eqGainsDb: flat });
-      dependencies.settingsStore.patchAppSettings({ eqGainsDb: flat });
-
-      try {
-        const settings = await dependencies.api.setEqGains(flat);
-        dependencies.settingsStore.hydrateAppSettings(settings);
-        patchState({ eqGainsDb: settings.eq_gains_db });
-      } catch (error) {
-        // Revert to the previous authoritative values on failure.
-        patchState({ eqGainsDb: current });
-        dependencies.settingsStore.patchAppSettings({ eqGainsDb: current });
-        dependencies.notifyError(error);
-      }
+      await dependencies.settingsStore.setEqGains(flat);
+      patchState({
+        eqGainsDb:
+          dependencies.settingsStore.getAppSettingsSnapshot().eqGainsDb,
+      });
     },
   };
 }
