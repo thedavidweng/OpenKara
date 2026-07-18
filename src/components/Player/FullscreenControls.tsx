@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { PeakMeter } from "./PeakMeter";
 import { PlayControls } from "./PlayControls";
 import { SeekBar } from "./SeekBar";
 import { useMouseIdle } from "@/hooks/use-mouse-idle";
@@ -67,6 +68,7 @@ export function FullscreenControls({
         <div className="w-full max-w-2xl">
           <SeekBar />
         </div>
+        <PeakMeter />
       </div>
     </div>
   );

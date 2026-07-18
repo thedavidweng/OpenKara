@@ -1,5 +1,6 @@
 use crate::audio::decode::DecodedAudio;
 use crate::audio::error::PlaybackError;
+use crate::audio::output_format::OutputFormatSnapshot;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -15,6 +16,7 @@ const SEEK_FADE_DURATION: Duration = Duration::from_millis(8);
 pub const PLAYBACK_POSITION_EVENT: &str = "playback-position";
 pub const PLAYBACK_ENDED_EVENT: &str = "playback-ended";
 pub const PLAYBACK_ERROR_EVENT: &str = "playback-error";
+pub const TRACK_TRANSITIONED_EVENT: &str = "track-transitioned";
 pub const PLAYBACK_POSITION_POLL_INTERVAL_MS: u64 = 33;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -121,6 +123,35 @@ pub(crate) struct LoadedTrack {
     pub(crate) streaming: Option<super::streaming::StreamingTrack>,
 }
 
+/// A fully decoded, normalized next track ready for gapless transition.
+/// The audio callback is the only code allowed to consume this.
+#[derive(Debug)]
+pub struct PreparedTrack {
+    /// Monotonic generation of the `set_preload_candidate` call that
+    /// initiated this preload. The coordinator increments its expected
+    /// generation on every `CancelPreparedNext` and rejects `PrepareNext`
+    /// commands whose generation is stale — this closes the race where an
+    /// old preload thread passes its shutdown check before the flag is set
+    /// but sends `PrepareNext` after the cancel has been processed.
+    pub preload_request_generation: u64,
+    /// Output-format generation captured at prepare time. Used for the
+    /// `CompletedTransition` event and for stale-format rejection.
+    pub preload_generation: u64,
+    pub song_id: String,
+    pub output_format: OutputFormatSnapshot,
+    pub audio: DecodedAudio,
+}
+
+/// Completed gapless transition metadata, drained by the position emitter
+/// to emit `track-transitioned` before the next position event.
+#[derive(Debug, Clone)]
+pub struct CompletedTransition {
+    pub transition_serial: u64,
+    pub preload_generation: u64,
+    pub from_song_id: String,
+    pub to_song_id: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum FadeState {
     /// No fade active.
@@ -146,6 +177,32 @@ pub struct PlaybackController {
     pub(crate) is_buffering: bool,
     /// Active fade envelope for play/pause transitions.
     pub(crate) fade: FadeState,
+    /// EQ config snapshot published by the controller and polled by the
+    /// realtime output callback via `eq_config()`. The revision is bumped on
+    /// every successful setter so the callback can detect changes without
+    /// comparing the full struct each tick.
+    pub(crate) eq_config: crate::audio::eq::EqConfig,
+    /// #88: A fully decoded, normalized next track prepared by the preload
+    /// scheduler. The realtime callback is the only consumer — it swaps this
+    /// into `current_track` when the current track reaches EOF. Stays `None`
+    /// when no candidate is queued, the format changed, or the candidate was
+    /// cancelled.
+    pub(crate) prepared_track: Option<PreparedTrack>,
+    /// #88: Monotonic serial stamped onto each completed transition. Drained
+    /// by the position emitter to emit `track-transitioned` before the next
+    /// position event so the frontend can reconcile its queue head.
+    pub(crate) transition_serial: u64,
+    /// #88: Completed transition metadata produced by the realtime callback
+    /// after a gapless swap. The position emitter drains this (under the
+    /// playback lock) and emits `TRACK_TRANSITIONED_EVENT` before the next
+    /// `PLAYBACK_POSITION_EVENT`.
+    pub(crate) pending_transition_out: Option<CompletedTransition>,
+    /// #88: Monotonic generation of the latest `set_preload_candidate`
+    /// request. Incremented on every `cancel_prepared_track` call so that
+    /// stale `PrepareNext` commands from an older preload thread (which
+    /// passed its shutdown check before the flag was set but sends after the
+    /// cancel) are rejected by `install_prepared_track`.
+    pub(crate) expected_preload_request_generation: u64,
 }
 
 impl Default for PlaybackController {
@@ -158,6 +215,11 @@ impl Default for PlaybackController {
             stem_volumes: StemVolumes::default(),
             is_buffering: false,
             fade: FadeState::None,
+            eq_config: crate::audio::eq::EqConfig::flat(),
+            prepared_track: None,
+            transition_serial: 0,
+            pending_transition_out: None,
+            expected_preload_request_generation: 0,
         }
     }
 }
@@ -174,6 +236,9 @@ impl PlaybackController {
         _now_ms: u64,
     ) -> PlaybackStateSnapshot {
         self.loading_song_id = None;
+        // #88: An explicit track install cancels any pending gapless
+        // successor — the new track is not the prepared one.
+        self.prepared_track = None;
         self.current_track = Some(LoadedTrack {
             song_id,
             original_audio: decoded_audio,
@@ -198,6 +263,9 @@ impl PlaybackController {
         _now_ms: u64,
     ) -> PlaybackStateSnapshot {
         self.loading_song_id = None;
+        // #88: An explicit track install cancels any pending gapless
+        // successor — the new track is not the prepared one.
+        self.prepared_track = None;
         self.current_track = Some(LoadedTrack {
             song_id,
             original_audio: DecodedAudio {
@@ -318,6 +386,35 @@ impl PlaybackController {
             StemName::Other => self.stem_volumes.other = level,
         }
         Ok(self.snapshot())
+    }
+
+    /// Update the EQ enabled flag and bump the config revision so the realtime
+    /// output callback picks up the change. Returns the current snapshot.
+    pub fn set_eq_enabled(&mut self, enabled: bool) -> PlaybackStateSnapshot {
+        if self.eq_config.enabled != enabled {
+            self.eq_config.enabled = enabled;
+            self.eq_config.revision = self.eq_config.revision.saturating_add(1);
+        }
+        self.snapshot()
+    }
+
+    /// Update the per-band EQ gains (dB) and bump the config revision so the
+    /// realtime output callback picks up the change. Returns the current
+    /// snapshot. The caller is expected to have validated the gains via
+    /// `eq::validate_gains_db` before dispatching the command.
+    pub fn set_eq_gains(&mut self, gains_db: [f32; 5]) -> PlaybackStateSnapshot {
+        if self.eq_config.gains_db != gains_db {
+            self.eq_config.gains_db = gains_db;
+            self.eq_config.revision = self.eq_config.revision.saturating_add(1);
+        }
+        self.snapshot()
+    }
+
+    /// Current EQ config snapshot. The realtime output callback polls this
+    /// while it already holds the controller lock and compares the revision
+    /// with the processor's last-applied revision.
+    pub fn eq_config(&self) -> crate::audio::eq::EqConfig {
+        self.eq_config
     }
 
     pub fn attach_stems(&mut self, song_id: &str, stems: LoadedStems) -> Result<(), PlaybackError> {
@@ -506,6 +603,107 @@ impl PlaybackController {
         self.current_track = None;
         self.loading_song_id = None;
         self.fade = FadeState::None;
+        // #88: Clearing the current track also invalidates any prepared
+        // gapless successor — it was prepared relative to the track that is
+        // now being replaced by an explicit user action.
+        self.prepared_track = None;
+    }
+
+    /// #88: Install a prepared next track for gapless transition. Called by
+    /// the coordinator after the preload scheduler decodes and normalizes the
+    /// candidate. Returns `Err` if the output format no longer matches the
+    /// snapshot captured at prepare time (device restart or format change).
+    ///
+    /// `current_output_format` is the output-format snapshot re-captured by
+    /// the coordinator after acquiring the playback lock. The prepared
+    /// track's audio was normalized to the output format at prepare time;
+    /// we validate against the output format (NOT the current track's source
+    /// format, which may differ from the output format when the render
+    /// callback resamples).
+    pub fn install_prepared_track(
+        &mut self,
+        prepared: PreparedTrack,
+        current_output_format: OutputFormatSnapshot,
+    ) -> Result<(), PlaybackError> {
+        // Reject stale preload requests. `cancel_prepared_track` bumps
+        // `expected_preload_request_generation` on every cancel; if the
+        // prepared track's generation doesn't match, it came from an older
+        // preload thread that raced with a newer cancel (the thread passed
+        // its shutdown check before the flag was set but sent PrepareNext
+        // after the coordinator processed the cancel).
+        if prepared.preload_request_generation != self.expected_preload_request_generation {
+            return Err(PlaybackError::Internal(format!(
+                "prepared track from stale preload request (prepared gen={}, expected gen={})",
+                prepared.preload_request_generation, self.expected_preload_request_generation,
+            )));
+        }
+
+        // The coordinator already validates the output format against the
+        // current descriptor before calling this; this controller-level guard
+        // is a defensive check against a stale prepared payload that slipped
+        // through (e.g. format changed between the coordinator check and the
+        // lock acquisition). We compare the prepared track's captured output
+        // format against the re-captured current output format — NOT the
+        // current track's source format, which may differ from the output
+        // format when the render callback resamples (e.g. 48 kHz source on a
+        // 44.1 kHz device).
+        if prepared.output_format.generation != current_output_format.generation
+            || prepared.output_format.sample_rate != current_output_format.sample_rate
+            || prepared.output_format.channels != current_output_format.channels
+        {
+            return Err(PlaybackError::Internal(format!(
+                "prepared track output format does not match current output format \
+                 (prepared gen={}, rate={}, ch={} vs current gen={}, rate={}, ch={})",
+                prepared.output_format.generation,
+                prepared.output_format.sample_rate,
+                prepared.output_format.channels,
+                current_output_format.generation,
+                current_output_format.sample_rate,
+                current_output_format.channels,
+            )));
+        }
+        self.prepared_track = Some(prepared);
+        Ok(())
+    }
+
+    /// #88: Cancel a pending prepared track. Called when the user manually
+    /// skips, seeks, plays a different song, or the queue head changes.
+    /// Returns `true` if a prepared track was present and cancelled.
+    ///
+    /// `expected_generation` is the new preload request generation (bumped
+    /// by `set_preload_candidate` before sending the cancel command). We
+    /// stamp it onto `expected_preload_request_generation` so that any
+    /// `PrepareNext` from an older preload thread (which passed its shutdown
+    /// check before the flag was set but sends after this cancel) is
+    /// rejected by `install_prepared_track` as stale.
+    pub fn cancel_prepared_track(&mut self, expected_generation: u64) -> bool {
+        self.expected_preload_request_generation = expected_generation;
+        self.prepared_track.take().is_some()
+    }
+
+    /// #88: Drain a completed transition produced by the realtime callback.
+    /// The position emitter calls this under the playback lock to emit
+    /// `track-transitioned` before the next position event.
+    pub fn drain_pending_transition(&mut self) -> Option<CompletedTransition> {
+        self.pending_transition_out.take()
+    }
+
+    /// #88: Bump the transition serial and stamp it onto a new
+    /// `CompletedTransition`. Called by the realtime callback after a
+    /// gapless swap.
+    fn stamp_transition(
+        &mut self,
+        from_song_id: String,
+        to_song_id: String,
+        preload_generation: u64,
+    ) {
+        self.transition_serial = self.transition_serial.saturating_add(1);
+        self.pending_transition_out = Some(CompletedTransition {
+            transition_serial: self.transition_serial,
+            preload_generation,
+            from_song_id,
+            to_song_id,
+        });
     }
 
     /// Clear a pending background load when decode/start fails for the given song.
@@ -573,6 +771,111 @@ impl PlaybackController {
         if track.original_audio.duration_ms == 0 {
             track.original_audio.duration_ms = track.position_ms();
         }
+    }
+
+    /// #88: Check whether the current decoded (non-streaming) track has
+    /// reached its end. The render callback calls this after advancing
+    /// `render_frame` to decide whether a gapless swap should occur.
+    pub(crate) fn current_track_reached_eof(&self) -> bool {
+        let Some(track) = self.current_track.as_ref() else {
+            return false;
+        };
+        if let Some(streaming) = &track.streaming {
+            // Streaming tracks use `all_eof_and_drained` on the ring buffer.
+            return streaming.all_eof_and_drained();
+        }
+        let total_frames = track.original_audio.samples.len() / track.original_audio.channels;
+        track.render_frame >= total_frames as u64
+    }
+
+    /// #103: Whether the current track is actively playing — i.e. the user
+    /// has not paused and no pause fade-out is in progress. The gapless swap
+    /// path checks this before advancing to the prepared next track so that a
+    /// track reaching EOF during a user-initiated pause (or while paused with
+    /// `render_frame` already at EOF) does not auto-advance. Without this
+    /// guard, pausing near the end of a track would still swap to the
+    /// preloaded next track once the fade-out renders the final frames,
+    /// defeating the user's intent to stop at the current song.
+    ///
+    /// A `FadingIn` state (user just pressed play/resume) also counts as
+    /// playing, even if `snapshot()` has set `is_playing = false` because
+    /// the track is at EOF. Without this, a user who pauses near EOF and
+    /// then resumes would be stuck — the track is at EOF, `is_playing` is
+    /// false, and the gapless swap is permanently suppressed.
+    ///
+    /// #88: The gapless swap site in `output.rs` now checks `FadeState::FadingOut`
+    /// directly instead of calling this helper. The method is retained for the
+    /// regression tests below and as a reusable predicate.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn current_track_is_playing(&self) -> bool {
+        let Some(track) = self.current_track.as_ref() else {
+            return false;
+        };
+        if matches!(self.fade, FadeState::FadingOut { .. }) {
+            return false;
+        }
+        track.is_playing || matches!(self.fade, FadeState::FadingIn { .. })
+    }
+
+    /// #88: Perform a gapless swap from the current track to the prepared
+    /// track. Called by the realtime callback when the current track reaches
+    /// EOF and a prepared track is available. Returns `true` if the swap
+    /// occurred.
+    ///
+    /// This is the only path that consumes `prepared_track`. The new track
+    /// starts playing immediately at `render_frame = 0` with `is_playing =
+    /// true`, and a `CompletedTransition` is stamped for the position emitter
+    /// to drain.
+    pub(crate) fn perform_gapless_swap(&mut self) -> bool {
+        let Some(prepared) = self.prepared_track.take() else {
+            return false;
+        };
+        let Some(current) = self.current_track.as_ref() else {
+            // No current track — shouldn't happen, but be defensive.
+            self.prepared_track = Some(prepared);
+            return false;
+        };
+
+        // The prepared track's audio was already normalized to the output
+        // format by the preload scheduler, so sample_rate and channels match
+        // the current track. We construct a new LoadedTrack with the
+        // prepared audio.
+        let from_song_id = current.song_id.clone();
+        let to_song_id = prepared.song_id.clone();
+        let preload_generation = prepared.preload_generation;
+
+        self.current_track = Some(LoadedTrack {
+            song_id: prepared.song_id,
+            original_audio: prepared.audio,
+            stems: None,
+            is_playing: true,
+            render_frame: 0,
+            streaming: None,
+        });
+
+        // Clear transport state carried over from the previous track. The
+        // new track starts fresh at frame 0 with no fade and no buffering
+        // flag. Without clearing `fade`, a fade-out in progress when the
+        // previous track reached EOF would be applied to the new track,
+        // briefly attenuating it and then setting is_playing=false when the
+        // fade completes — defeating the gapless transition. `is_buffering`
+        // is only set for streaming tracks, but clearing it defensively
+        // guards against any stale state.
+        self.fade = FadeState::None;
+        self.is_buffering = false;
+
+        // #103: Bump the transport generation so the frontend's stale-event
+        // filter rejects any delayed `playback-position` event from the old
+        // song. The frontend only discards events with a *lower* generation,
+        // so without this bump a same-generation position event for song-a
+        // could arrive after the new-song snapshot and be accepted, reverting
+        // the clock and queue reconciliation back to song-a.
+        self.bump_transport_generation();
+
+        // Stamp the transition for the position emitter to drain.
+        self.stamp_transition(from_song_id, to_song_id, preload_generation);
+
+        true
     }
 
     /// If a fade-out has elapsed past `FADE_DURATION`, finalize it: set
@@ -670,6 +973,13 @@ pub struct PlaybackPositionEvent {
 #[derive(Debug, Clone, Serialize)]
 pub struct PlaybackEndedEvent {
     pub song_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TrackTransitionedEvent {
+    pub transition_serial: u64,
+    pub from_song_id: String,
+    pub to_song_id: String,
 }
 
 pub fn playback_position_event(snapshot: &PlaybackStateSnapshot) -> PlaybackPositionEvent {
@@ -937,5 +1247,348 @@ mod tests {
         let snap = controller.snapshot();
         assert_eq!(snap.buffered_ms, 5_000);
         assert_eq!(snap.buffered_ms, snap.duration_ms.unwrap());
+    }
+
+    // ── #88: Gapless prepared-track tests ──────────────────────────────
+
+    fn make_prepared(
+        song_id: &str,
+        preload_request_generation: u64,
+        output_format: super::OutputFormatSnapshot,
+    ) -> super::PreparedTrack {
+        super::PreparedTrack {
+            preload_request_generation,
+            preload_generation: output_format.generation,
+            song_id: song_id.to_owned(),
+            output_format,
+            audio: super::DecodedAudio {
+                sample_rate: output_format.sample_rate,
+                channels: output_format.channels as usize,
+                duration_ms: 5_000,
+                samples: vec![
+                    0.0;
+                    (output_format.sample_rate as usize)
+                        * (output_format.channels as usize)
+                        * 5
+                ],
+            },
+        }
+    }
+
+    #[test]
+    fn install_prepared_track_accepts_matching_generation_and_format() {
+        let mut controller = super::PlaybackController::default();
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+        let prepared = make_prepared("song-b", 0, fmt);
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+        assert!(controller.prepared_track.is_some());
+    }
+
+    #[test]
+    fn install_prepared_track_rejects_stale_preload_request_generation() {
+        // #88 race-condition fix: an old preload thread that passed its
+        // shutdown check before the flag was set but sends PrepareNext after
+        // the coordinator processed CancelPreparedNext must be rejected.
+        let mut controller = super::PlaybackController::default();
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+
+        // Cancel bumps expected generation to 1.
+        assert!(!controller.cancel_prepared_track(1));
+
+        // Old preload thread sends PrepareNext with generation 0 — rejected.
+        let stale = make_prepared("song-old", 0, fmt);
+        assert!(controller.install_prepared_track(stale, fmt).is_err());
+        assert!(controller.prepared_track.is_none());
+
+        // New preload thread sends PrepareNext with generation 1 — accepted.
+        let fresh = make_prepared("song-new", 1, fmt);
+        assert!(controller.install_prepared_track(fresh, fmt).is_ok());
+        assert!(controller.prepared_track.is_some());
+    }
+
+    #[test]
+    fn install_prepared_track_rejects_mismatched_output_format() {
+        let mut controller = super::PlaybackController::default();
+        let prepared_fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+        let current_fmt = super::OutputFormatSnapshot::new(2, 48_000, 2);
+        let prepared = make_prepared("song-b", 0, prepared_fmt);
+        assert!(controller
+            .install_prepared_track(prepared, current_fmt)
+            .is_err());
+        assert!(controller.prepared_track.is_none());
+    }
+
+    #[test]
+    fn install_prepared_track_accepts_when_source_rate_differs_from_output() {
+        // The prepared track is normalized to the OUTPUT format, not the
+        // current track's SOURCE format. This test verifies the fix for the
+        // original bug where the check compared against the current track's
+        // source format instead of the output format.
+        let mut controller = super::PlaybackController::default();
+        // Load a track at 48 kHz source rate.
+        let decoded = super::DecodedAudio {
+            sample_rate: 48_000,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 48_000 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+
+        // Output device runs at 44.1 kHz. Prepared track is normalized to
+        // 44.1 kHz. The old (buggy) check would compare 48000 != 44100 and
+        // reject; the fix compares against the output format (44100 == 44100).
+        let output_fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+        let prepared = make_prepared("song-b", 0, output_fmt);
+        assert!(controller
+            .install_prepared_track(prepared, output_fmt)
+            .is_ok());
+    }
+
+    #[test]
+    fn cancel_prepared_track_stamps_expected_generation() {
+        let mut controller = super::PlaybackController::default();
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+
+        // Install a prepared track at generation 0.
+        let prepared = make_prepared("song-b", 0, fmt);
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+        assert!(controller.prepared_track.is_some());
+
+        // Cancel with generation 1 — should clear the prepared track and
+        // stamp expected generation to 1.
+        assert!(controller.cancel_prepared_track(1));
+        assert!(controller.prepared_track.is_none());
+        assert_eq!(controller.expected_preload_request_generation, 1);
+    }
+
+    #[test]
+    fn perform_gapless_swap_clears_fade_and_buffering() {
+        let mut controller = super::PlaybackController::default();
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+
+        // Load track A at the output format rate.
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        controller.play(0).unwrap();
+        controller.pause(0).unwrap();
+        // Now fade is FadingOut.
+        assert!(matches!(
+            controller.fade,
+            super::FadeState::FadingOut { .. }
+        ));
+        controller.is_buffering = true;
+
+        // Install a prepared track.
+        let prepared = make_prepared("song-b", 0, fmt);
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+
+        // Perform the gapless swap.
+        assert!(controller.perform_gapless_swap());
+
+        // Fade and buffering must be cleared — the new track starts fresh.
+        assert!(matches!(controller.fade, super::FadeState::None));
+        assert!(!controller.is_buffering);
+        assert_eq!(controller.current_track.as_ref().unwrap().song_id, "song-b");
+    }
+
+    #[test]
+    fn perform_gapless_swap_stamps_transition() {
+        let mut controller = super::PlaybackController::default();
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+
+        let prepared = make_prepared("song-b", 0, fmt);
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+
+        assert!(controller.perform_gapless_swap());
+
+        let transition = controller.drain_pending_transition().expect("transition");
+        assert_eq!(transition.from_song_id, "song-a");
+        assert_eq!(transition.to_song_id, "song-b");
+        assert_eq!(transition.transition_serial, 1);
+    }
+
+    #[test]
+    fn perform_gapless_swap_bumps_transport_generation() {
+        // #103: A gapless swap replaces song-a with song-b but must bump the
+        // transport generation so the frontend's stale-event filter rejects
+        // delayed `playback-position` events from song-a. Without the bump,
+        // a same-generation position event for the old song could arrive
+        // after the new-song snapshot and be accepted, reverting the clock
+        // and queue reconciliation back to song-a.
+        let mut controller = super::PlaybackController::default();
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        let gen_before = controller.transport_generation;
+
+        let prepared = make_prepared("song-b", 0, fmt);
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+
+        assert!(controller.perform_gapless_swap());
+
+        // The generation must have advanced so stale events from song-a are
+        // rejected by the frontend's generation filter.
+        assert!(
+            controller.transport_generation > gen_before,
+            "gapless swap must bump transport_generation (was {gen_before}, is {})",
+            controller.transport_generation
+        );
+    }
+
+    #[test]
+    fn perform_gapless_swap_returns_false_without_prepared_track() {
+        let mut controller = super::PlaybackController::default();
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        assert!(!controller.perform_gapless_swap());
+    }
+
+    #[test]
+    fn start_track_clears_prepared_track() {
+        let mut controller = super::PlaybackController::default();
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+
+        // Install a prepared track.
+        let prepared = make_prepared("song-b", 0, fmt);
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+        assert!(controller.prepared_track.is_some());
+
+        // Starting a new track should clear the prepared track — the new
+        // track is not the prepared one.
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-c".to_owned(), decoded, 0);
+        assert!(controller.prepared_track.is_none());
+    }
+
+    #[test]
+    fn clear_track_clears_prepared_track() {
+        let mut controller = super::PlaybackController::default();
+        let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
+
+        let prepared = make_prepared("song-b", 0, fmt);
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+        assert!(controller.prepared_track.is_some());
+
+        controller.clear_track();
+        assert!(controller.prepared_track.is_none());
+    }
+
+    // ── #103: current_track_is_playing regression tests ───────────────
+    //
+    // The gapless swap path in the realtime callback checks
+    // `current_track_is_playing()` before advancing to the prepared next
+    // track. This helper returns false when `is_playing` is false or a
+    // `FadingOut` is in progress, so a track reaching EOF during a
+    // user-initiated pause does not auto-advance.
+
+    #[test]
+    fn current_track_is_playing_true_when_playing_no_fade() {
+        let mut controller = super::PlaybackController::default();
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        controller.play(0).unwrap();
+        // Clear the fade-in so we're in a steady playing state.
+        controller.fade = super::FadeState::None;
+
+        assert!(
+            controller.current_track_is_playing(),
+            "should be playing when is_playing=true and no fade-out"
+        );
+    }
+
+    #[test]
+    fn current_track_is_playing_false_during_fade_out() {
+        let mut controller = super::PlaybackController::default();
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        controller.play(0).unwrap();
+        controller.pause(0).unwrap();
+
+        // During the fade-out, is_playing is still true on the track, but
+        // the FadingOut state means the user has paused — the helper must
+        // return false so the gapless swap is suppressed.
+        assert!(
+            !controller.current_track_is_playing(),
+            "should not be playing during a fade-out"
+        );
+    }
+
+    #[test]
+    fn current_track_is_playing_false_when_no_track_loaded() {
+        let controller = super::PlaybackController::default();
+        assert!(
+            !controller.current_track_is_playing(),
+            "should return false when no track is loaded"
+        );
+    }
+
+    #[test]
+    fn current_track_is_playing_true_again_after_resume_from_pause() {
+        // #103: After pausing (fade-out) and then resuming (play), the
+        // helper must return true again so the gapless swap can proceed if
+        // the track is at EOF. Without this, a user who pauses near EOF
+        // and then resumes would be stuck — the track is at EOF but the
+        // gapless swap is permanently suppressed.
+        let mut controller = super::PlaybackController::default();
+        let decoded = super::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 5_000,
+            samples: vec![0.0; 44_100 * 2 * 5],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        controller.play(0).unwrap();
+        controller.fade = super::FadeState::None;
+
+        // Pause — helper returns false.
+        controller.pause(0).unwrap();
+        assert!(!controller.current_track_is_playing());
+
+        // Resume — play() sets is_playing=true and FadingIn. The helper
+        // must return true (FadingIn is not FadingOut).
+        controller.play(0).unwrap();
+        assert!(
+            controller.current_track_is_playing(),
+            "should be playing after resume (FadingIn is not FadingOut)"
+        );
     }
 }

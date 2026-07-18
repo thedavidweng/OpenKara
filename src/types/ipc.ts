@@ -221,6 +221,8 @@ export interface AppSettings {
   lyrics_font_step: number;
   execution_provider: ExecutionProvider;
   available_execution_providers: ExecutionProvider[];
+  eq_enabled: boolean;
+  eq_gains_db: [number, number, number, number, number];
 }
 
 export interface ModelStatusSnapshot {
@@ -283,6 +285,17 @@ export interface PlaybackPositionEvent {
 
 export interface PlaybackEndedEvent {
   song_id: string;
+}
+
+export interface TrackTransitionedEvent {
+  transition_serial: number;
+  from_song_id: string;
+  to_song_id: string;
+}
+
+export interface AudioPeakSnapshot {
+  writeIndex: number;
+  peaks: Array<[left: number, right: number]>;
 }
 
 export interface PlaybackErrorEvent {

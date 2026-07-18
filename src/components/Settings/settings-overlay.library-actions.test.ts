@@ -75,6 +75,8 @@ function createAppSettings() {
     lyrics_font_step: 0,
     execution_provider: "xnnpack" as const,
     available_execution_providers: ["cpu", "xnnpack"] as const,
+    eq_enabled: false,
+    eq_gains_db: [0, 0, 0, 0, 0],
   };
 }
 
@@ -106,6 +108,8 @@ function createHarness(overrides?: {
       coverArtBackdrop: false,
       executionProvider: "xnnpack",
       availableExecutionProviders: ["cpu", "xnnpack"],
+      eqEnabled: false,
+      eqGainsDb: [0, 0, 0, 0, 0],
     },
     meta: {
       isInitializing: false,
@@ -153,6 +157,8 @@ function createHarness(overrides?: {
       mirrorLocalLibraryToRemote: vi.fn(),
       reauthorizeRemoteLibrary: vi.fn(),
       setModelVariant: vi.fn(),
+      setEqEnabled: vi.fn(),
+      setEqGains: vi.fn(),
     },
     notifyError: vi.fn(),
     openDirectory: vi.fn(),
@@ -758,6 +764,160 @@ describe("createLibrarySettingsActions", () => {
       await harness.actions.toggleCoverArtBackdrop(false);
 
       expect(harness.dependencies.notifyError).toHaveBeenCalled();
+    });
+  });
+
+  // ---- setEqEnabled ----
+
+  describe("setEqEnabled", () => {
+    test("patches state, updates settings store, and calls api", async () => {
+      const harness = createHarness();
+      const appSettings = {
+        ...createAppSettings(),
+        eq_enabled: true,
+      };
+      harness.dependencies.api.setEqEnabled.mockResolvedValue(appSettings);
+
+      await harness.actions.setEqEnabled(true);
+
+      expect(harness.patchState).toHaveBeenCalledWith({ eqEnabled: true });
+      expect(
+        harness.dependencies.settingsStore.patchAppSettings,
+      ).toHaveBeenCalledWith({ eqEnabled: true });
+      expect(harness.dependencies.api.setEqEnabled).toHaveBeenCalledWith(true);
+      expect(
+        harness.dependencies.settingsStore.hydrateAppSettings,
+      ).toHaveBeenCalledWith(appSettings);
+    });
+
+    test("reverts optimistic state and notifies on failure", async () => {
+      const harness = createHarness();
+      harness.dependencies.api.setEqEnabled.mockRejectedValue(
+        new Error("eq fail"),
+      );
+
+      await harness.actions.setEqEnabled(false);
+
+      expect(harness.dependencies.notifyError).toHaveBeenCalled();
+      // Should revert to the previous authoritative values.
+      expect(harness.patchState).toHaveBeenCalledWith({ eqEnabled: false });
+      expect(
+        harness.dependencies.settingsStore.patchAppSettings,
+      ).toHaveBeenCalledWith({ eqEnabled: false });
+    });
+  });
+
+  // ---- setEqGains ----
+
+  describe("setEqGains", () => {
+    test("patches state, updates settings store, and calls api", async () => {
+      const harness = createHarness();
+      const appSettings = {
+        ...createAppSettings(),
+        eq_gains_db: [0, 0, 6, 0, 0],
+      };
+      harness.dependencies.api.setEqGains.mockResolvedValue(appSettings);
+
+      await harness.actions.setEqGains([0, 0, 6, 0, 0]);
+
+      expect(harness.patchState).toHaveBeenCalledWith({
+        eqGainsDb: [0, 0, 6, 0, 0],
+      });
+      expect(
+        harness.dependencies.settingsStore.patchAppSettings,
+      ).toHaveBeenCalledWith({ eqGainsDb: [0, 0, 6, 0, 0] });
+      expect(harness.dependencies.api.setEqGains).toHaveBeenCalledWith([
+        0, 0, 6, 0, 0,
+      ]);
+      expect(
+        harness.dependencies.settingsStore.hydrateAppSettings,
+      ).toHaveBeenCalledWith(appSettings);
+    });
+
+    test("clamps each gain to ±12 dB", async () => {
+      const harness = createHarness();
+      harness.dependencies.api.setEqGains.mockResolvedValue(
+        createAppSettings(),
+      );
+
+      await harness.actions.setEqGains([20, -20, 0, 0, 0]);
+
+      expect(harness.dependencies.api.setEqGains).toHaveBeenCalledWith([
+        12, -12, 0, 0, 0,
+      ]);
+    });
+
+    test("skips api call when values are unchanged", async () => {
+      const harness = createHarness();
+
+      await harness.actions.setEqGains([0, 0, 0, 0, 0]);
+
+      expect(harness.dependencies.api.setEqGains).not.toHaveBeenCalled();
+    });
+
+    test("reverts optimistic state and notifies on failure", async () => {
+      const harness = createHarness();
+      harness.dependencies.api.setEqGains.mockRejectedValue(
+        new Error("eq gains fail"),
+      );
+
+      await harness.actions.setEqGains([1, 3, 0, 0, 0]);
+
+      expect(harness.dependencies.notifyError).toHaveBeenCalled();
+      // Should revert to the previous authoritative values.
+      expect(harness.patchState).toHaveBeenCalledWith({
+        eqGainsDb: [0, 0, 0, 0, 0],
+      });
+      expect(
+        harness.dependencies.settingsStore.patchAppSettings,
+      ).toHaveBeenCalledWith({ eqGainsDb: [0, 0, 0, 0, 0] });
+    });
+  });
+
+  // ---- resetEqGains ----
+
+  describe("resetEqGains", () => {
+    test("patches state to flat and calls api", async () => {
+      const harness = createHarness();
+      const flat = [0, 0, 0, 0, 0] as [number, number, number, number, number];
+      const appSettings = { ...createAppSettings(), eq_gains_db: flat };
+      harness.dependencies.api.setEqGains.mockResolvedValue(appSettings);
+
+      await harness.actions.resetEqGains();
+
+      expect(harness.patchState).toHaveBeenCalledWith({ eqGainsDb: flat });
+      expect(
+        harness.dependencies.settingsStore.patchAppSettings,
+      ).toHaveBeenCalledWith({ eqGainsDb: flat });
+      expect(harness.dependencies.api.setEqGains).toHaveBeenCalledWith(flat);
+    });
+
+    test("reverts optimistic state and notifies on failure", async () => {
+      const harness = createHarness();
+      const previous = [6, 0, 0, 0, 0] as [
+        number,
+        number,
+        number,
+        number,
+        number,
+      ];
+      // Seed the snapshot with non-flat gains so rollback is observable.
+      harness.context.controls.setSnapshot((s) => ({
+        ...s,
+        state: { ...s.state, eqGainsDb: previous },
+      }));
+      harness.dependencies.api.setEqGains.mockRejectedValue(
+        new Error("eq reset fail"),
+      );
+
+      await harness.actions.resetEqGains();
+
+      expect(harness.dependencies.notifyError).toHaveBeenCalled();
+      // Should revert to the previous authoritative values.
+      expect(harness.patchState).toHaveBeenCalledWith({ eqGainsDb: previous });
+      expect(
+        harness.dependencies.settingsStore.patchAppSettings,
+      ).toHaveBeenCalledWith({ eqGainsDb: previous });
     });
   });
 });

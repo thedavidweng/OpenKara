@@ -14,9 +14,11 @@ use crate::{
         decode::DecodedAudio,
         error::PlaybackError,
         output,
+        output_format::{self, OutputFormatState},
         playback::{
             monotonic_now_ms, playback_position_event, LoadedStems, PlaybackController,
-            PlaybackStateSnapshot, StemName, PLAYBACK_ERROR_EVENT, PLAYBACK_POSITION_EVENT,
+            PlaybackStateSnapshot, PreparedTrack, StemName, PLAYBACK_ERROR_EVENT,
+            PLAYBACK_POSITION_EVENT,
         },
         streaming::StreamingTrack,
     },
@@ -95,6 +97,29 @@ pub enum PlaybackCommand {
         stems: LoadedStems,
         reply: SnapshotReply,
     },
+    SetEqEnabled {
+        enabled: bool,
+        reply: SnapshotReply,
+    },
+    SetEqGains {
+        gains_db: [f32; 5],
+        reply: SnapshotReply,
+    },
+    /// #88: Install a prepared next track for gapless transition. The preload
+    /// scheduler decodes and normalizes the candidate off-thread, then sends
+    /// this fire-and-forget command. The coordinator validates the output
+    /// format generation and the preload request generation before installing.
+    PrepareNext {
+        prepared: Box<PreparedTrack>,
+    },
+    /// #88: Cancel any pending prepared track. Sent when the user manually
+    /// skips, seeks, plays a different song, or the queue head changes.
+    /// `expected_generation` is the new preload request generation; the
+    /// coordinator stamps it onto `PlaybackController` so that any
+    /// `PrepareNext` from an older preload thread is rejected as stale.
+    CancelPreparedNext {
+        expected_generation: u64,
+    },
 }
 
 type SnapshotReply = tokio::sync::oneshot::Sender<Result<PlaybackStateSnapshot, PlaybackError>>;
@@ -110,6 +135,11 @@ pub struct CoordinatorRuntime<R: Runtime> {
     pub output_start_lock: Arc<Mutex<()>>,
     pub airplay: AirPlayState,
     pub shutdown: Arc<AtomicBool>,
+    pub peak_ring: Arc<crate::audio::peaks::PeakRing>,
+    /// #88: Output-format descriptor published by the CPAL output worker.
+    /// The coordinator reads this (without the playback lock) to validate
+    /// prepared-track generations before installing.
+    pub output_format: OutputFormatState,
 }
 
 /// Spawn the coordinator worker thread. Returns the `JoinHandle` so the caller
@@ -164,6 +194,16 @@ fn handle_command<R: Runtime>(runtime: &CoordinatorRuntime<R>, command: Playback
             stems,
             reply,
         } => handle_attach_stems(runtime, request_id, &song_id, stems, reply),
+        PlaybackCommand::SetEqEnabled { enabled, reply } => {
+            handle_set_eq_enabled(runtime, enabled, reply)
+        }
+        PlaybackCommand::SetEqGains { gains_db, reply } => {
+            handle_set_eq_gains(runtime, gains_db, reply)
+        }
+        PlaybackCommand::PrepareNext { prepared } => handle_prepare_next(runtime, *prepared),
+        PlaybackCommand::CancelPreparedNext {
+            expected_generation,
+        } => handle_cancel_prepared_next(runtime, expected_generation),
     }
 }
 
@@ -195,6 +235,8 @@ fn ensure_output(runtime: &CoordinatorRuntime<impl Runtime>) -> Result<(), Playb
         runtime.airplay.airplay_audio_tap.clone(),
         runtime.airplay.airplay_local_output_suppressed.clone(),
         runtime.shutdown.clone(),
+        runtime.peak_ring.clone(),
+        runtime.output_format.clone(),
     )
 }
 
@@ -605,6 +647,100 @@ fn handle_attach_stems<R: Runtime>(
     let _ = reply.send(Ok(snapshot));
 }
 
+fn handle_set_eq_enabled<R: Runtime>(
+    runtime: &CoordinatorRuntime<R>,
+    enabled: bool,
+    reply: SnapshotReply,
+) {
+    let snapshot = {
+        let Ok(mut playback) = runtime.playback.lock() else {
+            let _ = reply.send(Err(PlaybackError::Internal(
+                "playback controller lock was poisoned".to_owned(),
+            )));
+            return;
+        };
+        playback.set_eq_enabled(enabled)
+    };
+    let _ = reply.send(Ok(snapshot));
+}
+
+fn handle_set_eq_gains<R: Runtime>(
+    runtime: &CoordinatorRuntime<R>,
+    gains_db: [f32; 5],
+    reply: SnapshotReply,
+) {
+    let snapshot = {
+        let Ok(mut playback) = runtime.playback.lock() else {
+            let _ = reply.send(Err(PlaybackError::Internal(
+                "playback controller lock was poisoned".to_owned(),
+            )));
+            return;
+        };
+        playback.set_eq_gains(gains_db)
+    };
+    let _ = reply.send(Ok(snapshot));
+}
+
+// ── #88: Gapless prepared-track commands ─────────────────────────────────
+
+fn handle_prepare_next<R: Runtime>(runtime: &CoordinatorRuntime<R>, prepared: PreparedTrack) {
+    // Validate the output format generation before locking playback. If the
+    // device restarted (or the format changed) since the preload scheduler
+    // captured its descriptor, the prepared audio is stale and must be
+    // discarded. The preload scheduler will re-prepare with the new format.
+    let pre_lock_format = output_format::snapshot(&runtime.output_format);
+    if let Some(current) = pre_lock_format {
+        if current.generation != prepared.output_format.generation
+            || current.sample_rate != prepared.output_format.sample_rate
+            || current.channels != prepared.output_format.channels
+        {
+            eprintln!(
+                "coordinator: dropping stale PrepareNext for {} — output format changed (prepared gen={}, rate={}, ch={} vs current gen={}, rate={}, ch={})",
+                prepared.song_id,
+                prepared.output_format.generation,
+                prepared.output_format.sample_rate,
+                prepared.output_format.channels,
+                current.generation,
+                current.sample_rate,
+                current.channels,
+            );
+            return;
+        }
+    }
+
+    let Ok(mut playback) = runtime.playback.lock() else {
+        eprintln!("coordinator: playback lock poisoned in PrepareNext");
+        return;
+    };
+
+    // Re-capture the output format after acquiring the playback lock. The
+    // output thread publishes the format descriptor outside the playback
+    // lock, so it could change between the pre-lock check above and the lock
+    // acquisition. The controller's defensive guard compares the prepared
+    // track's captured format against this re-captured snapshot.
+    let post_lock_format = match output_format::snapshot(&runtime.output_format) {
+        Some(fmt) => fmt,
+        None => {
+            eprintln!("coordinator: PrepareNext rejected — output format unavailable after lock");
+            return;
+        }
+    };
+    if let Err(e) = playback.install_prepared_track(prepared, post_lock_format) {
+        eprintln!("coordinator: PrepareNext rejected: {e}");
+    }
+}
+
+fn handle_cancel_prepared_next<R: Runtime>(
+    runtime: &CoordinatorRuntime<R>,
+    expected_generation: u64,
+) {
+    let Ok(mut playback) = runtime.playback.lock() else {
+        eprintln!("coordinator: playback lock poisoned in CancelPreparedNext");
+        return;
+    };
+    playback.cancel_prepared_track(expected_generation);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -640,6 +776,7 @@ mod tests {
             let shutdown = Arc::new(AtomicBool::new(false));
 
             let (tx, rx) = mpsc::channel();
+            let output_format = output_format::create_output_format_state();
             let runtime = Arc::new(CoordinatorRuntime {
                 app_handle,
                 playback: Arc::clone(&playback),
@@ -649,6 +786,8 @@ mod tests {
                 output_start_lock: Arc::clone(&output_start_lock),
                 airplay: airplay.clone(),
                 shutdown: Arc::clone(&shutdown),
+                peak_ring: Arc::new(crate::audio::peaks::PeakRing::new()),
+                output_format: Arc::clone(&output_format),
             });
             let handle = spawn_coordinator(
                 CoordinatorRuntime {
@@ -660,6 +799,8 @@ mod tests {
                     output_start_lock: Arc::clone(&runtime.output_start_lock),
                     airplay: runtime.airplay.clone(),
                     shutdown: Arc::clone(&runtime.shutdown),
+                    peak_ring: runtime.peak_ring.clone(),
+                    output_format: Arc::clone(&output_format),
                 },
                 rx,
             );
@@ -1183,7 +1324,11 @@ mod tests {
             audio_output_started: Arc::new(AtomicBool::new(false)),
             audio_output_start_lock: Arc::new(Mutex::new(())),
             background_shutdown: Arc::new(Mutex::new(Arc::new(AtomicBool::new(false)))),
+            preload_shutdown: Arc::new(Mutex::new(Arc::new(AtomicBool::new(false)))),
+            preload_request_generation: Arc::new(AtomicU64::new(0)),
             command_tx: tx,
+            peak_ring: Arc::new(crate::audio::peaks::PeakRing::new()),
+            output_format: output_format::create_output_format_state(),
         };
 
         let (reply_tx, _reply_rx) = tokio::sync::oneshot::channel();

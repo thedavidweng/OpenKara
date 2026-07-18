@@ -414,6 +414,17 @@
       "directml": "DirectML",
       "directmlDescription": "DirectX 12 GPU acceleration for Windows",
       "note": "Changes take effect on the next separation."
+    },
+    "eq": {
+      "label": "Equalizer",
+      "enable": "Enable 5-band EQ",
+      "description": "Adjusts five frequency bands with automatic preamp and a soft limiter to prevent clipping.",
+      "band60": "60 Hz",
+      "band230": "230 Hz",
+      "band910": "910 Hz",
+      "band3600": "3.6 kHz",
+      "band14000": "14 kHz",
+      "reset": "Reset to flat"
     }
   },
   "bootstrap": {

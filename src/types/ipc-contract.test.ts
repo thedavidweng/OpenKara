@@ -105,6 +105,19 @@ const PLAYBACK_COMMANDS: CommandContract[] = [
     frontendFn: "getPlaybackState",
     hasArgs: false,
   },
+  {
+    command: "get_audio_peaks",
+    frontendFile: "src/lib/tauri/playback.ts",
+    frontendFn: "getAudioPeaks",
+    hasArgs: false,
+  },
+  {
+    command: "set_preload_candidate",
+    frontendFile: "src/lib/tauri/playback.ts",
+    frontendFn: "setPreloadCandidate",
+    hasArgs: true,
+    rustParams: ["song_id"],
+  },
 ];
 
 const LIBRARY_COMMANDS: CommandContract[] = [
@@ -322,6 +335,8 @@ describe("IPC command registry", () => {
       "set_stem_volume",
       "load_stems",
       "get_playback_state",
+      "get_audio_peaks",
+      "set_preload_candidate",
     ];
     const registered = PLAYBACK_COMMANDS.map((c) => c.command);
     expect(registered.sort()).toEqual(expectedPlaybackCommands.sort());
@@ -417,6 +432,13 @@ describe("IPC parameter contracts", () => {
       (c) => c.command === "set_stem_volume",
     )!;
     expect(contract.rustParams).toEqual(["stem", "level"]);
+  });
+
+  test("set_preload_candidate expects song_id parameter (camelCase: songId)", () => {
+    const contract = PLAYBACK_COMMANDS.find(
+      (c) => c.command === "set_preload_candidate",
+    )!;
+    expect(contract.rustParams).toContain("song_id");
   });
 
   test("import_songs expects paths and optional options parameters", () => {
@@ -1029,6 +1051,8 @@ describe("AppSettings shape matches Rust AppSettings", () => {
       lyrics_font_step: 0,
       execution_provider: "cpu",
       available_execution_providers: ["cpu", "xnnpack"],
+      eq_enabled: false,
+      eq_gains_db: [0, 0, 0, 0, 0],
     };
     expect(settings).toHaveProperty("stem_mode");
     expect(settings).toHaveProperty("model_variant");

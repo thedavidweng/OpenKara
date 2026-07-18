@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AirPlayAudienceStatePayload,
   AirPlayRoutePickerBounds,
+  AudioPeakSnapshot,
   PlaybackStateSnapshot,
   StemName,
 } from "@/types/ipc";
@@ -39,6 +40,14 @@ export function loadStems(): Promise<PlaybackStateSnapshot> {
 
 export function getPlaybackState(): Promise<PlaybackStateSnapshot> {
   return invoke<PlaybackStateSnapshot>("get_playback_state");
+}
+
+export function getAudioPeaks(): Promise<AudioPeakSnapshot> {
+  return invoke<AudioPeakSnapshot>("get_audio_peaks");
+}
+
+export function setPreloadCandidate(songId: string | null): Promise<void> {
+  return invoke<void>("set_preload_candidate", { songId });
 }
 
 export function syncAirPlayRoutePicker(

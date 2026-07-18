@@ -6,13 +6,27 @@ import {
   useSettingsStore,
 } from "./settings-store";
 
-const { mockSetLyricsFontStep, mockNotifyError } = vi.hoisted(() => ({
+const {
+  mockSetLyricsFontStep,
+  mockSetEqEnabled,
+  mockSetEqGains,
+  mockNotifyError,
+} = vi.hoisted(() => ({
   mockSetLyricsFontStep: vi.fn<(step: number) => Promise<AppSettings>>(),
+  mockSetEqEnabled: vi.fn<(enabled: boolean) => Promise<AppSettings>>(),
+  mockSetEqGains:
+    vi.fn<
+      (
+        gainsDb: [number, number, number, number, number],
+      ) => Promise<AppSettings>
+    >(),
   mockNotifyError: vi.fn(),
 }));
 
 vi.mock("@/lib/tauri", () => ({
   setLyricsFontStep: mockSetLyricsFontStep,
+  setEqEnabled: mockSetEqEnabled,
+  setEqGains: mockSetEqGains,
 }));
 
 vi.mock("@/lib/errors", () => ({
@@ -43,6 +57,8 @@ function makeAppSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     lyrics_font_step: 0,
     execution_provider: "cpu",
     available_execution_providers: ["cpu"],
+    eq_enabled: false,
+    eq_gains_db: [0, 0, 0, 0, 0],
     ...overrides,
   };
 }
@@ -122,8 +138,12 @@ describe("settings-store actions", () => {
       lyricsFontStep: 0,
       executionProvider: "cpu",
       availableExecutionProviders: ["cpu"],
+      eqEnabled: false,
+      eqGainsDb: [0, 0, 0, 0, 0],
     });
     mockSetLyricsFontStep.mockReset();
+    mockSetEqEnabled.mockReset();
+    mockSetEqGains.mockReset();
     mockNotifyError.mockReset();
   });
 
@@ -332,6 +352,8 @@ describe("settings-store actions", () => {
       lyricsFontStep: 1,
       executionProvider: "xnnpack",
       availableExecutionProviders: ["cpu", "xnnpack"],
+      eqEnabled: false,
+      eqGainsDb: [0, 0, 0, 0, 0],
     });
 
     const snapshot = store.getState().getAppSettingsSnapshot();
@@ -346,6 +368,8 @@ describe("settings-store actions", () => {
       lyricsFontStep: 1,
       executionProvider: "xnnpack",
       availableExecutionProviders: ["cpu", "xnnpack"],
+      eqEnabled: false,
+      eqGainsDb: [0, 0, 0, 0, 0],
     });
     expect(snapshot).not.toHaveProperty("isOpen");
   });
@@ -361,5 +385,93 @@ describe("settings-store actions", () => {
     expect(snapshot).not.toHaveProperty("resetLyricsFontStep");
     expect(snapshot).not.toHaveProperty("hydrateAppSettings");
     expect(snapshot).not.toHaveProperty("patchAppSettings");
+  });
+
+  // ── setEqEnabled ────────────────────────────────────────────────────────
+
+  test("setEqEnabled optimistically updates and hydrates on success", async () => {
+    const returned = makeAppSettings({ eq_enabled: true });
+    mockSetEqEnabled.mockResolvedValue(returned);
+
+    await store.getState().setEqEnabled(true);
+
+    expect(mockSetEqEnabled).toHaveBeenCalledWith(true);
+    expect(store.getState().eqEnabled).toBe(true);
+  });
+
+  test("setEqEnabled reverts on failure", async () => {
+    const error = new Error("invoke failed");
+    mockSetEqEnabled.mockRejectedValue(error);
+
+    await store.getState().setEqEnabled(true);
+
+    expect(mockNotifyError).toHaveBeenCalledWith(error);
+    expect(store.getState().eqEnabled).toBe(false);
+  });
+
+  // ── setEqGains ──────────────────────────────────────────────────────────
+
+  test("setEqGains optimistically updates and hydrates on success", async () => {
+    const gains: [number, number, number, number, number] = [0, 3, -6, 0, 12];
+    const returned = makeAppSettings({ eq_gains_db: gains });
+    mockSetEqGains.mockResolvedValue(returned);
+
+    await store.getState().setEqGains(gains);
+
+    expect(mockSetEqGains).toHaveBeenCalledWith(gains);
+    expect(store.getState().eqGainsDb).toEqual(gains);
+  });
+
+  test("setEqGains reverts optimistic state and calls notifyError on failure", async () => {
+    const error = new Error("invoke failed");
+    mockSetEqGains.mockRejectedValue(error);
+    store.setState({ eqGainsDb: [1, 2, 3, 4, 5] });
+
+    await store.getState().setEqGains([0, 0, 6, 0, 0]);
+
+    expect(mockNotifyError).toHaveBeenCalledWith(error);
+    // Should revert to the previous authoritative values.
+    expect(store.getState().eqGainsDb).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  // ── setEqBandGain ───────────────────────────────────────────────────────
+
+  test("setEqBandGain updates a single band and calls setEqGains", async () => {
+    const returned = makeAppSettings({ eq_gains_db: [0, 0, 6, 0, 0] });
+    mockSetEqGains.mockResolvedValue(returned);
+
+    await store.getState().setEqBandGain(2, 6);
+
+    expect(mockSetEqGains).toHaveBeenCalledWith([0, 0, 6, 0, 0]);
+    expect(store.getState().eqGainsDb).toEqual([0, 0, 6, 0, 0]);
+  });
+
+  test("setEqBandGain clamps to ±12 dB", async () => {
+    const returned = makeAppSettings({ eq_gains_db: [12, 0, 0, 0, 0] });
+    mockSetEqGains.mockResolvedValue(returned);
+
+    await store.getState().setEqBandGain(0, 20);
+
+    expect(mockSetEqGains).toHaveBeenCalledWith([12, 0, 0, 0, 0]);
+  });
+
+  test("setEqBandGain is a no-op when value is unchanged", async () => {
+    await store.getState().setEqBandGain(0, 0);
+
+    expect(mockSetEqGains).not.toHaveBeenCalled();
+  });
+
+  // ── resetEqGains ────────────────────────────────────────────────────────
+
+  test("resetEqGains calls setEqGains with flat values", async () => {
+    store.setState({ eqGainsDb: [3, -6, 0, 12, -12] });
+    const flat = [0, 0, 0, 0, 0] as [number, number, number, number, number];
+    const returned = makeAppSettings({ eq_gains_db: flat });
+    mockSetEqGains.mockResolvedValue(returned);
+
+    await store.getState().resetEqGains();
+
+    expect(mockSetEqGains).toHaveBeenCalledWith(flat);
+    expect(store.getState().eqGainsDb).toEqual(flat);
   });
 });

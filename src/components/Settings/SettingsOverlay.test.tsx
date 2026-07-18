@@ -49,6 +49,8 @@ vi.mock("@/stores/settings-store", () => ({
           lyricsFontStep: 0,
           executionProvider: "xnnpack" as const,
           availableExecutionProviders: ["cpu" as const, "xnnpack" as const],
+          eqEnabled: false,
+          eqGainsDb: [0, 0, 0, 0, 0],
         }),
       }),
     },

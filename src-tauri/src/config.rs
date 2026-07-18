@@ -425,6 +425,14 @@ pub struct AppConfig {
     pub lyrics_font_step: Option<i8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub execution_provider: Option<ExecutionProviderPreference>,
+    /// Whether the 5-band EQ is enabled. When absent, defaults to disabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eq_enabled: Option<bool>,
+    /// Per-band EQ gains in dB for the five fixed bands
+    /// (60, 230, 910, 3600, 14000 Hz). When absent, defaults to all-zero
+    /// (flat). Each gain is clamped to -12.0..=12.0 dB on read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eq_gains_db: Option<[f32; 5]>,
     /// Remote file cache cap in bytes. When set, the cache directory is
     /// trimmed to stay under this limit, deleting the least-recently-used
     /// files. When absent the cache grows unbounded.
@@ -500,6 +508,23 @@ impl AppConfig {
 
     pub fn effective_execution_provider(&self) -> ExecutionProviderPreference {
         self.effective_execution_provider_for(ExecutionProviderPlatform::current())
+    }
+
+    pub fn effective_eq_enabled(&self) -> bool {
+        self.eq_enabled.unwrap_or(false)
+    }
+
+    /// Returns the per-band EQ gains, clamped to -12.0..=12.0 dB. Non-finite
+    /// values are replaced with 0.0. Defaults to flat (all zeros) when unset.
+    pub fn effective_eq_gains_db(&self) -> [f32; 5] {
+        let mut gains = self.eq_gains_db.unwrap_or([0.0; 5]);
+        for g in gains.iter_mut() {
+            if !g.is_finite() {
+                *g = 0.0;
+            }
+            *g = g.clamp(-12.0, 12.0);
+        }
+        gains
     }
 
     pub fn effective_remote_cache_bytes_limit(&self) -> Option<u64> {
@@ -609,6 +634,8 @@ mod tests {
             lyrics_font_step: Some(1),
             execution_provider: None,
             library_path: None,
+            eq_enabled: None,
+            eq_gains_db: None,
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
@@ -641,6 +668,8 @@ mod tests {
             model_variant: None,
             lyrics_font_step: None,
             execution_provider: None,
+            eq_enabled: None,
+            eq_gains_db: None,
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
@@ -668,6 +697,8 @@ mod tests {
             model_variant: None,
             lyrics_font_step: None,
             execution_provider: None,
+            eq_enabled: None,
+            eq_gains_db: None,
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
@@ -689,6 +720,8 @@ mod tests {
             model_variant: None,
             lyrics_font_step: None,
             execution_provider: None,
+            eq_enabled: None,
+            eq_gains_db: None,
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
@@ -723,6 +756,8 @@ mod tests {
             model_variant: Some(ModelVariant::HtdemucsFt),
             lyrics_font_step: Some(1),
             execution_provider: None,
+            eq_enabled: None,
+            eq_gains_db: None,
             libraries: vec![],
             active_library_id: None,
             remote_cache_bytes_limit: None,
@@ -881,6 +916,36 @@ mod tests {
         );
     }
 
+    // ── EQ config hydration ────────────────────────────────────────────────
+
+    #[test]
+    fn effective_eq_defaults_to_disabled_flat() {
+        let config = AppConfig::default();
+        assert!(!config.effective_eq_enabled());
+        assert_eq!(config.effective_eq_gains_db(), [0.0; 5]);
+    }
+
+    #[test]
+    fn effective_eq_enabled_hydrates_from_persisted_value() {
+        let config = AppConfig {
+            eq_enabled: Some(true),
+            ..Default::default()
+        };
+        assert!(config.effective_eq_enabled());
+    }
+
+    #[test]
+    fn effective_eq_gains_hydrates_from_persisted_values() {
+        let config = AppConfig {
+            eq_gains_db: Some([3.0, -6.0, 0.0, 12.0, -12.0]),
+            ..Default::default()
+        };
+        assert_eq!(
+            config.effective_eq_gains_db(),
+            [3.0, -6.0, 0.0, 12.0, -12.0]
+        );
+    }
+
     #[test]
     fn effective_execution_provider_for_falls_back_for_stale_cross_platform_value() {
         use ExecutionProviderPlatform::*;
@@ -905,6 +970,21 @@ mod tests {
         assert_eq!(
             config.effective_execution_provider_for(Windows),
             ExecutionProviderPreference::DirectMl
+        );
+    }
+
+    #[test]
+    fn effective_eq_gains_clamps_out_of_range_persisted_values() {
+        // A manually-edited config file could contain values outside the
+        // valid range. The effective accessor clamps them rather than
+        // panicking, so the app stays usable.
+        let config = AppConfig {
+            eq_gains_db: Some([20.0, -20.0, 0.0, 100.0, -100.0]),
+            ..Default::default()
+        };
+        assert_eq!(
+            config.effective_eq_gains_db(),
+            [12.0, -12.0, 0.0, 12.0, -12.0]
         );
     }
 
@@ -941,5 +1021,15 @@ mod tests {
         assert_eq!(current, Linux);
         #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         assert_eq!(current, Other);
+    }
+
+    #[test]
+    fn effective_eq_gains_replaces_non_finite_persisted_values_with_zero() {
+        let config = AppConfig {
+            eq_gains_db: Some([f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.0, 6.0]),
+            ..Default::default()
+        };
+        let gains = config.effective_eq_gains_db();
+        assert_eq!(gains, [0.0, 0.0, 0.0, 0.0, 6.0]);
     }
 }

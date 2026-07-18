@@ -520,6 +520,8 @@ pub(crate) fn ensure_output_thread_inner(
     airplay_audio_tap: Arc<crate::airplay_stream::AirPlayAudioTap>,
     airplay_local_output_suppressed: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
+    peak_ring: Arc<crate::audio::peaks::PeakRing>,
+    output_format: crate::audio::output_format::OutputFormatState,
 ) -> Result<(), PlaybackError> {
     crate::audio::output::ensure_output_thread(
         audio_output_started,
@@ -528,6 +530,8 @@ pub(crate) fn ensure_output_thread_inner(
         airplay_audio_tap,
         airplay_local_output_suppressed,
         shutdown,
+        peak_ring,
+        output_format,
     )?;
     Ok(())
 }
@@ -573,7 +577,11 @@ mod tests {
                 audio_output_started: Arc::new(AtomicBool::new(true)),
                 audio_output_start_lock: Arc::new(Mutex::new(())),
                 background_shutdown: Arc::new(Mutex::new(Arc::new(AtomicBool::new(false)))),
+                preload_shutdown: Arc::new(Mutex::new(Arc::new(AtomicBool::new(false)))),
+                preload_request_generation: Arc::new(AtomicU64::new(0)),
                 command_tx,
+                peak_ring: Arc::new(crate::audio::peaks::PeakRing::new()),
+                output_format: crate::audio::output_format::create_output_format_state(),
             },
             airplay: AirPlayState {
                 airplay_audio_tap: Arc::new(AirPlayAudioTap::new(4)),

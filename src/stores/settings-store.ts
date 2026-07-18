@@ -22,6 +22,8 @@ export interface AppSettingsSnapshot {
   lyricsFontStep: number;
   executionProvider: ExecutionProvider;
   availableExecutionProviders: ExecutionProvider[];
+  eqEnabled: boolean;
+  eqGainsDb: [number, number, number, number, number];
 }
 
 interface SettingsState {
@@ -35,6 +37,8 @@ interface SettingsState {
   lyricsFontStep: AppSettingsSnapshot["lyricsFontStep"];
   executionProvider: AppSettingsSnapshot["executionProvider"];
   availableExecutionProviders: AppSettingsSnapshot["availableExecutionProviders"];
+  eqEnabled: AppSettingsSnapshot["eqEnabled"];
+  eqGainsDb: AppSettingsSnapshot["eqGainsDb"];
   toggle: () => void;
   close: () => void;
   open: () => void;
@@ -43,6 +47,12 @@ interface SettingsState {
   setLyricsFontStep: (step: number) => Promise<void>;
   adjustLyricsFontStep: (delta: number) => Promise<void>;
   resetLyricsFontStep: () => Promise<void>;
+  setEqEnabled: (enabled: boolean) => Promise<void>;
+  setEqGains: (
+    gainsDb: [number, number, number, number, number],
+  ) => Promise<void>;
+  setEqBandGain: (band: number, gainDb: number) => Promise<void>;
+  resetEqGains: () => Promise<void>;
   getAppSettingsSnapshot: () => AppSettingsSnapshot;
 }
 
@@ -56,6 +66,8 @@ const DEFAULT_APP_SETTINGS: AppSettingsSnapshot = {
   lyricsFontStep: 0,
   executionProvider: "cpu",
   availableExecutionProviders: ["cpu"],
+  eqEnabled: false,
+  eqGainsDb: [0, 0, 0, 0, 0],
 };
 
 function toAppSettingsSnapshot(settings: AppSettings): AppSettingsSnapshot {
@@ -69,6 +81,9 @@ function toAppSettingsSnapshot(settings: AppSettings): AppSettingsSnapshot {
     lyricsFontStep: settings.lyrics_font_step,
     executionProvider: settings.execution_provider,
     availableExecutionProviders: settings.available_execution_providers,
+    // Defensive defaults: incomplete IPC payloads must not leave eqGainsDb undefined.
+    eqEnabled: settings.eq_enabled ?? false,
+    eqGainsDb: settings.eq_gains_db ?? [0, 0, 0, 0, 0],
   };
 }
 
@@ -85,6 +100,8 @@ function selectAppSettingsSnapshot(
     lyricsFontStep: state.lyricsFontStep,
     executionProvider: state.executionProvider,
     availableExecutionProviders: state.availableExecutionProviders,
+    eqEnabled: state.eqEnabled,
+    eqGainsDb: state.eqGainsDb,
   };
 }
 
@@ -110,9 +127,12 @@ function applySettingsSyncSnapshot(
     modelVariant: snapshot.modelVariant,
     language: snapshot.language,
     hideBatchSeparate: snapshot.hideBatchSeparate,
+    coverArtBackdrop: snapshot.coverArtBackdrop,
     lyricsFontStep: snapshot.lyricsFontStep,
     executionProvider: snapshot.executionProvider,
     availableExecutionProviders: snapshot.availableExecutionProviders,
+    eqEnabled: snapshot.eqEnabled,
+    eqGainsDb: snapshot.eqGainsDb,
   });
 }
 
@@ -157,6 +177,49 @@ export function createSettingsStore(
           return;
         }
         await get().setLyricsFontStep(0);
+      },
+      setEqEnabled: async (enabled) => {
+        // Capture the authoritative value before the optimistic patch so we
+        // revert to it (not the inverse of the requested value) on failure.
+        // Reverting to !enabled would flip the store even when the backend
+        // state was already the requested value.
+        const previous = get().eqEnabled;
+        // Optimistically update local state so the toggle reflects immediately.
+        syncPatch({ eqEnabled: enabled });
+        try {
+          const settings = await api.setEqEnabled(enabled);
+          syncPatch(toAppSettingsSnapshot(settings));
+        } catch (error) {
+          // Revert to the previous authoritative value on failure.
+          syncPatch({ eqEnabled: previous });
+          notifyError(error);
+        }
+      },
+      setEqGains: async (gainsDb) => {
+        // Optimistically update local state so sliders reflect immediately.
+        const previous = get().eqGainsDb;
+        syncPatch({ eqGainsDb: gainsDb });
+        try {
+          const settings = await api.setEqGains(gainsDb);
+          syncPatch(toAppSettingsSnapshot(settings));
+        } catch (error) {
+          // Revert to the previous authoritative values on failure.
+          syncPatch({ eqGainsDb: previous });
+          notifyError(error);
+        }
+      },
+      setEqBandGain: async (band, gainDb) => {
+        const clamped = Math.max(-12, Math.min(12, gainDb));
+        const current = get().eqGainsDb;
+        if (current[band] === clamped) {
+          return;
+        }
+        const next = [...current] as [number, number, number, number, number];
+        next[band] = clamped;
+        await get().setEqGains(next);
+      },
+      resetEqGains: async () => {
+        await get().setEqGains([0, 0, 0, 0, 0]);
       },
       getAppSettingsSnapshot: () => selectAppSettingsSnapshot(get()),
     };

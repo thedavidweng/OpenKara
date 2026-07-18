@@ -1,10 +1,12 @@
-use crate::commands::error::{internal_error, CommandResult};
+use crate::audio::coordinator::PlaybackCommand;
+use crate::audio::eq::validate_gains_db;
+use crate::commands::error::{internal_error, invalid_playback_state, CommandResult};
 use crate::config::{self, AppConfig, ExecutionProviderPreference, ModelVariant, StemMode};
+use crate::AppState;
 use serde::Serialize;
 use std::path::Path;
+use std::sync::mpsc;
 use tauri::{AppHandle, Manager, State};
-
-use crate::AppState;
 
 #[derive(Debug, Serialize)]
 pub struct AppSettings {
@@ -16,6 +18,8 @@ pub struct AppSettings {
     pub lyrics_font_step: i8,
     pub execution_provider: String,
     pub available_execution_providers: Vec<&'static str>,
+    pub eq_enabled: bool,
+    pub eq_gains_db: [f32; 5],
 }
 
 fn settings_from_config(config: &AppConfig) -> AppSettings {
@@ -35,6 +39,8 @@ fn settings_from_config(config: &AppConfig) -> AppSettings {
         execution_provider: ep.as_str().to_owned(),
         available_execution_providers: ExecutionProviderPreference::available_for_current_platform(
         ),
+        eq_enabled: config.effective_eq_enabled(),
+        eq_gains_db: config.effective_eq_gains_db(),
     }
 }
 
@@ -212,6 +218,128 @@ pub fn set_execution_provider(
     Ok(settings_from_config(&config))
 }
 
+/// Apply an EQ-enabled change through the coordinator first, then persist.
+/// If the coordinator fails, the config is not touched. If persistence fails
+/// after a successful coordinator apply, the coordinator is reverted to the
+/// old value so the running engine and stored config stay consistent.
+///
+/// Returns the updated config on success. Testable without a Tauri
+/// `AppHandle` by passing a temp dir and a command sender directly.
+async fn apply_eq_enabled_atomically(
+    app_data_dir: &Path,
+    command_tx: &mpsc::Sender<PlaybackCommand>,
+    enabled: bool,
+) -> CommandResult<AppConfig> {
+    let mut config = config::load_config(app_data_dir)
+        .map_err(|e| internal_error(format!("failed to load config: {e}")))?
+        .unwrap_or_default();
+
+    let old_enabled = config.effective_eq_enabled();
+
+    // Apply through the coordinator FIRST so the running audio engine and
+    // persisted config never diverge. If the coordinator rejects the update
+    // or the channel is disconnected, we return an error without touching
+    // disk — the stored config and the engine both remain at the old value.
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let command = PlaybackCommand::SetEqEnabled { enabled, reply: tx };
+    command_tx
+        .send(command)
+        .map_err(|_| internal_error("playback coordinator disconnected"))?;
+    rx.await
+        .map_err(|_| internal_error("playback coordinator dropped reply"))?
+        .map_err(|e| internal_error(format!("failed to apply eq enabled: {e}")))?;
+
+    // Coordinator succeeded — persist the new value. If persistence fails,
+    // revert the coordinator to the old value so the engine and config stay
+    // consistent.
+    config.eq_enabled = Some(enabled);
+    if let Err(e) = config::save_config(app_data_dir, &config) {
+        let (revert_tx, revert_rx) = tokio::sync::oneshot::channel();
+        let revert_command = PlaybackCommand::SetEqEnabled {
+            enabled: old_enabled,
+            reply: revert_tx,
+        };
+        let _ = command_tx.send(revert_command);
+        let _ = revert_rx.await;
+        return Err(internal_error(format!("failed to save config: {e}")));
+    }
+
+    Ok(config)
+}
+
+/// Apply an EQ-gains change through the coordinator first, then persist.
+/// Same failure-atomic contract as `apply_eq_enabled_atomically`.
+async fn apply_eq_gains_atomically(
+    app_data_dir: &Path,
+    command_tx: &mpsc::Sender<PlaybackCommand>,
+    gains_db: [f32; 5],
+) -> CommandResult<AppConfig> {
+    validate_gains_db(&gains_db)
+        .map_err(|e| invalid_playback_state(format!("invalid eq gains: {e}")))?;
+
+    let mut config = config::load_config(app_data_dir)
+        .map_err(|e| internal_error(format!("failed to load config: {e}")))?
+        .unwrap_or_default();
+
+    let old_gains = config.effective_eq_gains_db();
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let command = PlaybackCommand::SetEqGains {
+        gains_db,
+        reply: tx,
+    };
+    command_tx
+        .send(command)
+        .map_err(|_| internal_error("playback coordinator disconnected"))?;
+    rx.await
+        .map_err(|_| internal_error("playback coordinator dropped reply"))?
+        .map_err(|e| internal_error(format!("failed to apply eq gains: {e}")))?;
+
+    config.eq_gains_db = Some(gains_db);
+    if let Err(e) = config::save_config(app_data_dir, &config) {
+        let (revert_tx, revert_rx) = tokio::sync::oneshot::channel();
+        let revert_command = PlaybackCommand::SetEqGains {
+            gains_db: old_gains,
+            reply: revert_tx,
+        };
+        let _ = command_tx.send(revert_command);
+        let _ = revert_rx.await;
+        return Err(internal_error(format!("failed to save config: {e}")));
+    }
+
+    Ok(config)
+}
+
+#[tauri::command]
+pub async fn set_eq_enabled(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> CommandResult<AppSettings> {
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| internal_error(format!("failed to get app data dir: {e}")))?;
+    let config =
+        apply_eq_enabled_atomically(&app_data_dir, &state.playback.command_tx, enabled).await?;
+    Ok(settings_from_config(&config))
+}
+
+#[tauri::command]
+pub async fn set_eq_gains(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    gains_db: [f32; 5],
+) -> CommandResult<AppSettings> {
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| internal_error(format!("failed to get app data dir: {e}")))?;
+    let config =
+        apply_eq_gains_atomically(&app_data_dir, &state.playback.command_tx, gains_db).await?;
+    Ok(settings_from_config(&config))
+}
+
 #[tauri::command]
 pub fn restart_app(app_handle: AppHandle) {
     app_handle.request_restart();
@@ -347,5 +475,376 @@ mod tests {
                 .is_none(),
             "rejected validation must not create a config file",
         );
+    }
+
+    // ── Failure-atomic EQ settings tests ───────────────────────────────
+    //
+    // These tests verify the coordinator-first / persist-second contract:
+    // if the coordinator fails, the config is not touched; if persistence
+    // fails after a successful coordinator apply, the coordinator is
+    // reverted to the old value.
+
+    /// Helper: drain the command channel and respond to SetEqEnabled with
+    /// the given result. Returns the `enabled` value from the command.
+    fn respond_to_set_eq_enabled(
+        rx: &std::sync::mpsc::Receiver<PlaybackCommand>,
+        result: Result<(), crate::audio::error::PlaybackError>,
+    ) -> bool {
+        match rx.recv().expect("command should arrive") {
+            PlaybackCommand::SetEqEnabled { enabled, reply } => {
+                if let Err(e) = result {
+                    let _ = reply.send(Err(e));
+                } else {
+                    let _ = reply.send(Ok(crate::audio::playback::PlaybackStateSnapshot::idle()));
+                }
+                enabled
+            }
+            _ => panic!("expected SetEqEnabled command"),
+        }
+    }
+
+    /// Helper: drain the command channel and respond to SetEqGains with
+    /// the given result. Returns the gains from the command.
+    fn respond_to_set_eq_gains(
+        rx: &std::sync::mpsc::Receiver<PlaybackCommand>,
+        result: Result<(), crate::audio::error::PlaybackError>,
+    ) -> [f32; 5] {
+        match rx.recv().expect("command should arrive") {
+            PlaybackCommand::SetEqGains { gains_db, reply } => {
+                if let Err(e) = result {
+                    let _ = reply.send(Err(e));
+                } else {
+                    let _ = reply.send(Ok(crate::audio::playback::PlaybackStateSnapshot::idle()));
+                }
+                gains_db
+            }
+            _ => panic!("expected SetEqGains command"),
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn eq_enabled_coordinator_send_failure_does_not_persist() {
+        let temp_dir = tempfile::tempdir().expect("temp dir should create");
+        // Drop the receiver immediately so send fails.
+        let (tx, _) = mpsc::channel::<PlaybackCommand>();
+
+        let error = apply_eq_enabled_atomically(temp_dir.path(), &tx, true)
+            .await
+            .expect_err("disconnected coordinator should fail");
+
+        assert!(error.message.contains("playback coordinator disconnected"));
+        assert!(
+            config::load_config(temp_dir.path())
+                .expect("config load should succeed")
+                .is_none(),
+            "config must not be created when coordinator send fails",
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn eq_enabled_coordinator_reply_dropped_does_not_persist() {
+        let temp_dir = tempfile::tempdir().expect("temp dir should create");
+        let (tx, rx) = mpsc::channel::<PlaybackCommand>();
+
+        // Spawn a task that receives the command but drops the reply sender
+        // without responding, simulating a coordinator that crashes mid-apply.
+        let handle = tokio::spawn(async move {
+            match rx.recv() {
+                Ok(PlaybackCommand::SetEqEnabled {
+                    enabled: _,
+                    reply: _,
+                }) => {
+                    // Drop reply without sending — simulates coordinator crash.
+                }
+                _ => panic!("expected SetEqEnabled"),
+            }
+        });
+
+        let error = apply_eq_enabled_atomically(temp_dir.path(), &tx, true)
+            .await
+            .expect_err("dropped reply should fail");
+
+        assert!(error.message.contains("playback coordinator dropped reply"));
+        assert!(
+            config::load_config(temp_dir.path())
+                .expect("config load should succeed")
+                .is_none(),
+            "config must not be created when coordinator reply is dropped",
+        );
+
+        let _ = handle.await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn eq_enabled_coordinator_apply_failure_does_not_persist() {
+        let temp_dir = tempfile::tempdir().expect("temp dir should create");
+        let (tx, rx) = mpsc::channel::<PlaybackCommand>();
+
+        // Spawn a background task that responds with an error.
+        let handle = tokio::spawn(async move {
+            respond_to_set_eq_enabled(
+                &rx,
+                Err(crate::audio::error::PlaybackError::Internal(
+                    "coordinator apply failed".to_owned(),
+                )),
+            );
+        });
+
+        let error = apply_eq_enabled_atomically(temp_dir.path(), &tx, true)
+            .await
+            .expect_err("coordinator apply failure should propagate");
+
+        assert!(error.message.contains("failed to apply eq enabled"));
+        assert!(
+            config::load_config(temp_dir.path())
+                .expect("config load should succeed")
+                .is_none(),
+            "config must not be created when coordinator apply fails",
+        );
+
+        let _ = handle.await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn eq_enabled_success_persists_and_returns_config() {
+        let temp_dir = tempfile::tempdir().expect("temp dir should create");
+        let (tx, rx) = mpsc::channel::<PlaybackCommand>();
+
+        let handle = tokio::spawn(async move {
+            let enabled = respond_to_set_eq_enabled(&rx, Ok(()));
+            assert!(enabled);
+        });
+
+        let config = apply_eq_enabled_atomically(temp_dir.path(), &tx, true)
+            .await
+            .expect("success should return config");
+
+        assert!(config.effective_eq_enabled());
+
+        let loaded = config::load_config(temp_dir.path())
+            .expect("config should load")
+            .expect("config should exist");
+        assert!(loaded.effective_eq_enabled());
+
+        let _ = handle.await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn eq_gains_coordinator_send_failure_does_not_persist() {
+        let temp_dir = tempfile::tempdir().expect("temp dir should create");
+        let (tx, _) = mpsc::channel::<PlaybackCommand>();
+
+        let error = apply_eq_gains_atomically(temp_dir.path(), &tx, [3.0, 0.0, 0.0, 0.0, 0.0])
+            .await
+            .expect_err("disconnected coordinator should fail");
+
+        assert!(error.message.contains("playback coordinator disconnected"));
+        assert!(config::load_config(temp_dir.path())
+            .expect("config load should succeed")
+            .is_none(),);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn eq_gains_coordinator_apply_failure_does_not_persist() {
+        let temp_dir = tempfile::tempdir().expect("temp dir should create");
+        let (tx, rx) = mpsc::channel::<PlaybackCommand>();
+
+        let handle = tokio::spawn(async move {
+            respond_to_set_eq_gains(
+                &rx,
+                Err(crate::audio::error::PlaybackError::Internal(
+                    "coordinator apply failed".to_owned(),
+                )),
+            );
+        });
+
+        let error = apply_eq_gains_atomically(temp_dir.path(), &tx, [3.0, 0.0, 0.0, 0.0, 0.0])
+            .await
+            .expect_err("coordinator apply failure should propagate");
+
+        assert!(error.message.contains("failed to apply eq gains"));
+        assert!(config::load_config(temp_dir.path())
+            .expect("config load should succeed")
+            .is_none(),);
+
+        let _ = handle.await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn eq_gains_invalid_values_fail_before_coordinator_or_persist() {
+        let temp_dir = tempfile::tempdir().expect("temp dir should create");
+        let (tx, rx) = mpsc::channel::<PlaybackCommand>();
+
+        // NaN gains should be rejected by validate_gains_db before any
+        // coordinator command is sent or config is touched.
+        let error = apply_eq_gains_atomically(temp_dir.path(), &tx, [f32::NAN, 0.0, 0.0, 0.0, 0.0])
+            .await
+            .expect_err("invalid gains should fail");
+
+        assert!(error.message.contains("invalid eq gains"));
+        assert!(
+            rx.try_recv().is_err(),
+            "no coordinator command should be sent for invalid gains",
+        );
+        assert!(config::load_config(temp_dir.path())
+            .expect("config load should succeed")
+            .is_none(),);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn eq_gains_success_persists_and_returns_config() {
+        let temp_dir = tempfile::tempdir().expect("temp dir should create");
+        let (tx, rx) = mpsc::channel::<PlaybackCommand>();
+
+        let handle = tokio::spawn(async move {
+            let gains = respond_to_set_eq_gains(&rx, Ok(()));
+            assert_eq!(gains, [3.0, -6.0, 0.0, 12.0, -12.0]);
+        });
+
+        let config = apply_eq_gains_atomically(temp_dir.path(), &tx, [3.0, -6.0, 0.0, 12.0, -12.0])
+            .await
+            .expect("success should return config");
+
+        assert_eq!(
+            config.effective_eq_gains_db(),
+            [3.0, -6.0, 0.0, 12.0, -12.0]
+        );
+
+        let loaded = config::load_config(temp_dir.path())
+            .expect("config should load")
+            .expect("config should exist");
+        assert_eq!(
+            loaded.effective_eq_gains_db(),
+            [3.0, -6.0, 0.0, 12.0, -12.0]
+        );
+
+        let _ = handle.await;
+    }
+
+    /// Persistence failure: coordinator succeeds, but save_config fails.
+    /// The coordinator should be reverted to the old value, and the error
+    /// should propagate. We simulate this by making the config file
+    /// read-only so save_config's fs::write fails.
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn eq_enabled_persistence_failure_reverts_coordinator() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp_dir = tempfile::tempdir().expect("temp dir should create");
+
+        // First, write a valid config with eq_enabled = false so we have
+        // an old value to revert to.
+        let initial_config = AppConfig {
+            eq_enabled: Some(false),
+            ..AppConfig::default()
+        };
+        config::save_config(temp_dir.path(), &initial_config).expect("initial config should save");
+
+        let (tx, rx) = mpsc::channel::<PlaybackCommand>();
+
+        // Make the config file read-only so save_config's fs::write fails.
+        // On Unix, writing an existing file requires the file's write bit,
+        // not the directory's.
+        let config_path = temp_dir.path().join("config.json");
+        let mut perms = std::fs::metadata(&config_path)
+            .expect("config metadata")
+            .permissions();
+        perms.set_mode(0o444);
+        std::fs::set_permissions(&config_path, perms).expect("should set config read-only");
+
+        // The coordinator should receive the forward command (enabled=true)
+        // and then a revert command (enabled=false).
+        let handle = tokio::spawn(async move {
+            // Forward command: respond Ok.
+            let forward_enabled = respond_to_set_eq_enabled(&rx, Ok(()));
+            assert!(forward_enabled, "forward command should set enabled=true");
+
+            // Revert command: respond Ok.
+            let revert_enabled = respond_to_set_eq_enabled(&rx, Ok(()));
+            assert!(
+                !revert_enabled,
+                "revert command should set enabled=false (old value)",
+            );
+        });
+
+        let error = apply_eq_enabled_atomically(temp_dir.path(), &tx, true)
+            .await
+            .expect_err("persistence failure should propagate");
+
+        assert!(error.message.contains("failed to save config"));
+
+        // The stored config should still have the old value.
+        let loaded = config::load_config(temp_dir.path())
+            .expect("config should load")
+            .expect("config should exist");
+        assert!(
+            !loaded.effective_eq_enabled(),
+            "stored config should remain at old value after persistence failure",
+        );
+
+        let _ = handle.await;
+
+        // Restore permissions so temp_dir cleanup works.
+        let mut perms = std::fs::metadata(&config_path)
+            .expect("metadata")
+            .permissions();
+        perms.set_mode(0o644);
+        let _ = std::fs::set_permissions(&config_path, perms);
+    }
+
+    /// Same persistence-failure revert test for eq_gains.
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn eq_gains_persistence_failure_reverts_coordinator() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp_dir = tempfile::tempdir().expect("temp dir should create");
+
+        let initial_config = AppConfig {
+            eq_gains_db: Some([0.0; 5]),
+            ..AppConfig::default()
+        };
+        config::save_config(temp_dir.path(), &initial_config).expect("initial config should save");
+
+        let (tx, rx) = mpsc::channel::<PlaybackCommand>();
+
+        let config_path = temp_dir.path().join("config.json");
+        let mut perms = std::fs::metadata(&config_path)
+            .expect("config metadata")
+            .permissions();
+        perms.set_mode(0o444);
+        std::fs::set_permissions(&config_path, perms).expect("should set config read-only");
+
+        let handle = tokio::spawn(async move {
+            let forward_gains = respond_to_set_eq_gains(&rx, Ok(()));
+            assert_eq!(forward_gains, [3.0, 0.0, 0.0, 0.0, 0.0]);
+
+            let revert_gains = respond_to_set_eq_gains(&rx, Ok(()));
+            assert_eq!(
+                revert_gains, [0.0; 5],
+                "revert command should restore old gains",
+            );
+        });
+
+        let error = apply_eq_gains_atomically(temp_dir.path(), &tx, [3.0, 0.0, 0.0, 0.0, 0.0])
+            .await
+            .expect_err("persistence failure should propagate");
+
+        assert!(error.message.contains("failed to save config"));
+
+        let loaded = config::load_config(temp_dir.path())
+            .expect("config should load")
+            .expect("config should exist");
+        assert_eq!(
+            loaded.effective_eq_gains_db(),
+            [0.0; 5],
+            "stored config should remain at old gains after persistence failure",
+        );
+
+        let _ = handle.await;
+
+        let mut perms = std::fs::metadata(&config_path)
+            .expect("metadata")
+            .permissions();
+        perms.set_mode(0o644);
+        let _ = std::fs::set_permissions(&config_path, perms);
     }
 }

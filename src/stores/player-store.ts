@@ -62,6 +62,8 @@ interface PlayerState {
   updateSnapshot: (snapshot: PlaybackStateSnapshot) => void;
   loadState: () => Promise<void>;
   playNextFromQueue: (endedSongId: string) => Promise<void>;
+  /** #88: Reconcile queue after a gapless track-transitioned event. */
+  onTrackTransitioned: (fromSongId: string, toSongId: string) => void;
   skipForward: () => Promise<void>;
   skipBack: () => Promise<void>;
   updateAirPlayOutput: (airPlayOutput: AirPlayOutputStateEvent) => void;
@@ -183,6 +185,7 @@ export function createPlayerStore(
         dequeue: () => useQueueStore.getState().dequeue() ?? null,
         pushToHistory: (id) => useQueueStore.getState().pushToHistory(id),
         popFromHistory: () => useQueueStore.getState().popFromHistory() ?? null,
+        removeSongIds: (ids) => useQueueStore.getState().removeSongIds(ids),
       },
       getSeparationStatus: (songId) =>
         useLibraryStore.getState().separationStatuses[songId],
@@ -318,6 +321,12 @@ export function createPlayerStore(
         } catch (e) {
           notifyError(e);
         }
+      },
+
+      onTrackTransitioned: (fromSongId, toSongId) => {
+        session.onTrackTransitioned(fromSongId, toSongId).catch((e) => {
+          notifyError(e);
+        });
       },
 
       skipForward: async () => {
