@@ -87,15 +87,14 @@ describe("AlphabetRail", () => {
     expect(onNavigate).not.toHaveBeenCalled();
   });
 
-  test("dedupes consecutive navigations to the same bucket", () => {
+  test("allows repeat button click activation for the same bucket", () => {
     const onNavigate = vi.fn();
     const index = makeIndex([["A", 0]]);
     render(<AlphabetRail indexByBucket={index} onNavigate={onNavigate} />);
     const buttonA = screen.getAllByRole("button")[0];
     fireEvent.click(buttonA);
     fireEvent.click(buttonA);
-    // Second click to the same resolved bucket should be deduped
-    expect(onNavigate).toHaveBeenCalledTimes(1);
+    expect(onNavigate).toHaveBeenCalledTimes(2);
   });
 
   test("roving tabindex: only one button has tabindex 0", () => {
@@ -379,6 +378,40 @@ describe("AlphabetRail", () => {
     fireEvent.click(buttonA);
     // The current-section marker must persist after a simple tap.
     expect(buttonA.getAttribute("aria-current")).toBe("true");
+  });
+
+  test("a later tap on the same bucket navigates again", () => {
+    const onNavigate = vi.fn();
+    const index = makeIndex([["A", 0]]);
+    render(<AlphabetRail indexByBucket={index} onNavigate={onNavigate} />);
+    const container = setupPointerContainer();
+    const buttonA = screen.getAllByRole("button")[0];
+
+    fireEvent.pointerDown(container, { button: 0, pointerId: 1, clientY: 0 });
+    fireEvent.pointerUp(container, { pointerId: 1 });
+    fireEvent.click(buttonA);
+
+    // The user may scroll elsewhere after the first jump. The next tap is a
+    // new gesture and must not be rejected by the prior gesture's dedup guard.
+    fireEvent.pointerDown(container, { button: 0, pointerId: 2, clientY: 0 });
+    fireEvent.pointerUp(container, { pointerId: 2 });
+    fireEvent.click(buttonA);
+
+    expect(onNavigate).toHaveBeenCalledTimes(2);
+  });
+
+  test("a cancelled pointer gesture does not suppress the next click", () => {
+    const onNavigate = vi.fn();
+    const index = makeIndex([["A", 0]]);
+    render(<AlphabetRail indexByBucket={index} onNavigate={onNavigate} />);
+    const container = setupPointerContainer();
+    const buttonA = screen.getAllByRole("button")[0];
+
+    fireEvent.pointerDown(container, { button: 0, pointerId: 1, clientY: 0 });
+    fireEvent.pointerCancel(container, { pointerId: 1 });
+    fireEvent.click(buttonA);
+
+    expect(onNavigate).toHaveBeenCalledTimes(2);
   });
 
   test("suppresses synthetic click after pointer-based navigation", () => {

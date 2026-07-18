@@ -36,13 +36,14 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
   }, [indexByBucket]);
 
   const navigateToBucket = useCallback(
-    (bucket: AlphabetBucket) => {
+    (bucket: AlphabetBucket): boolean => {
       const resolved = resolveBucket(indexByBucket, bucket);
-      if (resolved === null) return;
-      if (lastNavigatedBucketRef.current === resolved.bucket) return;
+      if (resolved === null) return false;
+      if (lastNavigatedBucketRef.current === resolved.bucket) return false;
       lastNavigatedBucketRef.current = resolved.bucket;
       setActiveBucket(resolved.bucket);
       onNavigate(resolved.index, resolved.bucket);
+      return true;
     },
     [indexByBucket, onNavigate],
   );
@@ -65,8 +66,10 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
       event.currentTarget.setPointerCapture(event.pointerId);
       const bucket = bucketFromClientY(event.clientY);
       setRovingBucket(bucket);
-      pointerNavOccurredRef.current = true;
-      navigateToBucket(bucket);
+      // A pointer gesture owns at most one synthetic click. Reset first so a
+      // cancelled prior gesture cannot suppress this gesture's activation.
+      pointerNavOccurredRef.current = false;
+      pointerNavOccurredRef.current = navigateToBucket(bucket);
     },
     [bucketFromClientY, navigateToBucket],
   );
@@ -88,13 +91,24 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (activePointerIdRef.current !== event.pointerId) return;
       activePointerIdRef.current = null;
+      const pointerMoved = pointerMovedRef.current;
+      pointerMovedRef.current = false;
       // Only clear the transient scrub state on release. A simple tap/click
       // (no movement) keeps `activeBucket` so the current-section marker
       // persists, matching keyboard Enter/Space behavior. An actual
       // scrub/drag clears the indicator as before.
-      if (pointerMovedRef.current) {
+      if (pointerMoved) {
         setActiveBucket(null);
-        lastNavigatedBucketRef.current = null;
+      }
+      // The dedup guard applies only while this pointer gesture is active.
+      // It must be reset for a later tap of the same letter to navigate again.
+      // `pointerNavOccurredRef` independently consumes the synthetic click
+      // that follows a successful pointerup.
+      lastNavigatedBucketRef.current = null;
+      // A cancelled/lost capture does not produce the synthetic click that a
+      // normal pointerup does, so do not let it suppress a later activation.
+      if (event.type !== "pointerup") {
+        pointerNavOccurredRef.current = false;
       }
       try {
         event.currentTarget.releasePointerCapture(event.pointerId);
@@ -224,6 +238,10 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
                 return;
               }
               setRovingBucket(bucket);
+              // A non-pointer click is an explicit activation (for example,
+              // assistive technology or a programmatic button click), not a
+              // pointer scrub update. It should always be able to re-jump.
+              lastNavigatedBucketRef.current = null;
               navigateToBucket(bucket);
             }}
             className="flex items-center justify-center text-[9px] leading-none min-h-[14px] text-[var(--color-text-dim)] hover:text-[var(--color-text)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--color-control-primary)] aria-[current=true]:text-[var(--color-control-primary)] aria-[current=true]:font-bold"

@@ -36,21 +36,21 @@ test.describe("Alphabet rail", () => {
     ).toBeVisible();
   });
 
-  test("clicking a letter button scrolls the song list", async ({ page }) => {
+  test("clicking a letter button marks the resolved section", async ({
+    page,
+  }) => {
     const selector = page.getByTestId("sort-mode-selector");
     await selector.selectOption("title_asc");
 
     const rail = page.getByRole("navigation", { name: "Alphabet navigation" });
     await expect(rail).toBeVisible();
 
-    // Click the "B" button — 北京之夜 (B bucket) should be the first song
+    // The short default fixture fits fully in the viewport, so a B jump does
+    // not produce a measurable scroll offset. Verify the visible resolved
+    // section marker here; the 5,000-song spec covers actual scroll movement.
     const buttonB = rail.locator("button[data-bucket='B']");
     await buttonB.click();
-
-    // The first visible song should contain 北京之夜
-    const songList = page.getByTestId("song-list");
-    const firstSong = songList.locator("[data-song-hash]").first();
-    await expect(firstSong).toContainText("北京之夜");
+    await expect(buttonB).toHaveAttribute("aria-current", "true");
   });
 
   test("keyboard typeahead on a missing letter falls forward to the next mapped bucket", async ({
