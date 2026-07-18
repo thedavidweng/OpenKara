@@ -17,6 +17,27 @@ pub enum StemMode {
     FourStem,
 }
 
+/// Library sort order persisted through the settings authority. The frontend
+/// comparator mirrors these exact total orders; see `src/lib/song-sort.ts`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LibrarySortMode {
+    #[default]
+    RecentlyImported,
+    TitleAsc,
+    ArtistAsc,
+}
+
+impl LibrarySortMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::RecentlyImported => "recently_imported",
+            Self::TitleAsc => "title_asc",
+            Self::ArtistAsc => "artist_asc",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelVariant {
@@ -433,6 +454,11 @@ pub struct AppConfig {
     /// (flat). Each gain is clamped to -12.0..=12.0 dB on read.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub eq_gains_db: Option<[f32; 5]>,
+    /// Library sort mode applied by the frontend comparator. Persisted so the
+    /// selected order survives restarts and is shared across WebViews via the
+    /// settings sync snapshot.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub library_sort_mode: Option<LibrarySortMode>,
     /// Remote file cache cap in bytes. When set, the cache directory is
     /// trimmed to stay under this limit, deleting the least-recently-used
     /// files. When absent the cache grows unbounded.
@@ -525,6 +551,10 @@ impl AppConfig {
             *g = g.clamp(-12.0, 12.0);
         }
         gains
+    }
+
+    pub fn effective_library_sort_mode(&self) -> LibrarySortMode {
+        self.library_sort_mode.unwrap_or_default()
     }
 
     pub fn effective_remote_cache_bytes_limit(&self) -> Option<u64> {
@@ -633,6 +663,7 @@ mod tests {
             model_variant: None,
             lyrics_font_step: Some(1),
             execution_provider: None,
+            library_sort_mode: None,
             library_path: None,
             eq_enabled: None,
             eq_gains_db: None,
@@ -670,6 +701,7 @@ mod tests {
             execution_provider: None,
             eq_enabled: None,
             eq_gains_db: None,
+            library_sort_mode: None,
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
@@ -699,6 +731,7 @@ mod tests {
             execution_provider: None,
             eq_enabled: None,
             eq_gains_db: None,
+            library_sort_mode: None,
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
@@ -722,6 +755,7 @@ mod tests {
             execution_provider: None,
             eq_enabled: None,
             eq_gains_db: None,
+            library_sort_mode: None,
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
@@ -734,6 +768,7 @@ mod tests {
     fn execution_provider_round_trips_through_json() {
         let config = AppConfig {
             execution_provider: Some(ExecutionProviderPreference::Xnnpack),
+            library_sort_mode: None,
             ..AppConfig::default()
         };
         let json = serde_json::to_string(&config).unwrap();
@@ -758,6 +793,7 @@ mod tests {
             execution_provider: None,
             eq_enabled: None,
             eq_gains_db: None,
+            library_sort_mode: None,
             libraries: vec![],
             active_library_id: None,
             remote_cache_bytes_limit: None,
@@ -870,6 +906,14 @@ mod tests {
     }
 
     #[test]
+    fn library_sort_mode_defaults_to_recently_imported() {
+        assert_eq!(
+            AppConfig::default().effective_library_sort_mode(),
+            LibrarySortMode::RecentlyImported
+        );
+    }
+
+    #[test]
     fn directml_is_present_only_for_windows() {
         use ExecutionProviderPlatform::*;
         for &platform in &[Macos, Linux, Other] {
@@ -887,6 +931,33 @@ mod tests {
             let list = ExecutionProviderPreference::available_for(platform);
             assert!(list.contains(&ExecutionProviderPreference::Cpu));
             assert!(list.contains(&ExecutionProviderPreference::Xnnpack));
+        }
+    }
+
+    #[test]
+    fn library_sort_mode_none_is_omitted_from_json() {
+        let config = AppConfig {
+            library_sort_mode: None,
+            ..AppConfig::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(!json.contains("library_sort_mode"));
+    }
+
+    #[test]
+    fn library_sort_mode_round_trips_through_json() {
+        for mode in [
+            LibrarySortMode::RecentlyImported,
+            LibrarySortMode::TitleAsc,
+            LibrarySortMode::ArtistAsc,
+        ] {
+            let config = AppConfig {
+                library_sort_mode: Some(mode),
+                ..AppConfig::default()
+            };
+            let json = serde_json::to_string(&config).unwrap();
+            let loaded: AppConfig = serde_json::from_str(&json).unwrap();
+            assert_eq!(loaded.library_sort_mode, Some(mode));
         }
     }
 
@@ -1031,5 +1102,27 @@ mod tests {
         };
         let gains = config.effective_eq_gains_db();
         assert_eq!(gains, [0.0, 0.0, 0.0, 0.0, 6.0]);
+    }
+
+    #[test]
+    fn library_sort_mode_rejects_unknown_snake_case_string() {
+        let raw = r#"{ "library_sort_mode": "descending_title" }"#;
+        let result: Result<AppConfig, _> = serde_json::from_str(raw);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn library_sort_mode_persists_through_save_and_load() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = AppConfig {
+            library_sort_mode: Some(LibrarySortMode::ArtistAsc),
+            ..AppConfig::default()
+        };
+        save_config(tmp.path(), &config).unwrap();
+        let loaded = load_config(tmp.path()).unwrap().unwrap();
+        assert_eq!(
+            loaded.effective_library_sort_mode(),
+            LibrarySortMode::ArtistAsc
+        );
     }
 }

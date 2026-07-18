@@ -94,6 +94,7 @@ function createControllerHarness() {
           availableExecutionProviders: ["cpu", "xnnpack"],
           eqEnabled: false,
           eqGainsDb: [0, 0, 0, 0, 0],
+          librarySortMode: "recently_imported",
         }),
       ),
       hydrateAppSettings: vi.fn(),
@@ -150,6 +151,7 @@ describe("SettingsOverlay controller", () => {
       available_execution_providers: ["cpu", "xnnpack"],
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
+      library_sort_mode: "recently_imported",
     });
     vi.mocked(harness.dependencies.api.getModelStatus)
       .mockResolvedValueOnce({
@@ -183,6 +185,7 @@ describe("SettingsOverlay controller", () => {
       available_execution_providers: ["cpu", "xnnpack"],
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
+      library_sort_mode: "recently_imported",
     });
     expect(harness.getSnapshot()).toMatchObject({
       state: {
@@ -566,6 +569,7 @@ describe("SettingsOverlay controller", () => {
       available_execution_providers: ["cpu", "xnnpack"],
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
+      library_sort_mode: "recently_imported",
     });
 
     await harness.actions.selectModelVariant("htdemucs");
@@ -697,6 +701,7 @@ describe("SettingsOverlay controller", () => {
       available_execution_providers: ["cpu", "xnnpack"],
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
+      library_sort_mode: "recently_imported",
     });
 
     await harness.actions.toggleHideBatchSeparate(true);

@@ -11,6 +11,7 @@ import { ConfirmationDialog } from "@/components/Settings/ConfirmationDialog";
 import { InputDialog } from "@/components/Settings/InputDialog";
 import { SearchBox } from "@/components/Library/SearchBox";
 import { SongList } from "@/components/Library/SongList";
+import { SortModeSelector } from "@/components/Library/SortModeSelector";
 import { songCanBeSeparated } from "@/lib/song-media";
 import { useLibraryStore } from "@/stores/library-store";
 import { usePlaylistStore } from "@/stores/playlist-store";
@@ -228,8 +229,11 @@ export function Sidebar({ header }: SidebarProps = {}) {
       {/* Song list */}
       {!activePlaylistId && (
         <div className="mt-4 flex flex-1 flex-col overflow-hidden px-2">
-          <div className="px-2 pb-1 text-[11px] font-semibold tracking-wide text-[var(--color-text-dim)]">
-            {t("sidebar.localMusic")}
+          <div className="flex items-center justify-between px-2 pb-1">
+            <span className="text-[11px] font-semibold tracking-wide text-[var(--color-text-dim)]">
+              {t("sidebar.localMusic")}
+            </span>
+            <SortModeSelector />
           </div>
           <SongList />
         </div>

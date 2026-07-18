@@ -10,6 +10,7 @@ const {
   mockSetLyricsFontStep,
   mockSetEqEnabled,
   mockSetEqGains,
+  mockSetLibrarySortMode,
   mockNotifyError,
 } = vi.hoisted(() => ({
   mockSetLyricsFontStep: vi.fn<(step: number) => Promise<AppSettings>>(),
@@ -20,6 +21,7 @@ const {
         gainsDb: [number, number, number, number, number],
       ) => Promise<AppSettings>
     >(),
+  mockSetLibrarySortMode: vi.fn<(mode: string) => Promise<AppSettings>>(),
   mockNotifyError: vi.fn(),
 }));
 
@@ -27,6 +29,7 @@ vi.mock("@/lib/tauri", () => ({
   setLyricsFontStep: mockSetLyricsFontStep,
   setEqEnabled: mockSetEqEnabled,
   setEqGains: mockSetEqGains,
+  setLibrarySortMode: mockSetLibrarySortMode,
 }));
 
 vi.mock("@/lib/errors", () => ({
@@ -59,6 +62,7 @@ function makeAppSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     available_execution_providers: ["cpu"],
     eq_enabled: false,
     eq_gains_db: [0, 0, 0, 0, 0],
+    library_sort_mode: "recently_imported",
     ...overrides,
   };
 }
@@ -140,10 +144,12 @@ describe("settings-store actions", () => {
       availableExecutionProviders: ["cpu"],
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
+      librarySortMode: "recently_imported",
     });
     mockSetLyricsFontStep.mockReset();
     mockSetEqEnabled.mockReset();
     mockSetEqGains.mockReset();
+    mockSetLibrarySortMode.mockReset();
     mockNotifyError.mockReset();
   });
 
@@ -202,6 +208,7 @@ describe("settings-store actions", () => {
       lyrics_font_step: 1,
       execution_provider: "xnnpack",
       available_execution_providers: ["cpu", "xnnpack"],
+      library_sort_mode: "artist_asc",
     });
 
     store.getState().hydrateAppSettings(settings);
@@ -216,6 +223,7 @@ describe("settings-store actions", () => {
     expect(state.lyricsFontStep).toBe(1);
     expect(state.executionProvider).toBe("xnnpack");
     expect(state.availableExecutionProviders).toEqual(["cpu", "xnnpack"]);
+    expect(state.librarySortMode).toBe("artist_asc");
   });
 
   test("hydrateAppSettings maps snake_case keys to camelCase", () => {
@@ -338,6 +346,178 @@ describe("settings-store actions", () => {
     expect(store.getState().lyricsFontStep).toBe(0);
   });
 
+  // ── setLibrarySortMode ─────────────────────────────────────────────────
+
+  test("setLibrarySortMode applies optimistic update immediately", async () => {
+    let resolveInvocation: (value: AppSettings) => void = () => {};
+    mockSetLibrarySortMode.mockImplementation(
+      () =>
+        new Promise<AppSettings>((resolve) => {
+          resolveInvocation = resolve;
+        }),
+    );
+
+    let pending = true;
+    const promise = store.getState().setLibrarySortMode("title_asc");
+    void promise.finally(() => {
+      pending = false;
+    });
+
+    // Allow the synchronous optimistic patch to flush.
+    await Promise.resolve();
+    expect(store.getState().librarySortMode).toBe("title_asc");
+    expect(pending).toBe(true);
+
+    resolveInvocation(makeAppSettings({ library_sort_mode: "title_asc" }));
+    await promise;
+
+    expect(mockSetLibrarySortMode).toHaveBeenCalledWith("title_asc");
+    expect(store.getState().librarySortMode).toBe("title_asc");
+  });
+
+  test("setLibrarySortMode applies authoritative snapshot on success", async () => {
+    const returned = makeAppSettings({
+      library_sort_mode: "artist_asc",
+      lyrics_font_step: 3,
+    });
+    mockSetLibrarySortMode.mockResolvedValue(returned);
+
+    await store.getState().setLibrarySortMode("artist_asc");
+
+    expect(mockSetLibrarySortMode).toHaveBeenCalledWith("artist_asc");
+    expect(store.getState().librarySortMode).toBe("artist_asc");
+    // This command owns only the sort preference; applying the full response
+    // could overwrite another locally pending setting.
+    expect(store.getState().lyricsFontStep).toBe(0);
+  });
+
+  test("setLibrarySortMode rolls back optimistic update on failure", async () => {
+    const error = new Error("invoke failed");
+    mockSetLibrarySortMode.mockRejectedValue(error);
+
+    await store.getState().setLibrarySortMode("title_asc");
+
+    expect(mockNotifyError).toHaveBeenCalledWith(error);
+    // Rolled back to the previous snapshot.
+    expect(store.getState().librarySortMode).toBe("recently_imported");
+  });
+
+  test("setLibrarySortMode rollback does not clobber other settings changed in flight", async () => {
+    // Simulate a concurrent lyricsFontStep change that succeeds while the
+    // sort-mode save is in flight. The rollback must only restore
+    // librarySortMode, not revert lyricsFontStep.
+    let rejectSort: (error: Error) => void = () => {};
+    mockSetLibrarySortMode.mockReturnValue(
+      new Promise<AppSettings>((_resolve, reject) => {
+        rejectSort = reject;
+      }),
+    );
+
+    const sortPromise = store.getState().setLibrarySortMode("title_asc");
+    await Promise.resolve();
+
+    // While the sort save is pending, change lyricsFontStep directly in the
+    // store (simulating a successful concurrent setter).
+    store.setState({ lyricsFontStep: 5 });
+
+    // Now fail the sort save.
+    rejectSort(new Error("sort fail"));
+    await sortPromise.catch(() => {});
+
+    // The sort mode should roll back, but lyricsFontStep must remain 5.
+    expect(store.getState().librarySortMode).toBe("recently_imported");
+    expect(store.getState().lyricsFontStep).toBe(5);
+  });
+
+  test("setLibrarySortMode ignores stale success from a superseded call", async () => {
+    let resolveFirst: (value: AppSettings) => void = () => {};
+    let resolveSecond: (value: AppSettings) => void = () => {};
+    mockSetLibrarySortMode.mockImplementation((mode: string) =>
+      mode === "title_asc"
+        ? new Promise<AppSettings>((resolve) => {
+            resolveFirst = resolve;
+          })
+        : new Promise<AppSettings>((resolve) => {
+            resolveSecond = resolve;
+          }),
+    );
+
+    const firstPromise = store.getState().setLibrarySortMode("title_asc");
+    const secondPromise = store.getState().setLibrarySortMode("artist_asc");
+    await Promise.resolve();
+
+    // Resolve the slower first call after the second has already started.
+    resolveFirst(makeAppSettings({ library_sort_mode: "title_asc" }));
+    await firstPromise;
+
+    // The second call is still in flight; the stale first response must not
+    // overwrite the optimistic artist_asc state.
+    expect(store.getState().librarySortMode).toBe("artist_asc");
+
+    resolveSecond(makeAppSettings({ library_sort_mode: "artist_asc" }));
+    await secondPromise;
+
+    expect(store.getState().librarySortMode).toBe("artist_asc");
+  });
+
+  test("setLibrarySortMode ignores stale failure from a superseded call", async () => {
+    let resolveSecond: (value: AppSettings) => void = () => {};
+    let rejectFirst: (error: Error) => void = () => {};
+    mockSetLibrarySortMode.mockImplementation((mode: string) =>
+      mode === "title_asc"
+        ? new Promise<AppSettings>((_resolve, reject) => {
+            rejectFirst = reject;
+          })
+        : new Promise<AppSettings>((resolve) => {
+            resolveSecond = resolve;
+          }),
+    );
+
+    const firstPromise = store.getState().setLibrarySortMode("title_asc");
+    const secondPromise = store.getState().setLibrarySortMode("artist_asc");
+    await Promise.resolve();
+
+    // The first call fails after the second has started. The stale rollback
+    // must not overwrite the optimistic artist_asc state.
+    rejectFirst(new Error("first failed"));
+    await firstPromise.catch(() => {});
+    expect(store.getState().librarySortMode).toBe("artist_asc");
+    expect(mockNotifyError).not.toHaveBeenCalled();
+
+    resolveSecond(makeAppSettings({ library_sort_mode: "artist_asc" }));
+    await secondPromise;
+    expect(store.getState().librarySortMode).toBe("artist_asc");
+  });
+
+  test("setLibrarySortMode restores the committed mode after two rapid failures", async () => {
+    let rejectFirst: (error: Error) => void = () => {};
+    let rejectSecond: (error: Error) => void = () => {};
+    mockSetLibrarySortMode.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((_resolve, reject) => {
+          rejectFirst = reject;
+        }),
+    );
+    mockSetLibrarySortMode.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((_resolve, reject) => {
+          rejectSecond = reject;
+        }),
+    );
+
+    const first = store.getState().setLibrarySortMode("title_asc");
+    const second = store.getState().setLibrarySortMode("artist_asc");
+
+    rejectSecond(new Error("newer request rejected"));
+    await second;
+    expect(store.getState().librarySortMode).toBe("title_asc");
+
+    rejectFirst(new Error("older request rejected"));
+    await first;
+    expect(store.getState().librarySortMode).toBe("recently_imported");
+    expect(mockNotifyError).toHaveBeenCalledTimes(1);
+  });
+
   // ── getAppSettingsSnapshot ──────────────────────────────────────────────
 
   test("getAppSettingsSnapshot returns subset of state without isOpen", () => {
@@ -354,6 +534,7 @@ describe("settings-store actions", () => {
       availableExecutionProviders: ["cpu", "xnnpack"],
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
+      librarySortMode: "title_asc",
     });
 
     const snapshot = store.getState().getAppSettingsSnapshot();
@@ -370,6 +551,7 @@ describe("settings-store actions", () => {
       availableExecutionProviders: ["cpu", "xnnpack"],
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
+      librarySortMode: "title_asc",
     });
     expect(snapshot).not.toHaveProperty("isOpen");
   });

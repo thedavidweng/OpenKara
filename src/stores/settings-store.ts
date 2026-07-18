@@ -8,6 +8,7 @@ import * as api from "@/lib/tauri";
 import type {
   AppSettings,
   ExecutionProvider,
+  LibrarySortMode,
   ModelVariant,
   StemMode,
 } from "@/types/ipc";
@@ -24,6 +25,7 @@ export interface AppSettingsSnapshot {
   availableExecutionProviders: ExecutionProvider[];
   eqEnabled: boolean;
   eqGainsDb: [number, number, number, number, number];
+  librarySortMode: LibrarySortMode;
 }
 
 interface SettingsState {
@@ -39,6 +41,7 @@ interface SettingsState {
   availableExecutionProviders: AppSettingsSnapshot["availableExecutionProviders"];
   eqEnabled: AppSettingsSnapshot["eqEnabled"];
   eqGainsDb: AppSettingsSnapshot["eqGainsDb"];
+  librarySortMode: AppSettingsSnapshot["librarySortMode"];
   toggle: () => void;
   close: () => void;
   open: () => void;
@@ -53,6 +56,7 @@ interface SettingsState {
   ) => Promise<void>;
   setEqBandGain: (band: number, gainDb: number) => Promise<void>;
   resetEqGains: () => Promise<void>;
+  setLibrarySortMode: (mode: LibrarySortMode) => Promise<void>;
   getAppSettingsSnapshot: () => AppSettingsSnapshot;
 }
 
@@ -68,6 +72,7 @@ const DEFAULT_APP_SETTINGS: AppSettingsSnapshot = {
   availableExecutionProviders: ["cpu"],
   eqEnabled: false,
   eqGainsDb: [0, 0, 0, 0, 0],
+  librarySortMode: "recently_imported",
 };
 
 function toAppSettingsSnapshot(settings: AppSettings): AppSettingsSnapshot {
@@ -84,6 +89,7 @@ function toAppSettingsSnapshot(settings: AppSettings): AppSettingsSnapshot {
     // Defensive defaults: incomplete IPC payloads must not leave eqGainsDb undefined.
     eqEnabled: settings.eq_enabled ?? false,
     eqGainsDb: settings.eq_gains_db ?? [0, 0, 0, 0, 0],
+    librarySortMode: settings.library_sort_mode,
   };
 }
 
@@ -102,6 +108,7 @@ function selectAppSettingsSnapshot(
     availableExecutionProviders: state.availableExecutionProviders,
     eqEnabled: state.eqEnabled,
     eqGainsDb: state.eqGainsDb,
+    librarySortMode: state.librarySortMode,
   };
 }
 
@@ -133,6 +140,7 @@ function applySettingsSyncSnapshot(
     availableExecutionProviders: snapshot.availableExecutionProviders,
     eqEnabled: snapshot.eqEnabled,
     eqGainsDb: snapshot.eqGainsDb,
+    librarySortMode: snapshot.librarySortMode,
   });
 }
 
@@ -232,6 +240,9 @@ export function createSettingsStore(
 ) {
   const eqEnabledField = createOptimisticField(DEFAULT_APP_SETTINGS.eqEnabled);
   const eqGainsField = createOptimisticField(DEFAULT_APP_SETTINGS.eqGainsDb);
+  const librarySortModeField = createOptimisticField(
+    DEFAULT_APP_SETTINGS.librarySortMode,
+  );
 
   const store = create<SettingsState>((set, get) => {
     const syncPatch = (patch: Partial<SettingsState>) => {
@@ -243,6 +254,9 @@ export function createSettingsStore(
       const snapshot = toAppSettingsSnapshot(settings);
       snapshot.eqEnabled = eqEnabledField.reconcileSnapshot(snapshot.eqEnabled);
       snapshot.eqGainsDb = eqGainsField.reconcileSnapshot(snapshot.eqGainsDb);
+      snapshot.librarySortMode = librarySortModeField.reconcileSnapshot(
+        snapshot.librarySortMode,
+      );
       syncPatch(snapshot);
     };
 
@@ -333,6 +347,31 @@ export function createSettingsStore(
       resetEqGains: async () => {
         await get().setEqGains([0, 0, 0, 0, 0]);
       },
+      setLibrarySortMode: async (mode) => {
+        const generation = librarySortModeField.begin(
+          get().librarySortMode,
+          mode,
+        );
+        // Keep the selector responsive while persisting the preference.
+        syncPatch({ librarySortMode: mode });
+        try {
+          const settings = await api.setLibrarySortMode(mode);
+          // A full settings snapshot can be stale for another locally-pending
+          // field, so this command confirms only the field it owns.
+          syncPatch({
+            librarySortMode: librarySortModeField.confirm(
+              generation,
+              settings.library_sort_mode,
+            ),
+          });
+        } catch (error) {
+          const result = librarySortModeField.reject(generation);
+          syncPatch({ librarySortMode: result.value });
+          if (result.shouldNotify) {
+            notifyError(error);
+          }
+        }
+      },
       getAppSettingsSnapshot: () => selectAppSettingsSnapshot(get()),
     };
   });
@@ -342,6 +381,9 @@ export function createSettingsStore(
       ...snapshot,
       eqEnabled: eqEnabledField.reconcileSnapshot(snapshot.eqEnabled),
       eqGainsDb: eqGainsField.reconcileSnapshot(snapshot.eqGainsDb),
+      librarySortMode: librarySortModeField.reconcileSnapshot(
+        snapshot.librarySortMode,
+      ),
     });
   });
 

@@ -211,6 +211,7 @@ export interface ImportLyricsResult {
 export type StemMode = "two_stem" | "four_stem";
 export type ModelVariant = "htdemucs" | "htdemucs_ft";
 export type ExecutionProvider = "cpu" | "xnnpack" | "directml";
+export type LibrarySortMode = "recently_imported" | "title_asc" | "artist_asc";
 
 export interface AppSettings {
   stem_mode: StemMode;
@@ -223,6 +224,7 @@ export interface AppSettings {
   available_execution_providers: ExecutionProvider[];
   eq_enabled: boolean;
   eq_gains_db: [number, number, number, number, number];
+  library_sort_mode: LibrarySortMode;
 }
 
 export interface ModelStatusSnapshot {

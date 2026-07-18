@@ -8,6 +8,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import type {
   ExecutionProvider,
   LibraryRegistrySnapshot,
+  LibrarySortMode,
   ModelVariant,
   RegisteredLibrary,
   RuntimeBootstrapState,
@@ -52,6 +53,7 @@ export interface SettingsOverlayState {
   availableExecutionProviders: ExecutionProvider[];
   eqEnabled: boolean;
   eqGainsDb: [number, number, number, number, number];
+  librarySortMode: LibrarySortMode;
 }
 
 export interface SettingsOverlayMeta {

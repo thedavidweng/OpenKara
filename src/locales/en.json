@@ -60,6 +60,12 @@
     "allTracks": "All Tracks",
     "separated": "Separated",
     "localMusic": "LOCAL MUSIC",
+    "sortMode": {
+      "label": "Sort by",
+      "recently_imported": "Recently imported",
+      "title_asc": "Title A–Z",
+      "artist_asc": "Artist A–Z"
+    },
     "separateAll": "Separate All",
     "separating": "Separating {{current}}/{{total}}",
     "separationComplete": "Separation complete: {{done}} done",
