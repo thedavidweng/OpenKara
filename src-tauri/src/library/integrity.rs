@@ -9,14 +9,18 @@
 //! folders, restore files, import filesystem orphans, or delete orphaned files
 //! automatically.
 
-use crate::{cache, library::delete, library_root::LibraryRoot};
+use crate::{
+    cache,
+    library::{artwork, delete},
+    library_root::LibraryRoot,
+};
 use anyhow::{Context, Result};
 use rusqlite::Connection;
 use serde::Serialize;
 use std::{
     collections::HashSet,
     fs,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
     time::SystemTime,
 };
 
@@ -130,8 +134,10 @@ fn resolve_safe_path(library: &LibraryRoot, relative: &str) -> Result<PathBuf> {
     Ok(absolute)
 }
 
-/// Normalize a relative path: reject absolute, parent, and current components.
-/// Require forward-slash normalized relative paths.
+/// Validate a canonical database-relative path. Database paths use forward
+/// slashes and must not contain empty, current-directory, or parent-directory
+/// segments. Rejecting aliases such as `media//song.mp3` prevents an invalid
+/// row from suppressing the orphan report for `media/song.mp3`.
 fn normalize_relative_path(path: &str) -> Result<String> {
     if path.is_empty() {
         anyhow::bail!("path is empty");
@@ -152,31 +158,16 @@ fn normalize_relative_path(path: &str) -> Result<String> {
         anyhow::bail!("path has drive prefix");
     }
 
-    let p = Path::new(path);
-
-    // Reject parent (..) and current (.) components.
-    for component in p.components() {
-        match component {
-            Component::ParentDir => anyhow::bail!("path contains parent directory (..)"),
-            Component::CurDir => anyhow::bail!("path contains current directory (.)"),
-            Component::RootDir => anyhow::bail!("path is absolute"),
-            Component::Prefix(_) => anyhow::bail!("path has prefix"),
-            Component::Normal(_) => {}
+    for segment in path.split('/') {
+        match segment {
+            "" => anyhow::bail!("path contains an empty segment"),
+            "." => anyhow::bail!("path contains current directory (.)"),
+            ".." => anyhow::bail!("path contains parent directory (..)"),
+            _ => {}
         }
     }
 
-    // Normalize: strip leading/trailing slashes, collapse multiple slashes.
-    let normalized: String = path
-        .split('/')
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join("/");
-
-    if normalized.is_empty() {
-        anyhow::bail!("path is empty after normalization");
-    }
-
-    Ok(normalized)
+    Ok(path.to_owned())
 }
 
 /// Check if a file is a regular file (not a directory, symlink, or special file).
@@ -222,8 +213,8 @@ pub fn check_library_integrity(library: &LibraryRoot) -> Result<IntegrityReport>
 
 /// Run the audit using an existing connection.
 fn run_audit(connection: &Connection, library: &LibraryRoot) -> Result<IntegrityReport> {
-    let has_artwork_thumb = column_exists(connection, "songs", "artwork_thumb_path")?;
-    let has_artwork_preview = column_exists(connection, "songs", "artwork_preview_path")?;
+    let has_artwork_thumb = cache::column_exists(connection, "songs", "artwork_thumb_path")?;
+    let has_artwork_preview = cache::column_exists(connection, "songs", "artwork_preview_path")?;
 
     // Build the query dynamically based on available columns.
     let artwork_thumb_col = if has_artwork_thumb {
@@ -285,19 +276,27 @@ fn run_audit(connection: &Connection, library: &LibraryRoot) -> Result<Integrity
 
         if is_remote {
             report.skipped_remote_songs += 1;
-            // Remote songs: artwork paths are still portable assets and audited.
-            // But we skip primary/stem files as intentionally absent.
-            // Artwork paths are still added to the referenced set.
-            if let Some(ref path) = row.artwork_thumb_path {
-                if is_valid_referenced_path(library, path) {
-                    referenced_paths.insert(path.clone());
-                }
-            }
-            if let Some(ref path) = row.artwork_preview_path {
-                if is_valid_referenced_path(library, path) {
-                    referenced_paths.insert(path.clone());
-                }
-            }
+            // Remote songs: primary/stem files are intentionally absent and
+            // skipped, but artwork paths are still portable managed assets that
+            // should be audited for missing/empty files and excluded from orphans.
+            classify_artwork_optional(
+                library,
+                &row.hash,
+                ASSET_ARTWORK_THUMB,
+                artwork::ArtworkSize::Thumb,
+                row.artwork_thumb_path.as_deref(),
+                &mut report,
+                &mut referenced_paths,
+            );
+            classify_artwork_optional(
+                library,
+                &row.hash,
+                ASSET_ARTWORK_PREVIEW,
+                artwork::ArtworkSize::Preview,
+                row.artwork_preview_path.as_deref(),
+                &mut report,
+                &mut referenced_paths,
+            );
             continue;
         }
 
@@ -306,7 +305,7 @@ fn run_audit(connection: &Connection, library: &LibraryRoot) -> Result<Integrity
         // Primary media (required for local originals).
         match row.file_path.as_ref() {
             Some(path) => {
-                referenced_paths.insert(path.clone());
+                record_referenced_path(&mut referenced_paths, path);
                 match resolve_safe_path(library, path) {
                     Ok(absolute) => {
                         if !is_regular_file(&absolute) {
@@ -390,18 +389,20 @@ fn run_audit(connection: &Connection, library: &LibraryRoot) -> Result<Integrity
             &mut report,
             &mut referenced_paths,
         );
-        classify_optional(
+        classify_artwork_optional(
             library,
             &row.hash,
             ASSET_ARTWORK_THUMB,
+            artwork::ArtworkSize::Thumb,
             row.artwork_thumb_path.as_deref(),
             &mut report,
             &mut referenced_paths,
         );
-        classify_optional(
+        classify_artwork_optional(
             library,
             &row.hash,
             ASSET_ARTWORK_PREVIEW,
+            artwork::ArtworkSize::Preview,
             row.artwork_preview_path.as_deref(),
             &mut report,
             &mut referenced_paths,
@@ -417,21 +418,32 @@ fn run_audit(connection: &Connection, library: &LibraryRoot) -> Result<Integrity
     Ok(report)
 }
 
-/// Check if a referenced path is syntactically and top-level valid.
-fn is_valid_referenced_path(library: &LibraryRoot, path: &str) -> bool {
+/// Preserve only valid canonical references for orphan comparison. Invalid
+/// database values are still reported as missing by their classifier, but they
+/// cannot hide a real on-disk file behind a spelling alias.
+fn record_referenced_path(referenced: &mut HashSet<String>, path: &str) {
     if let Ok(normalized) = normalize_relative_path(path) {
-        let top_level = normalized.split('/').next();
-        if let Some(tl) = top_level {
-            if MANAGED_TOP_LEVEL_DIRS.contains(&tl) {
-                return true;
-            }
-        }
+        referenced.insert(normalized);
     }
-    let _ = library;
-    false
 }
 
-/// Classify an optional asset as missing, empty, or valid.
+fn push_missing_optional(report: &mut IntegrityReport, song_hash: &str, asset_type: &str, path: &str) {
+    report.missing_optional_assets.push(ManagedAssetIssue {
+        song_hash: song_hash.to_owned(),
+        asset_type: asset_type.to_owned(),
+        path: path.to_owned(),
+    });
+}
+
+fn push_empty_optional(report: &mut IntegrityReport, song_hash: &str, asset_type: &str, path: &str) {
+    report.empty_optional_assets.push(ManagedAssetIssue {
+        song_hash: song_hash.to_owned(),
+        asset_type: asset_type.to_owned(),
+        path: path.to_owned(),
+    });
+}
+
+/// Classify a non-artwork optional asset as missing, empty, or valid.
 fn classify_optional(
     library: &LibraryRoot,
     song_hash: &str,
@@ -445,50 +457,100 @@ fn classify_optional(
         return;
     }
 
-    // Add to referenced set even if file is absent (so it's not called an orphan).
-    referenced.insert(path.to_string());
+    // A syntactically valid DB path remains a reference even when its file is
+    // absent. Invalid aliases do not suppress an orphan at a canonical path.
+    record_referenced_path(referenced, path);
 
     match resolve_safe_path(library, path) {
         Ok(absolute) => {
             if !is_regular_file(&absolute) {
-                report.missing_optional_assets.push(ManagedAssetIssue {
-                    song_hash: song_hash.to_string(),
-                    asset_type: asset_type.to_string(),
-                    path: path.to_string(),
-                });
+                push_missing_optional(report, song_hash, asset_type, path);
             } else if is_empty_file(&absolute) {
-                report.empty_optional_assets.push(ManagedAssetIssue {
-                    song_hash: song_hash.to_string(),
-                    asset_type: asset_type.to_string(),
-                    path: path.to_string(),
-                });
+                push_empty_optional(report, song_hash, asset_type, path);
             }
         }
         Err(_) => {
-            report.missing_optional_assets.push(ManagedAssetIssue {
-                song_hash: song_hash.to_string(),
-                asset_type: asset_type.to_string(),
-                path: path.to_string(),
-            });
+            push_missing_optional(report, song_hash, asset_type, path);
         }
+    }
+}
+
+/// Classify a derivative artwork path. Unlike generic optional assets, artwork
+/// records are valid only when they use the content-addressed filename for the
+/// requested size and the regular file contains a same-sized WebP image.
+fn classify_artwork_optional(
+    library: &LibraryRoot,
+    song_hash: &str,
+    asset_type: &str,
+    expected_size: artwork::ArtworkSize,
+    path: Option<&str>,
+    report: &mut IntegrityReport,
+    referenced: &mut HashSet<String>,
+) {
+    let Some(path) = path else { return };
+    if path.is_empty() {
+        return;
+    }
+
+    let (absolute, recorded_size) = match artwork::resolve_existing_artwork_path(library, path) {
+        Ok(resolved) => resolved,
+        Err(_) => {
+            push_missing_optional(report, song_hash, asset_type, path);
+            return;
+        }
+    };
+    if recorded_size != expected_size {
+        push_missing_optional(report, song_hash, asset_type, path);
+        return;
+    }
+
+    // Strict parsing above makes the recorded path canonical and safe to use
+    // for orphan comparison. A malformed value therefore remains reportable
+    // rather than incorrectly retaining a file it does not own.
+    referenced.insert(path.to_owned());
+
+    if !is_regular_file(&absolute) {
+        push_missing_optional(report, song_hash, asset_type, path);
+    } else if is_empty_file(&absolute) {
+        push_empty_optional(report, song_hash, asset_type, path);
+    } else if !artwork::validate_derivative_file(&absolute, expected_size.expected_dimension()) {
+        push_missing_optional(report, song_hash, asset_type, path);
     }
 }
 
 /// Recursively scan managed directories for orphaned files (not in the referenced set).
 /// Never follows symlinks. Reports symlinks as orphans.
+///
+/// Top-level managed roots (`media/`, `stems/`, …) are checked with
+/// `symlink_metadata` **before** `read_dir`. If a managed root itself is a
+/// symlink, we never open it (that would escape the library root) and instead
+/// report the relative root name as an orphaned managed path.
 fn scan_for_orphans(
     library: &LibraryRoot,
     referenced: &HashSet<String>,
     report: &mut IntegrityReport,
 ) -> Result<()> {
-    let canonical_root = library.root().canonicalize()?;
-
     for dir_name in MANAGED_TOP_LEVEL_DIRS {
         let dir = library.root().join(dir_name);
-        if !dir.exists() {
+        // Do not use Path::exists() / metadata() here — both follow symlinks
+        // and would let a replaced managed root point outside the library.
+        let meta = match fs::symlink_metadata(&dir) {
+            Ok(m) => m,
+            Err(_) => continue, // missing root is fine
+        };
+        let file_type = meta.file_type();
+        if file_type.is_symlink() {
+            // Report the managed-root relative path and skip traversal.
+            // MANAGED_TOP_LEVEL_DIRS is &[&str]; iterate yields &&str.
+            if !referenced.contains(*dir_name) {
+                report.orphaned_managed_files.push((*dir_name).to_string());
+            }
             continue;
         }
-        scan_directory(&dir, &canonical_root, library, referenced, report)?;
+        if !file_type.is_dir() {
+            continue;
+        }
+        scan_directory(&dir, library, referenced, report)?;
     }
 
     Ok(())
@@ -497,7 +559,6 @@ fn scan_for_orphans(
 /// Recursively scan a directory for orphaned files.
 fn scan_directory(
     dir: &Path,
-    canonical_root: &Path,
     library: &LibraryRoot,
     referenced: &HashSet<String>,
     report: &mut IntegrityReport,
@@ -531,7 +592,7 @@ fn scan_directory(
 
         if file_type.is_dir() {
             // Recurse into subdirectories (but not symlinks).
-            scan_directory(&path, canonical_root, library, referenced, report)?;
+            scan_directory(&path, library, referenced, report)?;
             continue;
         }
 
@@ -544,7 +605,7 @@ fn scan_directory(
                 }
 
                 // Exclude temporary artwork files younger than 24 hours.
-                if is_temp_artwork_file(&relative) {
+                if artwork::is_temp_artwork_file(&relative) {
                     if let Ok(age_secs) = file_age_seconds(&path) {
                         if age_secs < 86400 {
                             continue;
@@ -560,17 +621,6 @@ fn scan_directory(
     }
 
     Ok(())
-}
-
-/// Check if a relative path matches the temporary artwork file convention.
-/// Temp files match patterns like `artwork/.tmp-*` or `artwork/*-tmp.*`.
-fn is_temp_artwork_file(relative: &str) -> bool {
-    let parts: Vec<&str> = relative.split('/').collect();
-    if parts.is_empty() {
-        return false;
-    }
-    let filename = parts.last().unwrap();
-    filename.starts_with(".tmp-") || filename.contains("-tmp.") || filename.starts_with("tmp-")
 }
 
 /// Get the age of a file in seconds.
@@ -634,6 +684,10 @@ pub fn remove_missing_library_entries(
 
     let mut deleted = Vec::new();
     let mut skipped = Vec::new();
+    // These paths must be collected before their song rows are removed. They
+    // are reclaimed only after commit and only if no surviving row references
+    // them, because identical cover bytes intentionally share derivatives.
+    let mut artwork_paths_to_clean = Vec::new();
 
     // Start an immediate transaction.
     connection.execute_batch("BEGIN IMMEDIATE")?;
@@ -672,6 +726,9 @@ pub fn remove_missing_library_entries(
                 continue;
             }
 
+            artwork_paths_to_clean.extend(delete::collect_artwork_derivative_paths(
+                connection, hash,
+            )?);
             // Delete DB rows (safe inside transaction).
             delete::delete_song_rows_from_database(connection, library, hash)?;
             deleted.push(hash.clone());
@@ -695,6 +752,9 @@ pub fn remove_missing_library_entries(
         // Clean up stem directory.
         let _ = delete::delete_stem_files_from_working_copy(library, hash);
     }
+    for path in &artwork_paths_to_clean {
+        let _ = artwork::delete_artwork_derivative_if_unreferenced(connection, library, path);
+    }
 
     deleted.sort();
     skipped.sort();
@@ -703,16 +763,6 @@ pub fn remove_missing_library_entries(
         deleted_song_hashes: deleted,
         skipped_song_hashes: skipped,
     })
-}
-
-/// Check if a column exists in a table.
-fn column_exists(connection: &Connection, table: &str, column: &str) -> rusqlite::Result<bool> {
-    let sql = format!("PRAGMA table_info({})", table);
-    let mut stmt = connection.prepare(&sql)?;
-    let names: Vec<String> = stmt
-        .query_map([], |row| row.get::<_, String>(1))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(names.iter().any(|name| name == column))
 }
 
 #[cfg(test)]
@@ -761,6 +811,19 @@ mod tests {
             fs::create_dir_all(parent).unwrap();
         }
         fs::write(&absolute, content).unwrap();
+    }
+
+    fn test_jpeg() -> Vec<u8> {
+        let image = image::ImageBuffer::from_pixel(
+            8,
+            8,
+            image::Rgba([0_u8, 255_u8, 0_u8, 255_u8]),
+        );
+        let mut bytes = Vec::new();
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Jpeg)
+            .unwrap();
+        bytes
     }
 
     #[test]
@@ -877,6 +940,14 @@ mod tests {
     }
 
     #[test]
+    fn path_resolver_rejects_noncanonical_aliases() {
+        let (_temp, library) = create_test_library();
+        assert!(resolve_safe_path(&library, "media//song.mp3").is_err());
+        assert!(resolve_safe_path(&library, "media/./song.mp3").is_err());
+        assert!(resolve_safe_path(&library, "media/song.mp3/").is_err());
+    }
+
+    #[test]
     fn cleanup_deletes_missing_primary_media() {
         let (_temp, library) = create_test_library();
         let conn = cache::open_database(&library.database_path()).unwrap();
@@ -902,6 +973,74 @@ mod tests {
         let conn = cache::open_database(&library.database_path()).unwrap();
         assert!(cache::get_song_by_hash(&conn, "hash1").unwrap().is_none());
         assert!(cache::get_song_by_hash(&conn, "hash2").unwrap().is_some());
+    }
+
+    #[test]
+    fn cleanup_removes_stem_record_and_its_direct_child_directory() {
+        let (_temp, library) = create_test_library();
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        add_song(&conn, "hash1", Some("media/hash1.mp3"), "original");
+        conn.execute(
+            "INSERT INTO stems (song_hash, vocals_path, accomp_path, separated_at) \
+             VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![
+                "hash1",
+                "stems/hash1/vocals.ogg",
+                "stems/hash1/accompaniment.ogg",
+                1_i64,
+            ],
+        )
+        .unwrap();
+        let stem_dir = library.stems_dir().join("hash1");
+        fs::create_dir_all(&stem_dir).unwrap();
+        fs::write(stem_dir.join("vocals.ogg"), b"stem").unwrap();
+
+        let result =
+            remove_missing_library_entries(&conn, &library, vec!["hash1".to_string()]).unwrap();
+
+        assert_eq!(result.deleted_song_hashes, vec!["hash1"]);
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM stems WHERE song_hash = ?1",
+                ["hash1"],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            0
+        );
+        assert!(!stem_dir.exists());
+    }
+
+    #[test]
+    fn cleanup_rolls_back_the_whole_batch_before_touching_working_files() {
+        let (_temp, library) = create_test_library();
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        add_song(&conn, "hash1", Some("media/hash1.mp3"), "original");
+        add_song(&conn, "hash2", Some("media/hash2.mp3"), "original");
+        let stem_dir = library.stems_dir().join("hash1");
+        fs::create_dir_all(&stem_dir).unwrap();
+        let sentinel = stem_dir.join("must-remain.ogg");
+        fs::write(&sentinel, b"stem").unwrap();
+        conn.execute_batch(
+            "CREATE TRIGGER reject_hash2_delete
+             BEFORE DELETE ON songs
+             WHEN OLD.hash = 'hash2'
+             BEGIN
+                 SELECT RAISE(ABORT, 'test rollback');
+             END;",
+        )
+        .unwrap();
+
+        assert!(remove_missing_library_entries(
+            &conn,
+            &library,
+            vec!["hash1".to_string(), "hash2".to_string()],
+        )
+        .is_err());
+
+        assert!(cache::get_song_by_hash(&conn, "hash1").unwrap().is_some());
+        assert!(cache::get_song_by_hash(&conn, "hash2").unwrap().is_some());
+        assert!(sentinel.exists());
     }
 
     #[test]
@@ -968,5 +1107,419 @@ mod tests {
         )
         .unwrap();
         assert_eq!(result.deleted_song_hashes, vec!["hash1"]);
+    }
+
+    #[test]
+    fn cleanup_removes_unreferenced_artwork_derivatives() {
+        let (_temp, library) = create_test_library();
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        add_song(&conn, "hash1", Some("media/hash1.mp3"), "original");
+        let digest = "a".repeat(64);
+        let thumb = format!("artwork/thumb_{digest}_80.webp");
+        let preview = format!("artwork/preview_{digest}_256.webp");
+        conn.execute(
+            "UPDATE songs SET artwork_thumb_path = ?1, artwork_preview_path = ?2 WHERE hash = ?3",
+            rusqlite::params![&thumb, &preview, "hash1"],
+        )
+        .unwrap();
+        drop(conn);
+        create_media_file(&library, &thumb, b"thumb");
+        create_media_file(&library, &preview, b"preview");
+
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        let result =
+            remove_missing_library_entries(&conn, &library, vec!["hash1".to_owned()]).unwrap();
+
+        assert_eq!(result.deleted_song_hashes, vec!["hash1"]);
+        assert!(!library.resolve(&thumb).exists());
+        assert!(!library.resolve(&preview).exists());
+    }
+
+    #[test]
+    fn cleanup_preserves_shared_artwork_derivatives() {
+        let (_temp, library) = create_test_library();
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        add_song(&conn, "hash1", Some("media/hash1.mp3"), "original");
+        add_song(&conn, "hash2", Some("media/hash2.mp3"), "original");
+        let thumb = format!("artwork/thumb_{}_80.webp", "b".repeat(64));
+        conn.execute(
+            "UPDATE songs SET artwork_thumb_path = ?1 WHERE hash IN (?2, ?3)",
+            rusqlite::params![&thumb, "hash1", "hash2"],
+        )
+        .unwrap();
+        drop(conn);
+        create_media_file(&library, &thumb, b"shared thumb");
+        create_media_file(&library, "media/hash2.mp3", b"audio");
+
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        let result =
+            remove_missing_library_entries(&conn, &library, vec!["hash1".to_owned()]).unwrap();
+
+        assert_eq!(result.deleted_song_hashes, vec!["hash1"]);
+        assert!(library.resolve(&thumb).exists());
+    }
+
+    /// Add artwork columns to the songs table so tests can exercise artwork
+    /// auditing. `cache::open_database` already applies these columns via
+    /// `apply_migrations`, so this helper is now a no-op guard that only adds
+    /// them if they are somehow missing (e.g. a future test that opens a raw
+    /// connection without running migrations).
+    fn add_artwork_columns(connection: &Connection) {
+        if !cache::column_exists(connection, "songs", "artwork_thumb_path").unwrap_or(false) {
+            connection
+                .execute_batch("ALTER TABLE songs ADD COLUMN artwork_thumb_path TEXT;")
+                .unwrap();
+        }
+        if !cache::column_exists(connection, "songs", "artwork_preview_path").unwrap_or(false) {
+            connection
+                .execute_batch("ALTER TABLE songs ADD COLUMN artwork_preview_path TEXT;")
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn audit_remote_song_detects_missing_artwork() {
+        let (_temp, library) = create_test_library();
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        add_artwork_columns(&conn);
+        add_song(&conn, "hash1", Some("media/hash1.mp3"), "remote");
+        conn.execute(
+            "UPDATE songs SET artwork_thumb_path = ?1 WHERE hash = ?2",
+            rusqlite::params![
+                format!("artwork/thumb_{}_80.webp", "a".repeat(64)),
+                "hash1"
+            ],
+        )
+        .unwrap();
+        drop(conn);
+
+        let report = check_library_integrity(&library).unwrap();
+        assert_eq!(report.skipped_remote_songs, 1);
+        assert_eq!(report.checked_local_songs, 0);
+        // Missing artwork thumb should be reported as a missing optional asset.
+        assert_eq!(report.missing_optional_assets.len(), 1);
+        assert_eq!(report.missing_optional_assets[0].song_hash, "hash1");
+        assert_eq!(
+            report.missing_optional_assets[0].asset_type,
+            "artwork_thumb"
+        );
+        assert_eq!(
+            report.missing_optional_assets[0].path,
+            format!("artwork/thumb_{}_80.webp", "a".repeat(64))
+        );
+    }
+
+    #[test]
+    fn audit_remote_song_detects_empty_artwork() {
+        let (_temp, library) = create_test_library();
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        add_artwork_columns(&conn);
+        add_song(&conn, "hash1", Some("media/hash1.mp3"), "remote");
+        conn.execute(
+            "UPDATE songs SET artwork_preview_path = ?1 WHERE hash = ?2",
+            rusqlite::params![
+                format!("artwork/preview_{}_256.webp", "b".repeat(64)),
+                "hash1"
+            ],
+        )
+        .unwrap();
+        drop(conn);
+        create_media_file(
+            &library,
+            &format!("artwork/preview_{}_256.webp", "b".repeat(64)),
+            b"",
+        );
+
+        let report = check_library_integrity(&library).unwrap();
+        assert_eq!(report.skipped_remote_songs, 1);
+        assert_eq!(report.empty_optional_assets.len(), 1);
+        assert_eq!(
+            report.empty_optional_assets[0].asset_type,
+            "artwork_preview"
+        );
+        assert!(report.missing_optional_assets.is_empty());
+    }
+
+    #[test]
+    fn audit_remote_song_valid_artwork_no_issues() {
+        let (_temp, library) = create_test_library();
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        add_artwork_columns(&conn);
+        add_song(&conn, "hash1", Some("media/hash1.mp3"), "remote");
+        let derivatives = artwork::generate_artwork_derivatives(&library, &test_jpeg()).unwrap();
+        conn.execute(
+            "UPDATE songs SET artwork_thumb_path = ?1 WHERE hash = ?2",
+            rusqlite::params![derivatives.thumb_path, "hash1"],
+        )
+        .unwrap();
+        drop(conn);
+
+        let report = check_library_integrity(&library).unwrap();
+        assert_eq!(report.skipped_remote_songs, 1);
+        assert!(report.missing_optional_assets.is_empty());
+        assert!(report.empty_optional_assets.is_empty());
+    }
+
+    #[test]
+    fn audit_rejects_non_webp_bytes_at_a_valid_derivative_path() {
+        let (_temp, library) = create_test_library();
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        add_song(&conn, "hash1", Some("media/hash1.mp3"), "remote");
+        let thumb = format!("artwork/thumb_{}_80.webp", "d".repeat(64));
+        conn.execute(
+            "UPDATE songs SET artwork_thumb_path = ?1 WHERE hash = ?2",
+            rusqlite::params![&thumb, "hash1"],
+        )
+        .unwrap();
+        drop(conn);
+        create_media_file(&library, &thumb, &test_jpeg());
+
+        let report = check_library_integrity(&library).unwrap();
+        assert_eq!(report.missing_optional_assets.len(), 1);
+        assert_eq!(report.missing_optional_assets[0].path, thumb);
+        assert!(report.orphaned_managed_files.is_empty());
+    }
+
+    #[test]
+    fn invalid_primary_path_does_not_hide_the_canonical_orphan() {
+        let (_temp, library) = create_test_library();
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        add_song(&conn, "hash1", Some("media//hash1.mp3"), "original");
+        drop(conn);
+        create_media_file(&library, "media/hash1.mp3", b"audio");
+
+        let report = check_library_integrity(&library).unwrap();
+        assert_eq!(report.missing_primary_media.len(), 1);
+        assert_eq!(report.orphaned_managed_files, vec!["media/hash1.mp3"]);
+    }
+
+    #[test]
+    fn audit_reports_temp_named_orphan_in_non_artwork_dir() {
+        let (_temp, library) = create_test_library();
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        add_song(&conn, "hash1", Some("media/hash1.mp3"), "original");
+        drop(conn);
+        create_media_file(&library, "media/hash1.mp3", b"audio");
+        // A temp-named file in media/ (not artwork/) should be reported as an
+        // orphan, not silently excluded by the temp-file check.
+        create_media_file(&library, "media/tmp-upload.mp3", b"temp");
+
+        let report = check_library_integrity(&library).unwrap();
+        assert!(report
+            .orphaned_managed_files
+            .contains(&"media/tmp-upload.mp3".to_string()));
+    }
+
+    #[test]
+    fn audit_excludes_recent_temp_artwork_file() {
+        let (_temp, library) = create_test_library();
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        add_song(&conn, "hash1", Some("media/hash1.mp3"), "original");
+        drop(conn);
+        create_media_file(&library, "media/hash1.mp3", b"audio");
+        // A recent temp file under artwork/ matching the unique_temp_path
+        // convention (.{name}.{pid}.{counter}.tmp) should be excluded.
+        create_media_file(&library, "artwork/.thumb_abc_80.webp.12345.0.tmp", b"temp");
+
+        let report = check_library_integrity(&library).unwrap();
+        assert!(!report
+            .orphaned_managed_files
+            .contains(&"artwork/.thumb_abc_80.webp.12345.0.tmp".to_string()));
+    }
+
+    #[test]
+    fn audit_reports_temp_artwork_file_older_than_24h() {
+        let (_temp, library) = create_test_library();
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        add_song(&conn, "hash1", Some("media/hash1.mp3"), "original");
+        drop(conn);
+        create_media_file(&library, "media/hash1.mp3", b"audio");
+        // A temp file under artwork/ matching the unique_temp_path convention
+        // but older than 24 hours should be reported as an orphan (stale temp).
+        let temp_path = library.root().join("artwork/.thumb_stale.webp.99999.0.tmp");
+        fs::create_dir_all(temp_path.parent().unwrap()).unwrap();
+        fs::write(&temp_path, b"stale").unwrap();
+        // Set mtime to 25 hours ago to exceed the 24h boundary.
+        let past = std::time::SystemTime::now() - std::time::Duration::from_secs(25 * 3600);
+        filetime::set_file_mtime(&temp_path, filetime::FileTime::from_system_time(past)).unwrap();
+
+        let report = check_library_integrity(&library).unwrap();
+        assert!(
+            report
+                .orphaned_managed_files
+                .contains(&"artwork/.thumb_stale.webp.99999.0.tmp".to_string()),
+            "stale temp file older than 24h should be reported as orphan"
+        );
+    }
+
+    #[test]
+    fn audit_excludes_temp_artwork_file_just_under_24h_boundary() {
+        let (_temp, library) = create_test_library();
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        add_song(&conn, "hash1", Some("media/hash1.mp3"), "original");
+        drop(conn);
+        create_media_file(&library, "media/hash1.mp3", b"audio");
+        // A temp file just under 24h (23h59m) should still be excluded.
+        let temp_path = library.root().join("artwork/.thumb_fresh.webp.99999.1.tmp");
+        fs::create_dir_all(temp_path.parent().unwrap()).unwrap();
+        fs::write(&temp_path, b"fresh").unwrap();
+        let past =
+            std::time::SystemTime::now() - std::time::Duration::from_secs(23 * 3600 + 59 * 60);
+        filetime::set_file_mtime(&temp_path, filetime::FileTime::from_system_time(past)).unwrap();
+
+        let report = check_library_integrity(&library).unwrap();
+        assert!(
+            !report
+                .orphaned_managed_files
+                .contains(&"artwork/.thumb_fresh.webp.99999.1.tmp".to_string()),
+            "temp file just under 24h should be excluded from orphans"
+        );
+    }
+
+    #[test]
+    fn audit_reports_broad_temp_pattern_as_orphan() {
+        // A hidden file ending in .tmp but NOT matching the exact
+        // .{name}.{pid}.{counter}.tmp convention should be reported as an
+        // orphan, not silently excluded. The old broad filter (starts_with('.')
+        // && ends_with(".tmp")) would have wrongly excluded these.
+        let (_temp, library) = create_test_library();
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        add_song(&conn, "hash1", Some("media/hash1.mp3"), "original");
+        drop(conn);
+        create_media_file(&library, "media/hash1.mp3", b"audio");
+        // .foo.tmp — no pid/counter components.
+        create_media_file(&library, "artwork/.foo.tmp", b"temp");
+        // .foo.bar.tmp — only one numeric-looking component, not two.
+        create_media_file(&library, "artwork/.foo.bar.tmp", b"temp");
+        // .foo.abc.def.tmp — pid/counter are non-numeric.
+        create_media_file(&library, "artwork/.foo.abc.def.tmp", b"temp");
+        // .notes.tmp — arbitrary hidden .tmp file that does not follow the
+        // unique_temp_path convention; must be reported as an orphan.
+        create_media_file(&library, "artwork/.notes.tmp", b"temp");
+
+        let report = check_library_integrity(&library).unwrap();
+        assert!(
+            report
+                .orphaned_managed_files
+                .contains(&"artwork/.foo.tmp".to_string()),
+            "broad temp pattern without pid/counter should be reported as orphan"
+        );
+        assert!(
+            report
+                .orphaned_managed_files
+                .contains(&"artwork/.foo.bar.tmp".to_string()),
+            "temp pattern with non-numeric pid should be reported as orphan"
+        );
+        assert!(
+            report
+                .orphaned_managed_files
+                .contains(&"artwork/.foo.abc.def.tmp".to_string()),
+            "temp pattern with non-numeric pid/counter should be reported as orphan"
+        );
+        assert!(
+            report
+                .orphaned_managed_files
+                .contains(&"artwork/.notes.tmp".to_string()),
+            "arbitrary hidden .tmp file not matching writer convention should be reported as orphan"
+        );
+    }
+
+    #[test]
+    fn audit_reports_nested_temp_artwork_file_as_orphan() {
+        // A temp file in a subdirectory of artwork/ that matches the filename
+        // convention must still be reported as an orphan. The writer only
+        // places temp files as direct children of artwork/, so a nested path
+        // is not a legitimate temp file and must not receive the 24-hour
+        // grace period.
+        let (_temp, library) = create_test_library();
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        add_song(&conn, "hash1", Some("media/hash1.mp3"), "original");
+        drop(conn);
+        create_media_file(&library, "media/hash1.mp3", b"audio");
+        create_media_file(&library, "artwork/sub/.thumb_abc.123.0.tmp", b"temp");
+
+        let report = check_library_integrity(&library).unwrap();
+        assert!(
+            report
+                .orphaned_managed_files
+                .contains(&"artwork/sub/.thumb_abc.123.0.tmp".to_string()),
+            "nested temp file under artwork/ must be reported as orphan, not excluded"
+        );
+    }
+
+    // Unit predicate tests for is_temp_artwork_file / matches_temp_artwork_filename
+    // live beside the writer in artwork.rs (single source of truth). The tests
+    // below cover the integration behavior: matching files under 24h are
+    // excluded from the orphan report, and arbitrary/nested .tmp files are
+    // reported.
+
+    #[test]
+    fn audit_does_not_follow_top_level_managed_root_symlink() {
+        let (temp, library) = create_test_library();
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        add_song(&conn, "hash1", Some("media/hash1.mp3"), "original");
+        drop(conn);
+        create_media_file(&library, "media/hash1.mp3", b"audio");
+
+        // Replace media/ with a symlink pointing outside the library root.
+        let outside = temp.path().join("outside-escape");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("secret.mp3"), b"escaped").unwrap();
+        let media = library.root().join("media");
+        fs::remove_dir_all(&media).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, &media).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(&outside, &media).unwrap();
+
+        let report = check_library_integrity(&library).unwrap();
+        // Managed-root symlink is reported, never traversed.
+        assert!(
+            report.orphaned_managed_files.contains(&"media".to_string()),
+            "expected media root symlink in orphans, got {:?}",
+            report.orphaned_managed_files
+        );
+        assert!(
+            !report
+                .orphaned_managed_files
+                .iter()
+                .any(|p| p.contains("secret")),
+            "must not enumerate files outside the library root via managed symlink"
+        );
+    }
+
+    #[test]
+    fn audit_does_not_follow_nested_symlink_outside_library() {
+        let (temp, library) = create_test_library();
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        add_song(&conn, "hash1", Some("media/hash1.mp3"), "original");
+        drop(conn);
+        create_media_file(&library, "media/hash1.mp3", b"audio");
+
+        let outside = temp.path().join("outside-nested");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("leaked.mp3"), b"escaped").unwrap();
+        let link = library.root().join("media").join("escape-link");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(&outside, &link).unwrap();
+
+        let report = check_library_integrity(&library).unwrap();
+        // Nested symlink is reported as an orphan relative path, not followed.
+        assert!(
+            report
+                .orphaned_managed_files
+                .contains(&"media/escape-link".to_string()),
+            "nested symlink should be reported as orphan: {:?}",
+            report.orphaned_managed_files
+        );
+        assert!(
+            !report
+                .orphaned_managed_files
+                .iter()
+                .any(|p| p.contains("leaked")),
+            "must not enumerate outside files via nested symlink"
+        );
     }
 }
