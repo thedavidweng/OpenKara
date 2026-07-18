@@ -397,23 +397,25 @@ pub fn render_output_buffer(
     // padding (zero-filled above) must not advance filter state.
     eq_processor.process(output, rendered);
 
-    // Soft limiter: bound peaks to prevent clipping after EQ boost. Samples
-    // below the threshold pass through unchanged. Only run when the EQ is
-    // active (or transitioning to/from active) — for the common no-EQ
-    // single-source path the mixed value never exceeds 1.0 (decoded PCM is
-    // in [-1,1] and master/stem gains are <= 1.0), so the limiter would only
-    // attenuate loud-but-unclipped audio and alter fidelity for users who
-    // never enable the EQ.
-    if !eq_processor.is_fully_bypassed() {
+    // When EQ is fully bypassed, preserve in-range samples exactly but hard
+    // clamp out-of-range values. Multi-stem summing and sinc resampling can
+    // exceed full scale even with EQ disabled. When EQ is active (or crossing
+    // the bypass boundary), use the smoother limiter to contain EQ boosts.
+    if eq_processor.is_fully_bypassed() {
+        for sample in output[..rendered].iter_mut() {
+            *sample = sample.clamp(-1.0, 1.0);
+        }
+    } else {
         for sample in output[..rendered].iter_mut() {
             *sample = soft_limit(*sample);
         }
     }
 
     // Apply fade-in/fade-out envelope if active.
-    if let Some(fade_gain) = playback.take_fade_gain() {
+    let fade_gain = playback.take_fade_gain();
+    if let Some(fade_gain) = fade_gain {
         if fade_gain < 1.0 {
-            for sample in output.iter_mut() {
+            for sample in output[..rendered].iter_mut() {
                 *sample *= fade_gain;
             }
         }
@@ -502,6 +504,17 @@ pub fn render_output_buffer(
             } else {
                 for sample in remaining[..extra_rendered].iter_mut() {
                     *sample = soft_limit(*sample);
+                }
+            }
+            // A resume at EOF reaches this tail after the paused track has
+            // rendered zero samples. Keep the gain captured for this callback
+            // on the new-track samples so the play fade still masks the
+            // discontinuity at the swap boundary.
+            if let Some(fade_gain) = fade_gain {
+                if fade_gain < 1.0 {
+                    for sample in remaining[..extra_rendered].iter_mut() {
+                        *sample *= fade_gain;
+                    }
                 }
             }
             // Accumulate peaks for the tail so the visualizer stays live.
@@ -1436,6 +1449,67 @@ mod tests {
     }
 
     #[test]
+    fn bypassed_eq_hard_clamps_multistem_summation() {
+        use crate::audio::decode::DecodedAudio;
+        use crate::audio::playback::{FadeState, LoadedStems, PlaybackController};
+
+        let sample_rate = 44_100;
+        let channels = 2;
+        let frames = 128;
+        let decoded = |sample| DecodedAudio {
+            sample_rate,
+            channels,
+            duration_ms: (frames * 1_000 / sample_rate as usize) as u64,
+            samples: vec![sample; frames * channels],
+        };
+
+        let mut controller = PlaybackController::default();
+        controller.start_track("song-a".to_owned(), decoded(0.0), 0);
+        controller
+            .attach_stems(
+                "song-a",
+                LoadedStems::TwoStem {
+                    vocals: decoded(0.75),
+                    accompaniment: decoded(0.75),
+                },
+            )
+            .expect("stems should attach to the active track");
+        controller.play(0).expect("track should start");
+        controller.fade = FadeState::None;
+
+        let mut output = vec![0.0_f32; frames * channels];
+        let mut resampler_cache = super::ResamplerCache::new();
+        let mut eq = EqProcessor::new(sample_rate, channels);
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_accumulator = crate::audio::peaks::PeakAccumulator::new();
+        let rendered = render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            sample_rate,
+            channels,
+            &mut resampler_cache,
+            &mut eq,
+            &mut peak_accumulator,
+            &ring,
+        );
+
+        assert_eq!(rendered, frames * channels);
+        assert!(
+            output[..rendered]
+                .iter()
+                .all(|sample| (-1.0..=1.0).contains(sample)),
+            "EQ bypass must still keep mixed output in the PCM range",
+        );
+        assert!(
+            output[..rendered]
+                .iter()
+                .any(|sample| (*sample - 1.0).abs() < f32::EPSILON),
+            "two 0.75 stems should clamp to +1.0 rather than wrap or attenuate",
+        );
+    }
+
+    #[test]
     fn forward_rendered_audio_to_airplay_skips_unrendered_frames() {
         let tap = AirPlayAudioTap::new(4);
         let mut airplay_scratch = Vec::new();
@@ -2104,6 +2178,12 @@ mod tests {
             "current_track_is_playing must be true after resume"
         );
 
+        // Reset the start timestamp immediately before rendering so the
+        // assertion below exercises an active fade rather than setup time.
+        controller.fade = crate::audio::playback::FadeState::FadingIn {
+            start: std::time::Instant::now(),
+        };
+
         // Render another buffer. The track is at EOF and the user has
         // resumed, so the gapless swap should now fire and fill the buffer
         // from track B.
@@ -2155,13 +2235,20 @@ mod tests {
             non_zero > 0,
             "output buffer must contain non-zero samples from track B after resume swap"
         );
-        // No sample should exceed track B's 0.5 amplitude (the fade-in only
-        // attenuates further). This proves the tail is filled from track B,
-        // not from track A (0.1) or some leftover state.
+        // The fade must survive the gapless swap and be applied to tail audio.
+        // Without this regression fix perform_gapless_swap clears FadingIn, so
+        // this would be 0.5 exactly despite the deliberate play fade.
         let max_sample = output2.iter().fold(0.0f32, |a, &b| a.max(b.abs()));
         assert!(
-            max_sample <= 0.5 + 1e-6,
-            "tail samples must come from track B (<=0.5), got {max_sample}"
+            max_sample < 0.49,
+            "tail must remain attenuated by the active resume fade, got {max_sample}"
+        );
+        assert!(
+            matches!(
+                controller.fade,
+                crate::audio::playback::FadeState::FadingIn { .. }
+            ),
+            "gapless swap must preserve the active resume fade for later callbacks"
         );
     }
 
