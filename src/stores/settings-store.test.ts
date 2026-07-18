@@ -543,7 +543,7 @@ describe("settings-store actions", () => {
     expect(mockNotifyError).not.toHaveBeenCalled();
   });
 
-  test("an older EQ toggle cannot overwrite newer EQ gains", async () => {
+  test("cross-field successful snapshots update only their owned field", async () => {
     let resolveEnabled: (value: AppSettings) => void = () => {};
     mockSetEqEnabled.mockImplementationOnce(
       () =>
@@ -553,7 +553,7 @@ describe("settings-store actions", () => {
     );
     const newest: [number, number, number, number, number] = [0, 3, 0, 0, 0];
     mockSetEqGains.mockResolvedValueOnce(
-      makeAppSettings({ eq_enabled: true, eq_gains_db: newest }),
+      makeAppSettings({ eq_enabled: false, eq_gains_db: newest }),
     );
 
     const toggle = store.getState().setEqEnabled(true);
@@ -565,7 +565,63 @@ describe("settings-store actions", () => {
     );
     await toggle;
 
+    expect(store.getState().eqEnabled).toBe(true);
     expect(store.getState().eqGainsDb).toEqual(newest);
+  });
+
+  test("a failed EQ toggle rolls back after a newer gains request", async () => {
+    const error = new Error("toggle rejected");
+    let rejectEnabled: (error: Error) => void = () => {};
+    mockSetEqEnabled.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((_resolve, reject) => {
+          rejectEnabled = reject;
+        }),
+    );
+    const newest: [number, number, number, number, number] = [0, 3, 0, 0, 0];
+    mockSetEqGains.mockResolvedValueOnce(
+      makeAppSettings({ eq_enabled: false, eq_gains_db: newest }),
+    );
+
+    const toggle = store.getState().setEqEnabled(true);
+    const gains = store.getState().setEqGains(newest);
+
+    await gains;
+    rejectEnabled(error);
+    await toggle;
+
+    expect(store.getState().eqEnabled).toBe(false);
+    expect(store.getState().eqGainsDb).toEqual(newest);
+    expect(mockNotifyError).toHaveBeenCalledWith(error);
+  });
+
+  test("a failed EQ gains mutation rolls back after a newer toggle", async () => {
+    const error = new Error("gains rejected");
+    const previous: [number, number, number, number, number] = [1, 2, 3, 4, 5];
+    const requested: [number, number, number, number, number] = [6, 0, 0, 0, 0];
+    store.setState({ eqGainsDb: previous });
+
+    let rejectGains: (error: Error) => void = () => {};
+    mockSetEqGains.mockImplementationOnce(
+      () =>
+        new Promise<AppSettings>((_resolve, reject) => {
+          rejectGains = reject;
+        }),
+    );
+    mockSetEqEnabled.mockResolvedValueOnce(
+      makeAppSettings({ eq_enabled: true, eq_gains_db: [0, 0, 0, 0, 0] }),
+    );
+
+    const gains = store.getState().setEqGains(requested);
+    const toggle = store.getState().setEqEnabled(true);
+
+    await toggle;
+    rejectGains(error);
+    await gains;
+
+    expect(store.getState().eqEnabled).toBe(true);
+    expect(store.getState().eqGainsDb).toEqual(previous);
+    expect(mockNotifyError).toHaveBeenCalledWith(error);
   });
 
   // ── setEqBandGain ───────────────────────────────────────────────────────
