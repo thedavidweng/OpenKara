@@ -52,6 +52,8 @@ export function createInitialSettingsOverlaySnapshot(
       coverArtBackdrop: initialSettings.coverArtBackdrop,
       executionProvider: initialSettings.executionProvider,
       availableExecutionProviders: initialSettings.availableExecutionProviders,
+      eqEnabled: initialSettings.eqEnabled,
+      eqGainsDb: initialSettings.eqGainsDb,
     },
     meta: {
       isInitializing: true,
@@ -260,6 +262,8 @@ export function createSettingsOverlayActions(
           executionProvider: settingsResult.value.execution_provider,
           availableExecutionProviders:
             settingsResult.value.available_execution_providers,
+          eqEnabled: settingsResult.value.eq_enabled,
+          eqGainsDb: settingsResult.value.eq_gains_db,
         });
       } else {
         dependencies.notifyError(settingsResult.reason);

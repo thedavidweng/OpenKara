@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useEventSubscriptions } from "./use-event-subscription";
 import { usePlayerStore } from "@/stores/player-store";
 import { useLibraryStore } from "@/stores/library-store";
+import { useQueueStore } from "@/stores/queue-store";
 import { useLyricsStore } from "@/stores/lyrics-store";
 import { useBootstrapStore } from "@/stores/bootstrap-store";
 import { useRuntimeBootstrapStore } from "@/stores/runtime-bootstrap-store";
@@ -30,6 +31,7 @@ import type {
   SeparationCompleteEvent,
   SeparationErrorEvent,
   SeparationProgressEvent,
+  TrackTransitionedEvent,
   UploadCompleteEvent,
   UploadErrorEvent,
   UploadProgressEvent,
@@ -255,6 +257,53 @@ function usePlaybackEndedQueueAdvance(enabled: boolean) {
   );
 }
 
+/** #88: Subscribe to `track-transitioned` and reconcile the queue. */
+function useTrackTransitionedQueueReconcile(enabled: boolean) {
+  useEventSubscriptions(
+    [
+      {
+        event: "track-transitioned",
+        handler: (payload) => {
+          const event = payload as TrackTransitionedEvent;
+          usePlayerStore
+            .getState()
+            .onTrackTransitioned(event.from_song_id, event.to_song_id);
+        },
+      },
+    ],
+    enabled,
+  );
+}
+
+/** #88: Preload the queue head for gapless playback whenever the current
+ * song or queue changes. Calls `set_preload_candidate` with the queue head
+ * (or null to cancel) so the backend can decode the next track ahead of
+ * time.
+ *
+ * The effect depends only on the resolved next-candidate ID, not the full
+ * queue array, so unrelated queue edits (adding/removing tail entries) do
+ * not cancel and re-decode an already-prepared next track. */
+function usePreloadCandidateEffect(enabled: boolean) {
+  const currentSongId = usePlayerStore((s) => s.snapshot?.song_id) ?? null;
+  const queue = useQueueStore((s) => s.queue);
+
+  // Resolve the next candidate outside the effect so the dependency can be
+  // the candidate ID itself rather than the entire queue array.
+  const nextCandidate = (() => {
+    if (queue.length === 0) return null;
+    // Skip the queue head if it is the currently playing song.
+    if (queue[0] === currentSongId) {
+      return queue.length > 1 ? queue[1] : null;
+    }
+    return queue[0];
+  })();
+
+  useEffect(() => {
+    if (!enabled) return;
+    api.setPreloadCandidate(nextCandidate).catch(notifyError);
+  }, [enabled, nextCandidate]);
+}
+
 function useBatchSeparationEvents(enabled: boolean) {
   const updateBatchProgress = useLibraryStore((s) => s.updateBatchProgress);
   const clearBatchSeparation = useLibraryStore((s) => s.clearBatchSeparation);
@@ -353,6 +402,8 @@ export function useEventListeners(enabled = true) {
   useSeparationEvents(enabled);
   useBootstrapEvents(enabled);
   usePlaybackEndedQueueAdvance(enabled);
+  useTrackTransitionedQueueReconcile(enabled);
+  usePreloadCandidateEffect(enabled);
   useBatchSeparationEvents(enabled);
   useUploadEvents(enabled);
 }

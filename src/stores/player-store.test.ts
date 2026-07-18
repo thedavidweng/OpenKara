@@ -24,6 +24,7 @@ const {
   mockDequeue,
   mockPushToHistory,
   mockPopFromHistory,
+  mockRemoveSongIds,
 } = vi.hoisted(() => ({
   mockPlay: vi.fn(),
   mockResume: vi.fn(),
@@ -38,6 +39,7 @@ const {
   mockDequeue: vi.fn(),
   mockPushToHistory: vi.fn(),
   mockPopFromHistory: vi.fn(),
+  mockRemoveSongIds: vi.fn(),
 }));
 
 vi.mock("@/lib/tauri", () => ({
@@ -68,6 +70,7 @@ vi.mock("@/stores/queue-store", () => ({
       dequeue: mockDequeue,
       pushToHistory: mockPushToHistory,
       popFromHistory: mockPopFromHistory,
+      removeSongIds: mockRemoveSongIds,
     }),
   },
 }));
@@ -737,6 +740,57 @@ describe("playSong / playNow / skip / onEnded", () => {
     await player.store.getState().playSong("song-1");
 
     expect(mockNotifyError).toHaveBeenCalledWith(error, expect.any(Function));
+  });
+});
+
+describe("onTrackTransitioned", () => {
+  let player: ReturnType<typeof createPlayerStore>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    player = createPlayerStore();
+    mockPushToHistory.mockReset();
+    mockRemoveSongIds.mockReset();
+    mockGetPlaybackState.mockReset();
+    mockGetPlaybackState.mockResolvedValue(playbackSnapshot());
+  });
+
+  afterEach(() => {
+    player.dispose();
+    vi.useRealTimers();
+  });
+
+  test("reconciles the queue when the clock holds the from-song", () => {
+    player.store
+      .getState()
+      .updateSnapshot(playbackSnapshot({ song_id: "song-1" }));
+
+    player.store.getState().onTrackTransitioned("song-1", "song-2");
+
+    expect(mockPushToHistory).toHaveBeenCalledWith("song-1");
+    expect(mockRemoveSongIds).toHaveBeenCalledWith(["song-1", "song-2"]);
+  });
+
+  test("reconciles the queue when the clock holds the to-song", () => {
+    player.store
+      .getState()
+      .updateSnapshot(playbackSnapshot({ song_id: "song-2" }));
+
+    player.store.getState().onTrackTransitioned("song-1", "song-2");
+
+    expect(mockPushToHistory).toHaveBeenCalledWith("song-1");
+    expect(mockRemoveSongIds).toHaveBeenCalledWith(["song-1", "song-2"]);
+  });
+
+  test("skips reconciliation when the clock holds a different song", () => {
+    player.store
+      .getState()
+      .updateSnapshot(playbackSnapshot({ song_id: "song-3" }));
+
+    player.store.getState().onTrackTransitioned("song-1", "song-2");
+
+    expect(mockPushToHistory).not.toHaveBeenCalled();
+    expect(mockRemoveSongIds).not.toHaveBeenCalled();
   });
 });
 

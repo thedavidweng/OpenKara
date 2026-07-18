@@ -50,6 +50,8 @@ export interface SettingsOverlayState {
   coverArtBackdrop: boolean;
   executionProvider: ExecutionProvider;
   availableExecutionProviders: ExecutionProvider[];
+  eqEnabled: boolean;
+  eqGainsDb: [number, number, number, number, number];
 }
 
 export interface SettingsOverlayMeta {
@@ -85,6 +87,11 @@ export interface SettingsOverlayActions {
   deleteModel: (variant: ModelVariant) => Promise<void>;
   toggleHideBatchSeparate: (value: boolean) => Promise<void>;
   toggleCoverArtBackdrop: (value: boolean) => Promise<void>;
+  setEqEnabled: (enabled: boolean) => Promise<void>;
+  setEqGains: (
+    gainsDb: [number, number, number, number, number],
+  ) => Promise<void>;
+  resetEqGains: () => Promise<void>;
   openDeleteStemsDialog: () => Promise<void>;
   confirmDeleteStems: () => Promise<void>;
   openDowngradeDialog: () => Promise<void>;
@@ -135,6 +142,8 @@ export interface SettingsOverlayControllerDependencies {
     | "setLanguage"
     | "setModelVariant"
     | "setStemMode"
+    | "setEqEnabled"
+    | "setEqGains"
   >;
   notifyError: (error: unknown) => void;
   openDirectory: typeof open;

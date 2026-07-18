@@ -269,6 +269,22 @@ describe("playback", () => {
     expect(returned).toBe(snapshot);
   });
 
+  test("setPreloadCandidate invokes set_preload_candidate with songId", async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await playback.setPreloadCandidate("song-abc");
+    expect(mockInvoke).toHaveBeenCalledWith("set_preload_candidate", {
+      songId: "song-abc",
+    });
+  });
+
+  test("setPreloadCandidate invokes set_preload_candidate with null", async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await playback.setPreloadCandidate(null);
+    expect(mockInvoke).toHaveBeenCalledWith("set_preload_candidate", {
+      songId: null,
+    });
+  });
+
   test("syncAirPlayRoutePicker invokes sync_airplay_route_picker", async () => {
     mockInvoke.mockResolvedValueOnce(undefined);
     const bounds = { left: 10, top: 20, width: 100, height: 50 };
@@ -351,6 +367,8 @@ describe("settings", () => {
     lyrics_font_step: 0,
     execution_provider: "cpu" as const,
     available_execution_providers: ["cpu" as const],
+    eq_enabled: false,
+    eq_gains_db: [0, 0, 0, 0, 0],
   };
 
   test("getModelBootstrapStatus invokes get_model_bootstrap_status", async () => {

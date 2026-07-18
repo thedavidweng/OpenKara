@@ -414,6 +414,17 @@
       "directml": "DirectML",
       "directmlDescription": "DirectX 12 GPU 加速 — 适用于 Windows",
       "note": "更改将在下次分离时生效。"
+    },
+    "eq": {
+      "label": "均衡器",
+      "enable": "启用五段均衡器",
+      "description": "调整五个频段，自动预增益并带软限幅器以防止削波。",
+      "band60": "60 Hz",
+      "band230": "230 Hz",
+      "band910": "910 Hz",
+      "band3600": "3.6 kHz",
+      "band14000": "14 kHz",
+      "reset": "重置为平直"
     }
   },
   "bootstrap": {

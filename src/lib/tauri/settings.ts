@@ -72,6 +72,16 @@ export function setLyricsFontStep(step: number): Promise<AppSettings> {
   return invoke<AppSettings>("set_lyrics_font_step", { step });
 }
 
+export function setEqEnabled(enabled: boolean): Promise<AppSettings> {
+  return invoke<AppSettings>("set_eq_enabled", { enabled });
+}
+
+export function setEqGains(
+  gainsDb: [number, number, number, number, number],
+): Promise<AppSettings> {
+  return invoke<AppSettings>("set_eq_gains", { gainsDb });
+}
+
 export function restartApp(): Promise<void> {
   return invoke<void>("restart_app");
 }
