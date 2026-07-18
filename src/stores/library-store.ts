@@ -48,6 +48,7 @@ interface LibraryState {
     orderedHashes?: string[],
   ) => void;
   clearSelection: () => void;
+  clearRangeSelectionAnchor: () => void;
   setFilter: (filter: "all" | "separated") => void;
   updateSongMetadata: (
     hash: string,
@@ -246,6 +247,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   clearSelection: () =>
     set({ selectedSongIds: new Set(), lastClickedSongId: null }),
+
+  // Clears only the range-selection anchor so a sort-mode change can reset
+  // shift-click range origin without dropping the user's selected songs.
+  clearRangeSelectionAnchor: () => set({ lastClickedSongId: null }),
 
   setFilter: (filter) => set({ filter }),
 

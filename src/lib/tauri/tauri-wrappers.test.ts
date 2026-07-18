@@ -524,6 +524,15 @@ describe("settings", () => {
     expect(returned).toBe(appSettings);
   });
 
+  test("setLibrarySortMode invokes set_library_sort_mode", async () => {
+    mockInvoke.mockResolvedValueOnce(appSettings);
+    const returned = await settings.setLibrarySortMode("title_asc");
+    expect(mockInvoke).toHaveBeenCalledWith("set_library_sort_mode", {
+      mode: "title_asc",
+    });
+    expect(returned).toBe(appSettings);
+  });
+
   test("restartApp invokes restart_app", async () => {
     mockInvoke.mockResolvedValueOnce(undefined);
     const returned = await settings.restartApp();

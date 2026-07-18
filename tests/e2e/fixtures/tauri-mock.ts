@@ -20,27 +20,59 @@ export const TAURI_MOCK_SCRIPT = `
   // Mutable so tests can override the library with larger fixtures (e.g. the
   // scrollbar spec needs enough rows to produce real overflow in the song
   // list).  get_library is a function that reads the current value.
+  // imported_at values are distinct so library sort modes produce a
+  // deterministic order. The original three rows keep the most recent
+  // timestamps so the default recently_imported sort shows them first,
+  // preserving existing e2e visibility assertions.
   let mockSongs = [
     {
       hash: "aaa111", file_path: "/music/Bohemian_Rhapsody.mp3",
       audio_source_kind: "original", cdg_path: null, media_g_container: null,
       instrumental: false, language: "en",
       title: "Bohemian Rhapsody", artist: "Queen", album: "A Night at the Opera",
-      duration_ms: 354000, cover_art: null, imported_at: Date.now(), original_ext: ".mp3",
+      duration_ms: 354000, cover_art: null, imported_at: 700000, original_ext: ".mp3",
     },
     {
       hash: "bbb222", file_path: "/music/Hotel_California.mp3",
       audio_source_kind: "original", cdg_path: null, media_g_container: null,
       instrumental: false, language: "en",
       title: "Hotel California", artist: "Eagles", album: "Hotel California",
-      duration_ms: 391000, cover_art: null, imported_at: Date.now(), original_ext: ".mp3",
+      duration_ms: 391000, cover_art: null, imported_at: 600000, original_ext: ".mp3",
     },
     {
       hash: "ccc333", file_path: "/music/Imagine.mp3",
       audio_source_kind: "original", cdg_path: null, media_g_container: null,
       instrumental: false, language: "en",
       title: "Imagine", artist: "John Lennon", album: "Imagine",
-      duration_ms: 187000, cover_art: null, imported_at: Date.now(), original_ext: ".mp3",
+      duration_ms: 187000, cover_art: null, imported_at: 500000, original_ext: ".mp3",
+    },
+    {
+      hash: "ddd444", file_path: "/music/Alpha_2.mp3",
+      audio_source_kind: "original", cdg_path: null, media_g_container: null,
+      instrumental: false, language: "en",
+      title: "Alpha 2", artist: "The Beta", album: null,
+      duration_ms: 120000, cover_art: null, imported_at: 400000, original_ext: ".mp3",
+    },
+    {
+      hash: "eee555", file_path: "/music/Alpha_10.mp3",
+      audio_source_kind: "original", cdg_path: null, media_g_container: null,
+      instrumental: false, language: "en",
+      title: "Alpha 10", artist: "The Beta", album: null,
+      duration_ms: 140000, cover_art: null, imported_at: 300000, original_ext: ".mp3",
+    },
+    {
+      hash: "fff666", file_path: "/music/Beijing_Night.mp3",
+      audio_source_kind: "original", cdg_path: null, media_g_container: null,
+      instrumental: false, language: "zh",
+      title: "北京之夜", artist: "崔健", album: null,
+      duration_ms: 210000, cover_art: null, imported_at: 200000, original_ext: ".mp3",
+    },
+    {
+      hash: "ggg777", file_path: "/music/Unknown.mp3",
+      audio_source_kind: "original", cdg_path: null, media_g_container: null,
+      instrumental: false, language: null,
+      title: null, artist: null, album: null,
+      duration_ms: 90000, cover_art: null, imported_at: 100000, original_ext: ".mp3",
     },
   ];
 
@@ -72,6 +104,16 @@ export const TAURI_MOCK_SCRIPT = `
   let transportGeneration = 0;
   let rotationState = {
     singer_names: [], current_index: 0, mode: "round_robin", active: false,
+  };
+  // Mutable settings snapshot so set_library_sort_mode can update and return
+  // the complete authoritative snapshot, mirroring the Rust backend.
+  let settingsSnapshot = {
+    stem_mode: "two_stem", model_variant: "htdemucs", language: "en",
+    hide_batch_separate: false, cover_art_backdrop: false,
+    lyrics_font_step: 0, execution_provider: "cpu",
+    available_execution_providers: ["cpu"],
+    eq_enabled: false, eq_gains_db: [0, 0, 0, 0, 0],
+    library_sort_mode: "recently_imported",
   };
 
   function bumpTransportGeneration() {
@@ -213,13 +255,7 @@ export const TAURI_MOCK_SCRIPT = `
         display_name: "Test Library", root_path: "/tmp/openkara-test-lib",
       }],
     },
-    get_settings: {
-      stem_mode: "two_stem", model_variant: "htdemucs", language: "en",
-      hide_batch_separate: false, cover_art_backdrop: false,
-      lyrics_font_step: 0, execution_provider: "cpu",
-      available_execution_providers: ["cpu"],
-      eq_enabled: false, eq_gains_db: [0, 0, 0, 0, 0],
-    },
+    get_settings: () => settingsSnapshot,
     get_window_shell_state: {
       chrome_variant: "desktop", tier: "desktop", toolbar_height: 48,
       traffic_light_inset_leading: 0, sidebar_header_height: 0, sidebar_width: 280,
@@ -236,7 +272,9 @@ export const TAURI_MOCK_SCRIPT = `
       const q = ((args && args.query) || "").toLowerCase();
       if (!q) return mockSongs;
       return mockSongs.filter(
-        (s) => s.title.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q)
+        (s) =>
+          (s.title ?? "").toLowerCase().includes(q) ||
+          (s.artist ?? "").toLowerCase().includes(q)
       );
     },
     get_all_separation_statuses: {},
@@ -396,66 +434,47 @@ export const TAURI_MOCK_SCRIPT = `
 
     // Misc
     window_ready: undefined,
-    set_language: (args) => ({
-      stem_mode: "two_stem", model_variant: "htdemucs",
-      language: (args && args.language) || "en",
-      hide_batch_separate: false, cover_art_backdrop: false,
-      lyrics_font_step: 0, execution_provider: "cpu",
-      available_execution_providers: ["cpu"],
-      eq_enabled: false, eq_gains_db: [0, 0, 0, 0, 0],
-    }),
-    set_stem_mode: (args) => ({
-      stem_mode: (args && args.mode) || "two_stem", model_variant: "htdemucs",
-      language: "en", hide_batch_separate: false, cover_art_backdrop: false,
-      lyrics_font_step: 0, execution_provider: "cpu",
-      available_execution_providers: ["cpu"],
-      eq_enabled: false, eq_gains_db: [0, 0, 0, 0, 0],
-    }),
-    set_lyrics_font_step: (args) => ({
-      stem_mode: "two_stem", model_variant: "htdemucs",
-      language: "en", hide_batch_separate: false, cover_art_backdrop: false,
-      lyrics_font_step: (args && args.step) || 0, execution_provider: "cpu",
-      available_execution_providers: ["cpu"],
-      eq_enabled: false, eq_gains_db: [0, 0, 0, 0, 0],
-    }),
-    set_execution_provider: (args) => ({
-      stem_mode: "two_stem", model_variant: "htdemucs",
-      language: "en", hide_batch_separate: false, cover_art_backdrop: false,
-      lyrics_font_step: 0, execution_provider: (args && args.provider) || "cpu",
-      available_execution_providers: ["cpu"],
-      eq_enabled: false, eq_gains_db: [0, 0, 0, 0, 0],
-    }),
-    set_hide_batch_separate: (args) => ({
-      stem_mode: "two_stem", model_variant: "htdemucs",
-      language: "en", hide_batch_separate: (args && args.value) || false, cover_art_backdrop: false,
-      lyrics_font_step: 0, execution_provider: "cpu",
-      available_execution_providers: ["cpu"],
-      eq_enabled: false, eq_gains_db: [0, 0, 0, 0, 0],
-    }),
-    set_cover_art_backdrop: (args) => ({
-      stem_mode: "two_stem", model_variant: "htdemucs",
-      language: "en", hide_batch_separate: false, cover_art_backdrop: (args && args.value) || false,
-      lyrics_font_step: 0, execution_provider: "cpu",
-      available_execution_providers: ["cpu"],
-      eq_enabled: false, eq_gains_db: [0, 0, 0, 0, 0],
-    }),
+    set_language: (args) => {
+      settingsSnapshot = { ...settingsSnapshot, language: (args && args.language) || "en" };
+      return settingsSnapshot;
+    },
+    set_stem_mode: (args) => {
+      settingsSnapshot = { ...settingsSnapshot, stem_mode: (args && args.mode) || "two_stem" };
+      return settingsSnapshot;
+    },
+    set_lyrics_font_step: (args) => {
+      settingsSnapshot = { ...settingsSnapshot, lyrics_font_step: (args && args.step) || 0 };
+      return settingsSnapshot;
+    },
+    set_execution_provider: (args) => {
+      settingsSnapshot = { ...settingsSnapshot, execution_provider: (args && args.provider) || "cpu" };
+      return settingsSnapshot;
+    },
+    set_hide_batch_separate: (args) => {
+      settingsSnapshot = { ...settingsSnapshot, hide_batch_separate: (args && args.value) || false };
+      return settingsSnapshot;
+    },
+    set_cover_art_backdrop: (args) => {
+      settingsSnapshot = { ...settingsSnapshot, cover_art_backdrop: (args && args.value) || false };
+      return settingsSnapshot;
+    },
     get_audio_peaks: { writeIndex: 0, peaks: [] },
     set_preload_candidate: undefined,
-    set_eq_enabled: (args) => ({
-      stem_mode: "two_stem", model_variant: "htdemucs", language: "en",
-      hide_batch_separate: false, cover_art_backdrop: false,
-      lyrics_font_step: 0, execution_provider: "cpu",
-      available_execution_providers: ["cpu"],
-      eq_enabled: !!(args && args.enabled), eq_gains_db: [0, 0, 0, 0, 0],
-    }),
-    set_eq_gains: (args) => ({
-      stem_mode: "two_stem", model_variant: "htdemucs", language: "en",
-      hide_batch_separate: false, cover_art_backdrop: false,
-      lyrics_font_step: 0, execution_provider: "cpu",
-      available_execution_providers: ["cpu"],
-      eq_enabled: true,
-      eq_gains_db: (args && args.gainsDb) || [0, 0, 0, 0, 0],
-    }),
+    set_eq_enabled: (args) => {
+      settingsSnapshot = { ...settingsSnapshot, eq_enabled: !!(args && args.enabled) };
+      return settingsSnapshot;
+    },
+    set_eq_gains: (args) => {
+      settingsSnapshot = {
+        ...settingsSnapshot,
+        eq_gains_db: (args && args.gainsDb) || [0, 0, 0, 0, 0],
+      };
+      return settingsSnapshot;
+    },
+    set_library_sort_mode: (args) => {
+      settingsSnapshot = { ...settingsSnapshot, library_sort_mode: (args && args.mode) || "recently_imported" };
+      return settingsSnapshot;
+    },
     restart_app: undefined,
     create_library: undefined,
     open_library: undefined,

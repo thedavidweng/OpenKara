@@ -650,6 +650,39 @@ describe("library-store clearSelection", () => {
   });
 });
 
+// ─── clearRangeSelectionAnchor ──────────────────────────────
+
+describe("library-store clearRangeSelectionAnchor", () => {
+  test("clears only lastClickedSongId, preserving selectedSongIds", () => {
+    useLibraryStore.setState({
+      selectedSongIds: new Set(["a", "b", "c"]),
+      lastClickedSongId: "b",
+    });
+
+    useLibraryStore.getState().clearRangeSelectionAnchor();
+
+    expect(useLibraryStore.getState().lastClickedSongId).toBeNull();
+    expect(useLibraryStore.getState().selectedSongIds).toEqual(
+      new Set(["a", "b", "c"]),
+    );
+  });
+
+  test("is a no-op when lastClickedSongId is already null", () => {
+    useLibraryStore.setState({
+      selectedSongIds: new Set(["a"]),
+      lastClickedSongId: null,
+    });
+
+    const before = useLibraryStore.getState();
+    useLibraryStore.getState().clearRangeSelectionAnchor();
+
+    expect(useLibraryStore.getState().lastClickedSongId).toBeNull();
+    expect(useLibraryStore.getState().selectedSongIds).toEqual(
+      before.selectedSongIds,
+    );
+  });
+});
+
 // ─── setFilter ──────────────────────────────────────────────
 
 describe("library-store setFilter", () => {

@@ -33,6 +33,7 @@ vi.mock("@/stores/settings-store", () => ({
         availableExecutionProviders: ["cpu", "xnnpack"],
         eqEnabled: false,
         eqGainsDb: [0, 0, 0, 0, 0],
+        librarySortMode: "recently_imported",
       }),
     }),
   },
@@ -118,6 +119,7 @@ function createDependencies(): SettingsOverlayControllerDependencies {
           availableExecutionProviders: ["cpu", "xnnpack"],
           eqEnabled: false,
           eqGainsDb: [0, 0, 0, 0, 0],
+          librarySortMode: "recently_imported",
         }),
       ),
       hydrateAppSettings: vi.fn(),
@@ -145,6 +147,7 @@ function createHarness(overrides?: {
           availableExecutionProviders: ["cpu", "xnnpack"],
           eqEnabled: false,
           eqGainsDb: [0, 0, 0, 0, 0],
+          librarySortMode: "recently_imported",
           ...overrides.initialSettings,
         }
       : undefined,
@@ -192,6 +195,7 @@ describe("createInitialSettingsOverlaySnapshot", () => {
         availableExecutionProviders: ["cpu", "xnnpack"],
         eqEnabled: false,
         eqGainsDb: [0, 0, 0, 0, 0],
+        librarySortMode: "recently_imported",
       },
       meta: {
         isInitializing: true,
@@ -218,6 +222,7 @@ describe("createInitialSettingsOverlaySnapshot", () => {
       availableExecutionProviders: ["cpu"],
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
+      librarySortMode: "recently_imported",
     });
 
     expect(snapshot.state.language).toBe("en");
@@ -239,6 +244,7 @@ describe("createInitialSettingsOverlaySnapshot", () => {
       availableExecutionProviders: ["cpu", "xnnpack"],
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
+      librarySortMode: "recently_imported",
     });
 
     expect(snapshot.state.language).toBe("ko");
@@ -276,6 +282,7 @@ describe("createSettingsOverlayActions - initialize", () => {
       available_execution_providers: ["cpu"],
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
+      library_sort_mode: "recently_imported",
     });
     vi.mocked(harness.dependencies.api.getModelStatus)
       .mockResolvedValueOnce({
@@ -316,6 +323,7 @@ describe("createSettingsOverlayActions - initialize", () => {
       available_execution_providers: ["cpu"],
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
+      library_sort_mode: "recently_imported",
     });
     expect(harness.getSnapshot().state.libraryPath).toBe("/music");
     expect(harness.getSnapshot().state.stemMode).toBe("two_stem");
@@ -342,6 +350,7 @@ describe("createSettingsOverlayActions - initialize", () => {
       available_execution_providers: ["cpu", "xnnpack"],
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
+      library_sort_mode: "recently_imported",
     });
     vi.mocked(harness.dependencies.api.getModelStatus)
       .mockResolvedValueOnce({

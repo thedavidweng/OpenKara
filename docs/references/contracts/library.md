@@ -28,6 +28,7 @@
 19. `advance_rotation() -> RotationState` — 推进轮唱指针
 20. `set_queue_entry_singer(playlist_id: String, song_hash: String, singer: Option<String>) -> ()` — 设置队列条目歌手
 21. `playlists` 表和 `playlist_songs` 表通过 `ON DELETE CASCADE` 与 `songs` 表联动；删除歌曲时自动清理关联
+22. `set_library_sort_mode(mode: LibrarySortMode) -> AppSettings` — 持久化资料库排序模式并返回更新后的全局设置
 
 ## Inputs / outputs / required dependencies
 
@@ -311,6 +312,35 @@
 | --------- | -------------- | -------------------- |
 | `song_id` | `String`       | 请求中的歌曲 hash    |
 | `error`   | `CommandError` | 单首失败的结构化错误 |
+
+### Command: `set_library_sort_mode`
+
+**Input**
+
+```json
+{
+  "mode": "recently_imported"
+}
+```
+
+**Output**
+
+返回更新后的 `AppSettings`（与 `set_lyrics_font_step` 相同的结构，详见 [lyrics.md](./lyrics.md)）。
+
+**Semantics**
+
+1. `mode` 是资料库排序模式，允许值固定为 `recently_imported`、`title_asc`、`artist_asc`
+2. 该命令将排序模式持久化到应用 `config.json`，并返回更新后的全局 `AppSettings`
+3. 排序模式仅影响前端 `SongList` 的显示顺序，不改变 `songs` 表的存储顺序
+4. 非法值时命令返回 `CommandError`
+
+### Shared type: `LibrarySortMode`
+
+| Serialized value    | Meaning                  |
+| ------------------- | ------------------------ |
+| `recently_imported` | 按导入时间倒序（默认值） |
+| `title_asc`         | 按标题升序               |
+| `artist_asc`        | 按歌手升序               |
 
 ### Required dependencies
 

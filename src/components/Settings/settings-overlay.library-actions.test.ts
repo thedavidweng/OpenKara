@@ -114,6 +114,7 @@ function createHarness(overrides?: {
       availableExecutionProviders: ["cpu", "xnnpack"],
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
+      librarySortMode: "recently_imported",
     },
     meta: {
       isInitializing: false,
@@ -190,6 +191,7 @@ function createHarness(overrides?: {
         availableExecutionProviders: ["cpu", "xnnpack"] as ExecutionProvider[],
         eqEnabled: false,
         eqGainsDb: [0, 0, 0, 0, 0] as [number, number, number, number, number],
+        librarySortMode: "recently_imported" as const,
       })),
       hydrateAppSettings: vi.fn(),
       patchAppSettings: vi.fn(),

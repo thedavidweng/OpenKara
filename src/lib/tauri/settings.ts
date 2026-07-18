@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AppSettings,
   ExecutionProvider,
+  LibrarySortMode,
   ModelBootstrapStatusSnapshot,
   ModelStatusSnapshot,
   RuntimeBootstrapStatusSnapshot,
@@ -80,6 +81,12 @@ export function setEqGains(
   gainsDb: [number, number, number, number, number],
 ): Promise<AppSettings> {
   return invoke<AppSettings>("set_eq_gains", { gainsDb });
+}
+
+export function setLibrarySortMode(
+  mode: LibrarySortMode,
+): Promise<AppSettings> {
+  return invoke<AppSettings>("set_library_sort_mode", { mode });
 }
 
 export function restartApp(): Promise<void> {
