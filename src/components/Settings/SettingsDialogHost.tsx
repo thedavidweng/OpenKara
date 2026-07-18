@@ -5,7 +5,7 @@ import { formatBytes } from "./SettingsOverlay.utils";
 
 export function SettingsDialogHost() {
   const { t } = useTranslation();
-  const { meta, actions } = useSettingsOverlay();
+  const { state, meta, actions } = useSettingsOverlay();
 
   switch (meta.dangerDialog) {
     case "delete_stems":
@@ -76,6 +76,21 @@ export function SettingsDialogHost() {
           onCancel={actions.closeDialog}
         />
       );
+
+    case "integrity_cleanup_confirm": {
+      const selectedCount = state.integritySelection.size;
+      return (
+        <ConfirmationDialog
+          title={t("settings.integrity.confirmCleanupTitle")}
+          message={t("settings.integrity.confirmCleanupMessage", {
+            count: selectedCount,
+          })}
+          confirmLabel={t("settings.integrity.confirmCleanupButton")}
+          onConfirm={() => void actions.confirmIntegrityCleanup()}
+          onCancel={actions.closeDialog}
+        />
+      );
+    }
 
     default:
       return null;

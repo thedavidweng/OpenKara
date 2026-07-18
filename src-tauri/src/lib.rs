@@ -97,6 +97,8 @@ pub fn run() {
             commands::import::set_songs_instrumental,
             commands::import::set_songs_language,
             commands::import::get_song_properties,
+            commands::integrity::check_library_integrity,
+            commands::integrity::remove_missing_library_entries,
             commands::library_setup::create_library,
             commands::library_setup::open_library,
             commands::library_setup::switch_library,

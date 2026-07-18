@@ -87,6 +87,8 @@ function createDependencies(): SettingsOverlayControllerDependencies {
       setEqEnabled: vi.fn(),
       setEqGains: vi.fn(),
       setThemePreference: vi.fn(),
+      checkLibraryIntegrity: vi.fn(),
+      removeMissingLibraryEntries: vi.fn(),
     },
     notifyError: vi.fn(),
     openDirectory: vi.fn(),
@@ -100,6 +102,7 @@ function createDependencies(): SettingsOverlayControllerDependencies {
     },
     queueStore: {
       clearQueue: vi.fn(),
+      removeSongIds: vi.fn(),
     },
     playerStore: {
       loadState: vi.fn(),
@@ -202,6 +205,9 @@ describe("createInitialSettingsOverlaySnapshot", () => {
         eqGainsDb: [0, 0, 0, 0, 0],
         librarySortMode: "recently_imported",
         themePreference: "dark",
+        integrityReport: null,
+        integritySelection: expect.any(Set),
+        integritySkippedCount: null,
       },
       meta: {
         isInitializing: true,
@@ -211,6 +217,8 @@ describe("createInitialSettingsOverlaySnapshot", () => {
         deletingStemsInProgress: false,
         deletingLyricsInProgress: false,
         downgradingInProgress: false,
+        integrityCheckInProgress: false,
+        integrityCleanupInProgress: false,
       },
     });
   });
