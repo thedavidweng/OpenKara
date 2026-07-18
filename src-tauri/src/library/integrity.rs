@@ -842,7 +842,10 @@ pub fn remove_missing_library_entries(
 
     match result {
         Ok(()) => {
-            connection.execute_batch("COMMIT")?;
+            if let Err(error) = connection.execute_batch("COMMIT") {
+                connection.execute_batch("ROLLBACK").ok();
+                return Err(error.into());
+            }
         }
         Err(e) => {
             connection.execute_batch("ROLLBACK").ok();
