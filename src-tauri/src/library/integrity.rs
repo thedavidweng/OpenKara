@@ -72,6 +72,7 @@ const MANAGED_TOP_LEVEL_DIRS: &[&str] = &["media", "media-g", "stems", "artwork"
 const PRIMARY_MEDIA_DIRS: &[&str] = &["media", "media-g"];
 const CDG_DIRS: &[&str] = &["media-g"];
 const STEM_DIRS: &[&str] = &["stems"];
+const REDACTED_INVALID_PATH: &str = "<invalid path>";
 
 /// Validate and resolve a database-relative path safely within the library root.
 ///
@@ -168,6 +169,18 @@ fn normalize_relative_path(path: &str) -> Result<String> {
     }
 
     Ok(path.to_owned())
+}
+
+/// Return a path value safe to include in the IPC report. Corrupt database
+/// values are useful diagnostics, but no report may disclose an absolute host
+/// path (Unix, Windows drive, UNC, or Windows root-relative form).
+fn report_path(path: &str) -> String {
+    let has_drive_prefix = path.len() >= 2 && path.as_bytes()[1] == b':';
+    if path.starts_with('/') || path.starts_with('\\') || has_drive_prefix {
+        REDACTED_INVALID_PATH.to_owned()
+    } else {
+        path.to_owned()
+    }
 }
 
 /// Validate a canonical relative path against the managed roots allowed for
@@ -378,13 +391,13 @@ fn run_audit(connection: &Connection, library: &LibraryRoot) -> Result<Integrity
                             report.missing_primary_media.push(ManagedAssetIssue {
                                 song_hash: row.hash.clone(),
                                 asset_type: ASSET_PRIMARY_MEDIA.to_string(),
-                                path: path.clone(),
+                                path: report_path(path),
                             });
                         } else if is_empty_file(&absolute) {
                             report.empty_primary_media.push(ManagedAssetIssue {
                                 song_hash: row.hash.clone(),
                                 asset_type: ASSET_PRIMARY_MEDIA.to_string(),
-                                path: path.clone(),
+                                path: report_path(path),
                             });
                         }
                     }
@@ -392,7 +405,7 @@ fn run_audit(connection: &Connection, library: &LibraryRoot) -> Result<Integrity
                         report.missing_primary_media.push(ManagedAssetIssue {
                             song_hash: row.hash.clone(),
                             asset_type: ASSET_PRIMARY_MEDIA.to_string(),
-                            path: path.clone(),
+                            path: report_path(path),
                         });
                     }
                 }
@@ -512,7 +525,7 @@ fn push_missing_optional(
     report.missing_optional_assets.push(ManagedAssetIssue {
         song_hash: song_hash.to_owned(),
         asset_type: asset_type.to_owned(),
-        path: path.to_owned(),
+        path: report_path(path),
     });
 }
 
@@ -525,7 +538,7 @@ fn push_empty_optional(
     report.empty_optional_assets.push(ManagedAssetIssue {
         song_hash: song_hash.to_owned(),
         asset_type: asset_type.to_owned(),
-        path: path.to_owned(),
+        path: report_path(path),
     });
 }
 
@@ -1082,6 +1095,29 @@ mod tests {
         assert!(resolve_safe_path(&library, "media//song.mp3", PRIMARY_MEDIA_DIRS).is_err());
         assert!(resolve_safe_path(&library, "media/./song.mp3", PRIMARY_MEDIA_DIRS).is_err());
         assert!(resolve_safe_path(&library, "media/song.mp3/", PRIMARY_MEDIA_DIRS).is_err());
+    }
+
+    #[test]
+    fn report_path_redacts_absolute_host_path_forms() {
+        assert_eq!(report_path("/private/user/song.mp3"), REDACTED_INVALID_PATH);
+        assert_eq!(report_path(r"C:\\Users\\user\\song.mp3"), REDACTED_INVALID_PATH);
+        assert_eq!(report_path(r"\\server\\share\\song.cdg"), REDACTED_INVALID_PATH);
+        assert_eq!(report_path("media/../song.mp3"), "media/../song.mp3");
+    }
+
+    #[test]
+    fn audit_redacts_an_absolute_primary_path_in_the_report() {
+        let (_temp, library) = create_test_library();
+        let conn = cache::open_database(&library.database_path()).unwrap();
+        add_song(&conn, "hash1", Some("/private/user/song.mp3"), "original");
+        drop(conn);
+
+        let report = check_library_integrity(&library).unwrap();
+        assert_eq!(report.missing_primary_media.len(), 1);
+        assert_eq!(
+            report.missing_primary_media[0].path,
+            REDACTED_INVALID_PATH
+        );
     }
 
     #[cfg(unix)]
