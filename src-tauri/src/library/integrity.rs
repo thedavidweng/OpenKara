@@ -435,7 +435,12 @@ fn record_referenced_path(referenced: &mut HashSet<String>, path: &str) {
     }
 }
 
-fn push_missing_optional(report: &mut IntegrityReport, song_hash: &str, asset_type: &str, path: &str) {
+fn push_missing_optional(
+    report: &mut IntegrityReport,
+    song_hash: &str,
+    asset_type: &str,
+    path: &str,
+) {
     report.missing_optional_assets.push(ManagedAssetIssue {
         song_hash: song_hash.to_owned(),
         asset_type: asset_type.to_owned(),
@@ -443,7 +448,12 @@ fn push_missing_optional(report: &mut IntegrityReport, song_hash: &str, asset_ty
     });
 }
 
-fn push_empty_optional(report: &mut IntegrityReport, song_hash: &str, asset_type: &str, path: &str) {
+fn push_empty_optional(
+    report: &mut IntegrityReport,
+    song_hash: &str,
+    asset_type: &str,
+    path: &str,
+) {
     report.empty_optional_assets.push(ManagedAssetIssue {
         song_hash: song_hash.to_owned(),
         asset_type: asset_type.to_owned(),
@@ -734,9 +744,8 @@ pub fn remove_missing_library_entries(
                 continue;
             }
 
-            artwork_paths_to_clean.extend(delete::collect_artwork_derivative_paths(
-                connection, hash,
-            )?);
+            artwork_paths_to_clean
+                .extend(delete::collect_artwork_derivative_paths(connection, hash)?);
             // Delete DB rows (safe inside transaction).
             delete::delete_song_rows_from_database(connection, library, hash)?;
             deleted.push(hash.clone());
@@ -822,14 +831,13 @@ mod tests {
     }
 
     fn test_jpeg() -> Vec<u8> {
-        let image = image::ImageBuffer::from_pixel(
-            8,
-            8,
-            image::Rgba([0_u8, 255_u8, 0_u8, 255_u8]),
-        );
+        let image = image::ImageBuffer::from_pixel(8, 8, image::Rgba([0_u8, 255_u8, 0_u8, 255_u8]));
         let mut bytes = Vec::new();
         image::DynamicImage::ImageRgba8(image)
-            .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Jpeg)
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Jpeg,
+            )
             .unwrap();
         bytes
     }
@@ -1225,10 +1233,7 @@ mod tests {
         add_song(&conn, "hash1", Some("media/hash1.mp3"), "remote");
         conn.execute(
             "UPDATE songs SET artwork_thumb_path = ?1 WHERE hash = ?2",
-            rusqlite::params![
-                format!("artwork/thumb_{}_80.webp", "a".repeat(64)),
-                "hash1"
-            ],
+            rusqlite::params![format!("artwork/thumb_{}_80.webp", "a".repeat(64)), "hash1"],
         )
         .unwrap();
         drop(conn);
