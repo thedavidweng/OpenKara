@@ -536,9 +536,10 @@ a {
   border-bottom: 1px solid var(--landing-soft-line);
 }
 
-/* Adjacent feature blocks share one seam — avoid double padding + an extra
-   soft rule between the stem cards and the library section. */
-.feature-section:has(+ .feature-section) {
+/* Feature blocks share one continuous band — collapse the soft rule and
+   stacked padding between stem cards → library cards → closing CTA. */
+.feature-section:has(+ .feature-section),
+.feature-section:has(+ .closing-section) {
   padding-bottom: 0;
   border-bottom: none;
 }
@@ -618,7 +619,7 @@ a {
 .closing-section {
   width: min(620px, calc(100% - 48px));
   margin: 0 auto;
-  padding-block: clamp(132px, 16vw, 232px);
+  padding-block: clamp(72px, 8vw, 112px) clamp(132px, 16vw, 232px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -960,7 +961,8 @@ a {
     padding-block: 64px;
   }
 
-  .feature-section:has(+ .feature-section) {
+  .feature-section:has(+ .feature-section),
+  .feature-section:has(+ .closing-section) {
     padding-bottom: 0;
   }
 
@@ -983,7 +985,7 @@ a {
 
   .closing-section {
     width: min(100% - 28px, 620px);
-    padding-block: 96px;
+    padding-block: 64px 96px;
     gap: 30px;
   }
 
