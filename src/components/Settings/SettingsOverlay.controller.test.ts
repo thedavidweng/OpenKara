@@ -61,6 +61,8 @@ function createControllerHarness() {
       setEqEnabled: vi.fn(),
       setEqGains: vi.fn(),
       setThemePreference: vi.fn(),
+      checkLibraryIntegrity: vi.fn(),
+      removeMissingLibraryEntries: vi.fn(),
     },
     notifyError: vi.fn(),
     openDirectory: vi.fn(),
@@ -74,6 +76,7 @@ function createControllerHarness() {
     },
     queueStore: {
       clearQueue: vi.fn(),
+      removeSongIds: vi.fn(),
     },
     playerStore: {
       loadState: vi.fn(),

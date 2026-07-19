@@ -7,12 +7,14 @@ import {
   PencilLine,
   Plus,
   RefreshCw,
+  ShieldCheck,
   Trash2,
   Unlink2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { SettingsSectionCard } from "./SettingsSectionCard";
 import { InputDialog } from "./InputDialog";
+import { IntegrityReportModal } from "./IntegrityReportModal";
 import { RemoteLibraryWizard } from "./RemoteLibraryWizard";
 import { useSettingsOverlay } from "./SettingsOverlay.context";
 import type { RegisteredLibrary, RemoteLibraryProvider } from "@/types/ipc";
@@ -212,7 +214,29 @@ export function SettingsLibrarySection() {
                         <RefreshCw size={12} />
                       </button>
                     </>
-                  ) : null}
+                  ) : (
+                    isActive && (
+                      <button
+                        type="button"
+                        onClick={() => void actions.checkLibraryIntegrity()}
+                        disabled={
+                          meta.isInitializing ||
+                          meta.integrityCheckInProgress ||
+                          meta.integrityCleanupInProgress
+                        }
+                        title={t("settings.integrity.checkButton", {
+                          defaultValue: "Check library integrity",
+                        })}
+                        className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-white disabled:opacity-50"
+                      >
+                        {meta.integrityCheckInProgress ? (
+                          <RefreshCw size={12} className="animate-spin" />
+                        ) : (
+                          <ShieldCheck size={12} />
+                        )}
+                      </button>
+                    )
+                  )}
                   <button
                     type="button"
                     onClick={() =>
@@ -336,6 +360,10 @@ export function SettingsLibrarySection() {
           onConfirm={handleDeleteConfirm}
           onCancel={() => setDeleteConfirmDialog(null)}
         />
+      )}
+
+      {state.integrityReport && (
+        <IntegrityReportModal report={state.integrityReport} />
       )}
     </SettingsSectionCard>
   );

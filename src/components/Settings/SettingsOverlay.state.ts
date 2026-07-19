@@ -6,6 +6,7 @@ import {
   createLibrarySettingsActions,
   describeLibrary,
 } from "./settings-overlay.library-actions";
+import { createIntegritySettingsActions } from "./settings-overlay.integrity-actions";
 import { createMaintenanceSettingsActions } from "./settings-overlay.maintenance-actions";
 import { createModelSettingsActions } from "./settings-overlay.model-actions";
 import type {
@@ -56,6 +57,9 @@ export function createInitialSettingsOverlaySnapshot(
       eqGainsDb: initialSettings.eqGainsDb,
       librarySortMode: initialSettings.librarySortMode,
       themePreference: initialSettings.themePreference,
+      integrityReport: null,
+      integritySelection: new Set(),
+      integritySkippedCount: null,
     },
     meta: {
       isInitializing: true,
@@ -65,6 +69,8 @@ export function createInitialSettingsOverlaySnapshot(
       deletingStemsInProgress: false,
       deletingLyricsInProgress: false,
       downgradingInProgress: false,
+      integrityCheckInProgress: false,
+      integrityCleanupInProgress: false,
     },
   };
 }
@@ -287,6 +293,7 @@ export function createSettingsOverlayActions(
       patchMeta({ dangerDialog: "delete_runtime" });
     },
     ...createLibrarySettingsActions(actionContext),
+    ...createIntegritySettingsActions(actionContext),
     ...createModelSettingsActions(actionContext),
     ...createMaintenanceSettingsActions(actionContext),
     closeDialog,
