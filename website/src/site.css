@@ -467,88 +467,6 @@ a {
   line-height: 1.5;
 }
 
-.preview-details {
-  width: 100%;
-  padding-bottom: clamp(44px, 6vw, 88px);
-  background: var(--landing-bg);
-}
-
-.preview-caption {
-  position: relative;
-  z-index: 1;
-  min-height: 96px;
-  padding-top: 30px;
-  display: grid;
-  grid-template-columns: 0.8fr 1.2fr;
-  gap: 48px;
-  align-items: start;
-  color: var(--landing-text);
-}
-
-.preview-caption > span {
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.preview-caption p {
-  max-width: 620px;
-  margin: 0;
-  color: var(--landing-muted);
-  font-size: 13px;
-}
-
-.preview-modules {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  margin-top: 26px;
-  border-top: 1px solid color-mix(in srgb, var(--landing-text) 11%, transparent);
-  border-bottom: 1px solid
-    color-mix(in srgb, var(--landing-text) 9%, transparent);
-}
-
-.preview-module {
-  min-height: 178px;
-  padding: 26px 28px 30px;
-  border-right: 1px solid
-    color-mix(in srgb, var(--landing-text) 9%, transparent);
-}
-
-.preview-module:last-child {
-  border-right: 0;
-}
-
-.preview-module > svg {
-  color: color-mix(in srgb, var(--landing-text) 62%, var(--landing-muted));
-}
-
-.preview-module > span {
-  display: block;
-  margin-top: 25px;
-  color: var(--landing-muted);
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.preview-module h3 {
-  margin: 7px 0 8px;
-  color: var(--landing-text);
-  font-size: 16px;
-  font-weight: 620;
-  letter-spacing: -0.03em;
-}
-
-.preview-module p {
-  max-width: 300px;
-  margin: 0;
-  color: var(--landing-muted);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
 .feature-section {
   padding-block: clamp(72px, 7vw, 104px);
   border-bottom: 1px solid var(--landing-soft-line);
@@ -906,30 +824,9 @@ a {
     margin-top: 32px;
   }
 
-  .preview-caption {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-
   .built-with-logos {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     row-gap: 22px;
-  }
-
-  .preview-modules {
-    grid-template-columns: 1fr;
-    margin-top: 22px;
-  }
-
-  .preview-module {
-    min-height: 148px;
-    border-right: 0;
-    border-bottom: 1px solid
-      color-mix(in srgb, var(--landing-text) 9%, transparent);
-  }
-
-  .preview-module:last-child {
-    border-bottom: 0;
   }
 
   .closing-section {
