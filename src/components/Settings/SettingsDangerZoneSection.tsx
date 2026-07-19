@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsSectionCard } from "./SettingsSectionCard";
 import { useSettingsOverlay } from "./SettingsOverlay.context";
-import { formatBytes } from "./SettingsOverlay.utils";
+import { formatBytes } from "@/lib/format";
 import type { ModelVariant } from "@/types/ipc";
 
 interface DangerActionRowProps {

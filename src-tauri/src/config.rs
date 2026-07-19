@@ -600,10 +600,6 @@ impl AppConfig {
     pub fn effective_theme_preference(&self) -> ThemePreference {
         self.theme_preference.unwrap_or_default()
     }
-
-    pub fn effective_remote_cache_bytes_limit(&self) -> Option<u64> {
-        self.remote_cache_bytes_limit
-    }
 }
 
 /// Returns `Ok(None)` if the file does not exist.

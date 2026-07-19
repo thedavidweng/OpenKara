@@ -548,6 +548,7 @@ mod tests {
         commands::bootstrap,
         state::{AirPlayState, AppShell, AppState, PlaybackState, RemoteState, SeparationState},
     };
+    use std::sync::RwLock;
     use std::{
         path::PathBuf,
         sync::{
@@ -584,7 +585,7 @@ mod tests {
                 preload_request_generation: Arc::new(AtomicU64::new(0)),
                 command_tx,
                 peak_ring: Arc::new(crate::audio::peaks::PeakRing::new()),
-                output_format: crate::audio::output_format::create_output_format_state(),
+                output_format: Arc::new(RwLock::new(None)),
                 waveform_singleflight: crate::state::WaveformSingleflight::new(),
             },
             airplay: AirPlayState {

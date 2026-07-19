@@ -1,11 +1,11 @@
 use crate::audio::coordinator::PlaybackCommand;
-use crate::audio::output_format::{create_output_format_state, OutputFormatState};
+use crate::audio::output_format::OutputFormatState;
 use crate::audio::peaks::PeakRing;
 use crate::audio::playback::PlaybackController;
 use crate::commands::cdg::CdgPlaybackSlot;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex, RwLock};
 
 #[derive(Clone)]
 pub struct PlaybackState {
@@ -72,7 +72,7 @@ impl PlaybackState {
                 preload_request_generation: Arc::new(AtomicU64::new(0)),
                 command_tx,
                 peak_ring: Arc::new(PeakRing::new()),
-                output_format: create_output_format_state(),
+                output_format: Arc::new(RwLock::new(None)),
                 waveform_singleflight: WaveformSingleflight::new(),
             },
             command_rx,
@@ -95,7 +95,7 @@ impl PlaybackState {
             preload_request_generation: Arc::new(AtomicU64::new(0)),
             command_tx,
             peak_ring: Arc::new(PeakRing::new()),
-            output_format: create_output_format_state(),
+            output_format: Arc::new(RwLock::new(None)),
             waveform_singleflight: WaveformSingleflight::new(),
         }
     }

@@ -14,7 +14,7 @@ use crate::{
         decode::DecodedAudio,
         error::PlaybackError,
         output,
-        output_format::{self, OutputFormatState},
+        output_format::OutputFormatState,
         playback::{
             monotonic_now_ms, playback_position_event, LoadedStems, PlaybackController,
             PlaybackStateSnapshot, PreparedTrack, StemName, PLAYBACK_ERROR_EVENT,
@@ -879,7 +879,7 @@ fn handle_prepare_next<R: Runtime>(runtime: &CoordinatorRuntime<R>, prepared: Pr
     // device restarted (or the format changed) since the preload scheduler
     // captured its descriptor, the prepared audio is stale and must be
     // discarded. The preload scheduler will re-prepare with the new format.
-    let pre_lock_format = output_format::snapshot(&runtime.output_format);
+    let pre_lock_format = runtime.output_format.read().ok().and_then(|guard| *guard);
     if let Some(current) = pre_lock_format {
         if current.generation != prepared.output_format.generation
             || current.sample_rate != prepared.output_format.sample_rate
@@ -909,7 +909,7 @@ fn handle_prepare_next<R: Runtime>(runtime: &CoordinatorRuntime<R>, prepared: Pr
     // lock, so it could change between the pre-lock check above and the lock
     // acquisition. The controller's defensive guard compares the prepared
     // track's captured format against this re-captured snapshot.
-    let post_lock_format = match output_format::snapshot(&runtime.output_format) {
+    let post_lock_format = match runtime.output_format.read().ok().and_then(|guard| *guard) {
         Some(fmt) => fmt,
         None => {
             eprintln!("coordinator: PrepareNext rejected — output format unavailable after lock");
@@ -940,6 +940,7 @@ mod tests {
         state::{AirPlayState, PlaybackState},
     };
     use std::sync::atomic::Ordering;
+    use std::sync::RwLock;
     use tauri::test::{mock_app, MockRuntime};
 
     /// Test harness: creates a CoordinatorRuntime with a mock app handle,
@@ -963,7 +964,7 @@ mod tests {
             let shutdown = Arc::new(AtomicBool::new(false));
 
             let (tx, rx) = mpsc::channel();
-            let output_format = output_format::create_output_format_state();
+            let output_format = Arc::new(RwLock::new(None));
             let runtime = Arc::new(CoordinatorRuntime {
                 app_handle,
                 playback: Arc::clone(&playback),
@@ -1486,7 +1487,7 @@ mod tests {
             preload_request_generation: Arc::new(AtomicU64::new(0)),
             command_tx: tx,
             peak_ring: Arc::new(crate::audio::peaks::PeakRing::new()),
-            output_format: output_format::create_output_format_state(),
+            output_format: Arc::new(RwLock::new(None)),
             waveform_singleflight: crate::state::WaveformSingleflight::new(),
         };
 

@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { ConfirmationDialog } from "./ConfirmationDialog";
 import { useSettingsOverlay } from "./SettingsOverlay.context";
-import { formatBytes } from "./SettingsOverlay.utils";
+import { formatBytes } from "@/lib/format";
 
 export function SettingsDialogHost() {
   const { t } = useTranslation();

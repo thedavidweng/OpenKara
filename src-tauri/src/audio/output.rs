@@ -5,7 +5,7 @@ use crate::audio::crossfade::{
 use crate::audio::decode::DecodedAudio;
 use crate::audio::eq::{soft_limit, EqProcessor};
 use crate::audio::error::PlaybackError;
-use crate::audio::output_format::{self, OutputFormatState};
+use crate::audio::output_format::{OutputFormatSnapshot, OutputFormatState};
 use crate::audio::peaks::{PeakAccumulator, PeakRing};
 use crate::audio::playback::{LoadedStems, PlaybackController, StemVolumes};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -1502,10 +1502,19 @@ where
     // increments on every new stream construction (including device restarts),
     // so stale preparations captured before the restart are rejected by the
     // coordinator's generation check.
-    let generation = output_format::snapshot(&output_format)
+    let generation = output_format
+        .read()
+        .ok()
+        .and_then(|guard| *guard)
         .map(|s| s.generation.saturating_add(1))
         .unwrap_or(1);
-    output_format::publish(&output_format, generation, sample_rate, config.channels);
+    if let Ok(mut guard) = output_format.write() {
+        *guard = Some(OutputFormatSnapshot::new(
+            generation,
+            sample_rate,
+            config.channels,
+        ));
+    }
     let mut scratch = Vec::<f32>::new();
     // Pre-allocated scratch buffer for per-stem pop operations inside the audio
     // callback.  Reusing one buffer across all stems avoids `vec![]` allocations

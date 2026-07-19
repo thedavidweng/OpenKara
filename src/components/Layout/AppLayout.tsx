@@ -8,7 +8,7 @@ import { ImportCdgChoiceDialog } from "@/components/Library/ImportCdgChoiceDialo
 import { getShortcutPlatform } from "@/lib/app-shortcuts";
 import {
   createWindowShellStyle,
-  getNativeWindowShellState,
+  MAC_WINDOW_SHELL_STATE,
   type WindowShellState,
   useWindowShellState,
 } from "@/lib/window-shell";
@@ -27,20 +27,22 @@ interface AppLayoutProps {
 // app. This lets the shared toolbar retain its native traffic-light spacing as
 // the desktop shell evolves, while the browser preview supplies only a visual
 // stand-in for the OS-owned controls.
-const PREVIEW_WINDOW_SHELL_STATE: WindowShellState =
-  getNativeWindowShellState();
+const PREVIEW_WINDOW_SHELL_STATE: WindowShellState = MAC_WINDOW_SHELL_STATE;
 
 // Preview-mode interaction whitelist. The landing-page mock blocks all
-// interactions except: (1) playlist switches in the sidebar, (2) lyrics
-// scrolling + the Follow button inside the lyrics panel, and (3) the toolbar
-// sidebar toggle (keyboard already works via window shortcuts). Import and
-// other mutating actions stay blocked.
+// interactions except: (1) playlist switches in the sidebar (including the
+// back button that exits a playlist), (2) lyrics scrolling + the Follow
+// button inside the lyrics panel, (3) the toolbar sidebar toggle (keyboard
+// already works via window shortcuts), and (4) the play/pause toggle so the
+// mock stays consistent with the spacebar shortcut. Import and other mutating
+// actions stay blocked.
 function isPreviewAllowedTarget(target: EventTarget | null): boolean {
   return (
     target instanceof Element &&
     (target.closest("[data-preview-playlist-switch='true']") != null ||
       target.closest("[data-preview-lyrics-interactive='true']") != null ||
-      target.closest("[data-preview-sidebar-toggle='true']") != null)
+      target.closest("[data-preview-sidebar-toggle='true']") != null ||
+      target.closest("[data-preview-play-toggle='true']") != null)
   );
 }
 

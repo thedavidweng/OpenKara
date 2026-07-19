@@ -35,22 +35,6 @@ impl OutputFormatSnapshot {
 /// mutex.
 pub type OutputFormatState = Arc<RwLock<Option<OutputFormatSnapshot>>>;
 
-pub fn create_output_format_state() -> OutputFormatState {
-    Arc::new(RwLock::new(None))
-}
-
-/// Publish a new output-format snapshot. Called by the output worker after a
-/// stream is successfully constructed, before reporting readiness.
-pub fn publish(state: &OutputFormatState, generation: u64, sample_rate: u32, channels: u16) {
-    if let Ok(mut guard) = state.write() {
-        *guard = Some(OutputFormatSnapshot::new(generation, sample_rate, channels));
-    }
-}
-
-pub fn snapshot(state: &OutputFormatState) -> Option<OutputFormatSnapshot> {
-    state.read().ok().and_then(|guard| *guard)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -66,15 +50,21 @@ mod tests {
 
     #[test]
     fn create_state_starts_none() {
-        let state = create_output_format_state();
-        assert!(snapshot(&state).is_none());
+        let state: OutputFormatState = Arc::new(RwLock::new(None));
+        assert!(state.read().ok().and_then(|guard| *guard).is_none());
     }
 
     #[test]
     fn publish_and_read() {
-        let state = create_output_format_state();
-        publish(&state, 1, 48_000, 2);
-        let s = snapshot(&state).expect("should be published");
+        let state: OutputFormatState = Arc::new(RwLock::new(None));
+        if let Ok(mut guard) = state.write() {
+            *guard = Some(OutputFormatSnapshot::new(1, 48_000, 2));
+        }
+        let s = state
+            .read()
+            .ok()
+            .and_then(|guard| *guard)
+            .expect("should be published");
         assert_eq!(s.generation, 1);
         assert_eq!(s.sample_rate, 48_000);
         assert_eq!(s.channels, 2);
@@ -82,10 +72,18 @@ mod tests {
 
     #[test]
     fn publish_overwrites_previous() {
-        let state = create_output_format_state();
-        publish(&state, 1, 44_100, 2);
-        publish(&state, 2, 48_000, 2);
-        let s = snapshot(&state).expect("should exist");
+        let state: OutputFormatState = Arc::new(RwLock::new(None));
+        if let Ok(mut guard) = state.write() {
+            *guard = Some(OutputFormatSnapshot::new(1, 44_100, 2));
+        }
+        if let Ok(mut guard) = state.write() {
+            *guard = Some(OutputFormatSnapshot::new(2, 48_000, 2));
+        }
+        let s = state
+            .read()
+            .ok()
+            .and_then(|guard| *guard)
+            .expect("should exist");
         assert_eq!(s.generation, 2);
         assert_eq!(s.sample_rate, 48_000);
     }

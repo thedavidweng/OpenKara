@@ -1,8 +1,6 @@
 use crate::{
     audio::{
-        coordinator::PlaybackCommand,
-        error::PlaybackError,
-        output_format::{self, OutputFormatSnapshot},
+        coordinator::PlaybackCommand, error::PlaybackError, output_format::OutputFormatSnapshot,
         playback::PreparedTrack,
     },
     cache,
@@ -238,7 +236,13 @@ pub fn spawn_preload_next(
 
         // Capture the current output format. If no output stream has been
         // constructed yet, we cannot preload.
-        let output_format = match output_format::snapshot(&state.playback.output_format) {
+        let output_format = match state
+            .playback
+            .output_format
+            .read()
+            .ok()
+            .and_then(|guard| *guard)
+        {
             Some(fmt) => fmt,
             None => return,
         };

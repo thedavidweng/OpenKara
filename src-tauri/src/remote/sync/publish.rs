@@ -446,7 +446,7 @@ pub(crate) fn publish_song_to_remote<R: tauri::Runtime>(
     )?;
     emit_upload_progress(app_handle, &snapshot);
 
-    let background_state = state.clone_for_background();
+    let background_state = state.clone();
     let background_handle = app_handle.clone();
     let song_id = song_id.clone();
     std::thread::spawn(move || {
@@ -476,7 +476,7 @@ pub(crate) fn publish_songs_to_remote<R: tauri::Runtime>(
         snapshots.push(snapshot);
     }
 
-    let background_state = state.clone_for_background();
+    let background_state = state.clone();
     let background_handle = app_handle.clone();
     let song_ids = song_ids.to_vec();
     std::thread::spawn(move || {
