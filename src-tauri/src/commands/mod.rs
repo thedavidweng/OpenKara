@@ -14,7 +14,6 @@ pub mod remote_library;
 pub mod runtime_bootstrap;
 pub mod separation;
 pub mod settings;
-pub mod window_shell;
 
 pub use bootstrap::get_model_bootstrap_status;
 pub use cdg::{get_cdg_frame, get_cdg_status};

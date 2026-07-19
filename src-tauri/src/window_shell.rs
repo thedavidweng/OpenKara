@@ -215,11 +215,47 @@ mod native {
 
 /// Legacy IPC: split-shell sidebar visibility is a no-op now that the product uses
 /// a single webview layout; kept so older frontends do not error on invoke.
-pub fn set_native_sidebar_visibility<R: Runtime>(
+pub fn set_native_sidebar_visibility_impl<R: Runtime>(
     _webview: &tauri::Webview<R>,
     _visible: bool,
 ) -> anyhow::Result<()> {
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Tauri IPC commands.
+//
+// These three commands used to live in `commands::window_shell` as a thin
+// pass-through adapter. They failed the deletion test — deleting that module
+// just moved the `#[tauri::command]` attribute here — so they were inlined
+// directly onto the module that owns the behaviour. The seam is the IPC
+// boundary; there is no second adapter, so an intermediate module added
+// navigation overhead without concentrating complexity.
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn get_window_shell_state(state: tauri::State<'_, WindowShellState>) -> WindowShellState {
+    state.inner().clone()
+}
+
+#[tauri::command]
+pub fn set_native_sidebar_visibility(
+    webview: tauri::Webview,
+    visible: bool,
+) -> Result<(), crate::commands::error::CommandError> {
+    set_native_sidebar_visibility_impl(&webview, visible)
+        .map_err(|error| crate::commands::error::internal_error(error.to_string()))
+}
+
+#[tauri::command]
+pub fn window_ready(
+    window: tauri::WebviewWindow,
+) -> Result<(), crate::commands::error::CommandError> {
+    // The main window starts hidden so users never see the WebView's default
+    // empty frame. Frontend calls this only after the first real app screen commits.
+    window
+        .show()
+        .map_err(|error| crate::commands::error::internal_error(error.to_string()))
 }
 
 #[cfg(test)]
