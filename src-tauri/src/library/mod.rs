@@ -7,6 +7,7 @@
 //! IPC commands and remote Pre-Mutation Refresh / Publish Song wrappers live
 //! outside this module and call into these APIs with `Connection` + `LibraryRoot`.
 
+pub mod artwork;
 pub mod delete;
 pub mod error;
 pub mod import;

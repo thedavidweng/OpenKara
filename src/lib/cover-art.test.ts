@@ -100,4 +100,89 @@ describe("cover-art", () => {
     invalidateCoverArtUrl("nonexistent-hash");
     expect(URL.revokeObjectURL).not.toHaveBeenCalled();
   });
+
+  test("maintains independent ref counts per size for the same song", () => {
+    const jpeg = [0xff, 0xd8, 0x00];
+    const png = [0x89, 0x50, 0x4e, 0x47];
+
+    const thumbUrl1 = retainCoverArtUrl("song-size", jpeg, "thumb");
+    retainCoverArtUrl("song-size", jpeg, "thumb"); // second retain for refcount=2
+    const previewUrl = retainCoverArtUrl("song-size", png, "preview");
+
+    expect(thumbUrl1).toBe("blob:image/jpeg");
+    expect(previewUrl).toBe("blob:image/png");
+    expect(thumbUrl1).not.toBe(previewUrl);
+
+    // Releasing one thumb ref (refcount 2→1) does not revoke either URL.
+    releaseCoverArtUrl("song-size", "thumb");
+    expect(URL.revokeObjectURL).not.toHaveBeenCalledWith(thumbUrl1);
+    expect(URL.revokeObjectURL).not.toHaveBeenCalledWith(previewUrl);
+
+    // Final thumb release revokes the thumb URL but not the preview URL.
+    releaseCoverArtUrl("song-size", "thumb");
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(thumbUrl1);
+    expect(URL.revokeObjectURL).not.toHaveBeenCalledWith(previewUrl);
+
+    // Final preview release revokes the preview URL.
+    releaseCoverArtUrl("song-size", "preview");
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(previewUrl);
+  });
+
+  test("same-key byte replacement revokes the old URL and returns a new one", () => {
+    const jpeg = [0xff, 0xd8, 0x00];
+    const png = [0x89, 0x50, 0x4e, 0x47];
+
+    const first = retainCoverArtUrl("song-replace", jpeg, "thumb");
+    expect(first).toBe("blob:image/jpeg");
+
+    // New bytes under the same key → old URL revoked, new URL created.
+    const second = retainCoverArtUrl("song-replace", png, "thumb");
+    expect(second).toBe("blob:image/png");
+    expect(second).not.toBe(first);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(first);
+
+    // Releasing the replacement cleans up the new URL.
+    releaseCoverArtUrl("song-replace", "thumb");
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(second);
+  });
+
+  test("same-key identical bytes reuse the cached URL without revoking", () => {
+    const jpeg = [0xff, 0xd8, 0x00];
+
+    const first = retainCoverArtUrl("song-same", jpeg, "thumb");
+    const second = retainCoverArtUrl("song-same", jpeg, "thumb");
+
+    expect(first).toBe(second);
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+  });
+
+  test("invalidateCoverArtUrl revokes every size variant for a song", () => {
+    const jpeg = [0xff, 0xd8, 0x00];
+    const png = [0x89, 0x50, 0x4e, 0x47];
+
+    const thumbUrl = retainCoverArtUrl("song-multi", jpeg, "thumb");
+    const previewUrl = retainCoverArtUrl("song-multi", png, "preview");
+    const originalUrl = retainCoverArtUrl("song-multi", jpeg, "original");
+
+    invalidateCoverArtUrl("song-multi");
+
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(thumbUrl);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(previewUrl);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(originalUrl);
+  });
+
+  test("releaseCoverArtUrl with explicit size only releases that size", () => {
+    const jpeg = [0xff, 0xd8, 0x00];
+
+    retainCoverArtUrl("song-release-size", jpeg, "thumb");
+    retainCoverArtUrl("song-release-size", jpeg, "original");
+
+    releaseCoverArtUrl("song-release-size", "thumb");
+    // Only the thumb URL should be revoked; original still held.
+    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+
+    releaseCoverArtUrl("song-release-size", "original");
+    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2);
+  });
 });
