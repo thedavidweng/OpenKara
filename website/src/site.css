@@ -448,15 +448,18 @@ a {
 }
 
 .built-with-logos {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
+  /* Size tracks each logo's intrinsic width so square marks (Kilo / Codex)
+     don't sit in equal fr columns with oversized empty side padding. */
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: clamp(12px, 1.8vw, 32px);
+  justify-content: space-between;
+  gap: clamp(16px, 2vw, 40px);
   margin-top: 24px;
 }
 
 .built-with-tool {
-  min-width: 0;
+  flex: 0 0 auto;
   min-height: 34px;
   display: grid;
   place-items: center;
@@ -470,9 +473,11 @@ a {
 
 .built-with-tool img {
   display: block;
+  /* Explicit height so viewBox-only SVGs (Claude / Cursor) keep intrinsic
+     aspect width inside a flex row instead of collapsing to 0. */
   width: auto;
-  max-width: 100%;
-  max-height: 24px;
+  height: 24px;
+  max-width: none;
   object-fit: contain;
 }
 
@@ -487,27 +492,25 @@ a {
 }
 
 .built-with-tool--claude-code img {
-  max-height: 20px;
+  height: 20px;
 }
 
 .built-with-tool--devin img {
-  max-height: 29px;
+  height: 29px;
 }
 
 .built-with-tool--github-copilot img {
-  max-height: 22px;
+  height: 22px;
 }
 
 .built-with-tool--codex img {
   width: 30px;
   height: 30px;
-  max-height: none;
 }
 
 .built-with-tool--kilo-code img {
   width: 30px;
   height: 30px;
-  max-height: none;
   /* Kilo Code SVG uses fill="currentColor" but is loaded via <img src>, so host
      CSS color does not propagate and currentColor falls back to black — invisible
      on the dark logo wall. Force white via a luminance filter (brightness(0)
@@ -886,7 +889,8 @@ a {
   }
 
   .built-with-logos {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    flex-wrap: wrap;
+    justify-content: center;
     row-gap: 22px;
   }
 
@@ -973,7 +977,7 @@ a {
   }
 
   .built-with-logos {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px 28px;
   }
 
   .site-footer {
