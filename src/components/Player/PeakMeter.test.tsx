@@ -113,7 +113,7 @@ describe("PeakMeter", () => {
     expect(canvasMock.ctx.fillRect).toHaveBeenCalled();
   });
 
-  it("skips redraw when writeIndex has not changed", async () => {
+  it("skips redraw when writeIndex has not changed within the grace period", async () => {
     mockGetAudioPeaks.mockResolvedValue({
       writeIndex: 5,
       peaks: [[0.3, 0.4]],
@@ -125,6 +125,28 @@ describe("PeakMeter", () => {
     await vi.advanceTimersByTimeAsync(34);
     const secondCallCount = canvasMock.ctx.fillRect.mock.calls.length;
     expect(secondCallCount).toBe(firstCallCount);
+  });
+
+  it("falls back to flat baseline when writeIndex freezes with non-empty peaks", async () => {
+    mockGetAudioPeaks.mockResolvedValue({
+      writeIndex: 5,
+      peaks: [[0.5, 0.5]],
+    });
+    render(<PeakMeter width={120} height={24} />);
+    await vi.advanceTimersByTimeAsync(100);
+    canvasMock.ctx.fillRect.mockClear();
+    canvasMock.ctx.clearRect.mockClear();
+
+    // Ring stops advancing (playback stopped) but still returns last peaks.
+    mockGetAudioPeaks.mockResolvedValue({
+      writeIndex: 5,
+      peaks: [[0.5, 0.5]],
+    });
+    // Past the 500ms staleness grace — meter must clear to the flat baseline.
+    await vi.advanceTimersByTimeAsync(600);
+    expect(canvasMock.ctx.clearRect).toHaveBeenCalled();
+    // Flat baseline path draws a single mid-line fill, not live peak bars.
+    expect(canvasMock.ctx.fillRect).toHaveBeenCalled();
   });
 
   it("redraws when writeIndex changes", async () => {

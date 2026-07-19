@@ -11,3 +11,4 @@ pub mod playback;
 pub mod range_set;
 pub mod remote_source;
 pub mod streaming;
+pub mod waveform;

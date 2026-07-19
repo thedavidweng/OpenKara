@@ -312,6 +312,34 @@ describe("playback", () => {
     expect(returned).toBe(snapshot);
   });
 
+  test("getWaveform invokes get_waveform with hash and buckets", async () => {
+    const peaks = new Array(200).fill(0.5);
+    mockInvoke.mockResolvedValueOnce(peaks);
+    const returned = await playback.getWaveform("song-1", 200);
+    expect(mockInvoke).toHaveBeenCalledWith("get_waveform", {
+      hash: "song-1",
+      buckets: 200,
+    });
+    expect(returned).toEqual({ peaks, buckets: 200 });
+  });
+
+  test("getWaveform passes undefined buckets when omitted", async () => {
+    const peaks = new Array(200).fill(0.5);
+    mockInvoke.mockResolvedValueOnce(peaks);
+    const returned = await playback.getWaveform("song-1");
+    expect(mockInvoke).toHaveBeenCalledWith("get_waveform", {
+      hash: "song-1",
+      buckets: undefined,
+    });
+    expect(returned).toEqual({ peaks, buckets: 200 });
+  });
+
+  test("getWaveform returns empty peaks for remote sources", async () => {
+    mockInvoke.mockResolvedValueOnce([]);
+    const returned = await playback.getWaveform("remote-1", 200);
+    expect(returned).toEqual({ peaks: [], buckets: 0 });
+  });
+
   test("setPreloadCandidate invokes set_preload_candidate with songId", async () => {
     mockInvoke.mockResolvedValueOnce(undefined);
     await playback.setPreloadCandidate("song-abc");

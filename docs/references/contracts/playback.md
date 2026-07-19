@@ -17,7 +17,8 @@
 9. `get_audio_peaks() -> AudioPeakSnapshot` — 只读命令，拷贝 lock-free peak ring 快照（不持 playback mutex）
 10. `set_preload_candidate(song_id: Option<String>) -> ()` — #88 无缝播放预加载命令（见下）
 11. `playback-position` 事件 payload 为 `{ ms: u64, transport_generation: u64, snapshot: PlaybackStateSnapshot }`
-12. `track-transitioned` 事件 payload 为 `{ transition_serial: u64, from_song_id: String, to_song_id: String }` — #88 无缝换轨通知（见下）
+12. `track-transitioned` 事件 payload 为 `{ transitionSerial: u64, preloadGeneration: u64, fromSongId: String, toSongId: String, state: PlaybackStateSnapshot }` — #88/#89 无缝换轨通知（见下）
+13. `get_waveform(hash: String, buckets: Option<usize>) -> Vec<f32>` — #90 波形 seekbar 命令（见下）
 
 ### Peak envelope 可视化（#87）
 
@@ -27,6 +28,15 @@
 - Ring buffer 容量固定 256 对（约 3.0 s @ 44.1 kHz），单写多读，全原子操作。
 - 命令只读 ring，不持 `PlaybackController` mutex，不影响播放实时性。
 - 前端以 30 Hz 轮询，DPR-aware canvas 渲染，`writeIndex` 不变时跳过重绘。
+
+### Waveform seekbar（#90）
+
+`get_waveform(hash: String, buckets: Option<usize>) -> Vec<f32>` 返回长度为 `buckets`（clamp 到 `24..=1000`，默认 200）的 peak 数组，每个值在 `[0, 1]`。远程源返回 `[]`。
+
+- 缓存表 `waveforms` 使用复合主键 `(song_hash, buckets)`，不同 bucket 数独立缓存。BLOB 为 little-endian f32，读取时校验长度、finite、`[0, 1]` 范围，无效行 best-effort 删除。
+- 进程级 `WaveformSingleflight` 去重并发请求：首个调用者 spawn 一个 owned blocking 计算任务，后续调用者 append oneshot receiver 等待共享结果。计算任务拥有完成权——总是移除 key 并 fan-out 结果或 sanitized error（普通失败、panic、JoinError、取消均返回固定消息）。任一调用者取消只 drop 自己的 receiver，不影响其他等待者。poisoned mutex 用 `into_inner()` 恢复。
+- 命令不持 playback-controller lock；singleflight 值放在 `PlaybackState` 仅为进程级共享。
+- 前端 `SeekBar` 在 song 变化时 fetch 波形，bucket 数由 `clamp(round(cssWidth * dpr / 3), 24, 1000)` 推导（CSS 宽度经 `ResizeObserver` 监听，DPR 经 window resize 与 `resolution` media-query 变化监听并在 DPR 变化时重新注册查询），DPR-aware canvas 渲染在进度条后方。DPR-only 变化（同 CSS 宽度、不同 DPR）以新 bucket 数 refetch，不拉伸旧波形。
 
 ### EQ 命令（通过 settings 命令面下发）
 

@@ -1494,6 +1494,7 @@ mod tests {
             command_tx: tx,
             peak_ring: Arc::new(crate::audio::peaks::PeakRing::new()),
             output_format: output_format::create_output_format_state(),
+            waveform_singleflight: crate::state::WaveformSingleflight::new(),
         };
 
         let (reply_tx, _reply_rx) = tokio::sync::oneshot::channel();

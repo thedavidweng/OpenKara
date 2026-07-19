@@ -7,7 +7,7 @@ Do **not** edit it by hand. Regenerate after any migration change:
 node scripts/generate-db-schema.mjs
 ```
 
-Source migrations: `001_init.sql`, `002_stems.sql`, `003_lyrics.sql`, `004_portable_paths.sql`, `005_audio_source_kind.sql`, `005_individual_stem_paths.sql`, `006_stem_model_variant.sql`, `007_song_instrumental.sql`, `008_playlists.sql`, `009_singer_rotation.sql`, `010_fts5_songs.sql`, `012_artwork_derivatives.sql`.
+Source migrations: `001_init.sql`, `002_stems.sql`, `003_lyrics.sql`, `004_portable_paths.sql`, `005_audio_source_kind.sql`, `005_individual_stem_paths.sql`, `006_stem_model_variant.sql`, `007_song_instrumental.sql`, `008_playlists.sql`, `009_singer_rotation.sql`, `010_fts5_songs.sql`, `011_waveforms.sql`, `012_artwork_derivatives.sql`.
 
 ## `songs`
 
@@ -111,6 +111,16 @@ Created by `010_fts5_songs.sql`.
 | `album`     | `TEXT` | FTS5  |
 | `file_path` | `TEXT` | FTS5  |
 
+## `waveforms`
+
+Created by `011_waveforms.sql`.
+
+| Column      | Type      | Notes    |
+| ----------- | --------- | -------- |
+| `song_hash` | `TEXT`    | NOT NULL |
+| `buckets`   | `INTEGER` | NOT NULL |
+| `peaks`     | `BLOB`    | NOT NULL |
+
 ## Migration History
 
 1. `001_init.sql` — CREATE TABLE IF NOT EXISTS songs (
@@ -124,4 +134,5 @@ Created by `010_fts5_songs.sql`.
 9. `008_playlists.sql` — Playlist management tables for saved playlists (F1).
 10. `009_singer_rotation.sql` — Singer rotation state for turn-based queue workflows (F1).
 11. `010_fts5_songs.sql` — FTS5 virtual table for fast full-text search on song metadata.
-12. `012_artwork_derivatives.sql` — Artwork derivative paths (thumbnail and preview WebP files).
+12. `011_waveforms.sql` — CREATE TABLE IF NOT EXISTS waveforms (
+13. `012_artwork_derivatives.sql` — Artwork derivative paths (thumbnail and preview WebP files).
