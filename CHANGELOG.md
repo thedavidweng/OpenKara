@@ -10,8 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - Cancel a pending library search debounce when the query is cleared, so a late `searchLibrary` result cannot overwrite `loadLibrary()` and hide songs again (Playwright webkit flake in `song-import` search filter). Cap Linux CI `CARGO_BUILD_JOBS` to reduce parallel `rust-lld` SIGBUS crashes while linking heavy Tauri test binaries.
-
 - Website landing: collapse the soft separators and stacked padding after the stem cards and after the library cards (Synced lyrics / Portable library) so those blocks flow into the closing CTA as one continuous band; enlarge the closing Download / View source pills to match the hero CTA scale and optically center their labels (`line-height: 1` + a `translateY` label nudge — asymmetric padding only half-shifts flex children).
+
+### Tests
+
+- Backport crossfade regression tests from the original #89 branch (#137): PR #131 rewrote the crossfade implementation from scratch (fixing a frame-domain defect where source-rate and device-rate frame counts were mixed) but shipped with fewer regression tests than the original branch. Added 18 tests (8 in `output.rs`, 10 in `playback.rs`) covering pause-during-overlap promotion suppression, multi-chunk callback source-position advancement, mismatched sample rate overlap timing, incoming source-frame promotion, resampler history transfer, cancellation cache cleanup, seek-abort, pause-preserve, manual-load cancellation, stem-attach ownership guards, and promotion invariants.
 
 ### Changed
 
