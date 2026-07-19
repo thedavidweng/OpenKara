@@ -396,6 +396,16 @@ impl PlaybackController {
 
     pub fn play(&mut self, _now_ms: u64) -> Result<PlaybackStateSnapshot, PlaybackError> {
         if self.current_track.is_none() {
+            // RATIONALE: During the loading window (`start_track_loading`
+            // set `loading_song_id` but the decoded audio hasn't arrived
+            // yet), transport commands are semantically no-ops — the
+            // track isn't installed. Return the loading snapshot so the
+            // frontend can reconcile without surfacing a user-visible
+            // error toast. When truly idle (no load in progress), keep
+            // the error to surface real caller bugs.
+            if self.loading_song_id.is_some() {
+                return Ok(self.snapshot());
+            }
             return Err(PlaybackError::InvalidPlaybackState(
                 "no track is loaded".to_owned(),
             ));
@@ -415,6 +425,10 @@ impl PlaybackController {
 
     pub fn pause(&mut self, _now_ms: u64) -> Result<PlaybackStateSnapshot, PlaybackError> {
         if self.current_track.is_none() {
+            // See `play` for the loading-window no-op rationale.
+            if self.loading_song_id.is_some() {
+                return Ok(self.snapshot());
+            }
             return Err(PlaybackError::InvalidPlaybackState(
                 "no track is loaded".to_owned(),
             ));
@@ -434,6 +448,15 @@ impl PlaybackController {
         target_ms: u64,
         _now_ms: u64,
     ) -> Result<PlaybackStateSnapshot, PlaybackError> {
+        if self.current_track.is_none() {
+            // See `play` for the loading-window no-op rationale.
+            if self.loading_song_id.is_some() {
+                return Ok(self.snapshot());
+            }
+            return Err(PlaybackError::InvalidPlaybackState(
+                "no track is loaded".to_owned(),
+            ));
+        }
         // Cancel any active fade and start a short seek fade to mask
         // the amplitude discontinuity at the new position.
         self.bump_transport_generation();
@@ -448,7 +471,7 @@ impl PlaybackController {
         let track = self
             .current_track
             .as_mut()
-            .ok_or_else(|| PlaybackError::InvalidPlaybackState("no track is loaded".to_owned()))?;
+            .expect("track existence checked before generation bump");
         let clamped_ms = if track.duration_ms() == 0 {
             target_ms
         } else {
@@ -1896,5 +1919,58 @@ mod tests {
             controller.current_track_is_playing(),
             "should be playing after resume (FadingIn is not FadingOut)"
         );
+    }
+
+    // #125: Transport commands issued while a track is loading (current_track
+    // is None but loading_song_id is Some) must be benign no-ops returning the
+    // loading snapshot, not user-visible errors. The error remains for the
+    // truly-idle case to surface real caller bugs.
+    #[test]
+    fn play_during_loading_is_no_op_returning_loading_snapshot() {
+        let mut controller = super::PlaybackController::default();
+        let loading = controller.start_track_loading("song-a");
+        let generation_before = loading.transport_generation;
+
+        let result = controller.play(0).expect("loading no-op should be Ok");
+        assert_eq!(result.song_id.as_deref(), Some("song-a"));
+        assert_eq!(result.state, "loading");
+        assert!(!result.is_playing);
+        // No transport bump — the track isn't installed yet.
+        assert_eq!(result.transport_generation, generation_before);
+    }
+
+    #[test]
+    fn pause_during_loading_is_no_op_returning_loading_snapshot() {
+        let mut controller = super::PlaybackController::default();
+        let loading = controller.start_track_loading("song-a");
+        let generation_before = loading.transport_generation;
+
+        let result = controller.pause(0).expect("loading no-op should be Ok");
+        assert_eq!(result.song_id.as_deref(), Some("song-a"));
+        assert_eq!(result.state, "loading");
+        assert_eq!(result.transport_generation, generation_before);
+    }
+
+    #[test]
+    fn seek_during_loading_is_no_op_returning_loading_snapshot() {
+        let mut controller = super::PlaybackController::default();
+        let loading = controller.start_track_loading("song-a");
+        let generation_before = loading.transport_generation;
+
+        let result = controller
+            .seek(5_000, 0)
+            .expect("loading no-op should be Ok");
+        assert_eq!(result.song_id.as_deref(), Some("song-a"));
+        assert_eq!(result.state, "loading");
+        assert_eq!(result.position_ms, 0);
+        assert_eq!(result.transport_generation, generation_before);
+    }
+
+    #[test]
+    fn play_pause_seek_when_truly_idle_still_error() {
+        let mut controller = super::PlaybackController::default();
+        assert!(controller.play(0).is_err());
+        assert!(controller.pause(0).is_err());
+        assert!(controller.seek(0, 0).is_err());
     }
 }
