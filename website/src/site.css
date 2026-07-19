@@ -437,6 +437,12 @@ a {
   max-height: 22px;
 }
 
+.built-with-tool--codex img {
+  width: 30px;
+  height: 30px;
+  max-height: none;
+}
+
 .built-with-tool--kilo-code img {
   width: 30px;
   height: 30px;
