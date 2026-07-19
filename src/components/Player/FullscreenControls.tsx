@@ -4,6 +4,7 @@ import { PlayControls } from "./PlayControls";
 import { SeekBar } from "./SeekBar";
 import { useMouseIdle } from "@/hooks/use-mouse-idle";
 import { closeFullscreenPlayer } from "@/lib/fullscreen-player";
+import { usePlayerStore, selectCurrentPositionMs } from "@/stores/player-store";
 
 interface FullscreenControlsProps {
   onHeightChange?: (height: number) => void;
@@ -19,6 +20,57 @@ export function FullscreenControls({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         void closeFullscreenPlayer();
+        return;
+      }
+
+      // Don't intercept keys when focus is inside an editable field.
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.tagName === "SELECT" ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+
+      const player = usePlayerStore.getState();
+      const snapshot = player.snapshot;
+
+      switch (event.code) {
+        case "Space": {
+          event.preventDefault();
+          if (snapshot?.is_playing) {
+            void player.pause();
+          } else if (snapshot?.song_id) {
+            void player.resume();
+          }
+          return;
+        }
+        case "ArrowLeft": {
+          event.preventDefault();
+          const pos = selectCurrentPositionMs(player);
+          void player.seek(pos - 5000);
+          return;
+        }
+        case "ArrowRight": {
+          event.preventDefault();
+          const pos = selectCurrentPositionMs(player);
+          void player.seek(pos + 5000);
+          return;
+        }
+        case "ArrowUp": {
+          event.preventDefault();
+          const volume = snapshot?.volume ?? 1;
+          void player.setVolume(Math.min(1, volume + 0.05));
+          return;
+        }
+        case "ArrowDown": {
+          event.preventDefault();
+          const volume = snapshot?.volume ?? 1;
+          void player.setVolume(Math.max(0, volume - 0.05));
+          return;
+        }
       }
     };
 

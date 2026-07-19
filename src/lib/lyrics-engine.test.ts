@@ -481,6 +481,7 @@ describe("tickLyricsEngineScroll", () => {
         isActive: () => true,
         clear: () => {},
         withProgrammatic: (fn) => fn(),
+        unlockWithIdleRelock: () => {},
         destroy: () => {},
       },
       reducedMotion: false,
@@ -501,6 +502,7 @@ describe("tickLyricsEngineScroll", () => {
         guardActive = false;
       },
       withProgrammatic: (fn: () => void) => fn(),
+      unlockWithIdleRelock: () => {},
       destroy: () => {},
     };
 
@@ -535,6 +537,7 @@ describe("tickLyricsEngineScroll", () => {
         guardActive = false;
       },
       withProgrammatic: (fn: () => void) => fn(),
+      unlockWithIdleRelock: () => {},
       destroy: () => {},
     };
 
@@ -560,6 +563,48 @@ describe("tickLyricsEngineScroll", () => {
     expect(scrollSpring.getPosition()).toBe(170);
   });
 
+  test("audience mode seek snaps to clicked line then unlocks with idle re-lock", () => {
+    const { container, scrollSpring, scrollState } = makeScrollFixture();
+    let guardActive = false;
+    let unlockCalled = false;
+    const guard = {
+      isActive: () => guardActive,
+      clear: () => {
+        guardActive = false;
+      },
+      withProgrammatic: (fn: () => void) => fn(),
+      unlockWithIdleRelock: () => {
+        guardActive = true;
+        unlockCalled = true;
+      },
+      destroy: () => {},
+    };
+
+    scrollState.prevAdjustedMsRef.current = 1000;
+    container.scrollTop = 0;
+    scrollSpring.jumpTo(0);
+    scrollState.prevActiveIndexRef.current = 0;
+
+    tickLyricsEngineScroll({
+      container,
+      lines: [{ time_ms: 0 }, { time_ms: 15000 }],
+      adjustedMs: 15000,
+      isSeek: true,
+      scrollState,
+      userScrollGuard: guard,
+      reducedMotion: false,
+      dt: 0.016,
+      audienceMode: true,
+    });
+
+    // Scroll snaps to the clicked line (now the active line).
+    expect(container.scrollTop).toBe(170);
+    expect(scrollSpring.getPosition()).toBe(170);
+    // Guard is unlocked with idle re-lock, not cleared.
+    expect(unlockCalled).toBe(true);
+    expect(guardActive).toBe(true);
+  });
+
   test("explicit resume from line click clears guard and keeps writing scrollTop", () => {
     const { container, scrollSpring, scrollState } = makeScrollFixture();
     let guardActive = true;
@@ -569,6 +614,7 @@ describe("tickLyricsEngineScroll", () => {
         guardActive = false;
       },
       withProgrammatic: (fn: () => void) => fn(),
+      unlockWithIdleRelock: () => {},
       destroy: () => {},
     };
 
@@ -636,6 +682,7 @@ describe("tickLyricsEngineScroll", () => {
         isActive: () => true,
         clear: () => {},
         withProgrammatic: (fn) => fn(),
+        unlockWithIdleRelock: () => {},
         destroy: () => {},
       },
       reducedMotion: false,
@@ -675,6 +722,7 @@ describe("tickLyricsEngineScroll", () => {
         guardActive = false;
       },
       withProgrammatic: (fn: () => void) => fn(),
+      unlockWithIdleRelock: () => {},
       destroy: () => {},
     };
 
@@ -833,12 +881,25 @@ describe("syncLyricsActiveLine", () => {
 });
 
 describe("readLyricsAdjustedPlaybackMs", () => {
-  test("returns positionMs - offsetMs when not in AirPlay mode", () => {
+  test("returns local positionMs - offsetMs (ignores AirPlay clock)", () => {
+    // RATIONALE: Lyrics always use the local playback clock, never the AirPlay
+    // displayed position. This test verifies that even when AirPlay is active
+    // with a displayed position, the local clock is used.
     vi.mocked(usePlayerStore.getState).mockReturnValue({
       snapshot: null,
       positionMs: 5000,
       playingSinceMs: null,
-      airPlayOutput: { active: false, displayedPositionMs: null },
+      airPlayOutput: {
+        active: true,
+        audioActive: true,
+        routeName: "TV",
+        mode: "lyrics",
+        phase: "playing",
+        detail: null,
+        displayedPositionMs: 99999,
+        streamGeneration: 1,
+        latencyMs: 200,
+      },
     } as ReturnType<(typeof usePlayerStore)["getState"]>);
     vi.mocked(selectCurrentPositionMs).mockReturnValue(5000);
     vi.mocked(useLyricsStore.getState).mockReturnValue({
