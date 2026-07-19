@@ -21,7 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- Theme siblings keep monochrome _controls_ (surfaces, type, primary fills via `--color-control-primary`). A single accent blue returns for recognition only (selected stem/EP/model chips, library icons, links); destructive red stays for Danger Zone. Settings section titles use primary text + semibold so panels scan clearly without a second palette.
+- Theme siblings keep monochrome _controls_ (surfaces, type, primary fills via `--color-control-primary`). A single accent blue returns for recognition only (selected stem/EP/model chips, active Karaoke Library row, library icons, links); destructive red stays for Danger Zone. Settings section titles use primary text + semibold so panels scan clearly without a second palette.
+- Settings Karaoke Library active row uses the same accent selected chrome as stem/EP/model chips (`border-accent` + `bg-accent/15` + accent check) instead of monochrome `--color-control-selected-*`.
 - Stem detail popup portals to `document.body` with fixed positioning (z-70) so stage `overflow-hidden` and the settings overlay no longer clip it. Sub-stem rows reuse accompaniment `playback_bar` geometry and `inlineStemVolumeWidthClass` rails, and anchor `left` to the accompaniment icon+rail so icons and sliders stay column-aligned.
 - Global ←/→ seek is removed so lyrics are not keyboard-driven; lyrics font/page shortcuts are also removed. ↑/↓ continue to nudge master volume only.
 - Stem/master mute no longer paints selected `data-active` chrome; muted icons use the dimmer gray token so mute reads as off rather than pressed.

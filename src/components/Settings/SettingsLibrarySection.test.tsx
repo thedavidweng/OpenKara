@@ -117,4 +117,41 @@ describe("SettingsLibrarySection", () => {
     expect(markup).toContain("Failed to switch library");
     expect(markup).toContain("text-[var(--color-destructive)]");
   });
+
+  test("active library uses accent selected chrome like stem/EP chips", () => {
+    const value = createSettingsOverlayTestContextValue({
+      state: {
+        libraries: [
+          {
+            id: "local:/karaoke",
+            kind: "local",
+            display_name: "Main Library",
+            root_path: "/karaoke",
+          },
+          {
+            id: "local:/other",
+            kind: "local",
+            display_name: "Other Library",
+            root_path: "/other",
+          },
+        ],
+        activeLibraryId: "local:/karaoke",
+      },
+    });
+
+    const markup = renderToStaticMarkup(
+      <SettingsOverlayContext value={value}>
+        <SettingsLibrarySection />
+      </SettingsOverlayContext>,
+    );
+
+    // Match SettingsStemModeSection / SettingsModelVariantSection selected tokens.
+    expect(markup).toContain("border-[var(--color-accent)]");
+    expect(markup).toContain("bg-[var(--color-accent)]/15");
+    expect(markup).toContain("text-[var(--color-accent)]");
+    expect(markup).not.toContain(
+      "border-[var(--color-control-selected-border)]",
+    );
+    expect(markup).not.toContain("bg-[var(--color-control-selected-bg)]");
+  });
 });
