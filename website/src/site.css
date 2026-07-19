@@ -536,6 +536,17 @@ a {
   border-bottom: 1px solid var(--landing-soft-line);
 }
 
+/* Adjacent feature blocks share one seam — avoid double padding + an extra
+   soft rule between the stem cards and the library section. */
+.feature-section:has(+ .feature-section) {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.feature-section + .feature-section {
+  padding-top: clamp(48px, 5vw, 72px);
+}
+
 .section-heading {
   display: grid;
   grid-template-columns: 0.72fr 1.1fr 1fr;
@@ -947,6 +958,14 @@ a {
 
   .feature-section {
     padding-block: 64px;
+  }
+
+  .feature-section:has(+ .feature-section) {
+    padding-bottom: 0;
+  }
+
+  .feature-section + .feature-section {
+    padding-top: 40px;
   }
 
   .feature-grid {
