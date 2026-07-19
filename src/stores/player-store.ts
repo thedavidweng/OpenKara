@@ -106,28 +106,49 @@ function applyPlayerSyncSnapshot(
   session: PlaybackSession,
   payload: PlayerSyncSnapshot,
 ) {
-  // RATIONALE: playingSinceMs is tied to this webview's performance.now() clock.
-  // Applying a peer window's timestamp would break selectCurrentPositionMs extrapolation.
-  const playingSinceMs =
-    payload.playingSinceMs === null
-      ? null
-      : payload.snapshot?.is_playing
-        ? performance.now()
-        : null;
+  const currentSnapshot = get().snapshot;
 
-  const clock: PositionClockState = {
-    snapshot: payload.snapshot,
-    positionMs: payload.positionMs,
-    playingSinceMs,
-  };
-  // Keep session clock aligned with peer sync without re-publishing.
-  session.replaceClock(clock);
+  // RATIONALE: Both webview windows receive the same playback-position events
+  // from the backend. The BroadcastChannel sync is only for propagating
+  // command-driven changes (seek, pause, resume) to the peer window. A delayed
+  // sync from before a seek would regress the clock to an older
+  // transport_generation, re-installing a stale position and freezing lyrics
+  // — the fullscreen window would see the pre-seek position and never scroll
+  // to the new line. Skip the clock replacement when the incoming generation
+  // is older than what we already have.
+  const isClockStale =
+    currentSnapshot !== null &&
+    payload.snapshot !== null &&
+    payload.snapshot.transport_generation <
+      currentSnapshot.transport_generation;
 
+  if (!isClockStale) {
+    // RATIONALE: playingSinceMs is tied to this webview's performance.now() clock.
+    // Applying a peer window's timestamp would break selectCurrentPositionMs extrapolation.
+    const playingSinceMs =
+      payload.playingSinceMs === null
+        ? null
+        : payload.snapshot?.is_playing
+          ? performance.now()
+          : null;
+
+    const clock: PositionClockState = {
+      snapshot: payload.snapshot,
+      positionMs: payload.positionMs,
+      playingSinceMs,
+    };
+    // Keep session clock aligned with peer sync without re-publishing.
+    session.replaceClock(clock);
+
+    set({
+      snapshot: payload.snapshot,
+      positionMs: payload.positionMs,
+      playingSinceMs,
+    });
+  }
+
+  // Delayed BroadcastChannel messages must never replay an older seek edge.
   set({
-    snapshot: payload.snapshot,
-    positionMs: payload.positionMs,
-    playingSinceMs,
-    // Delayed BroadcastChannel messages must never replay an older seek edge.
     seekRevision: Math.max(get().seekRevision, payload.seekRevision ?? 0),
     airPlayOutput: payload.airPlayOutput,
     localAudienceOutputActive: payload.localAudienceOutputActive,

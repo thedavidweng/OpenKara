@@ -53,6 +53,13 @@ export interface UserScrollGuard {
   /** Re-lock auto-follow immediately (Follow button / seek resetScroll). */
   clear: () => void;
   /**
+   * Unlock auto-follow and arm the idle re-lock timer, without requiring a
+   * scroll/wheel event. Used by audience mode line-click seek: the seek snaps
+   * to the clicked line, then the guard holds auto-follow paused for the idle
+   * window so the operator can browse before it re-locks onto the active line.
+   */
+  unlockWithIdleRelock: () => void;
+  /**
    * Run a programmatic scrollTop write without treating it as user unlock.
    * Real browsers fire the resulting scroll event asynchronously, so the guard
    * also records the written scrollTop and ignores scroll events that land on
@@ -187,6 +194,9 @@ export function createUserScrollGuard(
       timer = null;
       setUnlocked(false);
     },
+    unlockWithIdleRelock: () => {
+      unlockFromUser();
+    },
     withProgrammatic: (fn) => {
       programmaticDepth += 1;
       try {
@@ -215,18 +225,21 @@ export function readLyricsAdjustedPlaybackMs(
 ): number {
   const playerState = usePlayerStore.getState();
   const { offsetMs } = useLyricsStore.getState();
-  const positionMs =
-    playerState.airPlayOutput.active &&
-    playerState.airPlayOutput.displayedPositionMs !== null
-      ? playerState.airPlayOutput.displayedPositionMs
-      : selectCurrentPositionMs(
-          {
-            snapshot: playerState.snapshot,
-            positionMs: playerState.positionMs,
-            playingSinceMs: playerState.playingSinceMs,
-          },
-          nowMs,
-        );
+  // RATIONALE: Lyrics always follow the local playback clock — never the
+  // AirPlay displayed position. The AirPlay clock is a remote clock with
+  // network/decode latency that doesn't update on local seeks. Using it for
+  // lyrics caused the fullscreen window (which receives AirPlay state via
+  // BroadcastChannel) to freeze at the entry position and ignore seeks.
+  // Both windows share the same backend playback-position events, so the
+  // local clock is the single source of truth for lyrics in every window.
+  const positionMs = selectCurrentPositionMs(
+    {
+      snapshot: playerState.snapshot,
+      positionMs: playerState.positionMs,
+      playingSinceMs: playerState.playingSinceMs,
+    },
+    nowMs,
+  );
   return positionMs - offsetMs;
 }
 
@@ -234,13 +247,8 @@ export function readLyricsPlaybackClockMs(
   nowMs = () => performance.now(),
 ): number {
   const playerState = usePlayerStore.getState();
-  if (
-    playerState.airPlayOutput.active &&
-    playerState.airPlayOutput.displayedPositionMs !== null
-  ) {
-    return playerState.airPlayOutput.displayedPositionMs;
-  }
-
+  // RATIONALE: Lyrics always follow the local playback clock — never the
+  // AirPlay displayed position. See readLyricsAdjustedPlaybackMs for details.
   return selectCurrentPositionMs(
     {
       snapshot: playerState.snapshot,
@@ -341,6 +349,14 @@ export function tickLyricsEngineScroll(input: {
   userScrollGuard: UserScrollGuard | null;
   reducedMotion: boolean;
   dt: number;
+  /**
+   * In audience mode, a seek from line-click unlocks auto-follow with an idle
+   * re-lock timer instead of clearing the guard immediately. This lets the
+   * operator browse after clicking a line; after a few seconds of inactivity
+   * the view snaps back to the active (playing) line — appropriate for an
+   * audience-facing second monitor.
+   */
+  audienceMode?: boolean;
 }): void {
   const {
     container,
@@ -351,6 +367,7 @@ export function tickLyricsEngineScroll(input: {
     userScrollGuard,
     reducedMotion,
     dt,
+    audienceMode = false,
   } = input;
   const {
     scrollSpring,
@@ -377,15 +394,26 @@ export function tickLyricsEngineScroll(input: {
 
   const shouldResetScroll = isSeek || seekJump || explicitResume;
 
+  // RATIONALE: In audience mode, a line-click seek should snap to the clicked
+  // line and then unlock auto-follow with an idle re-lock timer — not clear
+  // the guard immediately. This lets the operator browse after clicking a
+  // line; after a few seconds of inactivity the view snaps back to the active
+  // (playing) line, appropriate for an audience-facing second monitor.
+  const audienceSeekUnlock = isSeek && audienceMode && userScrollGuard !== null;
+
   if (shouldResetScroll) {
-    // AMLL resetScroll on line-click seek: drop the user-scroll pause and
-    // force the next target write so auto-scroll resumes immediately.
-    userScrollGuard?.clear();
+    if (!audienceSeekUnlock) {
+      // AMLL resetScroll on line-click seek: drop the user-scroll pause and
+      // force the next target write so auto-scroll resumes immediately.
+      userScrollGuard?.clear();
+    }
     prevActiveIndexRef.current = -1;
     targetScrollTopRef.current = null;
   }
 
-  if (userScrollGuard?.isActive()) {
+  // In audience seek mode, the guard may still be active from a prior browse —
+  // but we must write scrollTop this frame to snap to the clicked line.
+  if (!audienceSeekUnlock && userScrollGuard?.isActive()) {
     // User is browsing freely (Spotify unlock). Track their viewport so the
     // next re-lock animates from where they left off — never write scrollTop.
     bindSpringToViewport(scrollSpring, container);
@@ -399,6 +427,9 @@ export function tickLyricsEngineScroll(input: {
   if (target === null) {
     if (shouldResetScroll) {
       endLyricsAutoScrollUnlockSuppress();
+    }
+    if (audienceSeekUnlock && userScrollGuard) {
+      userScrollGuard.unlockWithIdleRelock();
     }
     return;
   }
@@ -428,6 +459,9 @@ export function tickLyricsEngineScroll(input: {
     if (shouldResetScroll) {
       endLyricsAutoScrollUnlockSuppress();
     }
+    if (audienceSeekUnlock && userScrollGuard) {
+      userScrollGuard.unlockWithIdleRelock();
+    }
     return;
   }
 
@@ -452,6 +486,10 @@ export function tickLyricsEngineScroll(input: {
   // Re-assert scrollTop only while following. withProgrammatic prevents our
   // own writes from unlocking follow via the scroll listener.
   writeScrollTop(scrollSpring.getPosition());
+
+  if (audienceSeekUnlock && userScrollGuard) {
+    userScrollGuard.unlockWithIdleRelock();
+  }
 }
 
 export interface LyricsEngineFrameInput {
@@ -471,6 +509,8 @@ export interface LyricsEngineFrameInput {
   positionMs: number;
   /** AMLL isSeek for this frame. */
   isSeek: boolean;
+  /** Audience mode: line-click seek unlocks with idle re-lock (see tickLyricsEngineScroll). */
+  audienceMode?: boolean;
 }
 
 export function tickLyricsEngineFrame(input: LyricsEngineFrameInput): void {
@@ -486,6 +526,7 @@ export function tickLyricsEngineFrame(input: LyricsEngineFrameInput): void {
     dt,
     positionMs,
     isSeek,
+    audienceMode = false,
   } = input;
 
   const playerState = usePlayerStore.getState();
@@ -536,6 +577,7 @@ export function tickLyricsEngineFrame(input: LyricsEngineFrameInput): void {
     userScrollGuard,
     reducedMotion,
     dt,
+    audienceMode,
   });
 }
 

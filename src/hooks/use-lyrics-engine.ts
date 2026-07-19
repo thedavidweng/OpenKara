@@ -188,6 +188,7 @@ export function useLyricsEngine(input: {
         dt,
         positionMs: frame.positionMs,
         isSeek: frame.isSeek,
+        audienceMode: presentation === "audience",
       });
 
       rafId = requestAnimationFrame(tick);
