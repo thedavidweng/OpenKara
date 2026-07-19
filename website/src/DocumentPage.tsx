@@ -172,6 +172,11 @@ export function DocumentPage({ language, slug }: DocumentRoute) {
     document.documentElement.lang = language;
     document.title = `${label} | OpenKara`;
     localStorage.setItem("openkara-site-theme", theme);
+    // Persist the language so the landing page picks it up on the next
+    // visit — a visitor who switches a doc page to Chinese should land on
+    // the Chinese home page next time, even if their browser is set to
+    // English.
+    localStorage.setItem("openkara-site-language", language);
     document
       .querySelector('meta[name="theme-color"]')
       ?.setAttribute("content", theme === "dark" ? "#08090a" : "#f7f7f5");
