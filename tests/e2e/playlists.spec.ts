@@ -9,7 +9,7 @@ import { expect, objectRecord, test } from "./fixtures/base-test";
 test.describe("Playlist management", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText("Bohemian Rhapsody")).toBeVisible();
+    await expect(page.getByText("Earfquake")).toBeVisible();
   });
 
   test("sidebar shows playlist section", async ({ page }) => {
@@ -58,7 +58,7 @@ test.describe("Playlist management", () => {
 
     await page.getByText("My Karaoke Night").click();
     await expect(page.getByText("My Karaoke Night").first()).toBeVisible();
-    await expect(page.getByText("Bohemian Rhapsody")).not.toBeVisible();
+    await expect(page.getByText("Earfquake")).not.toBeVisible();
   });
 
   test("sidebar library filter tabs are functional", async ({ page }) => {
@@ -78,6 +78,6 @@ test.describe("Playlist management", () => {
 
     // Switch back to All Tracks
     await allTracks.click();
-    await expect(page.getByText("Bohemian Rhapsody")).toBeVisible();
+    await expect(page.getByText("Earfquake")).toBeVisible();
   });
 });
