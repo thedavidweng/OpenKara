@@ -592,14 +592,6 @@ export const TAURI_MOCK_SCRIPT = `
     },
     get_audio_peaks: { writeIndex: 0, peaks: [] },
     set_preload_candidate: undefined,
-    set_crossfade_enabled: (args) => {
-      settingsSnapshot = { ...settingsSnapshot, crossfade_enabled: !!(args && args.enabled) };
-      return settingsSnapshot;
-    },
-    set_crossfade_duration_ms: (args) => {
-      settingsSnapshot = { ...settingsSnapshot, crossfade_duration_ms: (args && args.durationMs) || 3000 };
-      return settingsSnapshot;
-    },
     get_waveform: (args) => {
       const buckets = (args && args.buckets) || 200;
       return Array.from({ length: buckets }, () => 0);

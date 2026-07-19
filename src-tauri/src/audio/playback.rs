@@ -285,6 +285,10 @@ pub struct PlaybackController {
     /// created when the overlap begins, advanced each frame, and
     /// consumed when the overlap completes (promoting the incoming track).
     pub(crate) active_crossfade: Option<ActiveCrossfade>,
+    /// Set by `abort_active_crossfade` so the realtime callback knows to
+    /// clear the incoming resampler cache even though `prepared_track` was
+    /// restored (which would otherwise skip the normal cleanup guard).
+    pub(crate) crossfade_abort_pending: bool,
 }
 
 impl Default for PlaybackController {
@@ -308,6 +312,7 @@ impl Default for PlaybackController {
                 revision: 0,
             },
             active_crossfade: None,
+            crossfade_abort_pending: false,
         }
     }
 }
@@ -563,6 +568,12 @@ impl PlaybackController {
     pub(crate) fn abort_active_crossfade(&mut self) {
         if let Some(active) = self.active_crossfade.take() {
             self.prepared_track = Some(active.prepared);
+            // Signal the realtime callback to clear the incoming resampler
+            // cache. The normal cleanup guard checks
+            // `prepared_track.is_none()`, but abort restores the prepared
+            // track, so without this flag the stale sinc state from the
+            // aborted overlap position would persist into the next crossfade.
+            self.crossfade_abort_pending = true;
         }
     }
 

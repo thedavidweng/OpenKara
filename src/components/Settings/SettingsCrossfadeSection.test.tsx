@@ -282,4 +282,141 @@ describe("SettingsCrossfadeSection", () => {
 
     expect(screen.getByText("7.5 s")).toBeDefined();
   });
+
+  test("change with same value as current draft does not schedule a commit", () => {
+    vi.useFakeTimers();
+    const setCrossfadeDurationMs = vi.fn().mockResolvedValue(undefined);
+    const value = createSettingsOverlayTestContextValue(
+      {
+        state: {
+          crossfadeEnabled: true,
+          crossfadeDurationMs: 3_000,
+        },
+        meta: { isInitializing: false },
+      },
+      { setCrossfadeDurationMs },
+    );
+
+    render(
+      <SettingsOverlayContext value={value}>
+        <SettingsCrossfadeSection />
+      </SettingsOverlayContext>,
+    );
+
+    const slider = screen.getByRole("slider");
+    // Change to the same value — should be a no-op (early return).
+    act(() => {
+      fireEvent.change(slider, { target: { value: "3000" } });
+    });
+
+    // Advance timers — nothing should fire.
+    act(() => {
+      vi.advanceTimersByTime(75);
+    });
+
+    expect(setCrossfadeDurationMs).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  test("second change replaces the pending debounce timer", () => {
+    vi.useFakeTimers();
+    const setCrossfadeDurationMs = vi.fn().mockResolvedValue(undefined);
+    const value = createSettingsOverlayTestContextValue(
+      {
+        state: {
+          crossfadeEnabled: true,
+          crossfadeDurationMs: 3_000,
+        },
+        meta: { isInitializing: false },
+      },
+      { setCrossfadeDurationMs },
+    );
+
+    render(
+      <SettingsOverlayContext value={value}>
+        <SettingsCrossfadeSection />
+      </SettingsOverlayContext>,
+    );
+
+    const slider = screen.getByRole("slider");
+    // First change starts a debounce timer.
+    act(() => {
+      fireEvent.change(slider, { target: { value: "4000" } });
+    });
+    // Second change before the timer fires — should clear the first timer
+    // and start a new one.
+    act(() => {
+      fireEvent.change(slider, { target: { value: "5000" } });
+    });
+
+    // Advance past the debounce — only the second value should commit.
+    act(() => {
+      vi.advanceTimersByTime(75);
+    });
+
+    expect(setCrossfadeDurationMs).toHaveBeenCalledTimes(1);
+    expect(setCrossfadeDurationMs).toHaveBeenCalledWith(5_000);
+    vi.useRealTimers();
+  });
+
+  test("unmount cancels pending debounced commit without flushing", () => {
+    vi.useFakeTimers();
+    const setCrossfadeDurationMs = vi.fn().mockResolvedValue(undefined);
+    const value = createSettingsOverlayTestContextValue(
+      {
+        state: {
+          crossfadeEnabled: true,
+          crossfadeDurationMs: 3_000,
+        },
+        meta: { isInitializing: false },
+      },
+      { setCrossfadeDurationMs },
+    );
+
+    const { unmount } = render(
+      <SettingsOverlayContext value={value}>
+        <SettingsCrossfadeSection />
+      </SettingsOverlayContext>,
+    );
+
+    const slider = screen.getByRole("slider");
+    act(() => {
+      fireEvent.change(slider, { target: { value: "6000" } });
+    });
+
+    // Unmount before the debounce timer fires.
+    unmount();
+
+    // Advance timers — the cleanup should have cancelled the timer.
+    act(() => {
+      vi.advanceTimersByTime(75);
+    });
+
+    expect(setCrossfadeDurationMs).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  test("default context actions are callable no-ops", async () => {
+    // Covers the default setCrossfadeEnabled/setCrossfadeDurationMs
+    // implementations in SettingsOverlay.context.ts.
+    const value = createSettingsOverlayTestContextValue({
+      state: {
+        crossfadeEnabled: false,
+        crossfadeDurationMs: 3_000,
+      },
+      meta: { isInitializing: false },
+    });
+
+    render(
+      <SettingsOverlayContext value={value}>
+        <SettingsCrossfadeSection />
+      </SettingsOverlayContext>,
+    );
+
+    // Toggle the checkbox — the default no-op setCrossfadeEnabled is called.
+    const checkbox = screen.getByRole("checkbox", { name: "Enable crossfade" });
+    await act(async () => {
+      fireEvent.click(checkbox);
+    });
+  });
 });

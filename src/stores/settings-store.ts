@@ -498,6 +498,12 @@ export function createSettingsStore(
       ...snapshot,
       eqEnabled: eqEnabledField.reconcileSnapshot(snapshot.eqEnabled),
       eqGainsDb: eqGainsField.reconcileSnapshot(snapshot.eqGainsDb),
+      crossfadeEnabled: crossfadeEnabledField.reconcileSnapshot(
+        snapshot.crossfadeEnabled,
+      ),
+      crossfadeDurationMs: crossfadeDurationField.reconcileSnapshot(
+        snapshot.crossfadeDurationMs,
+      ),
       librarySortMode: librarySortModeField.reconcileSnapshot(
         snapshot.librarySortMode,
       ),

@@ -277,8 +277,16 @@ pub fn render_output_buffer(
     // but the incoming resampler cache may still hold stale sinc state.
     // Clear it whenever there is no crossfade activity so the next crossfade
     // starts with a fresh resampler lane.
-    if playback.active_crossfade.is_none() && playback.prepared_track.is_none() {
+    //
+    // A seek-abort is a special case: `abort_active_crossfade` restores the
+    // prepared track (so `prepared_track.is_none()` is false), but the
+    // incoming resampler still holds stale state from the aborted overlap
+    // position. The `crossfade_abort_pending` flag covers this case.
+    if playback.crossfade_abort_pending
+        || (playback.active_crossfade.is_none() && playback.prepared_track.is_none())
+    {
         crossfade_incoming_resampler_cache.clear();
+        playback.crossfade_abort_pending = false;
     }
 
     // Crossfade path. When crossfade is enabled, the outgoing track is
@@ -719,14 +727,15 @@ fn render_crossfade_overlap(
             incoming_src_rate,
             device_sample_rate,
         );
-        let outgoing_device_frames_remaining = source_to_device_frames(
-            (outgoing_total_device_frames).saturating_sub(source_to_device_frames(
-                track.render_frame,
-                outgoing_src_rate,
-                device_sample_rate,
-            )),
-            outgoing_src_rate,
-            device_sample_rate,
+        // Convert the outgoing render position (source frames) to device
+        // frames. Both `outgoing_total_device_frames` and this converted
+        // position are already in device frames, so the subtraction is
+        // directly in device frames — no second conversion needed.
+        // An earlier iteration wrapped the subtraction in another
+        // `source_to_device_frames`, which over-scaled the remaining count
+        // by device_rate/src_rate whenever the rates differed.
+        let outgoing_device_frames_remaining = outgoing_total_device_frames.saturating_sub(
+            source_to_device_frames(track.render_frame, outgoing_src_rate, device_sample_rate),
         );
 
         let effective = effective_overlap_frames(
@@ -736,6 +745,14 @@ fn render_crossfade_overlap(
             incoming_total_device_frames,
             outgoing_device_frames_remaining,
         )?;
+
+        // Only begin the overlap once the outgoing track is within the
+        // effective overlap window of its end. Without this gate the
+        // crossfade would start as soon as the next track is preloaded
+        // (early in the song), cutting the current song short.
+        if outgoing_device_frames_remaining > effective {
+            return None;
+        }
 
         // Move the prepared track into the active crossfade. The prepared
         // track is consumed — if the overlap is aborted (seek), the abort
@@ -2821,6 +2838,95 @@ mod tests {
         assert!(
             max_sample > 0.0,
             "crossfade must produce non-zero audio, max {max_sample}"
+        );
+    }
+
+    /// Crossfade must NOT start when the outgoing track has more remaining
+    /// frames than the configured overlap. Without this gate the crossfade
+    /// would start as soon as the next track is preloaded, cutting the
+    /// current song short.
+    #[test]
+    fn crossfade_does_not_start_when_far_from_end() {
+        let device_sample_rate: u32 = 44_100;
+        let device_channels: usize = 2;
+
+        let (mut controller, _fmt) =
+            build_crossfade_controller(device_sample_rate, device_channels);
+
+        // Advance to 1 second — 9 seconds remaining, well outside the 1s overlap.
+        controller.seek(1_000, 0).unwrap();
+
+        let mut output = vec![0.0f32; 256 * device_channels];
+        let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        let _ = super::render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            &mut crossfade_scratch,
+            device_sample_rate,
+            device_channels,
+            &mut rc,
+            &mut rc_in,
+            &mut EqProcessor::new(device_sample_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        assert!(
+            controller.active_crossfade.is_none(),
+            "crossfade must not start when remaining > overlap duration"
+        );
+        assert!(
+            controller.prepared_track.is_some(),
+            "prepared track must not be consumed when crossfade is not started"
+        );
+    }
+
+    /// Crossfade must NOT start when the outgoing track has more remaining
+    /// frames than the configured overlap, even with mismatched source/device
+    /// rates. This is a regression test for the double-conversion bug where
+    /// remaining frames were over-scaled.
+    #[test]
+    fn crossfade_does_not_start_with_mismatched_rates() {
+        let device_sample_rate: u32 = 48_000;
+        let device_channels: usize = 2;
+
+        let (mut controller, _fmt) =
+            build_crossfade_controller(device_sample_rate, device_channels);
+
+        // Track A is 10s at 44100 Hz, device is 48000 Hz.
+        // At 1s into the song, ~9s remaining = ~432000 device frames.
+        // Configured overlap is 1s = 48000 device frames.
+        // 432000 > 48000, so crossfade must not start.
+        controller.seek(1_000, 0).unwrap();
+
+        let mut output = vec![0.0f32; 256 * device_channels];
+        let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        let _ = super::render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            &mut crossfade_scratch,
+            device_sample_rate,
+            device_channels,
+            &mut rc,
+            &mut rc_in,
+            &mut EqProcessor::new(device_sample_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        assert!(
+            controller.active_crossfade.is_none(),
+            "crossfade must not start with mismatched rates when far from end"
         );
     }
 
