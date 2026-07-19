@@ -417,7 +417,8 @@ a {
 
 /* Brand logos are authored as white-on-transparent assets for the dark logo
    wall. In light theme, invert luminance so they read as dark-on-light while
-   keeping the same shapes. Kilo Code uses currentColor and is handled below. */
+   keeping the same shapes. Kilo Code is handled by its own filter rules below
+   because its SVG uses fill="currentColor" but is loaded via <img src>. */
 :root[data-theme="light"]
   .built-with-tool:not(.built-with-tool--kilo-code)
   img {
@@ -440,9 +441,16 @@ a {
   width: 30px;
   height: 30px;
   max-height: none;
-  /* Kilo Code SVG uses fill="currentColor"; inherit the section's theme-aware
-     text color instead of a hardcoded filter that only works on dark backgrounds. */
-  color: var(--landing-text);
+  /* Kilo Code SVG uses fill="currentColor" but is loaded via <img src>, so host
+     CSS color does not propagate and currentColor falls back to black — invisible
+     on the dark logo wall. Force white via a luminance filter (brightness(0)
+     kills all color → black, invert(1) → white), mirroring the white-on-transparent
+     authoring of the other logos. The light-theme override below makes it dark. */
+  filter: brightness(0) invert(1);
+}
+
+:root[data-theme="light"] .built-with-tool--kilo-code img {
+  filter: brightness(0);
 }
 
 .built-with-disclaimer {
