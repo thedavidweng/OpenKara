@@ -123,7 +123,7 @@ export function SettingsLibrarySection() {
                 key={library.id}
                 className={`flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors ${
                   isActive
-                    ? "border-[var(--color-control-selected-border)] bg-[var(--color-control-selected-bg)]"
+                    ? "border-[var(--color-accent)] bg-[var(--color-accent)]/15 text-[var(--color-text)]"
                     : "border-[var(--color-border-light)] bg-[var(--color-surface)] hover:bg-[var(--color-hover)]"
                 }`}
               >
@@ -154,7 +154,7 @@ export function SettingsLibrarySection() {
                   {isActive ? (
                     <CheckCircle2
                       size={14}
-                      className="shrink-0 text-[var(--color-control-primary)]"
+                      className="shrink-0 text-[var(--color-accent)]"
                     />
                   ) : null}
                 </button>
