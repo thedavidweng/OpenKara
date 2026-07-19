@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
+import { useEscapeKey } from "@/hooks/use-escape-key";
 import * as api from "@/lib/tauri";
 import { formatDuration, formatBytes } from "@/lib/format";
 import {
@@ -95,13 +96,7 @@ export function SongPropertiesDialog({
       });
   }, [song.hash, t]);
 
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
-  }, [onClose]);
+  useEscapeKey(onClose, [onClose]);
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === backdropRef.current) onClose();
