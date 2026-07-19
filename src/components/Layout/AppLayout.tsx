@@ -31,15 +31,16 @@ const PREVIEW_WINDOW_SHELL_STATE: WindowShellState =
   getNativeWindowShellState();
 
 // Preview-mode interaction whitelist. The landing-page mock blocks all
-// interactions except: (1) playlist switches in the sidebar, and (2) lyrics
-// scrolling + the Follow button inside the lyrics panel. The lyrics exception
-// lets visitors browse the lyrics and jump back to the current line even
-// though playback itself is frozen.
+// interactions except: (1) playlist switches in the sidebar, (2) lyrics
+// scrolling + the Follow button inside the lyrics panel, and (3) the toolbar
+// sidebar toggle (keyboard already works via window shortcuts). Import and
+// other mutating actions stay blocked.
 function isPreviewAllowedTarget(target: EventTarget | null): boolean {
   return (
     target instanceof Element &&
     (target.closest("[data-preview-playlist-switch='true']") != null ||
-      target.closest("[data-preview-lyrics-interactive='true']") != null)
+      target.closest("[data-preview-lyrics-interactive='true']") != null ||
+      target.closest("[data-preview-sidebar-toggle='true']") != null)
   );
 }
 
