@@ -300,6 +300,22 @@ describe("AppLayout preview mode", () => {
     expect(onPointerDown).toHaveBeenCalledTimes(1);
   });
 
+  it("allows click interactions on sidebar-toggle targets in preview mode", () => {
+    const onClick = vi.fn();
+    const { container } = render(
+      <AppLayout initialWindowShellState={macShellState} previewMode />,
+    );
+
+    const outer = container.firstElementChild as HTMLElement;
+    const sidebarToggle = document.createElement("button");
+    sidebarToggle.setAttribute("data-preview-sidebar-toggle", "true");
+    sidebarToggle.addEventListener("click", onClick);
+    outer.appendChild(sidebarToggle);
+
+    fireEvent.click(sidebarToggle);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
   it("blocks context menu in preview mode", () => {
     const onContext = vi.fn();
     const { container } = render(

@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Backport crossfade regression tests from the original #89 branch (#137): PR #131 rewrote the crossfade implementation from scratch (fixing a frame-domain defect where source-rate and device-rate frame counts were mixed) but shipped with fewer regression tests than the original branch. Added 18 tests (8 in `output.rs`, 10 in `playback.rs`) covering pause-during-overlap promotion suppression, multi-chunk callback source-position advancement, mismatched sample rate overlap timing, incoming source-frame promotion, resampler history transfer, cancellation cache cleanup, seek-abort, pause-preserve, manual-load cancellation, stem-attach ownership guards, and promotion invariants.
 
+- Website product mock polish: freeze playback on Earfquake at a real lyric timestamp (`59.56s`) so the seekbar and lyrics panel stay mid-song; derive playlist `song_count` from membership (Favorites/Friday night = 4 each); allow clicking Toggle Sidebar in preview while still blocking Import; reset unlayered `font: inherit` inside `.product-preview` so shared `SongListItem` Separate buttons keep their app `text-[10px]` size instead of inheriting the landing 15px type.
+
 ### Changed
 
 - Website landing preview polish: tighten the product-mock halo so the under-glow sits close to the window tail (Linear-style side/bottom spacing), keep the light-mode halo below the mock top with a seamless fade into the stage gray, and keep all eight Built-with logos on one desktop row.
