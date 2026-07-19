@@ -76,6 +76,15 @@ export function handleAppKeyDown(
   switch (e.code) {
     case "Space": {
       e.preventDefault();
+      // RATIONALE: While a track is loading the backend has no
+      // `current_track` yet, so play/pause/resume would surface a
+      // "no track is loaded" error toast. The snapshot still reports
+      // the loading song_id, so the song_id guard alone is not enough;
+      // bail out on the loading state, matching PlayControls' isStarting
+      // guard. Volume arrows are unaffected (set_volume needs no track).
+      if (snapshot?.state === "loading") {
+        return true;
+      }
       if (snapshot?.is_playing) {
         pause();
       } else if (snapshot?.song_id) {

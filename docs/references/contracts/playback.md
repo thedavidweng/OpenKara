@@ -113,6 +113,7 @@ existing source/stem mix + master/stem gains
 1. 暂停后保留当前位置
 2. `isPlaying` 变为 `false`
 3. 当前实现不清空已加载轨道
+4. #125：若轨道正在加载（`loading_song_id` 已设置但 `current_track` 尚未安装），命令为良性 no-op，返回当前 `state: "loading"` 快照，不递增 `transport_generation`、不改变 fade 状态；真正空闲（无加载进行）时仍返回 `CommandError` 以暴露调用方 bug
 
 ### Command: `resume`
 
@@ -120,9 +121,10 @@ existing source/stem mix + master/stem gains
 
 **Semantics**
 
-1. 没有已加载轨道时返回 `CommandError`
-2. 恢复后从当前暂停位置继续推进
-3. 若输出线程尚未启动，命令会和 `play` 一样保证输出线程已就绪
+1. 真正空闲（无已加载轨道且无加载进行）时返回 `CommandError`
+2. #125：若轨道正在加载（`loading_song_id` 已设置但 `current_track` 尚未安装），命令为良性 no-op，返回当前 `state: "loading"` 快照，不递增 `transport_generation`、不启动输出线程
+3. 恢复后从当前暂停位置继续推进
+4. 若输出线程尚未启动，命令会和 `play` 一样保证输出线程已就绪
 
 ### Command: `seek`
 
@@ -139,6 +141,7 @@ existing source/stem mix + master/stem gains
 1. 会 clamp 到 `0..durationMs`
 2. 若当前正在播放，seek 后继续播放
 3. 命令完成后会立刻触发一次位置事件
+4. #125：若轨道正在加载（`loading_song_id` 已设置但 `current_track` 尚未安装），命令为良性 no-op，返回当前 `state: "loading"` 快照，不递增 `transport_generation`、不改变 fade 状态；真正空闲时仍返回 `CommandError`
 
 ### Command: `set_volume`
 
