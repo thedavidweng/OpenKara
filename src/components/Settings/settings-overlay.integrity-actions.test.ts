@@ -97,6 +97,7 @@ function createHarness(
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
       librarySortMode: "recently_imported",
+      themePreference: "dark",
       integrityReport: null,
       integritySelection: new Set<string>(),
       integritySkippedCount: null,
@@ -153,6 +154,7 @@ function createHarness(
       setModelVariant: vi.fn(),
       setEqEnabled: vi.fn(),
       setEqGains: vi.fn(),
+      setThemePreference: vi.fn(),
       checkLibraryIntegrity: vi.fn(),
       removeMissingLibraryEntries: vi.fn(),
     },
@@ -175,6 +177,7 @@ function createHarness(
       patchAppSettings: vi.fn(),
       setEqEnabled: vi.fn(),
       setEqGains: vi.fn(),
+      setThemePreference: vi.fn(),
     },
   };
 

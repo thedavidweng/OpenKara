@@ -1825,6 +1825,7 @@ mod tests {
                 audio: dummy_audio(),
                 stems: None,
                 cdg: None,
+                cdg_error: None,
             }),
         });
         let _ = harness.send_and_recv(|reply| PlaybackCommand::SetVolume { level: 0.5, reply });
@@ -1864,6 +1865,7 @@ mod tests {
                 audio: dummy_audio(),
                 stems: None,
                 cdg: None,
+                cdg_error: None,
             }),
         });
         // Barrier.
@@ -1912,7 +1914,8 @@ mod tests {
             ready: Box::new(ReadyTrack::Decoded {
                 audio: dummy_audio(),
                 stems: None,
-                cdg: Some(CdgPlaybackState::new(Vec::new())),
+                cdg: Some(Arc::from(Vec::new().into_boxed_slice())),
+                cdg_error: None,
             }),
         });
         // Barrier.
