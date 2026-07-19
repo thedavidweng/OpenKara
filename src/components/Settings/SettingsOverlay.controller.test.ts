@@ -60,6 +60,8 @@ function createControllerHarness() {
       setStemMode: vi.fn(),
       setEqEnabled: vi.fn(),
       setEqGains: vi.fn(),
+      setCrossfadeEnabled: vi.fn(),
+      setCrossfadeDurationMs: vi.fn(),
       setThemePreference: vi.fn(),
       checkLibraryIntegrity: vi.fn(),
       removeMissingLibraryEntries: vi.fn(),
@@ -98,6 +100,8 @@ function createControllerHarness() {
           availableExecutionProviders: ["cpu", "xnnpack"],
           eqEnabled: false,
           eqGainsDb: [0, 0, 0, 0, 0],
+          crossfadeEnabled: false,
+          crossfadeDurationMs: 3_000,
           librarySortMode: "recently_imported",
           themePreference: "dark",
         }),
@@ -106,6 +110,8 @@ function createControllerHarness() {
       patchAppSettings: vi.fn(),
       setEqEnabled: vi.fn(),
       setEqGains: vi.fn(),
+      setCrossfadeEnabled: vi.fn(),
+      setCrossfadeDurationMs: vi.fn(),
       setThemePreference: vi.fn(),
     },
   };
@@ -157,6 +163,8 @@ describe("SettingsOverlay controller", () => {
       available_execution_providers: ["cpu", "xnnpack"],
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: false,
+      crossfade_duration_ms: 3_000,
       library_sort_mode: "recently_imported",
       theme_preference: "dark",
     });
@@ -192,6 +200,8 @@ describe("SettingsOverlay controller", () => {
       available_execution_providers: ["cpu", "xnnpack"],
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: false,
+      crossfade_duration_ms: 3_000,
       library_sort_mode: "recently_imported",
       theme_preference: "dark",
     });
@@ -577,6 +587,8 @@ describe("SettingsOverlay controller", () => {
       available_execution_providers: ["cpu", "xnnpack"],
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: false,
+      crossfade_duration_ms: 3_000,
       library_sort_mode: "recently_imported",
       theme_preference: "dark",
     });
@@ -710,6 +722,8 @@ describe("SettingsOverlay controller", () => {
       available_execution_providers: ["cpu", "xnnpack"],
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: false,
+      crossfade_duration_ms: 3_000,
       library_sort_mode: "recently_imported",
       theme_preference: "dark",
     });

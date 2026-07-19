@@ -65,6 +65,8 @@ function makeAppSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     available_execution_providers: ["cpu"],
     eq_enabled: false,
     eq_gains_db: [0, 0, 0, 0, 0],
+    crossfade_enabled: false,
+    crossfade_duration_ms: 3_000,
     library_sort_mode: "recently_imported",
     theme_preference: "dark",
     ...overrides,
@@ -554,6 +556,8 @@ describe("settings-store actions", () => {
       availableExecutionProviders: ["cpu", "xnnpack"],
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
+      crossfadeEnabled: false,
+      crossfadeDurationMs: 3_000,
       librarySortMode: "title_asc",
       themePreference: "dark",
     });

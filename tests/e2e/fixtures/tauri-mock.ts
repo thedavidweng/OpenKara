@@ -571,6 +571,17 @@ export const TAURI_MOCK_SCRIPT = `
       };
       return settingsSnapshot;
     },
+    set_crossfade_enabled: (args) => {
+      settingsSnapshot = { ...settingsSnapshot, crossfade_enabled: !!(args && args.enabled) };
+      return settingsSnapshot;
+    },
+    set_crossfade_duration_ms: (args) => {
+      settingsSnapshot = {
+        ...settingsSnapshot,
+        crossfade_duration_ms: (args && args.durationMs) || 3000,
+      };
+      return settingsSnapshot;
+    },
     set_library_sort_mode: (args) => {
       settingsSnapshot = { ...settingsSnapshot, library_sort_mode: (args && args.mode) || "recently_imported" };
       return settingsSnapshot;

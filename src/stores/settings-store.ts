@@ -26,6 +26,8 @@ export interface AppSettingsSnapshot {
   availableExecutionProviders: ExecutionProvider[];
   eqEnabled: boolean;
   eqGainsDb: [number, number, number, number, number];
+  crossfadeEnabled: boolean;
+  crossfadeDurationMs: number;
   librarySortMode: LibrarySortMode;
   themePreference: ThemePreference;
 }
@@ -43,6 +45,8 @@ interface SettingsState {
   availableExecutionProviders: AppSettingsSnapshot["availableExecutionProviders"];
   eqEnabled: AppSettingsSnapshot["eqEnabled"];
   eqGainsDb: AppSettingsSnapshot["eqGainsDb"];
+  crossfadeEnabled: AppSettingsSnapshot["crossfadeEnabled"];
+  crossfadeDurationMs: AppSettingsSnapshot["crossfadeDurationMs"];
   librarySortMode: AppSettingsSnapshot["librarySortMode"];
   themePreference: AppSettingsSnapshot["themePreference"];
   /** Monotonic generation for optimistic theme-preference mutations. */
@@ -61,6 +65,8 @@ interface SettingsState {
   ) => Promise<void>;
   setEqBandGain: (band: number, gainDb: number) => Promise<void>;
   resetEqGains: () => Promise<void>;
+  setCrossfadeEnabled: (enabled: boolean) => Promise<void>;
+  setCrossfadeDurationMs: (durationMs: number) => Promise<void>;
   setLibrarySortMode: (mode: LibrarySortMode) => Promise<void>;
   setThemePreference: (preference: ThemePreference) => Promise<void>;
   getAppSettingsSnapshot: () => AppSettingsSnapshot;
@@ -78,6 +84,8 @@ export const DEFAULT_APP_SETTINGS: AppSettingsSnapshot = {
   availableExecutionProviders: ["cpu"],
   eqEnabled: false,
   eqGainsDb: [0, 0, 0, 0, 0],
+  crossfadeEnabled: false,
+  crossfadeDurationMs: 3_000,
   librarySortMode: "recently_imported",
   themePreference: "dark",
 };
@@ -97,6 +105,8 @@ function toAppSettingsSnapshot(settings: AppSettings): AppSettingsSnapshot {
     // not leave eqGainsDb undefined — SettingsEqSection maps over the array.
     eqEnabled: settings.eq_enabled ?? false,
     eqGainsDb: settings.eq_gains_db ?? [0, 0, 0, 0, 0],
+    crossfadeEnabled: settings.crossfade_enabled ?? false,
+    crossfadeDurationMs: settings.crossfade_duration_ms ?? 3_000,
     librarySortMode: settings.library_sort_mode,
     themePreference: settings.theme_preference,
   };
@@ -117,6 +127,8 @@ function selectAppSettingsSnapshot(
     availableExecutionProviders: state.availableExecutionProviders,
     eqEnabled: state.eqEnabled,
     eqGainsDb: state.eqGainsDb,
+    crossfadeEnabled: state.crossfadeEnabled,
+    crossfadeDurationMs: state.crossfadeDurationMs,
     librarySortMode: state.librarySortMode,
     themePreference: state.themePreference,
   };
@@ -150,6 +162,8 @@ function applySettingsSyncSnapshot(
     availableExecutionProviders: snapshot.availableExecutionProviders,
     eqEnabled: snapshot.eqEnabled,
     eqGainsDb: snapshot.eqGainsDb,
+    crossfadeEnabled: snapshot.crossfadeEnabled,
+    crossfadeDurationMs: snapshot.crossfadeDurationMs,
     librarySortMode: snapshot.librarySortMode,
     themePreference: snapshot.themePreference,
   });
@@ -251,6 +265,12 @@ export function createSettingsStore(
 ) {
   const eqEnabledField = createOptimisticField(DEFAULT_APP_SETTINGS.eqEnabled);
   const eqGainsField = createOptimisticField(DEFAULT_APP_SETTINGS.eqGainsDb);
+  const crossfadeEnabledField = createOptimisticField(
+    DEFAULT_APP_SETTINGS.crossfadeEnabled,
+  );
+  const crossfadeDurationField = createOptimisticField(
+    DEFAULT_APP_SETTINGS.crossfadeDurationMs,
+  );
   const librarySortModeField = createOptimisticField(
     DEFAULT_APP_SETTINGS.librarySortMode,
   );
@@ -265,6 +285,12 @@ export function createSettingsStore(
       const snapshot = toAppSettingsSnapshot(settings);
       snapshot.eqEnabled = eqEnabledField.reconcileSnapshot(snapshot.eqEnabled);
       snapshot.eqGainsDb = eqGainsField.reconcileSnapshot(snapshot.eqGainsDb);
+      snapshot.crossfadeEnabled = crossfadeEnabledField.reconcileSnapshot(
+        snapshot.crossfadeEnabled,
+      );
+      snapshot.crossfadeDurationMs = crossfadeDurationField.reconcileSnapshot(
+        snapshot.crossfadeDurationMs,
+      );
       snapshot.librarySortMode = librarySortModeField.reconcileSnapshot(
         snapshot.librarySortMode,
       );
@@ -358,6 +384,51 @@ export function createSettingsStore(
       },
       resetEqGains: async () => {
         await get().setEqGains([0, 0, 0, 0, 0]);
+      },
+      setCrossfadeEnabled: async (enabled) => {
+        const generation = crossfadeEnabledField.begin(
+          get().crossfadeEnabled,
+          enabled,
+        );
+        syncPatch({ crossfadeEnabled: enabled });
+        try {
+          const settings = await api.setCrossfadeEnabled(enabled);
+          syncPatch({
+            crossfadeEnabled: crossfadeEnabledField.confirm(
+              generation,
+              settings.crossfade_enabled ?? false,
+            ),
+          });
+        } catch (error) {
+          const result = crossfadeEnabledField.reject(generation);
+          syncPatch({ crossfadeEnabled: result.value });
+          if (result.shouldNotify) {
+            notifyError(error);
+          }
+        }
+      },
+      setCrossfadeDurationMs: async (durationMs) => {
+        const clamped = Math.max(500, Math.min(10_000, Math.round(durationMs)));
+        const generation = crossfadeDurationField.begin(
+          get().crossfadeDurationMs,
+          clamped,
+        );
+        syncPatch({ crossfadeDurationMs: clamped });
+        try {
+          const settings = await api.setCrossfadeDurationMs(clamped);
+          syncPatch({
+            crossfadeDurationMs: crossfadeDurationField.confirm(
+              generation,
+              settings.crossfade_duration_ms ?? 3_000,
+            ),
+          });
+        } catch (error) {
+          const result = crossfadeDurationField.reject(generation);
+          syncPatch({ crossfadeDurationMs: result.value });
+          if (result.shouldNotify) {
+            notifyError(error);
+          }
+        }
       },
       setLibrarySortMode: async (mode) => {
         const generation = librarySortModeField.begin(
