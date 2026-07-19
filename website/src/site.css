@@ -8,9 +8,11 @@
   --landing-soft-line: #17181c;
   --landing-accent: #f2f3f5;
   --preview-stage-top: #08090b;
-  --preview-stage-bottom: #2b3036;
-  --preview-halo: rgba(220, 226, 232, 0.32);
-  --preview-smoke: rgba(132, 144, 156, 0.24);
+  /* Keep the stage nearly flat so the under-glow comes from the halo, not a
+     tall stage brightening that reads as bloom past the mock tail. */
+  --preview-stage-bottom: #14171c;
+  --preview-halo: rgba(220, 226, 232, 0.36);
+  --preview-smoke: rgba(160, 172, 186, 0.18);
   --preview-window-edge: rgba(240, 244, 248, 0.1);
   --preview-window-shadow: rgba(0, 0, 0, 0.62);
 }
@@ -24,10 +26,14 @@
   --landing-line: #dedfda;
   --landing-soft-line: #e8e8e4;
   --landing-accent: #111214;
-  --preview-stage-top: #f4f5f6;
-  --preview-stage-bottom: #dfe3e7;
-  --preview-halo: rgba(116, 128, 141, 0.2);
-  --preview-smoke: rgba(109, 120, 132, 0.12);
+  /* Match landing-bg at the stage entry so hero → preview is seamless. */
+  --preview-stage-top: #f7f7f5;
+  /* Gentle gray sink — enough depth for the mock to sit, soft enough that
+     the halo can dissolve without a hard band. */
+  --preview-stage-bottom: #eceef1;
+  /* Light center that dissolves into the stage gray instead of a muddy ring. */
+  --preview-halo: rgba(255, 255, 255, 0.55);
+  --preview-smoke: rgba(255, 255, 255, 0.22);
   --preview-window-edge: rgba(17, 18, 20, 0.15);
   --preview-window-shadow: rgba(54, 72, 94, 0.27);
 }
@@ -285,16 +291,18 @@ a {
   isolation: isolate;
   width: 100%;
   overflow: clip;
-  padding: clamp(24px, 2.2vw, 40px) 0 clamp(44px, 6vw, 88px);
+  /* Bottom inset tracks the mock's side gap so under-glow has room to sit
+     close to the window tail without a tall soft field below it. */
+  padding: clamp(24px, 2.2vw, 40px) 0 clamp(24px, 2.5vw, 48px);
   background: linear-gradient(
     180deg,
     var(--preview-stage-top) 0%,
     color-mix(
         in srgb,
-        var(--preview-stage-top) 67%,
+        var(--preview-stage-top) 58%,
         var(--preview-stage-bottom)
       )
-      45%,
+      55%,
     var(--preview-stage-bottom) 100%
   );
 }
@@ -302,36 +310,83 @@ a {
 .preview-stage::before {
   position: absolute;
   z-index: 0;
-  right: -14%;
-  bottom: -20%;
-  left: -14%;
-  height: 58%;
+  /* Halo hugs the mock: same-ish bleed on the sides, tighter under the tail.
+     Blur is kept modest so it cannot re-bloom into a tall under-glow. */
+  top: 14%;
+  right: 7%;
+  bottom: clamp(18px, 2vw, 36px);
+  left: 7%;
   content: "";
   pointer-events: none;
   background: radial-gradient(
-    ellipse 63% 72% at 50% 82%,
+    ellipse 62% 48% at 50% 40%,
     var(--preview-halo) 0%,
-    color-mix(in srgb, var(--preview-halo) 50%, transparent) 40%,
-    transparent 78%
+    color-mix(in srgb, var(--preview-halo) 42%, transparent) 36%,
+    transparent 70%
   );
-  filter: blur(34px);
+  filter: blur(20px);
+  /* Cut the under-glow early so the visible halo ends near the mock tail,
+     matching the left/right spacing instead of filling the stage padding. */
+  -webkit-mask-image: linear-gradient(
+    180deg,
+    #000 0%,
+    #000 55%,
+    transparent 88%
+  );
+  mask-image: linear-gradient(180deg, #000 0%, #000 55%, transparent 88%);
 }
 
 .preview-stage::after {
   position: absolute;
   z-index: 0;
-  right: 6%;
-  bottom: 2%;
-  left: 6%;
-  height: 50%;
+  right: 22%;
+  bottom: clamp(22px, 2.4vw, 40px);
+  left: 22%;
+  height: 18%;
   content: "";
   pointer-events: none;
   background: radial-gradient(
-    ellipse 72% 100% at 50% 100%,
+    ellipse 65% 70% at 50% 100%,
     var(--preview-smoke) 0%,
     transparent 68%
   );
-  filter: blur(30px);
+  filter: blur(16px);
+}
+
+/* Light mode: keep the halo below the mock chrome and dissolve it into the
+   stage gray so the soft field never reads as a bright cap above the window. */
+:root[data-theme="light"] .preview-stage::before {
+  top: clamp(40px, 3.4vw, 58px);
+  right: 9%;
+  bottom: clamp(20px, 2.2vw, 40px);
+  left: 9%;
+  background: radial-gradient(
+    ellipse 56% 44% at 50% 46%,
+    rgba(255, 255, 255, 0.42) 0%,
+    color-mix(in srgb, var(--preview-stage-bottom) 22%, transparent) 42%,
+    transparent 74%
+  );
+  filter: blur(22px);
+  -webkit-mask-image: linear-gradient(
+    180deg,
+    transparent 0%,
+    #000 16%,
+    #000 52%,
+    transparent 86%
+  );
+  mask-image: linear-gradient(
+    180deg,
+    transparent 0%,
+    #000 16%,
+    #000 52%,
+    transparent 86%
+  );
+}
+
+:root[data-theme="light"] .preview-stage::after {
+  opacity: 0.45;
+  height: 14%;
+  filter: blur(14px);
 }
 
 .product-preview {
@@ -345,8 +400,8 @@ a {
   background: #121212;
   box-shadow:
     0 0 0 1px var(--preview-window-edge),
-    0 28px 66px var(--preview-window-shadow),
-    0 40px 110px color-mix(in srgb, var(--preview-halo) 38%, transparent);
+    0 18px 44px var(--preview-window-shadow),
+    0 10px 36px color-mix(in srgb, var(--preview-halo) 28%, transparent);
   corner-shape: squircle;
 }
 
@@ -393,15 +448,18 @@ a {
 }
 
 .built-with-logos {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  /* Size tracks each logo's intrinsic width so square marks (Kilo / Codex)
+     don't sit in equal fr columns with oversized empty side padding. */
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: clamp(18px, 2.5vw, 42px);
+  justify-content: space-between;
+  gap: clamp(16px, 2vw, 40px);
   margin-top: 24px;
 }
 
 .built-with-tool {
-  min-width: 0;
+  flex: 0 0 auto;
   min-height: 34px;
   display: grid;
   place-items: center;
@@ -415,9 +473,11 @@ a {
 
 .built-with-tool img {
   display: block;
+  /* Explicit height so viewBox-only SVGs (Claude / Cursor) keep intrinsic
+     aspect width inside a flex row instead of collapsing to 0. */
   width: auto;
-  max-width: 100%;
-  max-height: 24px;
+  height: 24px;
+  max-width: none;
   object-fit: contain;
 }
 
@@ -432,27 +492,25 @@ a {
 }
 
 .built-with-tool--claude-code img {
-  max-height: 20px;
+  height: 20px;
 }
 
 .built-with-tool--devin img {
-  max-height: 29px;
+  height: 29px;
 }
 
 .built-with-tool--github-copilot img {
-  max-height: 22px;
+  height: 22px;
 }
 
 .built-with-tool--codex img {
   width: 30px;
   height: 30px;
-  max-height: none;
 }
 
 .built-with-tool--kilo-code img {
   width: 30px;
   height: 30px;
-  max-height: none;
   /* Kilo Code SVG uses fill="currentColor" but is loaded via <img src>, so host
      CSS color does not propagate and currentColor falls back to black — invisible
      on the dark logo wall. Force white via a luminance filter (brightness(0)
@@ -831,7 +889,8 @@ a {
   }
 
   .built-with-logos {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    flex-wrap: wrap;
+    justify-content: center;
     row-gap: 22px;
   }
 
@@ -918,7 +977,7 @@ a {
   }
 
   .built-with-logos {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px 28px;
   }
 
   .site-footer {
