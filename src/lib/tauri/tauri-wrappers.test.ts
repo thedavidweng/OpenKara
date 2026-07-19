@@ -440,6 +440,8 @@ describe("settings", () => {
     available_execution_providers: ["cpu" as const],
     eq_enabled: false,
     eq_gains_db: [0, 0, 0, 0, 0] as [number, number, number, number, number],
+    crossfade_enabled: false,
+    crossfade_duration_ms: 3_000,
     library_sort_mode: "recently_imported" as const,
     theme_preference: "dark" as const,
   };

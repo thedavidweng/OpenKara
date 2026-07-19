@@ -86,6 +86,9 @@ export function SettingsOverlayProvider({
         patchAppSettings: useSettingsStore.getState().patchAppSettings,
         setEqEnabled: useSettingsStore.getState().setEqEnabled,
         setEqGains: useSettingsStore.getState().setEqGains,
+        setCrossfadeEnabled: useSettingsStore.getState().setCrossfadeEnabled,
+        setCrossfadeDurationMs:
+          useSettingsStore.getState().setCrossfadeDurationMs,
         setThemePreference: useSettingsStore.getState().setThemePreference,
       },
     }),

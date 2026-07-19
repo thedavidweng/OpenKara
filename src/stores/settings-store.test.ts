@@ -10,6 +10,8 @@ const {
   mockSetLyricsFontStep,
   mockSetEqEnabled,
   mockSetEqGains,
+  mockSetCrossfadeEnabled,
+  mockSetCrossfadeDurationMs,
   mockSetLibrarySortMode,
   mockSetThemePreference,
   mockNotifyError,
@@ -22,6 +24,9 @@ const {
         gainsDb: [number, number, number, number, number],
       ) => Promise<AppSettings>
     >(),
+  mockSetCrossfadeEnabled: vi.fn<(enabled: boolean) => Promise<AppSettings>>(),
+  mockSetCrossfadeDurationMs:
+    vi.fn<(durationMs: number) => Promise<AppSettings>>(),
   mockSetLibrarySortMode: vi.fn<(mode: string) => Promise<AppSettings>>(),
   mockSetThemePreference: vi.fn<(preference: string) => Promise<AppSettings>>(),
   mockNotifyError: vi.fn(),
@@ -31,6 +36,8 @@ vi.mock("@/lib/tauri", () => ({
   setLyricsFontStep: mockSetLyricsFontStep,
   setEqEnabled: mockSetEqEnabled,
   setEqGains: mockSetEqGains,
+  setCrossfadeEnabled: mockSetCrossfadeEnabled,
+  setCrossfadeDurationMs: mockSetCrossfadeDurationMs,
   setLibrarySortMode: mockSetLibrarySortMode,
   setThemePreference: mockSetThemePreference,
 }));
@@ -65,6 +72,8 @@ function makeAppSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     available_execution_providers: ["cpu"],
     eq_enabled: false,
     eq_gains_db: [0, 0, 0, 0, 0],
+    crossfade_enabled: false,
+    crossfade_duration_ms: 3_000,
     library_sort_mode: "recently_imported",
     theme_preference: "dark",
     ...overrides,
@@ -148,12 +157,16 @@ describe("settings-store actions", () => {
       availableExecutionProviders: ["cpu"],
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
+      crossfadeEnabled: false,
+      crossfadeDurationMs: 3_000,
       librarySortMode: "recently_imported",
       themePreference: "dark",
     });
     mockSetLyricsFontStep.mockReset();
     mockSetEqEnabled.mockReset();
     mockSetEqGains.mockReset();
+    mockSetCrossfadeEnabled.mockReset();
+    mockSetCrossfadeDurationMs.mockReset();
     mockSetLibrarySortMode.mockReset();
     mockSetThemePreference.mockReset();
     mockNotifyError.mockReset();
@@ -554,6 +567,8 @@ describe("settings-store actions", () => {
       availableExecutionProviders: ["cpu", "xnnpack"],
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
+      crossfadeEnabled: false,
+      crossfadeDurationMs: 3_000,
       librarySortMode: "title_asc",
       themePreference: "dark",
     });
@@ -937,6 +952,60 @@ describe("settings-store actions", () => {
 
     expect(mockSetEqGains).toHaveBeenCalledWith(flat);
     expect(store.getState().eqGainsDb).toEqual(flat);
+  });
+
+  // ── setCrossfadeEnabled ─────────────────────────────────────────────────
+
+  test("setCrossfadeEnabled optimistically updates and hydrates on success", async () => {
+    const returned = makeAppSettings({ crossfade_enabled: true });
+    mockSetCrossfadeEnabled.mockResolvedValue(returned);
+
+    await store.getState().setCrossfadeEnabled(true);
+
+    expect(mockSetCrossfadeEnabled).toHaveBeenCalledWith(true);
+    expect(store.getState().crossfadeEnabled).toBe(true);
+  });
+
+  test("setCrossfadeEnabled reverts on failure", async () => {
+    const error = new Error("invoke failed");
+    mockSetCrossfadeEnabled.mockRejectedValue(error);
+
+    await store.getState().setCrossfadeEnabled(true);
+
+    expect(mockNotifyError).toHaveBeenCalledWith(error);
+    expect(store.getState().crossfadeEnabled).toBe(false);
+  });
+
+  // ── setCrossfadeDurationMs ───────────────────────────────────────────────
+
+  test("setCrossfadeDurationMs optimistically updates and hydrates on success", async () => {
+    const returned = makeAppSettings({ crossfade_duration_ms: 5_000 });
+    mockSetCrossfadeDurationMs.mockResolvedValue(returned);
+
+    await store.getState().setCrossfadeDurationMs(5_000);
+
+    expect(mockSetCrossfadeDurationMs).toHaveBeenCalledWith(5_000);
+    expect(store.getState().crossfadeDurationMs).toBe(5_000);
+  });
+
+  test("setCrossfadeDurationMs reverts optimistic state and calls notifyError on failure", async () => {
+    const error = new Error("invoke failed");
+    mockSetCrossfadeDurationMs.mockRejectedValue(error);
+    store.setState({ crossfadeDurationMs: 2_000 });
+
+    await store.getState().setCrossfadeDurationMs(5_000);
+
+    expect(mockNotifyError).toHaveBeenCalledWith(error);
+    expect(store.getState().crossfadeDurationMs).toBe(2_000);
+  });
+
+  test("setCrossfadeDurationMs clamps to [500, 10000]", async () => {
+    const returned = makeAppSettings({ crossfade_duration_ms: 500 });
+    mockSetCrossfadeDurationMs.mockResolvedValue(returned);
+
+    await store.getState().setCrossfadeDurationMs(100);
+
+    expect(mockSetCrossfadeDurationMs).toHaveBeenCalledWith(500);
   });
 
   // ── setThemePreference ──────────────────────────────────────────────────

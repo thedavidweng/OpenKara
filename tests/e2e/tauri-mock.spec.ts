@@ -8,7 +8,7 @@ test.describe("Tauri IPC mock contract", () => {
       page.evaluate(() =>
         window.__TAURI_INTERNALS__.invoke("unknown_test_command", {}),
       ),
-    ).rejects.toThrow("Unhandled Tauri invoke in E2E mock");
+    ).rejects.toThrow("Unhandled Tauri invoke in mock");
   });
 
   test("set_volume preserves volume=0 via nullish handling", async ({
@@ -77,7 +77,7 @@ test.describe("Tauri IPC mock contract", () => {
     await page.goto("/");
 
     const statuses = await page.evaluate(async () => {
-      window.__OPENKARA_E2E__.setSeparationCompleted("aaa111");
+      window.__OPENKARA_E2E__.setSeparationCompleted("earfquake");
       return await window.__TAURI_INTERNALS__.invoke(
         "get_all_separation_statuses",
       );
@@ -85,7 +85,7 @@ test.describe("Tauri IPC mock contract", () => {
 
     expect(Array.isArray(statuses)).toBe(true);
     expect(statuses).toContainEqual(
-      expect.objectContaining({ song_id: "aaa111", state: "completed" }),
+      expect.objectContaining({ song_id: "earfquake", state: "completed" }),
     );
   });
 });

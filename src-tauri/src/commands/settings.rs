@@ -23,6 +23,8 @@ pub struct AppSettings {
     pub available_execution_providers: Vec<&'static str>,
     pub eq_enabled: bool,
     pub eq_gains_db: [f32; 5],
+    pub crossfade_enabled: bool,
+    pub crossfade_duration_ms: u32,
     pub library_sort_mode: String,
     pub theme_preference: String,
 }
@@ -47,6 +49,8 @@ fn settings_from_config(config: &AppConfig) -> AppSettings {
         ),
         eq_enabled: config.effective_eq_enabled(),
         eq_gains_db: config.effective_eq_gains_db(),
+        crossfade_enabled: config.effective_crossfade_enabled(),
+        crossfade_duration_ms: config.effective_crossfade_duration_ms(),
         library_sort_mode: sort_mode.as_str().to_owned(),
         theme_preference: config.effective_theme_preference().as_str().to_owned(),
     }
@@ -345,6 +349,121 @@ pub async fn set_eq_gains(
         .map_err(|e| internal_error(format!("failed to get app data dir: {e}")))?;
     let config =
         apply_eq_gains_atomically(&app_data_dir, &state.playback.command_tx, gains_db).await?;
+    Ok(settings_from_config(&config))
+}
+
+/// Apply a crossfade-enabled change through the coordinator first, then
+/// persist. Same failure-atomic contract as `apply_eq_enabled_atomically`.
+async fn apply_crossfade_enabled_atomically(
+    app_data_dir: &Path,
+    command_tx: &mpsc::Sender<PlaybackCommand>,
+    enabled: bool,
+) -> CommandResult<AppConfig> {
+    let mut config = config::load_config(app_data_dir)
+        .map_err(|e| internal_error(format!("failed to load config: {e}")))?
+        .unwrap_or_default();
+
+    let old_enabled = config.effective_crossfade_enabled();
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let command = PlaybackCommand::SetCrossfadeEnabled { enabled, reply: tx };
+    command_tx
+        .send(command)
+        .map_err(|_| internal_error("playback coordinator disconnected"))?;
+    rx.await
+        .map_err(|_| internal_error("playback coordinator dropped reply"))?
+        .map_err(|e| internal_error(format!("failed to apply crossfade enabled: {e}")))?;
+
+    config.crossfade_enabled = Some(enabled);
+    if let Err(e) = config::save_config(app_data_dir, &config) {
+        let (revert_tx, revert_rx) = tokio::sync::oneshot::channel();
+        let revert_command = PlaybackCommand::SetCrossfadeEnabled {
+            enabled: old_enabled,
+            reply: revert_tx,
+        };
+        let _ = command_tx.send(revert_command);
+        let _ = revert_rx.await;
+        return Err(internal_error(format!("failed to save config: {e}")));
+    }
+
+    Ok(config)
+}
+
+/// Apply a crossfade-duration change through the coordinator first, then
+/// persist. Same failure-atomic contract as `apply_eq_enabled_atomically`.
+async fn apply_crossfade_duration_atomically(
+    app_data_dir: &Path,
+    command_tx: &mpsc::Sender<PlaybackCommand>,
+    duration_ms: u32,
+) -> CommandResult<AppConfig> {
+    if !(500..=10_000).contains(&duration_ms) {
+        return Err(invalid_playback_state(format!(
+            "crossfade duration out of range: {duration_ms}"
+        )));
+    }
+
+    let mut config = config::load_config(app_data_dir)
+        .map_err(|e| internal_error(format!("failed to load config: {e}")))?
+        .unwrap_or_default();
+
+    let old_duration = config.effective_crossfade_duration_ms();
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let command = PlaybackCommand::SetCrossfadeDuration {
+        duration_ms,
+        reply: tx,
+    };
+    command_tx
+        .send(command)
+        .map_err(|_| internal_error("playback coordinator disconnected"))?;
+    rx.await
+        .map_err(|_| internal_error("playback coordinator dropped reply"))?
+        .map_err(|e| internal_error(format!("failed to apply crossfade duration: {e}")))?;
+
+    config.crossfade_duration_ms = Some(duration_ms);
+    if let Err(e) = config::save_config(app_data_dir, &config) {
+        let (revert_tx, revert_rx) = tokio::sync::oneshot::channel();
+        let revert_command = PlaybackCommand::SetCrossfadeDuration {
+            duration_ms: old_duration,
+            reply: revert_tx,
+        };
+        let _ = command_tx.send(revert_command);
+        let _ = revert_rx.await;
+        return Err(internal_error(format!("failed to save config: {e}")));
+    }
+
+    Ok(config)
+}
+
+#[tauri::command]
+pub async fn set_crossfade_enabled(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> CommandResult<AppSettings> {
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| internal_error(format!("failed to get app data dir: {e}")))?;
+    let config =
+        apply_crossfade_enabled_atomically(&app_data_dir, &state.playback.command_tx, enabled)
+            .await?;
+    Ok(settings_from_config(&config))
+}
+
+#[tauri::command]
+pub async fn set_crossfade_duration_ms(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    duration_ms: u32,
+) -> CommandResult<AppSettings> {
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| internal_error(format!("failed to get app data dir: {e}")))?;
+    let config =
+        apply_crossfade_duration_atomically(&app_data_dir, &state.playback.command_tx, duration_ms)
+            .await?;
     Ok(settings_from_config(&config))
 }
 

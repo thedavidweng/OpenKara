@@ -141,10 +141,10 @@ async function expectMetadataCollapse(
 test.describe("Playback controls geometry and pressed state", () => {
   test.beforeEach(async ({ page, tauriMock }) => {
     await page.goto("/");
-    await expect(page.getByText("Bohemian Rhapsody")).toBeVisible();
+    await expect(page.getByText("Earfquake")).toBeVisible();
 
     // Start playback so the right-zone action buttons render.
-    await page.getByText("Bohemian Rhapsody").dblclick();
+    await page.getByText("Earfquake").dblclick();
     await expect(page.getByRole("button", { name: /pause/i })).toBeVisible({
       timeout: 5000,
     });
@@ -154,7 +154,7 @@ test.describe("Playback controls geometry and pressed state", () => {
     // snapshot BEFORE marking separation as completed so the loadStems call
     // triggered by the separation-complete event sees has_stems: true.
     await tauriMock.setPlaybackSnapshot({
-      song_id: "aaa111",
+      song_id: "earfquake",
       state: "playing",
       is_playing: true,
       has_stems: true,
@@ -162,7 +162,7 @@ test.describe("Playback controls geometry and pressed state", () => {
       stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
       volume: 0.8,
     });
-    await tauriMock.setSeparationCompleted("aaa111");
+    await tauriMock.setSeparationCompleted("earfquake");
   });
 
   // ── Relaxed density (additional sample) ──────────────────────────────

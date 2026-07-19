@@ -70,6 +70,8 @@ export function createLibrarySettingsActions(
   | "setEqEnabled"
   | "setEqGains"
   | "resetEqGains"
+  | "setCrossfadeEnabled"
+  | "setCrossfadeDurationMs"
   | "setThemePreference"
 > {
   const {
@@ -368,6 +370,30 @@ export function createLibrarySettingsActions(
       patchState({
         eqGainsDb:
           dependencies.settingsStore.getAppSettingsSnapshot().eqGainsDb,
+      });
+    },
+
+    setCrossfadeEnabled: async (enabled) => {
+      patchState({ crossfadeEnabled: enabled });
+      await dependencies.settingsStore.setCrossfadeEnabled(enabled);
+      patchState({
+        crossfadeEnabled:
+          dependencies.settingsStore.getAppSettingsSnapshot().crossfadeEnabled,
+      });
+    },
+
+    setCrossfadeDurationMs: async (durationMs) => {
+      const clamped = Math.max(500, Math.min(10_000, Math.round(durationMs)));
+      const current = controls.getSnapshot().state.crossfadeDurationMs;
+      if (current === clamped) {
+        return;
+      }
+      patchState({ crossfadeDurationMs: clamped });
+      await dependencies.settingsStore.setCrossfadeDurationMs(clamped);
+      patchState({
+        crossfadeDurationMs:
+          dependencies.settingsStore.getAppSettingsSnapshot()
+            .crossfadeDurationMs,
       });
     },
 

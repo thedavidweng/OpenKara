@@ -5,7 +5,8 @@ import { test, expect } from "./fixtures/base-test";
  *
  * Verifies the sort-mode selector is visible, persists through the settings
  * mock, and reorders the song list across all three modes using the fixture
- * songs in tests/e2e/fixtures/tauri-mock.ts.
+ * songs in tests/e2e/fixtures/tauri-mock.ts (sourced from
+ * src/mock/preview-songs.ts).
  */
 test.describe("Library sort modes", () => {
   test.beforeEach(async ({ page }) => {
@@ -27,7 +28,7 @@ test.describe("Library sort modes", () => {
 
     const songList = page.getByTestId("song-list");
     const firstSong = songList.locator("[data-song-hash]").first();
-    await expect(firstSong).toContainText("Bohemian Rhapsody");
+    await expect(firstSong).toContainText("Earfquake");
   });
 
   test("title_asc sorts alphabetically by title", async ({ page }) => {
@@ -35,24 +36,23 @@ test.describe("Library sort modes", () => {
     await selector.selectOption("title_asc");
 
     // The list uses the same A-Z/# pinyin-aware bucket order as the alphabet
-    // rail. Alpha comes before the B bucket; numeric collation keeps 2 < 10.
+    // rail.  "ALL THE LOVE" sorts into the A bucket first.
     const songList = page.getByTestId("song-list");
     await expect(songList.locator("[data-song-hash]").first()).toContainText(
-      "Alpha 2",
+      "ALL THE LOVE",
     );
 
-    // All 7 songs fit in the 800px viewport, so verify full order via hash.
+    // All 6 songs fit in the 800px viewport, so verify full order via hash.
     const hashes = await songList
       .locator("[data-song-hash]")
       .evaluateAll((els) => els.map((el) => el.getAttribute("data-song-hash")));
     expect(hashes).toEqual([
-      "ddd444", // Alpha 2 (numeric: 2 < 10)
-      "eee555", // Alpha 10
-      "fff666", // 北京之夜 (pinyin B)
-      "aaa111", // Bohemian Rhapsody
-      "bbb222", // Hotel California
-      "ccc333", // Imagine
-      "ggg777", // (null title sorts last)
+      "all-the-love", // ALL THE LOVE
+      "counting-stars", // Counting Stars
+      "earfquake", // Earfquake
+      "feel-good-inc", // Feel Good Inc.
+      "see-you-again", // See You Again (feat. Kali Uchis)
+      "three-empty-words", // Three Empty Words
     ]);
   });
 
@@ -60,24 +60,22 @@ test.describe("Library sort modes", () => {
     const selector = page.getByTestId("sort-mode-selector");
     await selector.selectOption("artist_asc");
 
-    // 崔健 belongs to the pinyin C bucket, the first mapped artist bucket in
-    // this fixture.
+    // Gorillaz is the first artist bucket in this fixture.
     const songList = page.getByTestId("song-list");
     await expect(songList.locator("[data-song-hash]").first()).toContainText(
-      "北京之夜",
+      "Feel Good Inc.",
     );
 
     const hashes = await songList
       .locator("[data-song-hash]")
       .evaluateAll((els) => els.map((el) => el.getAttribute("data-song-hash")));
     expect(hashes).toEqual([
-      "fff666", // 北京之夜 / 崔健 (CJK first)
-      "bbb222", // Hotel California / Eagles
-      "ccc333", // Imagine / John Lennon
-      "aaa111", // Bohemian Rhapsody / Queen
-      "ddd444", // Alpha 2 / The Beta
-      "eee555", // Alpha 10 / The Beta (tie on artist, title breaks)
-      "ggg777", // (null artist sorts last)
+      "feel-good-inc", // Feel Good Inc. / Gorillaz
+      "counting-stars", // Counting Stars / OneRepublic
+      "three-empty-words", // Three Empty Words / Shawn Mendes
+      "earfquake", // Earfquake / Tyler, The Creator
+      "see-you-again", // See You Again / Tyler, The Creator & Kali Uchis
+      "all-the-love", // ALL THE LOVE / Ye feat. Andre Troutman
     ]);
   });
 

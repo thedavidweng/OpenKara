@@ -84,6 +84,16 @@ export function setEqGains(
   return invoke<AppSettings>("set_eq_gains", { gainsDb });
 }
 
+export function setCrossfadeEnabled(enabled: boolean): Promise<AppSettings> {
+  return invoke<AppSettings>("set_crossfade_enabled", { enabled });
+}
+
+export function setCrossfadeDurationMs(
+  durationMs: number,
+): Promise<AppSettings> {
+  return invoke<AppSettings>("set_crossfade_duration_ms", { durationMs });
+}
+
 export function setLibrarySortMode(
   mode: LibrarySortMode,
 ): Promise<AppSettings> {

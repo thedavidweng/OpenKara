@@ -51,6 +51,8 @@ vi.mock("@/stores/settings-store", () => ({
           availableExecutionProviders: ["cpu" as const, "xnnpack" as const],
           eqEnabled: false,
           eqGainsDb: [0, 0, 0, 0, 0],
+          crossfadeEnabled: false,
+          crossfadeDurationMs: 3_000,
         }),
       }),
     },

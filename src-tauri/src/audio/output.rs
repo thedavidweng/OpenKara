@@ -1,4 +1,7 @@
 use crate::airplay_stream::AirPlayAudioTap;
+use crate::audio::crossfade::{
+    effective_overlap_frames, equal_power_gains, source_to_device_frames, CROSSFADE_SCRATCH_FRAMES,
+};
 use crate::audio::decode::DecodedAudio;
 use crate::audio::eq::{soft_limit, EqProcessor};
 use crate::audio::error::PlaybackError;
@@ -41,6 +44,20 @@ struct ResamplerEntry {
 impl ResamplerCache {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Clear all cached resampler state. Called when the owning stream lane
+    /// is cancelled (seek, manual play, device recreation) so stale sinc
+    /// delay lines do not contaminate the next crossfade or normal render.
+    pub fn clear(&mut self) {
+        self.cache.clear();
+    }
+
+    /// Swap the contents of two resampler caches. Used on crossfade promotion
+    /// to transfer the incoming lane's sinc history into the primary lane so
+    /// the post-promotion remainder continues seamlessly.
+    pub fn swap(&mut self, other: &mut ResamplerCache) {
+        std::mem::swap(&mut self.cache, &mut other.cache);
     }
 
     /// Get or create a resampler entry for the given rate pair, channel index,
@@ -153,9 +170,11 @@ pub fn render_output_buffer(
     playback: &mut PlaybackController,
     output: &mut [f32],
     stem_scratch: &mut Vec<f32>,
+    crossfade_scratch: &mut [f32],
     device_sample_rate: u32,
     device_channels: usize,
     resampler_cache: &mut ResamplerCache,
+    crossfade_incoming_resampler_cache: &mut ResamplerCache,
     eq_processor: &mut EqProcessor,
     peak_accumulator: &mut PeakAccumulator,
     peak_ring: &PeakRing,
@@ -252,6 +271,127 @@ pub fn render_output_buffer(
     let render_frame = track.render_frame;
     let has_stems = track.stems.is_some();
     let has_streaming = track.streaming.is_some();
+
+    // If a previous crossfade was cancelled (seek, manual play, device
+    // recreation) the controller has no active crossfade or prepared track,
+    // but the incoming resampler cache may still hold stale sinc state.
+    // Clear it whenever there is no crossfade activity so the next crossfade
+    // starts with a fresh resampler lane.
+    //
+    // A seek-abort is a special case: `abort_active_crossfade` restores the
+    // prepared track (so `prepared_track.is_none()` is false), but the
+    // incoming resampler still holds stale state from the aborted overlap
+    // position. The `crossfade_abort_pending` flag covers this case.
+    if playback.crossfade_abort_pending
+        || (playback.active_crossfade.is_none() && playback.prepared_track.is_none())
+    {
+        crossfade_incoming_resampler_cache.clear();
+        playback.crossfade_abort_pending = false;
+    }
+
+    // Crossfade path. When crossfade is enabled, the outgoing track is
+    // a fully decoded plain track (no streaming, no stems), and a prepared
+    // incoming track exists, we overlap the tail of the outgoing with the
+    // start of the incoming using an equal-power curve. This replaces the
+    // normal render path for this callback.
+    //
+    // The common outgoing streaming path remains gapless-only — streaming
+    // tracks are never opportunistically decoded on the realtime thread.
+    //
+    // An already-active crossfade must continue to render even if the user
+    // disabled the crossfade setting mid-overlap. The prepared track was
+    // already moved into `active_crossfade` when the overlap started, so the
+    // normal EOF path has no `prepared_track` to swap to — skipping the
+    // crossfade branch here would stall playback at the outgoing tail.
+    // Disabling the setting should only prevent *initiating* new crossfades,
+    // not abort one already in progress.
+    if !has_streaming
+        && !has_stems
+        && (playback.active_crossfade.is_some()
+            || (playback.crossfade_config.enabled && playback.prepared_track.is_some()))
+    {
+        let crossfade_result = render_crossfade_overlap(
+            playback,
+            output,
+            crossfade_scratch,
+            master,
+            device_sample_rate,
+            device_channels,
+            resampler_cache,
+            crossfade_incoming_resampler_cache,
+        );
+        if let Some((rendered, src_frames_advanced)) = crossfade_result {
+            let rendered_samples = rendered * device_channels;
+
+            // Apply EQ + soft limiter to the mixed output.
+            eq_processor.process(output, rendered_samples);
+            if eq_processor.is_fully_bypassed() {
+                for sample in output[..rendered_samples].iter_mut() {
+                    *sample = sample.clamp(-1.0, 1.0);
+                }
+            } else {
+                for sample in output[..rendered_samples].iter_mut() {
+                    *sample = soft_limit(*sample);
+                }
+            }
+
+            // Apply fade envelope.
+            if let Some(fade_gain) = playback.take_fade_gain() {
+                if fade_gain < 1.0 {
+                    for sample in output[..rendered_samples].iter_mut() {
+                        *sample *= fade_gain;
+                    }
+                }
+            }
+
+            // Peak accumulation after EQ, limiter and fade.
+            peak_accumulator.process(output, rendered_samples, device_channels, peak_ring);
+
+            // Advance the render frame counter.
+            playback.advance_render_frame(src_frames_advanced);
+
+            // Check for gapless fallback after crossfade completes or if it
+            // was not started (e.g. effective overlap < 500ms). Fill any
+            // remaining buffer from the new track so EOF mid-callback does
+            // not leave a silence gap.
+            let mut total_rendered = rendered_samples;
+            if !has_streaming
+                && playback.current_track_reached_eof()
+                && playback.current_track_is_playing()
+                && playback.perform_gapless_swap()
+            {
+                let remaining = &mut output[rendered_samples..];
+                if !remaining.is_empty() {
+                    let track = playback.current_track.as_ref().unwrap();
+                    let original = &track.original_audio;
+                    let (extra_rendered, extra_frames) = mix_stem_resampled(
+                        remaining,
+                        original,
+                        0,
+                        master,
+                        device_sample_rate,
+                        device_channels,
+                        Some(resampler_cache),
+                    );
+                    eq_processor.process(remaining, extra_rendered);
+                    if eq_processor.is_fully_bypassed() {
+                        for sample in remaining[..extra_rendered].iter_mut() {
+                            *sample = sample.clamp(-1.0, 1.0);
+                        }
+                    } else {
+                        for sample in remaining[..extra_rendered].iter_mut() {
+                            *sample = soft_limit(*sample);
+                        }
+                    }
+                    peak_accumulator.process(remaining, extra_rendered, device_channels, peak_ring);
+                    playback.advance_render_frame(extra_frames);
+                    total_rendered += extra_rendered;
+                }
+            }
+
+            return total_rendered;
+        }
+    }
 
     let (rendered, src_frames_advanced) = if has_streaming {
         // Streaming mode: pop from ring buffer consumers.
@@ -524,6 +664,293 @@ pub fn render_output_buffer(
     }
 
     total_rendered
+}
+
+/// Render a crossfade overlap callback. Returns `Some((rendered_output_frames,
+/// src_frames_advanced))` when the crossfade path handled this callback, or
+/// `None` to fall back to the normal render path (e.g. no eligible crossfade
+/// could be started).
+///
+/// This function:
+/// 1. Starts the overlap when `outgoing_device_frames_remaining <= effective_frames`
+///    and no active crossfade exists yet. All frame counts are converted to
+///    device (output) frames before calling `effective_overlap_frames` so the
+///    overlap duration is correct regardless of source vs device sample rate.
+/// 2. Renders outgoing samples into `output` and incoming samples into
+///    `crossfade_scratch`, then mixes them with equal-power gains.
+/// 3. When the overlap completes, promotes the incoming track to
+///    `current_track` and continues filling the callback from the promoted
+///    source. The incoming resampler lane is swapped into the primary lane
+///    so the post-promotion remainder continues with the same sinc history.
+/// 4. Handles chunk processing in blocks of at most `CROSSFADE_SCRATCH_FRAMES`
+///    frames.
+fn render_crossfade_overlap(
+    playback: &mut PlaybackController,
+    output: &mut [f32],
+    crossfade_scratch: &mut [f32],
+    master: f32,
+    device_sample_rate: u32,
+    device_channels: usize,
+    outgoing_resampler_cache: &mut ResamplerCache,
+    incoming_resampler_cache: &mut ResamplerCache,
+) -> Option<(usize, u64)> {
+    let output_frames = output.len() / device_channels;
+    if output_frames == 0 {
+        return Some((0, 0));
+    }
+
+    // Start a new crossfade if none is active but a prepared track exists.
+    if playback.active_crossfade.is_none() {
+        let prepared = playback.prepared_track.as_ref()?;
+        let track = playback.current_track.as_ref()?;
+
+        // Eligibility: outgoing must be a fully decoded plain track.
+        if track.streaming.is_some() || track.stems.is_some() {
+            return None;
+        }
+
+        let outgoing_src_rate = track.original_audio.sample_rate;
+        let incoming_src_rate = prepared.audio.sample_rate;
+
+        // Convert all source-frame counts to device (output) frames so the
+        // overlap duration is computed in a single frame domain. This was a
+        // blocking correctness defect in earlier iterations: comparing
+        // source-rate counts with device-rate duration produced wrong overlap
+        // timing whenever source and device rates differed.
+        let outgoing_total_device_frames = source_to_device_frames(
+            (track.original_audio.samples.len() / track.original_audio.channels.max(1)) as u64,
+            outgoing_src_rate,
+            device_sample_rate,
+        );
+        let incoming_total_device_frames = source_to_device_frames(
+            (prepared.audio.samples.len() / prepared.audio.channels.max(1)) as u64,
+            incoming_src_rate,
+            device_sample_rate,
+        );
+        // Convert the outgoing render position (source frames) to device
+        // frames. Both `outgoing_total_device_frames` and this converted
+        // position are already in device frames, so the subtraction is
+        // directly in device frames — no second conversion needed.
+        // An earlier iteration wrapped the subtraction in another
+        // `source_to_device_frames`, which over-scaled the remaining count
+        // by device_rate/src_rate whenever the rates differed.
+        let outgoing_device_frames_remaining = outgoing_total_device_frames.saturating_sub(
+            source_to_device_frames(track.render_frame, outgoing_src_rate, device_sample_rate),
+        );
+
+        let effective = effective_overlap_frames(
+            playback.crossfade_config.duration_ms,
+            device_sample_rate,
+            outgoing_total_device_frames,
+            incoming_total_device_frames,
+            outgoing_device_frames_remaining,
+        )?;
+
+        // Only begin the overlap once the outgoing track is within the
+        // effective overlap window of its end. Without this gate the
+        // crossfade would start as soon as the next track is preloaded
+        // (early in the song), cutting the current song short.
+        if outgoing_device_frames_remaining > effective {
+            return None;
+        }
+
+        // Move the prepared track into the active crossfade. The prepared
+        // track is consumed — if the overlap is aborted (seek), the abort
+        // handler restores it to `prepared_track` at frame zero.
+        let prepared = playback.prepared_track.take().unwrap();
+        playback.active_crossfade = Some(crate::audio::playback::ActiveCrossfade {
+            prepared,
+            total_frames: effective,
+            rendered_frames: 0,
+            incoming_source_frame: 0,
+        });
+    }
+
+    let active = playback.active_crossfade.as_ref()?;
+    let total_overlap = active.total_frames;
+    let overlap_rendered = active.rendered_frames;
+    let frames_left_in_overlap = total_overlap - overlap_rendered;
+
+    // How many frames this callback will render in the overlap phase.
+    let overlap_frames_this_callback = output_frames.min(frames_left_in_overlap as usize);
+    let mut rendered_output_frames = 0usize;
+    let mut src_frames_advanced = 0u64;
+    // Outgoing source frames consumed across chunks in this callback.
+    // `track.render_frame` is only advanced by the caller's
+    // `advance_render_frame` AFTER this function returns, so each chunk must
+    // explicitly offset the outgoing start frame by the frames already
+    // consumed in earlier chunks of the same callback. Without this, every
+    // chunk re-reads the same outgoing source segment and the caller
+    // over-advances `render_frame` by `num_chunks * per_chunk_consumed`.
+    // The incoming side needs no such accumulator because it reads from
+    // `active.rendered_frames`, which is incremented inside the loop.
+    let mut outgoing_frames_consumed = 0u64;
+
+    // Render the overlap in chunks of at most CROSSFADE_SCRATCH_FRAMES.
+    let mut chunk_start = 0usize;
+    while chunk_start < overlap_frames_this_callback {
+        let chunk_frames =
+            (overlap_frames_this_callback - chunk_start).min(CROSSFADE_SCRATCH_FRAMES);
+        let chunk_samples = chunk_frames * device_channels;
+
+        // Render outgoing into output buffer (with master gain).
+        let track = playback.current_track.as_ref().unwrap();
+        let outgoing_render_frame = track.render_frame + outgoing_frames_consumed;
+        let outgoing_buf = &mut output
+            [chunk_start * device_channels..(chunk_start + chunk_frames) * device_channels];
+
+        let (out_rendered, out_consumed) = mix_stem_resampled(
+            outgoing_buf,
+            &track.original_audio,
+            outgoing_render_frame,
+            master,
+            device_sample_rate,
+            device_channels,
+            Some(outgoing_resampler_cache),
+        );
+
+        // Render incoming into scratch buffer (with master gain).
+        // Zero the scratch slice first — mix_stem_resampled uses additive
+        // mixing (+=), so stale samples from the previous callback would
+        // corrupt the incoming audio.
+        let active = playback.active_crossfade.as_ref().unwrap();
+        // Source-frame cursor for the incoming track (not device frames).
+        let incoming_render_frame = active.incoming_source_frame;
+        let incoming_buf = &mut crossfade_scratch[..chunk_samples];
+        incoming_buf.fill(0.0);
+        let (inc_rendered, inc_consumed) = mix_stem_resampled(
+            incoming_buf,
+            &active.prepared.audio,
+            incoming_render_frame,
+            master,
+            device_sample_rate,
+            device_channels,
+            Some(incoming_resampler_cache),
+        );
+
+        // Mix: for each frame, calculate gains and mix every channel.
+        // `mix_stem_resampled` returns interleaved samples (frames × channels),
+        // so convert to frames before iterating.
+        let mix_frames = (out_rendered.min(inc_rendered)) / device_channels;
+        for frame in 0..mix_frames {
+            let global_overlap_index = overlap_rendered + chunk_start as u64 + frame as u64;
+            let (out_gain, inc_gain) = equal_power_gains(global_overlap_index, total_overlap);
+
+            let inc_base = frame * device_channels;
+            for ch in 0..device_channels {
+                let out_sample = output[(chunk_start + frame) * device_channels + ch];
+                let inc_sample = crossfade_scratch[inc_base + ch];
+                output[(chunk_start + frame) * device_channels + ch] =
+                    out_sample * out_gain + inc_sample * inc_gain;
+            }
+        }
+
+        rendered_output_frames += mix_frames;
+        src_frames_advanced += out_consumed;
+        outgoing_frames_consumed += out_consumed;
+
+        // Advance device-frame progress (equal-power) and incoming source cursor.
+        if let Some(active) = playback.active_crossfade.as_mut() {
+            active.rendered_frames += mix_frames as u64;
+            active.incoming_source_frame += inc_consumed;
+        }
+
+        chunk_start += chunk_frames;
+
+        // If incoming exhausted early, abort crossfade.
+        if inc_rendered == 0 && mix_frames == 0 {
+            break;
+        }
+    }
+
+    // Check if the overlap has completed.
+    let overlap_complete = playback
+        .active_crossfade
+        .as_ref()
+        .is_some_and(|a| a.rendered_frames >= a.total_frames);
+
+    // Do not promote when the user is pausing (fade-out in progress).
+    // Unlike the normal gapless path, the crossfade promotion would otherwise
+    // clear `fade` and start the incoming track, so a fade-out pause inside
+    // the overlap window would advance to the next song instead of stopping.
+    // The `current_track_is_playing()` helper returns false during a
+    // `FadingOut`, matching the guard on the normal gapless swap path. The
+    // active crossfade is preserved so a future resume can complete the
+    // promotion; the overlap audio already rendered is faded out by the
+    // caller's fade gain, and any remaining outgoing frames (near EOF) are
+    // rendered and faded out below.
+    let mut promoted = false;
+    if overlap_complete && playback.current_track_is_playing() {
+        // Promote the incoming track to current_track.
+        let active = playback.active_crossfade.take().unwrap();
+        // Promote using the incoming *source* frame cursor, not device
+        // frames. `rendered_frames` counts device (output) frames for
+        // equal-power progress; `incoming_source_frame` tracks how far into
+        // the incoming track's source media we have actually read. Using
+        // device frames here would skip or duplicate source samples whenever
+        // the source and device rates differ.
+        let incoming_frame_offset = active.incoming_source_frame;
+        playback.promote_crossfade_track(active.prepared, incoming_frame_offset);
+        // Transfer the incoming resampler lane into the primary lane so
+        // the post-promotion remainder and subsequent normal callbacks continue
+        // with the same sinc delay history. The now-spare incoming lane is
+        // cleared so a future crossfade starts fresh.
+        outgoing_resampler_cache.swap(incoming_resampler_cache);
+        incoming_resampler_cache.clear();
+        // The outgoing track is discarded by promotion, so its source
+        // frames consumed during the overlap phase must NOT be applied to
+        // the promoted incoming track. `promote_crossfade_track` already
+        // set the incoming track's `render_frame = incoming_frame_offset`;
+        // only the post-overlap `rem_consumed` should advance it further.
+        // Without this reset, `advance_render_frame(src_frames_advanced)`
+        // in the caller would skip `out_consumed` frames of the incoming
+        // track, producing an audible click at the transition seam.
+        src_frames_advanced = 0;
+        promoted = true;
+    }
+
+    // If there are remaining frames in the callback after the overlap,
+    // render them from the promoted (or still-current) track.
+    if rendered_output_frames < output_frames {
+        let remaining_buf = &mut output[rendered_output_frames * device_channels..];
+
+        // If the overlap completed and we promoted, the current track is now
+        // the promoted incoming track at its offset
+        // (`render_frame = incoming_frame_offset`), so `track.render_frame`
+        // is the correct start frame.
+        // If the overlap did not complete (incoming exhausted early), or if
+        // the overlap completed but promotion was suppressed because the user
+        // is pausing, the current track is still the outgoing track and
+        // `track.render_frame` has NOT been advanced by the caller yet — we
+        // must offset it by the outgoing frames already consumed during the
+        // overlap phase to avoid re-reading the same source segment.
+        let track = playback.current_track.as_ref().unwrap();
+        let current_render_frame = if promoted {
+            track.render_frame
+        } else {
+            track.render_frame + outgoing_frames_consumed
+        };
+
+        let (rem_rendered, rem_consumed) = mix_stem_resampled(
+            remaining_buf,
+            &track.original_audio,
+            current_render_frame,
+            master,
+            device_sample_rate,
+            device_channels,
+            Some(outgoing_resampler_cache),
+        );
+
+        // `mix_stem_resampled` returns interleaved samples (frames × channels);
+        // convert to frames to match the unit of `rendered_output_frames`.
+        // Without this division the caller would multiply by `device_channels`
+        // again, inflating the rendered total and causing the EQ processor,
+        // peak accumulator, and CPAL output to read past valid data.
+        rendered_output_frames += rem_rendered / device_channels;
+        src_frames_advanced += rem_consumed;
+    }
+
+    Some((rendered_output_frames, src_frames_advanced))
 }
 
 /// Mix a single audio source into the output buffer with sample-rate conversion
@@ -1109,6 +1536,10 @@ where
     // Cached rubato resamplers for sample-rate conversion. Resamplers maintain
     // internal state so they must be reused across consecutive callbacks.
     let mut resampler_cache = ResamplerCache::new();
+    // Crossfade mixes two independent sources; each needs its own rubato
+    // filter state. Sharing one cache between outgoing and incoming would
+    // corrupt delay lines when rates differ.
+    let mut crossfade_incoming_resampler_cache = ResamplerCache::new();
     // EQ processor owned by the callback. A new stream constructs a new
     // processor; the controller publishes an `EqConfig` snapshot (enabled +
     // gains + monotonically increasing revision) and the callback compares
@@ -1117,6 +1548,11 @@ where
     // #87: Peak accumulator owned by the output closure. A device restart
     // starts a fresh partial window while retaining the process-wide ring.
     let mut peak_accumulator = PeakAccumulator::new();
+    // Pre-allocated crossfade scratch buffer for rendering incoming
+    // track samples during the overlap phase. Allocated once at stream
+    // construction — never resized in the callback. Sized for
+    // CROSSFADE_SCRATCH_FRAMES * output_channels samples.
+    let mut crossfade_scratch = vec![0.0f32; CROSSFADE_SCRATCH_FRAMES * channels];
 
     let stream = device
         .build_output_stream(
@@ -1147,9 +1583,11 @@ where
                         &mut controller,
                         &mut scratch,
                         &mut stem_scratch,
+                        &mut crossfade_scratch,
                         sample_rate,
                         channels,
                         &mut resampler_cache,
+                        &mut crossfade_incoming_resampler_cache,
                         &mut eq_processor,
                         &mut peak_accumulator,
                         &peak_ring,
@@ -1206,6 +1644,9 @@ fn start_output_thread(
             "failed to read default audio output config: {e}"
         ))
     })?;
+    // Clone playback so we can cancel active crossfade after the stream
+    // is built (the stream closure takes ownership of the original Arc).
+    let playback_for_cancel = playback.clone();
     let stream = match config.sample_format() {
         SampleFormat::F32 => build_output_stream::<f32>(
             &device,
@@ -1240,6 +1681,16 @@ fn start_output_thread(
             )));
         }
     };
+
+    // Device recreation cancels any active crossfade. The output
+    // format generation has already been incremented in
+    // `build_output_stream`, which invalidates stale preparations through
+    // the generation rule. We also cancel the active crossfade here
+    // because it holds a prepared track captured at the old generation and
+    // would produce audio at the wrong format if allowed to continue.
+    if let Ok(mut controller) = playback_for_cancel.try_lock() {
+        controller.cancel_crossfade_and_prepared();
+    }
 
     stream.play().map_err(|e| {
         PlaybackError::AudioOutputUnavailable(format!("failed to start audio output stream: {e}"))
@@ -1331,6 +1782,7 @@ mod tests {
     use super::{forward_rendered_audio_to_airplay, render_output_buffer, write_output_samples};
     use crate::airplay_stream::AirPlayAudioTap;
     use crate::audio::eq::EqProcessor;
+    use crate::audio::playback::PlaybackController;
 
     #[test]
     fn write_output_samples_preserves_rendered_audio_when_not_suppressed() {
@@ -1377,6 +1829,8 @@ mod tests {
 
         let mut output = vec![0.0_f32; frames * channels];
         let mut resampler_cache = super::ResamplerCache::new();
+        let mut crossfade_incoming_rc = super::ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * channels];
         let mut eq = EqProcessor::new(sample_rate, channels);
         let ring = crate::audio::peaks::PeakRing::new();
         let mut peak_accumulator = crate::audio::peaks::PeakAccumulator::new();
@@ -1384,9 +1838,11 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut crossfade_scratch,
             sample_rate,
             channels,
             &mut resampler_cache,
+            &mut crossfade_incoming_rc,
             &mut eq,
             &mut peak_accumulator,
             &ring,
@@ -1468,6 +1924,8 @@ mod tests {
         let device_channels = 2;
         let mut output = vec![0.0f32; 512 * device_channels];
         let mut rc = super::ResamplerCache::new();
+        let mut crossfade_incoming_rc = super::ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
         let mut eq = crate::audio::eq::EqProcessor::new(sample_rate, device_channels);
         let ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
@@ -1475,9 +1933,11 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut crossfade_scratch,
             sample_rate,
             device_channels,
             &mut rc,
+            &mut crossfade_incoming_rc,
             &mut eq,
             &mut peak_acc,
             &ring,
@@ -1495,9 +1955,11 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut crossfade_scratch,
             sample_rate,
             device_channels,
             &mut rc,
+            &mut crossfade_incoming_rc,
             &mut eq,
             &mut peak_acc,
             &ring,
@@ -1515,9 +1977,11 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut crossfade_scratch,
             sample_rate,
             device_channels,
             &mut rc,
+            &mut crossfade_incoming_rc,
             &mut eq,
             &mut peak_acc,
             &ring,
@@ -1744,6 +2208,8 @@ mod tests {
         let device_channels = 2;
         let mut output = vec![0.0f32; 512 * device_channels];
         let mut rc = super::ResamplerCache::new();
+        let mut crossfade_incoming_rc = super::ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
         let mut eq = crate::audio::eq::EqProcessor::new(sample_rate, device_channels);
         let ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
@@ -1751,9 +2217,11 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut crossfade_scratch,
             sample_rate,
             device_channels,
             &mut rc,
+            &mut crossfade_incoming_rc,
             &mut eq,
             &mut peak_acc,
             &ring,
@@ -1824,15 +2292,19 @@ mod tests {
         // swap should fill the remaining 412 frames from track B.
         let mut output = vec![0.0f32; 512 * device_channels];
         let mut rc = super::ResamplerCache::new();
+        let mut crossfade_incoming_rc = super::ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
         let ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
         let rendered = render_output_buffer(
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut crossfade_scratch,
             sample_rate,
             device_channels,
             &mut rc,
+            &mut crossfade_incoming_rc,
             &mut EqProcessor::new(sample_rate, device_channels),
             &mut peak_acc,
             &ring,
@@ -1933,15 +2405,19 @@ mod tests {
         // gapless swap is suppressed by the pause.
         let mut output = vec![0.0f32; 512 * device_channels];
         let mut rc = super::ResamplerCache::new();
+        let mut crossfade_incoming_rc = super::ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
         let ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
         let _rendered = render_output_buffer(
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut crossfade_scratch,
             sample_rate,
             device_channels,
             &mut rc,
+            &mut crossfade_incoming_rc,
             &mut EqProcessor::new(sample_rate, device_channels),
             &mut peak_acc,
             &ring,
@@ -2035,15 +2511,19 @@ mod tests {
         controller.pause(0).unwrap();
         let mut output = vec![0.0f32; 512 * device_channels];
         let mut rc = super::ResamplerCache::new();
+        let mut crossfade_incoming_rc = super::ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
         let ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
         let _rendered = render_output_buffer(
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut crossfade_scratch,
             sample_rate,
             device_channels,
             &mut rc,
+            &mut crossfade_incoming_rc,
             &mut EqProcessor::new(sample_rate, device_channels),
             &mut peak_acc,
             &ring,
@@ -2090,9 +2570,11 @@ mod tests {
             &mut controller,
             &mut output2,
             &mut Vec::new(),
+            &mut crossfade_scratch,
             sample_rate,
             device_channels,
             &mut rc,
+            &mut crossfade_incoming_rc,
             &mut EqProcessor::new(sample_rate, device_channels),
             &mut peak_acc,
             &ring,
@@ -2208,15 +2690,19 @@ mod tests {
         // by the fade-out gain); the remaining 462 frames must be silence.
         let mut output = vec![0.0f32; 512 * device_channels];
         let mut rc = super::ResamplerCache::new();
+        let mut crossfade_incoming_rc = super::ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
         let ring = crate::audio::peaks::PeakRing::new();
         let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
         let _rendered = render_output_buffer(
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut crossfade_scratch,
             sample_rate,
             device_channels,
             &mut rc,
+            &mut crossfade_incoming_rc,
             &mut EqProcessor::new(sample_rate, device_channels),
             &mut peak_acc,
             &ring,
@@ -2238,6 +2724,403 @@ mod tests {
             controller.current_track.as_ref().unwrap().song_id,
             "song-a",
             "no gapless swap during pause"
+        );
+    }
+
+    // ── Crossfade integration tests ──────────────────────────────────────
+
+    /// Helper: build a controller with track A playing and a prepared track B,
+    /// with crossfade enabled. Both tracks are plain decoded audio (no stems,
+    /// no streaming) so they are eligible for crossfade.
+    fn build_crossfade_controller(
+        device_sample_rate: u32,
+        device_channels: usize,
+    ) -> (
+        PlaybackController,
+        crate::audio::output_format::OutputFormatSnapshot,
+    ) {
+        use crate::audio::decode::DecodedAudio;
+        use crate::audio::output_format::OutputFormatSnapshot;
+        use crate::audio::playback::{PreloadRequestGeneration, PreparedTrack};
+
+        // Track A: 10 seconds of 0.5 amplitude at the device sample rate.
+        let track_a_samples = vec![0.5_f32; 10 * device_sample_rate as usize * device_channels];
+        let mut controller = PlaybackController::default();
+        controller.start_track(
+            "song-a".to_owned(),
+            DecodedAudio {
+                sample_rate: device_sample_rate,
+                channels: device_channels,
+                duration_ms: 10_000,
+                samples: track_a_samples,
+            },
+            0,
+        );
+
+        // Enable crossfade with a 1-second overlap.
+        let _ = controller.set_crossfade_enabled(true);
+        let _ = controller.set_crossfade_duration(1_000);
+
+        // Prepare track B: 10 seconds of 0.9 amplitude.
+        let track_b_samples = vec![0.9_f32; 10 * device_sample_rate as usize * device_channels];
+        let fmt = OutputFormatSnapshot {
+            sample_rate: device_sample_rate,
+            channels: device_channels as u16,
+            generation: 0,
+        };
+        let prepared = PreparedTrack {
+            preload_request_generation: PreloadRequestGeneration(0),
+            preload_generation: fmt.generation,
+            song_id: "song-b".to_owned(),
+            output_format: fmt,
+            audio: DecodedAudio {
+                sample_rate: device_sample_rate,
+                channels: device_channels,
+                duration_ms: 10_000,
+                samples: track_b_samples,
+            },
+        };
+        assert!(controller.install_prepared_track(prepared, fmt).is_ok());
+
+        (controller, fmt)
+    }
+
+    /// Crossfade must start when the outgoing track's remaining frames fall
+    /// within the configured overlap duration. The active crossfade must be
+    /// initialized with the correct total frame count.
+    #[test]
+    fn crossfade_starts_at_overlap_boundary_with_full_outgoing() {
+        let device_sample_rate: u32 = 44_100;
+        let device_channels: usize = 2;
+
+        let (mut controller, _fmt) =
+            build_crossfade_controller(device_sample_rate, device_channels);
+
+        // Advance to 9 seconds — 1 second remaining, exactly the overlap.
+        controller.seek(9_000, 0).unwrap();
+
+        let mut output = vec![0.0f32; 256 * device_channels];
+        let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        let rendered = super::render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            &mut crossfade_scratch,
+            device_sample_rate,
+            device_channels,
+            &mut rc,
+            &mut rc_in,
+            &mut EqProcessor::new(device_sample_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        assert!(rendered > 0, "crossfade must render audio");
+        assert!(
+            controller.active_crossfade.is_some(),
+            "active crossfade must be started"
+        );
+
+        // The overlap must be 1 second = 44100 device frames.
+        let active = controller.active_crossfade.as_ref().unwrap();
+        assert_eq!(
+            active.total_frames, device_sample_rate as u64,
+            "overlap must be exactly 1 second of device frames"
+        );
+
+        // Output must be non-zero — the seek fade ramps up but the
+        // crossfade mix is producing audio.
+        let max_sample = output.iter().fold(0.0f32, |a, &b| a.max(b.abs()));
+        assert!(
+            max_sample > 0.0,
+            "crossfade must produce non-zero audio, max {max_sample}"
+        );
+    }
+
+    /// Crossfade must NOT start when the outgoing track has more remaining
+    /// frames than the configured overlap. Without this gate the crossfade
+    /// would start as soon as the next track is preloaded, cutting the
+    /// current song short.
+    #[test]
+    fn crossfade_does_not_start_when_far_from_end() {
+        let device_sample_rate: u32 = 44_100;
+        let device_channels: usize = 2;
+
+        let (mut controller, _fmt) =
+            build_crossfade_controller(device_sample_rate, device_channels);
+
+        // Advance to 1 second — 9 seconds remaining, well outside the 1s overlap.
+        controller.seek(1_000, 0).unwrap();
+
+        let mut output = vec![0.0f32; 256 * device_channels];
+        let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        let _ = super::render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            &mut crossfade_scratch,
+            device_sample_rate,
+            device_channels,
+            &mut rc,
+            &mut rc_in,
+            &mut EqProcessor::new(device_sample_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        assert!(
+            controller.active_crossfade.is_none(),
+            "crossfade must not start when remaining > overlap duration"
+        );
+        assert!(
+            controller.prepared_track.is_some(),
+            "prepared track must not be consumed when crossfade is not started"
+        );
+    }
+
+    /// Crossfade must NOT start when the outgoing track has more remaining
+    /// frames than the configured overlap, even with mismatched source/device
+    /// rates. This is a regression test for the double-conversion bug where
+    /// remaining frames were over-scaled.
+    #[test]
+    fn crossfade_does_not_start_with_mismatched_rates() {
+        let device_sample_rate: u32 = 48_000;
+        let device_channels: usize = 2;
+
+        let (mut controller, _fmt) =
+            build_crossfade_controller(device_sample_rate, device_channels);
+
+        // Track A is 10s at 44100 Hz, device is 48000 Hz.
+        // At 1s into the song, ~9s remaining = ~432000 device frames.
+        // Configured overlap is 1s = 48000 device frames.
+        // 432000 > 48000, so crossfade must not start.
+        controller.seek(1_000, 0).unwrap();
+
+        let mut output = vec![0.0f32; 256 * device_channels];
+        let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        let _ = super::render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            &mut crossfade_scratch,
+            device_sample_rate,
+            device_channels,
+            &mut rc,
+            &mut rc_in,
+            &mut EqProcessor::new(device_sample_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        assert!(
+            controller.active_crossfade.is_none(),
+            "crossfade must not start with mismatched rates when far from end"
+        );
+    }
+
+    /// Crossfade must promote the incoming track when the overlap completes.
+    #[test]
+    fn crossfade_promotes_incoming_track_on_completion() {
+        let device_sample_rate: u32 = 44_100;
+        let device_channels: usize = 2;
+
+        let (mut controller, _fmt) =
+            build_crossfade_controller(device_sample_rate, device_channels);
+
+        // Advance to 9 seconds — 1 second remaining.
+        controller.seek(9_000, 0).unwrap();
+
+        let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+
+        // Render the entire 1-second overlap (44100 frames) in 512-frame
+        // callbacks.
+        for _ in 0..100 {
+            let mut output = vec![0.0f32; 512 * device_channels];
+            let rendered = super::render_output_buffer(
+                &mut controller,
+                &mut output,
+                &mut Vec::new(),
+                &mut crossfade_scratch,
+                device_sample_rate,
+                device_channels,
+                &mut rc,
+                &mut rc_in,
+                &mut EqProcessor::new(device_sample_rate, device_channels),
+                &mut peak_acc,
+                &ring,
+            );
+            if rendered == 0 {
+                break;
+            }
+        }
+
+        // The crossfade must have completed and promoted track B.
+        assert!(
+            controller.active_crossfade.is_none(),
+            "active crossfade must be cleared after completion"
+        );
+        assert_eq!(
+            controller.current_track.as_ref().unwrap().song_id,
+            "song-b",
+            "incoming track must be promoted after crossfade"
+        );
+    }
+
+    /// Crossfade must be cancelled when the user seeks. The prepared track
+    /// must be restored so it can be used for a subsequent gapless or
+    /// crossfade transition.
+    #[test]
+    fn crossfade_is_cancelled_by_seek() {
+        let device_sample_rate: u32 = 44_100;
+        let device_channels: usize = 2;
+
+        let (mut controller, _fmt) =
+            build_crossfade_controller(device_sample_rate, device_channels);
+
+        // Advance to 9 seconds — start the crossfade.
+        controller.seek(9 * 1000, 0).unwrap();
+
+        let mut output = vec![0.0f32; 256 * device_channels];
+        let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        super::render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            &mut crossfade_scratch,
+            device_sample_rate,
+            device_channels,
+            &mut rc,
+            &mut rc_in,
+            &mut EqProcessor::new(device_sample_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        assert!(
+            controller.active_crossfade.is_some(),
+            "crossfade must be active before seek"
+        );
+
+        // Seek — this must cancel the crossfade.
+        controller.seek(0, 0).unwrap();
+
+        assert!(
+            controller.active_crossfade.is_none(),
+            "active crossfade must be cancelled by seek"
+        );
+    }
+
+    /// Crossfade must not start for streaming tracks — they use gapless.
+    #[test]
+    fn crossfade_skips_streaming_tracks() {
+        use crate::audio::streaming::{self, StreamingTrack};
+
+        let device_sample_rate: u32 = 44_100;
+        let device_channels: usize = 2;
+
+        let (mut prod, consumer) =
+            streaming::create_stream_pair(device_sample_rate, device_channels);
+        let filler = vec![0.5_f32; device_sample_rate as usize * device_channels];
+        prod.push_samples(&filler);
+
+        let mut controller = PlaybackController::default();
+        controller.start_track_streaming(
+            "stream-song".to_owned(),
+            device_sample_rate,
+            device_channels,
+            10_000,
+            StreamingTrack::Single { consumer },
+            0,
+        );
+        let _ = controller.set_crossfade_enabled(true);
+        let _ = controller.set_crossfade_duration(1_000);
+
+        // No prepared track — crossfade cannot start.
+        let mut output = vec![0.0f32; 256 * device_channels];
+        let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        super::render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            &mut crossfade_scratch,
+            device_sample_rate,
+            device_channels,
+            &mut rc,
+            &mut rc_in,
+            &mut EqProcessor::new(device_sample_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        assert!(
+            controller.active_crossfade.is_none(),
+            "crossfade must not start for streaming tracks"
+        );
+    }
+
+    /// Crossfade must not start when disabled, even if a prepared track
+    /// exists and the outgoing track is near EOF.
+    #[test]
+    fn crossfade_disabled_does_not_start() {
+        let device_sample_rate: u32 = 44_100;
+        let device_channels: usize = 2;
+
+        let (mut controller, _fmt) =
+            build_crossfade_controller(device_sample_rate, device_channels);
+
+        // Disable crossfade.
+        let _ = controller.set_crossfade_enabled(false);
+
+        // Advance to 9 seconds.
+        controller.seek(9 * 1000, 0).unwrap();
+
+        let mut output = vec![0.0f32; 256 * device_channels];
+        let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        super::render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            &mut crossfade_scratch,
+            device_sample_rate,
+            device_channels,
+            &mut rc,
+            &mut rc_in,
+            &mut EqProcessor::new(device_sample_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        assert!(
+            controller.active_crossfade.is_none(),
+            "crossfade must not start when disabled"
         );
     }
 }
