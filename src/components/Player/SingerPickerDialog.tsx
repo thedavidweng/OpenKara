@@ -41,7 +41,7 @@ export function SingerPickerDialog({
       >
         <h3
           id="singer-picker-title"
-          className="mb-3 text-[14px] font-semibold text-white"
+          className="mb-3 text-[14px] font-semibold text-[var(--color-text)]"
         >
           {t("rotation.assignSinger")}
         </h3>
@@ -54,8 +54,8 @@ export function SingerPickerDialog({
               onClick={() => onSelect(name)}
               className={`rounded-md px-3 py-2 text-left text-[13px] transition-colors ${
                 name === currentSinger
-                  ? "bg-[var(--color-accent)] text-white"
-                  : "text-[var(--color-text)] hover:bg-[var(--color-hover)] hover:text-white"
+                  ? "bg-[var(--color-accent)] text-[var(--color-on-accent)]"
+                  : "text-[var(--color-text)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
               }`}
             >
               {name}
@@ -76,7 +76,7 @@ export function SingerPickerDialog({
         <button
           type="button"
           onClick={onCancel}
-          className="mt-2 w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-white"
+          className="mt-2 w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
         >
           {t("common.cancel")}
         </button>

@@ -3,6 +3,7 @@ use crate::audio::eq::validate_gains_db;
 use crate::commands::error::{internal_error, invalid_playback_state, CommandResult};
 use crate::config::{
     self, AppConfig, ExecutionProviderPreference, LibrarySortMode, ModelVariant, StemMode,
+    ThemePreference,
 };
 use crate::AppState;
 use serde::Serialize;
@@ -23,6 +24,7 @@ pub struct AppSettings {
     pub eq_enabled: bool,
     pub eq_gains_db: [f32; 5],
     pub library_sort_mode: String,
+    pub theme_preference: String,
 }
 
 fn settings_from_config(config: &AppConfig) -> AppSettings {
@@ -46,6 +48,7 @@ fn settings_from_config(config: &AppConfig) -> AppSettings {
         eq_enabled: config.effective_eq_enabled(),
         eq_gains_db: config.effective_eq_gains_db(),
         library_sort_mode: sort_mode.as_str().to_owned(),
+        theme_preference: config.effective_theme_preference().as_str().to_owned(),
     }
 }
 
@@ -358,6 +361,26 @@ pub fn set_library_sort_mode(
         .map_err(|e| internal_error(format!("failed to load config: {e}")))?
         .unwrap_or_default();
     config.library_sort_mode = Some(mode);
+    config::save_config(&app_data_dir, &config)
+        .map_err(|e| internal_error(format!("failed to save config: {e}")))?;
+    Ok(settings_from_config(&config))
+}
+
+#[tauri::command]
+pub fn set_theme_preference(
+    app_handle: AppHandle,
+    preference: String,
+) -> CommandResult<AppSettings> {
+    let theme = ThemePreference::parse(&preference)
+        .ok_or_else(|| internal_error(format!("invalid theme preference: {preference}")))?;
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| internal_error(format!("failed to get app data dir: {e}")))?;
+    let mut config = config::load_config(&app_data_dir)
+        .map_err(|e| internal_error(format!("failed to load config: {e}")))?
+        .unwrap_or_default();
+    config.theme_preference = Some(theme);
     config::save_config(&app_data_dir, &config)
         .map_err(|e| internal_error(format!("failed to save config: {e}")))?;
     Ok(settings_from_config(&config))
@@ -884,5 +907,27 @@ mod tests {
             ..AppConfig::default()
         });
         assert_eq!(settings.library_sort_mode, "artist_asc");
+    }
+
+    #[test]
+    fn settings_snapshot_defaults_theme_preference_to_dark() {
+        let settings = settings_from_config(&AppConfig::default());
+        assert_eq!(settings.theme_preference, "dark");
+    }
+
+    #[test]
+    fn settings_snapshot_reflects_persisted_theme_preference() {
+        for (preference, expected) in [
+            (ThemePreference::System, "system"),
+            (ThemePreference::Light, "light"),
+            (ThemePreference::Dark, "dark"),
+        ] {
+            let config = AppConfig {
+                theme_preference: Some(preference),
+                ..AppConfig::default()
+            };
+            let settings = settings_from_config(&config);
+            assert_eq!(settings.theme_preference, expected);
+        }
     }
 }

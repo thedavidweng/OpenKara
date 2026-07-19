@@ -30,6 +30,7 @@ describe("app runtime settings hydration", () => {
       hide_batch_separate: true,
       cover_art_backdrop: true,
       lyrics_font_step: 1,
+      theme_preference: "dark",
     });
     const hydrateAppSettings = vi.fn();
     const changeLanguage = vi.fn().mockResolvedValue(undefined);
@@ -49,6 +50,7 @@ describe("app runtime settings hydration", () => {
       hide_batch_separate: true,
       cover_art_backdrop: true,
       lyrics_font_step: 1,
+      theme_preference: "dark",
     });
     expect(changeLanguage).toHaveBeenCalledWith("zh-CN");
     expect(detectFallbackLanguage).not.toHaveBeenCalled();
@@ -64,6 +66,7 @@ describe("app runtime settings hydration", () => {
       lyrics_font_step: 0,
       execution_provider: "xnnpack",
       available_execution_providers: ["cpu", "xnnpack"],
+      theme_preference: "dark",
     });
     const hydrateAppSettings = vi.fn();
     const changeLanguage = vi.fn().mockResolvedValue(undefined);

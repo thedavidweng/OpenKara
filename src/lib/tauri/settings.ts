@@ -6,6 +6,7 @@ import type {
   ModelBootstrapStatusSnapshot,
   ModelStatusSnapshot,
   RuntimeBootstrapStatusSnapshot,
+  ThemePreference,
   WindowShellStateSnapshot,
 } from "@/types/ipc";
 
@@ -87,6 +88,12 @@ export function setLibrarySortMode(
   mode: LibrarySortMode,
 ): Promise<AppSettings> {
   return invoke<AppSettings>("set_library_sort_mode", { mode });
+}
+
+export function setThemePreference(
+  preference: ThemePreference,
+): Promise<AppSettings> {
+  return invoke<AppSettings>("set_theme_preference", { preference });
 }
 
 export function restartApp(): Promise<void> {

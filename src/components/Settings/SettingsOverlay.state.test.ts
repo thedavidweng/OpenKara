@@ -34,6 +34,7 @@ vi.mock("@/stores/settings-store", () => ({
         eqEnabled: false,
         eqGainsDb: [0, 0, 0, 0, 0],
         librarySortMode: "recently_imported",
+        themePreference: "dark",
       }),
     }),
   },
@@ -85,6 +86,7 @@ function createDependencies(): SettingsOverlayControllerDependencies {
       setStemMode: vi.fn(),
       setEqEnabled: vi.fn(),
       setEqGains: vi.fn(),
+      setThemePreference: vi.fn(),
     },
     notifyError: vi.fn(),
     openDirectory: vi.fn(),
@@ -120,12 +122,14 @@ function createDependencies(): SettingsOverlayControllerDependencies {
           eqEnabled: false,
           eqGainsDb: [0, 0, 0, 0, 0],
           librarySortMode: "recently_imported",
+          themePreference: "dark",
         }),
       ),
       hydrateAppSettings: vi.fn(),
       patchAppSettings: vi.fn(),
       setEqEnabled: vi.fn(),
       setEqGains: vi.fn(),
+      setThemePreference: vi.fn(),
     },
   };
 }
@@ -148,6 +152,7 @@ function createHarness(overrides?: {
           eqEnabled: false,
           eqGainsDb: [0, 0, 0, 0, 0],
           librarySortMode: "recently_imported",
+          themePreference: "dark",
           ...overrides.initialSettings,
         }
       : undefined,
@@ -196,6 +201,7 @@ describe("createInitialSettingsOverlaySnapshot", () => {
         eqEnabled: false,
         eqGainsDb: [0, 0, 0, 0, 0],
         librarySortMode: "recently_imported",
+        themePreference: "dark",
       },
       meta: {
         isInitializing: true,
@@ -223,6 +229,7 @@ describe("createInitialSettingsOverlaySnapshot", () => {
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
       librarySortMode: "recently_imported",
+      themePreference: "dark",
     });
 
     expect(snapshot.state.language).toBe("en");
@@ -245,6 +252,7 @@ describe("createInitialSettingsOverlaySnapshot", () => {
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
       librarySortMode: "recently_imported",
+      themePreference: "dark",
     });
 
     expect(snapshot.state.language).toBe("ko");
@@ -283,6 +291,7 @@ describe("createSettingsOverlayActions - initialize", () => {
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
       library_sort_mode: "recently_imported",
+      theme_preference: "dark",
     });
     vi.mocked(harness.dependencies.api.getModelStatus)
       .mockResolvedValueOnce({
@@ -324,6 +333,7 @@ describe("createSettingsOverlayActions - initialize", () => {
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
       library_sort_mode: "recently_imported",
+      theme_preference: "dark",
     });
     expect(harness.getSnapshot().state.libraryPath).toBe("/music");
     expect(harness.getSnapshot().state.stemMode).toBe("two_stem");
@@ -351,6 +361,7 @@ describe("createSettingsOverlayActions - initialize", () => {
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
       library_sort_mode: "recently_imported",
+      theme_preference: "dark",
     });
     vi.mocked(harness.dependencies.api.getModelStatus)
       .mockResolvedValueOnce({

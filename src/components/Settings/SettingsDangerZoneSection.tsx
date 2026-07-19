@@ -25,7 +25,7 @@ function DangerActionRow({
   return (
     <div className="flex items-center justify-between gap-4">
       <div>
-        <p className="text-[13px] text-white">{title}</p>
+        <p className="text-[13px] text-[var(--color-text)]">{title}</p>
         <p className="text-[11px] text-[var(--color-text-dim)]">
           {description}
         </p>

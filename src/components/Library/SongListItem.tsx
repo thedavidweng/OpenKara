@@ -169,7 +169,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
       onContextMenu={handleContextMenu}
       className={`group relative flex select-none items-center gap-2.5 rounded-[14px] border px-3 py-2.5 transition-colors duration-150 ${
         isSelected
-          ? "border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-white"
+          ? "border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-[var(--color-text)]"
           : "border-transparent text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
       }`}
       data-native-overlay-surface="song-row"
@@ -194,7 +194,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
           <div className="flex min-w-0 items-center gap-2 overflow-hidden">
             {isCurrentPlaying ? (
               <div className="flex w-3 shrink-0 justify-center">
-                <span className="inline-flex h-2 w-2 rounded-full bg-white" />
+                <span className="inline-flex h-2 w-2 rounded-full bg-[var(--color-accent)]" />
               </div>
             ) : isCurrentLoading ? (
               <div className="flex w-3 shrink-0 justify-center">
@@ -210,13 +210,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
 
           <div className="flex shrink-0 items-center gap-2">
             {mediaGBadgeLabel && (
-              <span
-                className={`inline-flex h-[14px] items-center justify-center rounded px-1.5 text-[9px] font-semibold leading-none tracking-[0.08em] ${
-                  isSelected
-                    ? "bg-white/20 text-white/80"
-                    : "bg-[var(--sidebar-row-overlay-bg)] text-[var(--color-text-dim)]"
-                }`}
-              >
+              <span className="inline-flex h-[14px] items-center justify-center rounded bg-[var(--sidebar-row-overlay-bg)] px-1.5 text-[9px] font-semibold leading-none tracking-[0.08em] text-[var(--color-text-dim)]">
                 {mediaGBadgeLabel}
               </span>
             )}
@@ -225,7 +219,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
                 onClick={handleSeparate}
                 className={`rounded border px-1.5 py-0.5 text-[10px] ${
                   isSelected
-                    ? "border-[var(--sidebar-control-border)] bg-[var(--sidebar-control-bg)] text-white hover:bg-[var(--sidebar-row-overlay-bg)]"
+                    ? "border-[var(--sidebar-control-border)] bg-[var(--sidebar-control-bg)] text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
                     : "border-[var(--sidebar-control-border)] bg-[var(--sidebar-control-bg)] text-[var(--color-text-dim)] hover:bg-[var(--sidebar-row-overlay-bg)]"
                 }`}
                 data-native-overlay-surface="song-action"
@@ -234,26 +228,18 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
               </button>
             )}
             {sepState === "running" && (
-              <div
-                className={`flex items-center gap-1 text-[11px] ${isSelected ? "text-white" : "text-[var(--color-text-dim)]"}`}
-              >
+              <div className="flex items-center gap-1 text-[11px] text-[var(--color-text-dim)]">
                 <Loader2 size={10} className="animate-spin" />
                 <span>{separationStatus?.percent ?? 0}%</span>
               </div>
             )}
             {sepState === "completed" && (
-              <span
-                className={`flex items-center gap-1.5 text-[11px] ${isSelected ? "text-white/70" : "text-[var(--color-text-dim)]"}`}
-              >
+              <span className="flex items-center gap-1.5 text-[11px] text-[var(--color-text-dim)]">
                 <span
                   className={`inline-flex h-[14px] min-w-[14px] items-center justify-center rounded text-[9px] font-semibold leading-none ${
                     separationStatus?.drums_path
-                      ? isSelected
-                        ? "bg-white/20 text-white/80"
-                        : "bg-[var(--sidebar-row-overlay-bg)] text-[var(--color-accent)]"
-                      : isSelected
-                        ? "bg-white/20 text-white/80"
-                        : "bg-[var(--sidebar-row-overlay-bg)] text-[var(--color-text-dim)]"
+                      ? "bg-[var(--sidebar-row-overlay-bg)] text-[var(--color-accent)]"
+                      : "bg-[var(--sidebar-row-overlay-bg)] text-[var(--color-text-dim)]"
                   }`}
                 >
                   {separationStatus?.drums_path ? "4" : "2"}
@@ -275,9 +261,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
                 sepState !== "running" &&
                 sepState !== "completed" &&
                 sepState !== "failed")) && (
-              <span
-                className={`text-[11px] ${isSelected ? "text-white/70" : "text-[var(--color-text-dim)]"}`}
-              >
+              <span className="text-[11px] text-[var(--color-text-dim)]">
                 {formatDuration(song.duration_ms)}
               </span>
             )}
@@ -311,11 +295,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
         )}
 
         <div className="flex pl-5">
-          <span
-            className={`truncate text-[12px] ${
-              isSelected ? "text-white/80" : "text-[var(--color-text-dim)]"
-            }`}
-          >
+          <span className="truncate text-[12px] text-[var(--color-text-dim)]">
             {song.artist || t("common.unknownArtist")}
           </span>
         </div>

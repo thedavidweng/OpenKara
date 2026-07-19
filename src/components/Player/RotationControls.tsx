@@ -71,7 +71,7 @@ function SingerTag({ name, isSelected, onSelect, onRemove }: SingerTagProps) {
     <span
       className={`flex items-center overflow-hidden rounded-full text-[11px] ${
         isSelected
-          ? "bg-[var(--color-accent)] text-white"
+          ? "bg-[var(--color-accent)] text-[var(--color-on-accent)]"
           : "bg-[var(--color-hover)] text-[var(--color-text)]"
       }`}
     >

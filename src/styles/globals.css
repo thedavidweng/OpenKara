@@ -5,23 +5,6 @@
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
     "PingFang SC", "Hiragino Sans", "Noto Sans CJK JP", "Noto Sans CJK SC",
     "Microsoft YaHei", "WenQuanYi Micro Hei", Ubuntu, sans-serif;
-  --color-surface: #121212;
-  --color-surface-muted: #171719;
-  --color-sidebar: #1c1c1e;
-  --color-toolbar: #1c1c1e;
-  --color-border: #2c2c2e;
-  --color-border-light: #38383a;
-  --color-hover: #2c2c2e;
-  --color-active: #3a3a3c;
-  --color-text: #d1d1d6;
-  --color-text-dim: #8e8e93;
-  --color-text-dimmer: #48484a;
-  --color-accent: #007aff;
-  --color-control-primary: #ebebf5;
-  --color-control-primary-foreground: #121212;
-  --color-destructive: #ff3b30;
-  --color-destructive-foreground: #f5f5f7;
-  --color-ghost-hover: rgba(255, 255, 255, 0.04);
   --panel-blur: 20px;
 }
 
@@ -51,31 +34,170 @@
     /* Main stage pocket radius — Spotify-like soft arc, no hairline frame. */
     --shell-content-radius: 12px;
     --sidebar-item-radius: 6px;
-    /* Unified chrome tokens (formerly split between “classic” vs native-only names). */
+  }
+
+  /*
+   * Theme siblings: dark and light share one monochrome *control* language
+   * (surfaces, type, primary fills). A single accent hue is reserved for
+   * recognition cues — selected choices, key library icons, links — so the
+   * UI stays calm without losing scannability. Destructive red stays the only
+   * other non-neutral semantic (Danger Zone).
+   *
+   * --color-control-primary = monochrome primary actions (play, CTAs)
+   * --color-accent          = restrained system blue for emphasis only
+   */
+  /* ── Dark theme tokens (default) ────────────────────────── */
+  :root,
+  :root[data-theme="dark"] {
+    --color-surface: #121212;
+    --color-surface-muted: #171719;
+    --color-sidebar: #1c1c1e;
+    --color-toolbar: #1c1c1e;
+    --color-border: #2c2c2e;
+    --color-border-light: #38383a;
+    --color-hover: #2c2c2e;
+    --color-active: #3a3a3c;
+    --color-text: #d1d1d6;
+    --color-text-dim: #8e8e93;
+    --color-text-dimmer: #48484a;
+    --color-control-primary: #ebebf5;
+    --color-control-primary-foreground: #121212;
+    /* Shared deep system blue — same hue in light and dark. */
+    --color-accent: #007aff;
+    --color-accent-hover: #0a84ff;
+    --color-destructive: #ff3b30;
+    --color-destructive-foreground: #f5f5f7;
+    --color-ghost-hover: rgba(255, 255, 255, 0.04);
+    /* Semantic tokens consumed by audited components. */
+    --color-on-accent: #ffffff;
+    --color-on-media: #ffffff;
+    --color-scrim: rgba(0, 0, 0, 0.5);
+    --color-lyrics-active: #ffffff;
+    --color-lyrics-past: rgba(255, 255, 255, 0.45);
+    --color-lyrics-future: rgba(255, 255, 255, 0.5);
+    --color-focus-ring: rgba(0, 122, 255, 0.55);
+    /* Neutral selection wash — no hue. */
+    --color-control-selected-bg: rgba(255, 255, 255, 0.1);
+    --color-control-selected-border: rgba(255, 255, 255, 0.16);
+    --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --shadow-dialog: 0 16px 48px rgba(0, 0, 0, 0.6);
+    --shadow-control-selected: 0 0 0 1px var(--color-control-selected-border);
+    --shadow-lyrics-hover:
+      0 2px 4px rgba(0, 0, 0, 0.55), 0 10px 36px rgba(0, 0, 0, 0.42),
+      0 22px 64px rgba(0, 0, 0, 0.28), 0 0 48px rgba(255, 255, 255, 0.14);
+    --shadow-lyrics-glow:
+      0 0 12px rgba(255, 255, 255, 0.5), 0 0 4px rgba(255, 255, 255, 0.4);
+    --shadow-lyrics-glow-strong:
+      0 0 20px rgba(255, 255, 255, 0.7), 0 0 8px rgba(255, 255, 255, 0.5);
+    /* Unified chrome tokens (formerly split between "classic" vs native-only names). */
     --sidebar-row-overlay-bg: rgba(255, 255, 255, 0.045);
-    --sidebar-row-selected-bg: color-mix(
-      in srgb,
-      var(--color-accent) 24%,
-      rgba(255, 255, 255, 0.03)
-    );
-    --sidebar-row-selected-border: color-mix(
-      in srgb,
-      var(--color-accent) 40%,
-      rgba(255, 255, 255, 0.12)
-    );
+    --sidebar-row-selected-bg: rgba(255, 255, 255, 0.1);
+    --sidebar-row-selected-border: rgba(255, 255, 255, 0.16);
     --sidebar-control-border: rgba(255, 255, 255, 0.08);
     --sidebar-control-bg: rgba(255, 255, 255, 0.045);
     --chrome-floating-bg: rgba(255, 255, 255, 0.09);
     --chrome-floating-border: rgba(255, 255, 255, 0.11);
     /*
      * Semantic scrollbar tokens — neutral gray dark-theme defaults shared by every
-     * platform. #96 overrides these per resolved theme. Components never use
-     * platform-specific literal scrollbar colors; descendants consume these vars.
+     * platform. Components never use platform-specific literal scrollbar colors;
+     * descendants consume these vars.
      */
     --scrollbar-thumb: #6e6e73;
     --scrollbar-thumb-hover: #8e8e93;
     --scrollbar-thumb-active: #aeaeb2;
     --scrollbar-track: transparent;
+  }
+
+  /* ── Light theme tokens ─────────────────────────────────── */
+  :root[data-theme="light"] {
+    /*
+     * Luminance invert of dark for surfaces/type/primary fills. Accent blue
+     * stays the same recognition hue as dark — not a second colorful skin.
+     */
+    --color-surface: #ffffff;
+    --color-surface-muted: #f8f8fa;
+    --color-sidebar: #f6f7f9;
+    --color-toolbar: #fbfbfd;
+    --color-border: #dedfe5;
+    --color-border-light: #d0d2da;
+    --color-hover: #eceef2;
+    --color-active: #e2e5eb;
+    --color-text: #1d1d1f;
+    --color-text-dim: #5f636b;
+    --color-text-dimmer: #7d818a;
+    --color-control-primary: #1d1d1f;
+    --color-control-primary-foreground: #ffffff;
+    /* Same deep blue as dark — not a brighter light-mode variant. */
+    --color-accent: #007aff;
+    --color-accent-hover: #0066d6;
+    --color-destructive: #d70015;
+    --color-destructive-foreground: #ffffff;
+    --color-ghost-hover: rgba(0, 0, 0, 0.055);
+    --color-on-accent: #ffffff;
+    --color-on-media: #ffffff;
+    --color-scrim: rgba(255, 255, 255, 0.76);
+    --color-lyrics-active: #16171a;
+    --color-lyrics-past: rgba(29, 29, 31, 0.42);
+    --color-lyrics-future: rgba(29, 29, 31, 0.48);
+    --color-focus-ring: rgba(0, 122, 255, 0.5);
+    --color-control-selected-bg: color-mix(
+      in srgb,
+      var(--color-text) 7%,
+      var(--color-surface)
+    );
+    --color-control-selected-border: color-mix(
+      in srgb,
+      var(--color-text) 14%,
+      var(--color-border)
+    );
+    --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.15);
+    --shadow-dialog: 0 16px 48px rgba(0, 0, 0, 0.2);
+    --shadow-control-selected: 0 0 0 1px var(--color-control-selected-border);
+    --shadow-lyrics-hover:
+      0 2px 4px rgba(29, 29, 31, 0.1), 0 10px 28px rgba(29, 29, 31, 0.08);
+    --shadow-lyrics-glow:
+      0 0 12px rgba(29, 29, 31, 0.12), 0 0 4px rgba(29, 29, 31, 0.08);
+    --shadow-lyrics-glow-strong:
+      0 0 20px rgba(29, 29, 31, 0.16), 0 0 8px rgba(29, 29, 31, 0.1);
+    --sidebar-row-overlay-bg: rgba(0, 0, 0, 0.04);
+    --sidebar-row-selected-bg: color-mix(
+      in srgb,
+      var(--color-text) 7%,
+      var(--color-surface)
+    );
+    --sidebar-row-selected-border: color-mix(
+      in srgb,
+      var(--color-text) 14%,
+      rgba(0, 0, 0, 0.08)
+    );
+    --sidebar-control-border: rgba(29, 29, 31, 0.12);
+    --sidebar-control-bg: rgba(29, 29, 31, 0.035);
+    --chrome-floating-bg: rgba(255, 255, 255, 0.86);
+    --chrome-floating-border: rgba(29, 29, 31, 0.1);
+    --scrollbar-thumb: #aeb1b9;
+    --scrollbar-thumb-hover: #858a94;
+    --scrollbar-thumb-active: #666b74;
+    --scrollbar-track: transparent;
+  }
+
+  /*
+   * Audience/fullscreen presentation stays explicitly dark regardless of the
+   * primary theme preference. Tauri's native application theme is process-wide
+   * on some platforms, so the CSS marker is the authoritative isolation.
+   */
+  :root[data-presentation-mode="audience"],
+  :root[data-presentation-mode="audience"] body {
+    color-scheme: dark;
+    /* Audience stage tokens remain the current dark/black set. */
+    --color-surface: #000000;
+    --color-sidebar: #000000;
+    --color-toolbar: #000000;
+    --color-text: #ffffff;
+    --color-text-dim: rgba(255, 255, 255, 0.6);
+    --color-text-dimmer: rgba(255, 255, 255, 0.4);
+    --color-border: rgba(255, 255, 255, 0.1);
+    --color-border-light: rgba(255, 255, 255, 0.15);
+    --color-on-media: #ffffff;
   }
 
   /*
@@ -89,13 +211,18 @@
     color-scheme: dark;
   }
 
+  :root[data-theme="light"] [data-window-chrome-platform="mac"] {
+    color-scheme: light;
+  }
+
   [data-window-chrome-platform="mac"],
   [data-window-chrome-platform="mac"] * {
     scrollbar-color: auto;
     scrollbar-width: auto;
   }
 
-  [data-window-chrome-platform="desktop"] {
+  /* ── Desktop (Windows/Linux) dark overrides ─────────────── */
+  :root[data-theme="dark"] [data-window-chrome-platform="desktop"] {
     --font-sans:
       "Segoe UI Variable Text", "Segoe UI", "Noto Sans", "Liberation Sans",
       "PingFang SC", "Microsoft YaHei", Ubuntu, sans-serif;
@@ -110,12 +237,40 @@
     --color-text: #d9dde3;
     --color-text-dim: #9ea6b0;
     --color-text-dimmer: #6f7780;
-    --color-accent: #3f8cff;
     --color-control-primary: #eef2f7;
     --color-control-primary-foreground: #17191d;
+    --color-accent: #007aff;
+    --color-accent-hover: #0a84ff;
+    --color-on-accent: #ffffff;
     --color-ghost-hover: rgba(255, 255, 255, 0.06);
     --panel-blur: 12px;
     color-scheme: dark;
+  }
+
+  /* ── Desktop (Windows/Linux) light overrides ────────────── */
+  :root[data-theme="light"] [data-window-chrome-platform="desktop"] {
+    --font-sans:
+      "Segoe UI Variable Text", "Segoe UI", "Noto Sans", "Liberation Sans",
+      "PingFang SC", "Microsoft YaHei", Ubuntu, sans-serif;
+    --color-surface: #ffffff;
+    --color-surface-muted: #f8f8fa;
+    --color-sidebar: #f6f7f9;
+    --color-toolbar: #fbfbfd;
+    --color-border: #dedfe5;
+    --color-border-light: #d0d2da;
+    --color-hover: #eceef2;
+    --color-active: #e2e5eb;
+    --color-text: #1d1d1f;
+    --color-text-dim: #5f636b;
+    --color-text-dimmer: #7d818a;
+    --color-control-primary: #1d1d1f;
+    --color-control-primary-foreground: #ffffff;
+    --color-accent: #007aff;
+    --color-accent-hover: #0066d6;
+    --color-on-accent: #ffffff;
+    --color-ghost-hover: rgba(0, 0, 0, 0.055);
+    --panel-blur: 12px;
+    color-scheme: light;
   }
 
   /*
@@ -190,7 +345,7 @@
     }
   }
 
-  [data-window-shell-tier="mac"] {
+  :root[data-theme="dark"] [data-window-shell-tier="mac"] {
     --color-surface: #161618;
     --color-surface-muted: #1a1a1d;
     --color-sidebar: #1d1d20;
@@ -202,10 +357,34 @@
     --color-text: #e6e6eb;
     --color-text-dim: #a0a0a7;
     --color-text-dimmer: #66666d;
-    --color-accent: #0a84ff;
     --color-control-primary: #f5f5f7;
     --color-control-primary-foreground: #18181b;
+    --color-accent: #007aff;
+    --color-accent-hover: #0a84ff;
+    --color-on-accent: #ffffff;
     --color-ghost-hover: rgba(255, 255, 255, 0.06);
+    --panel-blur: 8px;
+    --sidebar-item-radius: 10px;
+  }
+
+  :root[data-theme="light"] [data-window-shell-tier="mac"] {
+    --color-surface: #ffffff;
+    --color-surface-muted: #f8f8fa;
+    --color-sidebar: #f6f7f9;
+    --color-toolbar: #fbfbfd;
+    --color-border: #dedfe5;
+    --color-border-light: #d0d2da;
+    --color-hover: #eceef2;
+    --color-active: #e2e5eb;
+    --color-text: #1d1d1f;
+    --color-text-dim: #5f636b;
+    --color-text-dimmer: #7d818a;
+    --color-control-primary: #1d1d1f;
+    --color-control-primary-foreground: #ffffff;
+    --color-accent: #007aff;
+    --color-accent-hover: #0066d6;
+    --color-on-accent: #ffffff;
+    --color-ghost-hover: rgba(0, 0, 0, 0.055);
     --panel-blur: 8px;
     --sidebar-item-radius: 10px;
   }
@@ -301,6 +480,102 @@
       transform var(--motion-duration-standard)
         var(--motion-ease-emphasized-out),
       box-shadow var(--motion-duration-standard) var(--motion-ease-soft-out);
+  }
+
+  /*
+   * Shared geometry + interaction chrome for the five primary right-side
+   * playback-bar action buttons (queue, vocals mute, accompaniment mute,
+   * master mute, tight-density stem mixer trigger). The class is the sole
+   * geometry source — consumers must not add conflicting h/w/min/padding/
+   * rounded/flex-basis classes. Use together with `motion-icon-button`.
+   *
+   * Popup-row stem mute controls (Drums/Bass/Other, popup
+   * Vocals/Accompaniment) use `.panel-stem-action-button` instead — same
+   * 44×44 HIG hit target and chrome, but circular to match the panel
+   * aesthetic. The four-stem disclosure chevron stays compact (16px) as a
+   * non-operational inline toggle.
+   */
+  .playback-bar-action-button {
+    display: inline-flex;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    flex: 0 0 44px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 14px;
+    background-color: transparent;
+  }
+
+  .playback-bar-action-button:hover:not(:disabled):not([data-active="true"]),
+  .playback-bar-action-button:focus-visible:not([data-active="true"]) {
+    background-color: var(--color-ghost-hover);
+  }
+
+  .playback-bar-action-button[data-active="true"] {
+    /* Monochrome pressed chrome — same language in light and dark. */
+    color: var(--color-control-primary);
+    background-color: var(--color-control-selected-bg);
+    box-shadow: var(--shadow-control-selected);
+  }
+
+  .playback-bar-action-button:focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 2px;
+  }
+
+  .playback-bar-action-button:disabled {
+    background-color: transparent;
+    box-shadow: none;
+  }
+
+  /*
+   * Panel-variant stem mute buttons (Drums/Bass/Other, popup
+   * Vocals/Accompaniment) — same 44×44 HIG hit target, 14px radius, and
+   * chrome as .playback-bar-action-button so the pressed/hover/focus
+   * surfaces are visually identical across the playback bar and the popup
+   * panel. Desktop and touch both get the full 44px target without
+   * relying on the pointer:coarse fallback.
+   */
+  .panel-stem-action-button {
+    display: inline-flex;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    flex: 0 0 44px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 14px;
+    background-color: transparent;
+  }
+
+  .panel-stem-action-button:hover:not(:disabled):not([data-active="true"]),
+  .panel-stem-action-button:focus-visible:not([data-active="true"]) {
+    background-color: var(--color-ghost-hover);
+  }
+
+  .panel-stem-action-button[data-active="true"] {
+    color: var(--color-control-primary);
+    background-color: var(--color-control-selected-bg);
+    box-shadow: var(--shadow-control-selected);
+  }
+
+  .panel-stem-action-button:focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 2px;
+  }
+
+  .panel-stem-action-button:disabled {
+    background-color: transparent;
+    box-shadow: none;
   }
 
   .motion-icon-button:hover,
@@ -413,6 +688,38 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/*
+ * Stem mixer popup enter/exit animation. Uses @starting-style +
+ * transition-behavior: allow-discrete so the exit (display:none) also
+ * transitions on WKWebView 18+ / WebView2. On older WKWebView (macOS 14,
+ * Safari 17.x) the entry still animates via @starting-style but the exit
+ * falls back to instant close — acceptable graceful degradation.
+ *
+ * Mirror of the song-fade-in keyframe: opacity 0<->1, translateY by
+ * --motion-distance-sm, duration standard, ease-emphasized-out.
+ */
+.stem-popup {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity var(--motion-duration-standard) var(--motion-ease-emphasized-out),
+    transform var(--motion-duration-standard) var(--motion-ease-emphasized-out),
+    display var(--motion-duration-standard) var(--motion-ease-emphasized-out)
+      allow-discrete;
+}
+.stem-popup[data-state="closed"] {
+  opacity: 0;
+  transform: translateY(var(--motion-distance-sm));
+  pointer-events: none;
+  display: none;
+}
+@starting-style {
+  .stem-popup[data-state="open"] {
+    opacity: 0;
+    transform: translateY(var(--motion-distance-sm));
   }
 }
 @keyframes fade-in {
@@ -536,16 +843,12 @@
 @keyframes lyric-char-glow {
   0%,
   100% {
-    text-shadow:
-      0 0 4px rgba(255, 255, 255, 0.3),
-      0 0 2px rgba(255, 255, 255, 0.2);
+    text-shadow: var(--shadow-lyrics-glow);
     transform: scale(1) translateY(0);
   }
   40%,
   60% {
-    text-shadow:
-      0 0 16px rgba(255, 255, 255, 0.6),
-      0 0 6px rgba(255, 255, 255, 0.5);
+    text-shadow: var(--shadow-lyrics-glow-strong);
     transform: scale(1.05) translateY(-1px);
   }
 }
@@ -553,16 +856,12 @@
 @keyframes lyric-char-glow-last {
   0%,
   100% {
-    text-shadow:
-      0 0 6px rgba(255, 255, 255, 0.4),
-      0 0 3px rgba(255, 255, 255, 0.3);
+    text-shadow: var(--shadow-lyrics-glow);
     transform: scale(1) translateY(0);
   }
   35%,
   65% {
-    text-shadow:
-      0 0 24px rgba(255, 255, 255, 0.8),
-      0 0 10px rgba(255, 255, 255, 0.6);
+    text-shadow: var(--shadow-lyrics-glow-strong);
     transform: scale(1.08) translateY(-2px);
   }
 }

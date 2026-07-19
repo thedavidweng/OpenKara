@@ -200,7 +200,7 @@ export function MonitorPicker({ onClose, anchorRef }: MonitorPickerProps) {
           onClick={() => {
             void handleMonitorSelect(index);
           }}
-          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-white"
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
         >
           <Monitor size={14} className="text-[var(--color-text-dim)]" />
           <div className="min-w-0 flex-1">

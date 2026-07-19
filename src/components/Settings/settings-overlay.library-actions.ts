@@ -70,6 +70,7 @@ export function createLibrarySettingsActions(
   | "setEqEnabled"
   | "setEqGains"
   | "resetEqGains"
+  | "setThemePreference"
 > {
   const {
     dependencies,
@@ -367,6 +368,21 @@ export function createLibrarySettingsActions(
       patchState({
         eqGainsDb:
           dependencies.settingsStore.getAppSettingsSnapshot().eqGainsDb,
+      });
+    },
+
+    setThemePreference: async (preference) => {
+      // The store action is optimistic with generation-based rollback; the
+      // overlay state mirrors the store so the radio reflects the pending
+      // choice immediately. The store action handles IPC and rollback.
+      patchState({ themePreference: preference });
+      await dependencies.settingsStore.setThemePreference(preference);
+      // The store action synchronizes the authoritative snapshot on success;
+      // mirror the final store value so the overlay stays in sync after
+      // rollback too.
+      patchState({
+        themePreference:
+          dependencies.settingsStore.getAppSettingsSnapshot().themePreference,
       });
     },
   };

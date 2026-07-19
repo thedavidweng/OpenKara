@@ -364,6 +364,13 @@
       "hide": "Disable blurred album art backdrop",
       "description": "Removes the blurred album cover behind lyrics."
     },
+    "appearance": {
+      "label": "Appearance",
+      "description": "Choose the application color scheme. The audience stage stays dark.",
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark"
+    },
     "outputDevice": {
       "label": "Output Device",
       "systemDefault": "System Default"

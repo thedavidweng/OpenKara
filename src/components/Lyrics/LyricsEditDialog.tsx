@@ -86,7 +86,10 @@ function LyricsEditDialogContent({
         aria-busy={saving}
         className="flex w-full max-w-lg flex-col gap-4 overflow-hidden rounded-xl border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-6 shadow-2xl"
       >
-        <h2 id={headingId} className="text-[15px] font-semibold text-white">
+        <h2
+          id={headingId}
+          className="text-[15px] font-semibold text-[var(--color-text)]"
+        >
           {t("lyrics.editLyrics")}
         </h2>
 
@@ -98,7 +101,7 @@ function LyricsEditDialogContent({
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder={t("lyrics.pastePlaceholder")}
-          className="h-64 w-full resize-y rounded-md border border-[var(--color-border-light)] bg-[var(--color-hover)] px-3 py-2 text-[13px] text-white placeholder:text-[var(--color-text-dim)] transition-colors focus:border-[color-mix(in_srgb,var(--color-accent)_24%,var(--color-border-light))] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
+          className="h-64 w-full resize-y rounded-md border border-[var(--color-border-light)] bg-[var(--color-hover)] px-3 py-2 text-[13px] text-[var(--color-text)] placeholder:text-[var(--color-text-dim)] transition-colors focus:border-[color-mix(in_srgb,var(--color-accent)_24%,var(--color-border-light))] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
           spellCheck={false}
         />
 

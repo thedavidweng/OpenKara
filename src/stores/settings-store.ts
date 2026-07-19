@@ -11,6 +11,7 @@ import type {
   LibrarySortMode,
   ModelVariant,
   StemMode,
+  ThemePreference,
 } from "@/types/ipc";
 
 export interface AppSettingsSnapshot {
@@ -26,6 +27,7 @@ export interface AppSettingsSnapshot {
   eqEnabled: boolean;
   eqGainsDb: [number, number, number, number, number];
   librarySortMode: LibrarySortMode;
+  themePreference: ThemePreference;
 }
 
 interface SettingsState {
@@ -42,6 +44,9 @@ interface SettingsState {
   eqEnabled: AppSettingsSnapshot["eqEnabled"];
   eqGainsDb: AppSettingsSnapshot["eqGainsDb"];
   librarySortMode: AppSettingsSnapshot["librarySortMode"];
+  themePreference: AppSettingsSnapshot["themePreference"];
+  /** Monotonic generation for optimistic theme-preference mutations. */
+  themePreferenceMutationGeneration: number;
   toggle: () => void;
   close: () => void;
   open: () => void;
@@ -57,10 +62,11 @@ interface SettingsState {
   setEqBandGain: (band: number, gainDb: number) => Promise<void>;
   resetEqGains: () => Promise<void>;
   setLibrarySortMode: (mode: LibrarySortMode) => Promise<void>;
+  setThemePreference: (preference: ThemePreference) => Promise<void>;
   getAppSettingsSnapshot: () => AppSettingsSnapshot;
 }
 
-const DEFAULT_APP_SETTINGS: AppSettingsSnapshot = {
+export const DEFAULT_APP_SETTINGS: AppSettingsSnapshot = {
   hydrated: false,
   stemMode: "two_stem",
   modelVariant: "htdemucs",
@@ -73,6 +79,7 @@ const DEFAULT_APP_SETTINGS: AppSettingsSnapshot = {
   eqEnabled: false,
   eqGainsDb: [0, 0, 0, 0, 0],
   librarySortMode: "recently_imported",
+  themePreference: "dark",
 };
 
 function toAppSettingsSnapshot(settings: AppSettings): AppSettingsSnapshot {
@@ -90,6 +97,7 @@ function toAppSettingsSnapshot(settings: AppSettings): AppSettingsSnapshot {
     eqEnabled: settings.eq_enabled ?? false,
     eqGainsDb: settings.eq_gains_db ?? [0, 0, 0, 0, 0],
     librarySortMode: settings.library_sort_mode,
+    themePreference: settings.theme_preference,
   };
 }
 
@@ -109,6 +117,7 @@ function selectAppSettingsSnapshot(
     eqEnabled: state.eqEnabled,
     eqGainsDb: state.eqGainsDb,
     librarySortMode: state.librarySortMode,
+    themePreference: state.themePreference,
   };
 }
 
@@ -141,6 +150,7 @@ function applySettingsSyncSnapshot(
     eqEnabled: snapshot.eqEnabled,
     eqGainsDb: snapshot.eqGainsDb,
     librarySortMode: snapshot.librarySortMode,
+    themePreference: snapshot.themePreference,
   });
 }
 
@@ -263,6 +273,7 @@ export function createSettingsStore(
     return {
       isOpen: false,
       ...DEFAULT_APP_SETTINGS,
+      themePreferenceMutationGeneration: 0,
       toggle: () => syncPatch({ isOpen: !get().isOpen }),
       close: () => syncPatch({ isOpen: false }),
       open: () => syncPatch({ isOpen: true }),
@@ -368,6 +379,40 @@ export function createSettingsStore(
           const result = librarySortModeField.reject(generation);
           syncPatch({ librarySortMode: result.value });
           if (result.shouldNotify) {
+            notifyError(error);
+          }
+        }
+      },
+
+      setThemePreference: async (preference) => {
+        if (get().themePreference === preference) {
+          return;
+        }
+
+        const generation = get().themePreferenceMutationGeneration + 1;
+        const previousSnapshot = selectAppSettingsSnapshot(get());
+
+        syncPatch({
+          themePreference: preference,
+          themePreferenceMutationGeneration: generation,
+        });
+
+        try {
+          const settings = await api.setThemePreference(preference);
+          if (get().themePreferenceMutationGeneration === generation) {
+            // Reconcile through syncAppSettings so pending EQ / sort-mode
+            // optimistic fields are not clobbered by the full snapshot.
+            syncAppSettings(settings);
+          }
+        } catch (error) {
+          // Only roll back the theme preference that failed. Restoring the full
+          // pre-attempt snapshot would wipe concurrent settings edits that
+          // landed while the IPC call was in flight.
+          if (get().themePreferenceMutationGeneration === generation) {
+            syncPatch({
+              themePreference: previousSnapshot.themePreference,
+              themePreferenceMutationGeneration: generation,
+            });
             notifyError(error);
           }
         }
