@@ -644,6 +644,14 @@ a {
   gap: 12px;
 }
 
+/* Match hero CTA scale — the closing Download / View source pair is the
+   page's final conversion moment and should not read smaller than the hero. */
+.closing-actions .pill {
+  min-height: clamp(48px, 4.2vw, 56px);
+  padding-inline: clamp(22px, 2vw, 28px);
+  font-size: clamp(15px, 1.3vw, 17px);
+}
+
 .site-footer {
   border-top: 1px solid var(--landing-line);
   padding-top: clamp(72px, 8vw, 122px);
