@@ -297,16 +297,16 @@ a {
   position: absolute;
   z-index: 0;
   right: -14%;
-  bottom: -34%;
+  bottom: -20%;
   left: -14%;
-  height: 92%;
+  height: 58%;
   content: "";
   pointer-events: none;
   background: radial-gradient(
-    ellipse 63% 58% at 50% 78%,
+    ellipse 63% 72% at 50% 82%,
     var(--preview-halo) 0%,
-    color-mix(in srgb, var(--preview-halo) 55%, transparent) 36%,
-    transparent 74%
+    color-mix(in srgb, var(--preview-halo) 50%, transparent) 40%,
+    transparent 78%
   );
   filter: blur(34px);
 }
