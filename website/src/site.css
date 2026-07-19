@@ -209,12 +209,25 @@ a {
   align-items: center;
   justify-content: center;
   gap: 7px;
+  /* Landing sets line-height: 1.5; keep pills on a tight line box so flex
+     centering matches the glyph band instead of a tall inherited strut. */
+  line-height: 1;
   font-size: 13px;
   font-weight: 620;
   transition:
     transform 160ms ease,
     opacity 160ms ease,
     background 160ms ease;
+}
+
+/* Optical vertical centering for CTA copy. Asymmetric padding-block only
+   shifts flex children by half the delta; translateY moves the label 1:1.
+   Latin sans (Inter / system ui-sans) reads high in tall pills. */
+.pill-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transform: translateY(0.12em);
 }
 
 .pill:hover {
@@ -272,6 +285,7 @@ a {
 .hero-actions .pill {
   min-height: clamp(48px, 4.2vw, 56px);
   padding-inline: clamp(22px, 2vw, 28px);
+  padding-block: 0;
   font-size: clamp(15px, 1.3vw, 17px);
 }
 
@@ -536,6 +550,18 @@ a {
   border-bottom: 1px solid var(--landing-soft-line);
 }
 
+/* Feature blocks share one continuous band — collapse the soft rule and
+   stacked padding between stem cards → library cards → closing CTA. */
+.feature-section:has(+ .feature-section),
+.feature-section:has(+ .closing-section) {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.feature-section + .feature-section {
+  padding-top: clamp(48px, 5vw, 72px);
+}
+
 .section-heading {
   display: grid;
   grid-template-columns: 0.72fr 1.1fr 1fr;
@@ -607,7 +633,7 @@ a {
 .closing-section {
   width: min(620px, calc(100% - 48px));
   margin: 0 auto;
-  padding-block: clamp(132px, 16vw, 232px);
+  padding-block: clamp(72px, 8vw, 112px) clamp(132px, 16vw, 232px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -630,6 +656,15 @@ a {
   flex-wrap: wrap;
   justify-content: center;
   gap: 12px;
+}
+
+/* Match hero CTA scale — the closing Download / View source pair is the
+   page's final conversion moment and should not read smaller than the hero. */
+.closing-actions .pill {
+  min-height: clamp(48px, 4.2vw, 56px);
+  padding-inline: clamp(22px, 2vw, 28px);
+  padding-block: 0;
+  font-size: clamp(15px, 1.3vw, 17px);
 }
 
 .site-footer {
@@ -949,6 +984,15 @@ a {
     padding-block: 64px;
   }
 
+  .feature-section:has(+ .feature-section),
+  .feature-section:has(+ .closing-section) {
+    padding-bottom: 0;
+  }
+
+  .feature-section + .feature-section {
+    padding-top: 40px;
+  }
+
   .feature-grid {
     margin-top: 32px;
   }
@@ -964,7 +1008,7 @@ a {
 
   .closing-section {
     width: min(100% - 28px, 620px);
-    padding-block: 96px;
+    padding-block: 64px 96px;
     gap: 30px;
   }
 
