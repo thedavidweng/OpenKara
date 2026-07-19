@@ -196,6 +196,37 @@ pub struct CompletedTransition {
     pub snapshot: PlaybackStateSnapshot,
 }
 
+/// Active crossfade state owned by the realtime callback.
+/// The callback creates this when the overlap begins, advances it each
+/// frame, and promotes the incoming track when the overlap completes.
+#[derive(Debug)]
+pub struct ActiveCrossfade {
+    pub prepared: PreparedTrack,
+    /// Total overlap length in *device* (output) frames, captured at start.
+    pub total_frames: u64,
+    /// Overlap device frames already rendered (for equal-power progress).
+    pub rendered_frames: u64,
+    /// Incoming track position in *source* frames. Advanced by
+    /// `mix_stem_resampled`'s source-frame consumption so rate conversion
+    /// cannot be fed a device-frame index.
+    pub incoming_source_frame: u64,
+}
+
+/// Crossfade configuration with a revision for change detection.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CrossfadeConfig {
+    pub enabled: bool,
+    pub duration_ms: u32,
+    pub revision: u64,
+}
+
+/// Crossfade state snapshot returned to settings commands.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct CrossfadeState {
+    pub enabled: bool,
+    pub duration_ms: u32,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum FadeState {
     /// No fade active.
@@ -247,6 +278,17 @@ pub struct PlaybackController {
     /// passed its shutdown check before the flag was set but sends after the
     /// cancel) are rejected by `install_prepared_track`.
     pub(crate) expected_preload_request_generation: PreloadRequestGeneration,
+    /// Crossfade configuration. The output callback reads this while
+    /// holding the playback lock to decide whether to start an overlap.
+    pub(crate) crossfade_config: CrossfadeConfig,
+    /// Active crossfade state. Owned by the realtime callback —
+    /// created when the overlap begins, advanced each frame, and
+    /// consumed when the overlap completes (promoting the incoming track).
+    pub(crate) active_crossfade: Option<ActiveCrossfade>,
+    /// Set by `abort_active_crossfade` so the realtime callback knows to
+    /// clear the incoming resampler cache even though `prepared_track` was
+    /// restored (which would otherwise skip the normal cleanup guard).
+    pub(crate) crossfade_abort_pending: bool,
 }
 
 impl Default for PlaybackController {
@@ -264,6 +306,13 @@ impl Default for PlaybackController {
             transition_serial: 0,
             pending_transition_out: None,
             expected_preload_request_generation: PreloadRequestGeneration(0),
+            crossfade_config: CrossfadeConfig {
+                enabled: false,
+                duration_ms: 3_000,
+                revision: 0,
+            },
+            active_crossfade: None,
+            crossfade_abort_pending: false,
         }
     }
 }
@@ -282,7 +331,10 @@ impl PlaybackController {
         self.loading_song_id = None;
         // #88: An explicit track install cancels any pending gapless
         // successor — the new track is not the prepared one.
-        self.prepared_track = None;
+        // Also cancel any active crossfade — a manual load during an
+        // active overlap must not leave a stale crossfade mixing the new
+        // track with the old prepared payload.
+        self.cancel_crossfade_and_prepared();
         self.current_track = Some(LoadedTrack {
             song_id,
             original_audio: decoded_audio,
@@ -309,7 +361,8 @@ impl PlaybackController {
         self.loading_song_id = None;
         // #88: An explicit track install cancels any pending gapless
         // successor — the new track is not the prepared one.
-        self.prepared_track = None;
+        // Also cancel any active crossfade — see `start_track`.
+        self.cancel_crossfade_and_prepared();
         self.current_track = Some(LoadedTrack {
             song_id,
             original_audio: DecodedAudio {
@@ -333,6 +386,11 @@ impl PlaybackController {
         self.bump_transport_generation();
         self.current_track = None;
         self.loading_song_id = Some(song_id.to_owned());
+        // A new load request cancels any active crossfade and prepared
+        // track — the incoming track is not the prepared one, and a stale
+        // crossfade must not mix against the about-to-be-replaced current
+        // track.
+        self.cancel_crossfade_and_prepared();
         self.snapshot()
     }
 
@@ -379,6 +437,11 @@ impl PlaybackController {
         // Cancel any active fade and start a short seek fade to mask
         // the amplitude discontinuity at the new position.
         self.bump_transport_generation();
+        // Seek during an active crossfade aborts the overlap, restoring
+        // the incoming payload to prepared_track at frame zero. The outgoing
+        // track is then seeked normally, and a fresh crossfade may start
+        // later if the remaining time permits.
+        self.abort_active_crossfade();
         self.fade = FadeState::FadingAfterSeek {
             start: Instant::now(),
         };
@@ -461,10 +524,80 @@ impl PlaybackController {
         self.eq_config
     }
 
+    // ── Crossfade configuration ─────────────────────────────────────────
+
+    /// Set crossfade enabled. Bumps the config revision so the output
+    /// callback picks up the change. Does not alter an active crossfade.
+    pub fn set_crossfade_enabled(
+        &mut self,
+        enabled: bool,
+    ) -> Result<CrossfadeState, PlaybackError> {
+        if self.crossfade_config.enabled != enabled {
+            self.crossfade_config.enabled = enabled;
+            self.crossfade_config.revision = self.crossfade_config.revision.saturating_add(1);
+        }
+        Ok(self.crossfade_state())
+    }
+
+    /// Set crossfade duration in ms. The caller validates the range
+    /// (500..=10_000). Bumps the config revision only when the value
+    /// actually changes. Does not alter an active crossfade.
+    pub fn set_crossfade_duration(
+        &mut self,
+        duration_ms: u32,
+    ) -> Result<CrossfadeState, PlaybackError> {
+        if self.crossfade_config.duration_ms != duration_ms {
+            self.crossfade_config.duration_ms = duration_ms;
+            self.crossfade_config.revision = self.crossfade_config.revision.saturating_add(1);
+        }
+        Ok(self.crossfade_state())
+    }
+
+    /// Snapshot of the current crossfade configuration.
+    pub fn crossfade_state(&self) -> CrossfadeState {
+        CrossfadeState {
+            enabled: self.crossfade_config.enabled,
+            duration_ms: self.crossfade_config.duration_ms,
+        }
+    }
+
+    /// Abort an active crossfade, restoring the incoming payload to
+    /// `prepared_track` at frame zero. Called when a seek occurs during
+    /// an active overlap. The outgoing track is seeked separately by the
+    /// caller.
+    pub(crate) fn abort_active_crossfade(&mut self) {
+        if let Some(active) = self.active_crossfade.take() {
+            self.prepared_track = Some(active.prepared);
+            // Signal the realtime callback to clear the incoming resampler
+            // cache. The normal cleanup guard checks
+            // `prepared_track.is_none()`, but abort restores the prepared
+            // track, so without this flag the stale sinc state from the
+            // aborted overlap position would persist into the next crossfade.
+            self.crossfade_abort_pending = true;
+        }
+    }
+
+    /// Cancel both active crossfade and prepared track. Called by
+    /// manual play, stem attachment, and output-device recreation.
+    pub(crate) fn cancel_crossfade_and_prepared(&mut self) {
+        self.active_crossfade = None;
+        self.prepared_track = None;
+        // Also clear any pending outgoing transition. A manual load,
+        // clear, stem attach, or load failure supersedes the track context
+        // that produced the transition. Without this, the position emitter
+        // could drain a stale transition (A→B) after the user has already
+        // switched to an unrelated song C, causing the frontend to
+        // reconcile the queue with the wrong song IDs.
+        self.pending_transition_out = None;
+    }
+
     pub fn attach_stems(&mut self, song_id: &str, stems: LoadedStems) -> Result<(), PlaybackError> {
+        // Validate ownership first. Cancelling before the song-id guard would
+        // permanently destroy an in-progress crossfade / prepared next-track
+        // when a stale or misrouted attach arrives for a different song.
         let track = self
             .current_track
-            .as_mut()
+            .as_ref()
             .ok_or_else(|| PlaybackError::InvalidPlaybackState("no track is loaded".to_owned()))?;
         if track.song_id != song_id {
             return Err(PlaybackError::InvalidPlaybackState(format!(
@@ -472,7 +605,14 @@ impl PlaybackController {
                 song_id, track.song_id
             )));
         }
-        track.stems = Some(stems);
+        // Successful attach on the current track cancels both active
+        // crossfade and prepared track — stems change the render path and
+        // make an outgoing plain-track overlap invalid.
+        self.cancel_crossfade_and_prepared();
+        self.current_track
+            .as_mut()
+            .expect("current_track present after ownership check")
+            .stems = Some(stems);
         Ok(())
     }
 
@@ -658,7 +798,8 @@ impl PlaybackController {
         // #88: Clearing the current track also invalidates any prepared
         // gapless successor — it was prepared relative to the track that is
         // now being replaced by an explicit user action.
-        self.prepared_track = None;
+        // Also cancel any active crossfade.
+        self.cancel_crossfade_and_prepared();
     }
 
     /// #88: Install a prepared next track for gapless transition. Called by
@@ -957,6 +1098,49 @@ impl PlaybackController {
         self.stamp_transition(from_song_id, to_song_id, preload_generation);
 
         true
+    }
+
+    /// Promote the incoming track from an active crossfade to the
+    /// current track. Called by the realtime callback when the overlap
+    /// completes. The incoming track starts at `render_frame =
+    /// incoming_frame_offset` (the number of overlap source frames already
+    /// consumed), so subsequent callbacks continue seamlessly from the
+    /// promoted source. A `CompletedTransition` is stamped for the position
+    /// emitter to drain.
+    pub(crate) fn promote_crossfade_track(
+        &mut self,
+        prepared: PreparedTrack,
+        incoming_frame_offset: u64,
+    ) {
+        let from_song_id = self
+            .current_track
+            .as_ref()
+            .map(|t| t.song_id.clone())
+            .unwrap_or_default();
+        let to_song_id = prepared.song_id.clone();
+        let preload_generation = prepared.preload_generation;
+
+        self.current_track = Some(LoadedTrack {
+            song_id: prepared.song_id,
+            original_audio: prepared.audio,
+            stems: None,
+            is_playing: true,
+            render_frame: incoming_frame_offset,
+            streaming: None,
+        });
+
+        self.fade = FadeState::None;
+        self.is_buffering = false;
+
+        // Bump the transport generation so the frontend's stale-event
+        // filter rejects any delayed `playback-position` event from the old
+        // song. Without this bump, a same-generation position event for song-a
+        // could arrive after the new-song snapshot and be accepted, reverting
+        // the clock and queue reconciliation back to song-a. This mirrors the
+        // gapless swap path (`perform_gapless_swap`).
+        self.bump_transport_generation();
+
+        self.stamp_transition(from_song_id, to_song_id, preload_generation);
     }
 
     /// If a fade-out has elapsed past `FADE_DURATION`, finalize it: set

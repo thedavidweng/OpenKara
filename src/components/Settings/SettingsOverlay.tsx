@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { SettingsCrossfadeSection } from "./SettingsCrossfadeSection";
 import { SettingsDangerZoneSection } from "./SettingsDangerZoneSection";
 import { SettingsDialogHost } from "./SettingsDialogHost";
 import { SettingsEqSection } from "./SettingsEqSection";
@@ -41,6 +42,7 @@ export function SettingsOverlay() {
           <SettingsExecutionProviderSection />
           <SettingsGeneralSection />
           <SettingsEqSection />
+          <SettingsCrossfadeSection />
           <SettingsDangerZoneSection />
           <SettingsDialogHost />
         </SettingsOverlayProvider>

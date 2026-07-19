@@ -1111,6 +1111,8 @@ describe("AppSettings shape matches Rust AppSettings", () => {
       available_execution_providers: ["cpu", "xnnpack"],
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
+      crossfade_enabled: false,
+      crossfade_duration_ms: 3_000,
       library_sort_mode: "recently_imported",
       theme_preference: "dark",
     };

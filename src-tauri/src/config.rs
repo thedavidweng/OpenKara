@@ -482,6 +482,15 @@ pub struct AppConfig {
     /// (flat). Each gain is clamped to -12.0..=12.0 dB on read.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub eq_gains_db: Option<[f32; 5]>,
+    /// Whether crossfade between tracks is enabled. When absent, defaults
+    /// to disabled. Only applies to fully decoded local tracks — streaming
+    /// and stems tracks always use gapless transition.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crossfade_enabled: Option<bool>,
+    /// Crossfade overlap duration in milliseconds. Clamped to
+    /// 500..=10_000 on read. When absent, defaults to 3000.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crossfade_duration_ms: Option<u32>,
     /// Library sort mode applied by the frontend comparator. Persisted so the
     /// selected order survives restarts and is shared across WebViews via the
     /// settings sync snapshot.
@@ -586,6 +595,19 @@ impl AppConfig {
 
     pub fn effective_library_sort_mode(&self) -> LibrarySortMode {
         self.library_sort_mode.unwrap_or_default()
+    }
+
+    /// Returns the persisted crossfade enabled flag, defaulting to false.
+    pub fn effective_crossfade_enabled(&self) -> bool {
+        self.crossfade_enabled.unwrap_or(false)
+    }
+
+    /// Returns the persisted crossfade duration in ms, clamped to
+    /// 500..=10_000. Defaults to 3000 when unset or out of range.
+    pub fn effective_crossfade_duration_ms(&self) -> u32 {
+        self.crossfade_duration_ms
+            .unwrap_or(3_000)
+            .clamp(500, 10_000)
     }
 
     pub fn effective_theme_preference(&self) -> ThemePreference {
@@ -703,6 +725,8 @@ mod tests {
             library_path: None,
             eq_enabled: None,
             eq_gains_db: None,
+            crossfade_enabled: None,
+            crossfade_duration_ms: None,
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
@@ -737,6 +761,8 @@ mod tests {
             execution_provider: None,
             eq_enabled: None,
             eq_gains_db: None,
+            crossfade_enabled: None,
+            crossfade_duration_ms: None,
             library_sort_mode: None,
             theme_preference: None,
             remote_cache_bytes_limit: None,
@@ -768,6 +794,8 @@ mod tests {
             execution_provider: None,
             eq_enabled: None,
             eq_gains_db: None,
+            crossfade_enabled: None,
+            crossfade_duration_ms: None,
             library_sort_mode: None,
             theme_preference: None,
             remote_cache_bytes_limit: None,
@@ -793,6 +821,8 @@ mod tests {
             execution_provider: None,
             eq_enabled: None,
             eq_gains_db: None,
+            crossfade_enabled: None,
+            crossfade_duration_ms: None,
             library_sort_mode: None,
             theme_preference: None,
             remote_cache_bytes_limit: None,
@@ -833,6 +863,8 @@ mod tests {
             execution_provider: None,
             eq_enabled: None,
             eq_gains_db: None,
+            crossfade_enabled: None,
+            crossfade_duration_ms: None,
             library_sort_mode: None,
             theme_preference: None,
             libraries: vec![],
@@ -1211,5 +1243,50 @@ mod tests {
     fn missing_theme_preference_field_defaults_to_dark() {
         let loaded: AppConfig = serde_json::from_str("{}").unwrap();
         assert_eq!(loaded.effective_theme_preference(), ThemePreference::Dark);
+    }
+
+    // ── Crossfade config hydration ───────────────────────────────────────
+
+    #[test]
+    fn effective_crossfade_defaults_to_disabled_3000ms() {
+        let config = AppConfig::default();
+        assert!(!config.effective_crossfade_enabled());
+        assert_eq!(config.effective_crossfade_duration_ms(), 3_000);
+    }
+
+    #[test]
+    fn effective_crossfade_enabled_hydrates_from_persisted_value() {
+        let config = AppConfig {
+            crossfade_enabled: Some(true),
+            ..Default::default()
+        };
+        assert!(config.effective_crossfade_enabled());
+    }
+
+    #[test]
+    fn effective_crossfade_duration_hydrates_from_persisted_value() {
+        let config = AppConfig {
+            crossfade_duration_ms: Some(5_000),
+            ..Default::default()
+        };
+        assert_eq!(config.effective_crossfade_duration_ms(), 5_000);
+    }
+
+    #[test]
+    fn effective_crossfade_duration_clamps_below_minimum() {
+        let config = AppConfig {
+            crossfade_duration_ms: Some(100),
+            ..Default::default()
+        };
+        assert_eq!(config.effective_crossfade_duration_ms(), 500);
+    }
+
+    #[test]
+    fn effective_crossfade_duration_clamps_above_maximum() {
+        let config = AppConfig {
+            crossfade_duration_ms: Some(20_000),
+            ..Default::default()
+        };
+        assert_eq!(config.effective_crossfade_duration_ms(), 10_000);
     }
 }

@@ -82,6 +82,8 @@ function createAppSettings() {
     available_execution_providers: ["cpu", "xnnpack"] as const,
     eq_enabled: false,
     eq_gains_db: [0, 0, 0, 0, 0],
+    crossfade_enabled: false,
+    crossfade_duration_ms: 3_000,
     library_sort_mode: "recently_imported" as const,
   };
 }
@@ -116,6 +118,8 @@ function createHarness(overrides?: {
       availableExecutionProviders: ["cpu", "xnnpack"],
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
+      crossfadeEnabled: false,
+      crossfadeDurationMs: 3_000,
       librarySortMode: "recently_imported",
       themePreference: "dark",
       integrityReport: null,
@@ -173,6 +177,8 @@ function createHarness(overrides?: {
       setModelVariant: vi.fn(),
       setEqEnabled: vi.fn(),
       setEqGains: vi.fn(),
+      setCrossfadeEnabled: vi.fn(),
+      setCrossfadeDurationMs: vi.fn(),
       checkLibraryIntegrity: vi.fn(),
       removeMissingLibraryEntries: vi.fn(),
     },
@@ -202,6 +208,8 @@ function createHarness(overrides?: {
         availableExecutionProviders: ["cpu", "xnnpack"] as ExecutionProvider[],
         eqEnabled: false,
         eqGainsDb: [0, 0, 0, 0, 0] as [number, number, number, number, number],
+        crossfadeEnabled: false,
+        crossfadeDurationMs: 3_000,
         librarySortMode: "recently_imported" as const,
         themePreference: "dark" as ThemePreference,
       })),
@@ -209,6 +217,8 @@ function createHarness(overrides?: {
       patchAppSettings: vi.fn(),
       setEqEnabled: vi.fn().mockResolvedValue(undefined),
       setEqGains: vi.fn().mockResolvedValue(undefined),
+      setCrossfadeEnabled: vi.fn(),
+      setCrossfadeDurationMs: vi.fn(),
       setThemePreference: vi.fn(),
     },
   };
@@ -940,6 +950,95 @@ describe("createLibrarySettingsActions", () => {
       ).toHaveBeenCalledWith([0, 0, 0, 0, 0]);
       expect(harness.patchState).toHaveBeenCalledWith({ eqGainsDb: previous });
       expect(harness.dependencies.notifyError).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---- setCrossfadeEnabled ----
+
+  describe("setCrossfadeEnabled", () => {
+    test("patches state and delegates mutation ownership to the settings store", async () => {
+      const harness = createHarness();
+      harness.dependencies.settingsStore.getAppSettingsSnapshot.mockReturnValue(
+        {
+          ...harness.dependencies.settingsStore.getAppSettingsSnapshot(),
+          crossfadeEnabled: true,
+        },
+      );
+
+      await harness.actions.setCrossfadeEnabled(true);
+
+      expect(harness.patchState).toHaveBeenCalledWith({
+        crossfadeEnabled: true,
+      });
+      expect(
+        harness.dependencies.settingsStore.setCrossfadeEnabled,
+      ).toHaveBeenCalledWith(true);
+      expect(
+        harness.dependencies.settingsStore.getAppSettingsSnapshot,
+      ).toHaveBeenCalled();
+    });
+
+    test("uses the settings-store rollback value after a failed mutation", async () => {
+      const harness = createHarness();
+
+      await harness.actions.setCrossfadeEnabled(true);
+
+      expect(
+        harness.dependencies.settingsStore.setCrossfadeEnabled,
+      ).toHaveBeenCalledWith(true);
+      expect(harness.patchState).toHaveBeenCalledWith({
+        crossfadeEnabled: false,
+      });
+      expect(harness.dependencies.notifyError).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---- setCrossfadeDurationMs ----
+
+  describe("setCrossfadeDurationMs", () => {
+    test("patches state and delegates mutation ownership to the settings store", async () => {
+      const harness = createHarness();
+      harness.dependencies.settingsStore.getAppSettingsSnapshot.mockReturnValue(
+        {
+          ...harness.dependencies.settingsStore.getAppSettingsSnapshot(),
+          crossfadeDurationMs: 5_000,
+        },
+      );
+
+      await harness.actions.setCrossfadeDurationMs(5_000);
+
+      expect(harness.patchState).toHaveBeenCalledWith({
+        crossfadeDurationMs: 5_000,
+      });
+      expect(
+        harness.dependencies.settingsStore.setCrossfadeDurationMs,
+      ).toHaveBeenCalledWith(5_000);
+    });
+
+    test("skips api call when value is unchanged", async () => {
+      const harness = createHarness();
+      // Default snapshot has crossfadeDurationMs: 3_000
+      await harness.actions.setCrossfadeDurationMs(3_000);
+
+      expect(
+        harness.dependencies.settingsStore.setCrossfadeDurationMs,
+      ).not.toHaveBeenCalled();
+    });
+
+    test("clamps duration to [500, 10000]", async () => {
+      const harness = createHarness();
+      harness.dependencies.settingsStore.getAppSettingsSnapshot.mockReturnValue(
+        {
+          ...harness.dependencies.settingsStore.getAppSettingsSnapshot(),
+          crossfadeDurationMs: 500,
+        },
+      );
+
+      await harness.actions.setCrossfadeDurationMs(100);
+
+      expect(
+        harness.dependencies.settingsStore.setCrossfadeDurationMs,
+      ).toHaveBeenCalledWith(500);
     });
   });
 

@@ -118,6 +118,14 @@ pub enum PlaybackCommand {
         gains_db: [f32; 5],
         reply: SnapshotReply,
     },
+    SetCrossfadeEnabled {
+        enabled: bool,
+        reply: CrossfadeStateReply,
+    },
+    SetCrossfadeDuration {
+        duration_ms: u32,
+        reply: CrossfadeStateReply,
+    },
     /// #88: Install a prepared next track for gapless transition. The preload
     /// scheduler decodes and normalizes the candidate off-thread, then sends
     /// this fire-and-forget command. The coordinator validates the output
@@ -142,6 +150,8 @@ pub enum PlaybackCommand {
 }
 
 type SnapshotReply = tokio::sync::oneshot::Sender<Result<PlaybackStateSnapshot, PlaybackError>>;
+type CrossfadeStateReply =
+    tokio::sync::oneshot::Sender<Result<crate::audio::playback::CrossfadeState, PlaybackError>>;
 
 /// Runtime dependencies the coordinator worker needs. Generic over `R:
 /// tauri::Runtime` so mock-runtime tests compile.
@@ -218,6 +228,12 @@ fn handle_command<R: Runtime>(runtime: &CoordinatorRuntime<R>, command: Playback
         }
         PlaybackCommand::SetEqGains { gains_db, reply } => {
             handle_set_eq_gains(runtime, gains_db, reply)
+        }
+        PlaybackCommand::SetCrossfadeEnabled { enabled, reply } => {
+            handle_set_crossfade_enabled(runtime, enabled, reply)
+        }
+        PlaybackCommand::SetCrossfadeDuration { duration_ms, reply } => {
+            handle_set_crossfade_duration(runtime, duration_ms, reply)
         }
         PlaybackCommand::PrepareNext { prepared } => handle_prepare_next(runtime, *prepared),
         PlaybackCommand::CancelPreparedNext {
@@ -834,6 +850,40 @@ fn handle_set_eq_gains<R: Runtime>(
         playback.set_eq_gains(gains_db)
     };
     let _ = reply.send(Ok(snapshot));
+}
+
+fn handle_set_crossfade_enabled<R: Runtime>(
+    runtime: &CoordinatorRuntime<R>,
+    enabled: bool,
+    reply: CrossfadeStateReply,
+) {
+    let state = {
+        let Ok(mut playback) = runtime.playback.lock() else {
+            let _ = reply.send(Err(PlaybackError::Internal(
+                "playback controller lock was poisoned".to_owned(),
+            )));
+            return;
+        };
+        playback.set_crossfade_enabled(enabled)
+    };
+    let _ = reply.send(state);
+}
+
+fn handle_set_crossfade_duration<R: Runtime>(
+    runtime: &CoordinatorRuntime<R>,
+    duration_ms: u32,
+    reply: CrossfadeStateReply,
+) {
+    let state = {
+        let Ok(mut playback) = runtime.playback.lock() else {
+            let _ = reply.send(Err(PlaybackError::Internal(
+                "playback controller lock was poisoned".to_owned(),
+            )));
+            return;
+        };
+        playback.set_crossfade_duration(duration_ms)
+    };
+    let _ = reply.send(state);
 }
 
 // ── #88: Gapless prepared-track commands ─────────────────────────────────
