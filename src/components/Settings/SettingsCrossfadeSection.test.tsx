@@ -157,6 +157,78 @@ describe("SettingsCrossfadeSection", () => {
     vi.useRealTimers();
   });
 
+  test("pointer release flushes the debounced commit immediately", () => {
+    vi.useFakeTimers();
+    const setCrossfadeDurationMs = vi.fn().mockResolvedValue(undefined);
+    const value = createSettingsOverlayTestContextValue(
+      {
+        state: {
+          crossfadeEnabled: true,
+          crossfadeDurationMs: 3_000,
+        },
+        meta: { isInitializing: false },
+      },
+      { setCrossfadeDurationMs },
+    );
+
+    render(
+      <SettingsOverlayContext value={value}>
+        <SettingsCrossfadeSection />
+      </SettingsOverlayContext>,
+    );
+
+    const slider = screen.getByRole("slider");
+    act(() => {
+      fireEvent.change(slider, { target: { value: "7000" } });
+    });
+
+    // Not yet committed — debounce is pending.
+    expect(setCrossfadeDurationMs).not.toHaveBeenCalled();
+
+    // Pointer release flushes immediately.
+    act(() => {
+      fireEvent.pointerUp(slider);
+    });
+
+    expect(setCrossfadeDurationMs).toHaveBeenCalledWith(7_000);
+    vi.useRealTimers();
+  });
+
+  test("key release flushes the debounced commit immediately", () => {
+    vi.useFakeTimers();
+    const setCrossfadeDurationMs = vi.fn().mockResolvedValue(undefined);
+    const value = createSettingsOverlayTestContextValue(
+      {
+        state: {
+          crossfadeEnabled: true,
+          crossfadeDurationMs: 3_000,
+        },
+        meta: { isInitializing: false },
+      },
+      { setCrossfadeDurationMs },
+    );
+
+    render(
+      <SettingsOverlayContext value={value}>
+        <SettingsCrossfadeSection />
+      </SettingsOverlayContext>,
+    );
+
+    const slider = screen.getByRole("slider");
+    act(() => {
+      fireEvent.change(slider, { target: { value: "8000" } });
+    });
+
+    expect(setCrossfadeDurationMs).not.toHaveBeenCalled();
+
+    act(() => {
+      fireEvent.keyUp(slider);
+    });
+
+    expect(setCrossfadeDurationMs).toHaveBeenCalledWith(8_000);
+    vi.useRealTimers();
+  });
+
   test("slider is disabled when crossfade is disabled", () => {
     const value = createSettingsOverlayTestContextValue({
       state: {
