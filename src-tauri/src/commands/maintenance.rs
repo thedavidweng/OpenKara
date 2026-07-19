@@ -22,8 +22,7 @@ pub fn delete_all_stems(
     let freed_bytes = cache::stems::estimate_stems_disk_usage(&library_root)
         .map_err(|e| internal_error(format!("failed to estimate stems disk usage: {e}")))?;
 
-    let connection = cache::open_database(&library_root.database_path())
-        .map_err(|e| database_error(e.to_string()))?;
+    let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
 
     let deleted_count = remote::run_active_library_mirror_mutation(&state, &app_handle, || {
         let deleted_count = cache::stems::delete_all_stem_cache_entries(&connection, &library_root)
@@ -62,8 +61,7 @@ pub fn downgrade_all_to_two_stem(
     app_handle: AppHandle,
 ) -> CommandResult<DowngradeResult> {
     let library_root = state.library_root()?;
-    let connection = cache::open_database(&library_root.database_path())
-        .map_err(|e| database_error(e.to_string()))?;
+    let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
 
     let (downgraded_count, freed_bytes) =
         remote::run_active_library_mirror_mutation(&state, &app_handle, || {
@@ -95,8 +93,7 @@ pub fn downgrade_all_to_two_stem(
 #[tauri::command]
 pub fn estimate_downgrade_savings(state: State<'_, AppState>) -> CommandResult<u64> {
     let library_root = state.library_root()?;
-    let connection = cache::open_database(&library_root.database_path())
-        .map_err(|e| database_error(e.to_string()))?;
+    let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
 
     cache::stems::estimate_downgrade_savings(&connection, &library_root)
         .map_err(|e| internal_error(format!("failed to estimate downgrade savings: {e}")))
@@ -108,12 +105,10 @@ pub fn delete_all_cached_lyrics(
     app_handle: AppHandle,
 ) -> CommandResult<usize> {
     let library_root = state.library_root()?;
-    let connection = cache::open_database(&library_root.database_path())
-        .map_err(|e| database_error(e.to_string()))?;
+    let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
 
     let deleted = remote::run_active_library_mirror_mutation(&state, &app_handle, || {
-        cache::lyrics::delete_all_lyrics_cache_entries(&connection)
-            .map_err(|e| database_error(e.to_string()))
+        cache::lyrics::delete_all_lyrics_cache_entries(&connection).map_err(database_error)
     })?;
     Ok(deleted)
 }

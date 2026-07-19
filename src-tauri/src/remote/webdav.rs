@@ -1,5 +1,5 @@
 use crate::{
-    commands::error::{CommandError, CommandResult},
+    commands::error::{internal_error, CommandError, CommandResult},
     config::RegisteredLibrary,
     library::error::LibraryError,
 };
@@ -594,12 +594,11 @@ pub(crate) fn upload_directory_to_remote(
             base.display()
         )))
     })? {
-        let entry =
-            entry.map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
+        let entry = entry.map_err(internal_error)?;
         let path = entry.path();
         let relative = path
             .strip_prefix(&local_root)
-            .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?
+            .map_err(internal_error)?
             .to_string_lossy()
             .replace('\\', "/");
 

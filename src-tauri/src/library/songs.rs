@@ -23,11 +23,10 @@ pub fn update_song_metadata(
     title: Option<&str>,
     artist: Option<&str>,
 ) -> CommandResult<Song> {
-    cache::update_song_title_artist(connection, hash, title, artist)
-        .map_err(|e| database_error(e.to_string()))?;
+    cache::update_song_title_artist(connection, hash, title, artist).map_err(database_error)?;
 
     cache::get_song_by_hash(connection, hash)
-        .map_err(|e| database_error(e.to_string()))?
+        .map_err(database_error)?
         .ok_or_else(|| database_error(format!("song with hash {hash} not found")))
 }
 
@@ -90,7 +89,7 @@ pub fn get_song_properties(
     song_id: &str,
 ) -> CommandResult<SongProperties> {
     let song = cache::get_song_by_hash(connection, song_id)
-        .map_err(|e| database_error(e.to_string()))?
+        .map_err(database_error)?
         .ok_or_else(|| database_error(format!("song with hash {song_id} not found")))?;
 
     let Some(song_path) = song.file_path.as_deref() else {

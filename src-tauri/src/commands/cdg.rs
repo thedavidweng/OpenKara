@@ -264,17 +264,16 @@ fn maybe_save_checkpoint(ts: &mut CdgTimelineState, next_packet_index: usize) {
         .last()
         .map(|cp| cp.next_packet_index)
         .unwrap_or(0);
-    if next_packet_index >= last_cp_cursor + CHECKPOINT_INTERVAL_PACKETS {
-        if !ts
+    if next_packet_index >= last_cp_cursor + CHECKPOINT_INTERVAL_PACKETS
+        && !ts
             .checkpoints
             .iter()
             .any(|cp| cp.next_packet_index == next_packet_index)
-        {
-            ts.checkpoints.push(CdgCheckpoint {
-                next_packet_index,
-                renderer: ts.renderer.snapshot(),
-            });
-        }
+    {
+        ts.checkpoints.push(CdgCheckpoint {
+            next_packet_index,
+            renderer: ts.renderer.snapshot(),
+        });
     }
 }
 

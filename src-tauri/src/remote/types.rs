@@ -1,6 +1,6 @@
 use crate::{
     cache,
-    commands::error::{database_error, CommandError, CommandResult},
+    commands::error::{database_error, internal_error, CommandError, CommandResult},
     config::{self, AppConfig, RegisteredLibrary, RemoteLibraryProvider},
     library::error::LibraryError,
     library_root::LibraryRoot,
@@ -409,13 +409,12 @@ pub(crate) fn stored_webdav_server_url(library: &RegisteredLibrary) -> CommandRe
 
 pub(crate) fn load_app_config(app_data_dir: &Path) -> CommandResult<AppConfig> {
     Ok(config::load_config(app_data_dir)
-        .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
+        .map_err(internal_error)?
         .unwrap_or_default())
 }
 
 pub(crate) fn persist_app_config(app_data_dir: &Path, config: &AppConfig) -> CommandResult<()> {
-    config::save_config(app_data_dir, config)
-        .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))
+    config::save_config(app_data_dir, config).map_err(internal_error)
 }
 
 pub(crate) fn load_remote_root(
@@ -428,11 +427,9 @@ pub(crate) fn load_remote_root(
         ))
     })?;
     let root = if root_path.join(".openkara-library").exists() {
-        LibraryRoot::open(&root_path)
-            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
+        LibraryRoot::open(&root_path).map_err(internal_error)?
     } else {
-        LibraryRoot::create(&root_path)
-            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
+        LibraryRoot::create(&root_path).map_err(internal_error)?
     };
     cache::initialize_library_database(&root.database_path())
         .map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;

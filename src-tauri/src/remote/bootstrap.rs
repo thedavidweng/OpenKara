@@ -17,7 +17,7 @@
 
 use crate::{
     cache,
-    commands::error::{CommandError, CommandResult},
+    commands::error::{internal_error, CommandError, CommandResult},
     config::RegisteredLibrary,
     library::error::LibraryError,
     library_root::LibraryRoot,
@@ -132,11 +132,9 @@ fn open_or_create_local_working_copy(library: &RegisteredLibrary) -> CommandResu
         ))
     })?;
     let root = if root_path.join(".openkara-library").exists() {
-        LibraryRoot::open(&root_path)
-            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
+        LibraryRoot::open(&root_path).map_err(internal_error)?
     } else {
-        LibraryRoot::create(&root_path)
-            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
+        LibraryRoot::create(&root_path).map_err(internal_error)?
     };
     cache::initialize_library_database(&root.database_path())
         .map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;

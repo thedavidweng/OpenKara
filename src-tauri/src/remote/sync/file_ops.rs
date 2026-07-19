@@ -1,5 +1,5 @@
 use crate::{
-    commands::error::{CommandError, CommandResult},
+    commands::error::{internal_error, CommandError, CommandResult},
     library::error::LibraryError,
     library_root::LibraryRoot,
 };
@@ -58,8 +58,7 @@ pub(crate) fn copy_directory_recursive(source: &Path, destination: &Path) -> Com
             source.display()
         )))
     })? {
-        let entry =
-            entry.map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
+        let entry = entry.map_err(internal_error)?;
         let source_path = entry.path();
         let destination_path = destination.join(entry.file_name());
 

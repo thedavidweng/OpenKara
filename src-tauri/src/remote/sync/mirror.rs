@@ -1,6 +1,6 @@
 use crate::{
     cache,
-    commands::error::{database_error, CommandError, CommandResult},
+    commands::error::{database_error, internal_error, CommandError, CommandResult},
     config::RegisteredLibrary,
     library::error::LibraryError,
     library::Song,
@@ -120,7 +120,7 @@ fn sync_bound_remote<R: tauri::Runtime>(
             .map_err(|error| database_error(error.to_string()))?;
         for song in &songs_to_delete {
             crate::library::delete_song_rows_from_database(&tx, &remote_root, &song.hash)
-                .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
+                .map_err(internal_error)?;
         }
         tx.commit()
             .map_err(|error| database_error(error.to_string()))?;

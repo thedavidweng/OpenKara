@@ -530,7 +530,7 @@ pub fn plan_batch(
     stem_mode: StemMode,
 ) -> CommandResult<BatchPlan> {
     let hashes: Vec<String> = if song_ids.is_empty() {
-        let songs = cache::list_songs(connection).map_err(|e| database_error(e.to_string()))?;
+        let songs = cache::list_songs(connection).map_err(database_error)?;
         songs
             .into_iter()
             .filter(|song| song.is_separable())
@@ -797,11 +797,9 @@ pub fn get_all_separation_statuses(
     state: &AppState,
 ) -> CommandResult<Vec<SeparationStatusSnapshot>> {
     let library_root = state.library_root()?;
-    let connection = cache::open_database(&library_root.database_path())
-        .map_err(|e| database_error(e.to_string()))?;
+    let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
 
-    let entries = cache::stems::list_all_stem_entries(&connection)
-        .map_err(|e| database_error(e.to_string()))?;
+    let entries = cache::stems::list_all_stem_entries(&connection).map_err(database_error)?;
 
     // Also populate the in-memory separation_statuses map so that
     // subsequent get_separation_status calls return the correct state.

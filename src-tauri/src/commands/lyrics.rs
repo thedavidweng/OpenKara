@@ -118,14 +118,14 @@ fn fetch_lyrics_phase1(state: &AppState, song_id: &str) -> CommandResult<FetchLy
     let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
 
     let song = cache::get_song_by_hash(&connection, song_id)
-        .map_err(|e| database_error(e.to_string()))?
+        .map_err(database_error)?
         .ok_or(LyricsError::SongNotFound(song_id.to_string()))?;
 
     // Cache hit — return immediately (no DB write, no remote sync needed).
     // Negative cache (Absent) entries expire after NEGATIVE_CACHE_TTL_SECS so
     // lyrics added to LRCLIB/LrcAPI later can be discovered on re-fetch.
-    if let Some(cached) = cache::lyrics::get_lyrics_cache_entry(&connection, song_id)
-        .map_err(|e| database_error(e.to_string()))?
+    if let Some(cached) =
+        cache::lyrics::get_lyrics_cache_entry(&connection, song_id).map_err(database_error)?
     {
         if cached.source == LyricsSource::Absent {
             if !is_negative_cache_expired(&cached) {
@@ -438,7 +438,7 @@ fn save_manual_lyrics_on_thread(
                 fetched_at,
             },
         )
-        .map_err(|e| database_error(e.to_string()))?;
+        .map_err(database_error)?;
 
         Ok(LyricsPayload {
             song_id: publish_song_id,
@@ -491,8 +491,7 @@ fn import_lyrics_files_on_thread(
         state,
         app_handle,
         || {
-            let all_songs =
-                cache::list_songs(&connection).map_err(|e| database_error(e.to_string()))?;
+            let all_songs = cache::list_songs(&connection).map_err(database_error)?;
 
             let mut matched = Vec::new();
             let mut unmatched = Vec::new();
@@ -657,7 +656,7 @@ fn extract_embedded_lyrics_on_thread(
                 fetched_at,
             },
         )
-        .map_err(|e| database_error(e.to_string()))?;
+        .map_err(database_error)?;
 
         Ok(LyricsPayload {
             song_id: publish_song_id,
@@ -727,7 +726,7 @@ fn fetch_lyrics_online_phase1(state: &AppState, song_id: &str) -> CommandResult<
     let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
 
     let song = cache::get_song_by_hash(&connection, song_id)
-        .map_err(|e| database_error(e.to_string()))?
+        .map_err(database_error)?
         .ok_or(LyricsError::SongNotFound(song_id.to_owned()))?;
 
     match lookup_query_from_song(&song) {

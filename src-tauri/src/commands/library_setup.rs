@@ -1,6 +1,6 @@
 use crate::{
     cache,
-    commands::error::{state_lock_error, CommandError, CommandResult},
+    commands::error::{internal_error, state_lock_error, CommandError, CommandResult},
     config::{self, AppConfig, RegisteredLibrary},
     library::error::LibraryError,
     library_root::LibraryRoot,
@@ -28,13 +28,12 @@ fn canonical_path_string(path: &Path) -> String {
 
 fn load_app_config(app_data_dir: &Path) -> CommandResult<AppConfig> {
     Ok(config::load_config(app_data_dir)
-        .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
+        .map_err(internal_error)?
         .unwrap_or_default())
 }
 
 fn persist_app_config(app_data_dir: &Path, config: &AppConfig) -> CommandResult<()> {
-    config::save_config(app_data_dir, config)
-        .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))
+    config::save_config(app_data_dir, config).map_err(internal_error)
 }
 
 fn update_library_display_name(
@@ -223,8 +222,7 @@ fn activate_library(
             "remote repository is missing a cached working copy".to_string(),
         ))
     })?;
-    let lib = LibraryRoot::open(&root_path)
-        .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?;
+    let lib = LibraryRoot::open(&root_path).map_err(internal_error)?;
     let db_path = lib.database_path();
     cache::initialize_library_database(&db_path)
         .map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
@@ -248,8 +246,7 @@ pub fn create_library(
 ) -> CommandResult<LibraryRegistrySnapshot> {
     let lib_path = PathBuf::from(&path);
 
-    let lib = LibraryRoot::create(&lib_path)
-        .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?;
+    let lib = LibraryRoot::create(&lib_path).map_err(internal_error)?;
     let canonical_root = canonical_path_string(lib.root());
     let library = RegisteredLibrary::local(
         canonical_root.clone(),
@@ -266,8 +263,7 @@ pub fn open_library(
 ) -> CommandResult<LibraryRegistrySnapshot> {
     let lib_path = PathBuf::from(&path);
 
-    let lib = LibraryRoot::open(&lib_path)
-        .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?;
+    let lib = LibraryRoot::open(&lib_path).map_err(internal_error)?;
     let canonical_root = canonical_path_string(lib.root());
     let library = RegisteredLibrary::local(
         canonical_root.clone(),
@@ -300,10 +296,7 @@ pub fn get_library_path(state: State<'_, AppState>) -> CommandResult<Option<Stri
 
 #[tauri::command]
 pub fn get_library_registry(app_handle: AppHandle) -> CommandResult<LibraryRegistrySnapshot> {
-    let app_data_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
+    let app_data_dir = app_handle.path().app_data_dir().map_err(internal_error)?;
     let config = load_app_config(&app_data_dir)?;
 
     Ok(LibraryRegistrySnapshot {
@@ -314,10 +307,7 @@ pub fn get_library_registry(app_handle: AppHandle) -> CommandResult<LibraryRegis
 
 #[tauri::command]
 pub fn get_active_library(app_handle: AppHandle) -> CommandResult<Option<RegisteredLibrary>> {
-    let app_data_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
+    let app_data_dir = app_handle.path().app_data_dir().map_err(internal_error)?;
     let config = load_app_config(&app_data_dir)?;
 
     Ok(config.active_library().cloned())
@@ -329,10 +319,7 @@ pub fn remove_library(
     app_handle: AppHandle,
     library_id: String,
 ) -> CommandResult<LibraryRegistrySnapshot> {
-    let app_data_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
+    let app_data_dir = app_handle.path().app_data_dir().map_err(internal_error)?;
     let mut config = load_app_config(&app_data_dir)?;
     let removed_active = config.active_library_id.as_deref() == Some(library_id.as_str());
     let removed_libraries: Vec<_> = config
@@ -386,10 +373,7 @@ pub fn rename_library(
     library_id: String,
     display_name: String,
 ) -> CommandResult<LibraryRegistrySnapshot> {
-    let app_data_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
+    let app_data_dir = app_handle.path().app_data_dir().map_err(internal_error)?;
     update_library_display_name(&app_data_dir, &library_id, &display_name)
 }
 
@@ -399,10 +383,7 @@ pub fn delete_library(
     app_handle: AppHandle,
     library_id: String,
 ) -> CommandResult<LibraryRegistrySnapshot> {
-    let app_data_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
+    let app_data_dir = app_handle.path().app_data_dir().map_err(internal_error)?;
     let config = load_app_config(&app_data_dir)?;
     let Some(library) = config
         .libraries

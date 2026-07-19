@@ -18,7 +18,7 @@ pub(super) fn extract_embedded_cover_art_for_song(
     song_id: &str,
 ) -> Result<Song, CommandError> {
     let song = cache::get_song_by_hash(connection, song_id)
-        .map_err(|e| database_error(e.to_string()))?
+        .map_err(database_error)?
         .ok_or_else(|| {
             CommandError::new(
                 ErrorCode::SongNotFound,
@@ -101,7 +101,7 @@ pub(super) fn extract_embedded_cover_art_for_song(
     }
 
     cache::get_song_by_hash(connection, &song.hash)
-        .map_err(|e| database_error(e.to_string()))?
+        .map_err(database_error)?
         .ok_or_else(|| {
             CommandError::new(
                 ErrorCode::SongNotFound,

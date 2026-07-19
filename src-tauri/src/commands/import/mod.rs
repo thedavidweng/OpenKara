@@ -19,7 +19,9 @@ pub use crate::library::songs::{
 
 use crate::{
     cache,
-    commands::error::{database_error, state_lock_error, CommandError, CommandResult},
+    commands::error::{
+        database_error, internal_error, state_lock_error, CommandError, CommandResult,
+    },
     library::{artwork, error::LibraryError, ImportSongsResult, Song},
     remote, AppState,
 };
@@ -84,7 +86,7 @@ pub fn pick_import_paths(default_path: Option<String>) -> CommandResult<Vec<Stri
             .as_deref()
             .map(CString::new)
             .transpose()
-            .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
+            .map_err(internal_error)?;
         let mut count = 0usize;
         let raw_paths = unsafe {
             openkara_pick_import_paths(
@@ -435,7 +437,7 @@ pub fn get_song_properties(
 
     // Ensure remote working-copy files exist before probing (command-layer only).
     let song = cache::get_song_by_hash(&connection, &song_id)
-        .map_err(|e| database_error(e.to_string()))?
+        .map_err(database_error)?
         .ok_or_else(|| database_error(format!("song with hash {song_id} not found")))?;
 
     if song.is_remote() {
