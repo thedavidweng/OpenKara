@@ -4,7 +4,6 @@ import {
   HardDrive,
   Languages,
   Moon,
-  Music2,
   Play,
   SlidersHorizontal,
   Sparkles,
@@ -29,26 +28,6 @@ const COPY = {
     primary: "Download free",
     secondary: "Watch demo",
     platform: "For macOS, Windows, and Linux",
-    previewLabel: "A live preview built from the OpenKara app itself",
-    previewNote:
-      "Switch playlists in the left rail. The main window is intentionally read-only, so the product scene stays composed instead of becoming a demo sandbox.",
-    previewModules: [
-      [
-        "Lyrics",
-        "Follow every line",
-        "A lyric-led view keeps the song in focus before you begin singing.",
-      ],
-      [
-        "Stem separation",
-        "Shape the backing track",
-        "Separate vocals, drums, bass, and other parts directly on your computer.",
-      ],
-      [
-        "Mixing",
-        "Tune the moment",
-        "Fine-tune each part when you are ready to perform—not inside the landing preview.",
-      ],
-    ],
     builtWith: "Built with",
     builtWithDisclaimer:
       "Tool names and logos are shown for identification only. No partnership, sponsorship, endorsement, or affiliation is implied.",
@@ -105,26 +84,6 @@ const COPY = {
     primary: "免费下载",
     secondary: "观看演示",
     platform: "支持 macOS、Windows 和 Linux",
-    previewLabel: "直接由 OpenKara 应用构建的实时预览",
-    previewNote:
-      "可以在左侧切换歌单；主窗口刻意保持只读，让产品画面始终稳定，而不是变成一个可随意操作的演示沙盒。",
-    previewModules: [
-      [
-        "歌词",
-        "跟住每一句",
-        "以歌词为中心的画面，让你开唱前先专注于歌曲本身。",
-      ],
-      [
-        "音轨分离",
-        "塑造伴奏",
-        "直接在你的电脑上分离人声、鼓、贝斯与其他音轨。",
-      ],
-      [
-        "混音",
-        "调出此刻",
-        "真正准备开唱时再精细调整每一轨，而不是在落地页预览里操作。",
-      ],
-    ],
     builtWith: "构建工具",
     builtWithDisclaimer:
       "这些名称与标志仅用于识别；不代表合作、赞助、认可或隶属关系。",
@@ -163,8 +122,6 @@ const COPY = {
 } as const;
 
 const featureIcons = [Sparkles, SlidersHorizontal, Languages, HardDrive];
-
-const previewModuleIcons = [Music2, Sparkles, SlidersHorizontal];
 
 const BUILT_WITH_TOOLS = [
   {
@@ -328,25 +285,6 @@ export function LandingPage() {
               ))}
             </div>
             <p className="built-with-disclaimer">{copy.builtWithDisclaimer}</p>
-          </div>
-        </section>
-        <section className="preview-details" aria-labelledby="preview-title">
-          <div className="preview-caption content-width">
-            <span id="preview-title">{copy.previewLabel}</span>
-            <p>{copy.previewNote}</p>
-          </div>
-          <div className="preview-modules content-width">
-            {copy.previewModules.map((module, index) => {
-              const Icon = previewModuleIcons[index];
-              return (
-                <article className="preview-module" key={module[0]}>
-                  <Icon size={16} aria-hidden="true" />
-                  <span>{module[0]}</span>
-                  <h3>{module[1]}</h3>
-                  <p>{module[2]}</p>
-                </article>
-              );
-            })}
           </div>
         </section>
 
