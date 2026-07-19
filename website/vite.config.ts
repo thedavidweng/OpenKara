@@ -5,6 +5,10 @@ import { fileURLToPath, URL } from "node:url";
 
 export default defineConfig({
   root: fileURLToPath(new URL(".", import.meta.url)),
+  // Serve from the GitHub Pages project subpath (`thedavidweng.github.io/OpenKara/`).
+  // No CNAME → no custom domain redirect. The xyz domain stays registered for
+  // Dropbox app configuration but no longer serves the site.
+  base: "/OpenKara/",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

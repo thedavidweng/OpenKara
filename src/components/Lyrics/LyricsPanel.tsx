@@ -309,6 +309,7 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
         ref={containerRef}
         key={songId}
         data-testid="lyrics-scroll-viewport"
+        data-preview-lyrics-interactive="true"
         className={`flex w-full flex-1 overflow-y-auto animate-[song-fade-in_var(--motion-duration-slow)_var(--motion-ease-emphasized-out)] ${
           isAudience ? "" : spaciousStageLayout ? "px-16 py-10" : "px-12 py-8"
         }`}
@@ -430,6 +431,7 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
               type="button"
               data-testid="lyrics-follow-playing"
               data-visible={userScrollUnlocked}
+              data-preview-lyrics-interactive="true"
               onClick={() => requestLyricsAutoScrollResume()}
               aria-label={t("lyrics.followPlaying")}
               className="contextual-reveal pointer-events-auto motion-icon-button rounded-full border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-2 text-[var(--color-text-dim)] hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[var(--color-hover)] hover:text-[var(--color-control-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"

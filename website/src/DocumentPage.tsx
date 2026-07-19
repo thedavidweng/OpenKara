@@ -8,6 +8,7 @@ import privacyZh from "../zh/privacy.md?raw";
 import termsZh from "../zh/terms.md?raw";
 import {
   documentHref,
+  withBase,
   type DocumentRoute,
   type DocumentSlug,
   type SiteLanguage,
@@ -171,11 +172,11 @@ export function DocumentPage({ language, slug }: DocumentRoute) {
     <div className="document-site">
       <header className="site-header">
         <nav className="site-nav" aria-label="Document navigation">
-          <a className="brand" href="/" aria-label="OpenKara home">
-            <img src="/img/openkara-app-icon.png" alt="" />
+          <a className="brand" href={withBase("/")} aria-label="OpenKara home">
+            <img src={withBase("/img/openkara-app-icon.png")} alt="" />
             <span>OpenKara</span>
           </a>
-          <a className="document-home-link" href="/">
+          <a className="document-home-link" href={withBase("/")}>
             {language === "en" ? "Back to home" : "返回首页"}
           </a>
           <div className="nav-actions">
@@ -211,7 +212,7 @@ export function DocumentPage({ language, slug }: DocumentRoute) {
 
       <main className="document-main content-width">
         <div className="document-breadcrumb" aria-label="Breadcrumb">
-          <a href="/">OpenKara</a>
+          <a href={withBase("/")}>OpenKara</a>
           <span>/</span>
           <span>{label}</span>
         </div>
@@ -248,7 +249,7 @@ export function DocumentPage({ language, slug }: DocumentRoute) {
       </main>
 
       <footer className="document-footer content-width">
-        <a href="/">OpenKara</a>
+        <a href={withBase("/")}>OpenKara</a>
         <div>
           <a href={documentHref(language, "faq")}>{LABELS.faq[language]}</a>
           <a href={documentHref(language, "privacy")}>
