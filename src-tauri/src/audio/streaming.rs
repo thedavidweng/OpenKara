@@ -432,10 +432,47 @@ impl StreamingTrack {
     ///
     /// Moved onto the enum so output.rs does not pattern-match on the variant
     /// shape — adding a new stem layout only touches this one impl block.
+    ///
+    /// Matches on the variant directly instead of going through
+    /// `consumers_mut()` (which allocates a `Vec`). This method is called
+    /// from the realtime CPAL audio callback; allocations there cause
+    /// allocator stalls and audible glitches.
     pub fn acknowledge_flush_if_needed(&mut self) {
-        for consumer in self.consumers_mut() {
-            if consumer.needs_flush() {
-                consumer.acknowledge_flush();
+        match self {
+            StreamingTrack::Single { consumer } => {
+                if consumer.needs_flush() {
+                    consumer.acknowledge_flush();
+                }
+            }
+            StreamingTrack::TwoStem {
+                vocals,
+                accompaniment,
+            } => {
+                if vocals.needs_flush() {
+                    vocals.acknowledge_flush();
+                }
+                if accompaniment.needs_flush() {
+                    accompaniment.acknowledge_flush();
+                }
+            }
+            StreamingTrack::FourStem {
+                vocals,
+                drums,
+                bass,
+                other,
+            } => {
+                if vocals.needs_flush() {
+                    vocals.acknowledge_flush();
+                }
+                if drums.needs_flush() {
+                    drums.acknowledge_flush();
+                }
+                if bass.needs_flush() {
+                    bass.acknowledge_flush();
+                }
+                if other.needs_flush() {
+                    other.acknowledge_flush();
+                }
             }
         }
     }
@@ -454,13 +491,57 @@ impl StreamingTrack {
     /// guarantees that when playback resumes (all stems above high water),
     /// every consumer is at the same source-clock position. This is the
     /// simplest correctness strategy for synchronised multi-stem playback.
+    ///
+    /// Matches on the variant directly instead of going through `consumers()`
+    /// (which allocates a `Vec`). This method is called from the realtime
+    /// CPAL audio callback; allocations there cause allocator stalls and
+    /// audible glitches.
     pub fn any_consumer_below_low_water(&self) -> bool {
-        self.consumers().iter().any(|c| c.is_below_low_water())
+        match self {
+            StreamingTrack::Single { consumer } => consumer.is_below_low_water(),
+            StreamingTrack::TwoStem {
+                vocals,
+                accompaniment,
+            } => vocals.is_below_low_water() || accompaniment.is_below_low_water(),
+            StreamingTrack::FourStem {
+                vocals,
+                drums,
+                bass,
+                other,
+            } => {
+                vocals.is_below_low_water()
+                    || drums.is_below_low_water()
+                    || bass.is_below_low_water()
+                    || other.is_below_low_water()
+            }
+        }
     }
 
     /// True when *all* consumers are above their high-water mark.
+    ///
+    /// Matches on the variant directly instead of going through `consumers()`
+    /// (which allocates a `Vec`). This method is called from the realtime
+    /// CPAL audio callback; allocations there cause allocator stalls and
+    /// audible glitches.
     pub fn all_consumers_above_high_water(&self) -> bool {
-        self.consumers().iter().all(|c| c.is_above_high_water())
+        match self {
+            StreamingTrack::Single { consumer } => consumer.is_above_high_water(),
+            StreamingTrack::TwoStem {
+                vocals,
+                accompaniment,
+            } => vocals.is_above_high_water() && accompaniment.is_above_high_water(),
+            StreamingTrack::FourStem {
+                vocals,
+                drums,
+                bass,
+                other,
+            } => {
+                vocals.is_above_high_water()
+                    && drums.is_above_high_water()
+                    && bass.is_above_high_water()
+                    && other.is_above_high_water()
+            }
+        }
     }
 }
 
