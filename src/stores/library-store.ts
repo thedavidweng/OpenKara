@@ -13,12 +13,27 @@ import type {
   UploadStatusSnapshot,
 } from "@/types/ipc";
 
-function debounce<T extends (...args: never[]) => void>(fn: T, ms: number): T {
+function debounce<T extends (...args: never[]) => void>(
+  fn: T,
+  ms: number,
+): T & { cancel: () => void } {
   let timer: ReturnType<typeof setTimeout> | null = null;
-  return ((...args: Parameters<T>) => {
+  const wrapped = ((...args: Parameters<T>) => {
     if (timer) clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), ms);
-  }) as T;
+    timer = setTimeout(() => {
+      timer = null;
+      fn(...args);
+    }, ms);
+  }) as T & { cancel: () => void };
+  // Clear must cancel a pending timer: otherwise a late debounced search can
+  // overwrite loadLibrary() results when the user clears within the window.
+  wrapped.cancel = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  };
+  return wrapped;
 }
 
 interface LibraryState {
@@ -196,6 +211,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     if (query.trim()) {
       debouncedSearch(query);
     } else {
+      debouncedSearch.cancel();
       searchGeneration++;
       get().loadLibrary();
     }

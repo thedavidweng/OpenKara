@@ -360,6 +360,11 @@ jobs:
 
       - name: Run Rust tests
         working-directory: src-tauri
+        env:
+          # Parallel rust-lld of many heavy Tauri integration-test binaries has
+          # hit SIGBUS (Bus error) on GitHub Linux runners. Cap build jobs so
+          # concurrent linkers do not collide under memory pressure.
+          CARGO_BUILD_JOBS: "2"
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then
             cargo nextest run --no-fail-fast
