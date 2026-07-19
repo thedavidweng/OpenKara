@@ -143,7 +143,7 @@ export function SongEditDialog({ song, onClose }: SongEditDialogProps) {
             onClick={handleSave}
             disabled={saving}
             aria-describedby={saveError ? errorId : undefined}
-            className="rounded-md bg-[var(--color-accent)] px-3 py-2 text-[12px] font-medium text-[var(--color-on-accent)] transition-colors hover:bg-[var(--color-accent)]/80 focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/40 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md bg-[var(--color-control-primary)] px-3 py-2 text-[12px] font-medium text-[var(--color-control-primary-foreground)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-control-primary)_88%,white)] focus:outline-none focus:ring-2 focus:ring-[var(--color-focus-ring)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {saving ? t("common.saving") : t("common.save")}
           </button>

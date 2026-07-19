@@ -36,6 +36,16 @@
     --sidebar-item-radius: 6px;
   }
 
+  /*
+   * Theme siblings: dark and light share one monochrome control language.
+   * Light is the luminance invert of dark — white surfaces, dark type, dark
+   * primary fills — not a second "colorful" skin. Brand blue is not part of
+   * chrome. The only non-neutral semantic is destructive red.
+   *
+   * --color-accent tracks --color-control-primary so legacy class names that
+   * still say "accent" (active mute, links, focus, progress) stay monochrome
+   * without inventing a parallel hue for either theme.
+   */
   /* ── Dark theme tokens (default) ────────────────────────── */
   :root,
   :root[data-theme="dark"] {
@@ -50,31 +60,24 @@
     --color-text: #d1d1d6;
     --color-text-dim: #8e8e93;
     --color-text-dimmer: #48484a;
-    --color-accent: #007aff;
-    --color-accent-hover: #0a84ff;
     --color-control-primary: #ebebf5;
     --color-control-primary-foreground: #121212;
+    --color-accent: #ebebf5;
+    --color-accent-hover: #ffffff;
     --color-destructive: #ff3b30;
     --color-destructive-foreground: #f5f5f7;
     --color-ghost-hover: rgba(255, 255, 255, 0.04);
     /* Semantic tokens consumed by audited components. */
-    --color-on-accent: #ffffff;
+    --color-on-accent: #121212;
     --color-on-media: #ffffff;
     --color-scrim: rgba(0, 0, 0, 0.5);
     --color-lyrics-active: #ffffff;
     --color-lyrics-past: rgba(255, 255, 255, 0.45);
     --color-lyrics-future: rgba(255, 255, 255, 0.5);
-    --color-focus-ring: rgba(0, 122, 255, 0.6);
-    --color-control-selected-bg: color-mix(
-      in srgb,
-      var(--color-accent) 24%,
-      rgba(255, 255, 255, 0.03)
-    );
-    --color-control-selected-border: color-mix(
-      in srgb,
-      var(--color-accent) 40%,
-      rgba(255, 255, 255, 0.12)
-    );
+    --color-focus-ring: rgba(235, 235, 245, 0.45);
+    /* Neutral selection wash — no hue. */
+    --color-control-selected-bg: rgba(255, 255, 255, 0.1);
+    --color-control-selected-border: rgba(255, 255, 255, 0.16);
     --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.5);
     --shadow-dialog: 0 16px 48px rgba(0, 0, 0, 0.6);
     --shadow-control-selected: 0 0 0 1px var(--color-control-selected-border);
@@ -87,16 +90,8 @@
       0 0 20px rgba(255, 255, 255, 0.7), 0 0 8px rgba(255, 255, 255, 0.5);
     /* Unified chrome tokens (formerly split between "classic" vs native-only names). */
     --sidebar-row-overlay-bg: rgba(255, 255, 255, 0.045);
-    --sidebar-row-selected-bg: color-mix(
-      in srgb,
-      var(--color-accent) 24%,
-      rgba(255, 255, 255, 0.03)
-    );
-    --sidebar-row-selected-border: color-mix(
-      in srgb,
-      var(--color-accent) 40%,
-      rgba(255, 255, 255, 0.12)
-    );
+    --sidebar-row-selected-bg: rgba(255, 255, 255, 0.1);
+    --sidebar-row-selected-border: rgba(255, 255, 255, 0.16);
     --sidebar-control-border: rgba(255, 255, 255, 0.08);
     --sidebar-control-bg: rgba(255, 255, 255, 0.045);
     --chrome-floating-bg: rgba(255, 255, 255, 0.09);
@@ -115,9 +110,8 @@
   /* ── Light theme tokens ─────────────────────────────────── */
   :root[data-theme="light"] {
     /*
-     * The light shell intentionally follows the reference's near-white surfaces
-     * and blue control hierarchy.  A neutral gray sidebar/card stack made
-     * semantic text and white-only controls blend together on WKWebView.
+     * Luminance invert of dark — same monochrome language, flipped values.
+     * Do not introduce a blue (or other hue) control hierarchy here.
      */
     --color-surface: #ffffff;
     --color-surface-muted: #f8f8fa;
@@ -130,10 +124,10 @@
     --color-text: #1d1d1f;
     --color-text-dim: #5f636b;
     --color-text-dimmer: #7d818a;
-    --color-accent: #0a84ff;
-    --color-accent-hover: #0074e6;
-    --color-control-primary: #0a84ff;
+    --color-control-primary: #1d1d1f;
     --color-control-primary-foreground: #ffffff;
+    --color-accent: #1d1d1f;
+    --color-accent-hover: #000000;
     --color-destructive: #d70015;
     --color-destructive-foreground: #ffffff;
     --color-ghost-hover: rgba(0, 0, 0, 0.055);
@@ -143,35 +137,35 @@
     --color-lyrics-active: #16171a;
     --color-lyrics-past: rgba(29, 29, 31, 0.42);
     --color-lyrics-future: rgba(29, 29, 31, 0.48);
-    --color-focus-ring: rgba(0, 122, 255, 0.6);
+    --color-focus-ring: rgba(29, 29, 31, 0.4);
     --color-control-selected-bg: color-mix(
       in srgb,
-      var(--color-accent) 14%,
+      var(--color-text) 7%,
       var(--color-surface)
     );
     --color-control-selected-border: color-mix(
       in srgb,
-      var(--color-accent) 32%,
+      var(--color-text) 14%,
       var(--color-border)
     );
     --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.15);
     --shadow-dialog: 0 16px 48px rgba(0, 0, 0, 0.2);
     --shadow-control-selected: 0 0 0 1px var(--color-control-selected-border);
     --shadow-lyrics-hover:
-      0 2px 4px rgba(29, 29, 31, 0.1), 0 10px 28px rgba(10, 132, 255, 0.1);
+      0 2px 4px rgba(29, 29, 31, 0.1), 0 10px 28px rgba(29, 29, 31, 0.08);
     --shadow-lyrics-glow:
-      0 0 12px rgba(10, 132, 255, 0.28), 0 0 4px rgba(10, 132, 255, 0.2);
+      0 0 12px rgba(29, 29, 31, 0.12), 0 0 4px rgba(29, 29, 31, 0.08);
     --shadow-lyrics-glow-strong:
-      0 0 20px rgba(10, 132, 255, 0.38), 0 0 8px rgba(10, 132, 255, 0.28);
+      0 0 20px rgba(29, 29, 31, 0.16), 0 0 8px rgba(29, 29, 31, 0.1);
     --sidebar-row-overlay-bg: rgba(0, 0, 0, 0.04);
     --sidebar-row-selected-bg: color-mix(
       in srgb,
-      var(--color-accent) 14%,
+      var(--color-text) 7%,
       var(--color-surface)
     );
     --sidebar-row-selected-border: color-mix(
       in srgb,
-      var(--color-accent) 35%,
+      var(--color-text) 14%,
       rgba(0, 0, 0, 0.08)
     );
     --sidebar-control-border: rgba(29, 29, 31, 0.12);
@@ -241,10 +235,11 @@
     --color-text: #d9dde3;
     --color-text-dim: #9ea6b0;
     --color-text-dimmer: #6f7780;
-    --color-accent: #3f8cff;
-    --color-accent-hover: #5d9fff;
     --color-control-primary: #eef2f7;
     --color-control-primary-foreground: #17191d;
+    --color-accent: #eef2f7;
+    --color-accent-hover: #ffffff;
+    --color-on-accent: #17191d;
     --color-ghost-hover: rgba(255, 255, 255, 0.06);
     --panel-blur: 12px;
     color-scheme: dark;
@@ -266,10 +261,11 @@
     --color-text: #1d1d1f;
     --color-text-dim: #5f636b;
     --color-text-dimmer: #7d818a;
-    --color-accent: #0a84ff;
-    --color-accent-hover: #0074e6;
-    --color-control-primary: #0a84ff;
+    --color-control-primary: #1d1d1f;
     --color-control-primary-foreground: #ffffff;
+    --color-accent: #1d1d1f;
+    --color-accent-hover: #000000;
+    --color-on-accent: #ffffff;
     --color-ghost-hover: rgba(0, 0, 0, 0.055);
     --panel-blur: 12px;
     color-scheme: light;
@@ -359,10 +355,11 @@
     --color-text: #e6e6eb;
     --color-text-dim: #a0a0a7;
     --color-text-dimmer: #66666d;
-    --color-accent: #0a84ff;
-    --color-accent-hover: #409cff;
     --color-control-primary: #f5f5f7;
     --color-control-primary-foreground: #18181b;
+    --color-accent: #f5f5f7;
+    --color-accent-hover: #ffffff;
+    --color-on-accent: #18181b;
     --color-ghost-hover: rgba(255, 255, 255, 0.06);
     --panel-blur: 8px;
     --sidebar-item-radius: 10px;
@@ -380,10 +377,11 @@
     --color-text: #1d1d1f;
     --color-text-dim: #5f636b;
     --color-text-dimmer: #7d818a;
-    --color-accent: #0a84ff;
-    --color-accent-hover: #0074e6;
-    --color-control-primary: #0a84ff;
+    --color-control-primary: #1d1d1f;
     --color-control-primary-foreground: #ffffff;
+    --color-accent: #1d1d1f;
+    --color-accent-hover: #000000;
+    --color-on-accent: #ffffff;
     --color-ghost-hover: rgba(0, 0, 0, 0.055);
     --panel-blur: 8px;
     --sidebar-item-radius: 10px;
@@ -517,7 +515,8 @@
   }
 
   .playback-bar-action-button[data-active="true"] {
-    color: var(--color-accent);
+    /* Monochrome pressed chrome — same language in light and dark. */
+    color: var(--color-control-primary);
     background-color: var(--color-control-selected-bg);
     box-shadow: var(--shadow-control-selected);
   }
@@ -562,7 +561,7 @@
   }
 
   .panel-stem-action-button[data-active="true"] {
-    color: var(--color-accent);
+    color: var(--color-control-primary);
     background-color: var(--color-control-selected-bg);
     box-shadow: var(--shadow-control-selected);
   }

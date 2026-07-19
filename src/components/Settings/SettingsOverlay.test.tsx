@@ -351,7 +351,7 @@ describe("SettingsExecutionProviderSection rendering", () => {
     // The selected class marker appears exactly once.
     const selectedCount = (
       markup.match(
-        /border-\[var\(--color-accent\)\] bg-\[var\(--color-accent\)\]/g,
+        /border-\[var\(--color-control-selected-border\)\] bg-\[var\(--color-control-selected-bg\)\]/g,
       ) ?? []
     ).length;
     expect(selectedCount).toBe(1);

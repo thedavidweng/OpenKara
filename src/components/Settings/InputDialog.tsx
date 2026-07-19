@@ -81,7 +81,7 @@ export function InputDialog({
           <button
             onClick={() => value.trim() && onConfirm(value.trim())}
             disabled={!value.trim()}
-            className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-[13px] text-[var(--color-on-accent)] transition-colors hover:bg-[var(--color-accent-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/40 disabled:opacity-50"
+            className="rounded-md bg-[var(--color-control-primary)] px-4 py-2 text-[13px] text-[var(--color-control-primary-foreground)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-control-primary)_88%,white)] focus:outline-none focus:ring-2 focus:ring-[var(--color-focus-ring)] disabled:opacity-50"
           >
             {label}
           </button>

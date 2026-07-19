@@ -283,7 +283,7 @@ export function RemoteLibraryWizard({
               disabled={loading}
               className={`rounded-lg border px-4 py-3 text-left ${
                 mode === "open_remote"
-                  ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10"
+                  ? "border-[var(--color-control-selected-border)] bg-[var(--color-control-selected-bg)]"
                   : "border-[var(--color-border-light)] bg-[var(--color-surface)]"
               }`}
             >
@@ -304,7 +304,7 @@ export function RemoteLibraryWizard({
               disabled={loading || !canMirrorActiveLocal}
               className={`rounded-lg border px-4 py-3 text-left ${
                 mode === "mirror_active_local"
-                  ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10"
+                  ? "border-[var(--color-control-selected-border)] bg-[var(--color-control-selected-bg)]"
                   : "border-[var(--color-border-light)] bg-[var(--color-surface)]"
               } disabled:opacity-50`}
             >
@@ -343,11 +343,14 @@ export function RemoteLibraryWizard({
               disabled={loading}
               className={`rounded-lg border px-4 py-3 text-left ${
                 provider === candidate
-                  ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10"
+                  ? "border-[var(--color-control-selected-border)] bg-[var(--color-control-selected-bg)]"
                   : "border-[var(--color-border-light)] bg-[var(--color-surface)]"
               }`}
             >
-              <Icon size={16} className="mb-2 text-[var(--color-accent)]" />
+              <Icon
+                size={16}
+                className="mb-2 text-[var(--color-control-primary)]"
+              />
               <p className="text-sm font-medium text-[var(--color-text)]">
                 {getRemoteProviderLabel(t, candidate)}
               </p>
@@ -451,7 +454,7 @@ export function RemoteLibraryWizard({
           <button
             onClick={() => void connect()}
             disabled={loading || meta.isInitializing}
-            className="w-full rounded-lg bg-[var(--color-accent)] px-4 py-2.5 text-sm font-medium text-[var(--color-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-60"
+            className="w-full rounded-lg bg-[var(--color-control-primary)] px-4 py-2.5 text-sm font-medium text-[var(--color-control-primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-60"
           >
             {loading
               ? t("settings.library.connecting", {

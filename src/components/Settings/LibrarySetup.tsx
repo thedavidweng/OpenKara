@@ -104,7 +104,7 @@ function StepIndicator({ current }: { current: Step }) {
           key={step}
           className={`h-1.5 w-1.5 rounded-full transition-colors ${
             i <= currentIndex
-              ? "bg-[var(--color-accent)]"
+              ? "bg-[var(--color-control-primary)]"
               : "bg-[var(--color-border)]"
           }`}
         />
@@ -301,7 +301,10 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
           <>
             <div className="flex flex-col items-center gap-4">
               <div className="flex items-center justify-center">
-                <Globe size={32} className="text-[var(--color-accent)]" />
+                <Globe
+                  size={32}
+                  className="text-[var(--color-control-primary)]"
+                />
               </div>
               <h1 className="text-2xl font-bold text-[var(--color-text)]">
                 {t("setup.chooseLanguage")}
@@ -315,7 +318,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                   onClick={() => handleLanguageSelect(lang.code)}
                   className={`flex w-full items-center gap-3 rounded-lg border px-5 py-4 text-left transition-colors ${
                     selectedLanguage === lang.code
-                      ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10"
+                      ? "border-[var(--color-control-selected-border)] bg-[var(--color-control-selected-bg)]"
                       : "border-[var(--color-border-light)] bg-[var(--color-sidebar)] hover:bg-[var(--color-hover)]"
                   }`}
                 >
@@ -330,7 +333,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                   {selectedLanguage === lang.code && (
                     <Check
                       size={16}
-                      className="ml-auto text-[var(--color-accent)]"
+                      className="ml-auto text-[var(--color-control-primary)]"
                     />
                   )}
                 </button>
@@ -344,7 +347,10 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
           <>
             <div className="flex flex-col items-center gap-4">
               <div className="flex items-center justify-center">
-                <Music size={32} className="text-[var(--color-accent)]" />
+                <Music
+                  size={32}
+                  className="text-[var(--color-control-primary)]"
+                />
               </div>
               <h1 className="text-2xl font-bold text-[var(--color-text)]">
                 {t("setup.welcome")}
@@ -376,9 +382,9 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                       size={20}
                       className={`shrink-0 ${
                         choice.kind === "open_remote"
-                          ? "text-[var(--color-accent)]"
+                          ? "text-[var(--color-control-primary)]"
                           : choice.kind === "create_local"
-                            ? "text-[var(--color-accent)]"
+                            ? "text-[var(--color-control-primary)]"
                             : "text-[var(--color-text-dim)]"
                       }`}
                     />
@@ -436,7 +442,10 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
           <>
             <div className="flex flex-col items-center gap-4">
               <div className="flex items-center justify-center">
-                <Cloud size={32} className="text-[var(--color-accent)]" />
+                <Cloud
+                  size={32}
+                  className="text-[var(--color-control-primary)]"
+                />
               </div>
               <h1 className="text-2xl font-bold text-[var(--color-text)]">
                 {t("setup.openRemoteLibrary", {
@@ -471,13 +480,13 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                     disabled={loading}
                     className={`flex w-full items-start gap-3 rounded-lg border px-5 py-4 text-left transition-colors disabled:opacity-50 ${
                       isActive
-                        ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10"
+                        ? "border-[var(--color-control-selected-border)] bg-[var(--color-control-selected-bg)]"
                         : "border-[var(--color-border-light)] bg-[var(--color-sidebar)] hover:bg-[var(--color-hover)]"
                     }`}
                   >
                     <Icon
                       size={20}
-                      className="mt-0.5 shrink-0 text-[var(--color-accent)]"
+                      className="mt-0.5 shrink-0 text-[var(--color-control-primary)]"
                     />
                     <div className="min-w-0 flex-1">
                       <div className="text-[14px] font-medium text-[var(--color-text)]">
@@ -502,7 +511,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                     {isActive && (
                       <Check
                         size={16}
-                        className="mt-0.5 shrink-0 text-[var(--color-accent)]"
+                        className="mt-0.5 shrink-0 text-[var(--color-control-primary)]"
                       />
                     )}
                   </button>
@@ -540,7 +549,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                 <button
                   onClick={() => void handleGoogleDriveConnect()}
                   disabled={loading}
-                  className="w-full rounded-lg bg-[var(--color-accent)] px-4 py-2.5 text-[13px] font-medium text-[var(--color-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-60"
+                  className="w-full rounded-lg bg-[var(--color-control-primary)] px-4 py-2.5 text-[13px] font-medium text-[var(--color-control-primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-60"
                 >
                   {loading
                     ? t("settings.library.waitingForGoogle", {
@@ -658,7 +667,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                 <button
                   onClick={() => void handleWebDavConnect()}
                   disabled={loading}
-                  className="w-full rounded-lg bg-[var(--color-accent)] px-4 py-2.5 text-[13px] font-medium text-[var(--color-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-60"
+                  className="w-full rounded-lg bg-[var(--color-control-primary)] px-4 py-2.5 text-[13px] font-medium text-[var(--color-control-primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-60"
                 >
                   {loading
                     ? t("settings.library.connecting", {
@@ -698,7 +707,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                 <button
                   onClick={() => void handleDropboxConnect()}
                   disabled={loading}
-                  className="w-full rounded-lg bg-[var(--color-accent)] px-4 py-2.5 text-[13px] font-medium text-[var(--color-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-60"
+                  className="w-full rounded-lg bg-[var(--color-control-primary)] px-4 py-2.5 text-[13px] font-medium text-[var(--color-control-primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-60"
                 >
                   {loading
                     ? t("settings.library.waitingForDropbox", {
@@ -758,7 +767,10 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
           <>
             <div className="flex flex-col items-center gap-4">
               <div className="flex items-center justify-center">
-                <Layers size={32} className="text-[var(--color-accent)]" />
+                <Layers
+                  size={32}
+                  className="text-[var(--color-control-primary)]"
+                />
               </div>
               <h1 className="text-2xl font-bold text-[var(--color-text)]">
                 {t("setup.chooseStemMode")}
@@ -773,13 +785,13 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                 onClick={() => setSelectedStemModeDraft("two_stem")}
                 className={`flex w-full items-center gap-3 rounded-lg border px-5 py-4 text-left transition-colors ${
                   selectedStemMode === "two_stem"
-                    ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10"
+                    ? "border-[var(--color-control-selected-border)] bg-[var(--color-control-selected-bg)]"
                     : "border-[var(--color-border-light)] bg-[var(--color-sidebar)] hover:bg-[var(--color-hover)]"
                 }`}
               >
                 <Mic2
                   size={20}
-                  className="shrink-0 text-[var(--color-accent)]"
+                  className="shrink-0 text-[var(--color-control-primary)]"
                 />
                 <div className="flex-1">
                   <div className="text-[14px] font-medium text-[var(--color-text)]">
@@ -795,7 +807,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                 {selectedStemMode === "two_stem" && (
                   <Check
                     size={16}
-                    className="shrink-0 text-[var(--color-accent)]"
+                    className="shrink-0 text-[var(--color-control-primary)]"
                   />
                 )}
               </button>
@@ -804,13 +816,13 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                 onClick={() => setSelectedStemModeDraft("four_stem")}
                 className={`flex w-full items-center gap-3 rounded-lg border px-5 py-4 text-left transition-colors ${
                   selectedStemMode === "four_stem"
-                    ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10"
+                    ? "border-[var(--color-control-selected-border)] bg-[var(--color-control-selected-bg)]"
                     : "border-[var(--color-border-light)] bg-[var(--color-sidebar)] hover:bg-[var(--color-hover)]"
                 }`}
               >
                 <Layers
                   size={20}
-                  className="shrink-0 text-[var(--color-accent)]"
+                  className="shrink-0 text-[var(--color-control-primary)]"
                 />
                 <div className="flex-1">
                   <div className="text-[14px] font-medium text-[var(--color-text)]">
@@ -826,7 +838,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                 {selectedStemMode === "four_stem" && (
                   <Check
                     size={16}
-                    className="shrink-0 text-[var(--color-accent)]"
+                    className="shrink-0 text-[var(--color-control-primary)]"
                   />
                 )}
               </button>
@@ -834,7 +846,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
 
             <button
               onClick={handleFinish}
-              className="w-full rounded-lg bg-[var(--color-accent)] px-5 py-3 text-[14px] font-medium text-[var(--color-on-accent)] transition-opacity hover:opacity-90"
+              className="w-full rounded-lg bg-[var(--color-control-primary)] px-5 py-3 text-[14px] font-medium text-[var(--color-control-primary-foreground)] transition-opacity hover:opacity-90"
             >
               {t("setup.getStarted")}
             </button>

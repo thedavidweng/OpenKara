@@ -240,7 +240,7 @@ test.describe("Playback controls geometry and pressed state", () => {
       await expect(btn).not.toHaveAttribute("data-active", "true");
     });
 
-    test("active mute button CSS rule matches and applies accent color", async ({
+    test("active mute button CSS rule matches and applies selected chrome", async ({
       page,
     }) => {
       const sel = '[data-playback-action="vocals-mute"]';
@@ -248,11 +248,11 @@ test.describe("Playback controls geometry and pressed state", () => {
       await btn.click();
       await expect(btn).toHaveAttribute("data-active", "true");
 
-      // The [data-active="true"] rule sets color: var(--color-accent),
-      // background-color, and box-shadow. Transitions on background-color
-      // (from .motion-icon-button) can delay the computed background-color
-      // value, so we verify the rule matches the element and that the
-      // accent color token resolves correctly instead.
+      // The [data-active="true"] rule sets color, background-color, and
+      // box-shadow from monochrome selected tokens. Transitions on
+      // background-color (from .motion-icon-button) can delay the computed
+      // background-color value, so we verify the rule matches and that the
+      // selected chrome tokens resolve instead.
       const info = await page.evaluate((s) => {
         const el = document.querySelector(s) as HTMLElement;
         const cs = window.getComputedStyle(el);
@@ -264,6 +264,9 @@ test.describe("Playback controls geometry and pressed state", () => {
           ruleMatches,
           color: cs.color,
           accentToken: rootCs.getPropertyValue("--color-accent").trim(),
+          controlPrimaryToken: rootCs
+            .getPropertyValue("--color-control-primary")
+            .trim(),
           selectedBgToken: rootCs
             .getPropertyValue("--color-control-selected-bg")
             .trim(),
@@ -271,6 +274,7 @@ test.describe("Playback controls geometry and pressed state", () => {
       }, sel);
       expect(info.ruleMatches).toBe(true);
       expect(info.accentToken).not.toBe("");
+      expect(info.controlPrimaryToken).not.toBe("");
       expect(info.selectedBgToken).not.toBe("");
       expect(info.selectedBgToken).not.toBe("transparent");
     });
