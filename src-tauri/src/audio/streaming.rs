@@ -427,6 +427,41 @@ impl StreamingTrack {
             .iter()
             .all(|c| c.is_eof() && c.available_samples() == 0)
     }
+
+    /// Acknowledge a pending flush on every consumer that has one queued.
+    ///
+    /// Moved onto the enum so output.rs does not pattern-match on the variant
+    /// shape — adding a new stem layout only touches this one impl block.
+    pub fn acknowledge_flush_if_needed(&mut self) {
+        for consumer in self.consumers_mut() {
+            if consumer.needs_flush() {
+                consumer.acknowledge_flush();
+            }
+        }
+    }
+
+    /// True when *any* consumer is below its low-water mark.
+    ///
+    /// R5 RATIONALE: All-or-nothing buffering policy. Multi-stem rendering
+    /// requires every stem to stay frame-synchronized with the shared source
+    /// clock. If we allowed playback to continue while one stem is below the
+    /// low-water mark, the render callback would mix rendered audio from
+    /// buffered stems with silence (or stale data) from the depleted stem,
+    /// producing audible artifacts and — because the source clock advances —
+    /// permanent drift between stems that can never self-heal.
+    ///
+    /// Muting the entire stream when *any* required stem is below low water
+    /// guarantees that when playback resumes (all stems above high water),
+    /// every consumer is at the same source-clock position. This is the
+    /// simplest correctness strategy for synchronised multi-stem playback.
+    pub fn any_consumer_below_low_water(&self) -> bool {
+        self.consumers().iter().any(|c| c.is_below_low_water())
+    }
+
+    /// True when *all* consumers are above their high-water mark.
+    pub fn all_consumers_above_high_water(&self) -> bool {
+        self.consumers().iter().all(|c| c.is_above_high_water())
+    }
 }
 
 /// Create a producer-consumer pair for a single audio stream.

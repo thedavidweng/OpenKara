@@ -175,10 +175,10 @@ pub fn render_output_buffer(
         let track = playback.current_track.as_mut().unwrap();
         let streaming = track.streaming.as_mut().unwrap();
 
-        acknowledge_flush_if_needed(streaming);
+        streaming.acknowledge_flush_if_needed();
 
-        let below_low = any_consumer_below_low_water(streaming);
-        let all_above_high = all_consumers_above_high_water(streaming);
+        let below_low = streaming.any_consumer_below_low_water();
+        let all_above_high = streaming.all_consumers_above_high_water();
 
         if below_low {
             playback.is_buffering = true;
@@ -1071,105 +1071,6 @@ fn render_streaming_four_stem(
     // over-counted value and reintroduce the drift. min selects the
     // resampler's round() value from the non-muted stems.
     (r1.max(r2).max(r3).max(r4), f1.min(f2).min(f3).min(f4))
-}
-
-fn acknowledge_flush_if_needed(streaming: &mut crate::audio::streaming::StreamingTrack) {
-    match streaming {
-        crate::audio::streaming::StreamingTrack::Single { consumer } => {
-            if consumer.needs_flush() {
-                consumer.acknowledge_flush();
-            }
-        }
-        crate::audio::streaming::StreamingTrack::TwoStem {
-            vocals,
-            accompaniment,
-        } => {
-            if vocals.needs_flush() {
-                vocals.acknowledge_flush();
-            }
-            if accompaniment.needs_flush() {
-                accompaniment.acknowledge_flush();
-            }
-        }
-        crate::audio::streaming::StreamingTrack::FourStem {
-            vocals,
-            drums,
-            bass,
-            other,
-        } => {
-            if vocals.needs_flush() {
-                vocals.acknowledge_flush();
-            }
-            if drums.needs_flush() {
-                drums.acknowledge_flush();
-            }
-            if bass.needs_flush() {
-                bass.acknowledge_flush();
-            }
-            if other.needs_flush() {
-                other.acknowledge_flush();
-            }
-        }
-    }
-}
-
-// R5 RATIONALE: All-or-nothing buffering policy.
-//
-// Multi-stem rendering requires every stem to stay frame-synchronized with the
-// shared source clock. If we allowed playback to continue while one stem is
-// below the low-water mark, the render callback would mix rendered audio from
-// buffered stems with silence (or stale data) from the depleted stem, producing
-// audible artifacts and — because the source clock advances — permanent drift
-// between stems that can never self-heal.
-//
-// Muting the entire stream when *any* required stem is below low water
-// guarantees that when playback resumes (all stems above high water), every
-// consumer is at the same source-clock position. This is the simplest
-// correctness strategy for synchronised multi-stem playback.
-fn any_consumer_below_low_water(streaming: &crate::audio::streaming::StreamingTrack) -> bool {
-    match streaming {
-        crate::audio::streaming::StreamingTrack::Single { consumer } => {
-            consumer.is_below_low_water()
-        }
-        crate::audio::streaming::StreamingTrack::TwoStem {
-            vocals,
-            accompaniment,
-        } => vocals.is_below_low_water() || accompaniment.is_below_low_water(),
-        crate::audio::streaming::StreamingTrack::FourStem {
-            vocals,
-            drums,
-            bass,
-            other,
-        } => {
-            vocals.is_below_low_water()
-                || drums.is_below_low_water()
-                || bass.is_below_low_water()
-                || other.is_below_low_water()
-        }
-    }
-}
-
-fn all_consumers_above_high_water(streaming: &crate::audio::streaming::StreamingTrack) -> bool {
-    match streaming {
-        crate::audio::streaming::StreamingTrack::Single { consumer } => {
-            consumer.is_above_high_water()
-        }
-        crate::audio::streaming::StreamingTrack::TwoStem {
-            vocals,
-            accompaniment,
-        } => vocals.is_above_high_water() && accompaniment.is_above_high_water(),
-        crate::audio::streaming::StreamingTrack::FourStem {
-            vocals,
-            drums,
-            bass,
-            other,
-        } => {
-            vocals.is_above_high_water()
-                && drums.is_above_high_water()
-                && bass.is_above_high_water()
-                && other.is_above_high_water()
-        }
-    }
 }
 
 fn build_output_stream<T>(
