@@ -1,0 +1,93 @@
+/**
+ * Module-owned LRU for waveform peaks (#90).
+ *
+ * Capacity is exactly 96 entries. Key is `${songHash}:${effectiveBuckets}`.
+ * Empty remote results (`peaks.length === 0`) are intentionally NOT stored so
+ * a song that later becomes local can still be fetched.
+ */
+
+export interface WaveformCacheEntry {
+  peaks: number[];
+  buckets: number;
+}
+
+const WAVEFORM_LRU_CAPACITY = 96;
+
+const lruOrder: string[] = [];
+const lruMap = new Map<string, WaveformCacheEntry>();
+
+export function waveformCacheKey(songHash: string, buckets: number): string {
+  return `${songHash}:${buckets}`;
+}
+
+/**
+ * Map a CSS rail width and device pixel ratio to an effective bucket count.
+ * Spec: clamp(round(cssWidth * dpr / 3), 24, 1000). Sampling density tracks
+ * physical pixels so a DPR-only display migration refetches instead of
+ * stretching the old waveform.
+ */
+export function bucketsForRailWidth(cssWidth: number, dpr: number): number {
+  if (
+    !Number.isFinite(cssWidth) ||
+    cssWidth <= 0 ||
+    !Number.isFinite(dpr) ||
+    dpr <= 0
+  ) {
+    return 200;
+  }
+  return Math.min(1000, Math.max(24, Math.round((cssWidth * dpr) / 3)));
+}
+
+export function getWaveformCache(
+  songHash: string,
+  buckets: number,
+): WaveformCacheEntry | null {
+  const key = waveformCacheKey(songHash, buckets);
+  const entry = lruMap.get(key);
+  if (!entry) {
+    return null;
+  }
+  // Promote to most-recent.
+  const idx = lruOrder.indexOf(key);
+  if (idx >= 0) {
+    lruOrder.splice(idx, 1);
+  }
+  lruOrder.push(key);
+  return entry;
+}
+
+export function setWaveformCache(
+  songHash: string,
+  buckets: number,
+  peaks: number[],
+): void {
+  // Never cache empty remote results in the module LRU.
+  if (peaks.length === 0) {
+    return;
+  }
+  const key = waveformCacheKey(songHash, buckets);
+  if (lruMap.has(key)) {
+    const idx = lruOrder.indexOf(key);
+    if (idx >= 0) {
+      lruOrder.splice(idx, 1);
+    }
+  }
+  lruMap.set(key, { peaks, buckets });
+  lruOrder.push(key);
+  while (lruOrder.length > WAVEFORM_LRU_CAPACITY) {
+    const oldest = lruOrder.shift();
+    if (oldest) {
+      lruMap.delete(oldest);
+    }
+  }
+}
+
+/** Test-only: wipe module state between cases. */
+export function resetWaveformCacheForTests(): void {
+  lruOrder.length = 0;
+  lruMap.clear();
+}
+
+export function waveformCacheSizeForTests(): number {
+  return lruMap.size;
+}

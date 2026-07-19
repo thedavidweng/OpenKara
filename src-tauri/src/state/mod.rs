@@ -5,7 +5,10 @@ pub mod separation;
 pub mod shell;
 
 pub use airplay::AirPlayState;
-pub use playback::PlaybackState;
+pub use playback::{
+    PlaybackState, SingleflightCompletionGuard, WaveformKey, WaveformResult, WaveformSingleflight,
+    SANITIZED_WAVEFORM_ERROR,
+};
 pub use remote::RemoteState;
 pub use separation::SeparationState;
 pub use shell::AppShell;

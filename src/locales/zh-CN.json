@@ -375,6 +375,23 @@
       "label": "输出设备",
       "systemDefault": "系统默认"
     },
+    "eq": {
+      "label": "均衡器",
+      "description": "五段均衡器，带自动前置增益和软限幅器。",
+      "enable": "启用均衡器",
+      "reset": "重置所有频段至 0 dB",
+      "band60": "60 Hz",
+      "band230": "230 Hz",
+      "band910": "910 Hz",
+      "band3600": "3.6 kHz",
+      "band14000": "14 kHz"
+    },
+    "crossfade": {
+      "label": "淡入淡出",
+      "description": "使用等功率曲线将当前曲目尾部与下一曲目开头重叠过渡。",
+      "enable": "启用淡入淡出",
+      "duration": "时长"
+    },
     "language": {
       "label": "语言"
     },
@@ -432,17 +449,6 @@
       "directml": "DirectML",
       "directmlDescription": "DirectX 12 GPU 加速 — 适用于 Windows",
       "note": "更改将在下次分离时生效。"
-    },
-    "eq": {
-      "label": "均衡器",
-      "enable": "启用五段均衡器",
-      "description": "调整五个频段，自动预增益并带软限幅器以防止削波。",
-      "band60": "60 Hz",
-      "band230": "230 Hz",
-      "band910": "910 Hz",
-      "band3600": "3.6 kHz",
-      "band14000": "14 kHz",
-      "reset": "重置为平直"
     },
     "integrity": {
       "checkButton": "检查媒体库完整性",

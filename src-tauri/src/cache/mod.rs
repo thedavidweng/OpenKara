@@ -1,5 +1,6 @@
 pub mod lyrics;
 pub mod stems;
+pub mod waveforms;
 
 use crate::library::Song;
 use anyhow::Context;
@@ -13,12 +14,13 @@ use tauri::Manager;
 const DATABASE_FILENAME: &str = "openkara.sqlite3";
 // Keep the SQL in the migrations directory so tests and runtime initialization
 // execute the exact same schema definition.
-const MIGRATIONS: [&str; 5] = [
+const MIGRATIONS: [&str; 6] = [
     include_str!("../../migrations/001_init.sql"),
     include_str!("../../migrations/002_stems.sql"),
     include_str!("../../migrations/003_lyrics.sql"),
     include_str!("../../migrations/004_portable_paths.sql"),
     include_str!("../../migrations/010_fts5_songs.sql"),
+    include_str!("../../migrations/011_waveforms.sql"),
 ];
 
 fn database_path(base_dir: &Path) -> PathBuf {

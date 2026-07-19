@@ -150,6 +150,14 @@ pub struct CompletedTransition {
     pub preload_generation: u64,
     pub from_song_id: String,
     pub to_song_id: String,
+    /// #106: Authoritative post-transition snapshot captured at the moment
+    /// the track switched, not when the position emitter drains the
+    /// transition. If the listener manually picks a different song in the
+    /// brief gap between the swap and the notification, this snapshot still
+    /// describes the song that actually played, so the frontend's
+    /// `transport_generation` guard rejects the stale event and the queue
+    /// is not reconciled against a song the listener never heard.
+    pub snapshot: PlaybackStateSnapshot,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -699,6 +707,11 @@ impl PlaybackController {
     /// #88: Bump the transition serial and stamp it onto a new
     /// `CompletedTransition`. Called by the realtime callback after a
     /// gapless swap.
+    /// #106: The post-transition snapshot is captured here — under the
+    /// playback lock at the moment of the swap — so the `track-transitioned`
+    /// event describes the song that actually played even if the listener
+    /// manually changes tracks before the position emitter drains the
+    /// transition.
     fn stamp_transition(
         &mut self,
         from_song_id: String,
@@ -706,11 +719,13 @@ impl PlaybackController {
         preload_generation: u64,
     ) {
         self.transition_serial = self.transition_serial.saturating_add(1);
+        let snapshot = self.snapshot();
         self.pending_transition_out = Some(CompletedTransition {
             transition_serial: self.transition_serial,
             preload_generation,
             from_song_id,
             to_song_id,
+            snapshot,
         });
     }
 
@@ -808,6 +823,12 @@ impl PlaybackController {
             // Streaming tracks use `all_eof_and_drained` on the ring buffer.
             return streaming.all_eof_and_drained();
         }
+        // Guard against a zero-channel track, which would panic on the
+        // division below. A track with no channels can't produce audio, so
+        // treat it as already at EOF.
+        if track.original_audio.channels == 0 {
+            return true;
+        }
         let total_frames = track.original_audio.samples.len() / track.original_audio.channels;
         track.render_frame >= total_frames as u64
     }
@@ -826,11 +847,6 @@ impl PlaybackController {
     /// the track is at EOF. Without this, a user who pauses near EOF and
     /// then resumes would be stuck — the track is at EOF, `is_playing` is
     /// false, and the gapless swap is permanently suppressed.
-    ///
-    /// #88: The gapless swap site in `output.rs` now checks `FadeState::FadingOut`
-    /// directly instead of calling this helper. The method is retained for the
-    /// regression tests below and as a reusable predicate.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn current_track_is_playing(&self) -> bool {
         let Some(track) = self.current_track.as_ref() else {
             return false;
@@ -1008,6 +1024,7 @@ pub struct TrackTransitionedEvent {
     pub transition_serial: u64,
     pub from_song_id: String,
     pub to_song_id: String,
+    pub state: PlaybackStateSnapshot,
 }
 
 pub fn playback_position_event(snapshot: &PlaybackStateSnapshot) -> PlaybackPositionEvent {

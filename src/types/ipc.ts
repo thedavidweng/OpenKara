@@ -308,6 +308,19 @@ export interface AudioPeakSnapshot {
   peaks: Array<[left: number, right: number]>;
 }
 
+/**
+ * #90: Waveform peaks for the seekbar visualizer.
+ *
+ * `peaks` is empty for remote sources (no download/decode). For local
+ * sources every value is finite and in `[0, 1]`. `buckets` is the effective
+ * bucket count used by the backend (clamped to `24..=1000`), which may
+ * differ from the requested count.
+ */
+export interface WaveformData {
+  peaks: number[];
+  buckets: number;
+}
+
 export interface PlaybackErrorEvent {
   song_id: string;
   error: CommandError;

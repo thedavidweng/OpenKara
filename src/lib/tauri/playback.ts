@@ -5,6 +5,7 @@ import type {
   AudioPeakSnapshot,
   PlaybackStateSnapshot,
   StemName,
+  WaveformData,
 } from "@/types/ipc";
 
 export function play(songId: string): Promise<PlaybackStateSnapshot> {
@@ -44,6 +45,26 @@ export function getPlaybackState(): Promise<PlaybackStateSnapshot> {
 
 export function getAudioPeaks(): Promise<AudioPeakSnapshot> {
   return invoke<AudioPeakSnapshot>("get_audio_peaks");
+}
+
+/**
+ * #90: Fetch a cached or freshly-computed waveform for a song.
+ *
+ * Returns `WaveformData` with `peaks` of length `buckets` (clamped to
+ * `24..=1000`) for a local source, or empty `peaks` for a remote source.
+ * Every value is finite and in `[0, 1]`. `buckets` is optional and defaults
+ * to 200 on the backend.
+ *
+ * The backend returns a raw `Vec<f32>`; this wrapper constructs the
+ * `WaveformData` object with `buckets = peaks.length` so the caller knows
+ * the effective bucket count (0 for remote sources).
+ */
+export async function getWaveform(
+  hash: string,
+  buckets?: number,
+): Promise<WaveformData> {
+  const peaks = await invoke<number[]>("get_waveform", { hash, buckets });
+  return { peaks, buckets: peaks.length };
 }
 
 export function setPreloadCandidate(songId: string | null): Promise<void> {
