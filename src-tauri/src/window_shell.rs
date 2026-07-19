@@ -4,18 +4,26 @@ use tauri::Manager;
 use tauri::Runtime;
 
 const DESKTOP_TOOLBAR_HEIGHT: u16 = 48;
+#[cfg(target_os = "macos")]
 const MAC_TOOLBAR_HEIGHT: u16 = 48;
 const DESKTOP_TRAFFIC_LIGHT_INSET_LEADING: u16 = 0;
+#[cfg(target_os = "macos")]
 const MAC_TRAFFIC_LIGHT_INSET_LEADING: u16 = 78;
 const DESKTOP_SIDEBAR_HEADER_HEIGHT: u16 = 0;
+#[cfg(target_os = "macos")]
 const MAC_SIDEBAR_HEADER_HEIGHT: u16 = 28;
 const DEFAULT_SIDEBAR_WIDTH: u16 = 260;
+#[cfg(target_os = "macos")]
 const MAC_SIDEBAR_WIDTH: u16 = 260;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WindowChromeVariant {
     Desktop,
+    // The `Mac` variant is only constructed on macOS, but must exist on all
+    // platforms for serde serialization compatibility — the frontend expects
+    // `mac` in the JSON payload regardless of the backend platform.
+    #[allow(dead_code)]
     Mac,
 }
 
@@ -23,6 +31,7 @@ pub enum WindowChromeVariant {
 #[serde(rename_all = "snake_case")]
 pub enum WindowShellTier {
     Desktop,
+    #[allow(dead_code)]
     Mac,
 }
 
@@ -48,6 +57,10 @@ impl WindowShellState {
         }
     }
 
+    /// macOS-only constructor. Gated because on Linux the `Mac` variants and
+    /// `MAC_*` constants are never used; the `Mac` enum variants still exist
+    /// (with `#[allow(dead_code)]`) for serde serialization compatibility.
+    #[cfg(target_os = "macos")]
     pub fn mac() -> Self {
         Self {
             chrome_variant: WindowChromeVariant::Mac,
@@ -273,6 +286,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn mac_shell_state_exposes_the_unified_metrics() {
         let state = WindowShellState::mac();
 

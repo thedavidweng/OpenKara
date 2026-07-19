@@ -233,7 +233,7 @@ fn activate_library(
     cache::initialize_library_database(&db_path)
         .map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
 
-    clear_library_scoped_runtime_state(&state)?;
+    clear_library_scoped_runtime_state(state)?;
 
     set_active_library(&mut config, library.id().to_owned());
     persist_app_config(app_data_dir, &config)?;
