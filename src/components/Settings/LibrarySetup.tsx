@@ -303,7 +303,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
               <div className="flex items-center justify-center">
                 <Globe size={32} className="text-[var(--color-accent)]" />
               </div>
-              <h1 className="text-2xl font-bold text-white">
+              <h1 className="text-2xl font-bold text-[var(--color-text)]">
                 {t("setup.chooseLanguage")}
               </h1>
             </div>
@@ -320,11 +320,11 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                   }`}
                 >
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-hover)]">
-                    <span className="text-[14px] font-medium text-white">
+                    <span className="text-[14px] font-medium text-[var(--color-text)]">
                       {lang.code === "en" ? "EN" : "中"}
                     </span>
                   </div>
-                  <span className="text-[14px] font-medium text-white">
+                  <span className="text-[14px] font-medium text-[var(--color-text)]">
                     {lang.name}
                   </span>
                   {selectedLanguage === lang.code && (
@@ -346,7 +346,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
               <div className="flex items-center justify-center">
                 <Music size={32} className="text-[var(--color-accent)]" />
               </div>
-              <h1 className="text-2xl font-bold text-white">
+              <h1 className="text-2xl font-bold text-[var(--color-text)]">
                 {t("setup.welcome")}
               </h1>
               <p className="text-[14px] leading-relaxed text-[var(--color-text-dim)]">
@@ -383,7 +383,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                       }`}
                     />
                     <div>
-                      <div className="text-[14px] font-medium text-white">
+                      <div className="text-[14px] font-medium text-[var(--color-text)]">
                         {t(choice.title, {
                           defaultValue:
                             choice.kind === "create_local"
@@ -423,7 +423,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
 
             <button
               onClick={() => setStep("language")}
-              className="flex items-center justify-center gap-1 text-[13px] text-[var(--color-text-dim)] transition-colors hover:text-white"
+              className="flex items-center justify-center gap-1 text-[13px] text-[var(--color-text-dim)] transition-colors hover:text-[var(--color-text)]"
             >
               <ChevronLeft size={14} />
               {t("setup.back")}
@@ -438,7 +438,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
               <div className="flex items-center justify-center">
                 <Cloud size={32} className="text-[var(--color-accent)]" />
               </div>
-              <h1 className="text-2xl font-bold text-white">
+              <h1 className="text-2xl font-bold text-[var(--color-text)]">
                 {t("setup.openRemoteLibrary", {
                   defaultValue: "Choose a remote provider",
                 })}
@@ -480,7 +480,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                       className="mt-0.5 shrink-0 text-[var(--color-accent)]"
                     />
                     <div className="min-w-0 flex-1">
-                      <div className="text-[14px] font-medium text-white">
+                      <div className="text-[14px] font-medium text-[var(--color-text)]">
                         {t(choice.title, { defaultValue: choice.title })}
                       </div>
                       <div className="text-[12px] text-[var(--color-text-dim)]">
@@ -513,7 +513,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
             {selectedRemoteProvider === "google_drive" && (
               <div className="space-y-3 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-4 text-left">
                 <div>
-                  <label className="mb-1 block text-[12px] font-medium text-white">
+                  <label className="mb-1 block text-[12px] font-medium text-[var(--color-text)]">
                     {t("settings.library.displayName", {
                       defaultValue: "Display name",
                     })}
@@ -527,7 +527,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                       t,
                       "google_drive",
                     )}
-                    className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-white outline-none transition-colors focus:border-[var(--color-accent)]"
+                    className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]"
                   />
                 </div>
                 <p className="text-[11px] text-[var(--color-text-dimmer)]">
@@ -540,7 +540,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                 <button
                   onClick={() => void handleGoogleDriveConnect()}
                   disabled={loading}
-                  className="w-full rounded-lg bg-[var(--color-accent)] px-4 py-2.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                  className="w-full rounded-lg bg-[var(--color-accent)] px-4 py-2.5 text-[13px] font-medium text-[var(--color-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-60"
                 >
                   {loading
                     ? t("settings.library.waitingForGoogle", {
@@ -569,7 +569,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
             {selectedRemoteProvider === "webdav" && (
               <div className="space-y-3 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-4 text-left">
                 <div>
-                  <label className="mb-1 block text-[12px] font-medium text-white">
+                  <label className="mb-1 block text-[12px] font-medium text-[var(--color-text)]">
                     {t("settings.library.displayName", {
                       defaultValue: "Display name",
                     })}
@@ -580,12 +580,12 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                       setRemoteDisplayName(event.target.value)
                     }
                     placeholder={getRemoteProviderDisplayName(t, "webdav")}
-                    className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-white outline-none transition-colors focus:border-[var(--color-accent)]"
+                    className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]"
                   />
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-[12px] font-medium text-white">
+                  <label className="mb-1 block text-[12px] font-medium text-[var(--color-text)]">
                     {t("settings.library.webdavServerUrl", {
                       defaultValue: "Server URL",
                     })}
@@ -594,13 +594,13 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                     value={remoteServerUrl}
                     onChange={(event) => setRemoteServerUrl(event.target.value)}
                     placeholder="https://dav.example.com/remote.php/dav/files/you/"
-                    className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-white outline-none transition-colors focus:border-[var(--color-accent)]"
+                    className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]"
                     spellCheck={false}
                   />
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-[12px] font-medium text-white">
+                  <label className="mb-1 block text-[12px] font-medium text-[var(--color-text)]">
                     {t("settings.library.webdavLibraryPath", {
                       defaultValue: "Library path",
                     })}
@@ -609,7 +609,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                     value={remoteRootPath}
                     onChange={(event) => setRemoteRootPath(event.target.value)}
                     placeholder="/OpenKara"
-                    className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-white outline-none transition-colors focus:border-[var(--color-accent)]"
+                    className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]"
                     spellCheck={false}
                   />
                   <p className="mt-1 text-[11px] text-[var(--color-text-dimmer)]">
@@ -622,7 +622,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1 block text-[12px] font-medium text-white">
+                    <label className="mb-1 block text-[12px] font-medium text-[var(--color-text)]">
                       {t("settings.library.webdavUsername", {
                         defaultValue: "Username",
                       })}
@@ -633,12 +633,12 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                         setRemoteUsername(event.target.value)
                       }
                       placeholder="username"
-                      className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-white outline-none transition-colors focus:border-[var(--color-accent)]"
+                      className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]"
                       spellCheck={false}
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-[12px] font-medium text-white">
+                    <label className="mb-1 block text-[12px] font-medium text-[var(--color-text)]">
                       {t("settings.library.webdavPassword", {
                         defaultValue: "Password",
                       })}
@@ -650,7 +650,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                         setRemotePassword(event.target.value)
                       }
                       placeholder="password"
-                      className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-white outline-none transition-colors focus:border-[var(--color-accent)]"
+                      className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]"
                     />
                   </div>
                 </div>
@@ -658,7 +658,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                 <button
                   onClick={() => void handleWebDavConnect()}
                   disabled={loading}
-                  className="w-full rounded-lg bg-[var(--color-accent)] px-4 py-2.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                  className="w-full rounded-lg bg-[var(--color-accent)] px-4 py-2.5 text-[13px] font-medium text-[var(--color-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-60"
                 >
                   {loading
                     ? t("settings.library.connecting", {
@@ -674,7 +674,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
             {selectedRemoteProvider === "dropbox" && (
               <div className="space-y-3 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-4 text-left">
                 <div>
-                  <label className="mb-1 block text-[12px] font-medium text-white">
+                  <label className="mb-1 block text-[12px] font-medium text-[var(--color-text)]">
                     {t("settings.library.displayName", {
                       defaultValue: "Display name",
                     })}
@@ -685,7 +685,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                       setRemoteDisplayName(event.target.value)
                     }
                     placeholder={getRemoteProviderDisplayName(t, "dropbox")}
-                    className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-white outline-none transition-colors focus:border-[var(--color-accent)]"
+                    className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]"
                   />
                 </div>
                 <p className="text-[11px] text-[var(--color-text-dimmer)]">
@@ -698,7 +698,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                 <button
                   onClick={() => void handleDropboxConnect()}
                   disabled={loading}
-                  className="w-full rounded-lg bg-[var(--color-accent)] px-4 py-2.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                  className="w-full rounded-lg bg-[var(--color-accent)] px-4 py-2.5 text-[13px] font-medium text-[var(--color-on-accent)] transition-opacity hover:opacity-90 disabled:opacity-60"
                 >
                   {loading
                     ? t("settings.library.waitingForDropbox", {
@@ -745,7 +745,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                 resetRemoteWizard();
                 setStep("library");
               }}
-              className="flex items-center justify-center gap-1 text-[13px] text-[var(--color-text-dim)] transition-colors hover:text-white"
+              className="flex items-center justify-center gap-1 text-[13px] text-[var(--color-text-dim)] transition-colors hover:text-[var(--color-text)]"
             >
               <ChevronLeft size={14} />
               {t("setup.back")}
@@ -760,7 +760,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
               <div className="flex items-center justify-center">
                 <Layers size={32} className="text-[var(--color-accent)]" />
               </div>
-              <h1 className="text-2xl font-bold text-white">
+              <h1 className="text-2xl font-bold text-[var(--color-text)]">
                 {t("setup.chooseStemMode")}
               </h1>
               <p className="text-[14px] leading-relaxed text-[var(--color-text-dim)]">
@@ -782,7 +782,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                   className="shrink-0 text-[var(--color-accent)]"
                 />
                 <div className="flex-1">
-                  <div className="text-[14px] font-medium text-white">
+                  <div className="text-[14px] font-medium text-[var(--color-text)]">
                     {t("setup.twoStem")}
                   </div>
                   <div className="text-[12px] text-[var(--color-text-dim)]">
@@ -813,7 +813,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                   className="shrink-0 text-[var(--color-accent)]"
                 />
                 <div className="flex-1">
-                  <div className="text-[14px] font-medium text-white">
+                  <div className="text-[14px] font-medium text-[var(--color-text)]">
                     {t("setup.fourStem")}
                   </div>
                   <div className="text-[12px] text-[var(--color-text-dim)]">
@@ -834,14 +834,14 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
 
             <button
               onClick={handleFinish}
-              className="w-full rounded-lg bg-[var(--color-accent)] px-5 py-3 text-[14px] font-medium text-white transition-opacity hover:opacity-90"
+              className="w-full rounded-lg bg-[var(--color-accent)] px-5 py-3 text-[14px] font-medium text-[var(--color-on-accent)] transition-opacity hover:opacity-90"
             >
               {t("setup.getStarted")}
             </button>
 
             <button
               onClick={() => setStep("library")}
-              className="flex items-center justify-center gap-1 text-[13px] text-[var(--color-text-dim)] transition-colors hover:text-white"
+              className="flex items-center justify-center gap-1 text-[13px] text-[var(--color-text-dim)] transition-colors hover:text-[var(--color-text)]"
             >
               <ChevronLeft size={14} />
               {t("setup.back")}

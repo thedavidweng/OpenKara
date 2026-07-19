@@ -144,7 +144,7 @@ export function SettingsLibrarySection() {
                     />
                   )}
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] text-white">
+                    <p className="truncate text-[13px] text-[var(--color-text)]">
                       {library.display_name}
                     </p>
                     <p className="truncate text-[11px] text-[var(--color-text-dim)]">
@@ -170,7 +170,7 @@ export function SettingsLibrarySection() {
                         title={t("settings.library.refreshRemoteRepository", {
                           defaultValue: "Refresh remote repository",
                         })}
-                        className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-white disabled:opacity-50"
+                        className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
                       >
                         <RefreshCw size={12} />
                       </button>
@@ -207,7 +207,7 @@ export function SettingsLibrarySection() {
                             defaultValue: "Reauthorize remote repository",
                           },
                         )}
-                        className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-white disabled:opacity-50"
+                        className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
                       >
                         <RefreshCw size={12} />
                       </button>
@@ -226,7 +226,7 @@ export function SettingsLibrarySection() {
                     title={t("settings.library.renameLibrary", {
                       defaultValue: "Rename library",
                     })}
-                    className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-white disabled:opacity-50"
+                    className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
                   >
                     <PencilLine size={12} />
                   </button>
@@ -237,7 +237,7 @@ export function SettingsLibrarySection() {
                     title={t("settings.library.removeLibrary", {
                       defaultValue: "Disconnect repository",
                     })}
-                    className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-white disabled:opacity-50"
+                    className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
                   >
                     <Unlink2 size={12} />
                   </button>
@@ -270,21 +270,21 @@ export function SettingsLibrarySection() {
             void actions.createLibrary(t("setup.dialogTitleCreate"))
           }
           disabled={meta.isInitializing}
-          className="flex items-center gap-1.5 rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-white disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
         >
           <Plus size={12} /> {t("settings.library.newLibrary")}
         </button>
         <button
           onClick={() => void actions.openLibrary(t("setup.dialogTitleOpen"))}
           disabled={meta.isInitializing}
-          className="flex items-center gap-1.5 rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-white disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
         >
           <FolderOpen size={12} /> {t("settings.library.openLibrary")}
         </button>
         <button
           onClick={() => setRemoteWizard({ purpose: "add" })}
           disabled={meta.isInitializing}
-          className="flex items-center gap-1.5 rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-white disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] disabled:opacity-50"
         >
           <Globe size={12} />{" "}
           {t("settings.library.addRemoteLibrary", {

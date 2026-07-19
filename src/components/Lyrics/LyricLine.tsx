@@ -18,8 +18,11 @@ interface LyricLineProps {
   romanizedText?: string;
 }
 
-const SEEKABLE_HOVER_CLASS =
-  "relative transition-[color,transform,text-shadow] duration-300 ease-out group-hover/line:text-white group-hover/line:-translate-y-px group-hover/line:[text-shadow:0_2px_4px_rgba(0,0,0,0.55),0_10px_36px_rgba(0,0,0,0.42),0_22px_64px_rgba(0,0,0,0.28),0_0_48px_rgba(255,255,255,0.14)]";
+const STANDARD_SEEKABLE_HOVER_CLASS =
+  "relative transition-[color,transform,text-shadow] duration-300 ease-out group-hover/line:text-[var(--color-lyrics-active)] group-hover/line:-translate-y-px group-hover/line:[text-shadow:var(--shadow-lyrics-hover)]";
+
+const AUDIENCE_SEEKABLE_HOVER_CLASS =
+  "relative transition-[transform,text-shadow] duration-300 ease-out group-hover/line:-translate-y-px";
 
 const STANDARD_TEXT_SIZE_CLASSES = {
   [-2]: "text-lg font-bold tracking-tight md:text-xl",
@@ -124,7 +127,11 @@ export const LyricLine = memo(function LyricLine({
   const hasOnlyBackgroundWords = !hasWords && hasBackgroundWords(line);
   const shouldUseKaraokeFill =
     state === "active" && hasWords && presentation !== "audience";
-  const hoverClass = isSeekable ? SEEKABLE_HOVER_CLASS : "";
+  const hoverClass = isSeekable
+    ? presentation === "audience"
+      ? AUDIENCE_SEEKABLE_HOVER_CLASS
+      : STANDARD_SEEKABLE_HOVER_CLASS
+    : "";
 
   const karaokeRef = useRef<KaraokeFillController | null>(null);
   const wordElsRef = useRef<HTMLElement[]>([]);
@@ -239,10 +246,9 @@ export const LyricLine = memo(function LyricLine({
                   ref={(el) => {
                     if (el) wordElsRef.current[idx] = el;
                   }}
-                  className="motion-surface relative inline-block text-white"
+                  className="motion-surface relative inline-block text-[var(--color-lyrics-active)]"
                   style={{
-                    textShadow:
-                      "0 0 12px rgba(255,255,255,0.5), 0 0 4px rgba(255,255,255,0.4)",
+                    textShadow: "var(--shadow-lyrics-glow)",
                     animation: last
                       ? `lyric-char-glow-last ${wordDuration * 1.2}ms ease-in-out`
                       : `lyric-char-glow ${wordDuration}ms ease-in-out`,
@@ -265,10 +271,10 @@ export const LyricLine = memo(function LyricLine({
                     ? "motion-surface"
                     : `motion-surface relative inline-block ${
                         wordState === "active"
-                          ? "text-white"
+                          ? "text-[var(--color-lyrics-active)]"
                           : wordState === "past"
-                            ? "text-white/45"
-                            : "text-white/50"
+                            ? "text-[var(--color-lyrics-past)]"
+                            : "text-[var(--color-lyrics-future)]"
                       }`
                 }
                 style={{
@@ -291,8 +297,8 @@ export const LyricLine = memo(function LyricLine({
                     : isActiveWord
                       ? {
                           textShadow: isLastWord(idx, line.words!.length)
-                            ? "0 0 20px rgba(255,255,255,0.7), 0 0 8px rgba(255,255,255,0.5)"
-                            : "0 0 12px rgba(255,255,255,0.5), 0 0 4px rgba(255,255,255,0.4)",
+                            ? "var(--shadow-lyrics-glow-strong)"
+                            : "var(--shadow-lyrics-glow)",
                         }
                       : undefined),
                 }}
@@ -309,10 +315,10 @@ export const LyricLine = memo(function LyricLine({
             ? `motion-surface font-bold tracking-tight ${hoverClass}`
             : `motion-surface ${textSizeClass} ${
                 state === "plain" || state === "active"
-                  ? "text-white"
+                  ? "text-[var(--color-lyrics-active)]"
                   : state === "past"
-                    ? "text-white/45"
-                    : "text-white/50"
+                    ? "text-[var(--color-lyrics-past)]"
+                    : "text-[var(--color-lyrics-future)]"
               } ${hoverClass}`
           ).trim()}
           style={

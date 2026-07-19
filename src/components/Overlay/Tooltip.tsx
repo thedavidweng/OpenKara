@@ -231,7 +231,7 @@ export function Tooltip({
               ref={tooltipRef}
               role="tooltip"
               id={tooltipId}
-              className="app-panel-surface pointer-events-none fixed z-[80] flex items-center gap-2 rounded-xl border border-[color-mix(in_srgb,var(--color-border)_88%,transparent)] bg-[color-mix(in_srgb,var(--color-sidebar)_96%,transparent)] px-3 py-1.5 text-[11px] font-medium text-white shadow-md"
+              className="app-panel-surface pointer-events-none fixed z-[80] flex items-center gap-2 rounded-xl border border-[color-mix(in_srgb,var(--color-border)_88%,transparent)] bg-[color-mix(in_srgb,var(--color-sidebar)_96%,transparent)] px-3 py-1.5 text-[11px] font-medium text-[var(--color-text)] shadow-md"
               style={
                 position
                   ? position

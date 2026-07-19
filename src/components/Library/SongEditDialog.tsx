@@ -78,7 +78,10 @@ export function SongEditDialog({ song, onClose }: SongEditDialogProps) {
         className="w-full max-w-sm overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-sidebar)] shadow-2xl"
       >
         <div className="border-b border-[var(--color-border)] px-5 py-3">
-          <h3 id={headingId} className="text-[14px] font-semibold text-white">
+          <h3
+            id={headingId}
+            className="text-[14px] font-semibold text-[var(--color-text)]"
+          >
             {t("songEdit.title")}
           </h3>
         </div>
@@ -98,7 +101,7 @@ export function SongEditDialog({ song, onClose }: SongEditDialogProps) {
               onKeyDown={handleKeyDown}
               placeholder={t("songEdit.titlePlaceholder")}
               autoFocus
-              className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-white placeholder:text-[var(--color-text-dimmer)] transition-colors focus:border-[var(--color-accent)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
+              className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-[var(--color-text)] placeholder:text-[var(--color-text-dimmer)] transition-colors focus:border-[var(--color-accent)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
             />
           </div>
           <div className="space-y-1.5">
@@ -115,7 +118,7 @@ export function SongEditDialog({ song, onClose }: SongEditDialogProps) {
               onChange={(e) => setArtist(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={t("songEdit.artistPlaceholder")}
-              className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-white placeholder:text-[var(--color-text-dimmer)] transition-colors focus:border-[var(--color-accent)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
+              className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-[var(--color-text)] placeholder:text-[var(--color-text-dimmer)] transition-colors focus:border-[var(--color-accent)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
             />
           </div>
           {saveError && (
@@ -132,7 +135,7 @@ export function SongEditDialog({ song, onClose }: SongEditDialogProps) {
           <button
             onClick={onClose}
             disabled={saving}
-            className="rounded-md px-3 py-2 text-[12px] text-[var(--color-text-dim)] transition-colors hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md px-3 py-2 text-[12px] text-[var(--color-text-dim)] transition-colors hover:text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t("common.cancel")}
           </button>
@@ -140,7 +143,7 @@ export function SongEditDialog({ song, onClose }: SongEditDialogProps) {
             onClick={handleSave}
             disabled={saving}
             aria-describedby={saveError ? errorId : undefined}
-            className="rounded-md bg-[var(--color-accent)] px-3 py-2 text-[12px] font-medium text-white transition-colors hover:bg-[var(--color-accent)]/80 focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/40 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md bg-[var(--color-accent)] px-3 py-2 text-[12px] font-medium text-[var(--color-on-accent)] transition-colors hover:bg-[var(--color-accent)]/80 focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/40 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {saving ? t("common.saving") : t("common.save")}
           </button>

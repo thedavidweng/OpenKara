@@ -277,6 +277,15 @@ describe("SettingsOverlay sections", () => {
     expect(markup).toContain("pointer-events-auto");
     expect(markup).not.toContain("pointer-events-none");
   });
+
+  test("uses semantic foreground tokens instead of white text on light surfaces", () => {
+    const markup = renderToStaticMarkup(<SettingsOverlay />);
+
+    expect(markup).toContain("text-[var(--color-text)]");
+    expect(markup).toContain("bg-[var(--color-surface)]");
+    expect(markup).not.toContain("text-white");
+    expect(markup).not.toContain("hover:text-white");
+  });
 });
 
 describe("SettingsExecutionProviderSection rendering", () => {
