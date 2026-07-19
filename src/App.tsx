@@ -11,9 +11,12 @@ import { useSettingsStore } from "@/stores/settings-store";
 
 interface AppProps {
   initialLibraryReady?: boolean | null;
+  /** When true, AppLayout renders in preview mode (blocked interactions,
+   *  hidden UI elements). Used by the website embedded preview. */
+  previewMode?: boolean;
 }
 
-function App({ initialLibraryReady = null }: AppProps) {
+function App({ initialLibraryReady = null, previewMode = false }: AppProps) {
   const [libraryReady, setLibraryReady] = useState<boolean | null>(
     initialLibraryReady,
   );
@@ -46,7 +49,7 @@ function App({ initialLibraryReady = null }: AppProps) {
     return <LibrarySetup onComplete={handleLibrarySetupComplete} />;
   }
 
-  return <AppLayout />;
+  return <AppLayout previewMode={previewMode} />;
 }
 
 export default App;

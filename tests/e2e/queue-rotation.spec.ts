@@ -9,7 +9,7 @@ import { expect, objectRecord, test } from "./fixtures/base-test";
 test.describe("Queue panel", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText("Bohemian Rhapsody")).toBeVisible();
+    await expect(page.getByText("Earfquake")).toBeVisible();
   });
 
   test("queue panel toggles visibility", async ({ page }) => {
@@ -45,7 +45,7 @@ test.describe("Queue panel", () => {
     tauriMock,
   }) => {
     // Right-click on a song in the library to get the context menu
-    await page.getByText("Hotel California").click({ button: "right" });
+    await page.getByText("See You Again").click({ button: "right" });
 
     await expect
       .poll(async () => tauriMock.getLastNativeMenu())
@@ -61,7 +61,7 @@ test.describe("Queue panel", () => {
     const queueButton = page.getByRole("button", { name: /queue/i });
     await queueButton.click();
     await expect(
-      page.getByTestId("queue-panel").getByText("Hotel California"),
+      page.getByTestId("queue-panel").getByText("See You Again"),
     ).toBeVisible({ timeout: 5000 });
   });
 });
@@ -69,7 +69,7 @@ test.describe("Queue panel", () => {
 test.describe("Rotation / singer management", () => {
   test("rotation controls are visible in the queue panel", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText("Bohemian Rhapsody")).toBeVisible();
+    await expect(page.getByText("Earfquake")).toBeVisible();
 
     // Open queue panel
     const queueButton = page.getByRole("button", { name: /queue/i });
@@ -88,7 +88,7 @@ test.describe("Rotation / singer management", () => {
     tauriMock,
   }) => {
     await page.goto("/");
-    await expect(page.getByText("Bohemian Rhapsody")).toBeVisible();
+    await expect(page.getByText("Earfquake")).toBeVisible();
 
     const queueButton = page.getByRole("button", { name: /queue/i });
     await queueButton.click();

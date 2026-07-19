@@ -82,8 +82,8 @@ test.describe("Lyrics auto-follow", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(DENSE_LYRICS_SCRIPT);
     await page.goto("/");
-    await expect(page.getByText("Bohemian Rhapsody")).toBeVisible();
-    await page.getByText("Bohemian Rhapsody").dblclick();
+    await expect(page.getByText("Earfquake")).toBeVisible();
+    await page.getByText("Earfquake").dblclick();
     await expect(page.getByText("Lyric line 0")).toBeVisible({
       timeout: 10000,
     });
@@ -112,7 +112,7 @@ test.describe("Lyrics auto-follow", () => {
       // is accepted; contract requires top-level generation === snapshot gen.
       const transportGeneration = 1;
       const snapshot = {
-        song_id: "aaa111",
+        song_id: "earfquake",
         transport_generation: transportGeneration,
         state: "playing",
         is_playing: true,

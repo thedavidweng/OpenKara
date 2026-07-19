@@ -262,7 +262,7 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section className="preview-section" aria-label={copy.previewLabel}>
+        <section className="preview-section" aria-label="OpenKara preview">
           <div className="preview-stage">
             <Suspense fallback={null}>
               <AppPreview language={appLanguage} />

@@ -45,12 +45,13 @@ test.describe("Alphabet rail", () => {
     const rail = page.getByRole("navigation", { name: "Alphabet navigation" });
     await expect(rail).toBeVisible();
 
-    // The short default fixture fits fully in the viewport, so a B jump does
+    // The short default fixture fits fully in the viewport, so a C jump does
     // not produce a measurable scroll offset. Verify the visible resolved
     // section marker here; the 5,000-song spec covers actual scroll movement.
-    const buttonB = rail.locator("button[data-bucket='B']");
-    await buttonB.click();
-    await expect(buttonB).toHaveAttribute("aria-current", "true");
+    // The fixture's title_asc buckets are A, C, E, F, S, T.
+    const buttonC = rail.locator("button[data-bucket='C']");
+    await buttonC.click();
+    await expect(buttonC).toHaveAttribute("aria-current", "true");
   });
 
   test("keyboard typeahead on a missing letter falls forward to the next mapped bucket", async ({
@@ -62,17 +63,18 @@ test.describe("Alphabet rail", () => {
     const rail = page.getByRole("navigation", { name: "Alphabet navigation" });
     await expect(rail).toBeVisible();
 
-    // Focus a button in the rail and type "g" — not mapped, should fall forward
-    // to H (the nearest mapped bucket after G).
+    // Focus a button in the rail and type "b" — not mapped in this fixture
+    // (title_asc buckets are A, C, E, F, S, T), should fall forward to C
+    // (the nearest mapped bucket after B).
     const firstButton = rail.locator("button").first();
     await firstButton.focus();
 
-    // Type "g" on the focused button — the keydown handler is on the container
+    // Type "b" on the focused button — the keydown handler is on the container
     // and bubbles up.
-    await page.keyboard.press("g");
+    await page.keyboard.press("b");
 
-    // The aria-current button should be the resolved bucket (H)
+    // The aria-current button should be the resolved bucket (C)
     const activeButton = rail.locator("button[aria-current='true']");
-    await expect(activeButton).toHaveAttribute("data-bucket", "H");
+    await expect(activeButton).toHaveAttribute("data-bucket", "C");
   });
 });
