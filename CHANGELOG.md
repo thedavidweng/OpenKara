@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Cancel a pending library search debounce when the query is cleared, so a late `searchLibrary` result cannot overwrite `loadLibrary()` and hide songs again (Playwright webkit flake in `song-import` search filter). Cap Linux CI `CARGO_BUILD_JOBS` to reduce parallel `rust-lld` SIGBUS crashes while linking heavy Tauri test binaries.
 
-- Website landing: collapse the soft separators and stacked padding after the stem cards and after the library cards (Synced lyrics / Portable library) so those blocks flow into the closing CTA as one continuous band; enlarge the closing Download / View source pills to match the hero CTA scale and optically center their labels (`line-height: 1` + a 1px top nudge for Inter).
+- Website landing: collapse the soft separators and stacked padding after the stem cards and after the library cards (Synced lyrics / Portable library) so those blocks flow into the closing CTA as one continuous band; enlarge the closing Download / View source pills to match the hero CTA scale and optically center their labels (`line-height: 1` + a `translateY` label nudge — asymmetric padding only half-shifts flex children).
 
 ### Changed
 
