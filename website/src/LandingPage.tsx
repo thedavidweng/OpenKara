@@ -209,6 +209,12 @@ const BUILT_WITH_TOOLS = [
     asset: "/img/built-with/kilo-code.svg",
     slug: "kilo-code",
   },
+  {
+    name: "Codex",
+    href: "https://openai.com/codex",
+    asset: "/img/built-with/codex.svg",
+    slug: "codex",
+  },
 ] as const;
 
 export function LandingPage() {
