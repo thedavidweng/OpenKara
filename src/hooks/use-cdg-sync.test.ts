@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
+import { ensureArrayBuffer } from "@/lib/cdg-protocol";
 import {
-  ensureArrayBuffer,
+  createCdgFrameCoordinator,
   getCdgSyncBucket,
   startCdgPositionSync,
 } from "./use-cdg-sync";
@@ -211,30 +212,170 @@ describe("startCdgPositionSync", () => {
   });
 });
 
-// ─── F5: CDG frame IPC songId guard ─────────────────────────
+// ─── F5: CDG frame IPC songId/generation guard ─────────────────────────
 
 describe("F5: CDG frame IPC validates against current song before drawFrame", () => {
-  test("hot frame path captures songId at request time and compares before draw", async () => {
+  test("hot frame path captures songId and generation at request time and compares before draw", async () => {
     const { default: src } = await import("./use-cdg-sync.ts?raw");
 
     // In the hot frame path (the second useEffect that calls getCdgFrame
     // in a loop), the fix must:
-    // 1. Capture the current songId before the IPC call
-    // 2. After the IPC resolves, compare against current songId
-    // 3. Skip drawFrame/emitCdgFrame if song changed
+    // 1. Capture the current songId and transport generation before the IPC call
+    // 2. After the IPC resolves, compare against current songId and generation
+    // 3. Skip drawFrame/emitCdgFrame if song or generation changed
 
     // Find the hot frame getCdgFrame call (the one inside startCdgPositionSync)
     const hotFrameSection = src.slice(src.indexOf("startCdgPositionSync"));
 
-    // The songId must be captured before getCdgFrame
-    // (verified indirectly by checking the guard after IPC)
+    // The songId and generation must be captured before getCdgFrame
+    expect(hotFrameSection).toContain("requestSongId");
+    expect(hotFrameSection).toContain("requestGeneration");
 
-    // After the IPC resolves, there must be a songId comparison
+    // After the IPC resolves, there must be a songId and generation comparison
     const afterIpc = hotFrameSection.slice(
-      hotFrameSection.indexOf(".getCdgFrame(positionMs)"),
+      hotFrameSection.indexOf(".getCdgFrame("),
     );
 
-    // The guard should check that the current song still matches
+    // The guard should check that the current song and generation still match
     expect(afterIpc).toContain("snapshot?.song_id");
+    expect(afterIpc).toContain("transport_generation");
+  });
+});
+
+// ─── #113: CDG coordinator must not drop all in-flight frames under slow IPC ──
+
+describe("#113: createCdgFrameCoordinator under slow IPC", () => {
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((res) => {
+      resolve = res;
+    });
+    return { promise, resolve };
+  }
+
+  test("does not drop frame when a newer request was enqueued during slow IPC", async () => {
+    const first = deferred<ArrayBuffer>();
+    const second = deferred<ArrayBuffer>();
+    let n = 0;
+    const getCdgFrame = vi.fn(() => {
+      n += 1;
+      return n === 1 ? first.promise : second.promise;
+    });
+    const onFrame = vi.fn();
+    const onProbeResolved = vi.fn();
+    const onError = vi.fn();
+
+    const coordinator = createCdgFrameCoordinator({
+      getCdgFrame: getCdgFrame as never,
+      getCdgStatus: vi.fn().mockResolvedValue({
+        availability: "none",
+        songId: null,
+        transportGeneration: null,
+        packetCount: null,
+        errorCode: null,
+      }),
+      onFrame,
+      onProbeResolved,
+      onError,
+      isCurrent: () => true, // same song/generation throughout
+    });
+
+    // Enqueue request A (position 100).
+    coordinator.request({
+      songId: "song-a",
+      transportGeneration: 1,
+      positionMs: 100,
+      lastFrameVersion: 0,
+    });
+    expect(getCdgFrame).toHaveBeenCalledTimes(1);
+
+    // While A is in flight, enqueue request B (position 200).
+    // Under the old code, request() incremented the serial, so when A
+    // resolved, A's serial no longer matched and the frame was dropped.
+    // With the fix, request() does NOT increment the serial, so A's
+    // response is still processed.
+    coordinator.request({
+      songId: "song-a",
+      transportGeneration: 1,
+      positionMs: 200,
+      lastFrameVersion: 1,
+    });
+    expect(getCdgFrame).toHaveBeenCalledTimes(1);
+
+    // Now resolve A. The serial has not changed (only invalidate changes it),
+    // so A's result is processed.
+    first.resolve(new ArrayBuffer(0));
+    // Drain promise microtasks: then → finally → pump → second getCdgFrame.
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+    }
+
+    // A's response should have been processed (not dropped).
+    expect(onProbeResolved).toHaveBeenCalledTimes(1);
+    expect(onProbeResolved).toHaveBeenCalledWith({
+      songId: "song-a",
+      transportGeneration: 1,
+      hasCdg: false,
+      hasFrame: false,
+      availability: "none",
+      errorCode: null,
+    });
+
+    // After A completes, B should be pumped.
+    expect(getCdgFrame).toHaveBeenCalledTimes(2);
+
+    // Clean up: resolve B and invalidate.
+    second.resolve(new ArrayBuffer(0));
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+    }
+    coordinator.invalidate();
+  });
+
+  test("drops frame when song changes (isCurrent returns false)", async () => {
+    const pending = deferred<ArrayBuffer>();
+    const getCdgFrame = vi.fn(() => pending.promise);
+    const onFrame = vi.fn();
+    const onProbeResolved = vi.fn();
+    const onError = vi.fn();
+
+    let currentSong = "song-a";
+    const coordinator = createCdgFrameCoordinator({
+      getCdgFrame: getCdgFrame as never,
+      getCdgStatus: vi.fn().mockResolvedValue({
+        availability: "none",
+        songId: null,
+        transportGeneration: null,
+        packetCount: null,
+        errorCode: null,
+      }),
+      onFrame,
+      onProbeResolved,
+      onError,
+      isCurrent: (req) => req.songId === currentSong,
+    });
+
+    // Enqueue request for song-a.
+    coordinator.request({
+      songId: "song-a",
+      transportGeneration: 1,
+      positionMs: 100,
+      lastFrameVersion: 0,
+    });
+
+    // Song changes while request is in flight.
+    currentSong = "song-b";
+
+    // Resolve the in-flight request — should be dropped because isCurrent
+    // returns false.
+    pending.resolve(new ArrayBuffer(0));
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+    }
+
+    expect(onProbeResolved).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+
+    coordinator.invalidate();
   });
 });

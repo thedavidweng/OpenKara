@@ -2,14 +2,14 @@ use crate::audio::coordinator::PlaybackCommand;
 use crate::audio::output_format::{create_output_format_state, OutputFormatState};
 use crate::audio::peaks::PeakRing;
 use crate::audio::playback::PlaybackController;
-use crate::commands::cdg::CdgPlaybackState;
+use crate::commands::cdg::CdgPlaybackSlot;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{mpsc, Arc, Mutex};
 
 #[derive(Clone)]
 pub struct PlaybackState {
     pub playback: Arc<Mutex<PlaybackController>>,
-    pub cdg_state: Arc<Mutex<Option<CdgPlaybackState>>>,
+    pub cdg_state: Arc<Mutex<Option<CdgPlaybackSlot>>>,
     pub playback_request_id: Arc<AtomicU64>,
     pub audio_output_started: Arc<AtomicBool>,
     pub audio_output_start_lock: Arc<Mutex<()>>,
