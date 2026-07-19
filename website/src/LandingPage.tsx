@@ -231,7 +231,7 @@ export function LandingPage() {
               className="pill pill-primary pill-small"
               href="https://github.com/thedavidweng/OpenKara/releases/latest"
             >
-              {copy.download}
+              <span className="pill-label">{copy.download}</span>
             </a>
           </div>
         </nav>
@@ -246,7 +246,9 @@ export function LandingPage() {
               className="pill pill-primary"
               href="https://github.com/thedavidweng/OpenKara/releases/latest"
             >
-              <Download size={16} /> {copy.primary}
+              <span className="pill-label">
+                <Download size={16} /> {copy.primary}
+              </span>
             </a>
             <a
               className="pill pill-secondary"
@@ -254,7 +256,9 @@ export function LandingPage() {
               target="_blank"
               rel="noreferrer"
             >
-              <Play size={15} fill="currentColor" /> {copy.secondary}
+              <span className="pill-label">
+                <Play size={15} fill="currentColor" /> {copy.secondary}
+              </span>
             </a>
             <span>{copy.platform}</span>
           </div>
@@ -326,7 +330,7 @@ export function LandingPage() {
               className="pill pill-primary"
               href="https://github.com/thedavidweng/OpenKara/releases/latest"
             >
-              {copy.download}
+              <span className="pill-label">{copy.download}</span>
             </a>
             <a
               className="pill pill-secondary"
@@ -334,7 +338,7 @@ export function LandingPage() {
               target="_blank"
               rel="noreferrer"
             >
-              {copy.source}
+              <span className="pill-label">{copy.source}</span>
             </a>
           </div>
         </section>
