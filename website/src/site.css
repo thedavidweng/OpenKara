@@ -209,6 +209,9 @@ a {
   align-items: center;
   justify-content: center;
   gap: 7px;
+  /* Landing sets line-height: 1.5; keep pills on a tight line box so flex
+     centering matches the glyph band instead of a tall inherited strut. */
+  line-height: 1;
   font-size: 13px;
   font-weight: 620;
   transition:
@@ -272,6 +275,8 @@ a {
 .hero-actions .pill {
   min-height: clamp(48px, 4.2vw, 56px);
   padding-inline: clamp(22px, 2vw, 28px);
+  /* Inter's em-box sits optically high in tall CTAs — nudge the label down. */
+  padding-block: 1px 0;
   font-size: clamp(15px, 1.3vw, 17px);
 }
 
@@ -649,6 +654,8 @@ a {
 .closing-actions .pill {
   min-height: clamp(48px, 4.2vw, 56px);
   padding-inline: clamp(22px, 2vw, 28px);
+  /* Same optical nudge as hero CTAs (Inter sits high in tall pills). */
+  padding-block: 1px 0;
   font-size: clamp(15px, 1.3vw, 17px);
 }
 
