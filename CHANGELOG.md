@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Cancel a pending library search debounce when the query is cleared, so a late `searchLibrary` result cannot overwrite `loadLibrary()` and hide songs again (Playwright webkit flake in `song-import` search filter). Cap Linux CI `CARGO_BUILD_JOBS` to reduce parallel `rust-lld` SIGBUS crashes while linking heavy Tauri test binaries.
+
 ### Changed
 
 - Website landing preview polish: tighten the product-mock halo so the under-glow sits close to the window tail (Linear-style side/bottom spacing), keep the light-mode halo below the mock top with a seamless fade into the stage gray, and keep all eight Built-with logos on one desktop row.

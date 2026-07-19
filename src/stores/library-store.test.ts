@@ -945,6 +945,63 @@ describe("library-store setSearchQuery debounce race (F2)", () => {
     // Slow results must NOT overwrite the fast "a" results
     expect(useLibraryStore.getState().songs).toEqual([songA]);
   });
+
+  test("clearing search cancels a pending debounce before it can overwrite loadLibrary", async () => {
+    const filtered = {
+      hash: "see-you",
+      title: "See You Again",
+      artist: "Tyler, The Creator",
+      album: null,
+      file_path: "/music/see-you.m4a",
+      audio_source_kind: "original" as const,
+      cdg_path: null,
+      media_g_container: null,
+      instrumental: false,
+      language: null,
+      duration_ms: 100000,
+      cover_art: null,
+      has_cover_art: false,
+      imported_at: 0,
+      original_ext: null,
+    };
+    const fullLibrary = [
+      {
+        hash: "earfquake",
+        title: "Earfquake",
+        artist: "Tyler, The Creator",
+        album: null,
+        file_path: "/music/earfquake.m4a",
+        audio_source_kind: "original" as const,
+        cdg_path: null,
+        media_g_container: null,
+        instrumental: false,
+        language: null,
+        duration_ms: 100000,
+        cover_art: null,
+        has_cover_art: false,
+        imported_at: 1,
+        original_ext: null,
+      },
+      filtered,
+    ];
+
+    mockSearchLibrary.mockResolvedValue([filtered]);
+    mockGetLibrary.mockResolvedValue(fullLibrary);
+    mockGetActiveLibrary.mockResolvedValue(null);
+    mockGetAllSeparationStatuses.mockResolvedValue([]);
+    mockGetAllUploadStatuses.mockResolvedValue([]);
+
+    // Schedule a debounced search, then clear before the 300ms window elapses.
+    useLibraryStore.getState().setSearchQuery("See You");
+    useLibraryStore.getState().setSearchQuery("");
+
+    await vi.advanceTimersByTimeAsync(300);
+    await Promise.resolve();
+
+    expect(mockSearchLibrary).not.toHaveBeenCalled();
+    expect(mockGetLibrary).toHaveBeenCalled();
+    expect(useLibraryStore.getState().songs).toEqual(fullLibrary);
+  });
 });
 
 // ─── resolveCdgChoicePrompt ─────────────────────────────────
