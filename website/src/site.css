@@ -354,7 +354,9 @@ a {
 
 .product-preview
   [data-preview-interaction-mode="playlist-only"]
-  button:not([data-preview-playlist-switch="true"]),
+  button:not([data-preview-playlist-switch="true"]):not(
+    [data-preview-lyrics-interactive="true"]
+  ),
 .product-preview [data-preview-interaction-mode="playlist-only"] input,
 .product-preview
   [data-preview-interaction-mode="playlist-only"]
@@ -371,13 +373,13 @@ a {
 
 .built-with-section {
   padding-block: clamp(38px, 4.5vw, 66px) clamp(42px, 5vw, 76px);
-  color: #f3f3f4;
-  background: #08090a;
+  color: var(--landing-text);
+  background: var(--landing-bg);
 }
 
 .built-with-label {
   margin: 0;
-  color: #94969d;
+  color: var(--landing-muted);
   font-size: 11px;
   font-weight: 650;
   letter-spacing: 0.12em;
@@ -413,6 +415,16 @@ a {
   object-fit: contain;
 }
 
+/* Brand logos are authored as white-on-transparent assets for the dark logo
+   wall. In light theme, invert luminance so they read as dark-on-light while
+   keeping the same shapes. Kilo Code is handled by its own filter rules below
+   because its SVG uses fill="currentColor" but is loaded via <img src>. */
+:root[data-theme="light"]
+  .built-with-tool:not(.built-with-tool--kilo-code)
+  img {
+  filter: invert(1);
+}
+
 .built-with-tool--claude-code img {
   max-height: 20px;
 }
@@ -429,13 +441,22 @@ a {
   width: 30px;
   height: 30px;
   max-height: none;
+  /* Kilo Code SVG uses fill="currentColor" but is loaded via <img src>, so host
+     CSS color does not propagate and currentColor falls back to black — invisible
+     on the dark logo wall. Force white via a luminance filter (brightness(0)
+     kills all color → black, invert(1) → white), mirroring the white-on-transparent
+     authoring of the other logos. The light-theme override below makes it dark. */
   filter: brightness(0) invert(1);
+}
+
+:root[data-theme="light"] .built-with-tool--kilo-code img {
+  filter: brightness(0);
 }
 
 .built-with-disclaimer {
   max-width: 630px;
   margin: 25px 0 0;
-  color: #74777f;
+  color: var(--landing-muted);
   font-size: 11px;
   line-height: 1.5;
 }

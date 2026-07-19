@@ -1,6 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import {
-  Code2,
   Download,
   HardDrive,
   Languages,
@@ -11,7 +10,7 @@ import {
   Sparkles,
   Sun,
 } from "lucide-react";
-import { documentHref, type SiteLanguage } from "./document-route";
+import { documentHref, withBase, type SiteLanguage } from "./document-route";
 
 const AppPreview = lazy(() =>
   import("./AppPreview").then((module) => ({ default: module.AppPreview })),
@@ -22,7 +21,7 @@ type Theme = "dark" | "light";
 
 const COPY = {
   en: {
-    nav: ["Features", "Workflow", "Local first"],
+    nav: ["Features", "Workflow"],
     download: "Download",
     heroTitle: "Your music, on your stage.",
     heroBody:
@@ -64,11 +63,6 @@ const COPY = {
         title: "Import once. Sing anytime.",
         body: "OpenKara keeps metadata, stems, and lyrics together in a self-contained library that can live on your computer, NAS, or USB drive.",
       },
-      {
-        eyebrow: "Local first",
-        title: "Your music stays with you.",
-        body: "Audio processing happens on your machine. No monthly subscription and no need to upload a private library to a third-party separation service.",
-      },
     ],
     cards: [
       [
@@ -87,11 +81,6 @@ const COPY = {
         "Portable library",
         "Back up or move one self-contained library directory.",
       ],
-      [
-        "Background jobs",
-        "Keep browsing or singing while separation finishes.",
-      ],
-      ["Open source", "Apache 2.0 licensed, inspectable, and yours to keep."],
     ],
     closing: "Turn your music into karaoke tonight.",
     source: "View source",
@@ -108,7 +97,7 @@ const COPY = {
     themeLight: "Switch to light theme",
   },
   "zh-CN": {
-    nav: ["功能", "体验", "本地优先"],
+    nav: ["功能", "体验"],
     download: "下载",
     heroTitle: "让你的音乐，成为你的舞台。",
     heroBody:
@@ -150,19 +139,12 @@ const COPY = {
         title: "导入一次，随时开唱。",
         body: "OpenKara 把元数据、分轨与歌词集中在自包含曲库中，可存放在电脑、NAS 或 USB 硬盘。",
       },
-      {
-        eyebrow: "本地优先",
-        title: "你的音乐留在你的设备上。",
-        body: "音频处理在本机完成。没有按月订阅，也无需把私人曲库上传到第三方分离服务。",
-      },
     ],
     cards: [
       ["2 或 4 轨", "快速生成伴奏，或分别控制每一个音轨。"],
       ["实时混音", "播放中调整各轨，无需重新处理歌曲。"],
       ["同步歌词", "支持时间歌词、内嵌歌词、LRC 与 CD+G。"],
       ["便携曲库", "一个自包含目录即可完成备份与迁移。"],
-      ["后台任务", "分离在后台完成，不打断浏览与演唱。"],
-      ["开源", "Apache 2.0 许可，透明、可检查、长期可用。"],
     ],
     closing: "今晚就把你的音乐变成 Karaoke。",
     source: "查看源代码",
@@ -180,14 +162,7 @@ const COPY = {
   },
 } as const;
 
-const featureIcons = [
-  Sparkles,
-  SlidersHorizontal,
-  Languages,
-  HardDrive,
-  Music2,
-  Code2,
-];
+const featureIcons = [Sparkles, SlidersHorizontal, Languages, HardDrive];
 
 const previewModuleIcons = [Music2, Sparkles, SlidersHorizontal];
 
@@ -261,13 +236,12 @@ export function LandingPage() {
       <header className="site-header">
         <nav className="site-nav" aria-label="Primary navigation">
           <a className="brand" href="#top" aria-label="OpenKara home">
-            <img src="/img/openkara-app-icon.png" alt="" />
+            <img src={withBase("/img/openkara-app-icon.png")} alt="" />
             <span>OpenKara</span>
           </a>
           <div className="nav-links">
             <a href="#features">{copy.nav[0]}</a>
             <a href="#workflow">{copy.nav[1]}</a>
-            <a href="#local-first">{copy.nav[2]}</a>
           </div>
           <div className="nav-actions">
             <button
@@ -343,7 +317,7 @@ export function LandingPage() {
                   rel="noreferrer"
                   aria-label={tool.name}
                 >
-                  <img src={tool.asset} alt={tool.name} />
+                  <img src={withBase(tool.asset)} alt={tool.name} />
                 </a>
               ))}
             </div>
@@ -371,7 +345,7 @@ export function LandingPage() {
         </section>
 
         {copy.sections.map((section, sectionIndex) => {
-          const sectionIds = ["features", "workflow", "local-first"];
+          const sectionIds = ["features", "workflow"];
           return (
             <section
               className="feature-section content-width"
@@ -424,7 +398,7 @@ export function LandingPage() {
 
       <footer className="site-footer content-width">
         <a className="brand footer-brand" href="#top">
-          <img src="/img/openkara-app-icon.png" alt="" />
+          <img src={withBase("/img/openkara-app-icon.png")} alt="" />
           <span>OpenKara</span>
         </a>
         <nav
