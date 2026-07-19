@@ -56,7 +56,8 @@ describe("SettingsSectionCard", () => {
     );
 
     expect(markup).toContain("border-[var(--color-border)]");
-    expect(markup).toContain("text-[var(--color-text-dim)]");
+    expect(markup).toContain("font-semibold");
+    expect(markup).toContain("text-[var(--color-text)]");
     expect(markup).not.toContain("text-[var(--color-destructive)]");
   });
 

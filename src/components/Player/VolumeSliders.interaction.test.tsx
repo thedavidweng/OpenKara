@@ -65,7 +65,7 @@ vi.mock("@/components/Overlay/Tooltip", () => ({
   ),
 }));
 
-describe("VolumeSliders panel stem controls", () => {
+describe("VolumeSliders stem popup portal", () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
 
@@ -85,14 +85,19 @@ describe("VolumeSliders panel stem controls", () => {
       other: 0.55,
     };
     mockPlayerState.snapshot.has_stems = true;
+    mockPlayerState.snapshot.stem_mode = "four_stem";
   });
 
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    // Portal nodes attach to document.body — clear leftovers.
+    document
+      .querySelectorAll("[data-stem-popup]")
+      .forEach((node) => node.remove());
   });
 
-  test("expanded tight mixer renders panel mute chrome with aria-pressed", () => {
+  test("expanded tight mixer portals a popup with playback-bar mute chrome", () => {
     act(() => {
       root.render(<VolumeSliders density="tight" />);
     });
@@ -110,22 +115,53 @@ describe("VolumeSliders panel stem controls", () => {
     expect(trigger.getAttribute("aria-pressed")).toBe("true");
     expect(trigger.getAttribute("data-active")).toBe("true");
 
-    // Panel-variant stem mute buttons (no playback-bar class) are rendered.
+    const popup = document.querySelector(
+      '[data-stem-popup="true"]',
+    ) as HTMLElement | null;
+    expect(popup).not.toBeNull();
+    expect(popup?.getAttribute("data-state")).toBe("open");
+    expect(popup?.className).toContain("fixed");
+    expect(popup?.className).toContain("z-[70]");
+
     const muteButtons = Array.from(
-      container.querySelectorAll("button[aria-label^='Mute ']"),
+      document.querySelectorAll("button[aria-label^='Mute ']"),
     ) as HTMLButtonElement[];
     expect(muteButtons.length).toBeGreaterThanOrEqual(4);
-    const panelMute = muteButtons.find(
-      (button) => !button.className.includes("playback-bar-action-button"),
-    );
-    expect(panelMute).toBeDefined();
-    expect(panelMute?.getAttribute("aria-pressed")).toBe("false");
-    expect(panelMute?.className).toContain(
-      "text-[var(--color-control-primary)]",
-    );
+    for (const button of muteButtons) {
+      expect(button.className).toContain("playback-bar-action-button");
+    }
   });
 
-  test("panel mute button shows accent active chrome when stem is muted", () => {
+  test("relaxed expand portals sub-stems with longer master-width rails", () => {
+    act(() => {
+      root.render(<VolumeSliders density="relaxed" />);
+    });
+
+    const trigger = container.querySelector(
+      'button[data-playback-action="stem-mixer"]',
+    ) as HTMLButtonElement;
+    expect(trigger).not.toBeNull();
+
+    act(() => {
+      trigger.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const popup = document.querySelector('[data-stem-popup="true"]');
+    expect(popup).not.toBeNull();
+    expect(popup?.className).toContain("p-4");
+
+    const popupRails = Array.from(
+      popup!.querySelectorAll("input.audio-level-slider"),
+    ) as HTMLInputElement[];
+    // Drums + Bass + Other — longer master rail + trailing optical margin.
+    expect(popupRails.length).toBe(3);
+    for (const rail of popupRails) {
+      expect(rail.className).toContain("w-[104px]");
+      expect(rail.className).toContain("mr-[14px]");
+    }
+  });
+
+  test("popup mute button dims the icon when stem is muted", () => {
     mockPlayerState.snapshot.stem_volumes = {
       vocals: 0,
       drums: 0,
@@ -145,14 +181,13 @@ describe("VolumeSliders panel stem controls", () => {
     });
 
     const unmuteButtons = Array.from(
-      container.querySelectorAll("button[aria-label^='Unmute ']"),
+      document.querySelectorAll("button[aria-label^='Unmute ']"),
     ) as HTMLButtonElement[];
     expect(unmuteButtons.length).toBeGreaterThan(0);
-    const panelUnmute = unmuteButtons.find(
-      (button) => !button.className.includes("playback-bar-action-button"),
-    );
-    expect(panelUnmute).toBeDefined();
-    expect(panelUnmute?.getAttribute("aria-pressed")).toBe("true");
-    expect(panelUnmute?.getAttribute("data-active")).toBe("true");
+    const muted = unmuteButtons[0];
+    expect(muted.getAttribute("aria-pressed")).toBe("true");
+    expect(muted.getAttribute("data-active")).toBeNull();
+    expect(muted.className).toContain("text-[var(--color-text-dimmer)]");
+    expect(muted.className).toContain("playback-bar-action-button");
   });
 });

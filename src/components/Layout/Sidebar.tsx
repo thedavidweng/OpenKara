@@ -166,10 +166,7 @@ export function Sidebar({ header }: SidebarProps = {}) {
             }`}
           >
             <span className="flex items-center gap-2">
-              <CheckCircle2
-                size={14}
-                className="text-[var(--color-text-dim)]"
-              />
+              <CheckCircle2 size={14} className="text-[var(--color-accent)]" />
               <span>{t("sidebar.separated")}</span>
             </span>
             <span className="text-[11px] text-[var(--color-text-dim)]">

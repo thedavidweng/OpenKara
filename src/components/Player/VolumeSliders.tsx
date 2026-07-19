@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import {
   Mic2,
@@ -23,6 +24,22 @@ import {
   getPlaybackBarLayoutTokens,
   type PlaybackBarDensity,
 } from "./playback-bar-layout";
+
+/** Gap between the anchor control and the floating stem panel (px). */
+const STEM_POPUP_GAP_PX = 12;
+/**
+ * Popup surface uses Tailwind `p-4` (16px). Position so the *content* icon
+ * column lines up with the accompaniment mute button's left edge:
+ *   panel.left = muteButton.left - PAD
+ */
+const STEM_POPUP_PAD_PX = 16;
+/**
+ * Extra trailing margin on popup rails. Icons sit inside a 44px hit target so
+ * the glyph has ~13px inset; the range thumb sits at the rail's end. Equal
+ * box padding alone still looks right-heavy — this restores the pre-portal
+ * `mr-[14px]` optical balance between left glyph inset and right thumb gap.
+ */
+const STEM_POPUP_RAIL_TRAIL_CLASS = "mr-[14px]";
 
 interface VolumeSlidersProps {
   density?: PlaybackBarDensity;
@@ -74,9 +91,50 @@ export function VolumeSliders({
   const prevBassRef = useRef(1);
   const prevOtherRef = useRef(1);
 
-  // Click-outside to close popup
+  // Floating popup: portal to body so stage overflow / settings z-index cannot clip it.
   const popupRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  /**
+   * Anchors to the accompaniment *mute button* (not the whole row), so the
+   * popup icon column lines up with the Music control on the playback bar.
+   */
+  const accompMuteButtonRef = useRef<HTMLButtonElement>(null);
+  /** Tight-density mixer trigger doubles as the position anchor. */
+  const tightAnchorRef = useRef<HTMLDivElement>(null);
+  const [popupPos, setPopupPos] = useState<{
+    left: number;
+    bottom: number;
+  } | null>(null);
+
+  const updatePopupPosition = useCallback(() => {
+    const muteButton = accompMuteButtonRef.current;
+    const tightAnchor = tightAnchorRef.current;
+    const anchor = muteButton ?? tightAnchor;
+    if (!anchor) {
+      return;
+    }
+    const rect = anchor.getBoundingClientRect();
+    setPopupPos({
+      // Align popup content icons with the mute button: subtract surface pad.
+      left: rect.left - STEM_POPUP_PAD_PX,
+      bottom: window.innerHeight - rect.top + STEM_POPUP_GAP_PX,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isExpanded) {
+      setPopupPos(null);
+      return;
+    }
+    updatePopupPosition();
+    window.addEventListener("resize", updatePopupPosition);
+    // Capture scroll from nested stage/settings panes.
+    window.addEventListener("scroll", updatePopupPosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePopupPosition);
+      window.removeEventListener("scroll", updatePopupPosition, true);
+    };
+  }, [isExpanded, updatePopupPosition]);
 
   useEffect(() => {
     if (!isExpanded) return;
@@ -85,7 +143,9 @@ export function VolumeSliders({
         popupRef.current &&
         !popupRef.current.contains(e.target as Node) &&
         triggerRef.current &&
-        !triggerRef.current.contains(e.target as Node)
+        !triggerRef.current.contains(e.target as Node) &&
+        anchorRef.current &&
+        !anchorRef.current.contains(e.target as Node)
       ) {
         setIsExpanded(false);
       }
@@ -189,36 +249,90 @@ export function VolumeSliders({
     }
   }, [stemVolumes.other, setStemVolume]);
 
-  const inlineSliderWidthClass =
-    getPlaybackBarLayoutTokens(density).inlineStemVolumeWidthClass;
+  const layoutTokens = getPlaybackBarLayoutTokens(density);
+  const inlineSliderWidthClass = layoutTokens.inlineStemVolumeWidthClass;
+  /*
+   * Popup rails: longer master-rail token + trailing optical margin. The
+   * trail margin is what makes left/right look equal — box p-4 alone is not
+   * enough because icon glyphs inset inside 44px buttons while thumbs sit
+   * flush on the rail end. Inline accompaniment keeps the stem token only.
+   */
+  const popupSliderWidthClass = `${layoutTokens.masterVolumeWidthClass} ${STEM_POPUP_RAIL_TRAIL_CLASS}`;
   const collapsedMode = density === "tight";
   const triggerLabel = isExpanded
     ? t("stems.collapseStems")
     : t("stems.expandStems");
-  const sharedPanelClassName =
-    "stem-popup app-panel-surface absolute bottom-full z-50 mb-3 rounded-lg border border-[color-mix(in_srgb,var(--color-border)_85%,transparent)] bg-[color-mix(in_srgb,var(--color-sidebar)_90%,transparent)] p-4 shadow-[0_20px_40px_rgba(0,0,0,0.32)]";
+  const canExpandFourStem = stemsAvailable && isFourStem;
+  const canExpandTight = stemsAvailable && collapsedMode;
+  const showPopup =
+    isExpanded &&
+    popupPos != null &&
+    typeof document !== "undefined" &&
+    (canExpandFourStem || canExpandTight);
 
-  const panelContent = (
-    <div className="flex flex-col gap-2.5">
+  /*
+   * Popup surface: fixed + portaled to body (escape overflow-hidden /
+   * settings stacking). p-4 + rail trailing margin for optical side balance;
+   * left is muteButton.left - PAD so icons stack above the Music control.
+   */
+  const popupSurfaceClassName =
+    "stem-popup app-panel-surface fixed z-[70] w-max rounded-lg border border-[color-mix(in_srgb,var(--color-border)_85%,transparent)] bg-[color-mix(in_srgb,var(--color-sidebar)_94%,transparent)] p-4 shadow-[0_20px_40px_rgba(0,0,0,0.32)]";
+
+  const fourStemPopupRows = (
+    <div className="flex flex-col gap-2">
+      <StemSlider
+        icon={Drum}
+        label={t("stems.drums")}
+        value={stemVolumes.drums}
+        onChange={(v) => handleStemChange("drums", v)}
+        onIconClick={handleDrumsMuteToggle}
+        sliderWidthClass={popupSliderWidthClass}
+        iconButtonVariant="playback_bar"
+      />
+      <StemSlider
+        icon={Guitar}
+        label={t("stems.bass")}
+        value={stemVolumes.bass}
+        onChange={(v) => handleStemChange("bass", v)}
+        onIconClick={handleBassMuteToggle}
+        sliderWidthClass={popupSliderWidthClass}
+        iconButtonVariant="playback_bar"
+      />
+      <StemSlider
+        icon={AudioWaveform}
+        label={t("stems.other")}
+        value={stemVolumes.other}
+        onChange={(v) => handleStemChange("other", v)}
+        onIconClick={handleOtherMuteToggle}
+        sliderWidthClass={popupSliderWidthClass}
+        iconButtonVariant="playback_bar"
+      />
+    </div>
+  );
+
+  const tightPopupRows = (
+    <div className="flex flex-col gap-2">
       <StemSlider
         icon={Mic2}
         label={t("stems.vocals")}
         value={stemVolumes.vocals}
         onChange={(v) => handleStemChange("vocals", v)}
-        onIconClick={stemsAvailable ? handleVocalsMuteToggle : undefined}
-        disabled={!stemsAvailable}
-        sliderWidthClass={`${inlineSliderWidthClass} mr-[14px]`}
+        onIconClick={handleVocalsMuteToggle}
+        sliderWidthClass={popupSliderWidthClass}
+        iconButtonVariant="playback_bar"
+        playbackActionName="vocals-mute"
       />
       <StemSlider
         icon={Music}
         label={t("stems.accompaniment")}
         value={accompValue}
         onChange={handleAccompChange}
-        onIconClick={stemsAvailable ? handleAccompMuteToggle : undefined}
-        disabled={!stemsAvailable}
-        sliderWidthClass={`${inlineSliderWidthClass} mr-[14px]`}
+        onIconClick={handleAccompMuteToggle}
+        sliderWidthClass={popupSliderWidthClass}
+        iconButtonVariant="playback_bar"
+        playbackActionName="accompaniment-mute"
       />
-      {isFourStem && (
+      {isFourStem ? (
         <>
           <div className="h-px bg-[color-mix(in_srgb,var(--color-border)_85%,transparent)]" />
           <StemSlider
@@ -227,8 +341,8 @@ export function VolumeSliders({
             value={stemVolumes.drums}
             onChange={(v) => handleStemChange("drums", v)}
             onIconClick={handleDrumsMuteToggle}
-            disabled={!stemsAvailable}
-            sliderWidthClass={`${inlineSliderWidthClass} mr-[14px]`}
+            sliderWidthClass={popupSliderWidthClass}
+            iconButtonVariant="playback_bar"
           />
           <StemSlider
             icon={Guitar}
@@ -236,8 +350,8 @@ export function VolumeSliders({
             value={stemVolumes.bass}
             onChange={(v) => handleStemChange("bass", v)}
             onIconClick={handleBassMuteToggle}
-            disabled={!stemsAvailable}
-            sliderWidthClass={`${inlineSliderWidthClass} mr-[14px]`}
+            sliderWidthClass={popupSliderWidthClass}
+            iconButtonVariant="playback_bar"
           />
           <StemSlider
             icon={AudioWaveform}
@@ -245,17 +359,33 @@ export function VolumeSliders({
             value={stemVolumes.other}
             onChange={(v) => handleStemChange("other", v)}
             onIconClick={handleOtherMuteToggle}
-            disabled={!stemsAvailable}
-            sliderWidthClass={`${inlineSliderWidthClass} mr-[14px]`}
+            sliderWidthClass={popupSliderWidthClass}
+            iconButtonVariant="playback_bar"
           />
         </>
-      )}
+      ) : null}
     </div>
   );
 
+  const stemPopup =
+    showPopup && popupPos
+      ? createPortal(
+          <div
+            ref={popupRef}
+            data-state="open"
+            data-stem-popup="true"
+            className={popupSurfaceClassName}
+            style={{ left: popupPos.left, bottom: popupPos.bottom }}
+          >
+            {collapsedMode ? tightPopupRows : fourStemPopupRows}
+          </div>,
+          document.body,
+        )
+      : null;
+
   if (collapsedMode) {
     return (
-      <div className="relative shrink-0">
+      <div ref={tightAnchorRef} className="relative shrink-0">
         <Tooltip label={triggerLabel}>
           <button
             ref={triggerRef}
@@ -272,10 +402,8 @@ export function VolumeSliders({
             data-active={isExpanded && stemsAvailable ? "true" : undefined}
             className={`motion-icon-button playback-bar-action-button ${
               stemsAvailable
-                ? // When expanded, show the accent color explicitly (matches
-                  // queue/mute buttons) so hover does not strip it.
-                  isExpanded
-                  ? "text-[var(--color-accent)]"
+                ? isExpanded
+                  ? "text-[var(--color-control-primary)]"
                   : "text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
                 : "text-[var(--color-text-dimmer)]"
             }`}
@@ -283,16 +411,7 @@ export function VolumeSliders({
             <SlidersHorizontal size={18} />
           </button>
         </Tooltip>
-
-        {stemsAvailable && (
-          <div
-            ref={popupRef}
-            data-state={isExpanded ? "open" : "closed"}
-            className={`${sharedPanelClassName} right-0 w-max`}
-          >
-            {panelContent}
-          </div>
-        )}
+        {stemPopup}
       </div>
     );
   }
@@ -303,7 +422,6 @@ export function VolumeSliders({
         density === "relaxed" ? "gap-5" : "gap-3"
       }`}
     >
-      {/* Vocals slider */}
       <StemSlider
         icon={Mic2}
         label={t("stems.vocals")}
@@ -316,8 +434,11 @@ export function VolumeSliders({
         playbackActionName="vocals-mute"
       />
 
-      {/* Accompaniment group — relative for popup anchor */}
-      <div className="relative flex items-center gap-2">
+      {/*
+       * Accompaniment mute button is the position anchor for the stem popup
+       * so sub-stem icons stack directly above the Music control.
+       */}
+      <div className="flex items-center gap-2">
         <StemSlider
           icon={Music}
           label={t("stems.accompaniment")}
@@ -328,20 +449,19 @@ export function VolumeSliders({
           sliderWidthClass={inlineSliderWidthClass}
           iconButtonVariant="playback_bar"
           playbackActionName="accompaniment-mute"
+          muteButtonRef={accompMuteButtonRef}
         />
-        {stemsAvailable && isFourStem && (
-          <Tooltip
-            label={
-              isExpanded ? t("stems.collapseStems") : t("stems.expandStems")
-            }
-          >
+        {canExpandFourStem ? (
+          <Tooltip label={triggerLabel}>
             <button
               ref={triggerRef}
+              type="button"
               onClick={() => setIsExpanded(!isExpanded)}
-              aria-label={
-                isExpanded ? t("stems.collapseStems") : t("stems.expandStems")
-              }
-              className="motion-icon-button flex h-4 w-4 items-center justify-center rounded-full text-[var(--color-text-dimmer)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-control-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
+              aria-label={triggerLabel}
+              aria-pressed={isExpanded}
+              data-playback-action="stem-mixer"
+              data-active={isExpanded ? "true" : undefined}
+              className="motion-icon-button flex h-4 w-4 items-center justify-center rounded-full text-[var(--color-text-dimmer)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-control-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
             >
               <ChevronDown
                 size={12}
@@ -349,43 +469,8 @@ export function VolumeSliders({
               />
             </button>
           </Tooltip>
-        )}
-
-        {/* Popup for individual stem controls — aligned with accompaniment */}
-        {stemsAvailable && isFourStem && (
-          <div
-            ref={popupRef}
-            data-state={isExpanded ? "open" : "closed"}
-            className={`${sharedPanelClassName} left-0`}
-          >
-            <div className="flex flex-col gap-2">
-              <StemSlider
-                icon={Drum}
-                label={t("stems.drums")}
-                value={stemVolumes.drums}
-                onChange={(v) => handleStemChange("drums", v)}
-                onIconClick={handleDrumsMuteToggle}
-                panelIconSize={16}
-              />
-              <StemSlider
-                icon={Guitar}
-                label={t("stems.bass")}
-                value={stemVolumes.bass}
-                onChange={(v) => handleStemChange("bass", v)}
-                onIconClick={handleBassMuteToggle}
-                panelIconSize={16}
-              />
-              <StemSlider
-                icon={AudioWaveform}
-                label={t("stems.other")}
-                value={stemVolumes.other}
-                onChange={(v) => handleStemChange("other", v)}
-                onIconClick={handleOtherMuteToggle}
-                panelIconSize={16}
-              />
-            </div>
-          </div>
-        )}
+        ) : null}
+        {stemPopup}
       </div>
     </div>
   );
@@ -404,6 +489,8 @@ interface StemSliderProps {
   onIconClick?: () => void;
   disabled?: boolean;
   sliderWidthClass?: string;
+  /** Optional ref to the mute icon button (popup positioning anchor). */
+  muteButtonRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
 export function StemSlider({
@@ -417,9 +504,9 @@ export function StemSlider({
   onIconClick,
   disabled = false,
   sliderWidthClass = "w-16 mr-[14px]",
+  muteButtonRef,
 }: StemSliderProps) {
   const { t } = useTranslation();
-  const inputRef = useRef<HTMLInputElement>(null);
   const muteLabel =
     value === 0
       ? t("stems.unmute", { stem: label })
@@ -430,35 +517,30 @@ export function StemSlider({
   const isOperational = !disabled && onIconClick != null;
   const isMuted = value === 0;
 
-  // RATIONALE: Clicking the stem mute icon toggles mute, but focus stays on
-  // the button (tagName "BUTTON"), so the global keyboard shortcut handler
-  // treats arrow keys as master-volume / seek commands. Focusing the slider
-  // input after the click lets the native range input handle arrow keys
-  // directly, so the user can adjust the stem they just clicked.
-  const handleIconClick = () => {
-    onIconClick?.();
-    // Defer focus so the mute toggle's state update doesn't blur the input.
-    requestAnimationFrame(() => inputRef.current?.focus());
-  };
+  /*
+   * Muted = dim icon only (same gray as disabled/unselected). Do not set
+   * data-active — that class paints a persistent rounded selected chrome
+   * which reads as "pressed", not "muted".
+   */
+  const muteIconClass = isOperational
+    ? isMuted
+      ? "text-[var(--color-text-dimmer)]"
+      : "text-[var(--color-control-primary)] hover:text-[var(--color-text)]"
+    : "text-[var(--color-text-dimmer)]";
 
   if (isPlaybackBar) {
     return (
       <div className="flex items-center gap-2">
         <Tooltip label={onIconClick ? muteLabel : label}>
           <button
-            onClick={handleIconClick}
+            ref={muteButtonRef}
+            type="button"
+            onClick={onIconClick}
             disabled={disabled || !onIconClick}
             aria-label={onIconClick ? muteLabel : label}
             aria-pressed={isOperational ? isMuted : undefined}
             data-playback-action={playbackActionName}
-            data-active={isOperational && isMuted ? "true" : undefined}
-            className={`motion-icon-button playback-bar-action-button ${
-              isOperational
-                ? isMuted
-                  ? "text-[var(--color-accent)]"
-                  : "text-[var(--color-control-primary)] hover:text-[var(--color-text)]"
-                : "text-[var(--color-text-dimmer)]"
-            }`}
+            className={`motion-icon-button playback-bar-action-button ${muteIconClass}`}
           >
             <Icon size={iconSize} />
           </button>
@@ -470,7 +552,6 @@ export function StemSlider({
           disabled={disabled}
           widthClass={sliderWidthClass}
           ariaLabel={label}
-          inputRef={inputRef}
         />
       </div>
     );
@@ -480,15 +561,15 @@ export function StemSlider({
     <div className="flex items-center gap-2">
       <Tooltip label={onIconClick ? muteLabel : label}>
         <button
-          onClick={handleIconClick}
+          ref={muteButtonRef}
+          type="button"
+          onClick={onIconClick}
           disabled={disabled || !onIconClick}
           aria-pressed={isOperational ? isMuted : undefined}
-          data-active={isOperational && isMuted ? "true" : undefined}
           className={`motion-icon-button panel-stem-action-button ${
             isOperational
               ? isMuted
-                ? // Muted-but-clickable: use accent so it reads as active, not disabled.
-                  "text-[var(--color-accent)] hover:bg-[var(--color-ghost-hover)]"
+                ? "text-[var(--color-text-dimmer)] hover:bg-[var(--color-ghost-hover)]"
                 : "text-[var(--color-control-primary)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-text)]"
               : "text-[var(--color-text-dimmer)]"
           }`}
@@ -504,7 +585,6 @@ export function StemSlider({
         disabled={disabled}
         widthClass={sliderWidthClass}
         ariaLabel={label}
-        inputRef={inputRef}
       />
     </div>
   );

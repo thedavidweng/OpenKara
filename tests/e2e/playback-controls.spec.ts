@@ -203,7 +203,7 @@ test.describe("Playback controls geometry and pressed state", () => {
       await expectMetadataCollapse(page, 1440);
     });
 
-    test("master mute click toggles aria-pressed and data-active", async ({
+    test("master mute click toggles aria-pressed without selected chrome", async ({
       page,
     }) => {
       const sel = '[data-playback-action="master-mute"]';
@@ -214,9 +214,9 @@ test.describe("Playback controls geometry and pressed state", () => {
 
       await btn.click();
 
-      // After muting, volume=0 → aria-pressed=true, data-active=true
+      // After muting: aria-pressed=true, no data-active selected chrome
       await expect(btn).toHaveAttribute("aria-pressed", "true");
-      await expect(btn).toHaveAttribute("data-active", "true");
+      await expect(btn).not.toHaveAttribute("data-active", "true");
 
       // Click again to unmute
       await btn.click();
@@ -224,7 +224,7 @@ test.describe("Playback controls geometry and pressed state", () => {
       await expect(btn).not.toHaveAttribute("data-active", "true");
     });
 
-    test("vocals mute click toggles aria-pressed and data-active", async ({
+    test("vocals mute click toggles aria-pressed without selected chrome", async ({
       page,
     }) => {
       const sel = '[data-playback-action="vocals-mute"]';
@@ -233,50 +233,37 @@ test.describe("Playback controls geometry and pressed state", () => {
 
       await btn.click();
       await expect(btn).toHaveAttribute("aria-pressed", "true");
-      await expect(btn).toHaveAttribute("data-active", "true");
+      await expect(btn).not.toHaveAttribute("data-active", "true");
 
       await btn.click();
       await expect(btn).toHaveAttribute("aria-pressed", "false");
       await expect(btn).not.toHaveAttribute("data-active", "true");
     });
 
-    test("active mute button CSS rule matches and applies selected chrome", async ({
+    test("muted stem button uses dimmer color without selected background", async ({
       page,
     }) => {
       const sel = '[data-playback-action="vocals-mute"]';
       const btn = page.locator(sel);
       await btn.click();
-      await expect(btn).toHaveAttribute("data-active", "true");
+      await expect(btn).toHaveAttribute("aria-pressed", "true");
+      await expect(btn).not.toHaveAttribute("data-active", "true");
 
-      // The [data-active="true"] rule sets color, background-color, and
-      // box-shadow from monochrome selected tokens. Transitions on
-      // background-color (from .motion-icon-button) can delay the computed
-      // background-color value, so we verify the rule matches and that the
-      // selected chrome tokens resolve instead.
       const info = await page.evaluate((s) => {
         const el = document.querySelector(s) as HTMLElement;
         const cs = window.getComputedStyle(el);
         const rootCs = window.getComputedStyle(document.documentElement);
-        const ruleMatches = el.matches(
-          '.playback-bar-action-button[data-active="true"]',
-        );
         return {
-          ruleMatches,
           color: cs.color,
-          accentToken: rootCs.getPropertyValue("--color-accent").trim(),
-          controlPrimaryToken: rootCs
-            .getPropertyValue("--color-control-primary")
-            .trim(),
-          selectedBgToken: rootCs
-            .getPropertyValue("--color-control-selected-bg")
-            .trim(),
+          backgroundColor: cs.backgroundColor,
+          dimmerToken: rootCs.getPropertyValue("--color-text-dimmer").trim(),
         };
       }, sel);
-      expect(info.ruleMatches).toBe(true);
-      expect(info.accentToken).not.toBe("");
-      expect(info.controlPrimaryToken).not.toBe("");
-      expect(info.selectedBgToken).not.toBe("");
-      expect(info.selectedBgToken).not.toBe("transparent");
+      // No selected fill — background stays transparent.
+      expect(info.backgroundColor).toMatch(
+        /rgba?\(0,\s*0,\s*0,\s*0\)|transparent/,
+      );
+      expect(info.dimmerToken).not.toBe("");
     });
 
     test("queue button geometry does not change when panel opens", async ({
@@ -361,13 +348,13 @@ test.describe("Playback controls geometry and pressed state", () => {
       await expect(masterBtn).not.toHaveAttribute("data-active", "true");
       await masterBtn.click();
       await expect(masterBtn).toHaveAttribute("aria-pressed", "true");
-      await expect(masterBtn).toHaveAttribute("data-active", "true");
+      await expect(masterBtn).not.toHaveAttribute("data-active", "true");
 
       const vocalsBtn = page.locator('[data-playback-action="vocals-mute"]');
       await expect(vocalsBtn).toHaveAttribute("aria-pressed", "false");
       await vocalsBtn.click();
       await expect(vocalsBtn).toHaveAttribute("aria-pressed", "true");
-      await expect(vocalsBtn).toHaveAttribute("data-active", "true");
+      await expect(vocalsBtn).not.toHaveAttribute("data-active", "true");
     });
 
     test("volume and stem actions invoke the correct commands", async ({
@@ -460,7 +447,7 @@ test.describe("Playback controls geometry and pressed state", () => {
       await expect(masterBtn).toHaveAttribute("aria-pressed", "false");
       await masterBtn.click();
       await expect(masterBtn).toHaveAttribute("aria-pressed", "true");
-      await expect(masterBtn).toHaveAttribute("data-active", "true");
+      await expect(masterBtn).not.toHaveAttribute("data-active", "true");
     });
 
     test("master mute invokes set_volume", async ({ page, tauriMock }) => {
@@ -538,7 +525,7 @@ test.describe("Playback controls geometry and pressed state", () => {
       await expect(masterBtn).toHaveAttribute("aria-pressed", "false");
       await masterBtn.click();
       await expect(masterBtn).toHaveAttribute("aria-pressed", "true");
-      await expect(masterBtn).toHaveAttribute("data-active", "true");
+      await expect(masterBtn).not.toHaveAttribute("data-active", "true");
     });
   });
 
@@ -584,7 +571,7 @@ test.describe("Playback controls geometry and pressed state", () => {
       await expect(masterBtn).toHaveAttribute("aria-pressed", "false");
       await masterBtn.click();
       await expect(masterBtn).toHaveAttribute("aria-pressed", "true");
-      await expect(masterBtn).toHaveAttribute("data-active", "true");
+      await expect(masterBtn).not.toHaveAttribute("data-active", "true");
     });
   });
 
@@ -633,7 +620,7 @@ test.describe("Playback controls geometry and pressed state", () => {
       await expect(masterBtn).toHaveAttribute("aria-pressed", "false");
       await masterBtn.click();
       await expect(masterBtn).toHaveAttribute("aria-pressed", "true");
-      await expect(masterBtn).toHaveAttribute("data-active", "true");
+      await expect(masterBtn).not.toHaveAttribute("data-active", "true");
     });
   });
 });

@@ -80,9 +80,8 @@ describe("VolumeSliders", () => {
     const markup = renderToStaticMarkup(<VolumeSliders density="tight" />);
 
     expect(markup).toContain('aria-label="Expand stems"');
-    // Popup stays mounted in the closed state so the exit animation can run;
-    // it must not be open.
-    expect(markup).toContain('data-state="closed"');
+    // Portaled popup mounts only when open — closed SSR has no popup surface.
+    expect(markup).not.toContain('data-stem-popup="true"');
     expect(markup).not.toContain('data-state="open"');
   });
 
@@ -105,19 +104,12 @@ describe("VolumeSliders", () => {
     expect(compactRailCount).toBe(2);
   });
 
-  test("tight density renders no inline audio slider but popup rows use the tight token", () => {
+  test("tight density renders no inline audio sliders while closed", () => {
     const markup = renderToStaticMarkup(<VolumeSliders density="tight" />);
 
-    // In tight mode, inline stem sliders are hidden (only the expand button
-    // is rendered inline). The popup is always rendered (data-state="closed"),
-    // so its slider rows carry the tight-density width token (w-[64px]) instead
-    // of the old hardcoded w-16.
-    const tightRailCount = (
-      markup.match(/audio-level-slider shrink-0 w-\[64px\]/g) ?? []
-    ).length;
-    // Popup has vocals + accompaniment rows (drums/bass/other only in 4-stem).
-    expect(tightRailCount).toBeGreaterThanOrEqual(2);
-    // No leftover w-16 rails from the old hardcoded popup width.
+    // Closed: only the mixer trigger; popup portal is not mounted.
+    expect(markup).toContain('data-playback-action="stem-mixer"');
+    expect(markup).not.toContain("audio-level-slider");
     expect(markup).not.toContain("w-16");
   });
 
@@ -134,7 +126,7 @@ describe("VolumeSliders", () => {
     expect(markup).toContain('aria-pressed="false"');
   });
 
-  test("inline stem mute button shows active chrome when the stem is muted", () => {
+  test("inline stem mute button dims the icon when the stem is muted", () => {
     mockPlayerState.snapshot.stem_volumes = {
       vocals: 0,
       drums: 0.8,
@@ -143,13 +135,14 @@ describe("VolumeSliders", () => {
     };
     const markup = renderToStaticMarkup(<VolumeSliders />);
 
-    // Vocals muted → aria-pressed=true, data-active=true
+    // Vocals muted → aria-pressed=true, dimmer icon, no selected chrome
     const vocalsBtn = markup.match(
       /<button[^>]*data-playback-action="vocals-mute"[^>]*>/,
     )?.[0];
     expect(vocalsBtn).toBeDefined();
     expect(vocalsBtn).toContain('aria-pressed="true"');
-    expect(vocalsBtn).toContain('data-active="true"');
+    expect(vocalsBtn).not.toContain('data-active="true"');
+    expect(vocalsBtn).toContain("text-[var(--color-text-dimmer)]");
     mockPlayerState.snapshot.stem_volumes = {
       vocals: 0.45,
       drums: 0.8,
@@ -191,16 +184,12 @@ describe("VolumeSliders", () => {
     mockPlayerState.snapshot.has_stems = true;
   });
 
-  test("popup-row stem controls stay compact without the shared class", () => {
-    // Force four_stem so the popup rows render inside the inline accompaniment
+  test("disclosure chevron stays compact beside accompaniment", () => {
     mockPlayerState.snapshot.stem_mode = "four_stem";
     const markup = renderToStaticMarkup(<VolumeSliders />);
 
-    // Popup rows use rounded-full p-1, not the shared class — but the inline
-    // vocals/accompaniment DO use the shared class, so we check that the
-    // disclosure chevron button stays compact (h-4 w-4 rounded-full).
     expect(markup).toContain("h-4 w-4");
     expect(markup).toContain("rounded-full");
-    mockPlayerState.snapshot.stem_mode = "four_stem";
+    expect(markup).toContain('data-playback-action="stem-mixer"');
   });
 });

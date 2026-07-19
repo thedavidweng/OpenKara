@@ -135,14 +135,14 @@ describe("PlaybackBar", () => {
     expect(markup).not.toContain('data-active="true"');
   });
 
-  test("renders the muted master volume button with active chrome and aria-pressed", () => {
+  test("renders the muted master volume button with dimmed icon and aria-pressed", () => {
     mockPlayerState.snapshot.volume = 0;
     const markup = renderToStaticMarkup(<PlaybackBar />);
 
     expect(markup).toContain('aria-pressed="true"');
-    expect(markup).toContain('data-active="true"');
+    expect(markup).not.toContain('data-active="true"');
     expect(markup).toContain('aria-label="Unmute"');
-    expect(markup).toContain("text-[var(--color-accent)]");
+    expect(markup).toContain("text-[var(--color-text-dimmer)]");
     mockPlayerState.snapshot.volume = 0.72;
   });
 

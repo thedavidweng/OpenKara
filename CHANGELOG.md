@@ -17,7 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- Theme siblings are monochrome: light mode is the luminance invert of dark (white surfaces / dark type / dark primary fills), not a second colorful skin. Brand blue is removed from chrome tokens — `--color-accent` tracks `--color-control-primary` in both themes, selection washes are neutral gray, and the only non-neutral semantic remains destructive red. Settings option chips, library selection, and primary CTAs use the shared control/selected tokens.
+- Theme siblings keep monochrome _controls_ (surfaces, type, primary fills via `--color-control-primary`). A single accent blue returns for recognition only (selected stem/EP/model chips, library icons, links); destructive red stays for Danger Zone. Settings section titles use primary text + semibold so panels scan clearly without a second palette.
+- Stem detail popup portals to `document.body` with fixed positioning (z-70) so stage `overflow-hidden` and the settings overlay no longer clip it. Sub-stem rows reuse accompaniment `playback_bar` geometry and `inlineStemVolumeWidthClass` rails, and anchor `left` to the accompaniment icon+rail so icons and sliders stay column-aligned.
+- Global ←/→ seek is removed so lyrics are not keyboard-driven; lyrics font/page shortcuts are also removed. ↑/↓ continue to nudge master volume only.
+- Stem/master mute no longer paints selected `data-active` chrome; muted icons use the dimmer gray token so mute reads as off rather than pressed.
 
 ### Fixed
 

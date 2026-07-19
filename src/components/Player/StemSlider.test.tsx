@@ -45,7 +45,7 @@ describe("StemSlider panel chrome", () => {
     expect(markup).toContain("text-[var(--color-text-dimmer)]");
   });
 
-  test("muted operational panel mute uses accent token", () => {
+  test("muted operational panel mute uses dimmer icon without selected chrome", () => {
     const markup = renderToStaticMarkup(
       <StemSlider
         icon={Mic2}
@@ -55,7 +55,8 @@ describe("StemSlider panel chrome", () => {
         onIconClick={() => {}}
       />,
     );
-    expect(markup).toContain("text-[var(--color-accent)]");
+    expect(markup).toContain("text-[var(--color-text-dimmer)]");
     expect(markup).toContain('aria-pressed="true"');
+    expect(markup).not.toContain('data-active="true"');
   });
 });

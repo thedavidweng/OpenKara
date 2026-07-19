@@ -35,7 +35,7 @@ export function LyricsFontSizeControl({
       </button>
       <div className="min-w-[3.25rem] text-center">
         <div
-          className={`font-[tabular-nums] text-[12px] font-medium ${
+          className={`tabular-nums text-[12px] font-medium ${
             lyricsFontStep === 0
               ? "text-[var(--color-text-dim)]"
               : "text-[var(--color-control-primary)]"

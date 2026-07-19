@@ -94,7 +94,7 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
 
   return (
     <div
-      className={`flex ${PLAYBACK_BAR_SEEK_MIN_WIDTH_CLASS} flex-1 items-center font-[tabular-nums] text-[11px] text-[var(--color-text-dim)] ${
+      className={`flex ${PLAYBACK_BAR_SEEK_MIN_WIDTH_CLASS} flex-1 items-center tabular-nums text-[11px] text-[var(--color-text-dim)] ${
         density === "relaxed" ? "gap-3" : "gap-2"
       }`}
     >

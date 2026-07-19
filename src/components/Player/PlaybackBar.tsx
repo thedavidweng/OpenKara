@@ -141,17 +141,17 @@ export function PlaybackBar({ densityOverride }: PlaybackBarProps = {}) {
               label={volume === 0 ? t("player.unmute") : t("player.mute")}
             >
               <button
+                type="button"
                 onClick={handleMasterMuteToggle}
                 aria-label={
                   volume === 0 ? t("player.unmute") : t("player.mute")
                 }
                 aria-pressed={volume === 0}
                 data-playback-action="master-mute"
-                data-active={volume === 0 ? "true" : undefined}
                 className={`motion-icon-button playback-bar-action-button ${
                   volume > 0
                     ? "text-[var(--color-control-primary)] hover:text-[var(--color-text)]"
-                    : "text-[var(--color-accent)]"
+                    : "text-[var(--color-text-dimmer)]"
                 }`}
               >
                 {volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}

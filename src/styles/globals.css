@@ -37,14 +37,14 @@
   }
 
   /*
-   * Theme siblings: dark and light share one monochrome control language.
-   * Light is the luminance invert of dark — white surfaces, dark type, dark
-   * primary fills — not a second "colorful" skin. Brand blue is not part of
-   * chrome. The only non-neutral semantic is destructive red.
+   * Theme siblings: dark and light share one monochrome *control* language
+   * (surfaces, type, primary fills). A single accent hue is reserved for
+   * recognition cues — selected choices, key library icons, links — so the
+   * UI stays calm without losing scannability. Destructive red stays the only
+   * other non-neutral semantic (Danger Zone).
    *
-   * --color-accent tracks --color-control-primary so legacy class names that
-   * still say "accent" (active mute, links, focus, progress) stay monochrome
-   * without inventing a parallel hue for either theme.
+   * --color-control-primary = monochrome primary actions (play, CTAs)
+   * --color-accent          = restrained system blue for emphasis only
    */
   /* ── Dark theme tokens (default) ────────────────────────── */
   :root,
@@ -62,19 +62,20 @@
     --color-text-dimmer: #48484a;
     --color-control-primary: #ebebf5;
     --color-control-primary-foreground: #121212;
-    --color-accent: #ebebf5;
-    --color-accent-hover: #ffffff;
+    /* Shared deep system blue — same hue in light and dark. */
+    --color-accent: #007aff;
+    --color-accent-hover: #0a84ff;
     --color-destructive: #ff3b30;
     --color-destructive-foreground: #f5f5f7;
     --color-ghost-hover: rgba(255, 255, 255, 0.04);
     /* Semantic tokens consumed by audited components. */
-    --color-on-accent: #121212;
+    --color-on-accent: #ffffff;
     --color-on-media: #ffffff;
     --color-scrim: rgba(0, 0, 0, 0.5);
     --color-lyrics-active: #ffffff;
     --color-lyrics-past: rgba(255, 255, 255, 0.45);
     --color-lyrics-future: rgba(255, 255, 255, 0.5);
-    --color-focus-ring: rgba(235, 235, 245, 0.45);
+    --color-focus-ring: rgba(0, 122, 255, 0.55);
     /* Neutral selection wash — no hue. */
     --color-control-selected-bg: rgba(255, 255, 255, 0.1);
     --color-control-selected-border: rgba(255, 255, 255, 0.16);
@@ -110,8 +111,8 @@
   /* ── Light theme tokens ─────────────────────────────────── */
   :root[data-theme="light"] {
     /*
-     * Luminance invert of dark — same monochrome language, flipped values.
-     * Do not introduce a blue (or other hue) control hierarchy here.
+     * Luminance invert of dark for surfaces/type/primary fills. Accent blue
+     * stays the same recognition hue as dark — not a second colorful skin.
      */
     --color-surface: #ffffff;
     --color-surface-muted: #f8f8fa;
@@ -126,8 +127,9 @@
     --color-text-dimmer: #7d818a;
     --color-control-primary: #1d1d1f;
     --color-control-primary-foreground: #ffffff;
-    --color-accent: #1d1d1f;
-    --color-accent-hover: #000000;
+    /* Same deep blue as dark — not a brighter light-mode variant. */
+    --color-accent: #007aff;
+    --color-accent-hover: #0066d6;
     --color-destructive: #d70015;
     --color-destructive-foreground: #ffffff;
     --color-ghost-hover: rgba(0, 0, 0, 0.055);
@@ -137,7 +139,7 @@
     --color-lyrics-active: #16171a;
     --color-lyrics-past: rgba(29, 29, 31, 0.42);
     --color-lyrics-future: rgba(29, 29, 31, 0.48);
-    --color-focus-ring: rgba(29, 29, 31, 0.4);
+    --color-focus-ring: rgba(0, 122, 255, 0.5);
     --color-control-selected-bg: color-mix(
       in srgb,
       var(--color-text) 7%,
@@ -237,9 +239,9 @@
     --color-text-dimmer: #6f7780;
     --color-control-primary: #eef2f7;
     --color-control-primary-foreground: #17191d;
-    --color-accent: #eef2f7;
-    --color-accent-hover: #ffffff;
-    --color-on-accent: #17191d;
+    --color-accent: #007aff;
+    --color-accent-hover: #0a84ff;
+    --color-on-accent: #ffffff;
     --color-ghost-hover: rgba(255, 255, 255, 0.06);
     --panel-blur: 12px;
     color-scheme: dark;
@@ -263,8 +265,8 @@
     --color-text-dimmer: #7d818a;
     --color-control-primary: #1d1d1f;
     --color-control-primary-foreground: #ffffff;
-    --color-accent: #1d1d1f;
-    --color-accent-hover: #000000;
+    --color-accent: #007aff;
+    --color-accent-hover: #0066d6;
     --color-on-accent: #ffffff;
     --color-ghost-hover: rgba(0, 0, 0, 0.055);
     --panel-blur: 12px;
@@ -357,9 +359,9 @@
     --color-text-dimmer: #66666d;
     --color-control-primary: #f5f5f7;
     --color-control-primary-foreground: #18181b;
-    --color-accent: #f5f5f7;
-    --color-accent-hover: #ffffff;
-    --color-on-accent: #18181b;
+    --color-accent: #007aff;
+    --color-accent-hover: #0a84ff;
+    --color-on-accent: #ffffff;
     --color-ghost-hover: rgba(255, 255, 255, 0.06);
     --panel-blur: 8px;
     --sidebar-item-radius: 10px;
@@ -379,8 +381,8 @@
     --color-text-dimmer: #7d818a;
     --color-control-primary: #1d1d1f;
     --color-control-primary-foreground: #ffffff;
-    --color-accent: #1d1d1f;
-    --color-accent-hover: #000000;
+    --color-accent: #007aff;
+    --color-accent-hover: #0066d6;
     --color-on-accent: #ffffff;
     --color-ghost-hover: rgba(0, 0, 0, 0.055);
     --panel-blur: 8px;

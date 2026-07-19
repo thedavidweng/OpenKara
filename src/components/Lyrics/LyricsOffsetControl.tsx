@@ -27,7 +27,7 @@ export function LyricsOffsetControl({
       </button>
       <div className="min-w-[4.75rem] text-center">
         <div
-          className={`font-[tabular-nums] text-[12px] font-medium ${
+          className={`tabular-nums text-[12px] font-medium ${
             offsetMs === 0
               ? "text-[var(--color-text-dim)]"
               : "text-[var(--color-control-primary)]"

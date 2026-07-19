@@ -18,11 +18,16 @@ export function SettingsSectionCard({
   return (
     <section className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
       <div className="space-y-1">
+        {/*
+          Section titles use primary text + semibold so panels scan like Danger
+          Zone: hierarchy first, color only when semantic (danger). Dim body
+          copy stays on the description line.
+        */}
         <label
-          className={`text-[12px] font-medium ${
+          className={`text-[13px] font-semibold tracking-tight ${
             isDanger
               ? "text-[var(--color-destructive)]"
-              : "text-[var(--color-text-dim)]"
+              : "text-[var(--color-text)]"
           }`}
         >
           {title}
