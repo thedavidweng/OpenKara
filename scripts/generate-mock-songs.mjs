@@ -339,7 +339,7 @@ async function fetchLrclibLyrics(meta) {
     if (typeof synced === "string" && synced.trim().length > 0) {
       const { lines, offset_ms } = parseLrc(synced);
       if (lines.length > 0) {
-        return { raw_lrc: synced, lines, offset_ms, source: "lrclib" };
+        return { raw_lrc: synced, lines, offset_ms, source: "lrc_lib" };
       }
     }
     return null;
@@ -395,12 +395,12 @@ for (const { hash, slug } of PLAYLIST) {
       raw_lrc: lrclibResult.raw_lrc,
       lines: lrclibResult.lines,
       offset_ms: lrclibResult.offset_ms,
-      source: "lrclib",
+      source: "lrc_lib",
     };
-    lyricsSource = "lrclib";
+    lyricsSource = "lrc_lib";
   } else if (lrclibResult && lrclibResult.instrumental) {
-    lyricsPayload = { raw_lrc: "", lines: [], offset_ms: 0, source: "lrclib" };
-    lyricsSource = "lrclib(instrumental)";
+    lyricsPayload = { raw_lrc: "", lines: [], offset_ms: 0, source: "lrc_lib" };
+    lyricsSource = "lrc_lib(instrumental)";
   } else {
     const pseudo = generatePseudoLrc(meta.lyrics, meta.duration_ms);
     lyricsPayload = {

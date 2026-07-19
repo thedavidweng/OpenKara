@@ -436,9 +436,13 @@ export function createTauriMock(data: any): TauriMockResult {
     },
     load_stems: () => clone(currentPlaybackSnapshot),
 
-    // Lyrics
-    fetch_lyrics: () => mockLyrics,
-    fetch_lyrics_online: data.lyrics,
+    // Lyrics — include song_id from args so lyrics-store's songId-scoped
+    // operations (offset updates, stale-response checks) match correctly.
+    fetch_lyrics: (args: any) => ({ ...mockLyrics, song_id: args?.songId }),
+    fetch_lyrics_online: (args: any) => ({
+      ...data.lyrics,
+      song_id: args?.songId,
+    }),
     save_manual_lyrics: (args: any) => ({
       raw_lrc: (args && args.text) || "",
       lines: [],

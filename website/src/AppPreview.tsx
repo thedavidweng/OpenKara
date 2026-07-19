@@ -1,10 +1,12 @@
 import { useEffect, useMemo } from "react";
 import App from "@/App";
 import { TooltipProvider } from "@/components/Overlay/Tooltip";
+import i18next from "@/lib/i18n";
 import { MOCK_DATA } from "@/mock/tauri-mock-data";
 import { createTauriMock } from "@/mock/tauri-mock-impl";
 import { useLayoutStore } from "@/stores/layout-store";
 import { usePlaylistStore } from "@/stores/playlist-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import type { PlaylistSong } from "@/lib/tauri/playlist";
 
 // Set up the mock Tauri IPC before the app renders so that `useAppStartupRuntime`
@@ -31,6 +33,16 @@ export function AppPreview({ language }: { language: "en" | "zh-CN" }) {
   // valid library, but we pre-set libraryReady=true to avoid a flash of the
   // LibrarySetup component during the async init.
   const app = useMemo(() => <App initialLibraryReady={true} previewMode />, []);
+
+  // Apply the site's language prop to i18next.  The startup runtime
+  // (useAppStartupRuntime → loadStartupSettings) asynchronously calls
+  // changeLanguage(settings.language) where the mock returns "en", which
+  // would override the prop.  Re-apply after settings hydration completes
+  // so the prop-driven language wins the race.
+  const settingsHydrated = useSettingsStore((s) => s.hydrated);
+  useEffect(() => {
+    void i18next.changeLanguage(language);
+  }, [language, settingsHydrated]);
 
   // previewMode skips the Sidebar's loadPlaylists useEffect, so manually
   // populate the playlist store from the mock data.  This is the only store

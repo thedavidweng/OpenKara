@@ -617,7 +617,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
       },
     ],
     offset_ms: 0,
-    source: "lrclib",
+    source: "lrc_lib",
   },
   "all-the-love": {
     raw_lrc:
@@ -1045,7 +1045,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
       },
     ],
     offset_ms: 0,
-    source: "lrclib",
+    source: "lrc_lib",
   },
   "counting-stars": {
     raw_lrc:
@@ -1620,7 +1620,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
       },
     ],
     offset_ms: 0,
-    source: "lrclib",
+    source: "lrc_lib",
   },
   "feel-good-inc": {
     raw_lrc:
@@ -2090,7 +2090,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
       },
     ],
     offset_ms: 0,
-    source: "lrclib",
+    source: "lrc_lib",
   },
   "three-empty-words": {
     raw_lrc:
@@ -2392,7 +2392,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
       },
     ],
     offset_ms: 0,
-    source: "lrclib",
+    source: "lrc_lib",
   },
   "see-you-again": {
     raw_lrc:
@@ -2806,7 +2806,7 @@ export const PREVIEW_LYRICS: Record<string, PreviewLyrics> = {
       },
     ],
     offset_ms: 0,
-    source: "lrclib",
+    source: "lrc_lib",
   },
 };
 
