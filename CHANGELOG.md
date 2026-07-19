@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Docs
+
+- Stale-docs cleanup: deleted `docs/references/agents/triage-labels.md` (agent instructions misplaced under `docs/`); stripped phase-era "Verification commands" / "Expected evidence" sections and `(B2)` / `(B3/B4)` / `(I1)` / `(新增)` labels from the six IPC contract docs (`errors`, `library`, `lyrics`, `model-bootstrap`, `playback`, `separation`) so contracts describe frozen interfaces only; rewrote `queue-management.md` to drop the stale "crossfade is a future feature" line (crossfade shipped) and the `Last updated` stamp; renamed `F1-playlists-and-singer-rotation.md` → `playlists-and-singer-rotation.md` and replaced its duplicating Data Model + IPC commands sections with links to `contracts/library.md` and the generated `db-schema.md`. Added `.scratch/` to `.gitignore`.
+
 ### Fixed
 
 - Cancel a pending library search debounce when the query is cleared, so a late `searchLibrary` result cannot overwrite `loadLibrary()` and hide songs again (Playwright webkit flake in `song-import` search filter). Cap Linux CI `CARGO_BUILD_JOBS` to reduce parallel `rust-lld` SIGBUS crashes while linking heavy Tauri test binaries.

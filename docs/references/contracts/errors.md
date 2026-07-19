@@ -106,7 +106,7 @@
 4. 运行时模型校验失败、bootstrap 已失败或旧模型需要用户删除：
    - `code = model_unavailable`
    - `fallback = retry`
-5. ONNX Runtime 下载、校验或加载失败（B2/B3/B4）：
+5. ONNX Runtime 下载、校验或加载失败：
    - `code = model_unavailable`
    - `fallback = retry`
    - 触发场景：`separate`、`upgrade_to_four_stem`、`re_separate`、`batch_separate` 的后台前置 bootstrap 失败，或 `download_model` 命令在 Runtime 未就绪时返回此错误
@@ -115,20 +115,3 @@
 
 1. 当前错误分类先在 command 边界完成，底层模块仍主要返回 `anyhow::Error`
 2. 如果后续把底层模块也切到 typed domain errors，必须保持这里定义的 `ErrorCode` 和 `FallbackAction` 对外稳定
-
-## Verification commands
-
-```bash
-cd src-tauri
-cargo test --test phase5_errors --test phase3_status --test phase1_import
-cargo test
-cd ..
-pnpm tauri build --debug --no-bundle --ci
-```
-
-**Expected evidence**
-
-1. `phase5_errors` 证明错误分类稳定
-2. `phase1_import` 证明导入失败项已携带结构化错误
-3. `phase3_status` 证明分离状态已携带结构化错误
-4. 全量测试和调试构建通过

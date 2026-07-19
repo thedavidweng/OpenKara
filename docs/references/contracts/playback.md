@@ -415,20 +415,3 @@ A mismatch in `songId` or `transportGeneration` returns 0 bytes and does not mut
 ```
 
 Returns `{ availability: "none" }` if no CDG is active or the song/generation doesn't match the backend's current CDG slot.
-
-## Verification commands
-
-```bash
-cd src-tauri
-cargo test
-cd ..
-pnpm tauri build --debug --no-bundle --ci
-```
-
-**Expected evidence**
-
-1. `phase2_decode`
-2. `phase2_playback`
-3. `phase2_output`
-
-以上测试全部通过，并且调试构建成功。

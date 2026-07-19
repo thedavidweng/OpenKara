@@ -50,7 +50,7 @@
 4. 如果缓存命中，后台仍会发出一次 `separation-progress`，其 `percent` 为 `100`，然后再发 `separation-complete`
 5. 标记为 `instrumental = true` 的歌曲视为官方伴奏，不允许进入 AI 分离
 6. Runtime/model 缺失不阻止命令创建后台任务；worker 会按 Runtime -> active model -> separation 的顺序自动补齐前置资源。下载、校验或 outdated 模型失败时，任务通过 terminal error 状态返回；模型侧约束详见 [model-bootstrap.md](./model-bootstrap.md)
-7. **ONNX Runtime 前置检查 (B2/B3/B4):** 分离命令（`separate`、`upgrade_to_four_stem`、`re_separate`、`batch_separate`）现在会在后台 worker 中确保 ONNX Runtime 已就绪。若 Runtime 缺失或损坏，worker 会下载、校验并在当前进程加载 Runtime，然后继续模型 bootstrap 与分离。Runtime 状态通过 `get_runtime_bootstrap_status` IPC 和 `runtime-bootstrap-*` 事件查询。
+7. **ONNX Runtime 前置检查:** 分离命令（`separate`、`upgrade_to_four_stem`、`re_separate`、`batch_separate`）现在会在后台 worker 中确保 ONNX Runtime 已就绪。若 Runtime 缺失或损坏，worker 会下载、校验并在当前进程加载 Runtime，然后继续模型 bootstrap 与分离。Runtime 状态通过 `get_runtime_bootstrap_status` IPC 和 `runtime-bootstrap-*` 事件查询。
 
 ### Command: `upgrade_to_four_stem`
 
@@ -170,27 +170,6 @@
 3. `rubato` 负责把非 `44.1 kHz` 输入重采样到 Demucs 目标采样率
 4. `vorbis_rs` + backend audio encode helper 负责 stem / accompaniment OGG 写盘
 5. `tauri::async_runtime::spawn_blocking` 负责后台执行推理任务
-
-## Verification commands
-
-```bash
-cd src-tauri
-cargo test
-cd ..
-pnpm tauri build --debug --no-bundle --ci
-```
-
-**Expected evidence**
-
-1. `phase3_model`
-2. `phase3_preprocess`
-3. `phase3_inference`
-4. `phase3_mix`
-5. `phase3_stems_cache`
-6. `phase3_job`
-7. `phase3_status`
-
-以上测试全部通过，并且调试构建成功。
 
 ## Limits & expectations
 
