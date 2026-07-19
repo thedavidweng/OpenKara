@@ -156,7 +156,12 @@ function renderInline(value: string): ReactNode[] {
 export function DocumentPage({ language, slug }: DocumentRoute) {
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem("openkara-site-theme");
-    return saved === "light" ? "light" : "dark";
+    if (saved === "light" || saved === "dark") {
+      return saved;
+    }
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
   });
   const label = LABELS[slug][language];
   const otherLanguage = language === "en" ? "zh-CN" : "en";

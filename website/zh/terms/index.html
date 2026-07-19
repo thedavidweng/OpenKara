@@ -21,6 +21,24 @@
     <link rel="manifest" href="/img/site.webmanifest" />
     <meta name="apple-mobile-web-app-title" content="OpenKara" />
     <title>服务条款 | OpenKara</title>
+    <script>
+      (function () {
+        var saved = localStorage.getItem("openkara-site-theme");
+        var theme =
+          saved === "light" || saved === "dark"
+            ? saved
+            : window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+        document.documentElement.dataset.theme = theme;
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta)
+          meta.setAttribute(
+            "content",
+            theme === "dark" ? "#08090a" : "#f7f7f5",
+          );
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

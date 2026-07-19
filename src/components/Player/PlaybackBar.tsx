@@ -22,9 +22,14 @@ import { usePlayerStore } from "@/stores/player-store";
 
 interface PlaybackBarProps {
   densityOverride?: PlaybackBarDensity;
+  /** Forwarded to PlayControls so the play/pause toggle works in the preview. */
+  previewMode?: boolean;
 }
 
-export function PlaybackBar({ densityOverride }: PlaybackBarProps = {}) {
+export function PlaybackBar({
+  densityOverride,
+  previewMode = false,
+}: PlaybackBarProps = {}) {
   const { t } = useTranslation();
   const snapshot = usePlayerStore((s) => s.snapshot);
   const setVolume = usePlayerStore((s) => s.setVolume);
@@ -121,7 +126,7 @@ export function PlaybackBar({ densityOverride }: PlaybackBarProps = {}) {
           className="grid min-w-0 items-center"
           style={centerZoneStyle}
         >
-          <PlayControls density={density} />
+          <PlayControls density={density} previewMode={previewMode} />
           <SeekBar density={density} />
         </div>
 

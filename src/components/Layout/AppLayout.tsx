@@ -31,16 +31,19 @@ const PREVIEW_WINDOW_SHELL_STATE: WindowShellState =
   getNativeWindowShellState();
 
 // Preview-mode interaction whitelist. The landing-page mock blocks all
-// interactions except: (1) playlist switches in the sidebar, (2) lyrics
-// scrolling + the Follow button inside the lyrics panel, and (3) the toolbar
-// sidebar toggle (keyboard already works via window shortcuts). Import and
-// other mutating actions stay blocked.
+// interactions except: (1) playlist switches in the sidebar (including the
+// back button that exits a playlist), (2) lyrics scrolling + the Follow
+// button inside the lyrics panel, (3) the toolbar sidebar toggle (keyboard
+// already works via window shortcuts), and (4) the play/pause toggle so the
+// mock stays consistent with the spacebar shortcut. Import and other mutating
+// actions stay blocked.
 function isPreviewAllowedTarget(target: EventTarget | null): boolean {
   return (
     target instanceof Element &&
     (target.closest("[data-preview-playlist-switch='true']") != null ||
       target.closest("[data-preview-lyrics-interactive='true']") != null ||
-      target.closest("[data-preview-sidebar-toggle='true']") != null)
+      target.closest("[data-preview-sidebar-toggle='true']") != null ||
+      target.closest("[data-preview-play-toggle='true']") != null)
   );
 }
 

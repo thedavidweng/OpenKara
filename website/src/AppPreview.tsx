@@ -22,7 +22,13 @@ function ensureTauriMock() {
   }
 }
 
-export function AppPreview({ language }: { language: "en" | "zh-CN" }) {
+export function AppPreview({
+  language,
+  theme,
+}: {
+  language: "en" | "zh-CN";
+  theme: "dark" | "light";
+}) {
   // Inject the mock IPC once before first render.  The real app initialization
   // (useAppStartupRuntime) will call invoke() to load settings, library,
   // playback state, etc. — the same code path as the real Tauri app.
@@ -44,6 +50,19 @@ export function AppPreview({ language }: { language: "en" | "zh-CN" }) {
     void i18next.changeLanguage(language);
   }, [language, settingsHydrated]);
 
+  // Mirror the landing page theme into the app settings store so the embedded
+  // preview's theme-runtime resolves to the same theme as the surrounding
+  // chrome. The mock's get_app_settings returns theme_preference "dark", which
+  // would otherwise desync the preview from the landing toggle. Re-apply after
+  // hydration so the prop-driven theme wins the race, matching the language
+  // pattern above.
+  useEffect(() => {
+    if (!settingsHydrated) {
+      return;
+    }
+    useSettingsStore.setState({ themePreference: theme });
+  }, [theme, settingsHydrated]);
+
   // previewMode skips the Sidebar's loadPlaylists useEffect, so manually
   // populate the playlist store from the mock data.  This is the only store
   // manipulation needed — all other stores are populated by the real
@@ -57,7 +76,9 @@ export function AppPreview({ language }: { language: "en" | "zh-CN" }) {
     );
     usePlaylistStore.setState({
       playlists: [...MOCK_DATA.playlists],
-      activePlaylistId: MOCK_DATA.playlists[0]?.id ?? null,
+      // Default to the full library view (no active playlist). Visitors can
+      // open a playlist from the sidebar and exit it via the back button.
+      activePlaylistId: null,
       isLoading: false,
       playlistSongSets,
       loadPlaylists: async () => {},

@@ -1,5 +1,6 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useLayoutEffect, useState } from "react";
 import {
+  Code,
   Download,
   HardDrive,
   Languages,
@@ -40,7 +41,7 @@ const COPY = {
       {
         eyebrow: "One complete library",
         title: "Import once. Sing anytime.",
-        body: "OpenKara keeps metadata, stems, and lyrics together in a self-contained library that can live on your computer, NAS, or USB drive.",
+        body: "OpenKara keeps metadata, stems, and lyrics together in a self-contained library that can live on your computer, NAS, USB drive, or in the cloud via Dropbox and Google Drive.",
       },
     ],
     cards: [
@@ -96,7 +97,7 @@ const COPY = {
       {
         eyebrow: "一个完整曲库",
         title: "导入一次，随时开唱。",
-        body: "OpenKara 把元数据、分轨与歌词集中在自包含曲库中，可存放在电脑、NAS 或 USB 硬盘。",
+        body: "OpenKara 把元数据、分轨与歌词集中在自包含曲库中，可存放在电脑、NAS、USB 硬盘，或通过 Dropbox 和 Google Drive 保存在云端。",
       },
     ],
     cards: [
@@ -180,12 +181,22 @@ export function LandingPage() {
   );
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem("openkara-site-theme");
-    return saved === "light" ? "light" : "dark";
+    if (saved === "light" || saved === "dark") {
+      return saved;
+    }
+    // First visit: follow the OS preference so the page matches the
+    // visitor's environment instead of forcing dark.
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
   });
   const copy = COPY[language];
   const appLanguage = language;
 
-  useEffect(() => {
+  // Apply the theme before paint so there is no dark→light flash when the
+  // OS prefers light. The inline script in index.html covers the pre-JS
+  // paint; this keeps the attribute in sync after hydration.
+  useLayoutEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.lang = language;
     localStorage.setItem("openkara-site-theme", theme);
@@ -267,7 +278,7 @@ export function LandingPage() {
         <section className="preview-section" aria-label="OpenKara preview">
           <div className="preview-stage">
             <Suspense fallback={null}>
-              <AppPreview language={appLanguage} />
+              <AppPreview language={appLanguage} theme={theme} />
             </Suspense>
           </div>
         </section>
@@ -330,7 +341,9 @@ export function LandingPage() {
               className="pill pill-primary"
               href="https://github.com/thedavidweng/OpenKara/releases/latest"
             >
-              <span className="pill-label">{copy.download}</span>
+              <span className="pill-label">
+                <Download size={16} /> {copy.download}
+              </span>
             </a>
             <a
               className="pill pill-secondary"
@@ -338,7 +351,9 @@ export function LandingPage() {
               target="_blank"
               rel="noreferrer"
             >
-              <span className="pill-label">{copy.source}</span>
+              <span className="pill-label">
+                <Code size={16} /> {copy.source}
+              </span>
             </a>
           </div>
         </section>
