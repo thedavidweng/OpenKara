@@ -185,7 +185,7 @@ fn prepare_next_track(
     library_root: &LibraryRoot,
     song: &Song,
     output_format: OutputFormatSnapshot,
-    preload_request_generation: u64,
+    preload_request_generation: crate::audio::playback::PreloadRequestGeneration,
 ) -> Result<PreparedTrack, PlaybackError> {
     if !is_eligible_for_gapless(song) {
         return Err(PlaybackError::Internal(
@@ -230,7 +230,7 @@ pub fn spawn_preload_next(
     app_data_dir: std::path::PathBuf,
     song_id: String,
     shutdown: Arc<AtomicBool>,
-    preload_request_generation: u64,
+    preload_request_generation: crate::audio::playback::PreloadRequestGeneration,
 ) {
     std::thread::spawn(move || {
         if shutdown.load(Ordering::Relaxed) {

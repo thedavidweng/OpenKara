@@ -131,7 +131,7 @@ pub enum PlaybackCommand {
     /// coordinator stamps it onto `PlaybackController` so that any
     /// `PrepareNext` from an older preload thread is rejected as stale.
     CancelPreparedNext {
-        expected_generation: u64,
+        expected_generation: crate::audio::playback::PreloadRequestGeneration,
     },
     /// After integrity cleanup deletes songs, reconcile authoritative playback.
     /// Clears current/loading tracks that match any deleted id and drops CDG.
@@ -887,7 +887,7 @@ fn handle_prepare_next<R: Runtime>(runtime: &CoordinatorRuntime<R>, prepared: Pr
 
 fn handle_cancel_prepared_next<R: Runtime>(
     runtime: &CoordinatorRuntime<R>,
-    expected_generation: u64,
+    expected_generation: crate::audio::playback::PreloadRequestGeneration,
 ) {
     let Ok(mut playback) = runtime.playback.lock() else {
         eprintln!("coordinator: playback lock poisoned in CancelPreparedNext");

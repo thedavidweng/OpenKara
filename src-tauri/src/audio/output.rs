@@ -1807,7 +1807,7 @@ mod tests {
         let fmt = OutputFormatSnapshot::new(1, sample_rate, channels as u16);
         let track_b_samples = vec![0.5_f32; 512 * channels];
         let prepared = PreparedTrack {
-            preload_request_generation: 0,
+            preload_request_generation: crate::audio::playback::PreloadRequestGeneration(0),
             preload_generation: fmt.generation,
             song_id: "song-b".to_owned(),
             output_format: fmt,
@@ -1905,7 +1905,7 @@ mod tests {
         let fmt = OutputFormatSnapshot::new(1, sample_rate, channels as u16);
         let track_b_samples = vec![0.5_f32; 512 * channels];
         let prepared = PreparedTrack {
-            preload_request_generation: 0,
+            preload_request_generation: crate::audio::playback::PreloadRequestGeneration(0),
             preload_generation: fmt.generation,
             song_id: "song-b".to_owned(),
             output_format: fmt,
@@ -2017,7 +2017,7 @@ mod tests {
         let fmt = OutputFormatSnapshot::new(1, sample_rate, channels as u16);
         let track_b_samples = vec![0.5_f32; 512 * channels];
         let prepared = PreparedTrack {
-            preload_request_generation: 0,
+            preload_request_generation: crate::audio::playback::PreloadRequestGeneration(0),
             preload_generation: fmt.generation,
             song_id: "song-b".to_owned(),
             output_format: fmt,
@@ -2188,7 +2188,7 @@ mod tests {
         let fmt = OutputFormatSnapshot::new(1, sample_rate, channels as u16);
         let track_b_samples = vec![0.9_f32; 512 * channels];
         let prepared = PreparedTrack {
-            preload_request_generation: 0,
+            preload_request_generation: crate::audio::playback::PreloadRequestGeneration(0),
             preload_generation: fmt.generation,
             song_id: "song-b".to_owned(),
             output_format: fmt,
