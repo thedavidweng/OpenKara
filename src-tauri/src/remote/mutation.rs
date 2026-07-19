@@ -1,3 +1,35 @@
+//! Remote-mutation orchestration: wraps local DB mutations with the
+//! Pre-Mutation Refresh / Pre-Publish Conflict / Publish Changes protocol
+//! defined in `docs/references/contracts/library.md` and `CONTEXT.md`.
+//!
+//! # Why six entry points, not one
+//!
+//! An earlier architecture review suggested collapsing these into a single
+//! `run_mutation(closure, manifest)` that inspects a manifest to decide
+//! whether to prepare / sync_db / publish_song / publish_songs / mirror.
+//! That would *not* deepen this module — it would replace a typed interface
+//! with an untyped manifest, moving the caller's choice from "pick the right
+//! fn" to "construct the right manifest struct" with less type safety and
+//! no internal decision the module can make on its own.
+//!
+//! Each entry point encodes a real protocol variant that the caller knows
+//! and the module cannot infer:
+//!
+//! | Wrapper                              | prepare | sync_db | publish         | When                                   |
+//! |--------------------------------------|---------|---------|-----------------|----------------------------------------|
+//! | `run_imported_songs_mutation`        | yes     | no      | songs (imported)| additive import; publish uploads DB    |
+//! | `run_updated_songs_mutation`         | yes     | no      | songs (extracted)| metadata update; publish uploads DB   |
+//! | `run_song_database_mutation`         | yes     | yes     | single song     | single-song DB-level change            |
+//! | `run_song_database_mutation_with_result` | yes | yes     | song from result| same, song id only known after mutation|
+//! | `run_songs_database_mutation`        | yes     | yes     | songs (extracted)| multi-song DB-level change            |
+//! | `run_active_library_mirror_mutation` | no      | no      | mirror          | whole-library re-sync (e.g. maintenance)|
+//! | `run_database_then_library_mirror_mutation` | yes | yes | mirror        | DB change + whole-library re-sync      |
+//!
+//! The deletion test confirms the set earns its keep: inlining
+//! `prepare → mutate → sync_db → publish` at 18 call sites would scatter
+//! the Pre-Mutation Refresh / Pre-Publish Conflict protocol across the
+//! command layer. The typed wrappers concentrate it here.
+
 use crate::{commands::error::CommandResult, library::Song, AppState};
 use tauri::AppHandle;
 
@@ -147,6 +179,17 @@ mod sync_backend {
 // Mutation functions — orchestrate prepare / mutate / sync / publish
 // ---------------------------------------------------------------------------
 
+/// Shared prefix for every mutation that starts with a Pre-Mutation Refresh:
+/// `prepare → mutation`. Centralizes the `app_data_dir` extraction so a
+/// future change to how the active remote is resolved touches one place.
+fn prepare_and_mutate<T, F>(state: &AppState, mutation: F) -> CommandResult<T>
+where
+    F: FnOnce() -> CommandResult<T>,
+{
+    sync_backend::prepare(&state.shell.app_data_dir)?;
+    mutation()
+}
+
 pub(crate) fn run_imported_songs_mutation<R, F>(
     state: &AppState,
     app_handle: &AppHandle<R>,
@@ -156,6 +199,7 @@ where
     R: tauri::Runtime,
     F: FnOnce() -> crate::library::ImportSongsResult,
 {
+    // ImportSongsResult is not a CommandResult, so call prepare directly.
     sync_backend::prepare(&state.shell.app_data_dir)?;
     let result = mutation();
     let imported_song_ids: Vec<String> = result
@@ -178,8 +222,7 @@ where
     F: FnOnce() -> CommandResult<T>,
     S: FnOnce(&T) -> Vec<String>,
 {
-    sync_backend::prepare(&state.shell.app_data_dir)?;
-    let result = mutation()?;
+    let result = prepare_and_mutate(state, mutation)?;
     let song_ids = updated_song_ids(&result);
     sync_backend::publish_songs(state, app_handle, &song_ids)?;
     Ok(result)
@@ -203,8 +246,7 @@ where
     R: tauri::Runtime,
     F: FnOnce() -> CommandResult<T>,
 {
-    sync_backend::prepare(&state.shell.app_data_dir)?;
-    let result = mutation()?;
+    let result = prepare_and_mutate(state, mutation)?;
     sync_backend::sync_db(&state.shell.app_data_dir)?;
     sync_backend::publish_song(state, app_handle, song_id)?;
     Ok(result)
@@ -221,8 +263,7 @@ where
     F: FnOnce() -> CommandResult<T>,
     S: FnOnce(&T) -> Option<String>,
 {
-    sync_backend::prepare(&state.shell.app_data_dir)?;
-    let result = mutation()?;
+    let result = prepare_and_mutate(state, mutation)?;
     if let Some(song_id) = song_id(&result) {
         sync_backend::sync_db(&state.shell.app_data_dir)?;
         sync_backend::publish_song(state, app_handle, &song_id)?;
@@ -241,8 +282,7 @@ where
     F: FnOnce() -> CommandResult<T>,
     S: FnOnce(&T) -> Vec<String>,
 {
-    sync_backend::prepare(&state.shell.app_data_dir)?;
-    let result = mutation()?;
+    let result = prepare_and_mutate(state, mutation)?;
     let song_ids = song_ids(&result);
     if !song_ids.is_empty() {
         sync_backend::sync_db(&state.shell.app_data_dir)?;
@@ -260,6 +300,9 @@ where
     R: tauri::Runtime,
     F: FnOnce() -> CommandResult<T>,
 {
+    // Mirror-only: no Pre-Mutation Refresh — a mirror is itself a full
+    // re-sync and is used for maintenance operations that rebuild remote
+    // state from the local working copy.
     let result = mutation()?;
     sync_backend::mirror(state, app_handle)?;
     Ok(result)
@@ -274,8 +317,7 @@ where
     R: tauri::Runtime,
     F: FnOnce() -> CommandResult<T>,
 {
-    sync_backend::prepare(&state.shell.app_data_dir)?;
-    let result = mutation()?;
+    let result = prepare_and_mutate(state, mutation)?;
     sync_backend::sync_db(&state.shell.app_data_dir)?;
     sync_backend::mirror(state, app_handle)?;
     Ok(result)
