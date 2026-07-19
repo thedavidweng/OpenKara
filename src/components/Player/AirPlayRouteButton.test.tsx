@@ -178,6 +178,31 @@ describe("AirPlayRouteButton", () => {
     container.remove();
   });
 
+  test("uses a visual fallback in the browser preview without mounting AppKit", async () => {
+    mockGetShortcutPlatform.mockReturnValue("windows");
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<AirPlayRouteButton previewMode />);
+    });
+    await flushEffects();
+
+    expect(
+      container.querySelector('[data-airplay-route-button="true"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-airplay-preview="true"]'),
+    ).not.toBeNull();
+    expect(mockSyncAirPlayRoutePicker).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   test("re-syncs the native route picker when the host bounds change", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

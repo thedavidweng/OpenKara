@@ -12,6 +12,7 @@ interface WindowChromeProps {
   onOpenSettingsMenuAction?: () => void | Promise<void>;
   onToggleSettings: () => void;
   onToggleSidebar: () => void;
+  previewMode?: boolean;
   settingsOpen: boolean;
   shellState?: WindowShellState;
   sidebarVisible: boolean;
@@ -24,6 +25,7 @@ export function WindowChrome({
   onToggleSettings,
   onToggleSidebar,
   platform = getShortcutPlatform(),
+  previewMode = false,
   shellState,
   settingsOpen,
   sidebarVisible,
@@ -34,8 +36,10 @@ export function WindowChrome({
   if (chromeVariant === "mac") {
     return (
       <Toolbar
+        onImportMenuAction={onImportMenuAction}
         onToggleSidebar={onToggleSidebar}
         onToggleSettings={onToggleSettings}
+        previewMode={previewMode}
         shellState={shellState}
         settingsOpen={settingsOpen}
         sidebarVisible={sidebarVisible}

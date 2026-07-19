@@ -8,7 +8,13 @@ import { useAnimatedPresence } from "@/hooks/use-animated-presence";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useQueueStore } from "@/stores/queue-store";
 
-export function MainContentView() {
+interface MainContentViewProps {
+  previewMode?: boolean;
+}
+
+export function MainContentView({
+  previewMode = false,
+}: MainContentViewProps = {}) {
   const settingsOpen = useSettingsStore((s) => s.isOpen);
   const queueOpen = useQueueStore((s) => s.isOpen);
   const queueSidebar = useAnimatedPresence(
@@ -42,7 +48,7 @@ export function MainContentView() {
         {settingsOpen ? <SettingsOverlay /> : null}
       </div>
 
-      <GlobalProgressBar />
+      {!previewMode && <GlobalProgressBar />}
       <PlaybackBar />
     </div>
   );

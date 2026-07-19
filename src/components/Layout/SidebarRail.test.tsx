@@ -39,4 +39,14 @@ describe("SidebarRail", () => {
 
     expect(markup).toContain("select-none");
   });
+
+  test("can keep the preview rail at a fixed width", () => {
+    const markup = renderToStaticMarkup(
+      <SidebarRail visible width={300} onResize={() => {}} resizable={false}>
+        <div>Sidebar</div>
+      </SidebarRail>,
+    );
+
+    expect(markup).not.toContain('role="separator"');
+  });
 });

@@ -167,6 +167,12 @@ jobs:
       - name: Build frontend
         run: node --run build
 
+      - name: Typecheck landing page
+        run: pnpm tsc --noEmit --project website/tsconfig.json
+
+      - name: Build landing page
+        run: node --run docs:build
+
       - name: Typecheck with tsgo
         run: pnpm tsgo --noEmit --project tsconfig.json
         continue-on-error: true
