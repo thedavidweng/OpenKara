@@ -237,7 +237,6 @@ fn dropbox_refresh_access_token(
     Ok(secret.access_token.clone())
 }
 
-/// Load the Dropbox secret from disk and refresh the access token.
 /// Used as a callback by `ProviderFetcher` for automatic token renewal on 403.
 fn refresh_dropbox_token(
     app_data_dir: &Path,
@@ -794,7 +793,6 @@ pub(crate) fn dropbox_upload_directory_to_remote(
     Ok(())
 }
 
-/// Dropbox HTTP/path adapter for the shared bootstrap protocol.
 struct DropboxBootstrapStorage<'a> {
     app_data_dir: &'a Path,
     library: &'a RegisteredLibrary,
@@ -938,8 +936,6 @@ pub(crate) fn dropbox_delete_path(
         )))),
     }
 }
-
-// --- RemoteProvider implementation ---
 
 pub(crate) struct DropboxProvider<'a> {
     app_data_dir: &'a Path,

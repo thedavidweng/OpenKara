@@ -102,20 +102,20 @@ describe("rotation-store", () => {
     test("removes singer and adjusts index when removed before current", async () => {
       useRotationStore.setState({
         singerNames: ["Alice", "Bob", "Charlie"],
-        currentIndex: 2, // pointing at Charlie
+        currentIndex: 2,
       });
 
       await useRotationStore.getState().removeSinger("Alice");
 
       const state = useRotationStore.getState();
       expect(state.singerNames).toEqual(["Bob", "Charlie"]);
-      expect(state.currentIndex).toBe(1); // decremented
+      expect(state.currentIndex).toBe(1);
     });
 
     test("keeps index when removed after current", async () => {
       useRotationStore.setState({
         singerNames: ["Alice", "Bob", "Charlie"],
-        currentIndex: 0, // pointing at Alice
+        currentIndex: 0,
       });
 
       await useRotationStore.getState().removeSinger("Charlie");
@@ -128,14 +128,14 @@ describe("rotation-store", () => {
     test("clamps index when it overshoots", async () => {
       useRotationStore.setState({
         singerNames: ["Alice", "Bob"],
-        currentIndex: 1, // pointing at Bob
+        currentIndex: 1,
       });
 
       await useRotationStore.getState().removeSinger("Bob");
 
       const state = useRotationStore.getState();
       expect(state.singerNames).toEqual(["Alice"]);
-      expect(state.currentIndex).toBe(0); // clamped to last valid
+      expect(state.currentIndex).toBe(0);
     });
 
     test("handles removing the only singer", async () => {
@@ -262,7 +262,6 @@ describe("rotation-store", () => {
     });
 
     test("interleaves by singer to avoid back-to-back", () => {
-      // 3 songs by Alice, 2 by Bob
       mockQueueState.queue = ["a1", "a2", "a3", "b1", "b2"];
       useRotationStore.setState({
         queueSingers: new Map([
@@ -296,7 +295,6 @@ describe("rotation-store", () => {
         }
         if (!hasBackToBack) break;
       }
-      // With 3 Alice + 2 Bob, interleaving should avoid back-to-back
       expect(hasBackToBack).toBe(false);
     });
 

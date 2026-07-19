@@ -4,13 +4,12 @@
 //!
 //! # Why six entry points, not one
 //!
-//! An earlier architecture review suggested collapsing these into a single
-//! `run_mutation(closure, manifest)` that inspects a manifest to decide
-//! whether to prepare / sync_db / publish_song / publish_songs / mirror.
-//! That would *not* deepen this module — it would replace a typed interface
-//! with an untyped manifest, moving the caller's choice from "pick the right
-//! fn" to "construct the right manifest struct" with less type safety and
-//! no internal decision the module can make on its own.
+//! Collapsing these into a single `run_mutation(closure, manifest)` that
+//! inspects a manifest to decide whether to prepare / sync_db / publish_song /
+//! publish_songs / mirror would *not* deepen this module — it would replace a
+//! typed interface with an untyped manifest, moving the caller's choice from
+//! "pick the right fn" to "construct the right manifest struct" with less type
+//! safety and no internal decision the module can make on its own.
 //!
 //! Each entry point encodes a real protocol variant that the caller knows
 //! and the module cannot infer:
@@ -176,7 +175,7 @@ mod sync_backend {
 }
 
 // ---------------------------------------------------------------------------
-// Mutation functions — orchestrate prepare / mutate / sync / publish
+// Mutation functions
 // ---------------------------------------------------------------------------
 
 /// Shared prefix for every mutation that starts with a Pre-Mutation Refresh:
@@ -362,8 +361,6 @@ mod tests {
         }
     }
 
-    // -- imported songs --
-
     #[test]
     fn imported_songs_prepares_then_publishes_hashes() {
         reset();
@@ -385,8 +382,6 @@ mod tests {
             ]
         );
     }
-
-    // -- updated songs --
 
     #[test]
     fn updated_songs_prepares_then_publishes() {
@@ -412,8 +407,6 @@ mod tests {
         );
     }
 
-    // -- publish_song_to_active_remote_if_ready --
-
     #[test]
     fn publish_song_delegates_directly() {
         reset();
@@ -424,8 +417,6 @@ mod tests {
 
         assert_eq!(calls(), vec![SyncCall::PublishSong("song-42".into())]);
     }
-
-    // -- song database mutation --
 
     #[test]
     fn song_database_mutation_prepares_syncs_publishes() {
@@ -444,8 +435,6 @@ mod tests {
             ]
         );
     }
-
-    // -- song database mutation with result --
 
     #[test]
     fn mutation_with_result_some_id_syncs_and_publishes() {
@@ -482,8 +471,6 @@ mod tests {
         assert_eq!(calls(), vec![SyncCall::Prepare]);
     }
 
-    // -- songs database mutation --
-
     #[test]
     fn songs_database_mutation_nonempty_syncs_and_publishes() {
         reset();
@@ -514,8 +501,6 @@ mod tests {
         assert_eq!(calls(), vec![SyncCall::Prepare]);
     }
 
-    // -- mirror mutations --
-
     #[test]
     fn active_library_mirror_just_mirrors() {
         reset();
@@ -540,8 +525,6 @@ mod tests {
             vec![SyncCall::Prepare, SyncCall::SyncDb, SyncCall::Mirror]
         );
     }
-
-    // -- error propagation --
 
     #[test]
     fn prepare_error_skips_mutation_and_publish() {

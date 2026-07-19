@@ -102,9 +102,6 @@ pub fn model_bootstrap_error(message: impl ToString) -> CommandError {
     )
 }
 
-// Typed error conversions — each domain error maps to a CommandError with
-// the appropriate ErrorCode and FallbackAction for the frontend.
-
 impl From<crate::separator::error::SeparationError> for CommandError {
     fn from(err: crate::separator::error::SeparationError) -> Self {
         use crate::separator::error::SeparationError::*;

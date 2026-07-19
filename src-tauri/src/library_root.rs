@@ -33,8 +33,6 @@ pub struct LibraryRoot {
 }
 
 impl LibraryRoot {
-    /// Create a new library at `path`, writing the marker file and creating
-    /// the `media/`, `media-g/`, and `stems/` subdirectories.
     pub fn create(path: &Path) -> Result<Self> {
         if path.join(MARKER_FILENAME).exists() {
             bail!("a library already exists at {}", path.display());
@@ -67,7 +65,6 @@ impl LibraryRoot {
         })
     }
 
-    /// Open an existing library, validating that the marker file exists.
     pub fn open(path: &Path) -> Result<Self> {
         let marker_path = path.join(MARKER_FILENAME);
         if !marker_path.exists() {
@@ -93,60 +90,46 @@ impl LibraryRoot {
         })
     }
 
-    /// The root directory of this library.
     pub fn root(&self) -> &Path {
         &self.root
     }
 
-    /// Path to the SQLite database inside this library.
     pub fn database_path(&self) -> PathBuf {
         self.root.join(DATABASE_FILENAME)
     }
 
-    /// Path to the `stems/` directory that holds separation output.
     pub fn stems_dir(&self) -> PathBuf {
         self.root.join(STEMS_DIRECTORY)
     }
 
-    /// Path to the `artwork/` directory that holds cover art derivative files.
     pub fn artwork_dir(&self) -> PathBuf {
         self.root.join(ARTWORK_DIRECTORY)
     }
 
-    /// Build the absolute path for a media file given its hash and extension.
-    ///
-    /// Example: `media_path("a1b2c3", "mp3")` → `<root>/media/a1b2c3.mp3`
     pub fn media_path(&self, hash: &str, ext: &str) -> PathBuf {
         self.root
             .join(MEDIA_DIRECTORY)
             .join(format!("{}.{}", hash, ext))
     }
 
-    /// Build the absolute path for a loose Media+G audio file.
     pub fn media_g_audio_path(&self, hash: &str, ext: &str) -> PathBuf {
         self.root
             .join(MEDIA_G_DIRECTORY)
             .join(format!("{}.{}", hash, ext))
     }
 
-    /// Build the absolute path for a loose Media+G CDG sidecar.
     pub fn media_g_cdg_path(&self, hash: &str) -> PathBuf {
         self.root
             .join(MEDIA_G_DIRECTORY)
             .join(format!("{}.cdg", hash))
     }
 
-    /// Build the absolute path for a Media+G ZIP archive.
     pub fn media_g_zip_path(&self, hash: &str) -> PathBuf {
         self.root
             .join(MEDIA_G_DIRECTORY)
             .join(format!("{}.zip", hash))
     }
 
-    /// Resolve a database-relative path (forward slashes) to an absolute
-    /// platform path.
-    ///
-    /// Example: `resolve("media/a1b2c3.mp3")` → `/Users/x/MyLib/media/a1b2c3.mp3`
     pub fn resolve(&self, relative: &str) -> PathBuf {
         // Database paths always use forward slashes.  On Windows we need to
         // convert them to the native separator before joining.
@@ -158,8 +141,6 @@ impl LibraryRoot {
         self.root.join(native)
     }
 
-    /// Convert an absolute path that lives inside this library to a
-    /// database-relative path with forward slashes.
     pub fn to_relative(&self, absolute: &Path) -> Result<String> {
         let relative = absolute.strip_prefix(&self.root).with_context(|| {
             format!(

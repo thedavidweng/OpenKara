@@ -20,9 +20,7 @@
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
-/// Fixed number of rendered frames that contribute to one peak pair.
 pub const PEAK_WINDOW_FRAMES: u64 = 512;
-/// Maximum number of peak pairs retained in the ring buffer.
 pub const PEAK_RING_CAPACITY: usize = 256;
 
 /// A fixed-size lock-free ring buffer for stereo peak pairs.
@@ -41,7 +39,6 @@ pub struct PeakRing {
 }
 
 impl PeakRing {
-    /// Allocate all slots once. The ring is empty until the first `push`.
     pub fn new() -> Self {
         let mut slots: Vec<[AtomicU32; 2]> = Vec::with_capacity(PEAK_RING_CAPACITY);
         for _ in 0..PEAK_RING_CAPACITY {
@@ -257,7 +254,6 @@ impl Default for PeakAccumulator {
     }
 }
 
-/// A copied snapshot of the peak ring suitable for IPC serialization.
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioPeakSnapshot {
@@ -336,7 +332,6 @@ mod tests {
         let (idx, peaks) = ring.snapshot();
         assert_eq!(idx as u32, total);
         assert_eq!(peaks.len(), PEAK_RING_CAPACITY);
-        // The oldest retained entry should be at index (total - capacity).
         let oldest = total as usize - PEAK_RING_CAPACITY;
         let first_expected = oldest as f32 / total as f32;
         assert!(
@@ -344,7 +339,6 @@ mod tests {
             "oldest entry should be at index {oldest}, expected {first_expected}, got {}",
             peaks[0][0]
         );
-        // The newest entry should be the last pushed.
         let last_expected = (total - 1) as f32 / total as f32;
         assert!(
             (peaks[peaks.len() - 1][0] - last_expected).abs() < 1e-5,
@@ -384,13 +378,11 @@ mod tests {
     fn test_accumulator_exact_window_boundary() {
         let ring = PeakRing::new();
         let mut acc = PeakAccumulator::new();
-        // Feed 511 frames — no push yet.
         for _ in 0..511 {
             acc.feed_frame(&[0.5, 0.5], 2, &ring);
         }
         let (idx, _) = ring.snapshot();
         assert_eq!(idx, 0, "no push before 512 frames");
-        // 512th frame triggers push and reset.
         acc.feed_frame(&[0.9, 0.9], 2, &ring);
         let (idx, peaks) = ring.snapshot();
         assert_eq!(idx, 1);
@@ -449,7 +441,6 @@ mod tests {
         assert_eq!(acc.frames_in_window, 0);
         assert_eq!(acc.max_left, 0.0);
         assert_eq!(acc.max_right, 0.0);
-        // After reset, feeding 512 fresh frames pushes the new max.
         for _ in 0..512 {
             acc.feed_frame(&[0.3, 0.3], 2, &ring);
         }
@@ -462,7 +453,6 @@ mod tests {
     fn test_process_respects_rendered_samples_only() {
         let ring = PeakRing::new();
         let mut acc = PeakAccumulator::new();
-        // 512 frames of real data, then trailing zeros (padding).
         let channels = 2;
         let rendered = 512 * channels;
         let total = rendered + 100 * channels; // extra padding
@@ -475,7 +465,6 @@ mod tests {
         let (idx, peaks) = ring.snapshot();
         assert_eq!(idx, 1);
         assert_eq!(peaks.len(), 1);
-        // The peak should be 0.6, not 1.0 (padding ignored).
         assert!((peaks[0][0] - 0.6).abs() < 1e-6);
         assert!((peaks[0][1] - 0.6).abs() < 1e-6);
     }
@@ -484,7 +473,6 @@ mod tests {
     fn test_zero_render_calls_do_not_invent_frames() {
         let ring = PeakRing::new();
         let mut acc = PeakAccumulator::new();
-        // Zero rendered samples — no frames counted.
         acc.process(&[0.0; 1024], 0, 2, &ring);
         assert_eq!(acc.frames_in_window, 0);
         let (idx, _) = ring.snapshot();
@@ -495,7 +483,6 @@ mod tests {
     fn test_device_restart_keeps_ring_counter() {
         let ring = PeakRing::new();
         let mut acc = PeakAccumulator::new();
-        // Push one full window.
         for _ in 0..512 {
             acc.feed_frame(&[0.5, 0.5], 2, &ring);
         }
@@ -507,26 +494,6 @@ mod tests {
         let (idx_after, _) = ring.snapshot();
         assert_eq!(idx_after, 1, "ring counter retained after restart");
     }
-
-    // ── Deterministic race regression: cursor must not be ahead of copied data ──
-    //
-    // The original bug: `snapshot()` copied entries for `second_index` but
-    // returned `third_index` (a fresh load after the retry copy). If the
-    // writer advanced between the retry copy and that final load, the
-    // frontend accepted `third_index` while the peaks only reached
-    // `second_index`, causing the visualizer to be one update behind.
-    //
-    // The fix returns `(second_index, retry)` — the index that was actually
-    // used for the copy. These tests deterministically force the exact
-    // interlecing using `snapshot_impl` (no threads, no sleeps):
-    //   1. Writer pushes N pairs (write_index = N).
-    //   2. Reader starts snapshot: loads first_index = N, copies.
-    //   3. Intercept 1: writer pushes one more pair (write_index = N+1).
-    //   4. Reader loads second_index = N+1, retries copy from N+1.
-    //   5. Intercept 2: writer pushes one more pair (write_index = N+2).
-    //   6. Assert: returned cursor == N+1 (second_index), NOT N+2.
-    //      Assert: last peak in the snapshot is the value at index N
-    //      (the (N+1)th push), NOT the value at N+1.
 
     #[test]
     fn test_retry_cursor_not_ahead_of_copied_data() {
@@ -568,13 +535,12 @@ mod tests {
         );
 
         // The cursor must be second_index (3), NOT the post-intercept-2
-        // write_index (4). The buggy code would have returned 4.
+        // write_index (4).
         assert_eq!(
             cursor, 3,
             "cursor must equal second_index (3), not the post-intercept write_index (4)",
         );
 
-        // The last peak in the snapshot must be 0.30 (at index 2), not 0.40.
         assert!(!peaks.is_empty());
         let last = peaks.last().unwrap();
         assert!(
@@ -583,8 +549,6 @@ mod tests {
             last[0],
         );
 
-        // Verify write_index has indeed advanced to 4 (proving intercept 2
-        // pushed).
         let final_index = ring.write_index.load(Ordering::Acquire);
         assert_eq!(
             final_index, 4,

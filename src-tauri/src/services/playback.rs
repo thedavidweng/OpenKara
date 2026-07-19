@@ -37,7 +37,6 @@ pub struct PlaybackErrorEvent {
     pub error: CommandError,
 }
 
-/// Load CDG packets for a song and return them as a shared `Arc<[CdgPacket]>`.
 /// Returns `(None, None)` when no CDG file exists, `(None, Some(code))` when
 /// a CDG file exists but loading fails, and `(Some(packets), None)` on success.
 /// Load failures are logged by the CDG service; audio playback continues.
@@ -120,11 +119,6 @@ fn spawn_airplay_control_refresh_worker_with_timing(
     });
 }
 
-/// Play a song from the library. Resolves the song, increments the request id,
-/// sends a `BeginLoad` command to the coordinator (which handles
-/// `start_track_loading`, AirPlay epoch bump, and position emission), awaits
-/// the loading snapshot, then spawns a background thread to decode/fetch and
-/// install the ready track.
 pub fn play<R: Runtime>(
     state: &AppState,
     app_handle: &AppHandle<R>,
@@ -145,7 +139,7 @@ pub fn play<R: Runtime>(
         .map_err(|e| PlaybackError::Internal(e.to_string()))?
         .ok_or_else(|| PlaybackError::SongNotFound(song_id.to_owned()))?;
 
-    // R9: Signal any previously running background thread to stop. Replace the
+    // Signal any previously running background thread to stop. Replace the
     // old Arc with a fresh one so the new thread gets its own un-signalled flag.
     let shutdown = {
         let mut guard = state.playback.background_shutdown.lock().map_err(|_| {
@@ -157,9 +151,6 @@ pub fn play<R: Runtime>(
         new_shutdown
     };
 
-    // Send BeginLoad to the coordinator and await the loading snapshot.
-    // The coordinator handles start_track_loading, AirPlay epoch bump, and
-    // the initial position event emission.
     let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
     state
         .playback
@@ -192,8 +183,6 @@ pub fn play<R: Runtime>(
             request_id,
             &shutdown,
         ) {
-            // Send FailLoad to the coordinator — it handles cancel_loading,
-            // position emission, and error event emission.
             let _ = background_state
                 .playback
                 .command_tx
@@ -208,10 +197,8 @@ pub fn play<R: Runtime>(
     Ok(snapshot)
 }
 
-/// Background task: load, decode, and install a ready track for any song
-/// (local or remote). Runs on a spawned thread so the UI stays responsive
-/// during decode/download. Sends `InstallReady` to the coordinator instead
-/// of directly mutating the controller.
+/// Runs on a spawned thread so the UI stays responsive during decode/download.
+/// Sends `InstallReady` to the coordinator instead of directly mutating the controller.
 fn play_track_background<R: Runtime>(
     state: &AppState,
     app_handle: &AppHandle<R>,
@@ -221,11 +208,9 @@ fn play_track_background<R: Runtime>(
     request_id: u64,
     shutdown: &AtomicBool,
 ) -> Result<(), PlaybackError> {
-    // R9: Early exit if a newer play() has signalled shutdown.
     if shutdown.load(Ordering::Relaxed) {
         return Ok(());
     }
-    // Try streaming path first for local and remote files (low latency, bounded memory).
     if let Some(streaming_source) = playback_source::load_playback_source_streaming(
         Some(app_data_dir),
         &state.remote.remote_chunk_cache,
@@ -250,7 +235,6 @@ fn play_track_background<R: Runtime>(
             song,
         ) {
             Ok(Some(stems_source)) => {
-                // Log stem decode errors in the background.
                 for handle in stems_source.decode_handles {
                     let song_id = song.hash.clone();
                     std::thread::spawn(move || {
@@ -261,20 +245,19 @@ fn play_track_background<R: Runtime>(
                 }
                 Some(Box::new(stems_source.streaming_track))
             }
-            Ok(None) => None, // No cached stems — play base audio only.
+            Ok(None) => None,
             Err(e) => {
                 eprintln!("streaming stem load failed for {}: {e}", song.hash);
                 None
             }
         };
 
-        // Load CDG packets for this song (optional graphics sidecar).
         let (cdg, cdg_error) = load_cdg_packets_as_arc(library_root, song);
 
         let ready = ReadyTrack::Streaming {
             sample_rate: streaming_source.metadata.sample_rate,
             channels: streaming_source.metadata.channels,
-            // Item 12: duration_ms may be None if the container doesn't expose
+            // duration_ms may be None if the container doesn't expose
             // frame count metadata. Use 0 as fallback; it will be resolved async.
             duration_ms: streaming_source.metadata.duration_ms.unwrap_or(0),
             original: streaming_source.streaming_track,
@@ -296,7 +279,6 @@ fn play_track_background<R: Runtime>(
             })
             .map_err(|_| PlaybackError::Internal("playback coordinator disconnected".to_owned()))?;
 
-        // Consume fetch events in the background (for remote streaming).
         if let Some(fetch_event_rx) = streaming_source.fetch_event_rx {
             let event_state = state.clone();
             let event_app_handle = app_handle.clone();
@@ -358,7 +340,6 @@ fn play_track_background<R: Runtime>(
             });
         }
 
-        // Log decode errors in the background (non-blocking).
         let song_id = song.hash.clone();
         std::thread::spawn(move || {
             if let Err(e) = streaming_source.decode_handle.join() {
@@ -377,12 +358,10 @@ fn play_track_background<R: Runtime>(
         stems,
     } = load_playback_source(Some(app_data_dir), &connection, library_root, song)?;
 
-    // R9: After the expensive decode, check if a newer play() has started.
     if shutdown.load(Ordering::Relaxed) {
         return Ok(());
     }
 
-    // Load CDG packets for this song (optional graphics sidecar).
     let (cdg, cdg_error) = load_cdg_packets_as_arc(library_root, song);
 
     let ready = ReadyTrack::Decoded {
@@ -405,10 +384,8 @@ fn play_track_background<R: Runtime>(
     Ok(())
 }
 
-/// Fallback when the remote byte-range stream becomes unusable.
-///
-/// We fully decode from the provider-backed cached full-file path (or an
-/// equivalent non-range route) and send `InstallReady` to the coordinator.
+/// Fully decodes from the provider-backed cached full-file path (or an
+/// equivalent non-range route) and sends `InstallReady` to the coordinator.
 fn fallback_remote_playback_to_full_file(
     state: &AppState,
     request_id: u64,
@@ -450,10 +427,9 @@ fn fallback_remote_playback_to_full_file(
     Ok(())
 }
 
-/// Load and attach stems for the current song. Captures the current song_id
-/// and latest request id before decode, then sends `AttachStems` to the
-/// coordinator. A stale or switched song returns the current snapshot without
-/// attaching data.
+/// Captures the current song_id and latest request id before decode, then
+/// sends `AttachStems` to the coordinator. A stale or switched song returns
+/// the current snapshot without attaching data.
 pub fn load_stems(state: &AppState) -> Result<PlaybackStateSnapshot, PlaybackError> {
     let library_root = state
         .shell
@@ -492,7 +468,6 @@ pub fn load_stems(state: &AppState) -> Result<PlaybackStateSnapshot, PlaybackErr
         &song,
     )?;
 
-    // Send AttachStems and await the reply.
     let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
     state
         .playback

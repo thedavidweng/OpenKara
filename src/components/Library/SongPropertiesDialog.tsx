@@ -118,7 +118,6 @@ export function SongPropertiesDialog({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
     >
       <div className="w-full max-w-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-sidebar)] shadow-2xl">
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-3">
           <h3 className="text-[14px] font-semibold text-[var(--color-text)]">
             {t("songProperties.title")}
@@ -143,7 +142,6 @@ export function SongPropertiesDialog({
           </button>
         </div>
 
-        {/* Song title/artist */}
         <div className="border-b border-[var(--color-border)] px-5 py-3">
           <p className="truncate text-[13px] font-medium text-[var(--color-text)]">
             {displayTitle}
@@ -155,7 +153,6 @@ export function SongPropertiesDialog({
           )}
         </div>
 
-        {/* Properties grid */}
         <div className="px-5 py-3">
           {loading && (
             <p className="py-4 text-center text-[12px] text-[var(--color-text-dim)]">
@@ -355,7 +352,6 @@ export function SongPropertiesDialog({
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex justify-end border-t border-[var(--color-border)] px-5 py-3">
           <button
             onClick={onClose}

@@ -282,7 +282,6 @@ mod tests {
         let Ok(audio) = decode_file(&path) else {
             return; // File missing in CI — skip.
         };
-        // The full file should have a reasonable duration.
         assert!(audio.duration_ms > 100);
     }
 

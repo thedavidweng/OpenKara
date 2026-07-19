@@ -138,7 +138,6 @@ export function IntegrityReportModal({ report }: { report: IntegrityReport }) {
         </div>
 
         <div className="flex-1 overflow-y-auto space-y-4 px-4 py-3">
-          {/* Summary */}
           <div className="flex gap-4 text-[12px] text-[var(--color-text-dim)]">
             <span>
               {t("settings.integrity.checkedLocal", {
@@ -157,7 +156,6 @@ export function IntegrityReportModal({ report }: { report: IntegrityReport }) {
             ) : null}
           </div>
 
-          {/* Skipped notice */}
           {state.integritySkippedCount != null &&
           state.integritySkippedCount > 0 ? (
             <p className="text-[12px] text-[var(--color-text-dim)]">
@@ -196,7 +194,6 @@ export function IntegrityReportModal({ report }: { report: IntegrityReport }) {
             t={t}
           />
 
-          {/* Orphaned files (read-only) */}
           <div className="space-y-1">
             <h4 className="text-[13px] font-medium text-[var(--color-text)]">
               {t("settings.integrity.orphanedFiles")}{" "}
@@ -223,7 +220,6 @@ export function IntegrityReportModal({ report }: { report: IntegrityReport }) {
           </div>
         </div>
 
-        {/* Footer actions */}
         <div className="flex items-center justify-between border-t border-[var(--color-border-light)] px-4 py-3">
           <button
             type="button"

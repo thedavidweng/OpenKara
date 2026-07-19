@@ -147,7 +147,6 @@ impl Default for ExecutionProviderPreference {
 }
 
 impl ExecutionProviderPreference {
-    /// Providers valid for `platform`, in canonical display order.
     /// DirectML is Windows-only; CPU and XNNPACK are available everywhere.
     fn available_for(platform: ExecutionProviderPlatform) -> &'static [Self] {
         match platform {
@@ -192,7 +191,6 @@ impl ExecutionProviderPreference {
         }
     }
 
-    /// Returns the execution provider options valid for the current platform.
     /// Used by the frontend to populate the settings dropdown.
     pub fn available_for_current_platform() -> Vec<&'static str> {
         Self::available_for(ExecutionProviderPlatform::current())
@@ -443,8 +441,6 @@ impl RegisteredLibrary {
     }
 }
 
-/// Per-machine configuration stored in `{app_data_dir}/config.json`.
-///
 /// This is the only file that stays outside the portable library directory.
 /// It tracks user preferences and the registered library set.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -474,34 +470,30 @@ pub struct AppConfig {
     pub lyrics_font_step: Option<i8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub execution_provider: Option<ExecutionProviderPreference>,
-    /// Whether the 5-band EQ is enabled. When absent, defaults to disabled.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub eq_enabled: Option<bool>,
     /// Per-band EQ gains in dB for the five fixed bands
-    /// (60, 230, 910, 3600, 14000 Hz). When absent, defaults to all-zero
-    /// (flat). Each gain is clamped to -12.0..=12.0 dB on read.
+    /// (60, 230, 910, 3600, 14000 Hz). Each gain is clamped to
+    /// -12.0..=12.0 dB on read.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub eq_gains_db: Option<[f32; 5]>,
-    /// Whether crossfade between tracks is enabled. When absent, defaults
-    /// to disabled. Only applies to fully decoded local tracks — streaming
+    /// Only applies to fully decoded local tracks — streaming
     /// and stems tracks always use gapless transition.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub crossfade_enabled: Option<bool>,
     /// Crossfade overlap duration in milliseconds. Clamped to
-    /// 500..=10_000 on read. When absent, defaults to 3000.
+    /// 500..=10_000 on read.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub crossfade_duration_ms: Option<u32>,
-    /// Library sort mode applied by the frontend comparator. Persisted so the
-    /// selected order survives restarts and is shared across WebViews via the
-    /// settings sync snapshot.
+    /// Persisted so the selected order survives restarts and is shared
+    /// across WebViews via the settings sync snapshot.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub library_sort_mode: Option<LibrarySortMode>,
-    /// Appearance preference: system / light / dark. Default dark when unset.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub theme_preference: Option<ThemePreference>,
-    /// Remote file cache cap in bytes. When set, the cache directory is
-    /// trimmed to stay under this limit, deleting the least-recently-used
-    /// files. When absent the cache grows unbounded.
+    /// When set, the cache directory is trimmed to stay under this limit,
+    /// deleting the least-recently-used files. When absent the cache grows
+    /// unbounded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote_cache_bytes_limit: Option<u64>,
     /// Crash-recovery marker for mirror operations. `mirror_local_library_to_remote`
@@ -512,7 +504,6 @@ pub struct AppConfig {
     /// successful sync or on startup recovery.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub pending_mirror_restore: bool,
-    /// The original `active_library_id` to restore after a mirror sync.
     /// Only meaningful when `pending_mirror_restore` is true. May be None
     /// if the original active library was unset — that is a valid restore
     /// target, not an absence of a pending operation.
@@ -558,8 +549,6 @@ impl AppConfig {
         self.lyrics_font_step.unwrap_or(0)
     }
 
-    /// Returns the saved execution provider only when it is valid for
-    /// `platform`; otherwise falls back to that platform's default.
     /// A stale known cross-platform value (e.g. `directml` on macOS) is
     /// normalized without writing to disk.
     fn effective_execution_provider_for(
@@ -580,8 +569,8 @@ impl AppConfig {
         self.eq_enabled.unwrap_or(false)
     }
 
-    /// Returns the per-band EQ gains, clamped to -12.0..=12.0 dB. Non-finite
-    /// values are replaced with 0.0. Defaults to flat (all zeros) when unset.
+    /// Returns the per-band EQ gains, clamped to -12.0..=12.0 dB.
+    /// Non-finite values are replaced with 0.0.
     pub fn effective_eq_gains_db(&self) -> [f32; 5] {
         let mut gains = self.eq_gains_db.unwrap_or([0.0; 5]);
         for g in gains.iter_mut() {
@@ -597,13 +586,11 @@ impl AppConfig {
         self.library_sort_mode.unwrap_or_default()
     }
 
-    /// Returns the persisted crossfade enabled flag, defaulting to false.
     pub fn effective_crossfade_enabled(&self) -> bool {
         self.crossfade_enabled.unwrap_or(false)
     }
 
-    /// Returns the persisted crossfade duration in ms, clamped to
-    /// 500..=10_000. Defaults to 3000 when unset or out of range.
+    /// Clamped to 500..=10_000.
     pub fn effective_crossfade_duration_ms(&self) -> u32 {
         self.crossfade_duration_ms
             .unwrap_or(3_000)
@@ -619,7 +606,7 @@ impl AppConfig {
     }
 }
 
-/// Load the per-machine config. Returns `Ok(None)` if the file does not exist.
+/// Returns `Ok(None)` if the file does not exist.
 pub fn load_config(app_data_dir: &Path) -> Result<Option<AppConfig>> {
     let config_path = config_path(app_data_dir);
     if !config_path.exists() {
@@ -647,7 +634,6 @@ pub fn load_config(app_data_dir: &Path) -> Result<Option<AppConfig>> {
     Ok(Some(config.normalize_for_save()))
 }
 
-/// Persist the per-machine config to disk.
 pub fn save_config(app_data_dir: &Path, config: &AppConfig) -> Result<()> {
     fs::create_dir_all(app_data_dir)
         .with_context(|| format!("failed to create app data dir {}", app_data_dir.display()))?;
@@ -940,7 +926,6 @@ mod tests {
         );
     }
 
-    // --- execution-provider platform policy table tests ---
     // These exercise the pure platform parameter so they pass on every host.
 
     #[test]
@@ -1062,8 +1047,6 @@ mod tests {
         );
     }
 
-    // ── EQ config hydration ────────────────────────────────────────────────
-
     #[test]
     fn effective_eq_defaults_to_disabled_flat() {
         let config = AppConfig::default();
@@ -1095,7 +1078,6 @@ mod tests {
     #[test]
     fn effective_execution_provider_for_falls_back_for_stale_cross_platform_value() {
         use ExecutionProviderPlatform::*;
-        // directml persisted but running on macOS/Linux/Other -> xnnpack
         let config = AppConfig {
             execution_provider: Some(ExecutionProviderPreference::DirectMl),
             ..AppConfig::default()
@@ -1112,7 +1094,6 @@ mod tests {
             config.effective_execution_provider_for(Other),
             ExecutionProviderPreference::Xnnpack
         );
-        // directml is valid on Windows and is preserved
         assert_eq!(
             config.effective_execution_provider_for(Windows),
             ExecutionProviderPreference::DirectMl

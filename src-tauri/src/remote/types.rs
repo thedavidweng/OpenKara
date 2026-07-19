@@ -188,7 +188,6 @@ pub(crate) struct GoogleDriveFileMetadata {
     pub(crate) head_revision_id: Option<String>,
     #[serde(default, rename = "modifiedTime")]
     pub(crate) modified_time: Option<String>,
-    /// File size in bytes (only present for files, not folders).
     /// Google Drive returns this as a string in the JSON response.
     #[serde(default, deserialize_with = "deserialize_optional_string_as_u64")]
     pub(crate) size: Option<u64>,
@@ -206,7 +205,6 @@ pub(crate) struct DropboxMetadata {
     pub(crate) rev: Option<String>,
     #[serde(default)]
     pub(crate) server_modified: Option<String>,
-    /// File size in bytes.
     #[serde(default)]
     pub(crate) size: Option<u64>,
 }
@@ -270,8 +268,6 @@ pub struct UploadStatusSnapshot {
     pub error: Option<CommandError>,
 }
 
-/// Provider-specific session data carried by an in-progress Remote Auth session.
-///
 /// Replaces an Option-triple (google_drive/dropbox/webdav) so exactly one
 /// provider's credentials/tokens are present — the same shape used when binding
 /// Repository Credentials during Register / Reauthorize.
@@ -290,7 +286,6 @@ pub struct RemoteAuthSession {
     pub display_name: Option<String>,
     pub account_id: String,
     pub error: Option<CommandError>,
-    /// Exactly one provider's auth material (tokens / WebDAV password, etc.).
     pub(crate) session: ProviderSessionData,
 }
 

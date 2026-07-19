@@ -7,18 +7,14 @@ use crate::{
 use std::path::Path;
 use std::sync::Arc;
 
-// ── Transport lifecycle helpers ────────────────────────────────────────────
-
-/// Clear the CDG slot for a transport change (new track load, stop, end,
-/// track failure, library close). Removes both status and playback state
-/// so the previous frame cannot survive while decode/import work continues.
+/// Removes both status and playback state so the previous frame cannot
+/// survive while decode/import work continues.
 pub fn clear_cdg_for_transport_change(cdg_state: &mut Option<CdgPlaybackSlot>) {
     *cdg_state = None;
 }
 
-/// Mark CDG as loading for a new track request. Clears the old slot
-/// immediately so the previous frame cannot survive while decode/import
-/// work continues.
+/// Clears the old slot immediately so the previous frame cannot survive
+/// while decode/import work continues.
 pub fn mark_cdg_loading(
     cdg_state: &mut Option<CdgPlaybackSlot>,
     song_id: &str,
@@ -36,8 +32,6 @@ pub fn mark_cdg_loading(
     });
 }
 
-/// Attach CDG playback state for a successfully loaded song. The CDG state
-/// is loaded with the authoritative `song_id` and `transport_generation`.
 pub fn attach_cdg_for_song(
     cdg_state: &mut Option<CdgPlaybackSlot>,
     song_id: &str,
@@ -93,7 +87,6 @@ pub fn attach_cdg_for_song(
     });
 }
 
-/// Mark CDG error for a song that failed to load.
 pub fn mark_cdg_error(
     cdg_state: &mut Option<CdgPlaybackSlot>,
     song_id: &str,
@@ -112,8 +105,6 @@ pub fn mark_cdg_error(
     });
 }
 
-/// Update the CDG transport generation without resetting renderer pixels
-/// or cursor. Used for pause/resume.
 pub fn update_cdg_transport_generation(
     cdg_state: &mut Option<CdgPlaybackSlot>,
     transport_generation: u64,
@@ -126,8 +117,6 @@ pub fn update_cdg_transport_generation(
     }
 }
 
-/// Mark both timelines for repositioning on their next authorized advance.
-/// Used for seek in either direction.
 pub fn mark_cdg_seek(cdg_state: &mut Option<CdgPlaybackSlot>, transport_generation: u64) {
     if let Some(slot) = cdg_state.as_mut() {
         slot.status.transport_generation = Some(transport_generation);
@@ -143,11 +132,6 @@ pub fn mark_cdg_seek(cdg_state: &mut Option<CdgPlaybackSlot>, transport_generati
     }
 }
 
-// ── CDG asset loading ──────────────────────────────────────────────────────
-
-/// Load CDG packets from various sources (sidecar, explicit path, ZIP).
-/// Returns the parse result including diagnostics. Does not create playback
-/// state — the caller uses `attach_cdg_for_song` or `mark_cdg_error`.
 pub fn load_cdg_packets_for_song(
     library_root: &LibraryRoot,
     song: &crate::library::Song,
@@ -231,7 +215,6 @@ fn load_cdg_packets_from_zip(zip_path: &Path) -> CdgLoadResult {
     }
 }
 
-/// Convenience: load CDG packets and attach them to the slot, or mark error.
 /// Kept for backward compatibility with existing call sites that don't need
 /// the intermediate `CdgLoadResult`.
 pub fn load_and_attach_cdg(
@@ -243,7 +226,6 @@ pub fn load_and_attach_cdg(
 ) {
     match load_cdg_packets_for_song(library_root, song) {
         CdgLoadResult::Missing => {
-            // No CDG file found — clear the slot (no CDG for this song).
             clear_cdg_for_transport_change(cdg_state);
         }
         CdgLoadResult::Loaded(result) => {
@@ -272,11 +254,6 @@ pub fn load_and_attach_cdg(
         }
     }
 }
-
-// ── Legacy compatibility ───────────────────────────────────────────────────
-// The old `load_cdg_state_for_song` and `mark_cdg_reset_for_seek` are replaced
-// by the new helpers above. These stubs exist only to catch any remaining
-// references during the transition.
 
 #[cfg(test)]
 mod tests {

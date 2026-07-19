@@ -19,7 +19,6 @@ pub fn delete_all_stems(
 ) -> CommandResult<DeleteStemsResult> {
     let library_root = state.library_root()?;
 
-    // Estimate disk usage before deletion.
     let freed_bytes = cache::stems::estimate_stems_disk_usage(&library_root)
         .map_err(|e| internal_error(format!("failed to estimate stems disk usage: {e}")))?;
 
@@ -72,7 +71,7 @@ pub fn downgrade_all_to_two_stem(
                 cache::stems::batch_downgrade_to_two_stem(&connection, &library_root)
                     .map_err(|e| internal_error(format!("failed to downgrade stems: {e}")))?;
 
-            // Update in-memory separation statuses: clear individual stem paths for downgraded songs.
+            // Clear individual stem paths for downgraded songs.
             if let Ok(mut statuses) = state.separation.separation_statuses.lock() {
                 for status in statuses.values_mut() {
                     if status.drums_path.is_some() {

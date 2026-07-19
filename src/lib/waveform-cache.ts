@@ -1,10 +1,5 @@
-/**
- * Module-owned LRU for waveform peaks (#90).
- *
- * Capacity is exactly 96 entries. Key is `${songHash}:${effectiveBuckets}`.
- * Empty remote results (`peaks.length === 0`) are intentionally NOT stored so
- * a song that later becomes local can still be fetched.
- */
+// Empty remote results (peaks.length === 0) are intentionally NOT stored so
+// a song that later becomes local can still be fetched.
 
 export interface WaveformCacheEntry {
   peaks: number[];
@@ -20,12 +15,8 @@ export function waveformCacheKey(songHash: string, buckets: number): string {
   return `${songHash}:${buckets}`;
 }
 
-/**
- * Map a CSS rail width and device pixel ratio to an effective bucket count.
- * Spec: clamp(round(cssWidth * dpr / 3), 24, 1000). Sampling density tracks
- * physical pixels so a DPR-only display migration refetches instead of
- * stretching the old waveform.
- */
+// Sampling density tracks physical pixels so a DPR-only display migration
+// refetches instead of stretching the old waveform.
 export function bucketsForRailWidth(cssWidth: number, dpr: number): number {
   if (
     !Number.isFinite(cssWidth) ||
@@ -47,7 +38,6 @@ export function getWaveformCache(
   if (!entry) {
     return null;
   }
-  // Promote to most-recent.
   const idx = lruOrder.indexOf(key);
   if (idx >= 0) {
     lruOrder.splice(idx, 1);
@@ -61,7 +51,6 @@ export function setWaveformCache(
   buckets: number,
   peaks: number[],
 ): void {
-  // Never cache empty remote results in the module LRU.
   if (peaks.length === 0) {
     return;
   }
@@ -82,7 +71,6 @@ export function setWaveformCache(
   }
 }
 
-/** Test-only: wipe module state between cases. */
 export function resetWaveformCacheForTests(): void {
   lruOrder.length = 0;
   lruMap.clear();

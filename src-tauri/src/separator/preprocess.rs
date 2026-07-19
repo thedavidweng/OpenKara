@@ -26,7 +26,7 @@ pub fn target_frame_count(model: &LoadedModel, fallback_frame_count: usize) -> R
     })
 }
 
-/// Item 4: Takes ownership of the decoded audio buffer to avoid holding two
+/// Takes ownership of the decoded audio buffer to avoid holding two
 /// full-song PCM copies in memory simultaneously. If resampling is needed, the
 /// original buffer is consumed and replaced; otherwise it is returned as-is.
 pub fn normalize_audio_for_model(decoded_audio: DecodedAudio) -> Result<DecodedAudio> {

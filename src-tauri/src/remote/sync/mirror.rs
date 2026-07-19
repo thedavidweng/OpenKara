@@ -114,7 +114,6 @@ fn sync_bound_remote<R: tauri::Runtime>(
         }
     }
 
-    // Phase 1: transactional DB deletes.
     if !songs_to_delete.is_empty() {
         let tx = remote_connection
             .transaction()
@@ -148,9 +147,7 @@ fn sync_bound_remote<R: tauri::Runtime>(
                 &format!("stems/{}", song.hash),
             );
         }
-        // Best-effort working-copy file cleanup (audio, CDG, media_g).
         let _ = crate::library::delete_song_files_from_working_copy(&remote_root, song);
-        // Best-effort working-copy stem directory cleanup.
         let _ = crate::library::delete_stem_files_from_working_copy(&remote_root, &song.hash);
     }
 
@@ -240,7 +237,6 @@ pub fn mirror_local_library_to_remote<R: tauri::Runtime>(
 
     let sync_result = sync_bound_remote_for_active_local_library(state, app_handle);
 
-    // Restore the original active_library_id and clear the pending marker.
     let mut restore_config = load_app_config(&state.shell.app_data_dir)?;
     restore_config.active_library_id = original_active_library_id;
     restore_config.pending_mirror_restore = false;

@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 pub struct RemoteState {
     pub remote_auth_sessions: Arc<Mutex<HashMap<String, RemoteAuthSession>>>,
     pub remote_upload_statuses: Arc<Mutex<HashMap<String, UploadStatusSnapshot>>>,
-    /// LRU-managed on-disk caches for remote streaming playback (P3/P4).
+    /// LRU-managed on-disk caches for remote streaming playback.
     pub remote_chunk_cache: Arc<Mutex<CacheManager>>,
 }
 

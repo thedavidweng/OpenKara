@@ -1,10 +1,3 @@
-//! Separation lifecycle orchestration.
-//!
-//! Deep inference stays in `separator::job::separate_song_into_cache`.
-//! This module owns status DTOs, bootstrap prerequisites, progress/terminal
-//! event emission, and shared single/batch job launching so commands remain
-//! thin IPC adapters and `state` does not import `commands::`.
-
 use crate::{
     cache,
     commands::bootstrap::{self, ModelBootstrapStatusSnapshot},
@@ -29,10 +22,6 @@ use std::{
     },
 };
 use tauri::{AppHandle, Emitter, Manager, Runtime};
-
-// ---------------------------------------------------------------------------
-// Status / event contracts (IPC-facing; moved out of commands for locality)
-// ---------------------------------------------------------------------------
 
 pub const SEPARATION_PROGRESS_EVENT: &str = "separation-progress";
 pub const SEPARATION_COMPLETE_EVENT: &str = "separation-complete";
@@ -93,10 +82,6 @@ pub struct BatchSeparationProgress {
     pub current_song_id: Option<String>,
     pub current_percent: u8,
 }
-
-// ---------------------------------------------------------------------------
-// Status constructors
-// ---------------------------------------------------------------------------
 
 pub fn idle_status(song_id: impl Into<String>) -> SeparationStatusSnapshot {
     SeparationStatusSnapshot {
@@ -195,11 +180,6 @@ pub fn failed_status(song_id: impl Into<String>, error: CommandError) -> Separat
     }
 }
 
-// ---------------------------------------------------------------------------
-// Execution context (shared by single-song + batch)
-// ---------------------------------------------------------------------------
-
-/// Shared configuration + handles gathered once before spawning workers.
 /// Built from AppState so single and batch paths cannot drift.
 #[derive(Clone)]
 pub struct SeparationExecutionContext {
@@ -246,12 +226,6 @@ pub fn build_execution_context(state: &AppState) -> CommandResult<SeparationExec
     })
 }
 
-// ---------------------------------------------------------------------------
-// Seams — injectable bootstrap / publish for unit tests without full Tauri
-// ---------------------------------------------------------------------------
-
-/// Ensure ONNX Runtime then the active model are ready (download/install if needed).
-///
 /// Seam: production path uses command bootstrap helpers; tests can call
 /// `run_job_blocking` with a known model path and skip this entirely.
 pub fn ensure_runtime_and_model_blocking<ER, EM>(
@@ -273,18 +247,12 @@ where
     bootstrap::ensure_active_model_ready_or_install_blocking(app_data_dir, model_status, emit_model)
 }
 
-/// Publish a completed song to the active remote library when one is bound.
-///
 /// Seam: `emit_terminal_status` accepts a custom `publish` callback so tests
 /// can assert completion without remote I/O.
 pub fn publish_on_complete_default<R: Runtime>(app_handle: &AppHandle<R>, song_id: &str) {
     let state = app_handle.state::<AppState>();
     let _ = remote::publish_song_to_active_remote_if_ready(&state, app_handle, song_id);
 }
-
-// ---------------------------------------------------------------------------
-// Status map helpers
-// ---------------------------------------------------------------------------
 
 pub fn get_separation_status_from_map(
     statuses: &Arc<Mutex<HashMap<String, SeparationStatusSnapshot>>>,
@@ -365,7 +333,6 @@ pub fn report_progress_to_status_and_events<R: Runtime>(
     );
 }
 
-/// Store terminal status, emit complete/error events, and invoke publish on success.
 pub fn emit_terminal_status<R, P>(
     app_handle: &AppHandle<R>,
     statuses: &Arc<Mutex<HashMap<String, SeparationStatusSnapshot>>>,
@@ -403,10 +370,6 @@ pub fn emit_terminal_status<R, P>(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Validation
-// ---------------------------------------------------------------------------
-
 pub fn ensure_song_can_be_separated(state: &AppState, song_id: &str) -> CommandResult<()> {
     let library_root = state.library_root()?;
     let connection = cache::open_database(&library_root.database_path())
@@ -441,11 +404,6 @@ pub fn validate_song_can_be_separated(
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Job runner (shared deep-job boundary)
-// ---------------------------------------------------------------------------
-
-/// Open the library DB and run `separate_song_into_cache` with progress callback.
 /// Does not touch bootstrap or remote publish — those are caller responsibilities.
 pub fn run_job_blocking(
     library_root: &LibraryRoot,
@@ -473,14 +431,7 @@ pub fn run_job_blocking(
     .map_err(|error| SeparationError::Failed(error.to_string()).into())
 }
 
-// ---------------------------------------------------------------------------
-// Single-song orchestration
-// ---------------------------------------------------------------------------
-
-/// Spawn a single-song separation worker: bootstrap → job → terminal status + publish.
-///
-/// Keep command handlers thin and preserve the event/status contract in one
-/// place. Separation orchestration is concurrency-sensitive, so duplicated
+/// Separation orchestration is concurrency-sensitive, so duplicated
 /// branches here are easy to drift and regress independently.
 pub fn start_job<R: Runtime>(
     app_handle: AppHandle<R>,
@@ -562,21 +513,16 @@ pub fn start_job<R: Runtime>(
     });
 }
 
-// ---------------------------------------------------------------------------
-// Batch planning + orchestration
-// ---------------------------------------------------------------------------
-
 pub struct BatchPlan {
     pub to_separate: Vec<String>,
     pub skipped: usize,
 }
 
-/// Failures among the `to_separate` pool. `total` already excludes skipped songs.
+/// `total` already excludes skipped songs.
 fn batch_failed_among_candidates(total: usize, completed: usize) -> usize {
     total.saturating_sub(completed)
 }
 
-/// Resolve which song hashes still need separation for the given stem mode.
 pub fn plan_batch(
     connection: &rusqlite::Connection,
     library_root: &LibraryRoot,
@@ -625,7 +571,7 @@ pub fn plan_batch(
     })
 }
 
-/// Spawn sequential batch separation (ONNX Runtime is memory-heavy).
+/// ONNX Runtime is memory-heavy, so jobs run sequentially.
 pub fn start_batch_job<R: Runtime>(
     app_handle: AppHandle<R>,
     execution_context: SeparationExecutionContext,
@@ -649,11 +595,9 @@ pub fn start_batch_job<R: Runtime>(
     let skipped = plan.skipped;
     let to_separate = plan.to_separate;
 
-    // Mark batch as running.
     batch_running.store(true, Ordering::Relaxed);
     batch_cancel.store(false, Ordering::Relaxed);
 
-    // Emit initial progress.
     let _ = app_handle.emit(
         BATCH_SEPARATION_PROGRESS_EVENT,
         BatchSeparationProgress {
@@ -731,7 +675,6 @@ pub fn start_batch_job<R: Runtime>(
         };
 
         for song_id in &to_separate {
-            // Check cancellation.
             if batch_cancel.load(Ordering::Relaxed) {
                 let _ = app_handle.emit(
                     BATCH_SEPARATION_CANCELLED_EVENT,
@@ -748,14 +691,12 @@ pub fn start_batch_job<R: Runtime>(
                 return;
             }
 
-            // Mark song as running.
             {
                 if let Ok(mut statuses) = separation_statuses.lock() {
                     statuses.insert(song_id.clone(), running_status(song_id, 0));
                 }
             }
 
-            // Emit batch progress with current song.
             let _ = app_handle.emit(
                 BATCH_SEPARATION_PROGRESS_EVENT,
                 BatchSeparationProgress {
@@ -798,7 +739,6 @@ pub fn start_batch_job<R: Runtime>(
                             &progress_song_id,
                             percent,
                         );
-                        // Also emit batch progress update with per-song percent.
                         let _ = batch_progress_app_handle.emit(
                             BATCH_SEPARATION_PROGRESS_EVENT,
                             BatchSeparationProgress {
@@ -838,7 +778,6 @@ pub fn start_batch_job<R: Runtime>(
             }
         }
 
-        // Batch complete.
         let _ = app_handle.emit(
             BATCH_SEPARATION_COMPLETE_EVENT,
             BatchSeparationProgress {
@@ -853,10 +792,6 @@ pub fn start_batch_job<R: Runtime>(
         batch_running.store(false, Ordering::Relaxed);
     });
 }
-
-// ---------------------------------------------------------------------------
-// Synchronous command helpers (status query / downgrade / cache clear)
-// ---------------------------------------------------------------------------
 
 pub fn get_all_separation_statuses(
     state: &AppState,
@@ -962,7 +897,6 @@ pub fn downgrade_to_two_stem_and_publish<R: Runtime>(
         updated_entry.other_path,
     );
 
-    // Update in-memory separation statuses.
     {
         let mut statuses = state
             .separation
@@ -972,7 +906,6 @@ pub fn downgrade_to_two_stem_and_publish<R: Runtime>(
         statuses.insert(song_id.to_owned(), completed.clone());
     }
 
-    // Emit completion event so the frontend updates.
     let _ = app_handle.emit(
         SEPARATION_COMPLETE_EVENT,
         SeparationCompleteEvent {

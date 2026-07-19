@@ -61,7 +61,6 @@ export function PeakMeter({
       const physicalWidth = Math.round(width * dpr);
       const physicalHeight = Math.round(height * dpr);
 
-      // Resize the backing store if DPR or dimensions changed.
       if (canvas.width !== physicalWidth || canvas.height !== physicalHeight) {
         canvas.width = physicalWidth;
         canvas.height = physicalHeight;
@@ -72,14 +71,12 @@ export function PeakMeter({
 
       const peaks = snapshot.peaks;
       if (peaks.length === 0) {
-        // Flat baseline when no audio has been published yet.
         const midY = height / 2;
         ctx.fillStyle = "rgba(255, 255, 255, 0.15)";
         ctx.fillRect(0, midY - 0.5, width, 1);
         return;
       }
 
-      // Determine how many bars fit in the canvas width.
       const barWidth = 3;
       const maxBars = Math.floor((width + barGap) / (barWidth + barGap));
       // Take the most recent peaks (right-aligned, scrolling).
@@ -96,12 +93,10 @@ export function PeakMeter({
         const [left, right] = visiblePeaks[i];
         const x = startX + i * (barWidth + barGap);
 
-        // Left channel: grows upward from midY.
         const leftH = Math.max(1, left * maxBarHeight);
         ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
         ctx.fillRect(x, midY - leftH, barWidth, leftH);
 
-        // Right channel: grows downward from midY.
         const rightH = Math.max(1, right * maxBarHeight);
         ctx.fillStyle = "rgba(255, 255, 255, 0.45)";
         ctx.fillRect(x, midY, barWidth, rightH);
@@ -137,7 +132,6 @@ export function PeakMeter({
           lastPeaksRef.current = snapshot;
           draw(snapshot);
         } else if (snapshot.peaks.length === 0) {
-          // Flat baseline when no audio has been published yet.
           // Only draw once — the canvas content is static until peaks arrive.
           if (!flatLineDrawnRef.current) {
             flatLineDrawnRef.current = true;
@@ -163,7 +157,6 @@ export function PeakMeter({
           const graceMs = 500;
           const decayMs = 400;
           if (elapsed <= graceMs) {
-            // Grace period: keep showing the last waveform as-is.
             if (!lastPeaksRef.current) lastPeaksRef.current = snapshot;
           } else if (decayStartRef.current === null) {
             decayStartRef.current = now;
@@ -171,7 +164,6 @@ export function PeakMeter({
           if (decayStartRef.current !== null) {
             const decayElapsed = now - decayStartRef.current;
             if (decayElapsed >= decayMs) {
-              // Decay complete — draw the flat line once and stop.
               if (!flatLineDrawnRef.current) {
                 flatLineDrawnRef.current = true;
                 draw({ ...snapshot, peaks: [] });

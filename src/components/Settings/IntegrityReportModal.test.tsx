@@ -117,7 +117,6 @@ describe("IntegrityReportModal", () => {
       value,
     );
 
-    // All sections should show "no issues"
     const noIssuesCount = (markup.match(/settings\.integrity\.noIssues/g) ?? [])
       .length;
     expect(noIssuesCount).toBe(5);
@@ -131,7 +130,6 @@ describe("IntegrityReportModal", () => {
       value,
     );
 
-    // Checkboxes are rendered for selectable sections (missing + empty primary)
     const checkboxCount = (markup.match(/type="checkbox"/g) ?? []).length;
     expect(checkboxCount).toBe(2);
   });

@@ -140,7 +140,6 @@ describe("AlphabetRail", () => {
     const index = makeIndex([["A", 0]]);
     render(<AlphabetRail indexByBucket={index} onNavigate={onNavigate} />);
     const container = screen.getByRole("navigation");
-    // A is the initial roving bucket
     fireEvent.keyDown(container, { key: "Enter" });
     expect(onNavigate).toHaveBeenCalledWith(0, "A");
   });
@@ -196,17 +195,13 @@ describe("AlphabetRail", () => {
     fireEvent.click(buttons[1]);
     expect(buttons[1].getAttribute("aria-current")).toBe("true");
 
-    // Change index map
     const index2 = makeIndex([["C", 10]]);
     rerender(<AlphabetRail indexByBucket={index2} onNavigate={onNavigate} />);
-    // No aria-current should be set after reset
     const activeButtons = screen
       .getAllByRole("button")
       .filter((b) => b.getAttribute("aria-current") === "true");
     expect(activeButtons).toHaveLength(0);
   });
-
-  // ─── keyboard: ArrowUp / ArrowLeft ─────────────────────────
 
   test("ArrowUp moves roving tabindex to the previous bucket", () => {
     const index = makeIndex([["B", 5]]);
@@ -226,8 +221,6 @@ describe("AlphabetRail", () => {
     const buttons = screen.getAllByRole("button");
     expect(buttons[0].getAttribute("tabindex")).toBe("0");
   });
-
-  // ─── pointer-based navigation ──────────────────────────────
 
   // Mock geometry so each of the 27 buckets spans 10px (height 270, top 0).
   function mockContainerGeometry(): DOMRect {
@@ -465,10 +458,8 @@ describe("AlphabetRail", () => {
     render(<AlphabetRail indexByBucket={index} onNavigate={onNavigate} />);
     const container = setupPointerContainer();
     fireEvent.pointerDown(container, { button: 0, pointerId: 1, clientY: 0 });
-    // Wrong pointer id should not clear active state / release capture.
     fireEvent.pointerUp(container, { button: 0, pointerId: 99, clientY: 0 });
     expect(container.releasePointerCapture).not.toHaveBeenCalled();
-    // Correct id still releases.
     fireEvent.pointerUp(container, { button: 0, pointerId: 1, clientY: 0 });
     expect(container.releasePointerCapture).toHaveBeenCalledWith(1);
   });
@@ -483,7 +474,6 @@ describe("AlphabetRail", () => {
     // With null roving, currentPos falls back to 0 (bucket A). ArrowDown → B.
     // But B has no mapping so navigation may no-op; the :0 branch is still executed.
     const buttons = screen.getAllByRole("button");
-    // After ArrowDown, roving should move to B (index 1) even without mapping.
     expect(buttons[1].getAttribute("tabindex")).toBe("0");
   });
 });

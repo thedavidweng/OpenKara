@@ -11,7 +11,6 @@ use crate::{
 };
 use tauri::{AppHandle, Manager, State};
 
-// Re-export IPC-facing domain types (same public surface as before the lift).
 pub use remote::{
     RemoteAuthSession, RemoteAuthStart, RemoteAuthState, RemoteAuthStatus, RemoteLibraryCandidate,
     UploadState, UploadStatusSnapshot,

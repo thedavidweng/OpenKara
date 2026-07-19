@@ -223,7 +223,6 @@ describe("SeekBar", () => {
     await act(async () => {
       root.render(<SeekBar />);
     });
-    // Flush the getWaveform promise
     await act(async () => {
       await Promise.resolve();
     });

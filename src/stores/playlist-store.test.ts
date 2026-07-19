@@ -70,10 +70,6 @@ describe("playlist-store", () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // loadPlaylists
-  // -----------------------------------------------------------------------
-
   describe("loadPlaylists", () => {
     test("fetches playlists and sets state", async () => {
       mockListPlaylists.mockResolvedValue(mockPlaylists);
@@ -122,10 +118,6 @@ describe("playlist-store", () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // createPlaylist
-  // -----------------------------------------------------------------------
-
   describe("createPlaylist", () => {
     test("calls API and reloads playlists", async () => {
       const newPlaylist = {
@@ -147,10 +139,6 @@ describe("playlist-store", () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // renamePlaylist
-  // -----------------------------------------------------------------------
-
   describe("renamePlaylist", () => {
     test("calls API and updates local state optimistically", async () => {
       mockRenamePlaylist.mockResolvedValue(undefined);
@@ -163,17 +151,12 @@ describe("playlist-store", () => {
         .getState()
         .playlists.find((p) => p.id === "pl-1");
       expect(updated?.name).toBe("Renamed");
-      // Other playlist untouched
       const other = usePlaylistStore
         .getState()
         .playlists.find((p) => p.id === "pl-2");
       expect(other?.name).toBe("Party");
     });
   });
-
-  // -----------------------------------------------------------------------
-  // deletePlaylist
-  // -----------------------------------------------------------------------
 
   describe("deletePlaylist", () => {
     test("calls API, clears activePlaylistId if it was the deleted one, and reloads", async () => {
@@ -208,10 +191,6 @@ describe("playlist-store", () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // addSongsToPlaylist
-  // -----------------------------------------------------------------------
-
   describe("addSongsToPlaylist", () => {
     test("calls API and reloads playlists", async () => {
       mockAddSongsToPlaylist.mockResolvedValue(undefined);
@@ -227,10 +206,6 @@ describe("playlist-store", () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // removeSongsFromPlaylist
-  // -----------------------------------------------------------------------
-
   describe("removeSongsFromPlaylist", () => {
     test("calls API and reloads playlists", async () => {
       mockRemoveSongsFromPlaylist.mockResolvedValue(undefined);
@@ -244,10 +219,6 @@ describe("playlist-store", () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // getPlaylistSongs
-  // -----------------------------------------------------------------------
-
   describe("getPlaylistSongs", () => {
     test("returns songs from API", async () => {
       mockGetPlaylistSongs.mockResolvedValue(mockSongs);
@@ -258,10 +229,6 @@ describe("playlist-store", () => {
       expect(result).toEqual(mockSongs);
     });
   });
-
-  // -----------------------------------------------------------------------
-  // setActivePlaylist
-  // -----------------------------------------------------------------------
 
   describe("setActivePlaylist", () => {
     test("sets activePlaylistId", () => {
@@ -275,10 +242,6 @@ describe("playlist-store", () => {
       expect(usePlaylistStore.getState().activePlaylistId).toBeNull();
     });
   });
-
-  // -----------------------------------------------------------------------
-  // loadPlaylistSongSets
-  // -----------------------------------------------------------------------
 
   describe("loadPlaylistSongSets", () => {
     test("builds set of song hashes per playlist", async () => {

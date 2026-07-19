@@ -466,7 +466,6 @@ describe("createSettingsOverlayActions - initialize", () => {
     expect(harness.dependencies.notifyError).toHaveBeenCalledWith(
       expect.any(Error),
     );
-    // Settings store hydration should not have been called
     expect(
       harness.dependencies.settingsStore.hydrateAppSettings,
     ).not.toHaveBeenCalled();

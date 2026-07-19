@@ -26,10 +26,6 @@ vi.mock("@/stores/library-store", () => ({
 
 import { createIntegritySettingsActions } from "./settings-overlay.integrity-actions";
 
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
-
 const emptyReport: IntegrityReport = {
   checked_local_songs: 0,
   skipped_remote_songs: 0,
@@ -67,10 +63,6 @@ const sampleReport: IntegrityReport = {
   empty_optional_assets: [],
   orphaned_managed_files: ["stems/orphan.wav"],
 };
-
-// ---------------------------------------------------------------------------
-// Harness
-// ---------------------------------------------------------------------------
 
 function createHarness(
   initialSnapshot?: Partial<Omit<SettingsOverlaySnapshot, "state">> & {
@@ -229,10 +221,6 @@ function createHarness(
   return { actions, context, dependencies, snapshot: () => snapshot };
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -252,17 +240,14 @@ describe("createIntegritySettingsActions", () => {
       ).toHaveBeenCalledOnce();
       expect(harness.dependencies.notifyError).not.toHaveBeenCalled();
 
-      // Verify the report was stored
       const finalSnapshot = harness.snapshot();
       expect(finalSnapshot.state.integrityReport).toEqual(sampleReport);
-      // Default selection includes missing + empty primary
       expect(finalSnapshot.state.integritySelection.has("hash-abc12345")).toBe(
         true,
       );
       expect(finalSnapshot.state.integritySelection.has("hash-empty1234")).toBe(
         true,
       );
-      // Optional issues are NOT in default selection
       expect(
         finalSnapshot.state.integritySelection.has("hash-opt1234567"),
       ).toBe(false);
@@ -382,7 +367,6 @@ describe("createIntegritySettingsActions", () => {
       expect(
         harness.dependencies.api.removeMissingLibraryEntries,
       ).not.toHaveBeenCalled();
-      // closeDialog was called (dangerDialog reset)
       expect(harness.snapshot().meta.dangerDialog).toBeNull();
     });
 
@@ -488,18 +472,15 @@ describe("createIntegritySettingsActions", () => {
       await harness.actions.confirmIntegrityCleanup();
 
       const finalSnapshot = harness.snapshot();
-      // Deleted hashes removed from report
       expect(
         finalSnapshot.state.integrityReport!.missing_primary_media,
       ).toHaveLength(0);
       expect(
         finalSnapshot.state.integrityReport!.empty_primary_media,
       ).toHaveLength(0);
-      // Optional issue remains
       expect(
         finalSnapshot.state.integrityReport!.missing_optional_assets,
       ).toHaveLength(1);
-      // Selection only retains non-deleted hashes
       expect(finalSnapshot.state.integritySelection.has("hash-abc12345")).toBe(
         false,
       );
@@ -639,7 +620,6 @@ describe("createIntegritySettingsActions", () => {
       const finalSnapshot = harness.snapshot();
       const emptyOptional =
         finalSnapshot.state.integrityReport!.empty_optional_assets;
-      // Deleted hash removed; non-deleted hash retained.
       expect(emptyOptional).toHaveLength(1);
       expect(emptyOptional[0].song_hash).toBe("hash-opt1234567");
     });

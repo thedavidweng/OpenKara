@@ -128,7 +128,6 @@ pub(crate) fn resolve_remote_library_candidate(
     Ok(candidate_from_session(&session_id, session, &display_name))
 }
 
-/// Take ownership of provider session material from an auth session and mark it ready.
 fn take_ready_session_binding(
     state: &AppState,
     session_id: &str,

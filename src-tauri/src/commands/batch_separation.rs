@@ -25,7 +25,6 @@ pub fn batch_separate(
     app_handle: AppHandle,
     song_ids: Vec<String>,
 ) -> CommandResult<()> {
-    // Prevent concurrent batch operations.
     if state.separation.batch_running.load(Ordering::Relaxed) {
         return Err(
             SeparationError::Failed("A batch separation is already running".to_owned()).into(),

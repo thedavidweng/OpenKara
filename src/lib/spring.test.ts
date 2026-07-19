@@ -24,7 +24,6 @@ describe("Spring", () => {
     const spring = new Spring(0, { stiffness: 180, damping: 12 });
     spring.setTarget(1);
 
-    // Simulate 2 seconds at 60fps
     for (let i = 0; i < 120; i++) {
       spring.update(1 / 60);
     }
@@ -36,7 +35,7 @@ describe("Spring", () => {
   test("jumpTo immediately sets position", () => {
     const spring = new Spring(0);
     spring.setTarget(1);
-    spring.update(0.016); // advance a bit
+    spring.update(0.016);
     spring.jumpTo(0.5);
     expect(spring.getPosition()).toBe(0.5);
     expect(spring.isSettled()).toBe(true);

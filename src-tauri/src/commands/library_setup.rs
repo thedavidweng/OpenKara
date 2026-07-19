@@ -136,11 +136,7 @@ fn store_active_library(
 /// Clear every in-memory state holder that is scoped to the active library.
 ///
 /// Called when the active library changes (`activate_library`) or is removed
-/// with no successor (`remove_library`). Concentrating the clear sequence
-/// here means a new library-scoped state holder only needs to be added in one
-/// place — previously the sequence was duplicated across `activate_library`
-/// and `remove_library`, and forgetting a holder in either was a silent
-/// stale-state bug.
+/// with no successor (`remove_library`).
 ///
 /// Ordering: clear playback first (stop the current track), then CDG (which
 /// is bound to the current track), then remote upload statuses (which are

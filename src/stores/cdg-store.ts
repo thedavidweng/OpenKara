@@ -2,7 +2,6 @@ import { create } from "zustand";
 import type { CdgAvailability, CdgErrorCode } from "@/lib/tauri/cdg";
 
 interface CdgState {
-  /** Whether the currently playing song has a CDG file. */
   hasCdg: boolean;
   songId: string | null;
   /** CDG availability from the backend (more granular than hasCdg). */

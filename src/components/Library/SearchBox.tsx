@@ -8,7 +8,7 @@ export function SearchBox() {
   const searchQuery = useLibraryStore((s) => s.searchQuery);
   const setSearchQuery = useLibraryStore((s) => s.setSearchQuery);
 
-  // F9: The store's setSearchQuery already debounces the actual library search
+  // The store's setSearchQuery already debounces the actual library search
   // at 300ms. Adding a second 200ms debounce here creates a cumulative 500ms
   // delay. Call setSearchQuery directly so the total debounce is ~300ms.
   const handleChange = useCallback(

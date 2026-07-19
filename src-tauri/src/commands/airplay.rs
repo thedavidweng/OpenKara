@@ -473,10 +473,6 @@ fn build_current_runtime_payload(
     ))
 }
 
-/// Check whether the AirPlay native route is in an active phase that
-/// requires CDG decoding. CDG frames are advanced only while the route
-/// is in `route_selected`, `buffering`, or `playing`. For `idle` or
-/// `failed`, no CDG work is done.
 fn airplay_phase_requires_cdg() -> bool {
     let phase = airplay_runtime_state()
         .lock()
@@ -490,9 +486,8 @@ fn airplay_phase_requires_cdg() -> bool {
     )
 }
 
-/// Advance the AirPlay CDG timeline and return the RGBA frame bytes if
-/// a new authoritative frame is available. Uses the AirPlay timeline
-/// (not Local) so AirPlay cannot rewind or corrupt local playback.
+/// Uses the AirPlay timeline (not Local) so AirPlay cannot rewind or
+/// corrupt local playback.
 fn build_current_cdg_frame(
     cdg_state: &Arc<Mutex<Option<CdgPlaybackSlot>>>,
     runtime: &AirPlayAudienceRuntimePayload,
@@ -501,7 +496,6 @@ fn build_current_cdg_frame(
         return None;
     }
 
-    // Gate: no AirPlay CDG work in idle/failed phase.
     if !airplay_phase_requires_cdg() {
         return None;
     }

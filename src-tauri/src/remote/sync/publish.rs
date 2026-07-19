@@ -20,8 +20,6 @@ use super::upload_status::{
     emit_upload_complete, emit_upload_error, emit_upload_progress, mark_upload_status,
 };
 
-/// Copy and upload artwork derivative files (thumbnail + preview) to the
-/// remote repository, and persist the derivative paths in the remote DB.
 /// Best-effort: missing/invalid derivatives are regenerated from the local
 /// cover art bytes. Failures are logged but do not abort the publish.
 fn publish_artwork_derivatives(

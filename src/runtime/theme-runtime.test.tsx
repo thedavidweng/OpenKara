@@ -9,13 +9,10 @@ import {
   useThemeRuntime,
 } from "./theme-runtime";
 
-// ── Mocks ──────────────────────────────────────────────────────────────
-
 const mockSetTheme = vi.fn<(theme: "light" | "dark" | null) => Promise<void>>();
 const mockMatchMedia = vi.fn<(query: string) => MediaQueryList>();
 const mockConsoleWarn = vi.fn();
 
-// Module-level state the mock store reads from.
 let mockThemePreference: ThemePreference = "dark";
 let mockHydrated = false;
 // When true, the mocked getCurrentWindow throws to exercise the
@@ -40,8 +37,6 @@ vi.mock("@/stores/settings-store", () => ({
 }));
 
 vi.stubGlobal("matchMedia", mockMatchMedia);
-
-// ── Helpers ────────────────────────────────────────────────────────────
 
 function createMockMedia(matches: boolean): MediaQueryList {
   return {
@@ -108,8 +103,6 @@ function renderHook<T>(hook: () => T): {
   };
 }
 
-// ── Pure function tests ────────────────────────────────────────────────
-
 describe("resolveThemePreference", () => {
   test("returns the explicit preference when not system", () => {
     expect(resolveThemePreference("light", true)).toBe("light");
@@ -157,8 +150,6 @@ describe("applyResolvedTheme", () => {
   });
 });
 
-// ── Hook tests ─────────────────────────────────────────────────────────
-
 describe("useThemeRuntime", () => {
   beforeEach(() => {
     mockSetTheme.mockReset();
@@ -168,7 +159,6 @@ describe("useThemeRuntime", () => {
     mockHydrated = true;
     mockNativeBridgeThrows = false;
     vi.useFakeTimers();
-    // Stub console.warn after fake timers are enabled
     vi.spyOn(console, "warn").mockImplementation(mockConsoleWarn);
   });
 
@@ -329,11 +319,7 @@ describe("useThemeRuntime", () => {
     unmount();
   });
 
-  // ── Defensive/edge paths ───────────────────────────────────────────
-
   test("defaults system preference to dark when matchMedia is unavailable", () => {
-    // matchMedia is not a function → getSystemPrefersDarkMedia returns null,
-    // and the effect falls back to assuming dark.
     vi.stubGlobal("matchMedia", undefined);
     setStoreState("system", true);
 

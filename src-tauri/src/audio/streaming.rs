@@ -24,16 +24,12 @@ use super::decode::DecodeError;
 /// allowing playback to continue on slow network connections.
 #[derive(Debug, Clone)]
 pub struct ProxyConfig {
-    /// Whether proxy mode is enabled.
     pub enabled: bool,
-    /// Target sample rate for the proxy (e.g., 22050).
     pub target_sample_rate: u32,
-    /// Target channel count (1 for mono).
     pub target_channels: usize,
 }
 
 impl ProxyConfig {
-    /// Proxy mode disabled (pass-through).
     pub fn none() -> Self {
         Self {
             enabled: false,
@@ -145,17 +141,13 @@ pub fn ring_capacity(sample_rate: u32, channels: usize) -> usize {
 /// Consumer side of a streaming audio track, held by the cpal callback.
 pub struct AudioConsumer {
     cons: ringbuf::HeapCons<f32>,
-    /// Prepend buffer for resampling lookahead. Uses `VecDeque` for efficient
-    /// front insertion without allocating a new `Vec` on every `prepend_samples`.
     pending_samples: VecDeque<f32>,
     pub sample_rate: u32,
     pub channels: usize,
-    /// Set by the producer when decode reaches EOF.
     is_eof: Arc<AtomicBool>,
     /// Set by the producer after a seek to signal the consumer should drain
     /// stale samples from the ring buffer before reading new ones.
     needs_flush: Arc<AtomicBool>,
-    /// Shared seek target between consumer and producer.
     seek_target: Arc<SeekTarget>,
     /// Pre-allocated scratch buffer for `acknowledge_flush` to avoid heap
     /// allocation on the realtime audio thread.
@@ -177,12 +169,10 @@ impl std::fmt::Debug for AudioConsumer {
 }
 
 impl AudioConsumer {
-    /// Number of samples available to read right now.
     pub fn available_samples(&self) -> usize {
         self.pending_samples.len() + self.cons.occupied_len()
     }
 
-    /// Available duration in milliseconds.
     pub fn available_ms(&self) -> u64 {
         if self.sample_rate == 0 || self.channels == 0 {
             return 0;
@@ -209,12 +199,10 @@ impl AudioConsumer {
         self.is_eof() || self.available_samples() >= HIGH_WATER_SAMPLES
     }
 
-    /// Whether the producer has finished decoding all samples.
     pub fn is_eof(&self) -> bool {
         self.is_eof.load(Ordering::Relaxed)
     }
 
-    /// Whether the producer has signaled a flush is needed after a seek.
     /// Uses Acquire to pair with the producer's Release store in signal_flush,
     /// ensuring the consumer observes flush_done = false before acting on
     /// needs_flush = true on weakly-ordered hardware (ARM).
@@ -222,23 +210,17 @@ impl AudioConsumer {
         self.needs_flush.load(Ordering::Acquire)
     }
 
-    /// Acknowledge the flush — clears the flag and drains stale samples.
     pub fn acknowledge_flush(&mut self) {
         self.needs_flush.store(false, Ordering::Relaxed);
         self.pending_samples.clear();
-        // Drain all stale samples that were pushed before the seek.
         // Reuse the pre-allocated scratch buffer to avoid heap allocation
         // on the realtime audio thread.
         let occupied = self.cons.occupied_len();
         self.flush_scratch.resize(occupied, 0.0);
         let _ = self.cons.pop_slice(&mut self.flush_scratch);
-        // Signal the producer (polling in `signal_flush`) that the flush
-        // is complete. Uses an atomic store — no mutex, no blocking on
-        // the realtime audio callback thread.
         self.flush_done.store(true, Ordering::Release);
     }
 
-    /// Get the shared seek target for setting seek positions.
     pub fn seek_target(&self) -> &SeekTarget {
         &self.seek_target
     }
@@ -271,7 +253,6 @@ impl AudioConsumer {
             return;
         }
 
-        // Prepend by extending front in reverse order.
         for &sample in samples.iter().rev() {
             self.pending_samples.push_front(sample);
         }
@@ -281,13 +262,11 @@ impl AudioConsumer {
 /// Producer side of a streaming audio track, held by the decode thread.
 pub struct AudioProducer {
     prod: ringbuf::HeapProd<f32>,
-    /// Shared EOF flag — set when decode reaches end of file.
     is_eof: Arc<AtomicBool>,
-    /// Shared flush-needed flag — set after a seek so the consumer drains stale data.
+    /// Set after a seek so the consumer drains stale data.
     needs_flush: Arc<AtomicBool>,
-    /// Shared seek target — checked before each packet decode.
     seek_target: Arc<SeekTarget>,
-    /// R6: Shared flush epoch — incremented on each flush so the consumer can
+    /// Shared flush epoch — incremented on each flush so the consumer can
     /// track which flush it has acknowledged.
     flush_epoch: Arc<AtomicU64>,
     /// Atomic flag set by the consumer when flush is acknowledged.
@@ -302,24 +281,21 @@ impl AudioProducer {
         self.prod.push_slice(samples)
     }
 
-    /// Number of samples that can be written before the buffer is full.
     pub fn vacant_samples(&self) -> usize {
         self.prod.vacant_len()
     }
 
-    /// Whether the buffer is above the high-water mark (producer should yield).
     pub fn is_above_high_water(&self) -> bool {
         self.prod.vacant_len() < (ring_capacity_from_prod(&self.prod) - HIGH_WATER_SAMPLES)
     }
 
-    /// Mark this producer's stream as EOF.
     pub fn set_eof(&self) {
         self.is_eof.store(true, Ordering::Relaxed);
     }
 
     /// After a seek, signal the consumer to drain stale samples.
     ///
-    /// R6: Increments the flush epoch and polls (with bounded timeout) for
+    /// Increments the flush epoch and polls (with bounded timeout) for
     /// the ring buffer to drain. Uses an atomic flag + short sleeps instead
     /// of a condvar to keep the realtime audio callback lock-free.
     pub fn signal_flush(&self) {
@@ -334,9 +310,6 @@ impl AudioProducer {
         self.flush_done.store(false, Ordering::Release);
         self.needs_flush.store(true, Ordering::Release);
 
-        // Poll for the consumer to acknowledge the flush.
-        // The consumer calls `acknowledge_flush` on the audio callback
-        // (~10ms) and sets the atomic flag after draining.
         // Sleep in short intervals to avoid busy-waiting while staying
         // responsive. Total timeout is 100ms (matches the old condvar timeout).
         let deadline = std::time::Instant::now() + Duration::from_millis(100);
@@ -348,34 +321,29 @@ impl AudioProducer {
         }
     }
 
-    /// Get the shared seek target.
     pub fn seek_target(&self) -> &SeekTarget {
         &self.seek_target
     }
 
-    /// Get the Arc to the shared seek target (for cloning across thread boundaries).
     pub fn seek_target_arc(&self) -> &Arc<SeekTarget> {
         &self.seek_target
     }
 }
 
-/// Helper to compute capacity from a producer (via the underlying ring buffer).
 fn ring_capacity_from_prod(prod: &ringbuf::HeapProd<f32>) -> usize {
     // vacant_len + occupied_len == capacity
     prod.vacant_len() + prod.occupied_len()
 }
 
-/// Streaming variants for multi-track playback.
 #[derive(Debug)]
 pub enum StreamingTrack {
-    /// Single audio track (no stems).
-    Single { consumer: AudioConsumer },
-    /// Two-stem mode: vocals + accompaniment.
+    Single {
+        consumer: AudioConsumer,
+    },
     TwoStem {
         vocals: AudioConsumer,
         accompaniment: AudioConsumer,
     },
-    /// Four-stem mode: vocals, drums, bass, other.
     /// Boxed to keep the enum size reasonable — `AudioConsumer` carries
     /// pre-allocated scratch buffers and sync primitives that add up.
     FourStem {
@@ -387,7 +355,6 @@ pub enum StreamingTrack {
 }
 
 impl StreamingTrack {
-    /// Get mutable references to all consumers in this track.
     pub fn consumers_mut(&mut self) -> Vec<&mut AudioConsumer> {
         match self {
             StreamingTrack::Single { consumer } => vec![consumer],
@@ -404,7 +371,6 @@ impl StreamingTrack {
         }
     }
 
-    /// Immutable view of all consumers — used for budget/EOF checks without mixing.
     pub fn consumers(&self) -> Vec<&AudioConsumer> {
         match self {
             StreamingTrack::Single { consumer } => vec![consumer],
@@ -421,7 +387,6 @@ impl StreamingTrack {
         }
     }
 
-    /// True when every consumer has reached EOF and drained its ring buffer.
     pub fn all_eof_and_drained(&self) -> bool {
         self.consumers()
             .iter()
@@ -479,7 +444,7 @@ impl StreamingTrack {
 
     /// True when *any* consumer is below its low-water mark.
     ///
-    /// R5 RATIONALE: All-or-nothing buffering policy. Multi-stem rendering
+    /// All-or-nothing buffering policy. Multi-stem rendering
     /// requires every stem to stay frame-synchronized with the shared source
     /// clock. If we allowed playback to continue while one stem is below the
     /// low-water mark, the render callback would mix rendered audio from
@@ -545,7 +510,6 @@ impl StreamingTrack {
     }
 }
 
-/// Create a producer-consumer pair for a single audio stream.
 pub fn create_stream_pair(sample_rate: u32, channels: usize) -> (AudioProducer, AudioConsumer) {
     let capacity = ring_capacity(sample_rate, channels);
     let rb = HeapRb::<f32>::new(capacity);
@@ -596,11 +560,10 @@ pub fn frames_to_ms(frames: u64, sample_rate: u32) -> u64 {
     frames.saturating_mul(1000) / sample_rate as u64
 }
 
-/// Metadata about a streaming audio source, returned from the probe step.
 pub struct StreamMetadata {
     pub sample_rate: u32,
     pub channels: usize,
-    /// Item 12: Duration is optional so playback can start immediately.
+    /// Duration is optional so playback can start immediately.
     /// When `None`, the container did not expose frame count metadata and
     /// the duration should be resolved asynchronously after playback begins.
     pub duration_ms: Option<u64>,
@@ -608,7 +571,7 @@ pub struct StreamMetadata {
 
 /// Probe an audio file for metadata without decoding the full PCM data.
 ///
-/// Item 12: Returns `duration_ms: None` when the container doesn't expose
+/// Returns `duration_ms: None` when the container doesn't expose
 /// `n_frames` instead of blocking on a full decode. Playback can start
 /// immediately and the duration can be resolved asynchronously.
 pub fn probe_stream_metadata(path: &Path) -> Result<StreamMetadata, DecodeError> {
@@ -667,7 +630,7 @@ pub fn probe_stream_metadata(path: &Path) -> Result<StreamMetadata, DecodeError>
     let sample_rate = sample_rate.ok_or(DecodeError::MissingSampleRate)?;
     let channels = channels.ok_or(DecodeError::MissingChannels)?;
 
-    // Item 12: Try to get duration from container metadata only.
+    // Try to get duration from container metadata only.
     // Do NOT fall back to full decode — return None so playback starts immediately.
     let duration_ms =
         if let (Some(n_frames), Some(tb)) = (codec_params.n_frames, codec_params.time_base) {
@@ -688,8 +651,6 @@ pub fn probe_stream_metadata(path: &Path) -> Result<StreamMetadata, DecodeError>
 /// interleaved f32 samples into the ring buffer.
 ///
 /// Returns `(consumer, metadata, join_handle)`.
-/// The consumer is ready to be used by the cpal callback.
-/// The join handle can be used to wait for the decode thread to finish.
 pub fn spawn_decode_producer(
     path: &Path,
 ) -> Result<
@@ -742,8 +703,6 @@ pub fn spawn_decode_producer_with_proxy(
 /// Spawn a decode producer from a `RemoteMediaSource` (or any `MediaSource`).
 /// The caller provides pre-probed metadata since the source may not support
 /// seeking back to re-probe.
-///
-/// Returns `(consumer, join_handle)`.
 pub fn spawn_decode_producer_from_source(
     source: Box<dyn symphonia::core::io::MediaSource>,
     extension: Option<&str>,
@@ -774,7 +733,6 @@ pub fn spawn_decode_producer_from_source(
     Ok((cons, handle))
 }
 
-/// Result of spawning decode producers for multiple stems.
 pub struct MultiStemResult {
     pub track: StreamingTrack,
     pub metadata: Vec<StreamMetadata>,
@@ -790,7 +748,6 @@ pub fn spawn_multi_stem_decode_producers(
     spawn_multi_stem_decode_producers_with_proxy(paths, ProxyConfig::none())
 }
 
-/// Like `spawn_multi_stem_decode_producers`, but with optional proxy mode.
 pub fn spawn_multi_stem_decode_producers_with_proxy(
     paths: &[std::path::PathBuf],
     proxy: ProxyConfig,
@@ -919,11 +876,9 @@ fn decode_mss_into_producer(
         .map_err(|e| DecodeError::DecoderCreationFailed(e.to_string()))?;
     let track_id = track.id;
 
-    // Clone the Arc so we can access the seek target without borrowing prod.
     let seek_target = Arc::clone(prod.seek_target_arc());
 
     loop {
-        // Check for pending seek before each packet.
         let target = seek_target.load(Ordering::Relaxed);
         if target != SeekTarget::NONE {
             let seconds = (target as u64) / expected_sample_rate as u64;
@@ -939,11 +894,9 @@ fn decode_mss_into_producer(
                 Ok(_) => {
                     decoder.reset();
                     seek_target.store(SeekTarget::NONE, Ordering::Relaxed);
-                    // Signal the consumer to drain any stale samples on its side.
                     prod.signal_flush();
                 }
                 Err(_) => {
-                    // Seek failed — clear the target to avoid retrying forever.
                     seek_target.store(SeekTarget::NONE, Ordering::Relaxed);
                 }
             }
@@ -970,7 +923,6 @@ fn decode_mss_into_producer(
         let decoded = match decoder.decode(&packet) {
             Ok(decoded) => decoded,
             Err(SymphoniaError::DecodeError(_)) => {
-                // Tolerate malformed packets — skip and continue decoding.
                 eprintln!(
                     "warning: skipping malformed audio packet at offset {} in {label}",
                     packet.ts()
@@ -1000,12 +952,10 @@ fn decode_mss_into_producer(
             samples
         };
 
-        // Push in chunks, yielding if the buffer is full.
         let mut offset = 0;
         while offset < push_samples.len() {
             let pushed = prod.push_samples(&push_samples[offset..]);
             if pushed == 0 {
-                // Buffer full — yield to let the consumer drain.
                 std::thread::yield_now();
             }
             offset += pushed;
@@ -1032,17 +982,14 @@ mod tests {
     fn push_and_pop_samples_through_ring_buffer() {
         let (mut prod, mut cons) = create_stream_pair(44_100, 2);
 
-        // Buffer starts empty
         assert_eq!(cons.available_samples(), 0);
         assert!(cons.is_below_low_water());
 
-        // Push 1024 samples
         let input: Vec<f32> = (0..1024).map(|i| i as f32).collect();
         let pushed = prod.push_samples(&input);
         assert_eq!(pushed, 1024);
         assert_eq!(cons.available_samples(), 1024);
 
-        // Pop them back
         let mut output = vec![0.0f32; 1024];
         let popped = cons.pop_samples(&mut output);
         assert_eq!(popped, 1024);
@@ -1054,13 +1001,10 @@ mod tests {
     fn available_ms_reflects_buffer_fill_level() {
         let (mut prod, cons) = create_stream_pair(44_100, 2);
 
-        // 44100 samples = 44100 frames / 2 channels = 22050 frames
-        // 22050 frames at 44100 Hz = 500ms
-        let samples_500ms = 44_100usize; // 1 second of interleaved stereo
+        let samples_500ms = 44_100usize;
         let input = vec![0.0f32; samples_500ms];
         prod.push_samples(&input);
 
-        // 44100 interleaved stereo samples = 22050 frames = 500ms
         assert_eq!(cons.available_ms(), 500);
     }
 
@@ -1068,20 +1012,16 @@ mod tests {
     fn high_water_mark_works() {
         let (mut prod, mut cons) = create_stream_pair(44_100, 2);
 
-        // Fill to just below high water
         let fill_amount = HIGH_WATER_SAMPLES - 100;
         let input = vec![0.0f32; fill_amount];
         prod.push_samples(&input);
 
-        // Not above high water yet (lots of vacant space)
         assert!(!prod.is_above_high_water());
 
-        // Fill past high water
         let more = vec![0.0f32; 200];
         prod.push_samples(&more);
         assert!(prod.is_above_high_water());
 
-        // Drain below low water
         let mut drain = vec![0.0f32; cons.available_samples() - LOW_WATER_SAMPLES + 1];
         cons.pop_samples(&mut drain);
         assert!(cons.is_below_low_water());
@@ -1099,7 +1039,7 @@ mod tests {
         assert_eq!(frames_to_ms(44_100, 44_100), 1000);
         assert_eq!(frames_to_ms(22_050, 44_100), 500);
         assert_eq!(frames_to_ms(0, 44_100), 0);
-        assert_eq!(frames_to_ms(100, 0), 0); // division by zero guard
+        assert_eq!(frames_to_ms(100, 0), 0);
     }
 
     #[test]
@@ -1123,18 +1063,15 @@ mod tests {
             .expect("WAV should have duration from container");
         assert!((999..=1_001).contains(&duration));
 
-        // Wait for decode to finish
         handle
             .join()
             .expect("decode thread should not panic")
             .expect("decode should succeed");
 
-        // All samples should be in the ring buffer now
         // fixture.wav is 1 second of 44.1 kHz stereo = 88200 interleaved samples
         assert_eq!(consumer.available_samples(), 88_200);
         assert_eq!(consumer.available_ms(), 1000);
 
-        // Pop and verify non-zero content
         let mut output = vec![0.0f32; 88_200];
         let popped = consumer.pop_samples(&mut output);
         assert_eq!(popped, 88_200);
@@ -1173,7 +1110,6 @@ mod tests {
         let (consumer, _metadata, handle) =
             spawn_decode_producer(&path).expect("spawn_decode_producer should succeed");
 
-        // Before decode finishes, EOF should be false
         assert!(!consumer.is_eof());
 
         handle
@@ -1181,7 +1117,6 @@ mod tests {
             .expect("decode thread should not panic")
             .expect("decode should succeed");
 
-        // After decode finishes, EOF should be true
         assert!(consumer.is_eof());
     }
 
@@ -1218,7 +1153,6 @@ mod tests {
             .join("metadata")
             .join("fixture.m4a");
 
-        // Probe should succeed and return valid metadata
         let metadata =
             probe_stream_metadata(&path).expect("probe_stream_metadata should succeed for m4a");
         assert!(metadata.sample_rate > 0, "sample_rate should be positive");
@@ -1230,23 +1164,19 @@ mod tests {
             duration
         );
 
-        // Spawn decode producer and verify it fills the ring buffer
         let (mut consumer, _, handle) =
             spawn_decode_producer(&path).expect("spawn_decode_producer should succeed for m4a");
 
-        // Wait for decode to finish
         handle
             .join()
             .expect("decode thread should not panic")
             .expect("decode should succeed for m4a");
 
-        // Should have decoded audio samples
         assert!(
             consumer.available_samples() > 0,
             "ring buffer should have samples after decoding m4a"
         );
 
-        // Pop and verify non-zero content
         let mut output = vec![0.0f32; consumer.available_samples()];
         let popped = consumer.pop_samples(&mut output);
         assert!(popped > 0, "should pop > 0 samples");
@@ -1286,7 +1216,6 @@ mod tests {
             .expect("decode thread should not panic")
             .expect("decode should succeed");
 
-        // Render audio — the ring buffer should have data now
         let device_rate = metadata.sample_rate;
         let device_channels = 2;
         let buffer_frames = 512;
@@ -1352,7 +1281,6 @@ mod tests {
         let mut total_rendered = 0u64;
         let mut callbacks_with_audio = 0u32;
 
-        // Simulate cpal callback loop until track finishes
         let mut rc = crate::audio::output::ResamplerCache::new();
         let mut rc_in = crate::audio::output::ResamplerCache::new();
         let mut crossfade_scratch =
@@ -1389,10 +1317,8 @@ mod tests {
             callbacks_with_audio > 0,
             "should have rendered audio in at least one callback"
         );
-        // fixture.m4a is ~1s of audio at 44.1kHz stereo = ~88200 interleaved samples
         assert!(total_rendered > 0, "total rendered samples should be > 0");
 
-        // The position should have advanced
         let final_snapshot = controller.snapshot();
         assert!(
             final_snapshot.position_ms > 0,
@@ -1410,7 +1336,6 @@ mod tests {
             .join("audio")
             .join("fixture.wav");
 
-        // Simulate two-stem mode: same file for both (in real use, different files)
         let result = spawn_multi_stem_decode_producers(&[fixture.clone(), fixture.clone()])
             .expect("spawn_multi_stem_decode_producers should succeed");
 
@@ -1422,14 +1347,12 @@ mod tests {
             panic!("expected TwoStem variant");
         };
 
-        // Both metadata entries should match the fixture
         assert_eq!(result.metadata.len(), 2);
         for meta in &result.metadata {
             assert_eq!(meta.sample_rate, 44_100);
             assert_eq!(meta.channels, 2);
         }
 
-        // Wait for all decode threads
         for handle in result.decode_handles {
             handle
                 .join()
@@ -1458,7 +1381,6 @@ mod tests {
         let (consumer, metadata, handle) =
             spawn_decode_producer(&path).expect("spawn_decode_producer should succeed");
 
-        // Wait for decode to fill the buffer
         handle
             .join()
             .expect("decode thread should not panic")
@@ -1466,11 +1388,9 @@ mod tests {
 
         assert_eq!(consumer.available_samples(), 88_200);
 
-        // No seek pending
         let seek_target = consumer.seek_target();
         assert_eq!(seek_target.load(Ordering::Relaxed), SeekTarget::NONE);
 
-        // Setting a seek target should be visible to the consumer
         seek_target.store(
             ms_to_frames(500, metadata.sample_rate) as i64,
             Ordering::Relaxed,
@@ -1480,47 +1400,36 @@ mod tests {
 
     #[test]
     fn resample_same_rate_passthrough() {
-        let input = vec![1.0f32, 2.0, 3.0, 4.0]; // 2 stereo frames
+        let input = vec![1.0f32, 2.0, 3.0, 4.0];
         let output = resample_interleaved(&input, 44_100, 2, 44_100, 2);
         assert_eq!(output, input);
     }
 
     #[test]
     fn resample_stereo_to_mono() {
-        // 2 stereo frames: [L0, R0, L1, R1]
         let input = vec![1.0f32, 0.5, 0.8, 0.2];
         let output = resample_interleaved(&input, 44_100, 2, 44_100, 1);
-        // Each mono frame takes the first channel (L).
-        assert_eq!(output.len(), 2); // 2 mono frames
-        assert_eq!(output[0], 1.0); // L0
-        assert_eq!(output[1], 0.8); // L1
+        assert_eq!(output.len(), 2);
+        assert_eq!(output[0], 1.0);
+        assert_eq!(output[1], 0.8);
     }
 
     #[test]
     fn resample_halves_sample_rate() {
-        // 4 mono frames at 44100 Hz → 2 mono frames at 22050 Hz
         let input = vec![1.0f32, 2.0, 3.0, 4.0];
         let output = resample_interleaved(&input, 44_100, 1, 22_050, 1);
         assert_eq!(output.len(), 2);
-        // Frame 0: src_pos=0.0 → 1.0
         assert_eq!(output[0], 1.0);
-        // Frame 1: src_pos=2.0 → 3.0
         assert_eq!(output[1], 3.0);
     }
 
     #[test]
     fn resample_stereo_to_mono_halved_rate() {
-        // 4 stereo frames at 44100 Hz → 2 mono frames at 22050 Hz
-        let input = vec![
-            1.0f32, 0.1, // frame 0: L=1.0, R=0.1
-            2.0, 0.2, // frame 1: L=2.0, R=0.2
-            3.0, 0.3, // frame 2: L=3.0, R=0.3
-            4.0, 0.4, // frame 3: L=4.0, R=0.4
-        ];
+        let input = vec![1.0f32, 0.1, 2.0, 0.2, 3.0, 0.3, 4.0, 0.4];
         let output = resample_interleaved(&input, 44_100, 2, 22_050, 1);
         assert_eq!(output.len(), 2);
-        assert_eq!(output[0], 1.0); // src_pos=0.0, ch0 (L) of frame 0
-        assert_eq!(output[1], 3.0); // src_pos=2.0, ch0 (L) of frame 2
+        assert_eq!(output[0], 1.0);
+        assert_eq!(output[1], 3.0);
     }
 
     #[test]
@@ -1551,7 +1460,6 @@ mod tests {
         let (consumer, metadata, handle) =
             spawn_decode_producer_with_proxy(&path, proxy).expect("spawn should succeed");
 
-        // Source metadata is unchanged.
         assert_eq!(metadata.sample_rate, 44_100);
         assert_eq!(metadata.channels, 2);
 
@@ -1560,7 +1468,6 @@ mod tests {
             .expect("thread should not panic")
             .expect("decode should succeed");
 
-        // Consumer reports proxy rate.
         assert_eq!(consumer.sample_rate, 22_050);
         assert_eq!(consumer.channels, 1);
 
@@ -1603,7 +1510,7 @@ mod tests {
         assert_eq!(consumer.available_ms(), 1_000);
     }
 
-    /// R6: Verify that post-seek samples are not drained by the flush
+    /// Verify that post-seek samples are not drained by the flush
     /// that clears stale pre-seek data. The producer's signal_flush waits
     /// for the ring buffer to drain before the decode thread pushes new
     /// samples, so the consumer only drains stale data.
@@ -1611,33 +1518,24 @@ mod tests {
     fn seek_flush_preserves_post_seek_samples() {
         let (mut prod, mut cons) = create_stream_pair(44_100, 2);
 
-        // Push pre-seek samples.
         let pre_seek: Vec<f32> = (0..1000).map(|i| i as f32).collect();
         assert_eq!(prod.push_samples(&pre_seek), 1000);
         assert_eq!(cons.available_samples(), 1000);
 
-        // Signal flush from a background thread (simulates decode thread).
         let flush_handle = std::thread::spawn(move || {
             prod.signal_flush();
-            // After flush returns, the ring buffer should be empty.
-            // Push post-seek samples.
             let post_seek: Vec<f32> = (2000..2500).map(|i| i as f32).collect();
             prod.push_samples(&post_seek);
             prod
         });
 
-        // Give the flush thread time to start waiting.
         std::thread::sleep(std::time::Duration::from_millis(10));
 
-        // Consumer acknowledges flush (drains stale samples).
-        // This should unblock the producer's signal_flush.
         cons.acknowledge_flush();
         assert!(!cons.needs_flush());
 
-        // Wait for the producer to finish pushing post-seek samples.
         let _prod = flush_handle.join().expect("flush thread should finish");
 
-        // The consumer should have only the post-seek samples.
         let available = cons.available_samples();
         assert_eq!(
             available, 500,
@@ -1651,7 +1549,7 @@ mod tests {
         assert_eq!(output[499], 2499.0, "last post-seek sample should be 2499");
     }
 
-    /// Item 12: Verify that probe_stream_metadata returns duration as Option.
+    /// Verify that probe_stream_metadata returns duration as Option.
     /// WAV files have container-level duration, so it should be Some.
     #[test]
     fn probe_returns_some_duration_when_container_has_metadata() {
@@ -1664,7 +1562,6 @@ mod tests {
             .join("fixture.wav");
 
         let metadata = probe_stream_metadata(&path).expect("probe should succeed");
-        // WAV container exposes n_frames, so duration should be available.
         assert!(
             metadata.duration_ms.is_some(),
             "WAV files should have duration from container metadata"
@@ -1673,7 +1570,7 @@ mod tests {
         assert!(dur > 0, "duration should be positive");
     }
 
-    /// Item 12: Verify that StreamMetadata.duration_ms is Option to allow
+    /// Verify that StreamMetadata.duration_ms is Option to allow
     /// immediate playback start when duration is unknown.
     #[test]
     fn stream_metadata_duration_is_optional() {
@@ -1682,7 +1579,6 @@ mod tests {
             channels: 2,
             duration_ms: None,
         };
-        // Playback should be able to start with None duration.
         assert!(metadata.duration_ms.is_none());
     }
 }

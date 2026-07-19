@@ -35,7 +35,6 @@ impl OutputFormatSnapshot {
 /// mutex.
 pub type OutputFormatState = Arc<RwLock<Option<OutputFormatSnapshot>>>;
 
-/// Create a fresh `OutputFormatState` initialized to `None`.
 pub fn create_output_format_state() -> OutputFormatState {
     Arc::new(RwLock::new(None))
 }
@@ -48,8 +47,6 @@ pub fn publish(state: &OutputFormatState, generation: u64, sample_rate: u32, cha
     }
 }
 
-/// Read the current output-format snapshot. Returns `None` if no stream has
-/// been constructed yet.
 pub fn snapshot(state: &OutputFormatState) -> Option<OutputFormatSnapshot> {
     state.read().ok().and_then(|guard| *guard)
 }

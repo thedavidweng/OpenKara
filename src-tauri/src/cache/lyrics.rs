@@ -79,8 +79,6 @@ pub fn set_lyrics_offset(
     Ok(())
 }
 
-/// Delete all lyrics cache entries from the database.
-/// Returns the number of deleted entries.
 pub fn delete_all_lyrics_cache_entries(connection: &Connection) -> rusqlite::Result<usize> {
     connection.execute("DELETE FROM lyrics", [])
 }

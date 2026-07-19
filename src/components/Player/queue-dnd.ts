@@ -46,7 +46,6 @@ export function getVerticalTransform(
   };
 }
 
-/** Visual chrome for a queue row based on drag/overlay/drop state. */
 export function getQueueItemStateClassName(options: {
   isOverlay?: boolean;
   isDraggingSource?: boolean;

@@ -25,7 +25,6 @@ import {
   type PlaybackBarDensity,
 } from "./playback-bar-layout";
 
-/** Gap between the anchor control and the floating stem panel (px). */
 const STEM_POPUP_GAP_PX = 12;
 /**
  * Popup surface uses Tailwind `p-4` (16px). Position so the *content* icon
@@ -185,7 +184,6 @@ export function VolumeSliders({
         handleStemChange("bass", newValue);
         handleStemChange("other", newValue);
       } else if (accompValue === 0) {
-        // All sub-stems are 0; set them all to the new value
         handleStemChange("drums", newValue);
         handleStemChange("bass", newValue);
         handleStemChange("other", newValue);
@@ -270,11 +268,6 @@ export function VolumeSliders({
     typeof document !== "undefined" &&
     (canExpandFourStem || canExpandTight);
 
-  /*
-   * Popup surface: fixed + portaled to body (escape overflow-hidden /
-   * settings stacking). p-4 + rail trailing margin for optical side balance;
-   * left is muteButton.left - PAD so icons stack above the Music control.
-   */
   const popupSurfaceClassName =
     "stem-popup app-panel-surface fixed z-[70] w-max rounded-lg border border-[color-mix(in_srgb,var(--color-border)_85%,transparent)] bg-[color-mix(in_srgb,var(--color-sidebar)_94%,transparent)] p-4 shadow-[0_20px_40px_rgba(0,0,0,0.32)]";
 
@@ -434,10 +427,6 @@ export function VolumeSliders({
         playbackActionName="vocals-mute"
       />
 
-      {/*
-       * Accompaniment mute button is the position anchor for the stem popup
-       * so sub-stem icons stack directly above the Music control.
-       */}
       <div className="flex items-center gap-2">
         <StemSlider
           icon={Music}

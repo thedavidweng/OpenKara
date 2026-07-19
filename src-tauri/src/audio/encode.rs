@@ -25,7 +25,6 @@ pub fn write_ogg_file(path: &Path, audio: &DecodedAudio) -> Result<()> {
 /// Quality ranges from -0.1 (lowest, ~45 kbps) to 1.0 (highest, ~500 kbps).
 /// Recommended values: 0.4 (~128 kbps), 0.5 (~160 kbps), 0.6 (~192 kbps).
 pub fn write_ogg_file_with_quality(path: &Path, audio: &DecodedAudio, quality: f32) -> Result<()> {
-    // Ensure the parent directory exists.
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("failed to create directory {}", parent.display()))?;
@@ -49,7 +48,6 @@ pub fn write_ogg_file_with_quality(path: &Path, audio: &DecodedAudio, quality: f
         .build()
         .context("failed to build Vorbis encoder")?;
 
-    // Convert interleaved samples to planar format and feed in chunks.
     let total_frames = audio.samples.len() / channels;
     let mut offset = 0;
     let mut planar = (0..channels)

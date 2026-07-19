@@ -1,19 +1,3 @@
-//! #88: NextTrack preload scheduler.
-//!
-//! Decodes the next queued song off-thread, normalizes the PCM to the active
-//! output format (sample rate + channel count), and sends a `PrepareNext`
-//! command to the coordinator. The coordinator validates the output-format
-//! generation before installing; if the device restarted or the format
-//! changed, the prepared payload is silently dropped and the scheduler does
-//! not retry — the next `set_preload_candidate` call will re-prepare with the
-//! new format.
-//!
-//! Eligibility: gapless preload is only attempted for local, non-streaming,
-//! non-Media+G songs whose source format matches the current track's format.
-//! Remote songs, Media+G containers, and streaming tracks fall back to the
-//! normal `play()` path (the frontend will call `play()` when
-//! `track-transitioned` does not arrive).
-
 use crate::{
     audio::{
         coordinator::PlaybackCommand,
@@ -36,9 +20,8 @@ use std::{
     },
 };
 
-/// Normalize decoded audio to the target output format. If the sample rate or
-/// channel count already matches, the audio is returned unchanged. Otherwise
-/// a simple linear resample / channel remap is applied.
+/// If the sample rate or channel count already matches, the audio is returned
+/// unchanged. Otherwise a simple linear resample / channel remap is applied.
 ///
 /// The preload scheduler uses this so the prepared track's PCM exactly
 /// matches what the render callback expects, avoiding a resampler cache
@@ -48,7 +31,6 @@ fn normalize_to_output_format(
     target_sample_rate: u32,
     target_channels: usize,
 ) -> crate::audio::decode::DecodedAudio {
-    // Channel remap if needed.
     if audio.channels != target_channels {
         audio.samples = remap_channels(
             &audio.samples,
@@ -59,7 +41,6 @@ fn normalize_to_output_format(
         audio.channels = target_channels;
     }
 
-    // Sample-rate conversion if needed (linear interpolation).
     if audio.sample_rate != target_sample_rate {
         audio.samples = linear_resample(
             &audio.samples,
@@ -84,8 +65,6 @@ fn normalize_to_output_format(
 }
 
 /// Remap interleaved samples from `src_channels` to `dst_channels`.
-/// Mono→stereo duplicates; stereo→mono averages; other mappings use
-/// modulo replication.
 fn remap_channels(
     samples: &[f32],
     src_channels: usize,
@@ -124,7 +103,6 @@ fn remap_channels(
     out
 }
 
-/// Linear-interpolation resampling for interleaved samples.
 fn linear_resample(samples: &[f32], src_rate: u32, dst_rate: u32, channels: usize) -> Vec<f32> {
     if src_rate == dst_rate || channels == 0 || samples.is_empty() {
         return samples.to_vec();
@@ -157,28 +135,19 @@ fn linear_resample(samples: &[f32], src_rate: u32, dst_rate: u32, channels: usiz
     out
 }
 
-/// Check whether a song is eligible for gapless preload. Only local,
-/// non-streaming, non-Media+G songs are eligible — the preload scheduler
-/// fully decodes the audio into memory so it must be a format that
+/// Only local, non-streaming, non-Media+G songs are eligible — the preload
+/// scheduler fully decodes the audio into memory so it must be a format that
 /// `load_playback_source` can decode without streaming.
 fn is_eligible_for_gapless(song: &Song) -> bool {
-    // Media+G containers need special handling (ZIP extraction) and are
-    // not eligible for the simple decode path.
     if song.is_media_g() {
         return false;
     }
-    // Remote songs use streaming/byte-range playback; gapless preload
-    // requires full decode into memory which defeats the low-latency
-    // streaming design.
     if song.is_remote() {
         return false;
     }
     true
 }
 
-/// Decode and normalize the next track for gapless transition. Called on a
-/// background thread. Returns `Some(PreparedTrack)` on success, or `None`
-/// if the song is not eligible or decoding failed.
 fn prepare_next_track(
     app_data_dir: &Path,
     connection: &Connection,
@@ -196,9 +165,6 @@ fn prepare_next_track(
     let load =
         playback_source::load_playback_source(Some(app_data_dir), connection, library_root, song)?;
 
-    // Normalize the decoded audio to the output format. Stems are not
-    // preloaded for gapless — the new track starts in base-audio mode and
-    // the frontend can call `load_stems()` after the transition.
     let normalized = normalize_to_output_format(
         load.decoded_audio,
         output_format.sample_rate,
@@ -214,10 +180,8 @@ fn prepare_next_track(
     })
 }
 
-/// Spawn a background thread to preload the next track and send a
-/// `PrepareNext` command to the coordinator. The thread checks `shutdown`
-/// before decoding and before sending; if a newer preload is requested the
-/// old thread bails out.
+/// The thread checks `shutdown` before decoding and before sending; if a
+/// newer preload is requested the old thread bails out.
 ///
 /// `preload_request_generation` is the monotonic generation of the
 /// `set_preload_candidate` call that initiated this preload. It is included
@@ -337,7 +301,6 @@ mod tests {
         let normalized = normalize_to_output_format(audio.clone(), 44_100, 2);
         assert_eq!(normalized.sample_rate, 44_100);
         assert_eq!(normalized.channels, 2);
-        // Samples should be identical (no resampling needed).
         assert_eq!(normalized.samples.len(), audio.samples.len());
     }
 
@@ -347,7 +310,6 @@ mod tests {
         let normalized = normalize_to_output_format(audio, 44_100, 2);
         assert_eq!(normalized.channels, 2);
         assert_eq!(normalized.samples.len(), 200);
-        // Each mono sample should be duplicated.
         for i in 0..100 {
             assert_eq!(normalized.samples[i * 2], normalized.samples[i * 2 + 1]);
         }
@@ -380,7 +342,6 @@ mod tests {
     fn normalize_recomputes_duration_ms() {
         let audio = make_audio(44_100, 2, 44_100); // 1s
         let normalized = normalize_to_output_format(audio, 48_000, 2);
-        // Duration should be ~1000ms after resampling.
         assert!(
             (normalized.duration_ms as i64 - 1000).abs() <= 2,
             "expected ~1000ms, got {}",
@@ -477,7 +438,6 @@ mod tests {
     #[test]
     fn normalize_to_output_format_with_zero_sample_rate_does_not_panic() {
         let audio = make_audio(0, 2, 100);
-        // Should not panic even though sample_rate is 0.
         let normalized = normalize_to_output_format(audio, 44_100, 2);
         assert_eq!(normalized.sample_rate, 44_100);
     }

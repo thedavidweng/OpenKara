@@ -51,7 +51,7 @@ impl AirPlayAudioTap {
         self.epoch.fetch_add(1, Ordering::SeqCst) + 1
     }
 
-    /// R1: Takes ownership of `samples` to avoid heap allocation on the realtime
+    /// Takes ownership of `samples` to avoid heap allocation on the realtime
     /// audio callback thread. Caller passes its pre-allocated scratch buffer and
     /// replaces it with a fresh Vec for the next callback.
     pub fn push_interleaved(&self, sample_rate: u32, channels: u16, samples: Vec<f32>) {
@@ -59,7 +59,7 @@ impl AirPlayAudioTap {
             return;
         }
 
-        // R1: Use try_lock() instead of blocking lock() on the realtime audio
+        // Use try_lock() instead of blocking lock() on the realtime audio
         // callback thread. If drain_pending holds the lock, dropping samples is
         // preferable to blocking the callback and causing audible glitches.
         let Ok(mut buffer) = self.buffer.try_lock() else {
@@ -128,7 +128,7 @@ pub fn select_forwardable_audio_chunks(
     current_epoch: u64,
     chunks: Vec<AirPlayAudioChunk>,
 ) -> (u64, Vec<AirPlayAudioChunk>) {
-    // RATIONALE: `epoch` is only a freshness boundary. It invalidates old PCM
+    // `epoch` is only a freshness boundary. It invalidates old PCM
     // after play/pause/seek/track changes, but it does not mean "forward only
     // the first chunk from that epoch". AirPlay must continue streaming every
     // subsequent chunk in the newest epoch or TV audio will fall silent after
@@ -266,14 +266,14 @@ fn build_file_response(
         _ => "application/octet-stream",
     };
 
-    // R11: Determine file size from metadata rather than reading the whole file.
+    // Determine file size from metadata rather than reading the whole file.
     let metadata = fs::metadata(file_path)
         .with_context(|| format!("failed to stat requested asset {}", file_path.display()))?;
     let total_len = metadata.len();
 
     let requested_range = range_header.and_then(|header| parse_byte_range(header, total_len));
 
-    // R11: For Range requests, seek to the start and read only the requested
+    // For Range requests, seek to the start and read only the requested
     // byte range instead of reading the entire file into memory.
     let (status, response_body, content_range) = if let Some(range) = requested_range {
         let mut file = fs::File::open(file_path)
@@ -337,7 +337,7 @@ mod tests {
     use super::*;
     use std::{sync::Arc, thread, time::Duration};
 
-    /// R1: push_interleaved must use try_lock() on the audio callback thread so
+    /// push_interleaved must use try_lock() on the audio callback thread so
     /// that contention with drain_pending drops samples instead of blocking.
     /// Blocking the realtime callback causes audible glitches.
     #[test]
@@ -355,8 +355,6 @@ mod tests {
         ready_rx.recv().expect("worker should start");
         thread::sleep(Duration::from_millis(25));
 
-        // With try_lock, the worker should have returned (dropped samples)
-        // instead of blocking on the contended mutex.
         assert!(
             worker.is_finished(),
             "push_interleaved should return immediately (try_lock) when lock is contended"
@@ -365,7 +363,6 @@ mod tests {
         drop(guard);
         worker.join().expect("worker should have finished");
 
-        // Samples should have been dropped because the lock was held.
         let drained = tap.drain_pending();
         assert!(
             drained.is_empty(),
@@ -374,7 +371,7 @@ mod tests {
         );
     }
 
-    /// R1: push_interleaved successfully enqueues when the lock is available.
+    /// push_interleaved successfully enqueues when the lock is available.
     #[test]
     fn push_interleaved_enqueues_when_lock_available() {
         let tap = AirPlayAudioTap::new(4);
@@ -387,25 +384,21 @@ mod tests {
         assert_eq!(drained[0].channels, 2);
     }
 
-    /// R11: Range requests must read only the requested byte range from disk,
-    /// not the entire file. This test writes a file and verifies that a Range
-    /// request returns exactly the requested slice.
+    /// Range requests must read only the requested byte range from disk,
+    /// not the entire file.
     #[test]
     fn range_request_reads_only_requested_bytes() {
         let dir = std::env::temp_dir().join(format!("airplay_r11_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
 
-        // Write a 1000-byte test file.
         let file_path = dir.join("test.bin");
         let data: Vec<u8> = (0..=255).cycle().take(1000).collect();
         fs::write(&file_path, &data).unwrap();
 
-        // Request bytes 100-199 (100 bytes).
         let response =
             super::build_file_response(false, Some("bytes=100-199"), &file_path).unwrap();
 
-        // The response body should be exactly 100 bytes matching the file slice.
         let mut reader = response.into_reader();
         let mut body = Vec::new();
         reader.read_to_end(&mut body).unwrap();
@@ -423,7 +416,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// R11: Full (non-Range) requests should still return the complete file.
+    /// Full (non-Range) requests should still return the complete file.
     #[test]
     fn full_request_returns_entire_file() {
         let dir = std::env::temp_dir().join(format!("airplay_r11_full_{}", std::process::id()));

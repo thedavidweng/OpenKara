@@ -39,8 +39,6 @@ vi.mock("@/lib/errors", () => ({
   notifyError: mockNotifyError,
 }));
 
-// ─── Helpers ────────────────────────────────────────────────
-
 // Track every rendered root so afterEach can unmount them all. Without this,
 // earlier tests' roots stay mounted and their hooks react to store mutations
 // from later tests (e.g. a still-mounted enabled=true instance calls
@@ -78,8 +76,6 @@ function HookHarness({ hookFn }: { hookFn: () => void }) {
   return null;
 }
 
-// ─── Existing wiring tests ───────────────────────────────────
-
 describe("use-playback-runtime wiring", () => {
   test("registers upload progress listeners alongside separation listeners", async () => {
     const { default: src } = await import("./use-playback-runtime.ts?raw");
@@ -100,9 +96,7 @@ describe("use-playback-runtime wiring", () => {
   });
 });
 
-// ─── F3: Playback-position listener leak ────────────────────
-
-describe("F3: playback-position listener cleanup when unmount races listen()", () => {
+describe("playback-position listener cleanup when unmount races listen()", () => {
   test("setup function checks cancelled flag after await listen (RED)", async () => {
     const { default: src } = await import("./use-playback-runtime.ts?raw");
 
@@ -119,8 +113,6 @@ describe("F3: playback-position listener cleanup when unmount races listen()", (
     expect(afterListen).toContain("unlisten()");
   });
 });
-
-// ─── Behavioural tests for gapless preload (#88) ─────────────
 
 describe("usePreloadCandidateEffect", () => {
   beforeEach(() => {
@@ -201,15 +193,12 @@ describe("usePreloadCandidateEffect", () => {
     const { useEventListeners } = await import("./use-playback-runtime");
     const unmount = await renderHook(() => useEventListeners(false));
 
-    // Wait for any pending effects to settle
     await act(async () => {});
 
     expect(mockSetPreloadCandidate).not.toHaveBeenCalled();
     unmount();
   });
 });
-
-// ─── Behavioural tests for track-transitioned (#88) ──────────
 
 describe("useTrackTransitionedQueueReconcile", () => {
   beforeEach(() => {
@@ -289,8 +278,6 @@ describe("useTrackTransitionedQueueReconcile", () => {
     expect(onTrackTransitioned).toHaveBeenCalledWith("song-a", "song-b");
   });
 });
-
-// ─── Behavioural tests for playback-position subscription ───
 
 describe("usePlaybackPositionSubscription", () => {
   beforeEach(() => {
@@ -403,17 +390,13 @@ describe("usePlaybackPositionSubscription", () => {
     // Unmount before listen resolves — the cancelled flag should be set
     unmount();
 
-    // Now resolve listen — the cleanup path should call unlisten()
     await act(async () => {
       resolveListen!(unlisten);
     });
 
-    // The unlisten function should have been called because cancelled was true
     expect(unlisten).toHaveBeenCalled();
   });
 });
-
-// ─── Behavioural tests for separation events ────────────────
 
 describe("useSeparationEvents", () => {
   beforeEach(() => {

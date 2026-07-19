@@ -65,7 +65,6 @@ describe("SettingsEqSection", () => {
     expect(markup).toContain("3.6 kHz");
     expect(markup).toContain("14 kHz");
     expect(markup).toContain("Reset to flat");
-    // Five range inputs
     const sliderCount = (markup.match(/type="range"/g) ?? []).length;
     expect(sliderCount).toBe(5);
   });
@@ -105,7 +104,6 @@ describe("SettingsEqSection", () => {
       </SettingsOverlayContext>,
     );
 
-    // Sliders should be disabled when EQ is off
     const disabledCount = (markup.match(/disabled=""/g) ?? []).length;
     expect(disabledCount).toBeGreaterThanOrEqual(5);
   });
@@ -151,9 +149,7 @@ describe("SettingsEqSection", () => {
     const sliders = container.querySelectorAll('input[type="range"]');
     fireEvent.change(sliders[2], { target: { value: "6" } });
 
-    // Local draft updates immediately — the slider's value attribute reflects 6.
     expect((sliders[2] as HTMLInputElement).value).toBe("6");
-    // IPC call is debounced — not fired synchronously.
     expect(setEqGains).not.toHaveBeenCalled();
   });
 
@@ -176,7 +172,6 @@ describe("SettingsEqSection", () => {
 
     const sliders = container.querySelectorAll('input[type="range"]');
     fireEvent.change(sliders[1], { target: { value: "3" } });
-    // Before the debounce window elapses, flush via pointer release.
     fireEvent.pointerUp(sliders[1]);
 
     expect(setEqGains).toHaveBeenCalledTimes(1);
@@ -202,7 +197,6 @@ describe("SettingsEqSection", () => {
     );
 
     const sliders = container.querySelectorAll('input[type="range"]');
-    // Simulate dragging through several values rapidly.
     fireEvent.change(sliders[0], { target: { value: "2" } });
     fireEvent.change(sliders[0], { target: { value: "4" } });
     fireEvent.change(sliders[0], { target: { value: "6" } });
@@ -238,14 +232,12 @@ describe("SettingsEqSection", () => {
     const sliders = container.querySelectorAll('input[type="range"]');
     fireEvent.change(sliders[0], { target: { value: "5" } });
 
-    // Unmount before the debounce window elapses.
     unmount();
 
     act(() => {
       vi.advanceTimersByTime(75);
     });
 
-    // The pending commit should have been cancelled, not flushed.
     expect(setEqGains).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
@@ -255,7 +247,6 @@ describe("SettingsEqSection", () => {
     const setEqGains = vi.fn().mockResolvedValue(undefined);
     const value = createSettingsOverlayTestContextValue(
       {
-        // Band 0 already at the +12 ceiling.
         state: { eqEnabled: true, eqGainsDb: [12, 0, 0, 0, 0] },
         meta: { isInitializing: false },
       },
@@ -304,7 +295,6 @@ describe("SettingsEqSection", () => {
 
     const sliders = container.querySelectorAll('input[type="range"]');
     fireEvent.change(sliders[3], { target: { value: "-3" } });
-    // Before the debounce window elapses, flush via key release.
     fireEvent.keyUp(sliders[3]);
 
     expect(setEqGains).toHaveBeenCalledTimes(1);

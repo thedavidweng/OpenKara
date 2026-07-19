@@ -242,7 +242,6 @@ describe("selectSyncDisplayPositionMs", () => {
     });
 
     test("advances smoothly between position events", () => {
-      // Initial play at position 0, synced at monotonic time 1000
       expect(
         selectCurrentPositionMs(
           {
@@ -254,7 +253,6 @@ describe("selectSyncDisplayPositionMs", () => {
         ),
       ).toBe(0);
 
-      // 33 ms later, position event arrives
       expect(
         selectCurrentPositionMs(
           {
@@ -266,7 +264,6 @@ describe("selectSyncDisplayPositionMs", () => {
         ),
       ).toBe(50);
 
-      // 33 ms later, next position event
       expect(
         selectCurrentPositionMs(
           {
@@ -280,8 +277,6 @@ describe("selectSyncDisplayPositionMs", () => {
     });
 
     test("continues advancing even without position events arriving", () => {
-      // Play at position 0, synced at monotonic time 1000
-      // 500 ms passes, no events arrive
       expect(
         selectCurrentPositionMs(
           {
@@ -672,15 +667,13 @@ describe("selectSyncDisplayPositionMs", () => {
     expect(secondary.store.getState().positionMs).toBe(30000);
     expect(secondary.store.getState().snapshot?.transport_generation).toBe(2);
 
-    // Primary publishes a stale sync (gen=1, position=60000) — e.g. a
-    // delayed BroadcastChannel message from before the seek.
+    // Primary publishes a stale sync (gen=1) from before the seek.
     primary.store
       .getState()
       .updateSnapshot(
         playbackSnapshot({ transport_generation: 1, position_ms: 60000 }),
       );
 
-    // The stale sync must not regress the secondary clock.
     expect(secondary.store.getState().positionMs).toBe(30000);
     expect(secondary.store.getState().snapshot?.transport_generation).toBe(2);
 
@@ -1499,11 +1492,9 @@ describe("startAirPlayPlainTextPagePending", () => {
       "next",
     );
 
-    // First timer has elapsed but second hasn't
     vi.advanceTimersByTime(500);
     expect(player.store.getState().airPlayPlainTextPagePending).toBe(true);
 
-    // Second timer elapses
     vi.advanceTimersByTime(500);
     expect(player.store.getState().airPlayPlainTextPagePending).toBe(false);
     expect(player.store.getState().airPlayPlainTextPagePendingDirection).toBe(

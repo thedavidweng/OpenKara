@@ -2,7 +2,6 @@
 import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
 import { KaraokeFillController } from "./karaoke-fill";
 
-// Mock Web Animations API
 class MockAnimation {
   currentTime: number | null = 0;
   paused = true;
@@ -203,7 +202,7 @@ describe("KaraokeFillController", () => {
     beforeEach(() => {
       perfCounter = 0;
       vi.spyOn(performance, "now").mockImplementation(() => {
-        perfCounter += 16.67; // ~60fps
+        perfCounter += 16.67;
         return perfCounter;
       });
     });
@@ -225,17 +224,13 @@ describe("KaraokeFillController", () => {
         controller.update(1200, true);
       }
 
-      // After smoothing, maskImage should reflect bright alpha near 1.0
       const maskImage = wordEl.style.maskImage;
       expect(maskImage).toContain("linear-gradient");
-      // jsdom normalizes rgba(0,0,0,1.0) to rgb(0,0,0)
-      // Check if it has converged to fully opaque or near it
       const alphas = maskAlphas(maskImage);
       if (alphas.length > 0) {
         const brightValue = alphas[0];
         expect(brightValue).toBeGreaterThan(0.9);
       }
-      // If no rgba match, it converged to rgb(0,0,0) which is alpha=1.0 — great
     });
 
     test("active-line target keeps mask contrast during the sweep", () => {
@@ -267,11 +262,9 @@ describe("KaraokeFillController", () => {
 
       controller.deactivateLine();
 
-      // Reactivate - alpha should start from 0.2 again
       const wordEl2 = createMockEl();
       controller.activateLine(lineEl, words, [wordEl2]);
 
-      // Check initial mask has low bright alpha
       const maskImage = wordEl2.style.maskImage;
       const alphas = maskAlphas(maskImage);
       expect(alphas).not.toHaveLength(0);

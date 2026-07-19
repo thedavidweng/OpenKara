@@ -49,7 +49,6 @@ pub fn parse_lys(lys: &str) -> Result<Vec<LyricLine>> {
 
         let time_ms = raw_tokens.iter().map(|(_, t, _)| *t).min().unwrap_or(0);
 
-        // Determine if background vocal (using raw text to detect parens)
         let is_bg = prop >= 6
             || (prop == 0
                 && raw_tokens
@@ -58,7 +57,6 @@ pub fn parse_lys(lys: &str) -> Result<Vec<LyricLine>> {
                 && raw_tokens.last().is_some_and(|(t, _, _)| t.ends_with(')')));
 
         let (words, bg_words, display_text) = if is_bg {
-            // Strip parentheses from bg tokens
             let cleaned: Vec<WordToken> = raw_tokens
                 .iter()
                 .map(|(txt, start_ms, duration_ms)| {
@@ -87,7 +85,6 @@ pub fn parse_lys(lys: &str) -> Result<Vec<LyricLine>> {
                     text: txt.trim().to_string(),
                 })
                 .collect();
-            // Reconstruct display text from trimmed token texts
             let display = display_text_for_tokens(&tokens);
             (Some(tokens), None, display)
         };
@@ -223,13 +220,11 @@ mod tests {
 
     #[test]
     fn parse_lys_duration_calculation() {
-        // Word with start=1000, duration=500 should have end=1500
         let lys = "[0]Word(1000,500)\n";
         let lines = parse_lys(lys).expect("should parse");
         let words = lines[0].words.as_ref().unwrap();
         assert_eq!(words[0].time_ms, 1000);
         assert_eq!(words[0].end_ms, 1500);
-        // text should be "Word"
         assert_eq!(words[0].text, "Word");
     }
 

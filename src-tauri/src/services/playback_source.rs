@@ -106,15 +106,13 @@ pub(crate) fn load_cached_stems_for_song(
         .map_err(|e| PlaybackError::AudioDecodeFailed(e.to_string()))
 }
 
-/// Result of loading stems in streaming mode.
 pub(crate) struct StreamingStemsSource {
     pub(crate) streaming_track: StreamingTrack,
     pub(crate) decode_handles: Vec<std::thread::JoinHandle<Result<(), decode::DecodeError>>>,
 }
 
-/// Load cached stems for streaming playback. Spawns one decode thread per stem
-/// file, each writing into its own ring buffer. Returns `None` for remote stems
-/// (which need caching first) or Media+G containers.
+/// Returns `None` for remote stems (which need caching first) or Media+G
+/// containers.
 pub(crate) fn load_cached_stems_for_song_streaming(
     _app_data_dir: Option<&Path>,
     connection: &Connection,
@@ -159,7 +157,6 @@ pub(crate) fn load_cached_stems_for_song_streaming(
     }))
 }
 
-/// Result of loading a playback source in streaming mode.
 pub(crate) struct StreamingPlaybackSource {
     pub(crate) streaming_track: StreamingTrack,
     pub(crate) metadata: StreamMetadata,
@@ -169,9 +166,6 @@ pub(crate) struct StreamingPlaybackSource {
     pub(crate) fetch_event_rx: Option<mpsc::Receiver<FetchEvent>>,
 }
 
-/// Load a song for streaming playback. Returns the ring-buffer consumer,
-/// metadata, and a join handle for the decode thread.
-///
 /// For local files, decodes directly from disk. For remote songs, creates a
 /// `RemoteMediaSource` that fetches byte ranges on demand via HTTP Range
 /// requests, enabling edge-downloaded playback without pre-downloading the
@@ -209,10 +203,7 @@ pub(crate) fn load_playback_source_streaming(
     }))
 }
 
-/// Load a remote song for streaming playback via HTTP Range requests.
-///
-/// Creates a `RemoteMediaSource` backed by a `ChunkedCache` and a background
-/// fetch thread. Returns `Ok(None)` if the provider doesn't support Range
+/// Returns `Ok(None)` if the provider doesn't support Range
 /// requests (caller should fall back to full-file download).
 fn load_remote_streaming_source(
     app_data_dir: Option<&Path>,
@@ -227,7 +218,6 @@ fn load_remote_streaming_source(
     let song_path =
         resolve_song_file_path(song).map_err(|e| PlaybackError::Internal(e.to_string()))?;
 
-    // Create provider and check Range support.
     let library = remote::active_remote_library(app_data_dir)
         .map_err(|e| PlaybackError::Internal(e.message.clone()))?;
     let Some(library) = library else {
@@ -242,7 +232,6 @@ fn load_remote_streaming_source(
         Err(_) => return Ok(None),   // Can't create fetcher — fall back.
     };
 
-    // Get file size for the cache.
     let file_size = provider
         .get_file_size(song_path)
         .map_err(|e| PlaybackError::Internal(e.message.clone()))?
@@ -261,7 +250,6 @@ fn load_remote_streaming_source(
             .map_err(map_cache_error)?
     };
 
-    // Spawn the fetch thread.
     let (fetch_tx, fetch_event_rx, _bandwidth_monitor, _fetch_handle) =
         remote_source::spawn_fetch_thread_with_fetcher(
             String::new(), // URL is embedded in the fetcher
@@ -305,8 +293,7 @@ fn load_remote_streaming_source(
     }))
 }
 
-/// Probe a `RemoteMediaSource` for audio metadata. Consumes the source
-/// (symphonia takes ownership of the `MediaSourceStream`).
+/// Consumes the source (symphonia takes ownership of the `MediaSourceStream`).
 fn probe_remote_source(
     source: RemoteMediaSource,
     extension: Option<&str>,
@@ -366,7 +353,7 @@ fn probe_remote_source(
     let sample_rate = sample_rate.ok_or(decode::DecodeError::MissingSampleRate)?;
     let channels = channels.ok_or(decode::DecodeError::MissingChannels)?;
 
-    // Item 12: Try to get duration from container metadata.
+    // Try to get duration from container metadata.
     // Return None when unavailable so playback can start immediately.
     let duration_ms =
         if let (Some(n_frames), Some(tb)) = (codec_params.n_frames, codec_params.time_base) {
@@ -543,7 +530,6 @@ mod tests {
         let c1 = manager.get_or_create("song-a", 150).expect("cache a");
         c1.write_at(0, &[0u8; 150]).expect("write a");
 
-        // Opening a second 150-byte cache should evict song-a (LRU).
         let c2 = manager.get_or_create("song-b", 150).expect("cache b");
         c2.write_at(0, &[0u8; 150]).expect("write b");
 

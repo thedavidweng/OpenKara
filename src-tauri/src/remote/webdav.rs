@@ -393,7 +393,6 @@ pub(crate) fn webdav_database_url(root_url: &str) -> CommandResult<String> {
     join_url(root_url, "openkara.db")
 }
 
-/// WebDAV HTTP/path adapter for the shared bootstrap protocol.
 struct WebDavBootstrapStorage<'a> {
     library: &'a RegisteredLibrary,
     secret: &'a WebDavSecret,
@@ -642,8 +641,6 @@ pub(crate) fn delete_relative_path_from_remote(
     }
 }
 
-// --- RemoteProvider implementation ---
-
 pub(crate) struct WebDAVProvider<'a> {
     app_data_dir: &'a Path,
     secret: WebDavSecret,
@@ -769,10 +766,6 @@ mod tests {
     };
     use tempfile::tempdir;
     use tiny_http::{Header, Method as HttpMethod, Response, Server, StatusCode as HttpStatusCode};
-
-    // -----------------------------------------------------------------------
-    // Pure URL/path normalization tests (no network, deterministic)
-    // -----------------------------------------------------------------------
 
     #[test]
     fn normalize_server_url_adds_trailing_slash() {

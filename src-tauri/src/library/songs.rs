@@ -17,7 +17,6 @@ use crate::{
 };
 use rusqlite::Connection;
 
-/// Update title/artist for a song and return the refreshed row.
 pub fn update_song_metadata(
     connection: &Connection,
     hash: &str,
@@ -32,7 +31,6 @@ pub fn update_song_metadata(
         .ok_or_else(|| database_error(format!("song with hash {hash} not found")))
 }
 
-/// Set the instrumental flag for multiple songs; returns each updated song.
 pub fn set_songs_instrumental(
     connection: &Connection,
     song_ids: &[String],
@@ -58,7 +56,6 @@ pub fn set_songs_instrumental(
     Ok(updated_songs)
 }
 
-/// Set the language for multiple songs; returns each updated song.
 pub fn set_songs_language(
     connection: &Connection,
     song_ids: &[String],
@@ -84,10 +81,9 @@ pub fn set_songs_language(
     Ok(updated_songs)
 }
 
-/// Probe format / duration / bitrate for a song whose media is already on disk.
-///
-/// Callers that serve remote libraries must ensure remote working-copy files are
-/// cached before calling this (see `commands::remote_library::ensure_remote_file_cached`).
+/// Callers that serve remote libraries must ensure remote working-copy files
+/// are cached before calling this (see
+/// `commands::remote_library::ensure_remote_file_cached`).
 pub fn get_song_properties(
     connection: &Connection,
     library: &LibraryRoot,
@@ -175,7 +171,6 @@ pub fn get_song_properties(
     })
 }
 
-/// Delete multiple songs from the library (DB rows + working-copy media/stems).
 pub fn delete_songs(
     connection: &Connection,
     library: &LibraryRoot,

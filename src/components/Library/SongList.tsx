@@ -63,7 +63,7 @@ export function SongList() {
     [getPlaylistSongs],
   );
 
-  // F8: Cancel stale async playlist loads when the active playlist changes
+  // Cancel stale async playlist loads when the active playlist changes
   // rapidly. Without this guard, a slow response from playlist A can overwrite
   // the song list after the user has already switched to playlist B.
   useEffect(() => {

@@ -141,8 +141,6 @@ describe("createModelSettingsActions", () => {
 
       await actions.deleteModel("htdemucs");
 
-      // The function does `void useBootstrapStore.getState().loadStatus()` after deleteModel
-      // We verify deleteModel was called; the bootstrap store mock returns a resolved promise
       expect(context.dependencies.api.deleteModel).toHaveBeenCalledOnce();
     });
   });

@@ -60,15 +60,12 @@ pub struct ResolvedModelPath {
     pub source: ModelSource,
 }
 
-/// Result of locating a managed + optional dev ONNX install for a pinned SHA-256.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ModelInstallationResolution {
-    /// Checksum matches at managed or dev path.
     Ready(ResolvedModelPath),
     /// A file exists at the managed install path but its digest does not match the
     /// pinned release. The file is kept so the user can delete it from Settings.
     LegacyManaged(PathBuf),
-    /// No verified install at either location.
     Absent,
 }
 
@@ -80,14 +77,12 @@ pub fn managed_model_path_for(app_data_dir: &Path, descriptor: &ModelDescriptor)
     app_data_dir.join("models").join(descriptor.filename)
 }
 
-/// Get the file size of a model variant if it exists on disk.
 pub fn model_file_size(app_data_dir: &Path, variant: ModelVariant) -> Option<u64> {
     let descriptor = descriptor_for(variant);
     let path = managed_model_path_for(app_data_dir, descriptor);
     fs::metadata(&path).ok().map(|m| m.len())
 }
 
-/// Delete a model variant from disk.
 pub fn delete_model_file(app_data_dir: &Path, variant: ModelVariant) -> Result<()> {
     let descriptor = descriptor_for(variant);
     let path = managed_model_path_for(app_data_dir, descriptor);

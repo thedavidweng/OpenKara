@@ -135,7 +135,6 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    // If right-clicking on a non-selected song, select only that song
     if (!isSelected) {
       selectSong(
         song.hash,

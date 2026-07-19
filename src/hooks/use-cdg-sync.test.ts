@@ -206,43 +206,26 @@ describe("startCdgPositionSync", () => {
 
     stop();
     expect(listener).toBeNull();
-
-    // Re-subscribe with a new listener after stop to verify cleanup worked
-    // The old listener reference should be nulled out
   });
 });
 
-// ─── F5: CDG frame IPC songId/generation guard ─────────────────────────
-
-describe("F5: CDG frame IPC validates against current song before drawFrame", () => {
+describe("CDG frame IPC validates against current song before drawFrame", () => {
   test("hot frame path captures songId and generation at request time and compares before draw", async () => {
     const { default: src } = await import("./use-cdg-sync.ts?raw");
 
-    // In the hot frame path (the second useEffect that calls getCdgFrame
-    // in a loop), the fix must:
-    // 1. Capture the current songId and transport generation before the IPC call
-    // 2. After the IPC resolves, compare against current songId and generation
-    // 3. Skip drawFrame/emitCdgFrame if song or generation changed
-
-    // Find the hot frame getCdgFrame call (the one inside startCdgPositionSync)
     const hotFrameSection = src.slice(src.indexOf("startCdgPositionSync"));
 
-    // The songId and generation must be captured before getCdgFrame
     expect(hotFrameSection).toContain("requestSongId");
     expect(hotFrameSection).toContain("requestGeneration");
 
-    // After the IPC resolves, there must be a songId and generation comparison
     const afterIpc = hotFrameSection.slice(
       hotFrameSection.indexOf(".getCdgFrame("),
     );
 
-    // The guard should check that the current song and generation still match
     expect(afterIpc).toContain("snapshot?.song_id");
     expect(afterIpc).toContain("transport_generation");
   });
 });
-
-// ─── #113: CDG coordinator must not drop all in-flight frames under slow IPC ──
 
 describe("#113: createCdgFrameCoordinator under slow IPC", () => {
   function deferred<T>() {
@@ -290,10 +273,6 @@ describe("#113: createCdgFrameCoordinator under slow IPC", () => {
     expect(getCdgFrame).toHaveBeenCalledTimes(1);
 
     // While A is in flight, enqueue request B (position 200).
-    // Under the old code, request() incremented the serial, so when A
-    // resolved, A's serial no longer matched and the frame was dropped.
-    // With the fix, request() does NOT increment the serial, so A's
-    // response is still processed.
     coordinator.request({
       songId: "song-a",
       transportGeneration: 1,
@@ -310,7 +289,6 @@ describe("#113: createCdgFrameCoordinator under slow IPC", () => {
       await Promise.resolve();
     }
 
-    // A's response should have been processed (not dropped).
     expect(onProbeResolved).toHaveBeenCalledTimes(1);
     expect(onProbeResolved).toHaveBeenCalledWith({
       songId: "song-a",
@@ -321,10 +299,8 @@ describe("#113: createCdgFrameCoordinator under slow IPC", () => {
       errorCode: null,
     });
 
-    // After A completes, B should be pumped.
     expect(getCdgFrame).toHaveBeenCalledTimes(2);
 
-    // Clean up: resolve B and invalidate.
     second.resolve(new ArrayBuffer(0));
     for (let i = 0; i < 10; i++) {
       await Promise.resolve();
@@ -366,8 +342,6 @@ describe("#113: createCdgFrameCoordinator under slow IPC", () => {
     // Song changes while request is in flight.
     currentSong = "song-b";
 
-    // Resolve the in-flight request — should be dropped because isCurrent
-    // returns false.
     pending.resolve(new ArrayBuffer(0));
     for (let i = 0; i < 10; i++) {
       await Promise.resolve();
