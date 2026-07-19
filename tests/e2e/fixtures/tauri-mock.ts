@@ -31,6 +31,15 @@ export const TAURI_MOCK_SCRIPT = `
   // Mutable so tests can override the library with larger fixtures (e.g. the
   // scrollbar spec needs enough rows to produce real overflow in the song
   // list).  get_library is a function that reads the current value.
+  // imported_at values are distinct so library sort modes produce a
+  // deterministic order. The original three rows keep the most recent
+  // timestamps so the default recently_imported sort shows them first,
+  // preserving existing e2e visibility assertions.
+  // Mutable so setLargeLibrary can swap in a synthetic large catalog for
+  // virtualization-at-scale tests without reloading the page.
+  // If a test set window.__OPENKARA_LARGE_LIBRARY_COUNT__ via addInitScript
+  // before this mock runs, eagerly generate the synthetic catalog so the
+  // initial get_library returns it without a reload.
   // Minimal 1x1 PNG so cover-art collapse thresholds are observable in E2E
   // (NowPlayingInfo only renders the thumbnail when has_cover_art is true).
   const TINY_PNG_BYTES = [
@@ -42,30 +51,85 @@ export const TAURI_MOCK_SCRIPT = `
     0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
   ];
 
-  let mockSongs = [
+  let mockSongs = (function initialSongs() {
+    const count = window.__OPENKARA_LARGE_LIBRARY_COUNT__;
+    if (count && count > 0) {
+      const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+      const songs = [];
+      for (let i = 0; i < count; i++) {
+        const letter = letters[i % 26];
+        songs.push({
+          hash: "large-" + i,
+          file_path: "/music/song-" + i + ".mp3",
+          audio_source_kind: "original",
+          cdg_path: null,
+          media_g_container: null,
+          instrumental: false,
+          language: "en",
+          title: letter + " Song " + i,
+          artist: letter + " Artist " + i,
+          album: null,
+          duration_ms: 180000,
+          cover_art: null,
+          imported_at: count - i,
+          original_ext: ".mp3",
+        });
+      }
+      return songs;
+    }
+    return [
     {
       hash: "aaa111", file_path: "/music/Bohemian_Rhapsody.mp3",
       audio_source_kind: "original", cdg_path: null, media_g_container: null,
       instrumental: false, language: "en",
       title: "Bohemian Rhapsody", artist: "Queen", album: "A Night at the Opera",
       duration_ms: 354000, cover_art: TINY_PNG_BYTES, has_cover_art: true,
-      imported_at: Date.now(), original_ext: ".mp3",
+      imported_at: 700000, original_ext: ".mp3",
     },
     {
       hash: "bbb222", file_path: "/music/Hotel_California.mp3",
       audio_source_kind: "original", cdg_path: null, media_g_container: null,
       instrumental: false, language: "en",
       title: "Hotel California", artist: "Eagles", album: "Hotel California",
-      duration_ms: 391000, cover_art: null, imported_at: Date.now(), original_ext: ".mp3",
+      duration_ms: 391000, cover_art: null, imported_at: 600000, original_ext: ".mp3",
     },
     {
       hash: "ccc333", file_path: "/music/Imagine.mp3",
       audio_source_kind: "original", cdg_path: null, media_g_container: null,
       instrumental: false, language: "en",
       title: "Imagine", artist: "John Lennon", album: "Imagine",
-      duration_ms: 187000, cover_art: null, imported_at: Date.now(), original_ext: ".mp3",
+      duration_ms: 187000, cover_art: null, imported_at: 500000, original_ext: ".mp3",
+    },
+    {
+      hash: "ddd444", file_path: "/music/Alpha_2.mp3",
+      audio_source_kind: "original", cdg_path: null, media_g_container: null,
+      instrumental: false, language: "en",
+      title: "Alpha 2", artist: "The Beta", album: null,
+      duration_ms: 120000, cover_art: null, imported_at: 400000, original_ext: ".mp3",
+    },
+    {
+      hash: "eee555", file_path: "/music/Alpha_10.mp3",
+      audio_source_kind: "original", cdg_path: null, media_g_container: null,
+      instrumental: false, language: "en",
+      title: "Alpha 10", artist: "The Beta", album: null,
+      duration_ms: 140000, cover_art: null, imported_at: 300000, original_ext: ".mp3",
+    },
+    {
+      hash: "fff666", file_path: "/music/Beijing_Night.mp3",
+      audio_source_kind: "original", cdg_path: null, media_g_container: null,
+      instrumental: false, language: "zh",
+      title: "北京之夜", artist: "崔健", album: null,
+      duration_ms: 210000, cover_art: null, imported_at: 200000, original_ext: ".mp3",
+    },
+    {
+      hash: "ggg777", file_path: "/music/Unknown.mp3",
+      audio_source_kind: "original", cdg_path: null, media_g_container: null,
+      instrumental: false, language: null,
+      title: null, artist: null, album: null,
+      duration_ms: 90000, cover_art: null, imported_at: 100000, original_ext: ".mp3",
     },
   ];
+  })();
 
   // ── Fixture lyrics ──
   // Mutable so tests can override with larger fixtures (e.g. the scrollbar
@@ -279,7 +343,9 @@ export const TAURI_MOCK_SCRIPT = `
       const q = ((args && args.query) || "").toLowerCase();
       if (!q) return mockSongs;
       return mockSongs.filter(
-        (s) => s.title.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q)
+        (s) =>
+          (s.title ?? "").toLowerCase().includes(q) ||
+          (s.artist ?? "").toLowerCase().includes(q)
       );
     },
     get_all_separation_statuses: () => clone(Object.values(separationStatuses)),
