@@ -232,8 +232,8 @@ a {
 }
 
 .hero-copy {
-  padding-top: clamp(88px, 11vw, 156px);
-  padding-bottom: clamp(72px, 9vw, 120px);
+  padding-top: clamp(72px, 9vw, 128px);
+  padding-bottom: clamp(32px, 4vw, 56px);
 }
 
 .hero-copy h1 {
@@ -279,7 +279,7 @@ a {
   isolation: isolate;
   width: 100%;
   overflow: clip;
-  padding: clamp(42px, 3.8vw, 72px) 0 clamp(44px, 6vw, 88px);
+  padding: clamp(24px, 2.2vw, 40px) 0 clamp(44px, 6vw, 88px);
   background: linear-gradient(
     180deg,
     var(--preview-stage-top) 0%,
@@ -860,7 +860,7 @@ a {
   }
 
   .hero-copy {
-    padding-top: 76px;
+    padding-top: 64px;
   }
 
   .hero-actions > span {
