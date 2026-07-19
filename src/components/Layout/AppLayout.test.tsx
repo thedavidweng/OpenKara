@@ -166,4 +166,12 @@ describe("AppLayout", () => {
     expect(markup).toContain("--window-shell-toolbar-height:48px");
     expect(markup).toContain('data-shell-tier="mac"');
   });
+
+  test("marks the landing-page mock as playlist-only", () => {
+    const markup = renderToStaticMarkup(<AppLayout previewMode />);
+
+    expect(markup).toContain('data-preview-interaction-mode="playlist-only"');
+    expect(markup).toContain("h-full");
+    expect(markup).toContain('data-shell-inset="78"');
+  });
 });

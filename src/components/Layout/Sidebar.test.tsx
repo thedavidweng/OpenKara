@@ -171,6 +171,17 @@ describe("Sidebar", () => {
     expect(markup).toContain(">5<");
   });
 
+  test("keeps the full app rail visible while marking playlist switches for preview", () => {
+    const markup = renderToStaticMarkup(<Sidebar previewMode />);
+
+    expect(markup).toContain('data-preview-playlist-switch="true"');
+    expect(markup).toContain('data-search-visual-variant="mock"');
+    expect(markup).toContain("sidebar.library");
+    expect(markup).toContain("sidebar.allTracks");
+    expect(markup).not.toContain("sidebar.separateAll");
+    expect(markup).toContain("pointer-events-none");
+  });
+
   test("renders batch actions with shared sidebar control tokens", () => {
     mockLibraryState.songs = [
       {

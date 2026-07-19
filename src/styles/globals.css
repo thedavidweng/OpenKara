@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/*
+ * The marketing site imports the real React application as an interactive
+ * preview. Tailwind's Vite source discovery starts at the website root, so
+ * keep the desktop app's source directory explicit or its utility classes are
+ * omitted from the landing-page bundle.
+ */
+@source "..";
+
 @theme {
   --font-sans:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",

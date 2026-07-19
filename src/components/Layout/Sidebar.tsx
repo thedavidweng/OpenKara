@@ -21,12 +21,13 @@ import { notifyError } from "@/lib/errors";
 
 interface SidebarProps {
   header?: ReactNode;
+  previewMode?: boolean;
 }
 
 const batchActionClassName =
   "rounded-[12px] border border-[var(--sidebar-control-border)] bg-[var(--sidebar-control-bg)] px-3 py-2 text-[13px] hover:border-[var(--sidebar-control-border)] hover:bg-[var(--sidebar-row-overlay-bg)]";
 
-export function Sidebar({ header }: SidebarProps = {}) {
+export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
   const { t } = useTranslation();
   const songs = useLibraryStore((s) => s.songs);
   const filter = useLibraryStore((s) => s.filter);
@@ -47,8 +48,11 @@ export function Sidebar({ header }: SidebarProps = {}) {
   const setActivePlaylist = usePlaylistStore((s) => s.setActivePlaylist);
 
   useEffect(() => {
+    if (previewMode) {
+      return;
+    }
     loadPlaylists();
-  }, [loadPlaylists]);
+  }, [loadPlaylists, previewMode]);
 
   const handleCreatePlaylist = async (name: string) => {
     try {
@@ -92,6 +96,9 @@ export function Sidebar({ header }: SidebarProps = {}) {
     (allSeparated && allMatchCurrentMode);
 
   const handleSeparateAll = () => {
+    if (previewMode) {
+      return;
+    }
     api.batchSeparate([]).catch(notifyError);
   };
 
@@ -178,7 +185,9 @@ export function Sidebar({ header }: SidebarProps = {}) {
       )}
 
       {/* PLAYLISTS section */}
-      <div className="shrink-0 space-y-0.5 px-2 mt-4">
+      <div
+        className={`shrink-0 space-y-0.5 px-2 ${previewMode ? "mt-3" : "mt-4"}`}
+      >
         <div className="flex items-center justify-between px-2 pb-1">
           <span className="text-[11px] font-semibold tracking-wide text-[var(--color-text-dim)]">
             {t("playlist.section")}
@@ -201,6 +210,10 @@ export function Sidebar({ header }: SidebarProps = {}) {
               <button
                 key={playlist.id}
                 onClick={() => setActivePlaylist(playlist.id)}
+                data-preview-playlist-switch={previewMode ? "true" : undefined}
+                aria-current={
+                  activePlaylistId === playlist.id ? "page" : undefined
+                }
                 className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-[13px] ${
                   activePlaylistId === playlist.id
                     ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-[var(--color-text)] shadow-[var(--shadow-control-selected)]"
@@ -225,7 +238,9 @@ export function Sidebar({ header }: SidebarProps = {}) {
 
       {/* Song list */}
       {!activePlaylistId && (
-        <div className="mt-4 flex flex-1 flex-col overflow-hidden px-2">
+        <div
+          className={`mt-4 flex flex-1 flex-col overflow-hidden px-2 ${previewMode ? "pointer-events-none" : ""}`}
+        >
           <div className="flex items-center justify-between px-2 pb-1">
             <span className="text-[11px] font-semibold tracking-wide text-[var(--color-text-dim)]">
               {t("sidebar.localMusic")}
@@ -236,7 +251,9 @@ export function Sidebar({ header }: SidebarProps = {}) {
         </div>
       )}
       {activePlaylistId && (
-        <div className="mt-4 flex flex-1 flex-col overflow-hidden px-2">
+        <div
+          className={`mt-4 flex flex-1 flex-col overflow-hidden px-2 ${previewMode ? "pointer-events-none" : ""}`}
+        >
           <SongList />
         </div>
       )}
@@ -293,7 +310,7 @@ export function Sidebar({ header }: SidebarProps = {}) {
         </div>
       )}
 
-      {showCreatePlaylist && (
+      {!previewMode && showCreatePlaylist && (
         <InputDialog
           title={t("playlist.create")}
           placeholder={t("playlist.name")}
@@ -306,14 +323,16 @@ export function Sidebar({ header }: SidebarProps = {}) {
         />
       )}
 
-      {showUpgradeConfirm && (
+      {!previewMode && showUpgradeConfirm && (
         <ConfirmationDialog
           title={t("sidebar.confirmUpgrade.title")}
           message={t("sidebar.confirmUpgrade.message")}
           confirmLabel={t("sidebar.confirmUpgrade.confirm")}
           onConfirm={() => {
             setShowUpgradeConfirm(false);
-            api.batchSeparate([]).catch(notifyError);
+            if (!previewMode) {
+              api.batchSeparate([]).catch(notifyError);
+            }
           }}
           onCancel={() => setShowUpgradeConfirm(false)}
         />
