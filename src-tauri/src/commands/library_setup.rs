@@ -133,6 +133,47 @@ fn store_active_library(
     Ok(())
 }
 
+/// Clear every in-memory state holder that is scoped to the active library.
+///
+/// Called when the active library changes (`activate_library`) or is removed
+/// with no successor (`remove_library`). Concentrating the clear sequence
+/// here means a new library-scoped state holder only needs to be added in one
+/// place — previously the sequence was duplicated across `activate_library`
+/// and `remove_library`, and forgetting a holder in either was a silent
+/// stale-state bug.
+///
+/// Ordering: clear playback first (stop the current track), then CDG (which
+/// is bound to the current track), then remote upload statuses (which are
+/// per-library). A failed DB transaction never reaches this function — it
+/// is only called after the config change is persisted.
+fn clear_library_scoped_runtime_state(state: &State<'_, AppState>) -> CommandResult<()> {
+    {
+        let mut playback = state
+            .playback
+            .playback
+            .lock()
+            .map_err(|_| state_lock_error("playback controller lock was poisoned"))?;
+        playback.clear_track();
+    }
+    {
+        let mut cdg_state = state
+            .playback
+            .cdg_state
+            .lock()
+            .map_err(|_| state_lock_error("CDG state lock was poisoned"))?;
+        *cdg_state = None;
+    }
+    {
+        let mut upload_statuses = state
+            .remote
+            .remote_upload_statuses
+            .lock()
+            .map_err(|_| state_lock_error("remote upload status lock was poisoned"))?;
+        upload_statuses.clear();
+    }
+    Ok(())
+}
+
 fn register_library(
     state: &State<'_, AppState>,
     app_data_dir: &Path,
@@ -192,30 +233,7 @@ fn activate_library(
     cache::initialize_library_database(&db_path)
         .map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
 
-    {
-        let mut playback = state
-            .playback
-            .playback
-            .lock()
-            .map_err(|_| state_lock_error("playback controller lock was poisoned"))?;
-        playback.clear_track();
-    }
-    {
-        let mut cdg_state = state
-            .playback
-            .cdg_state
-            .lock()
-            .map_err(|_| state_lock_error("CDG state lock was poisoned"))?;
-        *cdg_state = None;
-    }
-    {
-        let mut upload_statuses = state
-            .remote
-            .remote_upload_statuses
-            .lock()
-            .map_err(|_| state_lock_error("remote upload status lock was poisoned"))?;
-        upload_statuses.clear();
-    }
+    clear_library_scoped_runtime_state(&state)?;
 
     set_active_library(&mut config, library.id().to_owned());
     persist_app_config(app_data_dir, &config)?;
@@ -351,30 +369,7 @@ pub fn remove_library(
             .lock()
             .map_err(|_| state_lock_error("library lock was poisoned"))?;
         *guard = None;
-        {
-            let mut playback = state
-                .playback
-                .playback
-                .lock()
-                .map_err(|_| state_lock_error("playback controller lock was poisoned"))?;
-            playback.clear_track();
-        }
-        {
-            let mut cdg_state = state
-                .playback
-                .cdg_state
-                .lock()
-                .map_err(|_| state_lock_error("CDG state lock was poisoned"))?;
-            *cdg_state = None;
-        }
-        {
-            let mut upload_statuses = state
-                .remote
-                .remote_upload_statuses
-                .lock()
-                .map_err(|_| state_lock_error("remote upload status lock was poisoned"))?;
-            upload_statuses.clear();
-        }
+        clear_library_scoped_runtime_state(&state)?;
     } else if removed_active {
         activate_library(
             &state,
