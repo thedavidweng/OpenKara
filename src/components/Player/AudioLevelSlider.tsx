@@ -8,6 +8,7 @@ interface AudioLevelSliderProps {
   disabled?: boolean;
   widthClass?: string;
   ariaLabel?: string;
+  inputRef?: React.RefObject<HTMLInputElement | null>;
 }
 
 function formatAudioLevelTooltip(label: string, value: number): string {
@@ -21,6 +22,7 @@ export function AudioLevelSlider({
   disabled = false,
   widthClass = "w-16",
   ariaLabel,
+  inputRef,
 }: AudioLevelSliderProps) {
   const [isDragging, setIsDragging] = useState(false);
 
@@ -47,6 +49,7 @@ export function AudioLevelSlider({
   return (
     <Tooltip label={formatAudioLevelTooltip(label, value)}>
       <input
+        ref={inputRef}
         type="range"
         min="0"
         max="100"

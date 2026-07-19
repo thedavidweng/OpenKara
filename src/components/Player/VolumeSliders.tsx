@@ -207,7 +207,7 @@ export function VolumeSliders({
         onChange={(v) => handleStemChange("vocals", v)}
         onIconClick={stemsAvailable ? handleVocalsMuteToggle : undefined}
         disabled={!stemsAvailable}
-        sliderWidthClass="w-16 mr-[14px]"
+        sliderWidthClass={`${inlineSliderWidthClass} mr-[14px]`}
       />
       <StemSlider
         icon={Music}
@@ -216,7 +216,7 @@ export function VolumeSliders({
         onChange={handleAccompChange}
         onIconClick={stemsAvailable ? handleAccompMuteToggle : undefined}
         disabled={!stemsAvailable}
-        sliderWidthClass="w-16 mr-[14px]"
+        sliderWidthClass={`${inlineSliderWidthClass} mr-[14px]`}
       />
       {isFourStem && (
         <>
@@ -228,8 +228,7 @@ export function VolumeSliders({
             onChange={(v) => handleStemChange("drums", v)}
             onIconClick={handleDrumsMuteToggle}
             disabled={!stemsAvailable}
-            sliderWidthClass="w-16 mr-[14px]"
-            panelIconSize={16}
+            sliderWidthClass={`${inlineSliderWidthClass} mr-[14px]`}
           />
           <StemSlider
             icon={Guitar}
@@ -238,8 +237,7 @@ export function VolumeSliders({
             onChange={(v) => handleStemChange("bass", v)}
             onIconClick={handleBassMuteToggle}
             disabled={!stemsAvailable}
-            sliderWidthClass="w-16 mr-[14px]"
-            panelIconSize={16}
+            sliderWidthClass={`${inlineSliderWidthClass} mr-[14px]`}
           />
           <StemSlider
             icon={AudioWaveform}
@@ -248,8 +246,7 @@ export function VolumeSliders({
             onChange={(v) => handleStemChange("other", v)}
             onIconClick={handleOtherMuteToggle}
             disabled={!stemsAvailable}
-            sliderWidthClass="w-16 mr-[14px]"
-            panelIconSize={16}
+            sliderWidthClass={`${inlineSliderWidthClass} mr-[14px]`}
           />
         </>
       )}
@@ -400,7 +397,7 @@ interface StemSliderProps {
   icon: LucideIcon;
   iconButtonVariant?: StemIconButtonVariant; // default "panel"
   playbackActionName?: "vocals-mute" | "accompaniment-mute";
-  panelIconSize?: 14 | 16; // default 16 (balanced inside 44px target)
+  panelIconSize?: 14 | 16 | 18; // default 18 (matches inline playback-bar icons)
   label: string;
   value: number;
   onChange: (value: number) => void;
@@ -413,7 +410,7 @@ export function StemSlider({
   icon: Icon,
   iconButtonVariant = "panel",
   playbackActionName,
-  panelIconSize = 16,
+  panelIconSize = 18,
   label,
   value,
   onChange,
@@ -422,6 +419,7 @@ export function StemSlider({
   sliderWidthClass = "w-16 mr-[14px]",
 }: StemSliderProps) {
   const { t } = useTranslation();
+  const inputRef = useRef<HTMLInputElement>(null);
   const muteLabel =
     value === 0
       ? t("stems.unmute", { stem: label })
@@ -432,12 +430,23 @@ export function StemSlider({
   const isOperational = !disabled && onIconClick != null;
   const isMuted = value === 0;
 
+  // RATIONALE: Clicking the stem mute icon toggles mute, but focus stays on
+  // the button (tagName "BUTTON"), so the global keyboard shortcut handler
+  // treats arrow keys as master-volume / seek commands. Focusing the slider
+  // input after the click lets the native range input handle arrow keys
+  // directly, so the user can adjust the stem they just clicked.
+  const handleIconClick = () => {
+    onIconClick?.();
+    // Defer focus so the mute toggle's state update doesn't blur the input.
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
   if (isPlaybackBar) {
     return (
       <div className="flex items-center gap-2">
         <Tooltip label={onIconClick ? muteLabel : label}>
           <button
-            onClick={onIconClick}
+            onClick={handleIconClick}
             disabled={disabled || !onIconClick}
             aria-label={onIconClick ? muteLabel : label}
             aria-pressed={isOperational ? isMuted : undefined}
@@ -461,6 +470,7 @@ export function StemSlider({
           disabled={disabled}
           widthClass={sliderWidthClass}
           ariaLabel={label}
+          inputRef={inputRef}
         />
       </div>
     );
@@ -470,7 +480,7 @@ export function StemSlider({
     <div className="flex items-center gap-2">
       <Tooltip label={onIconClick ? muteLabel : label}>
         <button
-          onClick={onIconClick}
+          onClick={handleIconClick}
           disabled={disabled || !onIconClick}
           aria-pressed={isOperational ? isMuted : undefined}
           data-active={isOperational && isMuted ? "true" : undefined}
@@ -494,6 +504,7 @@ export function StemSlider({
         disabled={disabled}
         widthClass={sliderWidthClass}
         ariaLabel={label}
+        inputRef={inputRef}
       />
     </div>
   );

@@ -219,12 +219,18 @@ test.describe("Playback volume rail layout geometry", () => {
         "tight",
       );
 
-      // No inline Vocals/Accompaniment sliders in tight mode.
+      // No inline Vocals/Accompaniment sliders in tight mode. The popup panel
+      // is always rendered (data-state="closed" until expanded), so exclude
+      // .stem-popup descendants from the inline-only assertion.
       await expect(
-        page.locator('[aria-label="Vocals"][type="range"]'),
+        page.locator(
+          '[aria-label="Vocals"][type="range"]:not(.stem-popup input)',
+        ),
       ).toHaveCount(0);
       await expect(
-        page.locator('[aria-label="Accompaniment"][type="range"]'),
+        page.locator(
+          '[aria-label="Accompaniment"][type="range"]:not(.stem-popup input)',
+        ),
       ).toHaveCount(0);
 
       const master = await readRailGeometry(

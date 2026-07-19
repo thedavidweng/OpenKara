@@ -105,11 +105,20 @@ describe("VolumeSliders", () => {
     expect(compactRailCount).toBe(2);
   });
 
-  test("tight density renders no inline audio slider and popup rows keep w-16", () => {
+  test("tight density renders no inline audio slider but popup rows use the tight token", () => {
     const markup = renderToStaticMarkup(<VolumeSliders density="tight" />);
 
-    // No inline audio-level-slider in tight mode
-    expect(markup).not.toContain("audio-level-slider");
+    // In tight mode, inline stem sliders are hidden (only the expand button
+    // is rendered inline). The popup is always rendered (data-state="closed"),
+    // so its slider rows carry the tight-density width token (w-[64px]) instead
+    // of the old hardcoded w-16.
+    const tightRailCount = (
+      markup.match(/audio-level-slider shrink-0 w-\[64px\]/g) ?? []
+    ).length;
+    // Popup has vocals + accompaniment rows (drums/bass/other only in 4-stem).
+    expect(tightRailCount).toBeGreaterThanOrEqual(2);
+    // No leftover w-16 rails from the old hardcoded popup width.
+    expect(markup).not.toContain("w-16");
   });
 
   test("inline vocals/accompaniment use the shared 44px variant with 18px icons", () => {
