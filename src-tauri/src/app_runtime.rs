@@ -142,7 +142,6 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         }
         controller
     }));
-    let cdg_state: Arc<Mutex<Option<commands::cdg::CdgPlaybackState>>> = Arc::new(Mutex::new(None));
     let airplay_audio_tap = Arc::new(airplay_stream::AirPlayAudioTap::new(12));
     let airplay_stream_generation = Arc::new(AtomicU64::new(1));
     let airplay_audience_active = Arc::new(AtomicBool::new(false));
