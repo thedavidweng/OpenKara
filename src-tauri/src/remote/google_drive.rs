@@ -939,7 +939,7 @@ impl super::bootstrap::RemoteBootstrapStorage for GoogleDriveBootstrapStorage<'_
     }
 
     fn ensure_layout(&mut self) -> CommandResult<()> {
-        for directory in ["media", "media-g", "stems"] {
+        for directory in ["media", "media-g", "stems", "artwork"] {
             let _ = google_drive_get_or_create_folder(
                 self.app_data_dir,
                 &mut self.secret,

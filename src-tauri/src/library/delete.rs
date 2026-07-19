@@ -17,6 +17,11 @@ pub fn delete_song_from_library(
         .context("failed to load song from library")?
         .with_context(|| format!("song with hash {song_id} was not found in the library"))?;
 
+    // Collect artwork derivative paths before DB rows are deleted so we can
+    // clean up the on-disk files afterwards (only if no other song references
+    // them — two songs can share the same cover art bytes/digest).
+    let artwork_paths = collect_artwork_derivative_paths(connection, song_id)?;
+
     if let Some(container) = song.media_g_container.as_deref() {
         match container {
             MEDIA_G_PAIRED => {
@@ -44,7 +49,31 @@ pub fn delete_song_from_library(
     delete_song_rows_from_database(connection, library, song_id)?;
     // Clean up the on-disk stem directory (not handled by the DB-only delete).
     delete_stem_files_from_working_copy(library, song_id)?;
+    // Clean up artwork derivative files (best-effort, only if unreferenced).
+    for path in artwork_paths {
+        let _ = crate::library::artwork::delete_artwork_derivative_if_unreferenced(
+            connection, library, &path,
+        );
+    }
     Ok(())
+}
+
+/// Collect recorded artwork derivative paths for a song before its DB row is
+/// deleted. Returns paths that exist in the database (may be empty).
+fn collect_artwork_derivative_paths(connection: &Connection, song_id: &str) -> Result<Vec<String>> {
+    let record = cache::get_artwork_record(connection, song_id)
+        .context("failed to load artwork record for song")?;
+    let Some(record) = record else {
+        return Ok(Vec::new());
+    };
+    let mut paths = Vec::new();
+    if let Some(p) = record.artwork_thumb_path {
+        paths.push(p);
+    }
+    if let Some(p) = record.artwork_preview_path {
+        paths.push(p);
+    }
+    Ok(paths)
 }
 
 /// Delete only the database rows for a song (lyrics, play_history, stems, song).
@@ -75,10 +104,10 @@ pub fn delete_song_rows_from_database(
     Ok(())
 }
 
-/// Delete working-copy files for a song (audio, CDG, media_g containers, stems).
-/// Does NOT touch the database — safe to call after a DB transaction has
-/// already committed. Used by mirror sync to clean up the remote working
-/// copy after transactional DB deletes.
+/// Delete working-copy files for a song (audio, CDG, media_g containers, stems,
+/// artwork derivatives). Does NOT touch the database — safe to call after a DB
+/// transaction has already committed. Used by mirror sync to clean up the
+/// remote working copy after transactional DB deletes.
 pub fn delete_song_files_from_working_copy(library: &LibraryRoot, song: &Song) -> Result<()> {
     if let Some(container) = song.media_g_container.as_deref() {
         match container {
@@ -102,6 +131,10 @@ pub fn delete_song_files_from_working_copy(library: &LibraryRoot, song: &Song) -
             delete_relative_file(library, relative_path)?;
         }
     }
+    // Artwork derivative files are cleaned up separately by
+    // delete_artwork_derivative_if_unreferenced (called from
+    // delete_song_from_library and mirror sync) because they require a
+    // DB reference count check — two songs can share the same cover digest.
     Ok(())
 }
 

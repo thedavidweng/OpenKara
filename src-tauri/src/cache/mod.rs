@@ -3,7 +3,7 @@ pub mod stems;
 
 use crate::library::Song;
 use anyhow::Context;
-use rusqlite::{params, Connection, Row};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -106,6 +106,16 @@ pub fn apply_migrations(connection: &Connection) -> rusqlite::Result<()> {
     }
 
     migrate_legacy_song_schema(connection)?;
+
+    // 012_artwork_derivatives – cover art derivative file paths.
+    // Applied after migrate_legacy_song_schema because that rebuild recreates
+    // the songs table and would discard columns added earlier.
+    if !column_exists(connection, "songs", "artwork_thumb_path")? {
+        connection.execute_batch("ALTER TABLE songs ADD COLUMN artwork_thumb_path TEXT;")?;
+    }
+    if !column_exists(connection, "songs", "artwork_preview_path")? {
+        connection.execute_batch("ALTER TABLE songs ADD COLUMN artwork_preview_path TEXT;")?;
+    }
 
     // 008_playlists – playlist management tables.
     connection.execute_batch(include_str!("../../migrations/008_playlists.sql"))?;
@@ -401,6 +411,118 @@ pub fn update_song_cover_art(
     Ok(())
 }
 
+/// Replace a song's cover art and derivative paths together. Returns the
+/// previous derivative paths so the caller can clean up on-disk files whose
+/// digest changed after the write commits. The original bytes and both
+/// derivative paths are written by one atomic SQLite UPDATE, so a crash cannot
+/// leave a row with new paths referencing unwritten files (or new bytes with
+/// stale paths). The previous paths are read before that UPDATE so the caller
+/// can delete old derivative files afterwards.
+pub fn replace_cover_art_and_derivatives(
+    connection: &Connection,
+    hash: &str,
+    cover_art: Option<&[u8]>,
+    thumb_path: Option<&str>,
+    preview_path: Option<&str>,
+) -> rusqlite::Result<(Option<String>, Option<String>)> {
+    let (old_thumb, old_preview) = connection
+        .query_row(
+            "SELECT artwork_thumb_path, artwork_preview_path FROM songs WHERE hash = ?1",
+            [hash],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?
+        .unwrap_or((None, None));
+    connection.execute(
+        "UPDATE songs SET cover_art = ?, artwork_thumb_path = ?, artwork_preview_path = ? WHERE hash = ?",
+        params![cover_art, thumb_path, preview_path, hash],
+    )?;
+    Ok((old_thumb, old_preview))
+}
+
+/// Internal record of cover art bytes and their derivative file paths.
+/// Used by artwork generation/lazy-repair paths to avoid a full `Song` read
+/// and to keep derivative paths out of Rust/TypeScript IPC.
+#[derive(Debug, Clone, Default)]
+pub struct ArtworkRecord {
+    pub cover_art: Option<Vec<u8>>,
+    pub artwork_thumb_path: Option<String>,
+    pub artwork_preview_path: Option<String>,
+}
+
+pub fn get_artwork_record(
+    connection: &Connection,
+    hash: &str,
+) -> rusqlite::Result<Option<ArtworkRecord>> {
+    let mut statement = connection.prepare(
+        "SELECT cover_art, artwork_thumb_path, artwork_preview_path
+         FROM songs WHERE hash = ?1 LIMIT 1",
+    )?;
+    let mut rows = statement.query([hash])?;
+    match rows.next()? {
+        Some(row) => Ok(Some(ArtworkRecord {
+            cover_art: row.get(0)?,
+            artwork_thumb_path: row.get(1)?,
+            artwork_preview_path: row.get(2)?,
+        })),
+        None => Ok(None),
+    }
+}
+
+pub fn update_artwork_derivative_paths(
+    connection: &Connection,
+    hash: &str,
+    thumb_path: Option<&str>,
+    preview_path: Option<&str>,
+) -> rusqlite::Result<()> {
+    connection.execute(
+        "UPDATE songs SET artwork_thumb_path = ?, artwork_preview_path = ? WHERE hash = ?",
+        params![thumb_path, preview_path, hash],
+    )?;
+    Ok(())
+}
+
+/// Update derivative paths only if the song's `cover_art` BLOB still equals
+/// `expected_cover_art` (the original bytes the derivatives were generated from).
+/// Implemented as a single conditional UPDATE so it is atomic with respect to
+/// concurrent writers without needing a mutable connection handle. Returns
+/// true if the update was applied, false if the cover art changed (concurrent
+/// cover-art replacement) or the row was deleted. This prevents a lazy repair
+/// from overwriting a newer cover's derivative paths with stale ones generated
+/// from older bytes. Comparing the raw BLOB avoids needing a separate digest
+/// column and is a direct byte-for-byte identity check.
+pub fn update_artwork_derivative_paths_if_cover_matches(
+    connection: &Connection,
+    hash: &str,
+    thumb_path: Option<&str>,
+    preview_path: Option<&str>,
+    expected_cover_art: &[u8],
+) -> rusqlite::Result<bool> {
+    let changed = connection.execute(
+        "UPDATE songs
+         SET artwork_thumb_path = ?, artwork_preview_path = ?
+         WHERE hash = ? AND cover_art = ?",
+        params![thumb_path, preview_path, hash, expected_cover_art],
+    )?;
+    Ok(changed > 0)
+}
+
+/// Count how many song rows reference a given artwork derivative path.
+/// Used by deletion to avoid removing a derivative file still referenced
+/// by another song row (e.g. two songs sharing the same cover art bytes).
+pub fn count_artwork_path_references(
+    connection: &Connection,
+    path: &str,
+) -> rusqlite::Result<usize> {
+    let count: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM songs
+         WHERE artwork_thumb_path = ?1 OR artwork_preview_path = ?1",
+        [path],
+        |row| row.get(0),
+    )?;
+    Ok(count as usize)
+}
+
 pub fn update_song_instrumental(
     connection: &Connection,
     hash: &str,
@@ -517,6 +639,17 @@ mod tests {
             .expect("lyrics table lookup should succeed");
 
         assert_eq!(lyrics_table_count, 1);
+
+        for column in ["artwork_thumb_path", "artwork_preview_path"] {
+            let count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('songs') WHERE name = ?1",
+                    [column],
+                    |row| row.get(0),
+                )
+                .expect("artwork derivative column lookup should succeed");
+            assert_eq!(count, 1, "missing {column}");
+        }
     }
 
     #[test]
@@ -955,6 +1088,43 @@ mod tests {
 
         let result = get_cover_art(&conn, "no-art").expect("query should succeed");
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn derivative_path_update_requires_the_original_cover_bytes() {
+        let conn = test_db();
+        let mut song = sample_song("conditional-artwork");
+        let original = b"original cover".to_vec();
+        song.cover_art = Some(original.clone());
+        upsert_song(&conn, &song).expect("upsert");
+
+        assert!(update_artwork_derivative_paths_if_cover_matches(
+            &conn,
+            &song.hash,
+            Some("artwork/thumb_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_80.webp"),
+            Some("artwork/preview_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_256.webp"),
+            &original,
+        )
+        .expect("matching original should update"));
+
+        update_song_cover_art(&conn, &song.hash, Some(b"replacement cover"))
+            .expect("replace cover");
+        assert!(!update_artwork_derivative_paths_if_cover_matches(
+            &conn,
+            &song.hash,
+            Some("artwork/thumb_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb_80.webp"),
+            Some("artwork/preview_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb_256.webp"),
+            &original,
+        )
+        .expect("stale original should not update"));
+
+        let record = get_artwork_record(&conn, &song.hash)
+            .expect("read record")
+            .expect("song exists");
+        assert_eq!(
+            record.artwork_thumb_path.as_deref(),
+            Some("artwork/thumb_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_80.webp")
+        );
     }
 
     /// Item 1: get_song_by_hash still returns full cover_art.

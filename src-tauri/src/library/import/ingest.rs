@@ -3,7 +3,7 @@ use crate::{
     cache,
     commands::error::current_unix_timestamp,
     hash,
-    library::Song,
+    library::{artwork, Song},
     library_root::LibraryRoot,
     lyrics::fetch::read_embedded_lyrics,
     media_g::{self, MEDIA_G_PAIRED, MEDIA_G_ZIP},
@@ -27,6 +27,35 @@ pub(super) struct SongBuildResult {
     pub song: Song,
     /// The original source CDG path that was consumed by this song, if any.
     pub consumed_cdg_source: Option<PathBuf>,
+}
+
+/// Generate artwork derivatives from cover art bytes if present.
+/// Returns (thumb_path, preview_path), both None on failure or when no cover art.
+/// Derivative failure is non-fatal: the caller persists the original and sets
+/// both paths to NULL.
+pub(super) fn try_generate_artwork_derivatives(
+    library: &LibraryRoot,
+    cover_art: &Option<Vec<u8>>,
+) -> (Option<String>, Option<String>) {
+    let Some(bytes) = cover_art.as_deref() else {
+        return (None, None);
+    };
+    match artwork::generate_artwork_derivatives(library, bytes) {
+        Ok(derivatives) => (Some(derivatives.thumb_path), Some(derivatives.preview_path)),
+        Err(e) => {
+            tracing::warn!("artwork derivative generation failed: {e}");
+            (None, None)
+        }
+    }
+}
+
+/// Convenience wrapper for callers that already have a `Song` (e.g. ZIP import
+/// path that builds the song before upsert). Reads cover_art from the song.
+pub(super) fn try_generate_artwork_derivatives_for_song(
+    song: &Song,
+    library: &LibraryRoot,
+) -> (Option<String>, Option<String>) {
+    try_generate_artwork_derivatives(library, &song.cover_art)
 }
 
 pub(super) fn build_and_store_song(

@@ -11,6 +11,7 @@ const DATABASE_FILENAME: &str = "openkara.db";
 const MEDIA_DIRECTORY: &str = "media";
 const MEDIA_G_DIRECTORY: &str = "media-g";
 const STEMS_DIRECTORY: &str = "stems";
+pub const ARTWORK_DIRECTORY: &str = "artwork";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct LibraryMarker {
@@ -58,6 +59,8 @@ impl LibraryRoot {
             .context("failed to create media-g directory")?;
         fs::create_dir_all(path.join(STEMS_DIRECTORY))
             .context("failed to create stems directory")?;
+        fs::create_dir_all(path.join(ARTWORK_DIRECTORY))
+            .context("failed to create artwork directory")?;
 
         Ok(Self {
             root: path.to_owned(),
@@ -76,9 +79,14 @@ impl LibraryRoot {
         }
 
         // Ensure subdirectories exist (may have been created by an older version).
-        fs::create_dir_all(path.join(MEDIA_DIRECTORY)).ok();
-        fs::create_dir_all(path.join(MEDIA_G_DIRECTORY)).ok();
-        fs::create_dir_all(path.join(STEMS_DIRECTORY)).ok();
+        fs::create_dir_all(path.join(MEDIA_DIRECTORY))
+            .context("failed to ensure media directory exists")?;
+        fs::create_dir_all(path.join(MEDIA_G_DIRECTORY))
+            .context("failed to ensure media-g directory exists")?;
+        fs::create_dir_all(path.join(STEMS_DIRECTORY))
+            .context("failed to ensure stems directory exists")?;
+        fs::create_dir_all(path.join(ARTWORK_DIRECTORY))
+            .context("failed to ensure artwork directory exists")?;
 
         Ok(Self {
             root: path.to_owned(),
@@ -98,6 +106,11 @@ impl LibraryRoot {
     /// Path to the `stems/` directory that holds separation output.
     pub fn stems_dir(&self) -> PathBuf {
         self.root.join(STEMS_DIRECTORY)
+    }
+
+    /// Path to the `artwork/` directory that holds cover art derivative files.
+    pub fn artwork_dir(&self) -> PathBuf {
+        self.root.join(ARTWORK_DIRECTORY)
     }
 
     /// Build the absolute path for a media file given its hash and extension.
@@ -189,6 +202,7 @@ mod tests {
         assert!(lib_path.join(MEDIA_DIRECTORY).is_dir());
         assert!(lib_path.join(MEDIA_G_DIRECTORY).is_dir());
         assert!(lib_path.join(STEMS_DIRECTORY).is_dir());
+        assert!(lib_path.join(ARTWORK_DIRECTORY).is_dir());
         assert_eq!(lib.database_path(), lib_path.join(DATABASE_FILENAME));
 
         let reopened = LibraryRoot::open(&lib_path).unwrap();

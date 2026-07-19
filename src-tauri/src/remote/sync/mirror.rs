@@ -87,6 +87,13 @@ fn sync_bound_remote<R: tauri::Runtime>(
     // deletes the DB rows). Used in phase 2 to decide whether to delete cloud
     // stem directories.
     let mut has_stem_entry: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // Pre-collect artwork derivative paths (before the transaction deletes the
+    // DB rows) so phase 2 can delete the on-disk derivative files. Two songs
+    // can share the same cover digest, so deletion checks the DB reference
+    // count — but by phase 2 the row is already gone, so we collect paths now
+    // and delete unconditionally (the local library is the source of truth and
+    // has already decided these songs should not exist remotely).
+    let mut artwork_paths_to_delete: Vec<String> = Vec::new();
     for song in &songs_to_delete {
         if song.is_remote_stems()
             || cache::stems::get_cached_stem_entry(&remote_connection, &song.hash)
@@ -94,6 +101,16 @@ fn sync_bound_remote<R: tauri::Runtime>(
                 .is_some()
         {
             has_stem_entry.insert(song.hash.clone());
+        }
+        if let Some(record) = cache::get_artwork_record(&remote_connection, &song.hash)
+            .map_err(|error| database_error(error.to_string()))?
+        {
+            if let Some(p) = record.artwork_thumb_path {
+                artwork_paths_to_delete.push(p);
+            }
+            if let Some(p) = record.artwork_preview_path {
+                artwork_paths_to_delete.push(p);
+            }
         }
     }
 
@@ -135,6 +152,29 @@ fn sync_bound_remote<R: tauri::Runtime>(
         let _ = crate::library::delete_song_files_from_working_copy(&remote_root, song);
         // Best-effort working-copy stem directory cleanup.
         let _ = crate::library::delete_stem_files_from_working_copy(&remote_root, &song.hash);
+    }
+
+    // Best-effort artwork derivative cleanup. Derivatives are reference-
+    // counted against the remote DB (two songs can share the same cover
+    // digest), so the on-disk file is removed only when no remaining row
+    // references it. The cloud copy is deleted under the same rule: only
+    // when the local derivative was actually removed, so a shared derivative
+    // belonging to a song that is staying is never deleted from the cloud.
+    for path in &artwork_paths_to_delete {
+        let deleted = match crate::library::artwork::delete_artwork_derivative_if_unreferenced(
+            &remote_connection,
+            &remote_root,
+            path,
+        ) {
+            Ok(deleted) => deleted,
+            Err(e) => {
+                tracing::warn!("failed to clean up artwork derivative {path}: {e}");
+                continue;
+            }
+        };
+        if deleted {
+            let _ = remote_delete_relative_path(&state.shell.app_data_dir, &remote_library, path);
+        }
     }
 
     let desired_song_ids: Vec<String> = local_songs
