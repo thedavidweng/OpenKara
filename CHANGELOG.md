@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Cancel a pending library search debounce when the query is cleared, so a late `searchLibrary` result cannot overwrite `loadLibrary()` and hide songs again (Playwright webkit flake in `song-import` search filter). Cap Linux CI `CARGO_BUILD_JOBS` to reduce parallel `rust-lld` SIGBUS crashes while linking heavy Tauri test binaries.
 
-- Website landing: collapse the double vertical padding and soft separator between consecutive feature sections so the stem cards and the library block sit in one continuous band.
+- Website landing: collapse the soft separators and stacked padding after the stem cards and after the library cards (Synced lyrics / Portable library) so those blocks flow into the closing CTA as one continuous band.
 
 ### Changed
 
