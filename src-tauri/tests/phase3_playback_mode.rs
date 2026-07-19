@@ -1,4 +1,5 @@
 use openkara_lib::audio::{
+    crossfade::CROSSFADE_SCRATCH_FRAMES,
     decode::DecodedAudio,
     eq::EqProcessor,
     output::{render_output_buffer, ResamplerCache},
@@ -46,7 +47,9 @@ fn render_output_mixes_stems_with_individual_volumes() {
 
     let mut output = vec![0.0; 4];
     let mut stem_scratch = Vec::new();
+    let mut crossfade_scratch = vec![0.0f32; CROSSFADE_SCRATCH_FRAMES * TEST_CHANNELS];
     let mut rc = ResamplerCache::default();
+    let mut rc_in = ResamplerCache::default();
     let mut eq = EqProcessor::new(TEST_SAMPLE_RATE, TEST_CHANNELS);
     let peak_ring = PeakRing::new();
     let mut peak_acc = PeakAccumulator::new();
@@ -54,9 +57,11 @@ fn render_output_mixes_stems_with_individual_volumes() {
         &mut controller,
         &mut output,
         &mut stem_scratch,
+        &mut crossfade_scratch,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
         &mut rc,
+        &mut rc_in,
         &mut eq,
         &mut peak_acc,
         &peak_ring,
@@ -87,7 +92,9 @@ fn render_output_falls_back_to_original_when_no_stems() {
 
     let mut output = vec![0.0; 4];
     let mut stem_scratch = Vec::new();
+    let mut crossfade_scratch = vec![0.0f32; CROSSFADE_SCRATCH_FRAMES * TEST_CHANNELS];
     let mut rc = ResamplerCache::default();
+    let mut rc_in = ResamplerCache::default();
     let mut eq = EqProcessor::new(TEST_SAMPLE_RATE, TEST_CHANNELS);
     let peak_ring = PeakRing::new();
     let mut peak_acc = PeakAccumulator::new();
@@ -95,9 +102,11 @@ fn render_output_falls_back_to_original_when_no_stems() {
         &mut controller,
         &mut output,
         &mut stem_scratch,
+        &mut crossfade_scratch,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
         &mut rc,
+        &mut rc_in,
         &mut eq,
         &mut peak_acc,
         &peak_ring,

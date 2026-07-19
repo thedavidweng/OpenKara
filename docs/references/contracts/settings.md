@@ -6,20 +6,22 @@ Field or command semantic changes must update this document before changing UI c
 
 `get_settings() -> AppSettings`
 
-| Field                           | Type          | Notes                                          |
-| ------------------------------- | ------------- | ---------------------------------------------- | ----------------------------------------- |
-| `stem_mode`                     | `"two_stem"   | "four_stem"`                                   | Active stem separation mode               |
-| `model_variant`                 | `"htdemucs"   | "htdemucs_ft"`                                 | Active Demucs model variant               |
-| `language`                      | `string       | null`                                          | UI language code, `null` = system default |
-| `hide_batch_separate`           | `boolean`     | Hide batch-separate action in UI               |
-| `cover_art_backdrop`            | `boolean`     | Show blurred cover-art backdrop in player      |
-| `lyrics_font_step`              | `i8`          | Range `[-2, 2]`, 0 = default                   |
-| `execution_provider`            | `string`      | Active ONNX Runtime execution provider         |
-| `available_execution_providers` | `Vec<string>` | Providers available on current platform        |
-| `eq_enabled`                    | `bool`        | Whether the five-band equalizer is enabled     |
-| `eq_gains_db`                   | `[f32; 5]`    | Per-band dB gains, each clamped to `[-12, 12]` |
-| `library_sort_mode`             | `string`      | Active sidebar song-list sort mode (see below) |
-| `theme_preference`              | `string`      | Appearance preference (see below)              |
+| Field                           | Type          | Notes                                               |
+| ------------------------------- | ------------- | --------------------------------------------------- | ----------------------------------------- |
+| `stem_mode`                     | `"two_stem"   | "four_stem"`                                        | Active stem separation mode               |
+| `model_variant`                 | `"htdemucs"   | "htdemucs_ft"`                                      | Active Demucs model variant               |
+| `language`                      | `string       | null`                                               | UI language code, `null` = system default |
+| `hide_batch_separate`           | `boolean`     | Hide batch-separate action in UI                    |
+| `cover_art_backdrop`            | `boolean`     | Show blurred cover-art backdrop in player           |
+| `lyrics_font_step`              | `i8`          | Range `[-2, 2]`, 0 = default                        |
+| `execution_provider`            | `string`      | Active ONNX Runtime execution provider              |
+| `available_execution_providers` | `Vec<string>` | Providers available on current platform             |
+| `eq_enabled`                    | `bool`        | Whether the five-band equalizer is enabled          |
+| `eq_gains_db`                   | `[f32; 5]`    | Per-band dB gains, each clamped to `[-12, 12]`      |
+| `crossfade_enabled`             | `bool`        | Whether equal-power crossfade is enabled            |
+| `crossfade_duration_ms`         | `u32`         | Crossfade duration in ms, clamped to `[500, 10000]` |
+| `library_sort_mode`             | `string`      | Active sidebar song-list sort mode (see below)      |
+| `theme_preference`              | `string`      | Appearance preference (see below)                   |
 
 ## Library sort mode
 
@@ -77,4 +79,6 @@ dark regardless of the primary preference.
 - `set_execution_provider(provider: String) -> AppSettings`
 - `set_eq_enabled(enabled: bool) -> AppSettings`
 - `set_eq_gains(gains_db: [f32; 5]) -> AppSettings`
+- `set_crossfade_enabled(enabled: bool) -> AppSettings`
+- `set_crossfade_duration_ms(duration_ms: u32) -> AppSettings`
 - `restart_app() -> ()`

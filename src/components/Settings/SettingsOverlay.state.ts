@@ -55,6 +55,8 @@ export function createInitialSettingsOverlaySnapshot(
       availableExecutionProviders: initialSettings.availableExecutionProviders,
       eqEnabled: initialSettings.eqEnabled,
       eqGainsDb: initialSettings.eqGainsDb,
+      crossfadeEnabled: initialSettings.crossfadeEnabled,
+      crossfadeDurationMs: initialSettings.crossfadeDurationMs,
       librarySortMode: initialSettings.librarySortMode,
       themePreference: initialSettings.themePreference,
       integrityReport: null,
@@ -272,6 +274,8 @@ export function createSettingsOverlayActions(
             settingsResult.value.available_execution_providers,
           eqEnabled: settingsResult.value.eq_enabled,
           eqGainsDb: settingsResult.value.eq_gains_db,
+          crossfadeEnabled: settingsResult.value.crossfade_enabled,
+          crossfadeDurationMs: settingsResult.value.crossfade_duration_ms,
           librarySortMode: settingsResult.value.library_sort_mode,
           themePreference: settingsResult.value.theme_preference,
         });

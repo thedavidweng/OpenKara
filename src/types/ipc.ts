@@ -255,6 +255,8 @@ export interface AppSettings {
   available_execution_providers: ExecutionProvider[];
   eq_enabled: boolean;
   eq_gains_db: [number, number, number, number, number];
+  crossfade_enabled: boolean;
+  crossfade_duration_ms: number;
   library_sort_mode: LibrarySortMode;
   theme_preference: ThemePreference;
 }

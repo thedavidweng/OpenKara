@@ -56,6 +56,8 @@ export interface SettingsOverlayState {
   availableExecutionProviders: ExecutionProvider[];
   eqEnabled: boolean;
   eqGainsDb: [number, number, number, number, number];
+  crossfadeEnabled: boolean;
+  crossfadeDurationMs: number;
   librarySortMode: LibrarySortMode;
   themePreference: ThemePreference;
   integrityReport: IntegrityReport | null;
@@ -103,6 +105,8 @@ export interface SettingsOverlayActions {
     gainsDb: [number, number, number, number, number],
   ) => Promise<void>;
   resetEqGains: () => Promise<void>;
+  setCrossfadeEnabled: (enabled: boolean) => Promise<void>;
+  setCrossfadeDurationMs: (durationMs: number) => Promise<void>;
   setThemePreference: (preference: ThemePreference) => Promise<void>;
   openDeleteStemsDialog: () => Promise<void>;
   confirmDeleteStems: () => Promise<void>;
@@ -161,6 +165,8 @@ export interface SettingsOverlayControllerDependencies {
     | "setStemMode"
     | "setEqEnabled"
     | "setEqGains"
+    | "setCrossfadeEnabled"
+    | "setCrossfadeDurationMs"
     | "setThemePreference"
     | "checkLibraryIntegrity"
     | "removeMissingLibraryEntries"
@@ -189,6 +195,8 @@ export interface SettingsOverlayControllerDependencies {
     | "patchAppSettings"
     | "setEqEnabled"
     | "setEqGains"
+    | "setCrossfadeEnabled"
+    | "setCrossfadeDurationMs"
     | "setThemePreference"
   >;
 }
