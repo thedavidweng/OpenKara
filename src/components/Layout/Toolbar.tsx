@@ -89,6 +89,7 @@ export function Toolbar({
             <button
               onClick={onToggleSidebar}
               aria-label={t("toolbar.toggleSidebar")}
+              data-preview-sidebar-toggle={previewMode ? "true" : undefined}
               className={`motion-icon-button rounded-xl p-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
                 sidebarVisible
                   ? "bg-[color-mix(in_srgb,var(--color-hover)_86%,transparent)] text-[var(--color-text)] shadow-[0_10px_24px_rgba(0,0,0,0.16)]"

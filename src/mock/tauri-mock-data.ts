@@ -24,32 +24,44 @@ import type { MockData } from "@/mock/tauri-mock-impl";
  */
 export const MOCK_SIDEBAR_WIDTH = 280;
 
+export const MOCK_PLAYLIST_SONGS: Record<string, string[]> = {
+  favorites: ["earfquake", "see-you-again", "counting-stars", "feel-good-inc"],
+  party: ["all-the-love", "three-empty-words", "earfquake", "see-you-again"],
+};
+
 /**
- * Playlists for the website preview.  E2E tests use an empty list — tests
- * that need playlists create them via the mock IPC's `create_playlist`
- * command at runtime.
+ * Playlists for the website preview.  `song_count` must match membership in
+ * {@link MOCK_PLAYLIST_SONGS} — the preview seeds the playlist store directly
+ * and never re-counts via IPC.  E2E tests use an empty list — tests that need
+ * playlists create them via the mock IPC's `create_playlist` command at runtime.
  */
 export const MOCK_PLAYLISTS = [
   {
     id: "favorites",
     name: "Favorites",
-    song_count: 12,
+    song_count: MOCK_PLAYLIST_SONGS.favorites.length,
     created_at: 1,
     updated_at: 1,
   },
   {
     id: "party",
     name: "Friday night",
-    song_count: 28,
+    song_count: MOCK_PLAYLIST_SONGS.party.length,
     created_at: 1,
     updated_at: 1,
   },
 ];
 
-export const MOCK_PLAYLIST_SONGS: Record<string, string[]> = {
-  favorites: ["earfquake", "see-you-again", "counting-stars", "feel-good-inc"],
-  party: ["all-the-love", "three-empty-words", "earfquake", "see-you-again"],
-};
+/**
+ * Freeze the website mock on this Earfquake lyric timestamp so the seekbar
+ * and lyrics panel show a real mid-song line instead of an idle blank state.
+ * Matches `Don't leave, it's my fault (Girl)` in `PREVIEW_LYRICS.earfquake`.
+ */
+export const PREVIEW_FROZEN_POSITION_MS = 59560;
+
+const PRIMARY_PREVIEW_DURATION_MS =
+  PREVIEW_SONGS.find((song) => song.hash === PRIMARY_PREVIEW_SONG_HASH)
+    ?.duration_ms ?? 0;
 
 /**
  * The shared mock data payload.  Both the website preview and E2E fixture
@@ -117,18 +129,23 @@ export const MOCK_DATA: MockData = {
     theme_preference: "dark",
   },
 
+  // Website preview freezes on the primary song at a real lyric timestamp so
+  // the seekbar and lyrics panel look mid-session. E2E overrides this back to
+  // idle via {@link E2E_MOCK_DATA} so playback specs start from a clean slate.
   playbackSnapshot: {
     transport_generation: 0,
-    song_id: null,
-    state: "idle",
+    song_id: PRIMARY_PREVIEW_SONG_HASH,
+    // Pause is `is_playing: false` with a non-idle transport state — keeps the
+    // player chrome populated while the clock stays frozen for the mock.
+    state: "playing",
     is_playing: false,
-    position_ms: 0,
-    duration_ms: 0,
-    buffered_ms: 0,
+    position_ms: PREVIEW_FROZEN_POSITION_MS,
+    duration_ms: PRIMARY_PREVIEW_DURATION_MS,
+    buffered_ms: PRIMARY_PREVIEW_DURATION_MS,
     volume: 0.8,
     stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
-    has_stems: false,
-    stem_mode: null,
+    has_stems: true,
+    stem_mode: "two_stem",
   },
 
   bootstrapStatus: {
@@ -153,10 +170,24 @@ export const MOCK_DATA: MockData = {
 
 /**
  * E2E-specific mock data: same as {@link MOCK_DATA} but with empty playlists
- * (E2E tests create playlists at runtime via mock IPC commands).
+ * (E2E tests create playlists at runtime via mock IPC commands) and an idle
+ * playback snapshot so specs control transport from a known starting state.
  */
 export const E2E_MOCK_DATA: MockData = {
   ...MOCK_DATA,
   playlists: [],
   playlistSongs: {},
+  playbackSnapshot: {
+    transport_generation: 0,
+    song_id: null,
+    state: "idle",
+    is_playing: false,
+    position_ms: 0,
+    duration_ms: 0,
+    buffered_ms: 0,
+    volume: 0.8,
+    stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
+    has_stems: false,
+    stem_mode: null,
+  },
 };

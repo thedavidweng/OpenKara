@@ -409,6 +409,14 @@ a {
   min-width: 920px;
 }
 
+/* Unlayered `button, a { font: inherit }` above would otherwise force the
+   landing 15px type into the embedded app and enlarge Tailwind text-[10px]
+   controls like Separate. Reset so app utilities own font sizing again. */
+.product-preview button,
+.product-preview a {
+  font: unset;
+}
+
 .product-preview [data-preview-interaction-mode="playlist-only"] {
   user-select: none;
 }
@@ -417,7 +425,7 @@ a {
   [data-preview-interaction-mode="playlist-only"]
   button:not([data-preview-playlist-switch="true"]):not(
     [data-preview-lyrics-interactive="true"]
-  ),
+  ):not([data-preview-sidebar-toggle="true"]),
 .product-preview [data-preview-interaction-mode="playlist-only"] input,
 .product-preview
   [data-preview-interaction-mode="playlist-only"]
@@ -428,7 +436,10 @@ a {
 
 .product-preview
   [data-preview-interaction-mode="playlist-only"]
-  [data-preview-playlist-switch="true"] {
+  [data-preview-playlist-switch="true"],
+.product-preview
+  [data-preview-interaction-mode="playlist-only"]
+  [data-preview-sidebar-toggle="true"] {
   cursor: pointer;
 }
 

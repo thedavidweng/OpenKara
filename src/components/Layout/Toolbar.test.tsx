@@ -138,6 +138,7 @@ describe("Toolbar drag region", () => {
 
     expect(markup).toContain('data-preview-traffic-lights="true"');
     expect(markup).toContain('data-airplay-preview="true"');
+    expect(markup).toContain('data-preview-sidebar-toggle="true"');
   });
 
   test("can omit the leading sidebar/import controls for native split shells", () => {
