@@ -1,8 +1,18 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type {
   CdgSyncChannel,
+  CdgSyncFramePayload,
   CdgSyncStatusPayload,
 } from "@/lib/cdg-sync-channel";
+
+/** Helper: create a minimal frame payload for tests. */
+function makeFramePayload(frameVersion: number = 1): CdgSyncFramePayload {
+  return {
+    rgba: new Uint8Array(4),
+    frameVersion,
+    transportGeneration: 1,
+  };
+}
 
 describe("createCoalescingPainter", () => {
   beforeEach(() => {
@@ -145,12 +155,13 @@ describe("startCdgBroadcastFrameReceiver", () => {
   test("onClear cancels pending coalesced frame and calls onClear", async () => {
     vi.resetModules();
 
-    let capturedFrameHandler: ((payload: ArrayBuffer) => void) | null = null;
+    let capturedFrameHandler: ((payload: CdgSyncFramePayload) => void) | null =
+      null;
     let capturedClearHandler: (() => void) | null = null;
 
     vi.doMock("@/lib/cdg-sync-channel", () => ({
       startCdgSyncReceiver: (opts: {
-        onFrame: (payload: ArrayBuffer) => void;
+        onFrame: (payload: CdgSyncFramePayload) => void;
         onClear: () => void;
       }) => {
         capturedFrameHandler = opts.onFrame;
@@ -172,7 +183,7 @@ describe("startCdgBroadcastFrameReceiver", () => {
     });
 
     // Enqueue a frame
-    capturedFrameHandler!(new ArrayBuffer(4));
+    capturedFrameHandler!(makeFramePayload());
     // Immediately clear before timer fires
     capturedClearHandler!();
 
@@ -226,12 +237,13 @@ describe("startCdgBroadcastFrameReceiver", () => {
   test("stop() cancels pending paint and stops the receiver", async () => {
     vi.resetModules();
 
-    let capturedFrameHandler: ((payload: ArrayBuffer) => void) | null = null;
+    let capturedFrameHandler: ((payload: CdgSyncFramePayload) => void) | null =
+      null;
     const stopReceiver = vi.fn();
 
     vi.doMock("@/lib/cdg-sync-channel", () => ({
       startCdgSyncReceiver: (opts: {
-        onFrame: (payload: ArrayBuffer) => void;
+        onFrame: (payload: CdgSyncFramePayload) => void;
       }) => {
         capturedFrameHandler = opts.onFrame;
         return stopReceiver;
@@ -250,7 +262,7 @@ describe("startCdgBroadcastFrameReceiver", () => {
     });
 
     // Enqueue a frame, then immediately stop
-    capturedFrameHandler!(new ArrayBuffer(8));
+    capturedFrameHandler!(makeFramePayload());
     stop();
 
     vi.runAllTimers();
@@ -263,12 +275,13 @@ describe("startCdgBroadcastFrameReceiver", () => {
   test("frames coalesce correctly across clear then re-enqueue", async () => {
     vi.resetModules();
 
-    let capturedFrameHandler: ((payload: ArrayBuffer) => void) | null = null;
+    let capturedFrameHandler: ((payload: CdgSyncFramePayload) => void) | null =
+      null;
     let capturedClearHandler: (() => void) | null = null;
 
     vi.doMock("@/lib/cdg-sync-channel", () => ({
       startCdgSyncReceiver: (opts: {
-        onFrame: (payload: ArrayBuffer) => void;
+        onFrame: (payload: CdgSyncFramePayload) => void;
         onClear: () => void;
       }) => {
         capturedFrameHandler = opts.onFrame;
@@ -289,17 +302,17 @@ describe("startCdgBroadcastFrameReceiver", () => {
     });
 
     // Enqueue, clear, then enqueue again
-    const buf1 = new ArrayBuffer(4);
-    const buf2 = new ArrayBuffer(8);
-    capturedFrameHandler!(buf1);
+    const frame1 = makeFramePayload(1);
+    const frame2 = makeFramePayload(2);
+    capturedFrameHandler!(frame1);
     capturedClearHandler!();
-    capturedFrameHandler!(buf2);
+    capturedFrameHandler!(frame2);
 
     vi.runAllTimers();
 
     // Only the second frame should paint (after clear)
     expect(onFrame).toHaveBeenCalledOnce();
-    expect(onFrame).toHaveBeenCalledWith(buf2);
+    expect(onFrame).toHaveBeenCalledWith(frame2);
 
     stop();
   });

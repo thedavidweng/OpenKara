@@ -3,11 +3,25 @@ export interface CdgSyncStatusPayload {
   hasCdg: boolean;
 }
 
+/**
+ * Frame payload broadcast over the sync channel. Carries the RGBA bytes plus
+ * the frame version and transport generation so receivers can skip redundant
+ * redraws and detect stale frames.
+ */
+export interface CdgSyncFramePayload {
+  /** RGBA frame bytes (288×192×4 = 221,184 bytes). */
+  rgba: Uint8Array;
+  /** Frame version from the backend. */
+  frameVersion: number;
+  /** Transport generation from the backend. */
+  transportGeneration: number;
+}
+
 export type CdgSyncMessage =
   | { type: "request-sync" }
   | { type: "clear" }
   | { type: "status"; payload: CdgSyncStatusPayload }
-  | { type: "frame"; payload: ArrayBuffer };
+  | { type: "frame"; payload: CdgSyncFramePayload };
 
 export interface CdgSyncChannel {
   postMessage: (message: CdgSyncMessage) => void;
@@ -22,7 +36,7 @@ export interface CdgSyncChannel {
   close: () => void;
 }
 
-const CDG_SYNC_CHANNEL_NAME = "openkara-cdg-sync-v1";
+const CDG_SYNC_CHANNEL_NAME = "openkara-cdg-sync-v2";
 
 let cachedChannel: CdgSyncChannel | null | undefined;
 
@@ -62,7 +76,7 @@ export function postCdgStatus(
 
 export function postCdgFrame(
   channel: CdgSyncChannel | null,
-  payload: ArrayBuffer,
+  payload: CdgSyncFramePayload,
 ): void {
   channel?.postMessage({ type: "frame", payload });
 }
@@ -78,7 +92,7 @@ export function startCdgSyncRequestListener({
   channel: CdgSyncChannel;
   getSnapshot: () => {
     status: CdgSyncStatusPayload;
-    frame: ArrayBuffer | null;
+    frame: CdgSyncFramePayload | null;
   };
 }): () => void {
   const onMessage = (event: MessageEvent<CdgSyncMessage>) => {
@@ -88,7 +102,7 @@ export function startCdgSyncRequestListener({
 
     const { status, frame } = getSnapshot();
     postCdgStatus(channel, status);
-    if (frame && frame.byteLength > 0) {
+    if (frame) {
       postCdgFrame(channel, frame);
     }
   };
@@ -107,7 +121,7 @@ export function startCdgSyncReceiver({
   onStatus,
 }: {
   channel: CdgSyncChannel;
-  onFrame: (payload: ArrayBuffer) => void;
+  onFrame: (payload: CdgSyncFramePayload) => void;
   onClear: () => void;
   onStatus: (payload: CdgSyncStatusPayload) => void;
 }): () => void {

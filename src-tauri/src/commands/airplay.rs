@@ -2,7 +2,7 @@ use crate::{
     airplay_stream::stream_tick_interval,
     airplay_stream::{default_stream_root, AirPlayHttpServer},
     audio::playback::{PlaybackController, PlaybackStateSnapshot},
-    commands::cdg::{render_cdg_frame_bytes, CdgPlaybackState},
+    commands::cdg::{advance_cdg_timeline, CdgFrameUpdate, CdgPlaybackSlot, CdgTimelineKind},
     commands::error::{internal_error, CommandResult},
     lyrics::parser::LyricLine,
     AppState,
@@ -189,6 +189,10 @@ struct AirPlayRuntimeState {
     app_handle: Option<AppHandle>,
     latest_payload: Option<AirPlayAudienceStatePayload>,
     local_audio_suppressed: Option<Arc<AtomicBool>>,
+    /// Latest native output phase. Used to gate AirPlay CDG decoding:
+    /// CDG frames are only advanced while the route is in
+    /// `route_selected`, `buffering`, or `playing`.
+    latest_output_phase: Option<AirPlayOutputPhase>,
 }
 
 fn airplay_runtime_state() -> &'static Mutex<AirPlayRuntimeState> {
@@ -469,21 +473,53 @@ fn build_current_runtime_payload(
     ))
 }
 
+/// Check whether the AirPlay native route is in an active phase that
+/// requires CDG decoding. CDG frames are advanced only while the route
+/// is in `route_selected`, `buffering`, or `playing`. For `idle` or
+/// `failed`, no CDG work is done.
+fn airplay_phase_requires_cdg() -> bool {
+    let phase = airplay_runtime_state()
+        .lock()
+        .ok()
+        .and_then(|state| state.latest_output_phase);
+    matches!(
+        phase,
+        Some(AirPlayOutputPhase::RouteSelected)
+            | Some(AirPlayOutputPhase::Buffering)
+            | Some(AirPlayOutputPhase::Playing)
+    )
+}
+
+/// Advance the AirPlay CDG timeline and return the RGBA frame bytes if
+/// a new authoritative frame is available. Uses the AirPlay timeline
+/// (not Local) so AirPlay cannot rewind or corrupt local playback.
 fn build_current_cdg_frame(
-    cdg_state: &Arc<Mutex<Option<CdgPlaybackState>>>,
+    cdg_state: &Arc<Mutex<Option<CdgPlaybackSlot>>>,
     runtime: &AirPlayAudienceRuntimePayload,
 ) -> Option<Vec<u8>> {
     if runtime.mode != AirPlayAudienceMode::Cdg || runtime.song_id.is_none() {
         return None;
     }
 
-    let mut cdg_state = cdg_state.lock().ok()?;
-    render_cdg_frame_bytes(&mut cdg_state, runtime.position_ms)
+    // Gate: no AirPlay CDG work in idle/failed phase.
+    if !airplay_phase_requires_cdg() {
+        return None;
+    }
+
+    let mut cdg_guard = cdg_state.lock().ok()?;
+    let slot = cdg_guard.as_mut()?;
+    let cdg = slot.playback.as_mut()?;
+
+    let update = advance_cdg_timeline(cdg, CdgTimelineKind::AirPlay, runtime.position_ms);
+    match update {
+        CdgFrameUpdate::Frame { rgba, .. } => Some(rgba.to_vec()),
+        CdgFrameUpdate::NoChange { .. } => None,
+    }
 }
 
 fn spawn_airplay_audience_coordinator(
     playback: Arc<Mutex<PlaybackController>>,
-    cdg_state: Arc<Mutex<Option<CdgPlaybackState>>>,
+    cdg_state: Arc<Mutex<Option<CdgPlaybackSlot>>>,
     stream_generation: Arc<AtomicU64>,
 ) {
     thread::spawn(move || {
@@ -504,7 +540,7 @@ fn spawn_airplay_audience_coordinator(
 
 pub fn ensure_airplay_audience_coordinator_started(
     playback: Arc<Mutex<PlaybackController>>,
-    cdg_state: Arc<Mutex<Option<CdgPlaybackState>>>,
+    cdg_state: Arc<Mutex<Option<CdgPlaybackSlot>>>,
     stream_generation: Arc<AtomicU64>,
 ) {
     static AIRPLAY_AUDIENCE_COORDINATOR_STARTED: OnceLock<()> = OnceLock::new();
@@ -532,6 +568,12 @@ fn emit_airplay_state(event: &AirPlayOutputStateEvent) {
             )
         })
         .unwrap_or((None, None));
+
+    // Store the latest output phase so the AirPlay coordinator can gate
+    // CDG decoding on active native phases only.
+    if let Ok(mut runtime_state) = airplay_runtime_state().lock() {
+        runtime_state.latest_output_phase = Some(event.phase);
+    }
 
     if let Some(local_audio_suppressed) = local_audio_suppressed {
         // Local speaker suppression must follow actual remote audio routing,
@@ -858,10 +900,13 @@ pub fn sync_airplay_audience_state(
             .airplay_stream_generation
             .load(Ordering::SeqCst),
     );
-    let cdg_frame = build_current_cdg_frame(&state.playback.cdg_state, &runtime);
 
+    // RATIONALE: `sync_airplay_audience_state` is configuration sync only.
+    // It must not call a CDG render/advance function. The 33ms coordinator
+    // is the only owner of the AirPlay timeline and advances CDG from
+    // backend source `position_ms`.
     native::sync_audience_config(&scene_config)?;
-    native::sync_audience_runtime(&runtime, cdg_frame.as_deref())
+    native::sync_audience_runtime(&runtime, None)
 }
 
 #[cfg(test)]

@@ -82,10 +82,13 @@ describe("tauri API wrappers", () => {
   });
 
   test("sends the backend positionMs payload name", async () => {
-    await getCdgFrame(123.6);
+    await getCdgFrame("song-1", 1, 123.6, 0);
 
     expect(mockInvoke).toHaveBeenCalledWith("get_cdg_frame", {
+      songId: "song-1",
+      transportGeneration: 1,
       positionMs: 124,
+      lastFrameVersion: 0,
     });
   });
 

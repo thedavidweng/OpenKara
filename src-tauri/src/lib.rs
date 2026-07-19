@@ -142,6 +142,7 @@ pub fn run() {
             commands::playback::get_audio_peaks,
             commands::playback::set_preload_candidate,
             commands::cdg::get_cdg_frame,
+            commands::cdg::get_cdg_status,
             commands::airplay::sync_airplay_route_picker,
             commands::airplay::sync_airplay_audience_state,
             commands::airplay::step_airplay_plain_text_page,
