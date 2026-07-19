@@ -209,9 +209,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
 
           <div className="flex shrink-0 items-center gap-2">
             {mediaGBadgeLabel && (
-              <span
-                className="inline-flex h-[14px] items-center justify-center rounded bg-[var(--sidebar-row-overlay-bg)] px-1.5 text-[9px] font-semibold leading-none tracking-[0.08em] text-[var(--color-text-dim)]"
-              >
+              <span className="inline-flex h-[14px] items-center justify-center rounded bg-[var(--sidebar-row-overlay-bg)] px-1.5 text-[9px] font-semibold leading-none tracking-[0.08em] text-[var(--color-text-dim)]">
                 {mediaGBadgeLabel}
               </span>
             )}
