@@ -232,8 +232,8 @@ a {
 }
 
 .hero-copy {
-  padding-top: clamp(88px, 11vw, 156px);
-  padding-bottom: clamp(72px, 9vw, 120px);
+  padding-top: clamp(72px, 9vw, 128px);
+  padding-bottom: clamp(32px, 4vw, 56px);
 }
 
 .hero-copy h1 {
@@ -279,7 +279,7 @@ a {
   isolation: isolate;
   width: 100%;
   overflow: clip;
-  padding: clamp(42px, 3.8vw, 72px) 0 clamp(44px, 6vw, 88px);
+  padding: clamp(24px, 2.2vw, 40px) 0 clamp(44px, 6vw, 88px);
   background: linear-gradient(
     180deg,
     var(--preview-stage-top) 0%,
@@ -297,16 +297,16 @@ a {
   position: absolute;
   z-index: 0;
   right: -14%;
-  bottom: -34%;
+  bottom: -20%;
   left: -14%;
-  height: 92%;
+  height: 58%;
   content: "";
   pointer-events: none;
   background: radial-gradient(
-    ellipse 63% 58% at 50% 78%,
+    ellipse 63% 72% at 50% 82%,
     var(--preview-halo) 0%,
-    color-mix(in srgb, var(--preview-halo) 55%, transparent) 36%,
-    transparent 74%
+    color-mix(in srgb, var(--preview-halo) 50%, transparent) 40%,
+    transparent 78%
   );
   filter: blur(34px);
 }
@@ -354,7 +354,9 @@ a {
 
 .product-preview
   [data-preview-interaction-mode="playlist-only"]
-  button:not([data-preview-playlist-switch="true"]),
+  button:not([data-preview-playlist-switch="true"]):not(
+    [data-preview-lyrics-interactive="true"]
+  ),
 .product-preview [data-preview-interaction-mode="playlist-only"] input,
 .product-preview
   [data-preview-interaction-mode="playlist-only"]
@@ -371,13 +373,13 @@ a {
 
 .built-with-section {
   padding-block: clamp(38px, 4.5vw, 66px) clamp(42px, 5vw, 76px);
-  color: #f3f3f4;
-  background: #08090a;
+  color: var(--landing-text);
+  background: var(--landing-bg);
 }
 
 .built-with-label {
   margin: 0;
-  color: #94969d;
+  color: var(--landing-muted);
   font-size: 11px;
   font-weight: 650;
   letter-spacing: 0.12em;
@@ -413,6 +415,16 @@ a {
   object-fit: contain;
 }
 
+/* Brand logos are authored as white-on-transparent assets for the dark logo
+   wall. In light theme, invert luminance so they read as dark-on-light while
+   keeping the same shapes. Kilo Code is handled by its own filter rules below
+   because its SVG uses fill="currentColor" but is loaded via <img src>. */
+:root[data-theme="light"]
+  .built-with-tool:not(.built-with-tool--kilo-code)
+  img {
+  filter: invert(1);
+}
+
 .built-with-tool--claude-code img {
   max-height: 20px;
 }
@@ -425,100 +437,33 @@ a {
   max-height: 22px;
 }
 
+.built-with-tool--codex img {
+  width: 30px;
+  height: 30px;
+  max-height: none;
+}
+
 .built-with-tool--kilo-code img {
   width: 30px;
   height: 30px;
   max-height: none;
+  /* Kilo Code SVG uses fill="currentColor" but is loaded via <img src>, so host
+     CSS color does not propagate and currentColor falls back to black — invisible
+     on the dark logo wall. Force white via a luminance filter (brightness(0)
+     kills all color → black, invert(1) → white), mirroring the white-on-transparent
+     authoring of the other logos. The light-theme override below makes it dark. */
   filter: brightness(0) invert(1);
+}
+
+:root[data-theme="light"] .built-with-tool--kilo-code img {
+  filter: brightness(0);
 }
 
 .built-with-disclaimer {
   max-width: 630px;
   margin: 25px 0 0;
-  color: #74777f;
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-.preview-details {
-  width: 100%;
-  padding-bottom: clamp(44px, 6vw, 88px);
-  background: var(--landing-bg);
-}
-
-.preview-caption {
-  position: relative;
-  z-index: 1;
-  min-height: 96px;
-  padding-top: 30px;
-  display: grid;
-  grid-template-columns: 0.8fr 1.2fr;
-  gap: 48px;
-  align-items: start;
-  color: var(--landing-text);
-}
-
-.preview-caption > span {
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.preview-caption p {
-  max-width: 620px;
-  margin: 0;
-  color: var(--landing-muted);
-  font-size: 13px;
-}
-
-.preview-modules {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  margin-top: 26px;
-  border-top: 1px solid color-mix(in srgb, var(--landing-text) 11%, transparent);
-  border-bottom: 1px solid
-    color-mix(in srgb, var(--landing-text) 9%, transparent);
-}
-
-.preview-module {
-  min-height: 178px;
-  padding: 26px 28px 30px;
-  border-right: 1px solid
-    color-mix(in srgb, var(--landing-text) 9%, transparent);
-}
-
-.preview-module:last-child {
-  border-right: 0;
-}
-
-.preview-module > svg {
-  color: color-mix(in srgb, var(--landing-text) 62%, var(--landing-muted));
-}
-
-.preview-module > span {
-  display: block;
-  margin-top: 25px;
   color: var(--landing-muted);
   font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.preview-module h3 {
-  margin: 7px 0 8px;
-  color: var(--landing-text);
-  font-size: 16px;
-  font-weight: 620;
-  letter-spacing: -0.03em;
-}
-
-.preview-module p {
-  max-width: 300px;
-  margin: 0;
-  color: var(--landing-muted);
-  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -879,30 +824,9 @@ a {
     margin-top: 32px;
   }
 
-  .preview-caption {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-
   .built-with-logos {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     row-gap: 22px;
-  }
-
-  .preview-modules {
-    grid-template-columns: 1fr;
-    margin-top: 22px;
-  }
-
-  .preview-module {
-    min-height: 148px;
-    border-right: 0;
-    border-bottom: 1px solid
-      color-mix(in srgb, var(--landing-text) 9%, transparent);
-  }
-
-  .preview-module:last-child {
-    border-bottom: 0;
   }
 
   .closing-section {
@@ -936,7 +860,7 @@ a {
   }
 
   .hero-copy {
-    padding-top: 76px;
+    padding-top: 64px;
   }
 
   .hero-actions > span {

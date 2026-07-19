@@ -268,6 +268,38 @@ describe("AppLayout preview mode", () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
+  it("allows click interactions on lyrics-interactive targets in preview mode", () => {
+    const onClick = vi.fn();
+    const { container } = render(
+      <AppLayout initialWindowShellState={macShellState} previewMode />,
+    );
+
+    const outer = container.firstElementChild as HTMLElement;
+    const lyricsButton = document.createElement("button");
+    lyricsButton.setAttribute("data-preview-lyrics-interactive", "true");
+    lyricsButton.addEventListener("click", onClick);
+    outer.appendChild(lyricsButton);
+
+    fireEvent.click(lyricsButton);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows pointerdown on lyrics-interactive targets in preview mode", () => {
+    const onPointerDown = vi.fn();
+    const { container } = render(
+      <AppLayout initialWindowShellState={macShellState} previewMode />,
+    );
+
+    const outer = container.firstElementChild as HTMLElement;
+    const lyricsViewport = document.createElement("div");
+    lyricsViewport.setAttribute("data-preview-lyrics-interactive", "true");
+    lyricsViewport.addEventListener("pointerdown", onPointerDown);
+    outer.appendChild(lyricsViewport);
+
+    fireEvent.pointerDown(lyricsViewport);
+    expect(onPointerDown).toHaveBeenCalledTimes(1);
+  });
+
   it("blocks context menu in preview mode", () => {
     const onContext = vi.fn();
     const { container } = render(

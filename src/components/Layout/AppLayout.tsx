@@ -30,10 +30,16 @@ interface AppLayoutProps {
 const PREVIEW_WINDOW_SHELL_STATE: WindowShellState =
   getNativeWindowShellState();
 
-function isPreviewPlaylistTarget(target: EventTarget | null): boolean {
+// Preview-mode interaction whitelist. The landing-page mock blocks all
+// interactions except: (1) playlist switches in the sidebar, and (2) lyrics
+// scrolling + the Follow button inside the lyrics panel. The lyrics exception
+// lets visitors browse the lyrics and jump back to the current line even
+// though playback itself is frozen.
+function isPreviewAllowedTarget(target: EventTarget | null): boolean {
   return (
     target instanceof Element &&
-    target.closest("[data-preview-playlist-switch='true']") != null
+    (target.closest("[data-preview-playlist-switch='true']") != null ||
+      target.closest("[data-preview-lyrics-interactive='true']") != null)
   );
 }
 
@@ -71,7 +77,7 @@ export function AppLayout({
   // second app. Keep its state deterministic while preserving playlist changes
   // as the one meaningful way to inspect the mock library.
   const blockPreviewInteraction = useCallback((event: SyntheticEvent) => {
-    if (isPreviewPlaylistTarget(event.target)) {
+    if (isPreviewAllowedTarget(event.target)) {
       return;
     }
     event.preventDefault();

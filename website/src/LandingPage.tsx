@@ -1,17 +1,15 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import {
-  Code2,
   Download,
   HardDrive,
   Languages,
   Moon,
-  Music2,
   Play,
   SlidersHorizontal,
   Sparkles,
   Sun,
 } from "lucide-react";
-import { documentHref, type SiteLanguage } from "./document-route";
+import { documentHref, withBase, type SiteLanguage } from "./document-route";
 
 const AppPreview = lazy(() =>
   import("./AppPreview").then((module) => ({ default: module.AppPreview })),
@@ -22,34 +20,14 @@ type Theme = "dark" | "light";
 
 const COPY = {
   en: {
-    nav: ["Features", "Workflow", "Local first"],
+    nav: ["Features", "Workflow"],
     download: "Download",
     heroTitle: "Your music, on your stage.",
     heroBody:
-      "OpenKara turns the songs you already own into a complete karaoke experience—on-device stem separation, synced lyrics, and precise mixing in one open-source desktop app.",
+      "OpenKara turns the songs you already own into a complete karaoke experience with on-device stem separation, synced lyrics, and precise mixing in one open-source desktop app.",
     primary: "Download free",
     secondary: "Watch demo",
     platform: "For macOS, Windows, and Linux",
-    previewLabel: "A live preview built from the OpenKara app itself",
-    previewNote:
-      "Switch playlists in the left rail. The main window is intentionally read-only, so the product scene stays composed instead of becoming a demo sandbox.",
-    previewModules: [
-      [
-        "Lyrics",
-        "Follow every line",
-        "A lyric-led view keeps the song in focus before you begin singing.",
-      ],
-      [
-        "Stem separation",
-        "Shape the backing track",
-        "Separate vocals, drums, bass, and other parts directly on your computer.",
-      ],
-      [
-        "Mixing",
-        "Tune the moment",
-        "Fine-tune each part when you are ready to perform—not inside the landing preview.",
-      ],
-    ],
     builtWith: "Built with",
     builtWithDisclaimer:
       "Tool names and logos are shown for identification only. No partnership, sponsorship, endorsement, or affiliation is implied.",
@@ -63,11 +41,6 @@ const COPY = {
         eyebrow: "One complete library",
         title: "Import once. Sing anytime.",
         body: "OpenKara keeps metadata, stems, and lyrics together in a self-contained library that can live on your computer, NAS, or USB drive.",
-      },
-      {
-        eyebrow: "Local first",
-        title: "Your music stays with you.",
-        body: "Audio processing happens on your machine. No monthly subscription and no need to upload a private library to a third-party separation service.",
       },
     ],
     cards: [
@@ -87,11 +60,6 @@ const COPY = {
         "Portable library",
         "Back up or move one self-contained library directory.",
       ],
-      [
-        "Background jobs",
-        "Keep browsing or singing while separation finishes.",
-      ],
-      ["Open source", "Apache 2.0 licensed, inspectable, and yours to keep."],
     ],
     closing: "Turn your music into karaoke tonight.",
     source: "View source",
@@ -108,7 +76,7 @@ const COPY = {
     themeLight: "Switch to light theme",
   },
   "zh-CN": {
-    nav: ["功能", "体验", "本地优先"],
+    nav: ["功能", "体验"],
     download: "下载",
     heroTitle: "让你的音乐，成为你的舞台。",
     heroBody:
@@ -116,26 +84,6 @@ const COPY = {
     primary: "免费下载",
     secondary: "观看演示",
     platform: "支持 macOS、Windows 和 Linux",
-    previewLabel: "直接由 OpenKara 应用构建的实时预览",
-    previewNote:
-      "可以在左侧切换歌单；主窗口刻意保持只读，让产品画面始终稳定，而不是变成一个可随意操作的演示沙盒。",
-    previewModules: [
-      [
-        "歌词",
-        "跟住每一句",
-        "以歌词为中心的画面，让你开唱前先专注于歌曲本身。",
-      ],
-      [
-        "音轨分离",
-        "塑造伴奏",
-        "直接在你的电脑上分离人声、鼓、贝斯与其他音轨。",
-      ],
-      [
-        "混音",
-        "调出此刻",
-        "真正准备开唱时再精细调整每一轨，而不是在落地页预览里操作。",
-      ],
-    ],
     builtWith: "构建工具",
     builtWithDisclaimer:
       "这些名称与标志仅用于识别；不代表合作、赞助、认可或隶属关系。",
@@ -150,19 +98,12 @@ const COPY = {
         title: "导入一次，随时开唱。",
         body: "OpenKara 把元数据、分轨与歌词集中在自包含曲库中，可存放在电脑、NAS 或 USB 硬盘。",
       },
-      {
-        eyebrow: "本地优先",
-        title: "你的音乐留在你的设备上。",
-        body: "音频处理在本机完成。没有按月订阅，也无需把私人曲库上传到第三方分离服务。",
-      },
     ],
     cards: [
       ["2 或 4 轨", "快速生成伴奏，或分别控制每一个音轨。"],
       ["实时混音", "播放中调整各轨，无需重新处理歌曲。"],
       ["同步歌词", "支持时间歌词、内嵌歌词、LRC 与 CD+G。"],
       ["便携曲库", "一个自包含目录即可完成备份与迁移。"],
-      ["后台任务", "分离在后台完成，不打断浏览与演唱。"],
-      ["开源", "Apache 2.0 许可，透明、可检查、长期可用。"],
     ],
     closing: "今晚就把你的音乐变成 Karaoke。",
     source: "查看源代码",
@@ -180,16 +121,7 @@ const COPY = {
   },
 } as const;
 
-const featureIcons = [
-  Sparkles,
-  SlidersHorizontal,
-  Languages,
-  HardDrive,
-  Music2,
-  Code2,
-];
-
-const previewModuleIcons = [Music2, Sparkles, SlidersHorizontal];
+const featureIcons = [Sparkles, SlidersHorizontal, Languages, HardDrive];
 
 const BUILT_WITH_TOOLS = [
   {
@@ -234,6 +166,12 @@ const BUILT_WITH_TOOLS = [
     asset: "/img/built-with/kilo-code.svg",
     slug: "kilo-code",
   },
+  {
+    name: "Codex",
+    href: "https://openai.com/codex",
+    asset: "/img/built-with/codex.svg",
+    slug: "codex",
+  },
 ] as const;
 
 export function LandingPage() {
@@ -261,13 +199,12 @@ export function LandingPage() {
       <header className="site-header">
         <nav className="site-nav" aria-label="Primary navigation">
           <a className="brand" href="#top" aria-label="OpenKara home">
-            <img src="/img/openkara-app-icon.png" alt="" />
+            <img src={withBase("/img/openkara-app-icon.png")} alt="" />
             <span>OpenKara</span>
           </a>
           <div className="nav-links">
             <a href="#features">{copy.nav[0]}</a>
             <a href="#workflow">{copy.nav[1]}</a>
-            <a href="#local-first">{copy.nav[2]}</a>
           </div>
           <div className="nav-actions">
             <button
@@ -343,35 +280,16 @@ export function LandingPage() {
                   rel="noreferrer"
                   aria-label={tool.name}
                 >
-                  <img src={tool.asset} alt={tool.name} />
+                  <img src={withBase(tool.asset)} alt={tool.name} />
                 </a>
               ))}
             </div>
             <p className="built-with-disclaimer">{copy.builtWithDisclaimer}</p>
           </div>
         </section>
-        <section className="preview-details" aria-labelledby="preview-title">
-          <div className="preview-caption content-width">
-            <span id="preview-title">{copy.previewLabel}</span>
-            <p>{copy.previewNote}</p>
-          </div>
-          <div className="preview-modules content-width">
-            {copy.previewModules.map((module, index) => {
-              const Icon = previewModuleIcons[index];
-              return (
-                <article className="preview-module" key={module[0]}>
-                  <Icon size={16} aria-hidden="true" />
-                  <span>{module[0]}</span>
-                  <h3>{module[1]}</h3>
-                  <p>{module[2]}</p>
-                </article>
-              );
-            })}
-          </div>
-        </section>
 
         {copy.sections.map((section, sectionIndex) => {
-          const sectionIds = ["features", "workflow", "local-first"];
+          const sectionIds = ["features", "workflow"];
           return (
             <section
               className="feature-section content-width"
@@ -424,7 +342,7 @@ export function LandingPage() {
 
       <footer className="site-footer content-width">
         <a className="brand footer-brand" href="#top">
-          <img src="/img/openkara-app-icon.png" alt="" />
+          <img src={withBase("/img/openkara-app-icon.png")} alt="" />
           <span>OpenKara</span>
         </a>
         <nav

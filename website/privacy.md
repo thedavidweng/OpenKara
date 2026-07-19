@@ -17,7 +17,7 @@ The OpenKara project does not operate a hosted backend service for the core desk
 
 ## Project Operator
 
-OpenKara is maintained as an open-source software project and website. Unless a separate commercial entity or support agreement is expressly identified for a given distribution channel, references in this policy to "OpenKara," "we," or "the project" mean the maintainers of the OpenKara project and the public website at [openkara.103279.xyz](https://openkara.103279.xyz/).
+OpenKara is maintained as an open-source software project and website. Unless a separate commercial entity or support agreement is expressly identified for a given distribution channel, references in this policy to "OpenKara," "we," or "the project" mean the maintainers of the OpenKara project and the public website at [thedavidweng.github.io/OpenKara/](https://thedavidweng.github.io/OpenKara/).
 
 ## Website Data
 
