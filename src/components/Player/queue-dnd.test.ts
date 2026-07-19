@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   getDropAnnouncementPosition,
   getDropIndicatorPosition,
+  getQueueItemStateClassName,
   getVerticalTransform,
 } from "./queue-dnd";
 
@@ -41,5 +42,26 @@ describe("getDropIndicatorPosition", () => {
     expect(getDropIndicatorPosition(2, 2)).toBeNull();
     expect(getDropAnnouncementPosition(2, 2)).toBeNull();
     expect(getVerticalTransform(null)).toBeNull();
+  });
+});
+
+describe("getQueueItemStateClassName", () => {
+  test("uses theme border token for drop-indicator chrome", () => {
+    expect(getQueueItemStateClassName({ dropIndicator: "above" })).toContain(
+      "var(--color-border)",
+    );
+    expect(getQueueItemStateClassName({ dropIndicator: "below" })).toContain(
+      "shadow-[inset_0_0_0_1px_var(--color-border)]",
+    );
+  });
+
+  test("covers overlay, dragging, and idle hover states", () => {
+    expect(getQueueItemStateClassName({ isOverlay: true })).toContain(
+      "motion-safe:scale-[1.01]",
+    );
+    expect(getQueueItemStateClassName({ isDraggingSource: true })).toContain(
+      "opacity-25",
+    );
+    expect(getQueueItemStateClassName({})).toContain("hover:bg-");
   });
 });

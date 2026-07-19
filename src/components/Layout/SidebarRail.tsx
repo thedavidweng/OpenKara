@@ -84,7 +84,7 @@ export function SidebarRail({
             aria-orientation="vertical"
             aria-label="Resize sidebar"
             onPointerDown={handleDragStart}
-            className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize bg-transparent hover:bg-white/10"
+            className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize bg-transparent hover:bg-[var(--color-ghost-hover)]"
           />
         ) : null}
       </div>

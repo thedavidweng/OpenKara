@@ -44,7 +44,7 @@ export function TaskProgressBar({
         {onCancel && (
           <button
             onClick={onCancel}
-            className="motion-icon-button shrink-0 rounded p-0.5 text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
+            className="motion-icon-button shrink-0 rounded p-0.5 text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
           >
             <X size={12} />
           </button>

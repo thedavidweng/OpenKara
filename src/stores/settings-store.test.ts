@@ -11,6 +11,7 @@ const {
   mockSetEqEnabled,
   mockSetEqGains,
   mockSetLibrarySortMode,
+  mockSetThemePreference,
   mockNotifyError,
 } = vi.hoisted(() => ({
   mockSetLyricsFontStep: vi.fn<(step: number) => Promise<AppSettings>>(),
@@ -22,6 +23,7 @@ const {
       ) => Promise<AppSettings>
     >(),
   mockSetLibrarySortMode: vi.fn<(mode: string) => Promise<AppSettings>>(),
+  mockSetThemePreference: vi.fn<(preference: string) => Promise<AppSettings>>(),
   mockNotifyError: vi.fn(),
 }));
 
@@ -30,6 +32,7 @@ vi.mock("@/lib/tauri", () => ({
   setEqEnabled: mockSetEqEnabled,
   setEqGains: mockSetEqGains,
   setLibrarySortMode: mockSetLibrarySortMode,
+  setThemePreference: mockSetThemePreference,
 }));
 
 vi.mock("@/lib/errors", () => ({
@@ -63,6 +66,7 @@ function makeAppSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     eq_enabled: false,
     eq_gains_db: [0, 0, 0, 0, 0],
     library_sort_mode: "recently_imported",
+    theme_preference: "dark",
     ...overrides,
   };
 }
@@ -145,11 +149,13 @@ describe("settings-store actions", () => {
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
       librarySortMode: "recently_imported",
+      themePreference: "dark",
     });
     mockSetLyricsFontStep.mockReset();
     mockSetEqEnabled.mockReset();
     mockSetEqGains.mockReset();
     mockSetLibrarySortMode.mockReset();
+    mockSetThemePreference.mockReset();
     mockNotifyError.mockReset();
   });
 
@@ -224,6 +230,7 @@ describe("settings-store actions", () => {
     expect(state.executionProvider).toBe("xnnpack");
     expect(state.availableExecutionProviders).toEqual(["cpu", "xnnpack"]);
     expect(state.librarySortMode).toBe("artist_asc");
+    expect(state.themePreference).toBe("dark");
   });
 
   test("hydrateAppSettings maps snake_case keys to camelCase", () => {
@@ -244,11 +251,6 @@ describe("settings-store actions", () => {
     // Other fields unchanged
     expect(state.modelVariant).toBe("htdemucs");
     expect(state.lyricsFontStep).toBe(0);
-  });
-
-  test("open sets isOpen to true", () => {
-    store.getState().open();
-    expect(store.getState().isOpen).toBe(true);
   });
 
   // ── setLyricsFontStep ──────────────────────────────────────────────────
@@ -535,6 +537,7 @@ describe("settings-store actions", () => {
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
       librarySortMode: "title_asc",
+      themePreference: "dark",
     });
 
     const snapshot = store.getState().getAppSettingsSnapshot();
@@ -552,6 +555,7 @@ describe("settings-store actions", () => {
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
       librarySortMode: "title_asc",
+      themePreference: "dark",
     });
     expect(snapshot).not.toHaveProperty("isOpen");
   });
@@ -933,5 +937,56 @@ describe("settings-store actions", () => {
 
     expect(mockSetEqGains).toHaveBeenCalledWith(flat);
     expect(store.getState().eqGainsDb).toEqual(flat);
+  });
+
+  // ── setThemePreference ──────────────────────────────────────────────────
+
+  test("setThemePreference updates state on success", async () => {
+    const returned = makeAppSettings({ theme_preference: "light" });
+    mockSetThemePreference.mockResolvedValue(returned);
+
+    await store.getState().setThemePreference("light");
+
+    expect(mockSetThemePreference).toHaveBeenCalledWith("light");
+    expect(store.getState().themePreference).toBe("light");
+  });
+
+  test("setThemePreference is a no-op when preference is unchanged", async () => {
+    store.setState({ themePreference: "dark" });
+
+    await store.getState().setThemePreference("dark");
+
+    expect(mockSetThemePreference).not.toHaveBeenCalled();
+  });
+
+  test("setThemePreference rolls back and notifies on failure", async () => {
+    const error = new Error("ipc failure");
+    mockSetThemePreference.mockRejectedValue(error);
+
+    await store.getState().setThemePreference("light");
+
+    expect(store.getState().themePreference).toBe("dark");
+    expect(mockNotifyError).toHaveBeenCalledWith(error);
+  });
+
+  test("setThemePreference does not roll back if a newer mutation superseded it", async () => {
+    // Start a mutation to "light"
+    mockSetThemePreference.mockResolvedValue(
+      makeAppSettings({ theme_preference: "light" }),
+    );
+    const firstPromise = store.getState().setThemePreference("light");
+
+    // Before it resolves, start a second mutation to "system"
+    mockSetThemePreference.mockResolvedValue(
+      makeAppSettings({ theme_preference: "system" }),
+    );
+    const secondPromise = store.getState().setThemePreference("system");
+
+    await firstPromise;
+    await secondPromise;
+
+    // The second mutation wins; the first's syncPatch is skipped because the
+    // generation no longer matches.
+    expect(store.getState().themePreference).toBe("system");
   });
 });

@@ -265,6 +265,37 @@ const LYRICS_COMMANDS: CommandContract[] = [
   },
 ];
 
+const SETTINGS_COMMANDS: CommandContract[] = [
+  {
+    command: "set_eq_enabled",
+    frontendFile: "src/lib/tauri/settings.ts",
+    frontendFn: "setEqEnabled",
+    hasArgs: true,
+    rustParams: ["enabled"],
+  },
+  {
+    command: "set_eq_gains",
+    frontendFile: "src/lib/tauri/settings.ts",
+    frontendFn: "setEqGains",
+    hasArgs: true,
+    rustParams: ["gains_db"],
+  },
+  {
+    command: "set_library_sort_mode",
+    frontendFile: "src/lib/tauri/settings.ts",
+    frontendFn: "setLibrarySortMode",
+    hasArgs: true,
+    rustParams: ["mode"],
+  },
+  {
+    command: "set_theme_preference",
+    frontendFile: "src/lib/tauri/settings.ts",
+    frontendFn: "setThemePreference",
+    hasArgs: true,
+    rustParams: ["preference"],
+  },
+];
+
 const SEPARATION_COMMANDS: CommandContract[] = [
   {
     command: "separate",
@@ -307,6 +338,7 @@ const ALL_COMMANDS = [
   ...LIBRARY_COMMANDS,
   ...LYRICS_COMMANDS,
   ...SEPARATION_COMMANDS,
+  ...SETTINGS_COMMANDS,
 ];
 
 // ─── Command Name Registry Tests ───────────────────────────────────────
@@ -376,6 +408,17 @@ describe("IPC command registry", () => {
     ];
     const registered = LYRICS_COMMANDS.map((c) => c.command);
     expect(registered.sort()).toEqual(expectedLyricsCommands.sort());
+  });
+
+  test("settings commands match contract documentation", () => {
+    const expectedSettingsCommands = [
+      "set_eq_enabled",
+      "set_eq_gains",
+      "set_library_sort_mode",
+      "set_theme_preference",
+    ];
+    const registered = SETTINGS_COMMANDS.map((c) => c.command);
+    expect(registered.sort()).toEqual(expectedSettingsCommands.sort());
   });
 
   test("separation commands match contract documentation", () => {
@@ -1054,6 +1097,7 @@ describe("AppSettings shape matches Rust AppSettings", () => {
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
       library_sort_mode: "recently_imported",
+      theme_preference: "dark",
     };
     expect(settings).toHaveProperty("stem_mode");
     expect(settings).toHaveProperty("model_variant");
@@ -1066,6 +1110,7 @@ describe("AppSettings shape matches Rust AppSettings", () => {
     expect(settings).toHaveProperty("eq_enabled");
     expect(settings).toHaveProperty("eq_gains_db");
     expect(settings).toHaveProperty("library_sort_mode");
+    expect(settings).toHaveProperty("theme_preference");
   });
 
   test("stem_mode values match Rust StemMode enum", () => {

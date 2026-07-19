@@ -29,6 +29,12 @@ async function setPlatformMarker(
   page: import("@playwright/test").Page,
   marker: PlatformMarker,
 ) {
+  // Wait for the window-chrome root to mount before setting the attribute.
+  // On slow CI runners the React tree may not have hydrated yet when the
+  // evaluate runs, causing the selector to miss and the test to fail.
+  await page
+    .locator("[data-window-chrome-platform]")
+    .waitFor({ state: "attached" });
   await page.evaluate((value) => {
     const el = document.querySelector("[data-window-chrome-platform]");
     if (el instanceof HTMLElement) {

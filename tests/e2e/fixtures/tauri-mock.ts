@@ -11,102 +11,61 @@
  * executes, so it must be self-contained (no imports).
  */
 
+/**
+ * Sidebar width returned by the mock's `get_window_shell_state`. The app
+ * applies this at runtime via `--window-shell-sidebar-width`, so E2E
+ * geometry helpers must use the same value when deriving the playback-bar
+ * container width (viewport minus sidebar). Exported so specs stay in sync
+ * with the mock instead of hard-coding a separate copy.
+ */
+export const MOCK_SIDEBAR_WIDTH = 280;
+
 // This script text is passed to page.addInitScript().
 // It is intentionally self-contained and contains no imports or
-// JSON.stringify of functions (which would be stripped).
+// JSON.stringify of functions (which would be stripped). The sidebar width
+// is interpolated from MOCK_SIDEBAR_WIDTH so the mock payload and any spec
+// that imports the constant can never drift apart.
 export const TAURI_MOCK_SCRIPT = `
 (() => {
   // ── Fixture songs ──
   // Mutable so tests can override the library with larger fixtures (e.g. the
   // scrollbar spec needs enough rows to produce real overflow in the song
   // list).  get_library is a function that reads the current value.
-  // imported_at values are distinct so library sort modes produce a
-  // deterministic order. The original three rows keep the most recent
-  // timestamps so the default recently_imported sort shows them first,
-  // preserving existing e2e visibility assertions.
-  // Mutable so setLargeLibrary can swap in a synthetic large catalog for
-  // virtualization-at-scale tests without reloading the page.
-  // If a test set window.__OPENKARA_LARGE_LIBRARY_COUNT__ via addInitScript
-  // before this mock runs, eagerly generate the synthetic catalog so the
-  // initial get_library returns it without a reload.
-  let mockSongs = (function initialSongs() {
-    const count = window.__OPENKARA_LARGE_LIBRARY_COUNT__;
-    if (count && count > 0) {
-      const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-      const songs = [];
-      for (let i = 0; i < count; i++) {
-        const letter = letters[i % 26];
-        songs.push({
-          hash: "large-" + i,
-          file_path: "/music/song-" + i + ".mp3",
-          audio_source_kind: "original",
-          cdg_path: null,
-          media_g_container: null,
-          instrumental: false,
-          language: "en",
-          title: letter + " Song " + i,
-          artist: letter + " Artist " + i,
-          album: null,
-          duration_ms: 180000,
-          cover_art: null,
-          imported_at: count - i,
-          original_ext: ".mp3",
-        });
-      }
-      return songs;
-    }
-    return [
+  // Minimal 1x1 PNG so cover-art collapse thresholds are observable in E2E
+  // (NowPlayingInfo only renders the thumbnail when has_cover_art is true).
+  const TINY_PNG_BYTES = [
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+    0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+    0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
+    0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x62, 0x00, 0x01, 0x00, 0x00,
+    0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
+    0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+  ];
+
+  let mockSongs = [
     {
       hash: "aaa111", file_path: "/music/Bohemian_Rhapsody.mp3",
       audio_source_kind: "original", cdg_path: null, media_g_container: null,
       instrumental: false, language: "en",
       title: "Bohemian Rhapsody", artist: "Queen", album: "A Night at the Opera",
-      duration_ms: 354000, cover_art: null, imported_at: 700000, original_ext: ".mp3",
+      duration_ms: 354000, cover_art: TINY_PNG_BYTES, has_cover_art: true,
+      imported_at: Date.now(), original_ext: ".mp3",
     },
     {
       hash: "bbb222", file_path: "/music/Hotel_California.mp3",
       audio_source_kind: "original", cdg_path: null, media_g_container: null,
       instrumental: false, language: "en",
       title: "Hotel California", artist: "Eagles", album: "Hotel California",
-      duration_ms: 391000, cover_art: null, imported_at: 600000, original_ext: ".mp3",
+      duration_ms: 391000, cover_art: null, imported_at: Date.now(), original_ext: ".mp3",
     },
     {
       hash: "ccc333", file_path: "/music/Imagine.mp3",
       audio_source_kind: "original", cdg_path: null, media_g_container: null,
       instrumental: false, language: "en",
       title: "Imagine", artist: "John Lennon", album: "Imagine",
-      duration_ms: 187000, cover_art: null, imported_at: 500000, original_ext: ".mp3",
-    },
-    {
-      hash: "ddd444", file_path: "/music/Alpha_2.mp3",
-      audio_source_kind: "original", cdg_path: null, media_g_container: null,
-      instrumental: false, language: "en",
-      title: "Alpha 2", artist: "The Beta", album: null,
-      duration_ms: 120000, cover_art: null, imported_at: 400000, original_ext: ".mp3",
-    },
-    {
-      hash: "eee555", file_path: "/music/Alpha_10.mp3",
-      audio_source_kind: "original", cdg_path: null, media_g_container: null,
-      instrumental: false, language: "en",
-      title: "Alpha 10", artist: "The Beta", album: null,
-      duration_ms: 140000, cover_art: null, imported_at: 300000, original_ext: ".mp3",
-    },
-    {
-      hash: "fff666", file_path: "/music/Beijing_Night.mp3",
-      audio_source_kind: "original", cdg_path: null, media_g_container: null,
-      instrumental: false, language: "zh",
-      title: "北京之夜", artist: "崔健", album: null,
-      duration_ms: 210000, cover_art: null, imported_at: 200000, original_ext: ".mp3",
-    },
-    {
-      hash: "ggg777", file_path: "/music/Unknown.mp3",
-      audio_source_kind: "original", cdg_path: null, media_g_container: null,
-      instrumental: false, language: null,
-      title: null, artist: null, album: null,
-      duration_ms: 90000, cover_art: null, imported_at: 100000, original_ext: ".mp3",
+      duration_ms: 187000, cover_art: null, imported_at: Date.now(), original_ext: ".mp3",
     },
   ];
-  })();
 
   // ── Fixture lyrics ──
   // Mutable so tests can override with larger fixtures (e.g. the scrollbar
@@ -127,6 +86,7 @@ export const TAURI_MOCK_SCRIPT = `
   const playlists = [];
   const playlistSongs = new Map();
   const menuResources = new Map();
+  const separationStatuses = {};
   let nextPlaylistId = 1;
   let nextEventId = 1;
   let nextMenuRid = 1;
@@ -137,7 +97,7 @@ export const TAURI_MOCK_SCRIPT = `
   let rotationState = {
     singer_names: [], current_index: 0, mode: "round_robin", active: false,
   };
-  // Mutable settings snapshot so set_library_sort_mode can update and return
+  // Mutable settings snapshot so settings mutators can update and return
   // the complete authoritative snapshot, mirroring the Rust backend.
   let settingsSnapshot = {
     stem_mode: "two_stem", model_variant: "htdemucs", language: "en",
@@ -146,21 +106,35 @@ export const TAURI_MOCK_SCRIPT = `
     available_execution_providers: ["cpu"],
     eq_enabled: false, eq_gains_db: [0, 0, 0, 0, 0],
     library_sort_mode: "recently_imported",
+    theme_preference: "dark",
+  };
+
+
+  // Mutable playback snapshot — every get/set command reads or updates this
+  // single source of truth so geometry/pressed E2E tests can exercise real
+  // vocals/accompaniment mute transitions by patching stem volumes.
+  let currentPlaybackSnapshot = {
+    transport_generation: transportGeneration,
+    song_id: null,
+    state: "idle",
+    is_playing: false,
+    position_ms: 0,
+    duration_ms: 0,
+    buffered_ms: 0,
+    volume: 0.8,
+    stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
+    has_stems: false,
+    stem_mode: null,
   };
 
   function bumpTransportGeneration() {
     transportGeneration += 1;
+    currentPlaybackSnapshot.transport_generation = transportGeneration;
     return transportGeneration;
   }
 
   function playbackSnapshot(fields) {
-    return {
-      transport_generation: transportGeneration,
-      stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
-      has_stems: false,
-      stem_mode: null,
-      ...fields,
-    };
+    return { ...currentPlaybackSnapshot, ...fields };
   }
 
   function clone(value) {
@@ -288,9 +262,10 @@ export const TAURI_MOCK_SCRIPT = `
       }],
     },
     get_settings: () => settingsSnapshot,
+
     get_window_shell_state: {
       chrome_variant: "desktop", tier: "desktop", toolbar_height: 48,
-      traffic_light_inset_leading: 0, sidebar_header_height: 0, sidebar_width: 280,
+      traffic_light_inset_leading: 0, sidebar_header_height: 0, sidebar_width: ${MOCK_SIDEBAR_WIDTH},
     },
     get_library_path: "/tmp/openkara-test-lib",
 
@@ -299,61 +274,71 @@ export const TAURI_MOCK_SCRIPT = `
       id: "mock-lib-1", kind: "local",
       display_name: "Test Library", root_path: "/tmp/openkara-test-lib",
     },
-    // Function so setLargeLibrary can swap mockSongs after init.
     get_library: () => mockSongs,
     search_library: (args) => {
       const q = ((args && args.query) || "").toLowerCase();
       if (!q) return mockSongs;
       return mockSongs.filter(
-        (s) =>
-          (s.title ?? "").toLowerCase().includes(q) ||
-          (s.artist ?? "").toLowerCase().includes(q)
+        (s) => s.title.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q)
       );
     },
-    get_all_separation_statuses: {},
+    get_all_separation_statuses: () => clone(Object.values(separationStatuses)),
     get_all_upload_statuses: {},
 
     // Playback — every snapshot carries transport_generation (IPC contract).
-    get_playback_state: () => playbackSnapshot({
-      song_id: null, state: "idle", is_playing: false,
-      position_ms: 0, duration_ms: 0, buffered_ms: 0, volume: 0.8,
-    }),
+    // The mock owns one mutable currentPlaybackSnapshot; get_* returns a
+    // clone and set_* updates the source so E2E tests can exercise real
+    // volume/stem transitions by clicking actual buttons.
+    get_playback_state: () => clone(currentPlaybackSnapshot),
     play: (args) => {
       const songId = (args && (args.songId || args.song_id)) || "aaa111";
       const song = mockSongs.find((s) => s.hash === songId);
       bumpTransportGeneration();
-      return playbackSnapshot({
+      currentPlaybackSnapshot = {
+        ...currentPlaybackSnapshot,
         song_id: songId,
-        state: "playing", is_playing: true, position_ms: 0,
-        duration_ms: song ? song.duration_ms : 300000, buffered_ms: 0, volume: 0.8,
-      });
+        state: "playing",
+        is_playing: true,
+        position_ms: 0,
+        duration_ms: song ? song.duration_ms : 300000,
+        buffered_ms: 0,
+      };
+      return clone(currentPlaybackSnapshot);
     },
     resume: () => {
       bumpTransportGeneration();
-      return playbackSnapshot({
-        song_id: "aaa111", state: "playing", is_playing: true,
-        position_ms: 0, duration_ms: 354000, buffered_ms: 0, volume: 0.8,
-      });
+      currentPlaybackSnapshot = {
+        ...currentPlaybackSnapshot,
+        state: "playing",
+        is_playing: true,
+      };
+      return clone(currentPlaybackSnapshot);
     },
     pause: () => {
       bumpTransportGeneration();
-      return playbackSnapshot({
-        song_id: "aaa111", state: "idle", is_playing: false,
-        position_ms: 5000, duration_ms: 354000, buffered_ms: 0, volume: 0.8,
-      });
+      currentPlaybackSnapshot = {
+        ...currentPlaybackSnapshot,
+        state: "idle",
+        is_playing: false,
+      };
+      return clone(currentPlaybackSnapshot);
     },
     seek: (args) => {
       bumpTransportGeneration();
       const targetMs = (args && args.ms) || 0;
-      const bufferingSnapshot = playbackSnapshot({
-        song_id: "aaa111", state: "buffering", is_playing: true,
-        position_ms: targetMs, duration_ms: 354000, buffered_ms: targetMs, volume: 0.8,
-      });
+      const bufferingSnapshot = {
+        ...currentPlaybackSnapshot,
+        state: "buffering",
+        is_playing: true,
+        position_ms: targetMs,
+        buffered_ms: targetMs,
+      };
+      currentPlaybackSnapshot = bufferingSnapshot;
       const playingSnapshot = {
         ...bufferingSnapshot,
         state: "playing",
         position_ms: targetMs + 50,
-        buffered_ms: 354000,
+        buffered_ms: currentPlaybackSnapshot.duration_ms || 354000,
       };
       // Match the streaming Rust path, not the old optimistic browser fixture:
       // seek first publishes the target as buffering. The audio thread can
@@ -364,28 +349,45 @@ export const TAURI_MOCK_SCRIPT = `
         emitMockEvent("playback-position", {
           ms: bufferingSnapshot.position_ms,
           transport_generation: bufferingSnapshot.transport_generation,
-          snapshot: bufferingSnapshot,
+          snapshot: clone(bufferingSnapshot),
         });
       });
       setTimeout(() => {
+        currentPlaybackSnapshot = playingSnapshot;
         emitMockEvent("playback-position", {
           ms: playingSnapshot.position_ms,
           transport_generation: playingSnapshot.transport_generation,
-          snapshot: playingSnapshot,
+          snapshot: clone(playingSnapshot),
         });
       }, 80);
-      return bufferingSnapshot;
+      return clone(bufferingSnapshot);
     },
-    set_volume: (args) => playbackSnapshot({
-      song_id: "aaa111", state: "playing", is_playing: true,
-      position_ms: 0, duration_ms: 354000, buffered_ms: 0,
-      volume: (args && args.level) || 0.8,
-    }),
-    set_stem_volume: () => playbackSnapshot({
-      song_id: "aaa111", state: "playing", is_playing: true,
-      position_ms: 0, duration_ms: 354000, buffered_ms: 0, volume: 0.8,
-      has_stems: true, stem_mode: "two_stem",
-    }),
+    set_volume: (args) => {
+      // Use nullish handling so volume=0 is preserved (not replaced by 0.8).
+      const level = args && args.level != null ? args.level : 0.8;
+      currentPlaybackSnapshot = {
+        ...currentPlaybackSnapshot,
+        volume: level,
+      };
+      return clone(currentPlaybackSnapshot);
+    },
+    set_stem_volume: (args) => {
+      // Update the named stem, preserving has_stems/stem_mode so the frontend
+      // keeps its operational state across real mute/unmute transitions.
+      const stem = args && args.stem;
+      const level = args && args.level != null ? args.level : 1;
+      if (stem && currentPlaybackSnapshot.stem_volumes) {
+        currentPlaybackSnapshot = {
+          ...currentPlaybackSnapshot,
+          stem_volumes: {
+            ...currentPlaybackSnapshot.stem_volumes,
+            [stem]: level,
+          },
+        };
+      }
+      return clone(currentPlaybackSnapshot);
+    },
+    load_stems: () => clone(currentPlaybackSnapshot),
 
     // Lyrics — mutable so tests can override with larger fixtures (e.g. the
     // scrollbar spec needs enough lines to produce real overflow).
@@ -491,8 +493,6 @@ export const TAURI_MOCK_SCRIPT = `
       settingsSnapshot = { ...settingsSnapshot, cover_art_backdrop: (args && args.value) || false };
       return settingsSnapshot;
     },
-    get_audio_peaks: { writeIndex: 0, peaks: [] },
-    set_preload_candidate: undefined,
     set_eq_enabled: (args) => {
       settingsSnapshot = { ...settingsSnapshot, eq_enabled: !!(args && args.enabled) };
       return settingsSnapshot;
@@ -508,6 +508,12 @@ export const TAURI_MOCK_SCRIPT = `
       settingsSnapshot = { ...settingsSnapshot, library_sort_mode: (args && args.mode) || "recently_imported" };
       return settingsSnapshot;
     },
+    set_theme_preference: (args) => {
+      settingsSnapshot = { ...settingsSnapshot, theme_preference: (args && args.preference) || "dark" };
+      return settingsSnapshot;
+    },
+    get_audio_peaks: { writeIndex: 0, peaks: [] },
+    set_preload_candidate: undefined,
     restart_app: undefined,
     create_library: undefined,
     open_library: undefined,
@@ -633,6 +639,7 @@ export const TAURI_MOCK_SCRIPT = `
     setMockSongs: (songs) => { mockSongs = songs; },
     // Override the mock lyrics payload returned by fetch_lyrics.
     setMockLyrics: (lyrics) => { mockLyrics = lyrics; },
+
     // Swap the fixture library for a synthetic N-song catalog so virtualized
     // list and alphabet-rail tests can prove behavior at scale (5k+ rows)
     // without bloating the default fixture. Titles start with each letter
@@ -673,6 +680,39 @@ export const TAURI_MOCK_SCRIPT = `
       if (!lastNativeMenu) throw new Error("No native menu has been opened");
       await clickSubmenuItem(lastNativeMenu, parentLabel, label);
     },
+    // Merge a patch into the mutable playback snapshot and emit an
+    // authoritative playback-position event so the frontend store picks up
+    // the new state. Nested stem_volumes are merged per-stem.
+    setPlaybackSnapshot: (patch) => {
+      const next = { ...currentPlaybackSnapshot, ...patch };
+      if (patch && patch.stem_volumes && currentPlaybackSnapshot.stem_volumes) {
+        next.stem_volumes = {
+          ...currentPlaybackSnapshot.stem_volumes,
+          ...patch.stem_volumes,
+        };
+      }
+      currentPlaybackSnapshot = next;
+      emitMockEvent("playback-position", {
+        ms: next.position_ms,
+        transport_generation: next.transport_generation,
+        snapshot: clone(next),
+      });
+      return clone(next);
+    },
+    // Mark a song as having completed stem separation so the frontend's
+    // stemsAvailable gate opens when has_stems is also set. Emits a
+    // separation-complete event so useSeparationEvents updates the store.
+    setSeparationCompleted: (songHash) => {
+      separationStatuses[songHash] = {
+        song_id: songHash,
+        state: "completed",
+      };
+      emitMockEvent("separation-complete", {
+        song_id: songHash,
+        status: { song_id: songHash, state: "completed" },
+      });
+    },
+    getPlaybackSnapshot: () => clone(currentPlaybackSnapshot),
   };
 })();
 `;

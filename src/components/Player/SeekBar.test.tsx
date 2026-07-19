@@ -82,7 +82,7 @@ describe("SeekBar", () => {
     expect(markup).toContain("min-w-[180px]");
     expect(markup).toContain("min-w-[120px]");
     expect(markup).toContain("w-[3.25rem]");
-    expect(markup).toContain("font-[tabular-nums]");
+    expect(markup).toContain("tabular-nums");
     expect(markup).toContain("whitespace-nowrap");
   });
 

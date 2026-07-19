@@ -54,7 +54,8 @@ export function PlaybackStage({
     coverArtBackdrop &&
     presentation === "standard" &&
     !hasCdg &&
-    !currentSongHasCdg;
+    !currentSongHasCdg &&
+    nativeBackdropUrl != null;
 
   return (
     <div
@@ -77,7 +78,7 @@ export function PlaybackStage({
                   : undefined
               }
             />
-            <div className="absolute inset-0 bg-black/50" />
+            <div className="absolute inset-0 bg-[var(--color-scrim)]" />
           </div>
           <div className="relative z-10 flex min-h-0 flex-1 overflow-hidden">
             <LyricsPanel presentation={presentation} />

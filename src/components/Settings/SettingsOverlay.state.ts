@@ -55,6 +55,7 @@ export function createInitialSettingsOverlaySnapshot(
       eqEnabled: initialSettings.eqEnabled,
       eqGainsDb: initialSettings.eqGainsDb,
       librarySortMode: initialSettings.librarySortMode,
+      themePreference: initialSettings.themePreference,
     },
     meta: {
       isInitializing: true,
@@ -266,6 +267,7 @@ export function createSettingsOverlayActions(
           eqEnabled: settingsResult.value.eq_enabled,
           eqGainsDb: settingsResult.value.eq_gains_db,
           librarySortMode: settingsResult.value.library_sort_mode,
+          themePreference: settingsResult.value.theme_preference,
         });
       } else {
         dependencies.notifyError(settingsResult.reason);

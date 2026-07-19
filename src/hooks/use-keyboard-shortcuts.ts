@@ -1,13 +1,7 @@
 import { useEffect } from "react";
-import {
-  stepPlainTextRemotePage,
-  resolvePlainTextRemoteTarget,
-  type PlainTextPageDirection,
-} from "@/lib/plain-text-page-controls";
-import { usePlayerStore, selectCurrentPositionMs } from "@/stores/player-store";
+import { usePlayerStore } from "@/stores/player-store";
 import { useLayoutStore } from "@/stores/layout-store";
 import { useLibraryStore } from "@/stores/library-store";
-import { useLyricsStore } from "@/stores/lyrics-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { promptImportFiles } from "@/runtime/menu-runtime";
 import {
@@ -18,11 +12,8 @@ import {
 
 interface KeyboardShortcutPlayerState {
   snapshot: ReturnType<typeof usePlayerStore.getState>["snapshot"];
-  positionMs: number;
-  playingSinceMs: number | null;
   resume: () => Promise<void>;
   pause: () => Promise<void>;
-  seek: (ms: number) => Promise<void>;
   setVolume: (level: number) => Promise<void>;
 }
 
@@ -30,10 +21,6 @@ interface KeyboardShortcutDeps {
   openImportDialog: () => void;
   toggleSettings: () => void;
   toggleSidebar: () => void;
-  adjustLyricsFont: (delta: number) => void;
-  resetLyricsFont: () => void;
-  canStepPlainTextPage: boolean;
-  stepPlainTextPage: (direction: PlainTextPageDirection) => void;
   player: KeyboardShortcutPlayerState;
 }
 
@@ -43,10 +30,6 @@ export function handleAppKeyDown(
     openImportDialog,
     toggleSettings,
     toggleSidebar,
-    adjustLyricsFont,
-    resetLyricsFont,
-    canStepPlainTextPage,
-    stepPlainTextPage,
     player,
   }: KeyboardShortcutDeps,
 ): boolean {
@@ -72,51 +55,10 @@ export function handleAppKeyDown(
     return true;
   }
 
-  if (matchesShortcut(APP_SHORTCUTS.increaseLyricsFont, e)) {
-    e.preventDefault();
-    adjustLyricsFont(1);
-    return true;
-  }
+  // Lyrics are intentionally not keyboard-driven (no font/page shortcuts,
+  // no ←/→ seek that jumps the lyric playhead). ↑/↓ always nudge master volume.
 
-  if (matchesShortcut(APP_SHORTCUTS.decreaseLyricsFont, e)) {
-    e.preventDefault();
-    adjustLyricsFont(-1);
-    return true;
-  }
-
-  if (matchesShortcut(APP_SHORTCUTS.resetLyricsFont, e)) {
-    e.preventDefault();
-    resetLyricsFont();
-    return true;
-  }
-
-  if (
-    canStepPlainTextPage &&
-    matchesShortcut(APP_SHORTCUTS.lyricsPagePrev, e)
-  ) {
-    e.preventDefault();
-    stepPlainTextPage("prev");
-    return true;
-  }
-
-  if (
-    canStepPlainTextPage &&
-    matchesShortcut(APP_SHORTCUTS.lyricsPageNext, e)
-  ) {
-    e.preventDefault();
-    stepPlainTextPage("next");
-    return true;
-  }
-
-  const {
-    snapshot,
-    resume,
-    pause,
-    seek,
-    setVolume,
-    positionMs,
-    playingSinceMs,
-  } = player;
+  const { snapshot, resume, pause, setVolume } = player;
 
   // Don't intercept arrow keys when focus is inside a dialog or panel that
   // has its own keyboard navigation (e.g. settings, modals).  This lets the
@@ -139,27 +81,6 @@ export function handleAppKeyDown(
       } else if (snapshot?.song_id) {
         resume();
       }
-      return true;
-    }
-    case "ArrowLeft": {
-      e.preventDefault();
-      // F7: Use extrapolated position (not raw snapshot) for smooth seek.
-      const extrapolated = selectCurrentPositionMs({
-        snapshot,
-        positionMs,
-        playingSinceMs,
-      });
-      void seek(extrapolated - 5000);
-      return true;
-    }
-    case "ArrowRight": {
-      e.preventDefault();
-      const extrapolated = selectCurrentPositionMs({
-        snapshot,
-        positionMs,
-        playingSinceMs,
-      });
-      void seek(extrapolated + 5000);
       return true;
     }
     case "ArrowUp": {
@@ -193,42 +114,11 @@ export function useKeyboardShortcuts(enabled = true): void {
           }),
         toggleSettings: () => useSettingsStore.getState().toggle(),
         toggleSidebar: () => useLayoutStore.getState().toggleSidebar(),
-        adjustLyricsFont: (delta) =>
-          void useSettingsStore.getState().adjustLyricsFontStep(delta),
-        resetLyricsFont: () =>
-          void useSettingsStore.getState().resetLyricsFontStep(),
-        canStepPlainTextPage: (() => {
-          const playerState = usePlayerStore.getState();
-          const lyricsState = useLyricsStore.getState();
-          const isPlainTextLyrics =
-            lyricsState.lines.length > 0 &&
-            lyricsState.lines.every((line) => line.time_ms === 0);
-          const remoteTarget = resolvePlainTextRemoteTarget(
-            playerState.airPlayOutput,
-            playerState.localAudienceOutputActive,
-          );
-          const isAirPlayPending =
-            remoteTarget === "airplay" &&
-            playerState.airPlayPlainTextPagePending;
-
-          return (
-            isPlainTextLyrics && remoteTarget !== null && !isAirPlayPending
-          );
-        })(),
-        stepPlainTextPage: (direction) => {
-          const playerState = usePlayerStore.getState();
-
-          void stepPlainTextRemotePage(
-            playerState.airPlayOutput,
-            playerState.localAudienceOutputActive,
-            direction,
-          ).catch(() => {
-            // Keep local shortcuts responsive even if the auxiliary audience
-            // surface disappears between keydown and dispatch.
-          });
-        },
         player: {
-          ...usePlayerStore.getState(),
+          snapshot: usePlayerStore.getState().snapshot,
+          resume: usePlayerStore.getState().resume,
+          pause: usePlayerStore.getState().pause,
+          setVolume: usePlayerStore.getState().setVolume,
         },
       });
     };

@@ -117,6 +117,22 @@ static BOOL openkara_layout_native_traffic_lights(
     return YES;
 }
 
+static void openkara_configure_traffic_light_zoom_action(NSWindow *window) {
+    NSButton *zoomButton = [window standardWindowButton:NSWindowZoomButton];
+    if (zoomButton == nil) {
+        return;
+    }
+
+    // RATIONALE: AppKit's true full-screen style intentionally stops drawing the
+    // titlebar, which takes the standard traffic lights with it.  OpenKara's
+    // primary workspace needs its top toolbar and native window controls to stay
+    // continuously available, so the green control zooms to the usable screen
+    // frame instead. `performZoom:` still provides AppKit's normal restore
+    // behavior on the next click without reparenting or imitating traffic lights.
+    [zoomButton setTarget:window];
+    [zoomButton setAction:@selector(performZoom:)];
+}
+
 void ok_window_shell_detect_profile(OKWindowShellProfile *profile_out) {
     if (profile_out == NULL) {
         return;
@@ -184,6 +200,7 @@ bool ok_window_shell_configure_main_window(
         )) {
             return;
         }
+        openkara_configure_traffic_light_zoom_action(window);
 
         CGFloat resolvedToolbarHeight = toolbar_height;
 

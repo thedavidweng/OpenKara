@@ -42,7 +42,7 @@ function PropertyRow({ label, value, title, mono }: PropertyRowProps) {
         {label}
       </span>
       <span
-        className={`text-[12px] text-white ${mono ? "font-mono text-[11px]" : ""}`}
+        className={`text-[12px] text-[var(--color-text)] ${mono ? "font-mono text-[11px]" : ""}`}
         title={title}
       >
         {value}
@@ -120,12 +120,12 @@ export function SongPropertiesDialog({
       <div className="w-full max-w-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-sidebar)] shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-3">
-          <h3 className="text-[14px] font-semibold text-white">
+          <h3 className="text-[14px] font-semibold text-[var(--color-text)]">
             {t("songProperties.title")}
           </h3>
           <button
             onClick={onClose}
-            className="rounded p-0.5 text-[var(--color-text-dim)] transition-colors hover:text-white"
+            className="rounded p-0.5 text-[var(--color-text-dim)] transition-colors hover:text-[var(--color-text)]"
             aria-label={t("common.close")}
           >
             <svg
@@ -145,7 +145,7 @@ export function SongPropertiesDialog({
 
         {/* Song title/artist */}
         <div className="border-b border-[var(--color-border)] px-5 py-3">
-          <p className="truncate text-[13px] font-medium text-white">
+          <p className="truncate text-[13px] font-medium text-[var(--color-text)]">
             {displayTitle}
           </p>
           {currentSong.artist && (
@@ -226,7 +226,7 @@ export function SongPropertiesDialog({
                   <span className="w-28 shrink-0 text-[12px] text-[var(--color-text-dim)]">
                     {t("songProperties.instrumental")}
                   </span>
-                  <label className="flex items-center gap-2 text-[12px] text-white">
+                  <label className="flex items-center gap-2 text-[12px] text-[var(--color-text)]">
                     <input
                       type="checkbox"
                       checked={currentSong.instrumental}
@@ -246,7 +246,7 @@ export function SongPropertiesDialog({
                 <span className="w-28 shrink-0 text-[12px] text-[var(--color-text-dim)]">
                   {t("songProperties.separation")}
                 </span>
-                <span className="flex items-center gap-2 text-[12px] text-white">
+                <span className="flex items-center gap-2 text-[12px] text-[var(--color-text)]">
                   {mediaGLabel
                     ? t("songProperties.notApplicable")
                     : !sepStatus || sepStatus.state === "idle"
@@ -268,7 +268,7 @@ export function SongPropertiesDialog({
                             .upgradeToFourStem(currentSong.hash)
                             .catch(() => {});
                         }}
-                        className="ml-1 rounded bg-[var(--color-border)] px-2 py-0.5 text-[11px] text-[var(--color-text-dim)] transition-colors hover:text-white"
+                        className="ml-1 rounded bg-[var(--color-border)] px-2 py-0.5 text-[11px] text-[var(--color-text-dim)] transition-colors hover:text-[var(--color-text)]"
                       >
                         {t("songProperties.upgradeToFourStem")}
                       </button>
@@ -288,7 +288,7 @@ export function SongPropertiesDialog({
                             })
                             .catch(notifyError);
                         }}
-                        className="ml-1 rounded bg-[var(--color-border)] px-2 py-0.5 text-[11px] text-[var(--color-text-dim)] transition-colors hover:text-white"
+                        className="ml-1 rounded bg-[var(--color-border)] px-2 py-0.5 text-[11px] text-[var(--color-text-dim)] transition-colors hover:text-[var(--color-text)]"
                       >
                         {t("songProperties.downgradeToTwoStem")}
                       </button>
@@ -307,7 +307,7 @@ export function SongPropertiesDialog({
                           );
                           setShowReSeparate(true);
                         }}
-                        className="rounded bg-[var(--color-border)] px-2 py-0.5 text-[11px] text-[var(--color-text-dim)] transition-colors hover:text-white"
+                        className="rounded bg-[var(--color-border)] px-2 py-0.5 text-[11px] text-[var(--color-text-dim)] transition-colors hover:text-[var(--color-text)]"
                       >
                         {t("songProperties.reSeparate")}
                       </button>
@@ -320,8 +320,8 @@ export function SongPropertiesDialog({
                           onClick={() => setReSeparateStemMode("two_stem")}
                           className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
                             reSeparateStemMode === "two_stem"
-                              ? "bg-[var(--color-accent)] text-white"
-                              : "bg-[var(--color-border)] text-[var(--color-text-dim)] hover:text-white"
+                              ? "bg-[var(--color-accent)] text-[var(--color-on-accent)]"
+                              : "bg-[var(--color-border)] text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
                           }`}
                         >
                           {t("songProperties.twoStem")}
@@ -330,8 +330,8 @@ export function SongPropertiesDialog({
                           onClick={() => setReSeparateStemMode("four_stem")}
                           className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
                             reSeparateStemMode === "four_stem"
-                              ? "bg-[var(--color-accent)] text-white"
-                              : "bg-[var(--color-border)] text-[var(--color-text-dim)] hover:text-white"
+                              ? "bg-[var(--color-accent)] text-[var(--color-on-accent)]"
+                              : "bg-[var(--color-border)] text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
                           }`}
                         >
                           {t("songProperties.fourStem")}
@@ -343,7 +343,7 @@ export function SongPropertiesDialog({
                               .reSeparate(currentSong.hash, reSeparateStemMode)
                               .catch(notifyError);
                           }}
-                          className="rounded bg-[var(--color-accent)] px-2 py-0.5 text-[11px] text-white transition-opacity hover:opacity-80"
+                          className="rounded bg-[var(--color-accent)] px-2 py-0.5 text-[11px] text-[var(--color-on-accent)] transition-opacity hover:opacity-80"
                         >
                           {t("songProperties.confirm")}
                         </button>
@@ -359,7 +359,7 @@ export function SongPropertiesDialog({
         <div className="flex justify-end border-t border-[var(--color-border)] px-5 py-3">
           <button
             onClick={onClose}
-            className="rounded-md px-3 py-1.5 text-[12px] text-[var(--color-text-dim)] transition-colors hover:text-white"
+            className="rounded-md px-3 py-1.5 text-[12px] text-[var(--color-text-dim)] transition-colors hover:text-[var(--color-text)]"
           >
             {t("common.close")}
           </button>

@@ -13,6 +13,7 @@ import type {
   RegisteredLibrary,
   RuntimeBootstrapState,
   StemMode,
+  ThemePreference,
 } from "@/types/ipc";
 
 export type DangerDialog =
@@ -54,6 +55,7 @@ export interface SettingsOverlayState {
   eqEnabled: boolean;
   eqGainsDb: [number, number, number, number, number];
   librarySortMode: LibrarySortMode;
+  themePreference: ThemePreference;
 }
 
 export interface SettingsOverlayMeta {
@@ -94,6 +96,7 @@ export interface SettingsOverlayActions {
     gainsDb: [number, number, number, number, number],
   ) => Promise<void>;
   resetEqGains: () => Promise<void>;
+  setThemePreference: (preference: ThemePreference) => Promise<void>;
   openDeleteStemsDialog: () => Promise<void>;
   confirmDeleteStems: () => Promise<void>;
   openDowngradeDialog: () => Promise<void>;
@@ -146,6 +149,7 @@ export interface SettingsOverlayControllerDependencies {
     | "setStemMode"
     | "setEqEnabled"
     | "setEqGains"
+    | "setThemePreference"
   >;
   notifyError: (error: unknown) => void;
   openDirectory: typeof open;
@@ -168,6 +172,7 @@ export interface SettingsOverlayControllerDependencies {
     | "patchAppSettings"
     | "setEqEnabled"
     | "setEqGains"
+    | "setThemePreference"
   >;
 }
 

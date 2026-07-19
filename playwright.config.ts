@@ -5,8 +5,10 @@ import { defineConfig, devices } from "@playwright/test";
  *
  * These tests run against the Vite dev server (port 1420) with a mocked
  * Tauri IPC layer injected via fixtures (see tests/e2e/fixtures/base-test.ts).
- * They exercise the React UI in a real Chromium browser without requiring the
- * Rust backend or any platform-specific Tauri dependencies.
+ * They exercise the React UI in real Chromium and WebKit browsers without
+ * requiring the Rust backend or any platform-specific Tauri dependencies.
+ * WebKit is included because Tauri on macOS renders WKWebView; geometry and
+ * pressed-state contracts must hold in both engines.
  *
  * For full desktop E2E (native window chrome, filesystem, audio pipeline)
  * use tauri-driver — see tests/e2e/SMOKE.md for manual smoke-test steps.
@@ -31,6 +33,13 @@ export default defineConfig({
       name: "chromium",
       use: {
         ...devices["Desktop Chrome"],
+        viewport: { width: 1280, height: 800 },
+      },
+    },
+    {
+      name: "webkit",
+      use: {
+        ...devices["Desktop Safari"],
         viewport: { width: 1280, height: 800 },
       },
     },

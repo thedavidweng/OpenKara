@@ -50,7 +50,7 @@ export function ConfirmationDialog({
       >
         <h3
           id="confirmation-dialog-title"
-          className="break-words text-[15px] font-semibold text-white"
+          className="break-words text-[15px] font-semibold text-[var(--color-text)]"
         >
           {title}
         </h3>
@@ -67,7 +67,7 @@ export function ConfirmationDialog({
           <button
             ref={cancelRef}
             onClick={onCancel}
-            className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-4 py-2 text-[13px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
+            className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-4 py-2 text-[13px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
           >
             {t("common.cancel")}
           </button>

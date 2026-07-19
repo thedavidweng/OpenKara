@@ -24,7 +24,9 @@ describe("AudioLevelSlider", () => {
     );
 
     expect(markup).toContain('data-tooltip-label="Volume 72%"');
-    expect(markup).toContain('class="native-slider audio-level-slider w-20"');
+    expect(markup).toContain(
+      'class="native-slider audio-level-slider shrink-0 w-20"',
+    );
     expect(markup).not.toContain("title=");
   });
 

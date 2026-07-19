@@ -138,7 +138,7 @@ export function Sidebar({ header }: SidebarProps = {}) {
             }}
             className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between px-2 py-1.5 ${
               filter === "all" && !activePlaylistId
-                ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)]"
+                ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-[var(--color-text)] shadow-[var(--shadow-control-selected)]"
                 : "border border-transparent text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
             }`}
           >
@@ -162,15 +162,12 @@ export function Sidebar({ header }: SidebarProps = {}) {
             }}
             className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between px-2 py-1.5 ${
               filter === "separated" && !activePlaylistId
-                ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)]"
+                ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-[var(--color-text)] shadow-[var(--shadow-control-selected)]"
                 : "border border-transparent text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
             }`}
           >
             <span className="flex items-center gap-2">
-              <CheckCircle2
-                size={14}
-                className="text-[var(--color-text-dim)]"
-              />
+              <CheckCircle2 size={14} className="text-[var(--color-accent)]" />
               <span>{t("sidebar.separated")}</span>
             </span>
             <span className="text-[11px] text-[var(--color-text-dim)]">
@@ -188,7 +185,7 @@ export function Sidebar({ header }: SidebarProps = {}) {
           </span>
           <button
             onClick={() => setShowCreatePlaylist(true)}
-            className="text-[11px] text-[var(--color-accent)] hover:text-white transition-colors"
+            className="text-[11px] text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors"
             title={t("playlist.create")}
           >
             + {t("playlist.create")}
@@ -206,7 +203,7 @@ export function Sidebar({ header }: SidebarProps = {}) {
                 onClick={() => setActivePlaylist(playlist.id)}
                 className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-[13px] ${
                   activePlaylistId === playlist.id
-                    ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)]"
+                    ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-[var(--color-text)] shadow-[var(--shadow-control-selected)]"
                     : "border border-transparent text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
                 }`}
               >
@@ -271,7 +268,7 @@ export function Sidebar({ header }: SidebarProps = {}) {
           ) : needsUpgrade ? (
             <button
               onClick={() => setShowUpgradeConfirm(true)}
-              className={`motion-surface flex w-full items-center justify-center gap-2 ${batchActionClassName} text-[var(--color-text)] hover:text-white`}
+              className={`motion-surface flex w-full items-center justify-center gap-2 ${batchActionClassName} text-[var(--color-text)] hover:text-[var(--color-text)]`}
             >
               <Layers size={12} />
               {t("sidebar.upgradeAll")}
@@ -280,7 +277,7 @@ export function Sidebar({ header }: SidebarProps = {}) {
             <button
               onClick={handleSeparateAll}
               disabled={separableSongs.length === 0}
-              className={`motion-surface flex w-full items-center justify-center gap-2 ${batchActionClassName} text-[var(--color-text)] hover:text-white disabled:opacity-40`}
+              className={`motion-surface flex w-full items-center justify-center gap-2 ${batchActionClassName} text-[var(--color-text)] hover:text-[var(--color-text)] disabled:opacity-40`}
             >
               <Layers size={12} />
               {t("sidebar.separateAll")}

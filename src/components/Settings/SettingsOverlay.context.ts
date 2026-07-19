@@ -66,6 +66,7 @@ export function createSettingsOverlayTestContextValue(
       setEqEnabled: async () => {},
       setEqGains: async () => {},
       resetEqGains: async () => {},
+      setThemePreference: async () => {},
       openDeleteStemsDialog: async () => {},
       confirmDeleteStems: async () => {},
       openDowngradeDialog: async () => {},

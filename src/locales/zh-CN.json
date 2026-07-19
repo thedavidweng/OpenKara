@@ -364,6 +364,13 @@
       "hide": "禁用模糊专辑封面背景",
       "description": "移除歌词后的模糊专辑封面。"
     },
+    "appearance": {
+      "label": "外观",
+      "description": "选择应用配色方案。观众舞台始终保持深色。",
+      "system": "跟随系统",
+      "light": "浅色",
+      "dark": "深色"
+    },
     "outputDevice": {
       "label": "输出设备",
       "systemDefault": "系统默认"

@@ -98,7 +98,7 @@ function MarqueeTitle({ title }: { title: string }) {
   return (
     <span
       ref={containerRef}
-      className="block overflow-hidden text-[14px] font-semibold text-white"
+      className="block overflow-hidden text-[14px] font-semibold text-[var(--color-text)]"
     >
       <span
         ref={textRef}

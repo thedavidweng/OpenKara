@@ -76,8 +76,8 @@ export function Toolbar({
               aria-label={t("toolbar.toggleSidebar")}
               className={`motion-icon-button rounded-xl p-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
                 sidebarVisible
-                  ? "bg-[color-mix(in_srgb,var(--color-hover)_86%,transparent)] text-white shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
-                  : "text-[var(--color-text-dim)] hover:bg-white/4 hover:text-white"
+                  ? "bg-[color-mix(in_srgb,var(--color-hover)_86%,transparent)] text-[var(--color-text)] shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
+                  : "text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-text)]"
               }`}
             >
               <PanelLeft size={16} />
@@ -89,7 +89,7 @@ export function Toolbar({
             shortcut={getShortcutDisplay(APP_SHORTCUTS.importFiles)}
           >
             <ImportButton ariaLabel={t("toolbar.import")}>
-              <span className="motion-surface flex items-center gap-1.5 rounded-md border border-[var(--color-border-light)] bg-[var(--color-hover)] px-2.5 py-1 text-[12px] font-medium text-[var(--color-text)] hover:border-[color-mix(in_srgb,var(--color-accent)_24%,var(--color-border-light))] hover:bg-[var(--color-active)] hover:text-white">
+              <span className="motion-surface flex items-center gap-1.5 rounded-md border border-[var(--color-border-light)] bg-[var(--color-hover)] px-2.5 py-1 text-[12px] font-medium text-[var(--color-text)] hover:border-[color-mix(in_srgb,var(--color-accent)_24%,var(--color-border-light))] hover:bg-[var(--color-active)] hover:text-[var(--color-text)]">
                 <UploadCloud size={14} /> {t("toolbar.import")}
               </span>
             </ImportButton>
@@ -114,8 +114,8 @@ export function Toolbar({
             aria-label={t("toolbar.settings")}
             className={`motion-icon-button rounded-xl p-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
               settingsOpen
-                ? "bg-[color-mix(in_srgb,var(--color-hover)_86%,transparent)] text-white shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
-                : "text-[var(--color-text-dim)] hover:bg-white/4 hover:text-white"
+                ? "bg-[color-mix(in_srgb,var(--color-hover)_86%,transparent)] text-[var(--color-text)] shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
+                : "text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-text)]"
             }`}
           >
             <Settings size={16} />
@@ -128,9 +128,9 @@ export function Toolbar({
               ref={monitorBtnRef}
               onClick={() => setMonitorPickerOpen(!monitorPickerOpen)}
               aria-label={t("player.selectMonitor")}
-              className={`motion-icon-button rounded-xl p-2 text-[var(--color-text-dim)] hover:bg-white/4 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
+              className={`motion-icon-button rounded-xl p-2 text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
                 monitorPickerOpen
-                  ? "bg-[color-mix(in_srgb,var(--color-hover)_86%,transparent)] text-white shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
+                  ? "bg-[color-mix(in_srgb,var(--color-hover)_86%,transparent)] text-[var(--color-text)] shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
                   : ""
               }`}
             >
