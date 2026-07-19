@@ -7,6 +7,7 @@ import { useQueueStore } from "@/stores/queue-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import type {
   ExecutionProvider,
+  IntegrityReport,
   LibraryRegistrySnapshot,
   LibrarySortMode,
   ModelVariant,
@@ -22,6 +23,7 @@ export type DangerDialog =
   | "delete_lyrics"
   | "delete_runtime"
   | "ft_warning"
+  | "integrity_cleanup_confirm"
   | null;
 
 export interface ModelStatusView {
@@ -56,6 +58,9 @@ export interface SettingsOverlayState {
   eqGainsDb: [number, number, number, number, number];
   librarySortMode: LibrarySortMode;
   themePreference: ThemePreference;
+  integrityReport: IntegrityReport | null;
+  integritySelection: Set<string>;
+  integritySkippedCount: number | null;
 }
 
 export interface SettingsOverlayMeta {
@@ -66,6 +71,8 @@ export interface SettingsOverlayMeta {
   deletingStemsInProgress: boolean;
   deletingLyricsInProgress: boolean;
   downgradingInProgress: boolean;
+  integrityCheckInProgress: boolean;
+  integrityCleanupInProgress: boolean;
 }
 
 export interface SettingsOverlaySnapshot {
@@ -109,6 +116,11 @@ export interface SettingsOverlayActions {
   downloadRuntime: () => Promise<void>;
   deleteRuntime: () => Promise<void>;
   openDeleteRuntimeDialog: () => void;
+  checkLibraryIntegrity: () => Promise<void>;
+  toggleIntegritySelection: (hash: string) => void;
+  confirmIntegrityCleanup: () => Promise<void>;
+  openIntegrityCleanupConfirmDialog: () => void;
+  closeIntegrityReport: () => void;
 }
 
 export interface SettingsOverlayControllerDependencies {
@@ -150,6 +162,8 @@ export interface SettingsOverlayControllerDependencies {
     | "setEqEnabled"
     | "setEqGains"
     | "setThemePreference"
+    | "checkLibraryIntegrity"
+    | "removeMissingLibraryEntries"
   >;
   notifyError: (error: unknown) => void;
   openDirectory: typeof open;
@@ -162,7 +176,10 @@ export interface SettingsOverlayControllerDependencies {
     | "loadLibrary"
     | "updateSeparationStatus"
   >;
-  queueStore: Pick<ReturnType<typeof useQueueStore.getState>, "clearQueue">;
+  queueStore: Pick<
+    ReturnType<typeof useQueueStore.getState>,
+    "clearQueue" | "removeSongIds"
+  >;
   playerStore: Pick<ReturnType<typeof usePlayerStore.getState>, "loadState">;
   lyricsStore: Pick<ReturnType<typeof useLyricsStore.getState>, "clear">;
   settingsStore: Pick<

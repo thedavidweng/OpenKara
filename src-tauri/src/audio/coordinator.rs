@@ -133,6 +133,12 @@ pub enum PlaybackCommand {
     CancelPreparedNext {
         expected_generation: u64,
     },
+    /// After integrity cleanup deletes songs, reconcile authoritative playback.
+    /// Clears current/loading tracks that match any deleted id and drops CDG.
+    InvalidateDeletedSongs {
+        song_ids: Vec<String>,
+        reply: SnapshotReply,
+    },
 }
 
 type SnapshotReply = tokio::sync::oneshot::Sender<Result<PlaybackStateSnapshot, PlaybackError>>;
@@ -217,7 +223,76 @@ fn handle_command<R: Runtime>(runtime: &CoordinatorRuntime<R>, command: Playback
         PlaybackCommand::CancelPreparedNext {
             expected_generation,
         } => handle_cancel_prepared_next(runtime, expected_generation),
+        PlaybackCommand::InvalidateDeletedSongs { song_ids, reply } => {
+            handle_invalidate_deleted_songs(runtime, song_ids, reply)
+        }
     }
+}
+
+fn handle_invalidate_deleted_songs<R: Runtime>(
+    runtime: &CoordinatorRuntime<R>,
+    song_ids: Vec<String>,
+    reply: SnapshotReply,
+) {
+    if song_ids.is_empty() {
+        let snapshot = match runtime.playback.lock() {
+            Ok(mut playback) => playback.snapshot(),
+            Err(_) => {
+                let _ = reply.send(Err(PlaybackError::Internal(
+                    "playback lock poisoned".to_owned(),
+                )));
+                return;
+            }
+        };
+        let _ = reply.send(Ok(snapshot));
+        return;
+    }
+
+    let (snapshot, cleared_current) = {
+        let Ok(mut playback) = runtime.playback.lock() else {
+            let _ = reply.send(Err(PlaybackError::Internal(
+                "playback lock poisoned".to_owned(),
+            )));
+            return;
+        };
+        let current_song_id = playback.current_song_id().map(str::to_owned);
+        let loading_song_id = playback.loading_song_id().map(str::to_owned);
+        let changed = playback.invalidate_songs(&song_ids);
+        let clears_current = current_song_id
+            .as_deref()
+            .is_some_and(|id| song_ids.iter().any(|deleted| deleted == id));
+
+        // `latest_request_id` gates every in-flight load. Bump it only when
+        // the deleted song is itself loading; bumping for a deleted current
+        // track would otherwise discard an unrelated healthy load and leave
+        // the player stuck in loading state.
+        if loading_song_id
+            .as_deref()
+            .is_some_and(|id| song_ids.iter().any(|deleted| deleted == id))
+        {
+            runtime.latest_request_id.fetch_add(1, Ordering::SeqCst);
+        }
+        (playback.snapshot(), changed && clears_current)
+    };
+
+    if cleared_current {
+        // CDG only serves the installed track; drop it so a deleted song's
+        // CDG state cannot outlive its database row.
+        if let Ok(mut cdg_state) = runtime.cdg_state.lock() {
+            *cdg_state = None;
+        }
+        // Bump the AirPlay epoch/generation so stale AirPlay audio/control
+        // work for the deleted song cannot continue.
+        bump_airplay_epoch_and_generation(&runtime.airplay);
+        // Always emit after destructive cleanup so every WebView converges even
+        // when the resulting snapshot is idle (emit_position normally skips
+        // song_id=None).
+        let _ = runtime
+            .app_handle
+            .emit(PLAYBACK_POSITION_EVENT, playback_position_event(&snapshot));
+    }
+
+    let _ = reply.send(Ok(snapshot));
 }
 
 // ── AirPlay helpers ──────────────────────────────────────────────────────
@@ -1667,6 +1742,264 @@ mod tests {
         assert!(
             result2.is_err(),
             "coordinator must still respond after poisoned lock"
+        );
+
+        harness.shutdown();
+    }
+
+    // ── Integrity cleanup invalidation ───────────────────────────────────
+
+    /// Helper: send InvalidateDeletedSongs and wait for the reply.
+    fn invalidate_deleted(harness: &Harness, song_ids: &[&str]) {
+        let ids: Vec<String> = song_ids.iter().map(|s| s.to_string()).collect();
+        let _ = harness.send_and_recv(|reply| PlaybackCommand::InvalidateDeletedSongs {
+            song_ids: ids,
+            reply,
+        });
+    }
+
+    #[test]
+    fn invalidate_deleted_current_track_preserves_request_generation() {
+        let harness = Harness::with_request_id(1);
+        install_track(&harness, 1, "song-a");
+        assert_eq!(harness.snapshot().song_id.as_deref(), Some("song-a"));
+
+        let gen_before = harness.runtime.latest_request_id.load(Ordering::SeqCst);
+        let airplay_gen_before = harness
+            .runtime
+            .airplay
+            .airplay_stream_generation
+            .load(Ordering::SeqCst);
+        let epoch_before = harness.runtime.airplay.airplay_audio_tap.current_epoch();
+
+        invalidate_deleted(&harness, &["song-a"]);
+
+        // Current track cleared.
+        assert!(harness.snapshot().song_id.is_none());
+        // No deleted song is loading, so preserve the request generation for
+        // any unrelated decode that may be in flight.
+        assert_eq!(
+            harness.runtime.latest_request_id.load(Ordering::SeqCst),
+            gen_before
+        );
+        // AirPlay epoch and generation bumped.
+        assert_eq!(
+            harness
+                .runtime
+                .airplay
+                .airplay_stream_generation
+                .load(Ordering::SeqCst),
+            airplay_gen_before + 1
+        );
+        assert_eq!(
+            harness.runtime.airplay.airplay_audio_tap.current_epoch(),
+            epoch_before + 1
+        );
+
+        harness.shutdown();
+    }
+
+    #[test]
+    fn invalidate_deleted_current_track_keeps_unrelated_load_installable() {
+        let harness = Harness::with_request_id(1);
+        install_track(&harness, 1, "song-a");
+        let _ = harness.send_and_recv(|reply| PlaybackCommand::BeginLoad {
+            request_id: 1,
+            song_id: "song-b".to_owned(),
+            reply,
+        });
+        assert_eq!(harness.snapshot().song_id.as_deref(), Some("song-b"));
+        assert_eq!(harness.snapshot().state, "loading");
+
+        let generation_before = harness.runtime.latest_request_id.load(Ordering::SeqCst);
+        invalidate_deleted(&harness, &["song-a"]);
+
+        assert_eq!(
+            harness.runtime.latest_request_id.load(Ordering::SeqCst),
+            generation_before
+        );
+        harness.send(PlaybackCommand::InstallReady {
+            request_id: 1,
+            song_id: "song-b".to_owned(),
+            ready: Box::new(ReadyTrack::Decoded {
+                audio: dummy_audio(),
+                stems: None,
+                cdg: None,
+                cdg_error: None,
+            }),
+        });
+        let _ = harness.send_and_recv(|reply| PlaybackCommand::SetVolume { level: 0.5, reply });
+        assert_eq!(harness.snapshot().song_id.as_deref(), Some("song-b"));
+
+        harness.shutdown();
+    }
+
+    #[test]
+    fn invalidate_during_load_makes_delayed_install_ready_stale() {
+        let harness = Harness::with_request_id(1);
+
+        // Start a load for song-a (request 1 is latest).
+        let _ = harness.send_and_recv(|reply| PlaybackCommand::BeginLoad {
+            request_id: 1,
+            song_id: "song-a".to_owned(),
+            reply,
+        });
+        assert_eq!(harness.snapshot().song_id.as_deref(), Some("song-a"));
+        assert_eq!(harness.snapshot().state, "loading");
+
+        let gen_before = harness.runtime.latest_request_id.load(Ordering::SeqCst);
+
+        // Delete song-a while the load is in flight.
+        invalidate_deleted(&harness, &["song-a"]);
+        assert!(harness.snapshot().song_id.is_none());
+        assert_eq!(
+            harness.runtime.latest_request_id.load(Ordering::SeqCst),
+            gen_before + 1
+        );
+
+        // A delayed InstallReady arrives with the old (now-stale) request id.
+        harness.send(PlaybackCommand::InstallReady {
+            request_id: 1,
+            song_id: "song-a".to_owned(),
+            ready: Box::new(ReadyTrack::Decoded {
+                audio: dummy_audio(),
+                stems: None,
+                cdg: None,
+                cdg_error: None,
+            }),
+        });
+        // Barrier.
+        let _ = harness.send_and_recv(|reply| PlaybackCommand::SetVolume { level: 0.5, reply });
+
+        // The stale InstallReady must not have reinstalled the deleted song.
+        assert!(
+            harness.snapshot().song_id.is_none(),
+            "delayed InstallReady for a deleted song must be a no-op"
+        );
+
+        harness.shutdown();
+    }
+
+    #[test]
+    fn invalidate_loading_song_bumps_generation() {
+        let harness = Harness::with_request_id(1);
+
+        let _ = harness.send_and_recv(|reply| PlaybackCommand::BeginLoad {
+            request_id: 1,
+            song_id: "song-b".to_owned(),
+            reply,
+        });
+        assert_eq!(harness.snapshot().state, "loading");
+
+        let gen_before = harness.runtime.latest_request_id.load(Ordering::SeqCst);
+
+        invalidate_deleted(&harness, &["song-b"]);
+
+        assert!(harness.snapshot().song_id.is_none());
+        assert_eq!(
+            harness.runtime.latest_request_id.load(Ordering::SeqCst),
+            gen_before + 1
+        );
+
+        harness.shutdown();
+    }
+
+    #[test]
+    fn invalidate_clears_cdg_state() {
+        let harness = Harness::with_request_id(1);
+        // Install a track with CDG state.
+        harness.send(PlaybackCommand::InstallReady {
+            request_id: 1,
+            song_id: "song-a".to_owned(),
+            ready: Box::new(ReadyTrack::Decoded {
+                audio: dummy_audio(),
+                stems: None,
+                cdg: Some(Arc::from(Vec::new().into_boxed_slice())),
+                cdg_error: None,
+            }),
+        });
+        // Barrier.
+        let _ = harness.send_and_recv(|reply| PlaybackCommand::Pause { reply });
+        let _ = harness.send_and_recv(|reply| PlaybackCommand::Resume { reply });
+
+        assert!(harness.runtime.cdg_state.lock().unwrap().is_some());
+
+        invalidate_deleted(&harness, &["song-a"]);
+
+        assert!(
+            harness.runtime.cdg_state.lock().unwrap().is_none(),
+            "CDG state must be cleared when its song is deleted"
+        );
+
+        harness.shutdown();
+    }
+
+    #[test]
+    fn invalidate_unrelated_song_makes_no_state_change() {
+        let harness = Harness::with_request_id(1);
+        install_track(&harness, 1, "song-a");
+
+        let gen_before = harness.runtime.latest_request_id.load(Ordering::SeqCst);
+        let airplay_gen_before = harness
+            .runtime
+            .airplay
+            .airplay_stream_generation
+            .load(Ordering::SeqCst);
+        let epoch_before = harness.runtime.airplay.airplay_audio_tap.current_epoch();
+
+        invalidate_deleted(&harness, &["song-z"]);
+
+        // Unrelated deletion must not change playback state or generations.
+        assert_eq!(harness.snapshot().song_id.as_deref(), Some("song-a"));
+        assert_eq!(
+            harness.runtime.latest_request_id.load(Ordering::SeqCst),
+            gen_before
+        );
+        assert_eq!(
+            harness
+                .runtime
+                .airplay
+                .airplay_stream_generation
+                .load(Ordering::SeqCst),
+            airplay_gen_before
+        );
+        assert_eq!(
+            harness.runtime.airplay.airplay_audio_tap.current_epoch(),
+            epoch_before
+        );
+
+        harness.shutdown();
+    }
+
+    #[test]
+    fn invalidate_empty_song_ids_makes_no_state_change() {
+        let harness = Harness::with_request_id(1);
+        install_track(&harness, 1, "song-a");
+
+        let gen_before = harness.runtime.latest_request_id.load(Ordering::SeqCst);
+        let airplay_gen_before = harness
+            .runtime
+            .airplay
+            .airplay_stream_generation
+            .load(Ordering::SeqCst);
+
+        // Empty song_ids simulates a failed/no-op DB transaction: the command
+        // layer never sends InvalidateDeletedSongs, but the coordinator must
+        // also be safe if invoked with an empty list.
+        invalidate_deleted(&harness, &[]);
+
+        assert_eq!(harness.snapshot().song_id.as_deref(), Some("song-a"));
+        assert_eq!(
+            harness.runtime.latest_request_id.load(Ordering::SeqCst),
+            gen_before
+        );
+        assert_eq!(
+            harness
+                .runtime
+                .airplay
+                .airplay_stream_generation
+                .load(Ordering::SeqCst),
+            airplay_gen_before
         );
 
         harness.shutdown();

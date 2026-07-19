@@ -147,6 +147,13 @@ test("default action stubs are callable no-ops", async () => {
   await expect(
     value.actions.setThemePreference("system"),
   ).resolves.toBeUndefined();
+  await expect(value.actions.checkLibraryIntegrity()).resolves.toBeUndefined();
+  expect(() => value.actions.toggleIntegritySelection("hash")).not.toThrow();
+  await expect(
+    value.actions.confirmIntegrityCleanup(),
+  ).resolves.toBeUndefined();
+  expect(() => value.actions.openIntegrityCleanupConfirmDialog()).not.toThrow();
+  expect(() => value.actions.closeIntegrityReport()).not.toThrow();
 });
 
 describe("useSettingsOverlay", () => {

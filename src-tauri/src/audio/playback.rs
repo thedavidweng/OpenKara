@@ -599,6 +599,14 @@ impl PlaybackController {
             .map(|track| track.song_id.as_str())
     }
 
+    /// Return the song identifier whose decode/load operation is still pending.
+    ///
+    /// The coordinator uses this to invalidate only an in-flight request for a
+    /// song that has just been deleted, without canceling unrelated work.
+    pub fn loading_song_id(&self) -> Option<&str> {
+        self.loading_song_id.as_deref()
+    }
+
     pub fn clear_track(&mut self) {
         self.current_track = None;
         self.loading_song_id = None;
@@ -731,6 +739,22 @@ impl PlaybackController {
             return true;
         }
         false
+    }
+
+    /// Invalidate current and/or pending loads that match any of `song_ids`.
+    /// Used after integrity cleanup deletes DB rows so the realtime path cannot
+    /// keep rendering deleted media. Returns `true` when any state changed.
+    pub fn invalidate_songs(&mut self, song_ids: &[String]) -> bool {
+        let mut changed = false;
+        for song_id in song_ids {
+            if self.clear_track_if_matching(song_id) {
+                changed = true;
+            }
+            if self.cancel_loading_if_matching(song_id) {
+                changed = true;
+            }
+        }
+        changed
     }
 
     fn idle_snapshot(&self) -> PlaybackStateSnapshot {
@@ -1065,6 +1089,43 @@ mod tests {
         let snapshot = controller.snapshot();
         assert_eq!(snapshot.song_id, None);
         assert_eq!(snapshot.state, "idle");
+    }
+
+    #[test]
+    fn invalidate_songs_clears_matching_current_and_loading() {
+        let mut controller = super::PlaybackController::default();
+        let decoded = crate::audio::decode::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 1_000,
+            samples: vec![0.0; 100],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        assert_eq!(controller.current_song_id(), Some("song-a"));
+
+        assert!(controller.invalidate_songs(&[String::from("song-a")]));
+        assert!(controller.current_song_id().is_none());
+
+        controller.start_track_loading("song-b");
+        assert_eq!(controller.loading_song_id(), Some("song-b"));
+        assert!(controller.invalidate_songs(&[String::from("song-b")]));
+        // loading cleared
+        assert!(controller.loading_song_id().is_none());
+        assert!(!controller.cancel_loading_if_matching("song-b"));
+    }
+
+    #[test]
+    fn invalidate_songs_ignores_unrelated_ids() {
+        let mut controller = super::PlaybackController::default();
+        let decoded = crate::audio::decode::DecodedAudio {
+            sample_rate: 44_100,
+            channels: 2,
+            duration_ms: 1_000,
+            samples: vec![0.0; 100],
+        };
+        controller.start_track("song-a".to_owned(), decoded, 0);
+        assert!(!controller.invalidate_songs(&[String::from("other")]));
+        assert_eq!(controller.current_song_id(), Some("song-a"));
     }
 
     #[test]
