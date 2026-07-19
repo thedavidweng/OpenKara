@@ -489,9 +489,11 @@
    * geometry source — consumers must not add conflicting h/w/min/padding/
    * rounded/flex-basis classes. Use together with `motion-icon-button`.
    *
-   * Popup-row stem controls (Drums/Bass/Other, popup Vocals/Accompaniment)
-   * and the four-stem disclosure chevron stay compact and never receive
-   * this class.
+   * Popup-row stem mute controls (Drums/Bass/Other, popup
+   * Vocals/Accompaniment) use `.panel-stem-action-button` instead — same
+   * 44×44 HIG hit target and chrome, but circular to match the panel
+   * aesthetic. The four-stem disclosure chevron stays compact (16px) as a
+   * non-operational inline toggle.
    */
   .playback-bar-action-button {
     display: inline-flex;
@@ -526,6 +528,51 @@
   }
 
   .playback-bar-action-button:disabled {
+    background-color: transparent;
+    box-shadow: none;
+  }
+
+  /*
+   * Panel-variant stem mute buttons (Drums/Bass/Other, popup
+   * Vocals/Accompaniment) — same 44×44 HIG hit target, 14px radius, and
+   * chrome as .playback-bar-action-button so the pressed/hover/focus
+   * surfaces are visually identical across the playback bar and the popup
+   * panel. Desktop and touch both get the full 44px target without
+   * relying on the pointer:coarse fallback.
+   */
+  .panel-stem-action-button {
+    display: inline-flex;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    flex: 0 0 44px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 14px;
+    background-color: transparent;
+  }
+
+  .panel-stem-action-button:hover:not(:disabled):not([data-active="true"]),
+  .panel-stem-action-button:focus-visible:not([data-active="true"]) {
+    background-color: var(--color-ghost-hover);
+  }
+
+  .panel-stem-action-button[data-active="true"] {
+    color: var(--color-accent);
+    background-color: var(--color-control-selected-bg);
+    box-shadow: var(--shadow-control-selected);
+  }
+
+  .panel-stem-action-button:focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 2px;
+  }
+
+  .panel-stem-action-button:disabled {
     background-color: transparent;
     box-shadow: none;
   }
@@ -640,6 +687,38 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/*
+ * Stem mixer popup enter/exit animation. Uses @starting-style +
+ * transition-behavior: allow-discrete so the exit (display:none) also
+ * transitions on WKWebView 18+ / WebView2. On older WKWebView (macOS 14,
+ * Safari 17.x) the entry still animates via @starting-style but the exit
+ * falls back to instant close — acceptable graceful degradation.
+ *
+ * Mirror of the song-fade-in keyframe: opacity 0<->1, translateY by
+ * --motion-distance-sm, duration standard, ease-emphasized-out.
+ */
+.stem-popup {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity var(--motion-duration-standard) var(--motion-ease-emphasized-out),
+    transform var(--motion-duration-standard) var(--motion-ease-emphasized-out),
+    display var(--motion-duration-standard) var(--motion-ease-emphasized-out)
+      allow-discrete;
+}
+.stem-popup[data-state="closed"] {
+  opacity: 0;
+  transform: translateY(var(--motion-distance-sm));
+  pointer-events: none;
+  display: none;
+}
+@starting-style {
+  .stem-popup[data-state="open"] {
+    opacity: 0;
+    transform: translateY(var(--motion-distance-sm));
   }
 }
 @keyframes fade-in {

@@ -192,7 +192,7 @@ export function VolumeSliders({
     ? t("stems.collapseStems")
     : t("stems.expandStems");
   const sharedPanelClassName =
-    "app-panel-surface absolute bottom-full z-50 mb-3 rounded-lg border border-[color-mix(in_srgb,var(--color-border)_85%,transparent)] bg-[color-mix(in_srgb,var(--color-sidebar)_90%,transparent)] p-3 shadow-[0_20px_40px_rgba(0,0,0,0.32)] animate-[song-fade-in_var(--motion-duration-standard)_var(--motion-ease-emphasized-out)]";
+    "stem-popup app-panel-surface absolute bottom-full z-50 mb-3 rounded-lg border border-[color-mix(in_srgb,var(--color-border)_85%,transparent)] bg-[color-mix(in_srgb,var(--color-sidebar)_90%,transparent)] p-4 shadow-[0_20px_40px_rgba(0,0,0,0.32)]";
 
   const panelContent = (
     <div className="flex flex-col gap-2.5">
@@ -203,7 +203,7 @@ export function VolumeSliders({
         onChange={(v) => handleStemChange("vocals", v)}
         onIconClick={stemsAvailable ? handleVocalsMuteToggle : undefined}
         disabled={!stemsAvailable}
-        sliderWidthClass="w-16"
+        sliderWidthClass="w-16 mr-[14px]"
       />
       <StemSlider
         icon={Music}
@@ -212,7 +212,7 @@ export function VolumeSliders({
         onChange={handleAccompChange}
         onIconClick={stemsAvailable ? handleAccompMuteToggle : undefined}
         disabled={!stemsAvailable}
-        sliderWidthClass="w-16"
+        sliderWidthClass="w-16 mr-[14px]"
       />
       {isFourStem && (
         <>
@@ -224,8 +224,8 @@ export function VolumeSliders({
             onChange={(v) => handleStemChange("drums", v)}
             onIconClick={handleDrumsMuteToggle}
             disabled={!stemsAvailable}
-            sliderWidthClass="w-16"
-            panelIconSize={13}
+            sliderWidthClass="w-16 mr-[14px]"
+            panelIconSize={16}
           />
           <StemSlider
             icon={Guitar}
@@ -234,8 +234,8 @@ export function VolumeSliders({
             onChange={(v) => handleStemChange("bass", v)}
             onIconClick={handleBassMuteToggle}
             disabled={!stemsAvailable}
-            sliderWidthClass="w-16"
-            panelIconSize={13}
+            sliderWidthClass="w-16 mr-[14px]"
+            panelIconSize={16}
           />
           <StemSlider
             icon={AudioWaveform}
@@ -244,8 +244,8 @@ export function VolumeSliders({
             onChange={(v) => handleStemChange("other", v)}
             onIconClick={handleOtherMuteToggle}
             disabled={!stemsAvailable}
-            sliderWidthClass="w-16"
-            panelIconSize={13}
+            sliderWidthClass="w-16 mr-[14px]"
+            panelIconSize={16}
           />
         </>
       )}
@@ -283,9 +283,10 @@ export function VolumeSliders({
           </button>
         </Tooltip>
 
-        {isExpanded && stemsAvailable && (
+        {stemsAvailable && (
           <div
             ref={popupRef}
+            data-state={isExpanded ? "open" : "closed"}
             className={`${sharedPanelClassName} right-0 w-max`}
           >
             {panelContent}
@@ -350,8 +351,12 @@ export function VolumeSliders({
         )}
 
         {/* Popup for individual stem controls — aligned with accompaniment */}
-        {isExpanded && stemsAvailable && isFourStem && (
-          <div ref={popupRef} className={`${sharedPanelClassName} left-0`}>
+        {stemsAvailable && isFourStem && (
+          <div
+            ref={popupRef}
+            data-state={isExpanded ? "open" : "closed"}
+            className={`${sharedPanelClassName} left-0`}
+          >
             <div className="flex flex-col gap-2">
               <StemSlider
                 icon={Drum}
@@ -359,7 +364,7 @@ export function VolumeSliders({
                 value={stemVolumes.drums}
                 onChange={(v) => handleStemChange("drums", v)}
                 onIconClick={handleDrumsMuteToggle}
-                panelIconSize={13}
+                panelIconSize={16}
               />
               <StemSlider
                 icon={Guitar}
@@ -367,7 +372,7 @@ export function VolumeSliders({
                 value={stemVolumes.bass}
                 onChange={(v) => handleStemChange("bass", v)}
                 onIconClick={handleBassMuteToggle}
-                panelIconSize={13}
+                panelIconSize={16}
               />
               <StemSlider
                 icon={AudioWaveform}
@@ -375,7 +380,7 @@ export function VolumeSliders({
                 value={stemVolumes.other}
                 onChange={(v) => handleStemChange("other", v)}
                 onIconClick={handleOtherMuteToggle}
-                panelIconSize={13}
+                panelIconSize={16}
               />
             </div>
           </div>
@@ -391,7 +396,7 @@ interface StemSliderProps {
   icon: LucideIcon;
   iconButtonVariant?: StemIconButtonVariant; // default "panel"
   playbackActionName?: "vocals-mute" | "accompaniment-mute";
-  panelIconSize?: 13 | 14; // default 14
+  panelIconSize?: 14 | 16; // default 16 (balanced inside 44px target)
   label: string;
   value: number;
   onChange: (value: number) => void;
@@ -404,13 +409,13 @@ export function StemSlider({
   icon: Icon,
   iconButtonVariant = "panel",
   playbackActionName,
-  panelIconSize = 14,
+  panelIconSize = 16,
   label,
   value,
   onChange,
   onIconClick,
   disabled = false,
-  sliderWidthClass = "w-16",
+  sliderWidthClass = "w-16 mr-[14px]",
 }: StemSliderProps) {
   const { t } = useTranslation();
   const muteLabel =
@@ -465,7 +470,7 @@ export function StemSlider({
           disabled={disabled || !onIconClick}
           aria-pressed={isOperational ? isMuted : undefined}
           data-active={isOperational && isMuted ? "true" : undefined}
-          className={`motion-icon-button rounded-full p-1 ${
+          className={`motion-icon-button panel-stem-action-button ${
             isOperational
               ? isMuted
                 ? // Muted-but-clickable: use accent so it reads as active, not disabled.

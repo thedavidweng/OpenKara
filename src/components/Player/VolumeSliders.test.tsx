@@ -80,7 +80,10 @@ describe("VolumeSliders", () => {
     const markup = renderToStaticMarkup(<VolumeSliders density="tight" />);
 
     expect(markup).toContain('aria-label="Expand stems"');
-    expect(markup).not.toContain("audio-level-slider");
+    // Popup stays mounted in the closed state so the exit animation can run;
+    // it must not be open.
+    expect(markup).toContain('data-state="closed"');
+    expect(markup).not.toContain('data-state="open"');
   });
 
   test("inline vocals/accompaniment use the shared 44px variant with 18px icons", () => {
