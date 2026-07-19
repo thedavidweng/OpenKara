@@ -3919,5 +3919,12 @@ mod tests {
         // The controller must be in a clean state — no active crossfade,
         // no stale resampler state leaking into the next overlap.
         assert!(controller.active_crossfade.is_none());
+        // The test is named for the cache-clearing guard — verify the
+        // incoming resampler lane was actually drained, not just that the
+        // crossfade ended (which seek already guaranteed above).
+        assert!(
+            rc_in.cache.is_empty(),
+            "incoming resampler cache must be cleared after cancellation"
+        );
     }
 }
