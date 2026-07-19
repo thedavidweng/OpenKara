@@ -308,7 +308,7 @@ test.describe("scrollbar platform contract", () => {
   }) => {
     // Override the mock lyrics with 60 synced lines so the lyrics viewport
     // overflows.  Then play a song to trigger fetchLyrics.
-    const lyrics = generateLyrics(60, "aaa111");
+    const lyrics = generateLyrics(60, "earfquake");
     await page.setViewportSize({ width: 1280, height: 400 });
     await page.goto("/");
     await setPlatformMarker(page, "desktop");
@@ -316,7 +316,7 @@ test.describe("scrollbar platform contract", () => {
     await tauriMock.setMockLyrics(lyrics);
 
     // Play the first song to trigger lyrics fetch.
-    await page.getByText("Bohemian Rhapsody").dblclick();
+    await page.getByText("Earfquake").dblclick();
     const viewport = page.getByTestId("lyrics-scroll-viewport");
     await expect(viewport).toBeVisible({ timeout: 5000 });
     // Wait for at least one lyric line to render.
