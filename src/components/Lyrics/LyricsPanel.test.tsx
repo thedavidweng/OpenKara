@@ -297,9 +297,12 @@ describe("LyricsPanel contextual reveal", () => {
 
     const markup = renderToStaticMarkup(<LyricsPanel />);
 
-    expect(markup).toContain('text-white">line one</span>');
-    expect(markup).toContain('text-white">line two</span>');
-    expect(markup).not.toContain('text-[var(--color-active)]">line one</span>');
+    expect(markup).toContain(
+      'text-[var(--color-lyrics-active)]">line one</span>',
+    );
+    expect(markup).toContain(
+      'text-[var(--color-lyrics-active)]">line two</span>',
+    );
   });
 
   test("shows remote paging controls for plain-text lyrics when a remote audience target exists", () => {
@@ -508,9 +511,9 @@ describe("LyricsPanel contextual reveal", () => {
     });
 
     const markup = container.innerHTML;
-    expect(markup).toContain("text-white/45");
-    expect(markup).toContain("text-white");
-    expect(markup).toContain("text-white/50");
+    expect(markup).toContain("text-[var(--color-lyrics-past)]");
+    expect(markup).toContain("text-[var(--color-lyrics-active)]");
+    expect(markup).toContain("text-[var(--color-lyrics-future)]");
 
     await act(async () => {
       root.unmount();

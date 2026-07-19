@@ -6,19 +6,20 @@ Field or command semantic changes must update this document before changing UI c
 
 `get_settings() -> AppSettings`
 
-| Field                           | Type                          | Notes                                          |
-| ------------------------------- | ----------------------------- | ---------------------------------------------- |
-| `stem_mode`                     | `"two_stem" \| "four_stem"`   | Active stem separation mode                    |
-| `model_variant`                 | `"htdemucs" \| "htdemucs_ft"` | Active Demucs model variant                    |
-| `language`                      | `string \| null`              | UI language code, `null` = system default      |
-| `hide_batch_separate`           | `boolean`                     | Hide batch-separate action in UI               |
-| `cover_art_backdrop`            | `boolean`                     | Show blurred cover-art backdrop in player      |
-| `lyrics_font_step`              | `i8`                          | Range `[-2, 2]`, 0 = default                   |
-| `execution_provider`            | `string`                      | Active ONNX Runtime execution provider         |
-| `available_execution_providers` | `Vec<string>`                 | Providers available on current platform        |
-| `eq_enabled`                    | `bool`                        | Whether the five-band equalizer is enabled     |
-| `eq_gains_db`                   | `[f32; 5]`                    | Per-band dB gains, each clamped to `[-12, 12]` |
-| `library_sort_mode`             | `string`                      | Active sidebar song-list sort mode (see below) |
+| Field                           | Type          | Notes                                          |
+| ------------------------------- | ------------- | ---------------------------------------------- | ----------------------------------------- |
+| `stem_mode`                     | `"two_stem"   | "four_stem"`                                   | Active stem separation mode               |
+| `model_variant`                 | `"htdemucs"   | "htdemucs_ft"`                                 | Active Demucs model variant               |
+| `language`                      | `string       | null`                                          | UI language code, `null` = system default |
+| `hide_batch_separate`           | `boolean`     | Hide batch-separate action in UI               |
+| `cover_art_backdrop`            | `boolean`     | Show blurred cover-art backdrop in player      |
+| `lyrics_font_step`              | `i8`          | Range `[-2, 2]`, 0 = default                   |
+| `execution_provider`            | `string`      | Active ONNX Runtime execution provider         |
+| `available_execution_providers` | `Vec<string>` | Providers available on current platform        |
+| `eq_enabled`                    | `bool`        | Whether the five-band equalizer is enabled     |
+| `eq_gains_db`                   | `[f32; 5]`    | Per-band dB gains, each clamped to `[-12, 12]` |
+| `library_sort_mode`             | `string`      | Active sidebar song-list sort mode (see below) |
+| `theme_preference`              | `string`      | Appearance preference (see below)              |
 
 ## Library sort mode
 
@@ -39,6 +40,31 @@ rail's target indices monotonically increase from A through `#`.
 
 - `set_library_sort_mode(mode: LibrarySortMode) -> AppSettings` — Persist the
   library sort mode and return the updated settings snapshot.
+
+## Theme preference
+
+`ThemePreference` enum values (serialized as lowercase snake_case strings):
+
+| Value      | Meaning                               |
+| ---------- | ------------------------------------- |
+| `"system"` | Follow OS appearance                  |
+| `"light"`  | Force light theme                     |
+| `"dark"`   | Force dark theme (default when unset) |
+
+`AppConfig::effective_theme_preference()` returns the persisted preference
+(defaulting to `Dark` when unset). It does **not** resolve `System` against the
+OS appearance — the frontend `theme-runtime.ts` is solely responsible for
+resolving `System` to `Light` or `Dark` via
+`matchMedia("(prefers-color-scheme: dark)")` and applying the `data-theme`
+attribute to the document root. The audience/fullscreen stage stays explicitly
+dark regardless of the primary preference.
+
+### Commands
+
+- `set_theme_preference(preference: ThemePreference) -> AppSettings` — Persist
+  the appearance preference and return the updated settings snapshot.
+  Frontend wrapper: `setThemePreference`. Capability
+  `core:window:allow-set-theme` is required for native window theme sync.
 
 ## Other settings commands
 

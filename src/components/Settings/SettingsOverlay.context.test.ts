@@ -138,6 +138,15 @@ test("default action stubs are callable no-ops", async () => {
     value.actions.setEqGains([0, 0, 0, 0, 0]),
   ).resolves.toBeUndefined();
   await expect(value.actions.resetEqGains()).resolves.toBeUndefined();
+  await expect(
+    value.actions.setThemePreference("dark"),
+  ).resolves.toBeUndefined();
+  await expect(
+    value.actions.setThemePreference("light"),
+  ).resolves.toBeUndefined();
+  await expect(
+    value.actions.setThemePreference("system"),
+  ).resolves.toBeUndefined();
 });
 
 describe("useSettingsOverlay", () => {

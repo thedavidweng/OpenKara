@@ -25,8 +25,8 @@ function ExecutionProviderOption({
       disabled={disabled}
       className={`flex-1 rounded-md border px-3 py-2 text-[13px] transition-colors ${
         selected
-          ? "border-[var(--color-accent)] bg-[var(--color-accent)]/20 text-white"
-          : "border-[var(--color-border-light)] bg-[var(--color-surface)] text-[var(--color-text)] hover:bg-[var(--color-hover)] hover:text-white"
+          ? "border-[var(--color-accent)] bg-[var(--color-accent)]/15 text-[var(--color-text)]"
+          : "border-[var(--color-border-light)] bg-[var(--color-surface)] text-[var(--color-text)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
       } disabled:opacity-50`}
     >
       <div className="font-medium">{title}</div>

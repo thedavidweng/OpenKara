@@ -40,6 +40,34 @@ impl LibrarySortMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
+pub enum ThemePreference {
+    System,
+    Light,
+    #[default]
+    Dark,
+}
+
+impl ThemePreference {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::System => "system",
+            Self::Light => "light",
+            Self::Dark => "dark",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "system" => Some(Self::System),
+            "light" => Some(Self::Light),
+            "dark" => Some(Self::Dark),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
 pub enum ModelVariant {
     #[default]
     Htdemucs,
@@ -459,6 +487,9 @@ pub struct AppConfig {
     /// settings sync snapshot.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub library_sort_mode: Option<LibrarySortMode>,
+    /// Appearance preference: system / light / dark. Default dark when unset.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme_preference: Option<ThemePreference>,
     /// Remote file cache cap in bytes. When set, the cache directory is
     /// trimmed to stay under this limit, deleting the least-recently-used
     /// files. When absent the cache grows unbounded.
@@ -555,6 +586,10 @@ impl AppConfig {
 
     pub fn effective_library_sort_mode(&self) -> LibrarySortMode {
         self.library_sort_mode.unwrap_or_default()
+    }
+
+    pub fn effective_theme_preference(&self) -> ThemePreference {
+        self.theme_preference.unwrap_or_default()
     }
 
     pub fn effective_remote_cache_bytes_limit(&self) -> Option<u64> {
@@ -664,6 +699,7 @@ mod tests {
             lyrics_font_step: Some(1),
             execution_provider: None,
             library_sort_mode: None,
+            theme_preference: None,
             library_path: None,
             eq_enabled: None,
             eq_gains_db: None,
@@ -702,6 +738,7 @@ mod tests {
             eq_enabled: None,
             eq_gains_db: None,
             library_sort_mode: None,
+            theme_preference: None,
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
@@ -732,6 +769,7 @@ mod tests {
             eq_enabled: None,
             eq_gains_db: None,
             library_sort_mode: None,
+            theme_preference: None,
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
@@ -756,6 +794,7 @@ mod tests {
             eq_enabled: None,
             eq_gains_db: None,
             library_sort_mode: None,
+            theme_preference: None,
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
@@ -769,6 +808,7 @@ mod tests {
         let config = AppConfig {
             execution_provider: Some(ExecutionProviderPreference::Xnnpack),
             library_sort_mode: None,
+            theme_preference: None,
             ..AppConfig::default()
         };
         let json = serde_json::to_string(&config).unwrap();
@@ -794,6 +834,7 @@ mod tests {
             eq_enabled: None,
             eq_gains_db: None,
             library_sort_mode: None,
+            theme_preference: None,
             libraries: vec![],
             active_library_id: None,
             remote_cache_bytes_limit: None,
@@ -938,6 +979,7 @@ mod tests {
     fn library_sort_mode_none_is_omitted_from_json() {
         let config = AppConfig {
             library_sort_mode: None,
+            theme_preference: None,
             ..AppConfig::default()
         };
         let json = serde_json::to_string(&config).unwrap();
@@ -953,6 +995,7 @@ mod tests {
         ] {
             let config = AppConfig {
                 library_sort_mode: Some(mode),
+                theme_preference: None,
                 ..AppConfig::default()
             };
             let json = serde_json::to_string(&config).unwrap();
@@ -1116,6 +1159,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let config = AppConfig {
             library_sort_mode: Some(LibrarySortMode::ArtistAsc),
+            theme_preference: None,
             ..AppConfig::default()
         };
         save_config(tmp.path(), &config).unwrap();
@@ -1124,5 +1168,48 @@ mod tests {
             loaded.effective_library_sort_mode(),
             LibrarySortMode::ArtistAsc
         );
+    }
+
+    #[test]
+    fn effective_theme_preference_defaults_to_dark() {
+        let config = AppConfig::default();
+        assert_eq!(config.effective_theme_preference(), ThemePreference::Dark);
+    }
+
+    #[test]
+    fn theme_preference_none_is_omitted_from_json() {
+        let config = AppConfig::default();
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(!json.contains("theme_preference"));
+    }
+
+    #[test]
+    fn theme_preference_round_trips_through_json() {
+        for preference in [
+            ThemePreference::System,
+            ThemePreference::Light,
+            ThemePreference::Dark,
+        ] {
+            let config = AppConfig {
+                theme_preference: Some(preference),
+                ..AppConfig::default()
+            };
+            let json = serde_json::to_string(&config).unwrap();
+            let loaded: AppConfig = serde_json::from_str(&json).unwrap();
+            assert_eq!(loaded.theme_preference, Some(preference));
+        }
+    }
+
+    #[test]
+    fn invalid_theme_preference_string_is_rejected() {
+        let json = r#"{"theme_preference": "high_contrast"}"#;
+        let result = serde_json::from_str::<AppConfig>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn missing_theme_preference_field_defaults_to_dark() {
+        let loaded: AppConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(loaded.effective_theme_preference(), ThemePreference::Dark);
     }
 }

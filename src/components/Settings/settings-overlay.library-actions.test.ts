@@ -5,6 +5,7 @@ import type {
   ExecutionProvider,
   LibraryRegistrySnapshot,
   RegisteredLibrary,
+  ThemePreference,
 } from "@/types/ipc";
 import type {
   SettingsActionContext,
@@ -116,6 +117,7 @@ function createHarness(overrides?: {
       eqEnabled: false,
       eqGainsDb: [0, 0, 0, 0, 0],
       librarySortMode: "recently_imported",
+      themePreference: "dark",
     },
     meta: {
       isInitializing: false,
@@ -141,6 +143,7 @@ function createHarness(overrides?: {
       setLanguage: vi.fn(),
       restartApp: vi.fn().mockResolvedValue(undefined),
       setStemMode: vi.fn(),
+      setThemePreference: vi.fn(),
       setExecutionProvider: vi.fn(),
       setHideBatchSeparate: vi.fn(),
       setCoverArtBackdrop: vi.fn(),
@@ -193,11 +196,13 @@ function createHarness(overrides?: {
         eqEnabled: false,
         eqGainsDb: [0, 0, 0, 0, 0] as [number, number, number, number, number],
         librarySortMode: "recently_imported" as const,
+        themePreference: "dark" as ThemePreference,
       })),
       hydrateAppSettings: vi.fn(),
       patchAppSettings: vi.fn(),
       setEqEnabled: vi.fn().mockResolvedValue(undefined),
       setEqGains: vi.fn().mockResolvedValue(undefined),
+      setThemePreference: vi.fn(),
     },
   };
 
@@ -928,6 +933,58 @@ describe("createLibrarySettingsActions", () => {
       ).toHaveBeenCalledWith([0, 0, 0, 0, 0]);
       expect(harness.patchState).toHaveBeenCalledWith({ eqGainsDb: previous });
       expect(harness.dependencies.notifyError).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---- setThemePreference ----
+
+  describe("setThemePreference", () => {
+    test("patches overlay state and delegates to settings store", async () => {
+      const harness = createHarness();
+      harness.dependencies.settingsStore.setThemePreference.mockResolvedValue(
+        undefined,
+      );
+      const baseSnapshot =
+        harness.dependencies.settingsStore.getAppSettingsSnapshot();
+      harness.dependencies.settingsStore.getAppSettingsSnapshot.mockReturnValue(
+        {
+          ...baseSnapshot,
+          themePreference: "light",
+        },
+      );
+
+      await harness.actions.setThemePreference("light");
+
+      expect(harness.patchState).toHaveBeenCalledWith({
+        themePreference: "light",
+      });
+      expect(
+        harness.dependencies.settingsStore.setThemePreference,
+      ).toHaveBeenCalledWith("light");
+    });
+
+    test("mirrors the final store snapshot after the store action resolves", async () => {
+      const harness = createHarness();
+      harness.dependencies.settingsStore.setThemePreference.mockResolvedValue(
+        undefined,
+      );
+      // Simulate a rollback: the user picked "light" but the store rolled
+      // back to "dark".
+      const baseSnapshot =
+        harness.dependencies.settingsStore.getAppSettingsSnapshot();
+      harness.dependencies.settingsStore.getAppSettingsSnapshot.mockReturnValue(
+        {
+          ...baseSnapshot,
+          themePreference: "dark",
+        },
+      );
+
+      await harness.actions.setThemePreference("light");
+
+      // The final patchState call should mirror the rolled-back store value.
+      expect(harness.patchState).toHaveBeenLastCalledWith({
+        themePreference: "dark",
+      });
     });
   });
 });

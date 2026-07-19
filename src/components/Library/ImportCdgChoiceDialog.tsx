@@ -88,7 +88,7 @@ export function ImportCdgChoiceDialog() {
           <div>
             <h3
               id="import-cdg-choice-title"
-              className="text-[16px] font-semibold text-white"
+              className="text-[16px] font-semibold text-[var(--color-text)]"
             >
               {t("library.importCdgChoice.title")}
             </h3>
@@ -106,7 +106,7 @@ export function ImportCdgChoiceDialog() {
               <button
                 key={audioPath}
                 onClick={() => resolveChoice(audioPath)}
-                className="motion-surface flex w-full items-start gap-3 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-surface)] px-4 py-3 text-left hover:border-[color-mix(in_srgb,var(--color-accent)_24%,var(--color-border-light))] hover:bg-[color-mix(in_srgb,var(--color-hover)_82%,transparent)] hover:text-white"
+                className="motion-surface flex w-full items-start gap-3 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-surface)] px-4 py-3 text-left hover:border-[color-mix(in_srgb,var(--color-accent)_24%,var(--color-border-light))] hover:bg-[color-mix(in_srgb,var(--color-hover)_82%,transparent)] hover:text-[var(--color-text)]"
               >
                 <FileAudio2
                   size={16}
@@ -148,7 +148,7 @@ export function ImportCdgChoiceDialog() {
         <div className="mt-5 flex justify-end gap-2">
           <button
             onClick={() => resolveChoice(null)}
-            className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-4 py-2 text-[13px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-white"
+            className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-4 py-2 text-[13px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
           >
             {t("library.importCdgChoice.skip")}
           </button>

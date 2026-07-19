@@ -165,9 +165,9 @@ describe("LyricLine", () => {
       />,
     );
 
-    expect(markup).toContain("text-white/45");
-    expect(markup).toContain("text-white");
-    expect(markup).toContain("text-white/50");
+    expect(markup).toContain("text-[var(--color-lyrics-past)]");
+    expect(markup).toContain("text-[var(--color-lyrics-active)]");
+    expect(markup).toContain("text-[var(--color-lyrics-future)]");
   });
 
   test("uses the configured font scale without changing the lyric state logic", () => {
@@ -561,7 +561,7 @@ describe("LyricLine", () => {
       />,
     );
 
-    expect(markup).toContain("text-white/45");
+    expect(markup).toContain("text-[var(--color-lyrics-past)]");
   });
 
   test("renders future line words with active text color", () => {
@@ -583,7 +583,7 @@ describe("LyricLine", () => {
       />,
     );
 
-    expect(markup).toContain("text-white/50");
+    expect(markup).toContain("text-[var(--color-lyrics-future)]");
   });
 
   test("renders audience presentation with bg_words", () => {
@@ -627,8 +627,8 @@ describe("LyricLine", () => {
       />,
     );
 
-    // "friend" is active, last word → amplified glow (20px)
-    expect(markup).toContain("text-white");
-    expect(markup).toContain("0 0 20px");
+    // "friend" is active, last word → the semantic amplified glow token.
+    expect(markup).toContain("text-[var(--color-lyrics-active)]");
+    expect(markup).toContain("var(--shadow-lyrics-glow-strong)");
   });
 });

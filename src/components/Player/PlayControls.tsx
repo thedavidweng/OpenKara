@@ -44,7 +44,7 @@ export function PlayControls({ density = "relaxed" }: PlayControlsProps = {}) {
     >
       <button
         onClick={skipBack}
-        className="motion-icon-button rounded-full p-2 opacity-80 hover:bg-[var(--color-ghost-hover)] hover:text-white hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
+        className="motion-icon-button rounded-full p-2 opacity-80 hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-text)] hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
         aria-label={t("player.previous")}
       >
         <SkipBack size={20} fill="currentColor" />
@@ -66,7 +66,7 @@ export function PlayControls({ density = "relaxed" }: PlayControlsProps = {}) {
       </button>
       <button
         onClick={skipForward}
-        className="motion-icon-button rounded-full p-2 opacity-80 hover:bg-[var(--color-ghost-hover)] hover:text-white hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
+        className="motion-icon-button rounded-full p-2 opacity-80 hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-text)] hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
         aria-label={t("player.next")}
       >
         <SkipForward size={20} fill="currentColor" />

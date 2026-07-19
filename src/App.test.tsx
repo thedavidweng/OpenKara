@@ -8,6 +8,13 @@ vi.mock("@/runtime/app-runtime", () => ({
   useAppRuntime: vi.fn(),
 }));
 
+vi.mock("@/runtime/theme-runtime", () => ({
+  useThemeRuntime: vi.fn(() => ({
+    resolvedTheme: "dark",
+    startupThemeReady: true,
+  })),
+}));
+
 vi.mock("@/components/Layout/AppLayout", () => ({
   AppLayout: () => <div data-testid="full-app-layout" />,
 }));

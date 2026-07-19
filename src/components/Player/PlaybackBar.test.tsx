@@ -129,9 +129,21 @@ describe("PlaybackBar", () => {
   test("renders the active master volume icon with the same control brightness as stem icons", () => {
     const markup = renderToStaticMarkup(<PlaybackBar />);
 
-    expect(markup).toMatch(
-      /<button[^>]*class="[^"]*text-\[var\(--color-control-primary\)\][^"]*"[^>]*aria-label="Mute"/,
-    );
+    expect(markup).toContain('data-playback-action="master-mute"');
+    expect(markup).toContain('aria-label="Mute"');
+    expect(markup).toContain("text-[var(--color-control-primary)]");
+    expect(markup).not.toContain('data-active="true"');
+  });
+
+  test("renders the muted master volume button with dimmed icon and aria-pressed", () => {
+    mockPlayerState.snapshot.volume = 0;
+    const markup = renderToStaticMarkup(<PlaybackBar />);
+
+    expect(markup).toContain('aria-pressed="true"');
+    expect(markup).not.toContain('data-active="true"');
+    expect(markup).toContain('aria-label="Unmute"');
+    expect(markup).toContain("text-[var(--color-text-dimmer)]");
+    mockPlayerState.snapshot.volume = 0.72;
   });
 
   test("forwards the tight density to the responsive children", () => {
@@ -148,7 +160,7 @@ describe("PlaybackBar", () => {
     expect(markup).toContain('data-seek-bar-density="tight"');
     expect(markup).toContain('data-volume-sliders-density="tight"');
     expect(markup).toContain("Queue button");
-    expect(markup).toContain("audio-level-slider w-10");
+    expect(markup).toContain("audio-level-slider shrink-0 w-[64px]");
   });
 
   test("keeps one shared structure for the flush playback bar chrome", () => {
@@ -163,6 +175,38 @@ describe("PlaybackBar", () => {
     expect(markup).toContain('data-playback-zone="left"');
     expect(markup).toContain('data-playback-zone="center"');
     expect(markup).toContain('data-playback-zone="right"');
+  });
+
+  test("master volume uses the token-provided width class at every density", () => {
+    const relaxed = renderToStaticMarkup(
+      <PlaybackBar densityOverride="relaxed" />,
+    );
+    expect(relaxed).toContain("audio-level-slider shrink-0 w-[104px]");
+
+    const compact = renderToStaticMarkup(
+      <PlaybackBar densityOverride="compact" />,
+    );
+    expect(compact).toContain("audio-level-slider shrink-0 w-[80px]");
+
+    const tight = renderToStaticMarkup(<PlaybackBar densityOverride="tight" />);
+    expect(tight).toContain("audio-level-slider shrink-0 w-[64px]");
+  });
+
+  test("master icon-to-rail gap uses the token-provided value at every density", () => {
+    // The master mute icon + slider group uses an inline style gap from
+    // layoutTokens.masterVolumeGap. We assert the rendered style attribute.
+    const relaxed = renderToStaticMarkup(
+      <PlaybackBar densityOverride="relaxed" />,
+    );
+    expect(relaxed).toContain("gap:8px");
+
+    const compact = renderToStaticMarkup(
+      <PlaybackBar densityOverride="compact" />,
+    );
+    expect(compact).toContain("gap:6px");
+
+    const tight = renderToStaticMarkup(<PlaybackBar densityOverride="tight" />);
+    expect(tight).toContain("gap:6px");
   });
 
   test("measures the container width and updates the density through ResizeObserver", async () => {
@@ -219,7 +263,9 @@ describe("PlaybackBar", () => {
     expect(container.innerHTML).toContain('data-playback-zone="center"');
     expect(container.innerHTML).toContain('data-playback-zone="right"');
     expect(container.innerHTML).toContain("Queue button");
-    expect(container.innerHTML).toContain("audio-level-slider w-10");
+    expect(container.innerHTML).toContain(
+      "audio-level-slider shrink-0 w-[64px]",
+    );
 
     await act(async () => {
       root.unmount();

@@ -32,17 +32,45 @@ describe("getPlaybackBarLayoutTokens", () => {
 
   test("uses density-specific left max widths and master volume widths", () => {
     expect(getPlaybackBarLayoutTokens("relaxed")).toMatchObject({
-      leftMaxWidth: 268,
-      masterVolumeWidth: 72,
+      leftMaxWidth: 180,
+      inlineStemVolumeWidthClass: "w-[88px]",
+      masterVolumeWidth: 104,
+      masterVolumeWidthClass: "w-[104px]",
+      outerPadding: 24,
+      zoneGap: 16,
+      rightZoneGap: 8,
+      masterVolumeGap: 8,
     });
     expect(getPlaybackBarLayoutTokens("compact")).toMatchObject({
-      leftMaxWidth: 218,
-      masterVolumeWidth: 52,
+      leftMaxWidth: 152,
+      inlineStemVolumeWidthClass: "w-[72px]",
+      masterVolumeWidth: 80,
+      masterVolumeWidthClass: "w-[80px]",
+      outerPadding: 16,
+      zoneGap: 12,
+      rightZoneGap: 6,
+      masterVolumeGap: 6,
     });
     expect(getPlaybackBarLayoutTokens("tight")).toMatchObject({
-      leftMaxWidth: 160,
-      masterVolumeWidth: 40,
+      leftMaxWidth: 148,
+      inlineStemVolumeWidthClass: "w-[64px]",
+      masterVolumeWidth: 64,
+      masterVolumeWidthClass: "w-[64px]",
+      outerPadding: 16,
+      zoneGap: 10,
+      rightZoneGap: 6,
+      masterVolumeGap: 6,
     });
+  });
+
+  test("keeps the density thresholds, left floor, and collapse helpers unchanged", () => {
+    expect(PLAYBACK_BAR_LEFT_MIN_WIDTH).toBe(112);
+    expect(getPlaybackBarDensity(1120)).toBe("relaxed");
+    expect(getPlaybackBarDensity(960)).toBe("compact");
+    expect(getPlaybackBarDensity(959)).toBe("tight");
+    expect(PLAYBACK_BAR_METADATA_COLLAPSE_WIDTH).toBe(760);
+    expect(shouldCollapsePlaybackBarMetadata(759)).toBe(true);
+    expect(shouldCollapsePlaybackBarMetadata(760)).toBe(false);
   });
 
   test("uses the tighter seek-bar safety dimensions", () => {

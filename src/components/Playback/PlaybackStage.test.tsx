@@ -7,7 +7,7 @@ const { mockCdgState, mockPlayerState, mockLibraryState } = vi.hoisted(() => ({
   mockCdgState: { hasCdg: false },
   mockPlayerState: {
     snapshot: {
-      song_id: "song-1",
+      song_id: "song-1" as string | null,
     },
   },
   mockLibraryState: {
@@ -48,7 +48,8 @@ vi.mock("@/stores/library-store", () => ({
 }));
 
 vi.mock("@/lib/cover-art", () => ({
-  useCoverArtUrl: () => "blob:stage-cover",
+  useCoverArtUrl: (_songHash: string, bytes: unknown) =>
+    bytes ? "blob:stage-cover" : null,
 }));
 
 vi.mock("@/components/Cdg/CdgCanvas", () => ({
@@ -103,6 +104,18 @@ describe("PlaybackStage", () => {
     expect(markup).toContain('data-stage-visual-variant="ambience"');
     expect(markup).toContain('data-native-stage-backdrop="true"');
     expect(markup).toContain("blob:stage-cover");
+    expect(markup).toContain("lyrics-panel");
+  });
+
+  test("keeps an empty lyric stage bright when no cover art is available", () => {
+    mockCdgState.hasCdg = false;
+    mockLibraryState.songs = [];
+    mockPlayerState.snapshot = { song_id: null };
+
+    const markup = renderToStaticMarkup(<PlaybackStage />);
+
+    expect(markup).toContain('data-stage-visual-variant="default"');
+    expect(markup).not.toContain('data-native-stage-backdrop="true"');
     expect(markup).toContain("lyrics-panel");
   });
 });

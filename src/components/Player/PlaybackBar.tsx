@@ -135,23 +135,26 @@ export function PlaybackBar({ densityOverride }: PlaybackBarProps = {}) {
 
           <div
             className="flex shrink-0 items-center"
-            style={{ gap: density === "relaxed" ? 8 : 6 }}
+            style={{ gap: layoutTokens.masterVolumeGap }}
           >
             <Tooltip
               label={volume === 0 ? t("player.unmute") : t("player.mute")}
             >
               <button
+                type="button"
                 onClick={handleMasterMuteToggle}
-                className={`motion-icon-button min-h-11 min-w-11 rounded-full p-1.5 hover:bg-[var(--color-ghost-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
-                  volume > 0
-                    ? "text-[var(--color-control-primary)] hover:text-white"
-                    : "text-[var(--color-text-dimmer)]"
-                }`}
                 aria-label={
                   volume === 0 ? t("player.unmute") : t("player.mute")
                 }
+                aria-pressed={volume === 0}
+                data-playback-action="master-mute"
+                className={`motion-icon-button playback-bar-action-button ${
+                  volume > 0
+                    ? "text-[var(--color-control-primary)] hover:text-[var(--color-text)]"
+                    : "text-[var(--color-text-dimmer)]"
+                }`}
               >
-                {volume === 0 ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                {volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
               </button>
             </Tooltip>
             <AudioLevelSlider

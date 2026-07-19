@@ -175,6 +175,7 @@ pub fn run() {
             commands::settings::set_eq_enabled,
             commands::settings::set_eq_gains,
             commands::settings::set_library_sort_mode,
+            commands::settings::set_theme_preference,
             commands::settings::restart_app,
             commands::window_shell::get_window_shell_state,
             commands::window_shell::set_native_sidebar_visibility,

@@ -20,7 +20,7 @@ export function SearchBox() {
 
   return (
     <div
-      className="motion-surface relative flex items-center overflow-hidden rounded-[14px] border border-[var(--sidebar-control-border)] bg-[var(--sidebar-control-bg)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] focus-within:border-[color-mix(in_srgb,var(--color-accent)_24%,var(--color-border-light))] focus-within:bg-[var(--sidebar-row-overlay-bg)]"
+      className="motion-surface relative flex items-center overflow-hidden rounded-[14px] border border-[var(--sidebar-control-border)] bg-[var(--sidebar-control-bg)] shadow-[inset_0_1px_0_var(--sidebar-control-border)] focus-within:border-[color-mix(in_srgb,var(--color-accent)_24%,var(--color-border-light))] focus-within:bg-[var(--sidebar-row-overlay-bg)]"
       data-search-visual-variant="unified"
     >
       <Search

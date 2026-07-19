@@ -12,7 +12,7 @@ import { Tooltip } from "@/components/Overlay/Tooltip";
 import { useLyricsEngine } from "@/hooks/use-lyrics-engine";
 import { useAudiencePlainTextPaging } from "@/hooks/use-audience-plain-text-paging";
 import { useAirPlayPendingGuard } from "@/hooks/use-airplay-pending-guard";
-import { APP_SHORTCUTS, getShortcutDisplay } from "@/lib/app-shortcuts";
+
 import {
   stepPlainTextRemotePage,
   resolvePlainTextRemoteTarget,
@@ -254,10 +254,7 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
           {shouldShowRemotePageControls ? (
             <div className="pointer-events-none absolute inset-y-0 right-4 z-10 flex items-center">
               <div className="pointer-events-auto flex flex-col gap-3">
-                <Tooltip
-                  label={t("lyrics.previousPage")}
-                  shortcut={getShortcutDisplay(APP_SHORTCUTS.lyricsPagePrev)}
-                >
+                <Tooltip label={t("lyrics.previousPage")}>
                   <button
                     type="button"
                     data-testid="plain-text-page-prev"
@@ -280,10 +277,7 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
                     )}
                   </button>
                 </Tooltip>
-                <Tooltip
-                  label={t("lyrics.nextPage")}
-                  shortcut={getShortcutDisplay(APP_SHORTCUTS.lyricsPageNext)}
-                >
+                <Tooltip label={t("lyrics.nextPage")}>
                   <button
                     type="button"
                     data-testid="plain-text-page-next"

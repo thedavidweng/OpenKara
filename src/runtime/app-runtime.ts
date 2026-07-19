@@ -2,7 +2,10 @@ import { useEffect } from "react";
 import { usePlayerStore } from "@/stores/player-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useBootstrapStore } from "@/stores/bootstrap-store";
-import { useSettingsStore } from "@/stores/settings-store";
+import {
+  DEFAULT_APP_SETTINGS,
+  useSettingsStore,
+} from "@/stores/settings-store";
 import {
   useEventListeners,
   useLyricsAutoFetch,
@@ -31,6 +34,7 @@ export function useAppStartupRuntime(
   const loadBootstrapStatus = useBootstrapStore((s) => s.loadStatus);
   const loadPlayerState = usePlayerStore((s) => s.loadState);
   const hydrateAppSettings = useSettingsStore((s) => s.hydrateAppSettings);
+  const patchAppSettings = useSettingsStore((s) => s.patchAppSettings);
 
   useEffect(() => {
     void loadStartupSettings({
@@ -38,11 +42,26 @@ export function useAppStartupRuntime(
       hydrateAppSettings,
       changeLanguage: i18next.changeLanguage,
       detectFallbackLanguage: detectSystemLanguage,
-    }).catch(() => {
-      // Language persistence should not block first render if settings are
-      // temporarily unavailable; later settings actions will rehydrate state.
+    }).catch((error) => {
+      // Missing/corrupt/unreadable config must not strand the hidden window.
+      // Apply all defaults with hydrated: true so the theme runtime and ready
+      // gate can proceed, then report the original settings error once.
+      // Guard against wiping already-loaded preferences: loadStartupSettings
+      // hydrates saved settings before attempting the language switch, so a
+      // language failure reaching this catch must not overwrite them.
+      if (!useSettingsStore.getState().hydrated) {
+        patchAppSettings({ ...DEFAULT_APP_SETTINGS, hydrated: true });
+      }
+      notifyError(error);
+
+      // Fallback system-language setup is independent of settings hydration so
+      // a language failure cannot clear the selected theme.
+      void i18next.changeLanguage(detectSystemLanguage()).catch(() => {
+        // Language failure after settings fallback is non-fatal; the default
+        // language remains active and the window can still be shown.
+      });
     });
-  }, [hydrateAppSettings]);
+  }, [hydrateAppSettings, patchAppSettings]);
 
   useEffect(() => {
     api
@@ -67,12 +86,19 @@ export function useAppStartupRuntime(
 
 export function useAppReadyRuntime(
   libraryReady: boolean | null,
+  settingsHydrated: boolean,
+  startupThemeReady: boolean,
   windowShown: boolean,
   setWindowShown: (shown: boolean) => void,
   scheduleFrame: AnimationFrameScheduler = requestAnimationFrame,
 ) {
   useEffect(() => {
-    if (libraryReady === null || windowShown) {
+    if (
+      libraryReady === null ||
+      !settingsHydrated ||
+      !startupThemeReady ||
+      windowShown
+    ) {
       return;
     }
 
@@ -84,7 +110,14 @@ export function useAppReadyRuntime(
     return () => {
       cancelAnimationFrame(frameId);
     };
-  }, [libraryReady, scheduleFrame, setWindowShown, windowShown]);
+  }, [
+    libraryReady,
+    scheduleFrame,
+    setWindowShown,
+    settingsHydrated,
+    startupThemeReady,
+    windowShown,
+  ]);
 }
 
 /**

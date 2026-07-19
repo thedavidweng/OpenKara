@@ -252,7 +252,7 @@ export function RemoteLibraryWizard({
       <div className="w-full max-w-xl rounded-xl border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-5 shadow-2xl">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-lg font-semibold text-white">
+            <h2 className="text-lg font-semibold text-[var(--color-text)]">
               {t(titleKey, {
                 defaultValue: isReauthorizeFlow
                   ? "Reauthorize remote repository"
@@ -270,7 +270,7 @@ export function RemoteLibraryWizard({
           <button
             onClick={requestClose}
             aria-label={t("common.close")}
-            className="rounded-md p-1 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-white"
+            className="rounded-md p-1 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
           >
             <X size={16} />
           </button>
@@ -283,11 +283,11 @@ export function RemoteLibraryWizard({
               disabled={loading}
               className={`rounded-lg border px-4 py-3 text-left ${
                 mode === "open_remote"
-                  ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10"
+                  ? "border-[var(--color-control-selected-border)] bg-[var(--color-control-selected-bg)]"
                   : "border-[var(--color-border-light)] bg-[var(--color-surface)]"
               }`}
             >
-              <p className="text-sm font-medium text-white">
+              <p className="text-sm font-medium text-[var(--color-text)]">
                 {t("settings.library.openRemoteLibrary", {
                   defaultValue: "Open Remote Repository",
                 })}
@@ -304,11 +304,11 @@ export function RemoteLibraryWizard({
               disabled={loading || !canMirrorActiveLocal}
               className={`rounded-lg border px-4 py-3 text-left ${
                 mode === "mirror_active_local"
-                  ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10"
+                  ? "border-[var(--color-control-selected-border)] bg-[var(--color-control-selected-bg)]"
                   : "border-[var(--color-border-light)] bg-[var(--color-surface)]"
               } disabled:opacity-50`}
             >
-              <p className="text-sm font-medium text-white">
+              <p className="text-sm font-medium text-[var(--color-text)]">
                 {t("settings.library.createAndMirrorActiveLocal", {
                   defaultValue: "Create And Mirror Active Local",
                 })}
@@ -343,12 +343,15 @@ export function RemoteLibraryWizard({
               disabled={loading}
               className={`rounded-lg border px-4 py-3 text-left ${
                 provider === candidate
-                  ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10"
+                  ? "border-[var(--color-control-selected-border)] bg-[var(--color-control-selected-bg)]"
                   : "border-[var(--color-border-light)] bg-[var(--color-surface)]"
               }`}
             >
-              <Icon size={16} className="mb-2 text-[var(--color-accent)]" />
-              <p className="text-sm font-medium text-white">
+              <Icon
+                size={16}
+                className="mb-2 text-[var(--color-control-primary)]"
+              />
+              <p className="text-sm font-medium text-[var(--color-text)]">
                 {getRemoteProviderLabel(t, candidate)}
               </p>
             </button>
@@ -357,7 +360,7 @@ export function RemoteLibraryWizard({
 
         <div className="mt-4 space-y-3 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-surface)] p-4">
           <div>
-            <label className="mb-1 block text-xs font-medium text-white">
+            <label className="mb-1 block text-xs font-medium text-[var(--color-text)]">
               {t("settings.library.displayName", {
                 defaultValue: "Display name",
               })}
@@ -365,7 +368,7 @@ export function RemoteLibraryWizard({
             <input
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
-              className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-sidebar)] px-3 py-2 text-sm text-white outline-none focus:border-[var(--color-accent)]"
+              className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-sidebar)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
             />
           </div>
 
@@ -390,7 +393,7 @@ export function RemoteLibraryWizard({
           {provider === "webdav" && (
             <>
               <div>
-                <label className="mb-1 block text-xs font-medium text-white">
+                <label className="mb-1 block text-xs font-medium text-[var(--color-text)]">
                   {t("settings.library.webdavServerUrl", {
                     defaultValue: "Server URL",
                   })}
@@ -399,12 +402,12 @@ export function RemoteLibraryWizard({
                   value={serverUrl}
                   onChange={(event) => setServerUrl(event.target.value)}
                   placeholder="https://dav.example.com/remote.php/dav/files/you/"
-                  className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-sidebar)] px-3 py-2 text-sm text-white outline-none focus:border-[var(--color-accent)]"
+                  className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-sidebar)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
                   spellCheck={false}
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-white">
+                <label className="mb-1 block text-xs font-medium text-[var(--color-text)]">
                   {t("settings.library.webdavLibraryPath", {
                     defaultValue: "Library path",
                   })}
@@ -413,13 +416,13 @@ export function RemoteLibraryWizard({
                   value={rootPath}
                   onChange={(event) => setRootPath(event.target.value)}
                   placeholder="/OpenKara"
-                  className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-sidebar)] px-3 py-2 text-sm text-white outline-none focus:border-[var(--color-accent)]"
+                  className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-sidebar)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
                   spellCheck={false}
                 />
               </div>
               <div className="grid gap-3 md:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-white">
+                  <label className="mb-1 block text-xs font-medium text-[var(--color-text)]">
                     {t("settings.library.webdavUsername", {
                       defaultValue: "Username",
                     })}
@@ -427,12 +430,12 @@ export function RemoteLibraryWizard({
                   <input
                     value={username}
                     onChange={(event) => setUsername(event.target.value)}
-                    className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-sidebar)] px-3 py-2 text-sm text-white outline-none focus:border-[var(--color-accent)]"
+                    className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-sidebar)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
                     spellCheck={false}
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-white">
+                  <label className="mb-1 block text-xs font-medium text-[var(--color-text)]">
                     {t("settings.library.webdavPassword", {
                       defaultValue: "Password",
                     })}
@@ -441,7 +444,7 @@ export function RemoteLibraryWizard({
                     type="password"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
-                    className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-sidebar)] px-3 py-2 text-sm text-white outline-none focus:border-[var(--color-accent)]"
+                    className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-sidebar)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
                   />
                 </div>
               </div>
@@ -451,7 +454,7 @@ export function RemoteLibraryWizard({
           <button
             onClick={() => void connect()}
             disabled={loading || meta.isInitializing}
-            className="w-full rounded-lg bg-[var(--color-accent)] px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+            className="w-full rounded-lg bg-[var(--color-control-primary)] px-4 py-2.5 text-sm font-medium text-[var(--color-control-primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-60"
           >
             {loading
               ? t("settings.library.connecting", {
@@ -507,7 +510,9 @@ export function RemoteLibraryWizard({
                   disabled={loading}
                   className="rounded-md border border-[var(--color-border-light)] px-3 py-2"
                 >
-                  <p className="text-sm text-white">{library.display_name}</p>
+                  <p className="text-sm text-[var(--color-text)]">
+                    {library.display_name}
+                  </p>
                   <p className="text-xs text-[var(--color-text-dim)]">
                     {library.remote_path_display || library.remote_root_locator}
                   </p>

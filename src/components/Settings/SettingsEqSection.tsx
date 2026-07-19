@@ -106,7 +106,7 @@ export function SettingsEqSection() {
               disabled={meta.isInitializing}
               className="h-4 w-4 rounded border-[var(--color-border-light)] bg-[var(--color-surface)] accent-[var(--color-accent)]"
             />
-            <span className="text-[13px] text-white">
+            <span className="text-[13px] text-[var(--color-text)]">
               {t("settings.eq.enable")}
             </span>
           </label>
@@ -162,7 +162,7 @@ export function SettingsEqSection() {
               void actions.resetEqGains();
             }}
             disabled={meta.isInitializing || !state.eqEnabled}
-            className="text-[11px] text-[var(--color-text-dim)] underline hover:text-white disabled:opacity-50"
+            className="text-[11px] text-[var(--color-text-dim)] underline hover:text-[var(--color-text)] disabled:opacity-50"
           >
             {t("settings.eq.reset")}
           </button>

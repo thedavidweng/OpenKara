@@ -26,7 +26,7 @@ function Toast({ notification }: { notification: Notification }) {
       <Icon size={14} className={`mt-0.5 shrink-0 ${iconColor}`} />
 
       <div className="min-w-0 flex-1">
-        <p className="break-words text-[12px] font-medium text-white">
+        <p className="break-words text-[12px] font-medium text-[var(--color-text)]">
           {notification.title}
         </p>
         {notification.message && (

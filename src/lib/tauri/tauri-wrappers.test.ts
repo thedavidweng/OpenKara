@@ -368,7 +368,9 @@ describe("settings", () => {
     execution_provider: "cpu" as const,
     available_execution_providers: ["cpu" as const],
     eq_enabled: false,
-    eq_gains_db: [0, 0, 0, 0, 0],
+    eq_gains_db: [0, 0, 0, 0, 0] as [number, number, number, number, number],
+    library_sort_mode: "recently_imported" as const,
+    theme_preference: "dark" as const,
   };
 
   test("getModelBootstrapStatus invokes get_model_bootstrap_status", async () => {
@@ -529,6 +531,15 @@ describe("settings", () => {
     const returned = await settings.setLibrarySortMode("title_asc");
     expect(mockInvoke).toHaveBeenCalledWith("set_library_sort_mode", {
       mode: "title_asc",
+    });
+    expect(returned).toBe(appSettings);
+  });
+
+  test("setThemePreference invokes set_theme_preference", async () => {
+    mockInvoke.mockResolvedValueOnce(appSettings);
+    const returned = await settings.setThemePreference("light");
+    expect(mockInvoke).toHaveBeenCalledWith("set_theme_preference", {
+      preference: "light",
     });
     expect(returned).toBe(appSettings);
   });

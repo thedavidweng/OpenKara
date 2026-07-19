@@ -60,6 +60,7 @@ function createControllerHarness() {
       setStemMode: vi.fn(),
       setEqEnabled: vi.fn(),
       setEqGains: vi.fn(),
+      setThemePreference: vi.fn(),
     },
     notifyError: vi.fn(),
     openDirectory: vi.fn(),
@@ -95,12 +96,14 @@ function createControllerHarness() {
           eqEnabled: false,
           eqGainsDb: [0, 0, 0, 0, 0],
           librarySortMode: "recently_imported",
+          themePreference: "dark",
         }),
       ),
       hydrateAppSettings: vi.fn(),
       patchAppSettings: vi.fn(),
       setEqEnabled: vi.fn(),
       setEqGains: vi.fn(),
+      setThemePreference: vi.fn(),
     },
   };
 
@@ -152,6 +155,7 @@ describe("SettingsOverlay controller", () => {
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
       library_sort_mode: "recently_imported",
+      theme_preference: "dark",
     });
     vi.mocked(harness.dependencies.api.getModelStatus)
       .mockResolvedValueOnce({
@@ -186,6 +190,7 @@ describe("SettingsOverlay controller", () => {
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
       library_sort_mode: "recently_imported",
+      theme_preference: "dark",
     });
     expect(harness.getSnapshot()).toMatchObject({
       state: {
@@ -570,6 +575,7 @@ describe("SettingsOverlay controller", () => {
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
       library_sort_mode: "recently_imported",
+      theme_preference: "dark",
     });
 
     await harness.actions.selectModelVariant("htdemucs");
@@ -702,6 +708,7 @@ describe("SettingsOverlay controller", () => {
       eq_enabled: false,
       eq_gains_db: [0, 0, 0, 0, 0],
       library_sort_mode: "recently_imported",
+      theme_preference: "dark",
     });
 
     await harness.actions.toggleHideBatchSeparate(true);

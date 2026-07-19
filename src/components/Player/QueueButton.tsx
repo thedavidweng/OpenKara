@@ -14,16 +14,19 @@ export function QueueButton() {
       <button
         onClick={togglePanel}
         aria-label={t("queue.title")}
-        className={`motion-icon-button relative flex min-h-11 min-w-11 shrink-0 items-center rounded-[14px] p-2.5 transition-colors ${
+        aria-pressed={isOpen}
+        data-playback-action="queue"
+        data-active={isOpen ? "true" : undefined}
+        className={`motion-icon-button playback-bar-action-button relative ${
           isOpen
-            ? "bg-[color-mix(in_srgb,var(--color-hover)_86%,transparent)] text-[var(--color-accent)] shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
-            : "text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-white"
+            ? "text-[var(--color-accent)]"
+            : "text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
         }`}
         data-queue-button-visual-variant="unified"
       >
-        <ListMusic size={16} />
+        <ListMusic size={18} />
         {queue.length > 0 && (
-          <span className="absolute -right-1.5 -top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[var(--color-accent)] text-[8px] font-bold text-white">
+          <span className="absolute -right-1.5 -top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[var(--color-accent)] text-[8px] font-bold text-[var(--color-on-accent)]">
             {queue.length > 9 ? "9+" : queue.length}
           </span>
         )}

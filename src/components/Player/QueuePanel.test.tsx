@@ -309,4 +309,9 @@ describe("QueuePanel", () => {
     expect(markup).not.toContain("Beta");
     expect(markup).toContain("Gamma");
   });
+
+  test("shadow panel uses theme border token", () => {
+    const markup = renderToStaticMarkup(<QueuePanel />);
+    expect(markup).toContain("shadow-[-1px_0_0_var(--color-border)]");
+  });
 });
