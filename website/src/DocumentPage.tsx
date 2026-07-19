@@ -165,7 +165,7 @@ export function DocumentPage({ language, slug }: DocumentRoute) {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.lang = language;
-    document.title = `${label} — OpenKara`;
+    document.title = `${label} | OpenKara`;
     localStorage.setItem("openkara-site-theme", theme);
     document
       .querySelector('meta[name="theme-color"]')

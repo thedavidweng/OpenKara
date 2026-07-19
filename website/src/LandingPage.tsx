@@ -24,7 +24,7 @@ const COPY = {
     download: "Download",
     heroTitle: "Your music, on your stage.",
     heroBody:
-      "OpenKara turns the songs you already own into a complete karaoke experience—on-device stem separation, synced lyrics, and precise mixing in one open-source desktop app.",
+      "OpenKara turns the songs you already own into a complete karaoke experience with on-device stem separation, synced lyrics, and precise mixing in one open-source desktop app.",
     primary: "Download free",
     secondary: "Watch demo",
     platform: "For macOS, Windows, and Linux",
