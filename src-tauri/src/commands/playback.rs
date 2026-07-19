@@ -190,6 +190,8 @@ pub async fn set_preload_candidate(
             .preload_request_generation
             .fetch_add(1, Ordering::SeqCst)
             + 1;
+        let preload_generation =
+            crate::audio::playback::PreloadRequestGeneration(preload_generation);
         guard.store(true, Ordering::Relaxed);
         let new_shutdown = Arc::new(AtomicBool::new(false));
         *guard = new_shutdown.clone();

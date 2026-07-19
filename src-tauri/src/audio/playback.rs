@@ -19,6 +19,42 @@ pub const PLAYBACK_ERROR_EVENT: &str = "playback-error";
 pub const TRACK_TRANSITIONED_EVENT: &str = "track-transitioned";
 pub const PLAYBACK_POSITION_POLL_INTERVAL_MS: u64 = 33;
 
+/// Opaque handle for the preload-request generation space.
+///
+/// `preload_request_generation` and `output_format.generation` are both
+/// monotonic `u64` counters stored on `PreparedTrack` and compared in
+/// `install_prepared_track`. Without a type wrapper, accidentally comparing
+/// `prepared.preload_request_generation` against
+/// `current_output_format.generation` (or vice versa) would compile silently
+/// and produce a stale-track bug that only manifests under specific timing.
+///
+/// This newtype makes that cross-space comparison a compile error. The
+/// `output_format.generation` field stays `u64` because it lives inside
+/// the typed `OutputFormatSnapshot` struct, which already provides
+/// namespace isolation.
+///
+/// C02 from architecture review: introduce opaque handles for playback
+/// generation tracking. This is the minimal scope — the two most
+/// confusable counters at the comparison site. The coordinator's
+/// `request_id` (load-from-AtomicU64-and-compare) and CDG's
+/// `transport_generation` (crosses the IPC boundary to the frontend)
+/// would require touching 100+ sites and the wire format for lower
+/// marginal safety; they are documented as deferred.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PreloadRequestGeneration(pub u64);
+
+impl PreloadRequestGeneration {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+impl std::fmt::Display for PreloadRequestGeneration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct StemVolumes {
     pub vocals: f32,
@@ -133,7 +169,7 @@ pub struct PreparedTrack {
     /// commands whose generation is stale — this closes the race where an
     /// old preload thread passes its shutdown check before the flag is set
     /// but sends `PrepareNext` after the cancel has been processed.
-    pub preload_request_generation: u64,
+    pub preload_request_generation: PreloadRequestGeneration,
     /// Output-format generation captured at prepare time. Used for the
     /// `CompletedTransition` event and for stale-format rejection.
     pub preload_generation: u64,
@@ -210,7 +246,7 @@ pub struct PlaybackController {
     /// stale `PrepareNext` commands from an older preload thread (which
     /// passed its shutdown check before the flag was set but sends after the
     /// cancel) are rejected by `install_prepared_track`.
-    pub(crate) expected_preload_request_generation: u64,
+    pub(crate) expected_preload_request_generation: PreloadRequestGeneration,
 }
 
 impl Default for PlaybackController {
@@ -227,7 +263,7 @@ impl Default for PlaybackController {
             prepared_track: None,
             transition_serial: 0,
             pending_transition_out: None,
-            expected_preload_request_generation: 0,
+            expected_preload_request_generation: PreloadRequestGeneration(0),
         }
     }
 }
@@ -650,7 +686,8 @@ impl PlaybackController {
         if prepared.preload_request_generation != self.expected_preload_request_generation {
             return Err(PlaybackError::Internal(format!(
                 "prepared track from stale preload request (prepared gen={}, expected gen={})",
-                prepared.preload_request_generation, self.expected_preload_request_generation,
+                prepared.preload_request_generation.get(),
+                self.expected_preload_request_generation.get(),
             )));
         }
 
@@ -692,7 +729,7 @@ impl PlaybackController {
     /// `PrepareNext` from an older preload thread (which passed its shutdown
     /// check before the flag was set but sends after this cancel) is
     /// rejected by `install_prepared_track` as stale.
-    pub fn cancel_prepared_track(&mut self, expected_generation: u64) -> bool {
+    pub fn cancel_prepared_track(&mut self, expected_generation: PreloadRequestGeneration) -> bool {
         self.expected_preload_request_generation = expected_generation;
         self.prepared_track.take().is_some()
     }
@@ -1339,7 +1376,7 @@ mod tests {
         output_format: super::OutputFormatSnapshot,
     ) -> super::PreparedTrack {
         super::PreparedTrack {
-            preload_request_generation,
+            preload_request_generation: super::PreloadRequestGeneration(preload_request_generation),
             preload_generation: output_format.generation,
             song_id: song_id.to_owned(),
             output_format,
@@ -1375,7 +1412,7 @@ mod tests {
         let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
 
         // Cancel bumps expected generation to 1.
-        assert!(!controller.cancel_prepared_track(1));
+        assert!(!controller.cancel_prepared_track(super::PreloadRequestGeneration(1)));
 
         // Old preload thread sends PrepareNext with generation 0 — rejected.
         let stale = make_prepared("song-old", 0, fmt);
@@ -1438,9 +1475,12 @@ mod tests {
 
         // Cancel with generation 1 — should clear the prepared track and
         // stamp expected generation to 1.
-        assert!(controller.cancel_prepared_track(1));
+        assert!(controller.cancel_prepared_track(super::PreloadRequestGeneration(1)));
         assert!(controller.prepared_track.is_none());
-        assert_eq!(controller.expected_preload_request_generation, 1);
+        assert_eq!(
+            controller.expected_preload_request_generation,
+            super::PreloadRequestGeneration(1)
+        );
     }
 
     #[test]
