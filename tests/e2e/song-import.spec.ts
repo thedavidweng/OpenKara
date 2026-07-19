@@ -33,22 +33,17 @@ test.describe("Song import workflow", () => {
   });
 
   test("search box filters the song list", async ({ page }) => {
-    // Find the search input
-    const searchBox = page.getByRole("textbox");
-    await expect(searchBox.first()).toBeVisible();
+    const searchBox = page.getByRole("textbox", { name: /search/i });
+    const songList = page.getByTestId("song-list");
+    await expect(searchBox).toBeVisible();
 
-    // Type a search query
-    await searchBox.first().fill("See You");
+    await searchBox.fill("See You");
+    // Wait for the store's 300ms debounce to apply before asserting filter.
+    await expect(songList.getByText("Earfquake")).not.toBeVisible();
+    await expect(songList.getByText("See You Again")).toBeVisible();
 
-    // Only matching songs should remain visible
-    await expect(page.getByText("See You Again")).toBeVisible();
-
-    // Non-matching songs should be hidden (or the filter should be active)
-    // Note: exact assertion depends on whether filtering hides or dims
-
-    // Clear search
-    await searchBox.first().clear();
-    await expect(page.getByText("Earfquake")).toBeVisible();
+    await searchBox.clear();
+    await expect(songList.getByText("Earfquake")).toBeVisible();
   });
 
   test("empty library state is not shown when songs exist", async ({
