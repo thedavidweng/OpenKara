@@ -260,7 +260,13 @@ a {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+}
+
+.hero-actions .pill {
+  min-height: clamp(48px, 4.2vw, 56px);
+  padding-inline: clamp(22px, 2vw, 28px);
+  font-size: clamp(15px, 1.3vw, 17px);
 }
 
 .hero-actions > span {
