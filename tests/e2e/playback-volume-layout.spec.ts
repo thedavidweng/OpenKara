@@ -88,10 +88,10 @@ async function assertZonesDoNotIntersect(
 test.describe("Playback volume rail layout geometry", () => {
   test.beforeEach(async ({ page, tauriMock }) => {
     await page.goto("/");
-    await expect(page.getByText("Bohemian Rhapsody")).toBeVisible();
+    await expect(page.getByText("Earfquake")).toBeVisible();
 
     // Start playback so the right-zone volume controls render.
-    await page.getByText("Bohemian Rhapsody").dblclick();
+    await page.getByText("Earfquake").dblclick();
     await expect(page.getByRole("button", { name: /pause/i })).toBeVisible({
       timeout: 5000,
     });
@@ -99,7 +99,7 @@ test.describe("Playback volume rail layout geometry", () => {
     // Configure a two-stem playing snapshot so the inline Vocals and
     // Accompaniment sliders render in relaxed/compact densities.
     await tauriMock.setPlaybackSnapshot({
-      song_id: "aaa111",
+      song_id: "earfquake",
       state: "playing",
       is_playing: true,
       has_stems: true,
@@ -107,7 +107,7 @@ test.describe("Playback volume rail layout geometry", () => {
       stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
       volume: 1,
     });
-    await tauriMock.setSeparationCompleted("aaa111");
+    await tauriMock.setSeparationCompleted("earfquake");
   });
 
   // -------------------------------------------------------------------------

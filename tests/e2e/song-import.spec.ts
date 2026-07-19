@@ -11,21 +11,25 @@ import { test, expect } from "./fixtures/base-test";
 test.describe("Song import workflow", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText("Bohemian Rhapsody")).toBeVisible();
+    await expect(page.getByText("Earfquake")).toBeVisible();
   });
 
   test("sidebar shows the song library with imported songs", async ({
     page,
   }) => {
-    // The mock returns 7 songs — all should be visible in the sidebar song list
-    await expect(page.getByText("Bohemian Rhapsody")).toBeVisible();
-    await expect(page.getByText("Hotel California")).toBeVisible();
-    await expect(page.getByText("Imagine")).toBeVisible();
+    // The mock returns 6 songs — all should be visible in the sidebar song list
+    await expect(page.getByText("Earfquake")).toBeVisible();
+    await expect(page.getByText("See You Again")).toBeVisible();
+    await expect(page.getByText("Counting Stars")).toBeVisible();
 
-    // Artist names should also appear
-    await expect(page.getByText("Queen")).toBeVisible();
-    await expect(page.getByText("Eagles")).toBeVisible();
-    await expect(page.getByText("John Lennon")).toBeVisible();
+    // Artist names should also appear.  Tyler, The Creator appears on two
+    // fixture songs (Earfquake and See You Again), so use exact matching to
+    // avoid strict-mode violations on the shared substring.
+    await expect(
+      page.getByText("Tyler, The Creator", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText("Gorillaz")).toBeVisible();
+    await expect(page.getByText("OneRepublic")).toBeVisible();
   });
 
   test("search box filters the song list", async ({ page }) => {
@@ -34,17 +38,17 @@ test.describe("Song import workflow", () => {
     await expect(searchBox.first()).toBeVisible();
 
     // Type a search query
-    await searchBox.first().fill("Hotel");
+    await searchBox.first().fill("See You");
 
     // Only matching songs should remain visible
-    await expect(page.getByText("Hotel California")).toBeVisible();
+    await expect(page.getByText("See You Again")).toBeVisible();
 
     // Non-matching songs should be hidden (or the filter should be active)
     // Note: exact assertion depends on whether filtering hides or dims
 
     // Clear search
     await searchBox.first().clear();
-    await expect(page.getByText("Bohemian Rhapsody")).toBeVisible();
+    await expect(page.getByText("Earfquake")).toBeVisible();
   });
 
   test("empty library state is not shown when songs exist", async ({
@@ -52,7 +56,7 @@ test.describe("Song import workflow", () => {
   }) => {
     const songList = page.getByTestId("song-list");
     await expect(songList).toBeVisible();
-    await expect(songList.getByText("Bohemian Rhapsody")).toBeVisible();
+    await expect(songList.getByText("Earfquake")).toBeVisible();
     await expect(songList.getByText(/no tracks/i)).not.toBeVisible();
   });
 });

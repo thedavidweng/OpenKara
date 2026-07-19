@@ -10,14 +10,14 @@ import { expect, objectRecord, test } from "./fixtures/base-test";
 test.describe("Playback controls", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText("Bohemian Rhapsody")).toBeVisible();
+    await expect(page.getByText("Earfquake")).toBeVisible();
   });
 
   test("double-clicking a song starts playback", async ({
     page,
     tauriMock,
   }) => {
-    await page.getByText("Bohemian Rhapsody").dblclick();
+    await page.getByText("Earfquake").dblclick();
 
     // The play button should become a pause button
     await expect(page.getByRole("button", { name: /pause/i })).toBeVisible({
@@ -28,7 +28,7 @@ test.describe("Playback controls", () => {
       .poll(async () =>
         (await tauriMock.getInvokeCalls()).some((call) => {
           const args = objectRecord(call.args);
-          return call.cmd === "play" && args?.songId === "aaa111";
+          return call.cmd === "play" && args?.songId === "earfquake";
         }),
       )
       .toBe(true);
@@ -36,7 +36,7 @@ test.describe("Playback controls", () => {
 
   test("pause button stops playback", async ({ page, tauriMock }) => {
     // Start playback
-    await page.getByText("Bohemian Rhapsody").dblclick();
+    await page.getByText("Earfquake").dblclick();
     await expect(page.getByRole("button", { name: /pause/i })).toBeVisible({
       timeout: 5000,
     });
@@ -59,7 +59,7 @@ test.describe("Playback controls", () => {
   test("skip forward and back buttons exist and are clickable", async ({
     page,
   }) => {
-    await page.getByText("Bohemian Rhapsody").dblclick();
+    await page.getByText("Earfquake").dblclick();
     await expect(page.getByRole("button", { name: /pause/i })).toBeVisible({
       timeout: 5000,
     });
@@ -79,7 +79,7 @@ test.describe("Playback controls", () => {
     page,
     tauriMock,
   }) => {
-    await page.getByText("Bohemian Rhapsody").dblclick();
+    await page.getByText("Earfquake").dblclick();
     await expect(page.getByRole("button", { name: /pause/i })).toBeVisible({
       timeout: 5000,
     });
@@ -107,10 +107,10 @@ test.describe("Playback controls", () => {
   test("now-playing info shows song title during playback", async ({
     page,
   }) => {
-    await page.getByText("Bohemian Rhapsody").dblclick();
+    await page.getByText("Earfquake").dblclick();
 
     // The playback bar area should show the currently playing song title
     // There may be multiple instances (sidebar + now-playing), so use .first()
-    await expect(page.getByText("Bohemian Rhapsody").first()).toBeVisible();
+    await expect(page.getByText("Earfquake").first()).toBeVisible();
   });
 });

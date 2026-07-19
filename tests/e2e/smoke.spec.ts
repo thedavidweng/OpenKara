@@ -20,17 +20,17 @@ test.describe("Smoke: happy path", () => {
     ).toBeVisible();
 
     // Sidebar should show the song list
-    await expect(page.getByText("Bohemian Rhapsody")).toBeVisible();
-    await expect(page.getByText("Hotel California")).toBeVisible();
-    await expect(page.getByText("Imagine")).toBeVisible();
+    await expect(page.getByText("Earfquake")).toBeVisible();
+    await expect(page.getByText("See You Again")).toBeVisible();
+    await expect(page.getByText("Counting Stars")).toBeVisible();
   });
 
   test("selecting a song shows it in the playback area", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText("Bohemian Rhapsody")).toBeVisible();
+    await expect(page.getByText("Earfquake")).toBeVisible();
 
     // Double-click a song to play it (or single click then play button)
-    await page.getByText("Bohemian Rhapsody").dblclick();
+    await page.getByText("Earfquake").dblclick();
 
     // The play button should now show a pause icon (song is playing)
     // Look for the play/pause toggle button by its aria-label
@@ -40,10 +40,10 @@ test.describe("Smoke: happy path", () => {
 
   test("play controls are interactive", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText("Bohemian Rhapsody")).toBeVisible();
+    await expect(page.getByText("Earfquake")).toBeVisible();
 
     // Play a song
-    await page.getByText("Bohemian Rhapsody").dblclick();
+    await page.getByText("Earfquake").dblclick();
     await expect(page.getByRole("button", { name: /pause/i })).toBeVisible({
       timeout: 5000,
     });
@@ -57,7 +57,7 @@ test.describe("Smoke: happy path", () => {
 
   test("queue panel toggles open and closed", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText("Bohemian Rhapsody")).toBeVisible();
+    await expect(page.getByText("Earfquake")).toBeVisible();
 
     // Find and click the queue toggle button
     const queueButton = page.getByRole("button", { name: /queue/i });
@@ -73,7 +73,7 @@ test.describe("Smoke: happy path", () => {
 
   test("lyrics section responds to song selection", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText("Bohemian Rhapsody")).toBeVisible();
+    await expect(page.getByText("Earfquake")).toBeVisible();
 
     // Before any song is selected, the lyrics area should show "select a song"
     // or similar prompt (depends on i18n key "lyrics.selectSong")
@@ -81,11 +81,12 @@ test.describe("Smoke: happy path", () => {
     await expect(lyricsPrompt).toBeVisible();
 
     // Play a song
-    await page.getByText("Bohemian Rhapsody").dblclick();
+    await page.getByText("Earfquake").dblclick();
 
-    // After playing, lyrics should load (mock returns lyrics)
-    await expect(page.getByText("Is this the real life?")).toBeVisible({
-      timeout: 10000,
-    });
+    // After playing, lyrics should load (mock returns lyrics).  Use exact
+    // matching because the Earfquake lyrics repeat "for real" phrases.
+    await expect(
+      page.getByText("For real, for real this time", { exact: true }),
+    ).toBeVisible({ timeout: 10000 });
   });
 });
