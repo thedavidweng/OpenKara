@@ -28,7 +28,6 @@ const COPY = {
     primary: "Download free",
     secondary: "Watch demo",
     platform: "For macOS, Windows, and Linux",
-    previewLabel: "A live preview built from the OpenKara app itself",
     builtWith: "Built with",
     builtWithDisclaimer:
       "Tool names and logos are shown for identification only. No partnership, sponsorship, endorsement, or affiliation is implied.",
@@ -85,7 +84,6 @@ const COPY = {
     primary: "免费下载",
     secondary: "观看演示",
     platform: "支持 macOS、Windows 和 Linux",
-    previewLabel: "直接由 OpenKara 应用构建的实时预览",
     builtWith: "构建工具",
     builtWithDisclaimer:
       "这些名称与标志仅用于识别；不代表合作、赞助、认可或隶属关系。",
