@@ -246,21 +246,6 @@ impl AudioConsumer {
 
         pending_count + self.cons.pop_slice(&mut output[pending_count..])
     }
-
-    /// Put samples back at the front of the next pop. Streaming resampling
-    /// reads a small lookahead window for interpolation; frames beyond the
-    /// committed render position must be preserved for the next callback.
-    ///
-    /// Uses `VecDeque` for O(n) front insertion without allocating a new buffer.
-    pub(crate) fn prepend_samples(&mut self, samples: &[f32]) {
-        if samples.is_empty() {
-            return;
-        }
-
-        for &sample in samples.iter().rev() {
-            self.pending_samples.push_front(sample);
-        }
-    }
 }
 
 /// Producer side of a streaming audio track, held by the decode thread.
@@ -795,6 +780,37 @@ pub fn spawn_multi_stem_decode_producers_with_proxy(
         handles.push(handle);
     }
 
+    // Validate stem timeline consistency. The source-domain mix bus
+    // (issue #143) pops the same source-frame range from every stem, so
+    // mismatched sample_rate or channels would cause one stem to exhaust
+    // early and stall the transport. Duration is checked when available —
+    // a mismatch signals different source material even though the exact
+    // frame count is only known after full decode.
+    if metadata_vec.len() > 1 {
+        let first = &metadata_vec[0];
+        for (i, meta) in metadata_vec.iter().enumerate().skip(1) {
+            if meta.sample_rate != first.sample_rate {
+                return Err(DecodeError::ProbeFailed(format!(
+                    "stem timeline mismatch: stem 0 sample_rate {} != stem {i} sample_rate {}",
+                    first.sample_rate, meta.sample_rate
+                )));
+            }
+            if meta.channels != first.channels {
+                return Err(DecodeError::ProbeFailed(format!(
+                    "stem timeline mismatch: stem 0 channels {} != stem {i} channels {}",
+                    first.channels, meta.channels
+                )));
+            }
+            if let (Some(d0), Some(di)) = (first.duration_ms, meta.duration_ms) {
+                if d0 != di {
+                    return Err(DecodeError::ProbeFailed(format!(
+                    "stem timeline mismatch: stem 0 duration_ms {d0} != stem {i} duration_ms {di}"
+                )));
+                }
+            }
+        }
+    }
+
     let track = match consumers.len() {
         1 => StreamingTrack::Single {
             consumer: consumers.pop().unwrap(),
@@ -1245,6 +1261,7 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut Vec::new(),
             &mut crossfade_scratch,
             device_rate,
             device_channels,
@@ -1311,6 +1328,7 @@ mod tests {
             let rendered = render_output_buffer(
                 &mut controller,
                 &mut output,
+                &mut Vec::new(),
                 &mut Vec::new(),
                 &mut crossfade_scratch,
                 device_rate,

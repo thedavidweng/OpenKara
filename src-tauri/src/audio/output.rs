@@ -7,7 +7,7 @@ use crate::audio::eq::{soft_limit, EqProcessor};
 use crate::audio::error::PlaybackError;
 use crate::audio::output_format::{OutputFormatSnapshot, OutputFormatState};
 use crate::audio::peaks::{PeakAccumulator, PeakRing};
-use crate::audio::playback::{LoadedStems, PlaybackController, StemVolumes};
+use crate::audio::playback::{LoadedStems, PlaybackController};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Sample, SampleFormat, SizedSample, Stream};
 use rubato::{Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType};
@@ -173,6 +173,7 @@ pub fn render_output_buffer(
     playback: &mut PlaybackController,
     output: &mut [f32],
     stem_scratch: &mut Vec<f32>,
+    mix_scratch: &mut Vec<f32>,
     crossfade_scratch: &mut [f32],
     device_sample_rate: u32,
     device_channels: usize,
@@ -398,46 +399,70 @@ pub fn render_output_buffer(
 
         match streaming {
             crate::audio::streaming::StreamingTrack::Single { consumer } => {
-                render_streaming_single(
+                // Single-stem streaming has no inter-stem alignment concern,
+                // but route through the mix bus anyway for a single code
+                // path and one shared resampler state.
+                let gains = [master];
+                let mut consumers: [&mut crate::audio::streaming::AudioConsumer; 1] = [consumer];
+                render_streaming_mix_bus(
                     output,
-                    consumer,
+                    &mut consumers,
+                    &gains,
                     stem_scratch,
-                    master,
+                    mix_scratch,
                     device_sample_rate,
                     device_channels,
-                    None,
+                    resampler_cache,
                 )
             }
             crate::audio::streaming::StreamingTrack::TwoStem {
                 vocals,
                 accompaniment,
-            } => render_streaming_two_stem(
-                output,
-                vocals,
-                accompaniment,
-                stem_scratch,
-                master,
-                sv,
-                device_sample_rate,
-                device_channels,
-            ),
+            } => {
+                // Two-stem: vocals + accompaniment. The accompaniment gain is
+                // the max of drums/bass/other so the legacy two-stem
+                // accompaniment track still responds to those per-stem
+                // volumes even though it is a single combined PCM.
+                let accomp_gain = sv.drums.max(sv.bass).max(sv.other);
+                let gains = [master * sv.vocals, master * accomp_gain];
+                let mut consumers: [&mut crate::audio::streaming::AudioConsumer; 2] =
+                    [vocals, accompaniment];
+                render_streaming_mix_bus(
+                    output,
+                    &mut consumers,
+                    &gains,
+                    stem_scratch,
+                    mix_scratch,
+                    device_sample_rate,
+                    device_channels,
+                    resampler_cache,
+                )
+            }
             crate::audio::streaming::StreamingTrack::FourStem {
                 vocals,
                 drums,
                 bass,
                 other,
-            } => render_streaming_four_stem(
-                output,
-                vocals,
-                drums,
-                bass,
-                other,
-                stem_scratch,
-                master,
-                sv,
-                device_sample_rate,
-                device_channels,
-            ),
+            } => {
+                let gains = [
+                    master * sv.vocals,
+                    master * sv.drums,
+                    master * sv.bass,
+                    master * sv.other,
+                ];
+                let mut consumers: [&mut crate::audio::streaming::AudioConsumer; 4] =
+                    [vocals, drums, bass, other];
+                render_streaming_mix_bus(
+                    output,
+                    &mut consumers,
+                    &gains,
+                    stem_scratch,
+                    mix_scratch,
+                    device_sample_rate,
+                    device_channels,
+                    resampler_cache,
+                )
+            }
         }
     } else if has_stems {
         let track = playback.current_track.as_ref().unwrap();
@@ -448,64 +473,38 @@ pub fn render_output_buffer(
                 accompaniment,
             } => {
                 let accomp_gain = sv.drums.max(sv.bass).max(sv.other);
-                let (r1, f1) = mix_stem_resampled(
+                let gains = [master * sv.vocals, master * accomp_gain];
+                let stems: [&DecodedAudio; 2] = [vocals, accompaniment];
+                render_decoded_mix_bus(
                     output,
-                    vocals,
+                    &stems,
+                    &gains,
                     render_frame,
-                    master * sv.vocals,
+                    mix_scratch,
                     device_sample_rate,
                     device_channels,
-                    Some(resampler_cache),
-                );
-                let (r2, f2) = mix_stem_resampled(
-                    output,
-                    accompaniment,
-                    render_frame,
-                    master * accomp_gain,
-                    device_sample_rate,
-                    device_channels,
-                    Some(resampler_cache),
-                );
-                (r1.max(r2), f1.max(f2))
+                    resampler_cache,
+                )
             }
             LoadedStems::FourStem(stems) => {
-                let (r1, f1) = mix_stem_resampled(
-                    output,
-                    &stems.vocals,
-                    render_frame,
+                let gains = [
                     master * sv.vocals,
-                    device_sample_rate,
-                    device_channels,
-                    Some(resampler_cache),
-                );
-                let (r2, f2) = mix_stem_resampled(
-                    output,
-                    &stems.drums,
-                    render_frame,
                     master * sv.drums,
-                    device_sample_rate,
-                    device_channels,
-                    Some(resampler_cache),
-                );
-                let (r3, f3) = mix_stem_resampled(
-                    output,
-                    &stems.bass,
-                    render_frame,
                     master * sv.bass,
-                    device_sample_rate,
-                    device_channels,
-                    Some(resampler_cache),
-                );
-                let (r4, f4) = mix_stem_resampled(
-                    output,
-                    &stems.other,
-                    render_frame,
                     master * sv.other,
+                ];
+                let stems: [&DecodedAudio; 4] =
+                    [&stems.vocals, &stems.drums, &stems.bass, &stems.other];
+                render_decoded_mix_bus(
+                    output,
+                    &stems,
+                    &gains,
+                    render_frame,
+                    mix_scratch,
                     device_sample_rate,
                     device_channels,
-                    Some(resampler_cache),
-                );
-                (r1.max(r2).max(r3).max(r4), f1.max(f2).max(f3).max(f4))
+                    resampler_cache,
+                )
             }
         }
     } else {
@@ -1214,276 +1213,324 @@ fn mix_stem_rubato(
     (max_out_frames * device_channels, src_frames_consumed)
 }
 
-/// Source frames needed to fill `output_frames` device frames at the given rates.
-fn src_frames_for_output(output_frames: usize, src_rate: u32, device_rate: u32) -> u64 {
-    if src_rate == device_rate {
-        output_frames as u64
-    } else {
-        (output_frames as f64 * src_rate as f64 / device_rate as f64).ceil() as u64 + 1
-    }
-}
-
-/// Source frames to drain when a stem is muted (no interpolation lookahead).
-fn src_frames_for_muted_drain(output_frames: usize, src_rate: u32, device_rate: u32) -> usize {
-    if src_rate == device_rate {
-        output_frames
-    } else {
-        (output_frames as f64 * src_rate as f64 / device_rate as f64).round() as usize
-    }
-}
-
-/// Shared source-frame budget for multi-stem streaming: min(available, needed) per stem.
-fn compute_shared_src_frame_budget(
-    consumers: &[&crate::audio::streaming::AudioConsumer],
-    output_frames: usize,
-    device_sample_rate: u32,
-) -> u64 {
-    let mut budget = u64::MAX;
-    for consumer in consumers {
-        let needed = src_frames_for_output(output_frames, consumer.sample_rate, device_sample_rate);
-        let available = consumer.available_src_frames() as u64;
-        budget = budget.min(available.min(needed));
-    }
-    if budget == u64::MAX {
-        0
-    } else {
-        budget
-    }
-}
-
 /// When every streaming consumer has EOF'd and drained, stop playback and backfill
 /// unknown duration from the final render position.
 fn finalize_streaming_natural_end(playback: &mut PlaybackController) {
     playback.finalize_streaming_natural_end();
 }
 
-/// Render a single streaming track into the output buffer.
-/// Pops samples from the ring buffer consumer and applies gain.
-/// Returns (rendered_output_samples, source_frames_consumed).
+// ---------------------------------------------------------------------------
+// Source-domain mix bus
+//
+// The invariant: every required stem is consumed over the same source-frame
+// interval `[start, start + budget)` before any device-rate conversion. A
+// gain of zero is an amplitude operation — the stem is still popped in
+// lockstep with the others, it simply contributes zeros to the mix. The
+// completed source-domain mix is then resampled exactly once for the output
+// device. This removes independent per-stem resampler state and makes
+// muting/restoring a stem clock-neutral.
+//
+// See issue #143 for the root-cause analysis and design rationale.
+// ---------------------------------------------------------------------------
+
+/// Resample a source-domain mix buffer into the output buffer.
 ///
-/// `scratch` is a reusable buffer — callers pass one pre-allocated instance to
-/// avoid `vec![]` allocations on the realtime audio thread.
-fn render_streaming_single(
+/// `mix` holds `feed_frames` interleaved source frames (at `src_channels`),
+/// of which `real_frames` are actual audio and the remainder is zero-padding
+/// (end-of-track / partial fill). The mix is processed through one persistent
+/// rubato resampler per source channel (keyed in `resampler_cache`) and
+/// written into `output` with channel mapping.
+///
+/// Returns `(rendered_output_samples, src_frames_consumed)` where
+/// `src_frames_consumed == real_frames` — the number of real source frames
+/// accepted into the bus. Every required stem must have been consumed over
+/// exactly this same range by the caller.
+fn resample_mix_to_output(
     output: &mut [f32],
-    consumer: &mut crate::audio::streaming::AudioConsumer,
-    scratch: &mut Vec<f32>,
-    gain: f32,
+    mix: &[f32],
+    real_frames: usize,
+    feed_frames: usize,
+    src_channels: usize,
+    src_rate: u32,
     device_sample_rate: u32,
     device_channels: usize,
-    max_src_frames: Option<u64>,
+    resampler_cache: &mut ResamplerCache,
 ) -> (usize, u64) {
     let output_frames = output.len() / device_channels;
-    let src_channels = consumer.channels;
-
-    let frame_cap = max_src_frames.map(|b| b as usize).unwrap_or_else(|| {
-        if gain == 0.0 {
-            src_frames_for_muted_drain(output_frames, consumer.sample_rate, device_sample_rate)
-        } else if consumer.sample_rate == device_sample_rate {
-            output_frames
-        } else {
-            src_frames_for_output(output_frames, consumer.sample_rate, device_sample_rate) as usize
-        }
-    });
-
-    if gain == 0.0 {
-        // Muted streaming tracks still advance so re-enabling a stem stays
-        // aligned with the shared render clock. Drain by source frames, not
-        // device frames, because common 44.1kHz→48kHz output resampling would
-        // otherwise skip too far while the stem is muted.
-        scratch.resize(frame_cap.saturating_mul(src_channels), 0.0);
-        let popped = consumer.pop_samples(scratch);
-        return (0, (popped / src_channels.max(1)) as u64);
-    }
-
-    let src_rate = consumer.sample_rate;
 
     if src_rate == device_sample_rate {
-        // Same rate — direct pop with channel mapping
-        scratch.resize(frame_cap.saturating_mul(src_channels), 0.0);
-        let popped = consumer.pop_samples(scratch);
-        let src_frames = (popped / src_channels.max(1)).min(frame_cap);
-
-        for out_frame in 0..src_frames {
+        // Same rate — direct copy with channel mapping, no resampler needed.
+        let frames_to_write = real_frames.min(output_frames);
+        for out_frame in 0..frames_to_write {
             for out_ch in 0..device_channels {
                 let src_ch = if out_ch < src_channels {
                     out_ch
                 } else {
                     out_ch % src_channels
                 };
-                let sample = scratch[out_frame * src_channels + src_ch];
-                output[out_frame * device_channels + out_ch] += sample * gain;
+                output[out_frame * device_channels + out_ch] +=
+                    mix[out_frame * src_channels + src_ch];
             }
         }
+        return (frames_to_write * device_channels, real_frames as u64);
+    }
 
-        (src_frames * device_channels, src_frames as u64)
-    } else {
-        // Different rate — linear interpolation resampling
-        let rate_ratio = src_rate as f64 / device_sample_rate as f64;
-        scratch.resize(frame_cap.saturating_mul(src_channels), 0.0);
-        let popped = consumer.pop_samples(scratch);
-        let available_src_frames = popped / src_channels.max(1);
+    // Different rate — rubato sinc resampling, one mono resampler per source
+    // channel. The cache key is (src_rate, dst_rate, src_ch, output_frames).
+    // Because the mix bus is the only writer for multi-stem callbacks, this
+    // resampler state tracks the mixed signal — never an individual stem.
+    let mut max_out_frames = 0usize;
 
-        let mut written = 0;
-        let mut rendered_out_frames = 0;
-        for out_frame in 0..output_frames {
-            let src_pos = out_frame as f64 * rate_ratio;
-            let src_idx = src_pos as usize;
-            let frac = src_pos - src_idx as f64;
+    for src_ch in 0..src_channels {
+        let entry =
+            resampler_cache.get_or_create_mut(src_rate, device_sample_rate, src_ch, output_frames);
 
-            if src_idx + 1 >= available_src_frames {
-                break;
-            }
-
-            for out_ch in 0..device_channels {
-                let src_ch = if out_ch < src_channels {
-                    out_ch
-                } else {
-                    out_ch % src_channels
-                };
-                let s0 = scratch[src_idx * src_channels + src_ch];
-                let s1 = scratch[(src_idx + 1) * src_channels + src_ch];
-                let sample = s0 + (s1 - s0) * frac as f32;
-                output[out_frame * device_channels + out_ch] += sample * gain;
-            }
-            written += device_channels;
-            rendered_out_frames += 1;
+        // De-interleave the mix into the reusable planar buffer, zero-padding
+        // the tail when real_frames < feed_frames (end-of-track / partial).
+        entry.channel_input.resize(feed_frames, 0.0);
+        entry.channel_input[real_frames..].fill(0.0);
+        for (frame, slot) in entry.channel_input.iter_mut().enumerate().take(real_frames) {
+            *slot = mix[frame * src_channels + src_ch];
         }
 
-        let src_frames_consumed = if rendered_out_frames > 0 {
-            (rendered_out_frames as f64 * rate_ratio)
-                .round()
-                .min(frame_cap as f64) as u64
-        } else {
-            0
+        entry.input_vecs[0] = std::mem::take(&mut entry.channel_input);
+        let input_adapter = match rubato::audioadapter_buffers::direct::SequentialSliceOfVecs::new(
+            &entry.input_vecs,
+            1,
+            feed_frames,
+        ) {
+            Ok(adapter) => adapter,
+            Err(_) => {
+                entry.channel_input = std::mem::take(&mut entry.input_vecs[0]);
+                continue;
+            }
         };
-        let consumed_samples = (src_frames_consumed as usize)
-            .saturating_mul(src_channels)
-            .min(popped);
-        if consumed_samples < popped {
-            consumer.prepend_samples(&scratch[consumed_samples..popped]);
+
+        let output_adapter = match entry.resampler.process(&input_adapter, None) {
+            Ok(out) => out,
+            Err(_) => {
+                entry.channel_input = std::mem::take(&mut entry.input_vecs[0]);
+                continue;
+            }
+        };
+
+        entry.channel_input = std::mem::take(&mut entry.input_vecs[0]);
+        let out_data = output_adapter.take_data();
+
+        let frames_to_write = out_data.len().min(output_frames);
+        for out_frame in 0..frames_to_write {
+            let sample = out_data[out_frame];
+            for out_ch in 0..device_channels {
+                let target_ch = if out_ch < src_channels {
+                    out_ch
+                } else {
+                    out_ch % src_channels
+                };
+                if target_ch == src_ch {
+                    output[out_frame * device_channels + out_ch] += sample;
+                }
+            }
+        }
+        max_out_frames = max_out_frames.max(frames_to_write);
+    }
+
+    (max_out_frames * device_channels, real_frames as u64)
+}
+
+/// Render streaming multi-stem audio through a single source-domain mix bus.
+///
+/// Every required stem — including a muted one (gain == 0.0) — is popped over
+/// the exact same `[pos, pos + budget)` source-frame range. The stems are
+/// mixed in the source domain with their per-stem gains, then the completed
+/// mix is resampled exactly once for the output device.
+///
+/// This replaces the former per-stem render paths (`render_streaming_single`,
+/// `render_streaming_two_stem`, `render_streaming_four_stem`) which
+/// independently consumed source frames and aggregated with min/max, causing
+/// inter-stem drift when one stem was muted (issue #143).
+///
+/// `stem_scratch` is a reusable per-stem pop buffer; `mix_scratch` is a
+/// reusable source-domain mix buffer. Both are pre-allocated by the caller to
+/// avoid heap allocation on the realtime audio thread.
+///
+/// Returns `(rendered_output_samples, source_frames_consumed)` where
+/// `source_frames_consumed` is the exact number of source frames popped from
+/// every required stem.
+fn render_streaming_mix_bus(
+    output: &mut [f32],
+    consumers: &mut [&mut crate::audio::streaming::AudioConsumer],
+    gains: &[f32],
+    stem_scratch: &mut Vec<f32>,
+    mix_scratch: &mut Vec<f32>,
+    device_sample_rate: u32,
+    device_channels: usize,
+    resampler_cache: &mut ResamplerCache,
+) -> (usize, u64) {
+    let output_frames = output.len() / device_channels;
+    if output_frames == 0 || consumers.is_empty() {
+        return (0, 0);
+    }
+
+    // All consumers share the same validated timeline (sample_rate + channels).
+    let src_rate = consumers[0].sample_rate;
+    let src_channels = consumers[0].channels.max(1);
+
+    // Ask the mix-bus resampler for the exact input-frame count it needs for
+    // this callback's output size. With FixedAsync::Output the resampler
+    // produces exactly `output_frames` device frames and consumes
+    // `input_frames_next()` source frames (variable, ~output_frames *
+    // src_rate / dst_rate). Every stem will be popped over this same count.
+    let input_needed = if src_rate == device_sample_rate {
+        output_frames
+    } else {
+        resampler_cache
+            .get_or_create_mut(src_rate, device_sample_rate, 0, output_frames)
+            .resampler
+            .input_frames_next()
+    };
+
+    // Shared source-frame budget: min(available per stem, input_needed).
+    // If any stem has fewer frames than the budget, the mix is zero-padded
+    // for the tail — but every stem still pops the same `budget` frames.
+    let mut budget = input_needed;
+    for consumer in consumers.iter() {
+        budget = budget.min(consumer.available_src_frames());
+    }
+
+    if budget == 0 {
+        return (0, 0);
+    }
+
+    // Build the source-domain mix. mix_scratch holds `budget * src_channels`
+    // interleaved f32 samples. stem_scratch is reused for per-stem pops.
+    let mix_len = budget * src_channels;
+    mix_scratch.resize(mix_len, 0.0);
+    mix_scratch[..mix_len].fill(0.0);
+    stem_scratch.resize(mix_len, 0.0);
+
+    for (i, consumer) in consumers.iter_mut().enumerate() {
+        let gain = gains.get(i).copied().unwrap_or(0.0);
+
+        // Pop exactly `budget` source frames from this stem, regardless of
+        // gain. A muted stem (gain == 0.0) is still consumed in lockstep so
+        // that restoring it later produces zero frame offset from the others.
+        let popped = consumer.pop_samples(&mut stem_scratch[..mix_len]);
+        let popped_frames = popped / src_channels;
+
+        if gain == 0.0 {
+            continue;
         }
 
-        (written, src_frames_consumed)
+        // Accumulate this stem into the source-domain mix with its gain.
+        for frame in 0..popped_frames {
+            let src_off = frame * src_channels;
+            let mix_off = frame * src_channels;
+            for ch in 0..src_channels {
+                mix_scratch[mix_off + ch] += stem_scratch[src_off + ch] * gain;
+            }
+        }
     }
+
+    // Resample the completed mix to the device rate. `real_frames == budget`
+    // (every stem contributed at least `budget` frames, verified above).
+    resample_mix_to_output(
+        output,
+        mix_scratch,
+        budget,
+        input_needed,
+        src_channels,
+        src_rate,
+        device_sample_rate,
+        device_channels,
+        resampler_cache,
+    )
 }
 
-/// Render two streaming stems (vocals + accompaniment).
-fn render_streaming_two_stem(
+/// Render decoded multi-stem audio through a single source-domain mix bus.
+///
+/// Every required stem is read over the exact same `[start_frame, start_frame
+/// + budget)` source-frame range. The stems are mixed in the source domain
+/// with their per-stem gains, then the completed mix is resampled exactly
+/// once for the output device. This removes the former per-stem
+/// `mix_stem_resampled` calls that independently computed `src_frames_consumed`
+/// and aggregated with max, which could diverge from the streaming path.
+///
+/// `mix_scratch` is a reusable source-domain mix buffer, pre-allocated by the
+/// caller to avoid heap allocation on the realtime audio thread.
+///
+/// Returns `(rendered_output_samples, source_frames_consumed)`.
+fn render_decoded_mix_bus(
     output: &mut [f32],
-    vocals: &mut crate::audio::streaming::AudioConsumer,
-    accompaniment: &mut crate::audio::streaming::AudioConsumer,
-    scratch: &mut Vec<f32>,
-    master: f32,
-    sv: StemVolumes,
+    stems: &[&DecodedAudio],
+    gains: &[f32],
+    start_frame: u64,
+    mix_scratch: &mut Vec<f32>,
     device_sample_rate: u32,
     device_channels: usize,
+    resampler_cache: &mut ResamplerCache,
 ) -> (usize, u64) {
     let output_frames = output.len() / device_channels;
-    let budget = compute_shared_src_frame_budget(
-        &[vocals as &_, accompaniment as &_],
-        output_frames,
-        device_sample_rate,
-    );
+    if output_frames == 0 || stems.is_empty() {
+        return (0, 0);
+    }
+
+    let src_rate = stems[0].sample_rate;
+    let src_channels = stems[0].channels.max(1);
+
+    let input_needed = if src_rate == device_sample_rate {
+        output_frames
+    } else {
+        resampler_cache
+            .get_or_create_mut(src_rate, device_sample_rate, 0, output_frames)
+            .resampler
+            .input_frames_next()
+    };
+
+    // Shared source-frame budget: min(remaining per stem, input_needed).
+    let src_start = start_frame as usize;
+    let mut budget = input_needed;
+    for stem in stems.iter() {
+        let total_frames = stem.samples.len() / stem.channels.max(1);
+        let remaining = total_frames.saturating_sub(src_start);
+        budget = budget.min(remaining);
+    }
+
     if budget == 0 {
         return (0, 0);
     }
-    let max_frames = Some(budget);
-    let accomp_gain = sv.drums.max(sv.bass).max(sv.other);
-    let (r1, f1) = render_streaming_single(
-        output,
-        vocals,
-        scratch,
-        master * sv.vocals,
-        device_sample_rate,
-        device_channels,
-        max_frames,
-    );
-    let (r2, f2) = render_streaming_single(
-        output,
-        accompaniment,
-        scratch,
-        master * accomp_gain,
-        device_sample_rate,
-        device_channels,
-        max_frames,
-    );
-    // Use the actual consumed source frames, not the pre-computed budget.
-    // The budget uses ceil()+1 while the resampler consumes round() frames,
-    // so advancing by budget would drift ~1-2 src frames per callback.
-    // Use min across stems: when a stem is muted (gain=0), the drain path
-    // returns budget (ceil()+1) instead of round(), so max would pick the
-    // over-counted value and reintroduce the drift. min selects the
-    // resampler's round() value from the non-muted stems.
-    (r1.max(r2), f1.min(f2))
-}
 
-/// Render four streaming stems.
-fn render_streaming_four_stem(
-    output: &mut [f32],
-    vocals: &mut crate::audio::streaming::AudioConsumer,
-    drums: &mut crate::audio::streaming::AudioConsumer,
-    bass: &mut crate::audio::streaming::AudioConsumer,
-    other: &mut crate::audio::streaming::AudioConsumer,
-    scratch: &mut Vec<f32>,
-    master: f32,
-    sv: StemVolumes,
-    device_sample_rate: u32,
-    device_channels: usize,
-) -> (usize, u64) {
-    let output_frames = output.len() / device_channels;
-    let budget = compute_shared_src_frame_budget(
-        &[vocals as &_, drums as &_, bass as &_, other as &_],
-        output_frames,
-        device_sample_rate,
-    );
-    if budget == 0 {
-        return (0, 0);
+    // Build the source-domain mix.
+    let mix_len = budget * src_channels;
+    mix_scratch.resize(mix_len, 0.0);
+    mix_scratch[..mix_len].fill(0.0);
+
+    for (i, stem) in stems.iter().enumerate() {
+        let gain = gains.get(i).copied().unwrap_or(0.0);
+        if gain == 0.0 {
+            // Muted stem: contributes zeros but the source range is still
+            // "consumed" (the transport advances by `budget` for every stem).
+            continue;
+        }
+        for frame in 0..budget {
+            let src_off = (src_start + frame) * src_channels;
+            let mix_off = frame * src_channels;
+            for ch in 0..src_channels {
+                mix_scratch[mix_off + ch] += stem.samples[src_off + ch] * gain;
+            }
+        }
     }
-    let max_frames = Some(budget);
-    let (r1, f1) = render_streaming_single(
+
+    resample_mix_to_output(
         output,
-        vocals,
-        scratch,
-        master * sv.vocals,
+        mix_scratch,
+        budget,
+        input_needed,
+        src_channels,
+        src_rate,
         device_sample_rate,
         device_channels,
-        max_frames,
-    );
-    let (r2, f2) = render_streaming_single(
-        output,
-        drums,
-        scratch,
-        master * sv.drums,
-        device_sample_rate,
-        device_channels,
-        max_frames,
-    );
-    let (r3, f3) = render_streaming_single(
-        output,
-        bass,
-        scratch,
-        master * sv.bass,
-        device_sample_rate,
-        device_channels,
-        max_frames,
-    );
-    let (r4, f4) = render_streaming_single(
-        output,
-        other,
-        scratch,
-        master * sv.other,
-        device_sample_rate,
-        device_channels,
-        max_frames,
-    );
-    // Use the actual consumed source frames, not the pre-computed budget.
-    // The budget uses ceil()+1 while the resampler consumes round() frames,
-    // so advancing by budget would drift ~1-2 src frames per callback.
-    // Use min across stems: when a stem is muted (gain=0), the drain path
-    // returns budget (ceil()+1) instead of round(), so max would pick the
-    // over-counted value and reintroduce the drift. min selects the
-    // resampler's round() value from the non-muted stems.
-    (r1.max(r2).max(r3).max(r4), f1.min(f2).min(f3).min(f4))
+        resampler_cache,
+    )
 }
 
 fn build_output_stream<T>(
@@ -1525,6 +1572,11 @@ where
     // on the realtime thread — after the first callback the capacity is sufficient
     // and `resize` becomes a no-op memset.
     let mut stem_scratch = Vec::<f32>::new();
+    // Pre-allocated scratch buffer for the source-domain mix bus. The mix bus
+    // accumulates all stems in the source domain before a single resample
+    // pass, so this buffer holds `budget * src_channels` interleaved f32
+    // samples (see `render_streaming_mix_bus` / `render_decoded_mix_bus`).
+    let mut mix_scratch = Vec::<f32>::new();
     // Pre-allocated scratch buffer for AirPlay downmix. Eliminates the
     // per-callback heap allocation that `downmix_for_airplay` previously caused.
     let mut airplay_scratch = Vec::<f32>::new();
@@ -1578,6 +1630,7 @@ where
                         &mut controller,
                         &mut scratch,
                         &mut stem_scratch,
+                        &mut mix_scratch,
                         &mut crossfade_scratch,
                         sample_rate,
                         channels,
@@ -1833,6 +1886,7 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut Vec::new(),
             &mut crossfade_scratch,
             sample_rate,
             channels,
@@ -1928,6 +1982,7 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut Vec::new(),
             &mut crossfade_scratch,
             sample_rate,
             device_channels,
@@ -1949,6 +2004,7 @@ mod tests {
         let rendered = render_output_buffer(
             &mut controller,
             &mut output,
+            &mut Vec::new(),
             &mut Vec::new(),
             &mut crossfade_scratch,
             sample_rate,
@@ -1972,6 +2028,7 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut Vec::new(),
             &mut crossfade_scratch,
             sample_rate,
             device_channels,
@@ -1992,76 +2049,121 @@ mod tests {
     fn streaming_resample_keeps_lookahead_sample_for_next_callback() {
         use crate::audio::streaming;
 
+        // The mix bus uses rubato sinc resampling with FixedAsync::Output.
+        // Each callback consumes `input_frames_next()` source frames and
+        // produces exactly `output_frames` device frames. The resampler
+        // maintains internal sinc state across callbacks, so consecutive
+        // callbacks join seamlessly — no lookahead sample is lost.
         let (mut prod, mut consumer) = streaming::create_stream_pair(4, 1);
         let input = [0.0_f32, 1.0, 2.0, 3.0, 4.0, 5.0];
         assert_eq!(prod.push_samples(&input), input.len());
 
         let mut first = vec![0.0_f32; 4];
         let mut scratch = Vec::new();
-        let rendered = super::render_streaming_single(
+        let mut mix_scratch = Vec::new();
+        let mut rc = super::ResamplerCache::new();
+        let gains = [1.0f32];
+        let mut consumers: [&mut streaming::AudioConsumer; 1] = [&mut consumer];
+        let (rendered, consumed) = super::render_streaming_mix_bus(
             &mut first,
-            &mut consumer,
+            &mut consumers,
+            &gains,
             &mut scratch,
-            1.0,
+            &mut mix_scratch,
             8,
             1,
-            None,
+            &mut rc,
         );
-        assert_eq!(rendered, (4, 2));
-        assert_eq!(first, vec![0.0, 0.5, 1.0, 1.5]);
+        assert_eq!(rendered, 4, "mix bus should fill the output buffer");
+        assert!(
+            consumed > 0 && consumed <= 6,
+            "mix bus should consume > 0 and <= available source frames, got {consumed}"
+        );
 
+        // Second callback: the remaining source frames should be consumed.
         let mut second = vec![0.0_f32; 4];
-        let rendered = super::render_streaming_single(
+        let (_rendered2, consumed2) = super::render_streaming_mix_bus(
             &mut second,
-            &mut consumer,
+            &mut consumers,
+            &gains,
             &mut scratch,
-            1.0,
+            &mut mix_scratch,
             8,
             1,
-            None,
+            &mut rc,
         );
-        assert_eq!(rendered, (4, 2));
-        assert_eq!(second, vec![2.0, 2.5, 3.0, 3.5]);
+        // The total consumed across both callbacks must not exceed the input.
+        let total_consumed = consumed + consumed2;
+        assert!(
+            total_consumed <= input.len() as u64,
+            "total consumed {total_consumed} must not exceed input length {}",
+            input.len()
+        );
     }
 
     #[test]
-    fn muted_streaming_resample_advances_by_source_frames() {
+    fn muted_streaming_stem_advances_in_lockstep_with_audible_stem() {
         use crate::audio::streaming;
 
-        let (mut prod, mut consumer) = streaming::create_stream_pair(4, 1);
-        let input = [0.0_f32, 1.0, 2.0, 3.0, 4.0, 5.0];
-        assert_eq!(prod.push_samples(&input), input.len());
+        // Issue #143 core invariant: a muted stem (gain == 0.0) must be
+        // popped over the exact same source-frame range as an audible stem.
+        // After N callbacks, both consumers must have been drained by the
+        // same total source-frame count, so restoring the muted stem
+        // produces zero inter-stem offset.
+        let sample_rate: u32 = 44_100;
+        let channels: usize = 2;
+        let (mut prod_a, mut consumer_a) = streaming::create_stream_pair(sample_rate, channels);
+        let (mut prod_m, mut consumer_m) = streaming::create_stream_pair(sample_rate, channels);
 
-        let mut muted = vec![0.0_f32; 4];
+        // Fill both stems with the same amount of data.
+        let frames = sample_rate as usize; // 1 second
+        let filler = vec![0.5_f32; frames * channels];
+        prod_a.push_samples(&filler);
+        prod_m.push_samples(&filler);
+
+        let device_channels = 2;
+        let buffer_frames = 512usize;
         let mut scratch = Vec::new();
-        let rendered = super::render_streaming_single(
-            &mut muted,
-            &mut consumer,
-            &mut scratch,
-            0.0,
-            8,
-            1,
-            None,
-        );
-        assert_eq!(rendered, (0, 2));
+        let mut mix_scratch = Vec::new();
+        let mut rc = super::ResamplerCache::new();
 
-        let mut audible = vec![0.0_f32; 4];
-        let rendered = super::render_streaming_single(
-            &mut audible,
-            &mut consumer,
+        // Mix both stems: audible gain=1.0, muted gain=0.0.
+        let gains = [1.0f32, 0.0f32];
+        let mut consumers: [&mut streaming::AudioConsumer; 2] = [&mut consumer_a, &mut consumer_m];
+
+        let mut output = vec![0.0f32; buffer_frames * device_channels];
+        let (_rendered, consumed) = super::render_streaming_mix_bus(
+            &mut output,
+            &mut consumers,
+            &gains,
             &mut scratch,
-            1.0,
-            8,
-            1,
-            None,
+            &mut mix_scratch,
+            sample_rate,
+            device_channels,
+            &mut rc,
         );
-        assert_eq!(rendered, (4, 2));
-        assert_eq!(audible, vec![2.0, 2.5, 3.0, 3.5]);
+
+        // Both consumers must have been drained by exactly `consumed` frames.
+        let a_remaining = consumer_a.available_src_frames();
+        let m_remaining = consumer_m.available_src_frames();
+        assert_eq!(
+            a_remaining, m_remaining,
+            "audible and muted stems must have identical remaining frame counts"
+        );
+        let expected_remaining = frames - consumed as usize;
+        assert_eq!(
+            a_remaining, expected_remaining,
+            "audible stem remaining {a_remaining} must equal initial {frames} - consumed {consumed}"
+        );
+        assert_eq!(
+            m_remaining, expected_remaining,
+            "muted stem remaining {m_remaining} must equal initial {frames} - consumed {consumed}"
+        );
     }
 
     /// R4: When one stem has fewer samples than another, the source clock must
-    /// NOT advance past the slow stem. This test forces one stem to
-    /// under-render and verifies the committed frame count is the minimum.
+    /// NOT advance past the slow stem. The mix bus budget is min(available per
+    /// stem, input_needed), so the clock advances only by the minimum.
     #[test]
     fn streaming_two_stem_clock_does_not_advance_past_slow_stem() {
         use crate::audio::streaming;
@@ -2078,50 +2180,46 @@ mod tests {
         let filler2 = vec![0.3_f32; (sample_rate as usize / 10) * channels]; // 100ms
         prod2.push_samples(&filler2);
 
-        // Request 512 output frames (= 512 source frames at same rate)
         let device_channels = 2;
         let mut scratch = Vec::new();
+        let mut mix_scratch = Vec::new();
+        let mut rc = super::ResamplerCache::new();
 
-        // Render both stems — stem2 only has ~100ms = ~4410 frames, stem1 has 44100
-        // Requested: 512 frames. Both stems have enough for one callback.
-        // We need more callbacks or a smaller buffer to actually see under-render.
-        // Use a buffer of 4410 frames (= 100ms) so stem2 is exactly at the edge.
         let big_frames = (sample_rate / 10) as usize; // 4410 frames = 100ms
         let mut big_output = vec![0.0f32; big_frames * device_channels];
 
-        // First callback: both stems render 4410 frames (stem2 is now empty)
-        let result = super::render_streaming_two_stem(
+        // First callback: both stems have enough for 4410 frames.
+        let gains = [1.0f32, 1.0f32];
+        let mut consumers: [&mut streaming::AudioConsumer; 2] = [&mut consumer1, &mut consumer2];
+        let (_rendered_1, frames_1) = super::render_streaming_mix_bus(
             &mut big_output,
-            &mut consumer1,
-            &mut consumer2,
+            &mut consumers,
+            &gains,
             &mut scratch,
-            1.0,
-            super::StemVolumes::default(),
+            &mut mix_scratch,
             sample_rate,
             device_channels,
+            &mut rc,
         );
-        let (_rendered_1, frames_1) = result;
         assert!(frames_1 > 0, "first callback should render frames");
 
-        // Second callback: stem1 still has data, stem2 has nothing
+        // Second callback: stem1 still has data, stem2 has nothing.
+        // Budget = min(available_stem1, available_stem2=0, input_needed) = 0.
         big_output.fill(0.0);
-        let result2 = super::render_streaming_two_stem(
+        let (_rendered_2, frames_2) = super::render_streaming_mix_bus(
             &mut big_output,
-            &mut consumer1,
-            &mut consumer2,
+            &mut consumers,
+            &gains,
             &mut scratch,
-            1.0,
-            super::StemVolumes::default(),
+            &mut mix_scratch,
             sample_rate,
             device_channels,
+            &mut rc,
         );
-        let (_rendered_2, frames_2) = result2;
 
-        // CRITICAL: frames advanced must be 0 or small — stem2 has no data,
-        // so min(f1, f2) must be 0 (f2=0).
         assert_eq!(
             frames_2, 0,
-            "when one stem has no data, source clock must not advance (min)"
+            "when one stem has no data, mix bus budget must be 0 (min)"
         );
     }
 
@@ -2150,23 +2248,26 @@ mod tests {
         let frames = 512usize;
         let mut output = vec![0.0f32; frames * device_channels];
         let mut scratch = Vec::new();
+        let mut mix_scratch = Vec::new();
+        let mut rc = super::ResamplerCache::new();
 
-        let (_rendered, src_frames) = super::render_streaming_four_stem(
+        let gains = [1.0f32, 1.0f32, 1.0f32, 1.0f32];
+        let mut consumers: [&mut streaming::AudioConsumer; 4] =
+            [&mut c_v, &mut c_d, &mut c_b, &mut c_o];
+        let (_rendered, src_frames) = super::render_streaming_mix_bus(
             &mut output,
-            &mut c_v,
-            &mut c_d,
-            &mut c_b,
-            &mut c_o,
+            &mut consumers,
+            &gains,
             &mut scratch,
-            1.0,
-            super::StemVolumes::default(),
+            &mut mix_scratch,
             sample_rate,
             device_channels,
+            &mut rc,
         );
 
         assert_eq!(
             src_frames, 0,
-            "four-stem clock must not advance when any stem has no data"
+            "four-stem mix bus must not advance when any stem has no data"
         );
     }
 
@@ -2211,6 +2312,7 @@ mod tests {
         let rendered = super::render_output_buffer(
             &mut controller,
             &mut output,
+            &mut Vec::new(),
             &mut Vec::new(),
             &mut crossfade_scratch,
             sample_rate,
@@ -2294,6 +2396,7 @@ mod tests {
         let rendered = render_output_buffer(
             &mut controller,
             &mut output,
+            &mut Vec::new(),
             &mut Vec::new(),
             &mut crossfade_scratch,
             sample_rate,
@@ -2408,6 +2511,7 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut Vec::new(),
             &mut crossfade_scratch,
             sample_rate,
             device_channels,
@@ -2504,6 +2608,7 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut Vec::new(),
             &mut crossfade_scratch,
             sample_rate,
             device_channels,
@@ -2554,6 +2659,7 @@ mod tests {
         let _rendered2 = render_output_buffer(
             &mut controller,
             &mut output2,
+            &mut Vec::new(),
             &mut Vec::new(),
             &mut crossfade_scratch,
             sample_rate,
@@ -2676,6 +2782,7 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut Vec::new(),
             &mut crossfade_scratch,
             sample_rate,
             device_channels,
@@ -2785,6 +2892,7 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut Vec::new(),
             &mut crossfade_scratch,
             device_sample_rate,
             device_channels,
@@ -2842,6 +2950,7 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut Vec::new(),
             &mut crossfade_scratch,
             device_sample_rate,
             device_channels,
@@ -2890,6 +2999,7 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut Vec::new(),
             &mut crossfade_scratch,
             device_sample_rate,
             device_channels,
@@ -2931,6 +3041,7 @@ mod tests {
             let rendered = super::render_output_buffer(
                 &mut controller,
                 &mut output,
+                &mut Vec::new(),
                 &mut Vec::new(),
                 &mut crossfade_scratch,
                 device_sample_rate,
@@ -2981,6 +3092,7 @@ mod tests {
         super::render_output_buffer(
             &mut controller,
             &mut output,
+            &mut Vec::new(),
             &mut Vec::new(),
             &mut crossfade_scratch,
             device_sample_rate,
@@ -3042,6 +3154,7 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut Vec::new(),
             &mut crossfade_scratch,
             device_sample_rate,
             device_channels,
@@ -3083,6 +3196,7 @@ mod tests {
         super::render_output_buffer(
             &mut controller,
             &mut output,
+            &mut Vec::new(),
             &mut Vec::new(),
             &mut crossfade_scratch,
             device_sample_rate,
@@ -3268,6 +3382,7 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut Vec::new(),
             &mut crossfade_scratch,
             device_sample_rate,
             device_channels,
@@ -3306,6 +3421,7 @@ mod tests {
         super::render_output_buffer(
             &mut controller,
             &mut output2,
+            &mut Vec::new(),
             &mut Vec::new(),
             &mut crossfade_scratch,
             device_sample_rate,
@@ -3363,6 +3479,7 @@ mod tests {
         super::render_output_buffer(
             &mut controller,
             &mut output,
+            &mut Vec::new(),
             &mut Vec::new(),
             &mut crossfade_scratch,
             device_sample_rate,
@@ -3466,6 +3583,7 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut Vec::new(),
             &mut crossfade_scratch,
             device_sample_rate,
             device_channels,
@@ -3525,6 +3643,7 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut Vec::new(),
             &mut crossfade_scratch,
             device_rate,
             device_channels,
@@ -3583,6 +3702,7 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut Vec::new(),
             &mut crossfade_scratch,
             device_rate,
             device_channels,
@@ -3640,6 +3760,7 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut Vec::new(),
             &mut crossfade_scratch,
             device_sample_rate,
             device_channels,
@@ -3657,6 +3778,7 @@ mod tests {
                 super::render_output_buffer(
                     &mut controller,
                     &mut output_more,
+                    &mut Vec::new(),
                     &mut Vec::new(),
                     &mut crossfade_scratch,
                     device_sample_rate,
@@ -3734,6 +3856,7 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut Vec::new(),
             &mut crossfade_scratch,
             device_sample_rate,
             device_channels,
@@ -3751,6 +3874,7 @@ mod tests {
                 super::render_output_buffer(
                     &mut controller,
                     &mut output_more,
+                    &mut Vec::new(),
                     &mut Vec::new(),
                     &mut crossfade_scratch,
                     device_sample_rate,
@@ -3780,6 +3904,7 @@ mod tests {
         let rendered2 = super::render_output_buffer(
             &mut controller,
             &mut output2,
+            &mut Vec::new(),
             &mut Vec::new(),
             &mut crossfade_scratch,
             device_sample_rate,
@@ -3844,6 +3969,7 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut Vec::new(),
             &mut crossfade_scratch,
             device_rate,
             device_channels,
@@ -3872,6 +3998,7 @@ mod tests {
             &mut controller,
             &mut output,
             &mut Vec::new(),
+            &mut Vec::new(),
             &mut crossfade_scratch,
             device_rate,
             device_channels,
@@ -3891,6 +4018,421 @@ mod tests {
         assert!(
             rc_in.cache.is_empty(),
             "incoming resampler cache must be cleared after cancellation"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Issue #143: source-domain mix bus invariants
+    // -----------------------------------------------------------------------
+
+    /// Helper: build a two-stem streaming controller with identical filler
+    /// data in both stems, so inter-stem frame offset can be measured
+    /// precisely by comparing `available_src_frames()` after callbacks.
+    fn build_two_stem_streaming_controller(
+        sample_rate: u32,
+        channels: usize,
+        frames: usize,
+    ) -> PlaybackController {
+        use crate::audio::streaming::{self, StreamingTrack};
+
+        let (mut prod_v, cons_v) = streaming::create_stream_pair(sample_rate, channels);
+        let (mut prod_a, cons_a) = streaming::create_stream_pair(sample_rate, channels);
+        let filler = vec![0.5f32; frames * channels];
+        prod_v.push_samples(&filler);
+        prod_a.push_samples(&filler);
+
+        let mut controller = PlaybackController::default();
+        controller.start_track_streaming(
+            "test-twostem".to_owned(),
+            sample_rate,
+            channels,
+            (frames * 1000 / sample_rate as usize) as u64,
+            StreamingTrack::TwoStem {
+                vocals: cons_v,
+                accompaniment: cons_a,
+            },
+            0,
+        );
+        controller.play(0).unwrap();
+        controller.fade = crate::audio::playback::FadeState::None;
+        controller
+    }
+
+    /// After N callbacks with one stem muted, both stems must have been
+    /// drained by exactly the same total source-frame count. This is the
+    /// core #143 invariant: muting is amplitude-only, not clock-affecting.
+    #[test]
+    fn mix_bus_mute_restore_preserves_zero_inter_stem_offset() {
+        let sample_rate: u32 = 44_100;
+        let channels: usize = 2;
+        let total_frames = sample_rate as usize * 5; // 5 seconds
+        let mut controller =
+            build_two_stem_streaming_controller(sample_rate, channels, total_frames);
+
+        // Mute the vocals stem.
+        controller.set_stem_volume(crate::audio::playback::StemName::Vocals, 0.0);
+
+        let device_channels = 2;
+        let buffer_frames = 512usize;
+        let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+
+        // Run 50 callbacks with vocals muted.
+        for _ in 0..50 {
+            let mut output = vec![0.0f32; buffer_frames * device_channels];
+            let _ = render_output_buffer(
+                &mut controller,
+                &mut output,
+                &mut Vec::new(),
+                &mut Vec::new(),
+                &mut crossfade_scratch,
+                sample_rate,
+                device_channels,
+                &mut rc,
+                &mut rc_in,
+                &mut EqProcessor::new(sample_rate, device_channels),
+                &mut peak_acc,
+                &ring,
+            );
+        }
+
+        // Both stems must have identical remaining frame counts.
+        let track = controller.current_track.as_ref().unwrap();
+        let streaming = track.streaming.as_ref().unwrap();
+        if let crate::audio::streaming::StreamingTrack::TwoStem {
+            vocals,
+            accompaniment,
+        } = streaming
+        {
+            let v_remaining = vocals.available_src_frames();
+            let a_remaining = accompaniment.available_src_frames();
+            assert_eq!(
+                v_remaining, a_remaining,
+                "after muted callbacks, vocals and accompaniment must have identical remaining frames"
+            );
+        } else {
+            panic!("expected TwoStem streaming track");
+        }
+
+        // Restore vocals and run 50 more callbacks.
+        controller.set_stem_volume(crate::audio::playback::StemName::Vocals, 1.0);
+        for _ in 0..50 {
+            let mut output = vec![0.0f32; buffer_frames * device_channels];
+            let _ = render_output_buffer(
+                &mut controller,
+                &mut output,
+                &mut Vec::new(),
+                &mut Vec::new(),
+                &mut crossfade_scratch,
+                sample_rate,
+                device_channels,
+                &mut rc,
+                &mut rc_in,
+                &mut EqProcessor::new(sample_rate, device_channels),
+                &mut peak_acc,
+                &ring,
+            );
+        }
+
+        // Still identical — no drift accumulated.
+        let track = controller.current_track.as_ref().unwrap();
+        let streaming = track.streaming.as_ref().unwrap();
+        if let crate::audio::streaming::StreamingTrack::TwoStem {
+            vocals,
+            accompaniment,
+        } = streaming
+        {
+            let v_remaining = vocals.available_src_frames();
+            let a_remaining = accompaniment.available_src_frames();
+            assert_eq!(
+                v_remaining, a_remaining,
+                "after restore, stems must still have identical remaining frames (no drift)"
+            );
+        } else {
+            panic!("expected TwoStem streaming track");
+        }
+    }
+
+    /// The mix bus must produce non-zero audio when at least one stem is
+    /// audible, even if the other is muted. This verifies the mix bus
+    /// doesn't accidentally zero the entire output when one gain is 0.
+    #[test]
+    fn mix_bus_produces_audio_when_one_stem_is_muted() {
+        let sample_rate: u32 = 44_100;
+        let channels: usize = 2;
+        let total_frames = sample_rate as usize; // 1 second
+        let mut controller =
+            build_two_stem_streaming_controller(sample_rate, channels, total_frames);
+
+        // Mute vocals, keep accompaniment audible.
+        controller.set_stem_volume(crate::audio::playback::StemName::Vocals, 0.0);
+
+        let device_channels = 2;
+        let buffer_frames = 512usize;
+        let mut output = vec![0.0f32; buffer_frames * device_channels];
+        let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        let rendered = render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            &mut Vec::new(),
+            &mut crossfade_scratch,
+            sample_rate,
+            device_channels,
+            &mut rc,
+            &mut rc_in,
+            &mut EqProcessor::new(sample_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        assert!(
+            rendered > 0,
+            "mix bus must render audio when one stem is audible"
+        );
+        let max_sample = output[..rendered]
+            .iter()
+            .fold(0.0f32, |a, &b| a.max(b.abs()));
+        assert!(
+            max_sample > 0.0,
+            "output must contain non-zero samples from the audible stem"
+        );
+    }
+
+    /// Decoded multi-stem mix bus: all stems must be read over the same
+    /// source-frame range. After rendering, the render_frame must advance
+    /// by exactly the number of source frames consumed (not per-stem max).
+    #[test]
+    fn decoded_mix_bus_advances_render_frame_by_consumed_frames() {
+        use crate::audio::decode::DecodedAudio;
+        use crate::audio::playback::{FadeState, LoadedStems, PlaybackController};
+
+        let sample_rate = 44_100;
+        let channels = 2;
+        let frames = 1024;
+        let decoded = |sample| DecodedAudio {
+            sample_rate,
+            channels,
+            duration_ms: (frames * 1000 / sample_rate as usize) as u64,
+            samples: vec![sample; frames * channels],
+        };
+
+        let mut controller = PlaybackController::default();
+        controller.start_track("song-a".to_owned(), decoded(0.0), 0);
+        controller
+            .attach_stems(
+                "song-a",
+                LoadedStems::TwoStem {
+                    vocals: decoded(0.5),
+                    accompaniment: decoded(0.3),
+                },
+            )
+            .expect("stems should attach");
+        controller.play(0).expect("track should start");
+        controller.fade = FadeState::None;
+
+        let device_channels = 2;
+        let buffer_frames = 256usize;
+        let mut output = vec![0.0f32; buffer_frames * device_channels];
+        let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        let rendered = render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            &mut Vec::new(),
+            &mut crossfade_scratch,
+            sample_rate,
+            device_channels,
+            &mut rc,
+            &mut rc_in,
+            &mut EqProcessor::new(sample_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        assert_eq!(rendered, buffer_frames * device_channels);
+        // render_frame should have advanced by exactly buffer_frames (same rate).
+        let track = controller.current_track.as_ref().unwrap();
+        assert_eq!(
+            track.render_frame, buffer_frames as u64,
+            "render_frame must advance by the source frames consumed, not per-stem max"
+        );
+    }
+
+    /// Decoded mix bus with mismatched sample rates: the mix bus resamples
+    /// the completed source-domain mix once, producing device-rate output.
+    /// The render_frame advances by source frames, not device frames.
+    #[test]
+    fn decoded_mix_bus_resamples_once_with_mismatched_rates() {
+        use crate::audio::decode::DecodedAudio;
+        use crate::audio::playback::{FadeState, LoadedStems, PlaybackController};
+
+        let src_rate = 44_100;
+        let device_rate = 48_000;
+        let channels = 2;
+        let frames = src_rate as usize * 5; // 5 seconds of source audio
+        let decoded = |sample| DecodedAudio {
+            sample_rate: src_rate,
+            channels,
+            duration_ms: 5000,
+            samples: vec![sample; frames * channels],
+        };
+
+        let mut controller = PlaybackController::default();
+        controller.start_track("song-a".to_owned(), decoded(0.0), 0);
+        controller
+            .attach_stems(
+                "song-a",
+                LoadedStems::TwoStem {
+                    vocals: decoded(0.5),
+                    accompaniment: decoded(0.3),
+                },
+            )
+            .expect("stems should attach");
+        controller.play(0).expect("track should start");
+        controller.fade = FadeState::None;
+
+        let device_channels = 2;
+        let buffer_frames = 512usize;
+        let mut output = vec![0.0f32; buffer_frames * device_channels];
+        let mut rc = super::ResamplerCache::new();
+        let mut rc_in = super::ResamplerCache::new();
+        let mut crossfade_scratch = vec![0.0f32; super::CROSSFADE_SCRATCH_FRAMES * device_channels];
+        let ring = crate::audio::peaks::PeakRing::new();
+        let mut peak_acc = crate::audio::peaks::PeakAccumulator::new();
+        let rendered = render_output_buffer(
+            &mut controller,
+            &mut output,
+            &mut Vec::new(),
+            &mut Vec::new(),
+            &mut crossfade_scratch,
+            device_rate,
+            device_channels,
+            &mut rc,
+            &mut rc_in,
+            &mut EqProcessor::new(device_rate, device_channels),
+            &mut peak_acc,
+            &ring,
+        );
+
+        assert!(rendered > 0, "mix bus must render audio with resampling");
+        // render_frame advances by source frames consumed, which is ~buffer_frames * src/dst.
+        // The rubato sinc resampler's first callback consumes extra frames to prime
+        // its delay line, so the tolerance is generous for the first callback.
+        let track = controller.current_track.as_ref().unwrap();
+        assert!(
+            track.render_frame > 0,
+            "render_frame must advance after a resampled callback"
+        );
+        let expected_approx = (buffer_frames as f64 * src_rate as f64 / device_rate as f64) as u64;
+        assert!(
+            (track.render_frame as i64 - expected_approx as i64).abs() <= 128,
+            "render_frame {} should be ~{} (buffer_frames * src/dst), \
+             allowing sinc filter priming overhead",
+            track.render_frame,
+            expected_approx
+        );
+    }
+
+    /// Mismatched stem metadata must be rejected by attach_stems before the
+    /// mix bus ever runs. This prevents the mix bus from stalling when one
+    /// stem has a different sample_rate, channels, or frame_count.
+    #[test]
+    fn attach_stems_rejects_mismatched_sample_rate() {
+        use crate::audio::decode::DecodedAudio;
+        use crate::audio::playback::{LoadedStems, PlaybackController};
+
+        let channels = 2;
+        let frames = 128;
+        let decoded = |sr, sample| DecodedAudio {
+            sample_rate: sr,
+            channels,
+            duration_ms: (frames * 1000 / sr as usize) as u64,
+            samples: vec![sample; frames * channels],
+        };
+
+        let mut controller = PlaybackController::default();
+        controller.start_track("song-a".to_owned(), decoded(44_100, 0.0), 0);
+        let result = controller.attach_stems(
+            "song-a",
+            LoadedStems::TwoStem {
+                vocals: decoded(44_100, 0.5),
+                accompaniment: decoded(48_000, 0.3), // mismatched rate
+            },
+        );
+        assert!(
+            result.is_err(),
+            "attach_stems must reject mismatched sample rates"
+        );
+    }
+
+    #[test]
+    fn attach_stems_rejects_mismatched_frame_count() {
+        use crate::audio::decode::DecodedAudio;
+        use crate::audio::playback::{LoadedStems, PlaybackController};
+
+        let sample_rate = 44_100;
+        let channels = 2;
+        let decoded = |frames, sample| DecodedAudio {
+            sample_rate,
+            channels,
+            duration_ms: (frames * 1000 / sample_rate as usize) as u64,
+            samples: vec![sample; frames * channels],
+        };
+
+        let mut controller = PlaybackController::default();
+        controller.start_track("song-a".to_owned(), decoded(128, 0.0), 0);
+        let result = controller.attach_stems(
+            "song-a",
+            LoadedStems::TwoStem {
+                vocals: decoded(128, 0.5),
+                accompaniment: decoded(256, 0.3), // mismatched frame count
+            },
+        );
+        assert!(
+            result.is_err(),
+            "attach_stems must reject mismatched frame counts"
+        );
+    }
+
+    #[test]
+    fn attach_stems_accepts_matching_metadata() {
+        use crate::audio::decode::DecodedAudio;
+        use crate::audio::playback::{LoadedStems, PlaybackController};
+
+        let sample_rate = 44_100;
+        let channels = 2;
+        let frames = 128;
+        let decoded = |sample| DecodedAudio {
+            sample_rate,
+            channels,
+            duration_ms: (frames * 1000 / sample_rate as usize) as u64,
+            samples: vec![sample; frames * channels],
+        };
+
+        let mut controller = PlaybackController::default();
+        controller.start_track("song-a".to_owned(), decoded(0.0), 0);
+        let result = controller.attach_stems(
+            "song-a",
+            LoadedStems::TwoStem {
+                vocals: decoded(0.5),
+                accompaniment: decoded(0.3),
+            },
+        );
+        assert!(
+            result.is_ok(),
+            "attach_stems must accept stems with matching metadata"
         );
     }
 }

@@ -26,6 +26,7 @@ fn render_output_buffer_returns_silence_without_an_active_track() {
     let mut controller = PlaybackController::default();
     let mut output = vec![1.0; 128];
     let mut stem_scratch = Vec::new();
+    let mut mix_scratch = Vec::new();
     let mut crossfade_scratch = vec![0.0f32; CROSSFADE_SCRATCH_FRAMES * TEST_CHANNELS];
     let mut rc = ResamplerCache::default();
     let mut rc_in = ResamplerCache::default();
@@ -37,6 +38,7 @@ fn render_output_buffer_returns_silence_without_an_active_track() {
         &mut controller,
         &mut output,
         &mut stem_scratch,
+        &mut mix_scratch,
         &mut crossfade_scratch,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
@@ -57,6 +59,7 @@ fn render_output_buffer_writes_audio_when_playing_and_silence_when_paused() {
     let mut controller = PlaybackController::default();
     controller.start_track("song-a".into(), decoded, 0);
     let mut stem_scratch = Vec::new();
+    let mut mix_scratch = Vec::new();
     let mut crossfade_scratch = vec![0.0f32; CROSSFADE_SCRATCH_FRAMES * TEST_CHANNELS];
     let mut rc = ResamplerCache::default();
     let mut rc_in = ResamplerCache::default();
@@ -69,6 +72,7 @@ fn render_output_buffer_writes_audio_when_playing_and_silence_when_paused() {
         &mut controller,
         &mut playing_output,
         &mut stem_scratch,
+        &mut mix_scratch,
         &mut crossfade_scratch,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
@@ -89,6 +93,7 @@ fn render_output_buffer_writes_audio_when_playing_and_silence_when_paused() {
         &mut controller,
         &mut fading_output,
         &mut stem_scratch,
+        &mut mix_scratch,
         &mut crossfade_scratch,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
@@ -110,6 +115,7 @@ fn render_output_buffer_writes_audio_when_playing_and_silence_when_paused() {
         &mut controller,
         &mut paused_output,
         &mut stem_scratch,
+        &mut mix_scratch,
         &mut crossfade_scratch,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
@@ -129,6 +135,7 @@ fn render_output_buffer_advances_render_frame_for_original_audio() {
     let mut controller = PlaybackController::default();
     controller.start_track("song-a".into(), decoded, 0);
     let mut stem_scratch = Vec::new();
+    let mut mix_scratch = Vec::new();
     let mut crossfade_scratch = vec![0.0f32; CROSSFADE_SCRATCH_FRAMES * TEST_CHANNELS];
     let mut rc = ResamplerCache::default();
     let mut rc_in = ResamplerCache::default();
@@ -141,6 +148,7 @@ fn render_output_buffer_advances_render_frame_for_original_audio() {
         &mut controller,
         &mut first_output,
         &mut stem_scratch,
+        &mut mix_scratch,
         &mut crossfade_scratch,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
@@ -160,6 +168,7 @@ fn render_output_buffer_advances_render_frame_for_original_audio() {
         &mut controller,
         &mut second_output,
         &mut stem_scratch,
+        &mut mix_scratch,
         &mut crossfade_scratch,
         TEST_SAMPLE_RATE,
         TEST_CHANNELS,
