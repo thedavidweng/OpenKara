@@ -327,6 +327,77 @@ playing ↔ playing（pause/resume，通过 isPlaying 区分）
 6. 如果前端 clock 持有的 `song_id` 既不是 `from_song_id` 也不是 `to_song_id`（用户手动切换了歌曲），则忽略该事件
 7. 无缝换轨时 `transport_generation` 递增，使前端 generation 过滤器丢弃旧歌的延迟 `playback-position` 事件（#103）
 
+### Event: `remote-playback-reconnect` (#151)
+
+当远程流式源在播放中途遇到瞬时错误（网络、provider 5xx、凭据过期）时，后端 reconnect 协调器在每次重新解析尝试前发出此事件，以便前端（PR #8）显示 "reconnecting…" 状态。
+
+**Payload**
+
+```json
+{
+  "song_id": "sha256 hash string",
+  "request_id": 3,
+  "attempt": 1,
+  "max_attempts": 3,
+  "reason": "transient fetch failure"
+}
+```
+
+**Semantics**
+
+1. `attempt` 从 1 开始计数，最大值由 `max_attempts`（默认 3）限定
+2. 重新解析成功后，后端通过 `ReplaceStreamingSource` 命令原子替换活动源并保持时间线（见下），随后发出一次 `playback-position` 事件
+3. 非瞬时错误（404/403、stale request）不触发 reconnect，直接发出 `remote-playback-failed`
+4. 用户切歌后 `request_id` 不再匹配活动请求，协调器静默中止（不发出任何事件）
+
+### Event: `remote-playback-resync` (#151)
+
+当重连后的新源无法 seek 到精确的保留位置时（例如缓存未命中需重新下载，源只能 seek 到块边界），后端发出此事件。`actual_position_ms` 始终 `<= requested_position_ms`（向前对齐到最近的可恢复边界）。
+
+**Payload**
+
+```json
+{
+  "song_id": "sha256 hash string",
+  "requested_position_ms": 1250,
+  "actual_position_ms": 1200
+}
+```
+
+**Semantics**
+
+1. 仅当 `actual_position_ms != requested_position_ms` 时发出；源支持精确 seek 时不发出
+2. 前端可据此显示短暂的 "resync" 提示，但播放从 `actual_position_ms` 继续无需用户介入
+
+### Event: `remote-playback-failed` (#151)
+
+重连尝试预算耗尽或遇到永久错误时发出。随后后端也会发出一次 `playback-error` 以触发前端的重试 UI。
+
+**Payload**
+
+```json
+{
+  "song_id": "sha256 hash string",
+  "request_id": 3,
+  "reason": "exhausted 3 reconnect attempts"
+}
+```
+
+**Semantics**
+
+1. `reason` 为机器可读的分类字符串（`Transient` / `CredentialExpired` / `NotFound` / `Stale` / `Permanent` 或 "exhausted N reconnect attempts"）
+2. 发出此事件后播放停止；前端应提示用户手动重试 `play(song_id)`
+
+### Command (internal): `ReplaceStreamingSource` (#151)
+
+后端内部 `PlaybackCommand`（非 IPC 命令）。reconnect 协调器在重连成功后发送此命令到 `PlaybackCoordinator`，由协调器在 `playback` mutex 下原子替换活动流式源并保持时间线：
+
+1. 协调器在锁内校验 `request_id` 仍为最新且 `song_id` 匹配当前轨道（用户切歌则静默 no-op）
+2. 将 `current_track.streaming` 替换为新源（旧源在新源安装后才 drop，无空窗）
+3. 设置 `render_frame` 为保留位置，并将新源的 consumers seek 到该位置
+4. 标记 `buffering` 直到新源的 decode 线程重新填充缓冲
+5. 发出一次 `playback-position` 事件使前端收敛到保留位置
+
 ### Shared error type: `CommandError`
 
 播放命令统一返回结构化错误，字段定义与错误码含义见 [errors.md](./errors.md)。

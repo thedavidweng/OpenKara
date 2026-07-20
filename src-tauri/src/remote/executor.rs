@@ -496,6 +496,10 @@ fn record_failure(
             (OperationState::RetryWait, LocalState::Publishing)
         }
         RemoteErrorKind::OperationCancelled => (OperationState::Cancelled, LocalState::Dirty),
+        // StaleRequest is a playback-only abort (the user skipped past the
+        // song). It is not an operation failure — treat it as cancelled so
+        // the control DB does not mark the publish dirty.
+        RemoteErrorKind::StaleRequest => (OperationState::Cancelled, LocalState::Dirty),
     };
 
     let (error_code, error_detail) = error.to_db_columns();

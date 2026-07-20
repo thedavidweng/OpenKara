@@ -15,6 +15,17 @@ pub const PLAYBACK_POSITION_EVENT: &str = "playback-position";
 pub const PLAYBACK_ENDED_EVENT: &str = "playback-ended";
 pub const PLAYBACK_ERROR_EVENT: &str = "playback-error";
 pub const TRACK_TRANSITIONED_EVENT: &str = "track-transitioned";
+/// Emitted by the playback reconnect coordinator (PR #7, issue #151) before
+/// each re-resolve attempt so the frontend (PR #8) can show a "reconnecting…"
+/// state. Payload: [`RemotePlaybackReconnectEvent`].
+pub const REMOTE_PLAYBACK_RECONNECT_EVENT: &str = "remote-playback-reconnect";
+/// Emitted when a reconnected source could not seek to the exact preserved
+/// position and snapped to a preceding resumable boundary. Payload:
+/// [`RemotePlaybackResyncEvent`].
+pub const REMOTE_PLAYBACK_RESYNC_EVENT: &str = "remote-playback-resync";
+/// Emitted after the reconnect attempt budget is exhausted or a permanent
+/// error occurs. Payload: [`RemotePlaybackFailedEvent`].
+pub const REMOTE_PLAYBACK_FAILED_EVENT: &str = "remote-playback-failed";
 pub const PLAYBACK_POSITION_POLL_INTERVAL_MS: u64 = 33;
 
 /// Opaque handle for the preload-request generation space.
@@ -694,6 +705,61 @@ impl PlaybackController {
         Ok(())
     }
 
+    /// Atomically replace the active streaming source while preserving the
+    /// playback timeline (PR #7, issue #151 defect #12).
+    ///
+    /// Called by the coordinator's `ReplaceStreamingSource` handler after a
+    /// reconnect re-resolves a fresh source. The swap happens in one critical
+    /// section (under the playback mutex): the old source is dropped only
+    /// after the new one is installed, so there is no window where no source
+    /// is active.
+    ///
+    /// `position_ms` is the position the old source was at when the failure
+    /// occurred. The new source's consumers are seeked to that position
+    /// (via their `seek_target`) so playback continues without an audible
+    /// jump. Returns the snapshot after the swap, or `None` when the current
+    /// track does not match `song_id` (the user skipped — stale reconnect).
+    pub fn replace_streaming_source(
+        &mut self,
+        song_id: &str,
+        new_streaming: super::streaming::StreamingTrack,
+        position_ms: u64,
+    ) -> Option<PlaybackStateSnapshot> {
+        let track = self.current_track.as_mut()?;
+        if track.song_id != song_id {
+            // Stale reconnect — the user skipped to a different song. Drop
+            // the new source (it drops here on return) and return None so
+            // the coordinator no-ops.
+            return None;
+        }
+        // Preserve the timeline: set render_frame to the position captured
+        // before the swap. This is the sole authority for position_ms, so
+        // the next snapshot reports the preserved position.
+        let sample_rate = track.original_audio.sample_rate as f64;
+        let target_frame = if sample_rate > 0.0 {
+            (position_ms as f64 * sample_rate / 1000.0) as u64
+        } else {
+            0
+        };
+        track.render_frame = target_frame;
+        let mut new_streaming = new_streaming;
+        // Seek the new source's consumers to the preserved position so the
+        // decode threads refill from the right offset.
+        for consumer in new_streaming.consumers_mut() {
+            consumer
+                .seek_target()
+                .store(target_frame as i64, std::sync::atomic::Ordering::Relaxed);
+        }
+        // Atomic swap: the old source is dropped when the field is
+        // overwritten, after the new one is installed.
+        track.streaming = Some(new_streaming);
+        // Mark buffering while the new source's decode threads seek and
+        // refill, so the snapshot reports "buffering" rather than
+        // implying continuous audio.
+        self.is_buffering = true;
+        Some(self.snapshot())
+    }
+
     pub fn has_stems(&self) -> bool {
         self.current_track
             .as_ref()
@@ -837,6 +903,13 @@ impl PlaybackController {
         self.current_track
             .as_ref()
             .map(|track| track.song_id.as_str())
+    }
+
+    /// Borrow the current track for read-only inspection (PR #7 reconnect).
+    /// Exposed so the playback service can read the current position and
+    /// song id without taking a mutable borrow.
+    pub(crate) fn current_track_ref(&self) -> Option<&LoadedTrack> {
+        self.current_track.as_ref()
     }
 
     /// Return the song identifier whose decode/load operation is still pending.
@@ -1270,6 +1343,13 @@ impl LoadedTrack {
             pos
         }
     }
+
+    /// Read-only access to the current position for the reconnect path
+    /// (PR #7). Mirrors [`position_ms`](Self::position_ms) but is `pub(crate)`
+    /// so `services::playback` can capture the timeline before a source swap.
+    pub(crate) fn position_ms_for_reconnect(&self) -> u64 {
+        self.position_ms()
+    }
 }
 
 pub fn monotonic_now_ms() -> u64 {
@@ -1300,6 +1380,39 @@ pub struct TrackTransitionedEvent {
     pub from_song_id: String,
     pub to_song_id: String,
     pub state: PlaybackStateSnapshot,
+}
+
+/// Payload for the `remote-playback-reconnect` event (PR #7, issue #151).
+/// Emitted before each re-resolve attempt so PR #8 can render a
+/// "reconnecting…" state.
+#[derive(Debug, Clone, Serialize)]
+pub struct RemotePlaybackReconnectEvent {
+    pub song_id: String,
+    pub request_id: u64,
+    pub attempt: u32,
+    pub max_attempts: u32,
+    pub reason: String,
+}
+
+/// Payload for the `remote-playback-resync` event (PR #7, issue #151).
+/// Emitted when a reconnected source could not seek to the exact preserved
+/// position and snapped to a preceding resumable boundary.
+/// `actual_position_ms` is always `<= requested_position_ms`.
+#[derive(Debug, Clone, Serialize)]
+pub struct RemotePlaybackResyncEvent {
+    pub song_id: String,
+    pub requested_position_ms: u64,
+    pub actual_position_ms: u64,
+}
+
+/// Payload for the `remote-playback-failed` event (PR #7, issue #151).
+/// Emitted after the reconnect attempt budget is exhausted or a permanent
+/// error occurs.
+#[derive(Debug, Clone, Serialize)]
+pub struct RemotePlaybackFailedEvent {
+    pub song_id: String,
+    pub request_id: u64,
+    pub reason: String,
 }
 
 pub fn playback_position_event(snapshot: &PlaybackStateSnapshot) -> PlaybackPositionEvent {
