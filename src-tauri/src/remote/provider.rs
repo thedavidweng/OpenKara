@@ -67,7 +67,53 @@ pub(crate) trait RemoteProvider {
 
     fn download_file(&self, relative_path: &str, destination: &Path) -> CommandResult<()>;
 
+    /// Download a byte range `[offset, offset + length)` from a remote object
+    /// and append it to the destination file at the given offset. Used by the
+    /// resumable download path to resume from a verified offset after an
+    /// interrupted transfer.
+    ///
+    /// The default implementation returns
+    /// [`RemoteErrorKind::ProviderCapabilityUnavailable`] so providers opt in.
+    /// A provider that does not support Range requests must NOT silently
+    /// download the full file — the caller checks `range_download` first.
+    // used by PR#5: resumable downloads
+    #[allow(dead_code)]
+    fn download_range(
+        &self,
+        _relative_path: &str,
+        _destination: &Path,
+        _offset: u64,
+        _length: u64,
+    ) -> RemoteResult<()> {
+        Err(RemoteError::from_kind(
+            RemoteErrorKind::ProviderCapabilityUnavailable,
+        ))
+    }
+
     fn upload_file(&self, relative_path: &str) -> CommandResult<()>;
+
+    /// Upload `bytes` to `relative_path` using a resumable upload mechanism
+    /// (provider-specific: Dropbox upload sessions, Google Drive resumable
+    /// upload, WebDAV staged PUT + MOVE). `operation_id` and `control_db` are
+    /// used to persist transfer progress so a restart can resume.
+    ///
+    /// The default implementation returns
+    /// [`RemoteErrorKind::ProviderCapabilityUnavailable`] so providers opt in.
+    /// The caller checks `resumable_upload` first and falls back to
+    /// `upload_file` when unsupported.
+    // used by PR#5: resumable uploads
+    #[allow(dead_code)]
+    fn resumable_upload_bytes(
+        &self,
+        _relative_path: &str,
+        _bytes: &[u8],
+        _operation_id: &str,
+        _control_db: &rusqlite::Connection,
+    ) -> RemoteResult<()> {
+        Err(RemoteError::from_kind(
+            RemoteErrorKind::ProviderCapabilityUnavailable,
+        ))
+    }
 
     fn upload_directory(&self, relative_path: &str) -> CommandResult<()>;
 

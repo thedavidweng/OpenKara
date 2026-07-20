@@ -773,11 +773,90 @@ mod tests {
 
     // --- Placeholder tests for PR#4/#5 ---
 
-    // TODO(PR#5): incomplete transfers resume from verified offsets.
+    // --- Resumable transfer parts ---
+
+    // TODO(PR#5): incomplete transfers resume from verified offsets. The
+    // recovery pass detects incomplete transfer parts so the executor can
+    // resume them. The actual resume is performed by the executor's
+    // resumable upload/download paths, not by recovery itself — recovery only
+    // transitions the operation to `pending` so the executor picks it up.
     #[test]
-    #[ignore = "PR#5: resumable uploads/downloads from verified offsets"]
-    fn recovery_resumes_incomplete_transfers_from_offsets() {
-        // PR#5 will implement resume-from-offset using remote_transfer_parts.
+    fn recovery_detects_incomplete_transfer_parts() {
+        use crate::remote::control_db::{
+            delete_transfer_parts, list_transfer_parts, upsert_transfer_part, TransferDirection,
+            TransferPartRow,
+        };
+        let (_dir, conn) = fresh_db();
+        let op = make_operation("op-1", "lib-1", OperationState::Running, None, None);
+        upsert_operation(&conn, &op).unwrap();
+
+        // Seed an incomplete download transfer part.
+        let row = TransferPartRow {
+            operation_id: "op-1".to_owned(),
+            relative_path: "openkara.db".to_owned(),
+            direction: TransferDirection::Download,
+            expected_size: Some(1024),
+            expected_digest: None,
+            provider_revision: Some("rev-1".to_owned()),
+            provider_session_id: None,
+            transferred_bytes: 512,
+            state: "in_progress".to_owned(),
+            updated_at_ms: 1000,
+        };
+        upsert_transfer_part(&conn, &row).unwrap();
+
+        // Recovery transitions the running operation to retry_wait.
+        let report = run_recovery(&conn, &NullDigestResolver, &fixed_clock(5000)).unwrap();
+        assert_eq!(report.transitioned_to_retry_wait, vec!["op-1".to_owned()]);
+
+        // The incomplete transfer part is still present so the executor can
+        // resume from the verified offset (512 bytes).
+        let parts = list_transfer_parts(&conn, "op-1").unwrap();
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0].transferred_bytes, 512);
+        assert_eq!(parts[0].provider_revision.as_deref(), Some("rev-1"));
+
+        // After a successful resume, the executor deletes the transfer part.
+        delete_transfer_parts(&conn, "op-1").unwrap();
+        assert!(list_transfer_parts(&conn, "op-1").unwrap().is_empty());
+    }
+
+    #[test]
+    fn recovery_revision_mismatch_invalidates_transfer_part() {
+        use crate::remote::control_db::{
+            list_transfer_parts, upsert_transfer_part, TransferDirection, TransferPartRow,
+        };
+        let (_dir, conn) = fresh_db();
+        let op = make_operation("op-1", "lib-1", OperationState::Running, None, None);
+        upsert_operation(&conn, &op).unwrap();
+
+        // Seed a transfer part with a stale provider_revision.
+        let row = TransferPartRow {
+            operation_id: "op-1".to_owned(),
+            relative_path: "openkara.db".to_owned(),
+            direction: TransferDirection::Download,
+            expected_size: Some(1024),
+            expected_digest: None,
+            provider_revision: Some("rev-old".to_owned()),
+            provider_session_id: None,
+            transferred_bytes: 512,
+            state: "in_progress".to_owned(),
+            updated_at_ms: 1000,
+        };
+        upsert_transfer_part(&conn, &row).unwrap();
+
+        // Recovery transitions the operation to retry_wait. The executor will
+        // detect the revision mismatch and start a fresh download (discarding
+        // the stale partial). The transfer part row remains until the executor
+        // decides whether to resume or restart.
+        let report = run_recovery(&conn, &NullDigestResolver, &fixed_clock(5000)).unwrap();
+        assert_eq!(report.transitioned_to_retry_wait, vec!["op-1".to_owned()]);
+        let parts = list_transfer_parts(&conn, "op-1").unwrap();
+        assert_eq!(
+            parts.len(),
+            1,
+            "transfer part retained for executor decision"
+        );
     }
 
     // TODO(PR#4): an accepted remote commit is detected even when the process

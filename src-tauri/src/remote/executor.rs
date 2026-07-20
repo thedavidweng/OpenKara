@@ -247,6 +247,8 @@ fn run_publish_protocol(
         ctx.working_copy_root,
         &db_remote_path,
         candidate_bytes.clone(),
+        &op.operation_id,
+        ctx.control_db,
     )
     .inspect_err(|_e| {
         let _ = std::fs::remove_file(&candidate_path);
@@ -341,11 +343,18 @@ fn run_publish_protocol(
 /// Upload the candidate database to the remote path by writing it to the
 /// working copy at the target relative path, calling `upload_file`, then
 /// removing the local staging copy.
+///
+/// PR#5: when the candidate is >= 8 MiB and the provider supports
+/// `resumable_upload`, the resumable path is used instead of `upload_file`.
+/// This persists transfer progress to `remote_transfer_parts` so a restart
+/// can resume the upload from the verified offset.
 fn upload_candidate_database(
     provider: &dyn RemoteProvider,
     working_copy_root: &Path,
     remote_relative_path: &str,
     bytes: Vec<u8>,
+    operation_id: &str,
+    control_db: &rusqlite::Connection,
 ) -> Result<(), RemoteError> {
     let local_staging = working_copy_root.join(remote_relative_path);
     if let Some(parent) = local_staging.parent() {
@@ -362,9 +371,20 @@ fn upload_candidate_database(
             format!("failed to write candidate staging file: {e}"),
         )
     })?;
-    provider
-        .upload_file(remote_relative_path)
-        .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+
+    // PR#5: use the resumable upload path for large candidates when the
+    // provider supports it. The 8 MiB threshold avoids the overhead of
+    // session setup for small databases while enabling resume for the
+    // multi-hundred-MiB libraries that motivated this PR.
+    const RESUMABLE_UPLOAD_THRESHOLD: usize = 8 * 1024 * 1024;
+    let caps = provider.capabilities();
+    if caps.resumable_upload && bytes.len() >= RESUMABLE_UPLOAD_THRESHOLD {
+        provider.resumable_upload_bytes(remote_relative_path, &bytes, operation_id, control_db)?;
+    } else {
+        provider
+            .upload_file(remote_relative_path)
+            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+    }
     // Remove the local staging copy — the bytes are now remote and the local
     // file is not part of the committed working copy.
     let _ = std::fs::remove_file(&local_staging);
