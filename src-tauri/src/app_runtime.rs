@@ -224,7 +224,13 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
     app.manage(separation_state);
     app.manage(remote_state);
     app.manage(shell_state);
-    app.manage(app_state);
+    app.manage(app_state.clone());
+
+    // Start the durable operation executor. This spawns a background thread
+    // that periodically retries pending/retry_wait operations (e.g. uploads
+    // that failed during a previous session). Without this, operations left
+    // in RetryWait by the startup recovery pass would never be re-executed.
+    spawn_durable_operation_executor(app_state);
 
     // Spawn the PlaybackCoordinator before pre-warming the output thread.
     // The coordinator serializes all control-plane mutations; the receiver
@@ -603,6 +609,39 @@ fn recover_stale_part_files_for_all_libraries(app_data_dir: &std::path::Path) {
             );
         }
     }
+}
+
+/// Spawn a background thread that periodically retries pending and
+/// retry_wait durable operations. This ensures that operations left in a
+/// non-terminal state by a previous session (or by a transient failure
+/// during the current session) are eventually re-executed.
+///
+/// The thread runs an immediate pass on startup (to handle operations
+/// transitioned to RetryWait by `run_remote_recovery`), then polls every
+/// 30 seconds. Rate-limited operations (next_attempt_at_ms in the future)
+/// are skipped by `retry_pending_operations` itself.
+fn spawn_durable_operation_executor(app_state: AppState) {
+    std::thread::spawn(move || {
+        // Immediate pass on startup.
+        if let Err(error) = crate::remote::recovery::retry_pending_operations(&app_state) {
+            eprintln!(
+                "warning: durable operation executor initial pass failed: {:?}",
+                error
+            );
+        }
+
+        // Periodic retry loop. Polls every 30 seconds.
+        let poll_interval = std::time::Duration::from_secs(30);
+        loop {
+            std::thread::sleep(poll_interval);
+            if let Err(error) = crate::remote::recovery::retry_pending_operations(&app_state) {
+                eprintln!(
+                    "warning: durable operation executor periodic pass failed: {:?}",
+                    error
+                );
+            }
+        }
+    });
 }
 
 #[cfg(test)]
