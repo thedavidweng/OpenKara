@@ -175,6 +175,7 @@ export function SongList() {
         className="h-full overflow-y-auto"
         data-testid="song-list"
         data-song-list-visual-variant="unified"
+        data-preview-song-list="true"
         style={showRail ? { paddingRight: "24px" } : undefined}
       >
         <div

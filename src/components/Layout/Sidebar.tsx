@@ -239,9 +239,7 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
 
       {/* Song list */}
       {!activePlaylistId && (
-        <div
-          className={`mt-4 flex flex-1 flex-col overflow-hidden px-2 ${previewMode ? "pointer-events-none" : ""}`}
-        >
+        <div className="mt-4 flex flex-1 flex-col overflow-hidden px-2">
           <div className="flex items-center justify-between px-2 pb-1">
             <span className="text-[11px] font-semibold tracking-wide text-[var(--color-text-dim)]">
               {t("sidebar.localMusic")}
@@ -252,9 +250,7 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
         </div>
       )}
       {activePlaylistId && (
-        <div
-          className={`mt-4 flex flex-1 flex-col overflow-hidden px-2 ${previewMode ? "pointer-events-none" : ""}`}
-        >
+        <div className="mt-4 flex flex-1 flex-col overflow-hidden px-2">
           <SongList />
         </div>
       )}
