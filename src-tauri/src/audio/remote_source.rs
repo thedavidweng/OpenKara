@@ -594,15 +594,20 @@ pub fn spawn_fetch_thread(
         cache,
         Box::new(ReqwestFetcher { client }),
         RetryConfig::default(),
+        None,
     )
 }
 
 /// Spawn a fetch thread with a custom `HttpFetcher` and `RetryConfig` (for testing).
+/// `on_range_written` is called after each successful range write so the
+/// caller can persist download progress to the cache catalog. Pass `None`
+/// when persistence is not needed (e.g. tests).
 pub fn spawn_fetch_thread_with_fetcher(
     url: String,
     cache: Arc<ChunkedCache>,
     fetcher: Box<dyn HttpFetcher>,
     retry_config: RetryConfig,
+    on_range_written: Option<Arc<dyn Fn() + Send + Sync>>,
 ) -> (
     mpsc::Sender<FetchCommand>,
     mpsc::Receiver<FetchEvent>,
@@ -625,6 +630,7 @@ pub fn spawn_fetch_thread_with_fetcher(
             &event_tx,
             &retry_config,
             &monitor_clone,
+            on_range_written.as_ref(),
         );
     });
 
@@ -682,6 +688,7 @@ fn fetch_loop(
     event_tx: &mpsc::Sender<FetchEvent>,
     retry_config: &RetryConfig,
     monitor: &BandwidthMonitor,
+    on_range_written: Option<&Arc<dyn Fn() + Send + Sync>>,
 ) {
     let current_url = url.to_string();
     let mut consecutive_failures: u32 = 0;
@@ -710,6 +717,9 @@ fn fetch_loop(
             match outcome {
                 FetchOutcome::Ok => {
                     *consecutive_failures = 0;
+                    if let Some(cb) = on_range_written {
+                        cb();
+                    }
                 }
                 FetchOutcome::UrlExpired => {
                     let _ = event_tx.send(FetchEvent::UrlExpired);
@@ -742,6 +752,9 @@ fn fetch_loop(
                 match outcome {
                     FetchOutcome::Ok => {
                         consecutive_failures = 0;
+                        if let Some(cb) = on_range_written {
+                            cb();
+                        }
                     }
                     FetchOutcome::UrlExpired => {
                         let _ = event_tx.send(FetchEvent::UrlExpired);
@@ -1107,6 +1120,7 @@ mod tests {
                 max_retries: 3,
                 consecutive_failure_threshold: 5,
             },
+            None,
         );
 
         // Send fetch command and wait for it to complete.
@@ -1149,6 +1163,7 @@ mod tests {
                 max_retries: 0,
                 consecutive_failure_threshold: 5,
             },
+            None,
         );
 
         tx.send(FetchCommand::Fetch {
@@ -1192,6 +1207,7 @@ mod tests {
                 max_retries: 0,
                 consecutive_failure_threshold: 5,
             },
+            None,
         );
 
         // Send 5 fetch commands.
@@ -1239,6 +1255,7 @@ mod tests {
                 max_retries: 3,
                 consecutive_failure_threshold: 5,
             },
+            None,
         );
 
         tx.send(FetchCommand::Fetch {
@@ -1359,6 +1376,7 @@ mod tests {
                 max_retries: 4,
                 consecutive_failure_threshold: 5,
             },
+            None,
         );
 
         tx.send(FetchCommand::Fetch {
@@ -1433,6 +1451,7 @@ mod tests {
                 max_retries: 0,
                 consecutive_failure_threshold: 5,
             },
+            None,
         );
 
         tx.send(FetchCommand::Fetch {
@@ -1500,6 +1519,7 @@ mod tests {
                 &event_tx,
                 &RetryConfig::default(),
                 &monitor,
+                None,
             );
         });
 

@@ -333,8 +333,12 @@ impl CacheCatalog {
             self.discard_entry(&cache_key)?;
         }
 
-        // Reserve space and evict if needed before creating the new entry.
-        self.evict_if_needed(identity.expected_size)?;
+        // Reserve space and evict if needed before creating a NEW entry. A
+        // verified hit is already counted in the catalog, so evicting for it
+        // would double-count and could delete the entry being reused.
+        if !verified {
+            self.evict_if_needed(identity.expected_size)?;
+        }
 
         // Create or open the on-disk file + in-memory handle. When the entry
         // was verified (catalog hit), initialize the ChunkedCache with the
