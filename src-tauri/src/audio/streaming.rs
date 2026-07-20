@@ -752,32 +752,14 @@ pub fn spawn_multi_stem_decode_producers_with_proxy(
         )));
     }
 
-    let mut consumers = Vec::with_capacity(paths.len());
+    // Probe every stem path first, before creating any stream pairs or
+    // spawning decode threads. A later mismatch must not leave orphaned
+    // decode threads running against dropped consumers — they have no
+    // cancellation path and would decode against closed/full ring buffers.
     let mut metadata_vec = Vec::with_capacity(paths.len());
-    let mut handles = Vec::with_capacity(paths.len());
-
     for path in paths {
         let meta = probe_stream_metadata(path)?;
-
-        let (ring_rate, ring_channels) = if proxy.enabled {
-            (proxy.target_sample_rate, proxy.target_channels)
-        } else {
-            (meta.sample_rate, meta.channels)
-        };
-
-        let (mut prod, cons) = create_stream_pair(ring_rate, ring_channels);
-
-        let path_buf = path.clone();
-        let sr = meta.sample_rate;
-        let ch = meta.channels;
-        let proxy_clone = proxy.clone();
-        let handle = std::thread::spawn(move || {
-            decode_into_producer(&path_buf, &mut prod, sr, ch, &proxy_clone)
-        });
-
-        consumers.push(cons);
         metadata_vec.push(meta);
-        handles.push(handle);
     }
 
     // Validate stem timeline consistency. The source-domain mix bus
@@ -809,6 +791,30 @@ pub fn spawn_multi_stem_decode_producers_with_proxy(
                 }
             }
         }
+    }
+
+    // Metadata is consistent — safe to create stream pairs and spawn.
+    let mut consumers = Vec::with_capacity(paths.len());
+    let mut handles = Vec::with_capacity(paths.len());
+    for (path, meta) in paths.iter().zip(metadata_vec.iter()) {
+        let (ring_rate, ring_channels) = if proxy.enabled {
+            (proxy.target_sample_rate, proxy.target_channels)
+        } else {
+            (meta.sample_rate, meta.channels)
+        };
+
+        let (mut prod, cons) = create_stream_pair(ring_rate, ring_channels);
+
+        let path_buf = path.clone();
+        let sr = meta.sample_rate;
+        let ch = meta.channels;
+        let proxy_clone = proxy.clone();
+        let handle = std::thread::spawn(move || {
+            decode_into_producer(&path_buf, &mut prod, sr, ch, &proxy_clone)
+        });
+
+        consumers.push(cons);
+        handles.push(handle);
     }
 
     let track = match consumers.len() {
