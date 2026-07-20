@@ -497,8 +497,9 @@ fn record_failure(
         }
         RemoteErrorKind::OperationCancelled => (OperationState::Cancelled, LocalState::Dirty),
         // StaleRequest is a playback-only abort (the user skipped past the
-        // song). It is not an operation failure — treat it as cancelled so
-        // the control DB does not mark the publish dirty.
+        // song). It is not an operation failure — treat it as cancelled,
+        // mirroring OperationCancelled (Dirty so an in-flight publish stays
+        // dirty rather than being reported clean).
         RemoteErrorKind::StaleRequest => (OperationState::Cancelled, LocalState::Dirty),
     };
 
