@@ -593,14 +593,17 @@ fn commit_via_executor(
 
     drop(conn);
 
-    // Execute the publish protocol.
-    let conn =
-        state.remote.control_db.lock().map_err(|_| {
-            crate::commands::error::state_lock_error("control DB lock was poisoned")
-        })?;
+    // Execute the publish protocol. Open a dedicated connection to the
+    // control DB instead of holding the shared Mutex lock for the entire
+    // duration (which includes network I/O). WAL mode allows concurrent
+    // readers/writers, so this does not block other operations.
+    let control_db_path = crate::remote::control_db::control_db_path(&state.shell.app_data_dir);
+    let exec_conn = crate::remote::control_db::open_control_db(&control_db_path).map_err(|e| {
+        crate::commands::error::database_error(format!("failed to open control DB: {e:?}"))
+    })?;
 
     let ctx = PublishContext {
-        control_db: &conn,
+        control_db: &exec_conn,
         provider: provider.as_ref(),
         working_copy_root: remote_root.root(),
         library_id: remote_library_id,
