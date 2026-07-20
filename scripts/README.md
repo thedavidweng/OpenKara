@@ -1,5 +1,23 @@
 # Scripts
 
+## `ci/classify-changes.mjs`
+
+CI change classifier — the single source of truth for path-based CI gating.
+Maps changed files to categories, collects unmatched files as `unknown`, and
+derives the expected job set from the category union. Consumed by the triage
+job in `.github/workflows/ci.yml` and `.github/workflows/packaging.yml`.
+
+- **Input:** newline-delimited filenames (`--files`) or JSON array (`--json`),
+  plus event type (`--event pull_request|push|workflow_dispatch`)
+- **Output:** JSON to stdout; `GITHUB_OUTPUT` entries (`expected-jobs`,
+  `run_<job>` booleans, `unknown-files`, `categories`) and
+  `GITHUB_STEP_SUMMARY` markdown table when those env vars are set
+- **Pure function:** no network or filesystem access beyond stdin — testable
+  locally without GitHub API access
+- **Contract tests:** `tests/ci/classify-changes.test.ts`
+- **Drift tests:** `tests/ci/ci-workflow-contract.test.ts`
+- **Run:** `node scripts/ci/classify-changes.mjs --files <paths> --event pull_request`
+
 ## `generate-mock-songs.mjs`
 
 Regenerates the shared mock/preview song catalog used by both the website

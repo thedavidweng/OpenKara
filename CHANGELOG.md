@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Introduce PlaybackCoordinator as independent control thread (#100)
 - Architecture deepening across 7 module-depth candidates (#129)
+- Consolidate duplicate utilities and inline single-caller hooks (#152)
 
 ### ⚡ Performance
 
@@ -107,7 +108,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **website**: Theme/lang auto-detect, mock interactions, natural Chinese copy (#139)
 - **audio**: Replace per-stem rendering with source-domain mix bus (#144)
 - **romanize**: Invalidate stale romanizedLines cache when source lyrics change
-- **rotation**: Shuffle within equal-size singer tiers so repeated Shuffle presses vary
+- **website**: Improve mobile landing layout and preview
+- **website**: Restore interactive mobile mock with left-half scale
+- **website**: Bleed mobile mock past the right viewport edge
+- **rotation**: Shuffle within equal-size singer tiers so repeated Shuffle presses vary (#147)
+- **website**: Restore desktop preview fill while keeping mobile bleed (#148)
+- **cover-art**: Resolve ambience backdrop revocation race on song change (#149)
+- **romanize**: Scale pronunciation and bg_words lines with lyricsFontStep (#153)
 
 ### 📝 Documentation
 
@@ -128,6 +135,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Add Codeberg mirror workflow
 - Use node --run instead of pnpm for package scripts
 - **flatpak**: Reclaim host disk and disable builder cache (#121)
+- Triage PR by changed paths and skip irrelevant jobs (#150)
+- **release**: Append installation section to GitHub Release Notes (#154)
+- Replace paths-filter with checked-in classifier and harden CI Gate
 
 ### 🔧 Chores
 

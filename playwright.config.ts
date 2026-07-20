@@ -19,7 +19,11 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: 1,
-  reporter: "list",
+  // Generate both the list reporter (for live CI logs) and the HTML report
+  // (for the playwright-report/ artifact upload). The CI workflow uploads
+  // playwright-report/ with if-no-files-found: error, so the config and
+  // workflow must agree on HTML report generation.
+  reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
   timeout: 30_000,
 
   use: {
