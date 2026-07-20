@@ -211,12 +211,17 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
             (repository_id, writer_id)
         };
 
-        let conn = state.remote.control_db.lock().map_err(|_| {
-            crate::commands::error::state_lock_error("control DB lock was poisoned")
-        })?;
+        // Open a dedicated connection for the publish execution instead
+        // of holding the shared Mutex lock across network I/O. WAL mode
+        // allows concurrent readers/writers.
+        let control_db_path = crate::remote::control_db::control_db_path(&state.shell.app_data_dir);
+        let exec_conn = match crate::remote::control_db::open_control_db(&control_db_path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
 
         let ctx = PublishContext {
-            control_db: &conn,
+            control_db: &exec_conn,
             provider: provider.as_ref(),
             working_copy_root: remote_root.root(),
             library_id: &library_id,
