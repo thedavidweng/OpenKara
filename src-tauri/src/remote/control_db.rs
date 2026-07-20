@@ -637,7 +637,7 @@ pub fn get_latest_publish_operation_for_song(
         })
         .collect();
     // Sort by updated_at_ms descending — most recent first.
-    matching.sort_by(|a, b| b.updated_at_ms.cmp(&a.updated_at_ms));
+    matching.sort_by_key(|b| std::cmp::Reverse(b.updated_at_ms));
     Ok(matching.into_iter().next())
 }
 
