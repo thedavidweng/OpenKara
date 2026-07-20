@@ -226,7 +226,13 @@ fn play_track_background<R: Runtime>(
         let connection = cache::open_database(&library_root.database_path())
             .map_err(|e| PlaybackError::Internal(e.to_string()))?;
         if song.is_remote_stems() {
-            let _ = ensure_remote_stem_files_cached(Some(app_data_dir), &connection, song);
+            let _ = ensure_remote_stem_files_cached(
+                Some(app_data_dir),
+                library_root,
+                &connection,
+                song,
+                request_id,
+            );
         }
         let stems_track = match playback_source::load_cached_stems_for_song_streaming(
             Some(app_data_dir),
@@ -466,6 +472,7 @@ pub fn load_stems(state: &AppState) -> Result<PlaybackStateSnapshot, PlaybackErr
         &connection,
         &library_root,
         &song,
+        request_id,
     )?;
 
     let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
