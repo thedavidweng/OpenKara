@@ -11,7 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Introduce PlaybackCoordinator as independent control thread (#100)
 - Architecture deepening across 7 module-depth candidates (#129)
-- Remove single-impl wrappers and dedup helpers
 
 ### ⚡ Performance
 
@@ -37,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **website**: Remove preview details section from landing page
 - Unify mock song data and IPC mechanism between website preview and E2E tests (#132)
 - Add equal-power crossfade between consecutive tracks (#131)
+- **romanize**: Sync romanized lyrics to fullscreen audience window (#142)
 
 ### 🐛 Bug Fixes
 
@@ -99,8 +99,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **website**: Enlarge closing Download and View source pills
 - **website**: Optically center pill CTA labels
 - **website**: Center CTA labels with translateY nudge
-- **website**: Remove translateY nudge on pill labels — Inter has balanced metrics and flexbox centering is already symmetric, the nudge pushed copy 2–3px low
 - **website**: Polish mock preview freeze, counts, sidebar, Separate size
+- **website**: Theme/lang auto-detect, mock interactions, natural Chinese copy (#139)
 
 ### 📝 Documentation
 
@@ -108,10 +108,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Update CHANGELOG for v0.9.0
 - Delete stale docs, keep only contracts and product specs
 - **changelog**: Record crossfade regression test backport (#137)
-- Clean up stale docs and phase-era labels
-- **adr**: Introduce docs/adr/ for non-obvious constraints
-- **adr**: Record non-obvious playback/audio/library constraints
-- **changelog**: Record ADR introduction and code comment cleanup
 
 ### 📦 Dependencies
 
@@ -140,6 +136,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **deps**: Bump @typescript/native-preview from 7.0.0-dev.20260622.1 to 7.0.0-dev.20260706.1 (#81)
 - Bump knip to 6.26 and update ignoreBinaries (#119)
 - **deps**: Bump serde_with from 3.18.0 to 3.21.0 in /src-tauri in the cargo group across 1 directory (#122)
+- Upgrade npm and Rust dependencies (#140)
 
 ### 🧪 Tests
 
@@ -430,14 +427,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### ♻️ Refactoring
 
-- Integrate demo video link into app screenshot and remove standalone video section.
 - Refine native macOS window shell integration and simplify UI element styling.
 - Simplify Sidebar and LyricsPanel tests by removing unused props and cleaning up expectations
 
 ### ✨ New Features
 
 - Add demo video, app screenshot, and import GIF sections to the website with new styling and assets.
-- Introduce a dedicated FAQ page, replacing the markdown version and updating site layout.
 - Enhance macOS support with improved AirPlay integration and UI updates
 - **macos**: Add native shell runtime and settings sync
 - **macos**: Align native shell visuals and controls
@@ -522,9 +517,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### 📝 Documentation
 
-- Simplify site layout and sharpen download copy
 - Add Homebrew install command and .deb to platform table
-- Remove icon frame, add Homebrew install to site
 - Add macOS quarantine removal command to install instructions
 - Reorganize repository docs
 - Document CD+G library support
@@ -618,7 +611,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Add GitHub Pages microsite and reorganize docs
 - Migrate Pages site to Jekyll
 - Rewrite site copy, add dark theme, add deb target, update READMEs
-- Distill, animate, harden, and optimize site
 - Codify agent verification and format site files
 
 ### 📦 Dependencies
