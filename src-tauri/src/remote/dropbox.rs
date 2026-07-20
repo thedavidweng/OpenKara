@@ -1237,9 +1237,16 @@ impl RemoteProvider for DropboxProvider<'_> {
         RemoteProviderCapabilities {
             conditional_replace: true,
             // PR#5: Dropbox upload_session (start/append/finish) supports
-            // resumable uploads with a persisted session_id + offset.
-            resumable_upload: true,
-            range_download: true,
+            // resumable uploads with a persisted session_id + offset, and
+            // the Content-Range header supports range downloads. However,
+            // the trait methods `resumable_upload_bytes` and `download_range`
+            // are not yet wired to the helper functions, so we must not
+            // advertise these capabilities until the implementations are
+            // connected. Advertising support without an implementation
+            // causes callers to route to the default trait method, which
+            // returns a non-retryable `ProviderCapabilityUnavailable` error.
+            resumable_upload: false,
+            range_download: false,
             revision_metadata: true,
             server_side_move: false,
         }

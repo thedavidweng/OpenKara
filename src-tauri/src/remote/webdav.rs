@@ -877,8 +877,14 @@ impl RemoteProvider for WebDAVProvider<'_> {
             // PR#5: WebDAV servers vary in partial-PUT / Content-Range
             // support, so we do NOT claim resumable_upload. Large uploads
             // use a safe staging path + server-side MOVE instead.
+            // WebDAV servers generally support Range requests (RFC 7233),
+            // but the `download_range` trait method is not yet implemented,
+            // so we must not advertise `range_download` until it is wired.
+            // Advertising support without an implementation causes the
+            // resumable download path to route to the default trait method,
+            // which returns a non-retryable error.
             resumable_upload: false,
-            range_download: true,
+            range_download: false,
             revision_metadata: true,
             // PR#5: Most WebDAV servers support MOVE (RFC 4918 §9.9). We
             // report this optimistically; the staged-upload path falls back
