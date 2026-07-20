@@ -20,6 +20,9 @@ const MAC_SIDEBAR_WIDTH: u16 = 260;
 #[serde(rename_all = "snake_case")]
 pub enum WindowChromeVariant {
     Desktop,
+    // The `Mac` variant is only constructed on macOS, but must exist on all
+    // platforms for serde serialization compatibility — the frontend expects
+    // `mac` in the JSON payload regardless of the backend platform.
     #[allow(dead_code)]
     Mac,
 }
@@ -54,6 +57,9 @@ impl WindowShellState {
         }
     }
 
+    /// macOS-only constructor. Gated because on Linux the `Mac` variants and
+    /// `MAC_*` constants are never used; the `Mac` enum variants still exist
+    /// (with `#[allow(dead_code)]`) for serde serialization compatibility.
     #[cfg(target_os = "macos")]
     pub fn mac() -> Self {
         Self {
@@ -98,6 +104,8 @@ pub fn initialize_main_window<R: Runtime>(
             WindowShellState::mac()
         };
 
+        // A missing or failed AppKit pass should keep the app usable with
+        // a deterministic mac shell profile instead of exposing half-applied chrome.
         match native::apply_main_window_shell(&window, &detected) {
             Ok(Some(applied)) => applied,
             Ok(None) => fallback_to_mac(),
@@ -218,12 +226,21 @@ mod native {
     }
 }
 
+/// Legacy IPC: split-shell sidebar visibility is a no-op now that the product uses
+/// a single webview layout; kept so older frontends do not error on invoke.
 pub fn set_native_sidebar_visibility_impl<R: Runtime>(
     _webview: &tauri::Webview<R>,
     _visible: bool,
 ) -> anyhow::Result<()> {
     Ok(())
 }
+
+// These three commands used to live in `commands::window_shell` as a thin
+// pass-through adapter. They failed the deletion test — deleting that module
+// just moved the `#[tauri::command]` attribute here — so they were inlined
+// directly onto the module that owns the behaviour. The seam is the IPC
+// boundary; there is no second adapter, so an intermediate module added
+// navigation overhead without concentrating complexity.
 
 #[tauri::command]
 pub fn get_window_shell_state(state: tauri::State<'_, WindowShellState>) -> WindowShellState {
@@ -243,6 +260,8 @@ pub fn set_native_sidebar_visibility(
 pub fn window_ready(
     window: tauri::WebviewWindow,
 ) -> Result<(), crate::commands::error::CommandError> {
+    // The main window starts hidden so users never see the WebView's default
+    // empty frame. Frontend calls this only after the first real app screen commits.
     window
         .show()
         .map_err(|error| crate::commands::error::internal_error(error.to_string()))

@@ -1,3 +1,10 @@
+//! Cover art derivative generation: square lossless WebP thumbnails and previews.
+//!
+//! Derivative identity is the SHA-256 of the original cover bytes, not the
+//! song hash. Replacing/extracting cover art therefore produces new filenames
+//! and cannot serve stale imagery. All output paths are stored relative to
+//! the library root using forward slashes for portability.
+
 use crate::library_root::{LibraryRoot, ARTWORK_DIRECTORY};
 use anyhow::{Context, Result};
 use image::imageops::FilterType;
@@ -69,6 +76,8 @@ pub(crate) fn derivative_relative_path(size: ArtworkSize, digest: &str) -> Strin
     )
 }
 
+/// Files are written atomically to the library's `artwork/` directory using
+/// digest-based deterministic filenames.
 pub fn generate_artwork_derivatives(
     library: &LibraryRoot,
     original: &[u8],
@@ -93,11 +102,14 @@ pub fn generate_artwork_derivatives(
     })
 }
 
+/// Decode an image from bytes with pre-decode dimension and allocation limits.
 fn decode_with_limits(original: &[u8]) -> Result<image::DynamicImage> {
     let reader = ImageReader::new(Cursor::new(original))
         .with_guessed_format()
         .context("failed to guess image format")?;
 
+    // Probe dimensions before full decode to reject oversized images early.
+    // into_dimensions consumes the reader; we re-create it for the full decode.
     let (width, height) = reader
         .into_dimensions()
         .context("failed to read image dimensions")?;
@@ -134,6 +146,9 @@ fn decode_with_limits(original: &[u8]) -> Result<image::DynamicImage> {
     Ok(image)
 }
 
+/// Uses `DynamicImage::resize_to_fill` so non-square cover art is scaled to
+/// cover the target square and center-cropped, producing exactly square
+/// derivatives without stretching the source aspect ratio.
 fn encode_webp(rgba: &image::RgbaImage, size: u32) -> Result<Vec<u8>> {
     let dynamic = image::DynamicImage::ImageRgba8(rgba.clone());
     let resized = dynamic.resize_to_fill(size, size, FilterType::Lanczos3);
@@ -146,6 +161,8 @@ fn encode_webp(rgba: &image::RgbaImage, size: u32) -> Result<Vec<u8>> {
     Ok(buf)
 }
 
+/// If the final file already exists and is a valid WebP of the exact expected
+/// dimensions, treat it as success.
 fn write_derivative(
     library: &LibraryRoot,
     relative_path: &str,
@@ -162,11 +179,15 @@ fn write_derivative(
     write_derivative_bytes(&final_abs, &webp_bytes, expected_size)
 }
 
+/// The final entry is checked with `symlink_metadata` so a symlink is removed
+/// as a link, never followed as a destination outside `artwork/`.
 fn write_derivative_bytes(final_abs: &Path, webp_bytes: &[u8], expected_size: u32) -> Result<()> {
     if fs::symlink_metadata(final_abs).is_ok() {
         if validate_derivative_file(final_abs, expected_size) {
             return Ok(());
         }
+        // Invalid existing final (including a symlink) — remove the directory
+        // entry, not a target outside artwork, then retry generation.
         fs::remove_file(final_abs).with_context(|| {
             format!(
                 "failed to remove invalid derivative at {}",
@@ -203,6 +224,8 @@ fn write_derivative_bytes(final_abs: &Path, webp_bytes: &[u8], expected_size: u3
             Ok(())
         }
         Err(_) => {
+            // Race: another process may have created the final file. A valid
+            // final wins and the temp is removed by the guard.
             if fs::symlink_metadata(final_abs).is_ok()
                 && validate_derivative_file(final_abs, expected_size)
             {
@@ -216,6 +239,9 @@ fn write_derivative_bytes(final_abs: &Path, webp_bytes: &[u8], expected_size: u3
     }
 }
 
+/// Both source and destination paths are resolved through the strict
+/// content-addressed parser; the destination write is atomic and never
+/// follows an existing symlink.
 pub(crate) fn copy_artwork_derivative(
     source_library: &LibraryRoot,
     destination_library: &LibraryRoot,
@@ -241,6 +267,7 @@ pub(crate) fn copy_artwork_derivative(
     write_derivative_bytes(&destination, &bytes, expected_size)
 }
 
+/// Ensures every error/unwind path cleans up its own temp file.
 struct TempFileGuard<'a> {
     path: &'a Path,
     armed: bool,
@@ -251,6 +278,8 @@ impl<'a> TempFileGuard<'a> {
         Self { path, armed: true }
     }
 
+    /// Disarm the guard after the temp file has been consumed (renamed to the
+    /// final path or removed after a race loss).
     fn disarm(&mut self) {
         self.armed = false;
     }
@@ -264,6 +293,8 @@ impl Drop for TempFileGuard<'_> {
     }
 }
 
+/// A filename suffix alone is not authoritative: image decoders can identify
+/// JPEG or PNG bytes in a `.webp` file.
 pub(crate) fn validate_derivative_file(path: &Path, expected_size: u32) -> bool {
     let Ok(metadata) = fs::symlink_metadata(path) else {
         return false;
@@ -311,6 +342,8 @@ fn unique_temp_path(final_path: &Path) -> PathBuf {
     dir.join(format!(".{name}.{pid}.{counter}.tmp"))
 }
 
+/// The temp must be a direct child of `artwork/` and have the exact
+/// `.{name}.{pid}.{counter}.tmp` shape.
 pub(crate) fn is_temp_artwork_file(relative: &str) -> bool {
     let Some(filename) = relative.strip_prefix("artwork/") else {
         return false;
@@ -318,6 +351,8 @@ pub(crate) fn is_temp_artwork_file(relative: &str) -> bool {
     !filename.is_empty() && !filename.contains('/') && matches_temp_artwork_filename(filename)
 }
 
+/// Keeping this next to the writer prevents the orphan scanner from granting
+/// a grace period to unrelated hidden files.
 pub(crate) fn matches_temp_artwork_filename(filename: &str) -> bool {
     let Some(stem) = filename
         .strip_prefix('.')
@@ -338,6 +373,9 @@ pub(crate) fn matches_temp_artwork_filename(filename: &str) -> bool {
     !name.is_empty() && pid.parse::<u32>().is_ok() && counter.parse::<u64>().is_ok()
 }
 
+/// Only the content-addressed filenames produced by
+/// `derivative_relative_path` are accepted, so a corrupt database cannot turn
+/// an artwork read/upload into an arbitrary file read inside the library.
 pub(crate) fn resolve_artwork_path(
     library: &LibraryRoot,
     relative: &str,
@@ -345,6 +383,9 @@ pub(crate) fn resolve_artwork_path(
     resolve_artwork_path_inner(library, relative, true)
 }
 
+/// Read paths and integrity audits use this variant so inspection never
+/// mutates the library merely because an expected derivative directory is
+/// absent.
 pub(crate) fn resolve_existing_artwork_path(
     library: &LibraryRoot,
     relative: &str,
@@ -371,6 +412,9 @@ fn resolve_artwork_path_inner(
     }
     let artwork_metadata =
         fs::symlink_metadata(&artwork_path).context("failed to inspect artwork directory")?;
+    // `artwork/` must be the direct, real child created by LibraryRoot. This
+    // rejects an attacker-controlled artwork-directory symlink before any
+    // read, write, copy, or delete follows it outside the library root.
     if artwork_metadata.file_type().is_symlink() || !artwork_metadata.is_dir() {
         anyhow::bail!("artwork directory must not be a symlink");
     }
@@ -384,6 +428,10 @@ fn resolve_artwork_path_inner(
     Ok((target, size))
 }
 
+/// Parse a recorded derivative path. It must be exactly one of the two
+/// content-addressed names generated by this module:
+/// `artwork/thumb_<64 lowercase hex>_80.webp` or
+/// `artwork/preview_<64 lowercase hex>_256.webp`.
 fn parse_artwork_relative_path(relative: &str) -> Result<(PathBuf, ArtworkSize)> {
     let filename = relative
         .strip_prefix("artwork/")
@@ -427,6 +475,9 @@ pub fn read_artwork_derivative(
     Ok(Some(bytes))
 }
 
+/// Delete a derivative file from disk only if no other song row references it.
+/// Returns `true` if the file was removed (or already absent and unreferenced),
+/// `false` if it was kept because another song row still references it.
 pub fn delete_artwork_derivative_if_unreferenced(
     connection: &rusqlite::Connection,
     library: &LibraryRoot,
