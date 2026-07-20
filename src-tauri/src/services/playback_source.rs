@@ -529,6 +529,19 @@ struct StemSetMetadata {
 /// PR #3 will route this through a shared atomic-download helper that can
 /// cache the decoded audio to avoid re-decoding during playback.
 // TODO(PR#3): route through shared atomic download helper.
+// NOTE: PR#3's `atomic_download` helper (src-tauri/src/remote/atomic_download.rs)
+// downloads to a temp file, validates, and atomically renames to the final
+// destination in one shot. The stem-set path cannot use it directly because
+// PR#1's all-or-nothing semantics require every stem to pass the cross-set
+// alignment check (Phase 3) BEFORE any final-path file is touched. Using
+// `atomic_download` per-stem would rename each stem to its final path
+// immediately, reintroducing the partial-set problem PR#1 fixed (e.g. vocals
+// installed but accompaniment truncated). The shared helper is instead used by
+// `ensure_remote_file_cached` and `atomic_database_pull`, which have no
+// all-or-nothing constraint. A future refactor could split the helper into
+// "download+validate to temp" and "commit temp to final" steps so the stem
+// path can reuse the download half while keeping its delayed collective
+// rename; that split is deferred to avoid churning the helper API in PR#3.
 fn decode_stem_metadata(path: &Path) -> Result<StemSetMetadata> {
     let audio = decode::decode_file(path)
         .with_context(|| format!("failed to decode stem at {}", path.display()))?;
@@ -562,8 +575,9 @@ fn decode_stem_metadata(path: &Path) -> Result<StemSetMetadata> {
 ///   were missing or invalid.  Durable restart-survival (persisting which
 ///   stems are verified across app restarts) is PR #2/#3's job; this function
 ///   only retains verified stems within the same process lifetime.
-///   // TODO(PR#3): route through shared atomic download helper and durable
-///   // verified-stem catalog so restart-survival works.
+///   // TODO(PR#6): route through durable verified-stem catalog (remote_cache_entries)
+///   // so restart-survival works. PR#3's atomic_download helper is not used
+///   // here because of the all-or-nothing set constraint (see note above).
 ///
 /// * **Sample alignment**: every stem in the set must share the same sample
 ///   rate, channel count, and PCM frame count.  Mismatched stems would

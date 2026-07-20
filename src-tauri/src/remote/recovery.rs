@@ -60,6 +60,8 @@ pub struct RecoveryReport {
     pub cancelled: Vec<String>,
     pub conflicted: Vec<String>,
     pub already_completed: usize,
+    /// Paths of stale `*.part.*` temp files removed during recovery.
+    pub removed_part_files: Vec<std::path::PathBuf>,
 }
 
 /// Run the startup recovery pass.
@@ -111,6 +113,20 @@ pub fn run_recovery(
     // the active library are available, the executor should pick up operations
     // in `pending` / `retry_wait` and re-execute them.
     Ok(report)
+}
+
+/// Remove stale `*.part.*` temp files from a working-copy directory.
+///
+/// Called during the startup recovery pass for each remote library working
+/// copy. In PR #3 there are no async transfers, so every `*.part.*` file is
+/// stale. PR #5's running transfers must be excluded before removal — see
+/// the TODO seam in `atomic_download::remove_stale_part_files`.
+///
+/// Returns the list of removed paths so callers/tests can observe the result.
+pub fn recover_stale_part_files(
+    working_copy_dir: &std::path::Path,
+) -> CommandResult<Vec<std::path::PathBuf>> {
+    crate::remote::atomic_download::remove_stale_part_files(working_copy_dir)
 }
 
 /// Transition an interrupted in-flight operation to `retry_wait`.
@@ -598,6 +614,39 @@ mod tests {
         let guard2 = acquire_commit_lock(&locks, "lib-2");
         assert!(guard2.is_some());
         // guard2 acquired while guard1 held — different libraries proceed.
+    }
+
+    // --- Stale partial-file recovery ---
+
+    #[test]
+    fn recover_stale_part_files_removes_part_files_in_working_copy() {
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        // Simulate a working copy with a stale part file and a real DB.
+        let part_file = dir.path().join("openkara.db.part.pull-1");
+        std::fs::write(&part_file, b"partial download").unwrap();
+        let real_db = dir.path().join("openkara.db");
+        std::fs::write(&real_db, b"real database").unwrap();
+        let lkg = dir.path().join("openkara.db.lkg");
+        std::fs::write(&lkg, b"last known good").unwrap();
+        // A part file in a subdirectory (e.g. stems).
+        std::fs::create_dir_all(dir.path().join("stems")).unwrap();
+        let stem_part = dir.path().join("stems/vocals.wav.part.op-2");
+        std::fs::write(&stem_part, b"partial stem").unwrap();
+
+        let removed = recover_stale_part_files(dir.path()).expect("recovery");
+
+        assert!(!part_file.exists(), "top-level part file removed");
+        assert!(!stem_part.exists(), "subdirectory part file removed");
+        assert!(real_db.exists(), "real database preserved");
+        assert!(lkg.exists(), "last-known-good preserved");
+        assert_eq!(removed.len(), 2);
+    }
+
+    #[test]
+    fn recover_stale_part_files_missing_dir_is_not_an_error() {
+        let result = recover_stale_part_files(std::path::Path::new("/nonexistent/xyz"));
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
     }
 
     // --- Placeholder tests for PR#4/#5 ---
