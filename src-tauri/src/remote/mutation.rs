@@ -147,13 +147,18 @@ mod sync_backend {
                 .unwrap_or(0)
         };
 
-        let operation_id = format!(
-            "publish-{}",
-            song_ids
-                .first()
-                .cloned()
-                .unwrap_or_else(|| "batch".to_owned())
-        );
+        let operation_id = if let Some(first) = song_ids.first() {
+            format!("publish-{first}")
+        } else {
+            // Batch mutations don't know song_ids yet. Use a unique
+            // timestamp-based id so concurrent or sequential batch mutations
+            // don't collide on the same primary key. These rows are internal
+            // outbook entries for recovery; get_all_upload_statuses filters
+            // them out (empty song_ids payload) so they never surface as
+            // phantom user-visible uploads.
+            let now = crate::remote::types::current_unix_time_ms();
+            format!("publish-batch-{now}")
+        };
         let now = crate::remote::types::current_unix_time_ms();
 
         let payload = OperationPayload {

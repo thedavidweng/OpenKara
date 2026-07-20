@@ -50,9 +50,14 @@ impl RemoteState {
                 );
                 // Fall back to an in-memory connection so the app can still
                 // start; operation state will not persist across restarts in
-                // this degraded mode.
-                rusqlite::Connection::open_in_memory()
-                    .expect("in-memory control DB fallback should always open")
+                // this degraded mode. Apply migrations so the recovery and
+                // upload-status paths can query remote_operations etc.
+                // without hitting "no such table" errors.
+                let conn = rusqlite::Connection::open_in_memory()
+                    .expect("in-memory control DB fallback should always open");
+                control_db::apply_migrations(&conn)
+                    .expect("in-memory control DB migrations should always succeed");
+                conn
             });
 
         Self {
