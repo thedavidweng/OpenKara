@@ -522,9 +522,9 @@ jobs:
             echo "git-cliff not installed, skipping parse check"
             exit 0
           fi
-          git cliff --help >/dev/null 2>&1 || true
           # Verify the config is parseable by generating an empty changelog.
-          git cliff --unreleased --tag 0.0.0-test --output /dev/null || true
+          # A parse failure must exit non-zero so release-validation fails.
+          git cliff --unreleased --tag 0.0.0-test --output /dev/null
 
   dependency-checks:
     name: Dependency surface checks

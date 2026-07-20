@@ -447,6 +447,25 @@ describe("event type behavior", () => {
     }
   });
 
+  test("push still classifies files into categories for downstream consumers", () => {
+    // The packaging workflow reads categories to gate packaging jobs. On
+    // push events, categories must still reflect the actual changed files
+    // so packaging gates work — not a blanket "unknown".
+    const result = classifyChanges(
+      ["packaging/com.openkara.OpenKara.yml", "docs/guide.md"],
+      "push",
+    );
+    expect(result.categories).toContain("packaging_inputs");
+    expect(result.categories).toContain("docs");
+    expect(
+      result.categoriesByFile["packaging/com.openkara.OpenKara.yml"],
+    ).toContain("packaging_inputs");
+    // expectedJobs is still full CI (safety path).
+    for (const job of FULL_CI_HEAVY) {
+      expect(result.expectedJobs).toContain(job);
+    }
+  });
+
   test("workflow_dispatch always runs full CI", () => {
     const result = classifyChanges([], "workflow_dispatch");
     for (const job of FULL_CI_HEAVY) {

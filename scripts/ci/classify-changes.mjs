@@ -338,23 +338,11 @@ const HEAVY_JOBS = new Set([
  * }}
  */
 export function classifyChanges(files, event) {
-  // Push to main and workflow_dispatch always run full CI.
-  if (event === "push" || event === "workflow_dispatch") {
-    const allJobs = ALL_JOBS.filter((job) =>
-      JOB_RULES[job](new Set(["unknown"]), event),
-    );
-    return {
-      files,
-      categories: ["unknown"],
-      categoriesByFile: {},
-      unknownFiles: files,
-      expectedJobs: allJobs,
-      expectedSkippedHeavyJobs: [],
-      run: Object.fromEntries(ALL_JOBS.map((j) => [j, allJobs.includes(j)])),
-    };
-  }
-
-  // PR: classify each file against all known categories.
+  // Always classify each file against all known categories. The category
+  // data is consumed by both the main CI workflow (for job gating) and the
+  // packaging workflow (for packaging-specific gates). Classifying up front
+  // lets downstream consumers inspect categories regardless of event type,
+  // while the job derivation below applies the event-based safety path.
   /** @type {Record<string, string[]>} */
   const categoriesByFile = {};
   /** @type {Set<string>} */
@@ -375,7 +363,26 @@ export function classifyChanges(files, event) {
     }
   }
 
-  // Derive expected jobs from the category union.
+  // Push to main and workflow_dispatch always run full CI as a deliberate
+  // safety path — the integration branch always gets full validation
+  // regardless of what changed. Categories are still populated above so
+  // downstream consumers (e.g. packaging triage) can inspect them.
+  if (event === "push" || event === "workflow_dispatch") {
+    const allJobs = ALL_JOBS.filter((job) =>
+      JOB_RULES[job](new Set(["unknown"]), event),
+    );
+    return {
+      files,
+      categories: [...categorySet],
+      categoriesByFile,
+      unknownFiles,
+      expectedJobs: allJobs,
+      expectedSkippedHeavyJobs: [],
+      run: Object.fromEntries(ALL_JOBS.map((j) => [j, allJobs.includes(j)])),
+    };
+  }
+
+  // PR: derive expected jobs from the category union.
   const expectedJobs = ALL_JOBS.filter((job) =>
     JOB_RULES[job](categorySet, event),
   );
