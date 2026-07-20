@@ -18,20 +18,20 @@
   <screenshots>
     <screenshot type="default">
       <caption>Library view with imported karaoke tracks and cover art</caption>
-      <image type="source">https://raw.githubusercontent.com/thedavidweng/OpenKara/v0.9.0/packaging/flatpak/screenshots/library.png</image>
+      <image type="source">https://raw.githubusercontent.com/thedavidweng/OpenKara/v1.0.0/packaging/flatpak/screenshots/library.png</image>
     </screenshot>
     <screenshot>
       <caption>Player view with synced lyrics and queue controls</caption>
-      <image type="source">https://raw.githubusercontent.com/thedavidweng/OpenKara/v0.9.0/packaging/flatpak/screenshots/player.png</image>
+      <image type="source">https://raw.githubusercontent.com/thedavidweng/OpenKara/v1.0.0/packaging/flatpak/screenshots/player.png</image>
     </screenshot>
     <screenshot>
       <caption>Setup flow for choosing a portable karaoke library folder</caption>
-      <image type="source">https://raw.githubusercontent.com/thedavidweng/OpenKara/v0.9.0/packaging/flatpak/screenshots/setup.png</image>
+      <image type="source">https://raw.githubusercontent.com/thedavidweng/OpenKara/v1.0.0/packaging/flatpak/screenshots/setup.png</image>
     </screenshot>
   </screenshots>
   <content_rating type="oars-1.1" />
   <releases>
-    <release version="0.9.0" date="2026-06-03">
+    <release version="1.0.0" date="2026-06-03">
       <description>
         <ul>
           <li>Streaming playback with ring-buffer decode, chunked cache, and bandwidth-aware proxy mode.</li>
