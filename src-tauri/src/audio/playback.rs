@@ -97,6 +97,58 @@ pub enum LoadedStems {
     FourStem(StemSet),
 }
 
+/// Validate that all stems in a `LoadedStems` share the same sample rate,
+/// channel count, and frame count. The source-domain mix bus (issue #143)
+/// pops the same `[frame, frame + budget)` range from every stem, so any
+/// mismatch would cause one stem to exhaust early and stall the transport.
+///
+/// Returns `Ok(())` if all stems are consistent, or an `InvalidPlaybackState`
+/// error describing the first mismatch.
+fn validate_loaded_stems(stems: &LoadedStems) -> Result<(), PlaybackError> {
+    match stems {
+        LoadedStems::TwoStem {
+            vocals,
+            accompaniment,
+        } => {
+            validate_stem_pair("vocals", vocals, "accompaniment", accompaniment)?;
+        }
+        LoadedStems::FourStem(set) => {
+            validate_stem_pair("vocals", &set.vocals, "drums", &set.drums)?;
+            validate_stem_pair("vocals", &set.vocals, "bass", &set.bass)?;
+            validate_stem_pair("vocals", &set.vocals, "other", &set.other)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_stem_pair(
+    name_a: &str,
+    a: &DecodedAudio,
+    name_b: &str,
+    b: &DecodedAudio,
+) -> Result<(), PlaybackError> {
+    if a.sample_rate != b.sample_rate {
+        return Err(PlaybackError::InvalidPlaybackState(format!(
+            "stem timeline mismatch: {name_a} sample_rate {} != {name_b} sample_rate {}",
+            a.sample_rate, b.sample_rate
+        )));
+    }
+    if a.channels != b.channels {
+        return Err(PlaybackError::InvalidPlaybackState(format!(
+            "stem timeline mismatch: {name_a} channels {} != {name_b} channels {}",
+            a.channels, b.channels
+        )));
+    }
+    let frames_a = a.samples.len() / a.channels.max(1);
+    let frames_b = b.samples.len() / b.channels.max(1);
+    if frames_a != frames_b {
+        return Err(PlaybackError::InvalidPlaybackState(format!(
+            "stem timeline mismatch: {name_a} frame_count {frames_a} != {name_b} frame_count {frames_b}"
+        )));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PlaybackStateSnapshot {
     pub song_id: Option<String>,
@@ -603,6 +655,13 @@ impl PlaybackController {
                 song_id, track.song_id
             )));
         }
+        // Validate stem timeline consistency before installing. The mix bus
+        // (issue #143) pops the same source-frame range from every stem, so
+        // mismatched sample_rate, channels, or frame count would cause one
+        // stem to run out of data early and stall the transport. Reject early
+        // rather than producing silent drift or glitches mid-playback.
+        validate_loaded_stems(&stems)?;
+
         // Successful attach on the current track cancels both active
         // crossfade and prepared track — stems change the render path and
         // make an outgoing plain-track overlap invalid.

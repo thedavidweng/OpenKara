@@ -53,7 +53,8 @@
 ### 渲染管线
 
 ```text
-existing source/stem mix + master/stem gains
+source-domain mix bus (all stems popped over the same [frame, frame+budget) range,
+  mixed with per-stem gains, resampled once to device rate)
 → EQ dry/wet processor + auto preamp
 → soft limiter
 → existing play/pause/seek fade
@@ -347,7 +348,8 @@ playing ↔ playing（pause/resume，通过 isPlaying 区分）
 实时输出回调的渲染顺序：
 
 ```text
-existing source/stem mix + master/stem gains
+source-domain mix bus (all stems popped over the same [frame, frame+budget) range,
+  mixed with per-stem gains, resampled once to device rate)
 → EQ dry/wet processor + auto preamp
 → soft limiter
 → existing play/pause/seek fade
@@ -356,6 +358,16 @@ existing source/stem mix + master/stem gains
 ```
 
 EQ 平滑（gain、preamp、bypass dry/wet）仅在已渲染样本上推进，trailing padding 不推进滤波器状态。Peak 累加在 fade 之后、输出转发之前执行，只统计已渲染样本。
+
+### Multi-stem mix bus (#143)
+
+多 stem 播放使用单一源域 mix bus，保证所有 stem（包括静音 stem）在相同的源帧区间 `[frame, frame+budget)` 内被消费：
+
+1. **共享源帧预算**：每个回调的 budget = min(每个 stem 的可用帧数, resampler 所需输入帧数)。所有 stem 在同一区间被 pop/read，无论 gain 是否为 0。
+2. **源域混合**：所有 stem 在源域（原始采样率）按各自 gain 混合为一个 buffer，然后通过一个共享的 rubato sinc resampler（每通道一个 mono resampler）一次性重采样到设备采样率。这取代了之前每 stem 独立重采样再聚合的方式。
+3. **静音是幅度操作，不是时钟操作**：gain=0 的 stem 仍被 pop 相同数量的源帧，只是贡献零到 mix。恢复一个静音 stem 不会产生与其他 stem 的帧偏移。
+4. **transport 只按已接受的源帧推进**：`render_frame` 每次回调推进的量等于所有 stem 共同消费的源帧数（budget），而非每 stem 的 max/min。
+5. **stem 元数据校验**：`attach_stems`（解码 stem）和 `spawn_multi_stem_decode_producers`（流式 stem）在安装前校验所有 stem 的 sample_rate、channels、frame_count（解码）/duration_ms（流式 probe）一致。不一致时返回 `InvalidPlaybackState` / `ProbeFailed` 错误，避免 mix bus 在播放中途因某个 stem 提前耗尽而卡住。
 
 ## CDG IPC
 
