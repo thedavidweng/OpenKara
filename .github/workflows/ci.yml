@@ -45,8 +45,12 @@ jobs:
           persist-credentials: false
 
       - name: Label PR by changed paths
+        # Fork PRs get a read-only GITHUB_TOKEN, so the labeling API call
+        # 403s. Labeling is cosmetic (human triage aid) — path detection
+        # below is what gates jobs. continue-on-error keeps fork PR CI alive.
         uses: actions/labeler@b8dd2d9be0f68b860e7dae5dae7d772984eacd6d # v6.2.0
         if: github.event_name == 'pull_request'
+        continue-on-error: true
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
