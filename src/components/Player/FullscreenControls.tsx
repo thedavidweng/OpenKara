@@ -1,9 +1,16 @@
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
+import { Languages, LoaderCircle } from "lucide-react";
 import { PeakMeter } from "./PeakMeter";
 import { PlayControls } from "./PlayControls";
 import { SeekBar } from "./SeekBar";
 import { useMouseIdle } from "@/hooks/use-mouse-idle";
 import { closeFullscreenPlayer } from "@/lib/fullscreen-player";
+import {
+  emitLocalAudienceRomanizeSetRequest,
+  type LocalAudienceRomanizeSetRequest,
+} from "@/lib/local-audience-romanize";
+import { useLyricsStore } from "@/stores/lyrics-store";
 import { usePlayerStore, selectCurrentPositionMs } from "@/stores/player-store";
 
 interface FullscreenControlsProps {
@@ -13,8 +20,30 @@ interface FullscreenControlsProps {
 export function FullscreenControls({
   onHeightChange,
 }: FullscreenControlsProps = {}) {
+  const { t } = useTranslation();
   const idle = useMouseIdle(3000);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // The fullscreen control projects the authoritative romanization state
+  // received from the main window. It never mutates the local store on
+  // click; it sends an explicit desired boolean to the main window and
+  // waits for the authoritative state event to update the projection.
+  const showRomanized = useLyricsStore((s) => s.showRomanized);
+  const isRomanizing = useLyricsStore((s) => s.isRomanizing);
+  const lyricSongId = useLyricsStore((s) => s.songId);
+  const hasLyrics = useLyricsStore((s) => s.lines.length > 0);
+  const romanizeDisabled = !hasLyrics || !lyricSongId || isRomanizing;
+
+  const handleRomanizeClick = () => {
+    if (!lyricSongId || romanizeDisabled) return;
+    const request: LocalAudienceRomanizeSetRequest = {
+      songId: lyricSongId,
+      showRomanized: !showRomanized,
+    };
+    void emitLocalAudienceRomanizeSetRequest(request).catch(() => {
+      // Auxiliary control delivery failure must not interrupt playback.
+    });
+  };
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -121,6 +150,25 @@ export function FullscreenControls({
           <SeekBar />
         </div>
         <PeakMeter />
+        <button
+          type="button"
+          data-testid="fullscreen-romanize-button"
+          onClick={handleRomanizeClick}
+          aria-label={t("lyrics.romanizeTooltip")}
+          aria-pressed={showRomanized}
+          disabled={romanizeDisabled}
+          className={`motion-icon-button rounded-full border p-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
+            showRomanized
+              ? "border-[color-mix(in_srgb,var(--color-accent)_40%,var(--color-border-light))] bg-[color-mix(in_srgb,var(--color-accent)_18%,var(--color-sidebar))] text-[var(--color-control-primary)]"
+              : "border-[var(--color-border-light)] bg-[var(--color-sidebar)] text-[var(--color-text-dim)] hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[var(--color-hover)] hover:text-[var(--color-control-primary)]"
+          }`}
+        >
+          {isRomanizing ? (
+            <LoaderCircle size={14} className="animate-spin" />
+          ) : (
+            <Languages size={14} />
+          )}
+        </button>
       </div>
     </div>
   );

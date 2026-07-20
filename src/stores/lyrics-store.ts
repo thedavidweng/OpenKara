@@ -2,6 +2,7 @@ import { create } from "zustand";
 import * as api from "@/lib/tauri";
 import { notifyError } from "@/lib/errors";
 import { romanizeLyricsLines } from "@/lib/lyrics-romanizer";
+import type { LocalAudienceRomanizeState } from "@/lib/local-audience-romanize";
 import {
   SONG_LANGUAGES,
   type SongLanguage,
@@ -43,6 +44,8 @@ interface LyricsState {
   setActiveLineIndex: (index: number) => void;
   setActiveWordIndex: (index: number) => void;
   toggleRomanized: () => void;
+  setRomanizedVisibility: (show: boolean) => void;
+  applyRemoteRomanizeState: (state: LocalAudienceRomanizeState) => void;
   romanizeCurrentLyrics: () => Promise<void>;
   clear: () => void;
 }
@@ -184,12 +187,40 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
   toggleRomanized: () => {
     const { showRomanized, lines } = get();
     if (lines.length === 0) return;
-    if (!showRomanized) {
+    get().setRomanizedVisibility(!showRomanized);
+  },
+
+  // Idempotent visibility action shared by the main-window Romanize button
+  // and remote set requests from the fullscreen audience control. The
+  // caller passes the explicit desired boolean; this action never toggles
+  // implicitly. Cached romanizedLines are preserved across disable/enable
+  // cycles so re-enabling does not re-run the Worker when results already
+  // exist for the current source lyrics.
+  setRomanizedVisibility: (show) => {
+    const { showRomanized, lines, romanizedLines } = get();
+    if (lines.length === 0) return;
+    if (show === showRomanized) return;
+
+    if (show) {
       set({ showRomanized: true });
-      void get().romanizeCurrentLyrics();
+      if (romanizedLines.length === 0) {
+        void get().romanizeCurrentLyrics();
+      }
     } else {
       set({ showRomanized: false });
     }
+  },
+
+  // Read-only projection used only by the fullscreen WebView. The receiver
+  // validates songId, lyricsIdentity, and revision before calling this; the
+  // store action copies the projected state without invoking the Worker or
+  // mutating source lyrics, offset, or active-lyric indices.
+  applyRemoteRomanizeState: (state) => {
+    set({
+      showRomanized: state.showRomanized,
+      isRomanizing: state.isRomanizing,
+      romanizedLines: [...state.romanizedLines],
+    });
   },
 
   romanizeCurrentLyrics: async () => {

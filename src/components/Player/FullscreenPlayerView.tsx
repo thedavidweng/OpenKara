@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { PlaybackStage } from "@/components/Playback/PlaybackStage";
 import { useCdgFrameReceiver } from "@/hooks/use-cdg-frame-receiver";
+import { useLocalAudienceRomanizeReceiver } from "@/hooks/use-local-audience-romanize-receiver";
 import {
   useFullscreenPlaybackRuntime,
   useLyricsAutoFetch,
@@ -20,6 +21,10 @@ export function FullscreenPlayerView() {
   useFullscreenPlaybackRuntime();
   useLyricsAutoFetch();
   useCdgFrameReceiver();
+  // Mount the romanization receiver before the audience-active announcement
+  // so its state listener is registered before the main window emits the
+  // initial authoritative snapshot in response to the sync request.
+  useLocalAudienceRomanizeReceiver();
 
   useEffect(() => {
     void announceLocalAudienceOutputActive(true).catch(() => {
