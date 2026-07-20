@@ -191,9 +191,9 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
                 crate::commands::error::state_lock_error("control DB lock was poisoned")
             })?;
             let repo_state = get_repository_state(&conn, &library_id)?;
-            let needs_persist = repo_state.as_ref().map_or(false, |r| {
-                r.repository_id.is_none() || r.writer_id.is_none()
-            });
+            let needs_persist = repo_state
+                .as_ref()
+                .is_some_and(|r| r.repository_id.is_none() || r.writer_id.is_none());
             let repository_id = repo_state
                 .as_ref()
                 .and_then(|r| r.repository_id.clone())
