@@ -33,15 +33,15 @@ Field or command semantic changes must update this document before changing UI c
 | `"title_asc"`         | Sort by title ascending                    |
 | `"artist_asc"`        | Sort by artist ascending                   |
 
-For the two alphabetical modes, the primary order is the A–Z / `#` alphabet
-rail bucket. Han-leading text uses its pinyin initial; locale collation orders
-entries within a bucket. This keeps every rail bucket contiguous and makes the
-rail's target indices monotonically increase from A through `#`.
+For the two alphabetical modes, the primary order uses the A–Z / `#` alphabet
+rail bucket. Han-leading text uses its pinyin initial. Locale collation orders
+entries within a bucket. This keeps every rail bucket contiguous. The rail's
+target indices increase monotonically from A through `#`.
 
 ### Commands
 
 - `set_library_sort_mode(mode: LibrarySortMode) -> AppSettings` — Persist the
-  library sort mode and return the updated settings snapshot.
+  library sort mode. Return the updated settings snapshot.
 
 ## Theme preference
 
@@ -53,20 +53,19 @@ rail's target indices monotonically increase from A through `#`.
 | `"light"`  | Force light theme                     |
 | `"dark"`   | Force dark theme (default when unset) |
 
-`AppConfig::effective_theme_preference()` returns the persisted preference
-(defaulting to `Dark` when unset). It does **not** resolve `System` against the
-OS appearance — the frontend `theme-runtime.ts` is solely responsible for
-resolving `System` to `Light` or `Dark` via
-`matchMedia("(prefers-color-scheme: dark)")` and applying the `data-theme`
-attribute to the document root. The audience/fullscreen stage stays explicitly
-dark regardless of the primary preference.
+`AppConfig::effective_theme_preference()` returns the persisted preference. It
+defaults to `Dark` when unset. It does **not** resolve `System` against the OS
+appearance. The frontend `theme-runtime.ts` resolves `System` to `Light` or
+`Dark` with `matchMedia("(prefers-color-scheme: dark)")`. It applies the
+`data-theme` attribute to the document root. The audience/fullscreen stage
+stays explicitly dark regardless of the primary preference.
 
 ### Commands
 
 - `set_theme_preference(preference: ThemePreference) -> AppSettings` — Persist
-  the appearance preference and return the updated settings snapshot.
-  Frontend wrapper: `setThemePreference`. Capability
-  `core:window:allow-set-theme` is required for native window theme sync.
+  the appearance preference. Return the updated settings snapshot.
+  Frontend wrapper: `setThemePreference`. Native window theme sync requires
+  the `core:window:allow-set-theme` capability.
 
 ## Other settings commands
 

@@ -39,6 +39,12 @@ does.
 - IPC contracts live under `docs/references/contracts/`. Update the corresponding contract file in the same change that modifies a public IPC command, payload, event, or source-enum.
 - Generated docs must name their generator and output path in `scripts/README.md`.
 
+## Technical English (ASD-STE100)
+
+Write technical documentation in ASD-STE100 Simplified English. Apply the standard by intent, not by dictionary lookup. Use short sentences. Use active voice. Use one topic per sentence. Use one word for one meaning. Avoid synonyms, passive voice, `-ing` verbs, noun clusters, and vague quantifiers.
+
+Scope: all repo-tracked English prose except `README.md`, `README_CN.md`, `website/`, `CHANGELOG.md`, `docs/references/generated/`, and `.github/` templates. Do not edit code comments. The codebase is self-explanatory. Report code comments instead.
+
 ## Never Do
 
 - Never use `as any`, `@ts-ignore`, or `@ts-expect-error` to silence type errors. Fix the types instead.

@@ -1,22 +1,15 @@
 # Architecture Decision Records
 
-ADRs capture durable decisions and non-obvious constraints that the code
-cannot explain on its own. Each record is a short, dated markdown file
-numbered in creation order (`NNNN-kebab-title.md`).
+ADRs record durable decisions. The code cannot explain these decisions alone. Each record is a short markdown file. The file has a date. The file has a number in creation order (`NNNN-kebab-title.md`).
 
 ## When to add an ADR
 
 Add a record when a decision is:
 
-- **load-bearing** — changing it would break correctness, portability, or a
-  frozen contract, and
-- **non-obvious** — a reader of the code alone would not reconstruct the
-  reasoning (e.g. why a specific `ort` feature flag is pinned, why a cursor
-  is monotonic, why two resampler caches must not be shared).
+- **load-bearing** — changing it breaks correctness, portability, or a frozen contract.
+- **non-obvious** — a reader cannot reconstruct the reasoning from the code alone. For example: why a specific `ort` feature flag is pinned, why a cursor is monotonic, why two resampler caches must not be shared.
 
-Do not add an ADR for anything the code already says clearly, for release
-history (that lives in `CHANGELOG.md`), or for frozen IPC interfaces (those
-live in `docs/references/contracts/`).
+Do not add an ADR for clear code. Do not add an ADR for release history. Release history lives in `CHANGELOG.md`. Do not add an ADR for frozen IPC interfaces. Frozen IPC interfaces live in `docs/references/contracts/`.
 
 ## Format
 
@@ -39,8 +32,9 @@ Status: accepted | superseded by NNNN | deprecated
 <bullet list: what this forces on future code, and what it rules out>
 ```
 
-Supersede a record by writing a new one and updating the old `Status` line —
-do not delete or rewrite accepted records.
+## Writing rules
+
+Write new ADRs in ASD-STE100 Simplified English. See `AGENTS.md` for the rules. Use short sentences. Use active voice. Use one topic per sentence. Use one word for one meaning. Do not edit accepted ADRs in place. Supersede a record. Write a new record. Update the old `Status` line. Do not delete accepted records. Do not rewrite accepted records.
 
 ## Index
 
