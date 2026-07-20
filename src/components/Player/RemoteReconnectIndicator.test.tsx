@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { RemoteReconnectIndicator } from "./RemoteReconnectIndicator";
 import { useRemotePlaybackStore } from "@/stores/remote-playback-store";
 import { usePlayerStore } from "@/stores/player-store";
+import type { PlaybackStateSnapshot } from "@/types/ipc";
 
 vi.mock("react-i18next", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-i18next")>();
@@ -31,9 +32,7 @@ vi.mock("react-i18next", async (importOriginal) => {
 function setPlayerSongId(songId: string | null) {
   usePlayerStore.setState({
     snapshot: songId
-      ? ({ song_id: songId } as unknown as Parameters<
-          typeof usePlayerStore.getState
-        >[0]["snapshot"])
+      ? ({ song_id: songId } as unknown as PlaybackStateSnapshot)
       : null,
   });
 }
