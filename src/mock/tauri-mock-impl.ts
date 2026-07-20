@@ -80,6 +80,10 @@ export interface MockData {
     mode: string;
     active: boolean;
   };
+  /** When true, playback loops back to loopStartPositionMs on song end. */
+  loopPlayback?: boolean;
+  /** Position to seek back to when looping. Defaults to 0. */
+  loopStartPositionMs?: number;
 }
 
 /**
@@ -222,8 +226,9 @@ export function createTauriMock(data: any): TauriMockResult {
   }
 
   // Schedule (or re-schedule) the end-of-song timer. When the remaining
-  // playback time elapses, emit a final position event pinned to duration_ms
-  // with is_playing:false so the local position clock stops extrapolating.
+  // playback time elapses, either loop back to loopStartPositionMs (website
+  // preview) or stop at duration_ms with is_playing:false (E2E / default) so
+  // the local position clock stops extrapolating.
   function schedulePlaybackEnd(): void {
     if (playbackEndTimer) {
       clearTimeout(playbackEndTimer);
@@ -240,17 +245,33 @@ export function createTauriMock(data: any): TauriMockResult {
       // (i.e. the user didn't pause/seek/play a different song in the
       // meantime — those paths clear or re-schedule the timer).
       if (gen !== transportGeneration) return;
-      currentPlaybackSnapshot = {
-        ...currentPlaybackSnapshot,
-        state: "idle",
-        is_playing: false,
-        position_ms: (currentPlaybackSnapshot as any).duration_ms,
-      };
-      emitMockEvent("playback-position", {
-        ms: (currentPlaybackSnapshot as any).duration_ms,
-        transport_generation: transportGeneration,
-        snapshot: clone(currentPlaybackSnapshot),
-      });
+      if (data.loopPlayback) {
+        const loopMs = data.loopStartPositionMs ?? 0;
+        currentPlaybackSnapshot = {
+          ...currentPlaybackSnapshot,
+          state: "playing",
+          is_playing: true,
+          position_ms: loopMs,
+        };
+        emitMockEvent("playback-position", {
+          ms: loopMs,
+          transport_generation: transportGeneration,
+          snapshot: clone(currentPlaybackSnapshot),
+        });
+        schedulePlaybackEnd();
+      } else {
+        currentPlaybackSnapshot = {
+          ...currentPlaybackSnapshot,
+          state: "idle",
+          is_playing: false,
+          position_ms: (currentPlaybackSnapshot as any).duration_ms,
+        };
+        emitMockEvent("playback-position", {
+          ms: (currentPlaybackSnapshot as any).duration_ms,
+          transport_generation: transportGeneration,
+          snapshot: clone(currentPlaybackSnapshot),
+        });
+      }
     }, remaining);
   }
 
@@ -783,6 +804,12 @@ export function createTauriMock(data: any): TauriMockResult {
       });
     }
     return songs;
+  }
+
+  // If the initial snapshot is already playing (website preview auto-play),
+  // schedule the end-of-song timer so playback loops correctly.
+  if ((currentPlaybackSnapshot as any).is_playing) {
+    schedulePlaybackEnd();
   }
 
   // ── Return ──

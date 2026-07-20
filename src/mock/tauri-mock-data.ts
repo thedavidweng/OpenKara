@@ -53,9 +53,10 @@ export const MOCK_PLAYLISTS = [
 ];
 
 /**
- * Freeze the website mock on this Earfquake lyric timestamp so the seekbar
- * and lyrics panel show a real mid-song line instead of an idle blank state.
- * Matches `Don't leave, it's my fault (Girl)` in `PREVIEW_LYRICS.earfquake`.
+ * Start position for the website mock's auto-playing preview loop. Chosen so
+ * the seekbar and lyrics panel open on a real mid-song line (`Don't leave,
+ * it's my fault (Girl)` in `PREVIEW_LYRICS.earfquake`) with active karaoke
+ * fill and word glow from the first frame.
  */
 export const PREVIEW_FROZEN_POSITION_MS = 59560;
 
@@ -129,16 +130,17 @@ export const MOCK_DATA: MockData = {
     theme_preference: "dark",
   },
 
-  // Website preview freezes on the primary song at a real lyric timestamp so
-  // the seekbar and lyrics panel look mid-session. E2E overrides this back to
-  // idle via {@link E2E_MOCK_DATA} so playback specs start from a clean slate.
+  // Website preview starts at a real lyric timestamp with playback active so
+  // the seekbar, karaoke fill, and lyrics panel look mid-session with live
+  // animations (word sweep, auto-scroll, line transitions). Playback loops
+  // back to the start position on song end so the preview stays animated.
+  // E2E overrides this back to idle via {@link E2E_MOCK_DATA} so playback
+  // specs start from a clean slate.
   playbackSnapshot: {
     transport_generation: 0,
     song_id: PRIMARY_PREVIEW_SONG_HASH,
-    // Pause is `is_playing: false` with a non-idle transport state — keeps the
-    // player chrome populated while the clock stays frozen for the mock.
     state: "playing",
-    is_playing: false,
+    is_playing: true,
     position_ms: PREVIEW_FROZEN_POSITION_MS,
     duration_ms: PRIMARY_PREVIEW_DURATION_MS,
     buffered_ms: PRIMARY_PREVIEW_DURATION_MS,
@@ -166,6 +168,11 @@ export const MOCK_DATA: MockData = {
     mode: "round_robin",
     active: false,
   },
+
+  // Loop playback so the website preview stays animated continuously.
+  // E2E does not set these — tests that need playback call `play` at runtime.
+  loopPlayback: true,
+  loopStartPositionMs: PREVIEW_FROZEN_POSITION_MS,
 };
 
 /**
@@ -177,6 +184,8 @@ export const E2E_MOCK_DATA: MockData = {
   ...MOCK_DATA,
   playlists: [],
   playlistSongs: {},
+  // E2E tests control transport from a known idle state; disable looping.
+  loopPlayback: false,
   playbackSnapshot: {
     transport_generation: 0,
     song_id: null,
