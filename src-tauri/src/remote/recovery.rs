@@ -125,7 +125,6 @@ pub fn run_recovery(
 /// Operations whose `next_attempt_at_ms` is in the future are skipped (rate
 /// limiting). Operations that are not `Publish` kind are skipped (PR#5 handles
 /// other kinds).
-#[allow(dead_code)]
 pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
     use crate::remote::control_db::{list_operations_in_states, OperationKind};
     use crate::remote::executor::{
