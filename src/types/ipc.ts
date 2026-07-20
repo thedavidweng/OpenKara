@@ -258,9 +258,28 @@ export interface AppSettings {
 export interface ModelStatusSnapshot {
   variant: string;
   downloaded: boolean;
-  /** Managed file exists but SHA-256 does not match the pinned release. */
-  legacy_install_present: boolean;
+  /** Release tag recorded in the verification manifest, if a verified
+   * model is installed. `null` when no manifest exists or the manifest
+   * predates the release-tag field. */
+  installed_tag: string | null;
   file_size: number | null;
+}
+
+/** Result of comparing the installed model against the upstream latest
+ * release. The frontend uses this to show an update prompt and trigger
+ * a download-and-replace flow. */
+export interface ModelUpdateInfo {
+  variant: string;
+  /** Release tag of the currently installed model, or `null` if no
+   * verified model is installed or the manifest predates the tag field. */
+  installed_tag: string | null;
+  /** Release tag of the newest upstream release for this variant. */
+  latest_tag: string;
+  /** Disk size of the latest release asset in bytes. */
+  latest_size: number;
+  /** `true` when the installed checksum differs from the upstream latest
+   * checksum (or no verified model is installed). */
+  update_available: boolean;
 }
 
 export type WindowShellChromeVariant = "desktop" | "mac";
@@ -538,7 +557,6 @@ export interface BatchSeparationProgress {
 export type ModelBootstrapState =
   | "pending"
   | "downloading"
-  | "outdated"
   | "ready"
   | "failed";
 

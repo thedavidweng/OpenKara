@@ -45,16 +45,25 @@ fn resolve_existing_model_path_prefers_managed_install_over_dev_fallback() {
     let managed_bytes = b"managed-model";
     let dev_bytes = b"dev-model";
 
-    write_file(&managed_path, managed_bytes);
-    write_file(&dev_path, dev_bytes);
-
-    let resolved = bootstrap::resolve_existing_model_path(
+    // Both files need a verification manifest to be considered installed.
+    bootstrap::install_verified_model_bytes(
         &managed_path,
-        &dev_path,
+        managed_bytes,
         &sha256_hex(managed_bytes),
+        Some("model-v2.1.0"),
     )
-    .expect("resolution should succeed")
-    .expect("managed install should be selected");
+    .expect("managed model should install");
+    bootstrap::install_verified_model_bytes(
+        &dev_path,
+        dev_bytes,
+        &sha256_hex(dev_bytes),
+        Some("model-v2.1.0"),
+    )
+    .expect("dev model should install");
+
+    let resolved = bootstrap::resolve_existing_model_path(&managed_path, &dev_path)
+        .expect("resolution should succeed")
+        .expect("managed install should be selected");
 
     assert_eq!(resolved.path, managed_path);
     assert_eq!(resolved.source, ModelSource::ManagedInstall);
@@ -69,15 +78,36 @@ fn resolve_existing_model_path_falls_back_to_verified_dev_model() {
     let dev_path = temp_dir.join("dev").join("htdemucs.onnx");
     let dev_bytes = b"dev-model";
 
-    write_file(&dev_path, dev_bytes);
+    bootstrap::install_verified_model_bytes(
+        &dev_path,
+        dev_bytes,
+        &sha256_hex(dev_bytes),
+        Some("model-v2.1.0"),
+    )
+    .expect("dev model should install");
 
-    let resolved =
-        bootstrap::resolve_existing_model_path(&managed_path, &dev_path, &sha256_hex(dev_bytes))
-            .expect("resolution should succeed")
-            .expect("development fallback should be selected");
+    let resolved = bootstrap::resolve_existing_model_path(&managed_path, &dev_path)
+        .expect("resolution should succeed")
+        .expect("development fallback should be selected");
 
     assert_eq!(resolved.path, dev_path);
     assert_eq!(resolved.source, ModelSource::DevelopmentFallback);
+
+    remove_dir_if_exists(&temp_dir);
+}
+
+#[test]
+fn resolve_existing_model_path_treats_unmanifested_file_as_absent() {
+    let temp_dir = unique_temp_dir();
+    let managed_path = temp_dir.join("managed").join("htdemucs.onnx");
+    let dev_path = temp_dir.join("dev").join("htdemucs.onnx");
+
+    // A file without a verification manifest is not trusted.
+    write_file(&managed_path, b"orphan-model");
+
+    let resolved = bootstrap::resolve_existing_model_path(&managed_path, &dev_path)
+        .expect("resolution should succeed");
+    assert!(resolved.is_none(), "unmanifested file should be absent");
 
     remove_dir_if_exists(&temp_dir);
 }
@@ -91,8 +121,13 @@ fn install_verified_model_bytes_writes_model_to_nested_runtime_directory() {
         .join("htdemucs.onnx");
     let payload = b"fake-model";
 
-    bootstrap::install_verified_model_bytes(&destination, payload, &sha256_hex(payload))
-        .expect("verified payload should install");
+    bootstrap::install_verified_model_bytes(
+        &destination,
+        payload,
+        &sha256_hex(payload),
+        Some("model-v2.1.0"),
+    )
+    .expect("verified payload should install");
 
     assert_eq!(
         fs::read(&destination).expect("installed model should be readable"),
@@ -116,8 +151,9 @@ fn install_verified_model_bytes_rejects_checksum_mismatch_without_creating_desti
         .join("models")
         .join("htdemucs.onnx");
 
-    let error = bootstrap::install_verified_model_bytes(&destination, b"fake-model", "not-a-sha")
-        .expect_err("checksum mismatch should fail");
+    let error =
+        bootstrap::install_verified_model_bytes(&destination, b"fake-model", "not-a-sha", None)
+            .expect_err("checksum mismatch should fail");
 
     assert!(error.to_string().contains("checksum mismatch"));
     assert!(!destination.exists());
@@ -126,31 +162,19 @@ fn install_verified_model_bytes_rejects_checksum_mismatch_without_creating_desti
 }
 
 #[test]
-fn htdemucs_descriptor_points_at_v2_release_asset() {
+fn htdemucs_descriptor_uses_correct_filename_and_variant_key() {
     let descriptor = bootstrap::descriptor_for(ModelVariant::Htdemucs);
 
-    assert_eq!(
-        descriptor.download_url,
-        "https://github.com/thedavidweng/openkara-models/releases/download/model-v2.0.1/htdemucs.onnx"
-    );
-    assert_eq!(
-        descriptor.sha256,
-        "8fa3dab679c59aeb049dd229f57a212c9339b3fc17ebf50541daad9e799364a1"
-    );
+    assert_eq!(descriptor.filename, "htdemucs.onnx");
+    assert_eq!(descriptor.variant_key, "htdemucs");
 }
 
 #[test]
-fn htdemucs_ft_descriptor_points_at_v2_release_asset() {
+fn htdemucs_ft_descriptor_uses_correct_filename_and_variant_key() {
     let descriptor = bootstrap::descriptor_for(ModelVariant::HtdemucsFt);
 
-    assert_eq!(
-        descriptor.download_url,
-        "https://github.com/thedavidweng/openkara-models/releases/download/model-ft-v2.0.1/htdemucs_ft.onnx"
-    );
-    assert_eq!(
-        descriptor.sha256,
-        "0f2efbd7044182c10a6e8169b670392a3a91f904635e29329d6a3667375f5c94"
-    );
+    assert_eq!(descriptor.filename, "htdemucs_ft.onnx");
+    assert_eq!(descriptor.variant_key, "htdemucs_ft");
 }
 
 #[test]
@@ -190,15 +214,17 @@ fn startup_bootstrap_keeps_verified_managed_model_ready_without_spawning_worker(
     let development_path = temp_dir.join("dev").join("htdemucs.onnx");
     let managed_bytes = b"managed-model";
 
-    write_file(&managed_path, managed_bytes);
-
-    let startup = derive_startup_model_bootstrap(
-        &temp_dir,
-        &development_path,
-        ModelVariant::Htdemucs,
+    bootstrap::install_verified_model_bytes(
+        &managed_path,
+        managed_bytes,
         &sha256_hex(managed_bytes),
+        Some("model-v2.1.0"),
     )
-    .expect("startup bootstrap should resolve verified managed model");
+    .expect("verified model should install with manifest");
+
+    let startup =
+        derive_startup_model_bootstrap(&temp_dir, &development_path, ModelVariant::Htdemucs)
+            .expect("startup bootstrap should resolve verified managed model");
 
     assert_eq!(startup.model_path, managed_path);
     assert_eq!(
@@ -228,16 +254,13 @@ fn startup_bootstrap_uses_existing_verified_manifest_for_managed_model() {
         &managed_path,
         managed_bytes,
         &sha256_hex(managed_bytes),
+        Some("model-v2.1.0"),
     )
     .expect("verified model should install with manifest");
 
-    let startup = derive_startup_model_bootstrap(
-        &temp_dir,
-        &development_path,
-        ModelVariant::Htdemucs,
-        &sha256_hex(managed_bytes),
-    )
-    .expect("startup bootstrap should trust the matching manifest");
+    let startup =
+        derive_startup_model_bootstrap(&temp_dir, &development_path, ModelVariant::Htdemucs)
+            .expect("startup bootstrap should trust the matching manifest");
 
     assert_eq!(startup.model_path, managed_path);
     assert_eq!(
@@ -249,45 +272,26 @@ fn startup_bootstrap_uses_existing_verified_manifest_for_managed_model() {
 }
 
 #[test]
-fn startup_bootstrap_detects_legacy_managed_model_without_spawning_worker() {
+fn startup_bootstrap_treats_unmanifested_file_as_absent_and_spawns_worker() {
     let temp_dir = unique_temp_dir();
     let managed_path = bootstrap::managed_model_path(&temp_dir);
     let development_path = temp_dir.join("dev").join("htdemucs.onnx");
-    let wrong_bytes = b"legacy-model-bytes";
 
-    write_file(&managed_path, wrong_bytes);
+    // A file without a manifest is not trusted — startup should treat it
+    // as absent and schedule a download.
+    write_file(&managed_path, b"orphan-model");
 
-    let startup = derive_startup_model_bootstrap(
-        &temp_dir,
-        &development_path,
-        ModelVariant::Htdemucs,
-        &sha256_hex(b"pinned-expected-bytes"),
-    )
-    .expect("startup bootstrap should classify legacy managed install");
+    let startup =
+        derive_startup_model_bootstrap(&temp_dir, &development_path, ModelVariant::Htdemucs)
+            .expect("startup bootstrap should classify unmanifested file");
 
     assert_eq!(
         startup.status.state,
-        commands::bootstrap::ModelBootstrapState::Outdated
+        commands::bootstrap::ModelBootstrapState::Pending
     );
-    assert!(!startup.should_spawn_bootstrap_worker);
-    assert!(
-        managed_path.exists(),
-        "legacy file should remain for user deletion"
-    );
+    assert!(startup.should_spawn_bootstrap_worker);
 
     remove_dir_if_exists(&temp_dir);
-}
-
-#[test]
-fn ensure_model_ready_rejects_outdated_install() {
-    let statuses = Arc::new(Mutex::new(commands::bootstrap::outdated_status(
-        "/tmp/openkara-model.onnx",
-    )));
-
-    let error = commands::bootstrap::ensure_model_ready(&statuses)
-        .expect_err("outdated install should block separation");
-
-    assert_eq!(error.code, ErrorCode::ModelUnavailable);
 }
 
 #[test]
@@ -296,8 +300,13 @@ fn delete_model_file_removes_verification_manifest() {
     let managed_path = bootstrap::managed_model_path(&temp_dir);
     let payload = b"fake-model";
 
-    bootstrap::install_verified_model_bytes(&managed_path, payload, &sha256_hex(payload))
-        .expect("verified model should install with manifest");
+    bootstrap::install_verified_model_bytes(
+        &managed_path,
+        payload,
+        &sha256_hex(payload),
+        Some("model-v2.1.0"),
+    )
+    .expect("verified model should install with manifest");
     let manifest_path = managed_path.with_file_name("htdemucs.onnx.verified.json");
     assert!(manifest_path.exists());
 
@@ -318,15 +327,17 @@ fn startup_bootstrap_uses_active_variant_descriptor_for_managed_model_resolution
     let development_path = temp_dir.join("dev").join("htdemucs_ft.onnx");
     let managed_bytes = b"managed-model-ft";
 
-    write_file(&managed_path, managed_bytes);
-
-    let startup = derive_startup_model_bootstrap(
-        &temp_dir,
-        &development_path,
-        ModelVariant::HtdemucsFt,
+    bootstrap::install_verified_model_bytes(
+        &managed_path,
+        managed_bytes,
         &sha256_hex(managed_bytes),
+        Some("model-ft-v2.1.0"),
     )
-    .expect("startup bootstrap should resolve managed model for active variant");
+    .expect("verified ft model should install with manifest");
+
+    let startup =
+        derive_startup_model_bootstrap(&temp_dir, &development_path, ModelVariant::HtdemucsFt)
+            .expect("startup bootstrap should resolve managed model for active variant");
 
     assert_eq!(startup.managed_model_path, managed_path);
     assert_eq!(startup.model_path, managed_path);
@@ -338,6 +349,39 @@ fn startup_bootstrap_uses_active_variant_descriptor_for_managed_model_resolution
         startup.status.model_path,
         managed_path.display().to_string()
     );
+
+    remove_dir_if_exists(&temp_dir);
+}
+
+#[test]
+fn installed_release_tag_returns_tag_from_manifest() {
+    let temp_dir = unique_temp_dir();
+    let model_path = temp_dir.join("htdemucs.onnx");
+    let payload = b"fake-model";
+
+    bootstrap::install_verified_model_bytes(
+        &model_path,
+        payload,
+        &sha256_hex(payload),
+        Some("model-v2.1.0"),
+    )
+    .expect("verified model should install");
+
+    let tag = bootstrap::installed_release_tag(&model_path).expect("tag lookup should succeed");
+    assert_eq!(tag.as_deref(), Some("model-v2.1.0"));
+
+    remove_dir_if_exists(&temp_dir);
+}
+
+#[test]
+fn installed_release_tag_returns_none_without_manifest() {
+    let temp_dir = unique_temp_dir();
+    let model_path = temp_dir.join("htdemucs.onnx");
+
+    write_file(&model_path, b"orphan-model");
+
+    let tag = bootstrap::installed_release_tag(&model_path).expect("tag lookup should succeed");
+    assert!(tag.is_none());
 
     remove_dir_if_exists(&temp_dir);
 }

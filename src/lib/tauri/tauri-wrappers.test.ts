@@ -545,12 +545,28 @@ describe("settings", () => {
     const result = {
       variant: "htdemucs",
       downloaded: true,
-      legacy_install_present: false,
+      installed_tag: "model-v2.1.0",
       file_size: 1000,
     };
     mockInvoke.mockResolvedValueOnce(result);
     const returned = await settings.getModelStatus("htdemucs");
     expect(mockInvoke).toHaveBeenCalledWith("get_model_status", {
+      variant: "htdemucs",
+    });
+    expect(returned).toBe(result);
+  });
+
+  test("checkModelUpdate invokes check_model_update", async () => {
+    const result = {
+      variant: "htdemucs",
+      installed_tag: "model-v2.0.1",
+      latest_tag: "model-v2.1.0",
+      latest_size: 354970480,
+      update_available: true,
+    };
+    mockInvoke.mockResolvedValueOnce(result);
+    const returned = await settings.checkModelUpdate("htdemucs");
+    expect(mockInvoke).toHaveBeenCalledWith("check_model_update", {
       variant: "htdemucs",
     });
     expect(returned).toBe(result);

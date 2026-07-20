@@ -10,6 +10,7 @@ import type {
   IntegrityReport,
   LibraryRegistrySnapshot,
   LibrarySortMode,
+  ModelUpdateInfo,
   ModelVariant,
   RegisteredLibrary,
   RuntimeBootstrapState,
@@ -28,7 +29,7 @@ export type DangerDialog =
 
 export interface ModelStatusView {
   downloaded: boolean;
-  legacy_install_present: boolean;
+  installed_tag: string | null;
   file_size: number | null;
 }
 
@@ -48,6 +49,11 @@ export interface SettingsOverlayState {
   modelVariant: ModelVariant;
   modelStatuses: Partial<Record<ModelVariant, ModelStatusView>>;
   downloadingModel: ModelVariant | null;
+  /** Update info per variant, populated by `checkModelUpdate`. `null` means
+   * no check has been run yet for this variant in the current settings session. */
+  modelUpdateInfo: Partial<Record<ModelVariant, ModelUpdateInfo>>;
+  /** Variant currently being checked for updates, or `null` when idle. */
+  checkingModelUpdate: ModelVariant | null;
   runtimeStatus: RuntimeStatusView | null;
   language: string;
   hideBatchSeparate: boolean;
@@ -75,6 +81,8 @@ export interface SettingsOverlayMeta {
   downgradingInProgress: boolean;
   integrityCheckInProgress: boolean;
   integrityCleanupInProgress: boolean;
+  /** Variant currently being upgraded (delete + download), or `null` when idle. */
+  upgradingModel: ModelVariant | null;
 }
 
 export interface SettingsOverlaySnapshot {
@@ -98,6 +106,8 @@ export interface SettingsOverlayActions {
   selectModelVariant: (variant: ModelVariant) => Promise<void>;
   confirmFtModel: () => Promise<void>;
   deleteModel: (variant: ModelVariant) => Promise<void>;
+  checkModelUpdate: (variant: ModelVariant) => Promise<void>;
+  upgradeModel: (variant: ModelVariant) => Promise<void>;
   toggleHideBatchSeparate: (value: boolean) => Promise<void>;
   toggleCoverArtBackdrop: (value: boolean) => Promise<void>;
   setEqEnabled: (enabled: boolean) => Promise<void>;
@@ -147,6 +157,7 @@ export interface SettingsOverlayControllerDependencies {
     | "getRuntimeBootstrapStatus"
     | "getSettings"
     | "getModelStatus"
+    | "checkModelUpdate"
     | "openLibrary"
     | "registerLocalLibrary"
     | "renameLibrary"

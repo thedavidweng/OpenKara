@@ -1,3 +1,4 @@
+import { Loader2, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsSectionCard } from "./SettingsSectionCard";
@@ -39,6 +40,84 @@ function ModelVariantOption({
   );
 }
 
+function ModelUpdateRow({ variant }: { variant: ModelVariant }) {
+  const { t } = useTranslation();
+  const { state, meta, actions } = useSettingsOverlay();
+
+  const info = state.modelUpdateInfo[variant];
+  const isChecking = state.checkingModelUpdate === variant;
+  const isUpgrading = meta.upgradingModel === variant;
+  const isDownloading = state.downloadingModel === variant;
+  const isBusy = isChecking || isUpgrading || isDownloading;
+  const status = state.modelStatuses[variant];
+
+  const installedLabel = status?.installed_tag
+    ? status.installed_tag
+    : t("settings.modelVariant.notInstalled");
+
+  let updateMessage: ReactNode = null;
+  if (info) {
+    if (info.update_available) {
+      updateMessage = (
+        <span className="text-[var(--color-accent)]">
+          {t("settings.modelVariant.updateAvailable", {
+            latest: info.latest_tag,
+            size: formatBytes(info.latest_size),
+          })}
+        </span>
+      );
+    } else {
+      updateMessage = (
+        <span className="text-[var(--color-text-dim)]">
+          {t("settings.modelVariant.upToDate", { tag: info.latest_tag })}
+        </span>
+      );
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-2 py-1.5">
+      <div className="flex flex-col gap-0.5 text-[11px]">
+        <span className="text-[var(--color-text-dim)]">
+          {t("settings.modelVariant.installedVersion", { tag: installedLabel })}
+        </span>
+        {updateMessage}
+      </div>
+      <div className="flex items-center gap-2">
+        {info?.update_available && !isUpgrading && !isDownloading && (
+          <button
+            type="button"
+            disabled={isBusy}
+            onClick={() => void actions.upgradeModel(variant)}
+            className="rounded-md bg-[var(--color-control-primary)] px-2.5 py-1 text-[11px] text-[var(--color-control-primary-foreground)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-control-primary)_88%,white)] disabled:opacity-50"
+          >
+            {t("settings.modelVariant.downloadAndReplace")}
+          </button>
+        )}
+        {(isUpgrading || isDownloading) && (
+          <span className="flex items-center gap-1 text-[11px] text-[var(--color-text-dim)]">
+            <Loader2 size={11} className="animate-spin" />
+            {t("settings.modelVariant.upgrading")}
+          </span>
+        )}
+        <button
+          type="button"
+          disabled={isBusy}
+          onClick={() => void actions.checkModelUpdate(variant)}
+          className="flex items-center gap-1 rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-2.5 py-1 text-[11px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] disabled:opacity-50"
+        >
+          {isChecking ? (
+            <Loader2 size={11} className="animate-spin" />
+          ) : (
+            <RefreshCw size={11} />
+          )}
+          {t("settings.modelVariant.checkForUpdate")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsModelVariantSection() {
   const { t } = useTranslation();
   const { state, meta, actions } = useSettingsOverlay();
@@ -55,12 +134,6 @@ export function SettingsModelVariantSection() {
     }
 
     const status = state.modelStatuses[variant];
-
-    if (status?.legacy_install_present && !status.downloaded) {
-      return `${t("settings.modelVariant.legacyOnDisk")}${
-        status.file_size ? ` (${formatBytes(status.file_size)})` : ""
-      }`;
-    }
 
     if (status?.downloaded) {
       return `${t("settings.modelVariant.downloaded")}${
@@ -132,6 +205,10 @@ export function SettingsModelVariantSection() {
           status={modelStatusLabel("htdemucs_ft")}
           onClick={() => void actions.selectModelVariant("htdemucs_ft")}
         />
+      </div>
+      <div className="mt-3 border-t border-[var(--color-border-light)] pt-2">
+        <ModelUpdateRow variant="htdemucs" />
+        <ModelUpdateRow variant="htdemucs_ft" />
       </div>
     </SettingsSectionCard>
   );

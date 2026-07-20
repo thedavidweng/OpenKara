@@ -64,27 +64,17 @@ impl AppShell {
             crate::separator::bootstrap::managed_model_path_for(&self.app_data_dir, descriptor);
         let dev_path =
             crate::separator::model::default_model_path_for_filename(descriptor.filename);
-        match crate::separator::bootstrap::resolve_model_installation(
-            &managed,
-            &dev_path,
-            descriptor.sha256,
-        )
-        .map_err(|error| crate::commands::error::internal_error(error.to_string()))?
+        match crate::separator::bootstrap::resolve_model_installation(&managed, &dev_path)
+            .map_err(|error| crate::commands::error::internal_error(error.to_string()))?
         {
             crate::separator::bootstrap::ModelInstallationResolution::Ready(resolved) => {
                 Ok(resolved.path)
             }
-            crate::separator::bootstrap::ModelInstallationResolution::LegacyManaged(_) => Err(
-                crate::commands::error::model_bootstrap_error(
-                    "installed model does not match the pinned release; open Settings to delete it and download the update"
-                        .to_string(),
-                ),
-            ),
-            crate::separator::bootstrap::ModelInstallationResolution::Absent => Err(
-                crate::commands::error::model_bootstrap_error(
+            crate::separator::bootstrap::ModelInstallationResolution::Absent => {
+                Err(crate::commands::error::model_bootstrap_error(
                     "model is not installed or is still downloading".to_string(),
-                ),
-            ),
+                ))
+            }
         }
     }
 

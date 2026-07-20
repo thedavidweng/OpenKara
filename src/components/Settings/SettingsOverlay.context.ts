@@ -61,6 +61,8 @@ export function createSettingsOverlayTestContextValue(
       selectModelVariant: async () => {},
       confirmFtModel: async () => {},
       deleteModel: async () => {},
+      checkModelUpdate: async () => {},
+      upgradeModel: async () => {},
       toggleHideBatchSeparate: async () => {},
       toggleCoverArtBackdrop: async () => {},
       setEqEnabled: async () => {},

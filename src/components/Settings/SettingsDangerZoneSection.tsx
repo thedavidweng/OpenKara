@@ -47,8 +47,7 @@ function DeleteModelAction({ variant }: { variant: ModelVariant }) {
   const { state, actions } = useSettingsOverlay();
   const status = state.modelStatuses[variant];
 
-  const hasRemovableFile =
-    status?.downloaded === true || status?.legacy_install_present === true;
+  const hasRemovableFile = status?.downloaded === true;
   if (!hasRemovableFile) {
     return null;
   }

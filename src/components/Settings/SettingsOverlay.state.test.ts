@@ -70,6 +70,7 @@ function createDependencies(): SettingsOverlayControllerDependencies {
       getRuntimeBootstrapStatus: vi.fn(),
       getSettings: vi.fn(),
       getModelStatus: vi.fn(),
+      checkModelUpdate: vi.fn(),
       openLibrary: vi.fn(),
       registerLocalLibrary: vi.fn(),
       restartApp: vi.fn(),
@@ -205,6 +206,8 @@ describe("createInitialSettingsOverlaySnapshot", () => {
         modelVariant: "htdemucs_ft",
         modelStatuses: {},
         downloadingModel: null,
+        modelUpdateInfo: {},
+        checkingModelUpdate: null,
         runtimeStatus: null,
         language: "zh-CN",
         hideBatchSeparate: false,
@@ -231,6 +234,7 @@ describe("createInitialSettingsOverlaySnapshot", () => {
         downgradingInProgress: false,
         integrityCheckInProgress: false,
         integrityCleanupInProgress: false,
+        upgradingModel: null,
       },
     });
   });
@@ -323,13 +327,13 @@ describe("createSettingsOverlayActions - initialize", () => {
       .mockResolvedValueOnce({
         variant: "htdemucs",
         downloaded: true,
-        legacy_install_present: false,
+        installed_tag: "model-v2.1.0",
         file_size: 100,
       })
       .mockResolvedValueOnce({
         variant: "htdemucs_ft",
         downloaded: false,
-        legacy_install_present: false,
+        installed_tag: "model-v2.1.0",
         file_size: null,
       });
     vi.mocked(
@@ -397,13 +401,13 @@ describe("createSettingsOverlayActions - initialize", () => {
       .mockResolvedValueOnce({
         variant: "htdemucs",
         downloaded: true,
-        legacy_install_present: false,
+        installed_tag: "model-v2.1.0",
         file_size: 100,
       })
       .mockResolvedValueOnce({
         variant: "htdemucs_ft",
         downloaded: true,
-        legacy_install_present: false,
+        installed_tag: "model-v2.1.0",
         file_size: 200,
       });
     vi.mocked(
@@ -441,13 +445,13 @@ describe("createSettingsOverlayActions - initialize", () => {
       .mockResolvedValueOnce({
         variant: "htdemucs",
         downloaded: false,
-        legacy_install_present: false,
+        installed_tag: "model-v2.1.0",
         file_size: null,
       })
       .mockResolvedValueOnce({
         variant: "htdemucs_ft",
         downloaded: false,
-        legacy_install_present: false,
+        installed_tag: "model-v2.1.0",
         file_size: null,
       });
     vi.mocked(
@@ -485,13 +489,13 @@ describe("createSettingsOverlayActions - initialize", () => {
       .mockResolvedValueOnce({
         variant: "htdemucs",
         downloaded: false,
-        legacy_install_present: false,
+        installed_tag: "model-v2.1.0",
         file_size: null,
       })
       .mockResolvedValueOnce({
         variant: "htdemucs_ft",
         downloaded: false,
-        legacy_install_present: false,
+        installed_tag: "model-v2.1.0",
         file_size: null,
       });
     vi.mocked(

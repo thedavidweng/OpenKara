@@ -147,12 +147,12 @@ describe("SettingsOverlay sections", () => {
         modelStatuses: {
           htdemucs: {
             downloaded: true,
-            legacy_install_present: false,
+            installed_tag: "model-v2.1.0",
             file_size: 1024,
           },
           htdemucs_ft: {
             downloaded: false,
-            legacy_install_present: false,
+            installed_tag: "model-v2.1.0",
             file_size: null,
           },
         },
@@ -170,7 +170,7 @@ describe("SettingsOverlay sections", () => {
     expect(markup).toContain("settings.modelVariant.downloading");
   });
 
-  test("model variant section shows legacy-on-disk label", () => {
+  test("model variant section shows installed tag and check-for-update button", () => {
     const value = createSettingsOverlayTestContextValue({
       state: {
         runtimeStatus: {
@@ -180,13 +180,13 @@ describe("SettingsOverlay sections", () => {
         },
         modelStatuses: {
           htdemucs: {
-            downloaded: false,
-            legacy_install_present: true,
+            downloaded: true,
+            installed_tag: "model-v2.0.1",
             file_size: 2048,
           },
           htdemucs_ft: {
             downloaded: false,
-            legacy_install_present: false,
+            installed_tag: null,
             file_size: null,
           },
         },
@@ -198,22 +198,105 @@ describe("SettingsOverlay sections", () => {
       value,
     );
 
-    expect(markup).toContain("settings.modelVariant.legacyOnDisk");
+    expect(markup).toContain("settings.modelVariant.installedVersion");
+    expect(markup).toContain("settings.modelVariant.checkForUpdate");
   });
 
-  test("danger zone shows model delete when legacy file exists without verified download", () => {
+  test("model variant section shows update available and download-and-replace when update exists", () => {
+    const value = createSettingsOverlayTestContextValue({
+      state: {
+        runtimeStatus: {
+          state: "ready",
+          version: "1.26.0",
+          runtime_path: "/test/runtime",
+        },
+        modelStatuses: {
+          htdemucs: {
+            downloaded: true,
+            installed_tag: "model-v2.0.1",
+            file_size: 2048,
+          },
+          htdemucs_ft: {
+            downloaded: false,
+            installed_tag: null,
+            file_size: null,
+          },
+        },
+        modelUpdateInfo: {
+          htdemucs: {
+            variant: "htdemucs",
+            installed_tag: "model-v2.0.1",
+            latest_tag: "model-v2.1.0",
+            latest_size: 354970480,
+            update_available: true,
+          },
+        },
+      },
+    });
+
+    const markup = renderWithSettingsContext(
+      <SettingsModelVariantSection />,
+      value,
+    );
+
+    expect(markup).toContain("settings.modelVariant.updateAvailable");
+    expect(markup).toContain("settings.modelVariant.downloadAndReplace");
+  });
+
+  test("model variant section shows up-to-date when no update is available", () => {
+    const value = createSettingsOverlayTestContextValue({
+      state: {
+        runtimeStatus: {
+          state: "ready",
+          version: "1.26.0",
+          runtime_path: "/test/runtime",
+        },
+        modelStatuses: {
+          htdemucs: {
+            downloaded: true,
+            installed_tag: "model-v2.1.0",
+            file_size: 2048,
+          },
+          htdemucs_ft: {
+            downloaded: false,
+            installed_tag: null,
+            file_size: null,
+          },
+        },
+        modelUpdateInfo: {
+          htdemucs: {
+            variant: "htdemucs",
+            installed_tag: "model-v2.1.0",
+            latest_tag: "model-v2.1.0",
+            latest_size: 354970480,
+            update_available: false,
+          },
+        },
+      },
+    });
+
+    const markup = renderWithSettingsContext(
+      <SettingsModelVariantSection />,
+      value,
+    );
+
+    expect(markup).toContain("settings.modelVariant.upToDate");
+    expect(markup).not.toContain("settings.modelVariant.downloadAndReplace");
+  });
+
+  test("danger zone shows model delete when a verified model is downloaded", () => {
     const value = createSettingsOverlayTestContextValue({
       state: {
         modelVariant: "htdemucs",
         modelStatuses: {
           htdemucs: {
-            downloaded: false,
-            legacy_install_present: true,
+            downloaded: true,
+            installed_tag: "model-v2.0.1",
             file_size: 2048,
           },
           htdemucs_ft: {
             downloaded: false,
-            legacy_install_present: false,
+            installed_tag: null,
             file_size: null,
           },
         },
@@ -234,12 +317,12 @@ describe("SettingsOverlay sections", () => {
         modelStatuses: {
           htdemucs: {
             downloaded: false,
-            legacy_install_present: false,
+            installed_tag: "model-v2.1.0",
             file_size: null,
           },
           htdemucs_ft: {
             downloaded: false,
-            legacy_install_present: false,
+            installed_tag: "model-v2.1.0",
             file_size: null,
           },
         },

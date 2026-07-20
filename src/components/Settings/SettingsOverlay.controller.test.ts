@@ -42,6 +42,7 @@ function createControllerHarness() {
       getRuntimeBootstrapStatus: vi.fn(),
       getSettings: vi.fn(),
       getModelStatus: vi.fn(),
+      checkModelUpdate: vi.fn(),
       openLibrary: vi.fn(),
       registerLocalLibrary: vi.fn(),
       restartApp: vi.fn(),
@@ -172,13 +173,13 @@ describe("SettingsOverlay controller", () => {
       .mockResolvedValueOnce({
         variant: "htdemucs",
         downloaded: true,
-        legacy_install_present: false,
+        installed_tag: "model-v2.1.0",
         file_size: 123,
       })
       .mockResolvedValueOnce({
         variant: "htdemucs_ft",
         downloaded: false,
-        legacy_install_present: false,
+        installed_tag: "model-v2.1.0",
         file_size: null,
       });
 
@@ -247,12 +248,12 @@ describe("SettingsOverlay controller", () => {
         modelStatuses: {
           htdemucs: {
             downloaded: true,
-            legacy_install_present: false,
+            installed_tag: "model-v2.1.0",
             file_size: 123,
           },
           htdemucs_ft: {
             downloaded: false,
-            legacy_install_present: false,
+            installed_tag: "model-v2.1.0",
             file_size: null,
           },
         },
@@ -332,13 +333,13 @@ describe("SettingsOverlay controller", () => {
       .mockResolvedValueOnce({
         variant: "htdemucs",
         downloaded: true,
-        legacy_install_present: false,
+        installed_tag: "model-v2.1.0",
         file_size: 1,
       })
       .mockResolvedValueOnce({
         variant: "htdemucs_ft",
         downloaded: false,
-        legacy_install_present: false,
+        installed_tag: "model-v2.1.0",
         file_size: null,
       });
 
@@ -418,13 +419,13 @@ describe("SettingsOverlay controller", () => {
       .mockResolvedValueOnce({
         variant: "htdemucs",
         downloaded: true,
-        legacy_install_present: false,
+        installed_tag: "model-v2.1.0",
         file_size: 1,
       })
       .mockResolvedValueOnce({
         variant: "htdemucs_ft",
         downloaded: false,
-        legacy_install_present: false,
+        installed_tag: "model-v2.1.0",
         file_size: null,
       });
 
@@ -543,12 +544,12 @@ describe("SettingsOverlay controller", () => {
         modelStatuses: {
           htdemucs: {
             downloaded: false,
-            legacy_install_present: false,
+            installed_tag: "model-v2.1.0",
             file_size: null,
           },
           htdemucs_ft: {
             downloaded: true,
-            legacy_install_present: false,
+            installed_tag: "model-v2.1.0",
             file_size: 10,
           },
         },
@@ -567,13 +568,13 @@ describe("SettingsOverlay controller", () => {
       .mockResolvedValueOnce({
         variant: "htdemucs",
         downloaded: true,
-        legacy_install_present: false,
+        installed_tag: "model-v2.1.0",
         file_size: 2048,
       })
       .mockResolvedValueOnce({
         variant: "htdemucs_ft",
         downloaded: true,
-        legacy_install_present: false,
+        installed_tag: "model-v2.1.0",
         file_size: 4096,
       });
     vi.mocked(harness.dependencies.api.setModelVariant).mockResolvedValue({
@@ -625,12 +626,12 @@ describe("SettingsOverlay controller", () => {
         modelStatuses: {
           htdemucs: {
             downloaded: true,
-            legacy_install_present: false,
+            installed_tag: "model-v2.1.0",
             file_size: 100,
           },
           htdemucs_ft: {
             downloaded: false,
-            legacy_install_present: false,
+            installed_tag: "model-v2.1.0",
             file_size: null,
           },
         },
@@ -645,13 +646,13 @@ describe("SettingsOverlay controller", () => {
       .mockResolvedValueOnce({
         variant: "htdemucs",
         downloaded: false,
-        legacy_install_present: false,
+        installed_tag: "model-v2.1.0",
         file_size: null,
       })
       .mockResolvedValueOnce({
         variant: "htdemucs_ft",
         downloaded: false,
-        legacy_install_present: false,
+        installed_tag: "model-v2.1.0",
         file_size: null,
       });
 
@@ -672,12 +673,12 @@ describe("SettingsOverlay controller", () => {
         modelStatuses: {
           htdemucs: {
             downloaded: false,
-            legacy_install_present: true,
+            installed_tag: "model-v2.0.1",
             file_size: 999,
           },
           htdemucs_ft: {
             downloaded: false,
-            legacy_install_present: false,
+            installed_tag: "model-v2.1.0",
             file_size: null,
           },
         },
@@ -692,13 +693,13 @@ describe("SettingsOverlay controller", () => {
       .mockResolvedValueOnce({
         variant: "htdemucs",
         downloaded: false,
-        legacy_install_present: false,
+        installed_tag: "model-v2.1.0",
         file_size: null,
       })
       .mockResolvedValueOnce({
         variant: "htdemucs_ft",
         downloaded: false,
-        legacy_install_present: false,
+        installed_tag: "model-v2.1.0",
         file_size: null,
       });
 

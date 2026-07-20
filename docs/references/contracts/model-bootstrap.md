@@ -1,6 +1,6 @@
 # 模型 Bootstrap 契约
 
-运行时模型解析、首次启动下载、状态查询和分离前置条件。
+运行时模型解析、首次启动下载、状态查询、更新检查和分离前置条件。
 
 ## 接口
 
@@ -11,11 +11,26 @@
    ONNX Runtime 动态库
 5. 分离会复用同一份动态库初始化，不再依赖 `ort`/pyke 自动下载预编译运行时
 6. `get_model_bootstrap_status() -> ModelBootstrapStatusSnapshot`
-7. `separate(song_id)` 在模型未 ready 时立即返回 `CommandError`
-8. 事件：
+7. `check_model_update(variant) -> ModelUpdateInfo`：查询上游 `latest.json`，
+   对比已安装 manifest 的 SHA-256 与最新 release 的 SHA-256，返回更新信息
+8. `separate(song_id)` 在模型未 ready 时立即返回 `CommandError`
+9. 事件：
    - `model-bootstrap-progress`
    - `model-bootstrap-ready`
    - `model-bootstrap-error`
+
+## 版本发现机制
+
+1. 模型版本不再硬编码在应用代码中。应用在下载时从上游 `latest.json` 解析最新 release：
+   `https://raw.githubusercontent.com/thedavidweng/openkara-models/main/latest.json`
+2. `latest.json` 由 `openkara-models` 仓库的 `publish-latest-manifest` CI job 在每次
+   release 后自动写入 `main` 分支，包含每个 variant 的 `tag`、`url`、`sha256`、`size`
+3. 选择稳定 manifest URL 而非 GitHub Releases API 的原因：
+   - Releases API 有 60 次/小时/IP 的未认证速率限制
+   - manifest 只需一次 HTTP GET + JSON 解析，无需遍历 release 列表或下载 sha256 sidecar
+   - `raw.githubusercontent.com` 通过 CDN 分发，无速率限制
+4. CI (`prepare-model` job) 和 `scripts/setup.sh` 同样从 `latest.json` 解析最新版本，
+   缓存 key 使用解析出的 SHA-256，上游升级时自动失效
 
 ## 开发仓库与运行时分发规则
 
@@ -31,10 +46,10 @@
    - `scripts/setup.sh`
    - `scripts/prepare-onnx-runtime.mjs`
    - `src-tauri/models/README.md`
-6. 当前 pinned 的 release 资源为：
-   - `htdemucs`: `model-v2.0.1/htdemucs.onnx`
-   - `htdemucs_ft`: `model-ft-v2.0.1/htdemucs_ft.onnx`
-7. `openkara-models v2.0.1` 资源会携带：
+6. 模型版本不固定：应用始终从 `latest.json` 解析最新 release。当前最新版本为：
+   - `htdemucs`: `model-v2.1.0`
+   - `htdemucs_ft`: `model-ft-v2.1.0`
+7. `openkara-models` 资源会携带：
    - `openkara.model_cache_key`
    - `openkara.optimized_by=onnxruntime`
      Rust 运行时必须把前者纳入 session cache key 失效条件，并对后者关闭重复图优化。
@@ -48,22 +63,52 @@
 ```json
 {
   "state": "downloading",
-  "modelPath": "/Users/example/Library/Application Support/com.openkara.desktop/models/htdemucs.onnx",
-  "downloadedBytes": 1048576,
-  "totalBytes": 52428800,
+  "model_path": "/Users/example/Library/Application Support/com.openkara.desktop/models/htdemucs.onnx",
+  "downloaded_bytes": 1048576,
+  "total_bytes": 52428800,
   "error": null
 }
 ```
 
 ### Shared type: `ModelBootstrapStatusSnapshot`
 
-| Field             | Type                                                              | Notes                                                                                                                         |
-| ----------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `state`           | `"pending" \| "downloading" \| "outdated" \| "ready" \| "failed"` | 状态字段固定为 snake_case enum；`outdated` 表示托管路径上存在文件但 SHA-256 与当前 pin 不一致（文件保留，供用户在设置中删除） |
-| `modelPath`       | `String`                                                          | 当前运行时实际模型路径或目标安装路径                                                                                          |
-| `downloadedBytes` | `Option<u64>`                                                     | `downloading` 时存在                                                                                                          |
-| `totalBytes`      | `Option<u64>`                                                     | 下载端若返回 `Content-Length` 则存在                                                                                          |
-| `error`           | `Option<CommandError>`                                            | `failed` 时存在                                                                                                               |
+| Field              | Type                                                | Notes                                                                                  |
+| ------------------ | --------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `state`            | `"pending" \| "downloading" \| "ready" \| "failed"` | 状态字段固定为 snake_case enum。`outdated` 已移除——启动时不再有固定 pin 可用于判定过期 |
+| `model_path`       | `String`                                            | 当前运行时实际模型路径或目标安装路径                                                   |
+| `downloaded_bytes` | `Option<u64>`                                       | `downloading` 时存在                                                                   |
+| `total_bytes`      | `Option<u64>`                                       | 下载端若返回 `Content-Length` 则存在                                                   |
+| `error`            | `Option<CommandError>`                              | `failed` 时存在                                                                        |
+
+### Command: `check_model_update`
+
+**Input**
+
+```json
+{ "variant": "htdemucs" }
+```
+
+**Output**
+
+```json
+{
+  "variant": "htdemucs",
+  "installed_tag": "model-v2.0.1",
+  "latest_tag": "model-v2.1.0",
+  "latest_size": 354970480,
+  "update_available": true
+}
+```
+
+### Shared type: `ModelUpdateInfo`
+
+| Field              | Type             | Notes                                                                                |
+| ------------------ | ---------------- | ------------------------------------------------------------------------------------ |
+| `variant`          | `String`         | 请求的 variant 名称                                                                  |
+| `installed_tag`    | `Option<String>` | 已安装 manifest 中记录的 release tag；无 manifest 或 manifest 早于 tag 字段时为 null |
+| `latest_tag`       | `String`         | 上游 `latest.json` 中该 variant 的最新 release tag                                   |
+| `latest_size`      | `u64`            | 最新 release asset 的磁盘大小（字节）                                                |
+| `update_available` | `bool`           | 已安装 SHA-256 与最新 SHA-256 不一致，或无已安装模型时为 `true`                      |
 
 ### Events
 
@@ -71,8 +116,7 @@
 
 payload 为完整的 `ModelBootstrapStatusSnapshot`，其中：
 
-- `state = "downloading"`：`downloadedBytes` 在事件流中应单调不减（实现侧可节流）；`model_path` 固定为运行时安装路径
-- `state = "outdated"`：校验失败但文件未自动删除；`downloadedBytes` / `totalBytes` 为 `null`
+- `state = "downloading"`：`downloaded_bytes` 在事件流中应单调不减（实现侧可节流）；`model_path` 固定为运行时安装路径
 - `state = "pending"`：等待后台 worker 或用户操作
 
 #### `model-bootstrap-ready`
@@ -80,7 +124,7 @@ payload 为完整的 `ModelBootstrapStatusSnapshot`，其中：
 payload 为完整的 `ModelBootstrapStatusSnapshot`，其中：
 
 - `state = "ready"`
-- `downloadedBytes = null`
+- `downloaded_bytes = null`
 - `error = null`
 
 #### `model-bootstrap-error`
@@ -94,15 +138,22 @@ payload 为完整的 `ModelBootstrapStatusSnapshot`，其中：
 ## Runtime path resolution semantics
 
 1. 优先使用活动模型 variant 对应的 `<app_data_dir>/models/<descriptor.filename>`
-2. 若运行时安装目录已有模型且 SHA-256 校验通过，直接进入 `ready`
-3. 运行时安装目录的模型在完整 SHA-256 校验通过后，会在同目录写入
-   `<filename>.verified.json`。后续启动时若该 manifest 的文件名、pinned
-   SHA-256、文件大小和修改时间都匹配当前模型文件，则直接进入 `ready`，不再读取整个
-   ONNX 文件；manifest 缺失或不匹配时必须重新执行完整 SHA-256 校验，并在通过后重写
-   manifest。
-4. 若运行时安装目录模型存在但校验失败（含旧版本 pin 不匹配），进入 `outdated`，**保留**托管文件以便用户在设置的危险区删除；不会静默删除后再下载
-5. 若运行时安装目录缺失，但开发目录 `src-tauri/models/<descriptor.filename>` 存在且校验通过，则直接进入 `ready`。开发目录同样允许写入本地 manifest；该目录仍只是开发/测试缓存，不是生产运行时依赖。
-6. 只有当两处都没有可用模型时，才会在后台从固定 URL 下载到运行时安装目录
+2. 若运行时安装目录已有模型且验证 manifest 的元数据（文件名、大小、修改时间）匹配，
+   直接进入 `ready`，不再读取整个 ONNX 文件
+3. 运行时安装目录的模型在下载校验通过后，会在同目录写入
+   `<filename>.verified.json`，包含 `sha256`、`file_size`、`modified_unix_nanos`
+   和 `release_tag`。后续启动时若 manifest 元数据匹配当前模型文件，则直接进入
+   `ready`；manifest 缺失时视为未安装并重新下载；元数据不匹配时重算 SHA-256
+   并与 manifest 记录值比对，匹配则刷新 manifest，不匹配视为损坏并重新下载
+4. 若运行时安装目录缺失，但开发目录 `src-tauri/models/<descriptor.filename>` 存在且
+   manifest 验证通过，则直接进入 `ready`。开发目录同样允许写入本地 manifest；该目录
+   仍只是开发/测试缓存，不是生产运行时依赖
+5. 只有当两处都没有可用模型时，才会在后台从 `latest.json` 解析出的 URL 下载到运行时
+   安装目录
+6. 启动时不再判定"过期"——没有固定 pin 可用于比较。更新检测完全由设置中的
+   "检查更新"按钮显式驱动：`check_model_update` 对比已安装 manifest 的 SHA-256
+   与上游最新 SHA-256，若有差异则前端提供"下载并替换"流程（`delete_model` +
+   `download_model`）
 
 ## ONNX Runtime path resolution semantics
 
@@ -142,10 +193,10 @@ payload 为完整的 `ModelBootstrapStatusSnapshot`，其中：
 
 ## Product UX target
 
-现有后端行为支持“启动后自动 bootstrap + 状态事件 + 分离前置 bootstrap”。后续
+现有后端行为支持"启动后自动 bootstrap + 状态事件 + 分离前置 bootstrap"。后续
 UI 与产品行为应以以下目标为准，而不是把后台下载继续当成隐式行为：
 
-1. 启动时检查模型是否存在且校验通过
+1. 启动时检查模型是否存在且 manifest 验证通过
 2. 若缺失，提示模型大小、安装位置和用途，并提供：
    - `Download now`
    - `Later`
@@ -153,14 +204,16 @@ UI 与产品行为应以以下目标为准，而不是把后台下载继续当�
 4. 用户选择稍后时，资料库和原曲播放仍然可用；首次分离会自动补齐 Runtime 和模型后继续
 5. 当用户首次进入 Karaoke 或主动触发分离时，如 Runtime 或模型仍未 ready，后台 worker 必须按 Runtime -> model -> separation 的顺序继续
 6. 下载失败时，UI 使用现有 `model-bootstrap-error` 状态提供重试入口，而不是要求用户手动找脚本
+7. 设置页提供"检查更新"按钮：调用 `check_model_update` 对比已安装与上游最新版本；
+   若有更新，提供"下载并替换"按钮执行 `delete_model` + `download_model` 流程
 
 ## Separation gate semantics
 
 1. `separate(song_id)`、`upgrade_to_four_stem(song_id)`、`re_separate(song_id, stem_mode)` 和 `batch_separate(song_ids)` 会立即创建后台任务
 2. 后台任务先确保 Runtime ready：缺失或损坏时下载、校验、写入 manifest，并在当前进程中加载 ORT
-3. Runtime ready 后，后台任务确保 active model ready：缺失时下载并校验 active variant，然后继续推理
+3. Runtime ready 后，后台任务确保 active model ready：缺失时从 `latest.json` 解析最新版本并下载校验 active variant，然后继续推理
 4. 只有 Runtime/model 下载或校验失败时，任务以 `separation-error` / batch terminal event 结束；命令入口不因缺失 Runtime 或模型直接返回 `model_unavailable`
-5. `outdated` 模型仍然不会被静默覆盖，错误文案应引导用户打开设置删除旧文件并重新下载：
+5. 模型缺失时错误文案应引导用户在设置中下载：
 
 ```json
 {
@@ -175,7 +228,7 @@ UI 与产品行为应以以下目标为准，而不是把后台下载继续当�
 
 ## Required dependencies
 
-1. `reqwest` 负责运行时模型下载
+1. `reqwest` 负责运行时模型下载和 `latest.json` 获取
 2. `sha2` 负责 SHA-256 完整性校验
 3. `tauri::async_runtime::spawn_blocking` 负责后台下载，避免阻塞 app setup
 4. `ort 2.0.0-rc.12` 仅以 `load-dynamic` + `api-24` 模式加载预先规整的

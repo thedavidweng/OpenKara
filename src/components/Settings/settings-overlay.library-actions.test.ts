@@ -102,6 +102,8 @@ function createHarness(overrides?: {
       modelVariant: "htdemucs_ft",
       modelStatuses: {},
       downloadingModel: null,
+      modelUpdateInfo: {},
+      checkingModelUpdate: null,
       runtimeStatus: null,
       language: "en",
       hideBatchSeparate: false,
@@ -128,6 +130,7 @@ function createHarness(overrides?: {
       downgradingInProgress: false,
       integrityCheckInProgress: false,
       integrityCleanupInProgress: false,
+      upgradingModel: null,
     },
   };
 
@@ -163,6 +166,7 @@ function createHarness(overrides?: {
       getRuntimeBootstrapStatus: vi.fn(),
       getSettings: vi.fn(),
       getModelStatus: vi.fn(),
+      checkModelUpdate: vi.fn(),
       openLibrary: vi.fn(),
       mirrorLocalLibraryToRemote: vi.fn(),
       reauthorizeRemoteLibrary: vi.fn(),

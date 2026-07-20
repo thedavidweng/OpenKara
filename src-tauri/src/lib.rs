@@ -39,7 +39,6 @@ pub fn derive_startup_model_bootstrap(
     app_data_dir: &Path,
     development_model_path: &Path,
     active_variant: config::ModelVariant,
-    expected_sha256: &str,
 ) -> anyhow::Result<StartupModelBootstrapPlan> {
     // Startup readiness must mean "the active variant has a verified model",
     // not merely "some file exists at the managed path". That distinction is
@@ -49,17 +48,11 @@ pub fn derive_startup_model_bootstrap(
     let resolution = separator::bootstrap::resolve_model_installation(
         &managed_model_path,
         development_model_path,
-        expected_sha256,
     )?;
     let (model_path, status, should_spawn_bootstrap_worker) = match resolution {
         separator::bootstrap::ModelInstallationResolution::Ready(resolved) => (
             resolved.path.clone(),
             commands::bootstrap::ready_status(resolved.path.display().to_string()),
-            false,
-        ),
-        separator::bootstrap::ModelInstallationResolution::LegacyManaged(path) => (
-            path.clone(),
-            commands::bootstrap::outdated_status(path.display().to_string()),
             false,
         ),
         separator::bootstrap::ModelInstallationResolution::Absent => (
@@ -189,6 +182,7 @@ pub fn run() {
             commands::bootstrap::download_model,
             commands::bootstrap::delete_model,
             commands::bootstrap::get_model_status,
+            commands::bootstrap::check_model_update,
             commands::runtime_bootstrap::get_runtime_bootstrap_status,
             commands::runtime_bootstrap::download_runtime,
             commands::runtime_bootstrap::delete_runtime

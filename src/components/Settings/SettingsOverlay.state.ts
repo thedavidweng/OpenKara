@@ -47,6 +47,8 @@ export function createInitialSettingsOverlaySnapshot(
       modelVariant: initialSettings.modelVariant,
       modelStatuses: {},
       downloadingModel: null,
+      modelUpdateInfo: {},
+      checkingModelUpdate: null,
       runtimeStatus: null,
       language: initialSettings.language ?? "en",
       hideBatchSeparate: initialSettings.hideBatchSeparate,
@@ -73,6 +75,7 @@ export function createInitialSettingsOverlaySnapshot(
       downgradingInProgress: false,
       integrityCheckInProgress: false,
       integrityCleanupInProgress: false,
+      upgradingModel: null,
     },
   };
 }
@@ -135,12 +138,12 @@ export function createSettingsOverlayActions(
         modelStatuses: {
           htdemucs: {
             downloaded: standard.downloaded,
-            legacy_install_present: standard.legacy_install_present,
+            installed_tag: standard.installed_tag,
             file_size: standard.file_size,
           },
           htdemucs_ft: {
             downloaded: hq.downloaded,
-            legacy_install_present: hq.legacy_install_present,
+            installed_tag: hq.installed_tag,
             file_size: hq.file_size,
           },
         },

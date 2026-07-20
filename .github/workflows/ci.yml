@@ -15,8 +15,10 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  MODEL_URL: https://github.com/thedavidweng/openkara-models/releases/download/model-v2.0.1/htdemucs.onnx
-  MODEL_SHA256: 8fa3dab679c59aeb049dd229f57a212c9339b3fc17ebf50541daad9e799364a1
+  # Stable manifest URL that maps each model variant to its newest release.
+  # The prepare-model job resolves this at runtime so CI always uses the
+  # latest model without a manual version bump in this file.
+  MODEL_MANIFEST_URL: https://raw.githubusercontent.com/thedavidweng/openkara-models/main/latest.json
 
 jobs:
   # ── Triage ───────────────────────────────────────────────────────────
@@ -196,14 +198,33 @@ jobs:
           node-version: 24
           package-manager-cache: false
 
+      - name: Resolve latest model from upstream manifest
+        id: resolve-model
+        run: |
+          set -euo pipefail
+          MANIFEST=$(curl -fsSL "$MODEL_MANIFEST_URL")
+          MODEL_URL=$(echo "$MANIFEST" | jq -r '.htdemucs.url')
+          MODEL_SHA256=$(echo "$MANIFEST" | jq -r '.htdemucs.sha256')
+          MODEL_TAG=$(echo "$MANIFEST" | jq -r '.htdemucs.tag')
+          if [ -z "$MODEL_URL" ] || [ -z "$MODEL_SHA256" ]; then
+            echo "Failed to resolve model URL or SHA-256 from manifest"
+            exit 1
+          fi
+          echo "model_url=$MODEL_URL" >> "$GITHUB_OUTPUT"
+          echo "model_sha256=$MODEL_SHA256" >> "$GITHUB_OUTPUT"
+          echo "Resolved latest model: $MODEL_TAG (sha256: ${MODEL_SHA256:0:12}...)"
+
       - name: Restore separation model cache
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: src-tauri/models/htdemucs.onnx
-          key: separation-model-${{ env.MODEL_SHA256 }}
+          key: separation-model-${{ steps.resolve-model.outputs.model_sha256 }}
           enableCrossOsArchive: true
 
       - name: Download and verify separation model
+        env:
+          MODEL_URL: ${{ steps.resolve-model.outputs.model_url }}
+          MODEL_SHA256: ${{ steps.resolve-model.outputs.model_sha256 }}
         run: |
           if echo "$MODEL_SHA256  src-tauri/models/htdemucs.onnx" | sha256sum -c --status 2>/dev/null; then
             echo "Model already present and verified"

@@ -331,7 +331,7 @@ fn download_and_install_runtime_to(
         )
     })?;
 
-    write_verified_manifest(destination, descriptor.sha256)?;
+    write_verified_manifest(destination, descriptor.sha256, None)?;
     install_runtime_companions(parent, &archive_bytes, descriptor)?;
 
     Ok(())
@@ -550,7 +550,7 @@ fn verify_runtime_install(path: &Path) -> Result<bool> {
     let actual = sha256_hex(&bytes);
 
     if actual == *expected_sha256 {
-        write_verified_manifest(path, expected_sha256)?;
+        write_verified_manifest(path, expected_sha256, None)?;
         return Ok(true);
     }
 

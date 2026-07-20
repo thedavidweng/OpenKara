@@ -19,9 +19,6 @@ pub const MODEL_BOOTSTRAP_ERROR_EVENT: &str = "model-bootstrap-error";
 pub enum ModelBootstrapState {
     Pending,
     Downloading,
-    /// Managed ONNX exists but its digest does not match the pinned release.
-    /// The file is kept so the user can remove it from Settings.
-    Outdated,
     Ready,
     Failed,
 }
@@ -58,9 +55,9 @@ pub fn emit_model_bootstrap_snapshot<R: Runtime>(
     let event = match snapshot.state {
         ModelBootstrapState::Ready => MODEL_BOOTSTRAP_READY_EVENT,
         ModelBootstrapState::Failed => MODEL_BOOTSTRAP_ERROR_EVENT,
-        ModelBootstrapState::Pending
-        | ModelBootstrapState::Downloading
-        | ModelBootstrapState::Outdated => MODEL_BOOTSTRAP_PROGRESS_EVENT,
+        ModelBootstrapState::Pending | ModelBootstrapState::Downloading => {
+            MODEL_BOOTSTRAP_PROGRESS_EVENT
+        }
     };
     let _ = app.emit(event, snapshot);
 }
@@ -76,10 +73,6 @@ pub fn ensure_model_ready(status: &Arc<Mutex<ModelBootstrapStatusSnapshot>>) -> 
         ))),
         ModelBootstrapState::Downloading => Err(model_bootstrap_error(format!(
             "model bootstrap is still downloading to {}",
-            snapshot.model_path
-        ))),
-        ModelBootstrapState::Outdated => Err(model_bootstrap_error(format!(
-            "installed model at {} does not match the current release; open Settings to delete it and download the update",
             snapshot.model_path
         ))),
         ModelBootstrapState::Failed => Err(snapshot.error.unwrap_or_else(|| {
@@ -105,12 +98,8 @@ pub fn ensure_active_model_ready_or_install_blocking(
     let managed_path = separator::bootstrap::managed_model_path_for(app_data_dir, descriptor);
     let dev_path = separator::model::default_model_path_for_filename(descriptor.filename);
 
-    match separator::bootstrap::resolve_model_installation(
-        &managed_path,
-        &dev_path,
-        descriptor.sha256,
-    )
-    .map_err(|error| internal_error(format!("failed to inspect model status: {error}")))?
+    match separator::bootstrap::resolve_model_installation(&managed_path, &dev_path)
+        .map_err(|error| internal_error(format!("failed to inspect model status: {error}")))?
     {
         separator::bootstrap::ModelInstallationResolution::Ready(resolved) => {
             let snapshot = ready_status(resolved.path.display().to_string());
@@ -120,11 +109,6 @@ pub fn ensure_active_model_ready_or_install_blocking(
             emit(MODEL_BOOTSTRAP_READY_EVENT, snapshot);
             Ok(resolved.path)
         }
-        separator::bootstrap::ModelInstallationResolution::LegacyManaged(_) => {
-            Err(model_bootstrap_error(
-                "installed model does not match the pinned release; open Settings to delete it and download the update",
-            ))
-        }
         separator::bootstrap::ModelInstallationResolution::Absent => {
             let initial = downloading_status(managed_path.display().to_string(), 0, None);
             if let Ok(mut current) = status.lock() {
@@ -133,16 +117,19 @@ pub fn ensure_active_model_ready_or_install_blocking(
             emit(MODEL_BOOTSTRAP_PROGRESS_EVENT, initial);
 
             let progress_path = managed_path.display().to_string();
+            let manifest = separator::upstream::fetch_upstream_manifest().map_err(|error| {
+                internal_error(format!("failed to resolve latest model: {error}"))
+            })?;
+            let latest = separator::upstream::latest_for_variant(&manifest, active_variant);
+
             let download_result = separator::bootstrap::download_and_install_model(
                 &managed_path,
-                descriptor.download_url,
-                descriptor.sha256,
+                &latest.url,
+                &latest.sha256,
+                Some(&latest.tag),
                 |downloaded_bytes, total_bytes| {
-                    let snapshot = downloading_status(
-                        progress_path.clone(),
-                        downloaded_bytes,
-                        total_bytes,
-                    );
+                    let snapshot =
+                        downloading_status(progress_path.clone(), downloaded_bytes, total_bytes);
                     if let Ok(mut current) = status.lock() {
                         *current = snapshot.clone();
                     }
@@ -191,7 +178,6 @@ pub fn sync_active_model_bootstrap_status(
         app_data_dir,
         &development_model_path,
         active_variant,
-        descriptor.sha256,
     )
     .map_err(|error| internal_error(format!("failed to derive bootstrap status: {error}")))?;
 
@@ -236,16 +222,6 @@ pub fn downloading_status(
     }
 }
 
-pub fn outdated_status(model_path: impl Into<String>) -> ModelBootstrapStatusSnapshot {
-    ModelBootstrapStatusSnapshot {
-        state: ModelBootstrapState::Outdated,
-        model_path: model_path.into(),
-        downloaded_bytes: None,
-        total_bytes: None,
-        error: None,
-    }
-}
-
 pub fn ready_status(model_path: impl Into<String>) -> ModelBootstrapStatusSnapshot {
     ModelBootstrapStatusSnapshot {
         state: ModelBootstrapState::Ready,
@@ -273,8 +249,10 @@ pub fn failed_status(
 pub struct ModelStatusSnapshot {
     pub variant: String,
     pub downloaded: bool,
-    /// True when `models/<variant>.onnx` exists but its SHA-256 does not match the pinned release.
-    pub legacy_install_present: bool,
+    /// Release tag recorded in the verification manifest, if a verified
+    /// model is installed. `None` when no manifest exists or the manifest
+    /// predates the release-tag field.
+    pub installed_tag: Option<String>,
     pub file_size: Option<u64>,
 }
 
@@ -294,20 +272,78 @@ pub fn get_model_status(
     let resolved = separator::bootstrap::resolve_model_installation(
         &model_path,
         &app_data_dir.join("__no_dev_fallback_model__"),
-        descriptor.sha256,
     )
     .map_err(|error| internal_error(format!("failed to inspect model status: {error}")))?;
-    let (downloaded, legacy_install_present) = match resolved {
-        separator::bootstrap::ModelInstallationResolution::Ready(_) => (true, false),
-        separator::bootstrap::ModelInstallationResolution::LegacyManaged(_) => (false, true),
-        separator::bootstrap::ModelInstallationResolution::Absent => (false, false),
-    };
+    let downloaded = matches!(
+        resolved,
+        separator::bootstrap::ModelInstallationResolution::Ready(_)
+    );
+    let installed_tag = separator::bootstrap::installed_release_tag(&model_path)
+        .map_err(|error| internal_error(format!("failed to read model manifest: {error}")))?;
     let file_size = separator::bootstrap::model_file_size(&app_data_dir, model_variant);
     Ok(ModelStatusSnapshot {
         variant,
         downloaded,
-        legacy_install_present,
+        installed_tag,
         file_size,
+    })
+}
+
+/// Result of comparing the installed model against the upstream latest
+/// release. The frontend uses this to show an update prompt and trigger
+/// a download-and-replace flow.
+#[derive(Debug, Clone, Serialize)]
+pub struct ModelUpdateInfo {
+    pub variant: String,
+    /// Release tag of the currently installed model, or `None` if no
+    /// verified model is installed or the manifest predates the tag field.
+    pub installed_tag: Option<String>,
+    /// Release tag of the newest upstream release for this variant.
+    pub latest_tag: String,
+    /// Disk size of the latest release asset in bytes.
+    pub latest_size: u64,
+    /// `true` when the installed checksum differs from the upstream latest
+    /// checksum (or no verified model is installed).
+    pub update_available: bool,
+}
+
+#[tauri::command]
+pub fn check_model_update(
+    app_handle: AppHandle,
+    variant: String,
+) -> CommandResult<ModelUpdateInfo> {
+    let model_variant = ModelVariant::parse(&variant)
+        .ok_or_else(|| internal_error(format!("invalid model variant: {variant}")))?;
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| internal_error(format!("failed to get app data dir: {e}")))?;
+    let descriptor = separator::bootstrap::descriptor_for(model_variant);
+    let model_path = separator::bootstrap::managed_model_path_for(&app_data_dir, descriptor);
+
+    // Read the installed manifest to get the recorded checksum and release tag.
+    let installed_manifest = separator::verified_manifest::read_verified_manifest(&model_path)
+        .map_err(|error| internal_error(format!("failed to read model manifest: {error}")))?;
+    let installed_tag = installed_manifest
+        .as_ref()
+        .and_then(|m| m.release_tag.clone());
+    let installed_sha256 = installed_manifest.as_ref().map(|m| m.sha256.as_str());
+
+    // Fetch the upstream latest release for this variant.
+    let manifest = separator::upstream::fetch_upstream_manifest()
+        .map_err(|error| internal_error(format!("failed to fetch upstream manifest: {error}")))?;
+    let latest = separator::upstream::latest_for_variant(&manifest, model_variant);
+
+    // An update is available when the installed checksum differs from the
+    // upstream latest, or when no verified model is installed at all.
+    let update_available = installed_sha256 != Some(latest.sha256.as_str());
+
+    Ok(ModelUpdateInfo {
+        variant,
+        installed_tag,
+        latest_tag: latest.tag.clone(),
+        latest_size: latest.size,
+        update_available,
     })
 }
 
@@ -331,7 +367,6 @@ pub fn download_model(
     if separator::bootstrap::resolve_existing_model_path(
         &model_path,
         &state.shell.app_data_dir.join("__no_dev_fallback_model__"),
-        descriptor.sha256,
     )
     .map_err(|error| internal_error(format!("failed to inspect model status: {error}")))?
     .is_some()
@@ -353,8 +388,6 @@ pub fn download_model(
         }
     }
 
-    let download_url = descriptor.download_url.to_owned();
-    let sha256 = descriptor.sha256.to_owned();
     let progress_path = model_path.display().to_string();
     let should_publish_status_for_task = should_publish_status;
     let task_variant = model_variant;
@@ -368,10 +401,15 @@ pub fn download_model(
         let blocking_app_data_dir = task_app_data_dir.clone();
 
         let result = tauri::async_runtime::spawn_blocking(move || {
+            // Resolve the latest release at download time so the app always
+            // fetches the newest model without a code change.
+            let manifest = separator::upstream::fetch_upstream_manifest()?;
+            let latest = separator::upstream::latest_for_variant(&manifest, task_variant);
             separator::bootstrap::download_and_install_model(
                 &blocking_model_path,
-                &download_url,
-                &sha256,
+                &latest.url,
+                &latest.sha256,
+                Some(&latest.tag),
                 |downloaded_bytes, total_bytes| {
                     if should_publish_status_for_task
                         && is_active_variant(&blocking_app_data_dir, task_variant)
@@ -456,7 +494,7 @@ pub fn delete_model(
             crate::app_runtime::spawn_model_bootstrap_worker(
                 app_handle.clone(),
                 managed,
-                descriptor,
+                active,
                 Arc::clone(&state.shell.model_bootstrap_status),
             );
         }

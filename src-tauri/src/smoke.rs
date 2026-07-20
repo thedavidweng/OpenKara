@@ -330,11 +330,8 @@ fn resolve_model_status(config: &LocalAudioSmokeConfig) -> Result<SmokeModelStat
             let dev_model_path = model::default_model_path();
             let placeholder_managed_path =
                 config.output_dir.join(".smoke-managed-model-placeholder");
-            let resolved = bootstrap::resolve_existing_model_path(
-                &placeholder_managed_path,
-                &dev_model_path,
-                bootstrap::MODEL_SHA256,
-            )?;
+            let resolved =
+                bootstrap::resolve_existing_model_path(&placeholder_managed_path, &dev_model_path)?;
 
             match resolved {
                 Some(path) => Ok(SmokeModelStatus {

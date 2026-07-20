@@ -6,14 +6,29 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODELS_DIR="$ROOT_DIR/src-tauri/models"
 MODEL_FILENAME="htdemucs.onnx"
 MODEL_PATH="$MODELS_DIR/$MODEL_FILENAME"
-MODEL_URL="https://github.com/thedavidweng/openkara-models/releases/download/model-v2.0.1/htdemucs.onnx"
-MODEL_SHA256="8fa3dab679c59aeb049dd229f57a212c9339b3fc17ebf50541daad9e799364a1"
+# Stable manifest URL that maps each model variant to its newest release.
+# Resolved at runtime so this script always fetches the latest model without
+# a manual version bump.
+MODEL_MANIFEST_URL="https://raw.githubusercontent.com/thedavidweng/openkara-models/main/latest.json"
 
 require_tool() {
   local tool="$1"
 
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "error: required tool '$tool' is not installed" >&2
+    exit 1
+  fi
+}
+
+resolve_latest_model() {
+  local manifest
+  manifest="$(curl -fsSL "$MODEL_MANIFEST_URL")"
+  MODEL_URL="$(echo "$manifest" | jq -r '.htdemucs.url')"
+  MODEL_SHA256="$(echo "$manifest" | jq -r '.htdemucs.sha256')"
+  MODEL_TAG="$(echo "$manifest" | jq -r '.htdemucs.tag')"
+
+  if [[ -z "$MODEL_URL" || -z "$MODEL_SHA256" ]]; then
+    echo "error: failed to resolve model URL or SHA-256 from manifest" >&2
     exit 1
   fi
 }
@@ -27,8 +42,12 @@ verify_checksum() {
 }
 
 require_tool curl
+require_tool jq
 require_tool node
 require_tool shasum
+
+resolve_latest_model
+echo "Latest model: $MODEL_TAG"
 
 mkdir -p "$MODELS_DIR"
 
@@ -39,9 +58,9 @@ if [[ -f "$MODEL_PATH" ]]; then
     exit 0
   fi
 
-  echo "error: existing model at $MODEL_PATH failed SHA-256 verification" >&2
-  echo "error: remove the file and rerun scripts/setup.sh to fetch a clean copy" >&2
-  exit 1
+  echo "Existing model at $MODEL_PATH does not match the latest release."
+  echo "Removing the stale file and downloading the latest version."
+  rm -f "$MODEL_PATH"
 fi
 
 tmp_file="$(mktemp "$MODELS_DIR/$MODEL_FILENAME.download.XXXXXX")"

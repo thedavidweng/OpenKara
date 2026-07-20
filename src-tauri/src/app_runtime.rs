@@ -253,7 +253,10 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         spawn_model_bootstrap_worker(
             app.handle().clone(),
             model_bootstrap.managed_model_path,
-            model_bootstrap.descriptor,
+            app_config
+                .as_ref()
+                .map(|config| config.effective_model_variant())
+                .unwrap_or_default(),
             model_bootstrap_status,
         );
     }
@@ -266,7 +269,6 @@ struct StartupBootstrapResources {
     managed_model_path: PathBuf,
     status: commands::bootstrap::ModelBootstrapStatusSnapshot,
     should_spawn_bootstrap_worker: bool,
-    descriptor: &'static separator::bootstrap::ModelDescriptor,
 }
 
 fn build_startup_model_bootstrap(
@@ -281,7 +283,6 @@ fn build_startup_model_bootstrap(
         app_data_dir,
         &separator::model::default_model_path_for_filename(descriptor.filename),
         active_variant,
-        descriptor.sha256,
     )?;
 
     Ok(StartupBootstrapResources {
@@ -289,7 +290,6 @@ fn build_startup_model_bootstrap(
         managed_model_path: startup_bootstrap.managed_model_path,
         status: startup_bootstrap.status,
         should_spawn_bootstrap_worker: startup_bootstrap.should_spawn_bootstrap_worker,
-        descriptor,
     })
 }
 
@@ -458,7 +458,7 @@ fn should_emit_playback_position(
 pub(crate) fn spawn_model_bootstrap_worker<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     model_path: PathBuf,
-    descriptor: &'static separator::bootstrap::ModelDescriptor,
+    variant: config::ModelVariant,
     status: Arc<Mutex<commands::bootstrap::ModelBootstrapStatusSnapshot>>,
 ) {
     let progress_path = model_path.display().to_string();
@@ -469,10 +469,15 @@ pub(crate) fn spawn_model_bootstrap_worker<R: Runtime>(
         let progress_path = progress_path.clone();
 
         let result = tauri::async_runtime::spawn_blocking(move || {
+            // Resolve the latest release at download time so the app always
+            // fetches the newest model without a code change.
+            let manifest = separator::upstream::fetch_upstream_manifest()?;
+            let latest = separator::upstream::latest_for_variant(&manifest, variant);
             separator::bootstrap::download_and_install_model(
                 &blocking_model_path,
-                descriptor.download_url,
-                descriptor.sha256,
+                &latest.url,
+                &latest.sha256,
+                Some(&latest.tag),
                 |downloaded_bytes, total_bytes| {
                     let snapshot = commands::bootstrap::downloading_status(
                         progress_path.clone(),
@@ -515,8 +520,7 @@ pub(crate) fn spawn_model_bootstrap_worker<R: Runtime>(
                 commands::bootstrap::MODEL_BOOTSTRAP_ERROR_EVENT
             }
             commands::bootstrap::ModelBootstrapState::Pending
-            | commands::bootstrap::ModelBootstrapState::Downloading
-            | commands::bootstrap::ModelBootstrapState::Outdated => return,
+            | commands::bootstrap::ModelBootstrapState::Downloading => return,
         };
         let _ = app_handle.emit(event, snapshot);
     });
