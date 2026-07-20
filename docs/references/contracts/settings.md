@@ -81,3 +81,29 @@ stays explicitly dark regardless of the primary preference.
 - `set_crossfade_enabled(enabled: bool) -> AppSettings`
 - `set_crossfade_duration_ms(duration_ms: u32) -> AppSettings`
 - `restart_app() -> ()`
+
+## Remote streaming cache
+
+The remote streaming cache stores byte-range downloads of remote media files
+so playback can resume without re-fetching. The cache is content-addressed by
+the SHA-256 of `(library_id, relative_path, provider_revision,
+expected_size)`, so a replaced remote object (new revision or size) does not
+reuse bytes from an older version. The durable catalog lives in the local-only
+`remote_cache_entries` table (`remote-state.db`); on-disk data files live in
+`<app-data>/remote-cache/`.
+
+When `remote_cache_bytes_limit` is unset, the cache defaults to a finite 2 GiB
+budget. The configured limit is read at startup from `AppConfig`.
+
+### Commands
+
+- `get_remote_cache_usage() -> CacheUsage` — Report cache usage.
+  - `used_bytes`: total bytes used by reconciled catalog entries.
+  - `limit_bytes`: the configured byte budget (2 GiB default).
+  - `entry_count`: number of catalog entries.
+  - `pinned_count`: number of entries currently pinned by active playback
+    (exempt from eviction).
+- `clear_remote_cache() -> usize` — Evict all unpinned cache entries. Pinned
+  entries (files in active use by playback) remain until playback releases
+  them, then a subsequent clear or LRU eviction removes them. Returns the
+  number of entries evicted.

@@ -1,6 +1,5 @@
 use crate::{
     audio::{
-        chunked_cache::{CacheError, CacheManager},
         decode,
         error::PlaybackError,
         playback::{LoadedStems, StemSet},
@@ -12,6 +11,7 @@ use crate::{
     library_root::LibraryRoot,
     media_g::{self, MEDIA_G_ZIP},
     remote,
+    remote::cache_catalog::{CacheCatalog, CacheIdentity, CachePinGuard},
     remote::provider::RemoteProvider,
 };
 use anyhow::{Context, Result};
@@ -176,6 +176,12 @@ pub(crate) struct StreamingPlaybackSource {
     /// Receiver for fetch events (only present for remote streaming).
     /// The caller should consume these to handle ConsecutiveFailures, etc.
     pub(crate) fetch_event_rx: Option<mpsc::Receiver<FetchEvent>>,
+    /// RAII pin guard for the remote cache entry. When dropped (on source
+    /// release / track skip / stop), the pin count decrements so the entry
+    /// becomes eligible for eviction. `None` for local sources. The field is
+    /// never read directly — it exists only for its `Drop` side effect.
+    #[allow(dead_code)]
+    pub(crate) cache_pin_guard: Option<CachePinGuard>,
 }
 
 /// For local files, decodes directly from disk. For remote songs, creates a
@@ -187,7 +193,7 @@ pub(crate) struct StreamingPlaybackSource {
 /// byte extraction).
 pub(crate) fn load_playback_source_streaming(
     app_data_dir: Option<&Path>,
-    remote_chunk_cache: &Mutex<CacheManager>,
+    remote_chunk_cache: &Arc<Mutex<CacheCatalog>>,
     library_root: &LibraryRoot,
     song: &Song,
 ) -> Result<Option<StreamingPlaybackSource>, PlaybackError> {
@@ -225,6 +231,7 @@ pub(crate) fn load_playback_source_streaming(
         metadata,
         decode_handle,
         fetch_event_rx: None,
+        cache_pin_guard: None,
     }))
 }
 
@@ -232,7 +239,7 @@ pub(crate) fn load_playback_source_streaming(
 /// requests (caller should fall back to full-file download).
 fn load_remote_streaming_source(
     app_data_dir: Option<&Path>,
-    remote_chunk_cache: &Mutex<CacheManager>,
+    remote_chunk_cache: &Arc<Mutex<CacheCatalog>>,
     _library_root: &LibraryRoot,
     song: &Song,
 ) -> Result<Option<StreamingPlaybackSource>, PlaybackError> {
@@ -265,14 +272,39 @@ fn load_remote_streaming_source(
         return Ok(None); // Can't determine size — fall back.
     }
 
-    let cache_key = format!("remote-{}", song.hash);
+    // Build a revision-aware cache identity so a replaced remote object (new
+    // provider revision or changed size) does not reuse bytes from an older
+    // version. The cache key is the SHA-256 of (library_id, relative_path,
+    // provider_revision, expected_size). When the provider does not expose a
+    // revision token, fall back to the library's stored remote_revision; if
+    // that is also unavailable, the content-digest fallback path in the
+    // catalog computes a SHA-256 of the cached file after the first full
+    // download and uses that for future lookups.
+    let provider_revision = provider.get_revision(song_path).ok().flatten();
+    let revision = provider_revision.or_else(|| library.remote_revision().map(str::to_owned));
+    let identity = CacheIdentity {
+        library_id: library.id().to_owned(),
+        relative_path: song_path.to_owned(),
+        provider_revision: revision,
+        expected_size: file_size,
+    };
+    let cache_key = identity.cache_key();
+
     let cache = {
         let mut manager = remote_chunk_cache.lock().map_err(|_| {
             PlaybackError::Internal("remote chunk cache manager lock was poisoned".to_owned())
         })?;
-        manager
-            .get_or_create(&cache_key, file_size)
-            .map_err(map_cache_error)?
+        manager.get_or_create(&identity).map_err(map_cache_error)?
+    };
+
+    // Pin the cache entry so eviction cannot remove the file while playback is
+    // active. The guard decrements the pin count on drop (source release /
+    // track skip / stop), making the entry eligible for eviction again.
+    let cache_pin_guard = {
+        Some(
+            CacheCatalog::pin_cache_entry(remote_chunk_cache, &cache_key)
+                .map_err(map_cache_error)?,
+        )
     };
 
     let (fetch_tx, fetch_event_rx, _bandwidth_monitor, _fetch_handle) =
@@ -315,6 +347,7 @@ fn load_remote_streaming_source(
         metadata: probe_metadata,
         decode_handle,
         fetch_event_rx: Some(fetch_event_rx),
+        cache_pin_guard,
     }))
 }
 
@@ -874,17 +907,18 @@ fn decode_stem_entry(
     }
 }
 
-fn map_cache_error(error: CacheError) -> PlaybackError {
-    PlaybackError::Internal(error.to_string())
+fn map_cache_error(error: crate::commands::error::CommandError) -> PlaybackError {
+    PlaybackError::Internal(error.message)
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::audio::chunked_cache::CacheManager;
     use crate::cache::stems::StemCacheEntry;
     use crate::commands::error::{CommandError, CommandResult};
     use crate::library::Song;
     use crate::library_root::LibraryRoot;
+    use crate::remote::cache_catalog::{CacheCatalog, CacheIdentity, DEFAULT_CACHE_BYTES_LIMIT};
+    use crate::remote::control_db::open_control_db;
     use crate::remote::provider::RemoteProvider;
     use std::collections::HashMap;
     use std::path::Path;
@@ -893,18 +927,44 @@ mod tests {
 
     #[test]
     fn remote_cache_manager_evicts_lru_when_over_budget() {
-        let dir = tempdir().expect("temp dir");
-        let mut manager = CacheManager::new(dir.path().to_path_buf(), 200);
+        let db_dir = tempdir().expect("db temp dir");
+        let cache_dir = tempdir().expect("cache temp dir");
+        let conn = open_control_db(&db_dir.path().join("remote-state.db")).expect("open db");
+        let control_db = Arc::new(Mutex::new(conn));
+        let mut manager = CacheCatalog::open(cache_dir.path().to_path_buf(), control_db, 200)
+            .expect("open catalog");
 
-        let c1 = manager.get_or_create("song-a", 150).expect("cache a");
+        let id_a = CacheIdentity {
+            library_id: "lib-1".to_owned(),
+            relative_path: "media/a.mp3".to_owned(),
+            provider_revision: Some("rev-1".to_owned()),
+            expected_size: 150,
+        };
+        let id_b = CacheIdentity {
+            library_id: "lib-1".to_owned(),
+            relative_path: "media/b.mp3".to_owned(),
+            provider_revision: Some("rev-1".to_owned()),
+            expected_size: 150,
+        };
+
+        let c1 = manager.get_or_create(&id_a).expect("cache a");
         c1.write_at(0, &[0u8; 150]).expect("write a");
+        manager
+            .persist_ranges(&id_a.cache_key())
+            .expect("persist a");
 
-        let c2 = manager.get_or_create("song-b", 150).expect("cache b");
+        let c2 = manager.get_or_create(&id_b).expect("cache b");
         c2.write_at(0, &[0u8; 150]).expect("write b");
+        manager
+            .persist_ranges(&id_b.cache_key())
+            .expect("persist b");
 
-        assert_eq!(manager.len(), 1);
-        assert!(dir.path().join("song-b.cache").exists());
-        assert!(!dir.path().join("song-a.cache").exists());
+        // A (oldest) should be evicted; B remains.
+        assert!(
+            manager.get_entry(&id_a.cache_key()).unwrap().is_none(),
+            "oldest entry must be evicted"
+        );
+        assert!(manager.get_entry(&id_b.cache_key()).unwrap().is_some());
     }
 
     // ---- Test infrastructure for remote stem set caching ----
@@ -1093,15 +1153,22 @@ mod tests {
         // return Ok(None) WITHOUT calling resolve_song_file_path, which would
         // fail.  Ok(None) makes the caller fall back to the non-streaming
         // load_playback_source that handles remote stems.
-        let dir = tempdir().expect("temp dir");
-        let lib = LibraryRoot::create(&dir.path().join("Lib")).expect("library");
+        let db_dir = tempdir().expect("db temp dir");
+        let cache_dir = tempdir().expect("cache temp dir");
+        let lib = LibraryRoot::create(&cache_dir.path().join("Lib")).expect("library");
         let song = remote_stems_song("song-a");
-        let cache = Arc::new(Mutex::new(CacheManager::new(
-            dir.path().join("cache"),
-            1024 * 1024,
-        )));
+        let conn = open_control_db(&db_dir.path().join("remote-state.db")).expect("open db");
+        let control_db = Arc::new(Mutex::new(conn));
+        let catalog = CacheCatalog::open(
+            db_dir.path().join("cache"),
+            control_db,
+            DEFAULT_CACHE_BYTES_LIMIT,
+        )
+        .expect("open catalog");
+        let cache = Arc::new(Mutex::new(catalog));
 
-        let result = super::load_playback_source_streaming(Some(dir.path()), &cache, &lib, &song);
+        let result =
+            super::load_playback_source_streaming(Some(cache_dir.path()), &cache, &lib, &song);
 
         assert!(
             result.is_ok(),

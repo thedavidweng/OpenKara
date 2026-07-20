@@ -15,6 +15,10 @@ pub use remote::{
     UploadState, UploadStatusSnapshot,
 };
 
+/// Re-export the cache usage snapshot type so the IPC command signature stays
+/// stable even if the internal module path changes.
+pub use remote::cache_catalog::CacheUsage;
+
 #[tauri::command]
 pub fn begin_remote_auth(
     state: State<'_, AppState>,
@@ -151,4 +155,31 @@ pub fn get_all_upload_statuses(
     state: State<'_, AppState>,
 ) -> CommandResult<Vec<UploadStatusSnapshot>> {
     remote::get_all_upload_statuses(&state)
+}
+
+/// Report remote streaming cache usage: total bytes used, the configured byte
+/// limit, the number of catalog entries, and how many are currently pinned
+/// (in use by playback and exempt from eviction).
+#[tauri::command]
+pub fn get_remote_cache_usage(state: State<'_, AppState>) -> CommandResult<CacheUsage> {
+    let manager = state
+        .remote
+        .remote_chunk_cache
+        .lock()
+        .map_err(|_| internal_error("remote chunk cache manager lock was poisoned"))?;
+    manager.usage()
+}
+
+/// Evict all unpinned remote cache entries. Pinned entries (files in active
+/// use by playback) are left in the catalog until playback releases them, at
+/// which point a subsequent clear or LRU eviction removes them. Returns the
+/// number of entries evicted.
+#[tauri::command]
+pub fn clear_remote_cache(state: State<'_, AppState>) -> CommandResult<usize> {
+    let mut manager = state
+        .remote
+        .remote_chunk_cache
+        .lock()
+        .map_err(|_| internal_error("remote chunk cache manager lock was poisoned"))?;
+    manager.clear_unpinned()
 }

@@ -7,6 +7,7 @@ pub(crate) mod atomic_download;
 mod auth;
 mod auth_binding;
 mod bootstrap;
+pub(crate) mod cache_catalog;
 pub(crate) mod control_db;
 mod dropbox;
 pub(crate) mod errors;
