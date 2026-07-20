@@ -47,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **remote**: Resumable provider transfers and shared network retry policy (#151)
 - **remote**: Persistent verified cache catalog with bounded eviction (#151)
 - **remote**: Playback reconnect and source replacement with timeline preservation (#151)
+- **remote**: Frontend states, conflict actions, diagnostics, and fault-injection suite
 
 ### 🐛 Bug Fixes
 

@@ -9,6 +9,8 @@ import { SettingsGeneralSection } from "./SettingsGeneralSection";
 import { SettingsLibrarySection } from "./SettingsLibrarySection";
 import { SettingsModelVariantSection } from "./SettingsModelVariantSection";
 import { SettingsOverlayProvider } from "./SettingsOverlay.controller";
+import { SettingsRemoteCacheSection } from "./SettingsRemoteCacheSection";
+import { SettingsRemoteDiagnosticsSection } from "./SettingsRemoteDiagnosticsSection";
 import { SettingsStemModeSection } from "./SettingsStemModeSection";
 import { useSettingsStore } from "@/stores/settings-store";
 
@@ -43,6 +45,8 @@ export function SettingsOverlay() {
           <SettingsGeneralSection />
           <SettingsEqSection />
           <SettingsCrossfadeSection />
+          <SettingsRemoteCacheSection />
+          <SettingsRemoteDiagnosticsSection />
           <SettingsDangerZoneSection />
           <SettingsDialogHost />
         </SettingsOverlayProvider>
