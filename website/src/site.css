@@ -7,6 +7,8 @@
   --landing-line: #202126;
   --landing-soft-line: #17181c;
   --landing-accent: #f2f3f5;
+  --landing-gutter: 24px;
+  --preview-design-width: 920px;
   --preview-stage-top: #08090b;
   /* Keep the stage nearly flat so the under-glow comes from the halo, not a
      tall stage brightening that reads as bloom past the mock tail. */
@@ -108,7 +110,7 @@ a {
 }
 
 .content-width {
-  width: min(1180px, calc(100% - 48px));
+  width: min(1180px, calc(100% - var(--landing-gutter) * 2));
   margin-inline: auto;
 }
 
@@ -124,7 +126,7 @@ a {
 }
 
 .site-nav {
-  width: min(1180px, calc(100% - 48px));
+  width: min(1180px, calc(100% - var(--landing-gutter) * 2));
   height: 100%;
   margin: auto;
   display: grid;
@@ -417,10 +419,25 @@ a {
     0 18px 44px var(--preview-window-shadow),
     0 10px 36px color-mix(in srgb, var(--preview-halo) 28%, transparent);
   corner-shape: squircle;
+  container-type: inline-size;
+  container-name: product-preview;
 }
 
+/* Keep the embedded app at a fixed desktop design size and scale it into the
+   frame. On wide frames the scale is 1; on narrower frames the whole UI shrinks
+   to fit. Mobile overrides this to show only the left half (right clips). */
 .product-preview > * {
-  min-width: 920px;
+  width: var(--preview-design-width);
+  min-width: var(--preview-design-width);
+  height: 100%;
+  transform-origin: top left;
+}
+
+@container product-preview (max-width: 919px) {
+  .product-preview > * {
+    height: calc(var(--preview-design-width) * 9 / 16);
+    transform: scale(calc(100cqi / var(--preview-design-width)));
+  }
 }
 
 /* The global `button, a { font-family: inherit }` above only carries
@@ -663,7 +680,7 @@ a {
 }
 
 .closing-section {
-  width: min(620px, calc(100% - 48px));
+  width: min(620px, calc(100% - var(--landing-gutter) * 2));
   margin: 0 auto;
   padding-block: clamp(72px, 8vw, 112px) clamp(132px, 16vw, 232px);
   display: flex;
@@ -775,7 +792,7 @@ a {
 }
 
 .document-main {
-  width: min(760px, calc(100% - 48px));
+  width: min(760px, calc(100% - var(--landing-gutter) * 2));
   flex: 1;
   padding-block: clamp(64px, 9vw, 124px);
 }
@@ -885,7 +902,7 @@ a {
 }
 
 .document-footer {
-  width: min(1180px, calc(100% - 48px));
+  width: min(1180px, calc(100% - var(--landing-gutter) * 2));
   margin-top: auto;
   padding-block: 30px;
   border-top: 1px solid var(--landing-line);
@@ -929,12 +946,34 @@ a {
   }
 
   .hero-copy h1 {
-    font-size: clamp(48px, 14vw, 74px);
+    max-width: none;
+    font-size: clamp(2.125rem, 8.2vw, 3.25rem);
+    line-height: 1.06;
+    letter-spacing: -0.048em;
+  }
+
+  .hero-copy > p {
+    max-width: none;
+    margin-top: 22px;
+    font-size: 16px;
+    line-height: 1.55;
   }
 
   .section-heading {
     grid-template-columns: 1fr;
-    gap: 20px;
+    gap: 16px;
+  }
+
+  .section-heading h2 {
+    max-width: none;
+    font-size: clamp(1.875rem, 7vw, 2.625rem);
+    line-height: 1.06;
+  }
+
+  .section-heading p {
+    max-width: none;
+    font-size: 15px;
+    line-height: 1.6;
   }
 
   .feature-grid {
@@ -961,8 +1000,13 @@ a {
     row-gap: 22px;
   }
 
+  .closing-section h2 {
+    font-size: clamp(2rem, 7.4vw, 2.75rem);
+    line-height: 1.04;
+  }
+
   .closing-section {
-    padding-block: 116px;
+    padding-block: 88px 112px;
   }
 
   .site-footer {
@@ -981,39 +1025,107 @@ a {
   }
 }
 
-@media (max-width: 560px) {
-  .content-width,
-  .site-nav {
-    width: min(100% - 28px, 1180px);
+@media (max-width: 640px) {
+  :root {
+    --landing-gutter: 20px;
   }
 
   .site-header {
-    height: 58px;
+    height: 56px;
   }
 
   .hero-copy {
-    padding-top: 64px;
+    padding-top: 56px;
+    padding-bottom: 28px;
+  }
+
+  .hero-copy h1 {
+    font-size: clamp(2rem, 9.2vw, 2.5rem);
+    line-height: 1.08;
+    letter-spacing: -0.042em;
+  }
+
+  .hero-copy > p {
+    margin-top: 18px;
+    font-size: 15px;
+    line-height: 1.52;
+  }
+
+  .hero-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    margin-top: 24px;
+  }
+
+  .hero-actions .pill {
+    width: 100%;
+    min-height: 48px;
+    justify-content: center;
   }
 
   .hero-actions > span {
     width: 100%;
-    margin: 4px 0 0;
+    margin: 6px 0 0;
+    text-align: center;
+    font-size: 11px;
+    line-height: 1.4;
   }
 
+  .preview-stage {
+    /* Full-bleed clip stage: mock may start inset on the left but must
+       continue past the right viewport edge with no trailing gutter. */
+    padding: 12px 0 28px;
+  }
+
+  .preview-stage::before {
+    top: 8%;
+    right: 0;
+    bottom: 18px;
+    left: 0;
+    filter: blur(14px);
+  }
+
+  .preview-stage::after {
+    opacity: 0.55;
+    height: 12%;
+    filter: blur(12px);
+  }
+
+  /* Same desktop mock, miniaturized. Left inset only; the window itself is
+     wider than the viewport so its right edge (and right half of the UI)
+     bleeds off-screen — clipped by .preview-stage, not by a padded frame. */
   .product-preview {
-    width: 100%;
-    height: 520px;
-    border-radius: 16px;
+    --preview-left-inset: var(--landing-gutter);
+    --preview-visible-width: calc(100vw - var(--preview-left-inset));
+    --preview-scale: calc(
+      var(--preview-visible-width) * 2 / var(--preview-design-width)
+    );
+    width: calc(var(--preview-design-width) * var(--preview-scale));
+    max-width: none;
+    aspect-ratio: auto;
+    height: calc(var(--preview-design-width) * 9 / 16 * var(--preview-scale));
+    margin-inline: 0;
+    margin-left: var(--preview-left-inset);
+    border-radius: 14px;
   }
 
   .product-preview > * {
-    min-width: 900px;
-    transform: translateX(-118px);
+    width: var(--preview-design-width);
+    min-width: var(--preview-design-width);
+    height: calc(var(--preview-design-width) * 9 / 16);
+    transform: scale(var(--preview-scale));
     transform-origin: top left;
+    margin-right: calc(
+      var(--preview-design-width) * (var(--preview-scale) - 1)
+    );
+    margin-bottom: calc(
+      var(--preview-design-width) * 9 / 16 * (var(--preview-scale) - 1)
+    );
   }
 
   .feature-section {
-    padding-block: 64px;
+    padding-block: 56px;
   }
 
   .feature-section:has(+ .feature-section),
@@ -1022,48 +1134,62 @@ a {
   }
 
   .feature-section + .feature-section {
-    padding-top: 40px;
+    padding-top: 36px;
   }
 
   .feature-grid {
-    margin-top: 32px;
+    margin-top: 28px;
   }
 
   .feature-card {
-    min-height: 156px;
-    padding: 22px 20px 24px;
+    min-height: 148px;
+    padding: 20px 0 22px;
   }
 
   .feature-card h3 {
-    margin-top: 30px;
+    margin-top: 28px;
+    font-size: 15px;
+  }
+
+  .feature-card p {
+    max-width: none;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
+  .built-with-section {
+    padding-block: 32px 40px;
+  }
+
+  .built-with-logos {
+    gap: 16px 24px;
   }
 
   .closing-section {
-    width: min(100% - 28px, 620px);
-    padding-block: 64px 96px;
-    gap: 30px;
+    padding-block: 56px 80px;
+    gap: 24px;
   }
 
   .closing-actions {
     width: 100%;
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .closing-actions .pill {
-    flex: 1 1 154px;
-  }
-
-  .built-with-logos {
-    gap: 18px 28px;
+    width: 100%;
+    flex: none;
+    justify-content: center;
   }
 
   .site-footer {
-    padding-top: 56px;
-    row-gap: 38px;
+    padding-top: 48px;
+    row-gap: 32px;
+    font-size: 13px;
   }
 
   .document-main {
-    width: min(100% - 28px, 760px);
-    padding-block: 52px 80px;
+    padding-block: 48px 72px;
   }
 
   .document-content {
@@ -1071,7 +1197,6 @@ a {
   }
 
   .document-footer {
-    width: min(100% - 28px, 1180px);
     align-items: flex-start;
     flex-direction: column;
   }
