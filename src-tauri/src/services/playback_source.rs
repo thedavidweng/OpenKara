@@ -63,6 +63,15 @@ pub(crate) fn load_playback_source(
     song: &Song,
 ) -> Result<PlaybackSourceLoad, PlaybackError> {
     if song.is_remote_stems() {
+        // Download missing stem files before decoding. The streaming path
+        // (load_playback_source_streaming) returns Ok(None) for remote stems,
+        // so this fallback path is the one that actually caches them. Without
+        // this call, a cold-cache remote-stems song would reach
+        // load_remote_stems_playback_source with no files on disk and fail
+        // to decode. request_id=0 is safe here because the fallback path is
+        // not guarded by the streaming stale-guard.
+        ensure_remote_stem_files_cached(app_data_dir, library_root, connection, song, 0)
+            .map_err(|e| PlaybackError::Internal(e.to_string()))?;
         return load_remote_stems_playback_source(connection, library_root, song)
             .map_err(|e| PlaybackError::Internal(e.to_string()));
     }
@@ -192,10 +201,10 @@ pub(crate) fn load_playback_source_streaming(
     // `resolve_song_file_path()` would fail inside `load_remote_streaming_source`
     // before the stem-caching path is ever reached.  Returning `Ok(None)` makes
     // the caller fall back to the non-streaming `load_playback_source` path,
-    // which already handles remote stems via `load_remote_stems_playback_source`
-    // + `ensure_remote_stem_files_cached`.  Remote stems use local file
-    // streaming after complete caching — they do NOT use network-backed
-    // per-stem readers in this PR.
+    // which downloads missing stems via `ensure_remote_stem_files_cached` and
+    // then decodes them via `load_remote_stems_playback_source`.  Remote stems
+    // use local file streaming after complete caching — they do NOT use
+    // network-backed per-stem readers in this PR.
     if song.is_remote_stems() {
         return Ok(None);
     }
@@ -644,6 +653,7 @@ fn ensure_remote_stem_set_cached(
         provider
             .download_file(&stem.relative_path, &temp_path)
             .map_err(|error| {
+                clean_up_temps(&verified);
                 anyhow::anyhow!("failed to download stem {}: {}", stem.label, error.message)
             })?;
 
@@ -651,6 +661,7 @@ fn ensure_remote_stem_set_cached(
         let size = fs::metadata(&temp_path).map(|m| m.len()).unwrap_or(0);
         if size == 0 {
             let _ = fs::remove_file(&temp_path);
+            clean_up_temps(&verified);
             anyhow::bail!(
                 "stem {} downloaded as a zero-byte file — permanently invalid",
                 stem.label
@@ -672,6 +683,7 @@ fn ensure_remote_stem_set_cached(
             }
             Err(error) => {
                 let _ = fs::remove_file(&temp_path);
+                clean_up_temps(&verified);
                 anyhow::bail!("stem {} failed validation decode: {}", stem.label, error);
             }
         }
