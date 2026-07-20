@@ -296,6 +296,13 @@ fn upsert_stem_cache_entry(
     Ok(())
 }
 
+/// Test-only helper to insert a stem cache entry directly into the database
+/// without going through the full separation pipeline.
+#[cfg(test)]
+pub fn upsert_stem_entry_test(connection: &Connection, entry: &StemCacheEntry) {
+    upsert_stem_cache_entry(connection, entry).expect("test stem entry upsert should succeed");
+}
+
 pub fn cache_entry_files_valid(library_root: &LibraryRoot, entry: &StemCacheEntry) -> bool {
     cache_entry_files_exist(library_root, entry)
 }

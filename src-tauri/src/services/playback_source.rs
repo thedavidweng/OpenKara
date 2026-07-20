@@ -12,11 +12,13 @@ use crate::{
     library_root::LibraryRoot,
     media_g::{self, MEDIA_G_ZIP},
     remote,
+    remote::provider::RemoteProvider,
 };
 use anyhow::{Context, Result};
 use rusqlite::Connection;
 use std::{
-    path::Path,
+    fs,
+    path::{Path, PathBuf},
     sync::{mpsc, Arc, Mutex},
 };
 
@@ -82,9 +84,10 @@ pub(crate) fn load_cached_stems_for_song(
     connection: &Connection,
     library_root: &LibraryRoot,
     song: &Song,
+    request_id: u64,
 ) -> Result<LoadedStems, PlaybackError> {
     if song.is_remote_stems() {
-        ensure_remote_stem_files_cached(app_data_dir, connection, song)
+        ensure_remote_stem_files_cached(app_data_dir, library_root, connection, song, request_id)
             .map_err(|e| PlaybackError::Internal(e.to_string()))?;
         return load_remote_stems_playback_source(connection, library_root, song)
             .map_err(|e| PlaybackError::Internal(e.to_string()))?
@@ -181,6 +184,19 @@ pub(crate) fn load_playback_source_streaming(
 ) -> Result<Option<StreamingPlaybackSource>, PlaybackError> {
     // Media+G containers require in-memory extraction — can't stream from disk.
     if song.media_g_container.as_deref() == Some(MEDIA_G_ZIP) {
+        return Ok(None);
+    }
+
+    // Remote stems must not enter the single-file remote streaming branch.
+    // `update_remote_song(..., "stems_remote")` clears `song.file_path`, so
+    // `resolve_song_file_path()` would fail inside `load_remote_streaming_source`
+    // before the stem-caching path is ever reached.  Returning `Ok(None)` makes
+    // the caller fall back to the non-streaming `load_playback_source` path,
+    // which already handles remote stems via `load_remote_stems_playback_source`
+    // + `ensure_remote_stem_files_cached`.  Remote stems use local file
+    // streaming after complete caching — they do NOT use network-backed
+    // per-stem readers in this PR.
+    if song.is_remote_stems() {
         return Ok(None);
     }
 
@@ -403,35 +419,347 @@ pub(crate) fn ensure_remote_song_files_cached(
 
 pub(crate) fn ensure_remote_stem_files_cached(
     app_data_dir: Option<&Path>,
+    library_root: &LibraryRoot,
     connection: &Connection,
     song: &Song,
+    request_id: u64,
 ) -> Result<()> {
     let Some(app_data_dir) = app_data_dir else {
         return Ok(());
     };
-    let Some(cached) = cache::stems::get_cached_stem_entry(connection, &song.hash)
-        .context("failed to load cached stems")?
+
+    let Some(library) = remote::active_remote_library(app_data_dir)
+        .map_err(|error| anyhow::anyhow!(error.message.clone()))?
     else {
         return Ok(());
     };
+    let provider = remote::provider::create_provider(app_data_dir, &library)
+        .map_err(|error| anyhow::anyhow!(error.message.clone()))?;
 
-    remote::ensure_remote_file_cached(app_data_dir, &cached.vocals_path)
-        .map_err(|error| anyhow::anyhow!(error.message.clone()))?;
-    remote::ensure_remote_file_cached(app_data_dir, &cached.accomp_path)
-        .map_err(|error| anyhow::anyhow!(error.message.clone()))?;
-    if let Some(drums_path) = cached.drums_path.as_deref() {
-        remote::ensure_remote_file_cached(app_data_dir, drums_path)
-            .map_err(|error| anyhow::anyhow!(error.message.clone()))?;
+    ensure_remote_stem_set_cached(
+        provider.as_ref(),
+        library_root,
+        connection,
+        song,
+        request_id,
+    )
+}
+
+/// A single required stem within a remote stem set, with its relative path
+/// (as stored in the cache database) and a human-readable label for errors.
+#[derive(Debug, Clone)]
+struct RequiredStem {
+    label: &'static str,
+    relative_path: String,
+}
+
+/// Returns the list of stems that must be present for the given cache entry.
+///
+/// Two-stem sets require vocals + accompaniment; four-stem sets require
+/// vocals + drums + bass + other.  The `accomp_path` column is always
+/// non-null in the schema but is empty for four-stem entries, so it is
+/// only included for two-stem sets.
+fn required_stems(entry: &cache::stems::StemCacheEntry) -> Vec<RequiredStem> {
+    if entry.has_individual_stems() {
+        vec![
+            RequiredStem {
+                label: "vocals",
+                relative_path: entry.vocals_path.clone(),
+            },
+            RequiredStem {
+                label: "drums",
+                relative_path: entry.drums_path.clone().unwrap_or_default(),
+            },
+            RequiredStem {
+                label: "bass",
+                relative_path: entry.bass_path.clone().unwrap_or_default(),
+            },
+            RequiredStem {
+                label: "other",
+                relative_path: entry.other_path.clone().unwrap_or_default(),
+            },
+        ]
+    } else {
+        vec![
+            RequiredStem {
+                label: "vocals",
+                relative_path: entry.vocals_path.clone(),
+            },
+            RequiredStem {
+                label: "accompaniment",
+                relative_path: entry.accomp_path.clone(),
+            },
+        ]
     }
-    if let Some(bass_path) = cached.bass_path.as_deref() {
-        remote::ensure_remote_file_cached(app_data_dir, bass_path)
-            .map_err(|error| anyhow::anyhow!(error.message.clone()))?;
+}
+
+/// Downloaded-and-verified stem, waiting to be atomically installed.
+struct VerifiedStem {
+    /// Absolute path of the temp file that passed validation.
+    temp_path: PathBuf,
+    /// Absolute path of the final destination.
+    final_path: PathBuf,
+}
+
+/// Decoded audio metadata used for cross-stem alignment validation.
+struct StemSetMetadata {
+    sample_rate: u32,
+    channels: usize,
+    /// Actual PCM frame count (samples.len() / channels) from a full decode.
+    /// This is more reliable than container-reported `num_frames`, which can
+    /// be wrong for truncated files.
+    frame_count: usize,
+}
+
+/// Decode a file and extract the metadata needed for set-level alignment
+/// validation.  A full decode is used (rather than just a probe) because it
+/// catches truncated files that have a valid header but incomplete data —
+/// a probe would report the header's frame count while the actual decoded
+/// frame count would be lower.
+///
+/// PR #3 will route this through a shared atomic-download helper that can
+/// cache the decoded audio to avoid re-decoding during playback.
+// TODO(PR#3): route through shared atomic download helper.
+fn decode_stem_metadata(path: &Path) -> Result<StemSetMetadata> {
+    let audio = decode::decode_file(path)
+        .with_context(|| format!("failed to decode stem at {}", path.display()))?;
+    let frame_count = audio.samples.len() / audio.channels.max(1);
+    Ok(StemSetMetadata {
+        sample_rate: audio.sample_rate,
+        channels: audio.channels,
+        frame_count,
+    })
+}
+
+/// All-or-nothing download + validation + atomic-rename for a remote stem set.
+///
+/// This orchestrator replaces the old per-stem `ensure_remote_file_cached`
+/// loop, which downloaded each stem independently to its final path with no
+/// validation and no set-level consistency check.  The old approach could
+/// leave a partially downloaded set on disk — e.g. vocals present but
+/// accompaniment truncated — which then produced silent or glitchy playback.
+///
+/// ## Semantics
+///
+/// * **All-or-nothing**: every required stem must download and validate
+///   successfully before any final-path file is touched.  If any stem fails
+///   (missing, truncated, corrupt, mismatched metadata), the entire set is
+///   rejected and existing final paths are left untouched.  Temp files are
+///   cleaned up.
+///
+/// * **In-process retention**: a stem whose final path already exists and
+///   decodes successfully is kept as-is — it is not re-downloaded.  This
+///   means a retry after a transient failure only re-downloads the stems that
+///   were missing or invalid.  Durable restart-survival (persisting which
+///   stems are verified across app restarts) is PR #2/#3's job; this function
+///   only retains verified stems within the same process lifetime.
+///   // TODO(PR#3): route through shared atomic download helper and durable
+///   // verified-stem catalog so restart-survival works.
+///
+/// * **Sample alignment**: every stem in the set must share the same sample
+///   rate, channel count, and PCM frame count.  Mismatched stems would
+///   produce phase artifacts or silent channels during playback, so the set
+///   is rejected as a unit when any stem deviates.  A full decode is used
+///   for validation (not just a probe) because truncated files can have a
+///   valid header but incomplete data — only a full decode reveals the
+///   actual PCM frame count.
+///
+/// * **Stale-guard**: `request_id` is an epoch counter that identifies the
+///   playback request that initiated this download.  When this function is
+///   made async in PR #7, the caller will check that the current song still
+///   matches `request_id` before installing the set.  In PR #1 the call is
+///   synchronous so the guard is structural — the song cannot change mid-call
+///   — but the parameter is threaded through so the async transition is a
+///   drop-in change.
+///   // TODO(PR#7): add an async stale-guard closure that checks the current
+///   // request_id against the active song before atomic rename.
+fn ensure_remote_stem_set_cached(
+    provider: &dyn RemoteProvider,
+    library_root: &LibraryRoot,
+    connection: &Connection,
+    song: &Song,
+    request_id: u64,
+) -> Result<()> {
+    let Some(cached) = cache::stems::get_cached_stem_entry(connection, &song.hash)
+        .context("failed to load cached stems")?
+    else {
+        // No stem cache entry — nothing to download.  The caller will surface
+        // a "karaoke not ready" error downstream.
+        return Ok(());
+    };
+
+    let required = required_stems(&cached);
+
+    // Phase 1: determine which stems are already verified (final path exists
+    // and decodes successfully) and which need downloading.
+    //
+    // A full decode is used for the retention check (not just a probe) so
+    // that a truncated or corrupt existing file is detected and re-downloaded
+    // rather than silently kept.
+    let mut verified: Vec<VerifiedStem> = Vec::new();
+    let mut to_download: Vec<RequiredStem> = Vec::new();
+    let mut reference_metadata: Option<StemSetMetadata> = None;
+
+    for stem in &required {
+        let final_path = library_root.resolve(&stem.relative_path);
+
+        if final_path.exists() {
+            match decode_stem_metadata(&final_path) {
+                Ok(metadata) => {
+                    // Retain already-verified stems — they survive retry and
+                    // are not re-downloaded.
+                    if reference_metadata.is_none() {
+                        reference_metadata = Some(metadata);
+                    }
+                    continue;
+                }
+                Err(_) => {
+                    // Existing file is corrupt or undecodeable — re-download.
+                }
+            }
+        }
+        to_download.push(stem.clone());
     }
-    if let Some(other_path) = cached.other_path.as_deref() {
-        remote::ensure_remote_file_cached(app_data_dir, other_path)
-            .map_err(|error| anyhow::anyhow!(error.message.clone()))?;
+
+    // Phase 2: download each missing stem to a unique temp path, then decode
+    // to validate content identity (fully decodable audio with non-zero
+    // length).
+    //
+    // Temp paths are unique per request so concurrent downloads for different
+    // playback requests do not collide: `<dest>.part.<stem>.<request_id>`.
+    for stem in &to_download {
+        let final_path = library_root.resolve(&stem.relative_path);
+        let temp_path = final_path.with_extension(format!("part.{}.{}", stem.label, request_id));
+
+        // Ensure the parent directory exists (the stem directory may not yet
+        // be present on a fresh working copy).
+        if let Some(parent) = temp_path.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create stem directory {}", parent.display()))?;
+        }
+
+        // Clean up any stale temp file from a previous attempt.
+        let _ = fs::remove_file(&temp_path);
+
+        provider
+            .download_file(&stem.relative_path, &temp_path)
+            .map_err(|error| {
+                anyhow::anyhow!("failed to download stem {}: {}", stem.label, error.message)
+            })?;
+
+        // Validate file size: a zero-byte download is permanently invalid.
+        let size = fs::metadata(&temp_path).map(|m| m.len()).unwrap_or(0);
+        if size == 0 {
+            let _ = fs::remove_file(&temp_path);
+            anyhow::bail!(
+                "stem {} downloaded as a zero-byte file — permanently invalid",
+                stem.label
+            );
+        }
+
+        // Full decode to verify content identity.  This catches truncated
+        // files (valid header but incomplete data) and corrupt files that
+        // cannot be decoded at all.
+        match decode_stem_metadata(&temp_path) {
+            Ok(metadata) => {
+                verified.push(VerifiedStem {
+                    temp_path,
+                    final_path,
+                });
+                if reference_metadata.is_none() {
+                    reference_metadata = Some(metadata);
+                }
+            }
+            Err(error) => {
+                let _ = fs::remove_file(&temp_path);
+                anyhow::bail!("stem {} failed validation decode: {}", stem.label, error);
+            }
+        }
     }
+
+    // Phase 3: cross-stem sample alignment check.
+    //
+    // Every stem in the set must share the same sample rate, channel count,
+    // and PCM frame count.  We decode each temp file and each already-verified
+    // final file and compare against the reference.  A mismatch means the
+    // set is inconsistent and must be rejected as a unit.
+    let reference = reference_metadata
+        .ok_or_else(|| anyhow::anyhow!("no stems to validate for song {}", song.hash))?;
+
+    for stem in &required {
+        let final_path = library_root.resolve(&stem.relative_path);
+        let path_to_check = verified
+            .iter()
+            .find(|v| v.final_path == final_path)
+            .map(|v| &v.temp_path)
+            .unwrap_or(&final_path);
+
+        if !path_to_check.exists() {
+            clean_up_temps(&verified);
+            anyhow::bail!(
+                "stem {} is missing after download phase — set incomplete",
+                stem.label
+            );
+        }
+
+        let metadata = decode_stem_metadata(path_to_check)
+            .with_context(|| format!("failed to decode stem {} for alignment check", stem.label))?;
+
+        if metadata.sample_rate != reference.sample_rate {
+            clean_up_temps(&verified);
+            anyhow::bail!(
+                "stem {} sample rate {} does not match set reference {}",
+                stem.label,
+                metadata.sample_rate,
+                reference.sample_rate
+            );
+        }
+        if metadata.channels != reference.channels {
+            clean_up_temps(&verified);
+            anyhow::bail!(
+                "stem {} channel count {} does not match set reference {}",
+                stem.label,
+                metadata.channels,
+                reference.channels
+            );
+        }
+        if metadata.frame_count != reference.frame_count {
+            clean_up_temps(&verified);
+            anyhow::bail!(
+                "stem {} PCM frame count {} does not match set reference {}",
+                stem.label,
+                metadata.frame_count,
+                reference.frame_count
+            );
+        }
+    }
+
+    // Phase 4: atomic rename — install every verified temp file over its
+    // final path only after ALL stems pass validation.
+    //
+    // `fs::rename` is atomic on POSIX (same filesystem) and overwrites the
+    // destination.  On Windows, `rename` also replaces the destination when
+    // both are on the same volume.  Temp files are siblings of the final
+    // path so they are always on the same filesystem.
+    for v in &verified {
+        fs::rename(&v.temp_path, &v.final_path).with_context(|| {
+            format!(
+                "failed to atomically install stem {} -> {}",
+                v.temp_path.display(),
+                v.final_path.display()
+            )
+        })?;
+    }
+
     Ok(())
+}
+
+/// Remove all temp files from a list of verified stems (used on validation
+/// failure to avoid leaving partial downloads on disk).
+fn clean_up_temps(verified: &[VerifiedStem]) {
+    for v in verified {
+        let _ = fs::remove_file(&v.temp_path);
+    }
 }
 
 fn load_remote_stems_playback_source(
@@ -527,6 +855,14 @@ fn map_cache_error(error: CacheError) -> PlaybackError {
 #[cfg(test)]
 mod tests {
     use crate::audio::chunked_cache::CacheManager;
+    use crate::cache::stems::StemCacheEntry;
+    use crate::commands::error::{CommandError, CommandResult};
+    use crate::library::Song;
+    use crate::library_root::LibraryRoot;
+    use crate::remote::provider::RemoteProvider;
+    use std::collections::HashMap;
+    use std::path::Path;
+    use std::sync::{Arc, Mutex};
     use tempfile::tempdir;
 
     #[test]
@@ -543,5 +879,472 @@ mod tests {
         assert_eq!(manager.len(), 1);
         assert!(dir.path().join("song-b.cache").exists());
         assert!(!dir.path().join("song-a.cache").exists());
+    }
+
+    // ---- Test infrastructure for remote stem set caching ----
+
+    /// In-memory fake provider that serves files from a `HashMap`.
+    ///
+    /// Implements only the `download_file` and `get_file_size` methods that
+    /// `ensure_remote_stem_set_cached` needs.  All other trait methods return
+    /// empty/Ok defaults — this is test-only and never used in production.
+    struct FakeRemoteProvider {
+        files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    }
+
+    impl FakeRemoteProvider {
+        fn with_files(files: HashMap<String, Vec<u8>>) -> Self {
+            Self {
+                files: Arc::new(Mutex::new(files)),
+            }
+        }
+    }
+
+    impl RemoteProvider for FakeRemoteProvider {
+        fn get_revision(&self, _relative_path: &str) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+
+        fn download_file(&self, relative_path: &str, destination: &Path) -> CommandResult<()> {
+            let files = self.files.lock().unwrap();
+            let data = files.get(relative_path).cloned().ok_or_else(|| {
+                CommandError::from(crate::library::error::LibraryError::Internal(format!(
+                    "fake provider: file {relative_path} not found"
+                )))
+            })?;
+            if let Some(parent) = destination.parent() {
+                std::fs::create_dir_all(parent).ok();
+            }
+            std::fs::write(destination, &data).map_err(|e| {
+                CommandError::from(crate::library::error::LibraryError::Internal(format!(
+                    "fake provider: failed to write {}: {e}",
+                    destination.display()
+                )))
+            })?;
+            Ok(())
+        }
+
+        fn upload_file(&self, _relative_path: &str) -> CommandResult<()> {
+            Ok(())
+        }
+
+        fn upload_directory(&self, _relative_path: &str) -> CommandResult<()> {
+            Ok(())
+        }
+
+        fn delete_path(&self, _relative_path: &str) -> CommandResult<()> {
+            Ok(())
+        }
+
+        fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+
+        fn get_file_size(&self, relative_path: &str) -> CommandResult<Option<u64>> {
+            Ok(self
+                .files
+                .lock()
+                .unwrap()
+                .get(relative_path)
+                .map(|d| d.len() as u64))
+        }
+
+        fn refresh_existing(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+    }
+
+    /// Generate a minimal valid WAV file with the given sample rate, channel
+    /// count, and number of PCM frames.  Each sample is a deterministic
+    /// non-zero value so symphonia can probe and decode it.
+    fn make_wav(sample_rate: u32, channels: u16, frames: u32) -> Vec<u8> {
+        let bits_per_sample: u16 = 16;
+        let bytes_per_sample = (bits_per_sample / 8) as u32;
+        let data_size = frames * channels as u32 * bytes_per_sample;
+        let file_size = 36 + data_size;
+
+        let mut buf = Vec::with_capacity(44 + data_size as usize);
+
+        // RIFF header
+        buf.extend_from_slice(b"RIFF");
+        buf.extend_from_slice(&file_size.to_le_bytes());
+        buf.extend_from_slice(b"WAVE");
+
+        // fmt chunk
+        buf.extend_from_slice(b"fmt ");
+        buf.extend_from_slice(&16u32.to_le_bytes()); // chunk size
+        buf.extend_from_slice(&1u16.to_le_bytes()); // PCM format
+        buf.extend_from_slice(&channels.to_le_bytes());
+        buf.extend_from_slice(&sample_rate.to_le_bytes());
+        let byte_rate = sample_rate * channels as u32 * bytes_per_sample;
+        buf.extend_from_slice(&byte_rate.to_le_bytes());
+        let block_align = channels * bytes_per_sample as u16;
+        buf.extend_from_slice(&block_align.to_le_bytes());
+        buf.extend_from_slice(&bits_per_sample.to_le_bytes());
+
+        // data chunk
+        buf.extend_from_slice(b"data");
+        buf.extend_from_slice(&data_size.to_le_bytes());
+
+        // PCM samples — deterministic pattern, non-zero
+        for i in 0..(frames * channels as u32) {
+            let sample: i16 = ((i % 8000) as i16) - 4000;
+            buf.extend_from_slice(&sample.to_le_bytes());
+        }
+
+        buf
+    }
+
+    /// Create a test library root with an initialized database.
+    fn test_library_root() -> (tempfile::TempDir, LibraryRoot) {
+        let dir = tempdir().expect("temp dir");
+        let lib = LibraryRoot::create(&dir.path().join("Lib")).expect("create library");
+        crate::cache::initialize_library_database(&lib.database_path()).expect("init database");
+        (dir, lib)
+    }
+
+    /// Insert a stem cache entry into the database for the given song hash.
+    /// Also inserts a minimal song row to satisfy the foreign key constraint.
+    fn insert_stem_entry(connection: &rusqlite::Connection, entry: &StemCacheEntry) {
+        let song = remote_stems_song(&entry.song_hash);
+        crate::cache::upsert_song(connection, &song).expect("test song upsert should succeed");
+        crate::cache::stems::upsert_stem_entry_test(connection, entry);
+    }
+
+    /// Build a `Song` with `audio_source_kind = "stems_remote"` and no
+    /// `file_path` (mirroring what `update_remote_song` produces).
+    fn remote_stems_song(hash: &str) -> Song {
+        Song {
+            hash: hash.to_owned(),
+            file_path: None,
+            cdg_path: None,
+            media_g_container: None,
+            instrumental: false,
+            language: None,
+            audio_source_kind: "stems_remote".to_owned(),
+            title: Some("Test".to_owned()),
+            artist: None,
+            album: None,
+            duration_ms: 1000,
+            cover_art: None,
+            has_cover_art: false,
+            imported_at: 1,
+            original_ext: Some("wav".to_owned()),
+        }
+    }
+
+    fn two_stem_entry(hash: &str) -> StemCacheEntry {
+        StemCacheEntry {
+            song_hash: hash.to_owned(),
+            vocals_path: format!("stems/{hash}/vocals.wav"),
+            accomp_path: format!("stems/{hash}/accompaniment.wav"),
+            separated_at: 1,
+            drums_path: None,
+            bass_path: None,
+            other_path: None,
+            model_variant: "test".to_owned(),
+        }
+    }
+
+    fn four_stem_entry(hash: &str) -> StemCacheEntry {
+        StemCacheEntry {
+            song_hash: hash.to_owned(),
+            vocals_path: format!("stems/{hash}/vocals.wav"),
+            accomp_path: String::new(),
+            separated_at: 1,
+            drums_path: Some(format!("stems/{hash}/drums.wav")),
+            bass_path: Some(format!("stems/{hash}/bass.wav")),
+            other_path: Some(format!("stems/{hash}/other.wav")),
+            model_variant: "test".to_owned(),
+        }
+    }
+
+    // ---- Test cases ----
+
+    #[test]
+    fn stems_remote_bypasses_resolve_song_file_path_in_streaming() {
+        // A stems_remote song has file_path = None.  The streaming path must
+        // return Ok(None) WITHOUT calling resolve_song_file_path, which would
+        // fail.  Ok(None) makes the caller fall back to the non-streaming
+        // load_playback_source that handles remote stems.
+        let dir = tempdir().expect("temp dir");
+        let lib = LibraryRoot::create(&dir.path().join("Lib")).expect("library");
+        let song = remote_stems_song("song-a");
+        let cache = Arc::new(Mutex::new(CacheManager::new(
+            dir.path().join("cache"),
+            1024 * 1024,
+        )));
+
+        let result = super::load_playback_source_streaming(Some(dir.path()), &cache, &lib, &song);
+
+        assert!(
+            result.is_ok(),
+            "streaming load should not error: {:?}",
+            result.err()
+        );
+        assert!(
+            result.unwrap().is_none(),
+            "stems_remote should return Ok(None)"
+        );
+    }
+
+    #[test]
+    fn two_stem_set_downloads_every_required_file() {
+        let (_dir, lib) = test_library_root();
+        let connection = crate::cache::open_database(&lib.database_path()).expect("open db");
+        let song = remote_stems_song("song-2s");
+        let entry = two_stem_entry("song-2s");
+        insert_stem_entry(&connection, &entry);
+
+        let wav = make_wav(44100, 2, 1000);
+        let mut files = HashMap::new();
+        files.insert(entry.vocals_path.clone(), wav.clone());
+        files.insert(entry.accomp_path.clone(), wav.clone());
+        let provider = FakeRemoteProvider::with_files(files);
+
+        let result = super::ensure_remote_stem_set_cached(&provider, &lib, &connection, &song, 1);
+
+        assert!(
+            result.is_ok(),
+            "two-stem download should succeed: {:?}",
+            result.err()
+        );
+
+        // Both final paths should exist.
+        assert!(lib.resolve(&entry.vocals_path).exists());
+        assert!(lib.resolve(&entry.accomp_path).exists());
+
+        // No temp files should remain.
+        let stem_dir = lib.resolve("stems/song-2s");
+        if let Ok(entries) = std::fs::read_dir(&stem_dir) {
+            for e in entries.flatten() {
+                assert!(
+                    !e.file_name().to_string_lossy().contains(".part."),
+                    "temp file left behind: {}",
+                    e.path().display()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn four_stem_set_downloads_every_required_file() {
+        let (_dir, lib) = test_library_root();
+        let connection = crate::cache::open_database(&lib.database_path()).expect("open db");
+        let song = remote_stems_song("song-4s");
+        let entry = four_stem_entry("song-4s");
+        insert_stem_entry(&connection, &entry);
+
+        let wav = make_wav(44100, 2, 1000);
+        let mut files = HashMap::new();
+        files.insert(entry.vocals_path.clone(), wav.clone());
+        files.insert(entry.drums_path.clone().unwrap(), wav.clone());
+        files.insert(entry.bass_path.clone().unwrap(), wav.clone());
+        files.insert(entry.other_path.clone().unwrap(), wav.clone());
+        let provider = FakeRemoteProvider::with_files(files);
+
+        let result = super::ensure_remote_stem_set_cached(&provider, &lib, &connection, &song, 1);
+
+        assert!(
+            result.is_ok(),
+            "four-stem download should succeed: {:?}",
+            result.err()
+        );
+        assert!(lib.resolve(&entry.vocals_path).exists());
+        assert!(lib.resolve(entry.drums_path.as_deref().unwrap()).exists());
+        assert!(lib.resolve(entry.bass_path.as_deref().unwrap()).exists());
+        assert!(lib.resolve(entry.other_path.as_deref().unwrap()).exists());
+    }
+
+    #[test]
+    fn missing_stem_prevents_entire_set_from_installing() {
+        let (_dir, lib) = test_library_root();
+        let connection = crate::cache::open_database(&lib.database_path()).expect("open db");
+        let song = remote_stems_song("song-missing");
+        let entry = two_stem_entry("song-missing");
+        insert_stem_entry(&connection, &entry);
+
+        let wav = make_wav(44100, 2, 1000);
+        let mut files = HashMap::new();
+        files.insert(entry.vocals_path.clone(), wav.clone());
+        // accomp is missing from the provider — download will fail.
+        let provider = FakeRemoteProvider::with_files(files);
+
+        let result = super::ensure_remote_stem_set_cached(&provider, &lib, &connection, &song, 1);
+
+        assert!(result.is_err(), "set with missing stem should fail");
+
+        // Neither final path should be installed (all-or-nothing).
+        assert!(!lib.resolve(&entry.vocals_path).exists());
+        assert!(!lib.resolve(&entry.accomp_path).exists());
+    }
+
+    #[test]
+    fn truncated_stem_prevents_entire_set_from_installing() {
+        let (_dir, lib) = test_library_root();
+        let connection = crate::cache::open_database(&lib.database_path()).expect("open db");
+        let song = remote_stems_song("song-trunc");
+        let entry = two_stem_entry("song-trunc");
+        insert_stem_entry(&connection, &entry);
+
+        let good_wav = make_wav(44100, 2, 1000);
+        // Truncated WAV: valid header but data chunk cut short.
+        let mut truncated = make_wav(44100, 2, 1000);
+        truncated.truncate(truncated.len() / 2);
+
+        let mut files = HashMap::new();
+        files.insert(entry.vocals_path.clone(), good_wav);
+        files.insert(entry.accomp_path.clone(), truncated);
+        let provider = FakeRemoteProvider::with_files(files);
+
+        let result = super::ensure_remote_stem_set_cached(&provider, &lib, &connection, &song, 1);
+
+        assert!(result.is_err(), "set with truncated stem should fail");
+
+        // Neither final path should be installed.
+        assert!(!lib.resolve(&entry.vocals_path).exists());
+        assert!(!lib.resolve(&entry.accomp_path).exists());
+    }
+
+    #[test]
+    fn corrupt_stem_prevents_entire_set_from_installing() {
+        let (_dir, lib) = test_library_root();
+        let connection = crate::cache::open_database(&lib.database_path()).expect("open db");
+        let song = remote_stems_song("song-corrupt");
+        let entry = two_stem_entry("song-corrupt");
+        insert_stem_entry(&connection, &entry);
+
+        let good_wav = make_wav(44100, 2, 1000);
+        // Corrupt: random bytes that are not valid audio.
+        let corrupt: Vec<u8> = (0..1024).map(|i| (i % 256) as u8).collect();
+
+        let mut files = HashMap::new();
+        files.insert(entry.vocals_path.clone(), good_wav);
+        files.insert(entry.accomp_path.clone(), corrupt);
+        let provider = FakeRemoteProvider::with_files(files);
+
+        let result = super::ensure_remote_stem_set_cached(&provider, &lib, &connection, &song, 1);
+
+        assert!(result.is_err(), "set with corrupt stem should fail");
+        assert!(!lib.resolve(&entry.vocals_path).exists());
+        assert!(!lib.resolve(&entry.accomp_path).exists());
+    }
+
+    #[test]
+    fn mismatched_sample_rate_rejects_set() {
+        let (_dir, lib) = test_library_root();
+        let connection = crate::cache::open_database(&lib.database_path()).expect("open db");
+        let song = remote_stems_song("song-mismatch");
+        let entry = two_stem_entry("song-mismatch");
+        insert_stem_entry(&connection, &entry);
+
+        let wav_44100 = make_wav(44100, 2, 1000);
+        let wav_48000 = make_wav(48000, 2, 1000);
+
+        let mut files = HashMap::new();
+        files.insert(entry.vocals_path.clone(), wav_44100);
+        files.insert(entry.accomp_path.clone(), wav_48000);
+        let provider = FakeRemoteProvider::with_files(files);
+
+        let result = super::ensure_remote_stem_set_cached(&provider, &lib, &connection, &song, 1);
+
+        let err = result.expect_err("mismatched sample rate should reject set");
+        assert!(
+            err.to_string().contains("sample rate"),
+            "error should mention sample rate: {err}"
+        );
+
+        // Neither file should be installed.
+        assert!(!lib.resolve(&entry.vocals_path).exists());
+        assert!(!lib.resolve(&entry.accomp_path).exists());
+    }
+
+    #[test]
+    fn already_verified_stems_are_retained_on_retry() {
+        let (_dir, lib) = test_library_root();
+        let connection = crate::cache::open_database(&lib.database_path()).expect("open db");
+        let song = remote_stems_song("song-retry");
+        let entry = two_stem_entry("song-retry");
+        insert_stem_entry(&connection, &entry);
+
+        // Pre-place a valid vocals file at its final path (simulating a
+        // previously verified stem from a prior partial run).
+        let wav = make_wav(44100, 2, 1000);
+        let vocals_final = lib.resolve(&entry.vocals_path);
+        std::fs::create_dir_all(vocals_final.parent().unwrap()).unwrap();
+        std::fs::write(&vocals_final, &wav).unwrap();
+
+        // Provider only has accomp — vocals should NOT be re-downloaded.
+        let mut files = HashMap::new();
+        files.insert(entry.accomp_path.clone(), wav);
+        let provider = FakeRemoteProvider::with_files(files);
+
+        let result = super::ensure_remote_stem_set_cached(&provider, &lib, &connection, &song, 1);
+
+        assert!(
+            result.is_ok(),
+            "retry with retained vocals should succeed: {:?}",
+            result.err()
+        );
+        assert!(vocals_final.exists(), "retained vocals should still exist");
+        assert!(
+            lib.resolve(&entry.accomp_path).exists(),
+            "accomp should be downloaded"
+        );
+    }
+
+    #[test]
+    fn stale_download_for_song_a_does_not_overwrite_song_b_files() {
+        // PR #1's stale-guard is structural: the function is synchronous so
+        // the song cannot change mid-call.  This test verifies that calling
+        // ensure_remote_stem_set_cached for song A does not touch song B's
+        // already-installed stem files.  When PR #7 makes this async, the
+        // request_id guard will prevent a late completion from song A's
+        // download from installing after song B is current.
+        let (_dir, lib) = test_library_root();
+        let connection = crate::cache::open_database(&lib.database_path()).expect("open db");
+
+        // Set up song B with already-installed stems.
+        let entry_b = two_stem_entry("song-b");
+        insert_stem_entry(&connection, &entry_b);
+        let wav = make_wav(44100, 2, 1000);
+        let vocals_b = lib.resolve(&entry_b.vocals_path);
+        let accomp_b = lib.resolve(&entry_b.accomp_path);
+        std::fs::create_dir_all(vocals_b.parent().unwrap()).unwrap();
+        std::fs::write(&vocals_b, &wav).unwrap();
+        std::fs::write(&accomp_b, &wav).unwrap();
+
+        // Now download stems for song A with a different request_id.
+        let song_a = remote_stems_song("song-a");
+        let entry_a = two_stem_entry("song-a");
+        insert_stem_entry(&connection, &entry_a);
+
+        let mut files = HashMap::new();
+        files.insert(entry_a.vocals_path.clone(), wav.clone());
+        files.insert(entry_a.accomp_path.clone(), wav.clone());
+        let provider = FakeRemoteProvider::with_files(files);
+
+        let result = super::ensure_remote_stem_set_cached(
+            &provider,
+            &lib,
+            &connection,
+            &song_a,
+            99, // different request_id
+        );
+
+        assert!(
+            result.is_ok(),
+            "song A download should succeed: {:?}",
+            result.err()
+        );
+
+        // Song B's files should be untouched — different song_hash, different
+        // stem directory.
+        assert!(vocals_b.exists(), "song B vocals should still exist");
+        assert!(accomp_b.exists(), "song B accompaniment should still exist");
+
+        // Song A's files should now exist.
+        assert!(lib.resolve(&entry_a.vocals_path).exists());
+        assert!(lib.resolve(&entry_a.accomp_path).exists());
     }
 }
