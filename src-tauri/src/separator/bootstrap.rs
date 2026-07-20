@@ -1,9 +1,9 @@
 use crate::config::ModelVariant;
-use crate::hash;
+use crate::separator::verified_manifest::{
+    sha256_hex, verified_manifest_matches, verified_manifest_path, write_verified_manifest,
+};
 use anyhow::{bail, Context, Result};
 use reqwest::blocking::Client;
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::{
     fs,
     io::Read,
@@ -15,14 +15,6 @@ pub struct ModelDescriptor {
     pub filename: &'static str,
     pub download_url: &'static str,
     pub sha256: &'static str,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct VerifiedModelManifest {
-    filename: String,
-    sha256: String,
-    file_size: u64,
-    modified_unix_nanos: u128,
 }
 
 pub const HTDEMUCS: ModelDescriptor = ModelDescriptor {
@@ -255,12 +247,6 @@ pub fn download_and_install_model(
     install_verified_model_bytes(destination, &payload, expected_sha256)
 }
 
-fn verify_file_checksum(path: &Path, expected_sha256: &str) -> Result<bool> {
-    let bytes =
-        fs::read(path).with_context(|| format!("failed to read model file {}", path.display()))?;
-    Ok(sha256_hex(&bytes) == expected_sha256)
-}
-
 fn verify_model_install(path: &Path, expected_sha256: &str) -> Result<bool> {
     // RATIONALE: Managed ONNX files are hundreds of MB. Once the app has
     // verified a model and recorded its exact metadata, startup should not read
@@ -269,90 +255,11 @@ fn verify_model_install(path: &Path, expected_sha256: &str) -> Result<bool> {
         return Ok(true);
     }
 
-    let ok = verify_file_checksum(path, expected_sha256)?;
+    let ok = crate::separator::verified_manifest::verify_file_checksum(path, expected_sha256)?;
     if ok {
         write_verified_manifest(path, expected_sha256)?;
     }
     Ok(ok)
-}
-
-fn verified_manifest_path(model_path: &Path) -> Result<PathBuf> {
-    let filename = model_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .with_context(|| format!("model path {} has no filename", model_path.display()))?;
-    Ok(model_path.with_file_name(format!("{filename}.verified.json")))
-}
-
-fn model_manifest(model_path: &Path, expected_sha256: &str) -> Result<VerifiedModelManifest> {
-    let metadata = fs::metadata(model_path)
-        .with_context(|| format!("failed to inspect model file {}", model_path.display()))?;
-    let modified_unix_nanos = metadata
-        .modified()
-        .with_context(|| format!("failed to read modified time for {}", model_path.display()))?
-        .duration_since(UNIX_EPOCH)
-        .with_context(|| {
-            format!(
-                "model file {} has invalid modified time",
-                model_path.display()
-            )
-        })?
-        .as_nanos();
-    let filename = model_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .with_context(|| format!("model path {} has no filename", model_path.display()))?
-        .to_owned();
-
-    Ok(VerifiedModelManifest {
-        filename,
-        sha256: expected_sha256.to_owned(),
-        file_size: metadata.len(),
-        modified_unix_nanos,
-    })
-}
-
-fn verified_manifest_matches(model_path: &Path, expected_sha256: &str) -> Result<bool> {
-    let manifest_path = verified_manifest_path(model_path)?;
-    if !manifest_path.exists() {
-        return Ok(false);
-    }
-
-    let expected = model_manifest(model_path, expected_sha256)?;
-    let contents = fs::read_to_string(&manifest_path).with_context(|| {
-        format!(
-            "failed to read model verification manifest {}",
-            manifest_path.display()
-        )
-    })?;
-    let actual: VerifiedModelManifest = serde_json::from_str(&contents).with_context(|| {
-        format!(
-            "failed to parse model verification manifest {}",
-            manifest_path.display()
-        )
-    })?;
-
-    Ok(actual == expected)
-}
-
-fn write_verified_manifest(model_path: &Path, expected_sha256: &str) -> Result<()> {
-    let manifest = model_manifest(model_path, expected_sha256)?;
-    let manifest_path = verified_manifest_path(model_path)?;
-    let json =
-        serde_json::to_string_pretty(&manifest).context("failed to serialize model manifest")?;
-    fs::write(&manifest_path, json).with_context(|| {
-        format!(
-            "failed to write model verification manifest {}",
-            manifest_path.display()
-        )
-    })?;
-    Ok(())
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    hash::hex_lower(hasher.finalize())
 }
 
 fn temporary_download_path(destination: &Path) -> PathBuf {

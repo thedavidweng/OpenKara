@@ -21,14 +21,6 @@ vi.mock("@/stores/queue-store", () => ({
     selector(mockQueueState),
 }));
 
-vi.mock("@/hooks/use-animated-presence", () => ({
-  useAnimatedPresence: () => ({
-    shouldRender: false,
-    className: "",
-    onAnimationEnd: undefined,
-  }),
-}));
-
 vi.mock("@/components/Layout/GlobalProgressBar", () => ({
   GlobalProgressBar: () => null,
 }));

@@ -1,6 +1,6 @@
 import { useCallback, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import { MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH } from "@/lib/layout-constants";
+import { MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH } from "@/stores/layout-store";
 
 interface SidebarRailProps {
   visible: boolean;

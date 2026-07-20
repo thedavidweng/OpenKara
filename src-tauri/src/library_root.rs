@@ -1,9 +1,9 @@
+use crate::commands::unix_timestamp;
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 const MARKER_FILENAME: &str = ".openkara-library";
@@ -160,13 +160,6 @@ impl LibraryRoot {
 
         Ok(normalised)
     }
-}
-
-fn unix_timestamp() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time should be after unix epoch")
-        .as_secs() as i64
 }
 
 #[cfg(test)]

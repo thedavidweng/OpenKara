@@ -1,10 +1,10 @@
+import { useCallback, useReducer } from "react";
 import { QueuePanel } from "@/components/Player/QueuePanel";
 import { GlobalProgressBar } from "@/components/Layout/GlobalProgressBar";
 import { PlaybackStage } from "@/components/Playback/PlaybackStage";
 import { SettingsOverlay } from "@/components/Settings/SettingsOverlay";
 import { ModelBootstrapBanner } from "@/components/Bootstrap/ModelBootstrapBanner";
 import { PlaybackBar } from "@/components/Player/PlaybackBar";
-import { useAnimatedPresence } from "@/hooks/use-animated-presence";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useQueueStore } from "@/stores/queue-store";
 
@@ -12,16 +12,45 @@ interface MainContentViewProps {
   previewMode?: boolean;
 }
 
+type QueuePhase = "visible" | "exiting" | "hidden";
+type QueueAction = { type: "show" } | { type: "hide" } | { type: "exited" };
+
+function queueReducer(_state: QueuePhase, action: QueueAction): QueuePhase {
+  switch (action.type) {
+    case "show":
+      return "visible";
+    case "hide":
+      return "exiting";
+    case "exited":
+      return "hidden";
+  }
+}
+
 export function MainContentView({
   previewMode = false,
 }: MainContentViewProps = {}) {
   const settingsOpen = useSettingsStore((s) => s.isOpen);
   const queueOpen = useQueueStore((s) => s.isOpen);
-  const queueSidebar = useAnimatedPresence(
-    queueOpen,
-    "animate-slide-in-right",
-    "animate-slide-out-right",
+  const [queuePhase, dispatch] = useReducer(
+    queueReducer,
+    queueOpen ? "visible" : "hidden",
   );
+
+  if (queueOpen && queuePhase !== "visible") {
+    dispatch({ type: "show" });
+  } else if (!queueOpen && queuePhase === "visible") {
+    dispatch({ type: "hide" });
+  }
+
+  const onQueueAnimationEnd = useCallback(() => {
+    dispatch({ type: "exited" });
+  }, []);
+
+  const queueShouldRender = queuePhase !== "hidden";
+  const queueClassName =
+    queuePhase === "exiting"
+      ? "animate-slide-out-right"
+      : "animate-slide-in-right";
 
   return (
     <div
@@ -37,10 +66,12 @@ export function MainContentView({
           <ModelBootstrapBanner />
           <PlaybackStage />
         </div>
-        {queueSidebar.shouldRender && (
+        {queueShouldRender && (
           <div
-            className={`h-full ${queueSidebar.className}`}
-            onAnimationEnd={queueSidebar.onAnimationEnd}
+            className={`h-full ${queueClassName}`}
+            onAnimationEnd={
+              queuePhase === "exiting" ? onQueueAnimationEnd : undefined
+            }
           >
             <QueuePanel />
           </div>

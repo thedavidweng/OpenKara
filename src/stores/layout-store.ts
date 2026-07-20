@@ -3,11 +3,10 @@ import {
   createWebviewSyncChannel,
   type WebviewSyncChannel,
 } from "@/runtime/webview-sync";
-import {
-  MIN_SIDEBAR_WIDTH,
-  MAX_SIDEBAR_WIDTH,
-  DEFAULT_SIDEBAR_WIDTH,
-} from "@/lib/layout-constants";
+
+export const MIN_SIDEBAR_WIDTH = 240;
+export const MAX_SIDEBAR_WIDTH = 420;
+const DEFAULT_SIDEBAR_WIDTH = 260;
 
 interface LayoutState {
   sidebarVisible: boolean;
@@ -22,10 +21,6 @@ export interface LayoutSyncSnapshot {
   sidebarWidth: number;
 }
 
-function clampSidebarWidth(width: number): number {
-  return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width));
-}
-
 export function createLayoutStore(
   syncChannel: WebviewSyncChannel<LayoutSyncSnapshot> = createWebviewSyncChannel<LayoutSyncSnapshot>(
     "openkara.layout",
@@ -35,8 +30,12 @@ export function createLayoutStore(
     const syncLayout = (snapshot: Partial<LayoutSyncSnapshot>) => {
       const current = get();
       const nextVisible = snapshot.sidebarVisible ?? current.sidebarVisible;
-      const nextWidth = clampSidebarWidth(
-        snapshot.sidebarWidth ?? current.sidebarWidth,
+      const nextWidth = Math.min(
+        MAX_SIDEBAR_WIDTH,
+        Math.max(
+          MIN_SIDEBAR_WIDTH,
+          snapshot.sidebarWidth ?? current.sidebarWidth,
+        ),
       );
 
       if (
@@ -77,7 +76,10 @@ export function createLayoutStore(
   const unsubscribe = syncChannel.subscribe(
     ({ sidebarVisible, sidebarWidth }) => {
       const current = store.getState();
-      const nextWidth = clampSidebarWidth(sidebarWidth);
+      const nextWidth = Math.min(
+        MAX_SIDEBAR_WIDTH,
+        Math.max(MIN_SIDEBAR_WIDTH, sidebarWidth),
+      );
       if (
         current.sidebarVisible === sidebarVisible &&
         current.sidebarWidth === nextWidth

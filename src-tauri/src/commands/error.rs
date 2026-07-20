@@ -223,3 +223,10 @@ pub fn current_unix_timestamp() -> Result<i64> {
 
     Ok(duration.as_secs() as i64)
 }
+
+pub fn unix_timestamp() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+}

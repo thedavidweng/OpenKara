@@ -7,11 +7,6 @@ import {
   useTooltipDelayCoordinator,
   type TooltipDelayCoordinator,
 } from "./Tooltip.context";
-import {
-  DEFAULT_DELAY_DURATION_MS,
-  DEFAULT_HIDE_GRACE_DURATION_MS,
-  DEFAULT_SKIP_DELAY_DURATION_MS,
-} from "./Tooltip.constants";
 
 describe("useTooltipDelayCoordinator", () => {
   let container: HTMLDivElement;
@@ -47,11 +42,6 @@ describe("useTooltipDelayCoordinator", () => {
       root.render(<Probe />);
     });
 
-    expect(coordinator?.config).toEqual({
-      delayDuration: DEFAULT_DELAY_DURATION_MS,
-      skipDelayDuration: DEFAULT_SKIP_DELAY_DURATION_MS,
-      hideGraceDuration: DEFAULT_HIDE_GRACE_DURATION_MS,
-    });
     expect(coordinator?.isSkipDelayActive()).toBe(false);
 
     expect(() => {

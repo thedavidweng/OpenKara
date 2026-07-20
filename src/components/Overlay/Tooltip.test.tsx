@@ -41,25 +41,10 @@ describe("Tooltip", () => {
     vi.restoreAllMocks();
   });
 
-  function renderTooltip(
-    ui: ReactNode,
-    options?: {
-      withProvider?: boolean;
-      providerProps?: Omit<
-        React.ComponentProps<typeof TooltipProvider>,
-        "children"
-      >;
-    },
-  ) {
+  function renderTooltip(ui: ReactNode, options?: { withProvider?: boolean }) {
     const withProvider = options?.withProvider ?? true;
     act(() => {
-      root.render(
-        withProvider ? (
-          <TooltipProvider {...options?.providerProps}>{ui}</TooltipProvider>
-        ) : (
-          ui
-        ),
-      );
+      root.render(withProvider ? <TooltipProvider>{ui}</TooltipProvider> : ui);
     });
   }
 
@@ -134,7 +119,6 @@ describe("Tooltip", () => {
       <Tooltip label="Import files" delayDuration={20}>
         <button type="button">Import</button>
       </Tooltip>,
-      { providerProps: { hideGraceDuration: 20 } },
     );
 
     const wrapper = getTriggerWrappers()[0] as HTMLElement;
@@ -148,7 +132,7 @@ describe("Tooltip", () => {
 
     await user.unhover(wrapper);
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await new Promise((resolve) => setTimeout(resolve, 130));
     });
     expect(getTooltip()).toBeNull();
   });
@@ -385,7 +369,6 @@ describe("Tooltip", () => {
       <Tooltip label="Late tooltip" delayDuration={50}>
         <button type="button">Late</button>
       </Tooltip>,
-      { providerProps: { hideGraceDuration: 20 } },
     );
 
     const wrapper = getTriggerWrappers()[0] as HTMLElement;
@@ -393,7 +376,7 @@ describe("Tooltip", () => {
     await user.unhover(wrapper);
 
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 80));
+      await new Promise((resolve) => setTimeout(resolve, 130));
     });
 
     expect(getTooltip()).toBeNull();

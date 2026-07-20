@@ -1,7 +1,9 @@
+use crate::separator::verified_manifest::{
+    sha256_hex, verified_manifest_matches, verified_manifest_path, write_verified_manifest,
+};
 use anyhow::{bail, Context, Result};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::{
     fs,
     io::Read,
@@ -200,7 +202,7 @@ pub fn ensure_runtime_verified(app_data_dir: &Path) -> Result<PathBuf> {
         RuntimeResolution::Corrupt(path) => {
             // Delete the corrupt file so the next attempt starts clean.
             let _ = fs::remove_file(&path);
-            let manifest = verified_manifest_path(&path);
+            let manifest = verified_manifest_path(&path)?;
             let _ = fs::remove_file(&manifest);
             bail!(
                 "ONNX Runtime at {} is corrupt (SHA-256 mismatch); deleted; re-download required",
@@ -222,7 +224,7 @@ pub fn delete_runtime(app_data_dir: &Path) -> Result<()> {
         fs::remove_file(&path)
             .with_context(|| format!("failed to delete runtime {}", path.display()))?;
     }
-    let manifest = verified_manifest_path(&path);
+    let manifest = verified_manifest_path(&path)?;
     if manifest.exists() {
         fs::remove_file(&manifest).with_context(|| {
             format!(
@@ -536,8 +538,9 @@ fn runtime_filename_matches(candidate: &str, expected: &str) -> bool {
 }
 
 fn verify_runtime_install(path: &Path) -> Result<bool> {
+    let expected_sha256 = &RUNTIME_DESCRIPTOR.sha256;
     // Fast path: check the verification manifest first.
-    if verified_manifest_matches(path)? {
+    if verified_manifest_matches(path, expected_sha256)? {
         return Ok(true);
     }
 
@@ -545,105 +548,13 @@ fn verify_runtime_install(path: &Path) -> Result<bool> {
     let bytes = fs::read(path)
         .with_context(|| format!("failed to read runtime file {}", path.display()))?;
     let actual = sha256_hex(&bytes);
-    let expected = &RUNTIME_DESCRIPTOR.sha256;
 
-    if actual == *expected {
-        write_verified_manifest(path, expected)?;
+    if actual == *expected_sha256 {
+        write_verified_manifest(path, expected_sha256)?;
         return Ok(true);
     }
 
     Ok(false)
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct VerifiedRuntimeManifest {
-    filename: String,
-    sha256: String,
-    file_size: u64,
-    modified_unix_nanos: u128,
-}
-
-fn verified_manifest_path(runtime_path: &Path) -> PathBuf {
-    let filename = runtime_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("runtime");
-    runtime_path.with_file_name(format!("{filename}.verified.json"))
-}
-
-fn runtime_manifest(runtime_path: &Path, expected_sha256: &str) -> Result<VerifiedRuntimeManifest> {
-    let metadata = fs::metadata(runtime_path)
-        .with_context(|| format!("failed to read runtime metadata {}", runtime_path.display()))?;
-    let modified_unix_nanos = metadata
-        .modified()
-        .with_context(|| {
-            format!(
-                "failed to read modified time for {}",
-                runtime_path.display()
-            )
-        })?
-        .duration_since(UNIX_EPOCH)
-        .with_context(|| {
-            format!(
-                "runtime file {} has invalid modified time",
-                runtime_path.display()
-            )
-        })?
-        .as_nanos();
-
-    Ok(VerifiedRuntimeManifest {
-        filename: runtime_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("")
-            .to_owned(),
-        sha256: expected_sha256.to_owned(),
-        file_size: metadata.len(),
-        modified_unix_nanos,
-    })
-}
-
-fn verified_manifest_matches(runtime_path: &Path) -> Result<bool> {
-    let manifest_path = verified_manifest_path(runtime_path);
-    if !manifest_path.exists() {
-        return Ok(false);
-    }
-
-    let expected = runtime_manifest(runtime_path, RUNTIME_DESCRIPTOR.sha256)?;
-    let contents = fs::read_to_string(&manifest_path).with_context(|| {
-        format!(
-            "failed to read runtime manifest {}",
-            manifest_path.display()
-        )
-    })?;
-    let actual: VerifiedRuntimeManifest = serde_json::from_str(&contents).with_context(|| {
-        format!(
-            "failed to parse runtime manifest {}",
-            manifest_path.display()
-        )
-    })?;
-
-    Ok(actual == expected)
-}
-
-fn write_verified_manifest(runtime_path: &Path, expected_sha256: &str) -> Result<()> {
-    let manifest = runtime_manifest(runtime_path, expected_sha256)?;
-    let manifest_path = verified_manifest_path(runtime_path);
-    let json =
-        serde_json::to_string_pretty(&manifest).context("failed to serialize runtime manifest")?;
-    fs::write(&manifest_path, json).with_context(|| {
-        format!(
-            "failed to write runtime manifest {}",
-            manifest_path.display()
-        )
-    })?;
-    Ok(())
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    crate::hash::hex_lower(hasher.finalize())
 }
 
 #[cfg(test)]
@@ -702,7 +613,7 @@ mod tests {
         fs::create_dir_all(&runtime_dir).unwrap();
         let runtime_path = managed_runtime_path(tmp.path());
         fs::write(&runtime_path, b"dummy").unwrap();
-        let manifest_path = verified_manifest_path(&runtime_path);
+        let manifest_path = verified_manifest_path(&runtime_path).unwrap();
         fs::write(&manifest_path, "{}").unwrap();
 
         delete_runtime(tmp.path()).unwrap();

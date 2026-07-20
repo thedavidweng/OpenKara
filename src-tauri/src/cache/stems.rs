@@ -1,3 +1,4 @@
+use crate::commands::unix_timestamp;
 use crate::separator::{inference::SeparationResult, mix};
 use crate::{config::StemMode, library::Song, library_root::LibraryRoot, metadata};
 use anyhow::{Context, Result};
@@ -5,7 +6,6 @@ use rusqlite::{params, Connection};
 use std::{
     fs,
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 const STEMS_CACHE_DIRECTORY: &str = "stems";
@@ -650,13 +650,6 @@ fn stem_title(song: &Song, source_path: &Path, suffix: &str) -> Result<String> {
         .with_context(|| format!("failed to derive stem title from {}", source_path.display()))?;
 
     Ok(format!("{base_title} ({suffix})"))
-}
-
-fn unix_timestamp() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64
 }
 
 fn validate_stem_compatibility(
