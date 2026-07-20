@@ -321,13 +321,29 @@ pub fn check_model_update(
     let descriptor = separator::bootstrap::descriptor_for(model_variant);
     let model_path = separator::bootstrap::managed_model_path_for(&app_data_dir, descriptor);
 
-    // Read the installed manifest to get the recorded checksum and release tag.
-    let installed_manifest = separator::verified_manifest::read_verified_manifest(&model_path)
-        .map_err(|error| internal_error(format!("failed to read model manifest: {error}")))?;
-    let installed_tag = installed_manifest
-        .as_ref()
-        .and_then(|m| m.release_tag.clone());
-    let installed_sha256 = installed_manifest.as_ref().map(|m| m.sha256.as_str());
+    // Only trust the manifest after confirming the model file on disk still
+    // matches it. If the file was removed outside the app but the manifest
+    // remains, resolve_model_installation reports Absent and we treat the
+    // model as not installed (update_available = true) instead of falsely
+    // reporting "up to date".
+    let dev_fallback = app_data_dir.join("__no_dev_fallback_model__");
+    let (installed_tag, installed_sha256) =
+        match separator::bootstrap::resolve_model_installation(&model_path, &dev_fallback)
+            .map_err(|error| internal_error(format!("failed to inspect model status: {error}")))?
+        {
+            separator::bootstrap::ModelInstallationResolution::Ready(_) => {
+                let installed_manifest =
+                    separator::verified_manifest::read_verified_manifest(&model_path).map_err(
+                        |error| internal_error(format!("failed to read model manifest: {error}")),
+                    )?;
+                let tag = installed_manifest
+                    .as_ref()
+                    .and_then(|m| m.release_tag.clone());
+                let sha256 = installed_manifest.map(|m| m.sha256);
+                (tag, sha256)
+            }
+            separator::bootstrap::ModelInstallationResolution::Absent => (None, None),
+        };
 
     // Fetch the upstream latest release for this variant.
     let manifest = separator::upstream::fetch_upstream_manifest()
@@ -336,7 +352,7 @@ pub fn check_model_update(
 
     // An update is available when the installed checksum differs from the
     // upstream latest, or when no verified model is installed at all.
-    let update_available = installed_sha256 != Some(latest.sha256.as_str());
+    let update_available = installed_sha256.as_deref() != Some(latest.sha256.as_str());
 
     Ok(ModelUpdateInfo {
         variant,
