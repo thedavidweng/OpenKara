@@ -43,6 +43,15 @@ commit_parsers = [
   { message = "^perf", group = "⚡ Performance" },
   { message = "^docs", group = "📝 Documentation" },
   { message = "^test", group = "🧪 Tests" },
+  # Skip noise: pure formatting, merge commits, reverts, review triggers.
+  { message = "^style", skip = true },
+  { message = "^merge", skip = true },
+  { message = "^revert", skip = true },
+  { message = "(?i)trigger.*re-review", skip = true },
+  { message = "(?i)^checkpoint", skip = true },
+  # Chores: keep meaningful tooling/process changes, skip version bumps and lockfile syncs.
+  { message = "^chore.*(?i)bump version", skip = true },
+  { message = "^chore.*(?i)sync lockfile", skip = true },
   { message = "^chore", group = "🔧 Chores" },
   { message = "^(build|ci)", group = "📦 Dependencies" },
 ]

@@ -1,7 +1,7 @@
 use crate::{
     cache,
     commands::{
-        error::{state_lock_error, CommandError, CommandResult},
+        error::{internal_error, state_lock_error, CommandError, CommandResult},
         library_setup::LibraryRegistrySnapshot,
     },
     config::{RegisteredLibrary, RemoteLibraryProvider},
@@ -128,7 +128,6 @@ pub(crate) fn resolve_remote_library_candidate(
     Ok(candidate_from_session(&session_id, session, &display_name))
 }
 
-/// Take ownership of provider session material from an auth session and mark it ready.
 fn take_ready_session_binding(
     state: &AppState,
     session_id: &str,
@@ -195,11 +194,9 @@ pub(crate) fn register_remote_library(
     let library_id = remote_library_id(provider, &account_id, &remote_root_locator);
     let root_path = remote_library_root(app_data_dir, &library_id);
     let library_root = if root_path.join(".openkara-library").exists() {
-        LibraryRoot::open(&root_path)
-            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
+        LibraryRoot::open(&root_path).map_err(internal_error)?
     } else {
-        LibraryRoot::create(&root_path)
-            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
+        LibraryRoot::create(&root_path).map_err(internal_error)?
     };
     cache::initialize_library_database(&library_root.database_path())
         .map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
@@ -378,10 +375,7 @@ pub(crate) fn reauthorize_remote_library(
         .library
         .lock()
         .map_err(|_| state_lock_error("library lock was poisoned"))?;
-    *guard = Some(
-        LibraryRoot::open(&root_path)
-            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?,
-    );
+    *guard = Some(LibraryRoot::open(&root_path).map_err(internal_error)?);
 
     Ok(LibraryRegistrySnapshot {
         active_library_id: config.active_library_id.clone(),

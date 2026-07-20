@@ -21,7 +21,6 @@ interface PlaybackBarLayoutTokens {
   barHeightClass: string;
 }
 
-/** Single layout table shared across shells (formerly the mac-only tier table). */
 const PLAYBACK_BAR_LAYOUT_TOKENS: Record<
   PlaybackBarDensity,
   PlaybackBarLayoutTokens

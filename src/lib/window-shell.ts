@@ -28,7 +28,7 @@ const DESKTOP_WINDOW_SHELL_STATE: WindowShellState = {
   sidebarWidth: 260,
 };
 
-const MAC_WINDOW_SHELL_STATE: WindowShellState = {
+export const MAC_WINDOW_SHELL_STATE: WindowShellState = {
   chromeVariant: "mac",
   tier: "mac",
   toolbarHeight: 48,
@@ -36,10 +36,6 @@ const MAC_WINDOW_SHELL_STATE: WindowShellState = {
   sidebarHeaderHeight: 28,
   sidebarWidth: 260,
 };
-
-export function getNativeWindowShellState(): WindowShellState {
-  return { ...MAC_WINDOW_SHELL_STATE };
-}
 
 function isPositiveNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;

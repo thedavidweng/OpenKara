@@ -130,7 +130,6 @@ describe("LyricLine", () => {
       );
     });
 
-    // LyricLine uses a clickable root with cursor-pointer class.
     const clickable = host.querySelector(".cursor-pointer") as HTMLElement;
     expect(clickable).toBeTruthy();
     act(() => {

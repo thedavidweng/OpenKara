@@ -91,8 +91,6 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
       // bucket count is unchanged.
       setWaveformVersion((v) => v + 1);
     };
-    // Synchronous initial measurement — establishes the real bucket count
-    // before the first fetch effect runs.
     measure();
     const onResize = () => {
       if (timer) clearTimeout(timer);
@@ -181,7 +179,6 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
     };
   }, [songId, effectiveBuckets, railWidth]);
 
-  // Render the waveform on a DPR-aware canvas behind the seek rail.
   useEffect(() => {
     const canvas = canvasRef.current;
     const rail = barRef.current;
@@ -215,9 +212,8 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
       return;
     }
 
-    // Render each peak as a vertical bar. The bar width is derived from
-    // the bucket count and the rail width so the waveform always spans
-    // the full rail regardless of bucket count.
+    // The bar width is derived from the bucket count and the rail width
+    // so the waveform always spans the full rail regardless of bucket count.
     const barWidth = cssWidth / peaks.length;
     const midY = cssHeight / 2;
     const maxBarHeight = cssHeight / 2;

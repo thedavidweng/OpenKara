@@ -39,9 +39,6 @@ pub async fn fetch_lyrics(
 ) -> CommandResult<LyricsPayload> {
     let background_state = state.inner().clone();
 
-    // Phase 1: cache check + local lyrics (spawn_blocking — fast DB + file I/O).
-    // Returns either a ready payload (cache hit / local lyrics) or a query for
-    // the online fetch phase.
     let song_id_for_phase1 = song_id.clone();
     let phase1 = tauri::async_runtime::spawn_blocking(move || {
         fetch_lyrics_phase1(&background_state, &song_id_for_phase1)
@@ -52,10 +49,8 @@ pub async fn fetch_lyrics(
     match phase1 {
         FetchLyricsPhase1::Ready(payload) => Ok(payload),
         FetchLyricsPhase1::LocalLyrics { fetched, song_hash } => {
-            // Phase 3: parse + cache + remote sync (spawn_blocking — DB + remote I/O).
             // Local lyrics must go through run_song_database_mutation so that
-            // prepare → sync_db → publish_song runs around the cache write,
-            // matching the original fetch_lyrics_from_connection behavior.
+            // prepare → sync_db → publish_song runs around the cache write.
             let state_for_phase3 = state.inner().clone();
             let handle_for_phase3 = app_handle.clone();
             let song_id_for_phase3 = song_id.clone();
@@ -72,7 +67,6 @@ pub async fn fetch_lyrics(
             .map_err(|error| internal_error(format!("fetch_lyrics task failed: {error}")))?
         }
         FetchLyricsPhase1::NeedOnline { query, song_hash } => {
-            // Phase 2: online fetch (async — no spawn_blocking thread occupied).
             // Reuse the shared HTTP clients from AppState so connection pools
             // persist across song switches instead of a fresh TLS handshake
             // per fetch.
@@ -86,7 +80,6 @@ pub async fn fetch_lyrics(
                 .await
                 .map_err(|e| LyricsError::NetworkUnavailable(e.to_string()));
 
-            // Phase 3: parse + cache + remote sync (spawn_blocking — DB + remote I/O).
             let state_for_phase3 = state.inner().clone();
             let handle_for_phase3 = app_handle.clone();
             let song_id_for_phase3 = song_id.clone();
@@ -105,8 +98,6 @@ pub async fn fetch_lyrics(
     }
 }
 
-/// Phase 1 result: either we have lyrics ready (cache hit), we found local
-/// lyrics that need a cache write, or we need to fetch from the network.
 enum FetchLyricsPhase1 {
     Ready(LyricsPayload),
     LocalLyrics {
@@ -119,36 +110,33 @@ enum FetchLyricsPhase1 {
     },
 }
 
-// Phase 1: check SQLite cache, then read embedded/sidecar lyrics. All local
-// I/O — safe for a blocking worker thread. This phase is read-only: it does
-// NOT write the cache or call prepare/sync/publish. Cache writes and remote
-// sync happen in phase 3, wrapped in run_song_database_mutation.
+// Read-only: does NOT write the cache or call prepare/sync/publish. Cache
+// writes and remote sync happen in phase 3, wrapped in
+// run_song_database_mutation.
 fn fetch_lyrics_phase1(state: &AppState, song_id: &str) -> CommandResult<FetchLyricsPhase1> {
     let library_root = state.library_root()?;
     let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
 
     let song = cache::get_song_by_hash(&connection, song_id)
-        .map_err(|e| database_error(e.to_string()))?
+        .map_err(database_error)?
         .ok_or(LyricsError::SongNotFound(song_id.to_string()))?;
 
     // Cache hit — return immediately (no DB write, no remote sync needed).
     // Negative cache (Absent) entries expire after NEGATIVE_CACHE_TTL_SECS so
     // lyrics added to LRCLIB/LrcAPI later can be discovered on re-fetch.
-    if let Some(cached) = cache::lyrics::get_lyrics_cache_entry(&connection, song_id)
-        .map_err(|e| database_error(e.to_string()))?
+    if let Some(cached) =
+        cache::lyrics::get_lyrics_cache_entry(&connection, song_id).map_err(database_error)?
     {
         if cached.source == LyricsSource::Absent {
             if !is_negative_cache_expired(&cached) {
                 return Ok(FetchLyricsPhase1::Ready(empty_lyrics_payload(song.hash)));
             }
-            // Expired negative cache — fall through to local + online fetch below.
         } else {
             let payload = payload_from_cached_entry(song.hash, cached)?;
             return Ok(FetchLyricsPhase1::Ready(payload));
         }
     }
 
-    // No cache (or expired negative cache) — try local sources first.
     // The cache write is deferred to phase 3 so it goes through
     // run_song_database_mutation (prepare → sync_db → publish_song).
     if let Some(song_path) = song.file_path.as_deref() {
@@ -163,7 +151,6 @@ fn fetch_lyrics_phase1(state: &AppState, song_id: &str) -> CommandResult<FetchLy
         }
     }
 
-    // No local lyrics — defer to online fetch.
     match lookup_query_from_song(&song) {
         Some(query) => Ok(FetchLyricsPhase1::NeedOnline {
             query,
@@ -173,9 +160,8 @@ fn fetch_lyrics_phase1(state: &AppState, song_id: &str) -> CommandResult<FetchLy
     }
 }
 
-// Phase 3: cache the online fetch result (or negative cache on miss), then
-// run remote-library sync/publish. Wrapped in run_song_database_mutation so
-// prepare/sync/publish happen around the DB write.
+// Wrapped in run_song_database_mutation so prepare/sync/publish happen
+// around the DB write.
 fn fetch_lyrics_phase3(
     state: &AppState,
     app_handle: &AppHandle,
@@ -218,14 +204,10 @@ fn fetch_lyrics_phase3(
                 })
             }
             Ok(None) => {
-                // All providers missed — cache negative lookup.
                 cache_negative_lyrics_lookup(&connection, song_hash)?;
                 Ok(empty_lyrics_payload(song_hash.to_owned()))
             }
-            Err(_) => {
-                // Network error — don't cache, return empty.
-                Ok(empty_lyrics_payload(song_hash.to_owned()))
-            }
+            Err(_) => Ok(empty_lyrics_payload(song_hash.to_owned())),
         };
         result.map_err(Into::into)
     })
@@ -411,13 +393,11 @@ fn save_manual_lyrics_on_thread(
 
     let publish_song_id = song_id.to_owned();
     remote::run_song_database_mutation(state, app_handle, song_id, || {
-        // Try parsing with auto-detection
         let lines = match lyrics::fetch::parse_lyrics_auto(&text) {
             Ok(parsed) if !parsed.is_empty() => parsed,
             _ => plain_text_to_lines(&text),
         };
 
-        // Detect format for correct source variant
         let source = {
             let trimmed = text.trim();
             if trimmed.starts_with("<?xml") || trimmed.starts_with("<tt") {
@@ -458,7 +438,7 @@ fn save_manual_lyrics_on_thread(
                 fetched_at,
             },
         )
-        .map_err(|e| database_error(e.to_string()))?;
+        .map_err(database_error)?;
 
         Ok(LyricsPayload {
             song_id: publish_song_id,
@@ -511,8 +491,7 @@ fn import_lyrics_files_on_thread(
         state,
         app_handle,
         || {
-            let all_songs =
-                cache::list_songs(&connection).map_err(|e| database_error(e.to_string()))?;
+            let all_songs = cache::list_songs(&connection).map_err(database_error)?;
 
             let mut matched = Vec::new();
             let mut unmatched = Vec::new();
@@ -520,7 +499,6 @@ fn import_lyrics_files_on_thread(
             for path_str in &paths {
                 let path = Path::new(path_str);
 
-                // Read LRC file content
                 let content = match std::fs::read_to_string(path) {
                     Ok(c) => c,
                     Err(_) => {
@@ -529,7 +507,6 @@ fn import_lyrics_files_on_thread(
                     }
                 };
 
-                // Try filename matching first
                 let lrc_stem = path
                     .file_stem()
                     .and_then(|s| s.to_str())
@@ -551,7 +528,6 @@ fn import_lyrics_files_on_thread(
                     });
                 }
 
-                // If no filename match, try metadata matching
                 if found_song.is_none() {
                     let meta = lyrics::parser::parse_lrc_metadata(&content);
                     if let (Some(ref lrc_artist), Some(ref lrc_title)) = (meta.artist, meta.title) {
@@ -656,7 +632,6 @@ fn extract_embedded_lyrics_on_thread(
                 "No embedded lyrics found in this file".to_owned(),
             ))?;
 
-        // Parse and cache
         let lines = match lyrics::fetch::parse_lyrics_auto(&embedded) {
             Ok(parsed) if !parsed.is_empty() => parsed,
             _ => plain_text_to_lines(&embedded),
@@ -681,7 +656,7 @@ fn extract_embedded_lyrics_on_thread(
                 fetched_at,
             },
         )
-        .map_err(|e| database_error(e.to_string()))?;
+        .map_err(database_error)?;
 
         Ok(LyricsPayload {
             song_id: publish_song_id,
@@ -699,7 +674,6 @@ pub async fn fetch_lyrics_online(
     app_handle: AppHandle,
     song_id: String,
 ) -> CommandResult<LyricsPayload> {
-    // Phase 1: get song from DB (spawn_blocking — fast local read).
     let background_state = state.inner().clone();
     let song_id_for_phase1 = song_id.clone();
     let phase1 = tauri::async_runtime::spawn_blocking(move || {
@@ -709,10 +683,8 @@ pub async fn fetch_lyrics_online(
     .map_err(|error| internal_error(format!("fetch_lyrics_online task failed: {error}")))??;
 
     match phase1 {
-        // No query possible (missing title/artist) — return empty without caching.
         FetchOnlinePhase1::NoQuery(payload) => Ok(payload),
         FetchOnlinePhase1::Fetch { query, song_hash } => {
-            // Phase 2: online fetch (async — no spawn_blocking thread occupied).
             // Reuse the shared HTTP clients from AppState for connection pool
             // reuse across calls.
             let lrclib_client = &state.inner().lrclib_client;
@@ -725,7 +697,6 @@ pub async fn fetch_lyrics_online(
                 .await
                 .map_err(|e| LyricsError::NetworkUnavailable(e.to_string()));
 
-            // Phase 3: parse + cache + remote sync (spawn_blocking — DB + remote I/O).
             let state_for_phase3 = state.inner().clone();
             let handle_for_phase3 = app_handle.clone();
             tauri::async_runtime::spawn_blocking(move || {
@@ -755,7 +726,7 @@ fn fetch_lyrics_online_phase1(state: &AppState, song_id: &str) -> CommandResult<
     let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
 
     let song = cache::get_song_by_hash(&connection, song_id)
-        .map_err(|e| database_error(e.to_string()))?
+        .map_err(database_error)?
         .ok_or(LyricsError::SongNotFound(song_id.to_owned()))?;
 
     match lookup_query_from_song(&song) {
@@ -881,8 +852,6 @@ use super::error::current_unix_timestamp;
 /// TTL balances re-discovery against hammering the APIs on every song change.
 const NEGATIVE_CACHE_TTL_SECS: i64 = 7 * 24 * 60 * 60;
 
-/// Returns true if an Absent cache entry is older than the negative cache TTL
-/// and should be re-fetched from the network.
 fn is_negative_cache_expired(entry: &LyricsCacheEntry) -> bool {
     match current_unix_timestamp() {
         Ok(now) => now - entry.fetched_at > NEGATIVE_CACHE_TTL_SECS,

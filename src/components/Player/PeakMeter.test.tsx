@@ -101,7 +101,6 @@ describe("PeakMeter", () => {
     const canvas = getCanvas(container);
     expect(canvas.width).toBeGreaterThan(0);
     expect(canvas.height).toBeGreaterThan(0);
-    // The drawing path should have called canvas context methods.
     expect(canvasMock.ctx.fillRect).toHaveBeenCalled();
   });
 
@@ -109,7 +108,6 @@ describe("PeakMeter", () => {
     mockGetAudioPeaks.mockResolvedValue({ writeIndex: 0, peaks: [] });
     render(<PeakMeter width={120} height={24} />);
     await vi.advanceTimersByTimeAsync(100);
-    // Even with no peaks, the baseline fillRect should be called.
     expect(canvasMock.ctx.fillRect).toHaveBeenCalled();
   });
 
@@ -157,7 +155,6 @@ describe("PeakMeter", () => {
     render(<PeakMeter width={120} height={24} />);
     await vi.advanceTimersByTimeAsync(100);
     const firstCallCount = canvasMock.ctx.fillRect.mock.calls.length;
-    // Change the mock to return a new writeIndex.
     mockGetAudioPeaks.mockResolvedValue({
       writeIndex: 6,
       peaks: [

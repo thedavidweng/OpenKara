@@ -1,11 +1,3 @@
-/**
- * Manages per-word karaoke fill animations using Web Animations API.
- * Each word gets a CSS mask that sweeps from left to right over its duration.
- * Animations are driven by the browser's compositor, not React re-renders.
- *
- * Includes attack/release alpha smoothing for natural mask contrast transitions.
- */
-
 interface WordAnimation {
   element: HTMLElement;
   animation: Animation;
@@ -26,7 +18,6 @@ export class KaraokeFillController {
   private activeWordEls: HTMLElement[] = [];
   private activeWordTimings: Array<{ time_ms: number; end_ms: number }> = [];
 
-  // Alpha smoothing state
   private brightAlpha = 0.2;
   private darkAlpha = 1.0;
   private targetBrightAlpha = 0.2;
@@ -37,10 +28,6 @@ export class KaraokeFillController {
 
   private lastUpdateTime = 0;
 
-  /**
-   * Set up animations for a line's word elements.
-   * Call this when a line becomes active.
-   */
   activateLine(
     lineEl: HTMLElement,
     words: Array<{ time_ms: number; end_ms: number }>,
@@ -58,7 +45,6 @@ export class KaraokeFillController {
       const duration = Math.max(1, word.end_ms - word.time_ms);
       const style = el.style as WebKitMaskStyle;
 
-      // Set up the mask gradient (static)
       this.setMaskGradient(style);
       style.maskRepeat = "no-repeat";
       style.webkitMaskRepeat = "no-repeat";
@@ -67,7 +53,6 @@ export class KaraokeFillController {
       style.maskSize = "200% 100%";
       style.webkitMaskSize = "200% 100%";
 
-      // Create the sweep animation
       const animation = el.animate(
         [
           { maskPosition: "-100% 0", webkitMaskPosition: "-100% 0" },
@@ -111,12 +96,7 @@ export class KaraokeFillController {
     this.updateMaskGradients();
   }
 
-  /**
-   * Update animation progress based on current playback time.
-   * Call this on each frame (from requestAnimationFrame or React render).
-   */
   update(currentMs: number, isPlaying: boolean) {
-    // Compute dt for alpha smoothing
     const now = performance.now();
     const dt =
       this.lastUpdateTime > 0
@@ -124,7 +104,6 @@ export class KaraokeFillController {
         : 1 / 60;
     this.lastUpdateTime = now;
 
-    // Smooth alpha with attack/release curves
     const brightSpeed =
       this.targetBrightAlpha > this.brightAlpha
         ? KaraokeFillController.ATTACK_SPEED
@@ -140,20 +119,16 @@ export class KaraokeFillController {
     this.darkAlpha +=
       (this.targetDarkAlpha - this.darkAlpha) * (1 - Math.exp(-darkSpeed * dt));
 
-    // Update mask gradient with smoothed alpha
     this.updateMaskGradients();
 
     for (const [, wa] of this.wordAnimations) {
       if (currentMs < wa.startTime) {
-        // Word hasn't started
         wa.animation.currentTime = 0;
         wa.animation.pause();
       } else if (currentMs >= wa.endTime) {
-        // Word is done
         wa.animation.currentTime = wa.endTime - wa.startTime;
         wa.animation.pause();
       } else {
-        // Word is active
         wa.animation.currentTime = currentMs - wa.startTime;
         if (isPlaying) {
           wa.animation.play();
@@ -164,9 +139,6 @@ export class KaraokeFillController {
     }
   }
 
-  /**
-   * Remove all animations and clean up.
-   */
   deactivateLine() {
     for (const [, wa] of this.wordAnimations) {
       wa.animation.cancel();

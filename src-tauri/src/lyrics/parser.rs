@@ -115,12 +115,10 @@ pub fn parse_word_tokens(text: &str) -> Option<(String, Vec<WordToken>)> {
 
     while !remaining.is_empty() {
         if let Some(stripped) = remaining.strip_prefix('<') {
-            // Try to parse an inline timestamp tag
             if let Some(close) = stripped.find('>') {
                 let tag = &stripped[..close];
                 match parse_timestamp_tag(tag) {
                     Ok(Some(time_ms)) => {
-                        // Collect text until the next '<' or end
                         let rest = &stripped[close + 1..];
                         let word_end = rest.find('<').unwrap_or(rest.len());
                         let word_text = &rest[..word_end];
@@ -141,13 +139,11 @@ pub fn parse_word_tokens(text: &str) -> Option<(String, Vec<WordToken>)> {
                     }
                 }
             } else {
-                // No closing '>' — treat '<' as literal
                 plain.push('<');
                 remaining = stripped;
                 continue;
             }
         } else {
-            // Find the next '<' and consume everything before it as plain text
             let next = remaining.find('<').unwrap_or(remaining.len());
             plain.push_str(&remaining[..next]);
             remaining = &remaining[next..];
@@ -184,7 +180,6 @@ fn parse_timestamp_tag(tag: &str) -> Result<Option<u64>> {
     } else if let Some((s, f)) = remainder.split_once(':') {
         (s, Some(f))
     } else {
-        // No separator at all — bare mm:ss
         (remainder, None)
     };
 
@@ -277,7 +272,6 @@ mod tests {
 
     #[test]
     fn parses_timestamp_without_fractional() {
-        // mm:ss — no fractional part
         let ms = parse_timestamp_tag("01:05")
             .expect("should not error")
             .expect("should be Some");
@@ -406,7 +400,6 @@ mod tests {
     #[test]
     fn parse_word_tokens_handles_unterminated_angle_bracket() {
         let result = parse_word_tokens("hello < world");
-        // Unterminated '<' should be treated as literal
-        assert!(result.is_none()); // no valid tokens found
+        assert!(result.is_none());
     }
 }

@@ -12,7 +12,7 @@ use std::{
     sync::{Arc, LazyLock, Mutex},
 };
 
-/// R3: Global lock that serializes audio decoding for separation jobs.
+/// Global lock that serializes audio decoding for separation jobs.
 /// Prevents N concurrent full-song PCM decodes from accumulating in memory.
 static DECODE_SERIALIZE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
@@ -47,7 +47,6 @@ pub fn separate_song_into_cache(
     if let Some(cached) =
         cache::stems::get_valid_cached_stem_entry(connection, library_root, song_hash)?
     {
-        // Verify the cached entry matches the requested stem mode AND model variant.
         let variant_matches = cached.entry.model_variant == model_variant;
         let mode_matches = match stem_mode {
             StemMode::TwoStem => true,
@@ -73,7 +72,7 @@ pub fn separate_song_into_cache(
     };
     let absolute_path = library_root.resolve(song_path);
 
-    // R3: Serialize audio decoding across all separation jobs. Multiple
+    // Serialize audio decoding across all separation jobs. Multiple
     // concurrent decodes would each hold a full-song PCM buffer in memory,
     // causing OOM on large libraries. The lock is released before model load
     // so the model-cache lock is not held during decode.
@@ -85,7 +84,7 @@ pub fn separate_song_into_cache(
     drop(_decode_guard);
 
     report_progress(MODEL_LOAD_PROGRESS);
-    // Item 3: Lock the model cache only for the get_or_load operation, then
+    // Lock the model cache only for the get_or_load operation, then
     // release it so other jobs can access the cache while inference runs.
     let loaded_model = {
         let mut model_cache = model_cache
@@ -165,8 +164,6 @@ mod tests {
     use std::sync::mpsc;
     use std::time::Duration;
 
-    /// R3: Verify that the DECODE_SERIALIZE_LOCK serializes concurrent tasks.
-    /// Only one task can hold the lock at a time; others must wait.
     #[test]
     fn decode_serialize_lock_serializes_concurrent_tasks() {
         let (tx, rx) = mpsc::channel();
@@ -183,23 +180,19 @@ mod tests {
             worker_tx.send("worker_acquired").unwrap();
         });
 
-        // Wait for worker to start.
         assert_eq!(
             rx.recv_timeout(Duration::from_millis(100)).unwrap(),
             "worker_started"
         );
 
-        // Worker should be blocked waiting for the lock.
         std::thread::sleep(Duration::from_millis(50));
         assert!(
             rx.try_recv().is_err(),
             "worker should not have acquired the lock yet"
         );
 
-        // Release the lock.
         drop(lock_guard);
 
-        // Worker should now acquire the lock.
         assert_eq!(
             rx.recv_timeout(Duration::from_millis(100)).unwrap(),
             "worker_acquired"
@@ -208,7 +201,6 @@ mod tests {
         handle.join().expect("worker thread should finish");
     }
 
-    /// R3: Verify that concurrent lock acquisitions are serialized (only 1 at a time).
     #[test]
     fn decode_serialize_lock_prevents_concurrent_execution() {
         let active_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -238,9 +230,6 @@ mod tests {
         );
     }
 
-    /// Item 3: Verify that the model cache lock is NOT held during inference.
-    /// After get_or_load_with_key returns an Arc, another thread should be able
-    /// to acquire the model cache lock while inference is "running".
     #[test]
     fn model_cache_lock_released_before_inference() {
         use crate::separator::model_cache::ModelCache;
@@ -248,19 +237,13 @@ mod tests {
 
         let cache: Arc<Mutex<ModelCache<i32>>> = Arc::new(Mutex::new(ModelCache::default()));
 
-        // Simulate the separation job pattern:
-        // 1. Lock cache, get_or_load, get Arc
-        // 2. Drop lock
-        // 3. "Run inference" with the Arc
         let loaded_model = {
             let mut guard = cache.lock().unwrap();
             guard
                 .get_or_load_with_key("test-model", || Ok::<_, anyhow::Error>(42))
                 .unwrap()
         };
-        // Lock is now released.
 
-        // Another thread should be able to acquire the lock immediately.
         let cache_clone = Arc::clone(&cache);
         let (tx, rx) = mpsc::channel();
         let handle = std::thread::spawn(move || {
@@ -268,7 +251,6 @@ mod tests {
             tx.send("lock_acquired").unwrap();
         });
 
-        // The other thread should acquire the lock without waiting.
         assert_eq!(
             rx.recv_timeout(Duration::from_millis(100)).unwrap(),
             "lock_acquired",
@@ -276,7 +258,6 @@ mod tests {
         );
         handle.join().unwrap();
 
-        // The model Arc is still valid.
         assert_eq!(*loaded_model, 42);
     }
 }

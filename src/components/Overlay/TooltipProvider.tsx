@@ -12,7 +12,6 @@ import {
 
 export interface TooltipProviderProps {
   children: ReactNode;
-  /** First-hover delay before a tooltip appears. */
   delayDuration?: number;
   /** After the last tooltip closes, instant switching stays enabled for this long. */
   skipDelayDuration?: number;

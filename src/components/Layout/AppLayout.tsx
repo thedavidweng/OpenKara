@@ -8,7 +8,7 @@ import { ImportCdgChoiceDialog } from "@/components/Library/ImportCdgChoiceDialo
 import { getShortcutPlatform } from "@/lib/app-shortcuts";
 import {
   createWindowShellStyle,
-  getNativeWindowShellState,
+  MAC_WINDOW_SHELL_STATE,
   type WindowShellState,
   useWindowShellState,
 } from "@/lib/window-shell";
@@ -27,8 +27,7 @@ interface AppLayoutProps {
 // app. This lets the shared toolbar retain its native traffic-light spacing as
 // the desktop shell evolves, while the browser preview supplies only a visual
 // stand-in for the OS-owned controls.
-const PREVIEW_WINDOW_SHELL_STATE: WindowShellState =
-  getNativeWindowShellState();
+const PREVIEW_WINDOW_SHELL_STATE: WindowShellState = MAC_WINDOW_SHELL_STATE;
 
 // Preview-mode interaction whitelist. The landing-page mock blocks all
 // interactions except: (1) playlist switches in the sidebar (including the

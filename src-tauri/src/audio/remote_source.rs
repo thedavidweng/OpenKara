@@ -15,9 +15,7 @@ use symphonia::core::io::MediaSource;
 pub struct BandwidthMonitor {
     /// Bytes per second, exponentially weighted moving average.
     bytes_per_sec: AtomicU64,
-    /// Whether the connection is currently considered slow.
     is_slow: Arc<AtomicBool>,
-    /// Threshold in bytes/sec below which the connection is considered slow.
     slow_threshold: AtomicU64,
     /// Request latency in microseconds, EWMA (alpha=0.3).
     latency_us: AtomicU64,
@@ -35,10 +33,8 @@ impl BandwidthMonitor {
         }
     }
 
-    /// Default slow threshold: 128 kbps = 16384 bytes/sec.
     pub const DEFAULT_SLOW_THRESHOLD: u64 = 16_384;
 
-    /// Record a completed fetch of `bytes` taking `elapsed`.
     pub fn record_fetch(&self, bytes: u64, elapsed: Duration) {
         let secs = elapsed.as_secs_f64();
         if secs <= 0.0 {
@@ -81,25 +77,20 @@ impl BandwidthMonitor {
         self.latency_us.store(new_latency, Ordering::Relaxed);
     }
 
-    /// Current estimated bandwidth in bytes/sec.
     pub fn bytes_per_sec(&self) -> u64 {
         self.bytes_per_sec.load(Ordering::Relaxed)
     }
 
-    /// Whether the connection is currently slow.
     pub fn is_slow(&self) -> bool {
         self.is_slow.load(Ordering::Relaxed)
     }
 
-    /// Estimated request latency in microseconds.
     pub fn latency_us(&self) -> u64 {
         self.latency_us.load(Ordering::Relaxed)
     }
 
-    /// Update the slow threshold at runtime.
     pub fn set_slow_threshold(&self, bps: u64) {
         self.slow_threshold.store(bps, Ordering::Relaxed);
-        // Re-evaluate whether the connection is slow.
         let current = self.bytes_per_sec.load(Ordering::Relaxed);
         self.is_slow.store(current < bps, Ordering::Relaxed);
     }
@@ -207,7 +198,6 @@ impl ProviderFetcher {
         self
     }
 
-    /// Update the Authorization header with a new token.
     fn update_auth_header(&self, new_token: &str) {
         let mut headers = self.headers.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(entry) = headers.iter_mut().find(|(k, _)| k == "Authorization") {
@@ -296,7 +286,6 @@ pub struct RemoteMediaSource {
     min_fetch_size: u64,
     /// Bytes that must be cached before the first read returns (startup buffering).
     startup_bytes: u64,
-    /// Whether the initial startup buffer has been satisfied.
     startup_satisfied: bool,
 }
 
@@ -306,7 +295,7 @@ impl RemoteMediaSource {
             cache,
             read_position: 0,
             fetch_tx,
-            min_fetch_size: 64 * 1024, // 64 KB minimum fetch block
+            min_fetch_size: 64 * 1024,
             startup_bytes: 0,
             startup_satisfied: true,
         }
@@ -330,7 +319,6 @@ impl RemoteMediaSource {
         });
     }
 
-    /// Notify the fetch thread of the current read position for prefetch tracking.
     fn update_position(&self) {
         let _ = self.fetch_tx.send(FetchCommand::UpdatePosition {
             position: self.read_position,
@@ -353,7 +341,6 @@ impl Read for RemoteMediaSource {
             let startup_length = startup_end.saturating_sub(offset);
             if startup_length > 0 {
                 self.request_fetch(offset, startup_length);
-                // Block until the startup region is fully cached.
                 let mut startup_buf = vec![0u8; startup_length as usize];
                 let _ = self
                     .cache
@@ -363,10 +350,8 @@ impl Read for RemoteMediaSource {
             self.startup_satisfied = true;
         }
 
-        // Notify fetch thread of current position for prefetch tracking.
         self.update_position();
 
-        // Check if data is already cached.
         if self.cache.is_cached(offset, length) {
             let read = self
                 .cache
@@ -376,10 +361,8 @@ impl Read for RemoteMediaSource {
             return Ok(read);
         }
 
-        // Request a fetch for the missing range.
         self.request_fetch(offset, length);
 
-        // Block until at least some data is available.
         let read = self
             .cache
             .read_at(offset, buf)
@@ -425,7 +408,6 @@ impl MediaSource for RemoteMediaSource {
     }
 }
 
-/// Result of a fetch attempt, indicating whether the URL needs refresh.
 enum FetchOutcome {
     Ok,
     UrlExpired,
@@ -444,7 +426,6 @@ pub struct DownloadSemaphore {
 }
 
 impl DownloadSemaphore {
-    /// Create a new semaphore allowing up to `max_concurrent` concurrent downloads.
     pub fn new(max_concurrent: usize) -> Self {
         Self {
             max_concurrent,
@@ -483,7 +464,6 @@ impl DownloadSemaphore {
             });
     }
 
-    /// Default max concurrent downloads.
     pub const DEFAULT_MAX_CONCURRENT: usize = 2;
 }
 

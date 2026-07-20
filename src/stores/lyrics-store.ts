@@ -9,7 +9,7 @@ import {
 import { useLibraryStore } from "@/stores/library-store";
 import type { LyricLine, LyricsSource } from "@/types/ipc";
 
-// F1: Generation counter to prevent stale fetch results from overwriting current lyrics.
+// Generation counter to prevent stale fetch results from overwriting current lyrics.
 let fetchGeneration = 0;
 
 function getSongLanguage(songId: string | null): SongLanguage | null {
@@ -86,7 +86,6 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
 
       // Auto-upgrade: if lyrics are unsynced (all time_ms === 0) and not
       // from LrcLib, try fetching synced lyrics from the network silently.
-      // isLoading is already false so the UI shows local lyrics immediately.
       if (
         payload.lines.length > 0 &&
         payload.source !== "lrc_lib" &&
@@ -109,7 +108,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
             });
           }
         } catch {
-          // Network failure is non-fatal; keep original local lyrics
+          // Network failure is non-fatal; keep original local lyrics.
         }
       }
     } catch (e) {
@@ -125,31 +124,26 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
   },
 
   adjustOffset: async (songId, deltaMs) => {
-    // Optimistic update: set the new offset synchronously before the await
-    // so rapid consecutive calls don't read a stale offsetMs and lose deltas.
+    // Optimistic update before the await so rapid consecutive calls don't
+    // read a stale offsetMs and lose deltas.
     const newOffset = get().offsetMs + deltaMs;
     set({ offsetMs: newOffset });
     try {
       await api.setLyricsOffset(songId, newOffset);
     } catch (e) {
       // Re-fetch the authoritative offset from the backend instead of
-      // reconstructing it arithmetically. When concurrent adjustOffset
-      // calls overlap, the arithmetic rollback (offsetMs - deltaMs) can
-      // diverge from the backend's ground truth because get().offsetMs
-      // may already include a later optimistic update from another call.
-      // fetchLyrics returns the persisted offset_ms, guaranteeing the UI
-      // matches the backend after a failure.
+      // arithmetic rollback. When concurrent adjustOffset calls overlap,
+      // get().offsetMs may already include a later optimistic update from
+      // another call, so offsetMs - deltaMs can diverge from ground truth.
       try {
         const payload = await api.fetchLyrics(songId);
         if (get().songId === songId) {
           set({ offsetMs: payload.offset_ms });
         }
       } catch {
-        // If re-fetch also fails, fall back to arithmetic rollback as a
-        // last resort so the UI at least moves in the right direction.
-        // Guard against song navigation: if the user switched songs while
-        // both the primary call and re-fetch were in-flight, don't corrupt
-        // the new song's offset with the old song's delta.
+        // Last-resort arithmetic rollback. Guard against song navigation:
+        // if the user switched songs while both the primary call and
+        // re-fetch were in-flight, don't corrupt the new song's offset.
         if (get().songId === songId) {
           set({ offsetMs: get().offsetMs - deltaMs });
         }
@@ -208,7 +202,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
     try {
       const language = getSongLanguage(currentSongId);
       const { result, requestId } = await romanizeLyricsLines(texts, language);
-      // Item 7: Discard stale responses if the song changed during romanization.
+      // Discard stale responses if the song changed during romanization.
       if (get().songId !== currentSongId || requestId === -1) {
         // requestId === -1 means Latin-only (no worker involved), always apply.
         if (requestId !== -1) return;

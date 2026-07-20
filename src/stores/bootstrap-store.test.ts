@@ -46,7 +46,7 @@ describe("bootstrap-store updateStatus", () => {
     });
 
     const status = useBootstrapStore.getState().status!;
-    expect(status.downloaded_bytes).toBe(800); // preserved from previous
+    expect(status.downloaded_bytes).toBe(800);
     expect(status.total_bytes).toBe(1000);
   });
 

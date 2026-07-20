@@ -38,7 +38,6 @@ impl AppShell {
         }
     }
 
-    /// Convenience: get a clone of the LibraryRoot (if configured).
     pub fn library_root(&self) -> Result<LibraryRoot, CommandError> {
         let guard = self
             .library
@@ -50,7 +49,6 @@ impl AppShell {
     }
 
     /// Resolve the path to the active AI model based on the current config.
-    ///
     /// Checks (in order): managed model dir for the active variant, then dev fallback.
     ///
     /// This must stay variant-aware. Falling back to a single hard-coded model

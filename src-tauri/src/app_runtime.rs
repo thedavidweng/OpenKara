@@ -36,9 +36,9 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         )
     })?;
 
-    // Resolve the runtime bootstrap status. The runtime may come from:
-    // 1. Bundled resources (legacy, being phased out)
-    // 2. Managed app-data location (new externalized path)
+    // The runtime may come from:
+    // 1. Bundled resources (legacy)
+    // 2. Managed app-data location (externalized path)
     // 3. Development fallback (staged by prepare-onnx-runtime.mjs)
     let runtime_status_snapshot =
         separator::runtime_bootstrap::runtime_status_snapshot(&app_data_dir);
@@ -51,7 +51,6 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
     // Attempt to load the runtime if available. If not, the app starts
     // without it — separation commands will gate on runtime readiness.
     if runtime_status_snapshot.status == separator::runtime_bootstrap::RuntimeStatus::Ready {
-        // Try to initialize ORT from the verified runtime path.
         let runtime_path = separator::runtime_bootstrap::ensure_runtime_verified(&app_data_dir)
             .or_else(|_| separator::model::resolve_runtime_library_path(Some(&app_resource_dir)));
         match runtime_path {
@@ -68,13 +67,12 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
             }
         }
     } else {
-        // Try the legacy bundled path as a fallback during the transition.
+        // Try the legacy bundled path as a fallback.
         match separator::model::resolve_runtime_library_path(Some(&app_resource_dir)) {
             Ok(path) => {
                 if let Err(err) = separator::model::ensure_runtime_loaded_from_path(&path) {
                     eprintln!("warning: failed to load bundled ONNX Runtime: {err:#}");
                 }
-                // Update status to Ready since the bundled runtime loaded.
                 let ready_snapshot = commands::runtime_bootstrap::RuntimeBootstrapStatusSnapshot {
                     state: commands::runtime_bootstrap::RuntimeBootstrapState::Ready,
                     runtime_path: path.display().to_string(),
@@ -174,7 +172,7 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
     let separation_state = SeparationState::new();
     let remote_cache_bytes_limit = app_config
         .as_ref()
-        .and_then(|config| config.effective_remote_cache_bytes_limit());
+        .and_then(|config| config.remote_cache_bytes_limit);
     let remote_state = RemoteState::new_with_limit(&app_data_dir, remote_cache_bytes_limit);
     let shell_state = AppShell::new(
         Arc::clone(&library),
@@ -190,7 +188,6 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
     let playback_state_for_output = playback_state.clone();
     let airplay_state_for_output = airplay_state.clone();
 
-    // Build the composition AppState from domain states.
     let app_state = AppState {
         playback: playback_state.clone(),
         airplay: airplay_state.clone(),
@@ -339,17 +336,17 @@ fn spawn_playback_position_emitter<R: Runtime>(
         loop {
             thread::sleep(Duration::from_millis(PLAYBACK_POSITION_POLL_INTERVAL_MS));
 
-            // #88: Drain any completed gapless transition before taking the
+            // Drain any completed gapless transition before taking the
             // snapshot. The realtime callback stamps a `CompletedTransition`
             // after a gapless swap; we emit `track-transitioned` here so the
             // frontend can reconcile its queue head before the next position
             // event arrives with the new song_id.
-            // #88: Drain any completed gapless transition and capture the
+            // Drain any completed gapless transition and capture the
             // authoritative post-transition snapshot in the same lock so the
             // event's `state` field reflects the new song. Emit
             // `track-transitioned` with the full payload, then the normal
             // position event.
-            // #106: The transition carries its own snapshot captured at the
+            // The transition carries its own snapshot captured at the
             // moment the track switched (inside `stamp_transition`). We use
             // that snapshot for the event's `state` field rather than a fresh
             // `controller.snapshot()`, so if the listener manually picked a

@@ -74,7 +74,7 @@ function usePlaybackPositionSubscription(
           if (!cancelled) onPosition(e.payload);
         },
       );
-      // F3: If unmount happened before listen() resolved, clean up now.
+      // If unmount happened before listen() resolved, clean up now.
       if (cancelled) {
         unlisten();
         return;
@@ -257,7 +257,6 @@ function usePlaybackEndedQueueAdvance(enabled: boolean) {
   );
 }
 
-/** #88: Subscribe to `track-transitioned` and reconcile the queue. */
 function useTrackTransitionedQueueReconcile(enabled: boolean) {
   useEventSubscriptions(
     [
@@ -275,12 +274,7 @@ function useTrackTransitionedQueueReconcile(enabled: boolean) {
   );
 }
 
-/** #88: Preload the queue head for gapless playback whenever the current
- * song or queue changes. Calls `set_preload_candidate` with the queue head
- * (or null to cancel) so the backend can decode the next track ahead of
- * time.
- *
- * The effect depends only on the resolved next-candidate ID, not the full
+/** The effect depends only on the resolved next-candidate ID, not the full
  * queue array, so unrelated queue edits (adding/removing tail entries) do
  * not cancel and re-decode an already-prepared next track. */
 function usePreloadCandidateEffect(enabled: boolean) {
@@ -291,7 +285,6 @@ function usePreloadCandidateEffect(enabled: boolean) {
   // the candidate ID itself rather than the entire queue array.
   const nextCandidate = (() => {
     if (queue.length === 0) return null;
-    // Skip the queue head if it is the currently playing song.
     if (queue[0] === currentSongId) {
       return queue.length > 1 ? queue[1] : null;
     }

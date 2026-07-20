@@ -54,7 +54,6 @@ impl From<RuntimeStatusSnapshot> for RuntimeBootstrapStatusSnapshot {
     }
 }
 
-/// Get the current runtime bootstrap status.
 #[tauri::command]
 pub fn get_runtime_bootstrap_status(
     state: State<'_, AppState>,
@@ -70,8 +69,6 @@ pub fn get_runtime_bootstrap_status_from_state(
     })
 }
 
-/// Ensure the runtime is ready. Returns an error if it's missing, downloading,
-/// corrupt, or failed.
 pub fn ensure_runtime_ready(
     status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
 ) -> CommandResult<()> {
@@ -217,7 +214,6 @@ pub fn ensure_runtime_ready_or_install_blocking(
     }
 }
 
-/// Download the ONNX Runtime to the managed app-data location.
 #[tauri::command]
 pub fn download_runtime(
     state: State<'_, AppState>,
@@ -227,7 +223,6 @@ pub fn download_runtime(
     let runtime_path = runtime_bootstrap::managed_runtime_path(&app_data_dir);
     let status = Arc::clone(&state.shell.runtime_bootstrap_status);
 
-    // Set initial downloading state.
     let initial = downloading_snapshot(&runtime_path, 0, None);
     store_snapshot(&status, initial.clone());
     let _ = app_handle.emit(RUNTIME_BOOTSTRAP_PROGRESS_EVENT, initial.clone());
@@ -264,14 +259,12 @@ pub fn download_runtime(
     Ok(initial)
 }
 
-/// Delete the managed runtime from app-data.
 #[tauri::command]
 pub fn delete_runtime(state: State<'_, AppState>) -> CommandResult<()> {
     let app_data_dir = state.shell.app_data_dir.clone();
     runtime_bootstrap::delete_runtime(&app_data_dir)
         .map_err(|e| internal_error(format!("failed to delete runtime: {e}")))?;
 
-    // Update status to Missing.
     let snapshot = runtime_bootstrap::runtime_status_snapshot(&app_data_dir);
     let bootstrap_snapshot: RuntimeBootstrapStatusSnapshot = snapshot.into();
     if let Ok(mut current) = state.shell.runtime_bootstrap_status.lock() {

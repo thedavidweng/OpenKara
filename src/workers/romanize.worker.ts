@@ -1,6 +1,5 @@
-/// Web Worker for romanization of non-Latin lyrics.
-/// Item 7: Moves romanization off the main thread and uses request-id
-/// matching so stale responses are ignored when the song changes.
+// Moves romanization off the main thread and uses request-id matching so
+// stale responses are ignored when the song changes.
 
 import { isLatinScript } from "lyric-romanizer/detector";
 import type { Romanizer, RomanizeOptions } from "lyric-romanizer";
@@ -66,7 +65,6 @@ self.onmessage = async (event: MessageEvent<RomanizeRequest>) => {
     const response: RomanizeResponse = { requestId, result };
     self.postMessage(response);
   } catch {
-    // Return original lines on error.
     const response: RomanizeResponse = {
       requestId,
       result: [...lines],

@@ -190,7 +190,6 @@ describe("SettingsLibrarySection interactions", () => {
     ) as HTMLButtonElement;
     expect(integrityButton).not.toBeNull();
     expect(integrityButton.disabled).toBe(true);
-    // Idle (non-spinning) ShieldCheck icon still renders when not checking.
     expect(integrityButton.querySelector(".animate-spin")).toBeNull();
   });
 });

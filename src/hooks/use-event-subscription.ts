@@ -7,13 +7,6 @@ interface EventSubscription {
 }
 
 /**
- * Subscribe to multiple Tauri events with a single useEffect.
- *
- * Handles the common pattern of:
- * - async listener setup with cancellation race protection
- * - collecting unlisten callbacks
- * - cleanup on unmount or dependency change
- *
  * Optional `onCleanup` runs before unlisteners are called (for clearing
  * scheduled timers, etc.).
  */

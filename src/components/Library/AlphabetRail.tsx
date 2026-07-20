@@ -119,7 +119,6 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
     [],
   );
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       activePointerIdRef.current = null;
@@ -171,7 +170,6 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
               const target = upper as AlphabetBucket;
               setRovingBucket(target);
               lastNavigatedBucketRef.current = null;
-              // Focus the button for the typed bucket
               const button = containerRef.current?.querySelector(
                 `[data-bucket="${target}"]`,
               ) as HTMLButtonElement | null;
@@ -186,7 +184,6 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
         event.preventDefault();
         const nextBucket = ALPHABET_BUCKETS[nextPos];
         setRovingBucket(nextBucket);
-        // Focus the button for the new roving bucket
         const button = containerRef.current?.querySelector(
           `[data-bucket="${nextBucket}"]`,
         ) as HTMLButtonElement | null;

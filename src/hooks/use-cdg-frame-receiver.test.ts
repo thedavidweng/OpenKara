@@ -5,7 +5,6 @@ import type {
   CdgSyncStatusPayload,
 } from "@/lib/cdg-sync-channel";
 
-/** Helper: create a minimal frame payload for tests. */
 function makeFramePayload(frameVersion: number = 1): CdgSyncFramePayload {
   return {
     rgba: new Uint8Array(4),
@@ -77,7 +76,6 @@ describe("createCoalescingPainter", () => {
 
     const painter = createCoalescingPainter<string>(paint);
 
-    // Should not throw
     painter.cancel();
 
     expect(paint).not.toHaveBeenCalled();
@@ -141,8 +139,6 @@ describe("createCoalescingPainter", () => {
   });
 });
 
-// ─── startCdgBroadcastFrameReceiver ─────────────────────────
-
 describe("startCdgBroadcastFrameReceiver", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -182,14 +178,11 @@ describe("startCdgBroadcastFrameReceiver", () => {
       onStatus: vi.fn(),
     });
 
-    // Enqueue a frame
     capturedFrameHandler!(makeFramePayload());
-    // Immediately clear before timer fires
     capturedClearHandler!();
 
     vi.runAllTimers();
 
-    // Frame should have been cancelled by clear
     expect(onFrame).not.toHaveBeenCalled();
     expect(onClear).toHaveBeenCalledOnce();
 
@@ -261,13 +254,11 @@ describe("startCdgBroadcastFrameReceiver", () => {
       onStatus: vi.fn(),
     });
 
-    // Enqueue a frame, then immediately stop
     capturedFrameHandler!(makeFramePayload());
     stop();
 
     vi.runAllTimers();
 
-    // Frame should have been cancelled and receiver stopped
     expect(onFrame).not.toHaveBeenCalled();
     expect(stopReceiver).toHaveBeenCalledOnce();
   });
@@ -301,7 +292,6 @@ describe("startCdgBroadcastFrameReceiver", () => {
       onStatus: vi.fn(),
     });
 
-    // Enqueue, clear, then enqueue again
     const frame1 = makeFramePayload(1);
     const frame2 = makeFramePayload(2);
     capturedFrameHandler!(frame1);
@@ -310,7 +300,6 @@ describe("startCdgBroadcastFrameReceiver", () => {
 
     vi.runAllTimers();
 
-    // Only the second frame should paint (after clear)
     expect(onFrame).toHaveBeenCalledOnce();
     expect(onFrame).toHaveBeenCalledWith(frame2);
 

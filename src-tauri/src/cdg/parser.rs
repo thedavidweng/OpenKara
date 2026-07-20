@@ -19,7 +19,6 @@ pub struct CdgPacket {
 }
 
 impl CdgPacket {
-    /// Whether this packet contains a valid CDG command.
     pub fn is_cdg(&self) -> bool {
         (self.command & 0x3F) == CDG_COMMAND
     }
@@ -47,11 +46,9 @@ pub struct CdgParseDiagnostic {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CdgDiagnosticKind {
-    /// Trailing bytes after the last complete packet.
     TrailingBytes,
 }
 
-/// Structured parse result carrying packets and optional diagnostics.
 #[derive(Debug, Clone)]
 pub struct CdgParseResult {
     pub packets: Vec<CdgPacket>,
@@ -147,7 +144,7 @@ mod tests {
     fn non_cdg_packet_preserved_for_timing() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.cdg");
-        let mut raw = [0u8; 48]; // 2 packets
+        let mut raw = [0u8; 48];
         raw[0] = 0x00; // not a CDG command
         raw[24] = 0x09; // valid CDG
         raw[25] = 0x06; // TileBlock
@@ -175,7 +172,7 @@ mod tests {
 
     #[test]
     fn no_trailing_bytes_no_diagnostic() {
-        let raw = [0u8; 48]; // exactly 2 packets
+        let raw = [0u8; 48];
         let result = parse_cdg_bytes_with_diagnostics(&raw);
         assert_eq!(result.packets.len(), 2);
         assert_eq!(result.diagnostic, None);

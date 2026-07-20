@@ -145,10 +145,8 @@ describe("SettingsCrossfadeSection", () => {
       fireEvent.change(slider, { target: { value: "5000" } });
     });
 
-    // The commit is debounced — it should not fire immediately.
     expect(setCrossfadeDurationMs).not.toHaveBeenCalled();
 
-    // After the debounce window, the commit fires.
     act(() => {
       vi.advanceTimersByTime(75);
     });
@@ -182,10 +180,8 @@ describe("SettingsCrossfadeSection", () => {
       fireEvent.change(slider, { target: { value: "7000" } });
     });
 
-    // Not yet committed — debounce is pending.
     expect(setCrossfadeDurationMs).not.toHaveBeenCalled();
 
-    // Pointer release flushes immediately.
     act(() => {
       fireEvent.pointerUp(slider);
     });
@@ -309,7 +305,6 @@ describe("SettingsCrossfadeSection", () => {
       fireEvent.change(slider, { target: { value: "3000" } });
     });
 
-    // Advance timers — nothing should fire.
     act(() => {
       vi.advanceTimersByTime(75);
     });
@@ -339,7 +334,6 @@ describe("SettingsCrossfadeSection", () => {
     );
 
     const slider = screen.getByRole("slider");
-    // First change starts a debounce timer.
     act(() => {
       fireEvent.change(slider, { target: { value: "4000" } });
     });
@@ -349,7 +343,6 @@ describe("SettingsCrossfadeSection", () => {
       fireEvent.change(slider, { target: { value: "5000" } });
     });
 
-    // Advance past the debounce — only the second value should commit.
     act(() => {
       vi.advanceTimersByTime(75);
     });
@@ -387,7 +380,6 @@ describe("SettingsCrossfadeSection", () => {
     // Unmount before the debounce timer fires.
     unmount();
 
-    // Advance timers — the cleanup should have cancelled the timer.
     act(() => {
       vi.advanceTimersByTime(75);
     });
@@ -413,7 +405,6 @@ describe("SettingsCrossfadeSection", () => {
       </SettingsOverlayContext>,
     );
 
-    // Toggle the checkbox — the default no-op setCrossfadeEnabled is called.
     const checkbox = screen.getByRole("checkbox", { name: "Enable crossfade" });
     await act(async () => {
       fireEvent.click(checkbox);

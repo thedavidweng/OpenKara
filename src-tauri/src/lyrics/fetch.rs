@@ -68,7 +68,6 @@ impl TimedLyricsProvider<'_> {
                 .fetch_by_track(query)
                 .map(|result| {
                     result.and_then(|lyrics| {
-                        // Prefer LRC, fall back to TTML
                         let lrc = lyrics.lrc.trim();
                         if !lrc.is_empty() {
                             Some(lyrics.lrc)
@@ -160,7 +159,6 @@ pub fn fetch_online_timed_lyrics(
         match (*provider).fetch_timed_lrc(query) {
             Ok(Some(raw)) => {
                 let trimmed = raw.trim();
-                // Detect TTML content from LrcAPI
                 let source = if (*provider).source() == LyricsSource::LrcApi
                     && (trimmed.starts_with("<?xml") || trimmed.starts_with("<tt"))
                 {
@@ -169,7 +167,6 @@ pub fn fetch_online_timed_lyrics(
                     (*provider).source()
                 };
 
-                // Verify it has timed content
                 let has_timed = if source == LyricsSource::LrcApiTtml {
                     ttml_parser::parse_ttml(&raw)
                         .map(|lines| !lines.is_empty())
@@ -199,10 +196,8 @@ pub fn fetch_online_timed_lyrics(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Async variants — used by async Tauri commands so network I/O does not occupy
+// Async variants used by async Tauri commands so network I/O does not occupy
 // a `spawn_blocking` worker thread for the full request duration.
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy)]
 pub enum TimedLyricsProviderAsync<'a> {
@@ -236,7 +231,6 @@ impl TimedLyricsProviderAsync<'_> {
                 .await
                 .map(|result| {
                     result.and_then(|lyrics| {
-                        // Prefer LRC, fall back to TTML
                         let lrc = lyrics.lrc.trim();
                         if !lrc.is_empty() {
                             Some(lyrics.lrc)
@@ -360,7 +354,6 @@ fn read_sidecar_lyrics(path: &Path) -> Result<Option<(String, LyricsSource)>> {
             }
         }
     } else {
-        // Fallback: probe common case variants directly.
         for (ext_lower, source) in &[
             ("ttml", LyricsSource::SidecarTtml),
             ("lys", LyricsSource::SidecarLys),
@@ -375,7 +368,8 @@ fn read_sidecar_lyrics(path: &Path) -> Result<Option<(String, LyricsSource)>> {
         }
     }
 
-    // Sort by priority: ttml > lys > lrc.
+    candidates.sort_by_key(|(_, source)| priority(source));
+
     fn priority(source: &LyricsSource) -> u8 {
         match source {
             LyricsSource::SidecarTtml => 0,
@@ -406,12 +400,10 @@ fn read_sidecar_lyrics(path: &Path) -> Result<Option<(String, LyricsSource)>> {
 pub fn parse_lyrics_auto(raw: &str) -> Result<Vec<crate::lyrics::parser::LyricLine>> {
     let trimmed = raw.trim();
 
-    // TTML detection
     if trimmed.starts_with("<?xml") || trimmed.starts_with("<tt") {
         return ttml_parser::parse_ttml(raw).map_err(|e| anyhow::anyhow!("TTML parse error: {e}"));
     }
 
-    // LYS detection: first non-empty line starts with [digit]
     if let Some(first_line) = trimmed.lines().find(|l| !l.trim().is_empty()) {
         let bytes = first_line.trim().as_bytes();
         if bytes.starts_with(b"[")
@@ -427,7 +419,6 @@ pub fn parse_lyrics_auto(raw: &str) -> Result<Vec<crate::lyrics::parser::LyricLi
         }
     }
 
-    // Default: LRC
     crate::lyrics::parser::parse_lrc(raw)
 }
 
@@ -494,8 +485,8 @@ mod tests {
 
     #[test]
     fn parse_lyrics_auto_lrc_with_l_bracket_digit_not_confused_with_lys() {
-        // "[00:10.00]Hello" starts with [digit but is LRC, not LYS
-        // LYS parser will fail (no parenthesized timestamps), falls back to LRC
+        // "[00:10.00]Hello" starts with [digit but is LRC, not LYS:
+        // the LYS parser fails (no parenthesized timestamps) and falls back to LRC.
         let lrc = "[00:10.00]Hello world\n";
         let lines = parse_lyrics_auto(lrc).expect("should fall back to LRC");
         assert_eq!(lines.len(), 1);

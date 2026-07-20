@@ -5,7 +5,7 @@ use crate::audio::crossfade::{
 use crate::audio::decode::DecodedAudio;
 use crate::audio::eq::{soft_limit, EqProcessor};
 use crate::audio::error::PlaybackError;
-use crate::audio::output_format::{self, OutputFormatState};
+use crate::audio::output_format::{OutputFormatSnapshot, OutputFormatState};
 use crate::audio::peaks::{PeakAccumulator, PeakRing};
 use crate::audio::playback::{LoadedStems, PlaybackController, StemVolumes};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -83,7 +83,10 @@ impl ResamplerCache {
                 // 128 taps, 256× oversampling — good quality with reasonable CPU cost.
                 let params = SincInterpolationParameters {
                     sinc_len: 128,
-                    f_cutoff: rubato::calculate_cutoff(128, rubato::WindowFunction::Blackman2),
+                    f_cutoff: Some(rubato::calculate_cutoff(
+                        128,
+                        rubato::WindowFunction::Blackman2,
+                    )),
                     interpolation: SincInterpolationType::Quadratic,
                     oversampling_factor: 256,
                     window: rubato::WindowFunction::Blackman2,
@@ -323,7 +326,6 @@ pub fn render_output_buffer(
         if let Some((rendered, src_frames_advanced)) = crossfade_result {
             let rendered_samples = rendered * device_channels;
 
-            // Apply EQ + soft limiter to the mixed output.
             eq_processor.process(output, rendered_samples);
             if eq_processor.is_fully_bypassed() {
                 for sample in output[..rendered_samples].iter_mut() {
@@ -335,7 +337,6 @@ pub fn render_output_buffer(
                 }
             }
 
-            // Apply fade envelope.
             if let Some(fade_gain) = playback.take_fade_gain() {
                 if fade_gain < 1.0 {
                     for sample in output[..rendered_samples].iter_mut() {
@@ -344,10 +345,8 @@ pub fn render_output_buffer(
                 }
             }
 
-            // Peak accumulation after EQ, limiter and fade.
             peak_accumulator.process(output, rendered_samples, device_channels, peak_ring);
 
-            // Advance the render frame counter.
             playback.advance_render_frame(src_frames_advanced);
 
             // Check for gapless fallback after crossfade completes or if it
@@ -394,8 +393,6 @@ pub fn render_output_buffer(
     }
 
     let (rendered, src_frames_advanced) = if has_streaming {
-        // Streaming mode: pop from ring buffer consumers.
-        // We need mutable access to streaming, so borrow the track mutably.
         let track = playback.current_track.as_mut().unwrap();
         let streaming = track.streaming.as_mut().unwrap();
 
@@ -443,7 +440,6 @@ pub fn render_output_buffer(
             ),
         }
     } else if has_stems {
-        // Stem mode: mix from pre-decoded stem buffers
         let track = playback.current_track.as_ref().unwrap();
         let loaded_stems = track.stems.as_ref().unwrap();
         match loaded_stems {
@@ -513,7 +509,6 @@ pub fn render_output_buffer(
             }
         }
     } else {
-        // Fallback: play original audio with master volume
         let track = playback.current_track.as_ref().unwrap();
         let original = &track.original_audio;
         mix_stem_resampled(
@@ -551,7 +546,6 @@ pub fn render_output_buffer(
         }
     }
 
-    // Apply fade-in/fade-out envelope if active.
     let fade_gain = playback.take_fade_gain();
     if let Some(fade_gain) = fade_gain {
         if fade_gain < 1.0 {
@@ -563,7 +557,7 @@ pub fn render_output_buffer(
         // set is_playing = false, so the next callback will return 0 immediately.
     }
 
-    // #87: Peak accumulation happens after EQ, limiter and fade — the final
+    // Peak accumulation happens after EQ, limiter and fade — the final
     // post-processing stage before CPAL output / AirPlay forwarding. Only
     // fully rendered samples participate; trailing zero padding is ignored.
     //
@@ -573,14 +567,13 @@ pub fn render_output_buffer(
     // envelope pairs far too frequently and distorting the visualizer timeline.
     peak_accumulator.process(output, rendered, device_channels, peak_ring);
 
-    // Advance the render frame counter so the next callback continues seamlessly
     playback.advance_render_frame(src_frames_advanced);
 
     if has_streaming {
         finalize_streaming_natural_end(playback);
     }
 
-    // #88: Gapless transition. After advancing the render frame, check if the
+    // Gapless transition. After advancing the render frame, check if the
     // current track has reached EOF. If a prepared track is available, swap it
     // in immediately and render the remaining buffer from the new track so
     // there is no silence gap when EOF lands mid-callback. Without this tail
@@ -592,7 +585,7 @@ pub fn render_output_buffer(
     // Streaming tracks use `finalize_streaming_natural_end` above and rely on
     // the frontend to call `play()` for the next song.
     let mut total_rendered = rendered;
-    // #103: Do not gapless-swap when the user has paused (or is pausing via
+    // Do not gapless-swap when the user has paused (or is pausing via
     // a fade-out). Without this check, a track reaching EOF during a pause
     // fade-out would auto-advance to the preloaded next track, defeating the
     // user's intent to stop at the current song. The `current_track_is_playing`
@@ -654,10 +647,7 @@ pub fn render_output_buffer(
                     }
                 }
             }
-            // Accumulate peaks for the tail so the visualizer stays live.
             peak_accumulator.process(remaining, extra_rendered, device_channels, peak_ring);
-            // Advance the new track's render frame by the frames we just
-            // rendered so the next callback continues seamlessly.
             playback.advance_render_frame(extra_frames);
             total_rendered += extra_rendered;
         }
@@ -699,7 +689,6 @@ fn render_crossfade_overlap(
         return Some((0, 0));
     }
 
-    // Start a new crossfade if none is active but a prepared track exists.
     if playback.active_crossfade.is_none() {
         let prepared = playback.prepared_track.as_ref()?;
         let track = playback.current_track.as_ref()?;
@@ -771,7 +760,6 @@ fn render_crossfade_overlap(
     let overlap_rendered = active.rendered_frames;
     let frames_left_in_overlap = total_overlap - overlap_rendered;
 
-    // How many frames this callback will render in the overlap phase.
     let overlap_frames_this_callback = output_frames.min(frames_left_in_overlap as usize);
     let mut rendered_output_frames = 0usize;
     let mut src_frames_advanced = 0u64;
@@ -786,14 +774,12 @@ fn render_crossfade_overlap(
     // `active.rendered_frames`, which is incremented inside the loop.
     let mut outgoing_frames_consumed = 0u64;
 
-    // Render the overlap in chunks of at most CROSSFADE_SCRATCH_FRAMES.
     let mut chunk_start = 0usize;
     while chunk_start < overlap_frames_this_callback {
         let chunk_frames =
             (overlap_frames_this_callback - chunk_start).min(CROSSFADE_SCRATCH_FRAMES);
         let chunk_samples = chunk_frames * device_channels;
 
-        // Render outgoing into output buffer (with master gain).
         let track = playback.current_track.as_ref().unwrap();
         let outgoing_render_frame = track.render_frame + outgoing_frames_consumed;
         let outgoing_buf = &mut output
@@ -809,7 +795,6 @@ fn render_crossfade_overlap(
             Some(outgoing_resampler_cache),
         );
 
-        // Render incoming into scratch buffer (with master gain).
         // Zero the scratch slice first — mix_stem_resampled uses additive
         // mixing (+=), so stale samples from the previous callback would
         // corrupt the incoming audio.
@@ -1187,7 +1172,8 @@ fn mix_stem_rubato(
 
         // Process through rubato. Returns an interleaved owned buffer.
         // FixedAsync::Output guarantees exactly output_frames output frames.
-        let output_adapter = match entry.resampler.process(&input_adapter, 0, None) {
+        // Indexing is None: default input_offset=0, all channels active.
+        let output_adapter = match entry.resampler.process(&input_adapter, None) {
             Ok(out) => out,
             Err(_) => {
                 entry.channel_input = std::mem::take(&mut entry.input_vecs[0]);
@@ -1502,7 +1488,7 @@ fn render_streaming_four_stem(
 
 fn build_output_stream<T>(
     device: &cpal::Device,
-    config: &cpal::StreamConfig,
+    config: cpal::StreamConfig,
     playback: Arc<Mutex<PlaybackController>>,
     airplay_audio_tap: Arc<AirPlayAudioTap>,
     airplay_local_output_suppressed: Arc<AtomicBool>,
@@ -1515,22 +1501,31 @@ where
     let channels = config.channels as usize;
     let sample_rate = config.sample_rate;
 
-    // #88: Publish the output format descriptor so the preload scheduler can
+    // Publish the output format descriptor so the preload scheduler can
     // capture it and normalize the next track to this format. The generation
     // increments on every new stream construction (including device restarts),
     // so stale preparations captured before the restart are rejected by the
     // coordinator's generation check.
-    let generation = output_format::snapshot(&output_format)
+    let generation = output_format
+        .read()
+        .ok()
+        .and_then(|guard| *guard)
         .map(|s| s.generation.saturating_add(1))
         .unwrap_or(1);
-    output_format::publish(&output_format, generation, sample_rate, config.channels);
+    if let Ok(mut guard) = output_format.write() {
+        *guard = Some(OutputFormatSnapshot::new(
+            generation,
+            sample_rate,
+            config.channels,
+        ));
+    }
     let mut scratch = Vec::<f32>::new();
     // Pre-allocated scratch buffer for per-stem pop operations inside the audio
     // callback.  Reusing one buffer across all stems avoids `vec![]` allocations
     // on the realtime thread — after the first callback the capacity is sufficient
     // and `resize` becomes a no-op memset.
     let mut stem_scratch = Vec::<f32>::new();
-    // R1: Pre-allocated scratch buffer for AirPlay downmix. Eliminates the
+    // Pre-allocated scratch buffer for AirPlay downmix. Eliminates the
     // per-callback heap allocation that `downmix_for_airplay` previously caused.
     let mut airplay_scratch = Vec::<f32>::new();
     // Cached rubato resamplers for sample-rate conversion. Resamplers maintain
@@ -1545,7 +1540,7 @@ where
     // gains + monotonically increasing revision) and the callback compares
     // revisions while it already holds the controller lock.
     let mut eq_processor = EqProcessor::new(sample_rate, channels);
-    // #87: Peak accumulator owned by the output closure. A device restart
+    // Peak accumulator owned by the output closure. A device restart
     // starts a fresh partial window while retaining the process-wide ring.
     let mut peak_accumulator = PeakAccumulator::new();
     // Pre-allocated crossfade scratch buffer for rendering incoming
@@ -1650,7 +1645,7 @@ fn start_output_thread(
     let stream = match config.sample_format() {
         SampleFormat::F32 => build_output_stream::<f32>(
             &device,
-            &config.into(),
+            config.into(),
             playback,
             airplay_audio_tap,
             airplay_local_output_suppressed,
@@ -1659,7 +1654,7 @@ fn start_output_thread(
         )?,
         SampleFormat::I16 => build_output_stream::<i16>(
             &device,
-            &config.into(),
+            config.into(),
             playback,
             airplay_audio_tap,
             airplay_local_output_suppressed,
@@ -1668,7 +1663,7 @@ fn start_output_thread(
         )?,
         SampleFormat::U16 => build_output_stream::<u16>(
             &device,
-            &config.into(),
+            config.into(),
             playback,
             airplay_audio_tap,
             airplay_local_output_suppressed,
@@ -1724,7 +1719,7 @@ fn forward_rendered_audio_to_airplay(
 
     downmix_for_airplay_into(&scratch[..rendered_samples], channels, airplay_scratch);
     if !airplay_scratch.is_empty() {
-        // R1: Swap out the buffer so push_interleaved takes ownership (no to_vec).
+        // Swap out the buffer so push_interleaved takes ownership (no to_vec).
         // The replacement Vec reuses the same capacity for the next callback.
         let owned = std::mem::replace(
             airplay_scratch,
@@ -1734,7 +1729,7 @@ fn forward_rendered_audio_to_airplay(
     }
 }
 
-/// R1: Downmix multi-channel audio to stereo, writing into a reusable buffer
+/// Downmix multi-channel audio to stereo, writing into a reusable buffer
 /// to avoid heap allocation on the realtime audio callback thread.
 fn downmix_for_airplay_into(samples: &[f32], channels: usize, output: &mut Vec<f32>) {
     output.clear();
@@ -2241,7 +2236,7 @@ mod tests {
         );
     }
 
-    /// #88: When the current track reaches EOF mid-callback, the gapless swap
+    /// When the current track reaches EOF mid-callback, the gapless swap
     /// must fill the remaining buffer with samples from the new track so there
     /// is no silence gap at the transition point.
     #[test]
@@ -2344,7 +2339,7 @@ mod tests {
         assert_eq!(track.render_frame, 412);
     }
 
-    /// #103: When the user pauses near the end of a track and the track
+    /// When the user pauses near the end of a track and the track
     /// reaches EOF during the pause fade-out, the gapless swap must NOT
     /// auto-advance to the preloaded next track. The user's intent is to
     /// stop at the current song, not to skip to the next one.
@@ -2435,14 +2430,14 @@ mod tests {
             "prepared track must not be consumed during a pause"
         );
 
-        // #103: No transition must be queued — the swap was suppressed, so
+        // No transition must be queued — the swap was suppressed, so
         // the position emitter must not emit a `track-transitioned` event.
         assert!(
             controller.pending_transition_out.is_none(),
             "no CompletedTransition must be queued while paused at EOF"
         );
 
-        // #103: The tail (after track A's 100 frames) must contain no
+        // The tail (after track A's 100 frames) must contain no
         // samples from track B (0.5 amplitude). It should be silence.
         let tail_start = 100 * device_channels;
         let tail = &output[tail_start..];
@@ -2453,16 +2448,6 @@ mod tests {
              max amplitude {max_tail}"
         );
     }
-
-    // ── #103: Explicit Resume after pause at EOF ──────────────────────
-    //
-    // After pausing near EOF (where the gapless swap is suppressed), the
-    // user presses resume (play). The track is at EOF, but now
-    // `current_track_is_playing()` returns true again (FadingIn, not
-    // FadingOut). The next render callback should perform the gapless swap
-    // and fill the buffer from the prepared next track. Without this
-    // regression test, a bug that permanently suppresses the swap after a
-    // pause/resume cycle would go undetected.
 
     #[test]
     fn gapless_swap_proceeds_after_resume_from_pause_at_eof() {
@@ -2591,7 +2576,7 @@ mod tests {
             "prepared track must be consumed after resume swap"
         );
 
-        // #103: Exactly one transition must have been queued — not zero
+        // Exactly one transition must have been queued — not zero
         // (the swap fired) and not more than one (no double-swap). Drain it
         // and verify a second drain yields None.
         let transition = controller
@@ -2604,7 +2589,7 @@ mod tests {
             "must not queue a second transition after resume swap"
         );
 
-        // #103: The output buffer must contain track B's audio in the tail
+        // The output buffer must contain track B's audio in the tail
         // (the swap filled the remaining frames from track B). Track B is
         // 0.5 amplitude, attenuated by the fade-in gain which ramps from
         // ~0 to 1 over FADE_DURATION. Verify the tail is not all silence
@@ -2631,13 +2616,6 @@ mod tests {
             "gapless swap must preserve the active resume fade for later callbacks"
         );
     }
-
-    // ── #103: Post-pause tail is silence, not next track ──────────────
-    //
-    // When the user pauses and the track reaches EOF during the fade-out,
-    // the remaining buffer after EOF must be silence (zeros), not the
-    // prepared next track's audio. This is the "tail" regression: the old
-    // code would fill the tail with the next track even during a pause.
 
     #[test]
     fn post_pause_tail_is_silence_not_next_track() {
@@ -2726,8 +2704,6 @@ mod tests {
             "no gapless swap during pause"
         );
     }
-
-    // ── Crossfade integration tests ──────────────────────────────────────
 
     /// Helper: build a controller with track A playing and a prepared track B,
     /// with crossfade enabled. Both tracks are plain decoded audio (no stems,
@@ -3123,16 +3099,6 @@ mod tests {
             "crossfade must not start when disabled"
         );
     }
-
-    // ── Crossfade regression tests backported from the original #89 branch ──
-    //
-    // PR #131 rewrote the crossfade implementation from scratch (fixing a
-    // frame-domain defect), but shipped with fewer regression tests than the
-    // original branch. The tests below cover scenarios that the v2 test suite
-    // did not explicitly exercise: pause-during-overlap promotion suppression,
-    // multi-chunk callback source-position advancement, mismatched sample
-    // rate overlap timing, incoming source-frame promotion, resampler history
-    // transfer, and cancellation cache cleanup.
 
     /// Build a crossfade controller with a **ramp** outgoing track (each
     /// frame's samples equal the frame index offset from the render position)

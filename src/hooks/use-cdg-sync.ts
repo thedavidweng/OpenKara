@@ -100,17 +100,12 @@ export type CdgFrameRequest = {
 
 export type CdgFrameCoordinator = {
   /**
-   * Enqueue a desired frame request. The request is coalesced if another
-   * is already in flight — only the latest pending request is pumped when
-   * the in-flight one completes. Returns `void`; callers cannot rely on a
+   * Enqueue a desired frame request. Returns `void`; callers cannot rely on a
    * return value to detect drops. Use `isInFlight()` for test assertions.
    */
   request: (req: Omit<CdgFrameRequest, "serial">) => void;
-  /** Invalidate outstanding work (unmount / empty-song lifecycle reset). */
   invalidate: () => void;
-  /** Test helper: is a request currently in flight? */
   isInFlight: () => boolean;
-  /** Test helper: current serial. */
   currentSerial: () => number;
 };
 
@@ -142,9 +137,6 @@ export function createCdgFrameCoordinator(deps: {
      * and IPC-failure fallback paths.
      */
     availability?: CdgAvailability;
-    /**
-     * Backend CDG error code, reported when `availability` is "error".
-     */
     errorCode?: CdgErrorCode | null;
   }) => void;
   onError: (args: { songId: string; transportGeneration: number }) => void;
@@ -174,7 +166,6 @@ export function createCdgFrameCoordinator(deps: {
     // flight" serialization invariant.
     const complete = () => {
       inFlight = false;
-      // Drop if invalidated while in flight.
       if (pending && pending.serial !== serial) {
         pending = null;
       }
@@ -313,7 +304,6 @@ export function useCdgSync(enabled = true): void {
 
   const coordinatorRef = useRef<CdgFrameCoordinator | null>(null);
 
-  // Build / rebuild coordinator when enabled; invalidate on cleanup.
   useEffect(() => {
     if (!enabled) {
       coordinatorRef.current = null;
@@ -343,7 +333,6 @@ export function useCdgSync(enabled = true): void {
           frameVersion,
           transportGeneration: gen,
         });
-        // Ensure store marks CDG present after a successful frame.
         if (
           useCdgStore.getState().songId !== sid ||
           !useCdgStore.getState().hasCdg

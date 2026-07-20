@@ -3,8 +3,6 @@
 //! Domain write path lives in `crate::library`. This module only binds
 //! Tauri state, opens the DB, and wraps remote mutation hooks.
 
-// Re-export domain types/functions so existing `commands::import::…` paths
-// (tests, smoke) keep working during the transition.
 pub use crate::library::import::{
     collect_expandable_import_paths, extract_embedded_cover_art_from_connection,
     get_library_from_connection, import_songs_from_paths, import_songs_from_paths_with_options,
@@ -28,6 +26,9 @@ use crate::{
 use tauri::{AppHandle, State};
 
 #[cfg(target_os = "macos")]
+use crate::commands::error::internal_error;
+
+#[cfg(target_os = "macos")]
 use std::ffi::{c_char, CStr, CString};
 
 #[tauri::command]
@@ -40,7 +41,6 @@ pub fn import_songs(
     let library = state.library_root()?;
     let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
 
-    // Remote Pre-Mutation Refresh / Publish Song: run_imported_songs_mutation
     remote::run_imported_songs_mutation(&state, &app_handle, || {
         import_songs_from_paths_with_options(
             &connection,
@@ -87,7 +87,7 @@ pub fn pick_import_paths(default_path: Option<String>) -> CommandResult<Vec<Stri
             .as_deref()
             .map(CString::new)
             .transpose()
-            .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
+            .map_err(internal_error)?;
         let mut count = 0usize;
         let raw_paths = unsafe {
             openkara_pick_import_paths(
@@ -147,7 +147,6 @@ pub fn search_library(state: State<'_, AppState>, query: String) -> CommandResul
     cache::search_songs(&connection, &query).map_err(|error| database_error(error.to_string()))
 }
 
-/// Requested cover art resolution for `get_cover_art`.
 #[derive(Clone, Copy, Debug, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CoverArtSize {
@@ -184,7 +183,6 @@ pub async fn get_cover_art(
     // opened library DB connection so the IPC thread is never blocked.
     let bytes = tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<Option<Vec<u8>>> {
         let connection = cache::open_database(&database_path)?;
-        // Unknown hash returns None, preserving the current command behavior.
         let Some(record) = cache::get_artwork_record(&connection, &hash)? else {
             return Ok(None);
         };
@@ -242,7 +240,6 @@ pub async fn get_cover_art(
                     _ => unreachable!(),
                 };
 
-                // 1. Validate/read the requested derivative if a path is recorded.
                 if let Some(path) = recorded_path {
                     if let Ok(Some(bytes)) =
                         artwork::read_artwork_derivative(&library, path, expected_size)
@@ -251,7 +248,7 @@ pub async fn get_cover_art(
                     }
                 }
 
-                // 2. Lazy repair: regenerate both derivatives from the
+                // Lazy repair: regenerate both derivatives from the
                 // original bytes, then update paths only if the cover art
                 // BLOB still matches (concurrent replacement safe).
                 let Some(cover_art) = record.cover_art.as_deref() else {
@@ -300,7 +297,6 @@ pub async fn get_cover_art(
                     }
                 }
 
-                // 3. Fallback: return the original bytes on generation failure.
                 Ok(cache::get_cover_art(&connection, &hash)?)
             }
         }
@@ -442,7 +438,7 @@ pub fn get_song_properties(
 
     // Ensure remote working-copy files exist before probing (command-layer only).
     let song = cache::get_song_by_hash(&connection, &song_id)
-        .map_err(|e| database_error(e.to_string()))?
+        .map_err(database_error)?
         .ok_or_else(|| database_error(format!("song with hash {song_id} not found")))?;
 
     if song.is_remote() {

@@ -13,7 +13,6 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-/** Minimal binary CDG envelope: 32-byte header with RGBA flag + 4 rgba bytes. */
 function frameEnvelope(
   transportGeneration: number,
   frameVersion: number,
@@ -25,16 +24,11 @@ function frameEnvelope(
   // We'll use the real parser expectations from cdg-protocol.
   const buf = new ArrayBuffer(32 + 4);
   const u8 = new Uint8Array(buf);
-  // Magic / version fields — fill using the same helpers as other tests if needed.
-  // For coordinator tests we can mock parse via returning empty if parse fails;
-  // instead build using the test helper pattern from render tests.
-  const dv = new DataView(buf);
   // protocol: see parseCdgFrameResponse — set hasRgba bit etc.
   // Simpler: mock getCdgFrame to return empty ArrayBuffer and only test concurrency.
   void transportGeneration;
   void frameVersion;
   void u8;
-  void dv;
   return buf;
 }
 
@@ -91,7 +85,6 @@ describe("createCdgFrameCoordinator", () => {
       await Promise.resolve();
     }
 
-    // After first completes, coalesced second is issued.
     expect(getCdgFrame).toHaveBeenCalledTimes(2);
 
     second.resolve(new ArrayBuffer(0));
@@ -197,7 +190,6 @@ describe("createCdgFrameCoordinator", () => {
     for (let i = 0; i < 4; i++) {
       await Promise.resolve();
     }
-    // Newer may resolve with empty frame → onProbeResolved once.
     expect(onProbeResolved).toHaveBeenCalledTimes(1);
     expect(onProbeResolved).toHaveBeenCalledWith({
       songId: "song-2",
@@ -280,8 +272,6 @@ describe("createCdgFrameCoordinator", () => {
       await Promise.resolve();
     }
 
-    // The coordinator must consult getCdgStatus and forward the error state
-    // instead of silently treating the song as audio-only.
     expect(getCdgStatus).toHaveBeenCalledWith("song-1", 1);
     expect(onProbeResolved).toHaveBeenCalledTimes(1);
     expect(onProbeResolved).toHaveBeenCalledWith({
@@ -422,8 +412,6 @@ describe("createCdgFrameCoordinator", () => {
       await Promise.resolve();
     }
 
-    // The coordinator must consult getCdgStatus and forward the loading
-    // state so the caller can keep hasCdg optimistic and retry.
     expect(getCdgStatus).toHaveBeenCalledWith("song-1", 1);
     expect(onProbeResolved).toHaveBeenCalledTimes(1);
     expect(onProbeResolved).toHaveBeenCalledWith({

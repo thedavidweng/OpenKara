@@ -3,7 +3,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { getNativeWindowShellState, useWindowShellState } from "./window-shell";
+import { MAC_WINDOW_SHELL_STATE, useWindowShellState } from "./window-shell";
 
 vi.mock("@/lib/app-shortcuts", () => ({
   getShortcutPlatform: () => "mac",
@@ -39,7 +39,7 @@ describe("useWindowShellState", () => {
     const root = createRoot(container);
 
     function Probe() {
-      const state = useWindowShellState(getNativeWindowShellState(), "mac");
+      const state = useWindowShellState(MAC_WINDOW_SHELL_STATE, "mac");
       const extendedState = state as typeof state & {
         sidebarHeaderHeight?: number;
       };

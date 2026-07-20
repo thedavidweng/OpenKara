@@ -1,6 +1,5 @@
 # Queue Management
 
-**Last updated:** 2026-05-13  
 **Covers:** Queue panel, up-next, play-now/play-next/add-to-queue, drag reorder, auto-advance, clear, and keyboard shortcuts.
 
 ## Scope
@@ -8,7 +7,7 @@
 This spec covers the user-facing behaviour of the playback queue. It does **not** cover:
 
 - Underlying queue data structure or IPC commands (see [`../contracts/playback.md`](../contracts/playback.md))
-- Singers or rotation (see [`F1-playlists-and-singer-rotation.md`](./F1-playlists-and-singer-rotation.md))
+- Singers or rotation (see [`playlists-and-singer-rotation.md`](./playlists-and-singer-rotation.md))
 - CDG, AirPlay, or fullscreen audience out-of-band state
 
 ## Adding songs to the queue
@@ -74,7 +73,7 @@ These actions are available from:
   - `isPlaying` becomes `false`
   - `songId` becomes `null`
   - UI shows "Select a song to start" in the lyrics panel.
-- Auto-advance respects crossfade: if enabled (future feature), the next song begins fading in before the current song ends. (Not yet implemented — crossfade is out of scope for this spec version.)
+- Auto-advance respects crossfade: when crossfade is enabled, the next song begins fading in before the current song ends.
 
 ## Queue and library deletion
 
@@ -82,7 +81,7 @@ These actions are available from:
 - If the deleted song is currently playing, playback continues until the track ends or the user skips.
 - After the track ends, the deleted song does **not** auto-advance (it has no file to load), and playback transitions to idle.
 - If the deleted song is queued but not playing, it remains in the queue listing but will fail to load when auto-advanced. The error is surfaced as a toast: "Song not found."
-- The queue is **not** persisted across app restarts (intentional design choice — may change in future).
+- The queue is **not** persisted across app restarts (intentional design choice).
 
 ## Keyboard shortcuts
 

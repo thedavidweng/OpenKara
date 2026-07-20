@@ -25,8 +25,6 @@ use crate::{
 use std::path::Path;
 
 impl ProviderSessionData {
-    /// Create a new remote root for a display name (Create Remote Library).
-    ///
     /// Mutates session state when the provider needs to remember the new root
     /// (e.g. Google Drive folder id).
     pub(crate) fn create_remote_root(&mut self, display_name: &str) -> CommandResult<String> {
@@ -65,8 +63,7 @@ impl ProviderSessionData {
         }
     }
 
-    /// Resolve the remote root locator for an already-known folder (reauth /
-    /// candidate resolution). Does not create folders on the remote.
+    /// Does not create folders on the remote.
     pub(crate) fn resolve_remote_root(
         &self,
         existing_locator: Option<&str>,
@@ -90,9 +87,6 @@ impl ProviderSessionData {
         }
     }
 
-    /// Persist Repository Credentials from this session into the system
-    /// credential store and return the connection metadata stored in config.
-    ///
     /// Shared by Register Repository and Reauthorize Repository so both paths
     /// bind secrets through one adapter-owned implementation.
     pub(crate) fn bind_repository_credentials(
@@ -184,7 +178,6 @@ impl ProviderSessionData {
     }
 }
 
-/// Whether credential binding is for a new registration or a reauthorization.
 /// Only affects user-facing refresh-token error copy.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum BindContext {

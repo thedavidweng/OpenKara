@@ -70,8 +70,6 @@ function resetStore() {
   useLyricsStore.setState(DEFAULT_STATE);
 }
 
-// ─── fetchLyrics ────────────────────────────────────────────
-
 describe("lyrics-store fetchLyrics", () => {
   beforeEach(resetStore);
 
@@ -243,8 +241,6 @@ describe("lyrics-store fetchLyrics", () => {
   });
 
   test("stale fetch result does not overwrite current lyrics (F1 race guard)", async () => {
-    // Song A responds slowly; Song B responds immediately.
-    // After both settle, the store must hold Song B's lyrics.
     let resolveA: (v: unknown) => void;
     const promiseA = new Promise((resolve) => {
       resolveA = resolve;
@@ -274,7 +270,6 @@ describe("lyrics-store fetchLyrics", () => {
     // Start fetching song B (resolves immediately)
     await useLyricsStore.getState().fetchLyrics("song-B");
 
-    // Store should now hold song B's lyrics
     expect(useLyricsStore.getState().songId).toBe("song-B");
     expect(useLyricsStore.getState().lines[0]?.text).toBe("B line");
 
@@ -313,7 +308,6 @@ describe("lyrics-store fetchLyrics", () => {
     };
     mockFetchLyrics.mockResolvedValue(unsynced);
     mockFetchLyricsOnline.mockImplementation(async () => {
-      // Simulate another fetch changing the active song while online resolves
       useLyricsStore.setState({ songId: "song-2" });
       return {
         song_id: "song-1",
@@ -333,8 +327,6 @@ describe("lyrics-store fetchLyrics", () => {
   });
 });
 
-// ─── setOffset ──────────────────────────────────────────────
-
 describe("lyrics-store setOffset", () => {
   beforeEach(resetStore);
 
@@ -347,8 +339,6 @@ describe("lyrics-store setOffset", () => {
     expect(useLyricsStore.getState().offsetMs).toBe(200);
   });
 });
-
-// ─── adjustOffset ───────────────────────────────────────────
 
 describe("lyrics-store adjustOffset", () => {
   beforeEach(resetStore);
@@ -374,8 +364,6 @@ describe("lyrics-store adjustOffset", () => {
   });
 });
 
-// ─── setActiveLineIndex ─────────────────────────────────────
-
 describe("lyrics-store setActiveLineIndex", () => {
   beforeEach(resetStore);
 
@@ -391,12 +379,9 @@ describe("lyrics-store setActiveLineIndex", () => {
     useLyricsStore.getState().setActiveLineIndex(3);
 
     expect(useLyricsStore.getState().activeLineIndex).toBe(3);
-    // State reference should be unchanged (no new set call)
     expect(useLyricsStore.getState()).toBe(before);
   });
 });
-
-// ─── clear ──────────────────────────────────────────────────
 
 describe("lyrics-store clear", () => {
   beforeEach(resetStore);
@@ -436,8 +421,6 @@ describe("lyrics-store clear", () => {
     expect(state.showRomanized).toBe(false);
   });
 });
-
-// ─── romanizeCurrentLyrics ──────────────────────────────────
 
 describe("lyrics-store romanizeCurrentLyrics", () => {
   beforeEach(resetStore);
@@ -526,8 +509,6 @@ describe("lyrics-store romanizeCurrentLyrics", () => {
   });
 });
 
-// ─── toggleRomanized ────────────────────────────────────────
-
 describe("lyrics-store toggleRomanized", () => {
   beforeEach(resetStore);
 
@@ -576,8 +557,6 @@ describe("lyrics-store toggleRomanized", () => {
     expect(mockRomanizeLyricsLines).not.toHaveBeenCalled();
   });
 });
-
-// ─── saveManualLyrics ───────────────────────────────────────
 
 describe("lyrics-store saveManualLyrics", () => {
   beforeEach(resetStore);

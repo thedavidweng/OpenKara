@@ -45,7 +45,6 @@ pub fn delete_song_from_library(
         }
     }
 
-    // Delete DB rows (lyrics, play_history, stems, song).
     delete_song_rows_from_database(connection, library, song_id)?;
     // Clean up the on-disk stem directory (not handled by the DB-only delete).
     delete_stem_files_from_working_copy(library, song_id)?;
@@ -58,8 +57,7 @@ pub fn delete_song_from_library(
     Ok(())
 }
 
-/// Collect recorded artwork derivative paths for a song before its DB row is
-/// deleted. Returns paths that exist in the database (may be empty).
+/// Returns paths that exist in the database (may be empty).
 pub(crate) fn collect_artwork_derivative_paths(
     connection: &Connection,
     song_id: &str,
@@ -79,10 +77,9 @@ pub(crate) fn collect_artwork_derivative_paths(
     Ok(paths)
 }
 
-/// Delete only the database rows for a song (lyrics, play_history, stems, song).
-/// Unlike `delete_song_from_library`, this does NOT touch the filesystem —
-/// safe to call inside a SQLite transaction. The caller is responsible for
-/// deleting any working-copy or cloud files separately.
+/// Does NOT touch the filesystem — safe to call inside a SQLite transaction.
+/// The caller is responsible for deleting any working-copy or cloud files
+/// separately.
 pub fn delete_song_rows_from_database(
     connection: &Connection,
     _library: &LibraryRoot,
@@ -107,10 +104,9 @@ pub fn delete_song_rows_from_database(
     Ok(())
 }
 
-/// Delete working-copy files for a song (audio, CDG, media_g containers, stems,
-/// artwork derivatives). Does NOT touch the database — safe to call after a DB
-/// transaction has already committed. Used by mirror sync to clean up the
-/// remote working copy after transactional DB deletes.
+/// Does NOT touch the database — safe to call after a DB transaction has
+/// already committed. Used by mirror sync to clean up the remote working copy
+/// after transactional DB deletes.
 pub fn delete_song_files_from_working_copy(library: &LibraryRoot, song: &Song) -> Result<()> {
     if let Some(container) = song.media_g_container.as_deref() {
         match container {
@@ -141,7 +137,6 @@ pub fn delete_song_files_from_working_copy(library: &LibraryRoot, song: &Song) -
     Ok(())
 }
 
-/// Delete the stem directory for a song from the working copy filesystem.
 /// Does NOT touch the database — safe to call after a DB transaction.
 pub fn delete_stem_files_from_working_copy(library: &LibraryRoot, song_hash: &str) -> Result<()> {
     if !is_safe_stem_directory_name(song_hash) {

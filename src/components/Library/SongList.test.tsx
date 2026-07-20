@@ -257,8 +257,6 @@ describe("SongList", () => {
   });
 });
 
-// ─── sort mode effect ──────────────────────────────────────
-
 describe("SongList sort mode effect", () => {
   afterEach(() => {
     cleanup();
@@ -363,8 +361,6 @@ describe("SongList sort mode effect", () => {
   });
 });
 
-// ─── playlist materialization ──────────────────────────────
-
 describe("SongList playlist materialization", () => {
   afterEach(() => {
     cleanup();
@@ -420,14 +416,11 @@ describe("SongList playlist materialization", () => {
 
     render(<SongList />);
 
-    // Wait for the async playlist load to complete.
     const items = await screen.findAllByTestId("song-item");
     expect(items[0].textContent).toBe("Beta");
     expect(items[1].textContent).toBe("Alpha");
   });
 });
-
-// ─── alphabet rail visibility (matchMedia) ─────────────────
 
 function makeSong(overrides: Partial<Song> = {}): Song {
   return {
@@ -541,7 +534,6 @@ describe("SongList alphabet rail visibility", () => {
 
     render(<SongList />);
 
-    // Click the B bucket button → triggers SongList's onNavigate handler.
     const buttons = screen.getAllByRole("button");
     const buttonB = buttons[1];
     fireEvent.click(buttonB);

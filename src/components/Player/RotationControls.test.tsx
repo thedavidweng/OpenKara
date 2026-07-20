@@ -60,7 +60,6 @@ describe("RotationControls", () => {
     mockRotationState.singerNames = [];
     const markup = renderToStaticMarkup(<RotationControls />);
     expect(markup).toContain("+ Add Singer");
-    // Restore
     mockRotationState.singerNames = ["David", "John", "Jack"];
   });
 });

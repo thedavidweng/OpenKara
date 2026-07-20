@@ -1,4 +1,3 @@
-/** First-hover delay before a tooltip appears. */
 export const DEFAULT_DELAY_DURATION_MS = 600;
 
 /** After the last tooltip closes, instant switching stays enabled for this long. */

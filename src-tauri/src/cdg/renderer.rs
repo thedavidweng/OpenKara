@@ -8,7 +8,7 @@ const FULL_HEIGHT: usize = 216;
 pub const VISIBLE_WIDTH: usize = 288;
 pub const VISIBLE_HEIGHT: usize = 192;
 
-/// Visible RGBA frame byte length (288 * 192 * 4).
+/// Visible RGBA frame byte length.
 pub const CDG_RGBA_LEN: usize = VISIBLE_WIDTH * VISIBLE_HEIGHT * 4;
 
 /// Border size on each side.
@@ -81,7 +81,6 @@ impl CdgRenderer {
         }
     }
 
-    /// Reset the renderer to initial state.
     pub fn reset(&mut self) {
         self.pixels.fill(0);
         self.palette = [[0, 0, 0, 255]; 16];
@@ -107,8 +106,6 @@ impl CdgRenderer {
         changed
     }
 
-    /// Process packets from `start` (inclusive) to `end` (exclusive).
-    /// Returns `true` if any packet caused a visible change.
     pub fn process_range(&mut self, packets: &[CdgPacket], start: usize, end: usize) -> bool {
         let mut changed = false;
         let end = end.min(packets.len());
@@ -120,7 +117,6 @@ impl CdgRenderer {
         changed
     }
 
-    /// Snapshot the current decoder state.
     pub fn snapshot(&self) -> CdgRendererSnapshot {
         CdgRendererSnapshot {
             pixels: self.pixels.clone(),
@@ -132,7 +128,6 @@ impl CdgRenderer {
         }
     }
 
-    /// Restore decoder state from a snapshot.
     pub fn restore(&mut self, snapshot: &CdgRendererSnapshot) {
         self.pixels.copy_from_slice(&snapshot.pixels);
         self.palette = snapshot.palette;
@@ -165,7 +160,6 @@ impl CdgRenderer {
                 rgba[dst] = color[0];
                 rgba[dst + 1] = color[1];
                 rgba[dst + 2] = color[2];
-                // Apply transparency: transparent index → alpha 0, else 255.
                 rgba[dst + 3] = if self.transparent_color == Some(color_idx) {
                     0
                 } else {
@@ -301,24 +295,18 @@ impl CdgRenderer {
 
         let mut changed = false;
 
-        // Horizontal scroll
         if h_cmd == 2 {
-            // Scroll left 6px
             self.scroll_horizontal(-1, copy, color);
             changed = true;
         } else if h_cmd == 1 {
-            // Scroll right 6px
             self.scroll_horizontal(1, copy, color);
             changed = true;
         }
 
-        // Vertical scroll
         if v_cmd == 2 {
-            // Scroll up 12px
             self.scroll_vertical(-1, copy, color);
             changed = true;
         } else if v_cmd == 1 {
-            // Scroll down 12px
             self.scroll_vertical(1, copy, color);
             changed = true;
         }
@@ -350,7 +338,6 @@ impl CdgRenderer {
                     if x + 6 < FULL_WIDTH {
                         Some(x + 6)
                     } else if copy {
-                        // Wrap around from the left edge.
                         Some(x + 6 - FULL_WIDTH)
                     } else {
                         None
@@ -361,7 +348,6 @@ impl CdgRenderer {
                     if x >= 6 {
                         Some(x - 6)
                     } else if copy {
-                        // Wrap around from the right edge.
                         Some(x + FULL_WIDTH - 6)
                     } else {
                         None
@@ -390,7 +376,6 @@ impl CdgRenderer {
                 if y + 12 < FULL_HEIGHT {
                     Some(y + 12)
                 } else if copy {
-                    // Wrap around from the top.
                     Some(y + 12 - FULL_HEIGHT)
                 } else {
                     None
@@ -401,7 +386,6 @@ impl CdgRenderer {
                 if y >= 12 {
                     Some(y - 12)
                 } else if copy {
-                    // Wrap around from the bottom.
                     Some(y + FULL_HEIGHT - 12)
                 } else {
                     None
@@ -588,11 +572,9 @@ mod tests {
         let snap = r.snapshot();
         let rgba_before = r.to_rgba();
 
-        // Mutate the renderer
         r.reset();
         assert_ne!(r.to_rgba(), rgba_before);
 
-        // Restore
         r.restore(&snap);
         assert_eq!(r.to_rgba(), rgba_before);
     }
@@ -788,14 +770,12 @@ mod tests {
         r.v_offset = MAX_V_OFFSET;
         let rgba = r.to_rgba();
         assert_eq!(rgba.len(), CDG_RGBA_LEN);
-        // Should not panic
     }
 
-    // ── Golden fixture tests ─────────────────────────────────────────────
-    // These tests build deterministic CDG packet sequences and verify the
-    // RGBA output against known-good reference values. They serve as
-    // regression guards: if any decoder logic changes, the golden values
-    // will fail and force a conscious review.
+    // Golden fixture tests: deterministic CDG packet sequences verified
+    // against known-good RGBA reference values. They serve as regression
+    // guards: if any decoder logic changes, the golden values will fail and
+    // force a conscious review.
 
     #[test]
     fn golden_memory_preset_red_visible_area() {
@@ -972,7 +952,6 @@ mod tests {
         let snap = r.snapshot();
         let rgba_before = r.to_rgba();
 
-        // Mutate.
         r.reset();
         r.process_packet(&cdg_packet(CMD_MEMORY_PRESET, {
             let mut d = [0u8; 16];
@@ -981,7 +960,6 @@ mod tests {
         }));
         assert_ne!(r.to_rgba(), rgba_before);
 
-        // Restore and verify.
         r.restore(&snap);
         assert_eq!(
             r.to_rgba(),

@@ -1,11 +1,6 @@
 import { useEffect, useRef } from "react";
 import { usePlayerStore } from "@/stores/player-store";
 
-/**
- * Clears the AirPlay plain-text page-pending flag when conditions invalidate
- * it — for example when the song changes, lyrics switch away from plain text,
- * or the AirPlay remote target is no longer active.
- */
 export function useAirPlayPendingGuard(
   songId: string | null | undefined,
   isPlainText: boolean,

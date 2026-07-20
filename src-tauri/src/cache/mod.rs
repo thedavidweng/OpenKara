@@ -90,7 +90,6 @@ pub fn apply_migrations(connection: &Connection) -> rusqlite::Result<()> {
         connection.execute_batch(include_str!("../../migrations/005_audio_source_kind.sql"))?;
     }
 
-    // 005_individual_stem_paths – add per-instrument columns to stems table.
     if !column_exists(connection, "stems", "drums_path")? {
         connection.execute_batch("ALTER TABLE stems ADD COLUMN drums_path TEXT;")?;
     }
@@ -101,7 +100,6 @@ pub fn apply_migrations(connection: &Connection) -> rusqlite::Result<()> {
         connection.execute_batch("ALTER TABLE stems ADD COLUMN other_path TEXT;")?;
     }
 
-    // 006_stem_model_variant – track which model produced each song's stems.
     if !column_exists(connection, "stems", "model_variant")? {
         connection
             .execute_batch("ALTER TABLE stems ADD COLUMN model_variant TEXT DEFAULT 'htdemucs';")?;
@@ -109,9 +107,9 @@ pub fn apply_migrations(connection: &Connection) -> rusqlite::Result<()> {
 
     migrate_legacy_song_schema(connection)?;
 
-    // 012_artwork_derivatives – cover art derivative file paths.
-    // Applied after migrate_legacy_song_schema because that rebuild recreates
-    // the songs table and would discard columns added earlier.
+    // 012_artwork_derivatives: applied after migrate_legacy_song_schema because
+    // that rebuild recreates the songs table and would discard columns added
+    // earlier.
     if !column_exists(connection, "songs", "artwork_thumb_path")? {
         connection.execute_batch("ALTER TABLE songs ADD COLUMN artwork_thumb_path TEXT;")?;
     }
@@ -119,9 +117,7 @@ pub fn apply_migrations(connection: &Connection) -> rusqlite::Result<()> {
         connection.execute_batch("ALTER TABLE songs ADD COLUMN artwork_preview_path TEXT;")?;
     }
 
-    // 008_playlists – playlist management tables.
     connection.execute_batch(include_str!("../../migrations/008_playlists.sql"))?;
-    // 009_singer_rotation – singer rotation state for turn-based queue workflows.
     connection.execute_batch(include_str!("../../migrations/009_singer_rotation.sql"))?;
 
     Ok(())
@@ -326,7 +322,6 @@ pub fn search_songs(connection: &Connection, query: &str) -> rusqlite::Result<Ve
     // FTS5 prefix queries use unquoted terms with trailing * (e.g. "bohem*").
     // Quoted terms are treated as literal phrase searches.
     let fts_query = if let Some(prefix) = query.strip_suffix('*') {
-        // Prefix query: strip trailing *, sanitize, re-append
         format!("{}*", prefix.replace('"', ""))
     } else {
         format!("\"{}\"", query.replace('"', "\"\""))
@@ -910,13 +905,12 @@ mod tests {
         assert_eq!(results.len(), 1);
     }
 
-    /// Item 2: search_songs should use FTS5 MATCH, not LIKE %q%.
+    /// search_songs should use FTS5 MATCH, not LIKE %q%.
     /// FTS5 MATCH requires an exact FTS5 table to exist.
     #[test]
     fn search_songs_uses_fts5_index() {
         let conn = test_db();
 
-        // Verify the FTS5 virtual table was created by migrations.
         let fts_count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'songs_fts'",
@@ -927,7 +921,7 @@ mod tests {
         assert_eq!(fts_count, 1, "songs_fts FTS5 virtual table should exist");
     }
 
-    /// Item 2: FTS5 search should match partial terms via prefix queries.
+    /// FTS5 search should match partial terms via prefix queries.
     #[test]
     fn search_songs_fts5_prefix_matching() {
         let conn = test_db();
@@ -935,13 +929,12 @@ mod tests {
         s1.title = Some("Bohemian Rhapsody".to_owned());
         upsert_song(&conn, &s1).unwrap();
 
-        // FTS5 prefix query with wildcard
         let results = search_songs(&conn, "bohem*").expect("search should succeed");
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].hash, "fts-test");
     }
 
-    /// Item 2: FTS5 search should stay in sync after updates.
+    /// FTS5 search should stay in sync after updates.
     #[test]
     fn search_songs_fts5_syncs_after_update() {
         let conn = test_db();
@@ -949,18 +942,14 @@ mod tests {
         s1.title = Some("Original Title".to_owned());
         upsert_song(&conn, &s1).unwrap();
 
-        // Verify original title is searchable.
         let results = search_songs(&conn, "original").expect("search should succeed");
         assert_eq!(results.len(), 1);
 
-        // Update title.
         update_song_title_artist(&conn, "fts-sync", Some("New Title"), None).unwrap();
 
-        // Old title should no longer match.
         let results = search_songs(&conn, "original").expect("search should succeed");
         assert_eq!(results.len(), 0);
 
-        // New title should match.
         let results = search_songs(&conn, "new title").expect("search should succeed");
         assert_eq!(results.len(), 1);
     }
@@ -1044,7 +1033,7 @@ mod tests {
         assert!(retrieved.original_ext.is_none());
     }
 
-    /// Item 1: list_songs should not include cover_art BLOB in IPC payload.
+    /// list_songs should not include cover_art BLOB in IPC payload.
     /// Instead, has_cover_art indicates whether cover art exists.
     #[test]
     fn list_songs_excludes_cover_art_blob() {
@@ -1065,7 +1054,7 @@ mod tests {
         );
     }
 
-    /// Item 1: list_songs with no cover art should report has_cover_art = false.
+    /// list_songs with no cover art should report has_cover_art = false.
     #[test]
     fn list_songs_reports_no_cover_art() {
         let conn = test_db();
@@ -1081,7 +1070,7 @@ mod tests {
         );
     }
 
-    /// Item 1: search_songs should also exclude cover_art BLOB.
+    /// search_songs should also exclude cover_art BLOB.
     #[test]
     fn search_songs_excludes_cover_art_blob() {
         let conn = test_db();
@@ -1099,7 +1088,7 @@ mod tests {
         assert!(results[0].has_cover_art, "has_cover_art should be true");
     }
 
-    /// Item 1: get_cover_art returns the raw BLOB on demand.
+    /// get_cover_art returns the raw BLOB on demand.
     #[test]
     fn get_cover_art_returns_blob_on_demand() {
         let conn = test_db();
@@ -1112,7 +1101,7 @@ mod tests {
         assert_eq!(result.as_deref(), Some(art.as_slice()));
     }
 
-    /// Item 1: get_cover_art returns None for songs without cover art.
+    /// get_cover_art returns None for songs without cover art.
     #[test]
     fn get_cover_art_returns_none_for_missing() {
         let conn = test_db();

@@ -136,7 +136,6 @@ describe("sortSongs / compareSongs", () => {
       makeSong({ hash: "a", title: "Apple" }),
     ];
     const sorted = sortSongs(songs, "title_asc");
-    // Lettered titles first (A, Z), then non-alphabetic (99, !!!)
     expect(sorted[0].hash).toBe("a");
     expect(sorted[1].hash).toBe("z");
     expect(sorted.slice(2).map((s) => s.hash)).toContain("num");

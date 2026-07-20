@@ -39,11 +39,6 @@ interface AudiencePlainTextPagingResult {
   visibleLines: LyricLine[];
 }
 
-/**
- * Manages audience-mode plain-text paging: measures line heights to build
- * page boundaries, listens for page-step events, and exposes the current
- * page slice of lyrics lines.
- */
 export function useAudiencePlainTextPaging({
   lines,
   shouldRender,
@@ -173,7 +168,7 @@ export function useAudiencePlainTextPaging({
           });
         },
       );
-      // F4: If unmount happened before listen() resolved, clean up now.
+      // If unmount happened before listen() resolved, clean up now.
       if (cancelled) {
         unlisten();
         return;

@@ -90,6 +90,8 @@ blob-report/
 .omx/
 .pnpm-store/
 .superpowers/
+.scratch/
 
 # Ephemeral macOS Liquid Glass icon compile staging (actool output)
 src-tauri/icons/.liquid-glass-staging/
+src-tauri/icons/OpenKara.icns

@@ -51,7 +51,6 @@ describe("SettingsDialogHost interactions", () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
-    // Clean up any portal content left on document.body
     document.body.innerHTML = "";
   });
 
