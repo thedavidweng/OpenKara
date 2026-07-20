@@ -267,6 +267,16 @@ pub fn get_all_upload_statuses(state: &AppState) -> CommandResult<Vec<UploadStat
     let snapshots: Vec<UploadStatusSnapshot> = operations
         .iter()
         .filter(|op| op.operation_kind == OperationKind::Publish)
+        // Skip batch outbox entries that have no song_ids — these are
+        // internal recovery bookkeeping (e.g. prepare_and_mutate records
+        // a placeholder before song_ids are known). Surfacing them as
+        // user-visible uploads would show a phantom "Running" entry that
+        // never completes.
+        .filter(|op| {
+            OperationPayload::from_json(&op.payload_json)
+                .map(|p| !p.song_ids.is_empty())
+                .unwrap_or(false)
+        })
         .map(operation_to_snapshot)
         .collect();
 
@@ -406,5 +416,53 @@ mod tests {
         let conn = state.remote.control_db.lock().unwrap();
         let ops = list_operations(&conn).unwrap();
         assert!(ops.is_empty());
+    }
+
+    #[test]
+    fn get_all_upload_statuses_filters_batch_rows_with_empty_song_ids() {
+        let (state, _dir) = test_state_with_control_db();
+
+        // Insert a batch outbox entry with empty song_ids (as produced by
+        // prepare_and_mutate before song_ids are known).
+        let now = control_db_now_ms();
+        upsert_operation(
+            &state.remote.control_db.lock().unwrap(),
+            &OperationRow {
+                operation_id: "publish-batch-123".to_owned(),
+                library_id: "lib-1".to_owned(),
+                operation_kind: OperationKind::Publish,
+                state: OperationState::Pending,
+                expected_generation: None,
+                target_generation: None,
+                source_db_digest: None,
+                candidate_db_digest: None,
+                payload_json: r#"{"song_ids":[],"percent":0}"#.to_owned(),
+                attempt_count: 0,
+                next_attempt_at_ms: None,
+                error_code: None,
+                error_detail: None,
+                created_at_ms: now,
+                updated_at_ms: now,
+            },
+        )
+        .unwrap();
+
+        // Insert a real per-song upload row.
+        mark_upload_status(
+            &state,
+            "song-1",
+            Some("lib-1".to_owned()),
+            UploadState::Running,
+            50,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let statuses = get_all_upload_statuses(&state).unwrap();
+        // Only the per-song row should appear; the batch placeholder is
+        // filtered out.
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].song_id, "song-1");
     }
 }
