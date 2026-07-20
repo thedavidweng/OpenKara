@@ -44,8 +44,8 @@ use crate::remote::net_policy::{
 };
 use crate::remote::provider::{ConditionalSource, RemoteProvider};
 use crate::services::reconnect::{
-    run_reconnect, EventSink, ReconnectConfig, ReconnectError, ReconnectEvent, ReresolvedSource,
-    SeekOutcome,
+    run_reconnect, EventSink, ReconnectConfig, ReconnectError, ReconnectEvent,
+    RemoteStreamingRuntime, ReresolvedSource, SeekOutcome,
 };
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
@@ -924,6 +924,10 @@ fn t8_reconnect_on_transient_playback_failure_timeline_preserved() {
             Ok(ReresolvedSource {
                 source: 0u32, // dummy source token
                 from_cache: false,
+                runtime: RemoteStreamingRuntime {
+                    cache_pin_guard: None,
+                    fetch_event_rx: None,
+                },
             })
         }
     };

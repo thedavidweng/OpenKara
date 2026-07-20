@@ -33,13 +33,44 @@
 //! - [`ReconnectEvent::Failed`] after the attempt budget is exhausted or a
 //!   permanent error occurs
 
+use crate::audio::remote_source::FetchEvent;
+use crate::remote::cache_catalog::CachePinGuard;
 use crate::remote::errors::{RemoteError, RemoteErrorKind};
 #[cfg(test)]
 use crate::remote::net_policy::SeededJitter;
 use crate::remote::net_policy::{full_jitter_delay, production_sleep, RetryPolicy};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
+
+/// RAII container for the remote streaming source's cache pin guard and
+/// fetch event receiver. The caller must keep this alive for the lifetime
+/// of the reconnected playback (until the track is skipped, stopped, or
+/// replaced). Dropping it unpins the cache entry and stops consuming fetch
+/// events.
+///
+/// This replaces the previous approach of leaking the pin guard into a
+/// detached `thread::park()` thread, which permanently leaked a thread and
+/// pinned the cache entry for the process lifetime.
+pub(crate) struct RemoteStreamingRuntime {
+    /// RAII pin guard. Unpins the cache entry on drop.
+    #[allow(dead_code)]
+    pub(crate) cache_pin_guard: Option<CachePinGuard>,
+    /// Fetch event receiver. The caller should drain this in a dedicated
+    /// listener thread to handle ConsecutiveFailures, UrlExpired, etc.
+    /// `None` for cache-fast-path sources that have no fetch thread.
+    pub(crate) fetch_event_rx: Option<mpsc::Receiver<FetchEvent>>,
+}
+
+impl std::fmt::Debug for RemoteStreamingRuntime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RemoteStreamingRuntime")
+            .field("cache_pin_guard", &self.cache_pin_guard.is_some())
+            .field("fetch_event_rx", &self.fetch_event_rx.is_some())
+            .finish()
+    }
+}
 
 /// Maximum reconnect attempts. A small cap keeps the user from waiting
 /// indefinitely on a dead provider while still tolerating a brief outage.
@@ -164,6 +195,9 @@ pub(crate) struct ReresolvedSource<S> {
     /// `true` when the source was served from the complete + verified cache
     /// catalog entry with no network fetch.
     pub from_cache: bool,
+    /// RAII runtime: cache pin guard and fetch event receiver. The caller
+    /// must keep this alive for the lifetime of the reconnected playback.
+    pub runtime: RemoteStreamingRuntime,
 }
 
 /// Outcome of a successful reconnect: the new source (already seeked to the
@@ -183,6 +217,9 @@ pub(crate) struct ReconnectSuccess<S> {
     // used by PR#8: reconnect UI
     #[allow(dead_code)]
     pub seek: SeekOutcome,
+    /// RAII runtime: cache pin guard and fetch event receiver. The caller
+    /// must keep this alive for the lifetime of the reconnected playback.
+    pub runtime: RemoteStreamingRuntime,
 }
 
 /// Configuration for the reconnect coordinator.
@@ -308,6 +345,7 @@ where
                     source: resolved.source,
                     from_cache: resolved.from_cache,
                     seek: outcome,
+                    runtime: resolved.runtime,
                 });
             }
             Err(error) => {
@@ -464,6 +502,10 @@ mod tests {
                         block_ms: None,
                     },
                     from_cache: false,
+                    runtime: RemoteStreamingRuntime {
+                        cache_pin_guard: None,
+                        fetch_event_rx: None,
+                    },
                 })
             }
         };
@@ -637,6 +679,10 @@ mod tests {
                         block_ms: Some(100),
                     },
                     from_cache: false,
+                    runtime: RemoteStreamingRuntime {
+                        cache_pin_guard: None,
+                        fetch_event_rx: None,
+                    },
                 })
             },
             seek_fake,
@@ -681,6 +727,10 @@ mod tests {
                         block_ms: None,
                     },
                     from_cache: false,
+                    runtime: RemoteStreamingRuntime {
+                        cache_pin_guard: None,
+                        fetch_event_rx: None,
+                    },
                 })
             },
             seek_fake,
@@ -714,6 +764,10 @@ mod tests {
                         block_ms: None,
                     },
                     from_cache: true,
+                    runtime: RemoteStreamingRuntime {
+                        cache_pin_guard: None,
+                        fetch_event_rx: None,
+                    },
                 })
             },
             seek_fake,
