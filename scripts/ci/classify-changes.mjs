@@ -144,6 +144,7 @@ const CATEGORY_PATTERNS = {
     "src-tauri/tauri.linux.conf.json",
     "src-tauri/tauri.macos.conf.json",
     "src-tauri/tauri.windows.conf.json",
+    "scripts/prepare-onnx-runtime.mjs",
     "scripts/render-flatpak-manifest.mjs",
     "scripts/render-winget-manifests.mjs",
     "scripts/generate-flatpak-cargo-sources.mjs",

@@ -122,10 +122,12 @@ describe("classifyFile", () => {
     expect(classifyFile("src-tauri/Cargo.toml")).toEqual(["deps_rust"]);
   });
 
-  test("prepare-onnx-runtime.mjs is model_runtime", () => {
-    expect(classifyFile("scripts/prepare-onnx-runtime.mjs")).toEqual([
-      "model_runtime",
-    ]);
+  test("prepare-onnx-runtime.mjs is model_runtime and packaging_inputs", () => {
+    // packaging.yml triggers on this file, so it must classify into
+    // packaging_inputs to gate validate-flatpak and build-flatpak.
+    const cats = classifyFile("scripts/prepare-onnx-runtime.mjs");
+    expect(cats).toContain("model_runtime");
+    expect(cats).toContain("packaging_inputs");
   });
 
   test("playwright.config.ts is e2e and frontend_tooling", () => {
