@@ -20,21 +20,21 @@ env:
 
 jobs:
   # ── Triage ───────────────────────────────────────────────────────────
-  # Runs on every PR/push. Does two things:
-  #   1. Auto-labels the PR by changed-file paths (actions/labeler).
-  #   2. Computes boolean path-filter outputs that downstream jobs use in
-  #      `if:` conditionals to skip entire job branches when nothing in
-  #      their scope changed. Skipped jobs report Success, so branch
-  #      protection required checks still pass.
+  # Runs the checked-in classifier (scripts/ci/classify-changes.mjs) to
+  # determine which jobs should run for this change set. The classifier is
+  # a pure function over filenames and event type — it is the single source
+  # of truth for path-based CI gating.
   #
-  # Path classification strategy:
-  #   - Known categories (frontend, rust, deps, workflows, e2e) list every
-  #     file path that can affect them.
-  #   - `unknown` matches any changed file NOT in a known category. This
-  #     is a safety net: new directories or config files added in the
-  #     future trigger full CI instead of silently skipping.
-  #   - Downstream jobs OR `unknown` into their conditions so unmapped
-  #     changes never bypass CI.
+  # Outputs:
+  #   expected-jobs       JSON array of job IDs that must run
+  #   run_<job>           "true"/"false" per job ID, consumed by `if:` conditions
+  #   unknown             "true" if any file is unmapped
+  #   unknown-files       JSON array of unmapped filenames
+  #   categories          JSON array of detected categories
+  #
+  # For push (to main) and workflow_dispatch, the classifier returns full CI
+  # as a deliberate safety path — the integration branch always gets full
+  # validation regardless of what changed.
   triage:
     name: Triage
     runs-on: ubuntu-24.04
@@ -43,17 +43,31 @@ jobs:
       contents: read
       pull-requests: write # labeler needs this to add/remove labels
     outputs:
-      frontend: ${{ steps.filter.outputs.frontend }}
-      rust: ${{ steps.filter.outputs.rust }}
-      deps: ${{ steps.filter.outputs.deps }}
-      workflows: ${{ steps.filter.outputs.workflows }}
-      e2e: ${{ steps.filter.outputs.e2e }}
-      unknown: ${{ steps.filter.outputs.unknown }}
+      expected-jobs: ${{ steps.classify.outputs.expected-jobs }}
+      expected-skipped-heavy: ${{ steps.classify.outputs.expected-skipped-heavy }}
+      unknown: ${{ steps.classify.outputs.unknown }}
+      unknown-files: ${{ steps.classify.outputs.unknown-files }}
+      categories: ${{ steps.classify.outputs.categories }}
+      run_triage: ${{ steps.classify.outputs.run_triage }}
+      run_conventional-commits: ${{ steps.classify.outputs.run_conventional-commits }}
+      run_ci-gate: ${{ steps.classify.outputs.run_ci-gate }}
+      run_js-quality: ${{ steps.classify.outputs.run_js-quality }}
+      run_app-frontend: ${{ steps.classify.outputs.run_app-frontend }}
+      run_website: ${{ steps.classify.outputs.run_website }}
+      run_playwright-ui-smoke: ${{ steps.classify.outputs.run_playwright-ui-smoke }}
+      run_workflow-lint: ${{ steps.classify.outputs.run_workflow-lint }}
+      run_release-validation: ${{ steps.classify.outputs.run_release-validation }}
+      run_cargo-deny: ${{ steps.classify.outputs.run_cargo-deny }}
+      run_dependency-checks: ${{ steps.classify.outputs.run_dependency-checks }}
+      run_prepare-model: ${{ steps.classify.outputs.run_prepare-model }}
+      run_rust-test: ${{ steps.classify.outputs.run_rust-test }}
+      run_rust-test-windows-compile: ${{ steps.classify.outputs.run_rust-test-windows-compile }}
+      run_tauri-build-smoke: ${{ steps.classify.outputs.run_tauri-build-smoke }}
+      run_tauri-build: ${{ steps.classify.outputs.run_tauri-build }}
     steps:
       # paths-filter uses the GitHub API for PR events (no checkout needed);
       # for push events it diffs via git, so checkout is required.
       - name: Checkout
-        if: github.event_name != 'pull_request'
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
@@ -70,87 +84,103 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           sync-labels: true
 
-      - name: Detect changed paths
-        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
-        id: filter
-        with:
-          filters: |
-            frontend:
-              - 'src/**'
-              - 'vite.config.ts'
-              - 'tsconfig.json'
-              - 'tsconfig.node.json'
-              - 'tsconfig.app.json'
-              - 'website/**'
-              - 'public/**'
-              - 'oxlintrc.json'
-              - '.oxfmtrc.json'
-              - 'knip.json'
-              - 'index.html'
-              - 'scripts/**'
-              - 'tests/**'
-              - 'playwright*.config.ts'
-            rust:
-              - 'src-tauri/**'
-              - 'rust-toolchain.toml'
-              - 'patches/**'
-              - 'scripts/prepare-onnx-runtime.mjs'
-            deps:
-              - 'pnpm-lock.yaml'
-              - 'package.json'
-              - 'src-tauri/Cargo.toml'
-              - 'src-tauri/Cargo.lock'
-            workflows:
-              - '.github/workflows/**'
-              - '.github/labeler.yml'
-            e2e:
-              - 'tests/e2e/**'
-              - 'playwright*.config.ts'
-            # Safety net: any changed file not in a known category triggers
-            # full CI. Negated patterns exclude known paths; if any file
-            # remains, `unknown` is true.
-            unknown:
-              - '**'
-              - '!src/**'
-              - '!src-tauri/**'
-              - '!scripts/**'
-              - '!tests/**'
-              - '!website/**'
-              - '!public/**'
-              - '!docs/**'
-              - '!**/*.md'
-              - '!pnpm-lock.yaml'
-              - '!package.json'
-              - '!vite.config.ts'
-              - '!tsconfig.json'
-              - '!tsconfig.node.json'
-              - '!tsconfig.app.json'
-              - '!knip.json'
-              - '!oxlintrc.json'
-              - '!.oxfmtrc.json'
-              - '!rust-toolchain.toml'
-              - '!patches/**'
-              - '!.github/workflows/**'
-              - '!.github/labeler.yml'
-              - '!playwright*.config.ts'
-              - '!index.html'
-              - '!cliff.toml'
-              - '!renovate.json'
-              - '!mise.toml'
-              - '!AGENTS.md'
-              - '!LICENSE'
-              - '!.gitignore'
-              - '!.gitattributes'
+      - name: Collect changed files
+        id: collect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            # Use the GitHub API with pagination to get the complete file list.
+            gh api --paginate --jq '.[].filename' \
+              "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+              > changed-files.txt
+          elif [ "$EVENT_NAME" = "push" ]; then
+            # Diff before/after. Handle the zero-SHA (new branch) edge case.
+            if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              git diff --name-only HEAD~1..HEAD > changed-files.txt
+            else
+              git diff --name-only "$BEFORE".."$AFTER" > changed-files.txt
+            fi
+          else
+            # workflow_dispatch — no changed files; classifier returns full CI.
+            : > changed-files.txt
+          fi
+          echo "count=$(wc -l < changed-files.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
+
+      - name: Classify changes
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/classify-changes.mjs \
+            --files "$(cat changed-files.txt)" \
+            --event "$EVENT_NAME" \
+            > classification.json
+
+          # Extract outputs for GITHUB_OUTPUT.
+          jq -r '
+            "expected-jobs=\(.expectedJobs | @json)",
+            "expected-skipped-heavy=\(.expectedSkippedHeavyJobs | @json)",
+            "unknown=\(if .unknownFiles | length > 0 then "true" else "false" end)",
+            "unknown-files=\(.unknownFiles | @json)",
+            "categories=\(.categories | @json)"
+          ' classification.json >> "$GITHUB_OUTPUT"
+
+          # Per-job run_ booleans.
+          jq -r '.run | to_entries[] | "run_\(.key)=\(.value)"' \
+            classification.json >> "$GITHUB_OUTPUT"
+
+          # Print classification to the step summary.
+          {
+            echo "## CI Triage"
+            echo ""
+            echo "**Event:** \`${EVENT_NAME}\`"
+            echo ""
+            echo "### Changed files"
+            echo ""
+            if [ -s changed-files.txt ]; then
+              while IFS= read -r file; do
+                cats=$(jq -r --arg f "$file" \
+                  '.categoriesByFile[$f] // ["unknown"] | join(", ")' \
+                  classification.json)
+                echo "- \`${file}\` → ${cats}"
+              done < changed-files.txt
+            else
+              echo "- _(none — full CI by event type)_"
+            fi
+            echo ""
+            echo "### Expected jobs"
+            echo ""
+            jq -r '.expectedJobs[] | "- \(.)"' classification.json
+            echo ""
+            echo "### Expected skipped heavy jobs"
+            echo ""
+            skipped=$(jq -r '.expectedSkippedHeavyJobs | length' classification.json)
+            if [ "$skipped" -gt 0 ]; then
+              jq -r '.expectedSkippedHeavyJobs[] | "- \(.)"' classification.json
+            else
+              echo "- _(none)_"
+            fi
+            if [ "$(jq '.unknownFiles | length' classification.json)" -gt 0 ]; then
+              echo ""
+              echo "### ⚠️ Unknown files (full CI safety fallback)"
+              echo ""
+              jq -r '.unknownFiles[] | "- `\(.)`"' classification.json
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
   prepare-model:
     name: Prepare separation model
     needs: triage
     if: |
-      success() &&
-      (needs.triage.outputs.rust == 'true' ||
-       needs.triage.outputs.deps == 'true' ||
-       needs.triage.outputs.workflows == 'true' ||
-       needs.triage.outputs.unknown == 'true')
+      !cancelled() &&
+      needs.triage.outputs.run_prepare-model == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
 
@@ -203,74 +233,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  cargo-deny:
-    name: Cargo deny
+  # ── JS quality ───────────────────────────────────────────────────────
+  # Format, lint, i18n, knip, schema drift, and dependency audit.
+  # Runs for any JS-touching category but does not build or run tests.
+  js-quality:
+    name: JS quality
     needs: triage
     if: |
-      success() &&
-      (needs.triage.outputs.rust == 'true' ||
-       needs.triage.outputs.deps == 'true' ||
-       needs.triage.outputs.workflows == 'true' ||
-       needs.triage.outputs.unknown == 'true')
+      !cancelled() &&
+      needs.triage.outputs.run_js-quality == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          persist-credentials: false
-
-      - name: Check Rust dependencies
-        uses: EmbarkStudios/cargo-deny-action@bb137d7af7e4fb67e5f82a49c4fce4fad40782fe # v2.0.20
-        with:
-          manifest-path: src-tauri/Cargo.toml
-
-  workflow-lint:
-    name: Workflow lint
-    needs: triage
-    if: |
-      success() &&
-      needs.triage.outputs.workflows == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-
-    permissions:
-      contents: read
-      security-events: write # Needed by zizmor-action to upload SARIF results.
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          persist-credentials: false
-
-      - name: actionlint
-        uses: reviewdog/action-actionlint@6fb7acc99f4a1008869fa8a0f09cfca740837d9d # v1.72.0
-        with:
-          actionlint_flags: ""
-
-      - name: zizmor
-        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa # v0.5.7
-        with:
-          persona: pedantic
-          min-severity: low
-
-  frontend:
-    name: Frontend quality / build / test
-    needs: triage
-    if: |
-      success() &&
-      (needs.triage.outputs.frontend == 'true' ||
-       needs.triage.outputs.deps == 'true' ||
-       needs.triage.outputs.workflows == 'true' ||
-       needs.triage.outputs.unknown == 'true')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-
-    permissions:
-      contents: read
-      pull-requests: write # Needed by vitest-coverage-report-action to comment coverage on PRs.
 
     steps:
       - name: Checkout
@@ -313,14 +286,44 @@ jobs:
       - name: knip (unused exports / dependencies)
         run: pnpm knip --no-progress
 
+  # ── App frontend ─────────────────────────────────────────────────────
+  # App typecheck, production build, and unit tests with coverage.
+  app-frontend:
+    name: App frontend build / test
+    needs: triage
+    if: |
+      !cancelled() &&
+      needs.triage.outputs.run_app-frontend == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+      pull-requests: write # Needed by vitest-coverage-report-action to comment coverage on PRs.
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+        with:
+          version: 11.13.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Build frontend
         run: node --run build
-
-      - name: Typecheck landing page
-        run: pnpm tsc --noEmit --project website/tsconfig.json
-
-      - name: Build landing page
-        run: node --run docs:build
 
       - name: Typecheck frontend
         run: pnpm tsc --noEmit --project tsconfig.json
@@ -384,15 +387,151 @@ jobs:
           flags: frontend
           fail_ci_if_error: false
 
+  # ── Website ──────────────────────────────────────────────────────────
+  # Website typecheck and docs build only. Does not run the full app
+  # test suite — website-only changes do not affect app behavior.
+  website:
+    name: Website build
+    needs: triage
+    if: |
+      !cancelled() &&
+      needs.triage.outputs.run_website == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+        with:
+          version: 11.13.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck landing page
+        run: pnpm tsc --noEmit --project website/tsconfig.json
+
+      - name: Build landing page
+        run: node --run docs:build
+
+  cargo-deny:
+    name: Cargo deny
+    needs: triage
+    if: |
+      !cancelled() &&
+      needs.triage.outputs.run_cargo-deny == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Check Rust dependencies
+        uses: EmbarkStudios/cargo-deny-action@bb137d7af7e4fb67e5f82a49c4fce4fad40782fe # v2.0.20
+        with:
+          manifest-path: src-tauri/Cargo.toml
+
+  workflow-lint:
+    name: Workflow lint
+    needs: triage
+    if: |
+      !cancelled() &&
+      needs.triage.outputs.run_workflow-lint == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+      security-events: write # Needed by zizmor-action to upload SARIF results.
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: actionlint
+        uses: reviewdog/action-actionlint@6fb7acc99f4a1008869fa8a0f09cfca740837d9d # v1.72.0
+        with:
+          actionlint_flags: ""
+
+      - name: zizmor
+        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa # v0.5.7
+        with:
+          persona: pedantic
+          min-severity: low
+
+  # ── Release validation ───────────────────────────────────────────────
+  # Focused validation for release-workflow and release-metadata changes.
+  # Runs the release-workflow and release-metadata contract tests and
+  # verifies cliff.toml parses. Does not run app/frontend/Rust CI.
+  release-validation:
+    name: Release validation
+    needs: triage
+    if: |
+      !cancelled() &&
+      needs.triage.outputs.run_release-validation == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+        with:
+          version: 11.13.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run release contract tests
+        run: |
+          pnpm vitest run \
+            tests/release-workflow.test.ts \
+            tests/release-metadata.test.ts
+
+      - name: Verify cliff.toml parses
+        run: |
+          if ! command -v git-cliff &>/dev/null; then
+            echo "git-cliff not installed, skipping parse check"
+            exit 0
+          fi
+          # Verify the config is parseable by generating an empty changelog.
+          # A parse failure must exit non-zero so release-validation fails.
+          git cliff --unreleased --tag 0.0.0-test --output /dev/null
+
   dependency-checks:
     name: Dependency surface checks
     needs: triage
     if: |
-      success() &&
-      (needs.triage.outputs.rust == 'true' ||
-       needs.triage.outputs.deps == 'true' ||
-       needs.triage.outputs.workflows == 'true' ||
-       needs.triage.outputs.unknown == 'true')
+      !cancelled() &&
+      needs.triage.outputs.run_dependency-checks == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
 
@@ -418,10 +557,7 @@ jobs:
     needs: [triage, prepare-model]
     if: |
       !cancelled() &&
-      (needs.triage.outputs.rust == 'true' ||
-       needs.triage.outputs.deps == 'true' ||
-       needs.triage.outputs.workflows == 'true' ||
-       needs.triage.outputs.unknown == 'true') &&
+      needs.triage.outputs.run_rust-test == 'true' &&
       needs.prepare-model.result == 'success'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -542,11 +678,8 @@ jobs:
     name: Rust tests (Windows compile)
     needs: triage
     if: |
-      success() &&
-      (needs.triage.outputs.rust == 'true' ||
-       needs.triage.outputs.deps == 'true' ||
-       needs.triage.outputs.workflows == 'true' ||
-       needs.triage.outputs.unknown == 'true')
+      !cancelled() &&
+      needs.triage.outputs.run_rust-test-windows-compile == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -591,16 +724,14 @@ jobs:
   # Linux-only Tauri smoke build for frontend-only PRs. Verifies that the
   # frontend bundles into Tauri and the build entry point works, without
   # paying for the 3-platform matrix. Runs when frontend changed but rust
-  # did not (pure frontend, deps, workflows, or unknown).
+  # did not (pure frontend, deps_js, or frontend_tooling).
   tauri-build-smoke:
     name: Tauri build (Linux smoke)
-    needs: [triage, frontend]
+    needs: [triage, app-frontend]
     if: |
       !cancelled() &&
-      needs.triage.outputs.frontend == 'true' &&
-      needs.triage.outputs.rust != 'true' &&
-      needs.triage.outputs.unknown != 'true' &&
-      needs.frontend.result != 'failure'
+      needs.triage.outputs.run_tauri-build-smoke == 'true' &&
+      needs.app-frontend.result != 'failure'
     runs-on: ubuntu-22.04
     timeout-minutes: 30
 
@@ -683,25 +814,22 @@ jobs:
     needs:
       [
         triage,
-        frontend,
+        app-frontend,
         rust-test,
         cargo-deny,
         dependency-checks,
         rust-test-windows-compile,
       ]
     # Use !cancelled() so the job can run even when some upstream jobs were
-    # skipped (e.g. a rust-only PR skips frontend, but tauri-build still
+    # skipped (e.g. a rust-only PR skips app-frontend, but tauri-build still
     # needs to verify the Rust side compiles into a Tauri bundle).
     # The result != 'failure' guards ensure we don't build on top of a
-    # failed dependency. Only runs for rust/deps/workflows/unknown —
+    # failed dependency. Only runs for rust/deps/unknown —
     # frontend-only PRs use tauri-build-smoke (Linux) instead.
     if: |
       !cancelled() &&
-      (needs.triage.outputs.rust == 'true' ||
-       needs.triage.outputs.deps == 'true' ||
-       needs.triage.outputs.workflows == 'true' ||
-       needs.triage.outputs.unknown == 'true') &&
-      needs.frontend.result != 'failure' &&
+      needs.triage.outputs.run_tauri-build == 'true' &&
+      needs.app-frontend.result != 'failure' &&
       needs.rust-test.result != 'failure' &&
       needs.cargo-deny.result != 'failure' &&
       needs.dependency-checks.result != 'failure' &&
@@ -878,12 +1006,8 @@ jobs:
     name: Playwright UI smoke
     needs: triage
     if: |
-      success() &&
-      (needs.triage.outputs.frontend == 'true' ||
-       needs.triage.outputs.e2e == 'true' ||
-       needs.triage.outputs.deps == 'true' ||
-       needs.triage.outputs.workflows == 'true' ||
-       needs.triage.outputs.unknown == 'true')
+      !cancelled() &&
+      needs.triage.outputs.run_playwright-ui-smoke == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
@@ -920,23 +1044,29 @@ jobs:
         with:
           name: playwright-report
           path: playwright-report/
+          if-no-files-found: error
           retention-days: 7
 
   # ── CI Gate ──────────────────────────────────────────────────────────
   # Single required check for branch protection. Always runs after all
-  # other jobs. Fails if any job that was expected to run failed or was
-  # cancelled. Succeeds if all jobs either succeeded or were legitimately
-  # skipped by triage. This catches triage misclassification (where a job
-  # is unexpectedly skipped) and triage job failures.
+  # other jobs. Reads the expected-job set from triage and verifies that:
+  #   1. Every expected job succeeded.
+  #   2. Every non-expected job was skipped.
+  #   3. No unexpected expensive job ran (gate regression detection).
+  # This catches both triage misclassification (unexpected skip) and
+  # gate regressions (unexpected execution).
   ci-gate:
     name: CI Gate
     if: always()
     needs:
       - triage
       - conventional-commits
+      - js-quality
+      - app-frontend
+      - website
       - cargo-deny
       - workflow-lint
-      - frontend
+      - release-validation
       - dependency-checks
       - prepare-model
       - rust-test
@@ -947,13 +1077,17 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Verify all required jobs succeeded or were skipped
+      - name: Verify expected jobs succeeded and non-expected jobs skipped
         env:
+          EXPECTED_JOBS: ${{ needs.triage.outputs.expected-jobs }}
           TRIAGE: ${{ needs.triage.result }}
           CONVENTIONAL_COMMITS: ${{ needs.conventional-commits.result }}
+          JS_QUALITY: ${{ needs.js-quality.result }}
+          APP_FRONTEND: ${{ needs.app-frontend.result }}
+          WEBSITE: ${{ needs.website.result }}
           CARGO_DENY: ${{ needs.cargo-deny.result }}
           WORKFLOW_LINT: ${{ needs.workflow-lint.result }}
-          FRONTEND: ${{ needs.frontend.result }}
+          RELEASE_VALIDATION: ${{ needs.release-validation.result }}
           DEPENDENCY_CHECKS: ${{ needs.dependency-checks.result }}
           PREPARE_MODEL: ${{ needs.prepare-model.result }}
           RUST_TEST: ${{ needs.rust-test.result }}
@@ -961,28 +1095,67 @@ jobs:
           TAURI_BUILD_SMOKE: ${{ needs.tauri-build-smoke.result }}
           TAURI_BUILD: ${{ needs.tauri-build.result }}
           PLAYWRIGHT_UI_SMOKE: ${{ needs.playwright-ui-smoke.result }}
+          UNKNOWN_FLAG: ${{ needs.triage.outputs.unknown }}
         run: |
           set -euo pipefail
+
+          # All checkable jobs and their result env vars.
+          declare -A JOBS=(
+            [triage]="$TRIAGE"
+            [conventional-commits]="$CONVENTIONAL_COMMITS"
+            [js-quality]="$JS_QUALITY"
+            [app-frontend]="$APP_FRONTEND"
+            [website]="$WEBSITE"
+            [cargo-deny]="$CARGO_DENY"
+            [workflow-lint]="$WORKFLOW_LINT"
+            [release-validation]="$RELEASE_VALIDATION"
+            [dependency-checks]="$DEPENDENCY_CHECKS"
+            [prepare-model]="$PREPARE_MODEL"
+            [rust-test]="$RUST_TEST"
+            [rust-test-windows-compile]="$RUST_TEST_WINDOWS_COMPILE"
+            [tauri-build-smoke]="$TAURI_BUILD_SMOKE"
+            [tauri-build]="$TAURI_BUILD"
+            [playwright-ui-smoke]="$PLAYWRIGHT_UI_SMOKE"
+          )
+
+          # Verify triage produced valid expected-jobs JSON.
+          if ! echo "$EXPECTED_JOBS" | jq -e 'type == "array"' >/dev/null 2>&1; then
+            echo "::error::Triage did not produce valid expected-jobs JSON: ${EXPECTED_JOBS:-<empty>}"
+            exit 1
+          fi
+
           fail=0
-          for entry in \
-            "triage:$TRIAGE" \
-            "conventional-commits:$CONVENTIONAL_COMMITS" \
-            "cargo-deny:$CARGO_DENY" \
-            "workflow-lint:$WORKFLOW_LINT" \
-            "frontend:$FRONTEND" \
-            "dependency-checks:$DEPENDENCY_CHECKS" \
-            "prepare-model:$PREPARE_MODEL" \
-            "rust-test:$RUST_TEST" \
-            "rust-test-windows-compile:$RUST_TEST_WINDOWS_COMPILE" \
-            "tauri-build-smoke:$TAURI_BUILD_SMOKE" \
-            "tauri-build:$TAURI_BUILD" \
-            "playwright-ui-smoke:$PLAYWRIGHT_UI_SMOKE"; do
-            job="${entry%%:*}"
-            result="${entry##*:}"
-            echo "$job: $result"
-            case "$result" in
-              success|skipped) ;;
-              *) echo "::error::$job did not succeed (result: $result)"; fail=1 ;;
-            esac
+
+          for job in "${!JOBS[@]}"; do
+            result="${JOBS[$job]}"
+            is_expected=$(echo "$EXPECTED_JOBS" | jq --arg job "$job" 'any(. == $job)')
+
+            echo "$job: result=$result expected=$is_expected"
+
+            if [ "$is_expected" = "true" ]; then
+              if [ "$result" != "success" ]; then
+                echo "::error::Expected job '$job' did not succeed (result: $result)"
+                fail=1
+              fi
+            else
+              if [ "$result" != "skipped" ]; then
+                echo "::error::Unexpected job '$job' ran (result: $result) — gate regression"
+                fail=1
+              fi
+            fi
           done
+
+          # Verify unknown files are printed and full CI is expected when
+          # unknown files exist.
+          UNKNOWN=$(echo "$EXPECTED_JOBS" | jq 'any(. == "tauri-build")')
+          if [ "$UNKNOWN_FLAG" = "true" ] && [ "$UNKNOWN" != "true" ]; then
+            echo "::error::Unknown files exist but full CI (tauri-build) was not expected"
+            fail=1
+          fi
+
+          if [ "$fail" -ne 0 ]; then
+            echo ""
+            echo "Expected jobs: $(echo "$EXPECTED_JOBS" | jq -r '. | join(", ")')"
+          fi
+
           exit $fail

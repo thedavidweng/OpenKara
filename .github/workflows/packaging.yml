@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - ".github/workflows/packaging.yml"
-      - ".github/workflows/release.yml"
       - "package.json"
       - "packaging/**"
       - "pnpm-lock.yaml"
@@ -16,10 +15,9 @@ on:
       - "src-tauri/tauri.conf.json"
       - "tests/flatpak-packaging.test.ts"
   push:
-    branches: ["main", "codex/**"]
+    branches: ["main"]
     paths:
       - ".github/workflows/packaging.yml"
-      - ".github/workflows/release.yml"
       - "package.json"
       - "packaging/**"
       - "pnpm-lock.yaml"
@@ -42,8 +40,73 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # Classify changed files to gate expensive packaging builds. The
+  # classifier (scripts/ci/classify-changes.mjs) is the single source of
+  # truth shared with the main CI workflow.
+  triage:
+    name: Triage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      packaging_inputs: ${{ steps.classify.outputs.packaging_inputs }}
+      packaging_workflow: ${{ steps.classify.outputs.packaging_workflow }}
+      release_metadata: ${{ steps.classify.outputs.release_metadata }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Collect changed files
+        id: collect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            gh api --paginate --jq '.[].filename' \
+              "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+              > changed-files.txt
+          elif [ "$EVENT_NAME" = "push" ]; then
+            if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              git diff --name-only HEAD~1..HEAD > changed-files.txt
+            else
+              git diff --name-only "$BEFORE".."$AFTER" > changed-files.txt
+            fi
+          else
+            : > changed-files.txt
+          fi
+
+      - name: Classify changes
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/classify-changes.mjs \
+            --files "$(cat changed-files.txt)" \
+            --event "$EVENT_NAME" \
+            > classification.json
+
+          # Check whether packaging-impacting categories are present.
+          cats=$(jq -r '.categories | join(",")' classification.json)
+          echo "packaging_inputs=$(echo "$cats" | grep -q 'packaging_inputs' && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "packaging_workflow=$(echo "$cats" | grep -q 'packaging_workflow' && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "release_metadata=$(echo "$cats" | grep -q 'release_metadata' && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
   validate-winget:
     name: Validate WinGet manifests
+    needs: triage
+    if: |
+      !cancelled() &&
+      (needs.triage.outputs.packaging_inputs == 'true' ||
+       needs.triage.outputs.packaging_workflow == 'true' ||
+       needs.triage.outputs.release_metadata == 'true' ||
+       github.event_name == 'workflow_dispatch')
     runs-on: windows-latest
     timeout-minutes: 30
 
@@ -100,6 +163,12 @@ jobs:
 
   validate-flatpak:
     name: Validate Flatpak metadata
+    needs: triage
+    if: |
+      !cancelled() &&
+      (needs.triage.outputs.packaging_inputs == 'true' ||
+       needs.triage.outputs.packaging_workflow == 'true' ||
+       github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
@@ -171,7 +240,15 @@ jobs:
 
   build-flatpak:
     name: Build Flatpak (x86_64)
-    needs: validate-flatpak
+    needs: [triage, validate-flatpak]
+    # Only build Flatpak from source when packaging inputs or the packaging
+    # workflow itself changed — not for release-metadata-only or
+    # workflow_dispatch validation runs.
+    if: |
+      !cancelled() &&
+      needs.validate-flatpak.result == 'success' &&
+      (needs.triage.outputs.packaging_inputs == 'true' ||
+       needs.triage.outputs.packaging_workflow == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     # Run inside the Flathub-maintained container. This image ships a
