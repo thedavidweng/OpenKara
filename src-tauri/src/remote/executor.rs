@@ -145,6 +145,19 @@ fn run_publish_protocol(
         .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?
         .and_then(|m| m.revision);
 
+    // If a manifest exists but the provider returns no revision (CAS token),
+    // fail closed. Without a revision, conditional_replace becomes a
+    // conditional-create instead of a compare-and-swap, which violates the
+    // CAS guarantee and can cause lost updates on providers that omit ETags
+    // (e.g. some WebDAV servers).
+    if current_manifest.is_some() && manifest_revision.is_none() {
+        return Err(RemoteError::new(
+            RemoteErrorKind::ProviderCapabilityUnavailable,
+            "manifest exists but provider returned no revision (CAS token); \
+             cannot safely replace without a compare-and-swap guard",
+        ));
+    }
+
     // --- Step 2: Require expected_generation matches ---
     let expected_generation = op.expected_generation.unwrap_or(0);
     let current_generation = current_manifest.as_ref().map(|m| m.generation).unwrap_or(0);
