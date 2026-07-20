@@ -314,8 +314,6 @@ pub struct TransferPartRow {
 }
 
 /// Row of `remote_cache_entries`.
-// used by PR#6: persistent cache catalog
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct CacheEntryRow {
     pub cache_key: String,
@@ -845,11 +843,6 @@ pub fn delete_transfer_parts(connection: &Connection, operation_id: &str) -> Com
 // ---------------------------------------------------------------------------
 
 /// Insert or replace a cache entry row.
-///
-/// PR#6 will populate this table; PR#2 only provides the accessor so the
-/// schema is in place.
-// used by PR#6: persistent cache catalog
-#[allow(dead_code)]
 pub fn upsert_cache_entry(connection: &Connection, row: &CacheEntryRow) -> CommandResult<()> {
     connection
         .execute(
@@ -889,9 +882,190 @@ pub fn upsert_cache_entry(connection: &Connection, row: &CacheEntryRow) -> Comma
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Digest helper
-// ---------------------------------------------------------------------------
+/// Load a cache entry row by its primary key (`cache_key`).
+pub fn get_cache_entry(
+    connection: &Connection,
+    cache_key: &str,
+) -> CommandResult<Option<CacheEntryRow>> {
+    let mut stmt = connection
+        .prepare(
+            "SELECT cache_key, library_id, relative_path, provider_revision, content_digest,
+                    expected_size, downloaded_ranges_json, complete, pinned_count,
+                    last_access_at_ms, verified_at_ms, data_path
+             FROM remote_cache_entries WHERE cache_key = ?1",
+        )
+        .map_err(|e| database_error(format!("failed to prepare cache entry query: {e}")))?;
+    let row = stmt
+        .query_row([cache_key], map_cache_entry_row)
+        .optional()
+        .map_err(|e| database_error(format!("failed to query cache entry: {e}")))?;
+    Ok(row)
+}
+
+/// Load all cache entry rows. Used by the startup reconciliation scan and by
+/// the usage/clear-cache IPC commands.
+pub fn list_cache_entries(connection: &Connection) -> CommandResult<Vec<CacheEntryRow>> {
+    let mut stmt = connection
+        .prepare(
+            "SELECT cache_key, library_id, relative_path, provider_revision, content_digest,
+                    expected_size, downloaded_ranges_json, complete, pinned_count,
+                    last_access_at_ms, verified_at_ms, data_path
+             FROM remote_cache_entries",
+        )
+        .map_err(|e| database_error(format!("failed to prepare cache entry list: {e}")))?;
+    let rows = stmt
+        .query_map([], map_cache_entry_row)
+        .map_err(|e| database_error(format!("failed to list cache entries: {e}")))?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| database_error(format!("failed to collect cache entries: {e}")))?;
+    Ok(rows)
+}
+
+/// Delete a cache entry row by its primary key. The caller is responsible for
+/// removing the on-disk data file; this only removes the catalog row. Removing
+/// the catalog row first (in the same logical transaction as marking the file
+/// for deletion) means an orphaned file left by a failed deletion is cleaned
+/// up on the next startup scan.
+pub fn delete_cache_entry(connection: &Connection, cache_key: &str) -> CommandResult<()> {
+    connection
+        .execute(
+            "DELETE FROM remote_cache_entries WHERE cache_key = ?1",
+            params![cache_key],
+        )
+        .map_err(|e| database_error(format!("failed to delete cache entry: {e}")))?;
+    Ok(())
+}
+
+/// Update the downloaded ranges JSON, complete flag, content digest, and
+/// verified timestamp for a cache entry. Called after each range write so a
+/// restart can resume from the persisted ranges.
+pub fn update_cache_entry_ranges(
+    connection: &Connection,
+    cache_key: &str,
+    downloaded_ranges_json: &str,
+    complete: bool,
+    content_digest: Option<&str>,
+    verified_at_ms: Option<i64>,
+) -> CommandResult<()> {
+    connection
+        .execute(
+            "UPDATE remote_cache_entries SET
+                downloaded_ranges_json = ?2,
+                complete = ?3,
+                content_digest = COALESCE(?4, content_digest),
+                verified_at_ms = ?5
+             WHERE cache_key = ?1",
+            params![
+                cache_key,
+                downloaded_ranges_json,
+                complete,
+                content_digest,
+                verified_at_ms,
+            ],
+        )
+        .map_err(|e| database_error(format!("failed to update cache entry ranges: {e}")))?;
+    Ok(())
+}
+
+/// Bump `last_access_at_ms` for a cache entry (wall-clock LRU touch).
+pub fn touch_cache_entry_access(
+    connection: &Connection,
+    cache_key: &str,
+    last_access_at_ms: i64,
+) -> CommandResult<()> {
+    connection
+        .execute(
+            "UPDATE remote_cache_entries SET last_access_at_ms = ?2 WHERE cache_key = ?1",
+            params![cache_key, last_access_at_ms],
+        )
+        .map_err(|e| database_error(format!("failed to touch cache entry access: {e}")))?;
+    Ok(())
+}
+
+/// Atomically increment `pinned_count` for a cache entry. Returns the new
+/// pinned count. A row that does not exist is a no-op returning 0.
+pub fn pin_cache_entry(connection: &Connection, cache_key: &str) -> CommandResult<i64> {
+    connection
+        .execute(
+            "UPDATE remote_cache_entries SET pinned_count = pinned_count + 1 WHERE cache_key = ?1",
+            params![cache_key],
+        )
+        .map_err(|e| database_error(format!("failed to pin cache entry: {e}")))?;
+    let pinned: Option<i64> = connection
+        .query_row(
+            "SELECT pinned_count FROM remote_cache_entries WHERE cache_key = ?1",
+            params![cache_key],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| database_error(format!("failed to query pinned count: {e}")))?;
+    Ok(pinned.unwrap_or(0))
+}
+
+/// Atomically decrement `pinned_count` for a cache entry, clamped at 0.
+/// Returns the new pinned count. A row that does not exist is a no-op
+/// returning 0.
+pub fn unpin_cache_entry(connection: &Connection, cache_key: &str) -> CommandResult<i64> {
+    connection
+        .execute(
+            "UPDATE remote_cache_entries SET pinned_count = MAX(0, pinned_count - 1) WHERE cache_key = ?1",
+            params![cache_key],
+        )
+        .map_err(|e| database_error(format!("failed to unpin cache entry: {e}")))?;
+    let pinned: Option<i64> = connection
+        .query_row(
+            "SELECT pinned_count FROM remote_cache_entries WHERE cache_key = ?1",
+            params![cache_key],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| database_error(format!("failed to query pinned count: {e}")))?;
+    Ok(pinned.unwrap_or(0))
+}
+
+/// Mark a cache entry for deferred eviction by setting `pinned_count = 0` only
+/// if it is already 0. Pinned entries are left untouched so the clear-cache
+/// command does not force-delete files in use. Returns the cache keys of
+/// entries that were actually deleted (pinned_count was already 0).
+pub fn delete_unpinned_cache_entries(connection: &Connection) -> CommandResult<Vec<CacheEntryRow>> {
+    let mut stmt = connection
+        .prepare(
+            "SELECT cache_key, library_id, relative_path, provider_revision, content_digest,
+                    expected_size, downloaded_ranges_json, complete, pinned_count,
+                    last_access_at_ms, verified_at_ms, data_path
+             FROM remote_cache_entries WHERE pinned_count = 0",
+        )
+        .map_err(|e| database_error(format!("failed to prepare unpinned cache query: {e}")))?;
+    let rows: Vec<CacheEntryRow> = stmt
+        .query_map([], map_cache_entry_row)
+        .map_err(|e| database_error(format!("failed to query unpinned cache entries: {e}")))?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| database_error(format!("failed to collect unpinned cache entries: {e}")))?;
+    connection
+        .execute(
+            "DELETE FROM remote_cache_entries WHERE pinned_count = 0",
+            [],
+        )
+        .map_err(|e| database_error(format!("failed to delete unpinned cache entries: {e}")))?;
+    Ok(rows)
+}
+
+fn map_cache_entry_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CacheEntryRow> {
+    Ok(CacheEntryRow {
+        cache_key: row.get(0)?,
+        library_id: row.get(1)?,
+        relative_path: row.get(2)?,
+        provider_revision: row.get(3)?,
+        content_digest: row.get(4)?,
+        expected_size: row.get(5)?,
+        downloaded_ranges_json: row.get(6)?,
+        complete: row.get::<_, i64>(7)? != 0,
+        pinned_count: row.get(8)?,
+        last_access_at_ms: row.get(9)?,
+        verified_at_ms: row.get(10)?,
+        data_path: row.get(11)?,
+    })
+}
 
 /// Compute the SHA-256 hex digest of a file's contents.
 ///

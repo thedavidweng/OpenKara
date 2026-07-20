@@ -122,6 +122,8 @@ pub fn run() {
             commands::remote_library::publish_song_to_remote,
             commands::remote_library::publish_songs_to_remote,
             commands::remote_library::get_all_upload_statuses,
+            commands::remote_library::get_remote_cache_usage,
+            commands::remote_library::clear_remote_cache,
             commands::lyrics::fetch_lyrics,
             commands::lyrics::set_lyrics_offset,
             commands::lyrics::save_manual_lyrics,

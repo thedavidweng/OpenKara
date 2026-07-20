@@ -326,28 +326,58 @@ pub fn ensure_remote_file_cached(app_data_dir: &Path, relative_path: &str) -> Co
 
     let provider = create_provider(app_data_dir, &library)?;
 
-    // Fast-path: if the destination exists AND the remote size matches,
-    // skip re-download. This is a minimal cache-validity check; the full
-    // verified cache catalog is PR #6.
-    // TODO(PR#6): replace existence+size check with verified cache
-    // catalog lookup.
-    //
-    // Note: we do NOT compare per-file revisions here because
-    // `library.remote_revision()` holds the revision of `openkara.db`,
-    // not the individual asset file. Comparing them would never match
-    // and cause every asset to be re-downloaded on each playback.
-    if destination.exists() {
-        let local_size = std::fs::metadata(&destination).map(|m| m.len()).ok();
-        let remote_size = provider.get_file_size(relative_path)?;
-        if local_size.is_some() && remote_size == local_size {
-            return Ok(());
+    // Verified cache catalog lookup. The cache key is derived from the
+    // identity tuple (library_id, relative_path, provider_revision,
+    // expected_size). A complete, verified catalog entry means the file is
+    // already cached and reusable; otherwise fall through to an atomic
+    // download. This replaces the old existence+revision+size check that could
+    // reuse bytes from an older provider revision (defect #7).
+    let provider_revision = provider.get_revision(relative_path)?;
+    let remote_size = provider.get_file_size(relative_path)?;
+    let revision = provider_revision
+        .clone()
+        .or_else(|| library.remote_revision().map(str::to_owned));
+
+    // Open the control DB to consult the cache catalog. This is the same DB
+    // the AppState holds; opening a short-lived read connection here is safe
+    // because WAL mode allows concurrent readers.
+    let control_db_path = crate::remote::control_db::control_db_path(app_data_dir);
+    if let Ok(conn) = crate::remote::control_db::open_control_db(&control_db_path) {
+        if let (Some(size), Some(rev)) = (remote_size, revision.as_deref()) {
+            let identity = crate::remote::cache_catalog::CacheIdentity {
+                library_id: library.id().to_owned(),
+                relative_path: relative_path.to_owned(),
+                provider_revision: Some(rev.to_owned()),
+                expected_size: size,
+            };
+            let cache_key = identity.cache_key();
+            if let Ok(Some(row)) = crate::remote::control_db::get_cache_entry(&conn, &cache_key) {
+                if row.complete
+                    && row.expected_size == size as i64
+                    && std::path::Path::new(&row.data_path).is_absolute()
+                    && std::fs::metadata(&row.data_path).is_ok()
+                {
+                    // Complete + verified catalog entry — the file is cached.
+                    return Ok(());
+                }
+                // For the working-copy destination path (not the streaming
+                // cache), check the destination directly when the catalog row
+                // is complete and the data file matches.
+                if row.complete
+                    && row.expected_size == size as i64
+                    && destination.exists()
+                    && std::fs::metadata(&destination).map(|m| m.len()).ok() == Some(size)
+                {
+                    return Ok(());
+                }
+            }
         }
     }
 
     // Download to a temp file, validate size when known, then atomically
     // rename. This replaces the old direct-to-destination download that
     // could leave a truncated file at the final path (defect #5).
-    let expected_size = provider.get_file_size(relative_path)?;
+    let expected_size = remote_size;
     let operation_id = format!("cache-{}", current_unix_time_ms());
     crate::remote::atomic_download::atomic_download(
         provider.as_ref(),

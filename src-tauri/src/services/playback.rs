@@ -292,7 +292,15 @@ fn play_track_background<R: Runtime>(
             let event_request_id = request_id;
             let event_library_root = library_root.clone();
             let event_app_data_dir = app_data_dir.to_path_buf();
+            // Move the cache pin guard into the fetch event thread so it lives
+            // for the duration of playback. When the fetch channel closes
+            // (playback stops / track skips), the guard is dropped, which
+            // decrements the pin count and makes the entry eligible for
+            // eviction.
+            let _pin_guard = streaming_source.cache_pin_guard;
             std::thread::spawn(move || {
+                // Keep the pin guard alive for the lifetime of this thread.
+                let _pin = _pin_guard;
                 for event in fetch_event_rx {
                     match event {
                         remote_source::FetchEvent::ConsecutiveFailures { count } => {
