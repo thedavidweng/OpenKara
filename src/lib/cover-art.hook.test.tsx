@@ -113,4 +113,21 @@ describe("useCoverArtUrl hook lifecycle", () => {
     expect(revokeObjectURL).toHaveBeenCalledTimes(1);
     expect(revokeObjectURL).toHaveBeenCalledWith(url1);
   });
+
+  test("returns null and skips retain/release when bytes are null", () => {
+    const { result, rerender, unmount } = renderHook(
+      (props: { bytes: CoverArtBytes }) =>
+        useCoverArtUrl("song-null", props.bytes, "preview"),
+      { bytes: null } as { bytes: CoverArtBytes },
+    );
+
+    expect(result.current).toBeNull();
+    expect(createObjectURL).not.toHaveBeenCalled();
+
+    // Non-null bytes arrive — now a URL is created.
+    rerender({ bytes: [0xff, 0xd8, 0x00] });
+    expect(result.current).toBeTruthy();
+
+    unmount();
+  });
 });

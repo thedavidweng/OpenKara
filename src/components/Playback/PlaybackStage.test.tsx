@@ -1,9 +1,17 @@
+// @vitest-environment jsdom
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, test, vi } from "vitest";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { PlaybackStage } from "./PlaybackStage";
 import type { Song } from "@/types/ipc";
 
-const { mockCdgState, mockPlayerState, mockLibraryState } = vi.hoisted(() => ({
+const {
+  mockCdgState,
+  mockPlayerState,
+  mockLibraryState,
+  mockGetCoverArtPreview,
+} = vi.hoisted(() => ({
   mockCdgState: { hasCdg: false },
   mockPlayerState: {
     snapshot: {
@@ -30,6 +38,7 @@ const { mockCdgState, mockPlayerState, mockLibraryState } = vi.hoisted(() => ({
       },
     ] as Song[],
   },
+  mockGetCoverArtPreview: vi.fn<(hash: string) => Promise<number[] | null>>(),
 }));
 
 vi.mock("@/stores/cdg-store", () => ({
@@ -59,6 +68,19 @@ vi.mock("@/components/Cdg/CdgCanvas", () => ({
 vi.mock("@/components/Lyrics/LyricsPanel", () => ({
   LyricsPanel: () => <div data-testid="lyrics-panel">Lyrics</div>,
 }));
+
+vi.mock("@/lib/tauri/library", () => ({
+  getCoverArtPreview: mockGetCoverArtPreview,
+}));
+
+vi.mock("@/stores/settings-store", () => ({
+  useSettingsStore: (selector: (s: { coverArtBackdrop: boolean }) => unknown) =>
+    selector({ coverArtBackdrop: true }),
+}));
+
+afterEach(() => {
+  mockGetCoverArtPreview.mockReset();
+});
 
 describe("PlaybackStage", () => {
   test("renders the CDG canvas when the current song metadata has CDG media", () => {
@@ -117,5 +139,42 @@ describe("PlaybackStage", () => {
     expect(markup).toContain('data-stage-visual-variant="default"');
     expect(markup).not.toContain('data-native-stage-backdrop="true"');
     expect(markup).toContain("lyrics-panel");
+  });
+
+  test("clears stale fetched cover art and fetches on mount when cover_art is absent", async () => {
+    mockCdgState.hasCdg = false;
+    mockLibraryState.songs = [
+      {
+        hash: "song-fetch",
+        file_path: "song.mp3",
+        audio_source_kind: "original",
+        cdg_path: null,
+        media_g_container: null,
+        instrumental: false,
+        title: "Fetch",
+        artist: null,
+        album: null,
+        duration_ms: 1000,
+        cover_art: null,
+        has_cover_art: true,
+        imported_at: 0,
+        original_ext: "mp3",
+      },
+    ] as Song[];
+    mockPlayerState.snapshot = { song_id: "song-fetch" };
+    mockGetCoverArtPreview.mockResolvedValue([0xff, 0xd8, 0x00]);
+
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<PlaybackStage />);
+    });
+
+    // The effect clears stale bytes then fetches the preview derivative.
+    expect(mockGetCoverArtPreview).toHaveBeenCalledWith("song-fetch");
+
+    await act(async () => {
+      root.unmount();
+    });
   });
 });
