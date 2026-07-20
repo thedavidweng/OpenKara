@@ -107,3 +107,31 @@ budget. The configured limit is read at startup from `AppConfig`.
   entries (files in active use by playback) remain until playback releases
   them, then a subsequent clear or LRU eviction removes them. Returns the
   number of entries evicted.
+
+## Remote diagnostics
+
+`get_remote_diagnostics() -> RemoteDiagnostics`
+
+Returns a diagnostic snapshot of the remote repository state for the active
+remote library. When no remote library is active, returns a snapshot with
+`has_active_remote: false` and all other fields zeroed/empty.
+
+| Field                   | Type                             | Notes                                                  |
+| ----------------------- | -------------------------------- | ------------------------------------------------------ |
+| `has_active_remote`     | `bool`                           | `true` when a remote library is active                 |
+| `repository_id`         | `string \| null`                 | Stable repository UUID (manifest protocol)             |
+| `writer_id`             | `string \| null`                 | Stable installation UUID (diagnostics only)            |
+| `committed_generation`  | `i64`                            | Monotonically increasing remote generation             |
+| `local_base_generation` | `i64`                            | Generation the local working copy was last synced from |
+| `local_state`           | `string`                         | `clean`, `dirty`, or `conflicted`                      |
+| `local_db_digest`       | `string \| null`                 | SHA-256 of the local working database                  |
+| `active_operation_id`   | `string \| null`                 | Active publish/GC operation ID                         |
+| `last_success_at_ms`    | `i64 \| null`                    | Wall-clock ms of last successful publication           |
+| `last_error_code`       | `string \| null`                 | Last error code (e.g. `remote_conflict`)               |
+| `recent_operations`     | `Vec<RemoteOperationDiagnostic>` | Most recent 20 operations (newest first)               |
+
+`RemoteOperationDiagnostic` fields: `operation_id`, `operation_kind`
+(`publish` / `gc`), `state` (`pending` / `running` / `completed` / `failed` /
+`conflicted` / `cancelled`), `expected_generation`, `target_generation`,
+`attempt_count`, `error_code`, `error_detail`, `created_at_ms`,
+`updated_at_ms`.

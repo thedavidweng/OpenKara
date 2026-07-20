@@ -577,4 +577,98 @@ describe("useSeparationEvents", () => {
 
     expect(updateSeparationStatus).toHaveBeenCalled();
   });
+
+  test("forwards remote-playback-reconnect events to the remote playback store", async () => {
+    const listeners = new Map<string, (e: { payload: unknown }) => void>();
+    mockListen.mockImplementation(
+      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
+        listeners.set(eventName, handler);
+        return () => {};
+      },
+    );
+
+    const { useEventListeners } = await import("./use-playback-runtime");
+    await renderHook(() => useEventListeners(true));
+
+    const handler = listeners.get("remote-playback-reconnect");
+    expect(handler).not.toBeUndefined();
+
+    handler!({
+      payload: {
+        song_id: "song-x",
+        request_id: 1,
+        attempt: 1,
+        max_attempts: 3,
+        reason: "503",
+      },
+    });
+
+    const { useRemotePlaybackStore } =
+      await import("@/stores/remote-playback-store");
+    expect(useRemotePlaybackStore.getState().reconnectState).toBe(
+      "reconnecting",
+    );
+    expect(useRemotePlaybackStore.getState().songId).toBe("song-x");
+    useRemotePlaybackStore.getState().reset();
+  });
+
+  test("forwards remote-playback-resync events to the remote playback store", async () => {
+    const listeners = new Map<string, (e: { payload: unknown }) => void>();
+    mockListen.mockImplementation(
+      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
+        listeners.set(eventName, handler);
+        return () => {};
+      },
+    );
+
+    const { useEventListeners } = await import("./use-playback-runtime");
+    await renderHook(() => useEventListeners(true));
+
+    const handler = listeners.get("remote-playback-resync");
+    expect(handler).not.toBeUndefined();
+
+    handler!({
+      payload: {
+        song_id: "song-y",
+        requested_position_ms: 5000,
+        actual_position_ms: 4000,
+      },
+    });
+
+    const { useRemotePlaybackStore } =
+      await import("@/stores/remote-playback-store");
+    expect(useRemotePlaybackStore.getState().reconnectState).toBe("resync");
+    expect(useRemotePlaybackStore.getState().resyncDeltaMs).toBe(1000);
+    useRemotePlaybackStore.getState().reset();
+  });
+
+  test("forwards remote-playback-failed events to the remote playback store", async () => {
+    const listeners = new Map<string, (e: { payload: unknown }) => void>();
+    mockListen.mockImplementation(
+      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
+        listeners.set(eventName, handler);
+        return () => {};
+      },
+    );
+
+    const { useEventListeners } = await import("./use-playback-runtime");
+    await renderHook(() => useEventListeners(true));
+
+    const handler = listeners.get("remote-playback-failed");
+    expect(handler).not.toBeUndefined();
+
+    handler!({
+      payload: {
+        song_id: "song-z",
+        request_id: 2,
+        reason: "permanent",
+      },
+    });
+
+    const { useRemotePlaybackStore } =
+      await import("@/stores/remote-playback-store");
+    expect(useRemotePlaybackStore.getState().reconnectState).toBe("failed");
+    expect(useRemotePlaybackStore.getState().reason).toBe("permanent");
+    useRemotePlaybackStore.getState().reset();
+  });
 });

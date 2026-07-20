@@ -4,6 +4,7 @@ import { useEventSubscriptions } from "./use-event-subscription";
 import { usePlayerStore } from "@/stores/player-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useQueueStore } from "@/stores/queue-store";
+import { useRemotePlaybackStore } from "@/stores/remote-playback-store";
 import { useLyricsStore } from "@/stores/lyrics-store";
 import { useBootstrapStore } from "@/stores/bootstrap-store";
 import { useRuntimeBootstrapStore } from "@/stores/runtime-bootstrap-store";
@@ -27,6 +28,9 @@ import type {
   PlaybackEndedEvent,
   PlaybackErrorEvent,
   PlaybackPositionEvent,
+  RemotePlaybackFailedEvent,
+  RemotePlaybackReconnectEvent,
+  RemotePlaybackResyncEvent,
   RuntimeBootstrapStatusSnapshot,
   SeparationCompleteEvent,
   SeparationErrorEvent,
@@ -389,6 +393,37 @@ function useUploadEvents(enabled: boolean) {
   );
 }
 
+function useRemotePlaybackReconnectEvents(enabled: boolean) {
+  const applyReconnectEvent = useRemotePlaybackStore(
+    (s) => s.applyReconnectEvent,
+  );
+  const applyResyncEvent = useRemotePlaybackStore((s) => s.applyResyncEvent);
+  const applyFailedEvent = useRemotePlaybackStore((s) => s.applyFailedEvent);
+
+  useEventSubscriptions(
+    [
+      {
+        event: "remote-playback-reconnect",
+        handler: (payload) =>
+          applyReconnectEvent(payload as RemotePlaybackReconnectEvent),
+      },
+      {
+        event: "remote-playback-resync",
+        handler: (payload) =>
+          applyResyncEvent(payload as RemotePlaybackResyncEvent),
+      },
+      {
+        event: "remote-playback-failed",
+        handler: (payload) =>
+          applyFailedEvent(payload as RemotePlaybackFailedEvent),
+      },
+    ],
+    enabled,
+    undefined,
+    [applyReconnectEvent, applyResyncEvent, applyFailedEvent],
+  );
+}
+
 export function useEventListeners(enabled = true) {
   usePlaybackPositionEvents(enabled);
   usePlaybackErrorEvents(enabled);
@@ -399,6 +434,7 @@ export function useEventListeners(enabled = true) {
   usePreloadCandidateEffect(enabled);
   useBatchSeparationEvents(enabled);
   useUploadEvents(enabled);
+  useRemotePlaybackReconnectEvents(enabled);
 }
 
 export function useFullscreenPlaybackRuntime() {

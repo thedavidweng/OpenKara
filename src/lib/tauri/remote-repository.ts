@@ -1,9 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  CacheUsage,
   LibraryRegistrySnapshot,
   RemoteAuthPayload,
   RemoteAuthStart,
   RemoteAuthStatus,
+  RemoteDiagnostics,
   RemoteLibraryCandidate,
   RemoteLibraryProvider,
   UploadStatusSnapshot,
@@ -115,4 +117,16 @@ export function publishSongsToRemote(songIds: string[]): Promise<unknown> {
 
 export function getAllUploadStatuses(): Promise<UploadStatusSnapshot[]> {
   return invoke<UploadStatusSnapshot[]>("get_all_upload_statuses");
+}
+
+export function getRemoteCacheUsage(): Promise<CacheUsage> {
+  return invoke<CacheUsage>("get_remote_cache_usage");
+}
+
+export function clearRemoteCache(): Promise<number> {
+  return invoke<number>("clear_remote_cache");
+}
+
+export function getRemoteDiagnostics(): Promise<RemoteDiagnostics> {
+  return invoke<RemoteDiagnostics>("get_remote_diagnostics");
 }

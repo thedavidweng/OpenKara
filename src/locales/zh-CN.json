@@ -173,7 +173,10 @@
     "monitor": "显示器 {{index}}",
     "localDisplayOutput": "本地显示器输出",
     "airPlayOutput": "AirPlay 输出",
-    "noDisplaysFound": "暂未发现可用显示器。"
+    "noDisplaysFound": "暂未发现可用显示器。",
+    "reconnecting": "正在重连… ({{attempt}}/{{max}})",
+    "resync": "已重新同步 −{{delta}} 毫秒",
+    "reconnectFailed": "重连失败"
   },
   "progress": {
     "separating": "正在分离：{{title}}",
@@ -477,6 +480,25 @@
       "assetTypeStemOther": "分轨：其他",
       "assetTypeArtworkThumb": "封面：缩略图",
       "assetTypeArtworkPreview": "封面：预览图"
+    },
+    "remoteCache": {
+      "label": "远程流式缓存",
+      "description": "远程媒体文件的字节范围下载会被缓存以便恢复播放。",
+      "used": "已用",
+      "entries": "条目数",
+      "pinned": "已锁定",
+      "clearButton": "清除缓存",
+      "evicted": "已清除 {{count}} 个条目。"
+    },
+    "remoteDiagnostics": {
+      "label": "远程诊断",
+      "description": "仓库健康状态、版本号及最近操作结果。",
+      "state": "仓库状态",
+      "generation": "已提交版本",
+      "repositoryId": "仓库 ID",
+      "lastError": "上次错误",
+      "recentOps": "最近操作",
+      "refresh": "刷新"
     }
   },
   "bootstrap": {

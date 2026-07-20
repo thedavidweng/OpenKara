@@ -12,6 +12,8 @@ pub(crate) mod control_db;
 mod dropbox;
 pub(crate) mod errors;
 pub(crate) mod executor;
+#[cfg(test)]
+mod fault_injection;
 mod google_drive;
 pub(crate) mod manifest;
 mod mutation;

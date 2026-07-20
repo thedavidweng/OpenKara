@@ -173,7 +173,10 @@
     "monitor": "Monitor {{index}}",
     "localDisplayOutput": "Local Display Output",
     "airPlayOutput": "AirPlay Output",
-    "noDisplaysFound": "No displays found yet."
+    "noDisplaysFound": "No displays found yet.",
+    "reconnecting": "Reconnecting… ({{attempt}}/{{max}})",
+    "resync": "Resynced −{{delta}} ms",
+    "reconnectFailed": "Reconnect failed"
   },
   "progress": {
     "separating": "Separating: {{title}}",
@@ -477,6 +480,25 @@
       "assetTypeStemOther": "Stem: other",
       "assetTypeArtworkThumb": "Artwork: thumbnail",
       "assetTypeArtworkPreview": "Artwork: preview"
+    },
+    "remoteCache": {
+      "label": "Remote Streaming Cache",
+      "description": "Byte-range downloads of remote media files are cached for playback resume.",
+      "used": "Used",
+      "entries": "Entries",
+      "pinned": "pinned",
+      "clearButton": "Clear Cache",
+      "evicted": "Evicted {{count}} entries."
+    },
+    "remoteDiagnostics": {
+      "label": "Remote Diagnostics",
+      "description": "Repository health, generation, and recent operation outcomes.",
+      "state": "Repository state",
+      "generation": "Committed generation",
+      "repositoryId": "Repository ID",
+      "lastError": "Last error",
+      "recentOps": "Recent operations",
+      "refresh": "Refresh"
     }
   },
   "bootstrap": {
