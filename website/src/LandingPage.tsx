@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useState } from "react";
+import { lazy, Suspense, useLayoutEffect, useState } from "react";
 import {
   Code,
   Download,
@@ -175,24 +175,6 @@ const BUILT_WITH_TOOLS = [
   },
 ] as const;
 
-const MOBILE_PREVIEW_QUERY = "(max-width: 640px)";
-
-function useMobilePreview() {
-  const [isMobile, setIsMobile] = useState(
-    () => window.matchMedia(MOBILE_PREVIEW_QUERY).matches,
-  );
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia(MOBILE_PREVIEW_QUERY);
-    const sync = () => setIsMobile(mediaQuery.matches);
-    sync();
-    mediaQuery.addEventListener("change", sync);
-    return () => mediaQuery.removeEventListener("change", sync);
-  }, []);
-
-  return isMobile;
-}
-
 export function LandingPage() {
   const [language, setLanguage] = useState<Language>(() => {
     const saved = localStorage.getItem("openkara-site-language");
@@ -216,7 +198,6 @@ export function LandingPage() {
   });
   const copy = COPY[language];
   const appLanguage = language;
-  const isMobilePreview = useMobilePreview();
 
   // Apply the theme before paint so there is no dark→light flash when the
   // OS prefers light. The inline script in index.html covers the pre-JS
@@ -305,23 +286,9 @@ export function LandingPage() {
 
         <section className="preview-section" aria-label="OpenKara preview">
           <div className="preview-stage">
-            {isMobilePreview ? (
-              <div
-                className="product-preview product-preview-static"
-                aria-label="OpenKara app preview"
-              >
-                <img
-                  src={withBase("/img/preview-player.png")}
-                  alt=""
-                  loading="eager"
-                  decoding="async"
-                />
-              </div>
-            ) : (
-              <Suspense fallback={null}>
-                <AppPreview language={appLanguage} theme={theme} />
-              </Suspense>
-            )}
+            <Suspense fallback={null}>
+              <AppPreview language={appLanguage} theme={theme} />
+            </Suspense>
           </div>
         </section>
         <section className="built-with-section" aria-label={copy.builtWith}>

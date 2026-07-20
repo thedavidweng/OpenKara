@@ -423,7 +423,10 @@ a {
   container-name: product-preview;
 }
 
-.product-preview:not(.product-preview-static) > * {
+/* Keep the embedded app at a fixed desktop design size and scale it into the
+   frame. On wide frames the scale is 1; on narrower frames the whole UI shrinks
+   to fit. Mobile overrides this to show only the left half (right clips). */
+.product-preview > * {
   width: var(--preview-design-width);
   min-width: var(--preview-design-width);
   height: 100%;
@@ -431,22 +434,10 @@ a {
 }
 
 @container product-preview (max-width: 919px) {
-  .product-preview:not(.product-preview-static) > * {
-    transform: scale(calc(100cqw / var(--preview-design-width)));
+  .product-preview > * {
+    height: calc(var(--preview-design-width) * 9 / 16);
+    transform: scale(calc(100cqi / var(--preview-design-width)));
   }
-}
-
-.product-preview-static {
-  pointer-events: none;
-  user-select: none;
-}
-
-.product-preview-static img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: top center;
 }
 
 /* The global `button, a { font-family: inherit }` above only carries
@@ -1099,9 +1090,33 @@ a {
     filter: blur(12px);
   }
 
+  /* Miniaturize the same desktop mock so its left half fills the phone frame;
+     the right half overflows and is clipped — not a separate mobile asset.
+     Scale = 2 * frameWidth / designWidth so left half → full frame width.
+     Negative margins collapse the unscaled layout box (same trick Linear uses). */
   .product-preview {
+    --preview-frame-width: calc(100vw - var(--landing-gutter) * 2);
+    --preview-scale: calc(
+      var(--preview-frame-width) * 2 / var(--preview-design-width)
+    );
     width: 100%;
+    aspect-ratio: auto;
+    height: calc(var(--preview-design-width) * 9 / 16 * var(--preview-scale));
     border-radius: 14px;
+  }
+
+  .product-preview > * {
+    width: var(--preview-design-width);
+    min-width: var(--preview-design-width);
+    height: calc(var(--preview-design-width) * 9 / 16);
+    transform: scale(var(--preview-scale));
+    transform-origin: top left;
+    margin-right: calc(
+      var(--preview-design-width) * (var(--preview-scale) - 1)
+    );
+    margin-bottom: calc(
+      var(--preview-design-width) * 9 / 16 * (var(--preview-scale) - 1)
+    );
   }
 
   .feature-section {
