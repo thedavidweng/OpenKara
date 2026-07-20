@@ -462,7 +462,9 @@ a {
 /* Lyrics utility controls (font size, offset) are wrapped in containers
    marked data-preview-lyrics-interactive so the playlist-only pointer-events
    blocklist doesn't disable their buttons. Only re-enable when the controls
-   are actually visible (hover-revealed or pinned via data-visible). */
+   are actually visible (hover-revealed or pinned via data-visible).
+   !important is needed because the blocklist rule accumulates extra
+   specificity from its :not() pseudo-class exclusions. */
 .product-preview
   [data-preview-interaction-mode="playlist-only"]
   .group:hover
@@ -472,8 +474,8 @@ a {
   [data-preview-interaction-mode="playlist-only"]
   [data-preview-lyrics-interactive="true"][data-visible="true"]
   button {
-  pointer-events: auto;
-  cursor: pointer;
+  pointer-events: auto !important;
+  cursor: pointer !important;
 }
 
 .built-with-section {

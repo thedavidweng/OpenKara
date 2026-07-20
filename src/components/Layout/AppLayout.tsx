@@ -83,6 +83,25 @@ export function AppLayout({
   // second app. Keep its state deterministic while preserving playlist changes
   // as the one meaningful way to inspect the mock library.
   const blockPreviewInteraction = useCallback((event: SyntheticEvent) => {
+    // Always block browser zoom shortcuts (Cmd/Ctrl +/-/0) inside the preview
+    // so the mock player doesn't visually scale when visitors use them.
+    const nativeEvent = event.nativeEvent;
+    if (nativeEvent instanceof KeyboardEvent) {
+      if (
+        (nativeEvent.metaKey || nativeEvent.ctrlKey) &&
+        !nativeEvent.altKey &&
+        (nativeEvent.code === "Equal" ||
+          nativeEvent.code === "NumpadAdd" ||
+          nativeEvent.code === "Minus" ||
+          nativeEvent.code === "NumpadSubtract" ||
+          nativeEvent.code === "Digit0" ||
+          nativeEvent.code === "Numpad0")
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+    }
     if (isPreviewAllowedTarget(event.target)) {
       return;
     }
