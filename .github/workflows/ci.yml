@@ -18,8 +18,73 @@ env:
   MODEL_SHA256: 8fa3dab679c59aeb049dd229f57a212c9339b3fc17ebf50541daad9e799364a1
 
 jobs:
+  # ── Triage ───────────────────────────────────────────────────────────
+  # Runs on every PR/push. Does two things:
+  #   1. Auto-labels the PR by changed-file paths (actions/labeler).
+  #   2. Computes boolean path-filter outputs that downstream jobs use in
+  #      `if:` conditionals to skip entire job branches when nothing in
+  #      their scope changed. Skipped jobs report Success, so branch
+  #      protection required checks still pass.
+  triage:
+    name: Triage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write # labeler needs this to add/remove labels
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      rust: ${{ steps.filter.outputs.rust }}
+      deps: ${{ steps.filter.outputs.deps }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+      e2e: ${{ steps.filter.outputs.e2e }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Label PR by changed paths
+        uses: actions/labeler@b8dd2d9be0f68b860e7dae5dae7d772984eacd6d # v6.2.0
+        if: github.event_name == 'pull_request'
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Detect changed paths
+        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'src/**'
+              - 'vite.config.ts'
+              - 'tsconfig.json'
+              - 'tsconfig.app.json'
+              - 'website/**'
+              - 'public/**'
+              - 'oxlintrc.json'
+            rust:
+              - 'src-tauri/**'
+            deps:
+              - 'pnpm-lock.yaml'
+              - 'package.json'
+              - 'src-tauri/Cargo.toml'
+              - 'src-tauri/Cargo.lock'
+            workflows:
+              - '.github/workflows/**'
+              - '.github/labeler.yml'
+            e2e:
+              - 'tests/e2e/**'
+              - 'playwright*.config.ts'
+
   prepare-model:
     name: Prepare separation model
+    needs: triage
+    if: |
+      success() &&
+      (needs.triage.outputs.rust == 'true' ||
+       needs.triage.outputs.deps == 'true' ||
+       needs.triage.outputs.workflows == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
 
@@ -74,6 +139,12 @@ jobs:
 
   cargo-deny:
     name: Cargo deny
+    needs: triage
+    if: |
+      success() &&
+      (needs.triage.outputs.rust == 'true' ||
+       needs.triage.outputs.deps == 'true' ||
+       needs.triage.outputs.workflows == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
 
@@ -90,6 +161,10 @@ jobs:
 
   workflow-lint:
     name: Workflow lint
+    needs: triage
+    if: |
+      success() &&
+      needs.triage.outputs.workflows == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
@@ -116,6 +191,12 @@ jobs:
 
   frontend:
     name: Frontend quality / build / test
+    needs: triage
+    if: |
+      success() &&
+      (needs.triage.outputs.frontend == 'true' ||
+       needs.triage.outputs.deps == 'true' ||
+       needs.triage.outputs.workflows == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
@@ -237,6 +318,12 @@ jobs:
 
   dependency-checks:
     name: Dependency surface checks
+    needs: triage
+    if: |
+      success() &&
+      (needs.triage.outputs.rust == 'true' ||
+       needs.triage.outputs.deps == 'true' ||
+       needs.triage.outputs.workflows == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
 
@@ -259,9 +346,15 @@ jobs:
 
   rust-test:
     name: Rust tests (${{ matrix.name }})
+    needs: [triage, prepare-model]
+    if: |
+      !cancelled() &&
+      (needs.triage.outputs.rust == 'true' ||
+       needs.triage.outputs.deps == 'true' ||
+       needs.triage.outputs.workflows == 'true') &&
+      needs.prepare-model.result == 'success'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-    needs: prepare-model
     strategy:
       fail-fast: false
       matrix:
@@ -377,6 +470,12 @@ jobs:
 
   rust-test-windows-compile:
     name: Rust tests (Windows compile)
+    needs: triage
+    if: |
+      success() &&
+      (needs.triage.outputs.rust == 'true' ||
+       needs.triage.outputs.deps == 'true' ||
+       needs.triage.outputs.workflows == 'true')
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -420,12 +519,23 @@ jobs:
 
   tauri-build:
     name: Tauri build (${{ matrix.name }})
+    needs: [triage, frontend, rust-test, cargo-deny]
+    # Use !cancelled() so the job can run even when some upstream jobs were
+    # skipped (e.g. a frontend-only PR skips rust-test and cargo-deny, but
+    # tauri-build still needs to verify the frontend bundles into Tauri).
+    # The result != 'failure' guards ensure we don't build on top of a
+    # failed dependency.
+    if: |
+      !cancelled() &&
+      (needs.triage.outputs.frontend == 'true' ||
+       needs.triage.outputs.rust == 'true' ||
+       needs.triage.outputs.deps == 'true' ||
+       needs.triage.outputs.workflows == 'true') &&
+      needs.frontend.result != 'failure' &&
+      needs.rust-test.result != 'failure' &&
+      needs.cargo-deny.result != 'failure'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
-    needs:
-      - frontend
-      - rust-test
-      - cargo-deny
     strategy:
       fail-fast: false
       matrix:
@@ -594,6 +704,13 @@ jobs:
 
   playwright-ui-smoke:
     name: Playwright UI smoke
+    needs: triage
+    if: |
+      success() &&
+      (needs.triage.outputs.frontend == 'true' ||
+       needs.triage.outputs.e2e == 'true' ||
+       needs.triage.outputs.deps == 'true' ||
+       needs.triage.outputs.workflows == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 

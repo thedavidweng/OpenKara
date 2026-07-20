@@ -1,0 +1,34 @@
+# Auto-label PRs by changed-file path rules.
+# Consumed by actions/labeler in the triage job (.github/workflows/ci.yml).
+# Labels must already exist in the repo — labeler does not create them.
+
+javascript:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/**"
+          - "vite.config.ts"
+          - "tsconfig.json"
+          - "tsconfig.app.json"
+          - "website/**"
+          - "public/**"
+          - "oxlintrc.json"
+
+rust:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src-tauri/**"
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "**/*.md"
+          - "website/**"
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "pnpm-lock.yaml"
+          - "package.json"
+          - "src-tauri/Cargo.toml"
+          - "src-tauri/Cargo.lock"
