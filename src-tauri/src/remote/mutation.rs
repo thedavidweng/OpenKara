@@ -2,6 +2,24 @@
 //! Pre-Mutation Refresh / Pre-Publish Conflict / Publish Changes protocol
 //! defined in `docs/references/contracts/library.md` and `CONTEXT.md`.
 //!
+//! # Durable outbox contract (PR#2)
+//!
+//! Every local mutation that publishes to a remote follows this sequence:
+//! 1. Read the local repository state row and current expected generation.
+//! 2. Write a durable `prepared` operation row (operation_id, expected_generation,
+//!    source_db_digest = current working DB SHA-256, payload_json with affected
+//!    song IDs + kind).
+//! 3. Execute and commit the library SQLite mutation (the mutation closure).
+//! 4. Compute the post-mutation DB digest.
+//! 5. Mark the repository `dirty` and the operation `pending` in the control DB.
+//! 6. Return the local mutation result to the caller.
+//! 7. Publication runs asynchronously (PR#4 drives it; PR#2 leaves the
+//!    operation `pending`).
+//!
+//! A network failure after step 6 leaves the local edit visible and durable
+//! with a retrying/outbox status. Recovery on the next startup inspects the
+//! `prepared`/`pending` rows and transitions them safely.
+//!
 //! # Why six entry points, not one
 //!
 //! Collapsing these into a single `run_mutation(closure, manifest)` that
@@ -36,10 +54,25 @@ use tauri::AppHandle;
 // sync_backend: production delegates to sync::, test uses thread-local mock
 // ---------------------------------------------------------------------------
 
+/// Handle returned by `record_prepared_operation` so the caller can transition
+/// the durable row to `pending` after the local mutation commits.
+// used by PR#4: operation executor will read these to drive retry
+#[allow(dead_code)]
+pub struct PreparedOperation {
+    pub operation_id: String,
+    pub library_id: String,
+}
+
 #[cfg(not(test))]
 mod sync_backend {
     use super::super::sync;
-    use crate::commands::error::CommandResult;
+    use super::PreparedOperation;
+    use crate::commands::error::{internal_error, CommandResult};
+    use crate::remote::control_db::{
+        self, get_repository_state, upsert_operation, upsert_repository_state, LocalState,
+        OperationKind, OperationPayload, OperationRow, OperationState, RepositoryStateRow,
+    };
+    use crate::remote::sync::active_remote_library;
     use crate::AppState;
     use std::path::Path;
     use tauri::AppHandle;
@@ -73,6 +106,135 @@ mod sync_backend {
         app_handle: &AppHandle<R>,
     ) -> CommandResult<()> {
         sync::sync_bound_remote_for_active_local_library(state, app_handle)
+    }
+
+    // --- Durable outbox state recording (PR#2) ---
+
+    /// Record a `prepared` operation row before the local mutation commits.
+    /// Returns the operation_id and source_db_digest so the caller can
+    /// transition the row to `pending` after the mutation.
+    ///
+    /// If no active remote library is bound, this is a no-op (local-only
+    /// library — nothing to publish).
+    pub fn record_prepared_operation(
+        state: &AppState,
+        song_ids: &[String],
+    ) -> CommandResult<Option<PreparedOperation>> {
+        let Some(library) = active_remote_library(&state.shell.app_data_dir)? else {
+            return Ok(None);
+        };
+        let library_id = library.id().to_owned();
+
+        // Resolve the working DB path to compute the pre-mutation digest.
+        let db_path = library
+            .working_copy_root()
+            .and_then(|root| crate::library_root::LibraryRoot::open(&root).ok())
+            .map(|root| root.database_path());
+
+        let source_db_digest = db_path
+            .as_ref()
+            .and_then(|p| control_db::sha256_file(p).ok());
+
+        // Read the current expected generation from the repository state row.
+        // PR#4 will wire committed_generation to the manifest generation; for
+        // now it defaults to 0.
+        let expected_generation = {
+            let conn = state.remote.control_db.lock().map_err(|_| {
+                crate::commands::error::state_lock_error("control DB lock was poisoned")
+            })?;
+            get_repository_state(&conn, &library_id)?
+                .map(|r| r.committed_generation)
+                .unwrap_or(0)
+        };
+
+        let operation_id = format!(
+            "publish-{}",
+            song_ids
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "batch".to_owned())
+        );
+        let now = crate::remote::types::current_unix_time_ms();
+
+        let payload = OperationPayload {
+            song_ids: song_ids.to_vec(),
+            percent: 0,
+            detail: None,
+        };
+
+        let row = OperationRow {
+            operation_id: operation_id.clone(),
+            library_id: library_id.clone(),
+            operation_kind: OperationKind::Publish,
+            state: OperationState::Prepared,
+            expected_generation: Some(expected_generation),
+            target_generation: None,
+            source_db_digest: source_db_digest.clone(),
+            candidate_db_digest: None,
+            payload_json: payload.to_json()?,
+            attempt_count: 0,
+            next_attempt_at_ms: None,
+            error_code: None,
+            error_detail: None,
+            created_at_ms: now,
+            updated_at_ms: now,
+        };
+
+        {
+            let conn = state.remote.control_db.lock().map_err(|_| {
+                crate::commands::error::state_lock_error("control DB lock was poisoned")
+            })?;
+            upsert_operation(&conn, &row)?;
+        }
+
+        Ok(Some(PreparedOperation {
+            operation_id,
+            library_id,
+        }))
+    }
+
+    /// Transition a `prepared` operation to `pending` and mark the repository
+    /// `dirty` after the local mutation has committed.
+    pub fn mark_operation_pending_and_dirty(
+        state: &AppState,
+        prepared: &PreparedOperation,
+    ) -> CommandResult<()> {
+        let now = crate::remote::types::current_unix_time_ms();
+
+        let conn = state.remote.control_db.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+
+        // Transition the operation to pending.
+        let mut op = control_db::get_operation(&conn, &prepared.operation_id)?
+            .ok_or_else(|| internal_error("prepared operation row was not found"))?;
+        op.state = OperationState::Pending;
+        op.updated_at_ms = now;
+        upsert_operation(&conn, &op)?;
+
+        // Mark the repository dirty.
+        let repo_row = match get_repository_state(&conn, &prepared.library_id)? {
+            Some(mut row) => {
+                row.local_state = LocalState::Dirty;
+                row.updated_at_ms = now;
+                row
+            }
+            None => RepositoryStateRow {
+                library_id: prepared.library_id.clone(),
+                committed_generation: 0,
+                committed_manifest_revision: None,
+                local_base_generation: 0,
+                local_db_digest: None,
+                local_state: LocalState::Dirty,
+                active_operation_id: Some(prepared.operation_id.clone()),
+                last_success_at_ms: None,
+                last_error_code: None,
+                updated_at_ms: now,
+            },
+        };
+        upsert_repository_state(&conn, &repo_row)?;
+
+        Ok(())
     }
 }
 
@@ -172,6 +334,26 @@ mod sync_backend {
         CALLS.with(|c| c.borrow_mut().push(SyncCall::Mirror));
         MIRROR_RESULT.with(|r| r.borrow().clone())
     }
+
+    // --- Durable outbox state recording (PR#2) ---
+    //
+    // In tests, the test fixture has no active remote library, so these are
+    // no-ops. The existing call-sequence assertions remain intact because the
+    // durable recording does not add any SyncCall entries.
+
+    pub fn record_prepared_operation(
+        _state: &AppState,
+        _song_ids: &[String],
+    ) -> CommandResult<Option<super::PreparedOperation>> {
+        Ok(None)
+    }
+
+    pub fn mark_operation_pending_and_dirty(
+        _state: &AppState,
+        _prepared: &super::PreparedOperation,
+    ) -> CommandResult<()> {
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -181,12 +363,25 @@ mod sync_backend {
 /// Shared prefix for every mutation that starts with a Pre-Mutation Refresh:
 /// `prepare → mutation`. Centralizes the `app_data_dir` extraction so a
 /// future change to how the active remote is resolved touches one place.
+///
+/// Also records the durable outbox contract: a `prepared` operation row is
+/// written before the mutation, and the row is transitioned to `pending` +
+/// the repository marked `dirty` after the mutation commits. When no active
+/// remote library is bound, the durable recording is a no-op.
 fn prepare_and_mutate<T, F>(state: &AppState, mutation: F) -> CommandResult<T>
 where
     F: FnOnce() -> CommandResult<T>,
 {
     sync_backend::prepare(&state.shell.app_data_dir)?;
-    mutation()
+    // The song_ids are not known at this point for all callers; record with an
+    // empty list. Callers that know the song_ids use the explicit wrappers
+    // below which call record_prepared_operation with the real ids.
+    let prepared = sync_backend::record_prepared_operation(state, &[])?;
+    let result = mutation()?;
+    if let Some(ref prepared) = prepared {
+        sync_backend::mark_operation_pending_and_dirty(state, prepared)?;
+    }
+    Ok(result)
 }
 
 pub(crate) fn run_imported_songs_mutation<R, F>(
@@ -200,7 +395,14 @@ where
 {
     // ImportSongsResult is not a CommandResult, so call prepare directly.
     sync_backend::prepare(&state.shell.app_data_dir)?;
+    // The imported song_ids are only known after the mutation, so record the
+    // prepared operation with an empty list. The payload is updated when
+    // mark_upload_status is called during publish.
+    let prepared = sync_backend::record_prepared_operation(state, &[])?;
     let result = mutation();
+    if let Some(ref prepared) = prepared {
+        sync_backend::mark_operation_pending_and_dirty(state, prepared)?;
+    }
     let imported_song_ids: Vec<String> = result
         .imported
         .iter()

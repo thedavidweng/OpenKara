@@ -174,6 +174,13 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         .as_ref()
         .and_then(|config| config.remote_cache_bytes_limit);
     let remote_state = RemoteState::new_with_limit(&app_data_dir, remote_cache_bytes_limit);
+
+    // Run startup recovery for the durable remote control plane. This
+    // transitions interrupted operations to safe states but does NOT
+    // re-execute them (PR#4/#5 drive re-execution). The recovery pass must
+    // not block library startup — it runs after the control DB is open.
+    run_remote_recovery(&remote_state, &app_data_dir);
+
     let shell_state = AppShell::new(
         Arc::clone(&library),
         app_data_dir.clone(),
@@ -520,6 +527,52 @@ pub(crate) fn spawn_model_bootstrap_worker<R: Runtime>(
         };
         let _ = app_handle.emit(event, snapshot);
     });
+}
+
+/// Run the startup recovery pass for the durable remote control plane.
+///
+/// This transitions interrupted operations (running/committing/verifying →
+/// retry_wait, prepared → cancelled/pending/conflicted) but does NOT
+/// re-execute them. PR#4/#5 will drive re-execution once credentials and the
+/// active library are available.
+///
+/// The recovery pass runs after the control DB is open and must not block
+/// library startup. Errors are logged but do not abort app startup — a
+/// failed recovery leaves operations in their pre-recovery states, which is
+/// safe because the next startup will retry recovery.
+fn run_remote_recovery(remote_state: &RemoteState, app_data_dir: &std::path::Path) {
+    use crate::remote::recovery::{run_recovery, Clock, FileDigestResolver};
+
+    let recovery_result = {
+        let conn = match remote_state.control_db.lock() {
+            Ok(conn) => conn,
+            Err(_) => {
+                eprintln!("warning: remote control DB lock was poisoned during recovery");
+                return;
+            }
+        };
+
+        // Resolve the working DB path for a library via the config. This is
+        // used to compute the current digest for `prepared` operations.
+        let app_data_dir_owned = app_data_dir.to_path_buf();
+        let resolver = FileDigestResolver::new(move |library_id: &str| {
+            let config = crate::config::load_config(&app_data_dir_owned)
+                .ok()
+                .flatten()?;
+            let library = config.libraries.iter().find(|l| l.id() == library_id)?;
+            let root_path = library.working_copy_root()?;
+            let root = crate::library_root::LibraryRoot::open(&root_path).ok()?;
+            Some(root.database_path())
+        });
+
+        let clock: Clock = Box::new(crate::remote::types::current_unix_time_ms);
+
+        run_recovery(&conn, &resolver, &clock)
+    };
+
+    if let Err(error) = recovery_result {
+        eprintln!("warning: remote control DB recovery failed: {:?}", error);
+    }
 }
 
 #[cfg(test)]
