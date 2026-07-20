@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Introduce PlaybackCoordinator as independent control thread (#100)
 - Architecture deepening across 7 module-depth candidates (#129)
+- Consolidate duplicate utilities and inline single-caller hooks (#152)
 
 ### ⚡ Performance
 
@@ -41,6 +42,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Unify mock song data and IPC mechanism between website preview and E2E tests (#132)
 - Add equal-power crossfade between consecutive tracks (#131)
 - **romanize**: Sync romanized lyrics to fullscreen audience window (#142)
+- **remote**: Durable remote-state.db control plane with operation state machine and startup recovery (#151)
+- **remote**: Versioned manifest, transactional publish, CAS conflict handling
+- **remote**: Resumable provider transfers and shared network retry policy (#151)
+- **remote**: Persistent verified cache catalog with bounded eviction (#151)
+- **remote**: Playback reconnect and source replacement with timeline preservation (#151)
 
 ### 🐛 Bug Fixes
 
@@ -107,7 +113,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **website**: Theme/lang auto-detect, mock interactions, natural Chinese copy (#139)
 - **audio**: Replace per-stem rendering with source-domain mix bus (#144)
 - **romanize**: Invalidate stale romanizedLines cache when source lyrics change
-- **rotation**: Shuffle within equal-size singer tiers so repeated Shuffle presses vary
+- **website**: Improve mobile landing layout and preview
+- **website**: Restore interactive mobile mock with left-half scale
+- **website**: Bleed mobile mock past the right viewport edge
+- **rotation**: Shuffle within equal-size singer tiers so repeated Shuffle presses vary (#147)
+- **website**: Restore desktop preview fill while keeping mobile bleed (#148)
+- **cover-art**: Resolve ambience backdrop revocation race on song change (#149)
+- **romanize**: Scale pronunciation and bg_words lines with lyricsFontStep (#153)
+- **remote**: Route stems_remote around single-file streaming and verify complete stem sets (#151)
+- **remote**: Atomic verified downloads and dirty working-copy protection (#151)
 
 ### 📝 Documentation
 
@@ -128,6 +142,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Add Codeberg mirror workflow
 - Use node --run instead of pnpm for package scripts
 - **flatpak**: Reclaim host disk and disable builder cache (#121)
+- Triage PR by changed paths and skip irrelevant jobs (#150)
+- **release**: Append installation section to GitHub Release Notes (#154)
 
 ### 🔧 Chores
 

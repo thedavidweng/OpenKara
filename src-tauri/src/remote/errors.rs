@@ -82,6 +82,14 @@ pub(crate) enum RemoteErrorKind {
     /// The operation was cancelled by the user or a coalescing decision.
     #[allow(dead_code)]
     OperationCancelled,
+    /// The playback request that initiated this operation is no longer
+    /// current — the user skipped to a different song (or a newer request
+    /// superseded this one) while the operation was in flight. Used by the
+    /// async stale-guard in `ensure_remote_stem_set_cached_guarded` (PR #7)
+    /// so a late stem-set completion does not install files for a song the
+    /// user has already moved past. Never retried: a stale request must
+    /// abort, not retry.
+    StaleRequest,
 }
 
 impl RemoteErrorKind {
@@ -98,6 +106,7 @@ impl RemoteErrorKind {
             RemoteErrorKind::PermissionDenied => "permission_denied",
             RemoteErrorKind::DiskFull => "disk_full",
             RemoteErrorKind::OperationCancelled => "operation_cancelled",
+            RemoteErrorKind::StaleRequest => "stale_request",
         }
     }
 
@@ -123,6 +132,7 @@ impl RemoteErrorKind {
             "permission_denied" => RemoteErrorKind::PermissionDenied,
             "disk_full" => RemoteErrorKind::DiskFull,
             "operation_cancelled" => RemoteErrorKind::OperationCancelled,
+            "stale_request" => RemoteErrorKind::StaleRequest,
             _ => return None,
         })
     }
@@ -304,6 +314,7 @@ mod tests {
             RemoteErrorKind::PermissionDenied,
             RemoteErrorKind::DiskFull,
             RemoteErrorKind::OperationCancelled,
+            RemoteErrorKind::StaleRequest,
         ] {
             let code = kind.code();
             let back = RemoteErrorKind::from_db(code).expect("round trip");
@@ -322,6 +333,7 @@ mod tests {
         assert!(!RemoteErrorKind::RemoteIntegrityFailed.retryable());
         assert!(!RemoteErrorKind::DiskFull.retryable());
         assert!(!RemoteErrorKind::OperationCancelled.retryable());
+        assert!(!RemoteErrorKind::StaleRequest.retryable());
     }
 
     #[test]

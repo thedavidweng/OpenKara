@@ -237,7 +237,7 @@ pub(crate) fn load_playback_source_streaming(
 
 /// Returns `Ok(None)` if the provider doesn't support Range
 /// requests (caller should fall back to full-file download).
-fn load_remote_streaming_source(
+pub(crate) fn load_remote_streaming_source(
     app_data_dir: Option<&Path>,
     remote_chunk_cache: &Arc<Mutex<CacheCatalog>>,
     _library_root: &LibraryRoot,
@@ -500,6 +500,49 @@ pub(crate) fn ensure_remote_stem_files_cached(
     )
 }
 
+/// Guarded variant of [`ensure_remote_stem_files_cached`] for the async
+/// playback path (PR #7, issue #151 defect #11). Threads a stale-guard
+/// closure through to [`ensure_remote_stem_set_cached_guarded`] so a skip
+/// cancels remaining stem downloads and aborts the atomic rename. Returns a
+/// typed `RemoteError` so the caller can no-op on `StaleRequest`.
+pub(crate) fn ensure_remote_stem_files_cached_guarded(
+    app_data_dir: Option<&Path>,
+    library_root: &LibraryRoot,
+    connection: &Connection,
+    song: &Song,
+    request_id: u64,
+    is_current: impl Fn() -> bool,
+) -> std::result::Result<(), remote::errors::RemoteError> {
+    let Some(app_data_dir) = app_data_dir else {
+        return Ok(());
+    };
+
+    let Some(library) = remote::active_remote_library(app_data_dir).map_err(|error| {
+        remote::errors::RemoteError::new(
+            remote::errors::RemoteErrorKind::NetworkUnavailable,
+            error.message.clone(),
+        )
+    })?
+    else {
+        return Ok(());
+    };
+    let provider = remote::provider::create_provider(app_data_dir, &library).map_err(|error| {
+        remote::errors::RemoteError::new(
+            remote::errors::RemoteErrorKind::NetworkUnavailable,
+            error.message.clone(),
+        )
+    })?;
+
+    ensure_remote_stem_set_cached_guarded(
+        provider.as_ref(),
+        library_root,
+        connection,
+        song,
+        request_id,
+        is_current,
+    )
+}
+
 /// A single required stem within a remote stem set, with its relative path
 /// (as stored in the cache database) and a human-readable label for errors.
 #[derive(Debug, Clone)]
@@ -634,20 +677,93 @@ fn decode_stem_metadata(path: &Path) -> Result<StemSetMetadata> {
 ///   actual PCM frame count.
 ///
 /// * **Stale-guard**: `request_id` is an epoch counter that identifies the
-///   playback request that initiated this download.  When this function is
-///   made async in PR #7, the caller will check that the current song still
-///   matches `request_id` before installing the set.  In PR #1 the call is
-///   synchronous so the guard is structural — the song cannot change mid-call
-///   — but the parameter is threaded through so the async transition is a
-///   drop-in change.
-///   // TODO(PR#7): add an async stale-guard closure that checks the current
-///   // request_id against the active song before atomic rename.
+///   playback request that initiated this download.  The guarded variant
+///   [`ensure_remote_stem_set_cached_guarded`] accepts a `is_current` closure
+///   that the orchestrator checks before each stem download and before the
+///   atomic-rename phase, so a skip cancels remaining work promptly and a
+///   late completion never installs a stem set for a song the user has
+///   already moved past.  The synchronous [`ensure_remote_stem_set_cached`]
+///   passes a guard that always returns `true` — the song cannot change
+///   mid-call — but the `request_id` parameter is threaded through so the
+///   async transition was a drop-in change.
 fn ensure_remote_stem_set_cached(
     provider: &dyn RemoteProvider,
     library_root: &LibraryRoot,
     connection: &Connection,
     song: &Song,
     request_id: u64,
+) -> Result<()> {
+    ensure_remote_stem_set_cached_inner(
+        provider,
+        library_root,
+        connection,
+        song,
+        request_id,
+        &|| true,
+    )
+}
+
+/// Async-capable variant of [`ensure_remote_stem_set_cached`] with a
+/// stale-guard closure (PR #7, issue #151 defect #11).
+///
+/// `is_current` returns `true` while `request_id` still identifies the active
+/// playback request. The orchestrator checks it:
+///
+/// * before each stem download (between stems) so a skip cancels remaining
+///   work promptly, and
+/// * before the atomic-rename phase so a late completion does not install a
+///   stem set for a song the user has already skipped past.
+///
+/// When the guard reports the request as stale, the orchestrator discards all
+/// temp files and returns a typed [`remote::errors::RemoteError`] with
+/// [`RemoteErrorKind::StaleRequest`] so the caller can no-op. The function is
+/// synchronous in its body (the provider's `download_file` is blocking), but
+/// it is intended to be called from a dedicated background thread so the
+/// guard can observe a request_id change made on another thread between
+/// stems.
+pub(crate) fn ensure_remote_stem_set_cached_guarded(
+    provider: &dyn RemoteProvider,
+    library_root: &LibraryRoot,
+    connection: &Connection,
+    song: &Song,
+    request_id: u64,
+    is_current: impl Fn() -> bool,
+) -> std::result::Result<(), remote::errors::RemoteError> {
+    ensure_remote_stem_set_cached_inner(
+        provider,
+        library_root,
+        connection,
+        song,
+        request_id,
+        &is_current,
+    )
+    .map_err(|error| {
+        // Distinguish a stale-guard abort from any other failure so the
+        // caller can no-op instead of surfacing a user-visible error.
+        if error.to_string().contains(STALE_GUARD_MARKER) {
+            remote::errors::RemoteError::from_kind(remote::errors::RemoteErrorKind::StaleRequest)
+        } else {
+            remote::errors::RemoteError::new(
+                remote::errors::RemoteErrorKind::NetworkUnavailable,
+                error.to_string(),
+            )
+        }
+    })
+}
+
+/// Marker embedded in the error message when the stale-guard aborts the
+/// orchestrator. Used by [`ensure_remote_stem_set_cached_guarded`] to map the
+/// abort back to a typed `StaleRequest` error without threading a custom
+/// error type through the shared inner body.
+const STALE_GUARD_MARKER: &str = "__stale_request_guard_aborted__";
+
+fn ensure_remote_stem_set_cached_inner(
+    provider: &dyn RemoteProvider,
+    library_root: &LibraryRoot,
+    connection: &Connection,
+    song: &Song,
+    request_id: u64,
+    is_current: &dyn Fn() -> bool,
 ) -> Result<()> {
     let Some(cached) = cache::stems::get_cached_stem_entry(connection, &song.hash)
         .context("failed to load cached stems")?
@@ -697,6 +813,16 @@ fn ensure_remote_stem_set_cached(
     // Temp paths are unique per request so concurrent downloads for different
     // playback requests do not collide: `<dest>.part.<stem>.<request_id>`.
     for stem in &to_download {
+        // Stale-guard (PR #7, defect #11): check before each stem download so
+        // a skip cancels remaining work promptly. When the active request has
+        // moved on, discard any temps already collected and abort with the
+        // stale-guard marker so the guarded wrapper maps it to
+        // `RemoteErrorKind::StaleRequest`.
+        if !is_current() {
+            clean_up_temps(&verified);
+            anyhow::bail!("{STALE_GUARD_MARKER}");
+        }
+
         let final_path = library_root.resolve(&stem.relative_path);
         let temp_path = final_path.with_extension(format!("part.{}.{}", stem.label, request_id));
 
@@ -813,6 +939,16 @@ fn ensure_remote_stem_set_cached(
     // destination.  On Windows, `rename` also replaces the destination when
     // both are on the same volume.  Temp files are siblings of the final
     // path so they are always on the same filesystem.
+    //
+    // Stale-guard (PR #7, defect #11): re-check immediately before the
+    // atomic-rename phase. Even if every stem downloaded successfully, a
+    // skip that arrived during the (relatively cheap) Phase 3 alignment
+    // check must prevent the rename from installing a stem set for a song
+    // the user has already moved past.
+    if !is_current() {
+        clean_up_temps(&verified);
+        anyhow::bail!("{STALE_GUARD_MARKER}");
+    }
     for v in &verified {
         fs::rename(&v.temp_path, &v.final_path).with_context(|| {
             format!(
@@ -1452,5 +1588,215 @@ mod tests {
         // Song A's files should now exist.
         assert!(lib.resolve(&entry_a.vocals_path).exists());
         assert!(lib.resolve(&entry_a.accomp_path).exists());
+    }
+
+    // ---- PR #7 stale-guard tests (defect #11) ----
+
+    /// A fake provider that counts how many stems it has downloaded, so a
+    /// test can flip the stale guard after the first stem completes and
+    /// assert the remaining stems are not downloaded.
+    struct CountingFakeProvider {
+        files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+        download_count: Arc<std::sync::atomic::AtomicU32>,
+    }
+
+    impl CountingFakeProvider {
+        fn with_files(files: HashMap<String, Vec<u8>>) -> Self {
+            Self {
+                files: Arc::new(Mutex::new(files)),
+                download_count: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+            }
+        }
+    }
+
+    impl RemoteProvider for CountingFakeProvider {
+        fn get_revision(&self, _relative_path: &str) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+
+        fn download_file(&self, relative_path: &str, destination: &Path) -> CommandResult<()> {
+            self.download_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let files = self.files.lock().unwrap();
+            let data = files.get(relative_path).cloned().ok_or_else(|| {
+                CommandError::from(crate::library::error::LibraryError::Internal(format!(
+                    "fake provider: file {relative_path} not found"
+                )))
+            })?;
+            if let Some(parent) = destination.parent() {
+                std::fs::create_dir_all(parent).ok();
+            }
+            std::fs::write(destination, &data).map_err(|e| {
+                CommandError::from(crate::library::error::LibraryError::Internal(format!(
+                    "fake provider: failed to write {}: {e}",
+                    destination.display()
+                )))
+            })?;
+            Ok(())
+        }
+
+        fn upload_file(&self, _relative_path: &str) -> CommandResult<()> {
+            Ok(())
+        }
+
+        fn upload_directory(&self, _relative_path: &str) -> CommandResult<()> {
+            Ok(())
+        }
+
+        fn delete_path(&self, _relative_path: &str) -> CommandResult<()> {
+            Ok(())
+        }
+
+        fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+
+        fn get_file_size(&self, relative_path: &str) -> CommandResult<Option<u64>> {
+            Ok(self
+                .files
+                .lock()
+                .unwrap()
+                .get(relative_path)
+                .map(|d| d.len() as u64))
+        }
+
+        fn refresh_existing(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+    }
+
+    #[test]
+    fn stale_guard_aborts_atomic_rename_when_active_song_changed() {
+        // PR #7, defect #11: a late stem-set completion must NOT install
+        // files when the active request has moved on. The stale guard
+        // returns false before the atomic-rename phase, so temps are
+        // discarded and the result is StaleRequest.
+        let (_dir, lib) = test_library_root();
+        let connection = crate::cache::open_database(&lib.database_path()).expect("open db");
+        let song = remote_stems_song("song-stale-rename");
+        let entry = two_stem_entry("song-stale-rename");
+        insert_stem_entry(&connection, &entry);
+
+        let wav = make_wav(44100, 2, 1000);
+        let mut files = HashMap::new();
+        files.insert(entry.vocals_path.clone(), wav.clone());
+        files.insert(entry.accomp_path.clone(), wav);
+        let provider = CountingFakeProvider::with_files(files);
+
+        // Guard is always stale — aborts before any download/rename.
+        let result = super::ensure_remote_stem_set_cached_guarded(
+            &provider,
+            &lib,
+            &connection,
+            &song,
+            1,
+            || false,
+        );
+
+        let err = result.expect_err("stale guard should abort");
+        assert_eq!(
+            err.kind,
+            crate::remote::errors::RemoteErrorKind::StaleRequest
+        );
+        // No final paths installed.
+        assert!(!lib.resolve(&entry.vocals_path).exists());
+        assert!(!lib.resolve(&entry.accomp_path).exists());
+        // No temp files left behind.
+        let stem_dir = lib.resolve("stems/song-stale-rename");
+        if let Ok(entries) = std::fs::read_dir(&stem_dir) {
+            for e in entries.flatten() {
+                assert!(
+                    !e.file_name().to_string_lossy().contains(".part."),
+                    "temp file left behind: {}",
+                    e.path().display()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn stale_guard_cancels_remaining_stem_downloads_mid_set() {
+        // PR #7, defect #11: a 4-stem set starts; after stem 1 completes,
+        // the request becomes stale. Stems 2-4 must NOT be downloaded.
+        let (_dir, lib) = test_library_root();
+        let connection = crate::cache::open_database(&lib.database_path()).expect("open db");
+        let song = remote_stems_song("song-stale-mid");
+        let entry = four_stem_entry("song-stale-mid");
+        insert_stem_entry(&connection, &entry);
+
+        let wav = make_wav(44100, 2, 1000);
+        let mut files = HashMap::new();
+        files.insert(entry.vocals_path.clone(), wav.clone());
+        files.insert(entry.drums_path.clone().unwrap(), wav.clone());
+        files.insert(entry.bass_path.clone().unwrap(), wav.clone());
+        files.insert(entry.other_path.clone().unwrap(), wav);
+        let provider = CountingFakeProvider::with_files(files);
+        let download_count = Arc::clone(&provider.download_count);
+
+        // The guard flips to stale after the first stem downloads. The
+        // orchestrator checks the guard before EACH stem download, so only
+        // stem 1 (vocals) is downloaded before the abort.
+        let guard = move || download_count.load(std::sync::atomic::Ordering::SeqCst) < 1;
+        let result = super::ensure_remote_stem_set_cached_guarded(
+            &provider,
+            &lib,
+            &connection,
+            &song,
+            1,
+            guard,
+        );
+
+        let err = result.expect_err("stale guard should abort mid-set");
+        assert_eq!(
+            err.kind,
+            crate::remote::errors::RemoteErrorKind::StaleRequest
+        );
+        // Only one stem (vocals) was downloaded before the guard flipped.
+        assert_eq!(
+            provider
+                .download_count
+                .load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "remaining stems must not be downloaded after stale guard flips"
+        );
+        // No final paths installed (rename aborted).
+        assert!(!lib.resolve(&entry.vocals_path).exists());
+        assert!(!lib.resolve(entry.drums_path.as_deref().unwrap()).exists());
+        assert!(!lib.resolve(entry.bass_path.as_deref().unwrap()).exists());
+        assert!(!lib.resolve(entry.other_path.as_deref().unwrap()).exists());
+    }
+
+    #[test]
+    fn guarded_download_succeeds_when_request_stays_current() {
+        // Control: when the guard always returns true, the guarded variant
+        // behaves like the synchronous one and installs all stems.
+        let (_dir, lib) = test_library_root();
+        let connection = crate::cache::open_database(&lib.database_path()).expect("open db");
+        let song = remote_stems_song("song-guarded-ok");
+        let entry = two_stem_entry("song-guarded-ok");
+        insert_stem_entry(&connection, &entry);
+
+        let wav = make_wav(44100, 2, 1000);
+        let mut files = HashMap::new();
+        files.insert(entry.vocals_path.clone(), wav.clone());
+        files.insert(entry.accomp_path.clone(), wav);
+        let provider = FakeRemoteProvider::with_files(files);
+
+        let result = super::ensure_remote_stem_set_cached_guarded(
+            &provider,
+            &lib,
+            &connection,
+            &song,
+            1,
+            || true,
+        );
+
+        assert!(
+            result.is_ok(),
+            "guarded download should succeed when current: {:?}",
+            result.err()
+        );
+        assert!(lib.resolve(&entry.vocals_path).exists());
+        assert!(lib.resolve(&entry.accomp_path).exists());
     }
 }
