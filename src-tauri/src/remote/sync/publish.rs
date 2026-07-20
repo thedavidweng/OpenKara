@@ -1,8 +1,16 @@
 use crate::{
     cache,
     commands::error::{database_error, CommandError, CommandResult},
+    config::RegisteredLibrary,
     library::{artwork, error::LibraryError, Song},
     library_root::LibraryRoot,
+    remote::control_db::{
+        get_operation, get_repository_state, upsert_operation, upsert_repository_state, LocalState,
+        OperationKind, OperationPayload, OperationRow, OperationState, RepositoryStateRow,
+    },
+    remote::executor::{
+        execute_publish, generate_repository_id, generate_writer_id, PublishContext,
+    },
     AppState,
 };
 use tauri::AppHandle;
@@ -13,9 +21,7 @@ use super::super::types::{
 };
 
 use super::file_ops::{copy_directory_recursive, copy_remote_song_assets};
-use super::revision::{
-    prepare_remote_database_for_mutation, resolve_active_remote, upload_remote_database,
-};
+use super::revision::{prepare_remote_database_for_mutation, resolve_active_remote};
 use super::upload_status::{
     emit_upload_complete, emit_upload_error, emit_upload_progress, mark_upload_status,
 };
@@ -422,20 +428,181 @@ fn publish_song_internal<R: tauri::Runtime>(
         return Err(error);
     }
 
-    let completed = mark_upload_status(
+    // --- Transactional manifest commit via the executor ---
+    //
+    // Defect #2 fix: `upload-complete` is emitted ONLY after the manifest CAS
+    // succeeds and is re-verified. The asset-upload portion above never emits
+    // `upload-complete`. A failure in the executor is persisted to the
+    // operation row and emitted as `upload-error`.
+    let commit_result = commit_via_executor(
         state,
+        &remote_library,
+        &remote_library_id,
         song_id,
-        Some(remote_library_id.clone()),
-        UploadState::Completed,
-        100,
-        None,
-        None,
-    )?;
-    emit_upload_complete(app_handle, &completed);
+        &remote_root,
+    );
 
-    upload_remote_database(&state.shell.app_data_dir, &remote_library)?;
+    match commit_result {
+        Ok(()) => {
+            let completed = mark_upload_status(
+                state,
+                song_id,
+                Some(remote_library_id.clone()),
+                UploadState::Completed,
+                100,
+                None,
+                None,
+            )?;
+            // Defect #2: emit upload-complete only after the manifest is
+            // committed and verified by the executor.
+            emit_upload_complete(app_handle, &completed);
+            Ok(completed)
+        }
+        Err(error) => {
+            let failure = mark_upload_status(
+                state,
+                song_id,
+                Some(remote_library_id.clone()),
+                UploadState::Failed,
+                0,
+                None,
+                Some(error.clone()),
+            )?;
+            emit_upload_error(app_handle, &failure, error.clone());
+            Err(error)
+        }
+    }
+}
 
-    Ok(completed)
+/// Commit the remote database via the transactional manifest executor.
+///
+/// This replaces the legacy `upload_remote_database` call with the 13-step
+/// publication protocol: candidate DB copy → integrity check → upload →
+/// manifest CAS → verify. The operation row is created or found in the
+/// control DB, and the executor drives it through the state machine.
+///
+/// On a CAS conflict, the repository transitions to `Conflicted` and the
+/// error is returned so the caller can emit `upload-error`. The operation is
+/// NEVER retried as an unconditional overwrite.
+fn commit_via_executor(
+    state: &AppState,
+    remote_library: &RegisteredLibrary,
+    remote_library_id: &str,
+    song_id: &str,
+    remote_root: &LibraryRoot,
+) -> CommandResult<()> {
+    let provider = create_provider(&state.shell.app_data_dir, remote_library)?;
+
+    // Resolve or generate stable repository_id and writer_id.
+    let (repository_id, writer_id) = {
+        let conn = state.remote.control_db.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+        let repo_state = get_repository_state(&conn, remote_library_id)?;
+        let repository_id = repo_state
+            .as_ref()
+            .and_then(|r| r.repository_id.clone())
+            .unwrap_or_else(generate_repository_id);
+        let writer_id = repo_state
+            .as_ref()
+            .and_then(|r| r.writer_id.clone())
+            .unwrap_or_else(generate_writer_id);
+
+        // If this is the first publication, persist the repository_id and
+        // writer_id so they are stable across future publications.
+        if repo_state
+            .as_ref()
+            .map(|r| r.repository_id.is_none())
+            .unwrap_or(true)
+        {
+            let mut row = repo_state.unwrap_or(RepositoryStateRow {
+                library_id: remote_library_id.to_owned(),
+                committed_generation: 0,
+                committed_manifest_revision: None,
+                local_base_generation: 0,
+                local_db_digest: None,
+                local_state: LocalState::Publishing,
+                active_operation_id: None,
+                last_success_at_ms: None,
+                last_error_code: None,
+                updated_at_ms: crate::remote::types::current_unix_time_ms(),
+                repository_id: Some(repository_id.clone()),
+                writer_id: Some(writer_id.clone()),
+            });
+            row.repository_id = Some(repository_id.clone());
+            row.writer_id = Some(writer_id.clone());
+            row.local_state = LocalState::Publishing;
+            upsert_repository_state(&conn, &row)?;
+        }
+
+        (repository_id, writer_id)
+    };
+
+    // Create or find the operation row. The mutation outbox (PR#2) may have
+    // already created one; if not, create a new one for this publish.
+    let operation_id = format!("publish-{song_id}");
+    let now = crate::remote::types::current_unix_time_ms();
+
+    let conn =
+        state.remote.control_db.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+
+    // Check if the operation row already exists from the mutation outbox.
+    let existing_op = get_operation(&conn, &operation_id)?;
+    if existing_op.is_none() {
+        // Create a new operation row. Read the current expected generation
+        // from the repository state (or the remote manifest if available).
+        let repo_state = get_repository_state(&conn, remote_library_id)?;
+        let expected_generation = repo_state
+            .as_ref()
+            .map(|r| r.committed_generation)
+            .unwrap_or(0);
+
+        let payload = OperationPayload {
+            song_ids: vec![song_id.to_owned()],
+            percent: 0,
+            detail: Some("Publishing to remote".to_owned()),
+        };
+
+        let row = OperationRow {
+            operation_id: operation_id.clone(),
+            library_id: remote_library_id.to_owned(),
+            operation_kind: OperationKind::Publish,
+            state: OperationState::Pending,
+            expected_generation: Some(expected_generation),
+            target_generation: None,
+            source_db_digest: None,
+            candidate_db_digest: None,
+            payload_json: payload.to_json()?,
+            attempt_count: 0,
+            next_attempt_at_ms: None,
+            error_code: None,
+            error_detail: None,
+            created_at_ms: now,
+            updated_at_ms: now,
+        };
+        upsert_operation(&conn, &row)?;
+    }
+
+    drop(conn);
+
+    // Execute the publish protocol.
+    let conn =
+        state.remote.control_db.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+
+    let ctx = PublishContext {
+        control_db: &conn,
+        provider: provider.as_ref(),
+        working_copy_root: remote_root.root(),
+        library_id: remote_library_id,
+        writer_id: &writer_id,
+        repository_id: &repository_id,
+    };
+
+    execute_publish(&ctx, &operation_id)
 }
 
 pub(crate) fn publish_song_to_remote<R: tauri::Runtime>(

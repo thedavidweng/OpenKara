@@ -36,6 +36,10 @@ use std::path::{Path, PathBuf};
 
 /// SQL migrations for the remote control database, kept in a subdirectory so
 /// they stay separate from portable library DB migrations.
+///
+/// Migration 001 uses `CREATE TABLE IF NOT EXISTS` (idempotent). Migration 002
+/// uses `ALTER TABLE ADD COLUMN` which is NOT idempotent in SQLite, so it is
+/// applied programmatically by [`apply_migration_002_manifest_columns`].
 const REMOTE_STATE_MIGRATIONS: [&str; 1] =
     [include_str!("../../migrations/remote_state/001_init.sql")];
 
@@ -263,6 +267,13 @@ pub struct RepositoryStateRow {
     pub last_success_at_ms: Option<i64>,
     pub last_error_code: Option<String>,
     pub updated_at_ms: i64,
+    /// Stable repository UUID, set on first publication and never changed.
+    /// Written into the manifest so all clients agree on repository identity.
+    /// `None` for rows created before PR#4's manifest protocol.
+    pub repository_id: Option<String>,
+    /// Stable installation UUID of the writer. For diagnostics only, not a
+    /// security principal. `None` for rows created before PR#4.
+    pub writer_id: Option<String>,
 }
 
 /// Row of `remote_operations`.
@@ -361,13 +372,48 @@ pub fn open_control_db(path: &Path) -> CommandResult<Connection> {
 }
 
 /// Apply all remote-state migrations. Idempotent: every statement uses
-/// `CREATE TABLE IF NOT EXISTS`, so running this on an already-migrated
+/// `CREATE TABLE IF NOT EXISTS` (migration 001) or checks for column existence
+/// before adding (migration 002), so running this on an already-migrated
 /// database is a no-op.
 pub fn apply_migrations(connection: &Connection) -> CommandResult<()> {
     for migration in REMOTE_STATE_MIGRATIONS {
         connection
             .execute_batch(migration)
             .map_err(|e| database_error(format!("failed to apply control DB migration: {e}")))?;
+    }
+    // Migration 002: add repository_id and writer_id columns. ALTER TABLE ADD
+    // COLUMN is not idempotent in SQLite, so we check for column existence
+    // before adding.
+    apply_migration_002_manifest_columns(connection)?;
+    Ok(())
+}
+
+/// Add `repository_id` and `writer_id` columns to `remote_repository_state`
+/// if they do not already exist. Idempotent.
+fn apply_migration_002_manifest_columns(connection: &Connection) -> CommandResult<()> {
+    let existing_columns: Vec<String> = connection
+        .prepare("PRAGMA table_info(remote_repository_state);")
+        .map_err(|e| database_error(format!("failed to inspect remote_repository_state: {e}")))?
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| database_error(format!("failed to query column info: {e}")))?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| database_error(format!("failed to collect column names: {e}")))?;
+
+    if !existing_columns.iter().any(|c| c == "repository_id") {
+        connection
+            .execute(
+                "ALTER TABLE remote_repository_state ADD COLUMN repository_id TEXT;",
+                [],
+            )
+            .map_err(|e| database_error(format!("failed to add repository_id column: {e}")))?;
+    }
+    if !existing_columns.iter().any(|c| c == "writer_id") {
+        connection
+            .execute(
+                "ALTER TABLE remote_repository_state ADD COLUMN writer_id TEXT;",
+                [],
+            )
+            .map_err(|e| database_error(format!("failed to add writer_id column: {e}")))?;
     }
     Ok(())
 }
@@ -395,8 +441,9 @@ pub fn upsert_repository_state(
             "INSERT INTO remote_repository_state (
                 library_id, committed_generation, committed_manifest_revision,
                 local_base_generation, local_db_digest, local_state,
-                active_operation_id, last_success_at_ms, last_error_code, updated_at_ms
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                active_operation_id, last_success_at_ms, last_error_code, updated_at_ms,
+                repository_id, writer_id
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
             ON CONFLICT(library_id) DO UPDATE SET
                 committed_generation = excluded.committed_generation,
                 committed_manifest_revision = excluded.committed_manifest_revision,
@@ -406,7 +453,9 @@ pub fn upsert_repository_state(
                 active_operation_id = excluded.active_operation_id,
                 last_success_at_ms = excluded.last_success_at_ms,
                 last_error_code = excluded.last_error_code,
-                updated_at_ms = excluded.updated_at_ms",
+                updated_at_ms = excluded.updated_at_ms,
+                repository_id = COALESCE(excluded.repository_id, remote_repository_state.repository_id),
+                writer_id = COALESCE(excluded.writer_id, remote_repository_state.writer_id)",
             params![
                 row.library_id,
                 row.committed_generation,
@@ -418,6 +467,8 @@ pub fn upsert_repository_state(
                 row.last_success_at_ms,
                 row.last_error_code,
                 row.updated_at_ms,
+                row.repository_id,
+                row.writer_id,
             ],
         )
         .map_err(|e| database_error(format!("failed to upsert repository state: {e}")))?;
@@ -433,7 +484,8 @@ pub fn get_repository_state(
         .prepare(
             "SELECT library_id, committed_generation, committed_manifest_revision,
                     local_base_generation, local_db_digest, local_state,
-                    active_operation_id, last_success_at_ms, last_error_code, updated_at_ms
+                    active_operation_id, last_success_at_ms, last_error_code, updated_at_ms,
+                    repository_id, writer_id
              FROM remote_repository_state WHERE library_id = ?1",
         )
         .map_err(|e| database_error(format!("failed to prepare repository state query: {e}")))?;
@@ -452,7 +504,8 @@ pub fn list_repository_states(connection: &Connection) -> CommandResult<Vec<Repo
         .prepare(
             "SELECT library_id, committed_generation, committed_manifest_revision,
                     local_base_generation, local_db_digest, local_state,
-                    active_operation_id, last_success_at_ms, last_error_code, updated_at_ms
+                    active_operation_id, last_success_at_ms, last_error_code, updated_at_ms,
+                    repository_id, writer_id
              FROM remote_repository_state",
         )
         .map_err(|e| database_error(format!("failed to prepare repository state list: {e}")))?;
@@ -487,6 +540,8 @@ fn map_repository_state_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Reposit
         last_success_at_ms: row.get(7)?,
         last_error_code: row.get(8)?,
         updated_at_ms: row.get(9)?,
+        repository_id: row.get(10)?,
+        writer_id: row.get(11)?,
     })
 }
 
@@ -884,6 +939,8 @@ mod tests {
             last_success_at_ms: None,
             last_error_code: None,
             updated_at_ms: now_ms(),
+            repository_id: None,
+            writer_id: None,
         };
         upsert_repository_state(&conn2, &row).expect("upsert after re-migration");
     }
@@ -902,6 +959,8 @@ mod tests {
             last_success_at_ms: Some(1000),
             last_error_code: None,
             updated_at_ms: now_ms(),
+            repository_id: Some("repo-uuid".to_owned()),
+            writer_id: Some("writer-uuid".to_owned()),
         };
         upsert_repository_state(&conn, &row).expect("upsert");
         let loaded = get_repository_state(&conn, "lib-1").expect("get").unwrap();

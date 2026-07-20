@@ -2,6 +2,11 @@ use crate::{
     commands::error::{internal_error, CommandError, CommandResult},
     config::RegisteredLibrary,
     library::error::LibraryError,
+    remote::errors::{
+        remote_error_from_status, RemoteError, RemoteErrorKind, RemoteObjectMetadata,
+        RemoteProviderCapabilities, RemoteResult,
+    },
+    remote::provider::ConditionalSource,
 };
 use reqwest::{Method, StatusCode, Url};
 use std::{
@@ -659,6 +664,72 @@ fn dropbox_upload_file_bytes(
     })
 }
 
+/// Upload bytes to a Dropbox path with compare-and-swap semantics.
+///
+/// - `expected_revision = Some(rev)`: uses `mode: { ".tag": "update", "rev": rev }`.
+///   Dropbox returns HTTP 409 with a `conflict` payload when the current rev
+///   differs — mapped to [`RemoteErrorKind::RemoteConflict`].
+/// - `expected_revision = None`: uses `mode: add` (conditional-create). A
+///   pre-existing file yields HTTP 409 → `RemoteConflict`.
+///
+/// Returns the metadata (size + rev) of the committed object.
+fn dropbox_conditional_upload(
+    app_data_dir: &Path,
+    secret: &mut DropboxSecret,
+    path: &str,
+    bytes: Vec<u8>,
+    expected_revision: Option<&str>,
+) -> RemoteResult<DropboxMetadata> {
+    let url = dropbox_content_url("/2/files/upload")
+        .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+    let mode = match expected_revision {
+        Some(rev) => serde_json::json!({ ".tag": "update", "rev": rev }),
+        // `mode: add` fails with HTTP 409 if the file already exists — this is
+        // the conditional-create semantics (first publication / migration).
+        None => serde_json::json!({ ".tag": "add" }),
+    };
+    let response = dropbox_authorized_request(app_data_dir, secret, Method::POST, url)
+        .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?
+        .header(
+            "Dropbox-API-Arg",
+            serde_json::json!({
+                "path": path,
+                "mode": mode,
+                "autorename": false,
+                "mute": true,
+                "strict_conflict": true
+            })
+            .to_string(),
+        )
+        .header("Content-Type", "application/octet-stream")
+        .body(bytes)
+        .send_network("Dropbox conditional upload")
+        .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        // HTTP 409 is Dropbox's conflict signal for mode=add/update mismatches.
+        if status == StatusCode::CONFLICT {
+            return Err(RemoteError::new(
+                RemoteErrorKind::RemoteConflict,
+                format!("Dropbox conditional upload conflict for {path}"),
+            ));
+        }
+        return Err(remote_error_from_status(
+            status,
+            "Dropbox conditional upload",
+        ));
+    }
+
+    let metadata: DropboxMetadata = response.json().map_err(|e| {
+        RemoteError::new(
+            RemoteErrorKind::NetworkUnavailable,
+            format!("failed to parse Dropbox upload response: {e}"),
+        )
+    })?;
+    Ok(metadata)
+}
+
 pub(crate) fn dropbox_download_file(
     app_data_dir: &Path,
     secret: &mut DropboxSecret,
@@ -957,6 +1028,64 @@ impl<'a> DropboxProvider<'a> {
 }
 
 impl RemoteProvider for DropboxProvider<'_> {
+    fn capabilities(&self) -> RemoteProviderCapabilities {
+        RemoteProviderCapabilities {
+            conditional_replace: true,
+            resumable_upload: false, // PR#5 fills this true where supported.
+            range_download: true,
+            revision_metadata: true,
+            server_side_move: false,
+        }
+    }
+
+    fn stat(&self, relative_path: &str) -> CommandResult<Option<RemoteObjectMetadata>> {
+        let mut secret = self.secret.borrow_mut();
+        let root_path = self.library.remote_root_locator().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "remote repository is missing a remote locator".to_owned(),
+            ))
+        })?;
+        let remote_path = dropbox_join_path(root_path, relative_path);
+        Ok(
+            dropbox_get_metadata(self.app_data_dir, &mut secret, &remote_path)?.map(|m| {
+                RemoteObjectMetadata {
+                    size: m.size,
+                    revision: dropbox_metadata_revision(&m),
+                }
+            }),
+        )
+    }
+
+    fn conditional_replace(
+        &self,
+        relative_path: &str,
+        source: ConditionalSource,
+        expected_revision: Option<&str>,
+    ) -> RemoteResult<RemoteObjectMetadata> {
+        let mut secret = self.secret.borrow_mut();
+        let root_path = self.library.remote_root_locator().ok_or_else(|| {
+            RemoteError::new(
+                RemoteErrorKind::ProviderCapabilityUnavailable,
+                "remote repository is missing a remote locator",
+            )
+        })?;
+        let remote_path = dropbox_join_path(root_path, relative_path);
+        let bytes = source
+            .read_bytes()
+            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+        let metadata = dropbox_conditional_upload(
+            self.app_data_dir,
+            &mut secret,
+            &remote_path,
+            bytes,
+            expected_revision,
+        )?;
+        Ok(RemoteObjectMetadata {
+            size: metadata.size,
+            revision: dropbox_metadata_revision(&metadata),
+        })
+    }
+
     fn get_revision(&self, relative_path: &str) -> CommandResult<Option<String>> {
         let mut secret = self.secret.borrow_mut();
         let root_path = self.library.remote_root_locator().ok_or_else(|| {

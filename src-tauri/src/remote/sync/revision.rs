@@ -442,6 +442,8 @@ mod tests {
             last_success_at_ms: None,
             last_error_code: None,
             updated_at_ms: 1000,
+            repository_id: None,
+            writer_id: None,
         }
     }
 

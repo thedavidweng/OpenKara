@@ -109,10 +109,116 @@ pub fn run_recovery(
     let completed = list_operations_in_states(connection, &[OperationState::Completed])?;
     report.already_completed = completed.len();
 
-    // TODO(PR#4): drive retry via operation executor. After credentials and
-    // the active library are available, the executor should pick up operations
-    // in `pending` / `retry_wait` and re-execute them.
+    // PR#4: After recovery transitions, the caller (startup hook) invokes
+    // `retry_pending_operations` to drive pending/retry_wait operations
+    // through the executor. This is done in a separate call so the recovery
+    // pass itself remains fast and testable without a provider.
     Ok(report)
+}
+
+/// Retry pending and retry_wait publish operations via the executor.
+///
+/// Called after the recovery pass and after credentials/the active library
+/// are available. Picks up operations in `pending` or `retry_wait` state and
+/// re-executes them through the transactional publish protocol.
+///
+/// Operations whose `next_attempt_at_ms` is in the future are skipped (rate
+/// limiting). Operations that are not `Publish` kind are skipped (PR#5 handles
+/// other kinds).
+#[allow(dead_code)]
+pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
+    use crate::remote::control_db::{list_operations_in_states, OperationKind};
+    use crate::remote::executor::{
+        execute_publish, generate_repository_id, generate_writer_id, PublishContext,
+    };
+    use crate::remote::provider::create_provider;
+    use crate::remote::sync::{load_registered_remote_library, resolve_active_remote};
+    use crate::remote::types::load_app_config;
+
+    let config = load_app_config(&state.shell.app_data_dir)?;
+    let Some(remote_library) = resolve_active_remote(&config) else {
+        return Ok(());
+    };
+    let library_id = remote_library.id().to_owned();
+
+    let pending = {
+        let conn = state.remote.control_db.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+        list_operations_in_states(&conn, &[OperationState::Pending, OperationState::RetryWait])?
+    };
+
+    let now = crate::remote::types::current_unix_time_ms();
+    for op in pending {
+        // Skip non-publish operations (PR#5 handles other kinds).
+        if op.operation_kind != OperationKind::Publish {
+            continue;
+        }
+
+        // Skip operations that are rate-limited (next_attempt_at_ms in the
+        // future).
+        if let Some(next_attempt) = op.next_attempt_at_ms {
+            if next_attempt > now {
+                continue;
+            }
+        }
+
+        // Reload the library to get the latest revision.
+        let remote_library =
+            match load_registered_remote_library(&state.shell.app_data_dir, &library_id) {
+                Ok(lib) => lib,
+                Err(_) => continue,
+            };
+
+        let provider = match create_provider(&state.shell.app_data_dir, &remote_library) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+
+        let remote_root = match crate::remote::types::load_remote_root(
+            &state.shell.app_data_dir,
+            &remote_library,
+        ) {
+            Ok(root) => root,
+            Err(_) => continue,
+        };
+
+        // Resolve or generate stable repository_id and writer_id.
+        let (repository_id, writer_id) = {
+            let conn = state.remote.control_db.lock().map_err(|_| {
+                crate::commands::error::state_lock_error("control DB lock was poisoned")
+            })?;
+            let repo_state = get_repository_state(&conn, &library_id)?;
+            let repository_id = repo_state
+                .as_ref()
+                .and_then(|r| r.repository_id.clone())
+                .unwrap_or_else(generate_repository_id);
+            let writer_id = repo_state
+                .as_ref()
+                .and_then(|r| r.writer_id.clone())
+                .unwrap_or_else(generate_writer_id);
+            (repository_id, writer_id)
+        };
+
+        let conn = state.remote.control_db.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+
+        let ctx = PublishContext {
+            control_db: &conn,
+            provider: provider.as_ref(),
+            working_copy_root: remote_root.root(),
+            library_id: &library_id,
+            writer_id: &writer_id,
+            repository_id: &repository_id,
+        };
+
+        // Execute the publish protocol. Errors are recorded by the executor
+        // in the operation row; we continue to the next operation.
+        let _ = execute_publish(&ctx, &op.operation_id);
+    }
+
+    Ok(())
 }
 
 /// Remove stale `*.part.*` temp files from a working-copy directory.
@@ -229,6 +335,8 @@ fn mark_repository_dirty(
             last_success_at_ms: None,
             last_error_code: None,
             updated_at_ms: now_ms,
+            repository_id: None,
+            writer_id: None,
         },
     };
     upsert_repository_state(connection, &row)
@@ -373,6 +481,8 @@ mod tests {
             last_success_at_ms: None,
             last_error_code: None,
             updated_at_ms: 1000,
+            repository_id: None,
+            writer_id: None,
         }
     }
 
