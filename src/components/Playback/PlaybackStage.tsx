@@ -33,8 +33,10 @@ export function PlaybackStage({
     null,
   );
   useEffect(() => {
+    // Clear stale bytes from a previous song on every dep change so the
+    // ambience backdrop never briefly paints the predecessor's cover.
+    setFetchedCoverArt(null);
     if (currentSong?.cover_art != null || !currentSong?.has_cover_art) {
-      setFetchedCoverArt(null);
       return;
     }
     let cancelled = false;
@@ -74,14 +76,16 @@ export function PlaybackStage({
         <>
           <div className="absolute inset-0" data-native-stage-backdrop="true">
             <div
-              className="absolute inset-[-6%] scale-[1.06] bg-center bg-cover opacity-40 blur-2xl saturate-[0.85] brightness-[0.75]"
-              style={
-                nativeBackdropUrl
+              className="absolute inset-[-6%] scale-[1.06] bg-center bg-cover"
+              style={{
+                ...(nativeBackdropUrl
                   ? { backgroundImage: `url(${nativeBackdropUrl})` }
-                  : undefined
-              }
+                  : {}),
+                opacity: "var(--ambience-backdrop-opacity)",
+                filter: "var(--ambience-backdrop-filter)",
+              }}
             />
-            <div className="absolute inset-0 bg-[var(--color-scrim)]" />
+            <div className="absolute inset-0 bg-[var(--ambience-scrim)]" />
           </div>
           <div className="relative z-10 flex min-h-0 flex-1 overflow-hidden">
             <LyricsPanel presentation={presentation} />

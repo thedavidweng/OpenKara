@@ -146,6 +146,27 @@ describe("cover-art", () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith(second);
   });
 
+  test("releaseCoverArtUrl with url guard skips stale cleanups after byte replacement", () => {
+    // Simulates the useCoverArtUrl hook lifecycle: retain URL_A, then replace
+    // with URL_B (same key, different bytes), then the OLD useEffect cleanup
+    // fires. Without the url guard, the cleanup would decrement the new
+    // entry's refs and prematurely revoke URL_B.
+    const jpeg = [0xff, 0xd8, 0x00];
+    const png = [0x89, 0x50, 0x4e, 0x47];
+
+    const urlA = retainCoverArtUrl("song-guard", jpeg, "thumb");
+    const urlB = retainCoverArtUrl("song-guard", png, "thumb");
+    expect(urlA).not.toBe(urlB);
+
+    // Old cleanup fires with the stale url — must be a no-op.
+    releaseCoverArtUrl("song-guard", "thumb", urlA);
+    expect(URL.revokeObjectURL).not.toHaveBeenCalledWith(urlB);
+
+    // New cleanup fires with the current url — releases normally.
+    releaseCoverArtUrl("song-guard", "thumb", urlB);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(urlB);
+  });
+
   test("same-key identical bytes reuse the cached URL without revoking", () => {
     const jpeg = [0xff, 0xd8, 0x00];
 
