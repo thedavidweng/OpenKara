@@ -1,14 +1,3 @@
-//! Library integrity audit and cleanup.
-//!
-//! Audits the active managed library for missing/empty referenced files and
-//! unreferenced managed files. Presents a deterministic report. After explicit
-//! confirmation, removes selected database entries only when their primary
-//! media is still missing or empty at mutation time.
-//!
-//! This is a fast metadata audit. It does not hash/decode media, watch source
-//! folders, restore files, import filesystem orphans, or delete orphaned files
-//! automatically.
-
 use crate::{
     cache,
     library::{artwork, delete},
@@ -60,20 +49,11 @@ pub const ASSET_ARTWORK_PREVIEW: &str = "artwork_preview";
 
 const MANAGED_TOP_LEVEL_DIRS: &[&str] = &["media", "media-g", "stems", "artwork"];
 
-/// A valid path in the wrong managed root is still invalid for that asset:
-/// accepting it would let a corrupt CDG/stem record retain an unrelated file
-/// in the orphan reference set.
 const PRIMARY_MEDIA_DIRS: &[&str] = &["media", "media-g"];
 const CDG_DIRS: &[&str] = &["media-g"];
 const STEM_DIRS: &[&str] = &["stems"];
 const REDACTED_INVALID_PATH: &str = "<invalid path>";
 
-/// Returns `Ok(absolute_path)` if the path is valid and its nearest existing
-/// ancestor canonicalizes within the root. Returns `Err` for invalid paths
-/// (absolute, parent traversal, wrong prefix, symlink escape, etc.).
-///
-/// Uses `symlink_metadata` so dangling symlinks are reported as missing and
-/// never followed.
 fn resolve_safe_path(
     library: &LibraryRoot,
     relative: &str,
@@ -88,20 +68,15 @@ fn resolve_safe_path(
         .canonicalize()
         .context("failed to canonicalize library root")?;
 
-    // Walk each component and reject symlinks. Canonicalize the nearest
-    // existing ancestor to verify the final path stays within the root.
     let mut current = canonical_root.clone();
     let components: Vec<&str> = normalized.split('/').collect();
 
     for component in &components {
         current = current.join(component);
 
-        // Use symlink_metadata to detect symlinks without following them.
         let metadata = match fs::symlink_metadata(&current) {
             Ok(m) => m,
             Err(_) => {
-                // Path doesn't exist yet — that's fine for missing-file checks.
-                // We still need to verify the ancestor is within the root.
                 break;
             }
         };
@@ -124,10 +99,6 @@ fn resolve_safe_path(
     Ok(absolute)
 }
 
-/// Database paths use forward slashes and must not contain empty,
-/// current-directory, or parent-directory segments. Rejecting aliases such as
-/// `media//song.mp3` prevents an invalid row from suppressing the orphan
-/// report for `media/song.mp3`.
 fn normalize_relative_path(path: &str) -> Result<String> {
     if path.is_empty() {
         anyhow::bail!("path is empty");
@@ -157,9 +128,6 @@ fn normalize_relative_path(path: &str) -> Result<String> {
     Ok(path.to_owned())
 }
 
-/// Corrupt database values are useful diagnostics, but no report may disclose
-/// an absolute host path (Unix, Windows drive, UNC, or Windows root-relative
-/// form).
 fn report_path(path: &str) -> String {
     let has_drive_prefix = path.len() >= 2 && path.as_bytes()[1] == b':';
     if path.starts_with('/') || path.starts_with('\\') || has_drive_prefix {
@@ -169,8 +137,6 @@ fn report_path(path: &str) -> String {
     }
 }
 
-/// A DB row containing just `media` or `stems` must not be able to suppress a
-/// top-level symlink from the orphan report.
 fn normalize_managed_asset_path_in(path: &str, allowed_top_level_dirs: &[&str]) -> Result<String> {
     let normalized = normalize_relative_path(path)?;
     let mut components = normalized.split('/');
@@ -201,10 +167,6 @@ fn is_empty_file(path: &Path) -> bool {
     }
 }
 
-/// The same per-asset resolver used by the audit protects this destructive
-/// operation: invalid paths, symlinks, non-regular entries, and missing files
-/// are never followed or removed. Missing files are already the expected
-/// state for an integrity cleanup, so they are treated as success.
 fn delete_optional_asset_file(
     library: &LibraryRoot,
     relative: &str,
@@ -227,9 +189,6 @@ fn delete_optional_asset_file(
     Ok(())
 }
 
-/// Although managed imports conventionally use a per-song hash filename,
-/// database contents are not trusted to preserve that invariant; cleanup must
-/// not delete an asset a remaining row still references.
 fn cdg_path_is_still_referenced(connection: &Connection, relative: &str) -> Result<bool> {
     let count: i64 = connection
         .query_row(
@@ -255,9 +214,6 @@ struct AuditRow {
     other_path: Option<String>,
 }
 
-/// Opens a fresh connection, queries all songs with a LEFT JOIN on stems,
-/// classifies each asset, scans managed directories for orphans, and returns
-/// a deterministic, sorted, deduplicated report.
 pub fn check_library_integrity(library: &LibraryRoot) -> Result<IntegrityReport> {
     let connection = cache::open_database(&library.database_path())?;
     run_audit(&connection, library)
@@ -267,7 +223,6 @@ fn run_audit(connection: &Connection, library: &LibraryRoot) -> Result<Integrity
     let has_artwork_thumb = cache::column_exists(connection, "songs", "artwork_thumb_path")?;
     let has_artwork_preview = cache::column_exists(connection, "songs", "artwork_preview_path")?;
 
-    // Build the query dynamically based on available columns.
     let artwork_thumb_col = if has_artwork_thumb {
         "s.artwork_thumb_path"
     } else {
@@ -327,9 +282,6 @@ fn run_audit(connection: &Connection, library: &LibraryRoot) -> Result<Integrity
 
         if is_remote {
             report.skipped_remote_songs += 1;
-            // Remote songs: primary/stem files are intentionally absent and
-            // skipped, but artwork paths are still portable managed assets that
-            // should be audited for missing/empty files and excluded from orphans.
             classify_artwork_optional(
                 library,
                 &row.hash,
@@ -353,7 +305,6 @@ fn run_audit(connection: &Connection, library: &LibraryRoot) -> Result<Integrity
 
         report.checked_local_songs += 1;
 
-        // Primary media (required for local originals).
         match row.file_path.as_ref() {
             Some(path) => {
                 record_referenced_path(&mut referenced_paths, path, PRIMARY_MEDIA_DIRS);
@@ -472,8 +423,6 @@ fn run_audit(connection: &Connection, library: &LibraryRoot) -> Result<Integrity
     Ok(report)
 }
 
-/// Invalid database values are still reported as missing by their classifier,
-/// but they cannot hide a real on-disk file behind a spelling alias.
 fn record_referenced_path(
     referenced: &mut HashSet<String>,
     path: &str,
@@ -524,8 +473,6 @@ fn classify_optional(
         return;
     }
 
-    // A syntactically valid DB path remains a reference even when its file is
-    // absent. Invalid aliases do not suppress an orphan at a canonical path.
     record_referenced_path(referenced, path, allowed_top_level_dirs);
 
     match resolve_safe_path(library, path, allowed_top_level_dirs) {
@@ -542,9 +489,6 @@ fn classify_optional(
     }
 }
 
-/// Unlike generic optional assets, artwork records are valid only when they
-/// use the content-addressed filename for the requested size and the regular
-/// file contains a same-sized WebP image.
 fn classify_artwork_optional(
     library: &LibraryRoot,
     song_hash: &str,
@@ -571,9 +515,6 @@ fn classify_artwork_optional(
         return;
     }
 
-    // Strict parsing above makes the recorded path canonical and safe to use
-    // for orphan comparison. A malformed value therefore remains reportable
-    // rather than incorrectly retaining a file it does not own.
     referenced.insert(path.to_owned());
 
     if !is_regular_file(&absolute) {

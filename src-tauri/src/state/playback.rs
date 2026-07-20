@@ -14,48 +14,16 @@ pub struct PlaybackState {
     pub playback_request_id: Arc<AtomicU64>,
     pub audio_output_started: Arc<AtomicBool>,
     pub audio_output_start_lock: Arc<Mutex<()>>,
-    /// Shutdown signal for the background decode/fetch thread. Signalled
-    /// when a new `play()` starts so the old thread can bail out early instead
-    /// of running to completion and wasting CPU/memory.
-    /// Wrapped in Mutex so `play()` can replace the Arc with a fresh one.
     pub background_shutdown: Arc<Mutex<Arc<AtomicBool>>>,
-    /// Shutdown signal for the gapless preload thread. Separate from
-    /// `background_shutdown` so that a `set_preload_candidate` call (which
-    /// fires whenever the queue head or current song changes) does not cancel
-    /// an in-flight `play()` background decode thread. The preload effect in
-    /// the frontend reacts to `currentSongId` changes, which happen during
-    /// `play()` loading — sharing the flag would kill the play thread.
     pub preload_shutdown: Arc<Mutex<Arc<AtomicBool>>>,
-    /// Monotonic generation bumped on every `set_preload_candidate`
-    /// call. The preload thread captures this value and includes it in the
-    /// `PrepareNext` command; the coordinator stamps it onto
-    /// `PlaybackController::expected_preload_request_generation` via
-    /// `CancelPreparedNext` so stale `PrepareNext` commands from older
-    /// preload threads are rejected.
     pub preload_request_generation: Arc<AtomicU64>,
-    /// Sender for the PlaybackCoordinator command queue. The coordinator worker
-    /// owns the receiver; all control-plane mutations go through this channel.
     pub command_tx: mpsc::Sender<PlaybackCommand>,
-    /// Process-wide lock-free peak ring shared between the CPAL output callback
-    /// (single writer) and the `get_audio_peaks` command (any reader). The
-    /// command reads only the ring and must not lock `PlaybackController`.
     pub peak_ring: Arc<PeakRing>,
-    /// Output-format descriptor published by the CPAL output worker.
-    /// The preload scheduler captures this to normalize the next track to the
-    /// active device format; the coordinator validates the generation before
-    /// installing a prepared track.
     pub output_format: OutputFormatState,
-    /// Process-wide singleflight for waveform computation. Multiple
-    /// WebViews requesting the same `(song_hash, buckets)` share one owned
-    /// blocking computation task; cancellation of any caller only drops its
-    /// receiver and never cancels work needed by remaining waiters.
     pub waveform_singleflight: WaveformSingleflight,
 }
 
 impl PlaybackState {
-    /// Construct a `PlaybackState` and return the coordinator receiver.
-    /// The receiver must be moved into `spawn_coordinator`; the sender stays
-    /// in managed state for command dispatch.
     pub fn new(
         playback: Arc<Mutex<PlaybackController>>,
     ) -> (Self, mpsc::Receiver<PlaybackCommand>) {
@@ -79,9 +47,6 @@ impl PlaybackState {
         )
     }
 
-    /// Test fixture with a disconnected sender. Tests that exercise commands
-    /// must spawn a coordinator harness; tests that only inspect shared state
-    /// may use this directly.
     pub fn test_fixture() -> Self {
         let (command_tx, _) = mpsc::channel();
         Self {
@@ -101,36 +66,16 @@ impl PlaybackState {
     }
 }
 
-/// Composite key for waveform computation deduplication. Two callers
-/// requesting different bucket counts for the same song hash do not share
-/// a computation; the cache and singleflight both key on `(song_hash, buckets)`.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct WaveformKey {
     pub song_hash: String,
     pub buckets: usize,
 }
 
-/// A shared waveform result. The `Err` variant carries a sanitized message
-/// suitable for IPC — no raw absolute paths.
 pub type WaveformResult = Result<Arc<[f32]>, String>;
 
 type Waiters = Vec<tokio::sync::oneshot::Sender<WaveformResult>>;
 
-/// Cancellation-safe singleflight for waveform computation.
-///
-/// Every caller creates a oneshot sender/receiver under the map lock:
-/// - occupied key: append sender, release lock, await receiver;
-/// - vacant key: insert a vector containing the first sender, release lock,
-///   spawn one owned async computation task, then await the first receiver.
-///
-/// The computation task, rather than the first request future, owns
-/// completion. Cancellation of any WebView/request only drops its receiver
-/// and never cancels work needed by remaining waiters. A task-owned
-/// completion guard always removes the key and fan-outs either the result or
-/// a fixed sanitized error on ordinary failure, `JoinError`, unwind or task
-/// cancellation. `Drop` recovers a poisoned standard mutex with
-/// `poisoned.into_inner()`; silently skipping removal would leave a
-/// permanent pending entry.
 #[derive(Clone, Default)]
 pub struct WaveformSingleflight {
     pending: Arc<Mutex<HashMap<WaveformKey, Waiters>>>,
@@ -141,20 +86,10 @@ impl WaveformSingleflight {
         Self::default()
     }
 
-    /// Look up the shared pending map. Exposed so the command layer can
-    /// inject a test-only worker via [`with_worker`].
     pub fn pending_map(&self) -> Arc<Mutex<HashMap<WaveformKey, Waiters>>> {
         Arc::clone(&self.pending)
     }
 
-    /// Register a new waiter for `key`. Returns `(receiver, inserted)` where
-    /// `inserted == true` means the caller is the first waiter and must
-    /// spawn the computation task; `false` means a computation is already
-    /// in flight and the caller should simply await the receiver.
-    ///
-    /// Poison recovery: if the map mutex is poisoned, recover with
-    /// `poisoned.into_inner()` rather than propagating the error — a
-    /// poisoned lock would otherwise permanently strand the key.
     pub fn register(
         &self,
         key: WaveformKey,
@@ -169,10 +104,6 @@ impl WaveformSingleflight {
         (rx, inserted)
     }
 
-    /// Remove the waiters for `key` and return them for fan-out. Returns
-    /// `None` if the key is absent (e.g. another path already completed).
-    /// No send occurs while holding the map lock: the guard is dropped
-    /// before the caller iterates senders.
     pub fn take_waiters(&self, key: &WaveformKey) -> Option<Waiters> {
         let mut guard = self
             .pending
@@ -190,18 +121,6 @@ impl WaveformSingleflight {
     }
 }
 
-/// RAII completion guard for a singleflight computation task.
-///
-/// Created inside the spawned task **before** awaiting the blocking
-/// computation, so that if the task is dropped at any point (cancellation
-/// during runtime shutdown, `JoinError`, panic unwind), `Drop` runs and
-/// removes the key from the pending map, fanning out a sanitized error to
-/// any remaining waiters. Without this guard, a cancelled task between the
-/// `spawn_blocking` await and `take_waiters` would permanently strand the
-/// key, causing all future requests for that song to hang forever.
-///
-/// The guard is marked `completed` after a successful fan-out so `Drop`
-/// becomes a no-op on the normal exit path.
 pub struct SingleflightCompletionGuard {
     singleflight: WaveformSingleflight,
     key: WaveformKey,
@@ -209,8 +128,6 @@ pub struct SingleflightCompletionGuard {
 }
 
 impl SingleflightCompletionGuard {
-    /// Create a guard bound to `key` on `singleflight`. The guard does not
-    /// take waiters yet — that happens in [`Self::complete`].
     pub fn new(singleflight: WaveformSingleflight, key: WaveformKey) -> Self {
         Self {
             singleflight,
@@ -219,10 +136,6 @@ impl SingleflightCompletionGuard {
         }
     }
 
-    /// Take the waiters for this key, mark the guard as completed, and
-    /// return the waiters for fan-out. After this call, `Drop` will not
-    /// attempt a second removal. Returns `None` if the key is already
-    /// absent (e.g. a prior guard or test path already cleared it).
     pub fn complete(&mut self) -> Option<Waiters> {
         self.completed = true;
         self.singleflight.take_waiters(&self.key)
@@ -234,8 +147,6 @@ impl Drop for SingleflightCompletionGuard {
         if self.completed {
             return;
         }
-        // The task was cancelled before completing. Remove the stranded key
-        // and fan out a sanitized error so waiters do not hang forever.
         if let Some(waiters) = self.singleflight.take_waiters(&self.key) {
             for waiter in waiters {
                 let _ = waiter.send(Err(SANITIZED_WAVEFORM_ERROR.to_owned()));
@@ -244,9 +155,6 @@ impl Drop for SingleflightCompletionGuard {
     }
 }
 
-/// Sanitized error returned to waiters when the computation task fails or
-/// is cancelled. The message is intentionally generic — no raw absolute
-/// paths leak to IPC. Shared between the guard and the command layer.
 pub const SANITIZED_WAVEFORM_ERROR: &str = "waveform computation failed";
 
 #[cfg(test)]
