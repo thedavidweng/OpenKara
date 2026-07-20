@@ -2,7 +2,10 @@ import { create } from "zustand";
 import * as api from "@/lib/tauri";
 import { notifyError } from "@/lib/errors";
 import { romanizeLyricsLines } from "@/lib/lyrics-romanizer";
-import type { LocalAudienceRomanizeState } from "@/lib/local-audience-romanize";
+import {
+  buildLyricsIdentity,
+  type LocalAudienceRomanizeState,
+} from "@/lib/local-audience-romanize";
 import {
   SONG_LANGUAGES,
   type SongLanguage,
@@ -34,6 +37,11 @@ interface LyricsState {
   isLoading: boolean;
 
   romanizedLines: string[];
+  // Identity of the source lyrics that romanizedLines was computed from.
+  // When lines change (manual edit, online auto-upgrade) without clearing
+  // romanizedLines, this identity no longer matches and the cache is
+  // treated as stale on the next enable.
+  romanizedLinesIdentity: string | null;
   isRomanizing: boolean;
   showRomanized: boolean;
 
@@ -60,6 +68,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
   activeWordIndex: -1,
   isLoading: false,
   romanizedLines: [],
+  romanizedLinesIdentity: null,
   isRomanizing: false,
   showRomanized: false,
 
@@ -73,6 +82,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
       activeLineIndex: -1,
       activeWordIndex: -1,
       romanizedLines: [],
+      romanizedLinesIdentity: null,
       showRomanized: false,
     });
     try {
@@ -195,15 +205,23 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
   // caller passes the explicit desired boolean; this action never toggles
   // implicitly. Cached romanizedLines are preserved across disable/enable
   // cycles so re-enabling does not re-run the Worker when results already
-  // exist for the current source lyrics.
+  // exist for the current source lyrics. The cache is validated against
+  // the current lyrics identity so that editing or upgrading lyrics after
+  // disabling romanization forces a recompute on the next enable instead
+  // of showing stale romanization for the previous lyric content.
   setRomanizedVisibility: (show) => {
-    const { showRomanized, lines, romanizedLines } = get();
+    const { showRomanized, lines, romanizedLines, romanizedLinesIdentity } =
+      get();
     if (lines.length === 0) return;
     if (show === showRomanized) return;
 
     if (show) {
       set({ showRomanized: true });
-      if (romanizedLines.length === 0) {
+      const currentIdentity = buildLyricsIdentity(lines);
+      if (
+        currentIdentity !== romanizedLinesIdentity ||
+        romanizedLines.length === 0
+      ) {
         void get().romanizeCurrentLyrics();
       }
     } else {
@@ -220,6 +238,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
       showRomanized: state.showRomanized,
       isRomanizing: state.isRomanizing,
       romanizedLines: [...state.romanizedLines],
+      romanizedLinesIdentity: state.lyricsIdentity,
     });
   },
 
@@ -238,10 +257,13 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
         // requestId === -1 means Latin-only (no worker involved), always apply.
         if (requestId !== -1) return;
       }
-      set({ romanizedLines: result });
+      set({
+        romanizedLines: result,
+        romanizedLinesIdentity: buildLyricsIdentity(get().lines),
+      });
     } catch (err) {
       console.error("Romanization failed:", err);
-      set({ romanizedLines: [] });
+      set({ romanizedLines: [], romanizedLinesIdentity: null });
     } finally {
       set({ isRomanizing: false });
     }
@@ -257,6 +279,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
       activeLineIndex: -1,
       activeWordIndex: -1,
       romanizedLines: [],
+      romanizedLinesIdentity: null,
       isRomanizing: false,
       showRomanized: false,
     }),
