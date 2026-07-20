@@ -8,15 +8,24 @@ javascript:
           - "src/**"
           - "vite.config.ts"
           - "tsconfig.json"
+          - "tsconfig.node.json"
           - "tsconfig.app.json"
           - "website/**"
           - "public/**"
           - "oxlintrc.json"
+          - ".oxfmtrc.json"
+          - "knip.json"
+          - "index.html"
+          - "scripts/**"
+          - "tests/**"
+          - "playwright.config.ts"
 
 rust:
   - changed-files:
       - any-glob-to-any-file:
           - "src-tauri/**"
+          - "rust-toolchain.toml"
+          - "patches/**"
 
 documentation:
   - changed-files:
