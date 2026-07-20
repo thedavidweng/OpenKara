@@ -190,7 +190,24 @@ fn pull_remote_database_atomically(
     let provider = create_provider(app_data_dir, library)?;
     let root = load_remote_root(app_data_dir, library)?;
 
-    let operation_id = format!("pull-{}", provider_revision.unwrap_or("unknown"));
+    // Sanitize the provider revision before embedding it in the operation
+    // id (which becomes part of a temp filename). WebDAV ETags can contain
+    // quotes ("abc123") and weak prefixes (W/"abc123"); other providers may
+    // return revision strings with slashes. Replace any character outside
+    // [A-Za-z0-9._-] with an underscore so the temp filename is always
+    // valid across platforms.
+    let sanitized_revision: String = provider_revision
+        .unwrap_or("unknown")
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let operation_id = format!("pull-{sanitized_revision}");
 
     let expected_size = provider.get_file_size("openkara.db")?;
 
@@ -309,19 +326,20 @@ pub fn ensure_remote_file_cached(app_data_dir: &Path, relative_path: &str) -> Co
 
     let provider = create_provider(app_data_dir, &library)?;
 
-    // Fast-path: if the destination exists AND the provider revision is
-    // unchanged AND the size matches, skip re-download. This is a minimal
-    // cache-validity check; the full verified cache catalog is PR #6.
-    // TODO(PR#6): replace existence+revision check with verified cache
+    // Fast-path: if the destination exists AND the remote size matches,
+    // skip re-download. This is a minimal cache-validity check; the full
+    // verified cache catalog is PR #6.
+    // TODO(PR#6): replace existence+size check with verified cache
     // catalog lookup.
+    //
+    // Note: we do NOT compare per-file revisions here because
+    // `library.remote_revision()` holds the revision of `openkara.db`,
+    // not the individual asset file. Comparing them would never match
+    // and cause every asset to be re-downloaded on each playback.
     if destination.exists() {
-        let stored_revision = provider.get_revision(relative_path)?;
         let local_size = std::fs::metadata(&destination).map(|m| m.len()).ok();
         let remote_size = provider.get_file_size(relative_path)?;
-        if stored_revision.as_deref() == library.remote_revision()
-            && local_size.is_some()
-            && remote_size == local_size
-        {
+        if local_size.is_some() && remote_size == local_size {
             return Ok(());
         }
     }
