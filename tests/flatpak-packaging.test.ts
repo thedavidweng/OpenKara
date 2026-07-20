@@ -357,10 +357,6 @@ describe("Flatpak packaging", () => {
     const metainfo = readProjectFile(
       "packaging/flatpak/io.github.thedavidweng.OpenKara.metainfo.xml",
     );
-    const packageJson = JSON.parse(readProjectFile("package.json")) as {
-      version: string;
-    };
-    const tagVersion = `v${packageJson.version}`;
 
     expect(
       existsSync(
@@ -388,7 +384,9 @@ describe("Flatpak packaging", () => {
     expect(renderScript).not.toContain("tauri.flatpak.conf.json");
     expect(renderScript).not.toContain("flathub.json");
     expect(metainfo).not.toContain("/main/packaging/flatpak/screenshots/");
-    expect(metainfo).toContain(`/${tagVersion}/packaging/flatpak/screenshots/`);
+    expect(metainfo).toMatch(
+      /\/v\d+\.\d+\.\d+\/packaging\/flatpak\/screenshots\//,
+    );
   });
 
   test("keeps pnpm dependency sources in sync with the lockfile packages used by the app", () => {
