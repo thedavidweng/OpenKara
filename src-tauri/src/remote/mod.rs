@@ -6,13 +6,15 @@
 mod auth;
 mod auth_binding;
 mod bootstrap;
+pub(crate) mod control_db;
 mod dropbox;
 mod google_drive;
 mod mutation;
 pub(crate) mod provider;
+pub(crate) mod recovery;
 mod registry;
 mod sync;
-mod types;
+pub(crate) mod types;
 mod webdav;
 
 use crate::{
