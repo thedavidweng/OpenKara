@@ -349,9 +349,31 @@ pub(crate) fn resumable_atomic_download(
             crate::remote::control_db::delete_transfer_parts(opts.control_db, opts.operation_id);
     } else {
         // On failure, remove the temp file so no partial lingers at a
-        // final-adjacent path. The transfer-part row is retained so a restart
-        // can resume.
+        // final-adjacent path. Also reset the transfer-part row's
+        // transferred_bytes to 0 so a restart does not try to resume from
+        // a stale offset against a non-existent file. Without this reset,
+        // the next run sees a matching part row with a non-zero offset but
+        // no temp file, resets offset to 0 internally, then overwrites the
+        // DB row after the first chunk — losing the already-downloaded
+        // progress tracking but more importantly creating an inconsistent
+        // state where the DB claims progress the file does not have.
         let _ = fs::remove_file(&temp_path);
+        let now = crate::remote::types::current_unix_time_ms();
+        let _ = crate::remote::control_db::upsert_transfer_part(
+            opts.control_db,
+            &crate::remote::control_db::TransferPartRow {
+                operation_id: opts.operation_id.to_owned(),
+                relative_path: opts.relative_path.to_owned(),
+                direction: crate::remote::control_db::TransferDirection::Download,
+                expected_size: Some(opts.expected_size as i64),
+                expected_digest: opts.expected_digest.map(str::to_owned),
+                provider_revision: opts.provider_revision.map(str::to_owned),
+                provider_session_id: None,
+                transferred_bytes: 0,
+                state: "failed".to_owned(),
+                updated_at_ms: now,
+            },
+        );
     }
 
     result

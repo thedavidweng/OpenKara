@@ -1372,11 +1372,16 @@ impl RemoteProvider for GoogleDriveProvider<'_> {
         RemoteProviderCapabilities {
             conditional_replace: false,
             // PR#5: Google Drive supports resumable uploads via
-            // `uploadType=resumable` with a session URL and offset query.
-            // (Publication is still blocked because conditional_replace is
-            // false, but resumable transfers apply to any upload path.)
-            resumable_upload: true,
-            range_download: true,
+            // `uploadType=resumable` with a session URL and offset query,
+            // and Range requests for downloads. However, the trait methods
+            // `resumable_upload_bytes` and `download_range` are not yet
+            // wired to the helper functions, so we must not advertise these
+            // capabilities until the implementations are connected.
+            // Advertising support without an implementation causes callers
+            // to route to the default trait method, which returns a
+            // non-retryable `ProviderCapabilityUnavailable` error.
+            resumable_upload: false,
+            range_download: false,
             revision_metadata: true,
             server_side_move: false,
         }
