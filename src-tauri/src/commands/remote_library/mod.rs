@@ -290,7 +290,7 @@ pub fn get_remote_diagnostics(
         Some(row) => (
             row.committed_generation,
             row.local_base_generation,
-            format!("{:?}", row.local_state).to_lowercase(),
+            row.local_state.as_str().to_owned(),
             row.local_db_digest,
             row.repository_id,
             row.writer_id,
@@ -310,8 +310,8 @@ pub fn get_remote_diagnostics(
         .into_iter()
         .map(|op| RemoteOperationDiagnostic {
             operation_id: op.operation_id,
-            operation_kind: format!("{:?}", op.operation_kind).to_lowercase(),
-            state: format!("{:?}", op.state).to_lowercase(),
+            operation_kind: op.operation_kind.as_str().to_owned(),
+            state: op.state.as_str().to_owned(),
             expected_generation: op.expected_generation,
             target_generation: op.target_generation,
             attempt_count: op.attempt_count,
