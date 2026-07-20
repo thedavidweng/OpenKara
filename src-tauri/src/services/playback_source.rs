@@ -307,12 +307,25 @@ fn load_remote_streaming_source(
         )
     };
 
+    // Create a persistence callback so the fetch thread can persist
+    // download progress to the cache catalog after each successful range
+    // write. Without this, downloaded_ranges_json stays empty and complete
+    // stays false, so cached remote audio is re-downloaded after restart.
+    let persist_catalog = Arc::clone(remote_chunk_cache);
+    let persist_key = cache_key.clone();
+    let on_range_written: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+        if let Ok(manager) = persist_catalog.lock() {
+            let _ = manager.persist_ranges(&persist_key);
+        }
+    });
+
     let (fetch_tx, fetch_event_rx, _bandwidth_monitor, _fetch_handle) =
         remote_source::spawn_fetch_thread_with_fetcher(
             String::new(), // URL is embedded in the fetcher
             Arc::clone(&cache),
             fetcher,
             remote_source::RetryConfig::default(),
+            Some(on_range_written),
         );
 
     let extension = std::path::Path::new(song_path)

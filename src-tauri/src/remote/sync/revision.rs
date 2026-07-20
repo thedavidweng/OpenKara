@@ -374,6 +374,21 @@ pub fn ensure_remote_file_cached(app_data_dir: &Path, relative_path: &str) -> Co
         }
     }
 
+    // Fallback fast-path: if the destination file already exists and its
+    // size matches the remote size, skip the download. The catalog lookup
+    // above only succeeds when a `remote_cache_entries` row exists, but
+    // `atomic_download` does not create catalog rows — it writes directly
+    // to the destination. Without this fallback, non-streaming remote media,
+    // CDG graphics, and imported remote files are re-downloaded on every
+    // access even when a valid copy is already present.
+    if let Some(size) = remote_size {
+        if destination.exists()
+            && std::fs::metadata(&destination).map(|m| m.len()).ok() == Some(size)
+        {
+            return Ok(());
+        }
+    }
+
     // Download to a temp file, validate size when known, then atomically
     // rename. This replaces the old direct-to-destination download that
     // could leave a truncated file at the final path (defect #5).
