@@ -419,25 +419,15 @@ a {
     0 18px 44px var(--preview-window-shadow),
     0 10px 36px color-mix(in srgb, var(--preview-halo) 28%, transparent);
   corner-shape: squircle;
-  container-type: inline-size;
-  container-name: product-preview;
 }
 
-/* Keep the embedded app at a fixed desktop design size and scale it into the
-   frame. On wide frames the scale is 1; on narrower frames the whole UI shrinks
-   to fit. Mobile overrides this to show only the left half (right clips). */
+/* Desktop: let the embedded app fill the wide preview frame. Only enforce a
+   minimum so narrow frames don't collapse the layout below the design width.
+   Fixed 920px width + scale belongs to the mobile bleed rules below — applying
+   it here left a blank strip on the right of wide desktop frames. */
 .product-preview > * {
-  width: var(--preview-design-width);
   min-width: var(--preview-design-width);
   height: 100%;
-  transform-origin: top left;
-}
-
-@container product-preview (max-width: 919px) {
-  .product-preview > * {
-    height: calc(var(--preview-design-width) * 9 / 16);
-    transform: scale(calc(100cqi / var(--preview-design-width)));
-  }
 }
 
 /* The global `button, a { font-family: inherit }` above only carries
