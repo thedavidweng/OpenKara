@@ -630,4 +630,80 @@ describe("LyricLine", () => {
     expect(markup).toContain("text-[var(--color-lyrics-active)]");
     expect(markup).toContain("var(--shadow-lyrics-glow-strong)");
   });
+
+  test("scales romanized pronunciation line with lyricsFontStep in standard mode", () => {
+    const line = {
+      time_ms: 1000,
+      text: "你好世界",
+      words: [
+        { text: "你好", time_ms: 1000, end_ms: 1500 },
+        { text: "世界", time_ms: 1500, end_ms: 2000 },
+      ],
+      bg_words: null,
+      section: null,
+    };
+
+    const smallStep = renderToStaticMarkup(
+      <LyricLine
+        lineIndex={0}
+        line={line}
+        state="active"
+        lyricsFontStep={-2}
+        romanizedText="ni hao shi jie"
+      />,
+    );
+    const largeStep = renderToStaticMarkup(
+      <LyricLine
+        lineIndex={0}
+        line={line}
+        state="active"
+        lyricsFontStep={2}
+        romanizedText="ni hao shi jie"
+      />,
+    );
+
+    // Smallest step clamps the secondary track at text-xs (the primary lyric
+    // at step -2 is still text-lg, so the secondary must be smaller).
+    expect(smallStep).toContain("text-xs");
+    expect(smallStep).not.toContain("md:text-base");
+    // Largest step grows the secondary track past the old fixed text-sm/md:text-base.
+    expect(largeStep).toContain("text-lg");
+    expect(largeStep).toContain("xl:text-3xl");
+  });
+
+  test("scales bg_words line with lyricsFontStep in standard mode", () => {
+    const line = {
+      time_ms: 1000,
+      text: "main line",
+      words: [
+        { text: "main", time_ms: 1000, end_ms: 1500 },
+        { text: "line", time_ms: 1500, end_ms: 2000 },
+      ],
+      bg_words: [{ text: "bg", time_ms: 1200, end_ms: 1800 }],
+      section: null,
+    };
+
+    const smallStep = renderToStaticMarkup(
+      <LyricLine
+        lineIndex={0}
+        line={line}
+        state="active"
+        activeWordIndex={1}
+        lyricsFontStep={-2}
+      />,
+    );
+    const largeStep = renderToStaticMarkup(
+      <LyricLine
+        lineIndex={0}
+        line={line}
+        state="active"
+        activeWordIndex={1}
+        lyricsFontStep={2}
+      />,
+    );
+
+    expect(smallStep).toContain("text-xs");
+    expect(largeStep).toContain("text-lg");
+    expect(largeStep).toContain("xl:text-3xl");
+  });
 });
