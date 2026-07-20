@@ -310,7 +310,6 @@ fn cache_entry_files_exist(library_root: &LibraryRoot, entry: &StemCacheEntry) -
         return false;
     }
 
-    // When individual stem paths are recorded, verify those files exist too.
     for path in [&entry.drums_path, &entry.bass_path, &entry.other_path]
         .into_iter()
         .flatten()
@@ -328,10 +327,8 @@ pub fn delete_stem_cache_entry(
     library_root: &LibraryRoot,
     song_hash: &str,
 ) -> Result<()> {
-    // Delete the row from the database.
     delete_stem_cache_entry_db_only(connection, song_hash)?;
 
-    // Remove the stem files from disk.
     let dir = stem_directory(&library_root.stems_dir(), song_hash);
     if dir.exists() {
         fs::remove_dir_all(&dir).with_context(|| {
@@ -354,7 +351,6 @@ pub fn delete_stem_cache_entry_db_only(connection: &Connection, song_hash: &str)
 }
 
 /// Delete all stem cache entries from the database and remove all stem files from disk.
-/// Returns the number of deleted entries.
 pub fn delete_all_stem_cache_entries(
     connection: &Connection,
     library_root: &LibraryRoot,
@@ -367,7 +363,6 @@ pub fn delete_all_stem_cache_entries(
         .execute("DELETE FROM stems", [])
         .context("failed to delete all stem cache entries from database")?;
 
-    // Remove the entire stems directory and recreate it empty.
     let stems_dir = library_root.stems_dir();
     if stems_dir.exists() {
         fs::remove_dir_all(&stems_dir).with_context(|| {
@@ -387,7 +382,6 @@ pub fn delete_all_stem_cache_entries(
     usize::try_from(count).context("stem cache row count should fit in usize")
 }
 
-/// Estimate total disk usage of cached stem files in bytes.
 pub fn estimate_stems_disk_usage(library_root: &LibraryRoot) -> Result<u64> {
     let stems_dir = library_root.stems_dir();
     if !stems_dir.exists() {
@@ -462,7 +456,6 @@ pub fn downgrade_to_two_stem(
     let bass_abs = library_root.resolve(bass_rel);
     let other_abs = library_root.resolve(other_rel);
 
-    // Decode each stem file.
     let drums_audio = crate::audio::decode::decode_file(&drums_abs)
         .map_err(|e| anyhow::anyhow!("failed to decode drums.ogg: {e}"))?;
     let bass_audio = crate::audio::decode::decode_file(&bass_abs)
@@ -470,18 +463,15 @@ pub fn downgrade_to_two_stem(
     let other_audio = crate::audio::decode::decode_file(&other_abs)
         .map_err(|e| anyhow::anyhow!("failed to decode other.ogg: {e}"))?;
 
-    // R7: Validate that all stems share the same sample rate and channel count.
     validate_stem_compatibility(&drums_audio, &bass_audio, &other_audio)?;
 
-    // R7: Use max of all stem lengths. Before the fix, this used
-    // drums_audio.samples.len() which silently truncated longer stems.
+    // Use max of all stem lengths so longer stems are not silently truncated.
     let len = drums_audio
         .samples
         .len()
         .max(bass_audio.samples.len())
         .max(other_audio.samples.len());
 
-    // Log a warning if stem lengths differ by more than 1%.
     let max_len = len as f64;
     for (name, audio) in [
         ("drums", &drums_audio),
@@ -523,7 +513,6 @@ pub fn downgrade_to_two_stem(
         samples: mixed_samples,
     };
 
-    // Write accompaniment file.
     let accomp_rel = format!("{STEMS_CACHE_DIRECTORY}/{song_hash}/{ACCOMPANIMENT_FILENAME}");
     let accomp_abs = library_root.resolve(&accomp_rel);
     let Some(song_path) = song.file_path.as_deref() else {
@@ -538,12 +527,10 @@ pub fn downgrade_to_two_stem(
     )
     .context("failed to write accompaniment.ogg")?;
 
-    // Calculate freed bytes before deleting.
     let freed_bytes = file_size_or_zero(&drums_abs)
         + file_size_or_zero(&bass_abs)
         + file_size_or_zero(&other_abs);
 
-    // Delete individual stem files.
     fs::remove_file(&drums_abs)
         .with_context(|| format!("failed to remove {}", drums_abs.display()))?;
     fs::remove_file(&bass_abs)
@@ -551,7 +538,6 @@ pub fn downgrade_to_two_stem(
     fs::remove_file(&other_abs)
         .with_context(|| format!("failed to remove {}", other_abs.display()))?;
 
-    // Update the database row.
     connection
         .execute(
             "UPDATE stems SET accomp_path = ?2, drums_path = NULL, bass_path = NULL, other_path = NULL WHERE song_hash = ?1",
@@ -574,7 +560,6 @@ pub fn downgrade_to_two_stem(
 }
 
 /// Downgrade all 4-stem entries to 2-stem.
-/// Returns (downgraded_count, total_freed_bytes).
 pub fn batch_downgrade_to_two_stem(
     connection: &Connection,
     library_root: &LibraryRoot,
@@ -674,7 +659,6 @@ fn unix_timestamp() -> i64 {
         .as_secs() as i64
 }
 
-/// R7: Validate that all stems have compatible sample rate and channel count.
 fn validate_stem_compatibility(
     drums: &crate::audio::decode::DecodedAudio,
     bass: &crate::audio::decode::DecodedAudio,
@@ -702,32 +686,29 @@ mod tests {
     use super::*;
     use crate::audio::decode::DecodedAudio;
 
-    /// R7: Verify that stem downgrade uses max() of all stem lengths and
-    /// validates sample_rate/channels match. Before the fix, this used
-    // drums_audio.samples.len() which silently truncated longer stems.
+    /// Verify that stem downgrade uses max() of all stem lengths and
+    /// validates sample_rate/channels match.
     #[test]
     fn downgrade_mix_uses_max_stem_length() {
-        // Create stems with different lengths.
         let drums = DecodedAudio {
             sample_rate: 44_100,
             channels: 2,
             duration_ms: 100,
-            samples: vec![1.0; 100], // 100 samples
+            samples: vec![1.0; 100],
         };
         let bass = DecodedAudio {
             sample_rate: 44_100,
             channels: 2,
             duration_ms: 150,
-            samples: vec![2.0; 150], // 150 samples (longer)
+            samples: vec![2.0; 150],
         };
         let other = DecodedAudio {
             sample_rate: 44_100,
             channels: 2,
             duration_ms: 120,
-            samples: vec![3.0; 120], // 120 samples
+            samples: vec![3.0; 120],
         };
 
-        // Simulate the mixing logic from downgrade_to_two_stem.
         let len = drums
             .samples
             .len()
@@ -756,7 +737,7 @@ mod tests {
         assert_eq!(mixed[149], 2.0);
     }
 
-    /// R7: Verify that mismatched sample rates are rejected.
+    /// Verify that mismatched sample rates are rejected.
     #[test]
     fn downgrade_rejects_mismatched_sample_rates() {
         let drums = DecodedAudio {
@@ -786,7 +767,7 @@ mod tests {
         );
     }
 
-    /// R7: Verify that mismatched channel counts are rejected.
+    /// Verify that mismatched channel counts are rejected.
     #[test]
     fn downgrade_rejects_mismatched_channels() {
         let drums = DecodedAudio {

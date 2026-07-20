@@ -46,7 +46,6 @@ pub fn upgrade_to_four_stem(
 ) -> CommandResult<SeparationStatusSnapshot> {
     separation::ensure_song_can_be_separated(&state, &song_id)?;
 
-    // Check if song already has 4-stem separation cached.
     if let Some(completed) = separation::try_completed_four_stem_status(&state, &song_id)? {
         return Ok(completed);
     }
@@ -69,7 +68,6 @@ pub fn re_separate(
 ) -> CommandResult<SeparationStatusSnapshot> {
     separation::ensure_song_can_be_separated(&state, &song_id)?;
 
-    // Clear existing cache entry and stem files before relaunching separation.
     separation::clear_stem_cache_for_song(&state, &song_id)?;
     separation::clear_in_memory_status(&state, &song_id)?;
 

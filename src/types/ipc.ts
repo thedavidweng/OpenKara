@@ -26,8 +26,6 @@
 // When updating a Rust struct that appears here, update this file in the
 // same change and run `pnpm tsc --noEmit` to verify the contract.
 
-// ─── Error ───────────────────────────────────────────────
-
 export type ErrorCode =
   | "database_unavailable"
   | "media_read_failed"
@@ -57,8 +55,6 @@ export interface CommandError {
   retryable: boolean;
   fallback: FallbackAction;
 }
-
-// ─── Library ─────────────────────────────────────────────
 
 export type CoverArtBytes = number[] | Uint8Array | ArrayBuffer | null;
 
@@ -235,8 +231,6 @@ export interface ImportLyricsResult {
   unmatched: string[];
 }
 
-// ─── Settings ───────────────────────────────────────────
-
 export type StemMode = "two_stem" | "four_stem";
 export type ModelVariant = "htdemucs" | "htdemucs_ft";
 export type ExecutionProvider = "cpu" | "xnnpack" | "directml";
@@ -280,8 +274,6 @@ export interface WindowShellStateSnapshot {
   sidebar_header_height: number;
   sidebar_width: number;
 }
-
-// ─── Playback ────────────────────────────────────────────
 
 export type StemName = "vocals" | "drums" | "bass" | "other";
 export type PlaybackTransportState =
@@ -335,7 +327,7 @@ export interface AudioPeakSnapshot {
 }
 
 /**
- * #90: Waveform peaks for the seekbar visualizer.
+ * Waveform peaks for the seekbar visualizer.
  *
  * `peaks` is empty for remote sources (no download/decode). For local
  * sources every value is finite and in `[0, 1]`. `buckets` is the effective
@@ -430,8 +422,6 @@ export interface AirPlayOutputStateEvent {
   latencyMs: number | null;
 }
 
-// ─── Separation ──────────────────────────────────────────
-
 export type SeparationState = "idle" | "running" | "completed" | "failed";
 
 export interface SeparationStatusSnapshot {
@@ -492,8 +482,6 @@ export interface UploadErrorEvent {
   error: CommandError;
 }
 
-// ─── Lyrics ──────────────────────────────────────────────
-
 export type LyricsSource =
   | "lrc_lib"
   | "lrc_api"
@@ -528,8 +516,6 @@ export interface LyricsPayload {
   raw_lrc: string;
 }
 
-// ─── Maintenance ────────────────────────────────────────
-
 export interface DeleteStemsResult {
   deleted_count: number;
   freed_bytes: number;
@@ -549,8 +535,6 @@ export interface BatchSeparationProgress {
   current_percent: number;
 }
 
-// ─── Model Bootstrap ────────────────────────────────────
-
 export type ModelBootstrapState =
   | "pending"
   | "downloading"
@@ -565,8 +549,6 @@ export interface ModelBootstrapStatusSnapshot {
   total_bytes: number | null;
   error: CommandError | null;
 }
-
-// ─── Runtime Bootstrap ────────────────────────────────────
 
 export type RuntimeBootstrapState =
   | "missing"
@@ -583,8 +565,6 @@ export interface RuntimeBootstrapStatusSnapshot {
   version: string;
   error: CommandError | null;
 }
-
-// ─── Library Integrity ──────────────────────────────────
 
 export interface ManagedAssetIssue {
   song_hash: string;

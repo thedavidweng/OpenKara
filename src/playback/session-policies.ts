@@ -13,7 +13,6 @@ export function shouldEnqueueInsteadOfReplacingCurrentSong(
   );
 }
 
-/** Auto-load stems once separation finished and transport is ready. */
 export function shouldLoadSeparatedStems(
   snapshot: PlaybackStateSnapshot,
   separationStatus: SeparationStatusSnapshot | undefined,

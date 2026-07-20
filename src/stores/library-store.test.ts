@@ -332,8 +332,6 @@ describe("library-store updateSongMetadata", () => {
   });
 });
 
-// ─── loadLibrary ────────────────────────────────────────────
-
 describe("library-store loadLibrary", () => {
   const songFixture = {
     hash: "song-1",
@@ -500,8 +498,6 @@ describe("library-store loadLibrary", () => {
   });
 });
 
-// ─── selectSong ─────────────────────────────────────────────
-
 describe("library-store selectSong", () => {
   const orderedHashes = ["a", "b", "c", "d", "e"];
 
@@ -634,8 +630,6 @@ describe("library-store selectSong", () => {
   });
 });
 
-// ─── clearSelection ─────────────────────────────────────────
-
 describe("library-store clearSelection", () => {
   test("clears selectedSongIds and lastClickedSongId", () => {
     useLibraryStore.setState({
@@ -649,8 +643,6 @@ describe("library-store clearSelection", () => {
     expect(useLibraryStore.getState().lastClickedSongId).toBeNull();
   });
 });
-
-// ─── clearRangeSelectionAnchor ──────────────────────────────
 
 describe("library-store clearRangeSelectionAnchor", () => {
   test("clears only lastClickedSongId, preserving selectedSongIds", () => {
@@ -683,8 +675,6 @@ describe("library-store clearRangeSelectionAnchor", () => {
   });
 });
 
-// ─── setFilter ──────────────────────────────────────────────
-
 describe("library-store setFilter", () => {
   test("sets filter to separated", () => {
     useLibraryStore.setState({ filter: "all" });
@@ -702,8 +692,6 @@ describe("library-store setFilter", () => {
     expect(useLibraryStore.getState().filter).toBe("all");
   });
 });
-
-// ─── setSongsLanguage ───────────────────────────────────────
 
 describe("library-store setSongsLanguage", () => {
   const songFixture = {
@@ -775,8 +763,6 @@ describe("library-store setSongsLanguage", () => {
   });
 });
 
-// ─── searchSongs ────────────────────────────────────────────
-
 describe("library-store searchSongs", () => {
   beforeEach(() => {
     mockSearchLibrary.mockReset();
@@ -840,9 +826,7 @@ describe("library-store searchSongs", () => {
   });
 });
 
-// ─── setSearchQuery debounce race (F2) ──────────────────────
-
-describe("library-store setSearchQuery debounce race (F2)", () => {
+describe("library-store setSearchQuery debounce race", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     mockSearchLibrary.mockReset();
@@ -1004,8 +988,6 @@ describe("library-store setSearchQuery debounce race (F2)", () => {
   });
 });
 
-// ─── resolveCdgChoicePrompt ─────────────────────────────────
-
 describe("library-store resolveCdgChoicePrompt", () => {
   beforeEach(() => {
     useLibraryStore.setState({
@@ -1052,8 +1034,6 @@ describe("library-store resolveCdgChoicePrompt", () => {
     expect(useLibraryStore.getState().pendingImportCdgChoice).toBeNull();
   });
 });
-
-// ─── separation status management ───────────────────────────
 
 describe("library-store separation status management", () => {
   const baseStatus = {
@@ -1125,8 +1105,6 @@ describe("library-store separation status management", () => {
   });
 });
 
-// ─── batch progress ─────────────────────────────────────────
-
 describe("library-store batch progress", () => {
   const batchProgress = {
     total: 5,
@@ -1168,8 +1146,6 @@ describe("library-store batch progress", () => {
   });
 });
 
-// ─── clearImportErrors ──────────────────────────────────────
-
 describe("library-store clearImportErrors", () => {
   test("resets importErrors to an empty array", () => {
     useLibraryStore.setState({
@@ -1192,8 +1168,6 @@ describe("library-store clearImportErrors", () => {
   });
 });
 
-// ─── clearUploadStatus edge cases ───────────────────────────
-
 describe("library-store clearUploadStatus edge cases", () => {
   test("is a no-op when songId is not in uploadStatuses", () => {
     useLibraryStore.setState({
@@ -1215,8 +1189,6 @@ describe("library-store clearUploadStatus edge cases", () => {
     expect(useLibraryStore.getState().uploadStatuses).toBe(before);
   });
 });
-
-// ─── clearAllUploadStatuses ─────────────────────────────────
 
 describe("library-store clearAllUploadStatuses", () => {
   test("resets uploadStatuses to an empty object", () => {

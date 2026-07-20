@@ -176,8 +176,6 @@ describe("settings-store actions", () => {
     dispose?.();
   });
 
-  // ── toggle ──────────────────────────────────────────────────────────────
-
   test("toggle flips isOpen from false to true", () => {
     store.getState().toggle();
     expect(store.getState().isOpen).toBe(true);
@@ -188,8 +186,6 @@ describe("settings-store actions", () => {
     store.getState().toggle();
     expect(store.getState().isOpen).toBe(false);
   });
-
-  // ── close ───────────────────────────────────────────────────────────────
 
   test("close sets isOpen to false", () => {
     store.setState({ isOpen: true });
@@ -202,8 +198,6 @@ describe("settings-store actions", () => {
     expect(store.getState().isOpen).toBe(false);
   });
 
-  // ── open ────────────────────────────────────────────────────────────────
-
   test("open sets isOpen to true", () => {
     store.getState().open();
     expect(store.getState().isOpen).toBe(true);
@@ -214,8 +208,6 @@ describe("settings-store actions", () => {
     store.getState().open();
     expect(store.getState().isOpen).toBe(true);
   });
-
-  // ── hydrateAppSettings ──────────────────────────────────────────────────
 
   test("hydrateAppSettings sets all fields from AppSettings object", () => {
     const settings = makeAppSettings({
@@ -252,8 +244,6 @@ describe("settings-store actions", () => {
     expect(store.getState().coverArtBackdrop).toBe(false);
   });
 
-  // ── patchAppSettings ────────────────────────────────────────────────────
-
   test("patchAppSettings applies partial update", () => {
     store
       .getState()
@@ -261,12 +251,9 @@ describe("settings-store actions", () => {
     const state = store.getState();
     expect(state.language).toBe("ko");
     expect(state.stemMode).toBe("four_stem");
-    // Other fields unchanged
     expect(state.modelVariant).toBe("htdemucs");
     expect(state.lyricsFontStep).toBe(0);
   });
-
-  // ── setLyricsFontStep ──────────────────────────────────────────────────
 
   test("setLyricsFontStep updates state on success", async () => {
     const returned = makeAppSettings({ lyrics_font_step: 2 });
@@ -286,11 +273,8 @@ describe("settings-store actions", () => {
     await store.getState().setLyricsFontStep(1);
 
     expect(mockNotifyError).toHaveBeenCalledWith(error);
-    // State unchanged
     expect(store.getState().lyricsFontStep).toBe(0);
   });
-
-  // ── adjustLyricsFontStep ───────────────────────────────────────────────
 
   test("adjustLyricsFontStep adds delta to current step", async () => {
     store.setState({ lyricsFontStep: 0 });
@@ -340,8 +324,6 @@ describe("settings-store actions", () => {
     expect(mockSetLyricsFontStep).not.toHaveBeenCalled();
   });
 
-  // ── resetLyricsFontStep ────────────────────────────────────────────────
-
   test("resetLyricsFontStep is a no-op when already 0", async () => {
     store.setState({ lyricsFontStep: 0 });
 
@@ -361,8 +343,6 @@ describe("settings-store actions", () => {
     expect(store.getState().lyricsFontStep).toBe(0);
   });
 
-  // ── setLibrarySortMode ─────────────────────────────────────────────────
-
   test("setLibrarySortMode applies optimistic update immediately", async () => {
     let resolveInvocation: (value: AppSettings) => void = () => {};
     mockSetLibrarySortMode.mockImplementation(
@@ -378,7 +358,6 @@ describe("settings-store actions", () => {
       pending = false;
     });
 
-    // Allow the synchronous optimistic patch to flush.
     await Promise.resolve();
     expect(store.getState().librarySortMode).toBe("title_asc");
     expect(pending).toBe(true);
@@ -413,7 +392,6 @@ describe("settings-store actions", () => {
     await store.getState().setLibrarySortMode("title_asc");
 
     expect(mockNotifyError).toHaveBeenCalledWith(error);
-    // Rolled back to the previous snapshot.
     expect(store.getState().librarySortMode).toBe("recently_imported");
   });
 
@@ -435,11 +413,9 @@ describe("settings-store actions", () => {
     // store (simulating a successful concurrent setter).
     store.setState({ lyricsFontStep: 5 });
 
-    // Now fail the sort save.
     rejectSort(new Error("sort fail"));
     await sortPromise.catch(() => {});
 
-    // The sort mode should roll back, but lyricsFontStep must remain 5.
     expect(store.getState().librarySortMode).toBe("recently_imported");
     expect(store.getState().lyricsFontStep).toBe(5);
   });
@@ -533,8 +509,6 @@ describe("settings-store actions", () => {
     expect(mockNotifyError).toHaveBeenCalledTimes(1);
   });
 
-  // ── getAppSettingsSnapshot ──────────────────────────────────────────────
-
   test("getAppSettingsSnapshot returns subset of state without isOpen", () => {
     store.setState({
       isOpen: true,
@@ -588,8 +562,6 @@ describe("settings-store actions", () => {
     expect(snapshot).not.toHaveProperty("patchAppSettings");
   });
 
-  // ── setEqEnabled ────────────────────────────────────────────────────────
-
   test("setEqEnabled optimistically updates and hydrates on success", async () => {
     const returned = makeAppSettings({ eq_enabled: true });
     mockSetEqEnabled.mockResolvedValue(returned);
@@ -610,8 +582,6 @@ describe("settings-store actions", () => {
     expect(store.getState().eqEnabled).toBe(false);
   });
 
-  // ── setEqGains ──────────────────────────────────────────────────────────
-
   test("setEqGains optimistically updates and hydrates on success", async () => {
     const gains: [number, number, number, number, number] = [0, 3, -6, 0, 12];
     const returned = makeAppSettings({ eq_gains_db: gains });
@@ -631,11 +601,8 @@ describe("settings-store actions", () => {
     await store.getState().setEqGains([0, 0, 6, 0, 0]);
 
     expect(mockNotifyError).toHaveBeenCalledWith(error);
-    // Should revert to the previous authoritative values.
     expect(store.getState().eqGainsDb).toEqual([1, 2, 3, 4, 5]);
   });
-
-  // ── EQ out-of-order response guards ─────────────────────────────────────
 
   test("setEqEnabled discards an older successful response", async () => {
     let resolveFirst: (value: AppSettings) => void = () => {};
@@ -913,8 +880,6 @@ describe("settings-store actions", () => {
     expect(mockNotifyError).toHaveBeenCalledWith(error);
   });
 
-  // ── setEqBandGain ───────────────────────────────────────────────────────
-
   test("setEqBandGain updates a single band and calls setEqGains", async () => {
     const returned = makeAppSettings({ eq_gains_db: [0, 0, 6, 0, 0] });
     mockSetEqGains.mockResolvedValue(returned);
@@ -940,8 +905,6 @@ describe("settings-store actions", () => {
     expect(mockSetEqGains).not.toHaveBeenCalled();
   });
 
-  // ── resetEqGains ────────────────────────────────────────────────────────
-
   test("resetEqGains calls setEqGains with flat values", async () => {
     store.setState({ eqGainsDb: [3, -6, 0, 12, -12] });
     const flat = [0, 0, 0, 0, 0] as [number, number, number, number, number];
@@ -953,8 +916,6 @@ describe("settings-store actions", () => {
     expect(mockSetEqGains).toHaveBeenCalledWith(flat);
     expect(store.getState().eqGainsDb).toEqual(flat);
   });
-
-  // ── setCrossfadeEnabled ─────────────────────────────────────────────────
 
   test("setCrossfadeEnabled optimistically updates and hydrates on success", async () => {
     const returned = makeAppSettings({ crossfade_enabled: true });
@@ -975,8 +936,6 @@ describe("settings-store actions", () => {
     expect(mockNotifyError).toHaveBeenCalledWith(error);
     expect(store.getState().crossfadeEnabled).toBe(false);
   });
-
-  // ── setCrossfadeDurationMs ───────────────────────────────────────────────
 
   test("setCrossfadeDurationMs optimistically updates and hydrates on success", async () => {
     const returned = makeAppSettings({ crossfade_duration_ms: 5_000 });
@@ -1008,8 +967,6 @@ describe("settings-store actions", () => {
     expect(mockSetCrossfadeDurationMs).toHaveBeenCalledWith(500);
   });
 
-  // ── setThemePreference ──────────────────────────────────────────────────
-
   test("setThemePreference updates state on success", async () => {
     const returned = makeAppSettings({ theme_preference: "light" });
     mockSetThemePreference.mockResolvedValue(returned);
@@ -1039,13 +996,11 @@ describe("settings-store actions", () => {
   });
 
   test("setThemePreference does not roll back if a newer mutation superseded it", async () => {
-    // Start a mutation to "light"
     mockSetThemePreference.mockResolvedValue(
       makeAppSettings({ theme_preference: "light" }),
     );
     const firstPromise = store.getState().setThemePreference("light");
 
-    // Before it resolves, start a second mutation to "system"
     mockSetThemePreference.mockResolvedValue(
       makeAppSettings({ theme_preference: "system" }),
     );

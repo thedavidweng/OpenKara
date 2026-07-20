@@ -4,7 +4,6 @@ use quick_xml::Reader;
 
 use super::parser::{LyricLine, WordToken};
 
-/// Parse a TTML XML string into lyric lines.
 pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
     let trimmed = ttml.trim();
     if !trimmed.contains('<') {
@@ -25,7 +24,6 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
     let mut line_timing_mode = false;
     let mut div_context_stack: Vec<(Option<String>, bool)> = Vec::new();
 
-    // Current line state
     let mut p_begin: Option<u64> = None;
     let mut p_end: Option<u64> = None;
     let mut words: Vec<WordToken> = Vec::new();
@@ -35,7 +33,6 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
     let mut current_span_begin: Option<u64> = None;
     let mut current_span_end: Option<u64> = None;
 
-    // Stack to track nesting (for closing tags)
     let mut span_role_stack: Vec<String> = Vec::new();
     let mut span_timing_stack: Vec<(Option<u64>, Option<u64>)> = Vec::new();
 
@@ -266,24 +263,20 @@ fn parse_ttml_timestamp(ts: &str) -> Option<u64> {
         return Some((secs * 1000.0) as u64);
     }
 
-    // Handle HH:MM:SS.fff or MM:SS.fff
     let parts: Vec<&str> = ts.split(':').collect();
     match parts.len() {
         3 => {
-            // HH:MM:SS.fff
             let hours: u64 = parts[0].parse().ok()?;
             let minutes: u64 = parts[1].parse().ok()?;
             let (secs, ms) = parse_seconds_and_ms(parts[2])?;
             Some(hours * 3_600_000 + minutes * 60_000 + secs * 1_000 + ms)
         }
         2 => {
-            // MM:SS.fff
             let minutes: u64 = parts[0].parse().ok()?;
             let (secs, ms) = parse_seconds_and_ms(parts[1])?;
             Some(minutes * 60_000 + secs * 1_000 + ms)
         }
         1 => {
-            // SS.fff (bare seconds)
             let (secs, ms) = parse_seconds_and_ms(parts[0])?;
             Some(secs * 1_000 + ms)
         }
@@ -291,7 +284,6 @@ fn parse_ttml_timestamp(ts: &str) -> Option<u64> {
     }
 }
 
-/// Parse "SS.fff" into (seconds, milliseconds)
 fn parse_seconds_and_ms(s: &str) -> Option<(u64, u64)> {
     if let Some((sec_str, frac_str)) = s.split_once('.') {
         let secs: u64 = sec_str.parse().ok()?;

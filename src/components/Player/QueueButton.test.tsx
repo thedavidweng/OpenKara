@@ -42,7 +42,6 @@ describe("QueueButton", () => {
     // 18px icon via lucide size prop renders as width="18" height="18"
     expect(markup).toContain('width="18"');
     expect(markup).toContain('height="18"');
-    // No conflicting geometry classes from the old layout
     expect(markup).not.toContain("min-h-11");
     expect(markup).not.toContain("min-w-11");
     expect(markup).not.toContain("p-2.5");

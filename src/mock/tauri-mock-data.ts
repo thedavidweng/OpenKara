@@ -75,7 +75,6 @@ export const MOCK_DATA: MockData = {
     cover_art: Array.from(cover_art),
   })),
 
-  // Lyrics — the primary song's lyrics payload.
   lyrics: PREVIEW_LYRICS[PRIMARY_PREVIEW_SONG_HASH],
 
   primarySongHash: PRIMARY_PREVIEW_SONG_HASH,
@@ -156,7 +155,6 @@ export const MOCK_DATA: MockData = {
     variant: "htdemucs",
   },
 
-  // Playlists — the website preview shows these; E2E overrides to [].
   playlists: MOCK_PLAYLISTS,
   playlistSongs: MOCK_PLAYLIST_SONGS,
 

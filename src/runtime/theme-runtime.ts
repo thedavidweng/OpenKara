@@ -145,7 +145,6 @@ export function useThemeRuntime(): {
     return unsubscribe;
   }, [themePreference]);
 
-  // Apply CSS tokens before the browser paints a hydrated frame.
   useLayoutEffect(() => {
     if (!hydrated) {
       return;

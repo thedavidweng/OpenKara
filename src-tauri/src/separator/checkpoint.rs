@@ -16,12 +16,10 @@ pub struct CheckpointManifest {
     pub stem_count: usize,
 }
 
-/// Returns the `.chunks/` directory path for a given song.
 pub fn checkpoint_dir(stems_base: &Path, song_hash: &str) -> PathBuf {
     stems_base.join(song_hash).join(".chunks")
 }
 
-/// Write `manifest.json` at the start of inference.
 pub fn write_manifest(dir: &Path, manifest: &CheckpointManifest) -> Result<()> {
     fs::create_dir_all(dir)
         .with_context(|| format!("failed to create checkpoint directory at {}", dir.display()))?;
@@ -33,7 +31,6 @@ pub fn write_manifest(dir: &Path, manifest: &CheckpointManifest) -> Result<()> {
     Ok(())
 }
 
-/// Read the manifest, returning `None` if missing or unreadable.
 pub fn read_manifest(dir: &Path) -> Result<Option<CheckpointManifest>> {
     let path = dir.join("manifest.json");
     if !path.exists() {
@@ -81,7 +78,6 @@ pub fn write_chunk(dir: &Path, chunk_index: usize, chunk_data: &[f32]) -> Result
     Ok(())
 }
 
-/// List completed chunk indices by scanning the directory for `chunk_NNNN.bin` files.
 pub fn list_completed_chunks(dir: &Path) -> Result<Vec<usize>> {
     if !dir.exists() {
         return Ok(Vec::new());
@@ -106,7 +102,6 @@ pub fn list_completed_chunks(dir: &Path) -> Result<Vec<usize>> {
     Ok(indices)
 }
 
-/// Read a chunk's data back from its binary file.
 pub fn read_chunk(dir: &Path, chunk_index: usize) -> Result<Vec<f32>> {
     let path = dir.join(format!("chunk_{:04}.bin", chunk_index));
     let buf = fs::read(&path)
@@ -136,7 +131,6 @@ pub fn read_chunk(dir: &Path, chunk_index: usize) -> Result<Vec<f32>> {
     Ok(samples)
 }
 
-/// Remove the `.chunks/` directory after successful completion.
 pub fn cleanup(dir: &Path) -> Result<()> {
     if dir.exists() {
         fs::remove_dir_all(dir).with_context(|| {

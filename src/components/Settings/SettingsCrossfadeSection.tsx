@@ -57,9 +57,6 @@ export function SettingsCrossfadeSection() {
     };
   }, []);
 
-  /// Update the local draft and schedule a trailing 75 ms commit. A
-  /// previous pending commit is cancelled and replaced with the latest
-  /// value.
   const handleDurationChange = (durationMs: number) => {
     const clamped = Math.max(
       CROSSFADE_MIN_MS,

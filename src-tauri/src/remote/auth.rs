@@ -68,7 +68,6 @@ pub(crate) fn begin_remote_auth(
     })
 }
 
-/// Outcome of starting provider-owned auth (before the session is stored).
 struct StartedProviderAuth {
     provider: RemoteLibraryProvider,
     session: ProviderSessionData,
@@ -76,7 +75,6 @@ struct StartedProviderAuth {
     authorization_url: Option<String>,
 }
 
-/// Adapter-owned auth start: spawn OAuth workers or validate WebDAV credentials.
 fn start_provider_auth_session(
     app_resource_dir: &std::path::Path,
     sessions: Arc<Mutex<HashMap<String, RemoteAuthSession>>>,

@@ -17,14 +17,13 @@
 
 use crate::{
     cache,
-    commands::error::{CommandError, CommandResult},
+    commands::error::{internal_error, CommandError, CommandResult},
     config::RegisteredLibrary,
     library::error::LibraryError,
     library_root::LibraryRoot,
 };
 use std::{fs, path::Path};
 
-/// Whether bootstrap may create a new remote library layout or must open one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BootstrapMode {
     /// Register / first open: ensure layout dirs, create marker if missing,
@@ -40,17 +39,15 @@ pub(crate) enum BootstrapMode {
 /// vs RequireExisting — that policy lives in [`bootstrap_remote_library`].
 pub(crate) trait RemoteBootstrapStorage {
     /// Noun phrase for RequireExisting errors, e.g. "Google Drive folder",
-    /// "Dropbox folder", "WebDAV path" (preserves historical copy).
+    /// "Dropbox folder", "WebDAV path".
     fn location_label(&self) -> &'static str;
 
     /// Ensure remote root layout directories exist (media, media-g, stems, and
     /// any provider-specific root folder materialization).
     fn ensure_layout(&mut self) -> CommandResult<()>;
 
-    /// Whether the remote `.openkara-library` marker exists.
     fn marker_exists(&mut self) -> CommandResult<bool>;
 
-    /// Upload the library marker to the remote root.
     fn upload_marker(&mut self, marker_bytes: &[u8]) -> CommandResult<()>;
 
     /// Probe remote `openkara.db`.
@@ -61,14 +58,11 @@ pub(crate) trait RemoteBootstrapStorage {
     /// etag as a missing file (that would overwrite a populated remote DB).
     fn probe_remote_database(&mut self) -> CommandResult<Option<Option<String>>>;
 
-    /// Download remote `openkara.db` into `destination`.
     fn download_database(&mut self, destination: &Path) -> CommandResult<()>;
 
-    /// Upload local `openkara.db` and return the new remote revision when known.
     fn upload_database(&mut self, source: &Path) -> CommandResult<Option<String>>;
 }
 
-/// One deep bootstrap protocol shared by all Remote Providers.
 pub(crate) fn bootstrap_remote_library(
     mode: BootstrapMode,
     library: &RegisteredLibrary,
@@ -138,11 +132,9 @@ fn open_or_create_local_working_copy(library: &RegisteredLibrary) -> CommandResu
         ))
     })?;
     let root = if root_path.join(".openkara-library").exists() {
-        LibraryRoot::open(&root_path)
-            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
+        LibraryRoot::open(&root_path).map_err(internal_error)?
     } else {
-        LibraryRoot::create(&root_path)
-            .map_err(|e| CommandError::from(LibraryError::Internal(e.to_string())))?
+        LibraryRoot::create(&root_path).map_err(internal_error)?
     };
     cache::initialize_library_database(&root.database_path())
         .map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;

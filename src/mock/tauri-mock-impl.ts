@@ -21,15 +21,10 @@
  * JSON.stringify).
  */
 export interface MockData {
-  /** Songs in IPC contract format (cover_art as number[]). */
   songs: MockSong[];
-  /** Lyrics payload for the primary song. */
   lyrics: MockLyrics;
-  /** Hash of the primary preview song. */
   primarySongHash: string;
-  /** Sidebar width returned by get_window_shell_state. */
   sidebarWidth: number;
-  /** Response for get_library_registry. */
   libraryRegistry: {
     active_library_id: string | null;
     libraries: Array<{
@@ -39,16 +34,13 @@ export interface MockData {
       root_path: string;
     }>;
   };
-  /** Response for get_active_library. */
   activeLibrary: {
     id: string;
     kind: string;
     display_name: string;
     root_path: string;
   };
-  /** Response for get_library_path. */
   libraryPath: string;
-  /** Response for get_window_shell_state. */
   windowShellState: {
     chrome_variant: string;
     tier: string;
@@ -61,7 +53,6 @@ export interface MockData {
   settings: Record<string, unknown>;
   /** Initial playback snapshot (mutable via play/pause/seek/etc). */
   playbackSnapshot: Record<string, unknown>;
-  /** Response for get_model_bootstrap_status. */
   bootstrapStatus: Record<string, unknown>;
   /** Initial playlists (empty array for E2E; website preview adds some). */
   playlists: Array<{
@@ -71,9 +62,7 @@ export interface MockData {
     created_at: number;
     updated_at: number;
   }>;
-  /** Playlist song sets: playlistId → song hashes. */
   playlistSongs: Record<string, string[]>;
-  /** Initial rotation state. */
   rotationState: {
     singer_names: string[];
     current_index: number;
@@ -82,9 +71,7 @@ export interface MockData {
   };
 }
 
-/**
- * Minimal Song type for the mock (IPC contract fields, cover_art as number[]).
- */
+// cover_art as number[] for JSON serialization.
 export interface MockSong {
   hash: string;
   file_path: string | null;
@@ -102,9 +89,6 @@ export interface MockSong {
   original_ext: string | null;
 }
 
-/**
- * Minimal lyrics payload for the mock.
- */
 export interface MockLyrics {
   raw_lrc: string;
   lines: Array<{
@@ -118,9 +102,6 @@ export interface MockLyrics {
   source: string;
 }
 
-/**
- * Result of `createTauriMock` — the mock Tauri internals and test helpers.
- */
 export interface TauriMockResult {
   internals: {
     metadata: {
@@ -156,20 +137,11 @@ export interface TauriMockResult {
   };
 }
 
-// ── Implementation ──
-// Everything below is a single self-contained function.  Do not add module-
-// scope helpers or imports that the function references.  All logic lives
+// Everything below is a single self-contained function.  All logic lives
 // inside the function body so `toString()` produces a valid standalone script.
 
-/**
- * Sets up mock Tauri IPC internals and test helpers from the given data.
- *
- * @param data - Mock data payload (must be JSON-serializable)
- * @returns `{ internals, eventPluginInternals, helpers }`
- */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- must be `any` for toString() serialization
 export function createTauriMock(data: any): TauriMockResult {
-  // ── State ──
   // Mutable so tests can override the library, lyrics, playback, etc.
   let mockSongs = data.songs;
   let mockLyrics = data.lyrics;
@@ -188,7 +160,6 @@ export function createTauriMock(data: any): TauriMockResult {
   let settingsSnapshot = { ...data.settings };
   let currentPlaybackSnapshot = { ...data.playbackSnapshot };
 
-  // Initialize playlist songs from data
   if (data.playlistSongs) {
     for (const [playlistId, songHashes] of Object.entries(data.playlistSongs)) {
       playlistSongs.set(
@@ -203,7 +174,6 @@ export function createTauriMock(data: any): TauriMockResult {
     }
   }
 
-  // ── Helpers ──
   function clone(value: any): any {
     if (value == null) return value;
     return JSON.parse(JSON.stringify(value));
@@ -252,7 +222,6 @@ export function createTauriMock(data: any): TauriMockResult {
     return resource;
   }
 
-  // ── Event system ──
   const eventListeners = new Map<string, Map<number, number>>();
   let callbackId = 0;
   const callbacks = new Map<number, (...args: any[]) => void>();
@@ -322,15 +291,12 @@ export function createTauriMock(data: any): TauriMockResult {
     return null;
   }
 
-  // ── Command handler table ──
   const COMMANDS: Record<string, any> = {
-    // Library registry & settings
     get_library_registry: data.libraryRegistry,
     get_settings: () => settingsSnapshot,
     get_window_shell_state: data.windowShellState,
     get_library_path: data.libraryPath,
 
-    // Library songs
     get_active_library: data.activeLibrary,
     get_library: () => mockSongs,
     search_library: (args: any) => {
@@ -345,7 +311,6 @@ export function createTauriMock(data: any): TauriMockResult {
     get_all_separation_statuses: () => clone(Object.values(separationStatuses)),
     get_all_upload_statuses: {},
 
-    // Playback
     get_playback_state: () => clone(currentPlaybackSnapshot),
     play: (args: any) => {
       const songId =
@@ -451,7 +416,6 @@ export function createTauriMock(data: any): TauriMockResult {
     }),
     set_lyrics_offset: undefined,
 
-    // Playlists
     list_playlists: () => playlistSnapshot(),
     create_playlist: (args: any) => {
       const pl = {
@@ -492,7 +456,6 @@ export function createTauriMock(data: any): TauriMockResult {
     },
     get_playlist_songs: (args: any) => playlistSongs.get(args.playlistId) || [],
 
-    // Rotation / Queue
     get_rotation_state: () => rotationState,
     set_rotation_state: (args: any) => {
       rotationState = args.rotation;
@@ -510,10 +473,8 @@ export function createTauriMock(data: any): TauriMockResult {
       return rotationState;
     },
 
-    // Bootstrap / model
     get_model_bootstrap_status: data.bootstrapStatus,
 
-    // Settings mutators
     window_ready: undefined,
     set_language: (args: any) => {
       settingsSnapshot = {
@@ -600,7 +561,6 @@ export function createTauriMock(data: any): TauriMockResult {
       return settingsSnapshot;
     },
 
-    // Misc
     get_audio_peaks: { writeIndex: 0, peaks: [] },
     set_preload_candidate: undefined,
     get_waveform: (args: any) => {
@@ -614,7 +574,6 @@ export function createTauriMock(data: any): TauriMockResult {
     cancel_remote_auth: undefined,
   };
 
-  // ── Invoke ──
   function invoke(cmd: string, args?: any): Promise<any> {
     invokeCalls.push({ cmd, args: clone(args) });
 
@@ -673,7 +632,6 @@ export function createTauriMock(data: any): TauriMockResult {
     return resolveCommandResult(cmd, handler);
   }
 
-  // ── Menu helpers ──
   function menuSnapshot(menu: any): any {
     return {
       items: menu.items.map((item: any) => menuResourceSnapshot(item)),
@@ -708,7 +666,6 @@ export function createTauriMock(data: any): TauriMockResult {
     await item.action();
   }
 
-  // ── Large library generation (E2E-only helper) ──
   function generateLargeLibrary(count: number): any[] {
     const songs = [];
     const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -734,7 +691,6 @@ export function createTauriMock(data: any): TauriMockResult {
     return songs;
   }
 
-  // ── Return ──
   return {
     internals: {
       metadata: {

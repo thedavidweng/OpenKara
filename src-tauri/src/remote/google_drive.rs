@@ -1,5 +1,5 @@
 use crate::{
-    commands::error::{CommandError, CommandResult},
+    commands::error::{internal_error, CommandError, CommandResult},
     config::RegisteredLibrary,
     library::error::LibraryError,
 };
@@ -237,7 +237,6 @@ fn google_drive_refresh_access_token(
     Ok(secret.access_token.clone())
 }
 
-/// Load the Google Drive secret from disk and refresh the access token.
 /// Used as a callback by `ProviderFetcher` for automatic token renewal on 403.
 fn refresh_google_drive_token(
     app_data_dir: &Path,
@@ -876,12 +875,11 @@ pub(crate) fn google_drive_upload_directory_to_remote(
             base.display()
         )))
     })? {
-        let entry =
-            entry.map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
+        let entry = entry.map_err(internal_error)?;
         let path = entry.path();
         let relative = path
             .strip_prefix(&local_root)
-            .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?
+            .map_err(internal_error)?
             .to_string_lossy()
             .replace('\\', "/");
         if path.is_dir() {
@@ -905,7 +903,6 @@ pub(crate) fn google_drive_upload_directory_to_remote(
     Ok(())
 }
 
-/// Google Drive HTTP/path adapter for the shared bootstrap protocol.
 struct GoogleDriveBootstrapStorage<'a> {
     app_data_dir: &'a Path,
     library: &'a RegisteredLibrary,
@@ -1062,8 +1059,6 @@ pub(crate) fn google_drive_delete_entry(
         )))),
     }
 }
-
-// --- RemoteProvider implementation ---
 
 pub(crate) struct GoogleDriveProvider<'a> {
     app_data_dir: &'a Path,

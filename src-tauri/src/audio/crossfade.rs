@@ -1,20 +1,11 @@
 //! Equal-power crossfade DSP helpers.
 //!
-//! Provides the per-frame gain computation and effective-duration calculation
-//! for overlapping the tail of an outgoing decoded track with the start of a
-//! prepared incoming track. The actual mixing happens in the CPAL output
-//! callback (`audio::output`); this module keeps the sample math testable
-//! without a realtime thread.
-//!
-//! ## Frame domain
-//!
 //! All frame counts passed to and returned from these helpers are in
 //! **device (output) frames**. The caller must convert source-track frame
-//! counts to device frames before calling `effective_overlap_frames`. This
-//! was a blocking correctness defect in earlier iterations: comparing
-//! source-rate counts (e.g. 44.1 kHz) with a duration expressed in device
-//! frames (e.g. 48 kHz) produced overlap windows that started too early or
-//! too late whenever the source and device rates differed.
+//! counts to device frames before calling `effective_overlap_frames`.
+//! Comparing source-rate counts (e.g. 44.1 kHz) with a duration expressed
+//! in device frames (e.g. 48 kHz) produces overlap windows that start too
+//! early or too late whenever the source and device rates differ.
 
 use std::f32::consts::FRAC_PI_2;
 
@@ -161,23 +152,19 @@ mod tests {
 
     #[test]
     fn effective_duration_clamps_to_half_track_limits() {
-        // 10s configured, but outgoing is only 4s (176400 frames at 44.1kHz)
-        // half = 88200, which is less than 10s of frames (441000)
         let effective = effective_overlap_frames(10_000, 44_100, 176_400, 441_000, 176_400);
         assert_eq!(effective, Some(88_200));
     }
 
     #[test]
     fn effective_duration_clamps_to_remaining_frames() {
-        // Only 1s remaining, configured 10s
         let effective = effective_overlap_frames(10_000, 44_100, 441_000, 441_000, 44_100);
         assert_eq!(effective, Some(44_100));
     }
 
     #[test]
     fn sub_500ms_falls_back_to_gapless() {
-        // 100ms remaining — below 500ms floor
-        let frames_100ms = 44_100 * 100 / 1000; // 4410
+        let frames_100ms = 44_100 * 100 / 1000;
         let effective =
             effective_overlap_frames(10_000, 44_100, 441_000, 441_000, frames_100ms as u64);
         assert_eq!(effective, None);
@@ -185,17 +172,13 @@ mod tests {
 
     #[test]
     fn effective_duration_uses_configured_when_tracks_are_long() {
-        // 3s configured, both tracks 60s, 30s remaining
         let effective = effective_overlap_frames(3_000, 44_100, 2_646_000, 2_646_000, 1_323_000);
-        // 3s = 132300 frames
         assert_eq!(effective, Some(132_300));
     }
 
     #[test]
     fn odd_duration_rounds_correctly() {
-        // 750ms at 44100 Hz = 33075 frames
         let effective = effective_overlap_frames(750, 44_100, 2_646_000, 2_646_000, 1_323_000);
-        // round(750 * 44100 / 1000) = round(33075) = 33075
         assert_eq!(effective, Some(33_075));
     }
 
@@ -205,8 +188,6 @@ mod tests {
         assert_eq!(effective, None);
     }
 
-    // ── Frame-domain conversion tests ───────────────────────────────────
-
     #[test]
     fn source_to_device_frames_identity_when_rates_match() {
         assert_eq!(source_to_device_frames(44_100, 44_100, 44_100), 44_100);
@@ -214,13 +195,11 @@ mod tests {
 
     #[test]
     fn source_to_device_frames_44100_to_48000() {
-        // 1 second of 44100 source = 48000 device frames
         assert_eq!(source_to_device_frames(44_100, 44_100, 48_000), 48_000);
     }
 
     #[test]
     fn source_to_device_frames_48000_to_44100() {
-        // 1 second of 48000 source = 44100 device frames
         assert_eq!(source_to_device_frames(48_000, 48_000, 44_100), 44_100);
     }
 
@@ -231,11 +210,6 @@ mod tests {
 
     #[test]
     fn effective_overlap_with_mismatched_rates_uses_device_domain() {
-        // Outgoing: 10s at 44100 Hz source = 10 * 48000 = 480000 device frames
-        // Incoming: 60s at 48000 Hz source = 60 * 48000 = 2880000 device frames
-        // Remaining: 3s at 44100 Hz = 3 * 48000 = 144000 device frames
-        // Configured: 5s = 240000 device frames
-        // Effective = min(240000, 240000, 1440000, 144000) = 144000
         let outgoing_device = source_to_device_frames(441_000, 44_100, 48_000);
         let incoming_device = source_to_device_frames(2_880_000, 48_000, 48_000);
         let remaining_device = source_to_device_frames(132_300, 44_100, 48_000);

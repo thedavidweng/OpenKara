@@ -53,7 +53,6 @@ describe("ConfirmationDialog", () => {
     );
 
     expect(markup).toContain("Proceed?");
-    // The dialog should still render without the detail section
     expect(markup).toContain('role="dialog"');
   });
 

@@ -158,7 +158,7 @@ export const useRotationStore = create<RotationState>((set, get) => ({
     const hasAssignments = queue.some((id) => queueSingers.has(id));
 
     if (!hasAssignments) {
-      // Pure random shuffle (Fisher-Yates)
+      // Fisher-Yates shuffle
       const shuffled = [...queue];
       for (let i = shuffled.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -182,7 +182,6 @@ export const useRotationStore = create<RotationState>((set, get) => ({
       }
     }
 
-    // Shuffle within each group
     const shuffle = (arr: string[]) => {
       for (let i = arr.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));

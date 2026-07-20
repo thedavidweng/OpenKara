@@ -13,8 +13,6 @@ pub use super::model::{ORT_RUNTIME_FILENAME, ORT_RUNTIME_VERSION};
 
 const RUNTIME_DIR_NAME: &str = "runtime";
 
-/// Platform-specific download archive name and expected SHA-256 of the
-/// extracted runtime shared library.
 pub struct RuntimeDescriptor {
     pub archive_name: &'static str,
     pub download_url: &'static str,
@@ -111,15 +109,11 @@ pub fn development_runtime_path() -> PathBuf {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeResolution {
-    /// Runtime found and SHA-256 verified.
     Ready(PathBuf),
-    /// Runtime file exists but SHA-256 does not match.
     Corrupt(PathBuf),
-    /// No runtime found.
     Absent,
 }
 
-/// Resolve the runtime library from managed install or development fallback.
 pub fn resolve_runtime_installation(app_data_dir: &Path) -> Result<RuntimeResolution> {
     let managed = managed_runtime_path(app_data_dir);
     if managed.is_file() {
@@ -142,7 +136,6 @@ pub fn resolve_runtime_installation(app_data_dir: &Path) -> Result<RuntimeResolu
     Ok(RuntimeResolution::Absent)
 }
 
-/// Check if a verified runtime exists at the managed or development path.
 pub fn is_runtime_available(app_data_dir: &Path) -> bool {
     matches!(
         resolve_runtime_installation(app_data_dir),
@@ -150,7 +143,6 @@ pub fn is_runtime_available(app_data_dir: &Path) -> bool {
     )
 }
 
-/// Build a status snapshot for the frontend.
 pub fn runtime_status_snapshot(app_data_dir: &Path) -> RuntimeStatusSnapshot {
     let path = managed_runtime_path(app_data_dir);
     let path_display = path.display().to_string();
@@ -188,7 +180,7 @@ pub fn runtime_status_snapshot(app_data_dir: &Path) -> RuntimeStatusSnapshot {
 }
 
 /// Download and install the runtime to the managed location with SHA-256
-/// verification. Calls `progress(downloaded_bytes, total_bytes)` periodically.
+/// verification.
 pub fn download_and_install_runtime(
     app_data_dir: &Path,
     progress: impl FnMut(u64, Option<u64>),
@@ -200,8 +192,7 @@ pub fn download_and_install_runtime(
     Ok(destination)
 }
 
-/// Ensure the runtime is verified at the managed or development path.
-/// Returns the verified path. Does NOT download — callers that want
+/// Does NOT download — callers that want
 /// auto-download should call `download_and_install_runtime` first.
 pub fn ensure_runtime_verified(app_data_dir: &Path) -> Result<PathBuf> {
     match resolve_runtime_installation(app_data_dir)? {
@@ -242,8 +233,6 @@ pub fn delete_runtime(app_data_dir: &Path) -> Result<()> {
     }
     Ok(())
 }
-
-// ── Internal helpers ────────────────────────────────────────────────
 
 fn download_and_install_runtime_to(
     destination: &Path,
@@ -301,10 +290,8 @@ fn download_and_install_runtime_to(
 
     emit(downloaded_bytes, total_bytes, true);
 
-    // Extract the runtime library from the archive.
     let extracted = extract_runtime_from_archive(&archive_bytes, descriptor)?;
 
-    // Verify SHA-256.
     let actual_sha256 = sha256_hex(&extracted);
     if actual_sha256 != descriptor.sha256 {
         bail!(
@@ -314,7 +301,6 @@ fn download_and_install_runtime_to(
         );
     }
 
-    // Write to a temp file, then atomically rename.
     let parent = destination.parent().with_context(|| {
         format!(
             "runtime destination {} has no parent directory",
@@ -363,8 +349,6 @@ fn extract_runtime_from_tgz(
     archive_bytes: &[u8],
     descriptor: &RuntimeDescriptor,
 ) -> Result<Vec<u8>> {
-    // The archive is a .tgz (tar.gz) containing the runtime library in a
-    // subdirectory. We need to find and extract just the runtime file.
     let decoder = flate2::read::GzDecoder::new(archive_bytes);
     let mut archive = tar::Archive::new(decoder);
 
@@ -378,7 +362,6 @@ fn extract_runtime_from_tgz(
             .context("failed to read entry path")?
             .to_path_buf();
 
-        // Match the runtime library filename.
         if path
             .file_name()
             .and_then(|n| n.to_str())
@@ -572,8 +555,6 @@ fn verify_runtime_install(path: &Path) -> Result<bool> {
     Ok(false)
 }
 
-// ── Verification manifest ──────────────────────────────────────────
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct VerifiedRuntimeManifest {
     filename: String,
@@ -733,7 +714,6 @@ mod tests {
     #[test]
     fn delete_runtime_is_idempotent() {
         let tmp = tempfile::tempdir().unwrap();
-        // Should not error when nothing exists.
         delete_runtime(tmp.path()).unwrap();
     }
 

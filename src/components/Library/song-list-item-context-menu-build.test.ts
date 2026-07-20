@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Song } from "@/types/ipc";
 
-// --- hoisted mocks ----------------------------------------------------------
 const {
   mockBatchSeparate,
   mockExtractEmbeddedLyrics,
@@ -62,7 +61,6 @@ vi.mock("@/stores/lyrics-store", () => ({
   useLyricsStore: { getState: vi.fn() },
 }));
 
-// --- imports after mocks -----------------------------------------------------
 import {
   buildSongListContextMenuForSong,
   getSongListContextSongIds,
@@ -74,7 +72,6 @@ import { useQueueStore } from "@/stores/queue-store";
 import { usePlayerStore } from "@/stores/player-store";
 import { useLyricsStore } from "@/stores/lyrics-store";
 
-// --- helpers -----------------------------------------------------------------
 function makeSong(overrides: Partial<Song> = {}): Song {
   return {
     hash: "song-abc",
@@ -111,7 +108,6 @@ const defaultActions = {
   setPlaylistDialogOpen: vi.fn(),
 };
 
-/** Minimal library store state stub */
 function libraryState(overrides: Record<string, unknown> = {}) {
   return {
     selectedSongIds: new Set<string>(),
@@ -123,7 +119,6 @@ function libraryState(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** Minimal playlist store state stub */
 function playlistState(overrides: Record<string, unknown> = {}) {
   return {
     playlists: [] as Array<{ id: string; name: string }>,
@@ -135,7 +130,6 @@ function playlistState(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** Minimal rotation store state stub */
 function rotationState(overrides: Record<string, unknown> = {}) {
   return {
     singerNames: [] as string[],
@@ -170,11 +164,8 @@ function lyricsState(overrides: Record<string, unknown> = {}) {
   };
 }
 
-// --- tests -------------------------------------------------------------------
-
 beforeEach(() => {
   vi.clearAllMocks();
-  // Default store stubs
   (
     useLibraryStore.getState as unknown as ReturnType<typeof vi.fn>
   ).mockReturnValue(libraryState());
@@ -195,9 +186,6 @@ beforeEach(() => {
   ).mockReturnValue(lyricsState());
 });
 
-// =============================================================================
-// getSongListContextSongIds
-// =============================================================================
 describe("getSongListContextSongIds", () => {
   test("returns [song.hash] when the song is not in selectedSongIds", () => {
     (
@@ -225,9 +213,6 @@ describe("getSongListContextSongIds", () => {
   });
 });
 
-// =============================================================================
-// buildSongListContextMenuForSong
-// =============================================================================
 describe("buildSongListContextMenuForSong", () => {
   test("calls buildSongListContextMenuItems with isMultiSelected=false for single song", () => {
     const song = makeSong();
@@ -426,9 +411,6 @@ describe("buildSongListContextMenuForSong", () => {
   });
 });
 
-// =============================================================================
-// Action callbacks passed through the context menu args
-// =============================================================================
 describe("buildSongListContextMenuForSong – action callbacks", () => {
   test("queueAllSelected adds each context song id to the queue", () => {
     const mockAddToQueue = vi.fn();
@@ -940,9 +922,6 @@ describe("buildSongListContextMenuForSong – action callbacks", () => {
   });
 });
 
-// =============================================================================
-// computePlaylistMembership (tested indirectly through buildSongListContextMenuForSong)
-// =============================================================================
 describe("computePlaylistMembership (indirect)", () => {
   test("returns null for playlists with no song set", () => {
     const playlists = [{ id: "pl-1", name: "Empty" }];

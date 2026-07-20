@@ -102,7 +102,7 @@ function publishLibraryInvalidation() {
   librarySyncChannel.publish({ revision: librarySyncRevision });
 }
 
-// F2: Generation counter to prevent stale search results from overwriting current results.
+// Generation counter to prevent stale search results from overwriting current results.
 let searchGeneration = 0;
 
 const debouncedSearch = debounce(async (query: string) => {
@@ -230,7 +230,6 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     const { selectedSongIds, lastClickedSongId } = get();
 
     if (event.shiftKey && lastClickedSongId && orderedHashes) {
-      // Range selection
       const startIdx = orderedHashes.indexOf(lastClickedSongId);
       const endIdx = orderedHashes.indexOf(songId);
       if (startIdx !== -1 && endIdx !== -1) {
@@ -244,7 +243,6 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         set({ selectedSongIds: newSet });
       }
     } else if (event.metaKey || event.ctrlKey) {
-      // Toggle selection
       const newSet = new Set(selectedSongIds);
       if (newSet.has(songId)) {
         newSet.delete(songId);
@@ -253,7 +251,6 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       }
       set({ selectedSongIds: newSet, lastClickedSongId: songId });
     } else {
-      // Normal click: select only this one
       set({
         selectedSongIds: new Set([songId]),
         lastClickedSongId: songId,

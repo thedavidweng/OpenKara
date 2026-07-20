@@ -86,7 +86,6 @@ fn persist_artwork_derivatives_after_upsert(
     }
 }
 
-/// Import songs from absolute filesystem paths into the library.
 pub fn import_songs_from_paths(
     connection: &Connection,
     library: &LibraryRoot,
@@ -95,7 +94,6 @@ pub fn import_songs_from_paths(
     import_songs_from_paths_with_options(connection, library, paths, &ImportSongsOptions::default())
 }
 
-/// Import songs with optional CDG pairing overrides.
 pub fn import_songs_from_paths_with_options(
     connection: &Connection,
     library: &LibraryRoot,
@@ -192,7 +190,6 @@ pub fn import_songs_from_paths_with_options(
     ImportSongsResult { imported, failed }
 }
 
-/// List all songs from an open library connection.
 pub fn get_library_from_connection(connection: &Connection) -> rusqlite::Result<Vec<Song>> {
     cache::list_songs(connection)
 }

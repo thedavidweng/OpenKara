@@ -4,14 +4,12 @@
 //! signatures and app-data path resolution to those domain entry points.
 
 use crate::{
-    commands::error::{CommandError, CommandResult},
+    commands::error::{internal_error, CommandResult},
     config::RemoteLibraryProvider,
-    library::error::LibraryError,
     remote, AppState,
 };
 use tauri::{AppHandle, Manager, State};
 
-// Re-export IPC-facing domain types (same public surface as before the lift).
 pub use remote::{
     RemoteAuthSession, RemoteAuthStart, RemoteAuthState, RemoteAuthStatus, RemoteLibraryCandidate,
     UploadState, UploadStatusSnapshot,
@@ -78,10 +76,7 @@ pub fn register_remote_library(
     remote_root_locator: String,
     display_name: Option<String>,
 ) -> CommandResult<crate::commands::library_setup::LibraryRegistrySnapshot> {
-    let app_data_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
+    let app_data_dir = app_handle.path().app_data_dir().map_err(internal_error)?;
     remote::register_remote_library(
         &state,
         &app_data_dir,
@@ -101,10 +96,7 @@ pub fn reauthorize_remote_library(
     display_name: String,
     allow_relocation: bool,
 ) -> CommandResult<crate::commands::library_setup::LibraryRegistrySnapshot> {
-    let app_data_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|error| CommandError::from(LibraryError::Internal(error.to_string())))?;
+    let app_data_dir = app_handle.path().app_data_dir().map_err(internal_error)?;
     remote::reauthorize_remote_library(
         &state,
         &app_data_dir,

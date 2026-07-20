@@ -7,8 +7,6 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{ipc::Response, State};
 
-// ── Checkpoint configuration ──────────────────────────────────────────────
-
 /// Save a checkpoint every 30 seconds (300 packets/s * 30s = 9000 packets).
 const CHECKPOINT_INTERVAL_PACKETS: usize = 9_000;
 /// Maximum number of checkpoints per timeline. Once full, stop adding later
@@ -19,12 +17,9 @@ const MAX_CHECKPOINTS: usize = 256;
 /// index `i` uses `next_packet_index = i + 1`.
 #[derive(Clone)]
 pub struct CdgCheckpoint {
-    /// Exclusive cursor represented by this snapshot.
     pub next_packet_index: usize,
     pub renderer: CdgRendererSnapshot,
 }
-
-// ── Timeline types ────────────────────────────────────────────────────────
 
 /// Identifies which presentation clock owns a timeline.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -73,9 +68,6 @@ impl Default for CdgTimelineState {
     }
 }
 
-// ── CDG availability status ───────────────────────────────────────────────
-
-/// CDG availability for the current song and generation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum CdgAvailability {
@@ -86,7 +78,6 @@ pub enum CdgAvailability {
     Error,
 }
 
-/// Error code for CDG parse/load failures.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CdgErrorCode {
@@ -97,7 +88,6 @@ pub enum CdgErrorCode {
     ZipFailed,
 }
 
-/// Explicit CDG status payload exposed to the frontend.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct CdgStatus {
@@ -108,14 +98,12 @@ pub struct CdgStatus {
     pub error_code: Option<CdgErrorCode>,
 }
 
-/// Slot holding status plus optional playback state.
 #[derive(Default)]
 pub struct CdgPlaybackSlot {
     pub status: CdgStatus,
     pub playback: Option<CdgPlaybackState>,
 }
 
-/// Holds shared immutable packets plus per-timeline mutable state.
 pub struct CdgPlaybackState {
     pub song_id: String,
     pub transport_generation: u64,
@@ -135,7 +123,6 @@ impl CdgPlaybackState {
         }
     }
 
-    /// Mark both timelines for repositioning on their next authorized advance.
     pub fn mark_seek(&mut self) {
         self.local.needs_reset = true;
         self.local.cached_frame = None;
@@ -149,9 +136,6 @@ impl CdgPlaybackState {
     }
 }
 
-// ── Frame update result ───────────────────────────────────────────────────
-
-/// Result of advancing a named timeline.
 #[derive(Debug)]
 pub enum CdgFrameUpdate {
     NoChange {
@@ -164,8 +148,6 @@ pub enum CdgFrameUpdate {
         rgba: Arc<[u8]>,
     },
 }
-
-// ── Timeline advancement ──────────────────────────────────────────────────
 
 /// Advance the selected timeline to the position implied by `position_ms`.
 ///
@@ -224,7 +206,6 @@ pub fn advance_cdg_timeline(
         }
     }
 
-    // No change — return current version without cloning the buffer.
     CdgFrameUpdate::NoChange {
         frame_version: ts.frame_version,
         packet_index: ts.next_packet_index,
@@ -234,7 +215,6 @@ pub fn advance_cdg_timeline(
 /// Reposition a timeline to `target_index` using checkpoint restore + replay
 /// for backward seeks, or reset + replay from zero when no checkpoint exists.
 fn reposition_timeline(ts: &mut CdgTimelineState, packets: &[CdgPacket], target_index: usize) {
-    // Find the greatest checkpoint whose exclusive cursor is <= target_index.
     let checkpoint = ts
         .checkpoints
         .iter()
@@ -245,23 +225,19 @@ fn reposition_timeline(ts: &mut CdgTimelineState, packets: &[CdgPacket], target_
     if let Some(cp) = checkpoint {
         ts.renderer.restore(&cp.renderer);
         ts.next_packet_index = cp.next_packet_index;
-        // Replay [checkpoint.next_packet_index, target_index).
         ts.renderer
             .process_range(packets, cp.next_packet_index, target_index);
         ts.next_packet_index = target_index;
     } else {
-        // No checkpoint — reset and replay from 0.
         ts.renderer.reset();
         ts.next_packet_index = 0;
         ts.checkpoints.clear();
         ts.renderer.process_range(packets, 0, target_index);
         ts.next_packet_index = target_index;
-        // Rebuild checkpoints up to target_index by replaying in intervals.
         rebuild_checkpoints(ts, packets, target_index);
     }
 }
 
-/// Rebuild checkpoints by replaying from 0 in CHECKPOINT_INTERVAL_PACKETS steps.
 /// This is only called on the reset path (no existing checkpoint).
 fn rebuild_checkpoints(ts: &mut CdgTimelineState, packets: &[CdgPacket], target_index: usize) {
     let mut snap_renderer = CdgRenderer::new();
@@ -270,7 +246,6 @@ fn rebuild_checkpoints(ts: &mut CdgTimelineState, packets: &[CdgPacket], target_
         let next = (cursor + CHECKPOINT_INTERVAL_PACKETS).min(target_index);
         snap_renderer.process_range(packets, cursor, next);
         if next - cursor >= CHECKPOINT_INTERVAL_PACKETS && ts.checkpoints.len() < MAX_CHECKPOINTS {
-            // Save checkpoint with exclusive cursor = next.
             ts.checkpoints.push(CdgCheckpoint {
                 next_packet_index: next,
                 renderer: snap_renderer.snapshot(),
@@ -280,45 +255,34 @@ fn rebuild_checkpoints(ts: &mut CdgTimelineState, packets: &[CdgPacket], target_
     }
 }
 
-/// Save a checkpoint after processing exactly `next_packet_index` packets.
-/// A snapshot saved after packet index `i` uses `next_packet_index = i + 1`.
 fn maybe_save_checkpoint(ts: &mut CdgTimelineState, next_packet_index: usize) {
     if ts.checkpoints.len() >= MAX_CHECKPOINTS {
         return;
     }
-    // Save after every CHECKPOINT_INTERVAL_PACKETS boundary.
     let last_cp_cursor = ts
         .checkpoints
         .last()
         .map(|cp| cp.next_packet_index)
         .unwrap_or(0);
-    if next_packet_index >= last_cp_cursor + CHECKPOINT_INTERVAL_PACKETS {
-        // Don't insert duplicate checkpoint cursors.
-        if !ts
+    if next_packet_index >= last_cp_cursor + CHECKPOINT_INTERVAL_PACKETS
+        && !ts
             .checkpoints
             .iter()
             .any(|cp| cp.next_packet_index == next_packet_index)
-        {
-            ts.checkpoints.push(CdgCheckpoint {
-                next_packet_index,
-                renderer: ts.renderer.snapshot(),
-            });
-        }
+    {
+        ts.checkpoints.push(CdgCheckpoint {
+            next_packet_index,
+            renderer: ts.renderer.snapshot(),
+        });
     }
 }
 
-// ── Binary frame protocol ─────────────────────────────────────────────────
-
-/// Binary protocol magic bytes ("OKCG").
 const PROTOCOL_MAGIC: [u8; 4] = *b"OKCG";
-/// Binary protocol version.
 const PROTOCOL_VERSION: u16 = 1;
-/// Header size in bytes.
 const PROTOCOL_HEADER_SIZE: usize = 32;
 /// Flag bit 0: RGBA payload present.
 const FLAG_RGBA_PRESENT: u16 = 0x01;
 
-/// Build a 32-byte little-endian header.
 fn build_header(
     transport_generation: u64,
     frame_version: u64,
@@ -336,7 +300,6 @@ fn build_header(
     header
 }
 
-/// Build the full binary response (header + optional RGBA payload).
 pub fn build_cdg_frame_response(transport_generation: u64, update: CdgFrameUpdate) -> Vec<u8> {
     match update {
         CdgFrameUpdate::NoChange {
@@ -369,8 +332,6 @@ pub fn build_cdg_frame_response(transport_generation: u64, update: CdgFrameUpdat
         }
     }
 }
-
-// ── IPC commands ──────────────────────────────────────────────────────────
 
 /// Returns a binary CDG frame envelope (32-byte header + optional RGBA).
 ///
@@ -413,7 +374,6 @@ pub fn get_cdg_frame(
 
     let update = advance_cdg_timeline(cdg, CdgTimelineKind::Local, position_ms);
 
-    // If the caller already has the current frame version, return header-only.
     match &update {
         CdgFrameUpdate::NoChange { frame_version, .. } if *frame_version == last_frame_version => {
             let header = build_header(
@@ -445,7 +405,6 @@ pub fn get_cdg_frame(
                 buf.extend_from_slice(rgba);
                 return Ok(Response::new(buf));
             }
-            // No cached frame — fall through to header-only response.
             let header = build_header(
                 cdg.transport_generation,
                 *frame_version,
@@ -461,7 +420,6 @@ pub fn get_cdg_frame(
     Ok(Response::new(response))
 }
 
-/// Returns the current CDG status for the given song and transport generation.
 #[tauri::command]
 pub fn get_cdg_status(
     state: State<'_, AppState>,
@@ -478,14 +436,12 @@ pub fn get_cdg_status(
         return Ok(CdgStatus::default());
     };
 
-    // Return status only if it matches the requested song/generation.
     if slot.status.song_id.as_deref() == Some(song_id.as_str())
         && slot.status.transport_generation == Some(transport_generation)
     {
         return Ok(slot.status.clone());
     }
 
-    // If the slot's status is for a different song/generation, return None.
     Ok(CdgStatus::default())
 }
 
@@ -544,7 +500,6 @@ mod tests {
         let mut state = make_state(vec![cdg_packet(1, [0u8; 16])]);
         let _ = advance_cdg_timeline(&mut state, CdgTimelineKind::Local, 0);
 
-        // AirPlay should be untouched.
         assert_eq!(state.airplay.next_packet_index, 0);
         assert!(state.airplay.cached_frame.is_none());
         assert_eq!(state.airplay.frame_version, 0);

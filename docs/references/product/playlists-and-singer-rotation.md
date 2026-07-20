@@ -1,4 +1,4 @@
-# F1 — Playlists & Singer Rotation
+# Playlists & Singer Rotation
 
 ---
 
@@ -110,7 +110,7 @@ When a song is removed from the library:
 ## 4. Concurrency / Single-Writer
 
 - **Single-writer assumption:** The app assumes one active UI window and no concurrent automation. Opening multiple windows or sending rapid-fire commands from scripts is **not supported** and may produce undefined rotation state.
-- **Future-proofing:** The SQLite schema uses `BEGIN IMMEDIATE` transactions so concurrent writers at the database layer are safe (last-writer-wins for queue/rotation metadata). No optimistic locking is implemented for the playlist metadata layer.
+- **Concurrency:** The SQLite schema uses `BEGIN IMMEDIATE` transactions so concurrent writers at the database layer are safe (last-writer-wins for queue/rotation metadata). No optimistic locking is implemented for the playlist metadata layer.
 - **Rapid operations:** Repeated add/remove within the same event loop tick are serialized by the frontend store; the backend sees them as sequential mutations.
 
 ## 5. Migration & Failure
@@ -197,51 +197,6 @@ rotation.noSinger        → No singer assigned
 | `rotation.noSinger`      | 未指定歌手                                                   |
 | `playlist.section`       | 播放列表                                                     |
 
-## Data Model (for implementer reference)
-
-### New tables
-
-```sql
--- 008_playlists.sql
-CREATE TABLE IF NOT EXISTS playlists (
-    id         TEXT PRIMARY KEY,
-    name       TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL,
-    sort_order INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE TABLE IF NOT EXISTS playlist_songs (
-    playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
-    song_hash   TEXT NOT NULL REFERENCES songs(hash) ON DELETE CASCADE,
-    added_at    INTEGER NOT NULL,
-    sort_order  INTEGER NOT NULL DEFAULT 0,
-    singer      TEXT,
-    PRIMARY KEY (playlist_id, song_hash)
-);
-
--- 009_singer_rotation.sql
-CREATE TABLE IF NOT EXISTS rotation_state (
-    id              INTEGER PRIMARY KEY DEFAULT 1,
-    singer_names    TEXT NOT NULL DEFAULT '[]',       -- JSON array of strings
-    current_index   INTEGER NOT NULL DEFAULT 0,
-    mode            TEXT NOT NULL DEFAULT 'round_robin',  -- 'round_robin' | 'single'
-    active          INTEGER NOT NULL DEFAULT 0        -- boolean
-);
-```
-
-### IPC commands
-
-| Command                      | Direction          | Purpose                                    |
-| ---------------------------- | ------------------ | ------------------------------------------ |
-| `list_playlists`             | Backend → Frontend | Returns all playlists with song counts     |
-| `create_playlist`            | Frontend → Backend | Creates a new named playlist               |
-| `rename_playlist`            | Frontend → Backend | Renames an existing playlist               |
-| `delete_playlist`            | Frontend → Backend | Deletes a playlist and its entries         |
-| `add_songs_to_playlist`      | Frontend → Backend | Adds songs to a playlist                   |
-| `remove_songs_from_playlist` | Frontend → Backend | Removes songs from a playlist              |
-| `get_playlist_songs`         | Frontend → Backend | Returns songs in a playlist                |
-| `set_rotation_state`         | Frontend → Backend | Sets singer names and mode                 |
-| `get_rotation_state`         | Frontend → Backend | Returns current rotation config            |
-| `advance_rotation`           | Frontend → Backend | Advances rotation pointer (manual next)    |
-| `set_queue_entry_singer`     | Frontend → Backend | Sets the singer for a specific queue entry |
+Schema and IPC commands for playlists and rotation live in
+[`../contracts/library.md`](../contracts/library.md) and the generated
+[`../generated/db-schema.md`](../generated/db-schema.md).

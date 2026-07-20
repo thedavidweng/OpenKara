@@ -106,7 +106,7 @@ payload 为完整的 `ModelBootstrapStatusSnapshot`，其中：
 
 ## ONNX Runtime path resolution semantics
 
-1. **Runtime 外部化 (B2):** ONNX Runtime 不再打包在安装包中。应用启动时按以下顺序查找：
+1. **Runtime 外部化:** ONNX Runtime 不再打包在安装包中。应用启动时按以下顺序查找：
    1. **Managed app-data:** `<app_data_dir>/runtime/<platform-lib>`（已验证 SHA-256）
    2. **Development fallback:** `src-tauri/generated/onnxruntime/<platform-lib>`（开发构建用）
    3. **Legacy bundled:** 打包资源目录 `onnxruntime/<platform-lib>`（过渡期兼容）
@@ -121,11 +121,11 @@ payload 为完整的 `ModelBootstrapStatusSnapshot`，其中：
 7. macOS 发布包启用 hardened runtime 时必须携带
    `com.apple.security.cs.disable-library-validation` entitlement；官方 ORT dylib
    由 Microsoft Developer ID 签名，应用需要该最小豁免才能在启动阶段加载它。
-8. **Runtime status IPC (B2):**
+8. **Runtime status IPC:**
    - `get_runtime_bootstrap_status() -> RuntimeBootstrapStatusSnapshot`
    - `download_runtime() -> RuntimeBootstrapStatusSnapshot`
    - `delete_runtime() -> ()`
-9. **Runtime/model state matrix (B3/B4):**
+9. **Runtime/model state matrix:**
 
    | Runtime     | Model   | Settings model action        | Separation action                                       |
    | ----------- | ------- | ---------------------------- | ------------------------------------------------------- |
@@ -180,20 +180,3 @@ UI 与产品行为应以以下目标为准，而不是把后台下载继续当�
 3. `tauri::async_runtime::spawn_blocking` 负责后台下载，避免阻塞 app setup
 4. `ort 2.0.0-rc.12` 仅以 `load-dynamic` + `api-24` 模式加载预先规整的
    ONNX Runtime 动态库
-
-## Verification commands
-
-```bash
-cd src-tauri
-cargo test --test phase6_model_bootstrap
-cargo test
-cd ..
-node scripts/prepare-onnx-runtime.mjs
-pnpm tauri build --debug --no-bundle --ci
-```
-
-**Expected evidence**
-
-1. `phase6_model_bootstrap` 证明路径解析、已验证写盘、状态 gate 正常
-2. 全量 `cargo test` 证明现有分离/播放/歌词链路未被打破
-3. 调试构建成功

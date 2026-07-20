@@ -29,7 +29,6 @@ export function useAnimatedPresence(
     phase: visible ? "visible" : "hidden",
   });
 
-  // Sync visibility changes
   if (visible && state.phase !== "visible") {
     dispatch({ type: "show" });
   } else if (!visible && state.phase === "visible") {

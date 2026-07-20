@@ -302,7 +302,6 @@ describe("useLyricsEngine", () => {
     act(() => {
       root.render(<Harness songId={null} />);
     });
-    // songId null short-circuits before shouldRun; no rAF.
     expect(rafCb).toBeNull();
   });
 

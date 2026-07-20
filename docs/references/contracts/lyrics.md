@@ -261,25 +261,3 @@
 5. `rusqlite` 负责缓存和 offset 持久化
 6. `playback-position` 事件由播放契约（`playback.md`）提供，歌词契约本身不新增事件
 7. 全局显示偏好由 settings 命令提供；歌词模块当前额外依赖 `AppSettings.lyrics_font_step`
-
-## Verification commands
-
-```bash
-cd src-tauri
-cargo test --test phase4_lrclib --test phase4_lrcapi --test phase4_parser --test phase4_fetch --test phase4_lyrics_cache --test phase4_commands --test phase5_errors
-cargo test
-cd ..
-pnpm tauri build --debug --no-bundle --ci
-```
-
-**Expected evidence**
-
-1. `phase4_lrclib`
-2. `phase4_lrcapi`
-3. `phase4_parser`
-4. `phase4_fetch`
-5. `phase4_lyrics_cache`
-6. `phase4_commands`
-7. `phase5_errors`
-
-以上测试全部通过，并且调试构建成功。

@@ -293,10 +293,8 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
   return (
     <div className="flex h-screen w-full items-center justify-center bg-[var(--color-surface)]">
       <div className="mx-auto max-w-md space-y-8 px-6 text-center">
-        {/* Step indicator */}
         <StepIndicator current={step} />
 
-        {/* Step 1: Language */}
         {step === "language" && (
           <>
             <div className="flex flex-col items-center gap-4">
@@ -342,7 +340,6 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
           </>
         )}
 
-        {/* Step 2: Library Location */}
         {step === "library" && (
           <>
             <div className="flex flex-col items-center gap-4">
@@ -437,7 +434,6 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
           </>
         )}
 
-        {/* Step 3: Remote Provider */}
         {step === "remoteProvider" && (
           <>
             <div className="flex flex-col items-center gap-4">
@@ -762,7 +758,6 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
           </>
         )}
 
-        {/* Step 3: Stem Mode */}
         {step === "stemMode" && (
           <>
             <div className="flex flex-col items-center gap-4">

@@ -19,7 +19,6 @@ import type {
 
 const AIRPLAY_OUTPUT_STATE_EVENT = "openkara://airplay-output-state";
 
-/** AirPlay adapter: pure projector + fixed TV viewport. */
 export function buildAirPlayAudienceState(
   input: AudienceProjectorInput,
 ): AirPlayAudienceStatePayload {

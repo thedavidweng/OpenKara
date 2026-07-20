@@ -33,7 +33,6 @@ impl RangeSet {
         Self { ranges: Vec::new() }
     }
 
-    /// Number of tracked ranges.
     pub fn len(&self) -> usize {
         self.ranges.len()
     }
@@ -55,7 +54,6 @@ impl RangeSet {
 
         let new_range = ByteRange::new(start, length);
 
-        // Find the insertion position and merge with overlapping/adjacent ranges.
         let mut merged_start = new_range.start;
         let mut merged_end = new_range.end();
         let mut remove_from = None;
@@ -90,7 +88,6 @@ impl RangeSet {
         );
     }
 
-    /// Check whether a range [start, start+length) is fully contained.
     pub fn contains(&self, start: u64, length: u64) -> bool {
         if length == 0 {
             return true;
@@ -131,7 +128,6 @@ impl RangeSet {
         0
     }
 
-    /// Whether the range set covers the entire file [0, file_size).
     pub fn covers_full(&self, file_size: u64) -> bool {
         if file_size == 0 {
             return true;
@@ -139,7 +135,6 @@ impl RangeSet {
         self.ranges.len() == 1 && self.ranges[0].start == 0 && self.ranges[0].length >= file_size
     }
 
-    /// Total bytes covered across all ranges.
     pub fn total_bytes(&self) -> u64 {
         self.ranges.iter().map(|r| r.length).sum()
     }
@@ -156,15 +151,12 @@ impl RangeSet {
         while i < self.ranges.len() {
             let r = &self.ranges[i];
             if r.end() <= start {
-                // Range is entirely before the subtraction — skip.
                 i += 1;
                 continue;
             }
             if r.start >= sub_end {
-                // Range is entirely after the subtraction — done.
                 break;
             }
-            // There is overlap. Determine what remains.
             let has_left = r.start < start;
             let has_right = r.end() > sub_end;
 
@@ -174,24 +166,20 @@ impl RangeSet {
                 let right = ByteRange::new(sub_end, r.end() - sub_end);
                 self.ranges[i] = left;
                 self.ranges.insert(i + 1, right);
-                i += 2; // Skip the right part.
+                i += 2;
             } else if has_left {
-                // Keep the left portion.
                 self.ranges[i] = ByteRange::new(r.start, start - r.start);
                 i += 1;
             } else if has_right {
-                // Keep the right portion.
                 self.ranges[i] = ByteRange::new(sub_end, r.end() - sub_end);
                 i += 1;
             } else {
-                // Fully enclosed — remove.
                 self.ranges.remove(i);
                 // Don't increment i — the next range shifted into this position.
             }
         }
     }
 
-    /// Subtract all ranges in `other` from this set.
     pub fn subtract_range_set(&mut self, other: &RangeSet) {
         for range in &other.ranges {
             self.subtract_range(range.start, range.length);

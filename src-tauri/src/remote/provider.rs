@@ -9,19 +9,14 @@ use std::path::Path;
 /// Each provider implementation holds its loaded secret internally and handles
 /// token refresh transparently (for OAuth-based providers).
 pub(crate) trait RemoteProvider {
-    /// Get the revision/etag for a relative path, or `None` if it doesn't exist.
     fn get_revision(&self, relative_path: &str) -> CommandResult<Option<String>>;
 
-    /// Download a remote file to a local destination path.
     fn download_file(&self, relative_path: &str, destination: &Path) -> CommandResult<()>;
 
-    /// Upload a local file (from the library's working copy) to the remote.
     fn upload_file(&self, relative_path: &str) -> CommandResult<()>;
 
-    /// Upload a local directory (from the library's working copy) to the remote.
     fn upload_directory(&self, relative_path: &str) -> CommandResult<()>;
 
-    /// Delete a remote path.
     fn delete_path(&self, relative_path: &str) -> CommandResult<()>;
 
     /// Register / first open: shared bootstrap `CreateOrOpen` mode (create
@@ -39,7 +34,6 @@ pub(crate) trait RemoteProvider {
         Ok(None)
     }
 
-    /// Get the file size in bytes for a remote file, if available.
     fn get_file_size(&self, _relative_path: &str) -> CommandResult<Option<u64>> {
         Ok(None)
     }
@@ -50,9 +44,6 @@ pub(crate) trait RemoteProvider {
     fn refresh_existing(&self) -> CommandResult<Option<String>>;
 }
 
-/// Create a `RemoteProvider` implementation for the given library.
-///
-/// Loads the provider's stored secret and constructs the appropriate provider struct.
 pub(crate) fn create_provider<'a>(
     app_data_dir: &'a Path,
     library: &'a RegisteredLibrary,
@@ -93,8 +84,6 @@ pub(crate) fn create_provider<'a>(
     }
 }
 
-/// Compute the display string for a remote root path.
-///
 /// Shared helper used by both `RemoteProvider` implementations and session-based
 /// code that doesn't yet have a provider instance.
 pub(crate) fn compute_remote_path_display(

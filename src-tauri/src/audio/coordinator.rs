@@ -14,7 +14,7 @@ use crate::{
         decode::DecodedAudio,
         error::PlaybackError,
         output,
-        output_format::{self, OutputFormatState},
+        output_format::OutputFormatState,
         playback::{
             monotonic_now_ms, playback_position_event, LoadedStems, PlaybackController,
             PlaybackStateSnapshot, PreparedTrack, StemName, PLAYBACK_ERROR_EVENT,
@@ -126,14 +126,14 @@ pub enum PlaybackCommand {
         duration_ms: u32,
         reply: CrossfadeStateReply,
     },
-    /// #88: Install a prepared next track for gapless transition. The preload
+    /// Install a prepared next track for gapless transition. The preload
     /// scheduler decodes and normalizes the candidate off-thread, then sends
     /// this fire-and-forget command. The coordinator validates the output
     /// format generation and the preload request generation before installing.
     PrepareNext {
         prepared: Box<PreparedTrack>,
     },
-    /// #88: Cancel any pending prepared track. Sent when the user manually
+    /// Cancel any pending prepared track. Sent when the user manually
     /// skips, seeks, plays a different song, or the queue head changes.
     /// `expected_generation` is the new preload request generation; the
     /// coordinator stamps it onto `PlaybackController` so that any
@@ -165,7 +165,7 @@ pub struct CoordinatorRuntime<R: Runtime> {
     pub airplay: AirPlayState,
     pub shutdown: Arc<AtomicBool>,
     pub peak_ring: Arc<crate::audio::peaks::PeakRing>,
-    /// #88: Output-format descriptor published by the CPAL output worker.
+    /// Output-format descriptor published by the CPAL output worker.
     /// The coordinator reads this (without the playback lock) to validate
     /// prepared-track generations before installing.
     pub output_format: OutputFormatState,
@@ -311,8 +311,6 @@ fn handle_invalidate_deleted_songs<R: Runtime>(
     let _ = reply.send(Ok(snapshot));
 }
 
-// ── AirPlay helpers ──────────────────────────────────────────────────────
-
 fn bump_airplay_epoch_and_generation(airplay: &AirPlayState) {
     airplay.airplay_audio_tap.bump_epoch();
     airplay_stream::notify_audio_epoch(airplay.airplay_audio_tap.current_epoch());
@@ -329,8 +327,6 @@ fn increment_airplay_refresh_token_if_audience_active(airplay: &AirPlayState) {
     }
 }
 
-// ── Output helper ────────────────────────────────────────────────────────
-
 fn ensure_output(runtime: &CoordinatorRuntime<impl Runtime>) -> Result<(), PlaybackError> {
     output::ensure_output_thread(
         &runtime.output_started,
@@ -343,8 +339,6 @@ fn ensure_output(runtime: &CoordinatorRuntime<impl Runtime>) -> Result<(), Playb
         runtime.output_format.clone(),
     )
 }
-
-// ── Emit helpers ─────────────────────────────────────────────────────────
 
 fn emit_position<R: Runtime>(
     app_handle: &tauri::AppHandle<R>,
@@ -372,13 +366,9 @@ fn emit_playback_error<R: Runtime>(
     );
 }
 
-// ── Latest-request guard ─────────────────────────────────────────────────
-
 fn is_latest_request(runtime: &CoordinatorRuntime<impl Runtime>, request_id: u64) -> bool {
     runtime.latest_request_id.load(Ordering::SeqCst) == request_id
 }
-
-// ── Failure reporting for InstallReady output failures ───────────────────
 
 /// Report a failure for the latest request after `InstallReady` has already
 /// installed the track. Unlike `handle_fail_load` (which clears a pending
@@ -417,8 +407,6 @@ fn report_install_output_failure<R: Runtime>(
     let _ = emit_position(&runtime.app_handle, &snapshot);
     emit_playback_error(&runtime.app_handle, song_id, error);
 }
-
-// ── Command handlers ─────────────────────────────────────────────────────
 
 fn handle_begin_load<R: Runtime>(
     runtime: &CoordinatorRuntime<R>,
@@ -886,14 +874,12 @@ fn handle_set_crossfade_duration<R: Runtime>(
     let _ = reply.send(state);
 }
 
-// ── #88: Gapless prepared-track commands ─────────────────────────────────
-
 fn handle_prepare_next<R: Runtime>(runtime: &CoordinatorRuntime<R>, prepared: PreparedTrack) {
     // Validate the output format generation before locking playback. If the
     // device restarted (or the format changed) since the preload scheduler
     // captured its descriptor, the prepared audio is stale and must be
     // discarded. The preload scheduler will re-prepare with the new format.
-    let pre_lock_format = output_format::snapshot(&runtime.output_format);
+    let pre_lock_format = runtime.output_format.read().ok().and_then(|guard| *guard);
     if let Some(current) = pre_lock_format {
         if current.generation != prepared.output_format.generation
             || current.sample_rate != prepared.output_format.sample_rate
@@ -923,7 +909,7 @@ fn handle_prepare_next<R: Runtime>(runtime: &CoordinatorRuntime<R>, prepared: Pr
     // lock, so it could change between the pre-lock check above and the lock
     // acquisition. The controller's defensive guard compares the prepared
     // track's captured format against this re-captured snapshot.
-    let post_lock_format = match output_format::snapshot(&runtime.output_format) {
+    let post_lock_format = match runtime.output_format.read().ok().and_then(|guard| *guard) {
         Some(fmt) => fmt,
         None => {
             eprintln!("coordinator: PrepareNext rejected — output format unavailable after lock");
@@ -954,6 +940,7 @@ mod tests {
         state::{AirPlayState, PlaybackState},
     };
     use std::sync::atomic::Ordering;
+    use std::sync::RwLock;
     use tauri::test::{mock_app, MockRuntime};
 
     /// Test harness: creates a CoordinatorRuntime with a mock app handle,
@@ -971,16 +958,13 @@ mod tests {
             let playback = Arc::new(Mutex::new(PlaybackController::default()));
             let cdg_state = Arc::new(Mutex::new(None));
             let latest_request_id = Arc::new(AtomicU64::new(initial_request_id));
-            // Pretend the output thread is already started so `ensure_output`
-            // is a no-op. Tests exercise coordinator command logic, not CPAL
-            // device initialization, which is unavailable on headless CI.
             let output_started = Arc::new(AtomicBool::new(true));
             let output_start_lock = Arc::new(Mutex::new(()));
             let airplay = AirPlayState::test_fixture();
             let shutdown = Arc::new(AtomicBool::new(false));
 
             let (tx, rx) = mpsc::channel();
-            let output_format = output_format::create_output_format_state();
+            let output_format = Arc::new(RwLock::new(None));
             let runtime = Arc::new(CoordinatorRuntime {
                 app_handle,
                 playback: Arc::clone(&playback),
@@ -1046,8 +1030,6 @@ mod tests {
         /// to skip CPAL initialization on headless CI).
         fn poison_output_lock(&self) {
             self.runtime.output_started.store(false, Ordering::SeqCst);
-            // Lock and explicitly leak the guard so the mutex becomes poisoned.
-            // We do this by panicking while holding the lock.
             let lock = Arc::clone(&self.runtime.output_start_lock);
             let _ = std::thread::spawn(move || {
                 let _guard = lock.lock().unwrap();
@@ -1058,7 +1040,6 @@ mod tests {
 
         fn shutdown(self) {
             self.runtime.shutdown.store(true, Ordering::Relaxed);
-            // Send a dummy command to wake the coordinator so it checks shutdown.
             let (tx_reply, _) = tokio::sync::oneshot::channel();
             let _ = self.tx.send(PlaybackCommand::Pause { reply: tx_reply });
             if let Some(handle) = self.handle {
@@ -1102,22 +1083,15 @@ mod tests {
                 cdg_error: None,
             }),
         });
-        // Give the coordinator time to process the fire-and-forget command.
-        // Use a barrier: send a Pause after and wait for its reply.
         let _ = harness.send_and_recv(|reply| PlaybackCommand::Pause { reply });
-        // Resume to restore playing state.
         let _ = harness.send_and_recv(|reply| PlaybackCommand::Resume { reply });
     }
-
-    // ── FIFO ordering ────────────────────────────────────────────────────
 
     #[test]
     fn fifo_ordering_across_pause_resume_seek_volume() {
         let harness = Harness::with_request_id(1);
         install_track(&harness, 1, "song-a");
 
-        // Send pause, then seek, then set_volume in rapid succession.
-        // The coordinator must process them in FIFO order.
         let paused = harness.send_and_recv(|reply| PlaybackCommand::Pause { reply });
         assert!(!paused.unwrap().is_playing);
 
@@ -1135,8 +1109,6 @@ mod tests {
 
         harness.shutdown();
     }
-
-    // ── Post-operation snapshots and transport-generation increments ──────
 
     #[test]
     fn pause_and_resume_increment_transport_generation() {
@@ -1171,16 +1143,12 @@ mod tests {
         harness.shutdown();
     }
 
-    // ── Stale request guards ─────────────────────────────────────────────
-
     #[test]
     fn stale_install_ready_is_ignored() {
         let harness = Harness::with_request_id(2);
-        // Install a track for request 2 (latest).
         install_track(&harness, 2, "song-b");
         assert_eq!(harness.snapshot().song_id.as_deref(), Some("song-b"));
 
-        // Send a stale InstallReady for request 1 — should be ignored.
         harness.send(PlaybackCommand::InstallReady {
             request_id: 1,
             song_id: "song-a".to_owned(),
@@ -1191,10 +1159,8 @@ mod tests {
                 cdg_error: None,
             }),
         });
-        // Use a sync command as a barrier.
         let _ = harness.send_and_recv(|reply| PlaybackCommand::SetVolume { level: 0.7, reply });
 
-        // Song-b should still be loaded, not song-a.
         assert_eq!(harness.snapshot().song_id.as_deref(), Some("song-b"));
 
         harness.shutdown();
@@ -1205,16 +1171,13 @@ mod tests {
         let harness = Harness::with_request_id(2);
         install_track(&harness, 2, "song-b");
 
-        // Send a stale FailLoad for request 1 — should be ignored.
         harness.send(PlaybackCommand::FailLoad {
             request_id: 1,
             song_id: "song-a".to_owned(),
             error: PlaybackError::AudioDecodeFailed("stale".to_owned()),
         });
-        // Barrier.
         let _ = harness.send_and_recv(|reply| PlaybackCommand::SetVolume { level: 0.8, reply });
 
-        // song-b should still be loaded.
         assert_eq!(harness.snapshot().song_id.as_deref(), Some("song-b"));
 
         harness.shutdown();
@@ -1225,7 +1188,6 @@ mod tests {
         let harness = Harness::with_request_id(2);
         install_track(&harness, 2, "song-b");
 
-        // Send AttachStems with a stale request_id.
         let snapshot = harness
             .send_and_recv(|reply| PlaybackCommand::AttachStems {
                 request_id: 1,
@@ -1258,8 +1220,6 @@ mod tests {
 
         harness.shutdown();
     }
-
-    // ── AirPlay epoch/generation/refresh-token matrix ────────────────────
 
     #[test]
     fn pause_bumps_airplay_epoch_and_generation() {
@@ -1432,14 +1392,11 @@ mod tests {
         harness.shutdown();
     }
 
-    // ── CDG seek behavior ────────────────────────────────────────────────
-
     #[test]
     fn seek_marks_both_cdg_timelines_for_repositioning() {
         use crate::cdg::CdgPacket;
 
         let harness = Harness::with_request_id(1);
-        // Install a track with CDG packets.
         let packets: Arc<[CdgPacket]> = Arc::from(
             vec![CdgPacket {
                 command: 0x09,
@@ -1458,18 +1415,15 @@ mod tests {
                 cdg_error: None,
             }),
         });
-        // Barrier.
         let _ = harness.send_and_recv(|reply| PlaybackCommand::Pause { reply });
         let _ = harness.send_and_recv(|reply| PlaybackCommand::Resume { reply });
 
-        // CDG slot should be attached and ready.
         {
             let cdg_state = harness.runtime.cdg_state.lock().unwrap();
             let slot = cdg_state.as_ref().expect("cdg slot should exist");
             assert!(slot.playback.is_some(), "playback state should be attached");
         }
 
-        // Seek — should mark both timelines for repositioning.
         let _ = harness.send_and_recv(|reply| PlaybackCommand::Seek {
             target_ms: 500,
             reply,
@@ -1499,24 +1453,17 @@ mod tests {
         harness.shutdown();
     }
 
-    // ── No output device: non-output commands complete ───────────────────
-
     #[test]
     fn non_output_commands_complete_without_output_device() {
         let harness = Harness::with_request_id(1);
-        // The harness pretends the output thread is already started so
-        // InstallReady succeeds without CPAL. Non-output commands (Pause,
-        // SetVolume, Seek) never call ensure_output and thus work regardless.
         install_track(&harness, 1, "song-a");
 
-        // Pause and SetVolume should work without an output device.
         let paused = harness.send_and_recv(|reply| PlaybackCommand::Pause { reply });
         assert!(!paused.unwrap().is_playing);
 
         let vol = harness.send_and_recv(|reply| PlaybackCommand::SetVolume { level: 0.3, reply });
         assert_eq!(vol.unwrap().volume, 0.3);
 
-        // Seek should work without an output device.
         let sought = harness.send_and_recv(|reply| PlaybackCommand::Seek {
             target_ms: 1_000,
             reply,
@@ -1526,11 +1473,8 @@ mod tests {
         harness.shutdown();
     }
 
-    // ── Coordinator disconnect ───────────────────────────────────────────
-
     #[test]
     fn disconnected_coordinator_returns_error_on_send() {
-        // Create a PlaybackState with a disconnected sender.
         let (tx, _) = mpsc::channel();
         let playback_state = PlaybackState {
             playback: Arc::new(Mutex::new(PlaybackController::default())),
@@ -1543,7 +1487,7 @@ mod tests {
             preload_request_generation: Arc::new(AtomicU64::new(0)),
             command_tx: tx,
             peak_ring: Arc::new(crate::audio::peaks::PeakRing::new()),
-            output_format: output_format::create_output_format_state(),
+            output_format: Arc::new(RwLock::new(None)),
             waveform_singleflight: crate::state::WaveformSingleflight::new(),
         };
 
@@ -1556,8 +1500,6 @@ mod tests {
             "send to disconnected coordinator should fail"
         );
     }
-
-    // ── Volume clamping ──────────────────────────────────────────────────
 
     #[test]
     fn set_volume_clamps_to_zero_one() {
@@ -1572,8 +1514,6 @@ mod tests {
 
         harness.shutdown();
     }
-
-    // ── BeginLoad returns loading snapshot ───────────────────────────────
 
     #[test]
     fn begin_load_returns_loading_snapshot() {
@@ -1591,7 +1531,6 @@ mod tests {
         assert_eq!(snapshot.state, "loading");
         assert!(!snapshot.is_playing);
 
-        // AirPlay epoch and generation should have been bumped.
         assert_eq!(
             harness
                 .runtime
@@ -1619,17 +1558,11 @@ mod tests {
         harness.shutdown();
     }
 
-    // ── Output failure on InstallReady ───────────────────────────────────
-
     #[test]
     fn install_ready_output_failure_clears_track_and_emits_error() {
         let harness = Harness::with_request_id(1);
-        // Poison the output start lock so ensure_output fails deterministically.
         harness.poison_output_lock();
 
-        // Send InstallReady — the coordinator will install the track, then
-        // fail to start the output thread, then clear the track and emit
-        // playback-error for the latest request.
         harness.send(PlaybackCommand::InstallReady {
             request_id: 1,
             song_id: "song-a".to_owned(),
@@ -1640,11 +1573,8 @@ mod tests {
                 cdg_error: None,
             }),
         });
-        // Barrier: send a sync command and wait for its reply to ensure the
-        // InstallReady has been fully processed.
         let _ = harness.send_and_recv(|reply| PlaybackCommand::SetVolume { level: 0.5, reply });
 
-        // The track must have been cleared — the controller should be idle.
         let snapshot = harness.snapshot();
         assert!(
             snapshot.song_id.is_none(),
@@ -1662,15 +1592,8 @@ mod tests {
         install_track(&harness, 2, "song-b");
         assert_eq!(harness.snapshot().song_id.as_deref(), Some("song-b"));
 
-        // Directly invoke the install-output-failure helper with a stale
-        // request_id (1) and a different song_id. The `is_latest_request`
-        // guard inside `report_install_output_failure` must reject it so
-        // the newer track (song-b) is not cleared.
         //
-        // At the command level, a stale `InstallReady` is already blocked
         // by `handle_install_ready`'s first guard and never reaches the
-        // failure path. This unit test exercises the defensive guard at
-        // the helper boundary directly.
         report_install_output_failure(
             &harness.runtime,
             "song-a",
@@ -1678,7 +1601,6 @@ mod tests {
             PlaybackError::AudioOutputUnavailable("test".to_owned()),
         );
 
-        // song-b must still be loaded — the stale failure was a no-op.
         assert_eq!(
             harness.snapshot().song_id.as_deref(),
             Some("song-b"),
@@ -1688,16 +1610,12 @@ mod tests {
         harness.shutdown();
     }
 
-    // ── Stale streaming InstallReady ─────────────────────────────────────
-
     #[test]
     fn stale_streaming_install_ready_is_ignored() {
         let harness = Harness::with_request_id(2);
-        // Install a decoded track for request 2 (latest).
         install_track(&harness, 2, "song-b");
         assert_eq!(harness.snapshot().song_id.as_deref(), Some("song-b"));
 
-        // Send a stale streaming InstallReady for request 1.
         harness.send(PlaybackCommand::InstallReady {
             request_id: 1,
             song_id: "song-a".to_owned(),
@@ -1711,22 +1629,17 @@ mod tests {
                 cdg_error: None,
             }),
         });
-        // Barrier.
         let _ = harness.send_and_recv(|reply| PlaybackCommand::SetVolume { level: 0.6, reply });
 
-        // song-b should still be loaded, not song-a.
         assert_eq!(harness.snapshot().song_id.as_deref(), Some("song-b"));
 
         harness.shutdown();
     }
 
-    // ── BeginLoad → InstallReady full flow ───────────────────────────────
-
     #[test]
     fn begin_load_then_install_ready_transitions_loading_to_playing() {
         let harness = Harness::with_request_id(1);
 
-        // Step 1: BeginLoad returns a loading snapshot.
         let loading = harness
             .send_and_recv(|reply| PlaybackCommand::BeginLoad {
                 request_id: 1,
@@ -1738,8 +1651,6 @@ mod tests {
         assert_eq!(loading.state, "loading");
         assert!(!loading.is_playing);
 
-        // Step 2: InstallReady transitions to playing.
-        // The request id is still 1 (the latest), so the guard passes.
         harness.send(PlaybackCommand::InstallReady {
             request_id: 1,
             song_id: "song-a".to_owned(),
@@ -1750,7 +1661,6 @@ mod tests {
                 cdg_error: None,
             }),
         });
-        // Barrier.
         let _ = harness.send_and_recv(|reply| PlaybackCommand::Pause { reply });
 
         let snapshot = harness.snapshot();
@@ -1763,13 +1673,10 @@ mod tests {
         harness.shutdown();
     }
 
-    // ── Lock poisoning ───────────────────────────────────────────────────
-
     #[test]
     fn poisoned_playback_lock_returns_error_and_worker_stays_alive() {
         let harness = Harness::with_request_id(1);
 
-        // Poison the playback mutex by panicking while holding it.
         let playback = Arc::clone(&harness.runtime.playback);
         let _ = std::thread::spawn(move || {
             let _guard = playback.lock().unwrap();
@@ -1777,17 +1684,12 @@ mod tests {
         })
         .join();
 
-        // A Pause command should return an internal error, not hang.
         let result = harness.send_and_recv(|reply| PlaybackCommand::Pause { reply });
         assert!(
             result.is_err(),
             "poisoned lock must return an error, not hang"
         );
 
-        // The coordinator must still be alive — send a SetVolume command.
-        // It uses the same (still-poisoned) playback mutex, so it will also
-        // return an error. The key assertion is that the coordinator
-        // *responds* at all (doesn't hang or terminate the worker thread).
         let result2 =
             harness.send_and_recv(|reply| PlaybackCommand::SetVolume { level: 0.5, reply });
         assert!(
@@ -1797,8 +1699,6 @@ mod tests {
 
         harness.shutdown();
     }
-
-    // ── Integrity cleanup invalidation ───────────────────────────────────
 
     /// Helper: send InvalidateDeletedSongs and wait for the reply.
     fn invalidate_deleted(harness: &Harness, song_ids: &[&str]) {
@@ -1825,15 +1725,11 @@ mod tests {
 
         invalidate_deleted(&harness, &["song-a"]);
 
-        // Current track cleared.
         assert!(harness.snapshot().song_id.is_none());
-        // No deleted song is loading, so preserve the request generation for
-        // any unrelated decode that may be in flight.
         assert_eq!(
             harness.runtime.latest_request_id.load(Ordering::SeqCst),
             gen_before
         );
-        // AirPlay epoch and generation bumped.
         assert_eq!(
             harness
                 .runtime
@@ -1889,7 +1785,6 @@ mod tests {
     fn invalidate_during_load_makes_delayed_install_ready_stale() {
         let harness = Harness::with_request_id(1);
 
-        // Start a load for song-a (request 1 is latest).
         let _ = harness.send_and_recv(|reply| PlaybackCommand::BeginLoad {
             request_id: 1,
             song_id: "song-a".to_owned(),
@@ -1900,7 +1795,6 @@ mod tests {
 
         let gen_before = harness.runtime.latest_request_id.load(Ordering::SeqCst);
 
-        // Delete song-a while the load is in flight.
         invalidate_deleted(&harness, &["song-a"]);
         assert!(harness.snapshot().song_id.is_none());
         assert_eq!(
@@ -1908,7 +1802,6 @@ mod tests {
             gen_before + 1
         );
 
-        // A delayed InstallReady arrives with the old (now-stale) request id.
         harness.send(PlaybackCommand::InstallReady {
             request_id: 1,
             song_id: "song-a".to_owned(),
@@ -1919,10 +1812,8 @@ mod tests {
                 cdg_error: None,
             }),
         });
-        // Barrier.
         let _ = harness.send_and_recv(|reply| PlaybackCommand::SetVolume { level: 0.5, reply });
 
-        // The stale InstallReady must not have reinstalled the deleted song.
         assert!(
             harness.snapshot().song_id.is_none(),
             "delayed InstallReady for a deleted song must be a no-op"
@@ -1958,7 +1849,6 @@ mod tests {
     #[test]
     fn invalidate_clears_cdg_state() {
         let harness = Harness::with_request_id(1);
-        // Install a track with CDG state.
         harness.send(PlaybackCommand::InstallReady {
             request_id: 1,
             song_id: "song-a".to_owned(),
@@ -1969,7 +1859,6 @@ mod tests {
                 cdg_error: None,
             }),
         });
-        // Barrier.
         let _ = harness.send_and_recv(|reply| PlaybackCommand::Pause { reply });
         let _ = harness.send_and_recv(|reply| PlaybackCommand::Resume { reply });
 
@@ -2000,7 +1889,6 @@ mod tests {
 
         invalidate_deleted(&harness, &["song-z"]);
 
-        // Unrelated deletion must not change playback state or generations.
         assert_eq!(harness.snapshot().song_id.as_deref(), Some("song-a"));
         assert_eq!(
             harness.runtime.latest_request_id.load(Ordering::SeqCst),
@@ -2034,9 +1922,7 @@ mod tests {
             .airplay_stream_generation
             .load(Ordering::SeqCst);
 
-        // Empty song_ids simulates a failed/no-op DB transaction: the command
         // layer never sends InvalidateDeletedSongs, but the coordinator must
-        // also be safe if invoked with an empty list.
         invalidate_deleted(&harness, &[]);
 
         assert_eq!(harness.snapshot().song_id.as_deref(), Some("song-a"));

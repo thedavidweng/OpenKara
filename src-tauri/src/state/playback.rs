@@ -1,11 +1,11 @@
 use crate::audio::coordinator::PlaybackCommand;
-use crate::audio::output_format::{create_output_format_state, OutputFormatState};
+use crate::audio::output_format::OutputFormatState;
 use crate::audio::peaks::PeakRing;
 use crate::audio::playback::PlaybackController;
 use crate::commands::cdg::CdgPlaybackSlot;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex, RwLock};
 
 #[derive(Clone)]
 pub struct PlaybackState {
@@ -14,19 +14,19 @@ pub struct PlaybackState {
     pub playback_request_id: Arc<AtomicU64>,
     pub audio_output_started: Arc<AtomicBool>,
     pub audio_output_start_lock: Arc<Mutex<()>>,
-    /// R9: Shutdown signal for the background decode/fetch thread. Signalled
+    /// Shutdown signal for the background decode/fetch thread. Signalled
     /// when a new `play()` starts so the old thread can bail out early instead
     /// of running to completion and wasting CPU/memory.
     /// Wrapped in Mutex so `play()` can replace the Arc with a fresh one.
     pub background_shutdown: Arc<Mutex<Arc<AtomicBool>>>,
-    /// #88: Shutdown signal for the gapless preload thread. Separate from
+    /// Shutdown signal for the gapless preload thread. Separate from
     /// `background_shutdown` so that a `set_preload_candidate` call (which
     /// fires whenever the queue head or current song changes) does not cancel
     /// an in-flight `play()` background decode thread. The preload effect in
     /// the frontend reacts to `currentSongId` changes, which happen during
     /// `play()` loading — sharing the flag would kill the play thread.
     pub preload_shutdown: Arc<Mutex<Arc<AtomicBool>>>,
-    /// #88: Monotonic generation bumped on every `set_preload_candidate`
+    /// Monotonic generation bumped on every `set_preload_candidate`
     /// call. The preload thread captures this value and includes it in the
     /// `PrepareNext` command; the coordinator stamps it onto
     /// `PlaybackController::expected_preload_request_generation` via
@@ -40,12 +40,12 @@ pub struct PlaybackState {
     /// (single writer) and the `get_audio_peaks` command (any reader). The
     /// command reads only the ring and must not lock `PlaybackController`.
     pub peak_ring: Arc<PeakRing>,
-    /// #88: Output-format descriptor published by the CPAL output worker.
+    /// Output-format descriptor published by the CPAL output worker.
     /// The preload scheduler captures this to normalize the next track to the
     /// active device format; the coordinator validates the generation before
     /// installing a prepared track.
     pub output_format: OutputFormatState,
-    /// #90: Process-wide singleflight for waveform computation. Multiple
+    /// Process-wide singleflight for waveform computation. Multiple
     /// WebViews requesting the same `(song_hash, buckets)` share one owned
     /// blocking computation task; cancellation of any caller only drops its
     /// receiver and never cancels work needed by remaining waiters.
@@ -72,7 +72,7 @@ impl PlaybackState {
                 preload_request_generation: Arc::new(AtomicU64::new(0)),
                 command_tx,
                 peak_ring: Arc::new(PeakRing::new()),
-                output_format: create_output_format_state(),
+                output_format: Arc::new(RwLock::new(None)),
                 waveform_singleflight: WaveformSingleflight::new(),
             },
             command_rx,
@@ -95,13 +95,11 @@ impl PlaybackState {
             preload_request_generation: Arc::new(AtomicU64::new(0)),
             command_tx,
             peak_ring: Arc::new(PeakRing::new()),
-            output_format: create_output_format_state(),
+            output_format: Arc::new(RwLock::new(None)),
             waveform_singleflight: WaveformSingleflight::new(),
         }
     }
 }
-
-// ─── #90: Waveform singleflight ─────────────────────────────────────────
 
 /// Composite key for waveform computation deduplication. Two callers
 /// requesting different bucket counts for the same song hash do not share
@@ -183,7 +181,6 @@ impl WaveformSingleflight {
         guard.remove(key)
     }
 
-    /// Number of pending computations. Test-only diagnostic.
     #[cfg(test)]
     pub fn pending_count(&self) -> usize {
         self.pending
@@ -265,8 +262,6 @@ mod waveform_singleflight_tests {
 
     #[test]
     fn simultaneous_callers_share_one_computation() {
-        // Two callers register for the same key. The first inserts and is
-        // expected to spawn the worker; the second appends and awaits.
         let sf = WaveformSingleflight::new();
         let k = key("song-1", 200);
         let (rx1, inserted1) = sf.register(k.clone());
@@ -274,7 +269,6 @@ mod waveform_singleflight_tests {
         assert!(inserted1, "first caller inserts");
         assert!(!inserted2, "second caller appends");
 
-        // Simulate the worker completing: take waiters and send the result.
         let waiters = sf.take_waiters(&k).expect("waiters exist");
         assert_eq!(waiters.len(), 2);
         let peaks: Arc<[f32]> = Arc::from(vec![0.5; 200]);
@@ -317,9 +311,6 @@ mod waveform_singleflight_tests {
 
     #[test]
     fn dropped_first_receiver_does_not_strand_key() {
-        // The first caller drops its receiver before completion. The worker
-        // must still complete and clear the entry; the second caller still
-        // gets the result.
         let sf = WaveformSingleflight::new();
         let k = key("song-drop", 200);
         let (_rx1_dropped, _inserted) = sf.register(k.clone());
@@ -331,7 +322,6 @@ mod waveform_singleflight_tests {
         for waiter in waiters {
             let _ = waiter.send(Ok(Arc::clone(&peaks)));
         }
-        // rx1 was dropped — its send silently fails. rx2 still receives.
         let r2 = rx2.blocking_recv().expect("rx2").expect("ok");
         assert_eq!(r2.as_ref(), peaks.as_ref());
         assert_eq!(sf.pending_count(), 0);
@@ -346,8 +336,6 @@ mod waveform_singleflight_tests {
         drop(rx1);
         drop(rx2);
 
-        // The worker still takes waiters and sends; all sends silently fail
-        // but the entry is cleared.
         let waiters = sf.take_waiters(&k).expect("waiters");
         let peaks: Arc<[f32]> = Arc::from(vec![0.7; 200]);
         for waiter in waiters {
@@ -361,7 +349,6 @@ mod waveform_singleflight_tests {
         let sf = WaveformSingleflight::new();
         let k = key("song-retry", 200);
 
-        // First attempt fails.
         let (rx1, _inserted) = sf.register(k.clone());
         let waiters = sf.take_waiters(&k).expect("waiters first");
         for waiter in waiters {
@@ -370,7 +357,6 @@ mod waveform_singleflight_tests {
         let _ = rx1.blocking_recv().expect("rx1").expect_err("first fails");
         assert_eq!(sf.pending_count(), 0);
 
-        // Second attempt succeeds — a fresh computation starts.
         let (rx2, inserted2) = sf.register(k.clone());
         assert!(inserted2, "retry inserts a new computation");
         let waiters = sf.take_waiters(&k).expect("waiters second");
@@ -386,7 +372,6 @@ mod waveform_singleflight_tests {
     #[test]
     fn poisoned_mutex_is_recovered_not_propagated() {
         let sf = WaveformSingleflight::new();
-        // Poison the mutex by panicking while holding the lock.
         let pending = Arc::clone(&sf.pending);
         let _ = std::thread::spawn(move || {
             let _guard = pending.lock().expect("lock");
@@ -394,8 +379,6 @@ mod waveform_singleflight_tests {
         })
         .join();
 
-        // register/take_waiters recover the poisoned lock instead of
-        // propagating the poison error.
         let k = key("song-poison", 200);
         let (rx, _inserted) = sf.register(k.clone());
         let waiters = sf.take_waiters(&k).expect("waiters after poison");
@@ -409,9 +392,6 @@ mod waveform_singleflight_tests {
 
     #[test]
     fn completion_guard_drop_clears_stranded_key_and_errors_waiters() {
-        // Simulate task cancellation: a guard is created but never
-        // completed. Drop must remove the key and send a sanitized error
-        // to all waiters so they do not hang forever.
         let sf = WaveformSingleflight::new();
         let k = key("song-cancel", 200);
         let (rx1, _inserted) = sf.register(k.clone());
@@ -419,16 +399,12 @@ mod waveform_singleflight_tests {
         assert_eq!(sf.pending_count(), 1, "one pending entry");
 
         {
-            // Guard is created inside the (simulated) task scope and then
-            // dropped without calling `complete()` — mirroring task
-            // cancellation before the blocking await resolves.
             let _guard = SingleflightCompletionGuard::new(sf.clone(), k.clone());
             assert_eq!(sf.pending_count(), 1, "guard creation does not clear key");
-        } // guard dropped here
+        }
 
         assert_eq!(sf.pending_count(), 0, "drop cleared the stranded key");
 
-        // Both waiters receive the sanitized error, not a hang.
         let err1 = rx1.blocking_recv().expect("rx1").expect_err("err1");
         let err2 = rx2.blocking_recv().expect("rx2").expect_err("err2");
         assert_eq!(err1, SANITIZED_WAVEFORM_ERROR);
@@ -437,10 +413,6 @@ mod waveform_singleflight_tests {
 
     #[test]
     fn completion_guard_complete_marks_done_so_drop_is_noop() {
-        // On the normal exit path, `complete()` takes waiters and marks the
-        // guard as done; the subsequent `Drop` must not attempt a second
-        // removal (which would be a harmless no-op, but we verify the key
-        // is already gone and no double-send occurs).
         let sf = WaveformSingleflight::new();
         let k = key("song-complete", 200);
         let (rx, _inserted) = sf.register(k.clone());
@@ -453,7 +425,6 @@ mod waveform_singleflight_tests {
         for waiter in waiters {
             let _ = waiter.send(Ok(Arc::clone(&peaks)));
         }
-        // Drop the guard after completion — must be a no-op.
         drop(guard);
         assert_eq!(sf.pending_count(), 0, "drop after complete is a no-op");
 

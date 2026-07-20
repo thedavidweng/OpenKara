@@ -117,7 +117,7 @@ export function createPlaybackSession(
     }
 
     const snapshotWithStems = await deps.transport.loadStems();
-    // F6: Skip applying stems if the song changed during loadStems().
+    // Skip applying stems if the song changed during loadStems().
     if (clock.snapshot?.song_id !== songId) {
       return;
     }
@@ -216,8 +216,8 @@ export function createPlaybackSession(
       }
 
       const snapshotWithStems = await deps.transport.loadStems();
-      // F6-style guard: skip applying stems if the song changed again
-      // before loadStems() resolved.
+      // Skip applying stems if the song changed again before loadStems()
+      // resolved.
       if (clock.snapshot?.song_id !== toSongId) {
         return;
       }
@@ -246,7 +246,7 @@ export function createPlaybackSession(
         return;
       }
 
-      // NOTE: applySnapshot also updates playingSinceMs from the seek response,
+      // applySnapshot also updates playingSinceMs from the seek response,
       // keeping position extrapolation consistent after restart-from-beginning.
       const newSnapshot = await deps.transport.seek(0);
       tryApplyAuthoritative(newSnapshot);

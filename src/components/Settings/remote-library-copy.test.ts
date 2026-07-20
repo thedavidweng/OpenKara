@@ -77,7 +77,6 @@ describe("getRemoteLibraryConnectedMessage", () => {
   });
 
   test("returns generic connected message for unknown provider", () => {
-    // The source has a final fallback for any provider not matching the three above
     const msg = getRemoteLibraryConnectedMessage(
       t,
       "unknown" as RemoteLibraryProvider,

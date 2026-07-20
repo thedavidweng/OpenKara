@@ -14,15 +14,14 @@ const collator = new Intl.Collator(["zh-Hans-CN", "en"], {
   ignorePunctuation: false,
 });
 
-// Normalize a text key by Unicode NFC plus trim(). null/empty/whitespace-only
-// values are treated as missing so they sort after present keys.
+// null/empty/whitespace-only values are treated as missing so they sort after
+// present keys.
 function normalizeKey(value: string | null): string | null {
   if (value == null) return null;
   const normalized = value.normalize("NFC").trim();
   return normalized.length === 0 ? null : normalized;
 }
 
-// Return the visual rail position for a text key: A=0 through Z=25, #=26.
 // Alphabetical sort modes use this as their primary key so every rail bucket
 // is contiguous and ordered exactly as the rail is rendered. This matters for
 // mixed Han/Latin libraries: Intl.Collator(["zh-Hans-CN", "en"]) groups Han
@@ -31,10 +30,9 @@ function alphabetBucketOrder(value: string | null): number {
   return ALPHABET_BUCKETS.indexOf(bucketForSortKey(value));
 }
 
-// Compare two optional text keys. Missing keys sort after present keys. When
-// both are present, alphabetical modes compare by rail bucket before using
-// the shared collator. Recently-imported mode intentionally keeps the legacy
-// locale-only tie-break behavior because it does not show an alphabet rail.
+// Missing keys sort after present keys. Recently-imported mode intentionally
+// keeps the legacy locale-only tie-break behavior because it does not show an
+// alphabet rail.
 function compareTextKeys(
   a: string | null,
   b: string | null,
@@ -52,8 +50,7 @@ function compareTextKeys(
   return collator.compare(aKey, bKey);
 }
 
-// finite imported_at descending; non-finite values collapse to 0 so they sort
-// last when descending (older effective import time).
+// non-finite values collapse to 0 so they sort last when descending.
 function importedAtDescending(a: number, b: number): number {
   const aMs = Number.isFinite(a) ? a : 0;
   const bMs = Number.isFinite(b) ? b : 0;
@@ -61,9 +58,8 @@ function importedAtDescending(a: number, b: number): number {
   return bMs - aMs;
 }
 
-// Final deterministic tie-break on the raw hash using code-point comparison.
-// This makes the order a total order even when the collator considers the
-// primary/secondary keys equivalent.
+// Final deterministic tie-break on the raw hash — makes the order a total
+// order even when the collator considers the primary/secondary keys equivalent.
 function compareHash(a: string, b: string): number {
   if (a < b) return -1;
   if (a > b) return 1;
@@ -102,11 +98,10 @@ export function compareSongs(a: Song, b: Song, mode: LibrarySortMode): number {
   }
 }
 
-// Precomputed sort fields for a song. bucketForSortKey is expensive (NFC
-// normalize, Intl.Segmenter grapheme iteration, Unicode regexes, pinyin
-// conversion), so alphabetical modes compute the primary bucket once per song
-// instead of once per pairwise comparison. Recently-imported mode has no rail
-// and avoids this work entirely.
+// bucketForSortKey is expensive (NFC normalize, Intl.Segmenter grapheme
+// iteration, Unicode regexes, pinyin conversion), so alphabetical modes
+// compute the primary bucket once per song instead of once per pairwise
+// comparison. Recently-imported mode has no rail and avoids this work entirely.
 interface DecoratedSong {
   song: Song;
   titleKey: string | null;
@@ -132,9 +127,8 @@ function decorateSong(song: Song, mode: LibrarySortMode): DecoratedSong {
   };
 }
 
-// Compare two precomputed text keys. Same logic as compareTextKeys but uses
-// the already-computed normalized key and, for alphabetical modes, bucket
-// order instead of recomputing them on every comparison.
+// Same logic as compareTextKeys but uses precomputed normalized keys and
+// bucket order instead of recomputing them on every comparison.
 function compareDecoratedTextKeys(
   aKey: string | null,
   aBucketOrder: number,

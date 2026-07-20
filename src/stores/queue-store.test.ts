@@ -16,8 +16,6 @@ describe("queue-store", () => {
     store.store.setState({ queue: [], playHistory: [], isOpen: false });
   });
 
-  // ── addToQueue ────────────────────────────────────────────────────────────
-
   test("addToQueue appends a song to the end of the queue", () => {
     store.store.getState().addToQueue("song-a");
     store.store.getState().addToQueue("song-b");
@@ -29,8 +27,6 @@ describe("queue-store", () => {
     store.store.getState().addToQueue("song-a");
     expect(store.store.getState().queue).toEqual(["song-a", "song-b"]);
   });
-
-  // ── playNext ──────────────────────────────────────────────────────────────
 
   test("playNext prepends a new song to the front of the queue", () => {
     store.store.setState({ queue: ["song-a", "song-b"] });
@@ -57,8 +53,6 @@ describe("queue-store", () => {
     expect(store.store.getState().queue).toEqual(["song-a"]);
   });
 
-  // ── removeFromQueue ───────────────────────────────────────────────────────
-
   test("removeFromQueue removes a song by index", () => {
     store.store.setState({ queue: ["song-a", "song-b", "song-c"] });
     store.store.getState().removeFromQueue(1);
@@ -70,8 +64,6 @@ describe("queue-store", () => {
     store.store.getState().removeFromQueue(5);
     expect(store.store.getState().queue).toEqual(["song-a"]);
   });
-
-  // ── removeSongIds ─────────────────────────────────────────────────────────
 
   test("removeSongIds removes multiple songs by id", () => {
     store.store.setState({ queue: ["song-a", "song-b", "song-c", "song-d"] });
@@ -90,8 +82,6 @@ describe("queue-store", () => {
     store.store.getState().removeSongIds([]);
     expect(store.store.getState().queue).toEqual(["song-a"]);
   });
-
-  // ── reorder ───────────────────────────────────────────────────────────────
 
   test("reorder moves a song from one position to another", () => {
     store.store.setState({ queue: ["song-a", "song-b", "song-c"] });
@@ -116,8 +106,6 @@ describe("queue-store", () => {
     store.store.getState().reorder(0, 5);
     expect(store.store.getState().queue).toEqual(["song-a"]);
   });
-
-  // ── reorderBySongId ───────────────────────────────────────────────────────
 
   test("reorderBySongId moves the dragged song before the hovered song", () => {
     store.store.setState({ queue: ["song-a", "song-b", "song-c"] });
@@ -155,15 +143,11 @@ describe("queue-store", () => {
     expect(store.store.getState().queue).toEqual(["song-a", "song-b"]);
   });
 
-  // ── clearQueue ────────────────────────────────────────────────────────────
-
   test("clearQueue empties the queue", () => {
     store.store.setState({ queue: ["song-a", "song-b"] });
     store.store.getState().clearQueue();
     expect(store.store.getState().queue).toEqual([]);
   });
-
-  // ── setQueue ──────────────────────────────────────────────────────────────
 
   test("setQueue replaces the entire queue", () => {
     store.store.setState({ queue: ["song-a"] });
@@ -180,8 +164,6 @@ describe("queue-store", () => {
     store.store.getState().setQueue([]);
     expect(store.store.getState().queue).toEqual([]);
   });
-
-  // ── dequeue ───────────────────────────────────────────────────────────────
 
   test("dequeue returns the first song and removes it from the queue", () => {
     store.store.setState({ queue: ["song-a", "song-b", "song-c"] });
@@ -202,8 +184,6 @@ describe("queue-store", () => {
     expect(result).toBe("song-a");
     expect(store.store.getState().queue).toEqual([]);
   });
-
-  // ── pushToHistory ─────────────────────────────────────────────────────────
 
   test("pushToHistory appends a song to the history", () => {
     store.store.getState().pushToHistory("song-1");
@@ -237,8 +217,6 @@ describe("queue-store", () => {
     expect(store.store.getState().queue).toEqual(["song-a"]);
   });
 
-  // ── popFromHistory ────────────────────────────────────────────────────────
-
   test("popFromHistory returns the last history entry and removes it", () => {
     store.store.setState({ playHistory: ["song-1", "song-2"] });
     const result = store.store.getState().popFromHistory();
@@ -258,8 +236,6 @@ describe("queue-store", () => {
     expect(store.store.getState().playHistory).toEqual([]);
   });
 
-  // ── clearHistory ──────────────────────────────────────────────────────────
-
   test("clearHistory empties the play history", () => {
     store.store.setState({ playHistory: ["song-1", "song-2"] });
     store.store.getState().clearHistory();
@@ -273,8 +249,6 @@ describe("queue-store", () => {
     expect(store.store.getState().playHistory).toEqual([]);
   });
 
-  // ── togglePanel ───────────────────────────────────────────────────────────
-
   test("togglePanel flips isOpen from false to true", () => {
     store.store.setState({ isOpen: false });
     store.store.getState().togglePanel();
@@ -286,8 +260,6 @@ describe("queue-store", () => {
     store.store.getState().togglePanel();
     expect(store.store.getState().isOpen).toBe(false);
   });
-
-  // ── dispose ───────────────────────────────────────────────────────────────
 
   test("dispose closes the sync channel", () => {
     const closed = { value: false };

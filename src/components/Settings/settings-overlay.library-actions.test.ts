@@ -28,10 +28,6 @@ import {
   describeLibrary,
 } from "./settings-overlay.library-actions";
 
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
-
 const localLibrary: RegisteredLibrary = {
   id: "local:/karaoke",
   kind: "local",
@@ -87,10 +83,6 @@ function createAppSettings() {
     library_sort_mode: "recently_imported" as const,
   };
 }
-
-// ---------------------------------------------------------------------------
-// Harness
-// ---------------------------------------------------------------------------
 
 function createHarness(overrides?: {
   libraries?: RegisteredLibrary[];
@@ -265,10 +257,6 @@ function createHarness(overrides?: {
   };
 }
 
-// ---------------------------------------------------------------------------
-// describeLibrary
-// ---------------------------------------------------------------------------
-
 describe("describeLibrary", () => {
   test("returns root_path for a local library", () => {
     expect(describeLibrary(localLibrary)).toBe("/karaoke");
@@ -287,16 +275,10 @@ describe("describeLibrary", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// createLibrarySettingsActions
-// ---------------------------------------------------------------------------
-
 describe("createLibrarySettingsActions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
-
-  // ---- createLibrary ----
 
   describe("createLibrary", () => {
     test("no-ops when selectSingleDirectory returns null", async () => {
@@ -339,8 +321,6 @@ describe("createLibrarySettingsActions", () => {
     });
   });
 
-  // ---- openLibrary ----
-
   describe("openLibrary", () => {
     test("no-ops when selectSingleDirectory returns null", async () => {
       const harness = createHarness();
@@ -380,8 +360,6 @@ describe("createLibrarySettingsActions", () => {
       });
     });
   });
-
-  // ---- switchLibrary ----
 
   describe("switchLibrary", () => {
     test("calls switchLibrary API and applies side effects on success", async () => {
@@ -447,8 +425,6 @@ describe("createLibrarySettingsActions", () => {
     });
   });
 
-  // ---- renameLibrary ----
-
   describe("renameLibrary", () => {
     test("no-ops when the trimmed name is empty", async () => {
       const harness = createHarness();
@@ -498,8 +474,6 @@ describe("createLibrarySettingsActions", () => {
     });
   });
 
-  // ---- removeLibrary ----
-
   describe("removeLibrary", () => {
     test("no-ops when window.confirm returns false", async () => {
       const harness = createHarness();
@@ -542,8 +516,6 @@ describe("createLibrarySettingsActions", () => {
       });
     });
   });
-
-  // ---- deleteLibrary ----
 
   describe("deleteLibrary", () => {
     test("no-ops when window.confirm returns false", async () => {
@@ -596,8 +568,6 @@ describe("createLibrarySettingsActions", () => {
     });
   });
 
-  // ---- setLanguage ----
-
   describe("setLanguage", () => {
     test("patches state, updates settings store, calls changeLanguage, and hydrates", async () => {
       const harness = createHarness();
@@ -631,8 +601,6 @@ describe("createLibrarySettingsActions", () => {
     });
   });
 
-  // ---- restartApp ----
-
   describe("restartApp", () => {
     test("calls api.restartApp", async () => {
       const harness = createHarness();
@@ -653,8 +621,6 @@ describe("createLibrarySettingsActions", () => {
       expect(harness.dependencies.notifyError).toHaveBeenCalled();
     });
   });
-
-  // ---- setStemMode ----
 
   describe("setStemMode", () => {
     test("calls api.setStemMode and hydrates settings", async () => {
@@ -689,8 +655,6 @@ describe("createLibrarySettingsActions", () => {
       expect(harness.dependencies.notifyError).toHaveBeenCalled();
     });
   });
-
-  // ---- setExecutionProvider ----
 
   describe("setExecutionProvider", () => {
     test("calls api.setExecutionProvider and hydrates settings", async () => {
@@ -727,8 +691,6 @@ describe("createLibrarySettingsActions", () => {
       expect(harness.dependencies.notifyError).toHaveBeenCalled();
     });
   });
-
-  // ---- toggleHideBatchSeparate ----
 
   describe("toggleHideBatchSeparate", () => {
     test("patches state, updates settings store, and calls api", async () => {
@@ -769,8 +731,6 @@ describe("createLibrarySettingsActions", () => {
     });
   });
 
-  // ---- toggleCoverArtBackdrop ----
-
   describe("toggleCoverArtBackdrop", () => {
     test("patches state, updates settings store, and calls api", async () => {
       const harness = createHarness();
@@ -810,8 +770,6 @@ describe("createLibrarySettingsActions", () => {
     });
   });
 
-  // ---- setEqEnabled ----
-
   describe("setEqEnabled", () => {
     test("patches state and delegates mutation ownership to the settings store", async () => {
       const harness = createHarness();
@@ -842,13 +800,10 @@ describe("createLibrarySettingsActions", () => {
       expect(
         harness.dependencies.settingsStore.setEqEnabled,
       ).toHaveBeenCalledWith(true);
-      // The store owns error reporting and returns its committed value.
       expect(harness.patchState).toHaveBeenCalledWith({ eqEnabled: false });
       expect(harness.dependencies.notifyError).not.toHaveBeenCalled();
     });
   });
-
-  // ---- setEqGains ----
 
   describe("setEqGains", () => {
     test("patches state and delegates mutation ownership to the settings store", async () => {
@@ -906,8 +861,6 @@ describe("createLibrarySettingsActions", () => {
     });
   });
 
-  // ---- resetEqGains ----
-
   describe("resetEqGains", () => {
     test("patches state to flat and delegates to the settings store", async () => {
       const harness = createHarness();
@@ -953,8 +906,6 @@ describe("createLibrarySettingsActions", () => {
     });
   });
 
-  // ---- setCrossfadeEnabled ----
-
   describe("setCrossfadeEnabled", () => {
     test("patches state and delegates mutation ownership to the settings store", async () => {
       const harness = createHarness();
@@ -992,8 +943,6 @@ describe("createLibrarySettingsActions", () => {
       expect(harness.dependencies.notifyError).not.toHaveBeenCalled();
     });
   });
-
-  // ---- setCrossfadeDurationMs ----
 
   describe("setCrossfadeDurationMs", () => {
     test("patches state and delegates mutation ownership to the settings store", async () => {
@@ -1042,8 +991,6 @@ describe("createLibrarySettingsActions", () => {
     });
   });
 
-  // ---- setThemePreference ----
-
   describe("setThemePreference", () => {
     test("patches overlay state and delegates to settings store", async () => {
       const harness = createHarness();
@@ -1087,7 +1034,6 @@ describe("createLibrarySettingsActions", () => {
 
       await harness.actions.setThemePreference("light");
 
-      // The final patchState call should mirror the rolled-back store value.
       expect(harness.patchState).toHaveBeenLastCalledWith({
         themePreference: "dark",
       });

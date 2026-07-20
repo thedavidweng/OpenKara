@@ -25,7 +25,6 @@ interface TooltipProps {
   shortcut?: string;
   /** Override provider delay for low-frequency explanatory tooltips. */
   delayDuration?: number;
-  /** When true, the trigger renders without a tooltip. */
   disabled?: boolean;
 }
 

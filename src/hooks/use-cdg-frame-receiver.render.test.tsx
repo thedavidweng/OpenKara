@@ -7,8 +7,6 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 // The coalescing painter uses setTimeout(flush, 0) to batch frames into the
 // next macrotask. We need fake timers to control this deterministically.
 
-// ── Mocks ──────────────────────────────────────────────────────────────────
-
 const {
   mockDrawFrame,
   mockClearFrame,
@@ -47,7 +45,6 @@ const {
         return () => {};
       },
     ),
-    // Expose captured handlers via getters
     getFrameHandler: () => frameHandler,
     getClearHandler: () => clearHandler,
     getStatusHandler: () => statusHandler,
@@ -64,8 +61,6 @@ vi.mock("@/lib/cdg-sync-channel", () => ({
   startCdgSyncReceiver: mockStartCdgSyncReceiver,
   startCdgSyncRequestListener: vi.fn(() => () => {}),
 }));
-
-// ── Test ───────────────────────────────────────────────────────────────────
 
 import { useCdgFrameReceiver } from "./use-cdg-frame-receiver";
 import { useCdgStore } from "@/stores/cdg-store";
@@ -111,7 +106,6 @@ describe("useCdgFrameReceiver — render coverage", () => {
       root!.render(<TestComponent />);
     });
 
-    // Get the captured frame handler
     const calls = mockStartCdgSyncReceiver.mock.calls;
     expect(calls.length).toBeGreaterThan(0);
     const opts = calls[0][0] as {
@@ -131,19 +125,16 @@ describe("useCdgFrameReceiver — render coverage", () => {
       opts.onFrame({ rgba, frameVersion: 5, transportGeneration: 2 });
     });
 
-    // Flush the coalescing painter's macrotask
     act(() => {
       vi.runAllTimers();
     });
 
-    // After flushing, frameVersion and drawFrame should both be applied
     expect(useCdgStore.getState().frameVersion).toBe(5);
     expect(useCdgStore.getState().transportGeneration).toBe(2);
     expect(mockDrawFrame).toHaveBeenCalledWith(rgba);
   });
 
   test("onClear clears the store and canvas", async () => {
-    // Set up some state first
     useCdgStore.setState({
       hasCdg: true,
       songId: "song-1",

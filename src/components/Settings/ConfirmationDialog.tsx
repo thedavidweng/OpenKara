@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
+import { useEscapeKey } from "@/hooks/use-escape-key";
 
 interface ConfirmationDialogProps {
   title: string;
@@ -26,22 +27,12 @@ export function ConfirmationDialog({
     cancelRef.current?.focus();
   }, []);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onCancel();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onCancel]);
+  useEscapeKey(onCancel, [onCancel]);
 
   const dialogContent = (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/60" onClick={onCancel} />
 
-      {/* Dialog */}
       <div
         role="dialog"
         aria-modal="true"

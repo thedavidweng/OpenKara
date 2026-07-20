@@ -330,7 +330,6 @@ export function createSettingsStore(
       },
       setEqEnabled: async (enabled) => {
         const generation = eqEnabledField.begin(get().eqEnabled, enabled);
-        // Optimistically update local state so the toggle reflects immediately.
         syncPatch({ eqEnabled: enabled });
         try {
           const settings = await api.setEqEnabled(enabled);
@@ -351,7 +350,6 @@ export function createSettingsStore(
         }
       },
       setEqGains: async (gainsDb) => {
-        // Optimistically update local state so sliders reflect immediately.
         const generation = eqGainsField.begin(get().eqGainsDb, gainsDb);
         syncPatch({ eqGainsDb: gainsDb });
         try {

@@ -20,8 +20,6 @@ use super::upload_status::{
     emit_upload_complete, emit_upload_error, emit_upload_progress, mark_upload_status,
 };
 
-/// Copy and upload artwork derivative files (thumbnail + preview) to the
-/// remote repository, and persist the derivative paths in the remote DB.
 /// Best-effort: missing/invalid derivatives are regenerated from the local
 /// cover art bytes. Failures are logged but do not abort the publish.
 fn publish_artwork_derivatives(
@@ -448,7 +446,7 @@ pub(crate) fn publish_song_to_remote<R: tauri::Runtime>(
     )?;
     emit_upload_progress(app_handle, &snapshot);
 
-    let background_state = state.clone_for_background();
+    let background_state = state.clone();
     let background_handle = app_handle.clone();
     let song_id = song_id.clone();
     std::thread::spawn(move || {
@@ -478,7 +476,7 @@ pub(crate) fn publish_songs_to_remote<R: tauri::Runtime>(
         snapshots.push(snapshot);
     }
 
-    let background_state = state.clone_for_background();
+    let background_state = state.clone();
     let background_handle = app_handle.clone();
     let song_ids = song_ids.to_vec();
     std::thread::spawn(move || {

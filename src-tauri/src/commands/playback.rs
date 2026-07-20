@@ -20,8 +20,6 @@ pub use crate::services::playback::play_song_from_library;
 /// divided by 3px per bucket.
 const DEFAULT_WAVEFORM_BUCKETS: usize = 200;
 
-/// Send a synchronous command to the coordinator and await its reply.
-/// Maps channel and reply errors to `CommandError`.
 async fn send_and_await(
     state: &AppState,
     make_command: impl FnOnce(
@@ -250,7 +248,6 @@ pub async fn get_waveform(
     hash: String,
     buckets: Option<usize>,
 ) -> CommandResult<Vec<f32>> {
-    // 1. Derive effective buckets before constructing the cache/singleflight key.
     let requested = buckets.unwrap_or(DEFAULT_WAVEFORM_BUCKETS);
     let effective = waveforms::clamp_buckets(requested);
     let key = WaveformKey {
@@ -258,7 +255,6 @@ pub async fn get_waveform(
         buckets: effective,
     };
 
-    // 2. Clone LibraryRoot without retaining its mutex.
     let library_root = state.library_root()?;
 
     // 3. Open the library DB in a short blocking task and fetch the song.
@@ -298,8 +294,6 @@ pub async fn get_waveform(
         return Ok(Vec::new());
     }
 
-    // 5. Register with the singleflight. If this is the first waiter, spawn
-    //    the owned blocking computation task.
     let (rx, inserted) = state.playback.waveform_singleflight.register(key.clone());
 
     if inserted {
@@ -323,7 +317,6 @@ pub async fn get_waveform(
             // Take waiters before sending so no send occurs under the map lock.
             // `complete()` marks the guard as done so its `Drop` is a no-op.
             let Some(waiters) = guard.complete() else {
-                // No waiters left (all cancelled). The key is already cleared.
                 return;
             };
             let payload = match result {
@@ -337,7 +330,6 @@ pub async fn get_waveform(
         });
     }
 
-    // 6. Await the shared result and convert to Vec<f32> at the IPC boundary.
     let shared = rx
         .await
         .map_err(|_| internal_error("waveform computation was cancelled"))?

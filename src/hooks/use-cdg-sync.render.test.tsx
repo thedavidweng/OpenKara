@@ -4,8 +4,6 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-// ── Mocks ──────────────────────────────────────────────────────────────────
-
 const {
   mockGetCdgFrame,
   mockGetCdgStatus,
@@ -63,8 +61,6 @@ vi.mock("@/lib/song-media", () => ({
   songHasCdgMedia: vi.fn(() => true),
 }));
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-
 import { useCdgSync } from "./use-cdg-sync";
 import {
   usePlayerStore,
@@ -75,7 +71,6 @@ import { useLibraryStore } from "@/stores/library-store";
 import type { PlaybackStateSnapshot } from "@/types/ipc";
 import { CDG_PROTOCOL_HEADER_SIZE, CDG_RGBA_SIZE } from "@/lib/cdg-protocol";
 
-/** Build a binary CDG frame response (header + RGBA payload). */
 function buildBinaryFrame(
   transportGeneration: number,
   frameVersion: number,
@@ -87,11 +82,9 @@ function buildBinaryFrame(
   view.setUint8(1, 0x4b);
   view.setUint8(2, 0x43);
   view.setUint8(3, 0x47);
-  // Version 1
   view.setUint16(4, 1, true);
   // Flags: RGBA present (bit 0)
   view.setUint16(6, 0x01, true);
-  // Transport generation
   view.setBigUint64(8, BigInt(transportGeneration), true);
   view.setBigUint64(16, BigInt(frameVersion), true);
   view.setBigUint64(24, 0n, true);
@@ -191,18 +184,14 @@ describe("useCdgSync — render coverage", () => {
       });
     });
 
-    // Verify the probe called getCdgFrame with the right parameters
     expect(mockGetCdgFrame).toHaveBeenCalledWith(
       "song-1",
       1,
       expect.any(Number),
       0,
     );
-    // Verify drawFrame was called with the RGBA payload
     expect(mockDrawFrame).toHaveBeenCalled();
-    // Verify postCdgFrame was called to broadcast to audience windows
     expect(mockPostCdgFrame).toHaveBeenCalled();
-    // Verify the store was updated
     expect(useCdgStore.getState().hasCdg).toBe(true);
     expect(useCdgStore.getState().songId).toBe("song-1");
     expect(useCdgStore.getState().frameVersion).toBe(1);
@@ -273,7 +262,6 @@ describe("useCdgSync — render coverage", () => {
       );
     });
 
-    // Verify drawFrame was called (either by probe or hot frame)
     expect(mockDrawFrame).toHaveBeenCalled();
   });
 
@@ -346,7 +334,6 @@ describe("useCdgSync — render coverage", () => {
       );
     });
 
-    // Graphics should now be drawn and CDG confirmed.
     expect(useCdgStore.getState().hasCdg).toBe(true);
     expect(useCdgStore.getState().availability).toBe("ready");
     // The loading path must not have cleared the display at any point.

@@ -54,10 +54,6 @@ impl AppState {
     pub fn resolve_model_path(&self) -> Result<PathBuf, CommandError> {
         self.shell.resolve_model_path()
     }
-
-    pub fn clone_for_background(&self) -> Self {
-        self.clone()
-    }
 }
 
 #[cfg(test)]
@@ -83,7 +79,7 @@ mod tests {
     fn delegation_methods_work() {
         let state = AppState::test_fixture();
         assert!(state.library_root().is_err());
-        let bg = state.clone_for_background();
+        let bg = state.clone();
         state
             .playback
             .playback_request_id

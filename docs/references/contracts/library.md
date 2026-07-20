@@ -382,23 +382,7 @@
 3. Rust crate `sha2` 负责生成稳定文件 hash
 4. Tauri app setup 必须先完成 `AppState.database_path` 注入
 
-## Verification commands
-
-```bash
-cd src-tauri
-cargo test --test phase1_metadata --test phase1_cache --test phase1_import
-cargo test
-```
-
-**Expected evidence**
-
-1. `phase1_metadata`、`phase1_cache`、`phase1_import` 三个 integration tests 全部通过
-2. `cache` 的 migration 单元测试通过
-3. 无需运行 UI 也能验证导入、搜索、落库语义
-
 ## 资料库完整性审计 (Library Integrity Audit)
-
-**I1 完整性审计与清理 (新增):**
 
 22. `check_library_integrity() -> IntegrityReport` — 审计活动本地资料库的缺失/空引用文件和孤立管理文件
 23. `remove_missing_library_entries(hashes: Vec<String>) -> IntegrityCleanupResult` — 在事务中重新验证并删除主媒体仍缺失/空的数据库条目

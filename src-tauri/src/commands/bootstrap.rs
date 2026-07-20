@@ -317,7 +317,6 @@ pub fn download_model(
     app_handle: AppHandle,
     variant: String,
 ) -> CommandResult<ModelBootstrapStatusSnapshot> {
-    // B3: Block model download when runtime is missing.
     crate::commands::runtime_bootstrap::ensure_runtime_ready(
         &state.shell.runtime_bootstrap_status,
     )?;

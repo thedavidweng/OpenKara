@@ -1,19 +1,8 @@
-/**
- * A simple spring physics solver for smooth animations.
- * Uses a damped harmonic oscillator model.
- *
- * Usage:
- *   const spring = new Spring({ stiffness: 180, damping: 12 });
- *   spring.setTarget(1.0);
- *   // In animation loop:
- *   spring.update(dtSeconds);
- *   const value = spring.getPosition();
- */
 interface SpringConfig {
-  stiffness: number; // Spring constant (higher = snappier). Default: 180
-  damping: number; // Damping ratio (higher = less bounce). Default: 12
-  mass: number; // Mass (higher = slower). Default: 1
-  precision: number; // Settle threshold. Default: 0.001
+  stiffness: number; // higher = snappier
+  damping: number; // higher = less bounce
+  mass: number;
+  precision: number; // settle threshold
 }
 
 const DEFAULT_CONFIG: SpringConfig = {
@@ -45,30 +34,20 @@ export class Spring {
     return true;
   }
 
-  /**
-   * Advance the simulation by `dt` seconds.
-   * Typical dt is 1/60 (~0.0167).
-   */
   update(dt: number) {
     if (this.settled) return;
 
     const { stiffness, damping, mass, precision } = this.config;
 
-    // Spring force: F = -k * displacement
     const displacement = this.position - this.target;
     const springForce = -stiffness * displacement;
-
-    // Damping force: F = -c * velocity
     const dampingForce = -damping * this.velocity;
-
-    // Acceleration: a = F / m
     const acceleration = (springForce + dampingForce) / mass;
 
     // Semi-implicit Euler integration
     this.velocity += acceleration * dt;
     this.position += this.velocity * dt;
 
-    // Check if settled
     if (
       Math.abs(this.velocity) < precision &&
       Math.abs(this.position - this.target) < precision

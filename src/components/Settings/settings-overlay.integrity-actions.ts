@@ -86,11 +86,9 @@ export function createIntegritySettingsActions(
         const result =
           await dependencies.api.removeMissingLibraryEntries(selectedHashes);
 
-        // Clean up queue and library selection for deleted songs.
         if (result.deleted_song_hashes.length > 0) {
           dependencies.queueStore.removeSongIds(result.deleted_song_hashes);
 
-          // Clear selection if any selected songs were deleted.
           const deletedSet = new Set(result.deleted_song_hashes);
           const libraryState = useLibraryStore.getState();
           const affectedSelection = Array.from(
@@ -105,7 +103,6 @@ export function createIntegritySettingsActions(
         await dependencies.libraryStore.loadLibrary();
         await dependencies.playerStore.loadState();
 
-        // Update the report: remove deleted entries from the current report.
         const deletedSet = new Set(result.deleted_song_hashes);
         if (current.integrityReport) {
           const updatedReport: IntegrityReport = {
@@ -127,7 +124,6 @@ export function createIntegritySettingsActions(
                 (issue) => !deletedSet.has(issue.song_hash),
               ),
           };
-          // Recompute selection: only keep hashes still in the report.
           const remainingSelection = new Set(
             Array.from(current.integritySelection).filter(
               (hash) => !deletedSet.has(hash),

@@ -245,7 +245,6 @@ describe("LyricsPanel contextual reveal", () => {
     ) as HTMLButtonElement;
     expect(button).toBeTruthy();
     expect(button.className).toContain("pointer-events-auto");
-    // Cover the onClick path (requests auto-scroll resume).
     act(() => {
       button.click();
     });

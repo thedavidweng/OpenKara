@@ -1,12 +1,3 @@
-//! #90: Waveform computation service.
-//!
-//! Owns the blocking work performed by the singleflight computation task:
-//! open a fresh DB connection, re-check the song exists and is local, return
-//! a cached value when present, decode the audio, compute peaks, persist
-//! them, and return the shared result. The command layer spawns this inside
-//! `tauri::async_runtime::spawn_blocking` so the work never blocks the
-//! async runtime or the WebView.
-
 use crate::audio::waveform::compute_waveform_peaks;
 use crate::cache::{self, waveforms};
 use crate::library_root::LibraryRoot;
@@ -16,22 +7,10 @@ use crate::state::{WaveformKey, WaveformResult};
 #[cfg(test)]
 use std::sync::Arc;
 
-/// Run the full blocking waveform computation pipeline for one
-/// `(song_hash, buckets)` key. The caller has already verified the song
-/// exists and is local; this function re-checks both facts under a fresh
-/// connection so a song deleted between the command's initial lookup and
-/// the computation task is observed and produces a sanitized error rather
-/// than a stale cache write.
-///
-/// Steps:
-/// 1. open a new connection from `LibraryRoot::database_path()`;
-/// 2. re-read the song by hash and repeat the local-source guard;
-/// 3. return a validated cached value when present;
-/// 4. drop the connection;
-/// 5. decode with `load_song_audio` and compute peaks;
-/// 6. open a fresh connection, re-check that the same song still exists,
-///    save the result, close it;
-/// 7. return the `Arc<[f32]>`.
+/// The caller has already verified the song exists and is local; this
+/// function re-checks both facts under a fresh connection so a song deleted
+/// between the command's initial lookup and the computation task is observed
+/// and produces a sanitized error rather than a stale cache write.
 ///
 /// All errors are sanitized to a fixed message so no raw absolute paths
 /// leak to IPC. The singleflight layer wraps this in a completion guard
@@ -41,11 +20,9 @@ pub fn compute_waveform_blocking(library_root: LibraryRoot, key: WaveformKey) ->
 }
 
 fn inner_compute(library_root: &LibraryRoot, key: &WaveformKey) -> WaveformResult {
-    // Step 1: open a fresh connection for the cache check.
     let connection = cache::open_database(&library_root.database_path())
         .map_err(|_| SANITIZED_WAVEFORM_ERROR.to_owned())?;
 
-    // Step 2: re-read the song and repeat the local-source guard.
     let song = cache::get_song_by_hash(&connection, &key.song_hash)
         .map_err(|_| SANITIZED_WAVEFORM_ERROR.to_owned())?
         .ok_or_else(|| SANITIZED_WAVEFORM_ERROR.to_owned())?;
@@ -56,23 +33,19 @@ fn inner_compute(library_root: &LibraryRoot, key: &WaveformKey) -> WaveformResul
         return Err(SANITIZED_WAVEFORM_ERROR.to_owned());
     }
 
-    // Step 3: return a validated cached value when present.
     if let Some(cached) = waveforms::get_cached_waveform(&connection, &key.song_hash, key.buckets)
         .map_err(|_| SANITIZED_WAVEFORM_ERROR.to_owned())?
     {
         return Ok(cached);
     }
 
-    // Step 4: drop the connection before decoding.
     drop(connection);
 
-    // Step 5: decode and compute peaks.
     let decoded = playback_source::load_song_audio(library_root, &song)
         .map_err(|_| SANITIZED_WAVEFORM_ERROR.to_owned())?;
     let peaks = compute_waveform_peaks(&decoded, key.buckets)
         .map_err(|_| SANITIZED_WAVEFORM_ERROR.to_owned())?;
 
-    // Step 6: open a fresh connection, re-check the song still exists, save.
     let connection = cache::open_database(&library_root.database_path())
         .map_err(|_| SANITIZED_WAVEFORM_ERROR.to_owned())?;
     let still_exists = cache::get_song_by_hash(&connection, &key.song_hash)
@@ -86,9 +59,7 @@ fn inner_compute(library_root: &LibraryRoot, key: &WaveformKey) -> WaveformResul
     Ok(peaks)
 }
 
-/// Sanitized error returned to waiters when the computation task fails for
-/// any reason (ordinary error, panic, cancellation, JoinError). The message
-/// is intentionally generic — no raw absolute paths leak to IPC.
+/// The message is intentionally generic — no raw absolute paths leak to IPC.
 const SANITIZED_WAVEFORM_ERROR: &str = "waveform computation failed";
 
 /// Test-only entry point that runs the same pipeline against an already-open
@@ -171,7 +142,6 @@ mod tests {
         let k = key("remote-1", 200);
         let result = compute_waveform_with_connection(&conn, &library_root, &k);
         assert!(result.is_err(), "remote source should not compute");
-        // No waveform row should have been written.
         assert!(waveforms::get_cached_waveform(&conn, "remote-1", 200)
             .expect("get")
             .is_none());
@@ -210,7 +180,6 @@ mod tests {
         let k = key("missing", 200);
         let err = compute_waveform_with_connection(&conn, &library_root, &k).expect_err("err");
         assert_eq!(err, SANITIZED_WAVEFORM_ERROR);
-        // No raw path should leak.
         assert!(!err.contains('/') && !err.contains('\\'));
     }
 

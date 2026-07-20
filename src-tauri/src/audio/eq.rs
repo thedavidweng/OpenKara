@@ -23,25 +23,18 @@
 
 use biquad::{Biquad, Coefficients, DirectForm1, Hertz, Type};
 
-/// Band center frequencies for the five-band peaking EQ.
 pub const EQ_BAND_FREQUENCIES_HZ: [f32; 5] = [60.0, 230.0, 910.0, 3_600.0, 14_000.0];
 /// Q factor shared by all bands (Butterworth-ish 0.707).
 pub const EQ_Q: f32 = 0.707;
-/// Inclusive lower bound for per-band gain in dB.
 pub const EQ_MIN_GAIN_DB: f32 = -12.0;
-/// Inclusive upper bound for per-band gain in dB.
 pub const EQ_MAX_GAIN_DB: f32 = 12.0;
-/// Smooth duration for gain and preamp transitions.
 const EQ_SMOOTH_MS: f32 = 50.0;
-/// Smooth duration for the bypass dry/wet crossfade.
 const BYPASS_SMOOTH_MS: f32 = 20.0;
 /// Bands at or above `sample_rate * NYQUIST_RATIO_LIMIT` are skipped to avoid
 /// coefficient instability near Nyquist.
 const NYQUIST_RATIO_LIMIT: f32 = 0.45;
-/// Soft-limiter threshold; samples at or below this pass through unchanged.
 pub const LIMITER_THRESHOLD: f32 = 0.95;
 
-/// Convert decibels to linear amplitude.
 fn db_to_linear(db: f32) -> f32 {
     10.0f32.powf(db / 20.0)
 }
@@ -68,10 +61,8 @@ pub fn soft_limit(sample: f32) -> f32 {
     compressed.copysign(sample)
 }
 
-/// Per-channel, per-band peaking EQ filter state.
 type ChannelBands = [Option<DirectForm1<f32>>; 5];
 
-/// Realtime EQ processor owned by the CPAL output closure.
 pub struct EqProcessor {
     filters: Vec<ChannelBands>,
     sample_rate: f32,
@@ -96,9 +87,8 @@ pub struct EqProcessor {
 }
 
 impl EqProcessor {
-    /// Construct a processor for the given device sample rate and channel
-    /// count. Bands above the Nyquist guard are left as `None` for the
-    /// lifetime of this processor (i.e. until a new stream is built).
+    /// Bands above the Nyquist guard are left as `None` for the lifetime of
+    /// this processor (i.e. until a new stream is built).
     pub fn new(sample_rate: u32, channels: usize) -> Self {
         let sr = sample_rate as f32;
         let nyquist_limit = sr * NYQUIST_RATIO_LIMIT;
@@ -230,12 +220,10 @@ impl EqProcessor {
         );
     }
 
-    /// Last controller revision applied to this processor.
     pub fn last_eq_revision(&self) -> u64 {
         self.last_eq_revision
     }
 
-    /// Record that the processor has consumed the given revision.
     pub fn set_last_eq_revision(&mut self, revision: u64) {
         self.last_eq_revision = revision;
     }
@@ -415,13 +403,9 @@ pub fn validate_gains_db(gains_db: &[f32; 5]) -> Result<(), &'static str> {
 mod tests {
     use super::*;
 
-    // ── soft_limit ────────────────────────────────────────────────────────
-
     #[test]
     fn flat_bypassed_path_is_transparent_below_threshold() {
         let mut proc = EqProcessor::new(44_100, 2);
-        // Flat gains, disabled: process should be transparent for samples
-        // below the limiter threshold.
         let samples = [0.3, -0.5, 0.7, -0.2, 0.0, 0.94, -0.94, 0.1];
         let mut buf = samples.to_vec();
         let len = buf.len();
@@ -484,47 +468,34 @@ mod tests {
         }
     }
 
-    // ── is_fully_bypassed / limiter gating ────────────────────────────────
-
     #[test]
     fn is_fully_bypassed_true_by_default_and_after_disable_settles() {
         let mut proc = EqProcessor::new(48_000, 2);
-        // Fresh processor: disabled, wet_mix = 0, no ramp.
         assert!(proc.is_fully_bypassed());
 
-        // Enabling starts a ramp toward wet_mix = 1.0, so not bypassed.
         proc.set_enabled(true);
         assert!(!proc.is_fully_bypassed());
 
-        // Process enough frames for the ramp to complete (50 ms at 48 kHz).
         let mut buf = [0.0f32; 48_000 * 2 / 20];
         let len = buf.len();
         proc.process(&mut buf, len);
 
-        // After the ramp completes, wet_mix = 1.0, not bypassed.
         assert!(!proc.is_fully_bypassed());
 
-        // Disabling starts a ramp back toward 0.0; while ramping, not bypassed.
         proc.set_enabled(false);
         assert!(!proc.is_fully_bypassed());
 
-        // Process enough frames for the disable ramp to complete.
         proc.process(&mut buf, len);
 
-        // After the disable ramp completes, fully bypassed again.
         assert!(proc.is_fully_bypassed());
     }
 
-    // ── EQ band response ──────────────────────────────────────────────────
-
     #[test]
     fn plus_12db_band_boosts_in_band_tone_more_than_off_band_tone() {
-        // 48 kHz stereo, 910 Hz band boosted by +12 dB.
         let mut proc = EqProcessor::new(48_000, 2);
         proc.set_enabled(true);
         proc.set_gains([0.0, 0.0, 12.0, 0.0, 0.0]);
-        // Run a few callbacks to let smoothing settle.
-        let frames = 48_000; // 1 second
+        let frames = 48_000;
         let in_band_freq = 910.0_f32;
         let off_band_freq = 60.0_f32;
 
@@ -541,7 +512,6 @@ mod tests {
         let mut buf = vec![0.0f32; frames * channels];
         let phase_step = 2.0 * std::f32::consts::PI * freq / sample_rate as f32;
         let mut phase: f32 = 0.0;
-        // Generate a sine tone into the buffer.
         for frame in 0..frames {
             let s = phase.sin() * 0.5;
             for ch in 0..channels {
@@ -564,14 +534,11 @@ mod tests {
         (sum / (buf.len() - half) as f32).sqrt()
     }
 
-    // ── Auto preamp ───────────────────────────────────────────────────────
-
     #[test]
     fn auto_preamp_target_reduces_wet_gain_for_positive_boost() {
         let mut proc = EqProcessor::new(44_100, 2);
         proc.set_enabled(true);
         proc.set_gains([0.0, 0.0, 0.0, 0.0, 12.0]);
-        // target_preamp = db_to_linear(-12) ≈ 0.251
         let expected = db_to_linear(-12.0);
         assert!(
             (proc.target_preamp - expected).abs() < 1e-5,
@@ -597,8 +564,6 @@ mod tests {
         let mut proc = EqProcessor::new(48_000, 2);
         proc.set_enabled(true);
         proc.set_gains([12.0, 0.0, 0.0, 0.0, 0.0]);
-        // 50 ms = 2400 frames at 48 kHz. After 2400 frames the preamp should
-        // have reached the target.
         let frames = 2400;
         let mut buf = vec![0.5f32; frames * 2];
         let len = buf.len();
@@ -623,7 +588,6 @@ mod tests {
             "boosting the skipped 14 kHz band at 22.05 kHz should not attenuate, got {}",
             proc.target_preamp
         );
-
         // Boosting an active band at the same sample rate still applies preamp.
         proc.set_gains([0.0, 0.0, 12.0, 0.0, 0.0]);
         let expected = db_to_linear(-12.0);
@@ -636,9 +600,6 @@ mod tests {
 
     #[test]
     fn disabled_eq_does_not_attenuate_when_top_band_is_boosted() {
-        // Even before the preamp fix, a disabled processor should pass the dry
-        // signal through unchanged. Regression guard for the bypass fast-path
-        // and the Nyquist-aware preamp.
         let mut proc = EqProcessor::new(22_050, 2);
         proc.set_gains([0.0, 0.0, 0.0, 0.0, 12.0]);
         let samples = [0.3, -0.5, 0.7, -0.2, 0.0, 0.94, -0.94, 0.1];
@@ -660,7 +621,6 @@ mod tests {
         // 50 ms ramp take far longer when processed in 256-frame chunks.
         let mut proc = EqProcessor::new(48_000, 2);
         proc.set_enabled(true);
-        // Settle wet_mix before measuring gain-only ramp.
         let mut settle = vec![0.0f32; 48_000 * 2];
         let settle_len = settle.len();
         proc.process(&mut settle, settle_len);
@@ -684,19 +644,15 @@ mod tests {
         );
     }
 
-    // ── Bypass / gain change discontinuity ────────────────────────────────
-
     #[test]
     fn bypass_transition_is_bounded() {
         let mut proc = EqProcessor::new(44_100, 2);
         proc.set_enabled(true);
-        // Settle wet_mix to 1.0.
         let mut buf = vec![0.5f32; 44_100 * 2];
         let len = buf.len();
         proc.process(&mut buf, len);
         assert!((proc.wet_mix - 1.0).abs() < 1e-6);
 
-        // Disable and check adjacent-sample discontinuity is bounded.
         proc.set_enabled(false);
         let chunk = 256;
         let mut prev = 0.5f32;
@@ -722,14 +678,11 @@ mod tests {
         );
     }
 
-    // ── Independent channel state ─────────────────────────────────────────
-
     #[test]
     fn left_and_right_filter_state_is_independent() {
         let mut proc = EqProcessor::new(48_000, 2);
         proc.set_enabled(true);
         proc.set_gains([0.0, 0.0, 12.0, 0.0, 0.0]);
-        // Feed a 910 Hz tone on the left only; right stays silent.
         let frames = 4096;
         let mut buf = vec![0.0f32; frames * 2];
         let phase_step = 2.0 * std::f32::consts::PI * 910.0 / 48_000.0;
@@ -759,8 +712,6 @@ mod tests {
             "right channel should stay silent, max={right_max}"
         );
     }
-
-    // ── Nyquist guards ────────────────────────────────────────────────────
 
     #[test]
     fn nyquist_guard_skips_bands_above_45_percent() {
@@ -820,8 +771,6 @@ mod tests {
         }
     }
 
-    // ── Validation ────────────────────────────────────────────────────────
-
     #[test]
     fn validate_gains_rejects_out_of_range() {
         assert!(validate_gains_db(&[0.0, 0.0, 0.0, 0.0, 12.5]).is_err());
@@ -840,8 +789,6 @@ mod tests {
         assert!(validate_gains_db(&[0.0; 5]).is_ok());
     }
 
-    // ── EqConfig ──────────────────────────────────────────────────────────
-
     #[test]
     fn eq_config_flat_defaults_to_disabled_zero_gains() {
         let c = EqConfig::flat();
@@ -849,8 +796,6 @@ mod tests {
         assert_eq!(c.gains_db, [0.0; 5]);
         assert_eq!(c.revision, 0);
     }
-
-    // ── Callback-chunk invariance ─────────────────────────────────────────
 
     /// Run a processor over a pre-filled input buffer split into the given
     /// partition sizes (in frames). Returns the processed output buffer.
@@ -924,7 +869,6 @@ mod tests {
 
         let input = tone_input(total_frames, channels, 910.0, sample_rate);
 
-        // Single 2,400-frame callback.
         let mut proc_single = EqProcessor::new(sample_rate, channels);
         proc_single.set_enabled(true);
         proc_single.set_gains([0.0, 0.0, 12.0, 0.0, 0.0]);
@@ -938,13 +882,11 @@ mod tests {
         let split_out = run_partitioned(&mut proc_split, &input, channels, &partitions);
         let split_snap = proc_split.snapshot();
 
-        // Parameter state must match exactly at the same total frame count.
         assert_eq!(
             single_snap, split_snap,
             "parameter state must be chunk-invariant"
         );
 
-        // Audio output must match within float tolerance at every sample.
         let tol = 1e-6;
         let mut max_err = 0.0f32;
         for i in 0..single_out.len() {
@@ -1004,8 +946,6 @@ mod tests {
 
     #[test]
     fn gain_reaches_target_at_exact_frame_boundary() {
-        // 50 ms @ 48 kHz = 2400 frames. After exactly 2400 frames the gain
-        // must reach its target with no residual callback-sized delay.
         let sample_rate = 48_000u32;
         let channels = 2;
         let ramp_frames = (EQ_SMOOTH_MS * sample_rate as f32 / 1000.0) as usize;
@@ -1019,7 +959,6 @@ mod tests {
         proc.process(&mut settle, settle_len);
         proc.set_gains([12.0, 0.0, 0.0, 0.0, 0.0]);
 
-        // Process exactly ramp_frames in one callback.
         let mut buf = vec![0.5f32; ramp_frames * channels];
         let len = buf.len();
         proc.process(&mut buf, len);

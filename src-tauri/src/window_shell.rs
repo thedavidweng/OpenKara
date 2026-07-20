@@ -104,7 +104,7 @@ pub fn initialize_main_window<R: Runtime>(
             WindowShellState::mac()
         };
 
-        // RATIONALE: A missing or failed AppKit pass should keep the app usable with
+        // A missing or failed AppKit pass should keep the app usable with
         // a deterministic mac shell profile instead of exposing half-applied chrome.
         match native::apply_main_window_shell(&window, &detected) {
             Ok(Some(applied)) => applied,
@@ -235,16 +235,12 @@ pub fn set_native_sidebar_visibility_impl<R: Runtime>(
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Tauri IPC commands.
-//
 // These three commands used to live in `commands::window_shell` as a thin
 // pass-through adapter. They failed the deletion test — deleting that module
 // just moved the `#[tauri::command]` attribute here — so they were inlined
 // directly onto the module that owns the behaviour. The seam is the IPC
 // boundary; there is no second adapter, so an intermediate module added
 // navigation overhead without concentrating complexity.
-// ---------------------------------------------------------------------------
 
 #[tauri::command]
 pub fn get_window_shell_state(state: tauri::State<'_, WindowShellState>) -> WindowShellState {

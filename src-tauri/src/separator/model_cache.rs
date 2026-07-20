@@ -26,9 +26,8 @@ impl<T> ModelCache<T> {
         self.get_or_load_with_key(path.display().to_string(), || load(path))
     }
 
-    /// Item 3: Returns `Arc<T>` so the caller can release the model cache lock
-    /// before running inference. Previously returned `&mut T` which held the
-    /// lock for the entire inference duration (minutes).
+    /// Returns `Arc<T>` so the caller can release the model cache lock
+    /// before running inference.
     pub fn get_or_load_with_key(
         &mut self,
         key: impl Into<String>,
@@ -90,8 +89,6 @@ mod tests {
         assert_eq!(*model, 2);
     }
 
-    /// Item 3: ModelCache returns Arc<T> so the lock can be released before
-    /// inference. Verify Arc semantics are correct.
     #[test]
     fn model_cache_returns_arc_allowing_lock_release() {
         let mut cache = ModelCache::default();
@@ -100,14 +97,11 @@ mod tests {
             .get_or_load_with_key("key", || Ok::<_, anyhow::Error>(42))
             .expect("load should succeed");
 
-        // Clone the Arc before "dropping the lock".
         let model1_clone = std::sync::Arc::clone(&model1);
         drop(model1);
 
-        // The cloned Arc should still be valid.
         assert_eq!(*model1_clone, 42);
 
-        // Getting the same key should return the same Arc.
         let model2 = cache
             .get_or_load_with_key("key", || Ok::<_, anyhow::Error>(99))
             .expect("load should succeed");

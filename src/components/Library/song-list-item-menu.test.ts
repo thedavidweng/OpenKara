@@ -105,7 +105,6 @@ describe("buildSongListContextMenuItems", () => {
 
       expect(addToPlaylist).toBeDefined();
       expect(addToPlaylist!.children).toBeDefined();
-      // At minimum it has the "new playlist" entry
       expect(addToPlaylist!.children!.length).toBeGreaterThanOrEqual(1);
       expect(
         addToPlaylist!.children![addToPlaylist!.children!.length - 1]!.label,
@@ -197,7 +196,6 @@ describe("buildSongListContextMenuItems", () => {
 
       expect(langItem).toBeDefined();
       expect(langItem.children).toBeDefined();
-      // auto + all languages
       expect(langItem.children!.length).toBe(1 + SONG_LANGUAGES.length);
       expect(langItem.children![0].label).toBe("library.languageAuto");
     });

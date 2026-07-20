@@ -83,7 +83,6 @@ describe("createSettingsOverlayTestContextValue", () => {
     expect(value.state.language).toBe("fr");
     expect(value.state.downloadingModel).toBe("htdemucs_ft");
 
-    // Unoverridden fields keep defaults
     expect(value.state.libraryPath).toBeNull();
     expect(value.state.stemMode).toBe("four_stem");
     expect(value.state.hideBatchSeparate).toBe(true);
@@ -102,7 +101,6 @@ describe("createSettingsOverlayTestContextValue", () => {
     expect(value.meta.dangerDialog).toBe("delete_stems");
     expect(value.meta.stemsSize).toBe(1024);
 
-    // Unoverridden fields keep defaults
     expect(value.meta.downgradeSavings).toBeNull();
     expect(value.meta.deletingStemsInProgress).toBe(false);
   });

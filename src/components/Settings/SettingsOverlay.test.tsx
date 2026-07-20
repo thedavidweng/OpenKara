@@ -365,14 +365,12 @@ describe("SettingsExecutionProviderSection rendering", () => {
       value,
     );
 
-    // The selected class marker appears exactly once.
     const selectedCount = (
       markup.match(
         /border-\[var\(--color-accent\)\] bg-\[var\(--color-accent\)\]\/15/g,
       ) ?? []
     ).length;
     expect(selectedCount).toBe(1);
-    // The selected option belongs to the supplied list (xnnpack), not directml.
     expect(markup).toContain("settings.executionProvider.xnnpack");
     expect(markup).not.toContain("settings.executionProvider.directml");
   });
