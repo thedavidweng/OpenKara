@@ -1073,14 +1073,16 @@ a {
   }
 
   .preview-stage {
-    padding: 12px var(--landing-gutter) 28px;
+    /* Full-bleed clip stage: mock may start inset on the left but must
+       continue past the right viewport edge with no trailing gutter. */
+    padding: 12px 0 28px;
   }
 
   .preview-stage::before {
     top: 8%;
-    right: 5%;
+    right: 0;
     bottom: 18px;
-    left: 5%;
+    left: 0;
     filter: blur(14px);
   }
 
@@ -1090,18 +1092,21 @@ a {
     filter: blur(12px);
   }
 
-  /* Miniaturize the same desktop mock so its left half fills the phone frame;
-     the right half overflows and is clipped — not a separate mobile asset.
-     Scale = 2 * frameWidth / designWidth so left half → full frame width.
-     Negative margins collapse the unscaled layout box (same trick Linear uses). */
+  /* Same desktop mock, miniaturized. Left inset only; the window itself is
+     wider than the viewport so its right edge (and right half of the UI)
+     bleeds off-screen — clipped by .preview-stage, not by a padded frame. */
   .product-preview {
-    --preview-frame-width: calc(100vw - var(--landing-gutter) * 2);
+    --preview-left-inset: var(--landing-gutter);
+    --preview-visible-width: calc(100vw - var(--preview-left-inset));
     --preview-scale: calc(
-      var(--preview-frame-width) * 2 / var(--preview-design-width)
+      var(--preview-visible-width) * 2 / var(--preview-design-width)
     );
-    width: 100%;
+    width: calc(var(--preview-design-width) * var(--preview-scale));
+    max-width: none;
     aspect-ratio: auto;
     height: calc(var(--preview-design-width) * 9 / 16 * var(--preview-scale));
+    margin-inline: 0;
+    margin-left: var(--preview-left-inset);
     border-radius: 14px;
   }
 
