@@ -184,11 +184,16 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
         };
 
         // Resolve or generate stable repository_id and writer_id.
+        // Persist newly generated ids so the next publish/retry uses the
+        // same identity instead of generating a different one.
         let (repository_id, writer_id) = {
             let conn = state.remote.control_db.lock().map_err(|_| {
                 crate::commands::error::state_lock_error("control DB lock was poisoned")
             })?;
             let repo_state = get_repository_state(&conn, &library_id)?;
+            let needs_persist = repo_state.as_ref().map_or(false, |r| {
+                r.repository_id.is_none() || r.writer_id.is_none()
+            });
             let repository_id = repo_state
                 .as_ref()
                 .and_then(|r| r.repository_id.clone())
@@ -197,6 +202,13 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
                 .as_ref()
                 .and_then(|r| r.writer_id.clone())
                 .unwrap_or_else(generate_writer_id);
+            if needs_persist {
+                if let Some(mut row) = repo_state {
+                    row.repository_id = Some(repository_id.clone());
+                    row.writer_id = Some(writer_id.clone());
+                    upsert_repository_state(&conn, &row)?;
+                }
+            }
             (repository_id, writer_id)
         };
 
