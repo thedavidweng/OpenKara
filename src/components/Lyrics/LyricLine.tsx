@@ -40,6 +40,21 @@ const AUDIENCE_TEXT_SIZE_CLASSES = {
   [2]: "text-6xl font-bold tracking-tight md:text-8xl xl:text-8xl",
 } as const;
 
+// RATIONALE: Secondary lines (romanized pronunciation, background vocals) sit
+// visually below the primary lyric. The audience renderer scales them to 0.55×
+// the primary fontSizePx; standard mode mirrors that ratio by stepping the
+// Tailwind size down so the secondary track grows and shrinks with the same
+// lyricsFontStep control instead of staying pinned at text-sm/md:text-base.
+// The smallest step clamps at text-xs to stay readable when the primary is
+// already at its minimum.
+const STANDARD_SECONDARY_TEXT_SIZE_CLASSES = {
+  [-2]: "text-xs",
+  [-1]: "text-xs md:text-sm",
+  [0]: "text-sm md:text-base",
+  [1]: "text-base md:text-lg xl:text-2xl",
+  [2]: "text-lg md:text-2xl xl:text-3xl",
+} as const;
+
 function getLyricsTextSizeClass(
   presentation: "standard" | "audience",
   lyricsFontStep: number,
@@ -54,6 +69,16 @@ function getLyricsTextSizeClass(
   return presentation === "audience"
     ? AUDIENCE_TEXT_SIZE_CLASSES[clampedStep]
     : STANDARD_TEXT_SIZE_CLASSES[clampedStep];
+}
+
+function getLyricsSecondaryTextSizeClass(lyricsFontStep: number): string {
+  const clampedStep = Math.max(-2, Math.min(2, lyricsFontStep)) as
+    | -2
+    | -1
+    | 0
+    | 1
+    | 2;
+  return STANDARD_SECONDARY_TEXT_SIZE_CLASSES[clampedStep];
 }
 
 function shouldEmphasize(word: {
@@ -112,6 +137,8 @@ export const LyricLine = memo(function LyricLine({
   const seek = usePlayerStore((s) => s.seek);
   const isSeekable = state !== "plain";
   const textSizeClass = getLyricsTextSizeClass(presentation, lyricsFontStep);
+  const secondaryTextSizeClass =
+    getLyricsSecondaryTextSizeClass(lyricsFontStep);
   const audiencePresentationSpec =
     buildAudiencePresentationSpec(lyricsFontStep);
 
@@ -351,7 +378,7 @@ export const LyricLine = memo(function LyricLine({
           className={
             presentation === "audience"
               ? "motion-surface font-medium tracking-tight"
-              : `motion-surface text-sm font-medium md:text-base ${
+              : `motion-surface ${secondaryTextSizeClass} font-medium ${
                   state === "plain" || state === "active"
                     ? "text-[var(--color-text-dim)]"
                     : state === "past"
@@ -391,7 +418,7 @@ export const LyricLine = memo(function LyricLine({
           className={
             presentation === "audience"
               ? "motion-surface font-medium tracking-tight opacity-50"
-              : `motion-surface text-sm font-medium md:text-base ${
+              : `motion-surface ${secondaryTextSizeClass} font-medium ${
                   state === "plain" || state === "active"
                     ? "text-[var(--color-text-dim)]"
                     : state === "past"
