@@ -59,6 +59,19 @@ export default defineConfig(async () => ({
   },
   plugins: [react(), tailwindcss(), kuromojiDictPlugin()],
   test: {
+    // CI runners have noisy CPU scheduling under parallel jsdom forks; a
+    // trivial render can measure 5+ seconds of wall-clock under contention
+    // even though the test logic itself is <100ms. 15s gives headroom for
+    // env setup + first render without masking genuinely hung tests.
+    testTimeout: 15000,
+    // Per-file setup (beforeAll/beforeEach) can also be starved under the
+    // same contention; keep hooks generous so setup never fails the file.
+    hookTimeout: 15000,
+    // Cap worker parallelism slightly below CPU count on CI so the main
+    // process + v8 coverage instrumentation get headroom. Locally
+    // (multi-core dev machines) we let vitest use the default (all cores).
+    // NOTE: Vitest 4 removed poolOptions; maxWorkers is now top-level.
+    maxWorkers: process.env.CI ? 3 : undefined,
     // Nested git worktrees under `.worktrees/` duplicate `src/**` and must not
     // be collected as part of this package's unit test run.
     include: [
