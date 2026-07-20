@@ -18,12 +18,6 @@ use std::{
     },
 };
 
-/// If the sample rate or channel count already matches, the audio is returned
-/// unchanged. Otherwise a simple linear resample / channel remap is applied.
-///
-/// The preload scheduler uses this so the prepared track's PCM exactly
-/// matches what the render callback expects, avoiding a resampler cache
-/// miss on the first gapless frame.
 fn normalize_to_output_format(
     mut audio: crate::audio::decode::DecodedAudio,
     target_sample_rate: u32,
@@ -49,10 +43,6 @@ fn normalize_to_output_format(
         audio.sample_rate = target_sample_rate;
     }
 
-    // Recompute duration_ms from the normalized samples. Guard against
-    // division by zero — a valid decoded audio should always have a non-zero
-    // sample rate, but the DecodedAudio struct does not enforce this
-    // invariant at construction time.
     if audio.sample_rate > 0 {
         if let Some(frames) = audio.samples.len().checked_div(audio.channels) {
             audio.duration_ms = (frames as u64 * 1000) / audio.sample_rate as u64;
@@ -62,7 +52,6 @@ fn normalize_to_output_format(
     audio
 }
 
-/// Remap interleaved samples from `src_channels` to `dst_channels`.
 fn remap_channels(
     samples: &[f32],
     src_channels: usize,
@@ -105,8 +94,6 @@ fn linear_resample(samples: &[f32], src_rate: u32, dst_rate: u32, channels: usiz
     if src_rate == dst_rate || channels == 0 || samples.is_empty() {
         return samples.to_vec();
     }
-    // Guard against zero rates — would produce a zero or infinite ratio and
-    // a division by zero in the frame count computation below.
     if src_rate == 0 || dst_rate == 0 {
         return samples.to_vec();
     }
@@ -133,9 +120,6 @@ fn linear_resample(samples: &[f32], src_rate: u32, dst_rate: u32, channels: usiz
     out
 }
 
-/// Only local, non-streaming, non-Media+G songs are eligible — the preload
-/// scheduler fully decodes the audio into memory so it must be a format that
-/// `load_playback_source` can decode without streaming.
 fn is_eligible_for_gapless(song: &Song) -> bool {
     if song.is_media_g() {
         return false;
@@ -178,15 +162,6 @@ fn prepare_next_track(
     })
 }
 
-/// The thread checks `shutdown` before decoding and before sending; if a
-/// newer preload is requested the old thread bails out.
-///
-/// `preload_request_generation` is the monotonic generation of the
-/// `set_preload_candidate` call that initiated this preload. It is included
-/// in the `PrepareNext` command so the coordinator can reject stale preloads
-/// from older threads that raced with a newer cancel.
-///
-/// Returns immediately; the caller does not wait for the decode to finish.
 pub fn spawn_preload_next(
     state: AppState,
     app_data_dir: std::path::PathBuf,
@@ -225,8 +200,6 @@ pub fn spawn_preload_next(
         };
 
         if !is_eligible_for_gapless(&song) {
-            // Not eligible — silently skip. The frontend will fall back to
-            // calling `play()` when `track-transitioned` does not arrive.
             return;
         }
 
@@ -234,8 +207,6 @@ pub fn spawn_preload_next(
             return;
         }
 
-        // Capture the current output format. If no output stream has been
-        // constructed yet, we cannot preload.
         let output_format = match state
             .playback
             .output_format
@@ -266,7 +237,6 @@ pub fn spawn_preload_next(
             return;
         }
 
-        // Send PrepareNext to the coordinator (fire-and-forget).
         let _ = state
             .playback
             .command_tx

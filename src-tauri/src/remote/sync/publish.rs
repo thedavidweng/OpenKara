@@ -20,8 +20,6 @@ use super::upload_status::{
     emit_upload_complete, emit_upload_error, emit_upload_progress, mark_upload_status,
 };
 
-/// Best-effort: missing/invalid derivatives are regenerated from the local
-/// cover art bytes. Failures are logged but do not abort the publish.
 fn publish_artwork_derivatives(
     local_connection: &rusqlite::Connection,
     local_root: &LibraryRoot,
@@ -37,8 +35,6 @@ fn publish_artwork_derivatives(
         return Ok(());
     };
     let Some(cover_art) = record.cover_art.as_deref() else {
-        // The original BLOB is the source of truth for a derivative. Do not
-        // propagate DB paths that cannot be tied to an authoritative cover.
         return Ok(());
     };
 
@@ -57,10 +53,6 @@ fn publish_artwork_derivatives(
             .map(|bytes| bytes.is_some())
             .unwrap_or(false);
 
-    // Regenerate if a path is missing, malformed, belongs to different cover
-    // bytes, or points at an invalid WebP. The conditional database update
-    // prevents a stale publisher from overwriting derivatives after concurrent
-    // cover-art replacement.
     let (thumb_path, preview_path) = if derivatives_are_usable {
         (expected_thumb, expected_preview)
     } else {
@@ -80,9 +72,6 @@ fn publish_artwork_derivatives(
         ) {
             Ok(true) => (derivatives.thumb_path, derivatives.preview_path),
             Ok(false) => {
-                // The just-generated deterministic files may have no row left
-                // referencing them. Delete only when reference counting proves
-                // they are not shared by another song.
                 for path in [&derivatives.thumb_path, &derivatives.preview_path] {
                     let _ = artwork::delete_artwork_derivative_if_unreferenced(
                         local_connection,
@@ -109,10 +98,6 @@ fn publish_artwork_derivatives(
         }
     };
 
-    // Copy derivative files to the remote working copy (unless same
-    // root) and upload to cloud storage. Persist the remote DB paths only
-    // after both files are present remotely — never commit DB paths that
-    // reference files omitted from the same publish operation.
     for (path, expected_size) in [
         (&thumb_path, artwork::THUMB_SIZE),
         (&preview_path, artwork::PREVIEW_SIZE),
@@ -139,8 +124,6 @@ fn publish_artwork_derivatives(
         }
     }
 
-    // Both derivative files are present in the remote working copy and cloud —
-    // safe to persist the paths in the remote DB.
     if let Err(error) = cache::update_artwork_derivative_paths(
         remote_connection,
         song_id,
@@ -234,10 +217,6 @@ pub(crate) fn update_remote_song(
     if remote_mode == "stems_remote" {
         song.file_path = None;
     }
-    // Updating cover_art without updating its paired derivative paths would
-    // leave the remote DB pointing at stale artwork if a later upload fails.
-    // Commit the song update and derivative-path invalidation together; the
-    // paths are repopulated only after both derivative uploads succeed.
     let transaction = connection
         .transaction()
         .map_err(|error| database_error(error.to_string()))?;
@@ -307,13 +286,6 @@ fn publish_song_internal<R: tauri::Runtime>(
     let remote_library_id = remote_library.id().to_owned();
     let remote_root = load_remote_root(&state.shell.app_data_dir, &remote_library)?;
 
-    // When the active library IS the remote repository (user is directly working
-    // in a remote repository), local_root and remote_root point to the same
-    // directory.  In that case the "copy to remote" step must be skipped —
-    // `copy_directory_recursive` would delete the source before reading it,
-    // destroying stems and media files.  The cloud upload reads from the
-    // working copy via `RegisteredLibrary::working_copy_root()`, so it works
-    // correctly regardless.
     let same_root = local_root.root() == remote_root.root();
 
     let local_connection = cache::open_database(&local_root.database_path())

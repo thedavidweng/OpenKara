@@ -17,9 +17,6 @@ pub fn delete_song_from_library(
         .context("failed to load song from library")?
         .with_context(|| format!("song with hash {song_id} was not found in the library"))?;
 
-    // Collect artwork derivative paths before DB rows are deleted so we can
-    // clean up the on-disk files afterwards (only if no other song references
-    // them — two songs can share the same cover art bytes/digest).
     let artwork_paths = collect_artwork_derivative_paths(connection, song_id)?;
 
     if let Some(container) = song.media_g_container.as_deref() {
@@ -46,9 +43,7 @@ pub fn delete_song_from_library(
     }
 
     delete_song_rows_from_database(connection, library, song_id)?;
-    // Clean up the on-disk stem directory (not handled by the DB-only delete).
     delete_stem_files_from_working_copy(library, song_id)?;
-    // Clean up artwork derivative files (best-effort, only if unreferenced).
     for path in artwork_paths {
         let _ = crate::library::artwork::delete_artwork_derivative_if_unreferenced(
             connection, library, &path,
@@ -57,7 +52,6 @@ pub fn delete_song_from_library(
     Ok(())
 }
 
-/// Returns paths that exist in the database (may be empty).
 pub(crate) fn collect_artwork_derivative_paths(
     connection: &Connection,
     song_id: &str,
@@ -77,15 +71,11 @@ pub(crate) fn collect_artwork_derivative_paths(
     Ok(paths)
 }
 
-/// Does NOT touch the filesystem — safe to call inside a SQLite transaction.
-/// The caller is responsible for deleting any working-copy or cloud files
-/// separately.
 pub fn delete_song_rows_from_database(
     connection: &Connection,
     _library: &LibraryRoot,
     song_id: &str,
 ) -> Result<()> {
-    // DB-only stem delete — no filesystem side effects, safe inside a transaction.
     cache::stems::delete_stem_cache_entry_db_only(connection, song_id)?;
     connection
         .execute("DELETE FROM lyrics WHERE song_hash = ?1", params![song_id])
@@ -104,9 +94,6 @@ pub fn delete_song_rows_from_database(
     Ok(())
 }
 
-/// Does NOT touch the database — safe to call after a DB transaction has
-/// already committed. Used by mirror sync to clean up the remote working copy
-/// after transactional DB deletes.
 pub fn delete_song_files_from_working_copy(library: &LibraryRoot, song: &Song) -> Result<()> {
     if let Some(container) = song.media_g_container.as_deref() {
         match container {
@@ -130,14 +117,9 @@ pub fn delete_song_files_from_working_copy(library: &LibraryRoot, song: &Song) -
             delete_relative_file(library, relative_path)?;
         }
     }
-    // Artwork derivative files are cleaned up separately by
-    // delete_artwork_derivative_if_unreferenced (called from
-    // delete_song_from_library and mirror sync) because they require a
-    // DB reference count check — two songs can share the same cover digest.
     Ok(())
 }
 
-/// Does NOT touch the database — safe to call after a DB transaction.
 pub fn delete_stem_files_from_working_copy(library: &LibraryRoot, song_hash: &str) -> Result<()> {
     if !is_safe_stem_directory_name(song_hash) {
         anyhow::bail!("refusing to delete a stem directory for an invalid song hash");
@@ -168,9 +150,6 @@ pub fn delete_stem_files_from_working_copy(library: &LibraryRoot, song_hash: &st
     };
 
     if metadata.file_type().is_symlink() {
-        // Removing the link itself is safe; never recurse through a link.
-        // Windows represents a directory symlink differently from a file
-        // symlink, so fall back to `remove_dir` without ever following it.
         if let Err(remove_file_error) = fs::remove_file(&dir) {
             fs::remove_dir(&dir).with_context(|| {
                 format!(
@@ -188,9 +167,6 @@ pub fn delete_stem_files_from_working_copy(library: &LibraryRoot, song_hash: &st
     Ok(())
 }
 
-/// Song identifiers are used as direct child directory names in `stems/`.
-/// Treat database contents as untrusted at the filesystem boundary so a
-/// malformed row cannot turn cleanup into a traversal outside the library.
 fn is_safe_stem_directory_name(song_hash: &str) -> bool {
     !song_hash.is_empty()
         && song_hash != "."
