@@ -299,7 +299,10 @@ fn probe_remote_source(
     extension: Option<&str>,
 ) -> Result<StreamMetadata, decode::DecodeError> {
     use symphonia::core::{
-        formats::FormatOptions, io::MediaSourceStream, meta::MetadataOptions, probe::Hint,
+        formats::{probe::Hint, FormatOptions, TrackType},
+        io::MediaSourceStream,
+        meta::MetadataOptions,
+        units::Timestamp,
     };
 
     let mut hint = Hint::new();
@@ -309,41 +312,46 @@ fn probe_remote_source(
 
     let mss = MediaSourceStream::new(Box::new(source), Default::default());
     let mut probed = symphonia::default::get_probe()
-        .format(
+        .probe(
             &hint,
             mss,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
+            FormatOptions::default(),
+            MetadataOptions::default(),
         )
         .map_err(|e| decode::DecodeError::ProbeFailed(format!("remote source: {e}")))?;
 
-    let (codec_params, track_id) = {
+    let (codec_params, track_id, n_frames, time_base) = {
         let track = probed
-            .format
-            .default_track()
+            .default_track(TrackType::Audio)
             .ok_or(decode::DecodeError::NoDefaultTrack)?;
-        (track.codec_params.clone(), track.id)
+        let audio_params = track
+            .codec_params
+            .as_ref()
+            .and_then(|p| p.audio())
+            .ok_or(decode::DecodeError::NoDefaultTrack)?
+            .clone();
+        (audio_params, track.id, track.num_frames, track.time_base)
     };
 
     let mut sample_rate = codec_params.sample_rate;
-    let mut channels = codec_params.channels.map(|c| c.count());
+    let mut channels = codec_params.channels.as_ref().map(|c| c.count());
 
     // Some containers don't expose sample rate / channel layout in the
     // codec params.  symphonia only populates these after decoding the
     // first packet, so try that before giving up.
     if sample_rate.is_none() || channels.is_none() {
-        use symphonia::core::codecs::DecoderOptions as DO;
+        use symphonia::core::codecs::audio::AudioDecoderOptions as DO;
         if let Ok(mut decoder) =
-            symphonia::default::get_codecs().make(&codec_params, &DO::default())
+            symphonia::default::get_codecs().make_audio_decoder(&codec_params, &DO::default())
         {
-            while let Ok(packet) = probed.format.next_packet() {
-                if packet.track_id() != track_id {
+            while let Ok(Some(packet)) = probed.next_packet() {
+                if packet.track_id != track_id {
                     continue;
                 }
                 if let Ok(decoded) = decoder.decode(&packet) {
-                    let spec = *decoded.spec();
-                    sample_rate.get_or_insert(spec.rate);
-                    channels.get_or_insert(spec.channels.count());
+                    let spec = decoded.spec();
+                    sample_rate.get_or_insert(spec.rate());
+                    channels.get_or_insert(spec.channels().count());
                     break;
                 }
             }
@@ -355,13 +363,12 @@ fn probe_remote_source(
 
     // Try to get duration from container metadata.
     // Return None when unavailable so playback can start immediately.
-    let duration_ms =
-        if let (Some(n_frames), Some(tb)) = (codec_params.n_frames, codec_params.time_base) {
-            let time = tb.calc_time(n_frames);
-            Some((time.seconds * 1000) + (time.frac * 1000.0) as u64)
-        } else {
-            None
-        };
+    let duration_ms = if let (Some(n_frames), Some(tb)) = (n_frames, time_base) {
+        let time = tb.calc_time(Timestamp::new(n_frames as i64));
+        time.map(|t| t.as_millis() as u64)
+    } else {
+        None
+    };
 
     Ok(StreamMetadata {
         sample_rate,

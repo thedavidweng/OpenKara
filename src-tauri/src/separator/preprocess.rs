@@ -1,7 +1,7 @@
 use crate::{audio::decode::DecodedAudio, separator::model::LoadedModel};
 use anyhow::{bail, Context, Result};
 use audioadapter_buffers::direct::InterleavedSlice;
-use rubato::{Fft, FixedSync, Resampler};
+use rubato::{Fft, FixedSync, Resampler, WindowFunction};
 
 pub const DEMUCS_SAMPLE_RATE: u32 = 44_100;
 pub const DEMUCS_CHANNELS: usize = 2;
@@ -45,12 +45,13 @@ pub fn normalize_audio_for_model(decoded_audio: DecodedAudio) -> Result<DecodedA
     let input_adapter =
         InterleavedSlice::new(&decoded_audio.samples, decoded_audio.channels, frame_count)
             .context("failed to wrap interleaved audio for resampling")?;
-    let mut resampler = Fft::<f32>::new(
+    let mut resampler = Fft::<f32>::new_custom(
         decoded_audio.sample_rate as usize,
         DEMUCS_SAMPLE_RATE as usize,
         1024,
         2,
         decoded_audio.channels,
+        WindowFunction::BlackmanHarris2,
         FixedSync::Both,
     )
     .with_context(|| {

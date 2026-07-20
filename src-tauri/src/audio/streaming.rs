@@ -10,8 +10,12 @@ use std::sync::{
 use std::thread::JoinHandle;
 use std::time::Duration;
 use symphonia::core::{
-    audio::SampleBuffer, codecs::DecoderOptions, errors::Error as SymphoniaError,
-    formats::FormatOptions, io::MediaSourceStream, meta::MetadataOptions, probe::Hint,
+    codecs::audio::AudioDecoderOptions,
+    errors::Error as SymphoniaError,
+    formats::{probe::Hint, FormatOptions, TrackType},
+    io::MediaSourceStream,
+    meta::MetadataOptions,
+    units::Timestamp,
 };
 
 use super::decode::DecodeError;
@@ -587,40 +591,45 @@ pub fn probe_stream_metadata(path: &Path) -> Result<StreamMetadata, DecodeError>
     }
 
     let mut probed = symphonia::default::get_probe()
-        .format(
+        .probe(
             &hint,
             media_source_stream,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
+            FormatOptions::default(),
+            MetadataOptions::default(),
         )
         .map_err(|e| DecodeError::ProbeFailed(format!("for {label}: {e}")))?;
 
-    let (codec_params, track_id) = {
+    let (codec_params, track_id, n_frames, time_base) = {
         let track = probed
-            .format
-            .default_track()
+            .default_track(TrackType::Audio)
             .ok_or(DecodeError::NoDefaultTrack)?;
-        (track.codec_params.clone(), track.id)
+        let audio_params = track
+            .codec_params
+            .as_ref()
+            .and_then(|p| p.audio())
+            .ok_or(DecodeError::NoDefaultTrack)?
+            .clone();
+        (audio_params, track.id, track.num_frames, track.time_base)
     };
 
     let mut sample_rate = codec_params.sample_rate;
-    let mut channels = codec_params.channels.map(|c| c.count());
+    let mut channels = codec_params.channels.as_ref().map(|c| c.count());
 
     // Some containers don't expose sample rate / channel layout in the
     // codec params.  symphonia only populates these after decoding the
     // first packet, so try that before giving up.
     if sample_rate.is_none() || channels.is_none() {
-        if let Ok(mut decoder) =
-            symphonia::default::get_codecs().make(&codec_params, &DecoderOptions::default())
+        if let Ok(mut decoder) = symphonia::default::get_codecs()
+            .make_audio_decoder(&codec_params, &AudioDecoderOptions::default())
         {
-            while let Ok(packet) = probed.format.next_packet() {
-                if packet.track_id() != track_id {
+            while let Ok(Some(packet)) = probed.next_packet() {
+                if packet.track_id != track_id {
                     continue;
                 }
                 if let Ok(decoded) = decoder.decode(&packet) {
-                    let spec = *decoded.spec();
-                    sample_rate.get_or_insert(spec.rate);
-                    channels.get_or_insert(spec.channels.count());
+                    let spec = decoded.spec();
+                    sample_rate.get_or_insert(spec.rate());
+                    channels.get_or_insert(spec.channels().count());
                     break;
                 }
             }
@@ -632,13 +641,12 @@ pub fn probe_stream_metadata(path: &Path) -> Result<StreamMetadata, DecodeError>
 
     // Try to get duration from container metadata only.
     // Do NOT fall back to full decode — return None so playback starts immediately.
-    let duration_ms =
-        if let (Some(n_frames), Some(tb)) = (codec_params.n_frames, codec_params.time_base) {
-            let time = tb.calc_time(n_frames);
-            Some((time.seconds * 1000) + (time.frac * 1000.0) as u64)
-        } else {
-            None
-        };
+    let duration_ms = if let (Some(n_frames), Some(tb)) = (n_frames, time_base) {
+        let time = tb.calc_time(Timestamp::new(n_frames as i64));
+        time.map(|t| t.as_millis() as u64)
+    } else {
+        None
+    };
 
     Ok(StreamMetadata {
         sample_rate,
@@ -858,21 +866,26 @@ fn decode_mss_into_producer(
     expected_channels: usize,
     proxy: &ProxyConfig,
 ) -> Result<(), DecodeError> {
-    let probed = symphonia::default::get_probe()
-        .format(
+    let mut format = symphonia::default::get_probe()
+        .probe(
             &hint,
             mss,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
+            FormatOptions::default(),
+            MetadataOptions::default(),
         )
         .map_err(|e| DecodeError::ProbeFailed(format!("for {label}: {e}")))?;
-    let mut format = probed.format;
 
-    let track = format.default_track().ok_or(DecodeError::NoDefaultTrack)?;
-    let codec_params = &track.codec_params;
+    let track = format
+        .default_track(TrackType::Audio)
+        .ok_or(DecodeError::NoDefaultTrack)?;
+    let codec_params = track
+        .codec_params
+        .as_ref()
+        .and_then(|p| p.audio())
+        .ok_or(DecodeError::NoDefaultTrack)?;
 
     let mut decoder = symphonia::default::get_codecs()
-        .make(codec_params, &DecoderOptions::default())
+        .make_audio_decoder(codec_params, &AudioDecoderOptions::default())
         .map_err(|e| DecodeError::DecoderCreationFailed(e.to_string()))?;
     let track_id = track.id;
 
@@ -884,11 +897,14 @@ fn decode_mss_into_producer(
             let seconds = (target as u64) / expected_sample_rate as u64;
             let frac = ((target as u64) % expected_sample_rate as u64) as f64
                 / expected_sample_rate as f64;
+            let total_secs = seconds as f64 + frac;
+            let time =
+                symphonia::core::units::Time::try_from_secs_f64(total_secs).unwrap_or_default();
             match format.seek(
                 symphonia::core::formats::SeekMode::Accurate,
                 symphonia::core::formats::SeekTo::Time {
                     track_id: Some(track_id),
-                    time: symphonia::core::units::Time { seconds, frac },
+                    time,
                 },
             ) {
                 Ok(_) => {
@@ -904,19 +920,15 @@ fn decode_mss_into_producer(
         }
 
         let packet = match format.next_packet() {
-            Ok(packet) => packet,
-            Err(SymphoniaError::IoError(error))
-                if error.kind() == std::io::ErrorKind::UnexpectedEof =>
-            {
-                break;
-            }
+            Ok(Some(packet)) => packet,
+            Ok(None) => break,
             Err(SymphoniaError::ResetRequired) => {
                 return Err(DecodeError::ResetNotSupported);
             }
             Err(error) => return Err(DecodeError::PacketReadFailed(error.to_string())),
         };
 
-        if packet.track_id() != track_id {
+        if packet.track_id != track_id {
             continue;
         }
 
@@ -925,17 +937,19 @@ fn decode_mss_into_producer(
             Err(SymphoniaError::DecodeError(_)) => {
                 eprintln!(
                     "warning: skipping malformed audio packet at offset {} in {label}",
-                    packet.ts()
+                    packet.pts
                 );
                 continue;
             }
             Err(e) => return Err(DecodeError::DecodeFailed(format!("from {label}: {e}"))),
         };
 
-        let mut sample_buffer =
-            SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
-        sample_buffer.copy_interleaved_ref(decoded);
-        let samples = sample_buffer.samples();
+        // Copy decoded samples into an interleaved f32 vector. The decoded
+        // buffer borrows the decoder's internal storage, so it must be copied
+        // out before the next decode call overwrites it.
+        let mut samples_vec: Vec<f32> = Vec::with_capacity(decoded.samples_interleaved());
+        decoded.copy_to_vec_interleaved(&mut samples_vec);
+        let samples = samples_vec.as_slice();
 
         // Apply proxy resampling if enabled.
         let resampled;

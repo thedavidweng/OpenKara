@@ -23,47 +23,47 @@ cc = "1.2.61"
 tauri-build = { version = "2.6.0", features = [] }
 
 [dependencies]
-anyhow = "1.0.103"
+anyhow = "1.0.104"
 biquad = "0.6"
 thiserror = "2"
-audioadapter-buffers = "3.0.0"
+audioadapter-buffers = "4.0.0"
 base64 = "0.22.1"
-cpal = "0.17.3"
+cpal = "0.18.1"
 libc = "0.2.186"
 lofty = "0.24.0"
-open = "5.3.4"
+open = "5.4.0"
 ort = { version = "=2.0.0-rc.12", default-features = false, features = ["std", "ndarray", "tracing", "load-dynamic", "api-24", "directml", "xnnpack"] }
-rand = "0.10.1"
-rayon = "1.10"
-reqwest = { version = "0.13.3", default-features = false, features = ["blocking", "json", "query", "rustls"] }
-ringbuf = "0.4"
-rubato = "2.0.0"
-rusqlite = { version = "0.39.0", features = ["bundled"] }
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
+rand = "0.10.2"
+rayon = "1.12.0"
+reqwest = { version = "0.13.4", default-features = false, features = ["blocking", "json", "query", "rustls"] }
+ringbuf = "0.5"
+rubato = "4.0.0"
+rusqlite = { version = "0.40.1", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.150"
 sha2 = "0.11.0"
-symphonia = { version = "0.5.5", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mp3", "ogg", "pcm", "vorbis", "wav"] }
-tauri = { version = "2.11.1", features = ["unstable"] }
-tauri-plugin-dialog = "2.7.1"
-uuid = { version = "1.15.0", features = ["v4"] }
+symphonia = { version = "0.6.0", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mp3", "ogg", "pcm", "vorbis", "wav", "all-meta"] }
+tauri = { version = "2.11.5", features = ["unstable"] }
+tauri-plugin-dialog = "2.7.2"
+uuid = { version = "1.24.0", features = ["v4"] }
 tiny_http = "0.12.0"
 tracing = "0.1"
 vorbis_rs = "0.5.5"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 quick-xml = "0.41"
 regex-lite = "0.1"
-flate2 = "1"
+flate2 = "1.1.9"
 tar = "0.4"
-tokio = { version = "1", features = ["sync"] }
-image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+tokio = { version = "1.53", features = ["sync"] }
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 
 [dev-dependencies]
 filetime = "0.2.29"
 hound = "3.5.1"
 mockito = "1.7.2"
-tauri = { version = "2.11.1", features = ["test", "unstable"] }
+tauri = { version = "2.11.5", features = ["test", "unstable"] }
 tempfile = "3.27.0"
-tokio = { version = "1", features = ["sync", "rt", "macros"] }
+tokio = { version = "1.53", features = ["sync", "rt", "macros"] }
 
 [profile.release]
 strip = true

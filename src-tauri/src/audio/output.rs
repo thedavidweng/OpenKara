@@ -83,7 +83,10 @@ impl ResamplerCache {
                 // 128 taps, 256× oversampling — good quality with reasonable CPU cost.
                 let params = SincInterpolationParameters {
                     sinc_len: 128,
-                    f_cutoff: rubato::calculate_cutoff(128, rubato::WindowFunction::Blackman2),
+                    f_cutoff: Some(rubato::calculate_cutoff(
+                        128,
+                        rubato::WindowFunction::Blackman2,
+                    )),
                     interpolation: SincInterpolationType::Quadratic,
                     oversampling_factor: 256,
                     window: rubato::WindowFunction::Blackman2,
@@ -1169,7 +1172,8 @@ fn mix_stem_rubato(
 
         // Process through rubato. Returns an interleaved owned buffer.
         // FixedAsync::Output guarantees exactly output_frames output frames.
-        let output_adapter = match entry.resampler.process(&input_adapter, 0, None) {
+        // Indexing is None: default input_offset=0, all channels active.
+        let output_adapter = match entry.resampler.process(&input_adapter, None) {
             Ok(out) => out,
             Err(_) => {
                 entry.channel_input = std::mem::take(&mut entry.input_vecs[0]);
@@ -1484,7 +1488,7 @@ fn render_streaming_four_stem(
 
 fn build_output_stream<T>(
     device: &cpal::Device,
-    config: &cpal::StreamConfig,
+    config: cpal::StreamConfig,
     playback: Arc<Mutex<PlaybackController>>,
     airplay_audio_tap: Arc<AirPlayAudioTap>,
     airplay_local_output_suppressed: Arc<AtomicBool>,
@@ -1641,7 +1645,7 @@ fn start_output_thread(
     let stream = match config.sample_format() {
         SampleFormat::F32 => build_output_stream::<f32>(
             &device,
-            &config.into(),
+            config.into(),
             playback,
             airplay_audio_tap,
             airplay_local_output_suppressed,
@@ -1650,7 +1654,7 @@ fn start_output_thread(
         )?,
         SampleFormat::I16 => build_output_stream::<i16>(
             &device,
-            &config.into(),
+            config.into(),
             playback,
             airplay_audio_tap,
             airplay_local_output_suppressed,
@@ -1659,7 +1663,7 @@ fn start_output_thread(
         )?,
         SampleFormat::U16 => build_output_stream::<u16>(
             &device,
-            &config.into(),
+            config.into(),
             playback,
             airplay_audio_tap,
             airplay_local_output_suppressed,

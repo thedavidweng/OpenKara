@@ -4,13 +4,12 @@ use std::{
     path::Path,
 };
 use symphonia::core::{
-    audio::{AudioBufferRef, SampleBuffer},
-    codecs::DecoderOptions,
+    audio::GenericAudioBufferRef,
+    codecs::audio::AudioDecoderOptions,
     errors::Error as SymphoniaError,
-    formats::FormatOptions,
+    formats::{probe::Hint, FormatOptions, TrackType},
     io::{MediaSource, MediaSourceStream},
     meta::MetadataOptions,
-    probe::Hint,
 };
 use thiserror::Error;
 
@@ -94,10 +93,12 @@ pub fn probe_bytes(bytes: Vec<u8>, extension: &str) -> Result<(), DecodeError> {
     )
 }
 
-fn extend_interleaved_samples(samples: &mut Vec<f32>, decoded: AudioBufferRef<'_>) {
-    let mut sample_buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
-    sample_buffer.copy_interleaved_ref(decoded);
-    samples.extend_from_slice(sample_buffer.samples());
+fn extend_interleaved_samples(samples: &mut Vec<f32>, decoded: GenericAudioBufferRef<'_>) {
+    // copy_to_vec_interleaved resizes (replaces) the destination, so use a
+    // temporary buffer and extend the accumulator.
+    let mut temp = Vec::with_capacity(decoded.samples_interleaved());
+    decoded.copy_to_vec_interleaved(&mut temp);
+    samples.extend_from_slice(&temp);
 }
 
 fn probe_source<R>(
@@ -115,18 +116,17 @@ where
         hint.with_extension(extension);
     }
 
-    let probed = symphonia::default::get_probe()
-        .format(
+    let format = symphonia::default::get_probe()
+        .probe(
             &hint,
             media_source_stream,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
+            FormatOptions::default(),
+            MetadataOptions::default(),
         )
         .map_err(|e| DecodeError::ProbeFailed(format!("for {source_label}: {e}")))?;
 
-    probed
-        .format
-        .default_track()
+    format
+        .default_track(TrackType::Audio)
         .ok_or(DecodeError::NoDefaultTrack)?;
 
     Ok(())
@@ -147,42 +147,43 @@ where
         hint.with_extension(extension);
     }
 
-    let probed = symphonia::default::get_probe()
-        .format(
+    let mut format = symphonia::default::get_probe()
+        .probe(
             &hint,
             media_source_stream,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
+            FormatOptions::default(),
+            MetadataOptions::default(),
         )
         .map_err(|e| DecodeError::ProbeFailed(format!("for {source_label}: {e}")))?;
-    let mut format = probed.format;
 
-    let track = format.default_track().ok_or(DecodeError::NoDefaultTrack)?;
-    let codec_params = &track.codec_params;
+    let track = format
+        .default_track(TrackType::Audio)
+        .ok_or(DecodeError::NoDefaultTrack)?;
+    let codec_params = track
+        .codec_params
+        .as_ref()
+        .and_then(|p| p.audio())
+        .ok_or(DecodeError::NoDefaultTrack)?;
     let mut sample_rate = codec_params.sample_rate;
-    let mut channels = codec_params.channels.map(|layout| layout.count());
+    let mut channels = codec_params.channels.as_ref().map(|layout| layout.count());
 
     let mut decoder = symphonia::default::get_codecs()
-        .make(codec_params, &DecoderOptions::default())
+        .make_audio_decoder(codec_params, &AudioDecoderOptions::default())
         .map_err(|e| DecodeError::DecoderCreationFailed(e.to_string()))?;
     let track_id = track.id;
     let mut samples = Vec::new();
 
     loop {
         let packet = match format.next_packet() {
-            Ok(packet) => packet,
-            Err(SymphoniaError::IoError(error))
-                if error.kind() == std::io::ErrorKind::UnexpectedEof =>
-            {
-                break;
-            }
+            Ok(Some(packet)) => packet,
+            Ok(None) => break,
             Err(SymphoniaError::ResetRequired) => {
                 return Err(DecodeError::ResetNotSupported);
             }
             Err(error) => return Err(DecodeError::PacketReadFailed(error.to_string())),
         };
 
-        if packet.track_id() != track_id {
+        if packet.track_id != track_id {
             continue;
         }
 
@@ -192,7 +193,7 @@ where
                 // Tolerate malformed packets — skip and continue decoding.
                 eprintln!(
                     "warning: skipping malformed audio packet at offset {} in {source_label}",
-                    packet.ts()
+                    packet.pts
                 );
                 continue;
             }
@@ -203,9 +204,9 @@ where
             }
         };
 
-        let spec = *decoded.spec();
-        sample_rate.get_or_insert(spec.rate);
-        channels.get_or_insert(spec.channels.count());
+        let spec = decoded.spec();
+        sample_rate.get_or_insert(spec.rate());
+        channels.get_or_insert(spec.channels().count());
         extend_interleaved_samples(&mut samples, decoded);
     }
 
