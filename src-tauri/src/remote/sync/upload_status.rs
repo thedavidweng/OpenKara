@@ -1,8 +1,8 @@
 use crate::{
     commands::error::{state_lock_error, CommandError, CommandResult},
     remote::control_db::{
-        get_operation, list_operations, upsert_operation, OperationKind, OperationPayload,
-        OperationRow, OperationState,
+        list_operations, upsert_operation, OperationKind, OperationPayload, OperationRow,
+        OperationState,
     },
     AppState,
 };
@@ -122,23 +122,32 @@ pub(crate) fn mark_upload_status(
         error: error.clone(),
     };
 
-    // Persist to the durable control DB. The operation_id is derived from the
-    // song_id so repeated status updates for the same song update the same row
-    // rather than creating duplicates.
+    // Persist to the durable control DB. We look up the most recent Publish
+    // operation for this library+song to update it in place. If none exists
+    // (e.g. status update before the publish row was created), we create a
+    // new row with a UUID operation_id.
     if let Some(ref library_id) = remote_library_id {
-        let operation_id = publish_operation_id(song_id);
         let now = control_db_now_ms();
 
         // Try to load the existing row to preserve created_at_ms and
-        // attempt_count across updates.
+        // attempt_count across updates. Look up by library+song rather than
+        // a fixed operation_id derived from the song_id, because each
+        // publish now gets a unique UUID operation_id.
         let existing = {
             let conn = state
                 .remote
                 .control_db
                 .lock()
                 .map_err(|_| state_lock_error("control DB lock was poisoned"))?;
-            get_operation(&conn, &operation_id)?
+            crate::remote::control_db::get_latest_publish_operation_for_song(
+                &conn, library_id, song_id,
+            )?
         };
+
+        let operation_id = existing
+            .as_ref()
+            .map(|e| e.operation_id.clone())
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
         let payload = OperationPayload {
             song_ids: vec![song_id.to_owned()],
@@ -185,13 +194,6 @@ pub(crate) fn mark_upload_status(
         .map_err(|_| state_lock_error("remote upload status lock was poisoned"))?;
     guard.insert(song_id.to_owned(), snapshot.clone());
     Ok(snapshot)
-}
-
-/// Derive a stable operation_id for a publish operation from the song_id.
-/// This ensures repeated `mark_upload_status` calls for the same song update
-/// the same durable row.
-pub(crate) fn publish_operation_id(song_id: &str) -> String {
-    format!("publish-{song_id}")
 }
 
 /// Current time in milliseconds. Centralized so tests could inject a clock
@@ -298,8 +300,7 @@ pub fn get_all_upload_statuses(state: &AppState) -> CommandResult<Vec<UploadStat
 mod tests {
     use super::*;
     use crate::remote::control_db::{
-        get_operation, open_control_db, upsert_operation, OperationKind, OperationRow,
-        OperationState,
+        open_control_db, upsert_operation, OperationKind, OperationRow, OperationState,
     };
     use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
@@ -330,7 +331,11 @@ mod tests {
         .unwrap();
 
         let conn = state.remote.control_db.lock().unwrap();
-        let op = get_operation(&conn, "publish-song-1").unwrap().unwrap();
+        let op = crate::remote::control_db::get_latest_publish_operation_for_song(
+            &conn, "lib-1", "song-1",
+        )
+        .unwrap()
+        .expect("operation row should exist");
         assert_eq!(op.operation_kind, OperationKind::Publish);
         assert_eq!(op.state, OperationState::Running);
         let payload = OperationPayload::from_json(&op.payload_json).unwrap();

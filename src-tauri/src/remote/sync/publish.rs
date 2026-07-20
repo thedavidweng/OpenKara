@@ -5,9 +5,9 @@ use crate::{
     library::{artwork, error::LibraryError, Song},
     library_root::LibraryRoot,
     remote::control_db::{
-        get_operation, get_repository_state, list_operations_in_states, upsert_operation,
-        upsert_repository_state, LocalState, OperationKind, OperationPayload, OperationRow,
-        OperationState, RepositoryStateRow,
+        get_repository_state, list_operations_in_states, upsert_operation, upsert_repository_state,
+        LocalState, OperationKind, OperationPayload, OperationRow, OperationState,
+        RepositoryStateRow,
     },
     remote::executor::{
         execute_publish, generate_repository_id, generate_writer_id, PublishContext,
@@ -539,9 +539,12 @@ fn commit_via_executor(
         (repository_id, writer_id)
     };
 
-    // Create or find the operation row. The mutation outbox (PR#2) may have
-    // already created one; if not, create a new one for this publish.
-    let operation_id = format!("publish-{song_id}");
+    // Create a fresh operation row with a UUID for this publish. Each
+    // publish attempt gets its own independent row — no reuse of terminal
+    // rows from previous publishes. This ensures re-publishes and retries
+    // always run the full protocol instead of short-circuiting on a
+    // Completed/Failed row.
+    let operation_id = uuid::Uuid::new_v4().to_string();
     let now = crate::remote::types::current_unix_time_ms();
 
     let conn =
@@ -549,93 +552,44 @@ fn commit_via_executor(
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
 
-    // Cancel stale batch prepared rows for this library. The mutation layer
-    // records `publish-batch-<timestamp>` rows before song_ids are known.
-    // Now that we're publishing a specific song, those batch placeholders
-    // are superseded. Without this, recovery would later retry them and
-    // either conflict (generation mismatch) or duplicate work.
+    // Cancel stale pending/prepared batch operations for this library.
+    // The mutation layer may have created placeholder rows before song_ids
+    // were known. Now that we're publishing a specific song, those batch
+    // placeholders are superseded and should not be retried by recovery.
     cancel_stale_batch_operations(&conn, remote_library_id, now)?;
 
-    // Check if the operation row already exists from the mutation outbox.
-    let existing_op = get_operation(&conn, &operation_id)?;
-    if let Some(ref existing) = existing_op {
-        // If the existing row is in a terminal state (Completed, Failed,
-        // Conflicted, Cancelled), reset it to Pending so a re-publish or
-        // retry actually runs the protocol instead of short-circuiting.
-        // Without this, a second publish of the same song silently does
-        // nothing because execute_publish returns Ok(()) for terminal ops.
-        if matches!(
-            existing.state,
-            OperationState::Completed
-                | OperationState::Failed
-                | OperationState::Conflicted
-                | OperationState::Cancelled
-        ) {
-            let repo_state = get_repository_state(&conn, remote_library_id)?;
-            let expected_generation = repo_state
-                .as_ref()
-                .map(|r| r.committed_generation)
-                .unwrap_or(0);
+    // Create a new operation row. Read the current expected generation
+    // from the repository state.
+    let repo_state = get_repository_state(&conn, remote_library_id)?;
+    let expected_generation = repo_state
+        .as_ref()
+        .map(|r| r.committed_generation)
+        .unwrap_or(0);
 
-            let payload = OperationPayload {
-                song_ids: vec![song_id.to_owned()],
-                percent: 0,
-                detail: Some("Publishing to remote".to_owned()),
-            };
+    let payload = OperationPayload {
+        song_ids: vec![song_id.to_owned()],
+        percent: 0,
+        detail: Some("Publishing to remote".to_owned()),
+    };
 
-            let row = OperationRow {
-                operation_id: operation_id.clone(),
-                library_id: remote_library_id.to_owned(),
-                operation_kind: OperationKind::Publish,
-                state: OperationState::Pending,
-                expected_generation: Some(expected_generation),
-                target_generation: None,
-                source_db_digest: None,
-                candidate_db_digest: None,
-                payload_json: payload.to_json()?,
-                attempt_count: existing.attempt_count,
-                next_attempt_at_ms: None,
-                error_code: None,
-                error_detail: None,
-                created_at_ms: existing.created_at_ms,
-                updated_at_ms: now,
-            };
-            upsert_operation(&conn, &row)?;
-        }
-    } else {
-        // Create a new operation row. Read the current expected generation
-        // from the repository state (or the remote manifest if available).
-        let repo_state = get_repository_state(&conn, remote_library_id)?;
-        let expected_generation = repo_state
-            .as_ref()
-            .map(|r| r.committed_generation)
-            .unwrap_or(0);
-
-        let payload = OperationPayload {
-            song_ids: vec![song_id.to_owned()],
-            percent: 0,
-            detail: Some("Publishing to remote".to_owned()),
-        };
-
-        let row = OperationRow {
-            operation_id: operation_id.clone(),
-            library_id: remote_library_id.to_owned(),
-            operation_kind: OperationKind::Publish,
-            state: OperationState::Pending,
-            expected_generation: Some(expected_generation),
-            target_generation: None,
-            source_db_digest: None,
-            candidate_db_digest: None,
-            payload_json: payload.to_json()?,
-            attempt_count: 0,
-            next_attempt_at_ms: None,
-            error_code: None,
-            error_detail: None,
-            created_at_ms: now,
-            updated_at_ms: now,
-        };
-        upsert_operation(&conn, &row)?;
-    }
+    let row = OperationRow {
+        operation_id: operation_id.clone(),
+        library_id: remote_library_id.to_owned(),
+        operation_kind: OperationKind::Publish,
+        state: OperationState::Pending,
+        expected_generation: Some(expected_generation),
+        target_generation: None,
+        source_db_digest: None,
+        candidate_db_digest: None,
+        payload_json: payload.to_json()?,
+        attempt_count: 0,
+        next_attempt_at_ms: None,
+        error_code: None,
+        error_detail: None,
+        created_at_ms: now,
+        updated_at_ms: now,
+    };
+    upsert_operation(&conn, &row)?;
 
     drop(conn);
 
@@ -671,14 +625,19 @@ fn cancel_stale_batch_operations(
         &[OperationState::Pending, OperationState::Prepared],
     )?;
     for op in pending {
-        if op.library_id == library_id
-            && op.operation_kind == OperationKind::Publish
-            && op.operation_id.starts_with("publish-batch-")
-        {
-            let mut updated = op.clone();
-            updated.state = OperationState::Cancelled;
-            updated.updated_at_ms = now;
-            upsert_operation(connection, &updated)?;
+        // Batch placeholder rows are Publish operations with empty
+        // song_ids (the mutation layer creates them before song_ids are
+        // known). Cancel them so recovery doesn't retry stale placeholders.
+        if op.library_id == library_id && op.operation_kind == OperationKind::Publish {
+            let is_batch_placeholder = OperationPayload::from_json(&op.payload_json)
+                .map(|p| p.song_ids.is_empty())
+                .unwrap_or(true);
+            if is_batch_placeholder {
+                let mut updated = op.clone();
+                updated.state = OperationState::Cancelled;
+                updated.updated_at_ms = now;
+                upsert_operation(connection, &updated)?;
+            }
         }
     }
     Ok(())

@@ -614,6 +614,33 @@ pub fn get_operation(
     Ok(row)
 }
 
+/// Find the most recent Publish operation for a given library and song_id.
+/// Operations store song_ids in the payload_json field; this function
+/// loads all Publish operations for the library, deserializes the payload,
+/// and returns the one matching the song_id with the highest updated_at_ms.
+/// Used by the upload-status system to find the current operation row for
+/// a song without relying on a fixed operation_id derived from the song_id
+/// (which would cause terminal rows to be reused on re-publish).
+pub fn get_latest_publish_operation_for_song(
+    connection: &Connection,
+    library_id: &str,
+    song_id: &str,
+) -> CommandResult<Option<OperationRow>> {
+    let ops = list_operations_for_library(connection, library_id)?;
+    let mut matching: Vec<OperationRow> = ops
+        .into_iter()
+        .filter(|op| op.operation_kind == OperationKind::Publish)
+        .filter(|op| {
+            OperationPayload::from_json(&op.payload_json)
+                .map(|p| p.song_ids.iter().any(|s| s == song_id))
+                .unwrap_or(false)
+        })
+        .collect();
+    // Sort by updated_at_ms descending — most recent first.
+    matching.sort_by(|a, b| b.updated_at_ms.cmp(&a.updated_at_ms));
+    Ok(matching.into_iter().next())
+}
+
 /// Load all operation rows.
 pub fn list_operations(connection: &Connection) -> CommandResult<Vec<OperationRow>> {
     let mut stmt = connection
