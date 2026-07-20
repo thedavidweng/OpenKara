@@ -188,6 +188,12 @@ export function createTauriMock(data: any): TauriMockResult {
   let settingsSnapshot = { ...data.settings };
   let currentPlaybackSnapshot = { ...data.playbackSnapshot };
 
+  // Timer that stops playback when the song reaches its end. The real Rust
+  // backend emits a track-transitioned event at song end; the mock must do
+  // the equivalent so the position clock (which extrapolates locally via
+  // performance.now) does not run past duration_ms in the website preview.
+  let playbackEndTimer: ReturnType<typeof setTimeout> | null = null;
+
   // Initialize playlist songs from data
   if (data.playlistSongs) {
     for (const [playlistId, songHashes] of Object.entries(data.playlistSongs)) {
@@ -213,6 +219,46 @@ export function createTauriMock(data: any): TauriMockResult {
     transportGeneration += 1;
     (currentPlaybackSnapshot as any).transport_generation = transportGeneration;
     return transportGeneration;
+  }
+
+  // Schedule (or re-schedule) the end-of-song timer. When the remaining
+  // playback time elapses, emit a final position event pinned to duration_ms
+  // with is_playing:false so the local position clock stops extrapolating.
+  function schedulePlaybackEnd(): void {
+    if (playbackEndTimer) {
+      clearTimeout(playbackEndTimer);
+      playbackEndTimer = null;
+    }
+    const snap = currentPlaybackSnapshot as any;
+    if (!snap.is_playing || snap.state === "buffering") return;
+    const remaining = (snap.duration_ms || 0) - (snap.position_ms || 0);
+    if (remaining <= 0) return;
+    playbackEndTimer = setTimeout(() => {
+      playbackEndTimer = null;
+      const gen = (currentPlaybackSnapshot as any).transport_generation;
+      // Stop if the transport generation hasn't changed since we scheduled
+      // (i.e. the user didn't pause/seek/play a different song in the
+      // meantime — those paths clear or re-schedule the timer).
+      if (gen !== transportGeneration) return;
+      currentPlaybackSnapshot = {
+        ...currentPlaybackSnapshot,
+        state: "idle",
+        is_playing: false,
+        position_ms: (currentPlaybackSnapshot as any).duration_ms,
+      };
+      emitMockEvent("playback-position", {
+        ms: (currentPlaybackSnapshot as any).duration_ms,
+        transport_generation: transportGeneration,
+        snapshot: clone(currentPlaybackSnapshot),
+      });
+    }, remaining);
+  }
+
+  function clearPlaybackEnd(): void {
+    if (playbackEndTimer) {
+      clearTimeout(playbackEndTimer);
+      playbackEndTimer = null;
+    }
   }
 
   function resolveCommandResult(cmd: string, result: any): Promise<any> {
@@ -361,6 +407,7 @@ export function createTauriMock(data: any): TauriMockResult {
         duration_ms: song ? song.duration_ms : 300000,
         buffered_ms: 0,
       };
+      schedulePlaybackEnd();
       return clone(currentPlaybackSnapshot);
     },
     resume: () => {
@@ -370,10 +417,12 @@ export function createTauriMock(data: any): TauriMockResult {
         state: "playing",
         is_playing: true,
       };
+      schedulePlaybackEnd();
       return clone(currentPlaybackSnapshot);
     },
     pause: () => {
       bumpTransportGeneration();
+      clearPlaybackEnd();
       currentPlaybackSnapshot = {
         ...currentPlaybackSnapshot,
         state: "idle",
@@ -383,6 +432,7 @@ export function createTauriMock(data: any): TauriMockResult {
     },
     seek: (args: any) => {
       bumpTransportGeneration();
+      clearPlaybackEnd();
       const targetMs = (args && args.ms) || 0;
       const bufferingSnapshot = {
         ...currentPlaybackSnapshot,
@@ -412,6 +462,7 @@ export function createTauriMock(data: any): TauriMockResult {
           transport_generation: (playingSnapshot as any).transport_generation,
           snapshot: clone(playingSnapshot),
         });
+        schedulePlaybackEnd();
       }, 80);
       return clone(bufferingSnapshot);
     },
@@ -798,6 +849,21 @@ export function createTauriMock(data: any): TauriMockResult {
           transport_generation: next.transport_generation,
           snapshot: clone(next),
         });
+        // Re-schedule the end-of-song timer if the patch changed playback
+        // state or position, so the mock stays consistent with the new snap.
+        if (
+          patch &&
+          (patch.is_playing !== undefined ||
+            patch.state !== undefined ||
+            patch.position_ms !== undefined ||
+            patch.duration_ms !== undefined)
+        ) {
+          if (next.is_playing && next.state !== "buffering") {
+            schedulePlaybackEnd();
+          } else {
+            clearPlaybackEnd();
+          }
+        }
         return clone(next);
       },
       setSeparationCompleted: (songHash: string) => {
