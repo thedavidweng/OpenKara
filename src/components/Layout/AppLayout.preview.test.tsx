@@ -316,6 +316,22 @@ describe("AppLayout preview mode", () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
+  it("allows click interactions on play-toggle targets in preview mode", () => {
+    const onClick = vi.fn();
+    const { container } = render(
+      <AppLayout initialWindowShellState={macShellState} previewMode />,
+    );
+
+    const outer = container.firstElementChild as HTMLElement;
+    const playToggle = document.createElement("button");
+    playToggle.setAttribute("data-preview-play-toggle", "true");
+    playToggle.addEventListener("click", onClick);
+    outer.appendChild(playToggle);
+
+    fireEvent.click(playToggle);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
   it("blocks context menu in preview mode", () => {
     const onContext = vi.fn();
     const { container } = render(
@@ -329,5 +345,88 @@ describe("AppLayout preview mode", () => {
 
     fireEvent.contextMenu(child);
     expect(onContext).not.toHaveBeenCalled();
+  });
+
+  it("blocks Cmd+Equal zoom shortcut even on allowed targets in preview mode", () => {
+    const onKeyDown = vi.fn();
+    const { container } = render(
+      <AppLayout initialWindowShellState={macShellState} previewMode />,
+    );
+
+    const outer = container.firstElementChild as HTMLElement;
+    const lyricsDiv = document.createElement("div");
+    lyricsDiv.setAttribute("data-preview-lyrics-interactive", "true");
+    lyricsDiv.addEventListener("keydown", onKeyDown);
+    outer.appendChild(lyricsDiv);
+
+    fireEvent.keyDown(lyricsDiv, {
+      key: "+",
+      code: "Equal",
+      metaKey: true,
+      altKey: false,
+    });
+    expect(onKeyDown).not.toHaveBeenCalled();
+  });
+
+  it("blocks Cmd+Minus zoom shortcut even on allowed targets in preview mode", () => {
+    const onKeyDown = vi.fn();
+    const { container } = render(
+      <AppLayout initialWindowShellState={macShellState} previewMode />,
+    );
+
+    const outer = container.firstElementChild as HTMLElement;
+    const lyricsDiv = document.createElement("div");
+    lyricsDiv.setAttribute("data-preview-lyrics-interactive", "true");
+    lyricsDiv.addEventListener("keydown", onKeyDown);
+    outer.appendChild(lyricsDiv);
+
+    fireEvent.keyDown(lyricsDiv, {
+      key: "-",
+      code: "Minus",
+      metaKey: true,
+      altKey: false,
+    });
+    expect(onKeyDown).not.toHaveBeenCalled();
+  });
+
+  it("blocks Cmd+Digit0 zoom reset even on allowed targets in preview mode", () => {
+    const onKeyDown = vi.fn();
+    const { container } = render(
+      <AppLayout initialWindowShellState={macShellState} previewMode />,
+    );
+
+    const outer = container.firstElementChild as HTMLElement;
+    const lyricsDiv = document.createElement("div");
+    lyricsDiv.setAttribute("data-preview-lyrics-interactive", "true");
+    lyricsDiv.addEventListener("keydown", onKeyDown);
+    outer.appendChild(lyricsDiv);
+
+    fireEvent.keyDown(lyricsDiv, {
+      key: "0",
+      code: "Digit0",
+      metaKey: true,
+      altKey: false,
+    });
+    expect(onKeyDown).not.toHaveBeenCalled();
+  });
+
+  it("allows non-zoom keyboard events on allowed targets in preview mode", () => {
+    const onKeyDown = vi.fn();
+    const { container } = render(
+      <AppLayout initialWindowShellState={macShellState} previewMode />,
+    );
+
+    const outer = container.firstElementChild as HTMLElement;
+    const lyricsDiv = document.createElement("div");
+    lyricsDiv.setAttribute("data-preview-lyrics-interactive", "true");
+    lyricsDiv.addEventListener("keydown", onKeyDown);
+    outer.appendChild(lyricsDiv);
+
+    fireEvent.keyDown(lyricsDiv, {
+      key: "ArrowDown",
+      code: "ArrowDown",
+      metaKey: false,
+    });
+    expect(onKeyDown).toHaveBeenCalledTimes(1);
   });
 });

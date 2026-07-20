@@ -33,16 +33,18 @@ const PREVIEW_WINDOW_SHELL_STATE: WindowShellState = MAC_WINDOW_SHELL_STATE;
 // interactions except: (1) playlist switches in the sidebar (including the
 // back button that exits a playlist), (2) lyrics scrolling + the Follow
 // button inside the lyrics panel, (3) the toolbar sidebar toggle (keyboard
-// already works via window shortcuts), and (4) the play/pause toggle so the
-// mock stays consistent with the spacebar shortcut. Import and other mutating
-// actions stay blocked.
+// already works via window shortcuts), (4) the play/pause toggle so the
+// mock stays consistent with the spacebar shortcut, and (5) song list
+// scrolling so visitors can browse the mock library. Import and other
+// mutating actions stay blocked.
 function isPreviewAllowedTarget(target: EventTarget | null): boolean {
   return (
     target instanceof Element &&
     (target.closest("[data-preview-playlist-switch='true']") != null ||
       target.closest("[data-preview-lyrics-interactive='true']") != null ||
       target.closest("[data-preview-sidebar-toggle='true']") != null ||
-      target.closest("[data-preview-play-toggle='true']") != null)
+      target.closest("[data-preview-play-toggle='true']") != null ||
+      target.closest("[data-preview-song-list='true']") != null)
   );
 }
 
@@ -80,6 +82,25 @@ export function AppLayout({
   // second app. Keep its state deterministic while preserving playlist changes
   // as the one meaningful way to inspect the mock library.
   const blockPreviewInteraction = useCallback((event: SyntheticEvent) => {
+    // Always block browser zoom shortcuts (Cmd/Ctrl +/-/0) inside the preview
+    // so the mock player doesn't visually scale when visitors use them.
+    const nativeEvent = event.nativeEvent;
+    if (nativeEvent instanceof KeyboardEvent) {
+      if (
+        (nativeEvent.metaKey || nativeEvent.ctrlKey) &&
+        !nativeEvent.altKey &&
+        (nativeEvent.code === "Equal" ||
+          nativeEvent.code === "NumpadAdd" ||
+          nativeEvent.code === "Minus" ||
+          nativeEvent.code === "NumpadSubtract" ||
+          nativeEvent.code === "Digit0" ||
+          nativeEvent.code === "Numpad0")
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+    }
     if (isPreviewAllowedTarget(event.target)) {
       return;
     }

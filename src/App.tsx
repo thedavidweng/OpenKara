@@ -28,7 +28,7 @@ function App({ initialLibraryReady = null, previewMode = false }: AppProps) {
   // schedule showing the hidden window.
   useAppStartupRuntime(libraryReady, setLibraryReady);
   useAppRuntime(libraryReady === true);
-  const { startupThemeReady } = useThemeRuntime();
+  const { startupThemeReady } = useThemeRuntime(previewMode);
   useAppReadyRuntime(
     libraryReady,
     settingsHydrated,

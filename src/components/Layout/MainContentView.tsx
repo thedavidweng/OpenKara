@@ -49,7 +49,7 @@ export function MainContentView({
       </div>
 
       {!previewMode && <GlobalProgressBar />}
-      <PlaybackBar />
+      <PlaybackBar previewMode={previewMode} />
     </div>
   );
 }

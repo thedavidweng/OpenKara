@@ -27,6 +27,35 @@
     <link rel="manifest" href="/img/site.webmanifest" />
     <meta name="apple-mobile-web-app-title" content="OpenKara" />
     <title>OpenKara | Your music, on your stage</title>
+    <script>
+      (function () {
+        var savedTheme = localStorage.getItem("openkara-site-theme");
+        var theme =
+          savedTheme === "light" || savedTheme === "dark"
+            ? savedTheme
+            : window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+        document.documentElement.dataset.theme = theme;
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta)
+          meta.setAttribute(
+            "content",
+            theme === "dark" ? "#08090a" : "#f7f7f5",
+          );
+        // Set <html lang> before paint so screen readers and search engines
+        // see the right language. Saved preference wins; otherwise follow the
+        // browser language. React syncs the attribute again after hydration.
+        var savedLang = localStorage.getItem("openkara-site-language");
+        var lang =
+          savedLang === "en" || savedLang === "zh-CN"
+            ? savedLang
+            : navigator.language.toLowerCase().startsWith("zh")
+              ? "zh-CN"
+              : "en";
+        document.documentElement.lang = lang;
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

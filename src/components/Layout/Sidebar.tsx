@@ -125,6 +125,7 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
             onClick={() => setActivePlaylist(null)}
             className="shrink-0 text-[var(--color-text-dim)] hover:text-[var(--color-control-primary)] transition-colors"
             aria-label={t("setup.back")}
+            data-preview-playlist-switch={previewMode ? "true" : undefined}
           >
             <ArrowLeft size={14} />
           </button>
@@ -143,7 +144,7 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
               setFilter("all");
               setActivePlaylist(null);
             }}
-            className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between px-2 py-1.5 ${
+            className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between px-2 py-1.5 text-[13px] ${
               filter === "all" && !activePlaylistId
                 ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-[var(--color-text)] shadow-[var(--shadow-control-selected)]"
                 : "border border-transparent text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
@@ -167,7 +168,7 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
               setFilter("separated");
               setActivePlaylist(null);
             }}
-            className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between px-2 py-1.5 ${
+            className={`sidebar-source-list-row motion-surface flex w-full items-center justify-between px-2 py-1.5 text-[13px] ${
               filter === "separated" && !activePlaylistId
                 ? "border border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-[var(--color-text)] shadow-[var(--shadow-control-selected)]"
                 : "border border-transparent text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
@@ -238,9 +239,7 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
 
       {/* Song list */}
       {!activePlaylistId && (
-        <div
-          className={`mt-4 flex flex-1 flex-col overflow-hidden px-2 ${previewMode ? "pointer-events-none" : ""}`}
-        >
+        <div className="mt-4 flex flex-1 flex-col overflow-hidden px-2">
           <div className="flex items-center justify-between px-2 pb-1">
             <span className="text-[11px] font-semibold tracking-wide text-[var(--color-text-dim)]">
               {t("sidebar.localMusic")}
@@ -251,9 +250,7 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
         </div>
       )}
       {activePlaylistId && (
-        <div
-          className={`mt-4 flex flex-1 flex-col overflow-hidden px-2 ${previewMode ? "pointer-events-none" : ""}`}
-        >
+        <div className="mt-4 flex flex-1 flex-col overflow-hidden px-2">
           <SongList />
         </div>
       )}

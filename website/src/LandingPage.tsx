@@ -1,5 +1,6 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useLayoutEffect, useState } from "react";
 import {
+  Code,
   Download,
   HardDrive,
   Languages,
@@ -40,7 +41,7 @@ const COPY = {
       {
         eyebrow: "One complete library",
         title: "Import once. Sing anytime.",
-        body: "OpenKara keeps metadata, stems, and lyrics together in a self-contained library that can live on your computer, NAS, or USB drive.",
+        body: "OpenKara keeps metadata, stems, and lyrics together in a self-contained library that can live on your computer, NAS, USB drive, or in the cloud via Dropbox and Google Drive.",
       },
     ],
     cards: [
@@ -76,36 +77,36 @@ const COPY = {
     themeLight: "Switch to light theme",
   },
   "zh-CN": {
-    nav: ["功能", "体验"],
+    nav: ["功能", "流程"],
     download: "下载",
-    heroTitle: "让你的音乐，成为你的舞台。",
+    heroTitle: "你的音乐，你的舞台。",
     heroBody:
-      "OpenKara 把你已有的歌曲变成完整的 Karaoke 体验：端侧音轨分离、同步歌词和精细混音，全部集中在一个开源桌面应用中。",
+      "OpenKara 用端侧 AI 人声分离、同步歌词和精细混音，把你已经拥有的音乐变成完整的卡拉 OK 体验——全部集中在一个开源桌面应用里。",
     primary: "免费下载",
     secondary: "观看演示",
     platform: "支持 macOS、Windows 和 Linux",
     builtWith: "构建工具",
     builtWithDisclaimer:
-      "这些名称与标志仅用于识别；不代表合作、赞助、认可或隶属关系。",
+      "工具名称与图标仅用于识别，不代表任何合作、赞助、背书或关联关系。",
     sections: [
       {
-        eyebrow: "AI 音轨分离",
-        title: "把每一首歌都变成 Karaoke。",
-        body: "在你的电脑上分离人声、鼓、贝斯和其他乐器。双轨模式适合快速开唱，四轨模式提供完整控制。",
+        eyebrow: "AI 人声分离",
+        title: "每首歌都能唱。",
+        body: "在本地分离人声、鼓、贝斯和其他乐器。双轨模式快速拿到伴奏，四轨模式逐轨控制。",
       },
       {
         eyebrow: "一个完整曲库",
         title: "导入一次，随时开唱。",
-        body: "OpenKara 把元数据、分轨与歌词集中在自包含曲库中，可存放在电脑、NAS 或 USB 硬盘。",
+        body: "OpenKara 把元数据、分轨和歌词集中在一个自包含曲库里，可以放在电脑、NAS、U 盘上，或通过 Dropbox、Google Drive 存到云端。",
       },
     ],
     cards: [
-      ["2 或 4 轨", "快速生成伴奏，或分别控制每一个音轨。"],
-      ["实时混音", "播放中调整各轨，无需重新处理歌曲。"],
-      ["同步歌词", "支持时间歌词、内嵌歌词、LRC 与 CD+G。"],
-      ["便携曲库", "一个自包含目录即可完成备份与迁移。"],
+      ["2 轨或 4 轨", "想要快速伴奏，还是逐轨独立控制，都行。"],
+      ["实时混音", "播放时直接调各轨音量，不用重新处理。"],
+      ["同步歌词", "支持时间同步歌词、内嵌歌词、.lrc 文件和 CD+G。"],
+      ["可移植曲库", "一个自包含目录就能备份或搬到别的设备。"],
     ],
-    closing: "今晚就把你的音乐变成 Karaoke。",
+    closing: "今晚就把你的音乐变成卡拉 OK。",
     source: "查看源代码",
     footerProduct: "产品",
     footerProject: "项目",
@@ -175,20 +176,39 @@ const BUILT_WITH_TOOLS = [
 ] as const;
 
 export function LandingPage() {
-  const [language, setLanguage] = useState<Language>(() =>
-    navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en",
-  );
+  const [language, setLanguage] = useState<Language>(() => {
+    const saved = localStorage.getItem("openkara-site-language");
+    if (saved === "en" || saved === "zh-CN") {
+      return saved;
+    }
+    // First visit: follow the browser language so Chinese visitors land on
+    // the Chinese site instead of the English default.
+    return navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
+  });
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem("openkara-site-theme");
-    return saved === "light" ? "light" : "dark";
+    if (saved === "light" || saved === "dark") {
+      return saved;
+    }
+    // First visit: follow the OS preference so the page matches the
+    // visitor's environment instead of forcing dark.
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
   });
   const copy = COPY[language];
   const appLanguage = language;
 
-  useEffect(() => {
+  // Apply the theme before paint so there is no dark→light flash when the
+  // OS prefers light. The inline script in index.html covers the pre-JS
+  // paint; this keeps the attribute in sync after hydration. Persist the
+  // language so a visitor who switches to English stays in English on
+  // return visits even if their browser is set to Chinese.
+  useLayoutEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.lang = language;
     localStorage.setItem("openkara-site-theme", theme);
+    localStorage.setItem("openkara-site-language", language);
     document
       .querySelector('meta[name="theme-color"]')
       ?.setAttribute("content", theme === "dark" ? "#08090a" : "#f7f7f5");
@@ -267,7 +287,7 @@ export function LandingPage() {
         <section className="preview-section" aria-label="OpenKara preview">
           <div className="preview-stage">
             <Suspense fallback={null}>
-              <AppPreview language={appLanguage} />
+              <AppPreview language={appLanguage} theme={theme} />
             </Suspense>
           </div>
         </section>
@@ -330,7 +350,9 @@ export function LandingPage() {
               className="pill pill-primary"
               href="https://github.com/thedavidweng/OpenKara/releases/latest"
             >
-              <span className="pill-label">{copy.download}</span>
+              <span className="pill-label">
+                <Download size={16} /> {copy.download}
+              </span>
             </a>
             <a
               className="pill pill-secondary"
@@ -338,7 +360,9 @@ export function LandingPage() {
               target="_blank"
               rel="noreferrer"
             >
-              <span className="pill-label">{copy.source}</span>
+              <span className="pill-label">
+                <Code size={16} /> {copy.source}
+              </span>
             </a>
           </div>
         </section>

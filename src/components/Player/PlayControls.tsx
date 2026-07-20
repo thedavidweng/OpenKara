@@ -5,9 +5,14 @@ import type { PlaybackBarDensity } from "./playback-bar-layout";
 
 interface PlayControlsProps {
   density?: PlaybackBarDensity;
+  /** When true, the play/pause toggle is clickable inside the website preview. */
+  previewMode?: boolean;
 }
 
-export function PlayControls({ density = "relaxed" }: PlayControlsProps = {}) {
+export function PlayControls({
+  density = "relaxed",
+  previewMode = false,
+}: PlayControlsProps = {}) {
   const { t } = useTranslation();
   const snapshot = usePlayerStore((s) => s.snapshot);
   const resume = usePlayerStore((s) => s.resume);
@@ -55,6 +60,7 @@ export function PlayControls({ density = "relaxed" }: PlayControlsProps = {}) {
         className="motion-icon-button flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-control-primary)] text-[var(--color-control-primary-foreground)] shadow-[0_10px_24px_rgba(0,0,0,0.22)] hover:bg-[color-mix(in_srgb,var(--color-control-primary)_90%,white)] hover:shadow-[0_14px_28px_rgba(0,0,0,0.28)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-control-primary)]/50 disabled:cursor-default disabled:opacity-80"
         aria-label={toggleLabel}
         aria-busy={isStarting}
+        data-preview-play-toggle={previewMode ? "true" : undefined}
       >
         {isStarting ? (
           <Loader2 size={16} className="animate-spin" />

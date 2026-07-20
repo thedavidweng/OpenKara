@@ -179,7 +179,6 @@ describe("Sidebar", () => {
     expect(markup).toContain("sidebar.library");
     expect(markup).toContain("sidebar.allTracks");
     expect(markup).not.toContain("sidebar.separateAll");
-    expect(markup).toContain("pointer-events-none");
   });
 
   test("renders batch actions with shared sidebar control tokens", () => {

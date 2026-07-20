@@ -99,6 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **website**: Enlarge closing Download and View source pills
 - **website**: Optically center pill CTA labels
 - **website**: Center CTA labels with translateY nudge
+- **website**: Remove translateY nudge on pill labels — Inter has balanced metrics and flexbox centering is already symmetric, the nudge pushed copy 2–3px low
 - **website**: Polish mock preview freeze, counts, sidebar, Separate size
 
 ### 📝 Documentation

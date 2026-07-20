@@ -106,8 +106,13 @@ const STARTUP_TIMEOUT_MS = 750;
  * `setTheme` call settles (success or failure) or after a 750ms injected
  * timeout guard. The ready gate ensures the hidden main window is not shown
  * until the document theme is correct.
+ *
+ * In preview mode (website embedded preview) the surrounding landing page
+ * owns `data-theme` on the document root; this hook skips writing it so the
+ * landing toggle stays the single source of truth and the mock's default
+ * preference cannot desync the preview from the chrome.
  */
-export function useThemeRuntime(): {
+export function useThemeRuntime(previewMode = false): {
   resolvedTheme: ResolvedTheme;
   startupThemeReady: boolean;
 } {
@@ -146,11 +151,11 @@ export function useThemeRuntime(): {
   }, [themePreference]);
 
   useLayoutEffect(() => {
-    if (!hydrated) {
+    if (!hydrated || previewMode) {
       return;
     }
     applyResolvedTheme(resolvedTheme);
-  }, [hydrated, resolvedTheme]);
+  }, [hydrated, previewMode, resolvedTheme]);
 
   // Call native setTheme once per distinct preference/resolved-theme pair and
   // gate the startup ready signal on the first settlement.

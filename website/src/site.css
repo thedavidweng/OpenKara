@@ -67,7 +67,7 @@ body {
 
 button,
 a {
-  font: inherit;
+  font-family: inherit;
 }
 
 .landing-site {
@@ -220,14 +220,14 @@ a {
     background 160ms ease;
 }
 
-/* Optical vertical centering for CTA copy. Asymmetric padding-block only
-   shifts flex children by half the delta; translateY moves the label 1:1.
-   Latin sans (Inter / system ui-sans) reads high in tall pills. */
+/* CTA label wrapper. The pill itself uses inline-flex + align-items: center,
+   so the label is already vertically centered by flexbox. Inter has balanced
+   vertical metrics and does not need an optical nudge — a translateY in either
+   direction makes the copy read low or high. Keep transform: none. */
 .pill-label {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  transform: translateY(0.12em);
 }
 
 .pill:hover {
@@ -423,13 +423,10 @@ a {
   min-width: 920px;
 }
 
-/* Unlayered `button, a { font: inherit }` above would otherwise force the
-   landing 15px type into the embedded app and enlarge Tailwind text-[10px]
-   controls like Separate. Reset so app utilities own font sizing again. */
-.product-preview button,
-.product-preview a {
-  font: unset;
-}
+/* The global `button, a { font-family: inherit }` above only carries
+   font-family (not font-size), so Tailwind text-[10px] / text-[11px] utilities
+   on embedded app controls like the Separate button keep their own sizing.
+   No font-size reset is needed here. */
 
 .product-preview [data-preview-interaction-mode="playlist-only"] {
   user-select: none;
@@ -439,7 +436,9 @@ a {
   [data-preview-interaction-mode="playlist-only"]
   button:not([data-preview-playlist-switch="true"]):not(
     [data-preview-lyrics-interactive="true"]
-  ):not([data-preview-sidebar-toggle="true"]),
+  ):not([data-preview-sidebar-toggle="true"]):not(
+    [data-preview-play-toggle="true"]
+  ),
 .product-preview [data-preview-interaction-mode="playlist-only"] input,
 .product-preview
   [data-preview-interaction-mode="playlist-only"]
@@ -453,8 +452,30 @@ a {
   [data-preview-playlist-switch="true"],
 .product-preview
   [data-preview-interaction-mode="playlist-only"]
-  [data-preview-sidebar-toggle="true"] {
+  [data-preview-sidebar-toggle="true"],
+.product-preview
+  [data-preview-interaction-mode="playlist-only"]
+  [data-preview-play-toggle="true"] {
   cursor: pointer;
+}
+
+/* Lyrics utility controls (font size, offset) are wrapped in containers
+   marked data-preview-lyrics-interactive so the playlist-only pointer-events
+   blocklist doesn't disable their buttons. Only re-enable when the controls
+   are actually visible (hover-revealed or pinned via data-visible).
+   !important is needed because the blocklist rule accumulates extra
+   specificity from its :not() pseudo-class exclusions. */
+.product-preview
+  [data-preview-interaction-mode="playlist-only"]
+  .group:hover
+  [data-preview-lyrics-interactive="true"]
+  button,
+.product-preview
+  [data-preview-interaction-mode="playlist-only"]
+  [data-preview-lyrics-interactive="true"][data-visible="true"]
+  button {
+  pointer-events: auto !important;
+  cursor: pointer !important;
 }
 
 .built-with-section {
