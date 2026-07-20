@@ -191,10 +191,27 @@ export const useRotationStore = create<RotationState>((set, get) => ({
     for (const group of groups.values()) shuffle(group);
     shuffle(unassigned);
 
-    // Round-robin placement, starting with the largest group
+    // Round-robin placement, starting with the largest group.
+    // Sort by descending group size so bigger groups lead every round (this
+    // is what avoids back-to-back same-singer runs when sizes differ), but
+    // shuffle within each equal-size tier so repeated presses produce
+    // different singer orders. Without the tier shuffle, single-song-per-
+    // singer queues collapse to one deterministic order every press (#145).
     const sorted = [...groups.entries()].sort(
       (a, b) => b[1].length - a[1].length,
     );
+    for (let i = 0; i < sorted.length;) {
+      let j = i + 1;
+      while (j < sorted.length && sorted[j][1].length === sorted[i][1].length) {
+        j++;
+      }
+      // Fisher-Yates within the equal-size tier [i, j)
+      for (let k = j - 1; k > i; k--) {
+        const r = i + Math.floor(Math.random() * (k - i + 1));
+        [sorted[k], sorted[r]] = [sorted[r], sorted[k]];
+      }
+      i = j;
+    }
     const result: string[] = [];
     let hasMore = true;
     while (hasMore) {

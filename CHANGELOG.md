@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changelog
+
+- Record romanize fullscreen sync (#142)
+
 ### ♻️ Refactoring
 
 - Introduce PlaybackCoordinator as independent control thread (#100)
@@ -101,6 +105,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **website**: Center CTA labels with translateY nudge
 - **website**: Polish mock preview freeze, counts, sidebar, Separate size
 - **website**: Theme/lang auto-detect, mock interactions, natural Chinese copy (#139)
+- **audio**: Replace per-stem rendering with source-domain mix bus (#144)
+- **romanize**: Invalidate stale romanizedLines cache when source lyrics change
+- **rotation**: Shuffle within equal-size singer tiers so repeated Shuffle presses vary
 
 ### 📝 Documentation
 

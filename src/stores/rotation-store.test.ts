@@ -313,5 +313,65 @@ describe("rotation-store", () => {
       const result = mockSetQueue.mock.calls[0][0];
       expect(result.sort()).toEqual(["x", "y", "z"]);
     });
+
+    test("repeated shuffles produce varied orderings with one song per singer (#145)", () => {
+      // Every singer has exactly one song, so all groups are size 1 (same
+      // tier). The old code sorted by descending size with a stable sort,
+      // preserving Map insertion order and yielding one deterministic order
+      // on every press. The fix shuffles within equal-size tiers.
+      mockQueueState.queue = ["a1", "b1", "c1", "d1"];
+      useRotationStore.setState({
+        queueSingers: new Map([
+          ["a1", "Alice"],
+          ["b1", "Bob"],
+          ["c1", "Charlie"],
+          ["d1", "Diana"],
+        ]),
+      });
+
+      const orderings = new Set<string>();
+      for (let i = 0; i < 30; i++) {
+        mockSetQueue.mockClear();
+        useRotationStore.getState().shuffleQueue();
+        const result = mockSetQueue.mock.calls[0][0];
+        orderings.add(result.join(","));
+      }
+      // 4! = 24 possible orders; require at least 2 distinct across 30
+      // presses. The old code produced exactly 1.
+      expect(orderings.size).toBeGreaterThan(1);
+    });
+
+    test("repeated shuffles still avoid back-to-back with unequal group sizes", () => {
+      // A(3), B(2): distinct sizes, so the tier shuffle must keep A before B
+      // to preserve the no-back-to-back guarantee.
+      mockQueueState.queue = ["a1", "a2", "a3", "b1", "b2"];
+      useRotationStore.setState({
+        queueSingers: new Map([
+          ["a1", "Alice"],
+          ["a2", "Alice"],
+          ["a3", "Alice"],
+          ["b1", "Bob"],
+          ["b2", "Bob"],
+        ]),
+      });
+
+      for (let run = 0; run < 30; run++) {
+        mockSetQueue.mockClear();
+        useRotationStore.getState().shuffleQueue();
+        const result = mockSetQueue.mock.calls[0][0];
+
+        for (let i = 1; i < result.length; i++) {
+          const prevSinger = useRotationStore
+            .getState()
+            .queueSingers.get(result[i - 1]);
+          const currSinger = useRotationStore
+            .getState()
+            .queueSingers.get(result[i]);
+          if (prevSinger && currSinger) {
+            expect(prevSinger).not.toBe(currSinger);
+          }
+        }
+      }
+    });
   });
 });
