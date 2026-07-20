@@ -23,7 +23,7 @@ use crate::{
         },
         reconnect::{
             reconnect_production, ReconnectConfig, ReconnectError, ReconnectEvent,
-            ReresolvedSource, SeekOutcome,
+            RemoteStreamingRuntime, ReresolvedSource, SeekOutcome,
         },
     },
     state::AppState,
@@ -595,18 +595,25 @@ fn attempt_remote_reconnect<R: Runtime>(
     };
     let config = ReconnectConfig::default();
     let request_id_for_guard = request_id;
-    let is_current = {
-        let request_id_atom = Arc::clone(&state.playback.playback_request_id);
-        move || request_id_atom.load(Ordering::SeqCst) == request_id_for_guard
-    };
+    let request_id_atom = Arc::clone(&state.playback.playback_request_id);
+    let is_current = move || request_id_atom.load(Ordering::SeqCst) == request_id_for_guard;
+    // Clone of the staleness check for the cache-fast-path pin guard
+    // thread. This thread polls until the song is no longer current.
+    let request_id_atom_for_pin = Arc::clone(&state.playback.playback_request_id);
+    let is_current_for_pin =
+        move || request_id_atom_for_pin.load(Ordering::SeqCst) == request_id_for_guard;
     let cache = Arc::clone(&state.remote.remote_chunk_cache);
     let library_root_clone = library_root.clone();
     let app_data_dir_clone = app_data_dir.to_path_buf();
     let song_id_clone = song_id.to_owned();
-    // Clones for the fetch event listener spawned inside re_resolve. These
-    // keep the reconnected source's cache pin guard alive and route
+    // Clones for the fetch event listener spawned after reconnect success.
+    // These keep the reconnected source's cache pin guard alive and route
     // subsequent fetch events (UrlExpired, ConsecutiveFailures) to the
-    // reconnect handler.
+    // reconnect handler. The originals are moved into `re_resolve` below,
+    // so we clone here before that closure captures them.
+    let event_library_root = library_root_clone.clone();
+    let event_app_data_dir = app_data_dir_clone.clone();
+    let event_song_id = song_id_clone.clone();
     let reconnect_state = state.clone();
     let reconnect_app_handle = app_handle.clone();
     let re_resolve = move || -> Result<ReresolvedSource<crate::audio::streaming::StreamingTrack>, ReconnectError> {
@@ -628,93 +635,18 @@ fn attempt_remote_reconnect<R: Runtime>(
         .map_err(ReconnectError::from_playback_error)?
         .ok_or(ReconnectError::Permanent)?;
 
-        // Preserve the reconnected source's cache pin guard and fetch
-        // event receiver. Without this, the cache entry is unpinned
-        // (can be evicted mid-playback) and subsequent transient failures
-        // have no listener (reconnect can only succeed once). The pin
-        // guard is moved into the fetch event thread so it lives for the
-        // duration of the reconnected playback.
-        if let Some(fetch_event_rx) = source.fetch_event_rx {
-            let event_state = reconnect_state.clone();
-            let event_app_handle = reconnect_app_handle.clone();
-            let event_song_id = song_id_clone.clone();
-            let event_request_id = request_id;
-            let event_library_root = library_root_clone.clone();
-            let event_app_data_dir = app_data_dir_clone.clone();
-            let _pin_guard = source.cache_pin_guard;
-            std::thread::spawn(move || {
-                // Keep the pin guard alive for the lifetime of this thread.
-                let _pin = _pin_guard;
-                for event in fetch_event_rx {
-                    match event {
-                        remote_source::FetchEvent::ConsecutiveFailures { count } => {
-                            eprintln!(
-                                "remote fetch (reconnect): {count} consecutive failures for {event_song_id}"
-                            );
-                            attempt_remote_reconnect(
-                                &event_state,
-                                &event_app_handle,
-                                event_request_id,
-                                &event_library_root,
-                                &event_app_data_dir,
-                                &event_song_id,
-                                ReconnectError::Transient,
-                            );
-                        }
-                        remote_source::FetchEvent::RangeNotSupported => {
-                            eprintln!(
-                                "remote fetch (reconnect): Range requests not supported for {event_song_id}, falling back to full-file playback"
-                            );
-                            if let Err(error) = fallback_remote_playback_to_full_file(
-                                &event_state,
-                                event_request_id,
-                                &event_library_root,
-                                &event_app_data_dir,
-                                &event_song_id,
-                            ) {
-                                eprintln!(
-                                    "remote fetch fallback failed for {event_song_id}: {error:#}"
-                                );
-                                let _ = event_state.playback.command_tx.send(
-                                    PlaybackCommand::FailLoad {
-                                        request_id: event_request_id,
-                                        song_id: event_song_id.clone(),
-                                        error,
-                                    },
-                                );
-                            }
-                        }
-                        remote_source::FetchEvent::UrlExpired => {
-                            eprintln!(
-                                "remote fetch (reconnect): download URL expired for {event_song_id}, attempting reconnect with credential refresh"
-                            );
-                            attempt_remote_reconnect(
-                                &event_state,
-                                &event_app_handle,
-                                event_request_id,
-                                &event_library_root,
-                                &event_app_data_dir,
-                                &event_song_id,
-                                ReconnectError::CredentialExpired,
-                            );
-                        }
-                    }
-                }
-            });
-        } else {
-            // No fetch event receiver (e.g. local or cache-fast-path source).
-            // Still keep the pin guard alive by leaking it into a detached
-            // thread that holds it until the process exits. This is safe
-            // because the pin guard only decrements a count on drop; a
-            // leaked guard means the entry stays pinned, which is
-            // conservative (over-pinning is safe, under-pinning is not).
-            if let Some(guard) = source.cache_pin_guard {
-                std::thread::spawn(move || {
-                    let _pin = guard;
-                    std::thread::park();
-                });
-            }
-        }
+        // Package the cache pin guard and fetch event receiver into a
+        // RemoteStreamingRuntime. The caller (attempt_remote_reconnect)
+        // spawns a fetch event listener thread that owns the runtime,
+        // so the pin guard lives for the duration of the reconnected
+        // playback and is dropped when the listener thread exits (on
+        // track skip, stop, or replace). This replaces the previous
+        // approach of leaking the pin guard into a detached
+        // thread::park() thread.
+        let runtime = RemoteStreamingRuntime {
+            cache_pin_guard: source.cache_pin_guard,
+            fetch_event_rx: source.fetch_event_rx,
+        };
 
         // The cache fast path is detected by checking whether the cache
         // entry is complete + verified. For simplicity here, treat any
@@ -723,6 +655,7 @@ fn attempt_remote_reconnect<R: Runtime>(
         Ok(ReresolvedSource {
             source: source.streaming_track,
             from_cache: false,
+            runtime,
         })
     };
     // Seek the new source to the preserved position. The streaming
@@ -761,6 +694,108 @@ fn attempt_remote_reconnect<R: Runtime>(
     );
     match result {
         Ok(success) => {
+            // Spawn a fetch event listener thread that owns the
+            // RemoteStreamingRuntime (cache pin guard + fetch event rx).
+            // The pin guard lives for the duration of this thread — when
+            // the fetch event rx is exhausted (source dropped on skip/stop/
+            // replace), the thread exits and the guard is dropped, unpinning
+            // the cache entry. This replaces the previous detached
+            // thread::park() leak.
+            let event_state = reconnect_state.clone();
+            let event_app_handle = reconnect_app_handle.clone();
+            let event_song_id = event_song_id.clone();
+            let event_request_id = request_id;
+            let event_library_root = event_library_root.clone();
+            let event_app_data_dir = event_app_data_dir.clone();
+            let RemoteStreamingRuntime {
+                cache_pin_guard,
+                fetch_event_rx,
+            } = success.runtime;
+            // The pin guard must stay alive as long as the fetch event
+            // listener runs. For sources with a fetch event rx, the guard
+            // is moved into the listener thread. For cache-fast-path
+            // sources (no rx), the guard is moved into a short-lived
+            // thread that waits on the rx channel — but since there is no
+            // rx, we instead tie it to the request_id staleness check.
+            if let Some(rx) = fetch_event_rx {
+                let _pin_guard = cache_pin_guard;
+                std::thread::spawn(move || {
+                    // Keep the pin guard alive for the lifetime of this
+                    // thread. It is dropped when the thread exits (rx
+                    // closes on source replacement/skip/stop).
+                    let _pin = _pin_guard;
+                    for event in rx {
+                        match event {
+                            remote_source::FetchEvent::ConsecutiveFailures { count } => {
+                                eprintln!(
+                                    "remote fetch (reconnect): {count} consecutive failures for {event_song_id}"
+                                );
+                                attempt_remote_reconnect(
+                                    &event_state,
+                                    &event_app_handle,
+                                    event_request_id,
+                                    &event_library_root,
+                                    &event_app_data_dir,
+                                    &event_song_id,
+                                    ReconnectError::Transient,
+                                );
+                            }
+                            remote_source::FetchEvent::RangeNotSupported => {
+                                eprintln!(
+                                    "remote fetch (reconnect): Range requests not supported for {event_song_id}, falling back to full-file playback"
+                                );
+                                if let Err(error) = fallback_remote_playback_to_full_file(
+                                    &event_state,
+                                    event_request_id,
+                                    &event_library_root,
+                                    &event_app_data_dir,
+                                    &event_song_id,
+                                ) {
+                                    eprintln!(
+                                        "remote fetch fallback failed for {event_song_id}: {error:#}"
+                                    );
+                                    let _ = event_state.playback.command_tx.send(
+                                        PlaybackCommand::FailLoad {
+                                            request_id: event_request_id,
+                                            song_id: event_song_id.clone(),
+                                            error,
+                                        },
+                                    );
+                                }
+                            }
+                            remote_source::FetchEvent::UrlExpired => {
+                                eprintln!(
+                                    "remote fetch (reconnect): download URL expired for {event_song_id}, attempting reconnect with credential refresh"
+                                );
+                                attempt_remote_reconnect(
+                                    &event_state,
+                                    &event_app_handle,
+                                    event_request_id,
+                                    &event_library_root,
+                                    &event_app_data_dir,
+                                    &event_song_id,
+                                    ReconnectError::CredentialExpired,
+                                );
+                            }
+                        }
+                    }
+                });
+            } else if let Some(guard) = cache_pin_guard {
+                // Cache-fast-path source: no fetch event rx, but still need
+                // the pin guard alive. Spawn a thread that polls the
+                // request_id staleness check and exits when the song is no
+                // longer current, dropping the guard.
+                std::thread::spawn(move || {
+                    let _pin = guard;
+                    // Poll until the song is no longer current (skipped/
+                    // stopped/replaced). This is lightweight — the check is
+                    // an atomic load.
+                    while is_current_for_pin() {
+                        std::thread::sleep(std::time::Duration::from_secs(1));
+                    }
+                });
+            }
+
             // Atomic source swap: send the new source to the coordinator,
             // which replaces the active source under the playback mutex
             // while preserving the timeline.
