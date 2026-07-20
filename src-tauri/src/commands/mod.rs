@@ -17,7 +17,9 @@ pub mod settings;
 
 pub use bootstrap::get_model_bootstrap_status;
 pub use cdg::{get_cdg_frame, get_cdg_status};
-pub use error::{current_unix_timestamp, CommandError, CommandResult, ErrorCode, FallbackAction};
+pub use error::{
+    current_unix_timestamp, unix_timestamp, CommandError, CommandResult, ErrorCode, FallbackAction,
+};
 pub use import::{delete_songs, get_library, import_songs, search_library};
 pub use lyrics::{fetch_lyrics, set_lyrics_offset};
 pub use playback::{

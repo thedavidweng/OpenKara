@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
@@ -11,7 +11,6 @@ import {
 import { Tooltip } from "@/components/Overlay/Tooltip";
 import { useLyricsEngine } from "@/hooks/use-lyrics-engine";
 import { useAudiencePlainTextPaging } from "@/hooks/use-audience-plain-text-paging";
-import { useAirPlayPendingGuard } from "@/hooks/use-airplay-pending-guard";
 
 import {
   stepPlainTextRemotePage,
@@ -111,13 +110,34 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
     onUserScrollActiveChange: setUserScrollUnlocked,
   });
 
-  useAirPlayPendingGuard(
-    songId,
-    isPlainText,
-    isAudience,
-    isAirPlayRemotePagingTarget,
+  const lastPendingSongIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!airPlayPlainTextPagePending) {
+      lastPendingSongIdRef.current = songId ?? null;
+      return;
+    }
+
+    const songChanged =
+      lastPendingSongIdRef.current !== null &&
+      lastPendingSongIdRef.current !== (songId ?? null);
+    if (
+      isAudience ||
+      songChanged ||
+      !isPlainText ||
+      !isAirPlayRemotePagingTarget
+    ) {
+      usePlayerStore.getState().clearAirPlayPlainTextPagePending();
+      return;
+    }
+
+    lastPendingSongIdRef.current = songId ?? null;
+  }, [
     airPlayPlainTextPagePending,
-  );
+    isAirPlayRemotePagingTarget,
+    isAudience,
+    isPlainText,
+    songId,
+  ]);
 
   // Cache one stable ref callback per line index. Inline refs change identity
   // every render; React 19 then detaches/attaches, and without spring-preserving

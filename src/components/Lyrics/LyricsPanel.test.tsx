@@ -52,6 +52,7 @@ const {
     localAudienceOutputActive: false,
     airPlayPlainTextPagePending: false,
     airPlayPlainTextPagePendingDirection: null as "prev" | "next" | null,
+    clearAirPlayPlainTextPagePending: vi.fn(),
   },
   mockLyricsState: {
     lines: [
@@ -129,6 +130,21 @@ vi.mock("@/stores/settings-store", () => ({
     selector(mockSettingsState),
 }));
 
+vi.mock("@/hooks/use-audience-plain-text-paging", () => ({
+  useAudiencePlainTextPaging: ({
+    lines,
+    shouldRender,
+  }: {
+    lines: import("@/types/ipc").LyricLine[];
+    shouldRender: boolean;
+  }) => ({
+    containerRef: { current: null },
+    measurementRef: { current: null },
+    currentPageStart: 0,
+    visibleLines: shouldRender ? lines.slice(0, 0) : lines,
+  }),
+}));
+
 describe("LyricsPanel contextual reveal", () => {
   beforeEach(() => {
     (
@@ -173,6 +189,7 @@ describe("LyricsPanel contextual reveal", () => {
     mockPlayerState.localAudienceOutputActive = false;
     mockPlayerState.airPlayPlainTextPagePending = false;
     mockPlayerState.airPlayPlainTextPagePendingDirection = null;
+    mockPlayerState.clearAirPlayPlainTextPagePending.mockReset();
     mockSelectCurrentPositionMs.mockImplementation((state) => state.positionMs);
     mockSelectCurrentPositionMs.mockClear();
 
@@ -523,5 +540,87 @@ describe("LyricsPanel contextual reveal", () => {
     renderToStaticMarkup(<LyricsPanel />);
 
     expect(mockSelectCurrentPositionMs).not.toHaveBeenCalled();
+  });
+
+  test("clears AirPlay plain-text page pending when song changes during pending", async () => {
+    // Plain-text lyrics + active AirPlay lyrics mode → pending guard is active.
+    mockLyricsState.lines = [
+      line({ time_ms: 0, text: "line one", words: null }),
+      line({ time_ms: 0, text: "line two", words: null }),
+    ];
+    mockLyricsState.rawLrc = "line one\nline two";
+    mockPlayerState.airPlayOutput = {
+      active: true,
+      audioActive: true,
+      routeName: "Living Room TV",
+      mode: "lyrics",
+      phase: "playing",
+      detail: null,
+      displayedPositionMs: 1250,
+      streamGeneration: 3,
+      latencyMs: 900,
+    } satisfies AirPlayOutputStateEvent;
+    mockPlayerState.airPlayPlainTextPagePending = true;
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    // First render with song-1 — pending is set but song hasn't changed yet.
+    await act(async () => {
+      root.render(<LyricsPanel />);
+    });
+
+    // Change the song while pending — guard should clear pending.
+    mockPlayerState.snapshot = {
+      song_id: "song-2",
+      is_playing: true,
+      state: "playing",
+    };
+    mockLyricsState.songId = "song-2";
+
+    await act(async () => {
+      root.render(<LyricsPanel />);
+    });
+
+    expect(mockPlayerState.clearAirPlayPlainTextPagePending).toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  test("clears AirPlay plain-text page pending in audience presentation", async () => {
+    mockLyricsState.lines = [
+      line({ time_ms: 0, text: "line one", words: null }),
+    ];
+    mockLyricsState.rawLrc = "line one";
+    mockPlayerState.airPlayOutput = {
+      active: true,
+      audioActive: true,
+      routeName: "Living Room TV",
+      mode: "lyrics",
+      phase: "playing",
+      detail: null,
+      displayedPositionMs: 1250,
+      streamGeneration: 3,
+      latencyMs: 900,
+    } satisfies AirPlayOutputStateEvent;
+    mockPlayerState.airPlayPlainTextPagePending = true;
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<LyricsPanel presentation="audience" />);
+    });
+
+    // Audience presentation always clears the pending flag.
+    expect(mockPlayerState.clearAirPlayPlainTextPagePending).toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
   });
 });

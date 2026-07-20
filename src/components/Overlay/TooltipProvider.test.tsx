@@ -8,7 +8,7 @@ import {
   type TooltipDelayCoordinator,
 } from "./Tooltip.context";
 import { Tooltip } from "./Tooltip";
-import { TooltipProvider, type TooltipProviderProps } from "./TooltipProvider";
+import { TooltipProvider } from "./TooltipProvider";
 
 describe("TooltipProvider", () => {
   let container: HTMLDivElement;
@@ -31,14 +31,11 @@ describe("TooltipProvider", () => {
     container.remove();
   });
 
-  function renderProvider(props?: Omit<TooltipProviderProps, "children">) {
-    return renderProviderTree(null, props);
+  function renderProvider() {
+    return renderProviderTree(null);
   }
 
-  function renderProviderTree(
-    children: ReactNode,
-    props?: Omit<TooltipProviderProps, "children">,
-  ) {
+  function renderProviderTree(children: ReactNode) {
     function Probe() {
       const value = useTooltipDelayCoordinator();
       useEffect(() => {
@@ -50,7 +47,7 @@ describe("TooltipProvider", () => {
     const root = createRoot(container);
     act(() => {
       root.render(
-        <TooltipProvider {...props}>
+        <TooltipProvider>
           {children}
           <Probe />
         </TooltipProvider>,
@@ -58,24 +55,6 @@ describe("TooltipProvider", () => {
     });
     return root;
   }
-
-  test("exposes configured delay values to descendants", () => {
-    const root = renderProvider({
-      delayDuration: 500,
-      skipDelayDuration: 200,
-      hideGraceDuration: 80,
-    });
-
-    expect(coordinator?.config).toEqual({
-      delayDuration: 500,
-      skipDelayDuration: 200,
-      hideGraceDuration: 80,
-    });
-
-    act(() => {
-      root.unmount();
-    });
-  });
 
   test("activates skip-delay after a tooltip opens", () => {
     const root = renderProvider();
@@ -98,7 +77,7 @@ describe("TooltipProvider", () => {
 
   test("resets skip-delay after the configured close window", () => {
     vi.useFakeTimers();
-    const root = renderProvider({ skipDelayDuration: 100 });
+    const root = renderProvider();
 
     coordinator?.markOpened("tooltip-a");
     expect(coordinator?.isSkipDelayActive()).toBe(true);
@@ -107,7 +86,7 @@ describe("TooltipProvider", () => {
     expect(coordinator?.isSkipDelayActive()).toBe(true);
 
     act(() => {
-      vi.advanceTimersByTime(100);
+      vi.advanceTimersByTime(300);
     });
     expect(coordinator?.isSkipDelayActive()).toBe(false);
 
@@ -118,14 +97,14 @@ describe("TooltipProvider", () => {
 
   test("cancelClose keeps skip-delay active while moving between triggers", () => {
     vi.useFakeTimers();
-    const root = renderProvider({ skipDelayDuration: 100 });
+    const root = renderProvider();
 
     coordinator?.markOpened("tooltip-a");
     coordinator?.markClosed();
     coordinator?.cancelClose();
 
     act(() => {
-      vi.advanceTimersByTime(100);
+      vi.advanceTimersByTime(300);
     });
     expect(coordinator?.isSkipDelayActive()).toBe(true);
 
@@ -151,7 +130,7 @@ describe("TooltipProvider", () => {
 
   test("resets bookkeeping when the provider unmounts", () => {
     vi.useFakeTimers();
-    const root = renderProvider({ skipDelayDuration: 100 });
+    const root = renderProvider();
 
     coordinator?.markOpened("tooltip-a");
     expect(coordinator?.isSkipDelayActive()).toBe(true);
@@ -161,10 +140,10 @@ describe("TooltipProvider", () => {
     });
 
     act(() => {
-      vi.advanceTimersByTime(100);
+      vi.advanceTimersByTime(300);
     });
 
-    const remounted = renderProvider({ skipDelayDuration: 100 });
+    const remounted = renderProvider();
     expect(coordinator?.isSkipDelayActive()).toBe(false);
 
     act(() => {
@@ -192,9 +171,7 @@ describe("TooltipProvider", () => {
       );
     }
 
-    const root = renderProviderTree(<RemovableTooltip />, {
-      skipDelayDuration: 100,
-    });
+    const root = renderProviderTree(<RemovableTooltip />);
 
     const trigger = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent === "Trigger",
@@ -210,7 +187,7 @@ describe("TooltipProvider", () => {
     expect(container.querySelector('[role="tooltip"]')).toBeNull();
 
     act(() => {
-      vi.advanceTimersByTime(100);
+      vi.advanceTimersByTime(300);
     });
     expect(coordinator?.isSkipDelayActive()).toBe(false);
 

@@ -2,7 +2,7 @@
 
 ## Goal
 
-A new user should be able to install OpenKara, point it at a music library, import songs, and start playback without reading internal engineering docs.
+A new user must install OpenKara, point it at a music library, import songs, and start playback. The user must do this without internal engineering docs.
 
 ## First-Run Flow
 
@@ -12,27 +12,27 @@ A new user should be able to install OpenKara, point it at a music library, impo
    - create a new local library
    - open an existing local library
    - connect a remote repository
-4. If the user chooses a remote repository, guide them through provider-specific setup.
-5. See the active library open with songs and metadata available from the selected source.
+4. If the user chooses a remote repository, guide the user through provider-specific setup.
+5. See the active library open. Songs and metadata come from the selected source.
 6. Start playback from the library.
-7. Optionally fetch or edit lyrics.
-8. Optionally download a separation model when the user needs karaoke stems.
+7. Fetch or edit lyrics (optional).
+8. Download a separation model when the user needs karaoke stems (optional).
 
 ## Expectations
 
-- The first-run flow should not require a hosted account.
-- Library setup should explain what directory or remote path is being used.
-- Import should work with common local audio formats.
-- The app should remain usable even before a model download finishes.
-- Lyrics should degrade gracefully: cached, online, embedded, sidecar, or manual.
-- Remote setup should clearly distinguish Google Drive, Dropbox, and WebDAV provider requirements.
+- The first-run flow must not require a hosted account.
+- Library setup must explain the directory or remote path in use.
+- Import must work with common local audio formats.
+- The app must stay usable before a model download finishes.
+- Lyrics must degrade gracefully: cached, online, embedded, sidecar, or manual.
+- Remote setup must distinguish Google Drive, Dropbox, and WebDAV provider needs.
 
 ## Remote Repository Expectations
 
-- A user connecting by Google Drive should be guided through browser-based OAuth and brought back into OpenKara without having to understand the Drive API model.
-- A user connecting by WebDAV should be able to enter the server URL, credentials, and target repository path without reading engineering docs.
-- If remote setup fails, the UI should explain whether the problem is authentication, server reachability, or remote repository initialization.
-- Google Drive, Dropbox, and WebDAV should all be presented as working provider flows, with provider-specific setup and recovery guidance.
-- Refreshing a remote repository means updating the local working copy from the remote database, not publishing local edits.
-- Reauthorizing a remote repository renews provider access. If the repository location changed, OpenKara should ask before replacing the saved location and should reject empty locations that are not already OpenKara repositories.
-- Disconnecting a remote repository removes only the local OpenKara registration and credentials; deleting one removes the provider-hosted repository contents and local working copy.
+- A user who connects by Google Drive must go through browser-based OAuth. OpenKara must bring the user back into the app. The user must not understand the Drive API model.
+- A user who connects by WebDAV must enter the server URL, credentials, and target repository path. The user must do this without engineering docs.
+- If remote setup fails, the UI must show the problem type: authentication, server reachability, or remote repository initialization.
+- Google Drive, Dropbox, and WebDAV must all work as provider flows. Each must give provider-specific setup and recovery guidance.
+- To refresh a remote repository, update the local working copy from the remote database. Do not publish local edits.
+- To reauthorize a remote repository, renew provider access. If the repository location changed, OpenKara must ask before it replaces the saved location. OpenKara must reject empty locations that are not already OpenKara repositories.
+- To disconnect a remote repository, remove only the local OpenKara registration and credentials. To delete one, remove the provider-hosted repository contents and the local working copy.

@@ -18,6 +18,10 @@ import {
   tooltipVisibilityReducer,
 } from "./Tooltip.utils";
 import { useTooltipDelayCoordinator } from "./Tooltip.context";
+import {
+  DEFAULT_DELAY_DURATION_MS,
+  DEFAULT_HIDE_GRACE_DURATION_MS,
+} from "./Tooltip.constants";
 
 interface TooltipProps {
   children: ReactNode;
@@ -51,8 +55,7 @@ export function Tooltip({
 
   openRef.current = open;
 
-  const resolvedDelayDuration =
-    delayDuration ?? coordinator.config.delayDuration;
+  const resolvedDelayDuration = delayDuration ?? DEFAULT_DELAY_DURATION_MS;
 
   const showTooltip = useCallback(() => {
     if (openRef.current) {
@@ -83,7 +86,7 @@ export function Tooltip({
     scheduleRef.current?.cancelAll();
     scheduleRef.current = createTooltipScheduleController({
       delayDuration: resolvedDelayDuration,
-      hideGraceDuration: coordinator.config.hideGraceDuration,
+      hideGraceDuration: DEFAULT_HIDE_GRACE_DURATION_MS,
       skipDelay: coordinator.isSkipDelayActive(),
     });
     return scheduleRef.current;

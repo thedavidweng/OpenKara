@@ -1,10 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Languages, LoaderCircle } from "lucide-react";
 import { PeakMeter } from "./PeakMeter";
 import { PlayControls } from "./PlayControls";
 import { SeekBar } from "./SeekBar";
-import { useMouseIdle } from "@/hooks/use-mouse-idle";
 import { closeFullscreenPlayer } from "@/lib/fullscreen-player";
 import {
   emitLocalAudienceRomanizeSetRequest,
@@ -21,8 +20,27 @@ export function FullscreenControls({
   onHeightChange,
 }: FullscreenControlsProps = {}) {
   const { t } = useTranslation();
-  const idle = useMouseIdle(3000);
+  const [idle, setIdle] = useState(true);
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const resetTimer = () => {
+      setIdle(false);
+      clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = setTimeout(() => setIdle(true), 3000);
+    };
+
+    resetTimer();
+    window.addEventListener("mousemove", resetTimer);
+    window.addEventListener("mousedown", resetTimer);
+
+    return () => {
+      clearTimeout(idleTimerRef.current);
+      window.removeEventListener("mousemove", resetTimer);
+      window.removeEventListener("mousedown", resetTimer);
+    };
+  }, []);
 
   // The fullscreen control projects the authoritative romanization state
   // received from the main window. It never mutates the local store on

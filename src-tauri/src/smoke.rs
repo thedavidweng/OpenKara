@@ -1,4 +1,5 @@
 use crate::{
+    commands::unix_timestamp,
     config::StemMode,
     library::import_songs_from_paths,
     perf::build_backend_performance_report,
@@ -12,7 +13,6 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 const JSON_REPORT_FILENAME: &str = "local-audio-smoke-report.json";
@@ -476,11 +476,4 @@ fn status_label(status: &SmokeStepStatus) -> &'static str {
         SmokeStepStatus::Skipped => "skipped",
         SmokeStepStatus::Failed => "failed",
     }
-}
-
-fn unix_timestamp() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time should be after unix epoch")
-        .as_secs() as i64
 }

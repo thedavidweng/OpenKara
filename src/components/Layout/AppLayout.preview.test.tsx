@@ -126,14 +126,6 @@ vi.mock("./WindowChrome", () => ({
   ),
 }));
 
-vi.mock("@/hooks/use-animated-presence", () => ({
-  useAnimatedPresence: () => ({
-    shouldRender: false,
-    className: "",
-    onAnimationEnd: vi.fn(),
-  }),
-}));
-
 vi.mock("@/lib/app-shortcuts", () => ({
   getShortcutPlatform: () => "mac",
   getShortcutDisplay: () => "",

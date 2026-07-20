@@ -1,5 +1,9 @@
+// @vitest-environment jsdom
+
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, test, vi } from "vitest";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { MainContentView } from "./MainContentView";
 
 const { mockSettingsState, mockQueueState } = vi.hoisted(() => ({
@@ -19,14 +23,6 @@ vi.mock("@/stores/settings-store", () => ({
 vi.mock("@/stores/queue-store", () => ({
   useQueueStore: (selector: (state: typeof mockQueueState) => unknown) =>
     selector(mockQueueState),
-}));
-
-vi.mock("@/hooks/use-animated-presence", () => ({
-  useAnimatedPresence: () => ({
-    shouldRender: false,
-    className: "",
-    onAnimationEnd: undefined,
-  }),
 }));
 
 vi.mock("@/components/Layout/GlobalProgressBar", () => ({
@@ -82,5 +78,54 @@ describe("MainContentView", () => {
 
     expect(markup).toContain('data-playback-stage="true"');
     expect(markup).toContain('data-playback-bar="true"');
+  });
+});
+
+describe("MainContentView queue animation", () => {
+  beforeEach(() => {
+    (
+      globalThis as typeof globalThis & {
+        IS_REACT_ACT_ENVIRONMENT?: boolean;
+      }
+    ).IS_REACT_ACT_ENVIRONMENT = true;
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+    mockQueueState.isOpen = false;
+  });
+
+  test("dispatches show when queue opens and exited when animation ends", () => {
+    mockQueueState.isOpen = false;
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    act(() => {
+      root.render(<MainContentView />);
+    });
+
+    // Open the queue — dispatches "show".
+    mockQueueState.isOpen = true;
+    act(() => {
+      root.render(<MainContentView />);
+    });
+
+    // Close the queue — dispatches "hide" (visible → exiting).
+    mockQueueState.isOpen = false;
+    act(() => {
+      root.render(<MainContentView />);
+    });
+
+    // Fire animation end — dispatches "exited" (exiting → hidden).
+    const queueWrapper = host.querySelector(".animate-slide-out-right");
+    expect(queueWrapper).toBeTruthy();
+    act(() => {
+      queueWrapper?.dispatchEvent(new Event("animationend", { bubbles: true }));
+    });
+
+    act(() => {
+      root.unmount();
+    });
   });
 });

@@ -1,6 +1,6 @@
 # Translating OpenKara
 
-OpenKara uses [react-i18next](https://react.i18next.com/) with static JSON translation files. English (`en.json`) is the source of truth. Contributions for new languages are welcome.
+OpenKara uses [react-i18next](https://react.i18next.com/) with static JSON translation files. English (`en.json`) is the source of truth. We welcome contributions for new languages.
 
 ## Adding a new language
 
@@ -52,14 +52,14 @@ OpenKara uses [react-i18next](https://react.i18next.com/) with static JSON trans
 ## Translation guidelines
 
 - **Keys are sacred.** Never rename, add, or remove keys. Only translate the values.
-- **Keep `{{variable}}` placeholders as-is.** These are dynamic values injected at runtime (e.g., `"Separating {{current}}/{{total}}"`). Translate the surrounding text but leave the placeholders untouched.
+- **Keep `{{variable}}` placeholders as-is.** The system injects these dynamic values at runtime (e.g., `"Separating {{current}}/{{total}}"`). Translate the surrounding text. Leave the placeholders untouched.
 - **Preserve special characters.** Keep unicode escapes like `\u2026` (ellipsis) or replace them with the actual character (`...`).
 - **Don't translate brand names.** Keep "OpenKara", "LRC", and other product/format names unchanged.
 - **Match the tone.** OpenKara's UI is concise and direct. Avoid overly formal or verbose translations.
 
 ## File structure
 
-Translation files use a flat namespace of feature areas. Here's what each section covers:
+Translation files use a flat namespace of feature areas. The table below shows what each section covers:
 
 | Namespace        | Description                                   |
 | ---------------- | --------------------------------------------- |
@@ -93,4 +93,4 @@ Use [BCP 47](https://www.rfc-editor.org/info/bcp47) language tags. Examples:
 | `es`    | Spanish              |
 | `pt-BR` | Brazilian Portuguese |
 
-Use the shortest code that uniquely identifies the language. Add a region subtag only when necessary to distinguish variants (e.g., `pt-BR` vs `pt-PT`).
+Use the shortest code. It must uniquely identify the language. Add a region subtag only to distinguish variants (e.g., `pt-BR` vs `pt-PT`).

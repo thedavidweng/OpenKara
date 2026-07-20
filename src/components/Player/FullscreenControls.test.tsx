@@ -7,14 +7,12 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { FullscreenControls } from "./FullscreenControls";
 
 const {
-  mockUseMouseIdle,
   mockCloseFullscreenPlayer,
   mockPlayerStore,
   mockEmitLocalAudienceRomanizeSetRequest,
   mockLyricsStore,
   mockT,
 } = vi.hoisted(() => ({
-  mockUseMouseIdle: vi.fn(() => true),
   mockCloseFullscreenPlayer: vi.fn(),
   mockPlayerStore: {
     snapshot: null as {
@@ -58,10 +56,6 @@ vi.mock("./PeakMeter", () => ({
   PeakMeter: () => <div>Peak meter</div>,
 }));
 
-vi.mock("@/hooks/use-mouse-idle", () => ({
-  useMouseIdle: mockUseMouseIdle,
-}));
-
 vi.mock("@/lib/fullscreen-player", () => ({
   closeFullscreenPlayer: mockCloseFullscreenPlayer,
 }));
@@ -87,22 +81,12 @@ vi.mock("react-i18next", () => ({
 }));
 
 describe("FullscreenControls", () => {
-  test("hides playback bar when cursor is idle", () => {
-    mockUseMouseIdle.mockReturnValue(true);
-
+  test("renders the playback bar with controls", () => {
     const markup = renderToStaticMarkup(<FullscreenControls />);
 
-    expect(markup).toContain("pointer-events-none");
-    expect(markup).toContain("opacity-0");
-  });
-
-  test("shows playback bar when cursor is active", () => {
-    mockUseMouseIdle.mockReturnValue(false);
-
-    const markup = renderToStaticMarkup(<FullscreenControls />);
-
-    expect(markup).not.toContain("pointer-events-none");
-    expect(markup).toContain("opacity-100");
+    expect(markup).toContain("Play controls");
+    expect(markup).toContain("Seek bar");
+    expect(markup).toContain("Peak meter");
   });
 });
 
@@ -111,7 +95,6 @@ describe("FullscreenControls keyboard shortcuts", () => {
   let root: ReturnType<typeof createRoot>;
 
   beforeEach(() => {
-    mockUseMouseIdle.mockReturnValue(false);
     mockCloseFullscreenPlayer.mockReset();
     mockPlayerStore.pause.mockReset();
     mockPlayerStore.resume.mockReset();
@@ -231,7 +214,6 @@ describe("FullscreenControls Romanize button", () => {
   let root: ReturnType<typeof createRoot>;
 
   beforeEach(() => {
-    mockUseMouseIdle.mockReturnValue(false);
     mockEmitLocalAudienceRomanizeSetRequest.mockReset();
     mockEmitLocalAudienceRomanizeSetRequest.mockResolvedValue(undefined);
     mockLyricsStore.showRomanized = false;

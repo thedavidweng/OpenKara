@@ -34,7 +34,7 @@ cargo test
 
 1. Fork the repository and create a feature branch.
 2. Make your changes with tests if applicable.
-3. Run `cargo clippy` and `cargo fmt` before committing.
+3. Run `cargo clippy` and `cargo fmt` before you commit.
 4. Open a pull request against `main`.
 
 ## Commit Messages
@@ -45,9 +45,9 @@ This project follows [Conventional Commits](https://www.conventionalcommits.org/
 - `fix:` bug fix
 - `docs:` documentation only
 - `chore:` maintenance task
-- `refactor:` code change that neither fixes a bug nor adds a feature
-- `test:` adding or updating tests
+- `refactor:` a code change. It does not fix a bug or add a feature.
+- `test:` add or update tests
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the same license as the project.
+If you contribute, you accept the project license for your contributions.
