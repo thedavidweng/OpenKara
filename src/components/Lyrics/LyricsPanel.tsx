@@ -456,10 +456,12 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
             <LyricsOffsetControl
               className="contextual-reveal pointer-events-auto"
               data-visible={utilityControlsPinned}
+              data-preview-lyrics-interactive="true"
             />
             <LyricsFontSizeControl
               className="contextual-reveal pointer-events-auto"
               data-visible={utilityControlsPinned}
+              data-preview-lyrics-interactive="true"
             />
           </div>
         </div>

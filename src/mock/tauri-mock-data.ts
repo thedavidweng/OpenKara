@@ -170,9 +170,10 @@ export const MOCK_DATA: MockData = {
   },
 
   // Loop playback so the website preview stays animated continuously.
+  // Loop back to the song start (0ms) so the full lyric timeline replays.
   // E2E does not set these — tests that need playback call `play` at runtime.
   loopPlayback: true,
-  loopStartPositionMs: PREVIEW_FROZEN_POSITION_MS,
+  loopStartPositionMs: 0,
 };
 
 /**

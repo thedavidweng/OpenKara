@@ -459,6 +459,23 @@ a {
   cursor: pointer;
 }
 
+/* Lyrics utility controls (font size, offset) are wrapped in containers
+   marked data-preview-lyrics-interactive so the playlist-only pointer-events
+   blocklist doesn't disable their buttons. Only re-enable when the controls
+   are actually visible (hover-revealed or pinned via data-visible). */
+.product-preview
+  [data-preview-interaction-mode="playlist-only"]
+  .group:hover
+  [data-preview-lyrics-interactive="true"]
+  button,
+.product-preview
+  [data-preview-interaction-mode="playlist-only"]
+  [data-preview-lyrics-interactive="true"][data-visible="true"]
+  button {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
 .built-with-section {
   padding-block: clamp(38px, 4.5vw, 66px) clamp(42px, 5vw, 76px);
   color: var(--landing-text);
