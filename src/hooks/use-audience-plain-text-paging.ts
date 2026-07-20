@@ -26,6 +26,12 @@ interface AudiencePlainTextPagingInput {
   shouldRender: boolean;
   pageIdentity: string;
   audiencePresentationSpec: AudiencePresentationSpec;
+  /**
+   * Invalidation token that changes when romanized text visibility or
+   * content changes the measured height of each lyric row. The hook
+   * re-measures page boundaries whenever this token changes.
+   */
+  layoutVersion?: string;
 }
 
 interface AudiencePlainTextPagingResult {
@@ -44,6 +50,7 @@ export function useAudiencePlainTextPaging({
   shouldRender,
   pageIdentity,
   audiencePresentationSpec,
+  layoutVersion,
 }: AudiencePlainTextPagingInput): AudiencePlainTextPagingResult {
   const containerRef = useRef<HTMLDivElement>(null);
   const measurementRef = useRef<HTMLDivElement>(null);
@@ -125,6 +132,12 @@ export function useAudiencePlainTextPaging({
       measurePages();
     });
     observer.observe(containerRef.current);
+    // Observe the measurement container too: romanized text changes the
+    // height of each measured row without resizing the visible viewport, so
+    // a viewport-only ResizeObserver would miss the layout invalidation.
+    if (measurementRef.current) {
+      observer.observe(measurementRef.current);
+    }
 
     return () => {
       observer.disconnect();
@@ -135,6 +148,7 @@ export function useAudiencePlainTextPaging({
     lines,
     pageIdentity,
     shouldRender,
+    layoutVersion,
   ]);
 
   useEffect(() => {

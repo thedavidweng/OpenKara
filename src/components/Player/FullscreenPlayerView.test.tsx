@@ -39,6 +39,10 @@ vi.mock("@/hooks/use-cdg-frame-receiver", () => ({
   useCdgFrameReceiver: () => {},
 }));
 
+vi.mock("@/hooks/use-local-audience-romanize-receiver", () => ({
+  useLocalAudienceRomanizeReceiver: () => {},
+}));
+
 vi.mock("@/hooks/use-playback-runtime", () => ({
   useFullscreenPlaybackRuntime: () => {},
   useLyricsAutoFetch: () => {},

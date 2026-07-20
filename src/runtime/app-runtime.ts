@@ -21,6 +21,7 @@ import {
   useLocalAudienceOutputState,
   useAirPlayOutputState,
 } from "@/runtime/airplay-runtime";
+import { useLocalAudienceRomanizeRuntime } from "@/runtime/local-audience-romanize-runtime";
 import { useAppMenuRuntime } from "./menu-runtime";
 import { loadStartupSettings } from "./settings-runtime";
 
@@ -134,6 +135,7 @@ export function useAppRuntime(enabled: boolean) {
   useAirPlayAudienceSync(enabled);
   useLocalAudienceOutputState(enabled);
   useAirPlayOutputState(enabled);
+  useLocalAudienceRomanizeRuntime(enabled);
   useKeyboardShortcuts(enabled);
   useFileDrop(enabled);
   useAppMenuRuntime(enabled);

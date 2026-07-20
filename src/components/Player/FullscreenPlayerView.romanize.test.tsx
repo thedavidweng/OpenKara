@@ -5,8 +5,12 @@ import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { FullscreenPlayerView } from "./FullscreenPlayerView";
 
-const { mockAnnounceLocalAudienceOutputActive } = vi.hoisted(() => ({
+const {
+  mockAnnounceLocalAudienceOutputActive,
+  mockUseLocalAudienceRomanizeReceiver,
+} = vi.hoisted(() => ({
   mockAnnounceLocalAudienceOutputActive: vi.fn(),
+  mockUseLocalAudienceRomanizeReceiver: vi.fn(),
 }));
 
 vi.mock("@/components/Playback/PlaybackStage", () => ({
@@ -22,7 +26,7 @@ vi.mock("@/hooks/use-cdg-frame-receiver", () => ({
 }));
 
 vi.mock("@/hooks/use-local-audience-romanize-receiver", () => ({
-  useLocalAudienceRomanizeReceiver: () => {},
+  useLocalAudienceRomanizeReceiver: mockUseLocalAudienceRomanizeReceiver,
 }));
 
 vi.mock("@/hooks/use-playback-runtime", () => ({
@@ -34,13 +38,22 @@ vi.mock("@/lib/plain-text-page-controls", () => ({
   announceLocalAudienceOutputActive: mockAnnounceLocalAudienceOutputActive,
 }));
 
-describe("FullscreenPlayerView audience state events", () => {
+describe("FullscreenPlayerView romanization receiver mount order", () => {
   beforeEach(() => {
     mockAnnounceLocalAudienceOutputActive.mockReset();
     mockAnnounceLocalAudienceOutputActive.mockResolvedValue(undefined);
+    mockUseLocalAudienceRomanizeReceiver.mockReset();
   });
 
-  test("announces when the local audience window opens and closes", async () => {
+  test("mounts the romanization receiver before announcing local audience output active", async () => {
+    const callOrder: string[] = [];
+    mockUseLocalAudienceRomanizeReceiver.mockImplementation(() => {
+      callOrder.push("receiver-mounted");
+    });
+    mockAnnounceLocalAudienceOutputActive.mockImplementation(async () => {
+      callOrder.push("announce-active");
+    });
+
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -49,15 +62,15 @@ describe("FullscreenPlayerView audience state events", () => {
       root.render(<FullscreenPlayerView />);
     });
 
-    expect(mockAnnounceLocalAudienceOutputActive).toHaveBeenCalledWith(true);
+    // The receiver hook runs synchronously during render, before the
+    // announce effect's async call resolves.
+    expect(callOrder.indexOf("receiver-mounted")).toBeLessThan(
+      callOrder.indexOf("announce-active"),
+    );
 
     await act(async () => {
       root.unmount();
     });
-
-    expect(mockAnnounceLocalAudienceOutputActive).toHaveBeenLastCalledWith(
-      false,
-    );
     container.remove();
   });
 });

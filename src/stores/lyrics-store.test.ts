@@ -56,6 +56,7 @@ const DEFAULT_STATE = {
   activeLineIndex: -1,
   isLoading: false,
   romanizedLines: [],
+  romanizedLinesIdentity: null,
   isRomanizing: false,
   showRomanized: false,
 };
@@ -599,5 +600,393 @@ describe("lyrics-store saveManualLyrics", () => {
       rawLrc: "[00:00.00]Original",
     });
     expect(mockNotifyError).toHaveBeenCalledWith(error);
+  });
+});
+
+describe("lyrics-store setRomanizedVisibility", () => {
+  beforeEach(resetStore);
+
+  test("enabling with lyrics sets showRomanized=true and starts one romanization task", async () => {
+    mockRomanizeLyricsLines.mockResolvedValue({
+      result: ["ni hao"],
+      requestId: 10,
+    });
+    useLyricsStore.setState({
+      songId: "song-1",
+      lines: [
+        { time_ms: 0, text: "你好", words: [], bg_words: null, section: null },
+      ],
+      showRomanized: false,
+    });
+
+    useLyricsStore.getState().setRomanizedVisibility(true);
+
+    expect(useLyricsStore.getState().showRomanized).toBe(true);
+    await vi.waitFor(() =>
+      expect(mockRomanizeLyricsLines).toHaveBeenCalledTimes(1),
+    );
+  });
+
+  test("enabling when already enabled does not start a duplicate task", () => {
+    mockRomanizeLyricsLines.mockResolvedValue({
+      result: ["ni hao"],
+      requestId: 11,
+    });
+    useLyricsStore.setState({
+      songId: "song-1",
+      lines: [
+        { time_ms: 0, text: "你好", words: [], bg_words: null, section: null },
+      ],
+      showRomanized: true,
+      romanizedLines: ["ni hao"],
+    });
+
+    useLyricsStore.getState().setRomanizedVisibility(true);
+
+    expect(mockRomanizeLyricsLines).not.toHaveBeenCalled();
+  });
+
+  test("enabling with cached romanizedLines does not re-run the Worker", () => {
+    mockRomanizeLyricsLines.mockResolvedValue({
+      result: ["ni hao"],
+      requestId: 12,
+    });
+    useLyricsStore.setState({
+      songId: "song-1",
+      lines: [
+        { time_ms: 0, text: "你好", words: [], bg_words: null, section: null },
+      ],
+      showRomanized: false,
+      romanizedLines: ["ni hao"],
+      romanizedLinesIdentity: JSON.stringify([[0, "你好"]]),
+    });
+
+    useLyricsStore.getState().setRomanizedVisibility(true);
+
+    expect(useLyricsStore.getState().showRomanized).toBe(true);
+    expect(mockRomanizeLyricsLines).not.toHaveBeenCalled();
+  });
+
+  test("enabling while romanizing does not start a duplicate task", () => {
+    mockRomanizeLyricsLines.mockResolvedValue({
+      result: ["ni hao"],
+      requestId: 13,
+    });
+    useLyricsStore.setState({
+      songId: "song-1",
+      lines: [
+        { time_ms: 0, text: "你好", words: [], bg_words: null, section: null },
+      ],
+      showRomanized: true,
+      isRomanizing: true,
+    });
+
+    useLyricsStore.getState().setRomanizedVisibility(true);
+
+    expect(mockRomanizeLyricsLines).not.toHaveBeenCalled();
+  });
+
+  test("disabling changes visibility without clearing cached romanizedLines", () => {
+    useLyricsStore.setState({
+      songId: "song-1",
+      lines: [
+        { time_ms: 0, text: "你好", words: [], bg_words: null, section: null },
+      ],
+      showRomanized: true,
+      romanizedLines: ["ni hao"],
+    });
+
+    useLyricsStore.getState().setRomanizedVisibility(false);
+
+    expect(useLyricsStore.getState().showRomanized).toBe(false);
+    expect(useLyricsStore.getState().romanizedLines).toEqual(["ni hao"]);
+    expect(mockRomanizeLyricsLines).not.toHaveBeenCalled();
+  });
+
+  test("no-op when lines are empty", () => {
+    useLyricsStore.setState({ lines: [], showRomanized: false });
+
+    useLyricsStore.getState().setRomanizedVisibility(true);
+
+    expect(useLyricsStore.getState().showRomanized).toBe(false);
+    expect(mockRomanizeLyricsLines).not.toHaveBeenCalled();
+  });
+
+  test("does not alter song, lyric, or playback state", () => {
+    useLyricsStore.setState({
+      songId: "song-1",
+      lines: [
+        { time_ms: 0, text: "你好", words: [], bg_words: null, section: null },
+      ],
+      offsetMs: 50,
+      activeLineIndex: 2,
+      showRomanized: true,
+      romanizedLines: ["ni hao"],
+    });
+
+    useLyricsStore.getState().setRomanizedVisibility(false);
+
+    const state = useLyricsStore.getState();
+    expect(state.songId).toBe("song-1");
+    expect(state.lines).toHaveLength(1);
+    expect(state.offsetMs).toBe(50);
+    expect(state.activeLineIndex).toBe(2);
+  });
+
+  test("re-enabling after lines changed recomputes instead of reusing stale cache", async () => {
+    // Simulate: romanize on (cache computed for v1), romanize off,
+    // edit/upgrade lyrics (lines become v2 without clearing cache),
+    // romanize on → must recompute, not reuse v1's romanizedLines.
+    mockRomanizeLyricsLines
+      .mockResolvedValueOnce({ result: ["ni hao"], requestId: 40 })
+      .mockResolvedValueOnce({ result: ["ni hao v2"], requestId: 41 });
+
+    const linesV1 = [
+      { time_ms: 0, text: "你好", words: [], bg_words: null, section: null },
+    ];
+    const linesV2 = [
+      {
+        time_ms: 0,
+        text: "你好世界",
+        words: [],
+        bg_words: null,
+        section: null,
+      },
+    ];
+
+    useLyricsStore.setState({
+      songId: "song-1",
+      lines: linesV1,
+      showRomanized: false,
+    });
+
+    // Romanize on → computes for v1.
+    useLyricsStore.getState().setRomanizedVisibility(true);
+    await vi.waitFor(() =>
+      expect(mockRomanizeLyricsLines).toHaveBeenCalledTimes(1),
+    );
+    await vi.waitFor(() =>
+      expect(useLyricsStore.getState().romanizedLines).toEqual(["ni hao"]),
+    );
+
+    // Romanize off → cache preserved.
+    useLyricsStore.getState().setRomanizedVisibility(false);
+    expect(useLyricsStore.getState().romanizedLines).toEqual(["ni hao"]);
+
+    // Edit/upgrade lyrics: lines change to v2 without clearing romanizedLines.
+    useLyricsStore.setState({ lines: linesV2 });
+
+    // Romanize on → must recompute because identity no longer matches.
+    useLyricsStore.getState().setRomanizedVisibility(true);
+    await vi.waitFor(() =>
+      expect(mockRomanizeLyricsLines).toHaveBeenCalledTimes(2),
+    );
+    await vi.waitFor(() =>
+      expect(useLyricsStore.getState().romanizedLines).toEqual(["ni hao v2"]),
+    );
+  });
+
+  test("re-enabling after lines replaced with identical content reuses cache", async () => {
+    mockRomanizeLyricsLines.mockResolvedValue({
+      result: ["ni hao"],
+      requestId: 50,
+    });
+
+    const lines = [
+      { time_ms: 0, text: "你好", words: [], bg_words: null, section: null },
+    ];
+
+    useLyricsStore.setState({
+      songId: "song-1",
+      lines,
+      showRomanized: false,
+    });
+
+    useLyricsStore.getState().setRomanizedVisibility(true);
+    await vi.waitFor(() =>
+      expect(mockRomanizeLyricsLines).toHaveBeenCalledTimes(1),
+    );
+
+    useLyricsStore.getState().setRomanizedVisibility(false);
+
+    // Replace lines with identical content (e.g. re-fetched same lyrics).
+    useLyricsStore.setState({ lines: [...lines] });
+
+    useLyricsStore.getState().setRomanizedVisibility(true);
+    // Identity matches → no recompute.
+    expect(mockRomanizeLyricsLines).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("lyrics-store toggleRomanized delegates to setRomanizedVisibility", () => {
+  beforeEach(resetStore);
+
+  test("toggle on delegates to setRomanizedVisibility(true)", async () => {
+    mockRomanizeLyricsLines.mockResolvedValue({
+      result: ["ni hao"],
+      requestId: 20,
+    });
+    useLyricsStore.setState({
+      songId: "song-1",
+      lines: [
+        { time_ms: 0, text: "你好", words: [], bg_words: null, section: null },
+      ],
+      showRomanized: false,
+    });
+
+    useLyricsStore.getState().toggleRomanized();
+
+    expect(useLyricsStore.getState().showRomanized).toBe(true);
+    await vi.waitFor(() =>
+      expect(mockRomanizeLyricsLines).toHaveBeenCalledTimes(1),
+    );
+  });
+
+  test("toggle off delegates to setRomanizedVisibility(false) and keeps cache", () => {
+    useLyricsStore.setState({
+      songId: "song-1",
+      lines: [
+        { time_ms: 0, text: "你好", words: [], bg_words: null, section: null },
+      ],
+      showRomanized: true,
+      romanizedLines: ["ni hao"],
+    });
+
+    useLyricsStore.getState().toggleRomanized();
+
+    expect(useLyricsStore.getState().showRomanized).toBe(false);
+    expect(useLyricsStore.getState().romanizedLines).toEqual(["ni hao"]);
+  });
+});
+
+describe("lyrics-store applyRemoteRomanizeState", () => {
+  beforeEach(resetStore);
+
+  test("copies projected state into the store", () => {
+    useLyricsStore.setState({
+      songId: "song-1",
+      lines: [
+        { time_ms: 0, text: "你好", words: [], bg_words: null, section: null },
+      ],
+      showRomanized: false,
+      isRomanizing: false,
+      romanizedLines: [],
+    });
+
+    useLyricsStore.getState().applyRemoteRomanizeState({
+      revision: 5,
+      songId: "song-1",
+      lyricsIdentity: "id",
+      showRomanized: true,
+      isRomanizing: false,
+      romanizedLines: ["ni hao", "shi jie"],
+    });
+
+    const state = useLyricsStore.getState();
+    expect(state.showRomanized).toBe(true);
+    expect(state.isRomanizing).toBe(false);
+    expect(state.romanizedLines).toEqual(["ni hao", "shi jie"]);
+  });
+
+  test("never invokes the romanizer Worker", () => {
+    useLyricsStore.setState({
+      songId: "song-1",
+      lines: [
+        { time_ms: 0, text: "你好", words: [], bg_words: null, section: null },
+      ],
+      romanizedLines: [],
+    });
+
+    useLyricsStore.getState().applyRemoteRomanizeState({
+      revision: 5,
+      songId: "song-1",
+      lyricsIdentity: "id",
+      showRomanized: true,
+      isRomanizing: false,
+      romanizedLines: ["ni hao"],
+    });
+
+    expect(mockRomanizeLyricsLines).not.toHaveBeenCalled();
+  });
+
+  test("does not mutate source lyrics, offset, or active indices", () => {
+    useLyricsStore.setState({
+      songId: "song-1",
+      lines: [
+        { time_ms: 0, text: "你好", words: [], bg_words: null, section: null },
+      ],
+      offsetMs: 75,
+      activeLineIndex: 3,
+      activeWordIndex: 2,
+      source: "lrc_lib",
+      rawLrc: "[00:00.00]你好",
+    });
+
+    useLyricsStore.getState().applyRemoteRomanizeState({
+      revision: 5,
+      songId: "song-1",
+      lyricsIdentity: "id",
+      showRomanized: true,
+      isRomanizing: false,
+      romanizedLines: ["ni hao"],
+    });
+
+    const state = useLyricsStore.getState();
+    expect(state.songId).toBe("song-1");
+    expect(state.lines).toHaveLength(1);
+    expect(state.offsetMs).toBe(75);
+    expect(state.activeLineIndex).toBe(3);
+    expect(state.activeWordIndex).toBe(2);
+    expect(state.source).toBe("lrc_lib");
+    expect(state.rawLrc).toBe("[00:00.00]你好");
+  });
+
+  test("copies the romanizedLines array so later remote mutation does not leak", () => {
+    const remote = ["ni hao", "shi jie"];
+    useLyricsStore.setState({
+      songId: "song-1",
+      lines: [
+        { time_ms: 0, text: "你好", words: [], bg_words: null, section: null },
+      ],
+    });
+
+    useLyricsStore.getState().applyRemoteRomanizeState({
+      revision: 5,
+      songId: "song-1",
+      lyricsIdentity: "id",
+      showRomanized: true,
+      isRomanizing: false,
+      romanizedLines: remote,
+    });
+
+    remote.push("mutated");
+    expect(useLyricsStore.getState().romanizedLines).toEqual([
+      "ni hao",
+      "shi jie",
+    ]);
+  });
+});
+
+describe("lyrics-store stale Worker result after song change", () => {
+  beforeEach(resetStore);
+
+  test("romanizeCurrentLyrics rejects a stale Worker result when songId changed", async () => {
+    mockRomanizeLyricsLines.mockResolvedValue({
+      result: ["ni hao"],
+      requestId: 30,
+    });
+    useLyricsStore.setState({
+      songId: "song-1",
+      lines: [
+        { time_ms: 0, text: "你好", words: [], bg_words: null, section: null },
+      ],
+    });
+
+    const promise = useLyricsStore.getState().romanizeCurrentLyrics();
+    // Simulate a song change while the Worker is still running.
+    useLyricsStore.setState({ songId: "song-2" });
+    await promise;
+
+    expect(useLyricsStore.getState().romanizedLines).toEqual([]);
   });
 });

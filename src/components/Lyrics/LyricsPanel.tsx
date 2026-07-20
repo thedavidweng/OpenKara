@@ -93,6 +93,7 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
       shouldRender: shouldRenderAudiencePlainTextPages,
       pageIdentity,
       audiencePresentationSpec,
+      layoutVersion: lyricsLayoutVersion,
     });
 
   useLyricsEngine({
