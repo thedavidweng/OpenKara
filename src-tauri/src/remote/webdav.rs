@@ -2,6 +2,11 @@ use crate::{
     commands::error::{internal_error, CommandError, CommandResult},
     config::RegisteredLibrary,
     library::error::LibraryError,
+    remote::errors::{
+        remote_error_from_status, RemoteError, RemoteErrorKind, RemoteObjectMetadata,
+        RemoteProviderCapabilities, RemoteResult,
+    },
+    remote::provider::ConditionalSource,
 };
 use base64::Engine;
 use reqwest::{
@@ -299,6 +304,100 @@ pub(crate) fn upload_webdav_bytes(
         .get(ETAG)
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned))
+}
+
+/// Conditionally PUT bytes to a WebDAV URL with compare-and-swap semantics.
+///
+/// - `expected_revision = Some(etag)`: sends `If-Match: <etag>`. A mismatch
+///   yields HTTP 412 → [`RemoteErrorKind::RemoteConflict`].
+/// - `expected_revision = None`: sends `If-None-Match: *` (conditional-create).
+///   A pre-existing object yields HTTP 412 → `RemoteConflict`.
+///
+/// Servers that omit stable ETags or ignore conditional requests remain
+/// readable but are rejected for safe writes (the provider reports
+/// `conditional_replace = false` when no ETag is available, so this function
+/// is only reached when a stable ETag was observed via `stat`).
+pub(crate) fn webdav_conditional_put(
+    client: &Client,
+    url: &str,
+    bytes: Vec<u8>,
+    username: &str,
+    password: &str,
+    expected_revision: Option<&str>,
+) -> RemoteResult<RemoteObjectMetadata> {
+    let mut request = client
+        .request(Method::PUT, url)
+        .basic_auth(username, Some(password));
+    if let Some(etag) = expected_revision {
+        request = request.header("If-Match", etag);
+    } else {
+        // Conditional-create: fail if the resource already exists.
+        request = request.header("If-None-Match", "*");
+    }
+    let response = request.body(bytes).send().map_err(|_e| {
+        RemoteError::new(
+            RemoteErrorKind::NetworkUnavailable,
+            format!("WebDAV conditional PUT to {url} failed"),
+        )
+    })?;
+
+    let status = response.status();
+    if !status.is_success() {
+        // 412 Precondition Failed is the CAS-conflict signal.
+        if status == StatusCode::PRECONDITION_FAILED {
+            return Err(RemoteError::new(
+                RemoteErrorKind::RemoteConflict,
+                format!("WebDAV conditional PUT conflict at {url}"),
+            ));
+        }
+        return Err(remote_error_from_status(status, "WebDAV conditional PUT"));
+    }
+
+    let etag = response
+        .headers()
+        .get(ETAG)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let size = response
+        .headers()
+        .get(reqwest::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok());
+    Ok(RemoteObjectMetadata {
+        size,
+        revision: etag,
+    })
+}
+
+/// Stat a WebDAV object: HEAD request returning size (Content-Length) and
+/// revision (ETag). Returns `Ok(None)` on 404.
+pub(crate) fn webdav_stat(
+    client: &Client,
+    url: &str,
+    username: &str,
+    password: &str,
+) -> CommandResult<Option<RemoteObjectMetadata>> {
+    let response = webdav_send(client, Method::HEAD, url, username, password, None, None)?;
+    if response.status() == StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    if !response.status().is_success() {
+        return Err(CommandError::from(LibraryError::Internal(format!(
+            "WebDAV HEAD {url} failed with status {}",
+            response.status()
+        ))));
+    }
+    let size = response
+        .headers()
+        .get(reqwest::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok());
+    let revision = response
+        .headers()
+        .get(ETAG)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    Ok(Some(RemoteObjectMetadata { size, revision }))
 }
 
 pub(crate) fn parse_webdav_payload(
@@ -661,6 +760,76 @@ impl<'a> WebDAVProvider<'a> {
 }
 
 impl RemoteProvider for WebDAVProvider<'_> {
+    fn capabilities(&self) -> RemoteProviderCapabilities {
+        // WebDAV supports conditional replacement when the server returns stable
+        // ETags and honors If-Match/If-None-Match. We report the capability
+        // optimistically; the actual CAS enforcement depends on the server.
+        // If `stat` returns no ETag for the manifest path, the executor fails
+        // closed before reaching `conditional_replace`.
+        RemoteProviderCapabilities {
+            conditional_replace: true,
+            resumable_upload: false, // PR#5
+            range_download: true,
+            revision_metadata: true,
+            server_side_move: false,
+        }
+    }
+
+    fn stat(&self, relative_path: &str) -> CommandResult<Option<RemoteObjectMetadata>> {
+        let client = webdav_client()?;
+        let url = join_url(&self.secret.root_url, relative_path)?;
+        webdav_stat(&client, &url, &self.secret.username, &self.secret.password)
+    }
+
+    fn conditional_replace(
+        &self,
+        relative_path: &str,
+        source: ConditionalSource,
+        expected_revision: Option<&str>,
+    ) -> RemoteResult<RemoteObjectMetadata> {
+        let client = webdav_client()
+            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+        let url = join_url(&self.secret.root_url, relative_path)
+            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+        let bytes = source
+            .read_bytes()
+            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+        // Ensure the parent collection exists for a first-create path.
+        if expected_revision.is_none() {
+            if let Some(parent) = Path::new(relative_path).parent() {
+                let parent_path = parent.to_string_lossy().replace('\\', "/");
+                if !parent_path.is_empty() {
+                    let parent_url = join_url(&self.secret.root_url, &format!("{parent_path}/"))
+                        .map_err(|e| {
+                            RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message)
+                        })?;
+                    let server_url = crate::remote::types::stored_webdav_server_url(self.library)
+                        .map_err(|e| {
+                        RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message)
+                    })?;
+                    ensure_webdav_collection_chain(
+                        &client,
+                        &server_url,
+                        &parent_url,
+                        &self.secret.username,
+                        &self.secret.password,
+                    )
+                    .map_err(|e| {
+                        RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message)
+                    })?;
+                }
+            }
+        }
+        webdav_conditional_put(
+            &client,
+            &url,
+            bytes,
+            &self.secret.username,
+            &self.secret.password,
+            expected_revision,
+        )
+    }
+
     fn get_revision(&self, relative_path: &str) -> CommandResult<Option<String>> {
         let client = webdav_client()?;
         let url = join_url(&self.secret.root_url, relative_path)?;

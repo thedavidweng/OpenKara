@@ -465,6 +465,14 @@ fn last_known_good_path(db_path: &Path) -> PathBuf {
 /// Open the candidate SQLite file read-only and run `PRAGMA quick_check` and
 /// `PRAGMA foreign_key_check`. Reject on any failure with a
 /// `remote_integrity_failed` error.
+// used by PR#4: executor integrity checks on the candidate DB
+pub(crate) fn verify_sqlite_integrity_pub(candidate: &Path) -> CommandResult<()> {
+    verify_sqlite_integrity(candidate)
+}
+
+/// Open the candidate SQLite file read-only and run `PRAGMA quick_check` and
+/// `PRAGMA foreign_key_check`. Reject on any failure with a
+/// `remote_integrity_failed` error.
 fn verify_sqlite_integrity(candidate: &Path) -> CommandResult<()> {
     let conn = open_readonly(candidate)?;
 
@@ -575,6 +583,8 @@ fn update_repository_state_after_pull(
             last_success_at_ms: Some(now),
             last_error_code: None,
             updated_at_ms: now,
+            repository_id: None,
+            writer_id: None,
         },
     };
     upsert_repository_state(connection, &row)
@@ -1282,6 +1292,8 @@ mod tests {
                 last_success_at_ms: None,
                 last_error_code: None,
                 updated_at_ms: 1000,
+                repository_id: None,
+                writer_id: None,
             },
         )
         .unwrap();
@@ -1317,6 +1329,8 @@ mod tests {
                 last_success_at_ms: None,
                 last_error_code: None,
                 updated_at_ms: 1000,
+                repository_id: None,
+                writer_id: None,
             },
         )
         .unwrap();

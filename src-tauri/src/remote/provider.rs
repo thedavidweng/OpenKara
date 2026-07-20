@@ -2,14 +2,68 @@ use crate::audio::remote_source::HttpFetcher;
 use crate::commands::error::{CommandError, CommandResult};
 use crate::config::{RegisteredLibrary, RemoteLibraryProvider};
 use crate::library::error::LibraryError;
-use std::path::Path;
+use crate::remote::errors::{
+    RemoteError, RemoteErrorKind, RemoteObjectMetadata, RemoteProviderCapabilities, RemoteResult,
+};
+use std::path::{Path, PathBuf};
+
+/// Source bytes for a conditional replace operation. Providers read from the
+/// temp file or in-memory bytes and upload them to the target path.
+pub(crate) enum ConditionalSource {
+    /// Upload from a temp file on disk.
+    #[allow(dead_code)]
+    TempFile(PathBuf),
+    /// Upload from in-memory bytes (e.g. a small manifest JSON blob).
+    Bytes(Vec<u8>),
+}
+
+impl ConditionalSource {
+    /// Read the source bytes into a `Vec`.
+    pub(crate) fn read_bytes(&self) -> CommandResult<Vec<u8>> {
+        match self {
+            ConditionalSource::TempFile(path) => std::fs::read(path).map_err(|e| {
+                crate::commands::error::internal_error(format!(
+                    "failed to read conditional source {}: {e}",
+                    path.display()
+                ))
+            }),
+            ConditionalSource::Bytes(bytes) => Ok(bytes.clone()),
+        }
+    }
+}
 
 /// Unified interface for remote storage providers (Google Drive, Dropbox, WebDAV).
 ///
 /// Each provider implementation holds its loaded secret internally and handles
 /// token refresh transparently (for OAuth-based providers).
 pub(crate) trait RemoteProvider {
+    /// Report the capabilities this provider supports. Providers that cannot
+    /// enforce a capability return `false` for it; the operation executor
+    /// fails closed rather than silently downgrading to last-writer-wins.
+    fn capabilities(&self) -> RemoteProviderCapabilities {
+        RemoteProviderCapabilities::default()
+    }
+
     fn get_revision(&self, relative_path: &str) -> CommandResult<Option<String>>;
+
+    /// Stat a remote object: return its size and provider revision (ETag /
+    /// Dropbox rev / Google Drive headRevisionId) when available. Returns
+    /// `Ok(None)` when the object does not exist. The default implementation
+    /// falls back to `get_revision` + `get_file_size` so providers without a
+    /// dedicated `stat` still work, but a dedicated override is preferred for
+    /// atomicity (a single round-trip).
+    fn stat(&self, relative_path: &str) -> CommandResult<Option<RemoteObjectMetadata>> {
+        let revision = self.get_revision(relative_path)?;
+        let size = self.get_file_size(relative_path)?;
+        if revision.is_none() && size.is_none() {
+            // Distinguish "absent" from "present but no metadata". When both
+            // are None, treat the object as absent. Providers with a real
+            // `stat` override return None only on a true 404.
+            Ok(None)
+        } else {
+            Ok(Some(RemoteObjectMetadata { size, revision }))
+        }
+    }
 
     fn download_file(&self, relative_path: &str, destination: &Path) -> CommandResult<()>;
 
@@ -18,6 +72,32 @@ pub(crate) trait RemoteProvider {
     fn upload_directory(&self, relative_path: &str) -> CommandResult<()>;
 
     fn delete_path(&self, relative_path: &str) -> CommandResult<()>;
+
+    /// Conditionally replace the object at `path` with `source`, enforcing a
+    /// compare-and-swap precondition:
+    /// - `expected_revision = Some(rev)`: the replace succeeds only if the
+    ///   current remote revision matches `rev`. A mismatch yields
+    ///   [`RemoteErrorKind::RemoteConflict`].
+    /// - `expected_revision = None`: conditional-create semantics — the
+    ///   replace succeeds only if the object does not already exist. A
+    ///   pre-existing object yields `RemoteConflict`.
+    ///
+    /// Returns the metadata (size + new revision) of the committed object.
+    ///
+    /// The default implementation returns
+    /// [`RemoteErrorKind::ProviderCapabilityUnavailable`] so providers opt in
+    /// per-capability. A provider that cannot enforce CAS must NOT silently
+    /// downgrade to an unconditional overwrite.
+    fn conditional_replace(
+        &self,
+        _path: &str,
+        _source: ConditionalSource,
+        _expected_revision: Option<&str>,
+    ) -> RemoteResult<RemoteObjectMetadata> {
+        Err(RemoteError::from_kind(
+            RemoteErrorKind::ProviderCapabilityUnavailable,
+        ))
+    }
 
     /// Register / first open: shared bootstrap `CreateOrOpen` mode (create
     /// layout/marker when empty, seed or pull `openkara.db`).

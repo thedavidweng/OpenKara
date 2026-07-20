@@ -2,6 +2,7 @@ use crate::{
     commands::error::{internal_error, CommandError, CommandResult},
     config::RegisteredLibrary,
     library::error::LibraryError,
+    remote::errors::{RemoteObjectMetadata, RemoteProviderCapabilities},
 };
 use reqwest::{blocking::Client, Method, Url};
 use std::{
@@ -1081,6 +1082,46 @@ impl<'a> GoogleDriveProvider<'a> {
 }
 
 impl RemoteProvider for GoogleDriveProvider<'_> {
+    fn capabilities(&self) -> RemoteProviderCapabilities {
+        // Google Drive API v3 does NOT support server-enforced conditional
+        // updates: the `etag` field is "n/a" in v3 (it was present in v2), and
+        // `If-Match` headers are ignored by the `files.update` endpoint. The
+        // `headRevisionId` is read-only metadata with no server-enforced
+        // precondition check. See:
+        // https://stackoverflow.com/questions/79865579/is-raceless-optimistic-concurrency-possible-in-google-drive-v3-interface
+        //
+        // Because we cannot enforce compare-and-swap, Google Drive is
+        // READ-ONLY for safe writes: reads + caching still work, but
+        // publication is blocked with `ProviderCapabilityUnavailable` rather
+        // than silently downgrading to last-writer-wins.
+        RemoteProviderCapabilities {
+            conditional_replace: false,
+            resumable_upload: false, // PR#5
+            range_download: true,
+            revision_metadata: true,
+            server_side_move: false,
+        }
+    }
+
+    fn stat(&self, relative_path: &str) -> CommandResult<Option<RemoteObjectMetadata>> {
+        let mut secret = self.secret.borrow_mut();
+        let root_folder_id = self.library.remote_root_locator().ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "remote repository is missing a remote locator".to_owned(),
+            ))
+        })?;
+        Ok(google_drive_find_relative_entry(
+            self.app_data_dir,
+            &mut secret,
+            root_folder_id,
+            relative_path,
+        )?
+        .map(|metadata| RemoteObjectMetadata {
+            size: metadata.size,
+            revision: metadata.head_revision_id.or(metadata.modified_time),
+        }))
+    }
+
     fn get_revision(&self, relative_path: &str) -> CommandResult<Option<String>> {
         let mut secret = self.secret.borrow_mut();
         let root_folder_id = self.library.remote_root_locator().ok_or_else(|| {

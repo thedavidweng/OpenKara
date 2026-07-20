@@ -15,7 +15,6 @@ use super::super::types::{load_app_config, load_remote_root, persist_app_config}
 use super::publish::{desired_remote_audio_source_kind, maybe_publish_songs_to_bound_remote};
 use super::revision::{
     load_registered_remote_library, prepare_remote_database_for_mutation, resolve_active_remote,
-    upload_remote_database,
 };
 
 pub(crate) fn remote_delete_relative_path(
@@ -187,10 +186,138 @@ fn sync_bound_remote<R: tauri::Runtime>(
         .filter_map(|song| desired_kinds.contains_key(&song.hash).then_some(song.hash))
         .collect();
     maybe_publish_songs_to_bound_remote(state, app_handle, &desired_song_ids)?;
+
+    // Commit the remote database via the transactional manifest executor.
+    // The mirror sync has already updated the remote working-copy DB with
+    // the desired song set; the executor handles the candidate DB copy,
+    // integrity check, manifest CAS, and verification.
     let remote_library =
         load_registered_remote_library(&state.shell.app_data_dir, remote_library.id())?;
-    upload_remote_database(&state.shell.app_data_dir, &remote_library)?;
+    commit_mirror_via_executor(state, &remote_library)?;
     Ok(())
+}
+
+/// Commit the mirror sync via the transactional manifest executor.
+///
+/// Similar to `commit_via_executor` in publish.rs but for a mirror operation
+/// (whole-library re-sync). Creates a `mirror-<library-id>-<timestamp>`
+/// operation row and drives it through the executor.
+fn commit_mirror_via_executor(
+    state: &AppState,
+    remote_library: &RegisteredLibrary,
+) -> CommandResult<()> {
+    use crate::remote::control_db::{
+        get_operation, get_repository_state, upsert_operation, upsert_repository_state, LocalState,
+        OperationKind, OperationPayload, OperationRow, OperationState, RepositoryStateRow,
+    };
+    use crate::remote::executor::{
+        execute_publish, generate_repository_id, generate_writer_id, PublishContext,
+    };
+
+    let provider = create_provider(&state.shell.app_data_dir, remote_library)?;
+    let remote_root = load_remote_root(&state.shell.app_data_dir, remote_library)?;
+    let library_id = remote_library.id();
+    let now = crate::remote::types::current_unix_time_ms();
+
+    // Resolve or generate stable repository_id and writer_id.
+    let (repository_id, writer_id) = {
+        let conn = state.remote.control_db.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+        let repo_state = get_repository_state(&conn, library_id)?;
+        let repository_id = repo_state
+            .as_ref()
+            .and_then(|r| r.repository_id.clone())
+            .unwrap_or_else(generate_repository_id);
+        let writer_id = repo_state
+            .as_ref()
+            .and_then(|r| r.writer_id.clone())
+            .unwrap_or_else(generate_writer_id);
+
+        if repo_state
+            .as_ref()
+            .map(|r| r.repository_id.is_none())
+            .unwrap_or(true)
+        {
+            let mut row = repo_state.unwrap_or(RepositoryStateRow {
+                library_id: library_id.to_owned(),
+                committed_generation: 0,
+                committed_manifest_revision: None,
+                local_base_generation: 0,
+                local_db_digest: None,
+                local_state: LocalState::Publishing,
+                active_operation_id: None,
+                last_success_at_ms: None,
+                last_error_code: None,
+                updated_at_ms: now,
+                repository_id: Some(repository_id.clone()),
+                writer_id: Some(writer_id.clone()),
+            });
+            row.repository_id = Some(repository_id.clone());
+            row.writer_id = Some(writer_id.clone());
+            row.local_state = LocalState::Publishing;
+            upsert_repository_state(&conn, &row)?;
+        }
+        (repository_id, writer_id)
+    };
+
+    let operation_id = format!("mirror-{library_id}-{now}");
+
+    {
+        let conn = state.remote.control_db.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+
+        // Check for an existing pending mirror operation.
+        if get_operation(&conn, &operation_id)?.is_none() {
+            let repo_state = get_repository_state(&conn, library_id)?;
+            let expected_generation = repo_state
+                .as_ref()
+                .map(|r| r.committed_generation)
+                .unwrap_or(0);
+
+            let payload = OperationPayload {
+                song_ids: Vec::new(),
+                percent: 0,
+                detail: Some("Mirror sync".to_owned()),
+            };
+
+            let row = OperationRow {
+                operation_id: operation_id.clone(),
+                library_id: library_id.to_owned(),
+                operation_kind: OperationKind::Publish,
+                state: OperationState::Pending,
+                expected_generation: Some(expected_generation),
+                target_generation: None,
+                source_db_digest: None,
+                candidate_db_digest: None,
+                payload_json: payload.to_json()?,
+                attempt_count: 0,
+                next_attempt_at_ms: None,
+                error_code: None,
+                error_detail: None,
+                created_at_ms: now,
+                updated_at_ms: now,
+            };
+            upsert_operation(&conn, &row)?;
+        }
+    }
+
+    let conn =
+        state.remote.control_db.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+
+    let ctx = PublishContext {
+        control_db: &conn,
+        provider: provider.as_ref(),
+        working_copy_root: remote_root.root(),
+        library_id,
+        writer_id: &writer_id,
+        repository_id: &repository_id,
+    };
+
+    execute_publish(&ctx, &operation_id)
 }
 
 pub fn mirror_local_library_to_remote<R: tauri::Runtime>(

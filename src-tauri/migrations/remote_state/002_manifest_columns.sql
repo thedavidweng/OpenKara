@@ -1,0 +1,18 @@
+-- Add repository_id and writer_id columns to remote_repository_state.
+--
+-- These stable UUIDs are set on first publication and never changed:
+--   * repository_id identifies the remote repository across devices and
+--     publications. It is written into the manifest so all clients agree on
+--     the repository identity.
+--   * writer_id identifies the local installation that committed a generation.
+--     It is for diagnostics only, not a security principal.
+--
+-- Both columns are nullable so existing rows (created by PR#2 before the
+-- manifest protocol existed) remain valid. The executor generates and
+-- persists them on first publication.
+--
+-- NOTE: ALTER TABLE ADD COLUMN is NOT idempotent in SQLite. The Rust
+-- migration runner checks for column existence before executing these
+-- statements. This file is kept for documentation; the actual column
+-- addition is performed by `apply_migration_002_manifest_columns` in
+-- control_db.rs.

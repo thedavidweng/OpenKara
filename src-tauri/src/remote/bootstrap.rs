@@ -14,6 +14,17 @@
 //! - **Register Repository** (first attach) uses [`BootstrapMode::CreateOrOpen`]
 //!   to create the marker + layout directories and seed `openkara.db` when the
 //!   remote root is empty.
+//!
+//! ## Legacy migration (PR#4)
+//!
+//! Repositories created before PR#4 store the database at `openkara.db` in the
+//! remote root and have no `.openkara-repository.json` manifest. The migration
+//! path detects this on first publication and writes the initial manifest
+//! (generation 1) referencing the legacy database. The executor handles this
+//! automatically: when `read_manifest` returns `None`, the executor treats the
+//! current generation as 0 and publishes generation 1. The legacy `openkara.db`
+//! is uploaded to `.openkara/databases/1.sqlite` and the manifest points at it.
+//! A `Gc` operation (PR#8) later removes the legacy `openkara.db` from the root.
 
 use crate::{
     cache,

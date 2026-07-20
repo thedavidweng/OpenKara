@@ -241,6 +241,8 @@ mod sync_backend {
                 last_success_at_ms: None,
                 last_error_code: None,
                 updated_at_ms: now,
+                repository_id: None,
+                writer_id: None,
             },
         };
         upsert_repository_state(&conn, &repo_row)?;
