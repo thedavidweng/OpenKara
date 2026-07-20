@@ -94,3 +94,4 @@ blob-report/
 
 # Ephemeral macOS Liquid Glass icon compile staging (actool output)
 src-tauri/icons/.liquid-glass-staging/
+src-tauri/icons/OpenKara.icns
