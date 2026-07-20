@@ -1459,6 +1459,7 @@ fn render_streaming_mix_bus(
 /// caller to avoid heap allocation on the realtime audio thread.
 ///
 /// Returns `(rendered_output_samples, source_frames_consumed)`.
+#[allow(clippy::doc_lazy_continuation)]
 fn render_decoded_mix_bus(
     output: &mut [f32],
     stems: &[&DecodedAudio],
@@ -4070,7 +4071,7 @@ mod tests {
             build_two_stem_streaming_controller(sample_rate, channels, total_frames);
 
         // Mute the vocals stem.
-        controller.set_stem_volume(crate::audio::playback::StemName::Vocals, 0.0);
+        let _ = controller.set_stem_volume(crate::audio::playback::StemName::Vocals, 0.0);
 
         let device_channels = 2;
         let buffer_frames = 512usize;
@@ -4118,7 +4119,7 @@ mod tests {
         }
 
         // Restore vocals and run 50 more callbacks.
-        controller.set_stem_volume(crate::audio::playback::StemName::Vocals, 1.0);
+        let _ = controller.set_stem_volume(crate::audio::playback::StemName::Vocals, 1.0);
         for _ in 0..50 {
             let mut output = vec![0.0f32; buffer_frames * device_channels];
             let _ = render_output_buffer(
@@ -4168,7 +4169,7 @@ mod tests {
             build_two_stem_streaming_controller(sample_rate, channels, total_frames);
 
         // Mute vocals, keep accompaniment audible.
-        controller.set_stem_volume(crate::audio::playback::StemName::Vocals, 0.0);
+        let _ = controller.set_stem_volume(crate::audio::playback::StemName::Vocals, 0.0);
 
         let device_channels = 2;
         let buffer_frames = 512usize;
