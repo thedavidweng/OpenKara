@@ -19,13 +19,14 @@ pub use crate::library::songs::{
 
 use crate::{
     cache,
-    commands::error::{
-        database_error, internal_error, state_lock_error, CommandError, CommandResult,
-    },
+    commands::error::{database_error, state_lock_error, CommandError, CommandResult},
     library::{artwork, error::LibraryError, ImportSongsResult, Song},
     remote, AppState,
 };
 use tauri::{AppHandle, State};
+
+#[cfg(target_os = "macos")]
+use crate::commands::error::internal_error;
 
 #[cfg(target_os = "macos")]
 use std::ffi::{c_char, CStr, CString};
