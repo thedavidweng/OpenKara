@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Cancel a pending library search debounce when the query is cleared, so a late `searchLibrary` result cannot overwrite `loadLibrary()` and hide songs again (Playwright webkit flake in `song-import` search filter). Cap Linux CI `CARGO_BUILD_JOBS` to reduce parallel `rust-lld` SIGBUS crashes while linking heavy Tauri test binaries.
 - Website landing: collapse the soft separators and stacked padding after the stem cards and after the library cards (Synced lyrics / Portable library) so those blocks flow into the closing CTA as one continuous band; enlarge the closing Download / View source pills to match the hero CTA scale and optically center their labels (`line-height: 1` + a `translateY` label nudge — asymmetric padding only half-shifts flex children).
+- Website landing: remove the `translateY(0.12em)` optical nudge on `.pill-label` that was pushing CTA copy (Download free / Watch demo / Download / View source) 2–3px below the flexbox-centered position, making the text read low in all pill buttons. Inter has balanced vertical metrics and does not need a nudge — pure `align-items: center` centering is symmetric.
 
 ### Tests
 

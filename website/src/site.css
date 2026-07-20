@@ -220,14 +220,14 @@ a {
     background 160ms ease;
 }
 
-/* Optical vertical centering for CTA copy. Asymmetric padding-block only
-   shifts flex children by half the delta; translateY moves the label 1:1.
-   Latin sans (Inter / system ui-sans) reads high in tall pills. */
+/* CTA label wrapper. The pill itself uses inline-flex + align-items: center,
+   so the label is already vertically centered by flexbox. Inter has balanced
+   vertical metrics and does not need an optical nudge — a translateY in either
+   direction makes the copy read low or high. Keep transform: none. */
 .pill-label {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  transform: translateY(0.12em);
 }
 
 .pill:hover {
