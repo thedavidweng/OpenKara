@@ -226,6 +226,255 @@ fn part_path(destination: &Path, operation_id: &str) -> PathBuf {
     destination.with_file_name(file_name)
 }
 
+// ---------------------------------------------------------------------------
+// Resumable downloads (PR#5)
+//
+// `resumable_atomic_download` extends `atomic_download` with resume-from-offset
+// for providers that support Range requests (`range_download = true`). Progress
+// is persisted in `remote_transfer_parts` after each chunk so a restart can
+// resume from the verified offset.
+//
+// Resume safety: before resuming, the provider_revision is checked against the
+// persisted value. A changed revision means the remote object was replaced —
+// the partial file is discarded and a fresh download starts. This prevents
+// concatenating bytes from two different object versions.
+//
+// The temp file is opened in append mode for resumed chunks and truncated for
+// a fresh start. The final size/digest/integrity checks are identical to
+// `atomic_download` — a resumed file that fails validation is rejected just
+// like a fresh one.
+// ---------------------------------------------------------------------------
+
+/// Chunk size for resumable downloads. 8 MiB balances memory, round-trip
+/// count, and the granularity of resume progress.
+#[allow(dead_code)]
+const RESUMABLE_DOWNLOAD_CHUNK_SIZE: u64 = 8 * 1024 * 1024;
+
+/// Options for a resumable atomic download. Extends [`AtomicDownloadOptions`]
+/// with a control DB connection and provider revision for resume validation.
+#[allow(dead_code)]
+pub(crate) struct ResumableDownloadOptions<'a> {
+    /// Remote-relative path passed to `provider.download_file` / `download_range`.
+    pub relative_path: &'a str,
+    /// Final destination path.
+    pub destination: &'a Path,
+    /// Expected byte length. Required for resumable downloads so the driver
+    /// knows when the transfer is complete.
+    pub expected_size: u64,
+    /// Expected hex SHA-256 digest. When `Some`, the temp file is rejected if
+    /// its SHA-256 differs.
+    pub expected_digest: Option<&'a str>,
+    /// Operation identifier used for temp file naming and transfer-part
+    /// persistence.
+    pub operation_id: &'a str,
+    /// Control DB connection for persisting transfer progress.
+    pub control_db: &'a Connection,
+    /// Current provider revision of the remote object (for resume validation).
+    /// When `None`, resume is disabled (a fresh download always starts).
+    pub provider_revision: Option<&'a str>,
+}
+
+/// Download `relative_path` from `provider` to a temp file with resume-from-
+/// offset support, validate it, then atomically rename it over `destination`.
+///
+/// When the provider supports `range_download` and a matching
+/// `remote_transfer_parts` row exists, the download resumes from the verified
+/// offset. Otherwise a fresh full download is performed (delegating to
+/// [`atomic_download`]).
+///
+/// On success, the transfer-part row is deleted so a future restart does not
+/// resume against a non-existent partial.
+#[allow(dead_code)]
+pub(crate) fn resumable_atomic_download(
+    provider: &dyn RemoteProvider,
+    opts: ResumableDownloadOptions,
+) -> CommandResult<()> {
+    let temp_path = part_path(opts.destination, opts.operation_id);
+
+    // Ensure the parent directory exists.
+    if let Some(parent) = temp_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| {
+            internal_error(format!(
+                "failed to create parent directory {}: {e}",
+                parent.display()
+            ))
+        })?;
+    }
+
+    let caps = provider.capabilities();
+    let existing_part =
+        crate::remote::control_db::list_transfer_parts(opts.control_db, opts.operation_id)?
+            .into_iter()
+            .find(|p| {
+                p.relative_path == opts.relative_path
+                    && p.direction == crate::remote::control_db::TransferDirection::Download
+            });
+
+    // Validate the persisted provider_revision before resuming.
+    let can_resume = caps.range_download
+        && existing_part.is_some()
+        && existing_part
+            .as_ref()
+            .and_then(|p| p.provider_revision.as_deref())
+            == opts.provider_revision
+        && existing_part
+            .as_ref()
+            .map(|p| p.transferred_bytes)
+            .unwrap_or(0)
+            > 0;
+
+    let result = if can_resume {
+        run_resumable_download(provider, &opts, &temp_path, existing_part.as_ref().unwrap())
+    } else {
+        // Fresh download: clean up any stale temp file and delegate to the
+        // non-resumable path.
+        let _ = fs::remove_file(&temp_path);
+        run_atomic_download(
+            provider,
+            AtomicDownloadOptions {
+                relative_path: opts.relative_path,
+                destination: opts.destination,
+                expected_size: Some(opts.expected_size),
+                expected_digest: opts.expected_digest,
+                operation_id: opts.operation_id,
+            },
+            &temp_path,
+        )
+    };
+
+    // On success, delete the transfer-part row so a future restart does not
+    // resume against a non-existent partial.
+    if result.is_ok() {
+        let _ =
+            crate::remote::control_db::delete_transfer_parts(opts.control_db, opts.operation_id);
+    } else {
+        // On failure, remove the temp file so no partial lingers at a
+        // final-adjacent path. The transfer-part row is retained so a restart
+        // can resume.
+        let _ = fs::remove_file(&temp_path);
+    }
+
+    result
+}
+
+/// Run a resumable download: resume from the verified offset using
+/// `download_range`, persisting progress after each chunk.
+fn run_resumable_download(
+    provider: &dyn RemoteProvider,
+    opts: &ResumableDownloadOptions,
+    temp_path: &Path,
+    existing: &crate::remote::control_db::TransferPartRow,
+) -> CommandResult<()> {
+    let mut offset = existing.transferred_bytes.max(0) as u64;
+    let total = opts.expected_size;
+
+    // If the persisted offset already matches the expected size, the download
+    // was complete but the rename did not happen. Skip to validation.
+    if offset >= total {
+        return validate_and_rename(
+            temp_path,
+            opts.destination,
+            opts.expected_size,
+            opts.expected_digest,
+        );
+    }
+
+    // Open the temp file in append mode for resumed chunks. If the file does
+    // not exist (e.g. the temp was cleaned up but the DB row remained), start
+    // from offset 0.
+    if !temp_path.exists() {
+        offset = 0;
+    }
+
+    // Download remaining chunks via Range requests.
+    while offset < total {
+        let length = RESUMABLE_DOWNLOAD_CHUNK_SIZE.min(total - offset);
+        provider
+            .download_range(opts.relative_path, temp_path, offset, length)
+            .map_err(|remote_error| {
+                internal_error(format!(
+                    "resumable download range failed at offset {offset}: {}",
+                    remote_error.detail.as_deref().unwrap_or(&remote_error.code)
+                ))
+            })?;
+
+        offset += length;
+
+        // Persist progress so a restart can resume from this offset.
+        let now = crate::remote::types::current_unix_time_ms();
+        crate::remote::control_db::upsert_transfer_part(
+            opts.control_db,
+            &crate::remote::control_db::TransferPartRow {
+                operation_id: opts.operation_id.to_owned(),
+                relative_path: opts.relative_path.to_owned(),
+                direction: crate::remote::control_db::TransferDirection::Download,
+                expected_size: Some(opts.expected_size as i64),
+                expected_digest: opts.expected_digest.map(str::to_owned),
+                provider_revision: opts.provider_revision.map(str::to_owned),
+                provider_session_id: None,
+                transferred_bytes: offset as i64,
+                state: "in_progress".to_owned(),
+                updated_at_ms: now,
+            },
+        )?;
+    }
+
+    validate_and_rename(
+        temp_path,
+        opts.destination,
+        opts.expected_size,
+        opts.expected_digest,
+    )
+}
+
+/// Validate the temp file's size and digest, fsync, then atomically rename it
+/// over the destination. Shared by the resumable and non-resumable paths.
+fn validate_and_rename(
+    temp_path: &Path,
+    destination: &Path,
+    expected_size: u64,
+    expected_digest: Option<&str>,
+) -> CommandResult<()> {
+    // Size check.
+    let actual = fs::metadata(temp_path).map(|m| m.len()).map_err(|e| {
+        internal_error(format!(
+            "failed to stat temp file {}: {e}",
+            temp_path.display()
+        ))
+    })?;
+    if actual != expected_size {
+        return Err(AtomicDownloadError::SizeMismatch {
+            expected: expected_size,
+            actual,
+        }
+        .into());
+    }
+
+    // Digest check.
+    if let Some(expected_digest) = expected_digest {
+        let actual = sha256_file(temp_path)?;
+        if !digests_equal(&actual, expected_digest) {
+            return Err(AtomicDownloadError::DigestMismatch {
+                expected: expected_digest.to_owned(),
+                actual,
+            }
+            .into());
+        }
+    }
+
+    // fsync + rename + fsync parent.
+    fsync_file(temp_path)?;
+    fs::rename(temp_path, destination).map_err(|e| {
+        AtomicDownloadError::Io(std::io::Error::other(format!(
+            "failed to atomically rename {} -> {}: {e}",
+            temp_path.display(),
+            destination.display()
+        )))
+    })?;
+    fsync_parent(destination)?;
+    Ok(())
+}
+
 /// Compute the SHA-256 hex digest of a file.
 ///
 /// Factored here (rather than reusing `control_db::sha256_file`) so this
@@ -1395,5 +1644,370 @@ mod tests {
         let mut hasher = Sha256::new();
         hasher.update(data);
         hash::hex_lower(hasher.finalize())
+    }
+
+    // ---- Resumable download tests (PR#5) ----
+
+    /// A fake provider that supports `download_range` for resumable downloads.
+    /// It serves byte ranges from an in-memory store and tracks how many
+    /// range requests were made so tests can verify resume behavior.
+    struct ResumableFakeProvider {
+        files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+        revisions: Arc<Mutex<HashMap<String, String>>>,
+        /// Fail the Nth range request (0-indexed) by returning an error.
+        fail_on_range: Arc<Mutex<Option<usize>>>,
+        range_call_count: Arc<Mutex<usize>>,
+    }
+
+    impl ResumableFakeProvider {
+        fn new() -> Self {
+            Self {
+                files: Arc::new(Mutex::new(HashMap::new())),
+                revisions: Arc::new(Mutex::new(HashMap::new())),
+                fail_on_range: Arc::new(Mutex::new(None)),
+                range_call_count: Arc::new(Mutex::new(0)),
+            }
+        }
+
+        fn store_file(&self, relative_path: &str, bytes: Vec<u8>, revision: &str) {
+            self.files
+                .lock()
+                .unwrap()
+                .insert(relative_path.to_owned(), bytes);
+            self.revisions
+                .lock()
+                .unwrap()
+                .insert(relative_path.to_owned(), revision.to_owned());
+        }
+
+        fn fail_on_range(&self, index: usize) {
+            *self.fail_on_range.lock().unwrap() = Some(index);
+        }
+
+        fn range_call_count(&self) -> usize {
+            *self.range_call_count.lock().unwrap()
+        }
+    }
+
+    impl crate::remote::provider::RemoteProvider for ResumableFakeProvider {
+        fn capabilities(&self) -> crate::remote::errors::RemoteProviderCapabilities {
+            crate::remote::errors::RemoteProviderCapabilities {
+                conditional_replace: false,
+                resumable_upload: false,
+                range_download: true,
+                revision_metadata: true,
+                server_side_move: false,
+            }
+        }
+
+        fn get_revision(&self, relative_path: &str) -> CommandResult<Option<String>> {
+            Ok(self.revisions.lock().unwrap().get(relative_path).cloned())
+        }
+
+        fn download_file(&self, relative_path: &str, destination: &Path) -> CommandResult<()> {
+            let data = self
+                .files
+                .lock()
+                .unwrap()
+                .get(relative_path)
+                .cloned()
+                .ok_or_else(|| {
+                    CommandError::from(LibraryError::Internal(format!(
+                        "fake provider: file {relative_path} not found"
+                    )))
+                })?;
+            std::fs::write(destination, &data).map_err(|e| {
+                CommandError::from(LibraryError::Internal(format!(
+                    "fake provider write failed: {e}"
+                )))
+            })
+        }
+
+        fn download_range(
+            &self,
+            relative_path: &str,
+            destination: &Path,
+            offset: u64,
+            length: u64,
+        ) -> crate::remote::errors::RemoteResult<()> {
+            let mut count = self.range_call_count.lock().unwrap();
+            let call_index = *count;
+            *count += 1;
+            drop(count);
+
+            if let Some(fail_idx) = *self.fail_on_range.lock().unwrap() {
+                if call_index == fail_idx {
+                    return Err(crate::remote::errors::RemoteError::new(
+                        crate::remote::errors::RemoteErrorKind::NetworkUnavailable,
+                        "simulated range failure",
+                    ));
+                }
+            }
+
+            let data = self
+                .files
+                .lock()
+                .unwrap()
+                .get(relative_path)
+                .cloned()
+                .ok_or_else(|| {
+                    crate::remote::errors::RemoteError::new(
+                        crate::remote::errors::RemoteErrorKind::PermissionDenied,
+                        format!("fake provider: file {relative_path} not found"),
+                    )
+                })?;
+            let start = offset as usize;
+            let end = (offset + length) as usize;
+            if end > data.len() {
+                return Err(crate::remote::errors::RemoteError::new(
+                    crate::remote::errors::RemoteErrorKind::RemoteIntegrityFailed,
+                    "range beyond file size",
+                ));
+            }
+            let chunk = &data[start..end];
+            // Append the chunk to the destination file at the given offset.
+            use std::io::Seek;
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(false)
+                .open(destination)
+                .map_err(|e| {
+                    crate::remote::errors::RemoteError::new(
+                        crate::remote::errors::RemoteErrorKind::NetworkUnavailable,
+                        format!("failed to open temp file: {e}"),
+                    )
+                })?;
+            file.seek(std::io::SeekFrom::Start(offset)).map_err(|e| {
+                crate::remote::errors::RemoteError::new(
+                    crate::remote::errors::RemoteErrorKind::NetworkUnavailable,
+                    format!("failed to seek: {e}"),
+                )
+            })?;
+            std::io::Write::write_all(&mut file, chunk).map_err(|e| {
+                crate::remote::errors::RemoteError::new(
+                    crate::remote::errors::RemoteErrorKind::NetworkUnavailable,
+                    format!("failed to write chunk: {e}"),
+                )
+            })?;
+            Ok(())
+        }
+
+        fn upload_file(&self, _relative_path: &str) -> CommandResult<()> {
+            Ok(())
+        }
+        fn upload_directory(&self, _relative_path: &str) -> CommandResult<()> {
+            Ok(())
+        }
+        fn delete_path(&self, _relative_path: &str) -> CommandResult<()> {
+            Ok(())
+        }
+        fn initialize_or_sync(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+        fn get_file_size(&self, relative_path: &str) -> CommandResult<Option<u64>> {
+            Ok(self
+                .files
+                .lock()
+                .unwrap()
+                .get(relative_path)
+                .map(|d| d.len() as u64))
+        }
+        fn refresh_existing(&self) -> CommandResult<Option<String>> {
+            Ok(None)
+        }
+    }
+
+    #[test]
+    fn resumable_download_fresh_download_succeeds() {
+        let dir = TempDir::new().expect("temp dir");
+        let dest = dir.path().join("media/song.mp3");
+        let provider = ResumableFakeProvider::new();
+        let data = b"hello world, this is a test file".to_vec();
+        provider.store_file("media/song.mp3", data.clone(), "rev-1");
+
+        let (_db_dir, conn) = fresh_control_db();
+
+        resumable_atomic_download(
+            &provider,
+            ResumableDownloadOptions {
+                relative_path: "media/song.mp3",
+                destination: &dest,
+                expected_size: data.len() as u64,
+                expected_digest: None,
+                operation_id: "op-1",
+                control_db: &conn,
+                provider_revision: Some("rev-1"),
+            },
+        )
+        .expect("download succeeds");
+
+        assert_eq!(std::fs::read(&dest).unwrap(), data);
+        // Transfer part deleted on success.
+        assert!(
+            crate::remote::control_db::list_transfer_parts(&conn, "op-1")
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn resumable_download_resumes_from_verified_offset() {
+        let dir = TempDir::new().expect("temp dir");
+        let dest = dir.path().join("media/song.mp3");
+        let provider = ResumableFakeProvider::new();
+        // 20 MiB file so multiple chunks are needed.
+        let data = vec![0xABu8; 20 * 1024 * 1024];
+        provider.store_file("media/song.mp3", data.clone(), "rev-1");
+
+        let (_db_dir, conn) = fresh_control_db();
+
+        // Seed a transfer part at offset 8 MiB (one chunk done).
+        let temp_path = part_path(&dest, "op-1");
+        std::fs::create_dir_all(temp_path.parent().unwrap()).unwrap();
+        // Write the first 8 MiB to the temp file so the resume can append.
+        std::fs::write(&temp_path, &data[..8 * 1024 * 1024]).unwrap();
+        crate::remote::control_db::upsert_transfer_part(
+            &conn,
+            &crate::remote::control_db::TransferPartRow {
+                operation_id: "op-1".to_owned(),
+                relative_path: "media/song.mp3".to_owned(),
+                direction: crate::remote::control_db::TransferDirection::Download,
+                expected_size: Some(data.len() as i64),
+                expected_digest: None,
+                provider_revision: Some("rev-1".to_owned()),
+                provider_session_id: None,
+                transferred_bytes: (8 * 1024 * 1024) as i64,
+                state: "in_progress".to_owned(),
+                updated_at_ms: 1000,
+            },
+        )
+        .unwrap();
+
+        resumable_atomic_download(
+            &provider,
+            ResumableDownloadOptions {
+                relative_path: "media/song.mp3",
+                destination: &dest,
+                expected_size: data.len() as u64,
+                expected_digest: None,
+                operation_id: "op-1",
+                control_db: &conn,
+                provider_revision: Some("rev-1"),
+            },
+        )
+        .expect("resume succeeds");
+
+        assert_eq!(std::fs::read(&dest).unwrap(), data);
+        // The provider should have been called for the remaining chunks
+        // (offset 8 MiB onward), not the first 8 MiB.
+        assert!(
+            provider.range_call_count() > 0,
+            "range requests made for remaining chunks"
+        );
+        assert!(
+            provider.range_call_count() < 4,
+            "fewer chunks than a full download"
+        );
+    }
+
+    #[test]
+    fn resumable_download_revision_mismatch_starts_fresh() {
+        let dir = TempDir::new().expect("temp dir");
+        let dest = dir.path().join("media/song.mp3");
+        let provider = ResumableFakeProvider::new();
+        let data = b"hello world".to_vec();
+        provider.store_file("media/song.mp3", data.clone(), "rev-2");
+
+        let (_db_dir, conn) = fresh_control_db();
+
+        // Seed a transfer part with a STALE revision.
+        crate::remote::control_db::upsert_transfer_part(
+            &conn,
+            &crate::remote::control_db::TransferPartRow {
+                operation_id: "op-1".to_owned(),
+                relative_path: "media/song.mp3".to_owned(),
+                direction: crate::remote::control_db::TransferDirection::Download,
+                expected_size: Some(data.len() as i64),
+                expected_digest: None,
+                provider_revision: Some("rev-old".to_owned()),
+                provider_session_id: None,
+                transferred_bytes: 5,
+                state: "in_progress".to_owned(),
+                updated_at_ms: 1000,
+            },
+        )
+        .unwrap();
+
+        resumable_atomic_download(
+            &provider,
+            ResumableDownloadOptions {
+                relative_path: "media/song.mp3",
+                destination: &dest,
+                expected_size: data.len() as u64,
+                expected_digest: None,
+                operation_id: "op-1",
+                control_db: &conn,
+                provider_revision: Some("rev-2"),
+            },
+        )
+        .expect("fresh download succeeds");
+
+        assert_eq!(std::fs::read(&dest).unwrap(), data);
+        // No range calls — fresh download via download_file.
+        assert_eq!(provider.range_call_count(), 0);
+    }
+
+    #[test]
+    fn resumable_download_range_failure_retains_progress() {
+        let dir = TempDir::new().expect("temp dir");
+        let dest = dir.path().join("media/song.mp3");
+        let provider = ResumableFakeProvider::new();
+        let data = vec![0xCDu8; 20 * 1024 * 1024];
+        provider.store_file("media/song.mp3", data.clone(), "rev-1");
+        // Fail the first range request.
+        provider.fail_on_range(0);
+
+        let (_db_dir, conn) = fresh_control_db();
+
+        // Seed a transfer part at offset 8 MiB.
+        let temp_path = part_path(&dest, "op-1");
+        std::fs::create_dir_all(temp_path.parent().unwrap()).unwrap();
+        std::fs::write(&temp_path, &data[..8 * 1024 * 1024]).unwrap();
+        crate::remote::control_db::upsert_transfer_part(
+            &conn,
+            &crate::remote::control_db::TransferPartRow {
+                operation_id: "op-1".to_owned(),
+                relative_path: "media/song.mp3".to_owned(),
+                direction: crate::remote::control_db::TransferDirection::Download,
+                expected_size: Some(data.len() as i64),
+                expected_digest: None,
+                provider_revision: Some("rev-1".to_owned()),
+                provider_session_id: None,
+                transferred_bytes: (8 * 1024 * 1024) as i64,
+                state: "in_progress".to_owned(),
+                updated_at_ms: 1000,
+            },
+        )
+        .unwrap();
+
+        let result = resumable_atomic_download(
+            &provider,
+            ResumableDownloadOptions {
+                relative_path: "media/song.mp3",
+                destination: &dest,
+                expected_size: data.len() as u64,
+                expected_digest: None,
+                operation_id: "op-1",
+                control_db: &conn,
+                provider_revision: Some("rev-1"),
+            },
+        );
+        assert!(result.is_err(), "range failure should propagate");
+        // The transfer part is retained so a restart can resume.
+        let parts = crate::remote::control_db::list_transfer_parts(&conn, "op-1").unwrap();
+        assert_eq!(parts.len(), 1, "transfer part retained after failure");
+        // The temp file is removed on failure (no partial lingers).
+        assert!(!temp_path.exists(), "temp removed on failure");
     }
 }

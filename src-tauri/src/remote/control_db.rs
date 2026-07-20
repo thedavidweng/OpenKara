@@ -825,6 +825,21 @@ fn map_transfer_part_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TransferPa
     })
 }
 
+/// Delete all transfer parts for an operation. Called after a transfer
+/// completes (or is cancelled) so stale offsets do not cause a future restart
+/// to resume against a non-existent remote partial.
+// used by PR#5: resumable uploads/downloads
+#[allow(dead_code)]
+pub fn delete_transfer_parts(connection: &Connection, operation_id: &str) -> CommandResult<()> {
+    connection
+        .execute(
+            "DELETE FROM remote_transfer_parts WHERE operation_id = ?1",
+            params![operation_id],
+        )
+        .map_err(|e| database_error(format!("failed to delete transfer parts: {e}")))?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // remote_cache_entries CRUD
 // ---------------------------------------------------------------------------

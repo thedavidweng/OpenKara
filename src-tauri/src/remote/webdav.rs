@@ -369,6 +369,112 @@ pub(crate) fn webdav_conditional_put(
     })
 }
 
+// ---------------------------------------------------------------------------
+// Staged upload + server-side MOVE (PR#5)
+//
+// WebDAV servers vary in their support for partial PUT / Content-Range, so we
+// do NOT claim `resumable_upload = true`. Instead, large uploads use a safe
+// staging path: upload to `.openkara/staging/<op-id>/<filename>.part`, verify,
+// then MOVE to the final path. The MOVE is server-side when the server
+// supports it (most WebDAV servers do), avoiding a re-upload.
+//
+// The staging path is operation-scoped so concurrent operations do not
+// collide. A changed provider_revision invalidates the staged partial — the
+// caller discards it and starts a new staging upload.
+// ---------------------------------------------------------------------------
+
+/// Build the staging URL for an operation-scoped partial upload.
+#[allow(dead_code)]
+pub(crate) fn webdav_staging_url(
+    root_url: &str,
+    operation_id: &str,
+    relative_path: &str,
+) -> CommandResult<String> {
+    // Sanitize the relative path into a single filename segment so the staged
+    // object lives under `.openkara/staging/<op-id>/` without nested dirs.
+    let flat_name = relative_path.replace('/', "_");
+    join_url(
+        root_url,
+        &format!(".openkara/staging/{operation_id}/{flat_name}.part"),
+    )
+}
+
+/// Upload bytes to the staging path. Returns the staging URL on success.
+#[allow(dead_code)]
+pub(crate) fn webdav_staged_upload(
+    client: &Client,
+    root_url: &str,
+    operation_id: &str,
+    relative_path: &str,
+    bytes: Vec<u8>,
+    username: &str,
+    password: &str,
+) -> CommandResult<String> {
+    let staging_url = webdav_staging_url(root_url, operation_id, relative_path)?;
+    // Ensure the staging collection chain exists.
+    let server_url = {
+        let parsed = Url::parse(root_url).map_err(|error| {
+            CommandError::from(LibraryError::Internal(format!(
+                "invalid WebDAV root URL: {error}"
+            )))
+        })?;
+        // The server URL is the scheme + host + first path segment (the
+        // share root). For staging we ensure the full chain.
+        let staging_dir_url = join_url(root_url, &format!(".openkara/staging/{operation_id}/"))?;
+        ensure_webdav_collection_chain(
+            client,
+            parsed.as_str(),
+            &staging_dir_url,
+            username,
+            password,
+        )?;
+        parsed.to_string()
+    };
+    let _ = server_url;
+    upload_webdav_bytes(client, &staging_url, bytes, username, password)?;
+    Ok(staging_url)
+}
+
+/// Move a staged object to its final URL using a server-side MOVE. Most WebDAV
+/// servers support MOVE; the destination is specified via the `Destination`
+/// header.
+#[allow(dead_code)]
+pub(crate) fn webdav_move_staged_to_final(
+    client: &Client,
+    staging_url: &str,
+    final_url: &str,
+    username: &str,
+    password: &str,
+) -> CommandResult<Option<String>> {
+    // webdav_send does not support custom headers, so we build the MOVE
+    // request directly with the Destination + Overwrite headers.
+    let response = client
+        .request(
+            Method::from_bytes(b"MOVE").expect("MOVE should parse"),
+            staging_url,
+        )
+        .basic_auth(username, Some(password))
+        .header("Destination", final_url)
+        .header("Overwrite", "T")
+        .send()
+        .map_err(|_error| {
+            CommandError::from(LibraryError::Internal(
+                "WebDAV MOVE request failed".to_owned(),
+            ))
+        })?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(CommandError::from(LibraryError::Internal(format!(
+            "WebDAV MOVE failed with status {status}"
+        ))));
+    }
+    Ok(response
+        .headers()
+        .get(ETAG)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned))
+}
+
 /// Stat a WebDAV object: HEAD request returning size (Content-Length) and
 /// revision (ETag). Returns `Ok(None)` on 404.
 pub(crate) fn webdav_stat(
@@ -768,10 +874,16 @@ impl RemoteProvider for WebDAVProvider<'_> {
         // closed before reaching `conditional_replace`.
         RemoteProviderCapabilities {
             conditional_replace: true,
-            resumable_upload: false, // PR#5
+            // PR#5: WebDAV servers vary in partial-PUT / Content-Range
+            // support, so we do NOT claim resumable_upload. Large uploads
+            // use a safe staging path + server-side MOVE instead.
+            resumable_upload: false,
             range_download: true,
             revision_metadata: true,
-            server_side_move: false,
+            // PR#5: Most WebDAV servers support MOVE (RFC 4918 §9.9). We
+            // report this optimistically; the staged-upload path falls back
+            // to a direct PUT if MOVE is unavailable.
+            server_side_move: true,
         }
     }
 

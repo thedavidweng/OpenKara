@@ -137,6 +137,12 @@ pub(crate) struct RemoteError {
     pub code: String,
     pub detail: Option<String>,
     pub retryable: bool,
+    /// Optional `Retry-After` delay parsed from the response. Honored by the
+    /// shared retry driver when present and bounded; `None` means the driver
+    /// falls back to full-jitter backoff.
+    // used by PR#5: shared network retry policy
+    #[allow(dead_code)]
+    pub retry_after: Option<std::time::Duration>,
 }
 
 impl RemoteError {
@@ -146,6 +152,7 @@ impl RemoteError {
             code: kind.code().to_owned(),
             detail: Some(detail.into()),
             retryable: kind.retryable(),
+            retry_after: None,
         }
     }
 
@@ -155,6 +162,7 @@ impl RemoteError {
             code: kind.code().to_owned(),
             detail: None,
             retryable: kind.retryable(),
+            retry_after: None,
         }
     }
 
@@ -178,6 +186,7 @@ impl RemoteError {
             code: code.to_owned(),
             detail: error_detail.map(str::to_owned),
             retryable: kind.retryable(),
+            retry_after: None,
         })
     }
 

@@ -54,6 +54,7 @@ quick-xml = "0.41"
 regex-lite = "0.1"
 flate2 = "1.1.9"
 tar = "0.4"
+httpdate = "1.0.3"
 tokio = { version = "1.53", features = ["sync"] }
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 

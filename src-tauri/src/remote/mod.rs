@@ -14,6 +14,7 @@ pub(crate) mod executor;
 mod google_drive;
 pub(crate) mod manifest;
 mod mutation;
+pub(crate) mod net_policy;
 pub(crate) mod provider;
 pub(crate) mod recovery;
 mod registry;

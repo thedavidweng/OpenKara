@@ -730,6 +730,211 @@ fn dropbox_conditional_upload(
     Ok(metadata)
 }
 
+// ---------------------------------------------------------------------------
+// Resumable upload session (PR#5)
+//
+// Dropbox supports multi-part uploads via the upload_session endpoints:
+//   start  → returns a session_id
+//   append → appends chunks with a cursor {session_id, offset}
+//   finish → final chunk + commit metadata (path, mode, etc.)
+//
+// The session_id and committed offset are persisted in
+// `remote_transfer_parts` so a restart can resume from the verified offset
+// (append_v2 with the correct cursor offset). A changed provider_revision
+// invalidates the partial transfer — a new session is started.
+//
+// See: https://www.dropbox.com/developers/documentation/http/documentation
+// ---------------------------------------------------------------------------
+
+/// Chunk size for Dropbox resumable uploads. Dropbox recommends chunks between
+/// 150 KB and 150 MB; we use 8 MiB to balance memory and round-trip count.
+#[allow(dead_code)]
+const DROPBOX_RESUMABLE_CHUNK_SIZE: usize = 8 * 1024 * 1024;
+
+/// Start a Dropbox upload session. Returns the `session_id` to persist in
+/// `remote_transfer_parts.provider_session_id`.
+#[allow(dead_code)]
+pub(crate) fn dropbox_upload_session_start(
+    app_data_dir: &Path,
+    secret: &mut DropboxSecret,
+    first_chunk: &[u8],
+) -> CommandResult<String> {
+    let url = dropbox_content_url("/2/files/upload_session/start")?;
+    let response = dropbox_authorized_request(app_data_dir, secret, Method::POST, url)?
+        .header(
+            "Dropbox-API-Arg",
+            serde_json::json!({ "close": false }).to_string(),
+        )
+        .header("Content-Type", "application/octet-stream")
+        .body(first_chunk.to_vec())
+        .send_network("Dropbox upload session start")?;
+    if !response.status().is_success() {
+        return Err(CommandError::from(LibraryError::Internal(format!(
+            "Dropbox upload_session/start failed with status {}",
+            response.status()
+        ))));
+    }
+    let body: serde_json::Value = response.json().map_err(|error| {
+        CommandError::from(LibraryError::Internal(format!(
+            "failed to parse Dropbox upload_session/start response: {error}"
+        )))
+    })?;
+    body.get("session_id")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(
+                "Dropbox upload_session/start response missing session_id".to_owned(),
+            ))
+        })
+}
+
+/// Append a chunk to an existing Dropbox upload session. `offset` is the
+/// committed byte offset within the session (must match the server's view).
+#[allow(dead_code)]
+pub(crate) fn dropbox_upload_session_append(
+    app_data_dir: &Path,
+    secret: &mut DropboxSecret,
+    session_id: &str,
+    offset: u64,
+    chunk: &[u8],
+) -> CommandResult<()> {
+    let url = dropbox_content_url("/2/files/upload_session/append_v2")?;
+    let response = dropbox_authorized_request(app_data_dir, secret, Method::POST, url)?
+        .header(
+            "Dropbox-API-Arg",
+            serde_json::json!({
+                "cursor": {
+                    "session_id": session_id,
+                    "offset": offset
+                },
+                "close": false
+            })
+            .to_string(),
+        )
+        .header("Content-Type", "application/octet-stream")
+        .body(chunk.to_vec())
+        .send_network("Dropbox upload session append")?;
+    if !response.status().is_success() {
+        return Err(CommandError::from(LibraryError::Internal(format!(
+            "Dropbox upload_session/append_v2 failed with status {}",
+            response.status()
+        ))));
+    }
+    Ok(())
+}
+
+/// Finish a Dropbox upload session: upload the final chunk and commit the
+/// file at `path` with `mode: overwrite`. Returns the committed metadata.
+#[allow(dead_code)]
+pub(crate) fn dropbox_upload_session_finish(
+    app_data_dir: &Path,
+    secret: &mut DropboxSecret,
+    session_id: &str,
+    offset: u64,
+    final_chunk: &[u8],
+    commit_path: &str,
+) -> CommandResult<DropboxMetadata> {
+    let url = dropbox_content_url("/2/files/upload_session/finish")?;
+    let response = dropbox_authorized_request(app_data_dir, secret, Method::POST, url)?
+        .header(
+            "Dropbox-API-Arg",
+            serde_json::json!({
+                "cursor": {
+                    "session_id": session_id,
+                    "offset": offset
+                },
+                "commit": {
+                    "path": commit_path,
+                    "mode": "overwrite",
+                    "autorename": false,
+                    "mute": true,
+                    "strict_conflict": false
+                }
+            })
+            .to_string(),
+        )
+        .header("Content-Type", "application/octet-stream")
+        .body(final_chunk.to_vec())
+        .send_network("Dropbox upload session finish")?;
+    if !response.status().is_success() {
+        return Err(CommandError::from(LibraryError::Internal(format!(
+            "Dropbox upload_session/finish failed with status {}",
+            response.status()
+        ))));
+    }
+    response.json().map_err(|error| {
+        CommandError::from(LibraryError::Internal(format!(
+            "failed to parse Dropbox upload_session/finish response: {error}"
+        )))
+    })
+}
+
+/// Upload `bytes` to `commit_path` using a resumable upload session. Splits
+/// the data into chunks, persists progress via `progress` after each chunk,
+/// and returns the committed metadata.
+///
+/// `existing_session` is `(session_id, offset)` from a prior interrupted run
+/// (read from `remote_transfer_parts`). When present, the upload resumes from
+/// the verified offset instead of starting a new session.
+#[allow(dead_code)]
+pub(crate) fn dropbox_resumable_upload(
+    app_data_dir: &Path,
+    secret: &mut DropboxSecret,
+    commit_path: &str,
+    bytes: &[u8],
+    existing_session: Option<(&str, u64)>,
+    progress: &dyn Fn(&str, u64),
+) -> CommandResult<DropboxMetadata> {
+    let total = bytes.len() as u64;
+
+    let (session_id, mut offset) = match existing_session {
+        Some((sid, off)) if off > 0 && off < total => {
+            // Resume from the verified offset. The caller is responsible for
+            // verifying the provider_revision has not changed before calling.
+            (sid.to_owned(), off)
+        }
+        _ => {
+            // Start a new session with the first chunk.
+            let first_chunk_end = (DROPBOX_RESUMABLE_CHUNK_SIZE).min(bytes.len());
+            let session_id =
+                dropbox_upload_session_start(app_data_dir, secret, &bytes[..first_chunk_end])?;
+            let offset = first_chunk_end as u64;
+            progress(&session_id, offset);
+            (session_id, offset)
+        }
+    };
+
+    // Append intermediate chunks.
+    while offset < total {
+        let chunk_end = (offset as usize + DROPBOX_RESUMABLE_CHUNK_SIZE).min(bytes.len());
+        let chunk = &bytes[offset as usize..chunk_end];
+
+        if chunk_end == bytes.len() {
+            // Final chunk — finish the session and commit.
+            let metadata = dropbox_upload_session_finish(
+                app_data_dir,
+                secret,
+                &session_id,
+                offset,
+                chunk,
+                commit_path,
+            )?;
+            return Ok(metadata);
+        }
+
+        dropbox_upload_session_append(app_data_dir, secret, &session_id, offset, chunk)?;
+        offset = chunk_end as u64;
+        progress(&session_id, offset);
+    }
+
+    // Edge case: the file was exactly one chunk. The session was started with
+    // the full content but never finished. Finish with an empty final chunk.
+    let metadata =
+        dropbox_upload_session_finish(app_data_dir, secret, &session_id, offset, &[], commit_path)?;
+    Ok(metadata)
+}
+
 pub(crate) fn dropbox_download_file(
     app_data_dir: &Path,
     secret: &mut DropboxSecret,
@@ -1031,7 +1236,9 @@ impl RemoteProvider for DropboxProvider<'_> {
     fn capabilities(&self) -> RemoteProviderCapabilities {
         RemoteProviderCapabilities {
             conditional_replace: true,
-            resumable_upload: false, // PR#5 fills this true where supported.
+            // PR#5: Dropbox upload_session (start/append/finish) supports
+            // resumable uploads with a persisted session_id + offset.
+            resumable_upload: true,
             range_download: true,
             revision_metadata: true,
             server_side_move: false,
