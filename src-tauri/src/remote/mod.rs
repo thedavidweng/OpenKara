@@ -3,6 +3,7 @@
 //! IPC entry points live in `crate::commands::remote_library` as thin adapters.
 //! Domain callers (import, lyrics, separation, playback_source, etc.) import from here.
 
+pub(crate) mod atomic_download;
 mod auth;
 mod auth_binding;
 mod bootstrap;

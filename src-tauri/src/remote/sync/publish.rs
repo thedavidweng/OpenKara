@@ -300,8 +300,16 @@ fn publish_song_internal<R: tauri::Runtime>(
             "no bound remote repository is available for publishing".to_string(),
         ))
     })?;
-    let remote_library =
-        prepare_remote_database_for_mutation(&state.shell.app_data_dir, &remote_library)?;
+    let remote_library = {
+        let control_db_conn = state.remote.control_db.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+        prepare_remote_database_for_mutation(
+            &control_db_conn,
+            &state.shell.app_data_dir,
+            &remote_library,
+        )?
+    };
 
     let local_root = state.library_root()?;
     let remote_library_id = remote_library.id().to_owned();

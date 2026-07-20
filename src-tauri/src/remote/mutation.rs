@@ -77,8 +77,14 @@ mod sync_backend {
     use std::path::Path;
     use tauri::AppHandle;
 
-    pub fn prepare(app_data_dir: &Path) -> CommandResult<()> {
-        sync::prepare_active_remote_database_for_mutation(app_data_dir)
+    pub fn prepare(state: &AppState) -> CommandResult<()> {
+        let control_db_conn = state.remote.control_db.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+        sync::prepare_active_remote_database_for_mutation(
+            &control_db_conn,
+            &state.shell.app_data_dir,
+        )
     }
 
     pub fn sync_db(app_data_dir: &Path) -> CommandResult<()> {
@@ -298,7 +304,7 @@ mod sync_backend {
         MIRROR_RESULT.with(|r| *r.borrow_mut() = result);
     }
 
-    pub fn prepare(_app_data_dir: &Path) -> CommandResult<()> {
+    pub fn prepare(_state: &AppState) -> CommandResult<()> {
         CALLS.with(|c| c.borrow_mut().push(SyncCall::Prepare));
         PREPARE_RESULT.with(|r| r.borrow().clone())
     }
@@ -377,7 +383,7 @@ fn prepare_and_mutate<T, F>(state: &AppState, mutation: F) -> CommandResult<T>
 where
     F: FnOnce() -> CommandResult<T>,
 {
-    sync_backend::prepare(&state.shell.app_data_dir)?;
+    sync_backend::prepare(state)?;
     // The song_ids are not known at this point for all callers; record with an
     // empty list. Callers that know the song_ids use the explicit wrappers
     // below which call record_prepared_operation with the real ids.
@@ -399,7 +405,7 @@ where
     F: FnOnce() -> crate::library::ImportSongsResult,
 {
     // ImportSongsResult is not a CommandResult, so call prepare directly.
-    sync_backend::prepare(&state.shell.app_data_dir)?;
+    sync_backend::prepare(state)?;
     // The imported song_ids are only known after the mutation, so record the
     // prepared operation with an empty list. The payload is updated when
     // mark_upload_status is called during publish.
