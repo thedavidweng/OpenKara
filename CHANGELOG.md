@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **remote**: Persistent verified cache catalog with bounded eviction (#151)
 - **remote**: Playback reconnect and source replacement with timeline preservation (#151)
 - **remote**: Frontend states, conflict actions, diagnostics, and fault-injection suite (#151)
+- **remote**: Verify referenced assets before manifest CAS (#151)
 
 ### 🐛 Bug Fixes
 
@@ -122,7 +123,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **cover-art**: Resolve ambience backdrop revocation race on song change (#149)
 - **romanize**: Scale pronunciation and bg_words lines with lyricsFontStep (#153)
 - **remote**: Route stems_remote around single-file streaming and verify complete stem sets (#151)
+- **remote**: Download remote stems in fallback path and clean temps on failure
+- **remote**: Unique batch operation ids, filter phantom uploads, migrate fallback DB
 - **remote**: Atomic verified downloads and dirty working-copy protection (#151)
+- **remote**: Use size-only cache fast-path and sanitize revision in operation id
+- **remote**: Reset terminal ops on re-publish, reject missing CAS token, cancel stale batch rows
+- **clippy**: Use is_some_and instead of map_or(false, ...)
+- **remote**: Revert unimplemented capability flags, reset transfer progress on failure
+- **remote**: Skip eviction on verified hits, restore fast-path skip, wire persist_ranges
+- **remote**: Preserve reconnect cache pin guard and fetch event listener
+- **remote**: Use as_str for diagnostics, regenerate changelog
+- **remote**: Apply migrations on fallback in-memory control DB, fix test TS type
+- **remote**: Replace park-thread pin leak with RemoteStreamingRuntime
+- **remote**: Use UUID operation IDs, stop reusing terminal rows
+- **remote**: Start durable operation executor on app startup
+- **clippy**: Use sort_by_key with Reverse in control_db
+- **remote**: Don't hold control DB Mutex across network I/O
 
 ### 📝 Documentation
 
