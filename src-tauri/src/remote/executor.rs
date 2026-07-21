@@ -310,11 +310,27 @@ fn run_publish_protocol(
                     },
                 )?;
                 // Confirm the table is empty (or absent) before proceeding.
-                let remaining: i64 = cand
-                    .query_row("SELECT COUNT(*) FROM remote_publish_outbox", [], |row| {
+                // Fail closed: query errors must not be reinterpreted as 0.
+                let remaining: i64 =
+                    match cand.query_row("SELECT COUNT(*) FROM remote_publish_outbox", [], |row| {
                         row.get(0)
-                    })
-                    .unwrap_or(0);
+                    }) {
+                        Ok(n) => n,
+                        Err(e) => {
+                            let msg = e.to_string();
+                            if msg.contains("no such table") {
+                                // Table absent after clear_all's missing-table
+                                // success path is equivalent to zero rows.
+                                0
+                            } else {
+                                let _ = std::fs::remove_file(&candidate_path);
+                                return Err(RemoteError::new(
+                                    RemoteErrorKind::RemoteIntegrityFailed,
+                                    format!("failed to verify outbox cleanup on candidate: {e}"),
+                                ));
+                            }
+                        }
+                    };
                 if remaining > 0 {
                     let _ = std::fs::remove_file(&candidate_path);
                     return Err(RemoteError::new(

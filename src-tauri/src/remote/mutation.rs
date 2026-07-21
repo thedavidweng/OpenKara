@@ -7,17 +7,23 @@
 //! Every local mutation that publishes to a remote follows this sequence:
 //! 1. Read the local repository state row and current expected generation.
 //! 2. Write a durable `prepared` operation row in remote-state.db.
-//! 3. Open the **library** SQLite database and begin a single transaction.
-//! 4. Run the mutation on that transaction connection.
-//! 5. Write `remote_publish_outbox` with the full song ID set on the **same**
+//! 3. Acquire the per-library commit lock (same lock as publish freeze/CAS).
+//! 4. Open the **library** SQLite database and begin a single transaction.
+//! 5. Run the mutation on that transaction connection.
+//! 6. Write `remote_publish_outbox` with the full song ID set on the **same**
 //!    transaction (fail closed — never commit songs without the change set).
-//! 6. Commit the library transaction (songs + outbox are atomic).
-//! 7. Project the outbox into control DB (`Pending` + `Dirty`) via a SQLite
+//! 7. Commit the library transaction (songs + outbox are atomic).
+//! 8. Project the outbox into control DB (`Pending` + `Dirty`) via a SQLite
 //!    transaction; on success delete the library outbox row.
-//! 8. Start background publication with the exact `operation_id`.
+//! 9. Release the commit lock, then start background publication with the
+//!    exact `operation_id`.
 //!
-//! A crash after step 6 leaves songs + outbox; startup rebuilds control DB
-//! from unprojected outbox rows. A crash before step 6 rolls back both.
+//! Holding the commit lock across steps 3–8 serializes local mutation with
+//! candidate freeze so a publisher cannot freeze a working DB that already
+//! contains an unmerged concurrent mutation.
+//!
+//! A crash after step 7 leaves songs + outbox; startup rebuilds control DB
+//! from unprojected outbox rows. A crash before step 7 rolls back both.
 //!
 //! # Why six entry points, not one
 //!
@@ -457,6 +463,15 @@ where
     }
 
     let prepared = prepared.expect("checked is_some above");
+    // Same per-library serialization as publish freeze/CAS. Holding the commit
+    // lock across local mutation + outbox + control projection closes the
+    // window where a publisher verifies the working DB then freezes a
+    // candidate that already includes an unmerged concurrent mutation.
+    let commit_lock = state.remote.commit_lock(&prepared.library_id);
+    let _commit_guard = commit_lock
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
     // Open the operation's library working copy — not whatever is currently active.
     let remote_lib = crate::remote::sync::load_registered_remote_library(
         &state.shell.app_data_dir,
@@ -538,6 +553,13 @@ where
         return Ok((result, song_ids));
     }
 
+    let prepared = prepared.expect("checked is_some above");
+    // Same per-library serialization as publish (see mutate_with_atomic_outbox).
+    let commit_lock = state.remote.commit_lock(&prepared.library_id);
+    let _commit_guard = commit_lock
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
     let conn = crate::cache::open_database(&library.database_path())
         .map_err(|e| database_error(e.to_string()))?;
     crate::cache::apply_migrations(&conn)
@@ -554,7 +576,6 @@ where
         .map(|song| song.hash.clone())
         .collect();
 
-    let prepared = prepared.expect("checked is_some above");
     if !song_ids.is_empty() {
         let now = crate::remote::types::current_unix_time_ms();
         let row = crate::remote::library_outbox::LibraryPublishOutboxRow {

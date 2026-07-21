@@ -607,6 +607,34 @@ fn run_remote_recovery(remote_state: &RemoteState, app_data_dir: &std::path::Pat
 /// Project unprojected library-DB publish outbox rows into remote-state.db.
 /// Fail closed: never delete / mark projected unless control projection
 /// succeeded. Leave outbox retryable on any error.
+/// Whether a residual library outbox row may be deleted because a terminal
+/// control-DB operation already covers its intent.
+///
+/// Safe only when:
+/// - operation `library_id` matches the outbox library
+/// - terminal payload is non-empty
+/// - every outbox song id is in the terminal payload (outbox ⊆ payload)
+///
+/// Empty terminal payload must never authorize deleting a non-empty outbox.
+/// `payload ⊆ outbox` is intentionally rejected so a partial payload cannot
+/// discard unmerged songs still sitting in the outbox.
+fn residual_outbox_safe_to_drop(
+    op_library_id: &str,
+    outbox_library_id: &str,
+    outbox_song_ids: &[String],
+    terminal_payload_song_ids: &[String],
+) -> bool {
+    if op_library_id != outbox_library_id {
+        return false;
+    }
+    if terminal_payload_song_ids.is_empty() {
+        return false;
+    }
+    outbox_song_ids
+        .iter()
+        .all(|s| terminal_payload_song_ids.contains(s))
+}
+
 fn project_library_outboxes_into_control_db(
     remote_state: &RemoteState,
     app_data_dir: &std::path::Path,
@@ -670,20 +698,23 @@ fn project_library_outboxes_into_control_db(
             let projected = match get_operation(&control, &row.operation_id) {
                 Ok(Some(existing)) if existing.state.is_terminal() => {
                     // Projection already finished (or op completed). Do not
-                    // reopen a terminal row — safely drop the residual outbox
-                    // when song_ids match the durable payload.
+                    // reopen a terminal row — only drop residual outbox when
+                    // residual_outbox_safe_to_drop says the intent is covered.
                     let payload_ids = crate::remote::control_db::OperationPayload::from_json(
                         &existing.payload_json,
                     )
                     .map(|p| p.song_ids)
                     .unwrap_or_default();
-                    let song_ids_match = row.song_ids.iter().all(|s| payload_ids.contains(s))
-                        || payload_ids.iter().all(|s| row.song_ids.contains(s));
-                    if song_ids_match || payload_ids.is_empty() {
-                        true // safe to delete residual outbox
+                    if residual_outbox_safe_to_drop(
+                        &existing.library_id,
+                        &library_id,
+                        &row.song_ids,
+                        &payload_ids,
+                    ) {
+                        true
                     } else {
                         eprintln!(
-                            "warning: residual outbox {} song_ids mismatch terminal op; keeping",
+                            "warning: residual outbox {} not covered by terminal op; keeping",
                             row.operation_id
                         );
                         false
@@ -830,6 +861,51 @@ fn spawn_durable_operation_executor(app_state: AppState) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod residual_outbox_tests {
+    use super::residual_outbox_safe_to_drop;
+
+    #[test]
+    fn equal_sets_are_safe() {
+        let ids = vec!["a".to_owned(), "b".to_owned()];
+        assert!(residual_outbox_safe_to_drop("lib", "lib", &ids, &ids));
+    }
+
+    #[test]
+    fn outbox_subset_of_payload_is_safe() {
+        let outbox = vec!["a".to_owned()];
+        let payload = vec!["a".to_owned(), "b".to_owned()];
+        assert!(residual_outbox_safe_to_drop(
+            "lib", "lib", &outbox, &payload
+        ));
+    }
+
+    #[test]
+    fn payload_subset_of_outbox_is_not_safe() {
+        // Terminal payload only [A] must not authorize deleting outbox [A,B].
+        let outbox = vec!["a".to_owned(), "b".to_owned()];
+        let payload = vec!["a".to_owned()];
+        assert!(!residual_outbox_safe_to_drop(
+            "lib", "lib", &outbox, &payload
+        ));
+    }
+
+    #[test]
+    fn empty_terminal_payload_never_authorizes_delete() {
+        let outbox = vec!["a".to_owned()];
+        let payload: Vec<String> = vec![];
+        assert!(!residual_outbox_safe_to_drop(
+            "lib", "lib", &outbox, &payload
+        ));
+    }
+
+    #[test]
+    fn library_mismatch_is_not_safe() {
+        let ids = vec!["a".to_owned()];
+        assert!(!residual_outbox_safe_to_drop("lib-a", "lib-b", &ids, &ids));
+    }
 }
 
 #[cfg(test)]

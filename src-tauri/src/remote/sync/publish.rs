@@ -472,16 +472,17 @@ fn publish_song_internal<R: tauri::Runtime>(
     let mut remote_connection = cache::open_database(&remote_root.database_path())
         .map_err(|error| database_error(error.to_string()))?;
 
-    // Under the commit lock: merge all co-pending publish ops for this library
-    // into one durable identity, re-bind expected_generation to the current
-    // committed generation, and union all song_ids. Prevents A+B both expecting
-    // gen N and A freezing a DB that already contains B without B's assets.
+    // Under the commit lock: atomically merge co-pending publish ops for this
+    // library into one durable identity, re-bind expected_generation to the
+    // current committed generation, and union song_ids. Prepared ops are never
+    // merged (they have not finished local mutation + outbox projection).
     let (operation_id, song_ids_to_publish) = merge_pending_ops_for_publish(
         state,
         &remote_library_id,
         &resolved_op.operation_id,
         batch_song_ids,
         song_id,
+        Some(remote_root.root()),
     )?;
     let ui_song_id = song_ids_to_publish
         .first()
@@ -673,99 +674,177 @@ fn upload_one_song_assets(
 /// On a CAS conflict, the repository transitions to `Conflicted` and the
 /// error is returned so the caller can emit `upload-error`. The operation is
 /// NEVER retried as an unconditional overwrite.
-/// Under the per-library commit lock: merge every non-terminal Publish op for
-/// this library into `primary_op_id`, union song_ids, rebind
-/// `expected_generation` to the current committed generation, and cancel the
-/// other ops. Returns (survivor_op_id, merged_song_ids).
+/// Only `Pending` / `RetryWait` may be coalesced. `Prepared` is excluded
+/// because its local library transaction and outbox projection may not have
+/// finished — canceling it would leave "local mutation committed + operation
+/// cancelled". In-flight executor states are owned by a lock holder.
+fn is_mergeable_publish_state(state: OperationState) -> bool {
+    matches!(state, OperationState::Pending | OperationState::RetryWait)
+}
+
+/// Under the per-library commit lock: atomically merge every
+/// `Pending`/`RetryWait` Publish op for this library into `primary_op_id`.
 ///
-/// This is the durable queue: concurrent mutations that each created their own
-/// op with the same expected_generation are coalesced into one CAS so that:
-/// - the candidate includes all committed local songs;
-/// - assets for every song are uploaded before freeze;
-/// - only one generation advance happens.
-fn merge_pending_ops_for_publish(
+/// All of the following happen inside **one** control-DB SQLite transaction:
+/// - read mergeable operations and union song_ids
+/// - update primary payload (and invalidate stale candidate identity when the
+///   change set grows)
+/// - rebind `expected_generation` to the live committed generation
+/// - cancel secondary operations
+/// - rebind repository `active_operation_id`
+/// - clear transfer/upload session rows for invalidated candidates
+///
+/// Returns `(survivor_op_id, merged_song_ids)`.
+pub(crate) fn merge_pending_ops_for_publish(
     state: &AppState,
     library_id: &str,
     primary_op_id: &str,
     batch_song_ids: &[String],
     fallback_song_id: &str,
+    working_copy_root: Option<&std::path::Path>,
 ) -> CommandResult<(String, Vec<String>)> {
     let conn =
         state.remote.control_db.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
     let now = crate::remote::types::current_unix_time_ms();
+    let mut candidate_paths_to_delete: Vec<String> = Vec::new();
 
-    let mut primary =
-        crate::remote::control_db::get_operation(&conn, primary_op_id)?.ok_or_else(|| {
+    let song_ids = {
+        let tx = conn.unchecked_transaction().map_err(|e| {
             CommandError::from(LibraryError::Internal(format!(
-                "publish operation {primary_op_id} was not found"
+                "failed to begin coalesce transaction: {e}"
             )))
         })?;
-    if primary.library_id != library_id {
-        return Err(CommandError::from(LibraryError::Internal(format!(
-            "operation {primary_op_id} library_id mismatch"
-        ))));
-    }
-    if primary.state.is_terminal() {
-        return Err(CommandError::from(LibraryError::Internal(format!(
-            "operation {primary_op_id} is terminal"
-        ))));
-    }
 
-    let mut song_ids: Vec<String> = OperationPayload::from_json(&primary.payload_json)
-        .map(|p| p.song_ids)
-        .unwrap_or_default();
-    if song_ids.is_empty() {
-        if batch_song_ids.is_empty() {
-            if !fallback_song_id.is_empty() {
-                song_ids.push(fallback_song_id.to_owned());
+        let mut primary = crate::remote::control_db::get_operation(&tx, primary_op_id)?
+            .ok_or_else(|| {
+                CommandError::from(LibraryError::Internal(format!(
+                    "publish operation {primary_op_id} was not found"
+                )))
+            })?;
+        if primary.library_id != library_id {
+            return Err(CommandError::from(LibraryError::Internal(format!(
+                "operation {primary_op_id} library_id mismatch"
+            ))));
+        }
+        if primary.state.is_terminal() {
+            return Err(CommandError::from(LibraryError::Internal(format!(
+                "operation {primary_op_id} is terminal"
+            ))));
+        }
+
+        let mut song_ids: Vec<String> = OperationPayload::from_json(&primary.payload_json)
+            .map(|p| p.song_ids)
+            .unwrap_or_default();
+        if song_ids.is_empty() {
+            if batch_song_ids.is_empty() {
+                if !fallback_song_id.is_empty() {
+                    song_ids.push(fallback_song_id.to_owned());
+                }
+            } else {
+                song_ids.extend(batch_song_ids.iter().cloned());
             }
-        } else {
-            song_ids.extend(batch_song_ids.iter().cloned());
         }
-    }
+        let original_song_ids = song_ids.clone();
 
-    let all_ops = list_operations_for_library(&conn, library_id)?;
-    for mut other in all_ops {
-        if other.operation_id == primary_op_id {
-            continue;
-        }
-        if other.operation_kind != OperationKind::Publish || other.state.is_terminal() {
-            continue;
-        }
-        if let Ok(payload) = OperationPayload::from_json(&other.payload_json) {
-            for sid in payload.song_ids {
-                if !song_ids.iter().any(|s| s == &sid) {
-                    song_ids.push(sid);
+        let mut merged_secondary = false;
+        let all_ops = list_operations_for_library(&tx, library_id)?;
+        for mut other in all_ops {
+            if other.operation_id == primary_op_id {
+                continue;
+            }
+            if other.operation_kind != OperationKind::Publish {
+                continue;
+            }
+            // Never coalesce Prepared (or in-flight executor states).
+            if !is_mergeable_publish_state(other.state) {
+                continue;
+            }
+            if let Ok(payload) = OperationPayload::from_json(&other.payload_json) {
+                for sid in payload.song_ids {
+                    if !song_ids.iter().any(|s| s == &sid) {
+                        song_ids.push(sid);
+                    }
+                }
+                if let Some(rel) = payload.candidate_relative_path {
+                    candidate_paths_to_delete.push(rel);
                 }
             }
+            other.state = OperationState::Cancelled;
+            other.error_code = Some("merged".to_owned());
+            other.error_detail = Some(format!(
+                "merged into concurrent publish operation {primary_op_id}"
+            ));
+            other.updated_at_ms = now;
+            upsert_operation(&tx, &other)?;
+            // Secondary transfer sessions are abandoned with the cancelled op.
+            let _ = crate::remote::control_db::delete_transfer_parts(&tx, &other.operation_id);
+            merged_secondary = true;
         }
-        other.state = OperationState::Cancelled;
-        other.error_code = Some("merged".to_owned());
-        other.error_detail = Some(format!(
-            "merged into concurrent publish operation {primary_op_id}"
-        ));
-        other.updated_at_ms = now;
-        upsert_operation(&conn, &other)?;
-    }
 
-    // Rebind expected_generation to the live committed generation under the
-    // commit lock so a stale value from prepare-time cannot CAS-conflict after
-    // an earlier publish advanced the remote.
-    let committed = get_repository_state(&conn, library_id)?
-        .map(|r| r.committed_generation)
-        .unwrap_or(0);
-    let mut payload = OperationPayload::from_json(&primary.payload_json).unwrap_or_default();
-    payload.song_ids = song_ids.clone();
-    if payload.detail.is_none() {
-        payload.detail = Some("Publishing to remote".to_owned());
+        let committed = get_repository_state(&tx, library_id)?
+            .map(|r| r.committed_generation)
+            .unwrap_or(0);
+
+        let mut payload = OperationPayload::from_json(&primary.payload_json).unwrap_or_default();
+        let mut sorted_original = original_song_ids;
+        let mut sorted_merged = song_ids.clone();
+        sorted_original.sort();
+        sorted_merged.sort();
+        let song_set_changed = sorted_original != sorted_merged;
+        // Any new song/change set invalidates a previously frozen candidate —
+        // otherwise a RetryWait op would reuse an A-only candidate after
+        // merging B into the payload.
+        let invalidate_candidate = merged_secondary || song_set_changed;
+        if invalidate_candidate {
+            if let Some(rel) = payload.candidate_relative_path.take() {
+                candidate_paths_to_delete.push(rel);
+            }
+            payload.candidate_size = None;
+            payload.candidate_sha256 = None;
+            payload.protocol_step = None;
+            primary.candidate_db_digest = None;
+            let _ = crate::remote::control_db::delete_transfer_parts(&tx, primary_op_id);
+        }
+
+        payload.song_ids = song_ids.clone();
+        if payload.detail.is_none() {
+            payload.detail = Some("Publishing to remote".to_owned());
+        }
+        primary.payload_json = payload.to_json()?;
+        primary.expected_generation = Some(committed);
+        primary.state = OperationState::Pending;
+        primary.next_attempt_at_ms = None;
+        primary.updated_at_ms = now;
+        upsert_operation(&tx, &primary)?;
+
+        // Rebind active_operation_id so status/UI track the survivor.
+        if let Some(mut repo) = get_repository_state(&tx, library_id)? {
+            repo.active_operation_id = Some(primary_op_id.to_owned());
+            if repo.local_state == LocalState::Clean {
+                repo.local_state = LocalState::Dirty;
+            }
+            repo.updated_at_ms = now;
+            upsert_repository_state(&tx, &repo)?;
+        }
+
+        tx.commit().map_err(|e| {
+            CommandError::from(LibraryError::Internal(format!(
+                "failed to commit coalesce transaction: {e}"
+            )))
+        })?;
+        song_ids
+    };
+
+    // Best-effort: remove abandoned candidate files outside the control TX.
+    // Missing files are fine; the identity was already cleared durably.
+    if let Some(root) = working_copy_root {
+        for rel in candidate_paths_to_delete {
+            let path = root.join(rel);
+            let _ = std::fs::remove_file(path);
+        }
     }
-    primary.payload_json = payload.to_json()?;
-    primary.expected_generation = Some(committed);
-    primary.state = OperationState::Pending;
-    primary.updated_at_ms = now;
-    upsert_operation(&conn, &primary)?;
 
     Ok((primary_op_id.to_owned(), song_ids))
 }
@@ -933,17 +1012,18 @@ fn commit_via_executor(
 
 /// Re-upload song assets for a durable operation after a crash between the
 /// local mutation and the executor. Uploads are idempotent (overwrite /
-/// re-put). The remote working DB is updated so asset verification and the
-/// candidate freeze see the mutation's committed state.
+/// re-put). Assets are always read from the **operation's library working
+/// copy** (`remote_root`), never from the currently active library — the user
+/// may have switched libraries since the operation was created.
 pub(crate) fn reupload_song_assets_for_recovery(
     state: &AppState,
     remote_library: &RegisteredLibrary,
     remote_root: &LibraryRoot,
     song_id: &str,
 ) -> CommandResult<()> {
-    let local_root = state.library_root()?;
-    let same_root = local_root.root() == remote_root.root();
-    let local_connection = cache::open_database(&local_root.database_path())
+    // Source of truth is the operation library working copy.
+    let same_root = true;
+    let local_connection = cache::open_database(&remote_root.database_path())
         .map_err(|error| database_error(error.to_string()))?;
     let mut remote_connection = cache::open_database(&remote_root.database_path())
         .map_err(|error| database_error(error.to_string()))?;
@@ -964,17 +1044,12 @@ pub(crate) fn reupload_song_assets_for_recovery(
                     "song {song_id} must have cached stems before publishing to a remote repository"
                 )))
             })?;
-        if !same_root {
-            let source_stems_dir = local_root.resolve(&format!("stems/{song_id}"));
-            let destination_stems_dir = remote_root.resolve(&format!("stems/{song_id}"));
-            copy_directory_recursive(&source_stems_dir, &destination_stems_dir)?;
-        }
         upsert_stem_entry(&remote_connection, &stem_entry)?;
         update_remote_song(&mut remote_connection, song.clone(), "stems_remote")?;
         provider.upload_directory(&format!("stems/{song_id}"))?;
         publish_artwork_derivatives(
             &local_connection,
-            &local_root,
+            remote_root,
             remote_root,
             &remote_connection,
             &*provider,
@@ -984,22 +1059,16 @@ pub(crate) fn reupload_song_assets_for_recovery(
         sync_song_lyrics_to_remote(&local_connection, &remote_connection, song_id)?;
     } else {
         if let Some(file_path) = song.file_path.as_deref() {
-            if !same_root {
-                copy_remote_song_assets(&local_root, remote_root, file_path, file_path)?;
-            }
             provider.upload_file(file_path)?;
         }
         if let Some(cdg_path) = song.cdg_path.as_deref() {
-            if !same_root {
-                copy_remote_song_assets(&local_root, remote_root, cdg_path, cdg_path)?;
-            }
             provider.upload_file(cdg_path)?;
         }
         delete_remote_stem_cache_if_present(&remote_connection, remote_root, song_id)?;
         update_remote_song(&mut remote_connection, song.clone(), "original_remote")?;
         publish_artwork_derivatives(
             &local_connection,
-            &local_root,
+            remote_root,
             remote_root,
             &remote_connection,
             &*provider,
@@ -1106,13 +1175,28 @@ mod merge_tests {
         }
     }
 
-    #[test]
-    fn merge_pending_ops_unions_song_ids_and_cancels_others() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("remote-state.db");
-        let conn = open_control_db(&path).unwrap();
+    fn op_with_candidate(
+        id: &str,
+        library_id: &str,
+        songs: &[&str],
+        state: OperationState,
+        candidate_rel: &str,
+        candidate_sha: &str,
+    ) -> OperationRow {
+        let mut row = op(id, library_id, songs, state);
+        let mut payload = OperationPayload::from_json(&row.payload_json).unwrap();
+        payload.candidate_relative_path = Some(candidate_rel.to_owned());
+        payload.candidate_sha256 = Some(candidate_sha.to_owned());
+        payload.candidate_size = Some(42);
+        payload.protocol_step = Some("candidate_ready".to_owned());
+        row.payload_json = payload.to_json().unwrap();
+        row.candidate_db_digest = Some(candidate_sha.to_owned());
+        row
+    }
+
+    fn seed_repo(conn: &rusqlite::Connection) {
         upsert_repository_state(
-            &conn,
+            conn,
             &RepositoryStateRow {
                 library_id: "lib-1".to_owned(),
                 committed_generation: 10,
@@ -1129,6 +1213,14 @@ mod merge_tests {
             },
         )
         .unwrap();
+    }
+
+    #[test]
+    fn merge_pending_ops_unions_song_ids_and_cancels_others() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("remote-state.db");
+        let conn = open_control_db(&path).unwrap();
+        seed_repo(&conn);
         upsert_operation(
             &conn,
             &op("op-a", "lib-1", &["song-a"], OperationState::Pending),
@@ -1144,7 +1236,7 @@ mod merge_tests {
         state.remote.control_db = Arc::new(Mutex::new(conn));
 
         let (survivor, songs) =
-            merge_pending_ops_for_publish(&state, "lib-1", "op-a", &[], "song-a").unwrap();
+            merge_pending_ops_for_publish(&state, "lib-1", "op-a", &[], "song-a", None).unwrap();
         assert_eq!(survivor, "op-a");
         assert!(songs.contains(&"song-a".to_owned()));
         assert!(songs.contains(&"song-b".to_owned()));
@@ -1152,8 +1244,130 @@ mod merge_tests {
         let conn = state.remote.control_db.lock().unwrap();
         let a = get_operation(&conn, "op-a").unwrap().unwrap();
         assert_eq!(a.expected_generation, Some(10));
+        let repo = crate::remote::control_db::get_repository_state(&conn, "lib-1")
+            .unwrap()
+            .unwrap();
+        assert_eq!(repo.active_operation_id.as_deref(), Some("op-a"));
         let b = get_operation(&conn, "op-b").unwrap().unwrap();
         assert_eq!(b.state, OperationState::Cancelled);
         assert_eq!(b.error_code.as_deref(), Some("merged"));
+    }
+
+    #[test]
+    fn merge_does_not_cancel_prepared_operations() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("remote-state.db");
+        let conn = open_control_db(&path).unwrap();
+        seed_repo(&conn);
+        upsert_operation(
+            &conn,
+            &op("op-a", "lib-1", &["song-a"], OperationState::Pending),
+        )
+        .unwrap();
+        // Prepared: local mutation not yet committed — must survive merge.
+        upsert_operation(
+            &conn,
+            &op("op-prepared", "lib-1", &[], OperationState::Prepared),
+        )
+        .unwrap();
+
+        let mut state = AppState::test_fixture();
+        state.remote.control_db = Arc::new(Mutex::new(conn));
+
+        let (survivor, songs) =
+            merge_pending_ops_for_publish(&state, "lib-1", "op-a", &[], "song-a", None).unwrap();
+        assert_eq!(survivor, "op-a");
+        assert_eq!(songs, vec!["song-a".to_owned()]);
+
+        let conn = state.remote.control_db.lock().unwrap();
+        let prepared = get_operation(&conn, "op-prepared").unwrap().unwrap();
+        assert_eq!(prepared.state, OperationState::Prepared);
+        assert!(prepared.error_code.is_none());
+    }
+
+    #[test]
+    fn merge_invalidates_stale_candidate_when_song_set_grows() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let work = dir.path().join("work");
+        std::fs::create_dir_all(work.join(".openkara/candidates")).unwrap();
+        let candidate_rel = ".openkara/candidates/op-a.sqlite";
+        let candidate_path = work.join(candidate_rel);
+        std::fs::write(&candidate_path, b"stale-candidate").unwrap();
+
+        let path = dir.path().join("remote-state.db");
+        let conn = open_control_db(&path).unwrap();
+        seed_repo(&conn);
+        upsert_operation(
+            &conn,
+            &op_with_candidate(
+                "op-a",
+                "lib-1",
+                &["song-a"],
+                OperationState::RetryWait,
+                candidate_rel,
+                "deadbeef",
+            ),
+        )
+        .unwrap();
+        upsert_operation(
+            &conn,
+            &op("op-b", "lib-1", &["song-b"], OperationState::Pending),
+        )
+        .unwrap();
+
+        let mut state = AppState::test_fixture();
+        state.remote.control_db = Arc::new(Mutex::new(conn));
+
+        let (_survivor, songs) =
+            merge_pending_ops_for_publish(&state, "lib-1", "op-a", &[], "song-a", Some(&work))
+                .unwrap();
+        assert!(songs.contains(&"song-b".to_owned()));
+
+        let conn = state.remote.control_db.lock().unwrap();
+        let a = get_operation(&conn, "op-a").unwrap().unwrap();
+        let payload = OperationPayload::from_json(&a.payload_json).unwrap();
+        assert!(payload.candidate_relative_path.is_none());
+        assert!(payload.candidate_sha256.is_none());
+        assert!(payload.candidate_size.is_none());
+        assert!(payload.protocol_step.is_none());
+        assert!(a.candidate_db_digest.is_none());
+        drop(conn);
+
+        assert!(
+            !candidate_path.exists(),
+            "stale candidate file must be removed after merge"
+        );
+    }
+
+    #[test]
+    fn merge_retry_wait_secondary_into_pending_primary() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("remote-state.db");
+        let conn = open_control_db(&path).unwrap();
+        seed_repo(&conn);
+        upsert_operation(
+            &conn,
+            &op("op-a", "lib-1", &["song-a"], OperationState::Pending),
+        )
+        .unwrap();
+        upsert_operation(
+            &conn,
+            &op("op-b", "lib-1", &["song-b"], OperationState::RetryWait),
+        )
+        .unwrap();
+
+        let mut state = AppState::test_fixture();
+        state.remote.control_db = Arc::new(Mutex::new(conn));
+
+        let (_, songs) =
+            merge_pending_ops_for_publish(&state, "lib-1", "op-a", &[], "song-a", None).unwrap();
+        assert!(songs.contains(&"song-a".to_owned()));
+        assert!(songs.contains(&"song-b".to_owned()));
+
+        let conn = state.remote.control_db.lock().unwrap();
+        assert_eq!(
+            get_operation(&conn, "op-b").unwrap().unwrap().state,
+            OperationState::Cancelled
+        );
     }
 }
