@@ -25,6 +25,7 @@ use super::file_ops::{copy_directory_recursive, copy_remote_song_assets};
 use super::revision::{prepare_remote_database_for_mutation, resolve_active_remote};
 use super::upload_status::{
     emit_upload_complete, emit_upload_error, emit_upload_progress, mark_upload_status,
+    project_upload_status_from_durable,
 };
 
 /// Best-effort: missing/invalid derivatives are regenerated from the local
@@ -433,8 +434,9 @@ fn publish_song_internal<R: tauri::Runtime>(
     };
 
     if let Err(error) = publish_result {
-        // mark_upload_status maps retryable errors to durable RetryWait and
-        // never demotes an existing RetryWait to terminal Failed.
+        // Asset stage failed before the executor. Retryable network faults
+        // land as durable RetryWait; permanent faults land as Failed.
+        // (Executor has not written control-plane state yet.)
         let failure = mark_upload_status(
             state,
             song_id,
@@ -479,18 +481,15 @@ fn publish_song_internal<R: tauri::Runtime>(
             Ok(completed)
         }
         Err(error) => {
-            // The executor already wrote RetryWait / Failed / Conflicted to
-            // the control plane. mark_upload_status must project that state
-            // for events and MUST NOT overwrite RetryWait with Failed — that
-            // would kill durable retry and startup recovery.
-            let failure = mark_upload_status(
+            // Control plane is already authoritative: the executor wrote
+            // RetryWait / Failed / Conflicted. Events/UI must project that
+            // state only — never call mark_upload_status(Failed) here, which
+            // would demote RetryWait to terminal Failed and kill durable retry.
+            let failure = project_upload_status_from_durable(
                 state,
                 song_id,
-                Some(remote_library_id.clone()),
-                UploadState::Failed,
-                0,
-                None,
-                Some(error.clone()),
+                &remote_library_id,
+                Some(&error),
             )?;
             emit_upload_error(app_handle, &failure, error.clone());
             Err(error)

@@ -131,11 +131,67 @@ pub(crate) fn operation_to_snapshot(op: &OperationRow) -> UploadStatusSnapshot {
     }
 }
 
+/// Project an upload status from the durable control plane only.
+///
+/// Used after the executor has already recorded RetryWait / Failed /
+/// Conflicted. Must never write back to `remote_operations` — that would
+/// let a UI Failed mapping demote durable retry state.
+pub(crate) fn project_upload_status_from_durable(
+    state: &AppState,
+    song_id: &str,
+    remote_library_id: &str,
+    error: Option<&CommandError>,
+) -> CommandResult<UploadStatusSnapshot> {
+    let conn = state
+        .remote
+        .control_db
+        .lock()
+        .map_err(|_| state_lock_error("control DB lock was poisoned"))?;
+    let existing = crate::remote::control_db::get_latest_publish_operation_for_song(
+        &conn,
+        remote_library_id,
+        song_id,
+    )?;
+    let snapshot = if let Some(op) = existing.as_ref() {
+        let mut snap = operation_to_snapshot(op);
+        // Prefer the live error for the event payload when provided.
+        if snap.error.is_none() {
+            snap.error = error.cloned();
+        }
+        // song_id key for the in-memory map / event should match the caller.
+        snap.song_id = song_id.to_owned();
+        snap
+    } else {
+        UploadStatusSnapshot {
+            song_id: song_id.to_owned(),
+            state: UploadState::Failed,
+            percent: 0,
+            remote_library_id: Some(remote_library_id.to_owned()),
+            detail: None,
+            error: error.cloned(),
+        }
+    };
+
+    // In-memory projection only — no durable upsert.
+    drop(conn);
+    let mut guard = state
+        .remote
+        .remote_upload_statuses
+        .lock()
+        .map_err(|_| state_lock_error("remote upload status lock was poisoned"))?;
+    guard.insert(song_id.to_owned(), snapshot.clone());
+    Ok(snapshot)
+}
+
 /// Record or update an upload status.
 ///
 /// This persists the operation to the durable `remote_operations` table (the
 /// source of truth) AND updates the in-memory projection (used for event
 /// delivery so we don't re-emit events for unchanged state).
+///
+/// After the executor has written control-plane state for a failure, callers
+/// must use [`project_upload_status_from_durable`] instead of this function
+/// with `UploadState::Failed` — UI must not reverse-overwrite the outbox.
 ///
 /// The `payload_json` shape is:
 /// ```json
@@ -150,19 +206,11 @@ pub(crate) fn mark_upload_status(
     detail: Option<String>,
     error: Option<CommandError>,
 ) -> CommandResult<UploadStatusSnapshot> {
-    let snapshot = UploadStatusSnapshot {
-        song_id: song_id.to_owned(),
-        state: upload_state,
-        percent,
-        remote_library_id: remote_library_id.clone(),
-        detail: detail.clone(),
-        error: error.clone(),
-    };
-
     // Persist to the durable control DB. We look up the most recent Publish
     // operation for this library+song to update it in place. If none exists
     // (e.g. status update before the publish row was created), we create a
     // new row with a UUID operation_id.
+    let mut durable_state_for_snapshot = upload_state.clone();
     if let Some(ref library_id) = remote_library_id {
         let now = control_db_now_ms();
 
@@ -180,6 +228,28 @@ pub(crate) fn mark_upload_status(
                 &conn, library_id, song_id,
             )?
         };
+
+        // If the control plane already owns a retry/conflict outcome, refuse
+        // to write a demoting Failed through this path. Callers after the
+        // executor should use project_upload_status_from_durable instead;
+        // this guard is belt-and-suspenders.
+        if matches!(upload_state, UploadState::Failed) {
+            if let Some(ref existing) = existing {
+                if matches!(
+                    existing.state,
+                    OperationState::RetryWait
+                        | OperationState::Conflicted
+                        | OperationState::Cancelled
+                ) {
+                    return project_upload_status_from_durable(
+                        state,
+                        song_id,
+                        library_id,
+                        error.as_ref(),
+                    );
+                }
+            }
+        }
 
         let operation_id = existing
             .as_ref()
@@ -202,9 +272,10 @@ pub(crate) fn mark_upload_status(
 
         let op_state = resolve_durable_state_for_status_update(
             existing.as_ref(),
-            snapshot.state.clone(),
+            upload_state.clone(),
             error.as_ref(),
         );
+        durable_state_for_snapshot = operation_state_to_upload_state(op_state);
         let (error_code, error_detail) = sanitize_error(error.as_ref());
 
         // Preserve a scheduled retry window when we keep RetryWait (either
@@ -249,6 +320,15 @@ pub(crate) fn mark_upload_status(
             .map_err(|_| state_lock_error("control DB lock was poisoned"))?;
         upsert_operation(&conn, &row)?;
     }
+
+    let snapshot = UploadStatusSnapshot {
+        song_id: song_id.to_owned(),
+        state: durable_state_for_snapshot,
+        percent,
+        remote_library_id: remote_library_id.clone(),
+        detail: detail.clone(),
+        error: error.clone(),
+    };
 
     // Update the in-memory projection.
     let mut guard = state
@@ -514,7 +594,27 @@ mod tests {
         )
         .unwrap();
 
-        // UI path after executor Err — must not overwrite RetryWait with Failed.
+        // Post-executor UI path must project only — never write Failed over RetryWait.
+        let snapshot = project_upload_status_from_durable(
+            &state,
+            "song-1",
+            "lib-1",
+            Some(&crate::commands::error::CommandError::new(
+                crate::commands::error::ErrorCode::NetworkUnavailable,
+                "connection reset",
+                true,
+                crate::commands::error::FallbackAction::Retry,
+            )),
+        )
+        .unwrap();
+        assert_eq!(
+            snapshot.state,
+            UploadState::Running,
+            "RetryWait projects as non-terminal Running for UI"
+        );
+
+        // Belt-and-suspenders: even a mistaken mark_upload_status(Failed) must
+        // not demote durable RetryWait.
         mark_upload_status(
             &state,
             "song-1",

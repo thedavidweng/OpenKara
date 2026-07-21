@@ -201,29 +201,6 @@ mod sync_backend {
         }))
     }
 
-    /// Bind the post-mutation song ID set onto the prepared operation before
-    /// it is marked pending. Import/batch paths create the row before song
-    /// IDs are known; recovery refuses empty `song_ids`, so binding must
-    /// happen on the same operation identity (never a second placeholder).
-    pub fn bind_operation_song_ids(
-        state: &AppState,
-        prepared: &PreparedOperation,
-        song_ids: &[String],
-    ) -> CommandResult<()> {
-        let now = crate::remote::types::current_unix_time_ms();
-        let conn = state.remote.control_db.lock().map_err(|_| {
-            crate::commands::error::state_lock_error("control DB lock was poisoned")
-        })?;
-        let mut op = control_db::get_operation(&conn, &prepared.operation_id)?
-            .ok_or_else(|| internal_error("prepared operation row was not found"))?;
-        let mut payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
-        payload.song_ids = song_ids.to_vec();
-        op.payload_json = payload.to_json()?;
-        op.updated_at_ms = now;
-        upsert_operation(&conn, &op)?;
-        Ok(())
-    }
-
     /// Cancel a prepared operation that has no recoverable song identity
     /// (mutation produced no songs to publish). Avoids a permanent empty
     /// pending zombie that recovery would skip forever.
@@ -243,8 +220,65 @@ mod sync_backend {
         Ok(())
     }
 
-    /// Transition a `prepared` operation to `pending` and mark the repository
-    /// `dirty` after the local mutation has committed.
+    /// Atomically bind the post-mutation song ID set onto the same prepared
+    /// operation, transition it to `pending`, and mark the repository dirty.
+    ///
+    /// Import/batch paths record the prepared row before song IDs are known.
+    /// Recovery refuses empty `song_ids`, so binding + pending must happen on
+    /// the same operation identity under one control-DB lock — never a second
+    /// placeholder, and never pending with an empty payload.
+    pub fn bind_song_ids_mark_pending_and_dirty(
+        state: &AppState,
+        prepared: &PreparedOperation,
+        song_ids: &[String],
+    ) -> CommandResult<()> {
+        if song_ids.is_empty() {
+            return Err(internal_error(
+                "refusing to mark publish operation pending without song_ids",
+            ));
+        }
+        let now = crate::remote::types::current_unix_time_ms();
+        let conn = state.remote.control_db.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+
+        let mut op = control_db::get_operation(&conn, &prepared.operation_id)?
+            .ok_or_else(|| internal_error("prepared operation row was not found"))?;
+        let mut payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
+        payload.song_ids = song_ids.to_vec();
+        op.payload_json = payload.to_json()?;
+        op.state = OperationState::Pending;
+        op.updated_at_ms = now;
+        upsert_operation(&conn, &op)?;
+
+        let repo_row = match get_repository_state(&conn, &prepared.library_id)? {
+            Some(mut row) => {
+                row.local_state = LocalState::Dirty;
+                row.active_operation_id = Some(prepared.operation_id.clone());
+                row.updated_at_ms = now;
+                row
+            }
+            None => RepositoryStateRow {
+                library_id: prepared.library_id.clone(),
+                committed_generation: 0,
+                committed_manifest_revision: None,
+                local_base_generation: 0,
+                local_db_digest: None,
+                local_state: LocalState::Dirty,
+                active_operation_id: Some(prepared.operation_id.clone()),
+                last_success_at_ms: None,
+                last_error_code: None,
+                updated_at_ms: now,
+                repository_id: None,
+                writer_id: None,
+            },
+        };
+        upsert_repository_state(&conn, &repo_row)?;
+        Ok(())
+    }
+
+    /// Transition a `prepared` operation that already has song_ids to
+    /// `pending` and mark the repository dirty.
     pub fn mark_operation_pending_and_dirty(
         state: &AppState,
         prepared: &PreparedOperation,
@@ -255,9 +289,16 @@ mod sync_backend {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
 
-        // Transition the operation to pending.
+        // Transition the operation to pending — refuse empty payloads so
+        // recovery never parks on an unrecoverable identity.
         let mut op = control_db::get_operation(&conn, &prepared.operation_id)?
             .ok_or_else(|| internal_error("prepared operation row was not found"))?;
+        let payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
+        if payload.song_ids.is_empty() {
+            return Err(internal_error(
+                "refusing to mark publish operation pending without song_ids",
+            ));
+        }
         op.state = OperationState::Pending;
         op.updated_at_ms = now;
         upsert_operation(&conn, &op)?;
@@ -266,6 +307,7 @@ mod sync_backend {
         let repo_row = match get_repository_state(&conn, &prepared.library_id)? {
             Some(mut row) => {
                 row.local_state = LocalState::Dirty;
+                row.active_operation_id = Some(prepared.operation_id.clone());
                 row.updated_at_ms = now;
                 row
             }
@@ -387,17 +429,17 @@ mod sync_backend {
         Ok(None)
     }
 
-    pub fn bind_operation_song_ids(
+    pub fn cancel_prepared_operation(
         _state: &AppState,
         _prepared: &super::PreparedOperation,
-        _song_ids: &[String],
     ) -> CommandResult<()> {
         Ok(())
     }
 
-    pub fn cancel_prepared_operation(
+    pub fn bind_song_ids_mark_pending_and_dirty(
         _state: &AppState,
         _prepared: &super::PreparedOperation,
+        _song_ids: &[String],
     ) -> CommandResult<()> {
         Ok(())
     }
@@ -415,8 +457,9 @@ mod sync_backend {
 // ---------------------------------------------------------------------------
 
 /// Finalize a prepared outbox row after the local mutation commits:
-/// bind song IDs when known, then mark pending; cancel when there is nothing
-/// recoverable so recovery never parks on an empty payload forever.
+/// atomically bind song IDs and mark pending on the same operation identity;
+/// cancel when there is nothing recoverable so recovery never parks on an
+/// empty payload forever. Background publication must not create a second op.
 fn finalize_prepared_for_publish(
     state: &AppState,
     prepared: Option<&PreparedOperation>,
@@ -429,10 +472,9 @@ fn finalize_prepared_for_publish(
         sync_backend::cancel_prepared_operation(state, prepared)?;
         return Ok(());
     }
-    // Bind before pending so a crash between mutation and background publish
-    // leaves a recoverable operation identity (not an empty zombie).
-    sync_backend::bind_operation_song_ids(state, prepared, song_ids)?;
-    sync_backend::mark_operation_pending_and_dirty(state, prepared)?;
+    // Atomic: same prepared operation_id gets full song_ids + pending + dirty
+    // under one control-DB lock, before any background publish thread starts.
+    sync_backend::bind_song_ids_mark_pending_and_dirty(state, prepared, song_ids)?;
     Ok(())
 }
 

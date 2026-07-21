@@ -262,12 +262,22 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
         let payload = crate::remote::control_db::OperationPayload::from_json(&op.payload_json)
             .unwrap_or_default();
         if payload.song_ids.is_empty() {
-            // Empty payload cannot recover assets. Leave the row for manual
-            // resolution rather than freezing a stale remote working DB.
+            // Empty payload cannot recover assets. Cancel rather than leave
+            // a permanent pending zombie that is skipped every startup.
             tracing::warn!(
-                "skipping publish recovery for {} — empty song_ids payload",
+                "cancelling publish recovery for {} — empty song_ids payload",
                 op.operation_id
             );
+            if let Ok(conn) = state.remote.control_db.lock() {
+                let mut updated = op.clone();
+                updated.state = OperationState::Cancelled;
+                updated.error_code = Some("empty_song_ids".to_owned());
+                updated.error_detail = Some(
+                    "pending operation had empty song_ids; cancelled as unrecoverable".to_owned(),
+                );
+                updated.updated_at_ms = crate::remote::types::current_unix_time_ms();
+                let _ = upsert_operation(&conn, &updated);
+            }
             continue;
         }
         let mut asset_ok = true;
@@ -418,7 +428,28 @@ fn resolve_prepared_operation(
         Ok(PreparedOutcome::Cancelled)
     } else {
         // The local mutation committed but publication didn't finish.
-        // Promote to pending and mark the repository dirty.
+        // Only promote when the payload has recoverable song identity.
+        // Empty song_ids placeholders (pre-bind crash window or legacy) must
+        // not become permanent pending zombies that recovery skips forever.
+        let payload = crate::remote::control_db::OperationPayload::from_json(&op.payload_json).ok();
+        let has_song_ids = payload.as_ref().is_some_and(|p| !p.song_ids.is_empty());
+        if !has_song_ids {
+            let mut updated = op.clone();
+            updated.state = OperationState::Cancelled;
+            updated.error_code = Some("empty_song_ids".to_owned());
+            updated.error_detail = Some(
+                "prepared operation had empty song_ids after local mutation; \
+                 cancelled to avoid unrecoverable pending zombie"
+                    .to_owned(),
+            );
+            updated.updated_at_ms = now;
+            upsert_operation(connection, &updated)?;
+            // Keep repository dirty so a subsequent publish can create a
+            // full-identity operation for the committed local edits.
+            mark_repository_dirty(connection, &op.library_id, now)?;
+            return Ok(PreparedOutcome::Cancelled);
+        }
+
         let mut updated = op.clone();
         updated.state = OperationState::Pending;
         updated.updated_at_ms = now;
@@ -578,7 +609,8 @@ mod tests {
             target_generation: None,
             source_db_digest: source_db_digest.map(|s| s.to_owned()),
             candidate_db_digest: None,
-            payload_json: r#"{"song_ids":[],"percent":0}"#.to_owned(),
+            // Recoverable publish identity — empty song_ids are a separate case.
+            payload_json: r#"{"song_ids":["song-1"],"percent":0}"#.to_owned(),
             attempt_count: 0,
             next_attempt_at_ms: None,
             error_code: None,
@@ -746,6 +778,39 @@ mod tests {
         let loaded = get_operation(&conn, "op-1").unwrap().unwrap();
         assert_eq!(loaded.state, OperationState::Pending);
 
+        let repo = get_repository_state(&conn, "lib-1").unwrap().unwrap();
+        assert_eq!(repo.local_state, LocalState::Dirty);
+    }
+
+    #[test]
+    fn recovery_prepared_empty_song_ids_after_mutation_is_cancelled_not_pending() {
+        let (_dir, conn) = fresh_db();
+        let mut op = make_operation(
+            "op-empty",
+            "lib-1",
+            OperationState::Prepared,
+            Some("digest-aaa"),
+            Some(0),
+        );
+        // Pre-bind crash window: prepared row still has empty song_ids.
+        op.payload_json = r#"{"song_ids":[],"percent":0}"#.to_owned();
+        upsert_operation(&conn, &op).unwrap();
+        upsert_repository_state(&conn, &make_repo_state("lib-1", 0)).unwrap();
+
+        let resolver = MapDigestResolver::new(
+            [("lib-1".to_owned(), "digest-bbb".to_owned())]
+                .into_iter()
+                .collect(),
+        );
+        let report = run_recovery(&conn, &resolver, &fixed_clock(5000)).unwrap();
+
+        assert!(
+            report.transitioned_to_pending.is_empty(),
+            "empty song_ids must not become pending zombies"
+        );
+        assert_eq!(report.cancelled, vec!["op-empty".to_owned()]);
+        let loaded = get_operation(&conn, "op-empty").unwrap().unwrap();
+        assert_eq!(loaded.state, OperationState::Cancelled);
         let repo = get_repository_state(&conn, "lib-1").unwrap().unwrap();
         assert_eq!(repo.local_state, LocalState::Dirty);
     }
