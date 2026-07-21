@@ -287,9 +287,43 @@ fn run_publish_protocol(
             })?;
 
             // Machine-local control metadata must not ship with a generation
-            // candidate. Clear remote_publish_outbox on the frozen copy.
-            if let Ok(cand) = rusqlite::Connection::open(&candidate_path) {
-                let _ = crate::remote::library_outbox::clear_all_library_publish_outbox(&cand);
+            // candidate. Fail closed: open/cleanup failure aborts publication
+            // before integrity/digest/upload so outbox rows cannot CAS.
+            {
+                let cand = rusqlite::Connection::open(&candidate_path).map_err(|e| {
+                    let _ = std::fs::remove_file(&candidate_path);
+                    RemoteError::new(
+                        RemoteErrorKind::RemoteIntegrityFailed,
+                        format!("failed to open candidate for outbox sanitation: {e}"),
+                    )
+                })?;
+                crate::remote::library_outbox::clear_all_library_publish_outbox(&cand).map_err(
+                    |e| {
+                        let _ = std::fs::remove_file(&candidate_path);
+                        RemoteError::new(
+                            RemoteErrorKind::RemoteIntegrityFailed,
+                            format!(
+                                "failed to clear machine-local outbox from candidate: {}",
+                                e.message
+                            ),
+                        )
+                    },
+                )?;
+                // Confirm the table is empty (or absent) before proceeding.
+                let remaining: i64 = cand
+                    .query_row("SELECT COUNT(*) FROM remote_publish_outbox", [], |row| {
+                        row.get(0)
+                    })
+                    .unwrap_or(0);
+                if remaining > 0 {
+                    let _ = std::fs::remove_file(&candidate_path);
+                    return Err(RemoteError::new(
+                        RemoteErrorKind::RemoteIntegrityFailed,
+                        format!(
+                            "candidate still has {remaining} remote_publish_outbox row(s) after cleanup"
+                        ),
+                    ));
+                }
             }
 
             // --- Step 6: SQLite integrity checks + SHA-256 digest ---

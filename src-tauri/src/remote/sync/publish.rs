@@ -5,8 +5,9 @@ use crate::{
     library::{artwork, error::LibraryError, Song},
     library_root::LibraryRoot,
     remote::control_db::{
-        get_repository_state, upsert_operation, upsert_repository_state, LocalState, OperationKind,
-        OperationPayload, OperationRow, OperationState, RepositoryStateRow,
+        get_repository_state, list_operations_for_library, upsert_operation,
+        upsert_repository_state, LocalState, OperationKind, OperationPayload, OperationRow,
+        OperationState, RepositoryStateRow,
     },
     remote::executor::{
         execute_publish, generate_repository_id, generate_writer_id, PublishContext,
@@ -21,7 +22,9 @@ use super::super::types::{
 };
 
 use super::file_ops::{copy_directory_recursive, copy_remote_song_assets};
-use super::revision::{prepare_remote_database_for_mutation, resolve_active_remote};
+use super::revision::{
+    load_registered_remote_library, prepare_remote_database_for_mutation, resolve_active_remote,
+};
 use super::upload_status::{
     emit_upload_complete, emit_upload_error, emit_upload_progress, mark_upload_status,
     mark_upload_status_for_operation, project_upload_status_from_operation,
@@ -269,9 +272,9 @@ pub(crate) fn maybe_publish_song_to_bound_remote<R: tauri::Runtime>(
 }
 
 /// Publish songs for a bound remote. When `operation_id` is `Some`, that exact
-/// durable identity is used for status, assets, and executor — never guessed
-/// via library+song. When `None`, a fresh non-terminal operation is created
-/// (explicit re-publish). Multi-song ops upload every song then CAS once.
+/// durable identity is used and **`op.library_id` is the target** — never the
+/// currently active library. When `None`, a fresh operation is created against
+/// the active remote (explicit re-publish).
 pub(crate) fn maybe_publish_songs_to_bound_remote<R: tauri::Runtime>(
     state: &AppState,
     app_handle: &AppHandle<R>,
@@ -281,12 +284,33 @@ pub(crate) fn maybe_publish_songs_to_bound_remote<R: tauri::Runtime>(
     if song_ids.is_empty() {
         return Ok(());
     }
-    let config = load_app_config(&state.shell.app_data_dir)?;
-    if resolve_active_remote(&config).is_none() {
-        return Ok(());
-    }
 
-    let local_root = state.library_root()?;
+    // Resolve target library: prefer the durable operation's library_id so a
+    // post-mutation library switch cannot redirect the publish.
+    let target_library_id = if let Some(op_id) = operation_id {
+        let conn = state.remote.control_db.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+        let op = crate::remote::control_db::get_operation(&conn, op_id)?.ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(format!(
+                "publish operation {op_id} was not found"
+            )))
+        })?;
+        if op.state.is_terminal() {
+            return Ok(());
+        }
+        op.library_id
+    } else {
+        let config = load_app_config(&state.shell.app_data_dir)?;
+        let Some(active) = resolve_active_remote(&config) else {
+            return Ok(());
+        };
+        active.id().to_owned()
+    };
+
+    let remote_library =
+        load_registered_remote_library(&state.shell.app_data_dir, &target_library_id)?;
+    let local_root = load_remote_root(&state.shell.app_data_dir, &remote_library)?;
     let local_connection = cache::open_database(&local_root.database_path())
         .map_err(|error| database_error(error.to_string()))?;
 
@@ -305,7 +329,6 @@ pub(crate) fn maybe_publish_songs_to_bound_remote<R: tauri::Runtime>(
         return Ok(());
     }
 
-    // Background publication uses the exact operation identity when known.
     let op_id = operation_id.map(|s| s.to_owned());
     let background_state = state.clone();
     let background_handle = app_handle.clone();
@@ -330,7 +353,6 @@ fn publish_operation_internal<R: tauri::Runtime>(
     operation_id: Option<&str>,
     fallback_song_ids: &[String],
 ) -> CommandResult<UploadStatusSnapshot> {
-    // Compatibility path: single-song callers without an operation_id.
     let primary_song = fallback_song_ids.first().map(|s| s.as_str()).unwrap_or("");
     publish_song_internal(
         state,
@@ -348,18 +370,6 @@ fn publish_song_internal<R: tauri::Runtime>(
     operation_id: Option<&str>,
     batch_song_ids: &[String],
 ) -> CommandResult<UploadStatusSnapshot> {
-    let config = load_app_config(&state.shell.app_data_dir)?;
-    let remote_library = resolve_active_remote(&config).ok_or_else(|| {
-        CommandError::from(LibraryError::Internal(
-            "no bound remote repository is available for publishing".to_string(),
-        ))
-    })?;
-    let remote_library_id = remote_library.id().to_owned();
-
-    // Serialize the FULL publication transaction for this library: remote
-    // working-DB mutation, asset staging/upload, candidate freeze, CAS, and
-    // local completion. Acquiring the lock only around the executor left a
-    // window where two publishers could interleave working-DB writes.
     if state.remote.control_db_degraded {
         return Err(CommandError::from(LibraryError::Internal(
             "remote control database is unavailable; publication is disabled \
@@ -367,10 +377,79 @@ fn publish_song_internal<R: tauri::Runtime>(
                 .to_string(),
         )));
     }
+
+    // Resolve the durable operation FIRST so the target library is taken from
+    // op.library_id — not the currently active library (user may have switched).
+    let (resolved_op, remote_library) = {
+        let conn = state.remote.control_db.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+        if let Some(op_id) = operation_id {
+            let op = crate::remote::control_db::get_operation(&conn, op_id)?.ok_or_else(|| {
+                CommandError::from(LibraryError::Internal(format!(
+                    "publish operation {op_id} was not found"
+                )))
+            })?;
+            if op.state.is_terminal() {
+                return Err(CommandError::from(LibraryError::Internal(format!(
+                    "refusing to reopen terminal operation {op_id} ({})",
+                    op.state.as_str()
+                ))));
+            }
+            let library =
+                load_registered_remote_library(&state.shell.app_data_dir, &op.library_id)?;
+            (op, library)
+        } else {
+            // Explicit re-publish: fall back to active remote.
+            drop(conn);
+            let config = load_app_config(&state.shell.app_data_dir)?;
+            let library = resolve_active_remote(&config).ok_or_else(|| {
+                CommandError::from(LibraryError::Internal(
+                    "no bound remote repository is available for publishing".to_string(),
+                ))
+            })?;
+            let op = resolve_or_create_publish_operation(
+                state,
+                library.id(),
+                None,
+                batch_song_ids,
+                song_id,
+            )?;
+            (op, library)
+        }
+    };
+    let remote_library_id = remote_library.id().to_owned();
+    if resolved_op.library_id != remote_library_id {
+        return Err(CommandError::from(LibraryError::Internal(format!(
+            "operation {} library_id {} does not match target library {}",
+            resolved_op.operation_id, resolved_op.library_id, remote_library_id
+        ))));
+    }
+
+    // Per-library commit lock serializes the full publish (assets + freeze + CAS)
+    // and coalesces concurrent pending ops under one generation advance.
     let commit_lock = state.remote.commit_lock(&remote_library_id);
     let _commit_guard = commit_lock
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    // If this operation was merged/cancelled by a concurrent publisher, stop.
+    {
+        let conn = state.remote.control_db.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+        if let Some(op) =
+            crate::remote::control_db::get_operation(&conn, &resolved_op.operation_id)?
+        {
+            if op.state.is_terminal() {
+                return Err(CommandError::from(LibraryError::Internal(format!(
+                    "operation {} already terminal ({}); likely merged into another publish",
+                    op.operation_id,
+                    op.state.as_str()
+                ))));
+            }
+        }
+    }
 
     let remote_library = {
         let control_db_conn = state.remote.control_db.lock().map_err(|_| {
@@ -383,46 +462,27 @@ fn publish_song_internal<R: tauri::Runtime>(
         )?
     };
 
-    let local_root = state.library_root()?;
+    // Working-copy root comes from the operation's library, never active.
     let remote_root = load_remote_root(&state.shell.app_data_dir, &remote_library)?;
-
-    // When the active library IS the remote repository (user is directly working
-    // in a remote repository), local_root and remote_root point to the same
-    // directory.  In that case the "copy to remote" step must be skipped —
-    // `copy_directory_recursive` would delete the source before reading it,
-    // destroying stems and media files.  The cloud upload reads from the
-    // working copy via `RegisteredLibrary::working_copy_root()`, so it works
-    // correctly regardless.
-    let same_root = local_root.root() == remote_root.root();
+    let local_root = remote_root.clone();
+    let same_root = true; // remote library working copy is the source of truth for publish
 
     let local_connection = cache::open_database(&local_root.database_path())
         .map_err(|error| database_error(error.to_string()))?;
     let mut remote_connection = cache::open_database(&remote_root.database_path())
         .map_err(|error| database_error(error.to_string()))?;
 
-    // Resolve the exact durable operation identity. Prefer the caller's
-    // operation_id; never reopen a terminal row. Multi-song batches keep one
-    // identity for upload-all + single CAS.
-    let resolved_op = resolve_or_create_publish_operation(
+    // Under the commit lock: merge all co-pending publish ops for this library
+    // into one durable identity, re-bind expected_generation to the current
+    // committed generation, and union all song_ids. Prevents A+B both expecting
+    // gen N and A freezing a DB that already contains B without B's assets.
+    let (operation_id, song_ids_to_publish) = merge_pending_ops_for_publish(
         state,
         &remote_library_id,
-        operation_id,
+        &resolved_op.operation_id,
         batch_song_ids,
         song_id,
     )?;
-    let operation_id = resolved_op.operation_id.clone();
-    let song_ids_to_publish = {
-        let payload = OperationPayload::from_json(&resolved_op.payload_json).unwrap_or_default();
-        if payload.song_ids.is_empty() {
-            if batch_song_ids.is_empty() {
-                vec![song_id.to_owned()]
-            } else {
-                batch_song_ids.to_vec()
-            }
-        } else {
-            payload.song_ids
-        }
-    };
     let ui_song_id = song_ids_to_publish
         .first()
         .map(|s| s.as_str())
@@ -442,8 +502,8 @@ fn publish_song_internal<R: tauri::Runtime>(
 
     let provider = create_provider(&state.shell.app_data_dir, &remote_library)?;
 
-    // Upload every song in the durable payload under the same commit lock,
-    // then freeze/CAS once. Do not split a batch into per-song commits.
+    // Upload every song in the (merged) durable payload under the commit lock,
+    // then freeze/CAS once.
     let mut publish_result: CommandResult<()> = Ok(());
     for sid in &song_ids_to_publish {
         if let Err(error) = upload_one_song_assets(
@@ -613,6 +673,103 @@ fn upload_one_song_assets(
 /// On a CAS conflict, the repository transitions to `Conflicted` and the
 /// error is returned so the caller can emit `upload-error`. The operation is
 /// NEVER retried as an unconditional overwrite.
+/// Under the per-library commit lock: merge every non-terminal Publish op for
+/// this library into `primary_op_id`, union song_ids, rebind
+/// `expected_generation` to the current committed generation, and cancel the
+/// other ops. Returns (survivor_op_id, merged_song_ids).
+///
+/// This is the durable queue: concurrent mutations that each created their own
+/// op with the same expected_generation are coalesced into one CAS so that:
+/// - the candidate includes all committed local songs;
+/// - assets for every song are uploaded before freeze;
+/// - only one generation advance happens.
+fn merge_pending_ops_for_publish(
+    state: &AppState,
+    library_id: &str,
+    primary_op_id: &str,
+    batch_song_ids: &[String],
+    fallback_song_id: &str,
+) -> CommandResult<(String, Vec<String>)> {
+    let conn =
+        state.remote.control_db.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+    let now = crate::remote::types::current_unix_time_ms();
+
+    let mut primary =
+        crate::remote::control_db::get_operation(&conn, primary_op_id)?.ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(format!(
+                "publish operation {primary_op_id} was not found"
+            )))
+        })?;
+    if primary.library_id != library_id {
+        return Err(CommandError::from(LibraryError::Internal(format!(
+            "operation {primary_op_id} library_id mismatch"
+        ))));
+    }
+    if primary.state.is_terminal() {
+        return Err(CommandError::from(LibraryError::Internal(format!(
+            "operation {primary_op_id} is terminal"
+        ))));
+    }
+
+    let mut song_ids: Vec<String> = OperationPayload::from_json(&primary.payload_json)
+        .map(|p| p.song_ids)
+        .unwrap_or_default();
+    if song_ids.is_empty() {
+        if batch_song_ids.is_empty() {
+            if !fallback_song_id.is_empty() {
+                song_ids.push(fallback_song_id.to_owned());
+            }
+        } else {
+            song_ids.extend(batch_song_ids.iter().cloned());
+        }
+    }
+
+    let all_ops = list_operations_for_library(&conn, library_id)?;
+    for mut other in all_ops {
+        if other.operation_id == primary_op_id {
+            continue;
+        }
+        if other.operation_kind != OperationKind::Publish || other.state.is_terminal() {
+            continue;
+        }
+        if let Ok(payload) = OperationPayload::from_json(&other.payload_json) {
+            for sid in payload.song_ids {
+                if !song_ids.iter().any(|s| s == &sid) {
+                    song_ids.push(sid);
+                }
+            }
+        }
+        other.state = OperationState::Cancelled;
+        other.error_code = Some("merged".to_owned());
+        other.error_detail = Some(format!(
+            "merged into concurrent publish operation {primary_op_id}"
+        ));
+        other.updated_at_ms = now;
+        upsert_operation(&conn, &other)?;
+    }
+
+    // Rebind expected_generation to the live committed generation under the
+    // commit lock so a stale value from prepare-time cannot CAS-conflict after
+    // an earlier publish advanced the remote.
+    let committed = get_repository_state(&conn, library_id)?
+        .map(|r| r.committed_generation)
+        .unwrap_or(0);
+    let mut payload = OperationPayload::from_json(&primary.payload_json).unwrap_or_default();
+    payload.song_ids = song_ids.clone();
+    if payload.detail.is_none() {
+        payload.detail = Some("Publishing to remote".to_owned());
+    }
+    primary.payload_json = payload.to_json()?;
+    primary.expected_generation = Some(committed);
+    primary.state = OperationState::Pending;
+    primary.updated_at_ms = now;
+    upsert_operation(&conn, &primary)?;
+
+    Ok((primary_op_id.to_owned(), song_ids))
+}
+
 /// Resolve an exact non-terminal operation by id, or create a fresh one for
 /// explicit re-publish. Never reopens Completed/Failed/Conflicted/Cancelled.
 fn resolve_or_create_publish_operation(
@@ -638,6 +795,12 @@ fn resolve_or_create_publish_operation(
             return Err(CommandError::from(LibraryError::Internal(format!(
                 "refusing to reopen terminal operation {op_id} ({})",
                 op.state.as_str()
+            ))));
+        }
+        if op.library_id != remote_library_id {
+            return Err(CommandError::from(LibraryError::Internal(format!(
+                "operation {op_id} library_id {} != {remote_library_id}",
+                op.library_id
             ))));
         }
         return Ok(op);
@@ -905,4 +1068,92 @@ pub(crate) fn publish_songs_to_remote<R: tauri::Runtime>(
     });
 
     Ok(snapshots)
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::merge_pending_ops_for_publish;
+    use crate::remote::control_db::{
+        get_operation, open_control_db, upsert_operation, upsert_repository_state, LocalState,
+        OperationKind, OperationPayload, OperationRow, OperationState, RepositoryStateRow,
+    };
+    use crate::AppState;
+    use std::sync::{Arc, Mutex};
+
+    fn op(id: &str, library_id: &str, songs: &[&str], state: OperationState) -> OperationRow {
+        let payload = OperationPayload {
+            song_ids: songs.iter().map(|s| (*s).to_owned()).collect(),
+            percent: 0,
+            detail: None,
+            ..Default::default()
+        };
+        OperationRow {
+            operation_id: id.to_owned(),
+            library_id: library_id.to_owned(),
+            operation_kind: OperationKind::Publish,
+            state,
+            expected_generation: Some(10),
+            target_generation: None,
+            source_db_digest: None,
+            candidate_db_digest: None,
+            payload_json: payload.to_json().unwrap(),
+            attempt_count: 0,
+            next_attempt_at_ms: None,
+            error_code: None,
+            error_detail: None,
+            created_at_ms: 1,
+            updated_at_ms: 1,
+        }
+    }
+
+    #[test]
+    fn merge_pending_ops_unions_song_ids_and_cancels_others() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("remote-state.db");
+        let conn = open_control_db(&path).unwrap();
+        upsert_repository_state(
+            &conn,
+            &RepositoryStateRow {
+                library_id: "lib-1".to_owned(),
+                committed_generation: 10,
+                committed_manifest_revision: None,
+                local_base_generation: 0,
+                local_db_digest: None,
+                local_state: LocalState::Dirty,
+                active_operation_id: None,
+                last_success_at_ms: None,
+                last_error_code: None,
+                updated_at_ms: 1,
+                repository_id: None,
+                writer_id: None,
+            },
+        )
+        .unwrap();
+        upsert_operation(
+            &conn,
+            &op("op-a", "lib-1", &["song-a"], OperationState::Pending),
+        )
+        .unwrap();
+        upsert_operation(
+            &conn,
+            &op("op-b", "lib-1", &["song-b"], OperationState::Pending),
+        )
+        .unwrap();
+
+        let mut state = AppState::test_fixture();
+        state.remote.control_db = Arc::new(Mutex::new(conn));
+
+        let (survivor, songs) =
+            merge_pending_ops_for_publish(&state, "lib-1", "op-a", &[], "song-a").unwrap();
+        assert_eq!(survivor, "op-a");
+        assert!(songs.contains(&"song-a".to_owned()));
+        assert!(songs.contains(&"song-b".to_owned()));
+
+        let conn = state.remote.control_db.lock().unwrap();
+        let a = get_operation(&conn, "op-a").unwrap().unwrap();
+        assert_eq!(a.expected_generation, Some(10));
+        let b = get_operation(&conn, "op-b").unwrap().unwrap();
+        assert_eq!(b.state, OperationState::Cancelled);
+        assert_eq!(b.error_code.as_deref(), Some("merged"));
+    }
 }

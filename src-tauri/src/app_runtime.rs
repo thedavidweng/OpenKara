@@ -668,6 +668,27 @@ fn project_library_outboxes_into_control_db(
                 continue;
             }
             let projected = match get_operation(&control, &row.operation_id) {
+                Ok(Some(existing)) if existing.state.is_terminal() => {
+                    // Projection already finished (or op completed). Do not
+                    // reopen a terminal row — safely drop the residual outbox
+                    // when song_ids match the durable payload.
+                    let payload_ids = crate::remote::control_db::OperationPayload::from_json(
+                        &existing.payload_json,
+                    )
+                    .map(|p| p.song_ids)
+                    .unwrap_or_default();
+                    let song_ids_match = row.song_ids.iter().all(|s| payload_ids.contains(s))
+                        || payload_ids.iter().all(|s| row.song_ids.contains(s));
+                    if song_ids_match || payload_ids.is_empty() {
+                        true // safe to delete residual outbox
+                    } else {
+                        eprintln!(
+                            "warning: residual outbox {} song_ids mismatch terminal op; keeping",
+                            row.operation_id
+                        );
+                        false
+                    }
+                }
                 Ok(Some(_)) => bind_song_ids_mark_pending_and_dirty_tx(
                     &control,
                     &row.operation_id,

@@ -403,9 +403,17 @@ fn project_outbox_to_control_db(
     song_ids: &[String],
 ) -> CommandResult<()> {
     sync_backend::bind_song_ids_mark_pending_and_dirty(state, prepared, song_ids)?;
-    // Control projection succeeded — remove machine-local outbox so it is not
-    // carried into generation candidates and cannot be double-projected.
-    let library = state.library_root()?;
+    // Control projection succeeded — remove machine-local outbox from the
+    // operation's library working copy (not the currently active library).
+    let remote_lib = crate::remote::sync::load_registered_remote_library(
+        &state.shell.app_data_dir,
+        &prepared.library_id,
+    )?;
+    let root_path = remote_lib.working_copy_root().ok_or_else(|| {
+        database_error("remote repository is missing a working copy root".to_owned())
+    })?;
+    let library = crate::library_root::LibraryRoot::open(&root_path)
+        .map_err(|e| database_error(e.to_string()))?;
     let lib_conn = crate::cache::open_database(&library.database_path())
         .map_err(|e| database_error(e.to_string()))?;
     crate::remote::library_outbox::delete_library_publish_outbox(
@@ -448,7 +456,18 @@ where
         return Ok((result, song_ids));
     }
 
-    let library = state.library_root()?;
+    let prepared = prepared.expect("checked is_some above");
+    // Open the operation's library working copy — not whatever is currently active.
+    let remote_lib = crate::remote::sync::load_registered_remote_library(
+        &state.shell.app_data_dir,
+        &prepared.library_id,
+    )?;
+    let root_path = remote_lib.working_copy_root().ok_or_else(|| {
+        database_error("remote repository is missing a working copy root".to_owned())
+    })?;
+    let library = crate::library_root::LibraryRoot::open(&root_path)
+        .or_else(|_| crate::library_root::LibraryRoot::create(&root_path))
+        .map_err(|e| database_error(e.to_string()))?;
     let conn = crate::cache::open_database(&library.database_path())
         .map_err(|e| database_error(e.to_string()))?;
     crate::cache::apply_migrations(&conn)
@@ -461,7 +480,6 @@ where
     let result = mutation(&tx)?;
     let song_ids = song_ids_of(&result);
 
-    let prepared = prepared.expect("checked is_some above");
     if !song_ids.is_empty() {
         // SAME transaction as the song mutation — fail closed.
         let now = crate::remote::types::current_unix_time_ms();
