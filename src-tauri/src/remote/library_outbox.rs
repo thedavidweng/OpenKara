@@ -263,4 +263,284 @@ mod tests {
         clear_all_library_publish_outbox(&conn).unwrap();
         assert!(list_unprojected_library_outbox(&conn).unwrap().is_empty());
     }
+
+    // -----------------------------------------------------------------------
+    // Fault-injection windows required by #175 acceptance
+    // -----------------------------------------------------------------------
+
+    use crate::remote::control_db::{
+        bind_song_ids_mark_pending_and_dirty_tx, get_operation, get_repository_state,
+        open_control_db, upsert_operation, LocalState, OperationKind, OperationPayload,
+        OperationRow, OperationState,
+    };
+
+    fn open_control() -> (tempfile::TempDir, Connection) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("remote-state.db");
+        let conn = open_control_db(&path).unwrap();
+        (dir, conn)
+    }
+
+    fn prepared_row(op_id: &str, library_id: &str) -> OperationRow {
+        OperationRow {
+            operation_id: op_id.to_owned(),
+            library_id: library_id.to_owned(),
+            operation_kind: OperationKind::Publish,
+            state: OperationState::Prepared,
+            expected_generation: Some(0),
+            target_generation: None,
+            source_db_digest: Some("aaa".to_owned()),
+            candidate_db_digest: None,
+            payload_json: r#"{"song_ids":[],"percent":0}"#.to_owned(),
+            attempt_count: 0,
+            next_attempt_at_ms: None,
+            error_code: None,
+            error_detail: None,
+            created_at_ms: 1,
+            updated_at_ms: 1,
+        }
+    }
+
+    /// Window: after song mutation, before outbox insert — TX not committed.
+    /// Simulated by failing outbox write; song and outbox must both be absent.
+    #[test]
+    fn fault_after_song_before_outbox_rolls_back_both() {
+        let (_dir, conn) = open_library_db();
+        let tx = conn.unchecked_transaction().unwrap();
+        tx.execute(
+            "INSERT INTO songs (hash, audio_source_kind, imported_at) VALUES ('s-fail', 'original', 1)",
+            [],
+        )
+        .unwrap();
+        // Simulate outbox insert failure before commit by rolling back.
+        // Real path: upsert_library_publish_outbox returns Err → no commit.
+        drop(tx);
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM songs WHERE hash='s-fail'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 0, "song must roll back with the failed TX");
+        assert!(
+            list_unprojected_library_outbox(&conn).unwrap().is_empty(),
+            "outbox must not exist when TX rolled back before outbox insert"
+        );
+    }
+
+    /// Window: after outbox insert, before control projection.
+    /// Library committed with song_ids; control still Prepared(empty).
+    /// Recovery rebuilds Pending + full song ID set from outbox.
+    #[test]
+    fn fault_after_outbox_before_control_projection_recovers_song_ids() {
+        let (_lib_dir, lib_conn) = open_library_db();
+        let (_ctl_dir, control) = open_control();
+
+        let op_id = "op-crash-1";
+        let library_id = "lib-1";
+        upsert_operation(&control, &prepared_row(op_id, library_id)).unwrap();
+
+        // Library commit succeeded: songs + outbox.
+        let tx = lib_conn.unchecked_transaction().unwrap();
+        tx.execute(
+            "INSERT INTO songs (hash, audio_source_kind, imported_at) VALUES ('s-a', 'original', 1)",
+            [],
+        )
+        .unwrap();
+        tx.execute(
+            "INSERT INTO songs (hash, audio_source_kind, imported_at) VALUES ('s-b', 'original', 1)",
+            [],
+        )
+        .unwrap();
+        upsert_library_publish_outbox(
+            &tx,
+            &LibraryPublishOutboxRow {
+                operation_id: op_id.to_owned(),
+                song_ids: vec!["s-a".to_owned(), "s-b".to_owned()],
+                expected_generation: Some(0),
+                source_db_digest: Some("aaa".to_owned()),
+                created_at_ms: 100,
+                projected_at_ms: None,
+            },
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        // Crash before control projection.
+
+        // Restart: project unprojected outbox.
+        let rows = list_unprojected_library_outbox(&lib_conn).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].song_ids, vec!["s-a", "s-b"]);
+        bind_song_ids_mark_pending_and_dirty_tx(&control, op_id, library_id, &rows[0].song_ids)
+            .unwrap();
+        delete_library_publish_outbox(&lib_conn, op_id).unwrap();
+
+        let op = get_operation(&control, op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Pending);
+        let payload = OperationPayload::from_json(&op.payload_json).unwrap();
+        assert_eq!(payload.song_ids, vec!["s-a", "s-b"]);
+        let repo = get_repository_state(&control, library_id).unwrap().unwrap();
+        assert_eq!(repo.local_state, LocalState::Dirty);
+        assert!(list_unprojected_library_outbox(&lib_conn)
+            .unwrap()
+            .is_empty());
+    }
+
+    /// Window: after operation upsert, before Dirty update — control TX
+    /// must roll back both, leaving outbox unprojected for retry.
+    #[test]
+    fn fault_mid_control_projection_tx_leaves_outbox_retryable() {
+        let (_lib_dir, lib_conn) = open_library_db();
+        let (_ctl_dir, control) = open_control();
+        let op_id = "op-crash-2";
+        let library_id = "lib-1";
+        upsert_operation(&control, &prepared_row(op_id, library_id)).unwrap();
+        upsert_library_publish_outbox(
+            &lib_conn,
+            &LibraryPublishOutboxRow {
+                operation_id: op_id.to_owned(),
+                song_ids: vec!["s-x".to_owned()],
+                expected_generation: Some(0),
+                source_db_digest: Some("aaa".to_owned()),
+                created_at_ms: 1,
+                projected_at_ms: None,
+            },
+        )
+        .unwrap();
+
+        // Simulate mid-control-TX crash: update op to Pending but never Dirty.
+        {
+            let tx = control.unchecked_transaction().unwrap();
+            let mut op = get_operation(&tx, op_id).unwrap().unwrap();
+            let mut payload = OperationPayload::from_json(&op.payload_json).unwrap();
+            payload.song_ids = vec!["s-x".to_owned()];
+            op.payload_json = payload.to_json().unwrap();
+            op.state = OperationState::Pending;
+            upsert_operation(&tx, &op).unwrap();
+            // Crash before Dirty / commit.
+            drop(tx);
+        }
+
+        // Control must still show Prepared (empty) because TX rolled back.
+        let op = get_operation(&control, op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Prepared);
+        let payload = OperationPayload::from_json(&op.payload_json).unwrap();
+        assert!(payload.song_ids.is_empty());
+
+        // Outbox still unprojected — recovery retries full projection.
+        let rows = list_unprojected_library_outbox(&lib_conn).unwrap();
+        assert_eq!(rows.len(), 1);
+        bind_song_ids_mark_pending_and_dirty_tx(&control, op_id, library_id, &rows[0].song_ids)
+            .unwrap();
+        let op = get_operation(&control, op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Pending);
+        let payload = OperationPayload::from_json(&op.payload_json).unwrap();
+        assert_eq!(payload.song_ids, vec!["s-x"]);
+        assert_eq!(
+            get_repository_state(&control, library_id)
+                .unwrap()
+                .unwrap()
+                .local_state,
+            LocalState::Dirty
+        );
+    }
+
+    /// Window: after successful control projection, before outbox delete.
+    /// Control is Pending+Dirty; outbox remains. Restart re-binds (idempotent)
+    /// and deletes outbox. Never mark projected on failure.
+    #[test]
+    fn fault_after_control_projection_before_outbox_delete_is_idempotent() {
+        let (_lib_dir, lib_conn) = open_library_db();
+        let (_ctl_dir, control) = open_control();
+        let op_id = "op-crash-3";
+        let library_id = "lib-1";
+        upsert_operation(&control, &prepared_row(op_id, library_id)).unwrap();
+        upsert_library_publish_outbox(
+            &lib_conn,
+            &LibraryPublishOutboxRow {
+                operation_id: op_id.to_owned(),
+                song_ids: vec!["s-y".to_owned()],
+                expected_generation: Some(0),
+                source_db_digest: Some("aaa".to_owned()),
+                created_at_ms: 1,
+                projected_at_ms: None,
+            },
+        )
+        .unwrap();
+
+        // Control projection succeeded.
+        bind_song_ids_mark_pending_and_dirty_tx(&control, op_id, library_id, &["s-y".to_owned()])
+            .unwrap();
+        // Crash before delete_library_publish_outbox.
+
+        assert_eq!(list_unprojected_library_outbox(&lib_conn).unwrap().len(), 1);
+
+        // Restart: re-project (idempotent) then delete.
+        bind_song_ids_mark_pending_and_dirty_tx(&control, op_id, library_id, &["s-y".to_owned()])
+            .unwrap();
+        delete_library_publish_outbox(&lib_conn, op_id).unwrap();
+
+        let op = get_operation(&control, op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Pending);
+        let payload = OperationPayload::from_json(&op.payload_json).unwrap();
+        assert_eq!(payload.song_ids, vec!["s-y"]);
+        assert!(list_unprojected_library_outbox(&lib_conn)
+            .unwrap()
+            .is_empty());
+    }
+
+    /// Fail-closed: projection failure must NOT delete outbox or pretend projected.
+    #[test]
+    fn projection_failure_must_not_delete_outbox() {
+        let (_lib_dir, lib_conn) = open_library_db();
+        let (_ctl_dir, control) = open_control();
+        // No prepared operation exists — bind must fail.
+        upsert_library_publish_outbox(
+            &lib_conn,
+            &LibraryPublishOutboxRow {
+                operation_id: "missing-op".to_owned(),
+                song_ids: vec!["s-z".to_owned()],
+                expected_generation: Some(0),
+                source_db_digest: None,
+                created_at_ms: 1,
+                projected_at_ms: None,
+            },
+        )
+        .unwrap();
+
+        let err = bind_song_ids_mark_pending_and_dirty_tx(
+            &control,
+            "missing-op",
+            "lib-1",
+            &["s-z".to_owned()],
+        );
+        assert!(err.is_err());
+        // Must remain unprojected for retry — never mark projected_at or delete.
+        assert_eq!(list_unprojected_library_outbox(&lib_conn).unwrap().len(), 1);
+        assert!(get_operation(&control, "missing-op").unwrap().is_none());
+    }
+
+    /// Candidate freeze must strip machine-local outbox from the published DB.
+    #[test]
+    fn candidate_copy_must_clear_outbox() {
+        let (_dir, conn) = open_library_db();
+        upsert_library_publish_outbox(
+            &conn,
+            &LibraryPublishOutboxRow {
+                operation_id: "op-local".to_owned(),
+                song_ids: vec!["local-only".to_owned()],
+                expected_generation: Some(1),
+                source_db_digest: Some("digest".to_owned()),
+                created_at_ms: 1,
+                projected_at_ms: None,
+            },
+        )
+        .unwrap();
+        // Simulate freeze sanitization on the candidate file.
+        clear_all_library_publish_outbox(&conn).unwrap();
+        assert!(
+            list_unprojected_library_outbox(&conn).unwrap().is_empty(),
+            "machine-local outbox must not ship with generation candidates"
+        );
+    }
 }
