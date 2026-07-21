@@ -160,6 +160,17 @@ impl OperationState {
         }
     }
 
+    /// Terminal states must never be reopened by status writes or re-publish.
+    pub fn is_terminal(self) -> bool {
+        matches!(
+            self,
+            OperationState::Completed
+                | OperationState::Failed
+                | OperationState::Conflicted
+                | OperationState::Cancelled
+        )
+    }
+
     fn from_db(value: &str) -> Result<Self, CommandError> {
         match value {
             "prepared" => Ok(OperationState::Prepared),
@@ -639,13 +650,11 @@ pub fn get_operation(
     Ok(row)
 }
 
-/// Find the most recent Publish operation for a given library and song_id.
-/// Operations store song_ids in the payload_json field; this function
-/// loads all Publish operations for the library, deserializes the payload,
-/// and returns the one matching the song_id with the highest updated_at_ms.
-/// Used by the upload-status system to find the current operation row for
-/// a song without relying on a fixed operation_id derived from the song_id
-/// (which would cause terminal rows to be reused on re-publish).
+/// Find the most recent **non-terminal** Publish operation for a library and
+/// song_id. Terminal rows (Completed/Failed/Conflicted/Cancelled) are never
+/// returned — re-publish must create a fresh operation identity rather than
+/// reopening a finished outbox row (which would reuse stale generation /
+/// candidate fields and can false-positive post-CAS recovery).
 pub fn get_latest_publish_operation_for_song(
     connection: &Connection,
     library_id: &str,
@@ -655,6 +664,7 @@ pub fn get_latest_publish_operation_for_song(
     let mut matching: Vec<OperationRow> = ops
         .into_iter()
         .filter(|op| op.operation_kind == OperationKind::Publish)
+        .filter(|op| !op.state.is_terminal())
         .filter(|op| {
             OperationPayload::from_json(&op.payload_json)
                 .map(|p| p.song_ids.iter().any(|s| s == song_id))
@@ -664,6 +674,125 @@ pub fn get_latest_publish_operation_for_song(
     // Sort by updated_at_ms descending — most recent first.
     matching.sort_by_key(|b| std::cmp::Reverse(b.updated_at_ms));
     Ok(matching.into_iter().next())
+}
+
+/// Atomically bind song IDs, mark the operation Pending, and mark the
+/// repository Dirty with `active_operation_id` in one SQLite transaction.
+/// Crash between the statements cannot leave Pending with Clean.
+pub fn bind_song_ids_mark_pending_and_dirty_tx(
+    connection: &Connection,
+    operation_id: &str,
+    library_id: &str,
+    song_ids: &[String],
+) -> CommandResult<()> {
+    if song_ids.is_empty() {
+        return Err(internal_error(
+            "refusing to mark publish operation pending without song_ids",
+        ));
+    }
+    let now = crate::remote::types::current_unix_time_ms();
+    let tx = connection
+        .unchecked_transaction()
+        .map_err(|e| database_error(format!("failed to begin control DB transaction: {e}")))?;
+
+    let mut op = get_operation(&tx, operation_id)?
+        .ok_or_else(|| internal_error("prepared operation row was not found"))?;
+    if op.state.is_terminal() {
+        return Err(internal_error(format!(
+            "refusing to reopen terminal operation {operation_id} ({})",
+            op.state.as_str()
+        )));
+    }
+    let mut payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
+    payload.song_ids = song_ids.to_vec();
+    op.payload_json = payload.to_json()?;
+    op.state = OperationState::Pending;
+    op.updated_at_ms = now;
+    upsert_operation(&tx, &op)?;
+
+    let repo_row = match get_repository_state(&tx, library_id)? {
+        Some(mut row) => {
+            row.local_state = LocalState::Dirty;
+            row.active_operation_id = Some(operation_id.to_owned());
+            row.updated_at_ms = now;
+            row
+        }
+        None => RepositoryStateRow {
+            library_id: library_id.to_owned(),
+            committed_generation: 0,
+            committed_manifest_revision: None,
+            local_base_generation: 0,
+            local_db_digest: None,
+            local_state: LocalState::Dirty,
+            active_operation_id: Some(operation_id.to_owned()),
+            last_success_at_ms: None,
+            last_error_code: None,
+            updated_at_ms: now,
+            repository_id: None,
+            writer_id: None,
+        },
+    };
+    upsert_repository_state(&tx, &repo_row)?;
+    tx.commit()
+        .map_err(|e| database_error(format!("failed to commit control DB transaction: {e}")))?;
+    Ok(())
+}
+
+/// Mark an existing non-terminal operation Pending and repository Dirty in
+/// one SQLite transaction. Payload must already carry song_ids.
+pub fn mark_pending_and_dirty_tx(
+    connection: &Connection,
+    operation_id: &str,
+    library_id: &str,
+) -> CommandResult<()> {
+    let now = crate::remote::types::current_unix_time_ms();
+    let tx = connection
+        .unchecked_transaction()
+        .map_err(|e| database_error(format!("failed to begin control DB transaction: {e}")))?;
+
+    let mut op = get_operation(&tx, operation_id)?
+        .ok_or_else(|| internal_error("prepared operation row was not found"))?;
+    if op.state.is_terminal() {
+        return Err(internal_error(format!(
+            "refusing to reopen terminal operation {operation_id}"
+        )));
+    }
+    let payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
+    if payload.song_ids.is_empty() {
+        return Err(internal_error(
+            "refusing to mark publish operation pending without song_ids",
+        ));
+    }
+    op.state = OperationState::Pending;
+    op.updated_at_ms = now;
+    upsert_operation(&tx, &op)?;
+
+    let repo_row = match get_repository_state(&tx, library_id)? {
+        Some(mut row) => {
+            row.local_state = LocalState::Dirty;
+            row.active_operation_id = Some(operation_id.to_owned());
+            row.updated_at_ms = now;
+            row
+        }
+        None => RepositoryStateRow {
+            library_id: library_id.to_owned(),
+            committed_generation: 0,
+            committed_manifest_revision: None,
+            local_base_generation: 0,
+            local_db_digest: None,
+            local_state: LocalState::Dirty,
+            active_operation_id: Some(operation_id.to_owned()),
+            last_success_at_ms: None,
+            last_error_code: None,
+            updated_at_ms: now,
+            repository_id: None,
+            writer_id: None,
+        },
+    };
+    upsert_repository_state(&tx, &repo_row)?;
+    tx.commit()
+        .map_err(|e| database_error(format!("failed to commit control DB transaction: {e}")))?;
+    Ok(())
 }
 
 /// Load all operation rows.

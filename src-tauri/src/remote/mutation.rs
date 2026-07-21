@@ -72,8 +72,8 @@ mod sync_backend {
     use super::PreparedOperation;
     use crate::commands::error::{internal_error, CommandResult};
     use crate::remote::control_db::{
-        self, get_repository_state, upsert_operation, upsert_repository_state, LocalState,
-        OperationKind, OperationPayload, OperationRow, OperationState, RepositoryStateRow,
+        self, get_repository_state, upsert_operation, OperationKind, OperationPayload,
+        OperationRow, OperationState,
     };
     use crate::remote::sync::active_remote_library;
     use crate::AppState;
@@ -101,8 +101,9 @@ mod sync_backend {
         state: &AppState,
         app_handle: &AppHandle<R>,
         song_ids: &[String],
+        operation_id: Option<&str>,
     ) -> CommandResult<()> {
-        sync::maybe_publish_songs_to_bound_remote(state, app_handle, song_ids)
+        sync::maybe_publish_songs_to_bound_remote(state, app_handle, song_ids, operation_id)
     }
 
     pub fn mirror<R: tauri::Runtime>(
@@ -135,13 +136,23 @@ mod sync_backend {
             .and_then(|root| crate::library_root::LibraryRoot::open(&root).ok())
             .map(|root| root.database_path());
 
-        let source_db_digest = db_path
-            .as_ref()
-            .and_then(|p| control_db::sha256_file(p).ok());
+        // Fail closed: a missing pre-mutation digest must not be treated as
+        // "unchanged" by recovery (None == None cancels the operation).
+        let source_db_digest = match db_path.as_ref() {
+            Some(p) => Some(control_db::sha256_file(p).map_err(|e| {
+                internal_error(format!(
+                    "failed to compute pre-mutation working DB digest: {}",
+                    e.message
+                ))
+            })?),
+            None => {
+                return Err(internal_error(
+                    "remote library working DB path is unavailable; cannot prepare publish",
+                ));
+            }
+        };
 
         // Read the current expected generation from the repository state row.
-        // PR#4 will wire committed_generation to the manifest generation; for
-        // now it defaults to 0.
         let expected_generation = {
             let conn = state.remote.control_db.lock().map_err(|_| {
                 crate::commands::error::state_lock_error("control DB lock was poisoned")
@@ -201,9 +212,7 @@ mod sync_backend {
         }))
     }
 
-    /// Cancel a prepared operation that has no recoverable song identity
-    /// (mutation produced no songs to publish). Avoids a permanent empty
-    /// pending zombie that recovery would skip forever.
+    /// Cancel a prepared operation that has no recoverable song identity.
     pub fn cancel_prepared_operation(
         state: &AppState,
         prepared: &PreparedOperation,
@@ -220,115 +229,33 @@ mod sync_backend {
         Ok(())
     }
 
-    /// Atomically bind the post-mutation song ID set onto the same prepared
-    /// operation, transition it to `pending`, and mark the repository dirty.
-    ///
-    /// Import/batch paths record the prepared row before song IDs are known.
-    /// Recovery refuses empty `song_ids`, so binding + pending must happen on
-    /// the same operation identity under one control-DB lock — never a second
-    /// placeholder, and never pending with an empty payload.
+    /// SQLite transaction: bind song IDs + Pending + Dirty + active_operation_id.
     pub fn bind_song_ids_mark_pending_and_dirty(
         state: &AppState,
         prepared: &PreparedOperation,
         song_ids: &[String],
     ) -> CommandResult<()> {
-        if song_ids.is_empty() {
-            return Err(internal_error(
-                "refusing to mark publish operation pending without song_ids",
-            ));
-        }
-        let now = crate::remote::types::current_unix_time_ms();
         let conn = state.remote.control_db.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
-
-        let mut op = control_db::get_operation(&conn, &prepared.operation_id)?
-            .ok_or_else(|| internal_error("prepared operation row was not found"))?;
-        let mut payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
-        payload.song_ids = song_ids.to_vec();
-        op.payload_json = payload.to_json()?;
-        op.state = OperationState::Pending;
-        op.updated_at_ms = now;
-        upsert_operation(&conn, &op)?;
-
-        let repo_row = match get_repository_state(&conn, &prepared.library_id)? {
-            Some(mut row) => {
-                row.local_state = LocalState::Dirty;
-                row.active_operation_id = Some(prepared.operation_id.clone());
-                row.updated_at_ms = now;
-                row
-            }
-            None => RepositoryStateRow {
-                library_id: prepared.library_id.clone(),
-                committed_generation: 0,
-                committed_manifest_revision: None,
-                local_base_generation: 0,
-                local_db_digest: None,
-                local_state: LocalState::Dirty,
-                active_operation_id: Some(prepared.operation_id.clone()),
-                last_success_at_ms: None,
-                last_error_code: None,
-                updated_at_ms: now,
-                repository_id: None,
-                writer_id: None,
-            },
-        };
-        upsert_repository_state(&conn, &repo_row)?;
-        Ok(())
+        control_db::bind_song_ids_mark_pending_and_dirty_tx(
+            &conn,
+            &prepared.operation_id,
+            &prepared.library_id,
+            song_ids,
+        )
     }
 
-    /// Transition a `prepared` operation that already has song_ids to
-    /// `pending` and mark the repository dirty.
+    /// SQLite transaction: Pending + Dirty for an op that already has song_ids.
+    #[allow(dead_code)]
     pub fn mark_operation_pending_and_dirty(
         state: &AppState,
         prepared: &PreparedOperation,
     ) -> CommandResult<()> {
-        let now = crate::remote::types::current_unix_time_ms();
-
         let conn = state.remote.control_db.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
-
-        // Transition the operation to pending — refuse empty payloads so
-        // recovery never parks on an unrecoverable identity.
-        let mut op = control_db::get_operation(&conn, &prepared.operation_id)?
-            .ok_or_else(|| internal_error("prepared operation row was not found"))?;
-        let payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
-        if payload.song_ids.is_empty() {
-            return Err(internal_error(
-                "refusing to mark publish operation pending without song_ids",
-            ));
-        }
-        op.state = OperationState::Pending;
-        op.updated_at_ms = now;
-        upsert_operation(&conn, &op)?;
-
-        // Mark the repository dirty.
-        let repo_row = match get_repository_state(&conn, &prepared.library_id)? {
-            Some(mut row) => {
-                row.local_state = LocalState::Dirty;
-                row.active_operation_id = Some(prepared.operation_id.clone());
-                row.updated_at_ms = now;
-                row
-            }
-            None => RepositoryStateRow {
-                library_id: prepared.library_id.clone(),
-                committed_generation: 0,
-                committed_manifest_revision: None,
-                local_base_generation: 0,
-                local_db_digest: None,
-                local_state: LocalState::Dirty,
-                active_operation_id: Some(prepared.operation_id.clone()),
-                last_success_at_ms: None,
-                last_error_code: None,
-                updated_at_ms: now,
-                repository_id: None,
-                writer_id: None,
-            },
-        };
-        upsert_repository_state(&conn, &repo_row)?;
-
-        Ok(())
+        control_db::mark_pending_and_dirty_tx(&conn, &prepared.operation_id, &prepared.library_id)
     }
 }
 
@@ -400,6 +327,7 @@ mod sync_backend {
         _state: &AppState,
         _app_handle: &AppHandle<R>,
         song_ids: &[String],
+        _operation_id: Option<&str>,
     ) -> CommandResult<()> {
         CALLS.with(|c| {
             c.borrow_mut()
@@ -456,10 +384,14 @@ mod sync_backend {
 // Mutation functions
 // ---------------------------------------------------------------------------
 
-/// Finalize a prepared outbox row after the local mutation commits:
-/// atomically bind song IDs and mark pending on the same operation identity;
-/// cancel when there is nothing recoverable so recovery never parks on an
-/// empty payload forever. Background publication must not create a second op.
+/// Finalize a prepared outbox row after the local mutation commits.
+///
+/// Steps:
+/// 1. Write the change set into the library DB outbox (crash recovery source).
+/// 2. Project into control DB via a real SQLite transaction (song_ids + Pending + Dirty).
+/// 3. Mark the library outbox projected.
+///
+/// Cancels the prepared row when there is nothing recoverable.
 fn finalize_prepared_for_publish(
     state: &AppState,
     prepared: Option<&PreparedOperation>,
@@ -472,8 +404,55 @@ fn finalize_prepared_for_publish(
         sync_backend::cancel_prepared_operation(state, prepared)?;
         return Ok(());
     }
-    // Atomic: same prepared operation_id gets full song_ids + pending + dirty
-    // under one control-DB lock, before any background publish thread starts.
+
+    // Durable change set in the library working DB first so a crash before
+    // control-DB projection can rebuild the operation from the library outbox.
+    if let Ok(library) = state.library_root() {
+        if let Ok(lib_conn) = crate::cache::open_database(&library.database_path()) {
+            // Ensure outbox schema exists (migrations on open for library DBs).
+            let _ = crate::cache::apply_migrations(&lib_conn);
+            let now = crate::remote::types::current_unix_time_ms();
+            let source_digest = {
+                let conn = state.remote.control_db.lock().ok();
+                conn.and_then(|c| {
+                    crate::remote::control_db::get_operation(&c, &prepared.operation_id)
+                        .ok()
+                        .flatten()
+                        .and_then(|op| op.source_db_digest)
+                })
+            };
+            let expected_generation = {
+                let conn = state.remote.control_db.lock().ok();
+                conn.and_then(|c| {
+                    crate::remote::control_db::get_operation(&c, &prepared.operation_id)
+                        .ok()
+                        .flatten()
+                        .and_then(|op| op.expected_generation)
+                })
+            };
+            let row = crate::remote::library_outbox::LibraryPublishOutboxRow {
+                operation_id: prepared.operation_id.clone(),
+                song_ids: song_ids.to_vec(),
+                expected_generation,
+                source_db_digest: source_digest,
+                created_at_ms: now,
+                projected_at_ms: None,
+            };
+            let _ = crate::remote::library_outbox::upsert_library_publish_outbox(&lib_conn, &row);
+
+            // Control DB projection in a true SQLite transaction.
+            sync_backend::bind_song_ids_mark_pending_and_dirty(state, prepared, song_ids)?;
+
+            let _ = crate::remote::library_outbox::mark_library_outbox_projected(
+                &lib_conn,
+                &prepared.operation_id,
+                crate::remote::types::current_unix_time_ms(),
+            );
+            return Ok(());
+        }
+    }
+
+    // Fallback when library root is unavailable: still use control-DB TX.
     sync_backend::bind_song_ids_mark_pending_and_dirty(state, prepared, song_ids)?;
     Ok(())
 }
@@ -523,7 +502,8 @@ where
         .collect();
     finalize_prepared_for_publish(state, prepared.as_ref(), &imported_song_ids)?;
     if !imported_song_ids.is_empty() {
-        sync_backend::publish_songs(state, app_handle, &imported_song_ids)?;
+        let op_id = prepared.as_ref().map(|p| p.operation_id.as_str());
+        sync_backend::publish_songs(state, app_handle, &imported_song_ids, op_id)?;
     }
     Ok(result)
 }
@@ -543,7 +523,8 @@ where
     let song_ids = updated_song_ids(&result);
     finalize_prepared_for_publish(state, prepared.as_ref(), &song_ids)?;
     if !song_ids.is_empty() {
-        sync_backend::publish_songs(state, app_handle, &song_ids)?;
+        let op_id = prepared.as_ref().map(|p| p.operation_id.as_str());
+        sync_backend::publish_songs(state, app_handle, &song_ids, op_id)?;
     }
     Ok(result)
 }
@@ -566,17 +547,23 @@ where
     R: tauri::Runtime,
     F: FnOnce() -> CommandResult<T>,
 {
-    // Record the durable outbox row with the known song_id so publish reuses
-    // the same operation identity instead of creating a second placeholder.
-    // Publication is driven solely by the durable executor (manifest CAS) —
-    // there is no separate root openkara.db upload step.
+    // Record the durable outbox row with the known song_id so publish uses
+    // the same operation identity. Publication is driven by the executor.
     sync_backend::prepare(state)?;
     let prepared = sync_backend::record_prepared_operation(state, &[song_id.to_owned()])?;
     let result = mutation()?;
     if let Some(ref prepared) = prepared {
-        sync_backend::mark_operation_pending_and_dirty(state, prepared)?;
+        // Also durable the change set in the library outbox when possible.
+        finalize_prepared_for_publish(state, Some(prepared), &[song_id.to_owned()])?;
+        sync_backend::publish_songs(
+            state,
+            app_handle,
+            &[song_id.to_owned()],
+            Some(&prepared.operation_id),
+        )?;
+    } else {
+        sync_backend::publish_song(state, app_handle, song_id)?;
     }
-    sync_backend::publish_song(state, app_handle, song_id)?;
     Ok(result)
 }
 
@@ -594,8 +581,9 @@ where
     let (result, prepared) = prepare_and_mutate(state, mutation)?;
     let ids = song_id(&result).map(|id| vec![id]).unwrap_or_default();
     finalize_prepared_for_publish(state, prepared.as_ref(), &ids)?;
-    if let Some(song_id) = ids.first() {
-        sync_backend::publish_song(state, app_handle, song_id)?;
+    if !ids.is_empty() {
+        let op_id = prepared.as_ref().map(|p| p.operation_id.as_str());
+        sync_backend::publish_songs(state, app_handle, &ids, op_id)?;
     }
     Ok(result)
 }
@@ -615,7 +603,8 @@ where
     let song_ids = song_ids(&result);
     finalize_prepared_for_publish(state, prepared.as_ref(), &song_ids)?;
     if !song_ids.is_empty() {
-        sync_backend::publish_songs(state, app_handle, &song_ids)?;
+        let op_id = prepared.as_ref().map(|p| p.operation_id.as_str());
+        sync_backend::publish_songs(state, app_handle, &song_ids, op_id)?;
     }
     Ok(result)
 }
@@ -761,6 +750,7 @@ mod tests {
 
         run_song_database_mutation(&state, &handle, "s1", || Ok("val")).unwrap();
 
+        // Test fixture has no active remote → prepared is None → publish_song path.
         assert_eq!(
             calls(),
             vec![SyncCall::Prepare, SyncCall::PublishSong("s1".into()),]
@@ -785,7 +775,7 @@ mod tests {
             calls(),
             vec![
                 SyncCall::Prepare,
-                SyncCall::PublishSong("resolved-id".into()),
+                SyncCall::PublishSongs(vec!["resolved-id".into()]),
             ]
         );
     }

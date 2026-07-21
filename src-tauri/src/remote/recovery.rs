@@ -109,11 +109,50 @@ pub fn run_recovery(
     let completed = list_operations_in_states(connection, &[OperationState::Completed])?;
     report.already_completed = completed.len();
 
+    // 4. Any Pending/RetryWait publish op forces repository non-Clean so an
+    // automatic pull cannot overwrite committed local edits when a prior
+    // crash left operation=Pending but local_state=Clean.
+    force_dirty_for_active_publish_ops(connection, clock)?;
+
     // PR#4: After recovery transitions, the caller (startup hook) invokes
     // `retry_pending_operations` to drive pending/retry_wait operations
     // through the executor. This is done in a separate call so the recovery
     // pass itself remains fast and testable without a provider.
     Ok(report)
+}
+
+/// Force repository local_state to Dirty whenever a non-terminal publish
+/// operation is outstanding. Closes the crash window where Pending was
+/// written but Dirty was not.
+fn force_dirty_for_active_publish_ops(connection: &Connection, clock: &Clock) -> CommandResult<()> {
+    use crate::remote::control_db::OperationKind;
+    let now = (clock)();
+    let active = list_operations_in_states(
+        connection,
+        &[
+            OperationState::Pending,
+            OperationState::RetryWait,
+            OperationState::Running,
+            OperationState::Committing,
+            OperationState::Verifying,
+            OperationState::Prepared,
+        ],
+    )?;
+    for op in active {
+        if op.operation_kind != OperationKind::Publish {
+            continue;
+        }
+        mark_repository_dirty(connection, &op.library_id, now)?;
+        // Also pin active_operation_id when missing.
+        if let Some(mut row) = get_repository_state(connection, &op.library_id)? {
+            if row.active_operation_id.is_none() {
+                row.active_operation_id = Some(op.operation_id.clone());
+                row.updated_at_ms = now;
+                upsert_repository_state(connection, &row)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Retry pending and retry_wait publish operations via the executor.
@@ -280,7 +319,7 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
             }
             continue;
         }
-        let mut asset_ok = true;
+        let mut asset_error: Option<crate::commands::error::CommandError> = None;
         for song_id in &payload.song_ids {
             if let Err(error) = crate::remote::sync::reupload_song_assets_for_recovery(
                 state,
@@ -294,11 +333,39 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
                     op.operation_id,
                     error.message
                 );
-                asset_ok = false;
+                asset_error = Some(error);
                 break;
             }
         }
-        if !asset_ok {
+        if let Some(error) = asset_error {
+            // Same classification as the executor: retryable → RetryWait +
+            // backoff; permanent → Failed; auth → ReauthRequired.
+            if let Ok(conn) = state.remote.control_db.lock() {
+                let now = crate::remote::types::current_unix_time_ms();
+                let mut updated = op.clone();
+                if error.retryable {
+                    updated.state = OperationState::RetryWait;
+                    updated.next_attempt_at_ms = Some(now + 30_000);
+                    updated.error_code = Some("network_unavailable".to_owned());
+                } else {
+                    updated.state = OperationState::Failed;
+                    updated.next_attempt_at_ms = None;
+                    updated.error_code = Some(format!("{:?}", error.code));
+                    let msg = error.message.to_ascii_lowercase();
+                    if msg.contains("auth") || msg.contains("401") || msg.contains("credential") {
+                        if let Ok(Some(mut repo)) = get_repository_state(&conn, library_id) {
+                            repo.local_state = LocalState::ReauthRequired;
+                            repo.last_error_code = Some("authentication_expired".to_owned());
+                            repo.updated_at_ms = now;
+                            let _ = upsert_repository_state(&conn, &repo);
+                        }
+                        updated.error_code = Some("authentication_expired".to_owned());
+                    }
+                }
+                updated.error_detail = Some(error.message.clone());
+                updated.updated_at_ms = now;
+                let _ = upsert_operation(&conn, &updated);
+            }
             continue;
         }
 
@@ -417,7 +484,18 @@ fn resolve_prepared_operation(
     let working_digest = digest_resolver.working_db_digest(&op.library_id);
     let source_digest = op.source_db_digest.as_deref();
 
-    let working_unchanged = working_digest.as_deref() == source_digest;
+    // None must never mean "same". Missing digests are degraded: keep the
+    // operation recoverable (promote/dirty) rather than cancelling as
+    // "mutation never committed".
+    let working_unchanged = match (working_digest.as_deref(), source_digest) {
+        (Some(w), Some(s)) => w == s,
+        (None, _) | (_, None) => {
+            // Degraded: cannot prove the mutation did not commit. Leave as
+            // pending when song_ids are present so publication can continue;
+            // cancel only empty payloads below.
+            false
+        }
+    };
 
     if working_unchanged {
         // The mutation never committed locally — discard the intent.

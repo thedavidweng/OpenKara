@@ -549,6 +549,11 @@ pub(crate) fn spawn_model_bootstrap_worker<R: Runtime>(
 fn run_remote_recovery(remote_state: &RemoteState, app_data_dir: &std::path::Path) {
     use crate::remote::recovery::{run_recovery, Clock, FileDigestResolver};
 
+    // Rebuild control-DB operations from library outbox rows that were
+    // committed with the local mutation but never projected (crash between
+    // library commit and remote-state.db write).
+    project_library_outboxes_into_control_db(remote_state, app_data_dir);
+
     let recovery_result = {
         let conn = match remote_state.control_db.lock() {
             Ok(conn) => conn,
@@ -589,19 +594,110 @@ fn run_remote_recovery(remote_state: &RemoteState, app_data_dir: &std::path::Pat
     if let Ok(part_cleanup_conn) = crate::remote::control_db::open_control_db(&control_db_path) {
         recover_stale_part_files_for_all_libraries(app_data_dir, &part_cleanup_conn);
     } else {
-        // Control DB unavailable — delete all part files as orphaned.
-        let empty = std::collections::HashSet::new();
-        let config = match crate::config::load_config(app_data_dir) {
-            Ok(Some(config)) => config,
-            _ => return,
+        // Fail closed: without the control plane we cannot tell which
+        // partials are resumable. Leave every `*.part.*` file in place
+        // rather than deleting them as orphans.
+        eprintln!(
+            "warning: control DB unavailable during part-file recovery; \
+             preserving all partial downloads (fail-closed)"
+        );
+    }
+}
+
+/// Project unprojected library-DB publish outbox rows into remote-state.db.
+fn project_library_outboxes_into_control_db(
+    remote_state: &RemoteState,
+    app_data_dir: &std::path::Path,
+) {
+    use crate::remote::control_db::{
+        bind_song_ids_mark_pending_and_dirty_tx, get_operation, upsert_operation, OperationKind,
+        OperationPayload, OperationRow, OperationState,
+    };
+    use crate::remote::library_outbox::{
+        list_unprojected_library_outbox, mark_library_outbox_projected,
+    };
+
+    let config = match crate::config::load_config(app_data_dir) {
+        Ok(Some(config)) => config,
+        _ => return,
+    };
+    for library in &config.libraries {
+        if !matches!(library, crate::config::RegisteredLibrary::Remote { .. }) {
+            continue;
+        }
+        let library_id = library.id().to_owned();
+        let Some(root_path) = library.working_copy_root() else {
+            continue;
         };
-        for library in &config.libraries {
-            if !matches!(library, crate::config::RegisteredLibrary::Remote { .. }) {
+        let Ok(root) = crate::library_root::LibraryRoot::open(&root_path) else {
+            continue;
+        };
+        let Ok(lib_conn) = crate::cache::open_database(&root.database_path()) else {
+            continue;
+        };
+        let _ = crate::cache::apply_migrations(&lib_conn);
+        let Ok(rows) = list_unprojected_library_outbox(&lib_conn) else {
+            continue;
+        };
+        if rows.is_empty() {
+            continue;
+        }
+        let Ok(control) = remote_state.control_db.lock() else {
+            continue;
+        };
+        let now = crate::remote::types::current_unix_time_ms();
+        for row in rows {
+            if row.song_ids.is_empty() {
                 continue;
             }
-            if let Some(root_path) = library.working_copy_root() {
-                let _ = crate::remote::atomic_download::remove_stale_part_files(&root_path, &empty);
+            match get_operation(&control, &row.operation_id) {
+                Ok(Some(_)) => {
+                    // Operation exists — ensure Pending+Dirty with song_ids.
+                    let _ = bind_song_ids_mark_pending_and_dirty_tx(
+                        &control,
+                        &row.operation_id,
+                        &library_id,
+                        &row.song_ids,
+                    );
+                }
+                Ok(None) => {
+                    let payload = OperationPayload {
+                        song_ids: row.song_ids.clone(),
+                        percent: 0,
+                        detail: Some("Recovered from library outbox".to_owned()),
+                        ..Default::default()
+                    };
+                    let op = OperationRow {
+                        operation_id: row.operation_id.clone(),
+                        library_id: library_id.clone(),
+                        operation_kind: OperationKind::Publish,
+                        state: OperationState::Pending,
+                        expected_generation: row.expected_generation,
+                        target_generation: None,
+                        source_db_digest: row.source_db_digest.clone(),
+                        candidate_db_digest: None,
+                        payload_json: payload
+                            .to_json()
+                            .unwrap_or_else(|_| r#"{"song_ids":[],"percent":0}"#.to_owned()),
+                        attempt_count: 0,
+                        next_attempt_at_ms: None,
+                        error_code: None,
+                        error_detail: None,
+                        created_at_ms: row.created_at_ms,
+                        updated_at_ms: now,
+                    };
+                    if upsert_operation(&control, &op).is_ok() {
+                        let _ = bind_song_ids_mark_pending_and_dirty_tx(
+                            &control,
+                            &row.operation_id,
+                            &library_id,
+                            &row.song_ids,
+                        );
+                    }
+                }
+                Err(_) => continue,
             }
+            let _ = mark_library_outbox_projected(&lib_conn, &row.operation_id, now);
         }
     }
 }

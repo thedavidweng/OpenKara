@@ -185,7 +185,7 @@ fn sync_bound_remote<R: tauri::Runtime>(
         .into_iter()
         .filter_map(|song| desired_kinds.contains_key(&song.hash).then_some(song.hash))
         .collect();
-    maybe_publish_songs_to_bound_remote(state, app_handle, &desired_song_ids)?;
+    maybe_publish_songs_to_bound_remote(state, app_handle, &desired_song_ids, None)?;
 
     // Commit the remote database via the transactional manifest executor.
     // The mirror sync has already updated the remote working-copy DB with

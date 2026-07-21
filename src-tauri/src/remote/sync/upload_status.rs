@@ -131,11 +131,49 @@ pub(crate) fn operation_to_snapshot(op: &OperationRow) -> UploadStatusSnapshot {
     }
 }
 
-/// Project an upload status from the durable control plane only.
-///
-/// Used after the executor has already recorded RetryWait / Failed /
-/// Conflicted. Must never write back to `remote_operations` — that would
-/// let a UI Failed mapping demote durable retry state.
+/// Project an upload status from a specific durable operation id.
+/// Must never write back to `remote_operations`.
+pub(crate) fn project_upload_status_from_operation(
+    state: &AppState,
+    operation_id: &str,
+    song_id: &str,
+    error: Option<&CommandError>,
+) -> CommandResult<UploadStatusSnapshot> {
+    let conn = state
+        .remote
+        .control_db
+        .lock()
+        .map_err(|_| state_lock_error("control DB lock was poisoned"))?;
+    let existing = crate::remote::control_db::get_operation(&conn, operation_id)?;
+    let snapshot = if let Some(op) = existing.as_ref() {
+        let mut snap = operation_to_snapshot(op);
+        if snap.error.is_none() {
+            snap.error = error.cloned();
+        }
+        snap.song_id = song_id.to_owned();
+        snap
+    } else {
+        UploadStatusSnapshot {
+            song_id: song_id.to_owned(),
+            state: UploadState::Failed,
+            percent: 0,
+            remote_library_id: None,
+            detail: None,
+            error: error.cloned(),
+        }
+    };
+    drop(conn);
+    let mut guard = state
+        .remote
+        .remote_upload_statuses
+        .lock()
+        .map_err(|_| state_lock_error("remote upload status lock was poisoned"))?;
+    guard.insert(song_id.to_owned(), snapshot.clone());
+    Ok(snapshot)
+}
+
+/// Project an upload status from the durable control plane by song (legacy).
+/// Prefer [`project_upload_status_from_operation`] when the operation_id is known.
 pub(crate) fn project_upload_status_from_durable(
     state: &AppState,
     song_id: &str,
@@ -154,11 +192,9 @@ pub(crate) fn project_upload_status_from_durable(
     )?;
     let snapshot = if let Some(op) = existing.as_ref() {
         let mut snap = operation_to_snapshot(op);
-        // Prefer the live error for the event payload when provided.
         if snap.error.is_none() {
             snap.error = error.cloned();
         }
-        // song_id key for the in-memory map / event should match the caller.
         snap.song_id = song_id.to_owned();
         snap
     } else {
@@ -171,9 +207,103 @@ pub(crate) fn project_upload_status_from_durable(
             error: error.cloned(),
         }
     };
-
-    // In-memory projection only — no durable upsert.
     drop(conn);
+    let mut guard = state
+        .remote
+        .remote_upload_statuses
+        .lock()
+        .map_err(|_| state_lock_error("remote upload status lock was poisoned"))?;
+    guard.insert(song_id.to_owned(), snapshot.clone());
+    Ok(snapshot)
+}
+
+/// Update status for an exact operation identity. Refuses to reopen terminal
+/// operations (Completed/Failed/Conflicted/Cancelled).
+pub(crate) fn mark_upload_status_for_operation(
+    state: &AppState,
+    operation_id: &str,
+    song_id: &str,
+    remote_library_id: Option<String>,
+    upload_state: UploadState,
+    percent: u8,
+    detail: Option<String>,
+    error: Option<CommandError>,
+) -> CommandResult<UploadStatusSnapshot> {
+    // Load under the lock, then drop before any re-entrant projection.
+    let existing = {
+        let conn = state
+            .remote
+            .control_db
+            .lock()
+            .map_err(|_| state_lock_error("control DB lock was poisoned"))?;
+        crate::remote::control_db::get_operation(&conn, operation_id)?
+    };
+    let Some(existing) = existing else {
+        return Err(crate::commands::error::internal_error(format!(
+            "operation {operation_id} not found for status update"
+        )));
+    };
+
+    if existing.state.is_terminal() {
+        // Project only — never mutate terminal control-plane state.
+        return project_upload_status_from_operation(state, operation_id, song_id, error.as_ref());
+    }
+
+    let now = control_db_now_ms();
+    let mut payload = OperationPayload::from_json(&existing.payload_json).unwrap_or_default();
+    if payload.song_ids.is_empty() {
+        payload.song_ids = vec![song_id.to_owned()];
+    }
+    payload.percent = percent;
+    payload.detail = detail.clone();
+
+    let op_state = resolve_durable_state_for_status_update(
+        Some(&existing),
+        upload_state.clone(),
+        error.as_ref(),
+    );
+    let durable_state_for_snapshot = operation_state_to_upload_state(op_state);
+    let (error_code, error_detail) = sanitize_error(error.as_ref());
+    let next_attempt_at_ms = if matches!(op_state, OperationState::RetryWait) {
+        existing.next_attempt_at_ms.or_else(|| Some(now + 30_000))
+    } else {
+        existing.next_attempt_at_ms
+    };
+
+    let row = OperationRow {
+        operation_id: existing.operation_id.clone(),
+        library_id: existing.library_id.clone(),
+        operation_kind: existing.operation_kind,
+        state: op_state,
+        expected_generation: existing.expected_generation,
+        target_generation: existing.target_generation,
+        source_db_digest: existing.source_db_digest.clone(),
+        candidate_db_digest: existing.candidate_db_digest.clone(),
+        payload_json: payload.to_json()?,
+        attempt_count: existing.attempt_count,
+        next_attempt_at_ms,
+        error_code,
+        error_detail,
+        created_at_ms: existing.created_at_ms,
+        updated_at_ms: now,
+    };
+    {
+        let conn = state
+            .remote
+            .control_db
+            .lock()
+            .map_err(|_| state_lock_error("control DB lock was poisoned"))?;
+        upsert_operation(&conn, &row)?;
+    }
+
+    let snapshot = UploadStatusSnapshot {
+        song_id: song_id.to_owned(),
+        state: durable_state_for_snapshot,
+        percent,
+        remote_library_id: remote_library_id.or(Some(existing.library_id)),
+        detail,
+        error,
+    };
     let mut guard = state
         .remote
         .remote_upload_statuses

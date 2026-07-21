@@ -15,6 +15,7 @@ pub(crate) mod executor;
 #[cfg(test)]
 mod fault_injection;
 mod google_drive;
+pub(crate) mod library_outbox;
 pub(crate) mod manifest;
 mod mutation;
 pub(crate) mod net_policy;

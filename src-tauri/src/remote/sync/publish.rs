@@ -5,9 +5,8 @@ use crate::{
     library::{artwork, error::LibraryError, Song},
     library_root::LibraryRoot,
     remote::control_db::{
-        get_repository_state, list_operations_in_states, upsert_operation, upsert_repository_state,
-        LocalState, OperationKind, OperationPayload, OperationRow, OperationState,
-        RepositoryStateRow,
+        get_repository_state, upsert_operation, upsert_repository_state, LocalState, OperationKind,
+        OperationPayload, OperationRow, OperationState, RepositoryStateRow,
     },
     remote::executor::{
         execute_publish, generate_repository_id, generate_writer_id, PublishContext,
@@ -25,7 +24,7 @@ use super::file_ops::{copy_directory_recursive, copy_remote_song_assets};
 use super::revision::{prepare_remote_database_for_mutation, resolve_active_remote};
 use super::upload_status::{
     emit_upload_complete, emit_upload_error, emit_upload_progress, mark_upload_status,
-    project_upload_status_from_durable,
+    mark_upload_status_for_operation, project_upload_status_from_operation,
 };
 
 /// Best-effort: missing/invalid derivatives are regenerated from the local
@@ -260,11 +259,28 @@ pub(crate) fn update_remote_song(
     Ok(())
 }
 
+#[allow(dead_code)]
 pub(crate) fn maybe_publish_song_to_bound_remote<R: tauri::Runtime>(
     state: &AppState,
     app_handle: &AppHandle<R>,
     song_id: &str,
 ) -> CommandResult<()> {
+    maybe_publish_songs_to_bound_remote(state, app_handle, &[song_id.to_owned()], None)
+}
+
+/// Publish songs for a bound remote. When `operation_id` is `Some`, that exact
+/// durable identity is used for status, assets, and executor — never guessed
+/// via library+song. When `None`, a fresh non-terminal operation is created
+/// (explicit re-publish). Multi-song ops upload every song then CAS once.
+pub(crate) fn maybe_publish_songs_to_bound_remote<R: tauri::Runtime>(
+    state: &AppState,
+    app_handle: &AppHandle<R>,
+    song_ids: &[String],
+    operation_id: Option<&str>,
+) -> CommandResult<()> {
+    if song_ids.is_empty() {
+        return Ok(());
+    }
     let config = load_app_config(&state.shell.app_data_dir)?;
     if resolve_active_remote(&config).is_none() {
         return Ok(());
@@ -273,34 +289,64 @@ pub(crate) fn maybe_publish_song_to_bound_remote<R: tauri::Runtime>(
     let local_root = state.library_root()?;
     let local_connection = cache::open_database(&local_root.database_path())
         .map_err(|error| database_error(error.to_string()))?;
-    let Some(song) = cache::get_song_by_hash(&local_connection, song_id)
-        .map_err(|error| database_error(error.to_string()))?
-    else {
-        return Ok(());
-    };
 
-    if song_ready_for_remote_publish(&local_connection, &local_root, &song)? {
-        let _ = publish_song_internal(state, app_handle, song_id)?;
+    let mut ready_ids = Vec::new();
+    for song_id in song_ids {
+        let Some(song) = cache::get_song_by_hash(&local_connection, song_id)
+            .map_err(|error| database_error(error.to_string()))?
+        else {
+            continue;
+        };
+        if song_ready_for_remote_publish(&local_connection, &local_root, &song)? {
+            ready_ids.push(song_id.clone());
+        }
+    }
+    if ready_ids.is_empty() {
+        return Ok(());
     }
 
+    // Background publication uses the exact operation identity when known.
+    let op_id = operation_id.map(|s| s.to_owned());
+    let background_state = state.clone();
+    let background_handle = app_handle.clone();
+    std::thread::spawn(move || {
+        let _ = publish_operation_internal(
+            &background_state,
+            &background_handle,
+            op_id.as_deref(),
+            &ready_ids,
+        );
+    });
     Ok(())
 }
 
-pub(crate) fn maybe_publish_songs_to_bound_remote<R: tauri::Runtime>(
+/// Publish by exact durable operation identity (or create one for explicit
+/// re-publish). All song_ids in the operation are uploaded under one commit
+/// lock, then a single candidate freeze + CAS runs. Never reopens terminal
+/// operations.
+fn publish_operation_internal<R: tauri::Runtime>(
     state: &AppState,
     app_handle: &AppHandle<R>,
-    song_ids: &[String],
-) -> CommandResult<()> {
-    for song_id in song_ids {
-        maybe_publish_song_to_bound_remote(state, app_handle, song_id)?;
-    }
-    Ok(())
+    operation_id: Option<&str>,
+    fallback_song_ids: &[String],
+) -> CommandResult<UploadStatusSnapshot> {
+    // Compatibility path: single-song callers without an operation_id.
+    let primary_song = fallback_song_ids.first().map(|s| s.as_str()).unwrap_or("");
+    publish_song_internal(
+        state,
+        app_handle,
+        primary_song,
+        operation_id,
+        fallback_song_ids,
+    )
 }
 
 fn publish_song_internal<R: tauri::Runtime>(
     state: &AppState,
     app_handle: &AppHandle<R>,
     song_id: &str,
+    operation_id: Option<&str>,
+    batch_song_ids: &[String],
 ) -> CommandResult<UploadStatusSnapshot> {
     let config = load_app_config(&state.shell.app_data_dir)?;
     let remote_library = resolve_active_remote(&config).ok_or_else(|| {
@@ -354,17 +400,38 @@ fn publish_song_internal<R: tauri::Runtime>(
     let mut remote_connection = cache::open_database(&remote_root.database_path())
         .map_err(|error| database_error(error.to_string()))?;
 
-    let song = cache::get_song_by_hash(&local_connection, song_id)
-        .map_err(|error| database_error(error.to_string()))?
-        .ok_or_else(|| {
-            CommandError::from(LibraryError::Internal(format!(
-                "song {song_id} was not found"
-            )))
-        })?;
-
-    let running = mark_upload_status(
+    // Resolve the exact durable operation identity. Prefer the caller's
+    // operation_id; never reopen a terminal row. Multi-song batches keep one
+    // identity for upload-all + single CAS.
+    let resolved_op = resolve_or_create_publish_operation(
         state,
+        &remote_library_id,
+        operation_id,
+        batch_song_ids,
         song_id,
+    )?;
+    let operation_id = resolved_op.operation_id.clone();
+    let song_ids_to_publish = {
+        let payload = OperationPayload::from_json(&resolved_op.payload_json).unwrap_or_default();
+        if payload.song_ids.is_empty() {
+            if batch_song_ids.is_empty() {
+                vec![song_id.to_owned()]
+            } else {
+                batch_song_ids.to_vec()
+            }
+        } else {
+            payload.song_ids
+        }
+    };
+    let ui_song_id = song_ids_to_publish
+        .first()
+        .map(|s| s.as_str())
+        .unwrap_or(song_id);
+
+    let running = mark_upload_status_for_operation(
+        state,
+        &operation_id,
+        ui_song_id,
         Some(remote_library_id.clone()),
         UploadState::Running,
         0,
@@ -375,71 +442,31 @@ fn publish_song_internal<R: tauri::Runtime>(
 
     let provider = create_provider(&state.shell.app_data_dir, &remote_library)?;
 
-    let publish_result = if song.is_separable() {
-        let stem_entry = cache::stems::get_cached_stem_entry(&local_connection, song_id)
-            .map_err(|error| database_error(error.to_string()))?
-            .ok_or_else(|| {
-                CommandError::from(LibraryError::Internal(format!(
-                    "song {song_id} must have cached stems before publishing to a remote repository"
-                )))
-            })?;
-        if !same_root {
-            let source_stems_dir = local_root.resolve(&format!("stems/{song_id}"));
-            let destination_stems_dir = remote_root.resolve(&format!("stems/{song_id}"));
-            copy_directory_recursive(&source_stems_dir, &destination_stems_dir)?;
-        }
-        upsert_stem_entry(&remote_connection, &stem_entry)?;
-
-        update_remote_song(&mut remote_connection, song.clone(), "stems_remote")?;
-        provider.upload_directory(&format!("stems/{song_id}"))?;
-        publish_artwork_derivatives(
+    // Upload every song in the durable payload under the same commit lock,
+    // then freeze/CAS once. Do not split a batch into per-song commits.
+    let mut publish_result: CommandResult<()> = Ok(());
+    for sid in &song_ids_to_publish {
+        if let Err(error) = upload_one_song_assets(
             &local_connection,
+            &mut remote_connection,
             &local_root,
             &remote_root,
-            &remote_connection,
             &*provider,
-            song_id,
+            sid,
             same_root,
-        )?;
-        sync_song_lyrics_to_remote(&local_connection, &remote_connection, song_id)?;
-        Ok::<_, CommandError>(())
-    } else {
-        if let Some(file_path) = song.file_path.as_deref() {
-            if !same_root {
-                copy_remote_song_assets(&local_root, &remote_root, file_path, file_path)?;
-            }
-            provider.upload_file(file_path)?;
+        ) {
+            publish_result = Err(error);
+            break;
         }
-        if let Some(cdg_path) = song.cdg_path.as_deref() {
-            if !same_root {
-                copy_remote_song_assets(&local_root, &remote_root, cdg_path, cdg_path)?;
-            }
-            provider.upload_file(cdg_path)?;
-        }
-
-        delete_remote_stem_cache_if_present(&remote_connection, &remote_root, song_id)?;
-
-        update_remote_song(&mut remote_connection, song.clone(), "original_remote")?;
-        publish_artwork_derivatives(
-            &local_connection,
-            &local_root,
-            &remote_root,
-            &remote_connection,
-            &*provider,
-            song_id,
-            same_root,
-        )?;
-        sync_song_lyrics_to_remote(&local_connection, &remote_connection, song_id)?;
-        Ok(())
-    };
+    }
 
     if let Err(error) = publish_result {
         // Asset stage failed before the executor. Retryable network faults
-        // land as durable RetryWait; permanent faults land as Failed.
-        // (Executor has not written control-plane state yet.)
-        let failure = mark_upload_status(
+        // land as durable RetryWait on this exact operation_id.
+        let failure = mark_upload_status_for_operation(
             state,
-            song_id,
+            &operation_id,
+            ui_song_id,
             Some(remote_library_id.clone()),
             UploadState::Failed,
             0,
@@ -452,49 +479,128 @@ fn publish_song_internal<R: tauri::Runtime>(
 
     // --- Transactional manifest commit via the executor ---
     //
-    // Defect #2 fix: `upload-complete` is emitted ONLY after the manifest CAS
-    // succeeds and is re-verified. The asset-upload portion above never emits
-    // `upload-complete`. A failure in the executor is persisted to the
-    // operation row and emitted as `upload-error`.
+    // `upload-complete` is emitted ONLY after the manifest CAS succeeds.
+    // Failure is persisted by the executor; UI only projects durable state.
     let commit_result = commit_via_executor(
         state,
         &remote_library,
         &remote_library_id,
-        song_id,
+        &operation_id,
         &remote_root,
     );
 
     match commit_result {
         Ok(()) => {
-            let completed = mark_upload_status(
+            let completed = mark_upload_status_for_operation(
                 state,
-                song_id,
+                &operation_id,
+                ui_song_id,
                 Some(remote_library_id.clone()),
                 UploadState::Completed,
                 100,
                 None,
                 None,
             )?;
-            // Defect #2: emit upload-complete only after the manifest is
-            // committed and verified by the executor.
             emit_upload_complete(app_handle, &completed);
+            // Emit complete for each song in the batch so UI clears all rows.
+            for sid in song_ids_to_publish.iter().skip(1) {
+                let snap = UploadStatusSnapshot {
+                    song_id: sid.clone(),
+                    state: UploadState::Completed,
+                    percent: 100,
+                    remote_library_id: Some(remote_library_id.clone()),
+                    detail: None,
+                    error: None,
+                };
+                emit_upload_complete(app_handle, &snap);
+            }
             Ok(completed)
         }
         Err(error) => {
-            // Control plane is already authoritative: the executor wrote
-            // RetryWait / Failed / Conflicted. Events/UI must project that
-            // state only — never call mark_upload_status(Failed) here, which
-            // would demote RetryWait to terminal Failed and kill durable retry.
-            let failure = project_upload_status_from_durable(
+            let failure = project_upload_status_from_operation(
                 state,
-                song_id,
-                &remote_library_id,
+                &operation_id,
+                ui_song_id,
                 Some(&error),
             )?;
             emit_upload_error(app_handle, &failure, error.clone());
             Err(error)
         }
     }
+}
+
+/// Upload assets and update the remote working DB for one song. Shared by
+/// single-song and multi-song batch publication under one commit lock.
+fn upload_one_song_assets(
+    local_connection: &rusqlite::Connection,
+    remote_connection: &mut rusqlite::Connection,
+    local_root: &LibraryRoot,
+    remote_root: &LibraryRoot,
+    provider: &dyn super::super::provider::RemoteProvider,
+    song_id: &str,
+    same_root: bool,
+) -> CommandResult<()> {
+    let song = cache::get_song_by_hash(local_connection, song_id)
+        .map_err(|error| database_error(error.to_string()))?
+        .ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(format!(
+                "song {song_id} was not found"
+            )))
+        })?;
+
+    if song.is_separable() {
+        let stem_entry = cache::stems::get_cached_stem_entry(local_connection, song_id)
+            .map_err(|error| database_error(error.to_string()))?
+            .ok_or_else(|| {
+                CommandError::from(LibraryError::Internal(format!(
+                    "song {song_id} must have cached stems before publishing to a remote repository"
+                )))
+            })?;
+        if !same_root {
+            let source_stems_dir = local_root.resolve(&format!("stems/{song_id}"));
+            let destination_stems_dir = remote_root.resolve(&format!("stems/{song_id}"));
+            copy_directory_recursive(&source_stems_dir, &destination_stems_dir)?;
+        }
+        upsert_stem_entry(remote_connection, &stem_entry)?;
+        update_remote_song(remote_connection, song.clone(), "stems_remote")?;
+        provider.upload_directory(&format!("stems/{song_id}"))?;
+        publish_artwork_derivatives(
+            local_connection,
+            local_root,
+            remote_root,
+            remote_connection,
+            provider,
+            song_id,
+            same_root,
+        )?;
+        sync_song_lyrics_to_remote(local_connection, remote_connection, song_id)?;
+    } else {
+        if let Some(file_path) = song.file_path.as_deref() {
+            if !same_root {
+                copy_remote_song_assets(local_root, remote_root, file_path, file_path)?;
+            }
+            provider.upload_file(file_path)?;
+        }
+        if let Some(cdg_path) = song.cdg_path.as_deref() {
+            if !same_root {
+                copy_remote_song_assets(local_root, remote_root, cdg_path, cdg_path)?;
+            }
+            provider.upload_file(cdg_path)?;
+        }
+        delete_remote_stem_cache_if_present(remote_connection, remote_root, song_id)?;
+        update_remote_song(remote_connection, song.clone(), "original_remote")?;
+        publish_artwork_derivatives(
+            local_connection,
+            local_root,
+            remote_root,
+            remote_connection,
+            provider,
+            song_id,
+            same_root,
+        )?;
+        sync_song_lyrics_to_remote(local_connection, remote_connection, song_id)?;
+    }
+    Ok(())
 }
 
 /// Commit the remote database via the transactional manifest executor.
@@ -507,18 +613,84 @@ fn publish_song_internal<R: tauri::Runtime>(
 /// On a CAS conflict, the repository transitions to `Conflicted` and the
 /// error is returned so the caller can emit `upload-error`. The operation is
 /// NEVER retried as an unconditional overwrite.
+/// Resolve an exact non-terminal operation by id, or create a fresh one for
+/// explicit re-publish. Never reopens Completed/Failed/Conflicted/Cancelled.
+fn resolve_or_create_publish_operation(
+    state: &AppState,
+    remote_library_id: &str,
+    operation_id: Option<&str>,
+    batch_song_ids: &[String],
+    fallback_song_id: &str,
+) -> CommandResult<OperationRow> {
+    let conn =
+        state.remote.control_db.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+    let now = crate::remote::types::current_unix_time_ms();
+
+    if let Some(op_id) = operation_id {
+        let op = crate::remote::control_db::get_operation(&conn, op_id)?.ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(format!(
+                "publish operation {op_id} was not found"
+            )))
+        })?;
+        if op.state.is_terminal() {
+            return Err(CommandError::from(LibraryError::Internal(format!(
+                "refusing to reopen terminal operation {op_id} ({})",
+                op.state.as_str()
+            ))));
+        }
+        return Ok(op);
+    }
+
+    // Explicit re-publish without a mutation outbox: mint a fresh identity.
+    // Terminal rows are never reused.
+    let song_ids = if batch_song_ids.is_empty() {
+        vec![fallback_song_id.to_owned()]
+    } else {
+        batch_song_ids.to_vec()
+    };
+    let operation_id = uuid::Uuid::new_v4().to_string();
+    let repo_state = get_repository_state(&conn, remote_library_id)?;
+    let expected_generation = repo_state
+        .as_ref()
+        .map(|r| r.committed_generation)
+        .unwrap_or(0);
+    let payload = OperationPayload {
+        song_ids,
+        percent: 0,
+        detail: Some("Publishing to remote".to_owned()),
+        ..Default::default()
+    };
+    let row = OperationRow {
+        operation_id: operation_id.clone(),
+        library_id: remote_library_id.to_owned(),
+        operation_kind: OperationKind::Publish,
+        state: OperationState::Pending,
+        expected_generation: Some(expected_generation),
+        target_generation: None,
+        source_db_digest: None,
+        candidate_db_digest: None,
+        payload_json: payload.to_json()?,
+        attempt_count: 0,
+        next_attempt_at_ms: None,
+        error_code: None,
+        error_detail: None,
+        created_at_ms: now,
+        updated_at_ms: now,
+    };
+    upsert_operation(&conn, &row)?;
+    Ok(row)
+}
+
 fn commit_via_executor(
     state: &AppState,
     remote_library: &RegisteredLibrary,
     remote_library_id: &str,
-    song_id: &str,
+    operation_id: &str,
     remote_root: &LibraryRoot,
 ) -> CommandResult<()> {
-    // Caller (publish_song_internal / recovery) already holds the per-library
-    // commit lock for the full transaction. Do not re-acquire here — nested
-    // locking on the same Mutex would deadlock.
-    //
-    // Fail closed when the durable control plane is unavailable.
+    // Caller already holds the per-library commit lock.
     if state.remote.control_db_degraded {
         return Err(CommandError::from(LibraryError::Internal(
             "remote control database is unavailable; publication is disabled \
@@ -529,11 +701,18 @@ fn commit_via_executor(
 
     let provider = create_provider(&state.shell.app_data_dir, remote_library)?;
 
-    // Resolve or generate stable repository_id and writer_id.
     let (repository_id, writer_id) = {
         let conn = state.remote.control_db.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
+        // Refuse terminal operations here as well.
+        if let Some(op) = crate::remote::control_db::get_operation(&conn, operation_id)? {
+            if op.state.is_terminal() {
+                return Err(CommandError::from(LibraryError::Internal(format!(
+                    "refusing to execute terminal operation {operation_id}"
+                ))));
+            }
+        }
         let repo_state = get_repository_state(&conn, remote_library_id)?;
         let repository_id = repo_state
             .as_ref()
@@ -544,8 +723,6 @@ fn commit_via_executor(
             .and_then(|r| r.writer_id.clone())
             .unwrap_or_else(generate_writer_id);
 
-        // If this is the first publication, persist the repository_id and
-        // writer_id so they are stable across future publications.
         if repo_state
             .as_ref()
             .map(|r| r.repository_id.is_none())
@@ -574,87 +751,6 @@ fn commit_via_executor(
         (repository_id, writer_id)
     };
 
-    // One durable operation identity per logical mutation. Prefer the
-    // pending/prepared/retryable outbox row created by the mutation layer so
-    // a restart continues the same operation instead of minting a new one
-    // from whatever database happens to be current. Only create a new row
-    // when no reusable operation exists (e.g. explicit re-publish).
-    let operation_id = {
-        let conn = state.remote.control_db.lock().map_err(|_| {
-            crate::commands::error::state_lock_error("control DB lock was poisoned")
-        })?;
-        let now = crate::remote::types::current_unix_time_ms();
-
-        if let Some(existing) = find_reusable_publish_operation(&conn, remote_library_id, song_id)?
-        {
-            // Bind the song_id into the payload if the mutation layer recorded
-            // an empty list (song id only known after the mutation).
-            let mut op = existing;
-            let mut payload =
-                OperationPayload::from_json(&op.payload_json).unwrap_or(OperationPayload {
-                    song_ids: Vec::new(),
-                    percent: 0,
-                    detail: None,
-                    ..Default::default()
-                });
-            if payload.song_ids.is_empty() {
-                payload.song_ids = vec![song_id.to_owned()];
-            }
-            if payload.detail.is_none() {
-                payload.detail = Some("Publishing to remote".to_owned());
-            }
-            op.payload_json = payload.to_json()?;
-            if !matches!(op.state, OperationState::Pending | OperationState::Running) {
-                op.state = OperationState::Pending;
-            }
-            op.updated_at_ms = now;
-            let id = op.operation_id.clone();
-            upsert_operation(&conn, &op)?;
-            id
-        } else {
-            // No mutation outbox row — create a fresh operation for this
-            // explicit publish. Terminal rows from prior publishes are never
-            // reused so re-publish always runs the full protocol.
-            let operation_id = uuid::Uuid::new_v4().to_string();
-            let repo_state = get_repository_state(&conn, remote_library_id)?;
-            let expected_generation = repo_state
-                .as_ref()
-                .map(|r| r.committed_generation)
-                .unwrap_or(0);
-
-            let payload = OperationPayload {
-                song_ids: vec![song_id.to_owned()],
-                percent: 0,
-                detail: Some("Publishing to remote".to_owned()),
-                ..Default::default()
-            };
-
-            let row = OperationRow {
-                operation_id: operation_id.clone(),
-                library_id: remote_library_id.to_owned(),
-                operation_kind: OperationKind::Publish,
-                state: OperationState::Pending,
-                expected_generation: Some(expected_generation),
-                target_generation: None,
-                source_db_digest: None,
-                candidate_db_digest: None,
-                payload_json: payload.to_json()?,
-                attempt_count: 0,
-                next_attempt_at_ms: None,
-                error_code: None,
-                error_detail: None,
-                created_at_ms: now,
-                updated_at_ms: now,
-            };
-            upsert_operation(&conn, &row)?;
-            operation_id
-        }
-    };
-
-    // Execute the publish protocol. Open a dedicated connection to the
-    // control DB instead of holding the shared Mutex lock for the entire
-    // duration (which includes network I/O). WAL mode allows concurrent
-    // readers/writers, so this does not block other operations.
     let control_db_path = crate::remote::control_db::control_db_path(&state.shell.app_data_dir);
     let exec_conn = crate::remote::control_db::open_control_db(&control_db_path).map_err(|e| {
         crate::commands::error::database_error(format!("failed to open control DB: {e:?}"))
@@ -669,46 +765,7 @@ fn commit_via_executor(
         repository_id: &repository_id,
     };
 
-    execute_publish(&ctx, &operation_id)
-}
-
-/// Find a non-terminal publish operation for this library that can be
-/// continued as the single durable identity for `song_id`.
-///
-/// Matches only operations whose payload already lists `song_id`. Empty
-/// `song_ids` placeholders are NEVER reused — they have no recoverable
-/// asset identity and would bind the wrong mutation under concurrency.
-///
-/// Never reuses terminal rows — those belong to completed prior attempts.
-fn find_reusable_publish_operation(
-    connection: &rusqlite::Connection,
-    library_id: &str,
-    song_id: &str,
-) -> CommandResult<Option<OperationRow>> {
-    let candidates = list_operations_in_states(
-        connection,
-        &[
-            OperationState::Prepared,
-            OperationState::Pending,
-            OperationState::Running,
-            OperationState::RetryWait,
-            OperationState::Committing,
-            OperationState::Verifying,
-        ],
-    )?;
-    for op in candidates {
-        if op.library_id != library_id || op.operation_kind != OperationKind::Publish {
-            continue;
-        }
-        let payload = match OperationPayload::from_json(&op.payload_json) {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-        if payload.song_ids.iter().any(|id| id == song_id) {
-            return Ok(Some(op));
-        }
-    }
-    Ok(None)
+    execute_publish(&ctx, operation_id)
 }
 
 /// Re-upload song assets for a durable operation after a crash between the
@@ -809,9 +866,9 @@ pub(crate) fn publish_song_to_remote<R: tauri::Runtime>(
 
     let background_state = state.clone();
     let background_handle = app_handle.clone();
-    let song_id = song_id.clone();
+    let song_ids = vec![song_id.clone()];
     std::thread::spawn(move || {
-        let _ = publish_song_internal(&background_state, &background_handle, &song_id);
+        let _ = publish_operation_internal(&background_state, &background_handle, None, &song_ids);
     });
 
     Ok(snapshot)
@@ -837,13 +894,14 @@ pub(crate) fn publish_songs_to_remote<R: tauri::Runtime>(
         snapshots.push(snapshot);
     }
 
+    // One background publication for the whole set. Without a pre-bound
+    // operation_id this mints a single fresh op covering all song_ids.
     let background_state = state.clone();
     let background_handle = app_handle.clone();
-    let song_ids = song_ids.to_vec();
+    let song_ids_bg = song_ids.clone();
     std::thread::spawn(move || {
-        for song_id in song_ids {
-            let _ = publish_song_internal(&background_state, &background_handle, &song_id);
-        }
+        let _ =
+            publish_operation_internal(&background_state, &background_handle, None, &song_ids_bg);
     });
 
     Ok(snapshots)
