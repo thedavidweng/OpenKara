@@ -140,6 +140,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **remote**: Start durable operation executor on app startup
 - **clippy**: Use sort_by_key with Reverse in control_db
 - **remote**: Don't hold control DB Mutex across network I/O
+- **remote**: Dispatch Gc operations in startup executor and reload credentials in single-flight waiters
+- **remote**: Block on condvar for refresh waiters, guard duplicate model downloads, align contract docs
 
 ### 📝 Documentation
 
@@ -162,6 +164,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **flatpak**: Reclaim host disk and disable builder cache (#121)
 - Triage PR by changed paths and skip irrelevant jobs (#150)
 - **release**: Append installation section to GitHub Release Notes (#154)
+- Replace paths-filter with checked-in classifier and harden CI Gate (#156)
 
 ### 🔧 Chores
 
@@ -178,6 +181,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Bump knip to 6.26 and update ignoreBinaries (#119)
 - **deps**: Bump serde_with from 3.18.0 to 3.21.0 in /src-tauri in the cargo group across 1 directory (#122)
 - Upgrade npm and Rust dependencies (#140)
+- Regenerate changelog
 - Regenerate changelog
 
 ### 🧪 Tests
