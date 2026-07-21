@@ -174,18 +174,30 @@ fn run_publish_protocol(
 
     let target_generation = expected_generation + 1;
 
-    // --- Steps 3-4: Asset uploads + verification ---
-    // Asset uploads are handled by the existing publish flow (copy to remote
-    // working copy + provider.upload_file/upload_directory). The executor
-    // does NOT re-upload assets here — the caller's `publish_song_internal`
-    // performs asset uploads before invoking the executor. This keeps the
-    // executor focused on the database + manifest CAS, which is the atomicity
-    // boundary. Assets are idempotent by content-addressed path.
+    // --- Steps 3-4: Asset verification ---
     //
-    // The executor verifies the provider is reachable by stat-ing the manifest
-    // (done above). A full asset-verification pass is PR#5's job (resumable
-    // transfers track per-object state); PR#4 relies on the existing
-    // upload_file/upload_directory calls having completed.
+    // Asset uploads are performed by the caller (`publish_song_internal`)
+    // before the executor runs. The executor's job here is step 4: verify
+    // every asset referenced by the working database is present remotely with
+    // the expected size. This is the invariant "remote readers cannot observe
+    // a database that references missing assets" — a failed or truncated
+    // upload must fail closed BEFORE the manifest CAS, leaving the committed
+    // manifest unchanged.
+    //
+    // The working database and the candidate copy (step 5) reference the same
+    // assets, and the per-library commit lock is held, so verifying against
+    // the working DB here is equivalent to verifying against the candidate.
+    transition_state(
+        ctx,
+        op,
+        OperationState::Running,
+        now,
+        15,
+        "Verifying remote assets",
+    )?;
+
+    let working_db_path = ctx.working_copy_root.join("openkara.db");
+    verify_referenced_assets(ctx.provider, ctx.working_copy_root, &working_db_path)?;
 
     // --- Step 5: Copy the local working database to a candidate temp file ---
     transition_state(
@@ -197,7 +209,6 @@ fn run_publish_protocol(
         "Preparing candidate database",
     )?;
 
-    let working_db_path = ctx.working_copy_root.join("openkara.db");
     let candidate_path = ctx
         .working_copy_root
         .join(format!(".openkara-candidate-{}.sqlite", op.operation_id));
@@ -338,6 +349,237 @@ fn run_publish_protocol(
         committed_manifest_revision: committed_meta.revision,
         candidate_db_digest: candidate_digest,
     })
+}
+
+/// Managed top-level directories that hold repository assets. A database
+/// path column must reference a file under one of these, otherwise the path
+/// is rejected before it reaches the provider.
+const ASSET_TOP_LEVEL_DIRS: &[&str] = &["media", "media-g", "stems", "artwork"];
+
+/// A path column row extracted from the working database. Every non-empty
+/// field is a managed-asset path that must be present remotely before the
+/// manifest commits.
+struct AssetPathRow {
+    file_path: Option<String>,
+    cdg_path: Option<String>,
+    artwork_thumb_path: Option<String>,
+    artwork_preview_path: Option<String>,
+    vocals_path: Option<String>,
+    accomp_path: Option<String>,
+    drums_path: Option<String>,
+    bass_path: Option<String>,
+    other_path: Option<String>,
+}
+
+impl AssetPathRow {
+    /// Yield every non-empty referenced path in a deterministic order.
+    fn referenced_paths(&self) -> Vec<&str> {
+        let mut out: Vec<&str> = Vec::new();
+        for field in [
+            &self.file_path,
+            &self.cdg_path,
+            &self.artwork_thumb_path,
+            &self.artwork_preview_path,
+            &self.vocals_path,
+            &self.accomp_path,
+            &self.drums_path,
+            &self.bass_path,
+            &self.other_path,
+        ] {
+            if let Some(s) = field.as_deref() {
+                if !s.is_empty() {
+                    out.push(s);
+                }
+            }
+        }
+        out
+    }
+}
+
+/// Validate that a database-referenced path is a relative, managed-asset path.
+/// Rejects absolute paths, `..` traversal, empty segments, and paths outside
+/// the managed top-level directories. This mirrors the safety check in the
+/// integrity audit so a corrupted or hostile database row cannot cause the
+/// executor to stat an arbitrary provider path.
+fn validate_asset_path(path: &str) -> Result<(), RemoteError> {
+    if path.is_empty() {
+        return Err(RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            "asset path is empty",
+        ));
+    }
+    if std::path::Path::new(path).is_absolute() {
+        return Err(RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!("asset path is absolute: {path}"),
+        ));
+    }
+    let mut depth: i32 = 0;
+    for (i, component) in path.split('/').enumerate() {
+        if component.is_empty() {
+            return Err(RemoteError::new(
+                RemoteErrorKind::RemoteIntegrityFailed,
+                format!("asset path has empty segment: {path}"),
+            ));
+        }
+        if component == "." || component == ".." {
+            return Err(RemoteError::new(
+                RemoteErrorKind::RemoteIntegrityFailed,
+                format!("asset path has traversal component: {path}"),
+            ));
+        }
+        if i == 0 && !ASSET_TOP_LEVEL_DIRS.contains(&component) {
+            return Err(RemoteError::new(
+                RemoteErrorKind::RemoteIntegrityFailed,
+                format!("asset path outside managed dirs: {path}"),
+            ));
+        }
+        depth += 1;
+    }
+    if depth < 2 {
+        return Err(RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!("asset path refers to a managed root, not a file: {path}"),
+        ));
+    }
+    Ok(())
+}
+
+/// Publication-protocol step 4: verify every asset referenced by the working
+/// database is present remotely with the expected size.
+///
+/// Opens the database read-only, enumerates every non-empty path column across
+/// `songs` and `stems`, and for each referenced path:
+///
+/// 1. Validates the path is a relative, managed-asset path (no traversal,
+///    no absolute paths, no paths outside `media`/`media-g`/`stems`/`artwork`).
+/// 2. `provider.stat(path)` — fail closed with `RemoteIntegrityFailed` if the
+///    object is absent. A missing asset means the upload did not complete, so
+///    the manifest must NOT commit.
+/// 3. When the local working copy has the file at that path and the provider
+///    reports a remote size, compare the local byte size to the remote size.
+///    A mismatch indicates truncation or a wrong object and fails closed.
+///
+/// Songs whose `audio_source_kind` is not `"original"` are treated the same as
+/// local originals for this check: their referenced paths (stems for
+/// `stems_remote`, media for `original_remote`, artwork for both) must all be
+/// present remotely. The candidate database is what remote readers will see,
+/// so every path it references must resolve.
+///
+/// A failed verification NEVER commits the manifest. The caller records the
+/// operation as `failed` and emits `upload-error`.
+fn verify_referenced_assets(
+    provider: &dyn RemoteProvider,
+    working_copy_root: &Path,
+    database_path: &Path,
+) -> Result<(), RemoteError> {
+    let conn = open_readonly(database_path).map_err(|e| {
+        RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!(
+                "failed to open working DB for asset verification: {}",
+                e.message
+            ),
+        )
+    })?;
+
+    let has_cdg_path = crate::cache::column_exists(&conn, "songs", "cdg_path")
+        .map_err(|e| RemoteError::new(RemoteErrorKind::RemoteIntegrityFailed, e.to_string()))?;
+    let has_artwork_thumb = crate::cache::column_exists(&conn, "songs", "artwork_thumb_path")
+        .map_err(|e| RemoteError::new(RemoteErrorKind::RemoteIntegrityFailed, e.to_string()))?;
+    let has_artwork_preview =
+        crate::cache::column_exists(&conn, "songs", "artwork_preview_path")
+            .map_err(|e| RemoteError::new(RemoteErrorKind::RemoteIntegrityFailed, e.to_string()))?;
+    let has_stems = crate::cache::column_exists(&conn, "stems", "song_hash")
+        .map_err(|e| RemoteError::new(RemoteErrorKind::RemoteIntegrityFailed, e.to_string()))?;
+
+    let cdg_col = if has_cdg_path { "s.cdg_path" } else { "NULL" };
+    let artwork_thumb_col = if has_artwork_thumb {
+        "s.artwork_thumb_path"
+    } else {
+        "NULL"
+    };
+    let artwork_preview_col = if has_artwork_preview {
+        "s.artwork_preview_path"
+    } else {
+        "NULL"
+    };
+    let stems_join = if has_stems {
+        "LEFT JOIN stems st ON st.song_hash = s.hash"
+    } else {
+        "LEFT JOIN (SELECT NULL AS song_hash, NULL AS vocals_path, NULL AS accomp_path, NULL AS drums_path, NULL AS bass_path, NULL AS other_path) st ON 0=1"
+    };
+    let stems_cols = if has_stems {
+        "st.vocals_path, st.accomp_path, st.drums_path, st.bass_path, st.other_path"
+    } else {
+        "NULL, NULL, NULL, NULL, NULL"
+    };
+
+    let sql = format!(
+        "SELECT s.file_path, {cdg_col}, {artwork_thumb_col}, {artwork_preview_col}, {stems_cols}
+         FROM songs s
+         {stems_join}
+         ORDER BY s.hash ASC"
+    );
+
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| RemoteError::new(RemoteErrorKind::RemoteIntegrityFailed, e.to_string()))?;
+    let rows: Vec<AssetPathRow> = stmt
+        .query_map([], |row| {
+            Ok(AssetPathRow {
+                file_path: row.get(0)?,
+                cdg_path: row.get(1)?,
+                artwork_thumb_path: row.get(2)?,
+                artwork_preview_path: row.get(3)?,
+                vocals_path: row.get(4)?,
+                accomp_path: row.get(5)?,
+                drums_path: row.get(6)?,
+                bass_path: row.get(7)?,
+                other_path: row.get(8)?,
+            })
+        })
+        .map_err(|e| RemoteError::new(RemoteErrorKind::RemoteIntegrityFailed, e.to_string()))?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| RemoteError::new(RemoteErrorKind::RemoteIntegrityFailed, e.to_string()))?;
+
+    for row in &rows {
+        for path in row.referenced_paths() {
+            validate_asset_path(path)?;
+
+            let remote_meta = provider
+                .stat(path)
+                .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+            let remote_meta = remote_meta.ok_or_else(|| {
+                RemoteError::new(
+                    RemoteErrorKind::RemoteIntegrityFailed,
+                    format!("asset referenced by database is missing remotely: {path}"),
+                )
+            })?;
+
+            // Best-effort size check: when the local working copy has the
+            // file and the provider reports a size, a mismatch indicates
+            // truncation or a wrong object. If the local file is absent
+            // (e.g. a song published by another device whose assets we did
+            // not download), only presence is verified.
+            if let Some(remote_size) = remote_meta.size {
+                let local_path = working_copy_root.join(path);
+                if let Ok(local_meta) = std::fs::metadata(&local_path) {
+                    let local_size = local_meta.len();
+                    if local_size != remote_size {
+                        return Err(RemoteError::new(
+                            RemoteErrorKind::RemoteIntegrityFailed,
+                            format!(
+                                "asset size mismatch for {path}: local {local_size}, remote {remote_size}"
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Upload the candidate database to the remote path by writing it to the
@@ -892,7 +1134,6 @@ fn settings_table_hash(db_path: &Path) -> CommandResult<Option<String>> {
 }
 
 /// Open a SQLite database read-only.
-#[allow(dead_code)]
 fn open_readonly(path: &Path) -> CommandResult<Connection> {
     let flags =
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX;
@@ -1110,11 +1351,28 @@ mod tests {
         }
     }
 
-    /// Create a valid SQLite database at the given path with a `songs` table.
+    /// Create a valid SQLite database at the given path with a `songs` table
+    /// that has the asset-path columns the verifier queries. Songs are inserted
+    /// with NULL paths so the verifier has nothing to check (matching a
+    /// freshly-bootstrapped repository with no published assets yet).
     fn make_valid_db(path: &Path) {
         let conn = Connection::open(path).unwrap();
         conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS songs (hash TEXT PRIMARY KEY);
+            "CREATE TABLE IF NOT EXISTS songs (
+                hash TEXT PRIMARY KEY,
+                file_path TEXT,
+                cdg_path TEXT,
+                artwork_thumb_path TEXT,
+                artwork_preview_path TEXT
+             );
+             CREATE TABLE IF NOT EXISTS stems (
+                song_hash TEXT PRIMARY KEY,
+                vocals_path TEXT,
+                accomp_path TEXT,
+                drums_path TEXT,
+                bass_path TEXT,
+                other_path TEXT
+             );
              CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
              INSERT OR IGNORE INTO songs (hash) VALUES ('song-1');
              INSERT OR IGNORE INTO settings (key, value) VALUES ('version', '1');",
@@ -1434,5 +1692,345 @@ mod tests {
             .unwrap();
         assert_eq!(state.repository_id.as_deref(), Some("repo-uuid-x"));
         assert_eq!(state.writer_id.as_deref(), Some("writer-uuid-y"));
+    }
+
+    // ---- Asset verification (publication-protocol steps 3-4) ----
+
+    /// Insert a song row with a `file_path` referencing a media asset, and
+    /// create the matching local file in the working copy.
+    fn insert_song_with_media(
+        db_path: &Path,
+        song_hash: &str,
+        media_rel: &str,
+        working_root: &Path,
+    ) {
+        let conn = Connection::open(db_path).unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO songs (hash, file_path) VALUES (?1, ?2)",
+            rusqlite::params![song_hash, media_rel],
+        )
+        .unwrap();
+        let local = working_root.join(media_rel);
+        std::fs::create_dir_all(local.parent().unwrap()).unwrap();
+        std::fs::write(&local, b"media-bytes").unwrap();
+    }
+
+    /// Insert a song row with stem paths and create the matching local files.
+    fn insert_song_with_stems(
+        db_path: &Path,
+        song_hash: &str,
+        stem_files: &[&str],
+        working_root: &Path,
+    ) {
+        let conn = Connection::open(db_path).unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO songs (hash) VALUES (?1)",
+            [song_hash],
+        )
+        .unwrap();
+        let vocals = format!("stems/{song_hash}/vocals.ogg");
+        let accomp = format!("stems/{song_hash}/accompaniment.ogg");
+        conn.execute(
+            "INSERT OR REPLACE INTO stems (song_hash, vocals_path, accomp_path) VALUES (?1, ?2, ?3)",
+            rusqlite::params![song_hash, vocals, accomp],
+        )
+        .unwrap();
+        for rel in stem_files {
+            let local = working_root.join(rel);
+            std::fs::create_dir_all(local.parent().unwrap()).unwrap();
+            std::fs::write(&local, b"stem-bytes").unwrap();
+        }
+    }
+
+    /// Insert a song row with artwork derivative paths and create the local
+    /// files.
+    fn insert_song_with_artwork(
+        db_path: &Path,
+        song_hash: &str,
+        thumb_rel: &str,
+        preview_rel: &str,
+        working_root: &Path,
+    ) {
+        let conn = Connection::open(db_path).unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO songs (hash, artwork_thumb_path, artwork_preview_path) VALUES (?1, ?2, ?3)",
+            rusqlite::params![song_hash, thumb_rel, preview_rel],
+        )
+        .unwrap();
+        for rel in [thumb_rel, preview_rel] {
+            let local = working_root.join(rel);
+            std::fs::create_dir_all(local.parent().unwrap()).unwrap();
+            std::fs::write(&local, b"artwork-bytes").unwrap();
+        }
+    }
+
+    #[test]
+    fn executor_fails_when_referenced_media_asset_is_missing() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+
+        // Song-1 references media/song-1.mp3 but the provider does NOT have it
+        // (simulating a failed or skipped upload).
+        insert_song_with_media(
+            &working_root.join("openkara.db"),
+            "song-1",
+            "media/song-1.mp3",
+            &working_root,
+        );
+
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+
+        let result = execute_publish(&ctx, &op_id);
+        assert!(
+            result.is_err(),
+            "publish must fail when an asset is missing"
+        );
+
+        let op = crate::remote::control_db::get_operation(&conn, &op_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(op.state, OperationState::Failed);
+        assert_eq!(
+            op.error_code.as_deref(),
+            Some("remote_integrity_failed"),
+            "missing asset must produce remote_integrity_failed"
+        );
+
+        // The manifest must NOT have been committed.
+        let manifest = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
+        assert!(
+            manifest.is_none(),
+            "manifest must not be committed when an asset is missing"
+        );
+    }
+
+    #[test]
+    fn executor_fails_when_referenced_asset_size_mismatches() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+
+        insert_song_with_media(
+            &working_root.join("openkara.db"),
+            "song-1",
+            "media/song-1.mp3",
+            &working_root,
+        );
+
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        // Simulate a truncated remote upload: store fewer bytes than the local
+        // file.
+        provider.store("media/song-1.mp3", b"trunc".to_vec(), "rev-1");
+
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        let result = execute_publish(&ctx, &op_id);
+        assert!(
+            result.is_err(),
+            "publish must fail when remote asset size mismatches"
+        );
+
+        let op = crate::remote::control_db::get_operation(&conn, &op_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(op.state, OperationState::Failed);
+        assert_eq!(op.error_code.as_deref(), Some("remote_integrity_failed"));
+
+        let manifest = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
+        assert!(
+            manifest.is_none(),
+            "manifest must not be committed on size mismatch"
+        );
+    }
+
+    #[test]
+    fn executor_succeeds_when_all_referenced_assets_present() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+
+        insert_song_with_media(
+            &working_root.join("openkara.db"),
+            "song-1",
+            "media/song-1.mp3",
+            &working_root,
+        );
+
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        // Upload the asset to the provider so stat succeeds with the correct
+        // size.
+        provider
+            .upload_file("media/song-1.mp3")
+            .expect("fake upload should succeed");
+
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        execute_publish(&ctx, &op_id).expect("publish should succeed when all assets are present");
+
+        let manifest = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
+        assert!(manifest.is_some(), "manifest should be committed");
+    }
+
+    #[test]
+    fn executor_asset_failure_leaves_existing_manifest_unchanged() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+
+        // Pre-existing manifest at generation 1 (another device published).
+        let existing_manifest = RepositoryManifest {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            repository_id: "repo-1".to_owned(),
+            generation: 1,
+            database_path: ".openkara/databases/1.sqlite".to_owned(),
+            database_size: 100,
+            database_sha256: "abc".to_owned(),
+            committed_at_ms: 1000,
+            writer_id: "other".to_owned(),
+        };
+        provider.store(
+            MANIFEST_PATH,
+            existing_manifest.to_json().unwrap().into_bytes(),
+            "rev-gen-1",
+        );
+
+        // Our publish references an asset the provider does not have.
+        insert_song_with_media(
+            &working_root.join("openkara.db"),
+            "song-1",
+            "media/song-1.mp3",
+            &working_root,
+        );
+
+        let op_id = make_pending_op(&conn, "lib-1", 1);
+        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        let result = execute_publish(&ctx, &op_id);
+        assert!(result.is_err(), "publish must fail");
+
+        // The existing manifest must be unchanged — still generation 1.
+        let manifest_bytes = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
+        let manifest: RepositoryManifest =
+            serde_json::from_slice(&manifest_bytes.unwrap()).unwrap();
+        assert_eq!(
+            manifest.generation, 1,
+            "existing manifest must be unchanged"
+        );
+        assert_eq!(manifest.writer_id, "other");
+    }
+
+    #[test]
+    fn executor_fails_when_referenced_stem_is_missing() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+
+        let vocals = "stems/song-1/vocals.ogg";
+        let accomp = "stems/song-1/accompaniment.ogg";
+        insert_song_with_stems(
+            &working_root.join("openkara.db"),
+            "song-1",
+            &[vocals, accomp],
+            &working_root,
+        );
+
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        // Only upload vocals; accompaniment is missing remotely.
+        provider.upload_file(vocals).expect("upload vocals");
+
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        let result = execute_publish(&ctx, &op_id);
+        assert!(
+            result.is_err(),
+            "publish must fail when a stem is missing remotely"
+        );
+
+        let op = crate::remote::control_db::get_operation(&conn, &op_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(op.state, OperationState::Failed);
+        assert_eq!(op.error_code.as_deref(), Some("remote_integrity_failed"));
+        assert!(provider.files.lock().unwrap().get(MANIFEST_PATH).is_none());
+    }
+
+    #[test]
+    fn executor_fails_when_referenced_artwork_is_missing() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+
+        let thumb = "artwork/thumb_abc_80.webp";
+        let preview = "artwork/preview_abc_256.webp";
+        insert_song_with_artwork(
+            &working_root.join("openkara.db"),
+            "song-1",
+            thumb,
+            preview,
+            &working_root,
+        );
+
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        // Upload only the thumbnail; preview is missing.
+        provider.upload_file(thumb).expect("upload thumb");
+
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        let result = execute_publish(&ctx, &op_id);
+        assert!(
+            result.is_err(),
+            "publish must fail when artwork is missing remotely"
+        );
+
+        let op = crate::remote::control_db::get_operation(&conn, &op_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(op.error_code.as_deref(), Some("remote_integrity_failed"));
+    }
+
+    #[test]
+    fn executor_skips_verification_for_empty_path_columns() {
+        // A song with NULL/empty path columns (e.g. a freshly imported song
+        // before any assets are uploaded) must not cause verification to fail.
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+
+        // The default song-1 from make_valid_db has NULL paths.
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        execute_publish(&ctx, &op_id).expect("publish with no asset paths should succeed");
+    }
+
+    #[test]
+    fn validate_asset_path_rejects_traversal_and_absolute_paths() {
+        assert!(validate_asset_path("").is_err());
+        assert!(validate_asset_path("/etc/passwd").is_err());
+        assert!(validate_asset_path("media/../../../etc/passwd").is_err());
+        assert!(validate_asset_path("media/./song.mp3").is_err());
+        assert!(validate_asset_path("media//song.mp3").is_err());
+        assert!(validate_asset_path("other/song.mp3").is_err());
+        assert!(
+            validate_asset_path("media").is_err(),
+            "bare dir is not a file"
+        );
+        assert!(validate_asset_path("stems").is_err());
+        // Valid paths pass.
+        assert!(validate_asset_path("media/song.mp3").is_ok());
+        assert!(validate_asset_path("stems/song-1/vocals.ogg").is_ok());
+        assert!(validate_asset_path("artwork/thumb_abc_80.webp").is_ok());
+        assert!(validate_asset_path("media-g/song.zip").is_ok());
     }
 }
