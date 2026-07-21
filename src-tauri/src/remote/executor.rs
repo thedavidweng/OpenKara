@@ -834,7 +834,6 @@ fn schedule_gc(ctx: &PublishContext<'_>, committed_generation: i64) -> CommandRe
 /// are NOT deleted — they are referenced by the committed database and
 /// removed only when a future generation's database no longer references them
 /// (a future reference-counting GC pass).
-#[allow(dead_code)] // wired by the recovery pass in a future change
 pub(crate) fn execute_gc(
     provider: &dyn RemoteProvider,
     control_db: &Connection,

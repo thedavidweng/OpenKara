@@ -123,12 +123,12 @@ pub fn run_recovery(
 /// re-executes them through the transactional publish protocol.
 ///
 /// Operations whose `next_attempt_at_ms` is in the future are skipped (rate
-/// limiting). Operations that are not `Publish` kind are skipped (PR#5 handles
-/// other kinds).
+/// limiting). `Publish` operations are replayed through the publication
+/// protocol; `Gc` operations are replayed through the GC executor.
 pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
     use crate::remote::control_db::{list_operations_in_states, OperationKind};
     use crate::remote::executor::{
-        execute_publish, generate_repository_id, generate_writer_id, PublishContext,
+        execute_gc, execute_publish, generate_repository_id, generate_writer_id, PublishContext,
     };
     use crate::remote::provider::create_provider;
     use crate::remote::sync::{load_registered_remote_library, resolve_active_remote};
@@ -149,17 +149,40 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
 
     let now = crate::remote::types::current_unix_time_ms();
     for op in pending {
-        // Skip non-publish operations (PR#5 handles other kinds).
-        if op.operation_kind != OperationKind::Publish {
-            continue;
-        }
-
         // Skip operations that are rate-limited (next_attempt_at_ms in the
         // future).
         if let Some(next_attempt) = op.next_attempt_at_ms {
             if next_attempt > now {
                 continue;
             }
+        }
+
+        // Dispatch based on operation kind. Gc operations don't need the
+        // full publish context (repository_id, writer_id, working copy) —
+        // they only need the provider and control DB.
+        if op.operation_kind == OperationKind::Gc {
+            let remote_library =
+                match load_registered_remote_library(&state.shell.app_data_dir, &library_id) {
+                    Ok(lib) => lib,
+                    Err(_) => continue,
+                };
+            let provider = match create_provider(&state.shell.app_data_dir, &remote_library) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            let control_db_path =
+                crate::remote::control_db::control_db_path(&state.shell.app_data_dir);
+            let exec_conn = match crate::remote::control_db::open_control_db(&control_db_path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            let _ = execute_gc(provider.as_ref(), &exec_conn, &library_id, &op.operation_id);
+            continue;
+        }
+
+        // Skip operations of kinds we don't handle yet.
+        if op.operation_kind != OperationKind::Publish {
+            continue;
         }
 
         // Reload the library to get the latest revision.

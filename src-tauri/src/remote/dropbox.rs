@@ -219,13 +219,19 @@ fn dropbox_refresh_access_token(
     })?;
 
     // Re-check after acquiring the lock — another thread may have refreshed
-    // while we waited. The secret in memory is per-provider-instance, so we
-    // cannot pick up the refreshed token here, but the 60-second skew means
-    // a token refreshed by another thread is still valid and the next call
-    // will hit the fast path.
-    if let Some(expires_at_ms) = secret.access_token_expires_at_ms {
-        if expires_at_ms > current_unix_time_ms() + 60_000 && !secret.access_token.is_empty() {
-            return Ok(secret.access_token.clone());
+    // while we waited. Reload the stored credential from disk to pick up the
+    // refreshed token. The in-memory secret is per-provider-instance, so
+    // without this reload the waiter would see its stale copy and fire a
+    // redundant refresh request.
+    if let Ok(Some(stored)) =
+        load_remote_credential::<StoredDropboxSecret>(app_data_dir, &secret.library_id)
+    {
+        if let Some(expires_at_ms) = stored.access_token_expires_at_ms {
+            if expires_at_ms > current_unix_time_ms() + 60_000 && !stored.access_token.is_empty() {
+                secret.access_token = stored.access_token;
+                secret.access_token_expires_at_ms = stored.access_token_expires_at_ms;
+                return Ok(secret.access_token.clone());
+            }
         }
     }
 
