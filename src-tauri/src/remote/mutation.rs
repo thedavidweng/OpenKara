@@ -201,6 +201,48 @@ mod sync_backend {
         }))
     }
 
+    /// Bind the post-mutation song ID set onto the prepared operation before
+    /// it is marked pending. Import/batch paths create the row before song
+    /// IDs are known; recovery refuses empty `song_ids`, so binding must
+    /// happen on the same operation identity (never a second placeholder).
+    pub fn bind_operation_song_ids(
+        state: &AppState,
+        prepared: &PreparedOperation,
+        song_ids: &[String],
+    ) -> CommandResult<()> {
+        let now = crate::remote::types::current_unix_time_ms();
+        let conn = state.remote.control_db.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+        let mut op = control_db::get_operation(&conn, &prepared.operation_id)?
+            .ok_or_else(|| internal_error("prepared operation row was not found"))?;
+        let mut payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
+        payload.song_ids = song_ids.to_vec();
+        op.payload_json = payload.to_json()?;
+        op.updated_at_ms = now;
+        upsert_operation(&conn, &op)?;
+        Ok(())
+    }
+
+    /// Cancel a prepared operation that has no recoverable song identity
+    /// (mutation produced no songs to publish). Avoids a permanent empty
+    /// pending zombie that recovery would skip forever.
+    pub fn cancel_prepared_operation(
+        state: &AppState,
+        prepared: &PreparedOperation,
+    ) -> CommandResult<()> {
+        let now = crate::remote::types::current_unix_time_ms();
+        let conn = state.remote.control_db.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+        let mut op = control_db::get_operation(&conn, &prepared.operation_id)?
+            .ok_or_else(|| internal_error("prepared operation row was not found"))?;
+        op.state = OperationState::Cancelled;
+        op.updated_at_ms = now;
+        upsert_operation(&conn, &op)?;
+        Ok(())
+    }
+
     /// Transition a `prepared` operation to `pending` and mark the repository
     /// `dirty` after the local mutation has committed.
     pub fn mark_operation_pending_and_dirty(
@@ -345,6 +387,21 @@ mod sync_backend {
         Ok(None)
     }
 
+    pub fn bind_operation_song_ids(
+        _state: &AppState,
+        _prepared: &super::PreparedOperation,
+        _song_ids: &[String],
+    ) -> CommandResult<()> {
+        Ok(())
+    }
+
+    pub fn cancel_prepared_operation(
+        _state: &AppState,
+        _prepared: &super::PreparedOperation,
+    ) -> CommandResult<()> {
+        Ok(())
+    }
+
     pub fn mark_operation_pending_and_dirty(
         _state: &AppState,
         _prepared: &super::PreparedOperation,
@@ -357,28 +414,48 @@ mod sync_backend {
 // Mutation functions
 // ---------------------------------------------------------------------------
 
+/// Finalize a prepared outbox row after the local mutation commits:
+/// bind song IDs when known, then mark pending; cancel when there is nothing
+/// recoverable so recovery never parks on an empty payload forever.
+fn finalize_prepared_for_publish(
+    state: &AppState,
+    prepared: Option<&PreparedOperation>,
+    song_ids: &[String],
+) -> CommandResult<()> {
+    let Some(prepared) = prepared else {
+        return Ok(());
+    };
+    if song_ids.is_empty() {
+        sync_backend::cancel_prepared_operation(state, prepared)?;
+        return Ok(());
+    }
+    // Bind before pending so a crash between mutation and background publish
+    // leaves a recoverable operation identity (not an empty zombie).
+    sync_backend::bind_operation_song_ids(state, prepared, song_ids)?;
+    sync_backend::mark_operation_pending_and_dirty(state, prepared)?;
+    Ok(())
+}
+
 /// Shared prefix for every mutation that starts with a Pre-Mutation Refresh:
 /// `prepare → mutation`. Centralizes the `app_data_dir` extraction so a
 /// future change to how the active remote is resolved touches one place.
 ///
-/// Also records the durable outbox contract: a `prepared` operation row is
-/// written before the mutation, and the row is transitioned to `pending` +
-/// the repository marked `dirty` after the mutation commits. When no active
-/// remote library is bound, the durable recording is a no-op.
-fn prepare_and_mutate<T, F>(state: &AppState, mutation: F) -> CommandResult<T>
+/// Returns the mutation result and the prepared outbox handle (if any) so
+/// callers can bind song IDs before marking pending. When no active remote
+/// library is bound, the durable recording is a no-op.
+fn prepare_and_mutate<T, F>(
+    state: &AppState,
+    mutation: F,
+) -> CommandResult<(T, Option<PreparedOperation>)>
 where
     F: FnOnce() -> CommandResult<T>,
 {
     sync_backend::prepare(state)?;
-    // The song_ids are not known at this point for all callers; record with an
-    // empty list. Callers that know the song_ids use the explicit wrappers
-    // below which call record_prepared_operation with the real ids.
+    // Song IDs may only be known after the mutation. Record empty, then
+    // callers bind the real set before pending via finalize_prepared_for_publish.
     let prepared = sync_backend::record_prepared_operation(state, &[])?;
     let result = mutation()?;
-    if let Some(ref prepared) = prepared {
-        sync_backend::mark_operation_pending_and_dirty(state, prepared)?;
-    }
-    Ok(result)
+    Ok((result, prepared))
 }
 
 pub(crate) fn run_imported_songs_mutation<R, F>(
@@ -392,20 +469,20 @@ where
 {
     // ImportSongsResult is not a CommandResult, so call prepare directly.
     sync_backend::prepare(state)?;
-    // The imported song_ids are only known after the mutation, so record the
-    // prepared operation with an empty list. The payload is updated when
-    // mark_upload_status is called during publish.
+    // Song IDs are only known after import commits. Record one prepared
+    // operation, bind the full imported set onto that same identity, then
+    // mark pending — never create a second empty placeholder for recovery.
     let prepared = sync_backend::record_prepared_operation(state, &[])?;
     let result = mutation();
-    if let Some(ref prepared) = prepared {
-        sync_backend::mark_operation_pending_and_dirty(state, prepared)?;
-    }
     let imported_song_ids: Vec<String> = result
         .imported
         .iter()
         .map(|song| song.hash.clone())
         .collect();
-    sync_backend::publish_songs(state, app_handle, &imported_song_ids)?;
+    finalize_prepared_for_publish(state, prepared.as_ref(), &imported_song_ids)?;
+    if !imported_song_ids.is_empty() {
+        sync_backend::publish_songs(state, app_handle, &imported_song_ids)?;
+    }
     Ok(result)
 }
 
@@ -420,9 +497,12 @@ where
     F: FnOnce() -> CommandResult<T>,
     S: FnOnce(&T) -> Vec<String>,
 {
-    let result = prepare_and_mutate(state, mutation)?;
+    let (result, prepared) = prepare_and_mutate(state, mutation)?;
     let song_ids = updated_song_ids(&result);
-    sync_backend::publish_songs(state, app_handle, &song_ids)?;
+    finalize_prepared_for_publish(state, prepared.as_ref(), &song_ids)?;
+    if !song_ids.is_empty() {
+        sync_backend::publish_songs(state, app_handle, &song_ids)?;
+    }
     Ok(result)
 }
 
@@ -469,9 +549,11 @@ where
     F: FnOnce() -> CommandResult<T>,
     S: FnOnce(&T) -> Option<String>,
 {
-    let result = prepare_and_mutate(state, mutation)?;
-    if let Some(song_id) = song_id(&result) {
-        sync_backend::publish_song(state, app_handle, &song_id)?;
+    let (result, prepared) = prepare_and_mutate(state, mutation)?;
+    let ids = song_id(&result).map(|id| vec![id]).unwrap_or_default();
+    finalize_prepared_for_publish(state, prepared.as_ref(), &ids)?;
+    if let Some(song_id) = ids.first() {
+        sync_backend::publish_song(state, app_handle, song_id)?;
     }
     Ok(result)
 }
@@ -487,8 +569,9 @@ where
     F: FnOnce() -> CommandResult<T>,
     S: FnOnce(&T) -> Vec<String>,
 {
-    let result = prepare_and_mutate(state, mutation)?;
+    let (result, prepared) = prepare_and_mutate(state, mutation)?;
     let song_ids = song_ids(&result);
+    finalize_prepared_for_publish(state, prepared.as_ref(), &song_ids)?;
     if !song_ids.is_empty() {
         sync_backend::publish_songs(state, app_handle, &song_ids)?;
     }
@@ -521,7 +604,13 @@ where
     R: tauri::Runtime,
     F: FnOnce() -> CommandResult<T>,
 {
-    let result = prepare_and_mutate(state, mutation)?;
+    // Mirror path: the prepared publish placeholder has no song identity and
+    // is not the durable unit for mirror recovery (mirror creates its own
+    // operation). Cancel the empty placeholder if one was recorded.
+    let (result, prepared) = prepare_and_mutate(state, mutation)?;
+    if let Some(ref prepared) = prepared {
+        sync_backend::cancel_prepared_operation(state, prepared)?;
+    }
     sync_backend::mirror(state, app_handle)?;
     Ok(result)
 }

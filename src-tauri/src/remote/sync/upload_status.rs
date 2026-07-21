@@ -19,6 +19,11 @@ use super::super::types::{
 /// Running / Completed / Failed). The durable `OperationState` is richer and
 /// tracks the full outbox lifecycle. This mapping records the projection back
 /// into the durable row.
+///
+/// Callers that have already written a control-plane state (for example the
+/// executor writing `RetryWait` for a network fault) must not use this path
+/// to demote that state back to `Failed`. See
+/// [`resolve_durable_state_for_status_update`].
 fn upload_state_to_operation_state(upload_state: UploadState) -> OperationState {
     match upload_state {
         UploadState::Idle => OperationState::Pending,
@@ -26,6 +31,38 @@ fn upload_state_to_operation_state(upload_state: UploadState) -> OperationState 
         UploadState::Completed => OperationState::Completed,
         UploadState::Failed => OperationState::Failed,
     }
+}
+
+/// Choose the durable state for a status write without demoting control-plane
+/// retry state that the executor already persisted.
+fn resolve_durable_state_for_status_update(
+    existing: Option<&OperationRow>,
+    upload_state: UploadState,
+    error: Option<&CommandError>,
+) -> OperationState {
+    // Retryable failures must land as RetryWait so recovery can reschedule.
+    // Non-retryable failures become terminal Failed.
+    if matches!(upload_state, UploadState::Failed) {
+        if let Some(existing) = existing {
+            // Executor already recorded RetryWait — the UI path is
+            // projection-only and must not demote control plane to Failed.
+            if matches!(existing.state, OperationState::RetryWait) {
+                return OperationState::RetryWait;
+            }
+            // Preserve Conflicted/Cancelled if somehow re-marked.
+            if matches!(
+                existing.state,
+                OperationState::Conflicted | OperationState::Cancelled
+            ) {
+                return existing.state;
+            }
+        }
+        if error.is_some_and(|e| e.retryable) {
+            return OperationState::RetryWait;
+        }
+        return OperationState::Failed;
+    }
+    upload_state_to_operation_state(upload_state)
 }
 
 /// Derive the in-memory `UploadState` from a durable `OperationState`.
@@ -149,15 +186,41 @@ pub(crate) fn mark_upload_status(
             .map(|e| e.operation_id.clone())
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-        let payload = OperationPayload {
-            song_ids: vec![song_id.to_owned()],
-            percent,
-            detail: detail.clone(),
-            ..Default::default()
-        };
+        // Preserve multi-song payloads written by the mutation layer. Only
+        // replace song_ids when the existing row has none (legacy / new row).
+        let mut existing_payload = existing
+            .as_ref()
+            .and_then(|e| OperationPayload::from_json(&e.payload_json).ok())
+            .unwrap_or_default();
+        if existing_payload.song_ids.is_empty() {
+            existing_payload.song_ids = vec![song_id.to_owned()];
+        } else if !existing_payload.song_ids.iter().any(|id| id == song_id) {
+            existing_payload.song_ids.push(song_id.to_owned());
+        }
+        existing_payload.percent = percent;
+        existing_payload.detail = detail.clone();
 
-        let op_state = upload_state_to_operation_state(snapshot.state.clone());
+        let op_state = resolve_durable_state_for_status_update(
+            existing.as_ref(),
+            snapshot.state.clone(),
+            error.as_ref(),
+        );
         let (error_code, error_detail) = sanitize_error(error.as_ref());
+
+        // Preserve a scheduled retry window when we keep RetryWait (either
+        // from the executor or from a retryable failure write).
+        let next_attempt_at_ms = if matches!(op_state, OperationState::RetryWait) {
+            existing
+                .as_ref()
+                .and_then(|e| e.next_attempt_at_ms)
+                .or_else(|| {
+                    // First transition to RetryWait from this path (e.g. asset
+                    // upload network fault before the executor ran).
+                    Some(now + 30_000)
+                })
+        } else {
+            existing.as_ref().and_then(|e| e.next_attempt_at_ms)
+        };
 
         let row = OperationRow {
             operation_id: operation_id.clone(),
@@ -170,9 +233,9 @@ pub(crate) fn mark_upload_status(
             candidate_db_digest: existing
                 .as_ref()
                 .and_then(|e| e.candidate_db_digest.clone()),
-            payload_json: payload.to_json()?,
+            payload_json: existing_payload.to_json()?,
             attempt_count: existing.as_ref().map(|e| e.attempt_count).unwrap_or(0),
-            next_attempt_at_ms: existing.as_ref().and_then(|e| e.next_attempt_at_ms),
+            next_attempt_at_ms,
             error_code,
             error_detail,
             created_at_ms: existing.as_ref().map(|e| e.created_at_ms).unwrap_or(now),
@@ -422,6 +485,107 @@ mod tests {
         let conn = state.remote.control_db.lock().unwrap();
         let ops = list_operations(&conn).unwrap();
         assert!(ops.is_empty());
+    }
+
+    #[test]
+    fn mark_upload_status_failed_does_not_demote_retry_wait() {
+        let (state, _dir) = test_state_with_control_db();
+        let now = control_db_now_ms();
+        // Executor already scheduled a durable retry for a network fault.
+        upsert_operation(
+            &state.remote.control_db.lock().unwrap(),
+            &OperationRow {
+                operation_id: "op-retry".to_owned(),
+                library_id: "lib-1".to_owned(),
+                operation_kind: OperationKind::Publish,
+                state: OperationState::RetryWait,
+                expected_generation: Some(1),
+                target_generation: None,
+                source_db_digest: None,
+                candidate_db_digest: None,
+                payload_json: r#"{"song_ids":["song-1"],"percent":40}"#.to_owned(),
+                attempt_count: 1,
+                next_attempt_at_ms: Some(now + 30_000),
+                error_code: Some("NetworkUnavailable".to_owned()),
+                error_detail: Some("connection reset".to_owned()),
+                created_at_ms: now,
+                updated_at_ms: now,
+            },
+        )
+        .unwrap();
+
+        // UI path after executor Err — must not overwrite RetryWait with Failed.
+        mark_upload_status(
+            &state,
+            "song-1",
+            Some("lib-1".to_owned()),
+            UploadState::Failed,
+            0,
+            None,
+            Some(crate::commands::error::CommandError::new(
+                crate::commands::error::ErrorCode::NetworkUnavailable,
+                "connection reset",
+                true,
+                crate::commands::error::FallbackAction::Retry,
+            )),
+        )
+        .unwrap();
+
+        let conn = state.remote.control_db.lock().unwrap();
+        let op = crate::remote::control_db::get_latest_publish_operation_for_song(
+            &conn, "lib-1", "song-1",
+        )
+        .unwrap()
+        .expect("operation row");
+        assert_eq!(
+            op.state,
+            OperationState::RetryWait,
+            "retryable executor state must not be demoted to Failed"
+        );
+        assert!(
+            op.next_attempt_at_ms.is_some(),
+            "scheduled retry window must be preserved"
+        );
+    }
+
+    #[test]
+    fn mark_upload_status_retryable_failure_writes_retry_wait() {
+        let (state, _dir) = test_state_with_control_db();
+        mark_upload_status(
+            &state,
+            "song-1",
+            Some("lib-1".to_owned()),
+            UploadState::Running,
+            10,
+            None,
+            None,
+        )
+        .unwrap();
+
+        mark_upload_status(
+            &state,
+            "song-1",
+            Some("lib-1".to_owned()),
+            UploadState::Failed,
+            0,
+            None,
+            Some(crate::commands::error::CommandError::new(
+                crate::commands::error::ErrorCode::NetworkUnavailable,
+                "timeout",
+                true,
+                crate::commands::error::FallbackAction::Retry,
+            )),
+        )
+        .unwrap();
+
+        let conn = state.remote.control_db.lock().unwrap();
+        let op = crate::remote::control_db::get_latest_publish_operation_for_song(
+            &conn, "lib-1", "song-1",
+        )
+        .unwrap()
+        .expect("operation row");
+        assert_eq!(op.state, OperationState::RetryWait);
+        assert!(op.next_attempt_at_ms.is_some());
     }
 
     #[test]

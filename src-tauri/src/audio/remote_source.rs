@@ -257,21 +257,30 @@ impl ProviderFetcher {
         }
 
         let refresh_result = refresh();
+        // Install success (token + epoch) or leave failure visible under the
+        // same in-flight lock, THEN clear the slot and notify waiters. If
+        // waiters wake before the epoch advances they can read a stale
+        // generation and wrongly return false even when refresh succeeded.
         {
             let mut in_flight = self
                 .refresh_in_flight
                 .lock()
                 .unwrap_or_else(|e| e.into_inner());
+            match &refresh_result {
+                Ok(new_token) => {
+                    self.update_auth_header(new_token);
+                    // ONLY the refresh leader success path advances the epoch.
+                    self.credential_generation.fetch_add(1, Ordering::AcqRel);
+                }
+                Err(_) => {
+                    // Epoch stays unchanged so waiters observe failure.
+                }
+            }
             *in_flight = None;
             self.refresh_condvar.notify_all();
         }
         match refresh_result {
-            Ok(new_token) => {
-                self.update_auth_header(&new_token);
-                // ONLY the refresh leader success path advances the epoch.
-                self.credential_generation.fetch_add(1, Ordering::AcqRel);
-                Ok(true)
-            }
+            Ok(_) => Ok(true),
             Err(e) => Err(e),
         }
     }

@@ -838,43 +838,9 @@ fn run_database_pull(
         }
     }
 
-    // 4. SQLite integrity checks: quick_check + foreign_key_check.
-    verify_sqlite_integrity(temp_path)?;
-
-    // 5. Schema compatibility: the `songs` table must exist.
-    verify_schema_compatibility(temp_path)?;
-
-    // 6. fsync the candidate.
-    fsync_file(temp_path)?;
-
-    // 7. Preserve the current verified database as last-known-good.
-    let lkg_path = last_known_good_path(destination);
-    if destination.exists() {
-        // Rename the current verified DB aside before replacing it. If a
-        // stale LKG exists, remove it first so the rename target is clear.
-        let _ = fs::remove_file(&lkg_path);
-        fs::rename(destination, &lkg_path).map_err(|e| {
-            internal_error(format!(
-                "failed to preserve last-known-good {}: {e}",
-                lkg_path.display()
-            ))
-        })?;
-    }
-
-    // 8. Atomically rename candidate -> openkara.db.
-    if let Err(e) = fs::rename(temp_path, destination) {
-        // The rename failed after we moved the old DB aside. Restore the
-        // last-known-good so the working copy is not left without a database.
-        if lkg_path.exists() {
-            let _ = fs::rename(&lkg_path, destination);
-        }
-        return Err(internal_error(format!(
-            "failed to atomically install candidate database: {e}"
-        )));
-    }
-
-    // 9. fsync the parent directory.
-    fsync_parent(destination)?;
+    // 4–9. Shared activation: integrity + schema + fsync + LKG + rename.
+    // Bootstrap uses the same helper so both paths stay equivalent.
+    activate_verified_database_candidate(temp_path, destination)?;
 
     // 10. Update local repository state only after activation succeeds.
     //     Advance committed_generation from the manifest so the executor's
@@ -890,6 +856,69 @@ fn run_database_pull(
         new_digest: candidate_digest,
         new_size: actual_size,
     })
+}
+
+/// Activate a verified database candidate into the working path.
+///
+/// Shared by ordinary atomic pull and Register/Reauthorize bootstrap so both
+/// paths run the same integrity, schema, fsync, LKG-preserve, and rename-
+/// with-restore sequence. Callers that need size/SHA-256 checks must run
+/// those before invoking this helper.
+///
+/// Steps:
+/// 1. `PRAGMA quick_check` + `foreign_key_check`
+/// 2. Schema compatibility (`songs` table + `hash` column)
+/// 3. fsync candidate
+/// 4. Preserve current destination as LKG (when present)
+/// 5. Atomic rename candidate → destination; on failure restore LKG
+/// 6. fsync parent directory
+pub(crate) fn activate_verified_database_candidate(
+    candidate: &Path,
+    destination: &Path,
+) -> CommandResult<()> {
+    // Integrity: quick_check + foreign_key_check.
+    verify_sqlite_integrity(candidate)?;
+
+    // Schema compatibility: songs table must exist with a hash column.
+    verify_schema_compatibility(candidate)?;
+
+    // Durable bytes before rename.
+    fsync_file(candidate)?;
+
+    // Preserve the current verified database as last-known-good.
+    let lkg_path = last_known_good_path(destination);
+    let mut preserved_lkg = false;
+    if destination.exists() {
+        // If a stale LKG exists, remove it first so the rename target is clear.
+        let _ = fs::remove_file(&lkg_path);
+        fs::rename(destination, &lkg_path).map_err(|e| {
+            internal_error(format!(
+                "failed to preserve last-known-good {}: {e}",
+                lkg_path.display()
+            ))
+        })?;
+        preserved_lkg = true;
+    }
+
+    // Atomically rename candidate -> destination.
+    if let Err(e) = fs::rename(candidate, destination) {
+        // The rename failed after we moved the old DB aside. Restore the
+        // last-known-good so the working copy is not left without a database.
+        if preserved_lkg && lkg_path.exists() {
+            if let Err(restore_err) = fs::rename(&lkg_path, destination) {
+                return Err(internal_error(format!(
+                    "failed to install candidate database ({e}) and failed to \
+                     restore last-known-good ({restore_err})"
+                )));
+            }
+        }
+        return Err(internal_error(format!(
+            "failed to atomically install candidate database: {e}"
+        )));
+    }
+
+    fsync_parent(destination)?;
+    Ok(())
 }
 
 /// Path of the last-known-good database: `<db>.lkg`.

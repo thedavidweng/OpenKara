@@ -171,9 +171,10 @@ pub(crate) fn bootstrap_remote_library(
 }
 
 /// Download the committed remote database to a temp path, verify size and
-/// SHA-256 when known, run SQLite integrity checks, fsync, preserve LKG, and
-/// atomically rename into the working path. Register/Reauthorize must not
-/// write a corrupt or truncated generation DB directly to the final path.
+/// SHA-256 when known, then activate via the shared database activation
+/// helper (integrity + schema + fsync + LKG restore on rename failure).
+/// Register/Reauthorize must not write a corrupt or truncated generation DB
+/// directly to the final path, and must not diverge from ordinary pull.
 fn activate_committed_database(
     storage: &mut dyn RemoteBootstrapStorage,
     root: &LibraryRoot,
@@ -208,30 +209,9 @@ fn activate_committed_database(
         }
     }
 
-    // SQLite integrity: quick_check + foreign_key_check via the shared helper.
-    crate::remote::atomic_download::verify_sqlite_integrity_pub(&temp_path)?;
-
-    if let Ok(file) = fs::File::open(&temp_path) {
-        let _ = file.sync_all();
-    }
-
-    // Preserve last-known-good before replacing.
-    if destination.exists() {
-        let lkg = destination.with_extension("db.lkg");
-        let _ = fs::remove_file(&lkg);
-        let _ = fs::rename(&destination, &lkg);
-    }
-    fs::rename(&temp_path, &destination).map_err(|e| {
-        internal_error(format!(
-            "failed to activate bootstrap database at {}: {e}",
-            destination.display()
-        ))
-    })?;
-    if let Some(parent) = destination.parent() {
-        if let Ok(dir) = fs::File::open(parent) {
-            let _ = dir.sync_all();
-        }
-    }
+    // Shared activation with ordinary atomic pull: integrity, schema
+    // compatibility, fsync, LKG preserve, rename-with-restore.
+    crate::remote::atomic_download::activate_verified_database_candidate(&temp_path, &destination)?;
     Ok(())
 }
 

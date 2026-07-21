@@ -433,6 +433,8 @@ fn publish_song_internal<R: tauri::Runtime>(
     };
 
     if let Err(error) = publish_result {
+        // mark_upload_status maps retryable errors to durable RetryWait and
+        // never demotes an existing RetryWait to terminal Failed.
         let failure = mark_upload_status(
             state,
             song_id,
@@ -477,6 +479,10 @@ fn publish_song_internal<R: tauri::Runtime>(
             Ok(completed)
         }
         Err(error) => {
+            // The executor already wrote RetryWait / Failed / Conflicted to
+            // the control plane. mark_upload_status must project that state
+            // for events and MUST NOT overwrite RetryWait with Failed — that
+            // would kill durable retry and startup recovery.
             let failure = mark_upload_status(
                 state,
                 song_id,
