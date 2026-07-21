@@ -372,6 +372,7 @@ mod sync_backend {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn mark_operation_pending_and_dirty(
         _state: &AppState,
         _prepared: &super::PreparedOperation,

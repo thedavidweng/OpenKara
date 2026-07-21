@@ -740,6 +740,7 @@ pub fn bind_song_ids_mark_pending_and_dirty_tx(
 
 /// Mark an existing non-terminal operation Pending and repository Dirty in
 /// one SQLite transaction. Payload must already carry song_ids.
+#[allow(dead_code)] // used when song_ids are already bound before pending
 pub fn mark_pending_and_dirty_tx(
     connection: &Connection,
     operation_id: &str,
