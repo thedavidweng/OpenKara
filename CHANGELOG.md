@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **remote**: Playback reconnect and source replacement with timeline preservation (#151)
 - **remote**: Frontend states, conflict actions, diagnostics, and fault-injection suite (#151)
 - **remote**: Verify referenced assets before manifest CAS (#151)
+- **remote**: Manifest-based pull, GC executor, resumable uploads, range downloads (#151)
 
 ### 🐛 Bug Fixes
 
@@ -177,6 +178,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Bump knip to 6.26 and update ignoreBinaries (#119)
 - **deps**: Bump serde_with from 3.18.0 to 3.21.0 in /src-tauri in the cargo group across 1 directory (#122)
 - Upgrade npm and Rust dependencies (#140)
+- Regenerate changelog
 
 ### 🧪 Tests
 
