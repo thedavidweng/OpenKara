@@ -346,16 +346,17 @@ pub(crate) fn resumable_atomic_download(
     if result.is_ok() {
         let _ =
             crate::remote::control_db::delete_transfer_parts(opts.control_db, opts.operation_id);
-    } else {
-        // On failure, remove the temp file so no partial lingers at a
-        // final-adjacent path. Also reset the transfer-part row's
-        // transferred_bytes to 0 so a restart does not try to resume from
-        // a stale offset against a non-existent file. Without this reset,
-        // the next run sees a matching part row with a non-zero offset but
-        // no temp file, resets offset to 0 internally, then overwrites the
-        // DB row after the first chunk — losing the already-downloaded
-        // progress tracking but more importantly creating an inconsistent
-        // state where the DB claims progress the file does not have.
+    } else if result.as_ref().err().is_some_and(|e| {
+        // Permanent failures (integrity, permission) invalidate the partial.
+        // Transient network failures KEEP the partial and the transfer row so
+        // a restart can resume from the verified offset.
+        let msg = e.message.to_ascii_lowercase();
+        msg.contains("integrity")
+            || msg.contains("digest")
+            || msg.contains("permission")
+            || msg.contains("not found")
+            || msg.contains("revision")
+    }) {
         let _ = fs::remove_file(&temp_path);
         let now = crate::remote::types::current_unix_time_ms();
         let _ = crate::remote::control_db::upsert_transfer_part(
@@ -374,8 +375,116 @@ pub(crate) fn resumable_atomic_download(
             },
         );
     }
+    // Transient failure: leave partial + transfer row intact for resume.
 
     result
+}
+
+/// Download into a part file with Range resume. Does NOT rename to the final
+/// destination — callers that need SQLite integrity / LKG activation (database
+/// pulls) validate the part file themselves, then rename.
+fn download_to_part_resumable(
+    provider: &dyn RemoteProvider,
+    control_db: &Connection,
+    relative_path: &str,
+    temp_path: &Path,
+    expected_size: u64,
+    expected_digest: Option<&str>,
+    operation_id: &str,
+) -> CommandResult<()> {
+    if let Some(parent) = temp_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| {
+            internal_error(format!(
+                "failed to create parent directory {}: {e}",
+                parent.display()
+            ))
+        })?;
+    }
+
+    let existing = crate::remote::control_db::list_transfer_parts(control_db, operation_id)?
+        .into_iter()
+        .find(|p| {
+            p.relative_path == relative_path
+                && p.direction == crate::remote::control_db::TransferDirection::Download
+        });
+
+    // Identity: size + digest must match for resume. A changed remote object
+    // invalidates the partial.
+    let mut offset = 0u64;
+    if let Some(ref part) = existing {
+        let size_ok = part.expected_size == Some(expected_size as i64);
+        let digest_ok = match (part.expected_digest.as_deref(), expected_digest) {
+            (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
+            (None, None) => true,
+            _ => false,
+        };
+        if size_ok && digest_ok && part.transferred_bytes > 0 && temp_path.exists() {
+            let file_len = fs::metadata(temp_path).map(|m| m.len()).unwrap_or(0);
+            offset = (part.transferred_bytes as u64).min(file_len);
+        } else if !size_ok || !digest_ok {
+            let _ = fs::remove_file(temp_path);
+            let _ = crate::remote::control_db::delete_transfer_parts(control_db, operation_id);
+            offset = 0;
+        } else if !temp_path.exists() {
+            offset = 0;
+        }
+    }
+
+    if offset >= expected_size {
+        return Ok(());
+    }
+
+    while offset < expected_size {
+        let length = RESUMABLE_DOWNLOAD_CHUNK_SIZE.min(expected_size - offset);
+        let verified_bytes = provider
+            .download_range(relative_path, temp_path, offset, length)
+            .map_err(|remote_error| {
+                // Persist progress before returning so a restart resumes.
+                let now = crate::remote::types::current_unix_time_ms();
+                let _ = crate::remote::control_db::upsert_transfer_part(
+                    control_db,
+                    &crate::remote::control_db::TransferPartRow {
+                        operation_id: operation_id.to_owned(),
+                        relative_path: relative_path.to_owned(),
+                        direction: crate::remote::control_db::TransferDirection::Download,
+                        expected_size: Some(expected_size as i64),
+                        expected_digest: expected_digest.map(str::to_owned),
+                        provider_revision: None,
+                        provider_session_id: None,
+                        transferred_bytes: offset as i64,
+                        state: "in_progress".to_owned(),
+                        updated_at_ms: now,
+                    },
+                );
+                internal_error(format!(
+                    "resumable download range failed at offset {offset}: {}",
+                    remote_error.detail.as_deref().unwrap_or(&remote_error.code)
+                ))
+            })?;
+        if verified_bytes == 0 {
+            return Err(internal_error(format!(
+                "resumable download made no progress at offset {offset}"
+            )));
+        }
+        offset += verified_bytes;
+        let now = crate::remote::types::current_unix_time_ms();
+        crate::remote::control_db::upsert_transfer_part(
+            control_db,
+            &crate::remote::control_db::TransferPartRow {
+                operation_id: operation_id.to_owned(),
+                relative_path: relative_path.to_owned(),
+                direction: crate::remote::control_db::TransferDirection::Download,
+                expected_size: Some(expected_size as i64),
+                expected_digest: expected_digest.map(str::to_owned),
+                provider_revision: None,
+                provider_session_id: None,
+                transferred_bytes: offset as i64,
+                state: "in_progress".to_owned(),
+                updated_at_ms: now,
+            },
+        )?;
+    }
+    Ok(())
 }
 
 /// Run a resumable download: resume from the verified offset using
@@ -637,14 +746,28 @@ pub(crate) fn atomic_database_pull(
         ))
     })?;
 
-    // Clean up a stale temp file from a previous attempt.
-    let _ = fs::remove_file(&temp_path);
-
+    // Do NOT wipe a resumable partial at the start. A transfer row with
+    // non-zero progress means the part file is still useful across restart.
     let result = run_database_pull(provider, control_db_conn, &destination, &temp_path, &opts);
 
-    // On failure, remove the temp candidate so no partial file lingers.
+    // On failure, only remove the temp when it is not a resumable partial with
+    // durable transfer progress. Transient network failures must leave the
+    // part file and transfer row intact.
     if result.is_err() {
-        let _ = fs::remove_file(&temp_path);
+        let has_resumable_progress =
+            crate::remote::control_db::list_transfer_parts(control_db_conn, opts.operation_id)
+                .ok()
+                .and_then(|parts| {
+                    parts.into_iter().find(|p| {
+                        p.relative_path == opts.remote_database_path
+                            && p.direction == crate::remote::control_db::TransferDirection::Download
+                            && p.transferred_bytes > 0
+                    })
+                })
+                .is_some();
+        if !has_resumable_progress {
+            let _ = fs::remove_file(&temp_path);
+        }
     }
 
     result
@@ -657,10 +780,33 @@ fn run_database_pull(
     temp_path: &Path,
     opts: &DatabasePullOptions,
 ) -> CommandResult<DatabasePullResult> {
-    // 1. Download the candidate to the temp path.
-    provider
-        .download_file(opts.remote_database_path, temp_path)
-        .map_err(AtomicDownloadError::DownloadFailed)?;
+    // 1. Download the candidate to the temp path. Prefer Range resume when
+    // size is known and the provider supports it.
+    if let Some(expected_size) = opts.expected_size {
+        if provider.capabilities().range_download {
+            download_to_part_resumable(
+                provider,
+                control_db_conn,
+                opts.remote_database_path,
+                temp_path,
+                expected_size,
+                opts.expected_digest,
+                opts.operation_id,
+            )
+            .map_err(AtomicDownloadError::DownloadFailed)?;
+        } else {
+            // Non-resumable: start clean.
+            let _ = fs::remove_file(temp_path);
+            provider
+                .download_file(opts.remote_database_path, temp_path)
+                .map_err(AtomicDownloadError::DownloadFailed)?;
+        }
+    } else {
+        let _ = fs::remove_file(temp_path);
+        provider
+            .download_file(opts.remote_database_path, temp_path)
+            .map_err(AtomicDownloadError::DownloadFailed)?;
+    }
 
     // 2. Size check (when known).
     let actual_size = fs::metadata(temp_path).map(|m| m.len()).map_err(|e| {
@@ -2118,10 +2264,17 @@ mod tests {
             },
         );
         assert!(result.is_err(), "range failure should propagate");
-        // The transfer part is retained so a restart can resume.
+        // Transient range failures retain both the transfer part and the
+        // partial file so a restart can resume from the verified offset.
         let parts = crate::remote::control_db::list_transfer_parts(&conn, "op-1").unwrap();
         assert_eq!(parts.len(), 1, "transfer part retained after failure");
-        // The temp file is removed on failure (no partial lingers).
-        assert!(!temp_path.exists(), "temp removed on failure");
+        assert!(
+            parts[0].transferred_bytes > 0,
+            "transferred_bytes must not be zeroed on transient failure"
+        );
+        assert!(
+            temp_path.exists(),
+            "partial must survive transient range failure for cross-restart resume"
+        );
     }
 }

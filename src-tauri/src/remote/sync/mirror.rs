@@ -280,6 +280,7 @@ fn commit_mirror_via_executor(
                 song_ids: Vec::new(),
                 percent: 0,
                 detail: Some("Mirror sync".to_owned()),
+                ..Default::default()
             };
 
             let row = OperationRow {

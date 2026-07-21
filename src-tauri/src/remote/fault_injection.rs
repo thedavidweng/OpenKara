@@ -569,6 +569,7 @@ fn make_pending_op(conn: &Connection, library_id: &str, expected_gen: i64) -> St
         song_ids: vec!["song-1".to_owned()],
         percent: 0,
         detail: None,
+        ..Default::default()
     };
     let row = OperationRow {
         operation_id: op_id.clone(),
@@ -1571,6 +1572,7 @@ fn t17_concurrent_writers_one_winner_one_conflict_no_overwrite() {
             song_ids: vec!["song-1".to_owned()],
             percent: 0,
             detail: None,
+            ..Default::default()
         };
         let row = OperationRow {
             operation_id: op_id.clone(),

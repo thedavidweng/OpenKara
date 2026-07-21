@@ -307,6 +307,24 @@ fn publish_song_internal<R: tauri::Runtime>(
             "no bound remote repository is available for publishing".to_string(),
         ))
     })?;
+    let remote_library_id = remote_library.id().to_owned();
+
+    // Serialize the FULL publication transaction for this library: remote
+    // working-DB mutation, asset staging/upload, candidate freeze, CAS, and
+    // local completion. Acquiring the lock only around the executor left a
+    // window where two publishers could interleave working-DB writes.
+    if state.remote.control_db_degraded {
+        return Err(CommandError::from(LibraryError::Internal(
+            "remote control database is unavailable; publication is disabled \
+             until the control plane is repaired"
+                .to_string(),
+        )));
+    }
+    let commit_lock = state.remote.commit_lock(&remote_library_id);
+    let _commit_guard = commit_lock
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
     let remote_library = {
         let control_db_conn = state.remote.control_db.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
@@ -319,7 +337,6 @@ fn publish_song_internal<R: tauri::Runtime>(
     };
 
     let local_root = state.library_root()?;
-    let remote_library_id = remote_library.id().to_owned();
     let remote_root = load_remote_root(&state.shell.app_data_dir, &remote_library)?;
 
     // When the active library IS the remote repository (user is directly working
@@ -492,9 +509,11 @@ fn commit_via_executor(
     song_id: &str,
     remote_root: &LibraryRoot,
 ) -> CommandResult<()> {
-    // Fail closed when the durable control plane is unavailable. An
-    // in-memory fallback cannot claim durable publication, resumable
-    // recovery, or clean-state guarantees.
+    // Caller (publish_song_internal / recovery) already holds the per-library
+    // commit lock for the full transaction. Do not re-acquire here — nested
+    // locking on the same Mutex would deadlock.
+    //
+    // Fail closed when the durable control plane is unavailable.
     if state.remote.control_db_degraded {
         return Err(CommandError::from(LibraryError::Internal(
             "remote control database is unavailable; publication is disabled \
@@ -502,15 +521,6 @@ fn commit_via_executor(
                 .to_string(),
         )));
     }
-
-    // Serialize concurrent publications for this library. Different libraries
-    // proceed independently. The lock is held for the full publication
-    // transaction but the shared global state mutex is NOT held across
-    // network I/O (we open a dedicated control DB connection below).
-    let commit_lock = state.remote.commit_lock(remote_library_id);
-    let _commit_guard = commit_lock
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let provider = create_provider(&state.shell.app_data_dir, remote_library)?;
 
@@ -580,6 +590,7 @@ fn commit_via_executor(
                     song_ids: Vec::new(),
                     percent: 0,
                     detail: None,
+                    ..Default::default()
                 });
             if payload.song_ids.is_empty() {
                 payload.song_ids = vec![song_id.to_owned()];
@@ -610,6 +621,7 @@ fn commit_via_executor(
                 song_ids: vec![song_id.to_owned()],
                 percent: 0,
                 detail: Some("Publishing to remote".to_owned()),
+                ..Default::default()
             };
 
             let row = OperationRow {
@@ -658,10 +670,9 @@ fn commit_via_executor(
 /// Find a non-terminal publish operation for this library that can be
 /// continued as the single durable identity for `song_id`.
 ///
-/// Matches:
-/// - operations whose payload already lists `song_id`;
-/// - operations with an empty song_ids list (mutation-layer outbox recorded
-///   before the song id was known).
+/// Matches only operations whose payload already lists `song_id`. Empty
+/// `song_ids` placeholders are NEVER reused — they have no recoverable
+/// asset identity and would bind the wrong mutation under concurrency.
 ///
 /// Never reuses terminal rows — those belong to completed prior attempts.
 fn find_reusable_publish_operation(
@@ -688,11 +699,91 @@ fn find_reusable_publish_operation(
             Ok(p) => p,
             Err(_) => continue,
         };
-        if payload.song_ids.is_empty() || payload.song_ids.iter().any(|id| id == song_id) {
+        if payload.song_ids.iter().any(|id| id == song_id) {
             return Ok(Some(op));
         }
     }
     Ok(None)
+}
+
+/// Re-upload song assets for a durable operation after a crash between the
+/// local mutation and the executor. Uploads are idempotent (overwrite /
+/// re-put). The remote working DB is updated so asset verification and the
+/// candidate freeze see the mutation's committed state.
+pub(crate) fn reupload_song_assets_for_recovery(
+    state: &AppState,
+    remote_library: &RegisteredLibrary,
+    remote_root: &LibraryRoot,
+    song_id: &str,
+) -> CommandResult<()> {
+    let local_root = state.library_root()?;
+    let same_root = local_root.root() == remote_root.root();
+    let local_connection = cache::open_database(&local_root.database_path())
+        .map_err(|error| database_error(error.to_string()))?;
+    let mut remote_connection = cache::open_database(&remote_root.database_path())
+        .map_err(|error| database_error(error.to_string()))?;
+    let song = cache::get_song_by_hash(&local_connection, song_id)
+        .map_err(|error| database_error(error.to_string()))?
+        .ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(format!(
+                "song {song_id} was not found for publish recovery"
+            )))
+        })?;
+    let provider = create_provider(&state.shell.app_data_dir, remote_library)?;
+
+    if song.is_separable() {
+        let stem_entry = cache::stems::get_cached_stem_entry(&local_connection, song_id)
+            .map_err(|error| database_error(error.to_string()))?
+            .ok_or_else(|| {
+                CommandError::from(LibraryError::Internal(format!(
+                    "song {song_id} must have cached stems before publishing to a remote repository"
+                )))
+            })?;
+        if !same_root {
+            let source_stems_dir = local_root.resolve(&format!("stems/{song_id}"));
+            let destination_stems_dir = remote_root.resolve(&format!("stems/{song_id}"));
+            copy_directory_recursive(&source_stems_dir, &destination_stems_dir)?;
+        }
+        upsert_stem_entry(&remote_connection, &stem_entry)?;
+        update_remote_song(&mut remote_connection, song.clone(), "stems_remote")?;
+        provider.upload_directory(&format!("stems/{song_id}"))?;
+        publish_artwork_derivatives(
+            &local_connection,
+            &local_root,
+            remote_root,
+            &remote_connection,
+            &*provider,
+            song_id,
+            same_root,
+        )?;
+        sync_song_lyrics_to_remote(&local_connection, &remote_connection, song_id)?;
+    } else {
+        if let Some(file_path) = song.file_path.as_deref() {
+            if !same_root {
+                copy_remote_song_assets(&local_root, remote_root, file_path, file_path)?;
+            }
+            provider.upload_file(file_path)?;
+        }
+        if let Some(cdg_path) = song.cdg_path.as_deref() {
+            if !same_root {
+                copy_remote_song_assets(&local_root, remote_root, cdg_path, cdg_path)?;
+            }
+            provider.upload_file(cdg_path)?;
+        }
+        delete_remote_stem_cache_if_present(&remote_connection, remote_root, song_id)?;
+        update_remote_song(&mut remote_connection, song.clone(), "original_remote")?;
+        publish_artwork_derivatives(
+            &local_connection,
+            &local_root,
+            remote_root,
+            &remote_connection,
+            &*provider,
+            song_id,
+            same_root,
+        )?;
+        sync_song_lyrics_to_remote(&local_connection, &remote_connection, song_id)?;
+    }
+    Ok(())
 }
 
 pub(crate) fn publish_song_to_remote<R: tauri::Runtime>(

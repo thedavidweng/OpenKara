@@ -57,6 +57,12 @@ pub(crate) struct CommittedDatabaseProbe {
     /// Relative path of the database object that [`RemoteBootstrapStorage::download_database`]
     /// must fetch.
     pub database_path: String,
+    /// Manifest generation when a manifest was found; 0 for legacy root DB.
+    pub generation: i64,
+    /// Expected byte length from the manifest (or None for legacy).
+    pub database_size: Option<u64>,
+    /// Expected hex SHA-256 from the manifest (or None for legacy).
+    pub database_sha256: Option<String>,
 }
 
 /// Provider-owned remote storage ops used by the shared bootstrap protocol.
@@ -123,7 +129,7 @@ pub(crate) fn bootstrap_remote_library(
 
             match storage.probe_committed_database()? {
                 Some(probe) => {
-                    storage.download_database(&probe.database_path, &root.database_path())?;
+                    activate_committed_database(storage, &root, &probe)?;
                     Ok(probe.revision)
                 }
                 None => {
@@ -158,10 +164,75 @@ pub(crate) fn bootstrap_remote_library(
                     ))));
                 }
             };
-            storage.download_database(&probe.database_path, &root.database_path())?;
+            activate_committed_database(storage, &root, &probe)?;
             Ok(probe.revision)
         }
     }
+}
+
+/// Download the committed remote database to a temp path, verify size and
+/// SHA-256 when known, run SQLite integrity checks, fsync, preserve LKG, and
+/// atomically rename into the working path. Register/Reauthorize must not
+/// write a corrupt or truncated generation DB directly to the final path.
+fn activate_committed_database(
+    storage: &mut dyn RemoteBootstrapStorage,
+    root: &LibraryRoot,
+    probe: &CommittedDatabaseProbe,
+) -> CommandResult<()> {
+    let destination = root.database_path();
+    let temp_path = destination.with_extension(format!("db.part.bootstrap-{}", probe.generation));
+    // Download to temp (never directly to the final working path).
+    let _ = fs::remove_file(&temp_path);
+    storage.download_database(&probe.database_path, &temp_path)?;
+
+    let actual_size = fs::metadata(&temp_path)
+        .map(|m| m.len())
+        .map_err(|e| internal_error(format!("failed to stat bootstrap candidate: {e}")))?;
+    if let Some(expected_size) = probe.database_size {
+        if actual_size != expected_size {
+            let _ = fs::remove_file(&temp_path);
+            return Err(internal_error(format!(
+                "bootstrap database size mismatch: expected {expected_size}, got {actual_size}"
+            )));
+        }
+    }
+
+    if let Some(ref expected_sha) = probe.database_sha256 {
+        let actual = crate::remote::control_db::sha256_file(&temp_path)
+            .map_err(|e| internal_error(e.message))?;
+        if !actual.eq_ignore_ascii_case(expected_sha) {
+            let _ = fs::remove_file(&temp_path);
+            return Err(internal_error(format!(
+                "bootstrap database digest mismatch: expected {expected_sha}, got {actual}"
+            )));
+        }
+    }
+
+    // SQLite integrity: quick_check + foreign_key_check via the shared helper.
+    crate::remote::atomic_download::verify_sqlite_integrity_pub(&temp_path)?;
+
+    if let Ok(file) = fs::File::open(&temp_path) {
+        let _ = file.sync_all();
+    }
+
+    // Preserve last-known-good before replacing.
+    if destination.exists() {
+        let lkg = destination.with_extension("db.lkg");
+        let _ = fs::remove_file(&lkg);
+        let _ = fs::rename(&destination, &lkg);
+    }
+    fs::rename(&temp_path, &destination).map_err(|e| {
+        internal_error(format!(
+            "failed to activate bootstrap database at {}: {e}",
+            destination.display()
+        ))
+    })?;
+    if let Some(parent) = destination.parent() {
+        if let Ok(dir) = fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
+    }
+    Ok(())
 }
 
 fn open_or_create_local_working_copy(library: &RegisteredLibrary) -> CommandResult<LibraryRoot> {

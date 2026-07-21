@@ -1337,6 +1337,9 @@ impl super::bootstrap::RemoteBootstrapStorage for GoogleDriveBootstrapStorage<'_
                     .head_revision_id
                     .or(manifest_entry.modified_time),
                 database_path: manifest.database_path,
+                generation: manifest.generation,
+                database_size: Some(manifest.database_size),
+                database_sha256: Some(manifest.database_sha256),
             }));
         }
 
@@ -1350,6 +1353,9 @@ impl super::bootstrap::RemoteBootstrapStorage for GoogleDriveBootstrapStorage<'_
         .map(|entry| CommittedDatabaseProbe {
             revision: entry.head_revision_id.or(entry.modified_time),
             database_path: "openkara.db".to_owned(),
+            generation: 0,
+            database_size: entry.size,
+            database_sha256: None,
         }))
     }
 
@@ -1827,8 +1833,14 @@ impl RemoteProvider for GoogleDriveProvider<'_> {
             ));
         }
 
-        // Validate Content-Range header when present.
-        if let Some(content_range) = response.headers().get("content-range") {
+        // 206 Partial Content MUST include a matching Content-Range.
+        if status == reqwest::StatusCode::PARTIAL_CONTENT {
+            let content_range = response.headers().get("content-range").ok_or_else(|| {
+                RemoteError::new(
+                    RemoteErrorKind::RemoteIntegrityFailed,
+                    "206 Partial Content missing Content-Range header",
+                )
+            })?;
             let cr_str = content_range.to_str().map_err(|e| {
                 RemoteError::new(
                     RemoteErrorKind::RemoteIntegrityFailed,

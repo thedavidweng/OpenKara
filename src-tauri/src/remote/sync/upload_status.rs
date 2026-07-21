@@ -153,6 +153,7 @@ pub(crate) fn mark_upload_status(
             song_ids: vec![song_id.to_owned()],
             percent,
             detail: detail.clone(),
+            ..Default::default()
         };
 
         let op_state = upload_state_to_operation_state(snapshot.state.clone());

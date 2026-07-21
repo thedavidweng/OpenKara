@@ -167,6 +167,7 @@ mod sync_backend {
             song_ids: song_ids.to_vec(),
             percent: 0,
             detail: None,
+            ..Default::default()
         };
 
         let row = OperationRow {

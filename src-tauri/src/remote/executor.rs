@@ -221,7 +221,12 @@ fn run_publish_protocol(
     let working_db_path = ctx.working_copy_root.join("openkara.db");
     verify_referenced_assets(ctx.provider, ctx.working_copy_root, &working_db_path)?;
 
-    // --- Step 5: Copy the local working database to a candidate temp file ---
+    // --- Step 5: Freeze an immutable candidate (or reuse a persisted one) ---
+    //
+    // The candidate is operation-scoped and survives process restarts. A retry
+    // MUST resume against the same bytes — never rebuild from a working DB that
+    // may have changed since the original freeze. Upload sessions bind to the
+    // candidate's SHA-256 so a hybrid of old+new bytes cannot be finished.
     transition_state(
         ctx,
         op,
@@ -231,64 +236,127 @@ fn run_publish_protocol(
         "Preparing candidate database",
     )?;
 
-    let candidate_path = ctx
-        .working_copy_root
-        .join(format!(".openkara-candidate-{}.sqlite", op.operation_id));
-    std::fs::copy(&working_db_path, &candidate_path).map_err(|e| {
-        RemoteError::new(
-            RemoteErrorKind::NetworkUnavailable,
-            format!("failed to copy working DB to candidate: {e}"),
-        )
-    })?;
+    let payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
+    let candidate_relative = payload
+        .candidate_relative_path
+        .clone()
+        .unwrap_or_else(|| format!(".openkara/candidates/{}.sqlite", op.operation_id));
+    let candidate_path = ctx.working_copy_root.join(&candidate_relative);
 
-    // --- Step 6: SQLite integrity checks + SHA-256 digest ---
-    verify_sqlite_integrity_pub(&candidate_path).map_err(|e| {
-        // Clean up the candidate on integrity failure.
-        let _ = std::fs::remove_file(&candidate_path);
-        RemoteError::new(RemoteErrorKind::RemoteIntegrityFailed, e.message)
-    })?;
+    let (candidate_digest, candidate_size, op) = {
+        let reusable = payload
+            .candidate_sha256
+            .as_ref()
+            .zip(payload.candidate_size)
+            .and_then(|(digest, size)| {
+                if !candidate_path.exists() {
+                    return None;
+                }
+                let actual = sha256_file(&candidate_path).ok()?;
+                let actual_size = std::fs::metadata(&candidate_path).ok()?.len();
+                if actual == *digest && actual_size == size {
+                    Some((digest.clone(), size))
+                } else {
+                    None
+                }
+            });
 
-    let candidate_digest = sha256_file(&candidate_path).map_err(|e| {
-        let _ = std::fs::remove_file(&candidate_path);
-        RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message)
-    })?;
-    let candidate_size = std::fs::metadata(&candidate_path)
-        .map(|m| m.len())
-        .map_err(|e| {
+        if let Some((digest, size)) = reusable {
+            tracing::info!(
+                "reusing immutable candidate for operation {} (sha256={})",
+                op.operation_id,
+                digest
+            );
+            (digest, size, op.clone())
+        } else {
+            if let Some(parent) = candidate_path.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    RemoteError::new(
+                        RemoteErrorKind::NetworkUnavailable,
+                        format!("failed to create candidate dir: {e}"),
+                    )
+                })?;
+            }
+            // Discard a mismatched partial candidate before freezing.
             let _ = std::fs::remove_file(&candidate_path);
-            RemoteError::new(
-                RemoteErrorKind::NetworkUnavailable,
-                format!("failed to stat candidate: {e}"),
-            )
-        })?;
+            std::fs::copy(&working_db_path, &candidate_path).map_err(|e| {
+                RemoteError::new(
+                    RemoteErrorKind::NetworkUnavailable,
+                    format!("failed to copy working DB to candidate: {e}"),
+                )
+            })?;
+
+            // --- Step 6: SQLite integrity checks + SHA-256 digest ---
+            verify_sqlite_integrity_pub(&candidate_path).map_err(|e| {
+                let _ = std::fs::remove_file(&candidate_path);
+                RemoteError::new(RemoteErrorKind::RemoteIntegrityFailed, e.message)
+            })?;
+
+            let digest = sha256_file(&candidate_path).map_err(|e| {
+                let _ = std::fs::remove_file(&candidate_path);
+                RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message)
+            })?;
+            let size = std::fs::metadata(&candidate_path)
+                .map(|m| m.len())
+                .map_err(|e| {
+                    let _ = std::fs::remove_file(&candidate_path);
+                    RemoteError::new(
+                        RemoteErrorKind::NetworkUnavailable,
+                        format!("failed to stat candidate: {e}"),
+                    )
+                })?;
+            let updated = persist_candidate_identity(
+                ctx,
+                op,
+                &candidate_relative,
+                size,
+                &digest,
+                "candidate_ready",
+            )?;
+            (digest, size, updated)
+        }
+    };
 
     // --- Step 7: Upload the candidate to .openkara/databases/<target>.sqlite ---
     let db_remote_path = database_path_for_generation(target_generation);
     let candidate_bytes = std::fs::read(&candidate_path).map_err(|e| {
-        let _ = std::fs::remove_file(&candidate_path);
         RemoteError::new(
             RemoteErrorKind::NetworkUnavailable,
             format!("failed to read candidate for upload: {e}"),
         )
     })?;
-    // The candidate DB upload is a single unconditional upload — it targets a
-    // generation-specific path that does not exist yet, so there is no CAS
-    // conflict possible here. The CAS point is the manifest replacement (step 10).
-    // PR#5 makes this upload resumable; PR#4 uses a single upload.
+    // Generation-specific path: no CAS conflict here. The CAS point is the
+    // manifest replacement (step 10). Do NOT delete the local candidate on
+    // upload failure — a restart must resume the same immutable bytes.
     upload_candidate_database(
         ctx.provider,
         ctx.working_copy_root,
         &db_remote_path,
-        candidate_bytes.clone(),
+        &candidate_bytes,
+        &candidate_digest,
+        candidate_size,
         &op.operation_id,
         ctx.control_db,
-    )
-    .inspect_err(|_e| {
-        let _ = std::fs::remove_file(&candidate_path);
-    })?;
-
-    // Clean up the local candidate temp file — the bytes are now remote.
-    let _ = std::fs::remove_file(&candidate_path);
+    )?;
+    // Verify the remote object matches the immutable candidate digest by
+    // downloading it back to a temp path. Size-only checks are insufficient
+    // when a resumable session could have mixed two candidates of equal size.
+    verify_remote_candidate_digest(
+        ctx.provider,
+        &db_remote_path,
+        candidate_size,
+        &candidate_digest,
+        &op.operation_id,
+        ctx.working_copy_root,
+    )?;
+    let op = persist_candidate_identity(
+        ctx,
+        &op,
+        &candidate_relative,
+        candidate_size,
+        &candidate_digest,
+        "candidate_uploaded",
+    )?;
 
     // --- Step 8: Stat-verify the candidate database metadata ---
     let candidate_meta = ctx
@@ -339,7 +407,7 @@ fn run_publish_protocol(
     // --- Step 11: Re-read the manifest and verify ---
     transition_state(
         ctx,
-        op,
+        &op,
         OperationState::Verifying,
         now,
         90,
@@ -604,22 +672,23 @@ fn verify_referenced_assets(
     Ok(())
 }
 
-/// Upload the candidate database to the remote path by writing it to the
-/// working copy at the target relative path, calling `upload_file`, then
-/// removing the local staging copy.
-///
-/// PR#5: when the candidate is >= 8 MiB and the provider supports
-/// `resumable_upload`, the resumable path is used instead of `upload_file`.
-/// This persists transfer progress to `remote_transfer_parts` so a restart
-/// can resume the upload from the verified offset.
+/// Upload the immutable candidate database to the generation-specific remote
+/// path. When the provider supports resumable upload and the candidate is
+/// large enough, progress is bound to `expected_digest` so a restart cannot
+/// append a different candidate's bytes into the same session.
 fn upload_candidate_database(
     provider: &dyn RemoteProvider,
     working_copy_root: &Path,
     remote_relative_path: &str,
-    bytes: Vec<u8>,
+    bytes: &[u8],
+    expected_digest: &str,
+    expected_size: u64,
     operation_id: &str,
     control_db: &rusqlite::Connection,
 ) -> Result<(), RemoteError> {
+    // Staging path used only for providers that read from the working copy
+    // via `upload_file`. The immutable candidate under `.openkara/candidates/`
+    // is the durable source of truth and is not deleted here.
     let local_staging = working_copy_root.join(remote_relative_path);
     if let Some(parent) = local_staging.parent() {
         std::fs::create_dir_all(parent).map_err(|e| {
@@ -629,29 +698,122 @@ fn upload_candidate_database(
             )
         })?;
     }
-    std::fs::write(&local_staging, &bytes).map_err(|e| {
+    std::fs::write(&local_staging, bytes).map_err(|e| {
         RemoteError::new(
             RemoteErrorKind::NetworkUnavailable,
             format!("failed to write candidate staging file: {e}"),
         )
     })?;
 
-    // PR#5: use the resumable upload path for large candidates when the
-    // provider supports it. The 8 MiB threshold avoids the overhead of
-    // session setup for small databases while enabling resume for the
-    // multi-hundred-MiB libraries that motivated this PR.
-    const RESUMABLE_UPLOAD_THRESHOLD: usize = 8 * 1024 * 1024;
+    const RESUMABLE_UPLOAD_THRESHOLD: u64 = 8 * 1024 * 1024;
     let caps = provider.capabilities();
-    if caps.resumable_upload && bytes.len() >= RESUMABLE_UPLOAD_THRESHOLD {
-        provider.resumable_upload_bytes(remote_relative_path, &bytes, operation_id, control_db)?;
+    if caps.resumable_upload && expected_size >= RESUMABLE_UPLOAD_THRESHOLD {
+        // Persist digest on the transfer row before the upload so resume
+        // identity is content-bound even if the process dies mid-chunk.
+        let now = current_unix_time_ms();
+        let existing = crate::remote::control_db::list_transfer_parts(control_db, operation_id)
+            .unwrap_or_default()
+            .into_iter()
+            .find(|p| {
+                p.relative_path == remote_relative_path
+                    && p.direction == crate::remote::control_db::TransferDirection::Upload
+            });
+        if let Some(row) = existing {
+            let digest_ok = row.expected_digest.as_deref() == Some(expected_digest);
+            let size_ok = row.expected_size == Some(expected_size as i64);
+            if !digest_ok || !size_ok {
+                // Immutable identity changed — invalidate the old session.
+                let _ = crate::remote::control_db::delete_transfer_parts(control_db, operation_id);
+            }
+        } else {
+            let _ = crate::remote::control_db::upsert_transfer_part(
+                control_db,
+                &crate::remote::control_db::TransferPartRow {
+                    operation_id: operation_id.to_owned(),
+                    relative_path: remote_relative_path.to_owned(),
+                    direction: crate::remote::control_db::TransferDirection::Upload,
+                    expected_size: Some(expected_size as i64),
+                    expected_digest: Some(expected_digest.to_owned()),
+                    provider_revision: None,
+                    provider_session_id: None,
+                    transferred_bytes: 0,
+                    state: "pending".to_owned(),
+                    updated_at_ms: now,
+                },
+            );
+        }
+        provider.resumable_upload_bytes(remote_relative_path, bytes, operation_id, control_db)?;
     } else {
         provider
             .upload_file(remote_relative_path)
             .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
     }
-    // Remove the local staging copy — the bytes are now remote and the local
-    // file is not part of the committed working copy.
+    // Staging is not the durable candidate — safe to remove after a successful
+    // upload attempt. The `.openkara/candidates/<op>.sqlite` file remains until
+    // local completion is recorded.
     let _ = std::fs::remove_file(&local_staging);
+    Ok(())
+}
+
+/// Download the just-uploaded generation database and verify its SHA-256
+/// matches the immutable candidate. Rejects hybrid objects produced by a
+/// mismatched resumable session.
+fn verify_remote_candidate_digest(
+    provider: &dyn RemoteProvider,
+    remote_relative_path: &str,
+    expected_size: u64,
+    expected_digest: &str,
+    operation_id: &str,
+    working_copy_root: &Path,
+) -> Result<(), RemoteError> {
+    let verify_path = working_copy_root.join(format!(
+        ".openkara/candidates/{operation_id}.remote-verify.sqlite"
+    ));
+    if let Some(parent) = verify_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::remove_file(&verify_path);
+    provider
+        .download_file(remote_relative_path, &verify_path)
+        .map_err(|e| {
+            let _ = std::fs::remove_file(&verify_path);
+            RemoteError::new(
+                RemoteErrorKind::RemoteIntegrityFailed,
+                format!(
+                    "failed to re-download candidate for digest verify: {}",
+                    e.message
+                ),
+            )
+        })?;
+    let actual_size = std::fs::metadata(&verify_path)
+        .map(|m| m.len())
+        .map_err(|e| {
+            let _ = std::fs::remove_file(&verify_path);
+            RemoteError::new(
+                RemoteErrorKind::RemoteIntegrityFailed,
+                format!("failed to stat re-downloaded candidate: {e}"),
+            )
+        })?;
+    if actual_size != expected_size {
+        let _ = std::fs::remove_file(&verify_path);
+        return Err(RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!("remote candidate size mismatch: expected {expected_size}, got {actual_size}"),
+        ));
+    }
+    let actual_digest = sha256_file(&verify_path).map_err(|e| {
+        let _ = std::fs::remove_file(&verify_path);
+        RemoteError::new(RemoteErrorKind::RemoteIntegrityFailed, e.message)
+    })?;
+    let _ = std::fs::remove_file(&verify_path);
+    if actual_digest != expected_digest {
+        return Err(RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!(
+                "remote candidate digest mismatch: expected {expected_digest}, got {actual_digest}"
+            ),
+        ));
+    }
     Ok(())
 }
 
@@ -665,13 +827,11 @@ fn transition_state(
     percent: u8,
     detail: &str,
 ) -> Result<(), RemoteError> {
-    let payload = OperationPayload {
-        song_ids: OperationPayload::from_json(&op.payload_json)
-            .map(|p| p.song_ids)
-            .unwrap_or_default(),
-        percent,
-        detail: Some(detail.to_owned()),
-    };
+    // Preserve recovery fields (candidate identity, song_ids, protocol_step)
+    // while updating progress projection.
+    let mut payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
+    payload.percent = percent;
+    payload.detail = Some(detail.to_owned());
     let mut updated = op.clone();
     updated.state = new_state;
     updated.payload_json = payload
@@ -680,6 +840,34 @@ fn transition_state(
     updated.updated_at_ms = now;
     upsert_operation(ctx.control_db, &updated)
         .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))
+}
+
+/// Persist immutable candidate identity into the operation row so a crash
+/// mid-upload can resume against the same bytes rather than a regenerated
+/// candidate from a mutated working copy.
+fn persist_candidate_identity(
+    ctx: &PublishContext<'_>,
+    op: &OperationRow,
+    candidate_relative_path: &str,
+    candidate_size: u64,
+    candidate_sha256: &str,
+    protocol_step: &str,
+) -> Result<OperationRow, RemoteError> {
+    let now = current_unix_time_ms();
+    let mut payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
+    payload.candidate_relative_path = Some(candidate_relative_path.to_owned());
+    payload.candidate_size = Some(candidate_size);
+    payload.candidate_sha256 = Some(candidate_sha256.to_owned());
+    payload.protocol_step = Some(protocol_step.to_owned());
+    let mut updated = op.clone();
+    updated.candidate_db_digest = Some(candidate_sha256.to_owned());
+    updated.payload_json = payload
+        .to_json()
+        .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+    updated.updated_at_ms = now;
+    upsert_operation(ctx.control_db, &updated)
+        .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+    Ok(updated)
 }
 
 /// Record a successful completion: update the operation row to `completed`,
@@ -734,6 +922,15 @@ fn record_completed(
 
     // Step 13: Schedule a Gc operation row for deferred cleanup.
     schedule_gc(ctx, outcome.target_generation)?;
+
+    // The immutable candidate is no longer needed once local completion is
+    // durable. Best-effort removal — a leftover is cleaned by deferred GC.
+    if let Ok(payload) = OperationPayload::from_json(&op.payload_json) {
+        if let Some(rel) = payload.candidate_relative_path {
+            let path = ctx.working_copy_root.join(rel);
+            let _ = std::fs::remove_file(path);
+        }
+    }
 
     Ok(())
 }
@@ -830,6 +1027,7 @@ fn schedule_gc(ctx: &PublishContext<'_>, committed_generation: i64) -> CommandRe
         detail: Some(format!(
             "deferred GC after generation {committed_generation}"
         )),
+        ..Default::default()
     };
     let row = OperationRow {
         operation_id: gc_op_id,
@@ -928,6 +1126,7 @@ pub(crate) fn execute_gc(
     // executor pass can try again. The GC is not marked Completed until
     // every target has been successfully deleted or confirmed absent.
     let mut transient_failures = 0;
+    let mut permanent_failures = 0;
     for gen in 1..retain_floor {
         let db_path = database_path_for_generation(gen);
         match provider.delete_path(&db_path) {
@@ -935,13 +1134,22 @@ pub(crate) fn execute_gc(
                 tracing::debug!("GC deleted old database generation {} at {}", gen, db_path);
             }
             Err(e) => {
-                // A non-retryable error from delete typically means the
-                // object is already absent (404 maps to a non-retryable
-                // permission error in the current HTTP status mapping).
-                // Treat non-retryable errors as idempotent success — the
-                // object is gone or permanently inaccessible, either way
-                // GC has nothing more to do for it.
-                if e.retryable {
+                // Only explicit missing-object (404 / not found) is idempotent
+                // success. 403 permission, auth, and unsupported errors must
+                // leave GC failed — never Completed.
+                let msg = e.message.to_ascii_lowercase();
+                let is_not_found = msg.contains("not found")
+                    || msg.contains("404")
+                    || msg.contains("does not exist")
+                    || msg.contains("was not found");
+                if is_not_found {
+                    tracing::debug!(
+                        "GC confirmed absence of old database generation {} at {}: {}",
+                        gen,
+                        db_path,
+                        e.message
+                    );
+                } else if e.retryable {
                     tracing::warn!(
                         "GC transient failure deleting {} (will retry): {}",
                         db_path,
@@ -949,21 +1157,56 @@ pub(crate) fn execute_gc(
                     );
                     transient_failures += 1;
                 } else {
-                    tracing::debug!(
-                        "GC confirmed absence of old database generation {} at {}: {}",
-                        gen,
+                    tracing::warn!(
+                        "GC permanent failure deleting {} (will not complete): {}",
                         db_path,
                         e.message
                     );
+                    permanent_failures += 1;
                 }
             }
         }
     }
 
+    // Best-effort cleanup of operation-scoped staging paths under
+    // `.openkara/staging/` and leftover candidates for completed ops.
+    // Failures here are retryable and do not delete media/stems/artwork.
+    // Staging is provider-relative; attempt delete of known prefix.
+    // Missing staging roots are success. Staging cleanup is best-effort and
+    // does not delete media/stems/artwork.
+    let staging_root = ".openkara/staging";
+    match provider.delete_path(staging_root) {
+        Ok(()) => {
+            tracing::debug!("GC cleaned staging root {staging_root}");
+        }
+        Err(e) => {
+            let msg = e.message.to_ascii_lowercase();
+            if e.retryable {
+                transient_failures += 1;
+                tracing::warn!("GC staging cleanup transient failure: {}", e.message);
+            } else if !(msg.contains("not found")
+                || msg.contains("404")
+                || msg.contains("does not exist"))
+            {
+                tracing::warn!("GC staging cleanup permanent failure: {}", e.message);
+            }
+        }
+    }
+
+    if permanent_failures > 0 {
+        let mut updated = op.clone();
+        updated.state = OperationState::Failed;
+        updated.error_code = Some("gc_delete_failed".to_owned());
+        updated.error_detail = Some(format!(
+            "{permanent_failures} generation delete(s) failed permanently"
+        ));
+        updated.updated_at_ms = now;
+        upsert_operation(control_db, &updated)?;
+        return Ok(());
+    }
+
     if transient_failures > 0 {
         // Leave the GC operation retryable — do NOT mark it Completed.
-        // Schedule a retry with a safety delay so the executor picks it
-        // up again on the next pass.
         let mut updated = op.clone();
         updated.state = OperationState::RetryWait;
         updated.next_attempt_at_ms = Some(now + GC_RETRY_BACKOFF_MS);
@@ -973,7 +1216,7 @@ pub(crate) fn execute_gc(
     }
 
     // Mark the GC operation as completed only after every target has been
-    // successfully deleted or confirmed absent.
+    // successfully deleted or confirmed absent (404).
     let mut updated = op.clone();
     updated.state = OperationState::Completed;
     updated.updated_at_ms = now;
@@ -1580,6 +1823,7 @@ mod tests {
             song_ids: vec!["song-1".to_owned()],
             percent: 0,
             detail: None,
+            ..Default::default()
         };
         let row = OperationRow {
             operation_id: op_id.clone(),
@@ -2265,6 +2509,7 @@ mod tests {
                 song_ids: Vec::new(),
                 percent: 0,
                 detail: None,
+                ..Default::default()
             }
             .to_json()
             .unwrap(),
@@ -2355,6 +2600,7 @@ mod tests {
                 song_ids: Vec::new(),
                 percent: 0,
                 detail: None,
+                ..Default::default()
             }
             .to_json()
             .unwrap(),
@@ -2436,6 +2682,7 @@ mod tests {
                 song_ids: Vec::new(),
                 percent: 0,
                 detail: None,
+                ..Default::default()
             }
             .to_json()
             .unwrap(),

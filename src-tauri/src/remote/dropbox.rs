@@ -1207,6 +1207,9 @@ impl super::bootstrap::RemoteBootstrapStorage for DropboxBootstrapStorage<'_> {
             return Ok(Some(CommittedDatabaseProbe {
                 revision: dropbox_metadata_revision(&metadata),
                 database_path: manifest.database_path,
+                generation: manifest.generation,
+                database_size: Some(manifest.database_size),
+                database_sha256: Some(manifest.database_sha256),
             }));
         }
 
@@ -1217,6 +1220,9 @@ impl super::bootstrap::RemoteBootstrapStorage for DropboxBootstrapStorage<'_> {
                 |metadata| CommittedDatabaseProbe {
                     revision: dropbox_metadata_revision(&metadata),
                     database_path: "openkara.db".to_owned(),
+                    generation: 0,
+                    database_size: metadata.size,
+                    database_sha256: None,
                 },
             ),
         )
@@ -1403,28 +1409,45 @@ impl RemoteProvider for DropboxProvider<'_> {
         let commit_path = dropbox_join_path(root_path, relative_path);
         let total = bytes.len() as u64;
 
-        // Resume from a prior interrupted run when a verified offset exists.
+        // Content identity for this upload. A session started for candidate X
+        // must never be resumed with bytes from candidate Y.
+        let expected_digest = {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(bytes);
+            crate::hash::hex_lower(hasher.finalize())
+        };
+
+        // Resume only when the persisted row matches size + digest identity.
         let existing_session = list_transfer_parts(control_db, operation_id)
             .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?
             .into_iter()
             .find(|row| {
                 row.direction == TransferDirection::Upload && row.relative_path == relative_path
             })
-            .and_then(
-                |row| match (row.provider_session_id, row.transferred_bytes) {
+            .and_then(|row| {
+                let digest_ok = row.expected_digest.as_deref() == Some(expected_digest.as_str());
+                let size_ok = row.expected_size == Some(total as i64);
+                if !digest_ok || !size_ok {
+                    // Invalidate the mismatched session before starting fresh.
+                    let _ = delete_transfer_parts(control_db, operation_id);
+                    return None;
+                }
+                match (row.provider_session_id, row.transferred_bytes) {
                     (Some(sid), off) if off > 0 => Some((sid, off as u64)),
                     _ => None,
-                },
-            );
+                }
+            });
 
         let mut secret = self.secret.borrow_mut();
-        let progress = |session_id: &str, offset: u64| {
+        let digest_for_progress = expected_digest.clone();
+        let progress = move |session_id: &str, offset: u64| {
             let row = TransferPartRow {
                 operation_id: operation_id.to_owned(),
                 relative_path: relative_path.to_owned(),
                 direction: TransferDirection::Upload,
                 expected_size: Some(total as i64),
-                expected_digest: None,
+                expected_digest: Some(digest_for_progress.clone()),
                 provider_revision: None,
                 provider_session_id: Some(session_id.to_owned()),
                 transferred_bytes: offset as i64,
@@ -1510,8 +1533,15 @@ impl RemoteProvider for DropboxProvider<'_> {
             ));
         }
 
-        // Validate Content-Range header when present.
-        if let Some(content_range) = response.headers().get("content-range") {
+        // A 206 Partial Content response MUST include a matching Content-Range.
+        // Treating the header as optional allowed silent mis-ranged bodies.
+        if status == reqwest::StatusCode::PARTIAL_CONTENT {
+            let content_range = response.headers().get("content-range").ok_or_else(|| {
+                RemoteError::new(
+                    RemoteErrorKind::RemoteIntegrityFailed,
+                    "206 Partial Content missing Content-Range header",
+                )
+            })?;
             let cr_str = content_range.to_str().map_err(|e| {
                 RemoteError::new(
                     RemoteErrorKind::RemoteIntegrityFailed,

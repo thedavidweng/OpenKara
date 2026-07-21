@@ -233,37 +233,29 @@ impl ProviderFetcher {
     }
 
     /// Run a single-flight credential refresh. If a refresh is already in
-    /// progress, wait for it to complete and return whether the generation
-    /// advanced (meaning the refresh succeeded and the caller should retry
-    /// with the new token). Returns `Ok(false)` when no refresh callback is
-    /// configured or the refresh failed.
+    /// progress, wait for it to complete and return whether the **refresh
+    /// epoch** advanced (only the leader success path advances it). Ordinary
+    /// successful range requests must NOT advance the refresh epoch — that
+    /// would let waiters mistake an unrelated 200 for a successful refresh.
     fn single_flight_refresh(&self) -> Result<bool, FetchError> {
         let Some(refresh) = self.token_refresh.as_ref() else {
             return Ok(false);
         };
 
-        // Try to claim the single-flight slot. If another request is already
-        // refreshing, record the generation we are waiting on and spin until
-        // it changes (refresh succeeded) or the slot clears (refresh failed).
-        let my_generation = self.credential_generation.load(Ordering::Acquire);
+        let my_epoch = self.credential_generation.load(Ordering::Acquire);
         {
             let mut in_flight = self
                 .refresh_in_flight
                 .lock()
                 .unwrap_or_else(|e| e.into_inner());
-            if let Some(active_generation) = *in_flight {
-                // A refresh is in progress. Drop the lock and wait for the
-                // generation to advance past the active generation.
+            if let Some(active_epoch) = *in_flight {
                 drop(in_flight);
-                return Ok(self.wait_for_refresh(active_generation));
+                return Ok(self.wait_for_refresh(active_epoch));
             }
-            // Claim the slot.
-            *in_flight = Some(my_generation);
+            // Claim the slot with the epoch the leader observed.
+            *in_flight = Some(my_epoch);
         }
 
-        // Run the refresh while holding the slot. On success, advance the
-        // generation so waiters observe the change. On failure, clear the
-        // slot so a future request can attempt a refresh again.
         let refresh_result = refresh();
         {
             let mut in_flight = self
@@ -271,12 +263,12 @@ impl ProviderFetcher {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner());
             *in_flight = None;
-            // Wake all waiters blocked on the condvar.
             self.refresh_condvar.notify_all();
         }
         match refresh_result {
             Ok(new_token) => {
                 self.update_auth_header(&new_token);
+                // ONLY the refresh leader success path advances the epoch.
                 self.credential_generation.fetch_add(1, Ordering::AcqRel);
                 Ok(true)
             }
@@ -285,14 +277,9 @@ impl ProviderFetcher {
     }
 
     /// Wait for an in-progress refresh to complete. Returns `true` if the
-    /// credential generation advanced past `active_generation` (refresh
-    /// succeeded), `false` if the slot cleared without a generation change
-    /// (refresh failed).
-    fn wait_for_refresh(&self, active_generation: u64) -> bool {
-        // Block on the condvar until the refresh leader clears the slot and
-        // notifies. This replaces a busy-wait yield loop that could exhaust
-        // its iteration budget before the OAuth round-trip finished, causing
-        // waiters to surface a spurious 401 and fail active playback.
+    /// refresh epoch advanced past `active_epoch` (leader success), `false`
+    /// if the slot cleared without an epoch change (leader failure).
+    fn wait_for_refresh(&self, active_epoch: u64) -> bool {
         let mut in_flight = self
             .refresh_in_flight
             .lock()
@@ -303,9 +290,8 @@ impl ProviderFetcher {
                 .wait(in_flight)
                 .unwrap_or_else(|e| e.into_inner());
         }
-        // Slot cleared — refresh finished.
         let current = self.credential_generation.load(Ordering::Acquire);
-        current > active_generation
+        current > active_epoch
     }
 
     fn execute_request(&self, offset: u64, length: u64) -> Result<Vec<u8>, FetchError> {
@@ -358,12 +344,11 @@ impl HttpFetcher for ProviderFetcher {
     fn fetch_range(&self, _url: &str, offset: u64, length: u64) -> Result<Vec<u8>, FetchError> {
         match self.execute_request(offset, length) {
             Ok(bytes) => {
-                // A successful authenticated request advances the credential
-                // generation so a future expiry can refresh again. This resets
-                // the transient refresh suppression that the old
-                // `refresh_attempted` flag applied for the fetcher's entire
-                // lifetime (defect #10).
-                self.credential_generation.fetch_add(1, Ordering::AcqRel);
+                // Do NOT advance credential_generation here. That counter is
+                // the refresh epoch: only a successful refresh leader may
+                // advance it. Advancing on ordinary 200s lets waiters mistake
+                // an unrelated success for a completed refresh after a failed
+                // leader (P1 acceptance finding).
                 Ok(bytes)
             }
             Err(FetchError::HttpStatus(401)) if self.token_refresh.is_some() => {
@@ -1742,11 +1727,11 @@ mod tests {
         assert!(result1.is_ok(), "first fetch with refresh should succeed");
         assert_eq!(refresh_count.load(Ordering::Relaxed), 1);
 
-        // The generation advanced after the successful request, so a future
-        // 401 can trigger another refresh. Verify the generation is > 0.
+        // The refresh epoch advances only on leader success (the 401→refresh
+        // path above), not on ordinary successful range responses.
         assert!(
             fetcher.credential_generation.load(Ordering::Relaxed) > 0,
-            "generation advanced after successful request"
+            "refresh epoch advanced after successful credential refresh"
         );
 
         // Suppress unused mock warning.

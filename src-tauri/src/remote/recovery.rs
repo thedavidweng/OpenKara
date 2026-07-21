@@ -255,6 +255,43 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
             (repository_id, writer_id)
         };
 
+        // Re-upload assets for each song in the durable payload BEFORE the
+        // executor runs. After a crash between the local mutation and asset
+        // upload, the executor alone cannot invent which stems/media to
+        // push — song_ids in the payload are the recovery identity.
+        let payload = crate::remote::control_db::OperationPayload::from_json(&op.payload_json)
+            .unwrap_or_default();
+        if payload.song_ids.is_empty() {
+            // Empty payload cannot recover assets. Leave the row for manual
+            // resolution rather than freezing a stale remote working DB.
+            tracing::warn!(
+                "skipping publish recovery for {} — empty song_ids payload",
+                op.operation_id
+            );
+            continue;
+        }
+        let mut asset_ok = true;
+        for song_id in &payload.song_ids {
+            if let Err(error) = crate::remote::sync::reupload_song_assets_for_recovery(
+                state,
+                &remote_library,
+                &remote_root,
+                song_id,
+            ) {
+                tracing::warn!(
+                    "asset re-upload failed for song {} op {}: {}",
+                    song_id,
+                    op.operation_id,
+                    error.message
+                );
+                asset_ok = false;
+                break;
+            }
+        }
+        if !asset_ok {
+            continue;
+        }
+
         // Open a dedicated connection for the publish execution instead
         // of holding the shared Mutex lock across network I/O. WAL mode
         // allows concurrent readers/writers.

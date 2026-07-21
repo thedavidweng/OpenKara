@@ -219,23 +219,48 @@ impl TransferDirection {
 // ---------------------------------------------------------------------------
 
 /// Stable JSON shape stored in `remote_operations.payload_json` for publish
-/// operations. Later PRs (PR#4/#5) extend this with additional fields but must
-/// keep `song_ids`, `percent`, and `detail` backward-compatible so recovery
-/// and `get_all_upload_statuses` can read rows written by older versions.
+/// operations. New optional fields use `#[serde(default)]` so recovery and
+/// `get_all_upload_statuses` can still read rows written by older versions.
 ///
 /// ```json
-/// {"song_ids": ["hash-a", "hash-b"], "percent": 42, "detail": "Uploading stems"}
+/// {
+///   "song_ids": ["hash-a"],
+///   "percent": 42,
+///   "detail": "Uploading stems",
+///   "protocol_step": "assets_done",
+///   "candidate_relative_path": ".openkara/candidates/<op>.sqlite",
+///   "candidate_size": 1234,
+///   "candidate_sha256": "..."
+/// }
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct OperationPayload {
     /// Song hashes affected by this operation. For publish operations this is
-    /// the set of songs whose assets are uploaded.
+    /// the set of songs whose assets are uploaded. Required for crash recovery
+    /// of the asset-upload phase — an empty list cannot re-upload assets.
+    #[serde(default)]
     pub song_ids: Vec<String>,
     /// Completion percentage (0-100) for progress projection.
+    #[serde(default)]
     pub percent: u8,
     /// Human-readable detail string for the upload status snapshot.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    /// Current publication protocol step. Used by recovery to resume the
+    /// correct phase after a crash.
+    /// Values: `prepared`, `assets_done`, `candidate_ready`, `candidate_uploaded`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol_step: Option<String>,
+    /// Operation-scoped immutable candidate path relative to the working copy.
+    /// Survives retries; never rebuilt from a different working DB while set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub candidate_relative_path: Option<String>,
+    /// Byte length of the immutable candidate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub candidate_size: Option<u64>,
+    /// Hex SHA-256 of the immutable candidate. Upload sessions bind to this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub candidate_sha256: Option<String>,
 }
 
 impl OperationPayload {
@@ -1213,6 +1238,7 @@ mod tests {
             song_ids: vec!["song-a".to_owned()],
             percent: 42,
             detail: Some("Uploading".to_owned()),
+            ..Default::default()
         };
         let row = OperationRow {
             operation_id: "op-1".to_owned(),
@@ -1321,6 +1347,7 @@ mod tests {
             song_ids: vec!["x".to_owned()],
             percent: 0,
             detail: None,
+            ..Default::default()
         };
         let json = payload.to_json().unwrap();
         let back = OperationPayload::from_json(&json).unwrap();
