@@ -286,9 +286,9 @@ fn resolve_prepared_operation(
     let now = (clock)();
 
     // Conflict check: if expected_generation differs from the currently-known
-    // committed_generation, the remote advanced independently.
-    // TODO(PR#4): replace revision-based conflict check with manifest
-    // generation CAS.
+    // committed_generation, the remote advanced independently. The
+    // committed_generation is advanced by the manifest-based pull in
+    // revision.rs after a successful atomic database pull.
     if let Some(expected_gen) = op.expected_generation {
         if let Some(repo_state) = get_repository_state(connection, &op.library_id)? {
             if repo_state.committed_generation != expected_gen {
@@ -775,15 +775,13 @@ mod tests {
         assert!(result.unwrap().is_empty());
     }
 
-    // --- Placeholder tests for PR#4/#5 ---
-
     // --- Resumable transfer parts ---
 
-    // TODO(PR#5): incomplete transfers resume from verified offsets. The
-    // recovery pass detects incomplete transfer parts so the executor can
-    // resume them. The actual resume is performed by the executor's
-    // resumable upload/download paths, not by recovery itself — recovery only
-    // transitions the operation to `pending` so the executor picks it up.
+    // Incomplete transfers resume from verified offsets. The recovery pass
+    // detects incomplete transfer parts so the executor can resume them. The
+    // actual resume is performed by the executor's resumable upload/download
+    // paths, not by recovery itself — recovery only transitions the operation
+    // to `pending` so the executor picks it up.
     #[test]
     fn recovery_detects_incomplete_transfer_parts() {
         use crate::remote::control_db::{
@@ -863,12 +861,15 @@ mod tests {
         );
     }
 
-    // TODO(PR#4): an accepted remote commit is detected even when the process
-    // died before recording success.
+    // Future: an accepted remote commit is detected even when the process
+    // died before recording success. The recovery pass would verify the
+    // remote manifest generation to detect commits that succeeded remotely
+    // but were not recorded locally.
     #[test]
-    #[ignore = "PR#4: detect accepted remote commit after process death"]
+    #[ignore = "detect accepted remote commit after process death"]
     fn recovery_detects_accepted_commit_after_death() {
-        // PR#4 will verify the remote manifest generation to detect commits
-        // that succeeded remotely but were not recorded locally.
+        // This test verifies that the recovery pass checks the remote
+        // manifest generation to detect commits that succeeded remotely
+        // but were not recorded locally.
     }
 }

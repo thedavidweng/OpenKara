@@ -55,8 +55,7 @@ pub(crate) struct AtomicDownloadOptions<'a> {
     /// filesystem (required for atomicity).
     pub destination: &'a Path,
     /// Expected byte length. When `Some`, the temp file is rejected if its
-    /// length differs. When `None`, the size check is skipped (caller does not
-    /// know the size yet — PR #4's manifest will supply it).
+    /// length differs. When `None`, the size check is skipped.
     pub expected_size: Option<u64>,
     /// Expected hex SHA-256 digest. When `Some`, the temp file is rejected if
     /// its SHA-256 differs. When `None`, the digest check is skipped.
@@ -560,12 +559,21 @@ pub(crate) struct DatabasePullOptions<'a> {
     /// Expected byte length of the candidate, when known. When `None` the size
     /// check is skipped but integrity checks still run.
     pub expected_size: Option<u64>,
-    /// Expected hex SHA-256 of the candidate. For PR #3 this is computed and
-    /// stored but comparison against the manifest is deferred to PR #4.
+    /// Expected hex SHA-256 of the candidate, sourced from the repository
+    /// manifest's `database_sha256`. When `None` the digest check is skipped
+    /// but integrity checks still run.
     pub expected_digest: Option<&'a str>,
     /// Library id, used to update the control DB repository state after
     /// activation succeeds.
     pub library_id: &'a str,
+    /// Relative remote path of the database file to download. For manifest-based
+    /// repositories this is `.openkara/databases/<generation>.sqlite`. For
+    /// legacy repositories (no manifest) this is `openkara.db`.
+    pub remote_database_path: &'a str,
+    /// Generation number to record as `committed_generation` in the control DB
+    /// after a successful pull. For manifest-based pulls this is the manifest's
+    /// `generation`. For legacy pulls this is 0 (unknown).
+    pub committed_generation: i64,
 }
 
 /// Result of an atomic database pull, returned so callers can persist the new
@@ -573,11 +581,9 @@ pub(crate) struct DatabasePullOptions<'a> {
 #[derive(Debug, Clone)]
 pub(crate) struct DatabasePullResult {
     /// SHA-256 hex digest of the newly activated `openkara.db`.
-    // used by PR#4: manifest generation comparison and tests
     #[allow(dead_code)]
     pub new_digest: String,
     /// Final size in bytes of the activated database.
-    // used by PR#4: manifest size comparison and tests
     #[allow(dead_code)]
     pub new_size: u64,
 }
@@ -588,8 +594,8 @@ pub(crate) struct DatabasePullResult {
 /// Sequence (issue step 4, "For databases"):
 /// 1. Download to `openkara.db.part.<operation-id>` (sibling temp file).
 /// 2. Enforce expected byte length when known.
-/// 3. Compute SHA-256 of the candidate. PR #3 stores it; PR #4 will compare
-///    against the manifest's `databaseSha256`.
+/// 3. Compute SHA-256 of the candidate and compare against the manifest's
+///    `databaseSha256` when provided.
 /// 4. Open the candidate read-only and run `PRAGMA quick_check` and
 ///    `PRAGMA foreign_key_check`. Reject on any failure.
 /// 5. Verify schema compatibility: the `songs` table must exist.
@@ -643,7 +649,7 @@ fn run_database_pull(
 ) -> CommandResult<DatabasePullResult> {
     // 1. Download the candidate to the temp path.
     provider
-        .download_file("openkara.db", temp_path)
+        .download_file(opts.remote_database_path, temp_path)
         .map_err(AtomicDownloadError::DownloadFailed)?;
 
     // 2. Size check (when known).
@@ -663,8 +669,8 @@ fn run_database_pull(
         }
     }
 
-    // 3. Compute SHA-256 of the candidate.
-    // TODO(PR#4): compare against manifest databaseSha256.
+    // 3. Compute SHA-256 of the candidate and compare against the manifest's
+    //    database_sha256 when provided.
     let candidate_digest = sha256_file(temp_path)?;
     if let Some(expected_digest) = opts.expected_digest {
         if !digests_equal(&candidate_digest, expected_digest) {
@@ -715,8 +721,14 @@ fn run_database_pull(
     fsync_parent(destination)?;
 
     // 10. Update local repository state only after activation succeeds.
-    // TODO(PR#4): advance committed_generation from manifest.
-    update_repository_state_after_pull(control_db_conn, opts.library_id, &candidate_digest)?;
+    //     Advance committed_generation from the manifest so the executor's
+    //     generation precondition can detect stale pulls.
+    update_repository_state_after_pull(
+        control_db_conn,
+        opts.library_id,
+        &candidate_digest,
+        opts.committed_generation,
+    )?;
 
     Ok(DatabasePullResult {
         new_digest: candidate_digest,
@@ -826,18 +838,21 @@ fn integrity_error(detail: impl std::fmt::Display) -> CommandError {
 }
 
 /// Update the control DB repository state after a successful database pull.
-/// Sets `local_db_digest` to the new digest and `local_state = Clean`.
-/// `committed_generation` is left as-is; PR #4 advances it from the manifest.
+/// Sets `local_db_digest` to the new digest, `local_state = Clean`, and
+/// advances `committed_generation` to the manifest's generation.
 fn update_repository_state_after_pull(
     connection: &Connection,
     library_id: &str,
     new_digest: &str,
+    committed_generation: i64,
 ) -> CommandResult<()> {
     let now = crate::remote::types::current_unix_time_ms();
     let row = match get_repository_state(connection, library_id)? {
         Some(mut row) => {
             row.local_db_digest = Some(new_digest.to_owned());
             row.local_state = LocalState::Clean;
+            row.committed_generation = committed_generation;
+            row.local_base_generation = committed_generation;
             row.last_success_at_ms = Some(now);
             row.last_error_code = None;
             row.updated_at_ms = now;
@@ -845,9 +860,9 @@ fn update_repository_state_after_pull(
         }
         None => RepositoryStateRow {
             library_id: library_id.to_owned(),
-            committed_generation: 0,
+            committed_generation,
             committed_manifest_revision: None,
-            local_base_generation: 0,
+            local_base_generation: committed_generation,
             local_db_digest: Some(new_digest.to_owned()),
             local_state: LocalState::Clean,
             active_operation_id: None,
@@ -889,7 +904,12 @@ pub(crate) fn reconcile_database_state_after_restart(
     if state.local_db_digest.as_deref() == Some(actual_digest.as_str()) {
         return Ok(None);
     }
-    update_repository_state_after_pull(control_db_conn, library_id, &actual_digest)?;
+    update_repository_state_after_pull(
+        control_db_conn,
+        library_id,
+        &actual_digest,
+        state.committed_generation,
+    )?;
     Ok(Some(actual_digest))
 }
 
@@ -940,9 +960,10 @@ fn remove_stale_part_files_recursive(dir: &Path, removed: &mut Vec<PathBuf>) -> 
             continue;
         };
         if is_part_file(file_name) {
-            // TODO(PR#5): exclude temp files belonging to currently-running
-            // transfers. PR #3 has no async transfers, so all *.part.* files
-            // are stale and safe to remove.
+            // All `*.part.*` files are stale — resumable transfers use the
+            // `remote_transfer_parts` control DB table to track progress, not
+            // lingering temp files. A part file without a matching in-flight
+            // operation row is safe to remove.
             if fs::remove_file(&path).is_ok() {
                 removed.push(path);
             }
@@ -1338,6 +1359,8 @@ mod tests {
                 expected_size: Some(candidate_bytes.len() as u64),
                 expected_digest: None,
                 library_id: "lib-1",
+                remote_database_path: "openkara.db",
+                committed_generation: 0,
             },
         )
         .expect("pull succeeds");
@@ -1391,6 +1414,8 @@ mod tests {
                 expected_size: None,
                 expected_digest: None,
                 library_id: "lib-1",
+                remote_database_path: "openkara.db",
+                committed_generation: 0,
             },
         );
 
@@ -1433,6 +1458,8 @@ mod tests {
                 expected_size: None,
                 expected_digest: None,
                 library_id: "lib-1",
+                remote_database_path: "openkara.db",
+                committed_generation: 0,
             },
         );
 
@@ -1464,6 +1491,8 @@ mod tests {
                 expected_size: Some(candidate_len + 100),
                 expected_digest: None,
                 library_id: "lib-1",
+                remote_database_path: "openkara.db",
+                committed_generation: 0,
             },
         );
 
@@ -1494,6 +1523,8 @@ mod tests {
                 expected_size: None,
                 expected_digest: None,
                 library_id: "lib-1",
+                remote_database_path: "openkara.db",
+                committed_generation: 0,
             },
         );
 
@@ -1529,6 +1560,8 @@ mod tests {
                 expected_size: None,
                 expected_digest: None,
                 library_id: "lib-1",
+                remote_database_path: "openkara.db",
+                committed_generation: 0,
             },
         )
         .expect("first pull succeeds");

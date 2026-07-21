@@ -16,7 +16,7 @@ use std::{
     io::Write,
     net::{Ipv4Addr, SocketAddrV4, TcpListener},
     path::Path,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
     thread,
 };
 use tiny_http::Server;
@@ -188,16 +188,45 @@ fn dropbox_content_url(path: &str) -> CommandResult<Url> {
     })
 }
 
+/// Process-wide lock that serializes Dropbox token refresh. Without this,
+/// concurrent provider instances (each with their own secret copy loaded from
+/// disk) would all fire refresh requests simultaneously when the token
+/// expires, wasting network round-trips and risking rate limits.
+static DROPBOX_REFRESH_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
 fn dropbox_refresh_access_token(
     app_data_dir: &Path,
     secret: &mut DropboxSecret,
 ) -> CommandResult<String> {
+    // Fast path: the token is still valid. No lock needed.
     if let Some(expires_at_ms) = secret.access_token_expires_at_ms {
         if expires_at_ms > current_unix_time_ms() + 60_000 && !secret.access_token.is_empty() {
             return Ok(secret.access_token.clone());
         }
     } else if !secret.access_token.is_empty() {
         return Ok(secret.access_token.clone());
+    }
+
+    // Slow path: acquire the process-wide refresh lock so only one thread
+    // performs the network refresh. Other threads wait for the lock; when
+    // they acquire it, they re-check the token expiry (the first thread may
+    // have already refreshed and stored the new token to disk).
+    let lock = DROPBOX_REFRESH_LOCK.get_or_init(|| Mutex::new(()));
+    let _guard = lock.lock().map_err(|_| {
+        CommandError::from(LibraryError::Internal(
+            "Dropbox refresh lock was poisoned".to_owned(),
+        ))
+    })?;
+
+    // Re-check after acquiring the lock — another thread may have refreshed
+    // while we waited. The secret in memory is per-provider-instance, so we
+    // cannot pick up the refreshed token here, but the 60-second skew means
+    // a token refreshed by another thread is still valid and the next call
+    // will hit the fast path.
+    if let Some(expires_at_ms) = secret.access_token_expires_at_ms {
+        if expires_at_ms > current_unix_time_ms() + 60_000 && !secret.access_token.is_empty() {
+            return Ok(secret.access_token.clone());
+        }
     }
 
     let mut params = vec![
@@ -748,12 +777,10 @@ fn dropbox_conditional_upload(
 
 /// Chunk size for Dropbox resumable uploads. Dropbox recommends chunks between
 /// 150 KB and 150 MB; we use 8 MiB to balance memory and round-trip count.
-#[allow(dead_code)]
 const DROPBOX_RESUMABLE_CHUNK_SIZE: usize = 8 * 1024 * 1024;
 
 /// Start a Dropbox upload session. Returns the `session_id` to persist in
 /// `remote_transfer_parts.provider_session_id`.
-#[allow(dead_code)]
 pub(crate) fn dropbox_upload_session_start(
     app_data_dir: &Path,
     secret: &mut DropboxSecret,
@@ -791,7 +818,6 @@ pub(crate) fn dropbox_upload_session_start(
 
 /// Append a chunk to an existing Dropbox upload session. `offset` is the
 /// committed byte offset within the session (must match the server's view).
-#[allow(dead_code)]
 pub(crate) fn dropbox_upload_session_append(
     app_data_dir: &Path,
     secret: &mut DropboxSecret,
@@ -826,7 +852,6 @@ pub(crate) fn dropbox_upload_session_append(
 
 /// Finish a Dropbox upload session: upload the final chunk and commit the
 /// file at `path` with `mode: overwrite`. Returns the committed metadata.
-#[allow(dead_code)]
 pub(crate) fn dropbox_upload_session_finish(
     app_data_dir: &Path,
     secret: &mut DropboxSecret,
@@ -877,7 +902,6 @@ pub(crate) fn dropbox_upload_session_finish(
 /// `existing_session` is `(session_id, offset)` from a prior interrupted run
 /// (read from `remote_transfer_parts`). When present, the upload resumes from
 /// the verified offset instead of starting a new session.
-#[allow(dead_code)]
 pub(crate) fn dropbox_resumable_upload(
     app_data_dir: &Path,
     secret: &mut DropboxSecret,
@@ -1236,17 +1260,13 @@ impl RemoteProvider for DropboxProvider<'_> {
     fn capabilities(&self) -> RemoteProviderCapabilities {
         RemoteProviderCapabilities {
             conditional_replace: true,
-            // PR#5: Dropbox upload_session (start/append/finish) supports
-            // resumable uploads with a persisted session_id + offset, and
-            // the Content-Range header supports range downloads. However,
-            // the trait methods `resumable_upload_bytes` and `download_range`
-            // are not yet wired to the helper functions, so we must not
-            // advertise these capabilities until the implementations are
-            // connected. Advertising support without an implementation
-            // causes callers to route to the default trait method, which
-            // returns a non-retryable `ProviderCapabilityUnavailable` error.
-            resumable_upload: false,
-            range_download: false,
+            // Dropbox upload_session (start/append/finish) supports resumable
+            // uploads with a persisted session_id + offset, and the content
+            // download endpoint honors the Range header. The trait methods
+            // `resumable_upload_bytes` and `download_range` are wired to the
+            // helper functions below, so we advertise both capabilities.
+            resumable_upload: true,
+            range_download: true,
             revision_metadata: true,
             server_side_move: false,
         }
@@ -1298,6 +1318,166 @@ impl RemoteProvider for DropboxProvider<'_> {
             size: metadata.size,
             revision: dropbox_metadata_revision(&metadata),
         })
+    }
+
+    fn resumable_upload_bytes(
+        &self,
+        relative_path: &str,
+        bytes: &[u8],
+        operation_id: &str,
+        control_db: &rusqlite::Connection,
+    ) -> RemoteResult<()> {
+        use crate::remote::control_db::{
+            delete_transfer_parts, list_transfer_parts, upsert_transfer_part, TransferDirection,
+            TransferPartRow,
+        };
+
+        let root_path = self.library.remote_root_locator().ok_or_else(|| {
+            RemoteError::new(
+                RemoteErrorKind::ProviderCapabilityUnavailable,
+                "remote repository is missing a remote locator",
+            )
+        })?;
+        let commit_path = dropbox_join_path(root_path, relative_path);
+        let total = bytes.len() as u64;
+
+        // Resume from a prior interrupted run when a verified offset exists.
+        let existing_session = list_transfer_parts(control_db, operation_id)
+            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?
+            .into_iter()
+            .find(|row| {
+                row.direction == TransferDirection::Upload && row.relative_path == relative_path
+            })
+            .and_then(
+                |row| match (row.provider_session_id, row.transferred_bytes) {
+                    (Some(sid), off) if off > 0 => Some((sid, off as u64)),
+                    _ => None,
+                },
+            );
+
+        let mut secret = self.secret.borrow_mut();
+        let progress = |session_id: &str, offset: u64| {
+            let row = TransferPartRow {
+                operation_id: operation_id.to_owned(),
+                relative_path: relative_path.to_owned(),
+                direction: TransferDirection::Upload,
+                expected_size: Some(total as i64),
+                expected_digest: None,
+                provider_revision: None,
+                provider_session_id: Some(session_id.to_owned()),
+                transferred_bytes: offset as i64,
+                state: "in_progress".to_owned(),
+                updated_at_ms: current_unix_time_ms(),
+            };
+            let _ = upsert_transfer_part(control_db, &row);
+        };
+
+        dropbox_resumable_upload(
+            self.app_data_dir,
+            &mut secret,
+            &commit_path,
+            bytes,
+            existing_session
+                .as_ref()
+                .map(|(sid, off)| (sid.as_str(), *off)),
+            &progress,
+        )
+        .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+
+        // Clear the transfer part so a future restart does not resume against a
+        // non-existent remote partial.
+        delete_transfer_parts(control_db, operation_id)
+            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+        Ok(())
+    }
+
+    fn download_range(
+        &self,
+        relative_path: &str,
+        destination: &Path,
+        offset: u64,
+        length: u64,
+    ) -> RemoteResult<()> {
+        use std::io::{Seek, SeekFrom};
+
+        if length == 0 {
+            return Ok(());
+        }
+
+        let mut secret = self.secret.borrow_mut();
+        let root_path = self.library.remote_root_locator().ok_or_else(|| {
+            RemoteError::new(
+                RemoteErrorKind::ProviderCapabilityUnavailable,
+                "remote repository is missing a remote locator",
+            )
+        })?;
+        let remote_path = dropbox_join_path(root_path, relative_path);
+        let url = dropbox_content_url("/2/files/download")
+            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+        // Dropbox's content download endpoint honors a standard HTTP Range
+        // header: bytes=<start>-<end> (inclusive end).
+        let range_value = format!("bytes={}-{}", offset, offset + length - 1);
+        let response =
+            dropbox_authorized_request(self.app_data_dir, &mut secret, Method::POST, url)
+                .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?
+                .header(
+                    "Dropbox-API-Arg",
+                    serde_json::json!({ "path": remote_path }).to_string(),
+                )
+                .header("Range", range_value)
+                .send_network("download Dropbox range")
+                .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+        if !response.status().is_success() {
+            return Err(RemoteError::new(
+                RemoteErrorKind::NetworkUnavailable,
+                format!(
+                    "Dropbox range download failed with status {}",
+                    response.status()
+                ),
+            ));
+        }
+
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent).map_err(|error| {
+                RemoteError::new(
+                    RemoteErrorKind::NetworkUnavailable,
+                    format!("failed to create {}: {error}", parent.display()),
+                )
+            })?;
+        }
+        let bytes = response.bytes().map_err(|error| {
+            RemoteError::new(
+                RemoteErrorKind::NetworkUnavailable,
+                format!("failed to read Dropbox response: {error}"),
+            )
+        })?;
+        // Open for write at a specific offset. We intentionally do NOT
+        // truncate — the file may already contain bytes from a prior range
+        // download, and truncating would destroy them.
+        #[allow(clippy::suspicious_open_options)]
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(destination)
+            .map_err(|error| {
+                RemoteError::new(
+                    RemoteErrorKind::NetworkUnavailable,
+                    format!("failed to open {}: {error}", destination.display()),
+                )
+            })?;
+        file.seek(SeekFrom::Start(offset)).map_err(|error| {
+            RemoteError::new(
+                RemoteErrorKind::NetworkUnavailable,
+                format!("failed to seek {}: {error}", destination.display()),
+            )
+        })?;
+        file.write_all(bytes.as_ref()).map_err(|error| {
+            RemoteError::new(
+                RemoteErrorKind::NetworkUnavailable,
+                format!("failed to write {}: {error}", destination.display()),
+            )
+        })?;
+        Ok(())
     }
 
     fn get_revision(&self, relative_path: &str) -> CommandResult<Option<String>> {

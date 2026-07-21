@@ -2,17 +2,26 @@ use crate::{
     commands::error::{internal_error, CommandError, CommandResult},
     config::RegisteredLibrary,
     library::error::LibraryError,
-    remote::errors::{RemoteObjectMetadata, RemoteProviderCapabilities},
+    remote::{
+        control_db::{
+            delete_transfer_parts, list_transfer_parts, upsert_transfer_part, TransferDirection,
+            TransferPartRow,
+        },
+        errors::{
+            RemoteError, RemoteErrorKind, RemoteObjectMetadata, RemoteProviderCapabilities,
+            RemoteResult,
+        },
+    },
 };
 use reqwest::{blocking::Client, Method, Url};
 use std::{
     cell::RefCell,
     collections::HashMap,
     fs,
-    io::Write,
+    io::{Seek, SeekFrom, Write},
     net::{Ipv4Addr, SocketAddrV4, TcpListener},
     path::Path,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
     thread,
 };
 use tiny_http::Server;
@@ -185,16 +194,39 @@ fn google_drive_api_url(path: &str) -> CommandResult<Url> {
     })
 }
 
+/// Process-wide lock that serializes Google Drive token refresh. Without
+/// this, concurrent provider instances would all fire refresh requests
+/// simultaneously when the token expires.
+static GOOGLE_DRIVE_REFRESH_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
 fn google_drive_refresh_access_token(
     app_data_dir: &Path,
     secret: &mut GoogleDriveSecret,
 ) -> CommandResult<String> {
+    // Fast path: the token is still valid. No lock needed.
     if let Some(expires_at_ms) = secret.access_token_expires_at_ms {
         if expires_at_ms > current_unix_time_ms() + 60_000 && !secret.access_token.is_empty() {
             return Ok(secret.access_token.clone());
         }
     } else if !secret.access_token.is_empty() {
         return Ok(secret.access_token.clone());
+    }
+
+    // Slow path: acquire the process-wide refresh lock so only one thread
+    // performs the network refresh.
+    let lock = GOOGLE_DRIVE_REFRESH_LOCK.get_or_init(|| Mutex::new(()));
+    let _guard = lock.lock().map_err(|_| {
+        CommandError::from(LibraryError::Internal(
+            "Google Drive refresh lock was poisoned".to_owned(),
+        ))
+    })?;
+
+    // Re-check after acquiring the lock — another thread may have refreshed
+    // while we waited.
+    if let Some(expires_at_ms) = secret.access_token_expires_at_ms {
+        if expires_at_ms > current_unix_time_ms() + 60_000 && !secret.access_token.is_empty() {
+            return Ok(secret.access_token.clone());
+        }
     }
 
     let mut params = vec![
@@ -1371,17 +1403,13 @@ impl RemoteProvider for GoogleDriveProvider<'_> {
         // than silently downgrading to last-writer-wins.
         RemoteProviderCapabilities {
             conditional_replace: false,
-            // PR#5: Google Drive supports resumable uploads via
-            // `uploadType=resumable` with a session URL and offset query,
-            // and Range requests for downloads. However, the trait methods
-            // `resumable_upload_bytes` and `download_range` are not yet
-            // wired to the helper functions, so we must not advertise these
-            // capabilities until the implementations are connected.
-            // Advertising support without an implementation causes callers
-            // to route to the default trait method, which returns a
-            // non-retryable `ProviderCapabilityUnavailable` error.
-            resumable_upload: false,
-            range_download: false,
+            // Google Drive supports resumable uploads via
+            // `uploadType=resumable` (session URL + offset query) and Range
+            // requests on the `files.get?alt=media` endpoint. The trait
+            // methods `resumable_upload_bytes` and `download_range` are wired
+            // to the helper functions below.
+            resumable_upload: true,
+            range_download: true,
             revision_metadata: true,
             server_side_move: false,
         }
@@ -1558,6 +1586,205 @@ impl RemoteProvider for GoogleDriveProvider<'_> {
     fn refresh_existing(&self) -> CommandResult<Option<String>> {
         let secret = self.secret.borrow();
         refresh_existing_google_drive_library(self.app_data_dir, self.library, &secret)
+    }
+
+    fn resumable_upload_bytes(
+        &self,
+        relative_path: &str,
+        bytes: &[u8],
+        operation_id: &str,
+        control_db: &rusqlite::Connection,
+    ) -> RemoteResult<()> {
+        let mut secret = self.secret.borrow_mut();
+        let root_folder_id = self.library.remote_root_locator().ok_or_else(|| {
+            RemoteError::new(
+                RemoteErrorKind::NetworkUnavailable,
+                "remote repository is missing a remote locator",
+            )
+        })?;
+
+        // Resolve or create the remote file: walk parent folders (creating
+        // them as needed), then find-or-create the leaf file metadata. If the
+        // file already exists we overwrite it resumably via its file_id;
+        // otherwise we start a new-file resumable session against the parent
+        // folder.
+        let segments: Vec<&str> = relative_path
+            .split('/')
+            .filter(|segment| !segment.is_empty())
+            .collect();
+        if segments.is_empty() {
+            return Ok(());
+        }
+        let file_name = segments.last().copied().unwrap_or_default();
+        let mut parent_id = root_folder_id.to_owned();
+        for segment in &segments[..segments.len() - 1] {
+            let folder = google_drive_get_or_create_folder(
+                self.app_data_dir,
+                &mut secret,
+                &parent_id,
+                segment,
+            )
+            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+            parent_id = folder.id;
+        }
+        let existing_file =
+            google_drive_find_child(self.app_data_dir, &mut secret, &parent_id, file_name, None)
+                .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+        let file_id = existing_file.as_ref().map(|f| f.id.clone());
+
+        // Look for an interrupted session persisted in the control DB so a
+        // restart can resume from the committed offset instead of restarting
+        // the upload from byte 0.
+        let existing_session = list_transfer_parts(control_db, operation_id)
+            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?
+            .into_iter()
+            .find(|row| {
+                row.relative_path == relative_path && row.direction == TransferDirection::Upload
+            })
+            .and_then(|row| {
+                row.provider_session_id
+                    .map(|url| (url, row.transferred_bytes as u64))
+            });
+
+        let total = bytes.len() as u64;
+        let progress = |session_url: &str, committed: u64| {
+            let _ = upsert_transfer_part(
+                control_db,
+                &TransferPartRow {
+                    operation_id: operation_id.to_owned(),
+                    relative_path: relative_path.to_owned(),
+                    direction: TransferDirection::Upload,
+                    expected_size: Some(total as i64),
+                    expected_digest: None,
+                    provider_revision: None,
+                    provider_session_id: Some(session_url.to_owned()),
+                    transferred_bytes: committed as i64,
+                    state: if committed >= total {
+                        "complete".to_owned()
+                    } else {
+                        "in_progress".to_owned()
+                    },
+                    updated_at_ms: current_unix_time_ms(),
+                },
+            );
+        };
+
+        google_drive_resumable_upload(
+            self.app_data_dir,
+            &mut secret,
+            bytes,
+            existing_session
+                .as_ref()
+                .map(|(url, off)| (url.as_str(), *off)),
+            if file_id.is_some() {
+                None
+            } else {
+                Some(&parent_id)
+            },
+            if file_id.is_some() {
+                None
+            } else {
+                Some(file_name)
+            },
+            file_id.as_deref(),
+            &progress,
+        )
+        .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+
+        // The upload committed successfully; drop the persisted progress so a
+        // future restart does not resume against a stale partial.
+        delete_transfer_parts(control_db, operation_id)
+            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+        Ok(())
+    }
+
+    fn download_range(
+        &self,
+        relative_path: &str,
+        destination: &Path,
+        offset: u64,
+        length: u64,
+    ) -> RemoteResult<()> {
+        let mut secret = self.secret.borrow_mut();
+        let root_folder_id = self.library.remote_root_locator().ok_or_else(|| {
+            RemoteError::new(
+                RemoteErrorKind::NetworkUnavailable,
+                "remote repository is missing a remote locator",
+            )
+        })?;
+        let entry = google_drive_find_relative_entry(
+            self.app_data_dir,
+            &mut secret,
+            root_folder_id,
+            relative_path,
+        )
+        .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?
+        .ok_or_else(|| {
+            RemoteError::new(
+                RemoteErrorKind::NetworkUnavailable,
+                format!("remote file {relative_path} was not found"),
+            )
+        })?;
+
+        let token = google_drive_refresh_access_token(self.app_data_dir, &mut secret)
+            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+        let url = google_drive_api_url(&format!("/drive/v3/files/{}?alt=media", entry.id))
+            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+        let end = offset + length - 1;
+        let response = google_drive_request_with_access_token(&token, Method::GET, url)
+            .header("Range", format!("bytes={offset}-{end}"))
+            .send_network("download Google Drive file range")
+            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+        if !response.status().is_success() {
+            return Err(RemoteError::new(
+                RemoteErrorKind::NetworkUnavailable,
+                format!(
+                    "Google Drive range download failed with status {}",
+                    response.status()
+                ),
+            ));
+        }
+        let body = response.bytes().map_err(|error| {
+            RemoteError::new(
+                RemoteErrorKind::NetworkUnavailable,
+                format!("failed to read Google Drive range response: {error}"),
+            )
+        })?;
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent).map_err(|error| {
+                RemoteError::new(
+                    RemoteErrorKind::NetworkUnavailable,
+                    format!("failed to create {}: {}", parent.display(), error),
+                )
+            })?;
+        }
+        // Open for write at a specific offset. We intentionally do NOT
+        // truncate — the file may already contain bytes from a prior range
+        // download, and truncating would destroy them.
+        #[allow(clippy::suspicious_open_options)]
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(destination)
+            .map_err(|error| {
+                RemoteError::new(
+                    RemoteErrorKind::NetworkUnavailable,
+                    format!("failed to open {}: {}", destination.display(), error),
+                )
+            })?;
+        file.seek(SeekFrom::Start(offset)).map_err(|error| {
+            RemoteError::new(
+                RemoteErrorKind::NetworkUnavailable,
+                format!("failed to seek {}: {}", destination.display(), error),
+            )
+        })?;
+        file.write_all(&body).map_err(|error| {
+            RemoteError::new(
+                RemoteErrorKind::NetworkUnavailable,
+                format!("failed to write {}: {}", destination.display(), error),
+            )
+        })?;
+        Ok(())
     }
 }
 

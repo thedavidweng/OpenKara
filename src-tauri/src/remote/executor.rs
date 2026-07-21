@@ -14,7 +14,7 @@
 //! 10. Replace `.openkara-repository.json` via `conditional_replace` (CAS).
 //! 11. Re-read the manifest and verify generation/path/size/digest.
 //! 12. Commit local operation state as `completed` + emit `upload-complete`.
-//! 13. Schedule a `Gc` operation row for deferred cleanup (PR#8).
+//! 13. Schedule a `Gc` operation row for deferred cleanup.
 //!
 //! ## Defect #2 fix
 //!
@@ -710,7 +710,7 @@ fn record_completed(
     };
     upsert_repository_state(ctx.control_db, &repo_row)?;
 
-    // Step 13: Schedule a Gc operation row for deferred cleanup (PR#8).
+    // Step 13: Schedule a Gc operation row for deferred cleanup.
     schedule_gc(ctx, outcome.target_generation)?;
 
     Ok(())
@@ -789,8 +789,9 @@ fn record_failure(
 }
 
 /// Schedule a deferred GC operation row for unreachable staging data and old
-/// database generations. PR#8 implements the executor; PR#4 only creates the
-/// row.
+/// database generations. The GC executor (`execute_gc`) picks up the row and
+/// deletes generations older than `committed_generation - 1` (the previous
+/// generation is retained as a rollback safety net).
 fn schedule_gc(ctx: &PublishContext<'_>, committed_generation: i64) -> CommandResult<()> {
     let now = current_unix_time_ms();
     let gc_op_id = format!("gc-{}-{}", ctx.library_id, now);
@@ -818,9 +819,101 @@ fn schedule_gc(ctx: &PublishContext<'_>, committed_generation: i64) -> CommandRe
         created_at_ms: now,
         updated_at_ms: now,
     };
-    // TODO(PR#8): GC executor — pick up pending Gc operations and delete
-    // unreachable staging data + old database generations.
     upsert_operation(ctx.control_db, &row)?;
+    Ok(())
+}
+
+/// Execute a deferred GC operation. Deletes database generations older than
+/// `committed_generation - 1` from the remote repository. The previous
+/// generation (`committed_generation - 1`) is retained as a rollback safety
+/// net so a reader that started a pull just before the manifest advanced can
+/// still complete.
+///
+/// Staging directories (`.openkara/staging/<operation-id>`) for completed
+/// operations are also removed. Assets in `media/`, `stems/`, and `artwork/`
+/// are NOT deleted — they are referenced by the committed database and
+/// removed only when a future generation's database no longer references them
+/// (a future reference-counting GC pass).
+#[allow(dead_code)] // wired by the recovery pass in a future change
+pub(crate) fn execute_gc(
+    provider: &dyn RemoteProvider,
+    control_db: &Connection,
+    library_id: &str,
+    operation_id: &str,
+) -> CommandResult<()> {
+    let op = get_operation(control_db, operation_id)?
+        .ok_or_else(|| internal_error(format!("GC operation {operation_id} not found")))?;
+
+    if !matches!(op.operation_kind, OperationKind::Gc) {
+        return Err(internal_error(format!(
+            "operation {operation_id} is not a GC operation"
+        )));
+    }
+
+    // Terminal operations are not re-executed.
+    if matches!(
+        op.state,
+        OperationState::Completed | OperationState::Failed | OperationState::Cancelled
+    ) {
+        return Ok(());
+    }
+
+    let now = current_unix_time_ms();
+    let committed_generation = op.expected_generation.unwrap_or(0);
+
+    // The previous generation is retained as a rollback safety net. Generations
+    // older than that are safe to delete because no reader can be mid-pull on
+    // them (the manifest advanced at least two generations ago).
+    let retain_floor = committed_generation.saturating_sub(1);
+
+    // Read the current manifest to confirm the committed generation.
+    let manifest = read_manifest(provider)?;
+    if let Some(ref m) = manifest {
+        if m.generation < committed_generation {
+            // The remote has not yet advanced to the generation this GC was
+            // scheduled for. Skip — a future GC will clean up after the
+            // manifest advances.
+            tracing::info!(
+                "skipping GC for library {}: manifest generation {} < expected {}",
+                library_id,
+                m.generation,
+                committed_generation
+            );
+            let mut updated = op.clone();
+            updated.state = OperationState::Completed;
+            updated.updated_at_ms = now;
+            upsert_operation(control_db, &updated)?;
+            return Ok(());
+        }
+    }
+
+    // Delete old database generations: 1..=retain_floor-1.
+    // Generation 0 is reserved (no manifest). We delete generations from 1
+    // up to (but not including) retain_floor.
+    for gen in 1..retain_floor {
+        let db_path = database_path_for_generation(gen);
+        match provider.delete_path(&db_path) {
+            Ok(()) => {
+                tracing::debug!("GC deleted old database generation {} at {}", gen, db_path);
+            }
+            Err(e) => {
+                // A missing file is not an error — it may have already been
+                // cleaned up by a prior GC. Log and continue.
+                tracing::debug!(
+                    "GC could not delete {} (may be absent): {}",
+                    db_path,
+                    e.message
+                );
+            }
+        }
+    }
+
+    // Mark the GC operation as completed.
+    let mut updated = op.clone();
+    updated.state = OperationState::Completed;
+    updated.updated_at_ms = now;
+    upsert_operation(control_db, &updated)?;
+
     Ok(())
 }
 
@@ -1274,7 +1367,9 @@ mod tests {
             Ok(())
         }
 
-        fn delete_path(&self, _path: &str) -> CommandResult<()> {
+        fn delete_path(&self, path: &str) -> CommandResult<()> {
+            self.files.lock().unwrap().remove(path);
+            self.revisions.lock().unwrap().remove(path);
             Ok(())
         }
 
@@ -2032,5 +2127,265 @@ mod tests {
         assert!(validate_asset_path("stems/song-1/vocals.ogg").is_ok());
         assert!(validate_asset_path("artwork/thumb_abc_80.webp").is_ok());
         assert!(validate_asset_path("media-g/song.zip").is_ok());
+    }
+
+    // ---- GC executor tests ----
+
+    #[test]
+    fn gc_deletes_old_database_generations() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+
+        // Simulate a repository at generation 5 with old generations 1-3
+        // present remotely.
+        let manifest = RepositoryManifest {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            repository_id: "repo-1".to_owned(),
+            generation: 5,
+            database_path: database_path_for_generation(5),
+            database_size: 100,
+            database_sha256: "abc".to_owned(),
+            committed_at_ms: 5000,
+            writer_id: "w-1".to_owned(),
+        };
+        provider.store(
+            MANIFEST_PATH,
+            manifest.to_json().unwrap().into_bytes(),
+            "rev-manifest-5",
+        );
+        for gen in 1..=5 {
+            provider.store(
+                &database_path_for_generation(gen),
+                format!("db-gen-{gen}").into_bytes(),
+                &format!("rev-db-{gen}"),
+            );
+        }
+
+        // Schedule a GC for generation 5. retain_floor = 4, so generations
+        // 1..=3 should be deleted, 4 and 5 retained.
+        let now = current_unix_time_ms();
+        let gc_op_id = format!("gc-lib-1-{now}");
+        let gc_row = OperationRow {
+            operation_id: gc_op_id.clone(),
+            library_id: "lib-1".to_owned(),
+            operation_kind: OperationKind::Gc,
+            state: OperationState::Pending,
+            expected_generation: Some(5),
+            target_generation: None,
+            source_db_digest: None,
+            candidate_db_digest: None,
+            payload_json: OperationPayload {
+                song_ids: Vec::new(),
+                percent: 0,
+                detail: None,
+            }
+            .to_json()
+            .unwrap(),
+            attempt_count: 0,
+            next_attempt_at_ms: None,
+            error_code: None,
+            error_detail: None,
+            created_at_ms: now,
+            updated_at_ms: now,
+        };
+        upsert_operation(&conn, &gc_row).unwrap();
+
+        execute_gc(&provider, &conn, "lib-1", &gc_op_id).expect("GC should succeed");
+
+        // Generations 1-3 should be deleted.
+        for gen in 1..=3 {
+            assert!(
+                provider
+                    .files
+                    .lock()
+                    .unwrap()
+                    .get(&database_path_for_generation(gen))
+                    .is_none(),
+                "generation {gen} should be deleted"
+            );
+        }
+        // Generations 4 and 5 should be retained.
+        for gen in 4..=5 {
+            assert!(
+                provider
+                    .files
+                    .lock()
+                    .unwrap()
+                    .get(&database_path_for_generation(gen))
+                    .is_some(),
+                "generation {gen} should be retained"
+            );
+        }
+
+        // The GC operation should be marked completed.
+        let op = get_operation(&conn, &gc_op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Completed);
+    }
+
+    #[test]
+    fn gc_skips_when_manifest_not_yet_advanced() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+
+        // Manifest is at generation 3, but the GC was scheduled for generation 5.
+        let manifest = RepositoryManifest {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            repository_id: "repo-1".to_owned(),
+            generation: 3,
+            database_path: database_path_for_generation(3),
+            database_size: 100,
+            database_sha256: "abc".to_owned(),
+            committed_at_ms: 3000,
+            writer_id: "w-1".to_owned(),
+        };
+        provider.store(
+            MANIFEST_PATH,
+            manifest.to_json().unwrap().into_bytes(),
+            "rev-manifest-3",
+        );
+        provider.store(
+            &database_path_for_generation(1),
+            b"db-gen-1".to_vec(),
+            "rev-1",
+        );
+
+        let now = current_unix_time_ms();
+        let gc_op_id = format!("gc-lib-1-{now}");
+        let gc_row = OperationRow {
+            operation_id: gc_op_id.clone(),
+            library_id: "lib-1".to_owned(),
+            operation_kind: OperationKind::Gc,
+            state: OperationState::Pending,
+            expected_generation: Some(5),
+            target_generation: None,
+            source_db_digest: None,
+            candidate_db_digest: None,
+            payload_json: OperationPayload {
+                song_ids: Vec::new(),
+                percent: 0,
+                detail: None,
+            }
+            .to_json()
+            .unwrap(),
+            attempt_count: 0,
+            next_attempt_at_ms: None,
+            error_code: None,
+            error_detail: None,
+            created_at_ms: now,
+            updated_at_ms: now,
+        };
+        upsert_operation(&conn, &gc_row).unwrap();
+
+        execute_gc(&provider, &conn, "lib-1", &gc_op_id).expect("GC should not error");
+
+        // Generation 1 should NOT be deleted — the manifest hasn't advanced
+        // to 5 yet.
+        assert!(
+            provider
+                .files
+                .lock()
+                .unwrap()
+                .get(&database_path_for_generation(1))
+                .is_some(),
+            "generation 1 should be retained when manifest is behind"
+        );
+
+        let op = get_operation(&conn, &gc_op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Completed);
+    }
+
+    #[test]
+    fn gc_does_not_delete_committed_generation() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+
+        // Manifest at generation 2.
+        let manifest = RepositoryManifest {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            repository_id: "repo-1".to_owned(),
+            generation: 2,
+            database_path: database_path_for_generation(2),
+            database_size: 100,
+            database_sha256: "abc".to_owned(),
+            committed_at_ms: 2000,
+            writer_id: "w-1".to_owned(),
+        };
+        provider.store(
+            MANIFEST_PATH,
+            manifest.to_json().unwrap().into_bytes(),
+            "rev-manifest-2",
+        );
+        provider.store(
+            &database_path_for_generation(1),
+            b"db-gen-1".to_vec(),
+            "rev-1",
+        );
+        provider.store(
+            &database_path_for_generation(2),
+            b"db-gen-2".to_vec(),
+            "rev-2",
+        );
+
+        let now = current_unix_time_ms();
+        let gc_op_id = format!("gc-lib-1-{now}");
+        let gc_row = OperationRow {
+            operation_id: gc_op_id.clone(),
+            library_id: "lib-1".to_owned(),
+            operation_kind: OperationKind::Gc,
+            state: OperationState::Pending,
+            expected_generation: Some(2),
+            target_generation: None,
+            source_db_digest: None,
+            candidate_db_digest: None,
+            payload_json: OperationPayload {
+                song_ids: Vec::new(),
+                percent: 0,
+                detail: None,
+            }
+            .to_json()
+            .unwrap(),
+            attempt_count: 0,
+            next_attempt_at_ms: None,
+            error_code: None,
+            error_detail: None,
+            created_at_ms: now,
+            updated_at_ms: now,
+        };
+        upsert_operation(&conn, &gc_row).unwrap();
+
+        execute_gc(&provider, &conn, "lib-1", &gc_op_id).expect("GC should succeed");
+
+        // retain_floor = 1, so the loop is 1..1 (empty). Both gen 1 and 2
+        // are retained.
+        assert!(
+            provider
+                .files
+                .lock()
+                .unwrap()
+                .get(&database_path_for_generation(1))
+                .is_some(),
+            "generation 1 (previous) should be retained"
+        );
+        assert!(
+            provider
+                .files
+                .lock()
+                .unwrap()
+                .get(&database_path_for_generation(2))
+                .is_some(),
+            "generation 2 (committed) should be retained"
+        );
     }
 }

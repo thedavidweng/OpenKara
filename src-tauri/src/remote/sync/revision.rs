@@ -6,6 +6,7 @@ use crate::{
         atomic_database_pull, reconcile_database_state_after_restart, DatabasePullOptions,
     },
     remote::control_db::{get_repository_state, LocalState},
+    remote::manifest::{read_manifest, MANIFEST_PATH},
     AppState,
 };
 use rusqlite::Connection;
@@ -63,6 +64,14 @@ pub(crate) fn remote_database_revision(
     library: &RegisteredLibrary,
 ) -> CommandResult<Option<String>> {
     let provider = create_provider(app_data_dir, library)?;
+    // For manifest-based repositories, the manifest revision is the staleness
+    // signal: a new generation always produces a new manifest write. For
+    // legacy repositories (no manifest), fall back to the `openkara.db`
+    // revision.
+    let manifest_rev = provider.get_revision(MANIFEST_PATH)?;
+    if manifest_rev.is_some() {
+        return Ok(manifest_rev);
+    }
     provider.get_revision("openkara.db")
 }
 
@@ -178,7 +187,16 @@ fn should_allow_automatic_pull(control_db_conn: &Connection, library: &Registere
 }
 
 /// Atomically pull and validate the remote database into the working copy.
-/// On success, updates the stored revision and returns the reloaded library.
+///
+/// Reads the repository manifest (`.openkara-repository.json`) to discover the
+/// committed generation, then downloads the generation-specific database from
+/// `.openkara/databases/<generation>.sqlite` with size and SHA-256 verification
+/// against the manifest's `database_size` and `database_sha256`. On success,
+/// updates the stored revision and `committed_generation` in the control DB.
+///
+/// For legacy repositories (no manifest yet), falls back to pulling
+/// `openkara.db` directly with size-only verification.
+///
 /// On failure, falls back to the existing local DB (returns the library
 /// unchanged) so the caller can proceed offline.
 fn pull_remote_database_atomically(
@@ -209,7 +227,27 @@ fn pull_remote_database_atomically(
         .collect();
     let operation_id = format!("pull-{sanitized_revision}");
 
-    let expected_size = provider.get_file_size("openkara.db")?;
+    // Read the repository manifest. When present, pull the generation-specific
+    // database with full size + digest verification. When absent (legacy
+    // repository or first publication), fall back to pulling `openkara.db`
+    // directly with size-only verification.
+    let manifest = read_manifest(provider.as_ref())?;
+
+    let (remote_db_path, expected_size, expected_digest, committed_generation) = match &manifest {
+        Some(m) => {
+            let size = provider.get_file_size(&m.database_path)?;
+            (
+                m.database_path.as_str(),
+                size.or(Some(m.database_size)),
+                Some(m.database_sha256.as_str()),
+                m.generation,
+            )
+        }
+        None => {
+            let size = provider.get_file_size("openkara.db")?;
+            ("openkara.db", size, None, 0)
+        }
+    };
 
     match atomic_database_pull(
         provider.as_ref(),
@@ -218,16 +256,21 @@ fn pull_remote_database_atomically(
         DatabasePullOptions {
             operation_id: &operation_id,
             expected_size,
-            expected_digest: None,
+            expected_digest,
             library_id: library.id(),
+            remote_database_path: remote_db_path,
+            committed_generation,
         },
     ) {
         Ok(_) => {
-            update_remote_revision_in_config(
-                app_data_dir,
-                library.id(),
-                provider_revision.map(|s| s.to_owned()),
-            )?;
+            // Use the manifest path's revision when available, falling back
+            // to the legacy `openkara.db` revision for pre-manifest repos.
+            let new_revision = if manifest.is_some() {
+                provider.get_revision(MANIFEST_PATH)?
+            } else {
+                provider_revision.map(|s| s.to_owned())
+            };
+            update_remote_revision_in_config(app_data_dir, library.id(), new_revision)?;
             load_registered_remote_library(app_data_dir, library.id())
         }
         Err(error) => {
