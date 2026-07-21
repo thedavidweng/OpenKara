@@ -182,6 +182,11 @@ pub struct ProviderFetcher {
     /// concurrent requests wait on the contained generation value to learn
     /// whether the refresh succeeded (generation advanced) or failed.
     refresh_in_flight: std::sync::Mutex<Option<u64>>,
+    /// Condvar paired with `refresh_in_flight`. The refresh leader notifies
+    /// all waiters after it clears the slot; waiters block on this instead
+    /// of busy-spinning, so they don't time out before the OAuth round-trip
+    /// completes.
+    refresh_condvar: std::sync::Condvar,
     /// Reusable HTTP client — avoids creating a new client per request.
     client: reqwest::blocking::Client,
 }
@@ -196,6 +201,7 @@ impl ProviderFetcher {
             token_refresh: None,
             credential_generation: AtomicU64::new(0),
             refresh_in_flight: std::sync::Mutex::new(None),
+            refresh_condvar: std::sync::Condvar::new(),
             client: reqwest::blocking::Client::new(),
         }
     }
@@ -265,6 +271,8 @@ impl ProviderFetcher {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner());
             *in_flight = None;
+            // Wake all waiters blocked on the condvar.
+            self.refresh_condvar.notify_all();
         }
         match refresh_result {
             Ok(new_token) => {
@@ -281,27 +289,23 @@ impl ProviderFetcher {
     /// succeeded), `false` if the slot cleared without a generation change
     /// (refresh failed).
     fn wait_for_refresh(&self, active_generation: u64) -> bool {
-        // Brief busy-wait with yield. The streaming hot path already runs on a
-        // dedicated fetch thread, and refresh round-trips are hundreds of
-        // milliseconds — a short yield loop is preferable to pulling in an
-        // async runtime or condition variable just for this rare contention.
-        for _ in 0..200 {
-            let in_flight = self
-                .refresh_in_flight
-                .lock()
+        // Block on the condvar until the refresh leader clears the slot and
+        // notifies. This replaces a busy-wait yield loop that could exhaust
+        // its iteration budget before the OAuth round-trip finished, causing
+        // waiters to surface a spurious 401 and fail active playback.
+        let mut in_flight = self
+            .refresh_in_flight
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        while in_flight.is_some() {
+            in_flight = self
+                .refresh_condvar
+                .wait(in_flight)
                 .unwrap_or_else(|e| e.into_inner());
-            if in_flight.is_none() {
-                // Slot cleared — refresh finished.
-                drop(in_flight);
-                let current = self.credential_generation.load(Ordering::Acquire);
-                return current > active_generation;
-            }
-            drop(in_flight);
-            std::thread::yield_now();
         }
-        // Timed out waiting; treat as refresh-not-succeeded so the caller
-        // surfaces the original error.
-        false
+        // Slot cleared — refresh finished.
+        let current = self.credential_generation.load(Ordering::Acquire);
+        current > active_generation
     }
 
     fn execute_request(&self, offset: u64, length: u64) -> Result<Vec<u8>, FetchError> {
