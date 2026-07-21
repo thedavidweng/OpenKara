@@ -1,10 +1,14 @@
 //! Library-database publish outbox.
 //!
 //! The change set for a remote publish is written into the **library** SQLite
-//! database in the same transaction as the local song mutation. Startup
+//! database in the **same transaction** as the local song mutation. Startup
 //! recovery can then rebuild a missing control-DB operation from this outbox
 //! when the process dies between the library commit and the remote-state.db
 //! projection.
+//!
+//! This table is machine-local control metadata. It must never be published as
+//! part of a generation candidate: freeze clears it, and successful control
+//! projection deletes the local row.
 
 use crate::commands::error::{database_error, CommandResult};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -21,7 +25,7 @@ pub struct LibraryPublishOutboxRow {
 }
 
 /// Insert or replace an outbox row. Caller must hold a library DB transaction
-/// that also contains the song mutation.
+/// that also contains the song mutation. Errors must propagate (fail closed).
 pub fn upsert_library_publish_outbox(
     connection: &Connection,
     row: &LibraryPublishOutboxRow,
@@ -53,37 +57,37 @@ pub fn upsert_library_publish_outbox(
     Ok(())
 }
 
-/// Mark an outbox row as projected into remote-state.db.
-pub fn mark_library_outbox_projected(
+/// Delete one outbox row after successful control-DB projection.
+pub fn delete_library_publish_outbox(
     connection: &Connection,
     operation_id: &str,
-    projected_at_ms: i64,
 ) -> CommandResult<()> {
     connection
         .execute(
-            "UPDATE remote_publish_outbox SET projected_at_ms = ?1 WHERE operation_id = ?2",
-            params![projected_at_ms, operation_id],
+            "DELETE FROM remote_publish_outbox WHERE operation_id = ?1",
+            params![operation_id],
         )
-        .map_err(|e| database_error(format!("failed to mark outbox projected: {e}")))?;
+        .map_err(|e| database_error(format!("failed to delete library publish outbox: {e}")))?;
     Ok(())
 }
 
-/// Load a single outbox row.
-#[allow(dead_code)]
-pub fn get_library_publish_outbox(
-    connection: &Connection,
-    operation_id: &str,
-) -> CommandResult<Option<LibraryPublishOutboxRow>> {
-    connection
-        .query_row(
-            "SELECT operation_id, song_ids_json, expected_generation, source_db_digest,
-                    created_at_ms, projected_at_ms
-             FROM remote_publish_outbox WHERE operation_id = ?1",
-            params![operation_id],
-            map_outbox_row,
-        )
-        .optional()
-        .map_err(|e| database_error(format!("failed to load library publish outbox: {e}")))
+/// Remove every outbox row. Used when freezing a generation candidate so
+/// machine-local control metadata never ships with the portable library DB.
+pub fn clear_all_library_publish_outbox(connection: &Connection) -> CommandResult<()> {
+    // Table may be missing on very old candidates; ignore missing-table.
+    match connection.execute("DELETE FROM remote_publish_outbox", []) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("no such table") {
+                Ok(())
+            } else {
+                Err(database_error(format!(
+                    "failed to clear library publish outbox: {e}"
+                )))
+            }
+        }
+    }
 }
 
 /// List outbox rows that have not yet been projected into the control DB.
@@ -107,6 +111,24 @@ pub fn list_unprojected_library_outbox(
     Ok(rows)
 }
 
+/// Load a single outbox row (tests / diagnostics).
+#[allow(dead_code)]
+pub fn get_library_publish_outbox(
+    connection: &Connection,
+    operation_id: &str,
+) -> CommandResult<Option<LibraryPublishOutboxRow>> {
+    connection
+        .query_row(
+            "SELECT operation_id, song_ids_json, expected_generation, source_db_digest,
+                    created_at_ms, projected_at_ms
+             FROM remote_publish_outbox WHERE operation_id = ?1",
+            params![operation_id],
+            map_outbox_row,
+        )
+        .optional()
+        .map_err(|e| database_error(format!("failed to load library publish outbox: {e}")))
+}
+
 fn map_outbox_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryPublishOutboxRow> {
     let song_ids_json: String = row.get(1)?;
     let song_ids: Vec<String> = serde_json::from_str(&song_ids_json).unwrap_or_default();
@@ -118,4 +140,127 @@ fn map_outbox_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryPublishOut
         created_at_ms: row.get(4)?,
         projected_at_ms: row.get(5)?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cache;
+
+    fn open_library_db() -> (tempfile::TempDir, Connection) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("openkara.db");
+        let conn = cache::open_database(&path).unwrap();
+        cache::apply_migrations(&conn).unwrap();
+        (dir, conn)
+    }
+
+    #[test]
+    fn outbox_insert_and_delete_roundtrip() {
+        let (_dir, conn) = open_library_db();
+        let row = LibraryPublishOutboxRow {
+            operation_id: "op-1".to_owned(),
+            song_ids: vec!["a".to_owned(), "b".to_owned()],
+            expected_generation: Some(3),
+            source_db_digest: Some("deadbeef".to_owned()),
+            created_at_ms: 1000,
+            projected_at_ms: None,
+        };
+        upsert_library_publish_outbox(&conn, &row).unwrap();
+        let loaded = get_library_publish_outbox(&conn, "op-1").unwrap().unwrap();
+        assert_eq!(loaded.song_ids, vec!["a", "b"]);
+        assert_eq!(list_unprojected_library_outbox(&conn).unwrap().len(), 1);
+        delete_library_publish_outbox(&conn, "op-1").unwrap();
+        assert!(get_library_publish_outbox(&conn, "op-1").unwrap().is_none());
+        assert!(list_unprojected_library_outbox(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn outbox_survives_same_transaction_as_mutation_commit() {
+        let (_dir, conn) = open_library_db();
+        let tx = conn.unchecked_transaction().unwrap();
+        // Simulate a song write + outbox in one TX.
+        tx.execute(
+            "INSERT INTO songs (hash, audio_source_kind, imported_at) VALUES ('s1', 'original', 1)",
+            [],
+        )
+        .unwrap();
+        upsert_library_publish_outbox(
+            &tx,
+            &LibraryPublishOutboxRow {
+                operation_id: "op-tx".to_owned(),
+                song_ids: vec!["s1".to_owned()],
+                expected_generation: Some(0),
+                source_db_digest: None,
+                created_at_ms: 1,
+                projected_at_ms: None,
+            },
+        )
+        .unwrap();
+        tx.commit().unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM songs WHERE hash='s1'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 1);
+        let outbox = get_library_publish_outbox(&conn, "op-tx").unwrap().unwrap();
+        assert_eq!(outbox.song_ids, vec!["s1"]);
+    }
+
+    #[test]
+    fn outbox_rolls_back_with_failed_transaction() {
+        let (_dir, conn) = open_library_db();
+        {
+            let tx = conn.unchecked_transaction().unwrap();
+            tx.execute(
+                "INSERT INTO songs (hash, audio_source_kind, imported_at) VALUES ('s2', 'original', 1)",
+                [],
+            )
+            .unwrap();
+            upsert_library_publish_outbox(
+                &tx,
+                &LibraryPublishOutboxRow {
+                    operation_id: "op-rb".to_owned(),
+                    song_ids: vec!["s2".to_owned()],
+                    expected_generation: None,
+                    source_db_digest: None,
+                    created_at_ms: 1,
+                    projected_at_ms: None,
+                },
+            )
+            .unwrap();
+            // Drop without commit — both song and outbox must vanish.
+            drop(tx);
+        }
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM songs WHERE hash='s2'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 0);
+        assert!(get_library_publish_outbox(&conn, "op-rb")
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn clear_all_removes_machine_local_rows_from_candidate() {
+        let (_dir, conn) = open_library_db();
+        upsert_library_publish_outbox(
+            &conn,
+            &LibraryPublishOutboxRow {
+                operation_id: "op-x".to_owned(),
+                song_ids: vec!["z".to_owned()],
+                expected_generation: None,
+                source_db_digest: None,
+                created_at_ms: 1,
+                projected_at_ms: None,
+            },
+        )
+        .unwrap();
+        clear_all_library_publish_outbox(&conn).unwrap();
+        assert!(list_unprojected_library_outbox(&conn).unwrap().is_empty());
+    }
 }

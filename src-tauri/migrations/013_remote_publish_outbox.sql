@@ -1,7 +1,8 @@
 -- Durable publish change-set stored inside the library SQLite database.
--- Written in the same transaction as the local song mutation so a crash
--- between the library commit and control-DB projection can rebuild the
--- remote-state.db operation from this outbox.
+-- MUST be written in the same library SQLite transaction as the song
+-- mutation. Crash recovery rebuilds remote-state.db from unprojected rows.
+-- Machine-local: cleared from generation candidates at freeze time and
+-- deleted after successful control-DB projection.
 CREATE TABLE IF NOT EXISTS remote_publish_outbox (
     operation_id TEXT PRIMARY KEY NOT NULL,
     song_ids_json TEXT NOT NULL,

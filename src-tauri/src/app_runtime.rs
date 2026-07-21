@@ -605,6 +605,8 @@ fn run_remote_recovery(remote_state: &RemoteState, app_data_dir: &std::path::Pat
 }
 
 /// Project unprojected library-DB publish outbox rows into remote-state.db.
+/// Fail closed: never delete / mark projected unless control projection
+/// succeeded. Leave outbox retryable on any error.
 fn project_library_outboxes_into_control_db(
     remote_state: &RemoteState,
     app_data_dir: &std::path::Path,
@@ -614,7 +616,7 @@ fn project_library_outboxes_into_control_db(
         OperationPayload, OperationRow, OperationState,
     };
     use crate::remote::library_outbox::{
-        list_unprojected_library_outbox, mark_library_outbox_projected,
+        delete_library_publish_outbox, list_unprojected_library_outbox,
     };
 
     let config = match crate::config::load_config(app_data_dir) {
@@ -635,14 +637,29 @@ fn project_library_outboxes_into_control_db(
         let Ok(lib_conn) = crate::cache::open_database(&root.database_path()) else {
             continue;
         };
-        let _ = crate::cache::apply_migrations(&lib_conn);
-        let Ok(rows) = list_unprojected_library_outbox(&lib_conn) else {
+        if let Err(error) = crate::cache::apply_migrations(&lib_conn) {
+            eprintln!(
+                "warning: library migrations failed during outbox projection for {}: {error}",
+                root_path.display()
+            );
             continue;
+        }
+        let rows = match list_unprojected_library_outbox(&lib_conn) {
+            Ok(rows) => rows,
+            Err(error) => {
+                eprintln!(
+                    "warning: failed to list library outbox for {}: {:?}",
+                    root_path.display(),
+                    error
+                );
+                continue;
+            }
         };
         if rows.is_empty() {
             continue;
         }
         let Ok(control) = remote_state.control_db.lock() else {
+            eprintln!("warning: control DB lock poisoned during outbox projection");
             continue;
         };
         let now = crate::remote::types::current_unix_time_ms();
@@ -650,22 +667,30 @@ fn project_library_outboxes_into_control_db(
             if row.song_ids.is_empty() {
                 continue;
             }
-            match get_operation(&control, &row.operation_id) {
-                Ok(Some(_)) => {
-                    // Operation exists — ensure Pending+Dirty with song_ids.
-                    let _ = bind_song_ids_mark_pending_and_dirty_tx(
-                        &control,
-                        &row.operation_id,
-                        &library_id,
-                        &row.song_ids,
-                    );
-                }
+            let projected = match get_operation(&control, &row.operation_id) {
+                Ok(Some(_)) => bind_song_ids_mark_pending_and_dirty_tx(
+                    &control,
+                    &row.operation_id,
+                    &library_id,
+                    &row.song_ids,
+                )
+                .is_ok(),
                 Ok(None) => {
                     let payload = OperationPayload {
                         song_ids: row.song_ids.clone(),
                         percent: 0,
                         detail: Some("Recovered from library outbox".to_owned()),
                         ..Default::default()
+                    };
+                    let payload_json = match payload.to_json() {
+                        Ok(json) => json,
+                        Err(error) => {
+                            eprintln!(
+                                "warning: outbox payload serialize failed for {}: {:?}",
+                                row.operation_id, error
+                            );
+                            continue;
+                        }
                     };
                     let op = OperationRow {
                         operation_id: row.operation_id.clone(),
@@ -676,9 +701,7 @@ fn project_library_outboxes_into_control_db(
                         target_generation: None,
                         source_db_digest: row.source_db_digest.clone(),
                         candidate_db_digest: None,
-                        payload_json: payload
-                            .to_json()
-                            .unwrap_or_else(|_| r#"{"song_ids":[],"percent":0}"#.to_owned()),
+                        payload_json,
                         attempt_count: 0,
                         next_attempt_at_ms: None,
                         error_code: None,
@@ -686,18 +709,40 @@ fn project_library_outboxes_into_control_db(
                         created_at_ms: row.created_at_ms,
                         updated_at_ms: now,
                     };
-                    if upsert_operation(&control, &op).is_ok() {
-                        let _ = bind_song_ids_mark_pending_and_dirty_tx(
+                    match upsert_operation(&control, &op) {
+                        Ok(()) => bind_song_ids_mark_pending_and_dirty_tx(
                             &control,
                             &row.operation_id,
                             &library_id,
                             &row.song_ids,
-                        );
+                        )
+                        .is_ok(),
+                        Err(error) => {
+                            eprintln!(
+                                "warning: control projection upsert failed for {}: {:?}",
+                                row.operation_id, error
+                            );
+                            false
+                        }
                     }
                 }
-                Err(_) => continue,
+                Err(error) => {
+                    eprintln!(
+                        "warning: control get_operation failed for {}: {:?}",
+                        row.operation_id, error
+                    );
+                    false
+                }
+            };
+            // Only remove the library outbox after control projection succeeds.
+            if projected {
+                if let Err(error) = delete_library_publish_outbox(&lib_conn, &row.operation_id) {
+                    eprintln!(
+                        "warning: failed to delete projected outbox {}: {:?}",
+                        row.operation_id, error
+                    );
+                }
             }
-            let _ = mark_library_outbox_projected(&lib_conn, &row.operation_id, now);
         }
     }
 }

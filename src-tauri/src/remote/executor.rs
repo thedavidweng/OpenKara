@@ -286,6 +286,12 @@ fn run_publish_protocol(
                 )
             })?;
 
+            // Machine-local control metadata must not ship with a generation
+            // candidate. Clear remote_publish_outbox on the frozen copy.
+            if let Ok(cand) = rusqlite::Connection::open(&candidate_path) {
+                let _ = crate::remote::library_outbox::clear_all_library_publish_outbox(&cand);
+            }
+
             // --- Step 6: SQLite integrity checks + SHA-256 digest ---
             verify_sqlite_integrity_pub(&candidate_path).map_err(|e| {
                 let _ = std::fs::remove_file(&candidate_path);

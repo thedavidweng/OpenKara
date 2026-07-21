@@ -38,13 +38,12 @@ pub fn import_songs(
     paths: Vec<String>,
     options: Option<ImportSongsOptions>,
 ) -> CommandResult<ImportSongsResult> {
-    let library = state.library_root()?;
-    let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
-
-    remote::run_imported_songs_mutation(&state, &app_handle, || {
+    // Connection + outbox share one library SQLite transaction inside the
+    // mutation wrapper — do not open a separate connection here.
+    remote::run_imported_songs_mutation(&state, &app_handle, |connection, library| {
         import_songs_from_paths_with_options(
-            &connection,
-            &library,
+            connection,
+            library,
             &paths,
             &options.unwrap_or_default(),
         )
@@ -366,16 +365,13 @@ pub fn extract_embedded_cover_art(
     song_ids: Vec<String>,
 ) -> CommandResult<ExtractEmbeddedCoverArtResult> {
     let library = state.library_root()?;
-    let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
 
     remote::run_updated_songs_mutation(
         &state,
         &app_handle,
-        || {
+        |connection| {
             Ok(extract_embedded_cover_art_from_connection(
-                &connection,
-                &library,
-                &song_ids,
+                connection, &library, &song_ids,
             ))
         },
         |result| remote::song_ids_from_songs(&result.updated_songs),
@@ -390,11 +386,8 @@ pub fn update_song_metadata(
     title: Option<String>,
     artist: Option<String>,
 ) -> CommandResult<Song> {
-    let library = state.library_root()?;
-    let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
-
-    remote::run_song_database_mutation(&state, &app_handle, &hash, || {
-        update_song_metadata_in_connection(&connection, &hash, title.as_deref(), artist.as_deref())
+    remote::run_song_database_mutation(&state, &app_handle, &hash, |connection| {
+        update_song_metadata_in_connection(connection, &hash, title.as_deref(), artist.as_deref())
     })
 }
 
