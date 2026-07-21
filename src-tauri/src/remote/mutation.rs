@@ -99,14 +99,26 @@ mod sync_backend {
         )
     }
 
-    pub fn prepare(state: &AppState) -> CommandResult<()> {
+    /// Pre-mutation refresh for an **explicit** library id (never re-resolves
+    /// the currently active library under a held commit lock).
+    pub fn prepare_for_library(state: &AppState, library_id: &str) -> CommandResult<()> {
+        let library = sync::load_registered_remote_library(&state.shell.app_data_dir, library_id)?;
         let control_db_conn = state.remote.control_db.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
-        sync::prepare_active_remote_database_for_mutation(
+        let _ = sync::prepare_remote_database_for_mutation(
             &control_db_conn,
             &state.shell.app_data_dir,
-        )
+            &library,
+        )?;
+        Ok(())
+    }
+
+    pub fn prepare(state: &AppState) -> CommandResult<()> {
+        let Some(library_id) = active_remote_library_id(state)? else {
+            return Ok(());
+        };
+        prepare_for_library(state, &library_id)
     }
 
     pub fn publish_song<R: tauri::Runtime>(
@@ -135,20 +147,15 @@ mod sync_backend {
 
     // --- Durable outbox state recording (PR#2) ---
 
-    /// Record a `prepared` operation row before the local mutation commits.
-    /// Returns the operation_id and source_db_digest so the caller can
-    /// transition the row to `pending` after the mutation.
-    ///
-    /// If no active remote library is bound, this is a no-op (local-only
-    /// library — nothing to publish).
-    pub fn record_prepared_operation(
+    /// Record a `prepared` operation for an **explicit** library id.
+    /// Never re-resolves the currently active library — callers pass the
+    /// library they already locked.
+    pub fn record_prepared_operation_for_library(
         state: &AppState,
+        library_id: &str,
         song_ids: &[String],
     ) -> CommandResult<Option<PreparedOperation>> {
-        let Some(library) = active_remote_library(&state.shell.app_data_dir)? else {
-            return Ok(None);
-        };
-        let library_id = library.id().to_owned();
+        let library = sync::load_registered_remote_library(&state.shell.app_data_dir, library_id)?;
 
         // Resolve the working DB path to compute the pre-mutation digest.
         let db_path = library
@@ -177,7 +184,7 @@ mod sync_backend {
             let conn = state.remote.control_db.lock().map_err(|_| {
                 crate::commands::error::state_lock_error("control DB lock was poisoned")
             })?;
-            get_repository_state(&conn, &library_id)?
+            get_repository_state(&conn, library_id)?
                 .map(|r| r.committed_generation)
                 .unwrap_or(0)
         };
@@ -201,6 +208,7 @@ mod sync_backend {
             ..Default::default()
         };
 
+        let library_id = library_id.to_owned();
         let row = OperationRow {
             operation_id: operation_id.clone(),
             library_id: library_id.clone(),
@@ -232,6 +240,18 @@ mod sync_backend {
             expected_generation: Some(expected_generation),
             source_db_digest,
         }))
+    }
+
+    /// Record a `prepared` operation for the currently active remote library.
+    /// Prefer `record_prepared_operation_for_library` under a commit lock.
+    pub fn record_prepared_operation(
+        state: &AppState,
+        song_ids: &[String],
+    ) -> CommandResult<Option<PreparedOperation>> {
+        let Some(library_id) = active_remote_library_id(state)? else {
+            return Ok(None);
+        };
+        record_prepared_operation_for_library(state, &library_id, song_ids)
     }
 
     /// Cancel a prepared operation that has no recoverable song identity.
@@ -333,6 +353,11 @@ mod sync_backend {
         Ok(None)
     }
 
+    pub fn prepare_for_library(_state: &AppState, _library_id: &str) -> CommandResult<()> {
+        CALLS.with(|c| c.borrow_mut().push(SyncCall::Prepare));
+        PREPARE_RESULT.with(|r| r.borrow().clone())
+    }
+
     pub fn prepare(_state: &AppState) -> CommandResult<()> {
         CALLS.with(|c| c.borrow_mut().push(SyncCall::Prepare));
         PREPARE_RESULT.with(|r| r.borrow().clone())
@@ -376,6 +401,14 @@ mod sync_backend {
     // In tests, the test fixture has no active remote library, so these are
     // no-ops. The existing call-sequence assertions remain intact because the
     // durable recording does not add any SyncCall entries.
+
+    pub fn record_prepared_operation_for_library(
+        _state: &AppState,
+        _library_id: &str,
+        _song_ids: &[String],
+    ) -> CommandResult<Option<super::PreparedOperation>> {
+        Ok(None)
+    }
 
     pub fn record_prepared_operation(
         _state: &AppState,
@@ -452,6 +485,10 @@ fn peek_active_remote_library_id(state: &AppState) -> CommandResult<Option<Strin
 /// pre-mutation refresh → Prepared row → library mutation+outbox → control
 /// projection. Mutex is not re-entrant, so the lock is acquired exactly once
 /// here and inner helpers must not re-lock.
+///
+/// Library identity is resolved **once** before the lock and then passed as an
+/// explicit parameter through prepare/record — never re-read as "active"
+/// under the lock (activate_library can race otherwise).
 fn with_serialized_remote_mutation<T, F>(
     state: &AppState,
     prepared_song_ids: &[String],
@@ -466,10 +503,13 @@ where
         let _commit_guard = commit_lock
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        // Pre-mutation refresh under the same lock as mutation/freeze so a
-        // concurrent publisher cannot race a Clean-state DB replace.
-        sync_backend::prepare(state)?;
-        let prepared = sync_backend::record_prepared_operation(state, prepared_song_ids)?;
+        // Explicit library_id end-to-end — no active-library re-resolve.
+        sync_backend::prepare_for_library(state, &library_id)?;
+        let prepared = sync_backend::record_prepared_operation_for_library(
+            state,
+            &library_id,
+            prepared_song_ids,
+        )?;
         if let Some(ref p) = prepared {
             if p.library_id != library_id {
                 return Err(database_error(format!(
@@ -481,6 +521,7 @@ where
         let result = body(prepared.as_ref())?;
         Ok((result, prepared))
     } else {
+        // Local-only: no remote lock, prepare is a no-op when unbound.
         sync_backend::prepare(state)?;
         let prepared = sync_backend::record_prepared_operation(state, prepared_song_ids)?;
         let result = body(prepared.as_ref())?;

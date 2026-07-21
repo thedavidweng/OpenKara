@@ -31,11 +31,12 @@
 //! The winning remote manifest + database are pulled to a conflict candidate
 //! (not the active working DB) for the conflict-resolution actions.
 
-use crate::commands::error::{internal_error, CommandResult};
+use crate::commands::error::{database_error, internal_error, CommandResult};
 use crate::remote::atomic_download::{sha256_file, verify_sqlite_integrity_pub};
 use crate::remote::control_db::{
-    get_operation, get_repository_state, upsert_operation, upsert_repository_state, LocalState,
-    OperationKind, OperationPayload, OperationRow, OperationState, RepositoryStateRow,
+    get_operation, get_repository_state, list_operations_for_library, upsert_operation,
+    upsert_repository_state, LocalState, OperationKind, OperationPayload, OperationRow,
+    OperationState, RepositoryStateRow,
 };
 use crate::remote::errors::{RemoteError, RemoteErrorKind};
 use crate::remote::manifest::{
@@ -976,16 +977,32 @@ fn persist_candidate_identity(
     Ok(updated)
 }
 
-/// Record a successful completion: update the operation row to `completed`,
-/// update the repository state, and emit `upload-complete`.
+/// Record a successful completion: mark the operation `completed` and update
+/// repository state in **one** control-DB SQLite transaction.
+///
+/// Repository becomes `Clean` only when:
+/// - no remaining non-terminal publish operations exist for the library, AND
+/// - the current working DB digest still equals the committed candidate digest
+///
+/// Otherwise the repository stays `Dirty` with `active_operation_id` pointing
+/// at the next durable-queue survivor. This prevents an automatic pull from
+/// overwriting uncommitted local mutations after a partial CAS completion.
 fn record_completed(
     ctx: &PublishContext<'_>,
     op: &OperationRow,
     outcome: &PublishOutcome,
 ) -> CommandResult<()> {
     let now = current_unix_time_ms();
+    let working_db_path = ctx.working_copy_root.join("openkara.db");
+    let working_digest = sha256_file(&working_db_path).ok();
+    let working_matches_candidate = working_digest.as_ref() == Some(&outcome.candidate_db_digest);
 
-    // Update the operation row to completed.
+    let tx = ctx
+        .control_db
+        .unchecked_transaction()
+        .map_err(|e| database_error(format!("failed to begin completion transaction: {e}")))?;
+
+    // 1. Mark this operation completed.
     let mut updated = op.clone();
     updated.state = OperationState::Completed;
     updated.target_generation = Some(outcome.target_generation);
@@ -993,20 +1010,74 @@ fn record_completed(
     updated.error_code = None;
     updated.error_detail = None;
     updated.updated_at_ms = now;
-    upsert_operation(ctx.control_db, &updated)?;
+    upsert_operation(&tx, &updated)?;
 
-    // Update the repository state.
-    let repo_row = match get_repository_state(ctx.control_db, ctx.library_id)? {
+    // 2. Remaining non-terminal publish intent for this library.
+    let remaining: Vec<OperationRow> = list_operations_for_library(&tx, ctx.library_id)?
+        .into_iter()
+        .filter(|row| {
+            row.operation_kind == OperationKind::Publish
+                && !row.state.is_terminal()
+                && row.operation_id != op.operation_id
+        })
+        .collect();
+
+    // Prefer CAS-boundary survivor, else earliest created non-terminal publish.
+    let next_active = {
+        let mut cas: Vec<&OperationRow> = remaining
+            .iter()
+            .filter(|row| {
+                row.candidate_db_digest.is_some()
+                    || OperationPayload::from_json(&row.payload_json)
+                        .map(|p| {
+                            p.candidate_sha256.is_some()
+                                || p.candidate_relative_path.is_some()
+                                || matches!(
+                                    p.protocol_step.as_deref(),
+                                    Some("candidate_ready" | "candidate_uploaded")
+                                )
+                        })
+                        .unwrap_or(false)
+            })
+            .collect();
+        if !cas.is_empty() {
+            cas.sort_by_key(|row| row.created_at_ms);
+            Some(cas[0].operation_id.clone())
+        } else {
+            let mut others = remaining.clone();
+            others.sort_by_key(|row| row.created_at_ms);
+            others.first().map(|row| row.operation_id.clone())
+        }
+    };
+
+    let (local_state, active_operation_id) = if !remaining.is_empty() {
+        (LocalState::Dirty, next_active)
+    } else if working_matches_candidate {
+        (LocalState::Clean, None)
+    } else {
+        // Working DB diverged after freeze (e.g. late mutation not yet
+        // projected). Keep Dirty so automatic pull cannot overwrite it.
+        (LocalState::Dirty, None)
+    };
+
+    // 3. Repository row (same TX as operation completion).
+    let repo_row = match get_repository_state(&tx, ctx.library_id)? {
         Some(mut row) => {
             row.committed_generation = outcome.target_generation;
             row.committed_manifest_revision = outcome.committed_manifest_revision.clone();
             row.local_base_generation = outcome.target_generation;
             row.local_db_digest = Some(outcome.candidate_db_digest.clone());
-            row.local_state = LocalState::Clean;
-            row.active_operation_id = None;
+            row.local_state = local_state;
+            row.active_operation_id = active_operation_id;
             row.last_success_at_ms = Some(now);
             row.last_error_code = None;
             row.updated_at_ms = now;
+            if row.repository_id.is_none() {
+                row.repository_id = Some(ctx.repository_id.to_owned());
+            }
+            if row.writer_id.is_none() {
+                row.writer_id = Some(ctx.writer_id.to_owned());
+            }
             row
         }
         None => RepositoryStateRow {
@@ -1015,8 +1086,8 @@ fn record_completed(
             committed_manifest_revision: outcome.committed_manifest_revision.clone(),
             local_base_generation: outcome.target_generation,
             local_db_digest: Some(outcome.candidate_db_digest.clone()),
-            local_state: LocalState::Clean,
-            active_operation_id: None,
+            local_state,
+            active_operation_id,
             last_success_at_ms: Some(now),
             last_error_code: None,
             updated_at_ms: now,
@@ -1024,10 +1095,13 @@ fn record_completed(
             writer_id: Some(ctx.writer_id.to_owned()),
         },
     };
-    upsert_repository_state(ctx.control_db, &repo_row)?;
+    upsert_repository_state(&tx, &repo_row)?;
 
-    // Step 13: Schedule a Gc operation row for deferred cleanup.
-    schedule_gc(ctx, outcome.target_generation)?;
+    // 4. Schedule deferred GC inside the same TX when possible.
+    schedule_gc_on_conn(&tx, ctx.library_id, outcome.target_generation, now)?;
+
+    tx.commit()
+        .map_err(|e| database_error(format!("failed to commit completion transaction: {e}")))?;
 
     // The immutable candidate is no longer needed once local completion is
     // durable. Best-effort removal — a leftover is cleaned by deferred GC.
@@ -1124,9 +1198,19 @@ const GC_SAFETY_DELAY_MS: i64 = 300_000;
 /// the safety delay and deletes generations older than
 /// `committed_generation - 1` (the previous generation is retained as a
 /// rollback safety net for the delay window).
+#[allow(dead_code)] // retained for non-TX call sites / future callers
 fn schedule_gc(ctx: &PublishContext<'_>, committed_generation: i64) -> CommandResult<()> {
     let now = current_unix_time_ms();
-    let gc_op_id = format!("gc-{}-{}", ctx.library_id, now);
+    schedule_gc_on_conn(ctx.control_db, ctx.library_id, committed_generation, now)
+}
+
+fn schedule_gc_on_conn(
+    connection: &Connection,
+    library_id: &str,
+    committed_generation: i64,
+    now: i64,
+) -> CommandResult<()> {
+    let gc_op_id = format!("gc-{library_id}-{now}");
     let payload = OperationPayload {
         song_ids: Vec::new(),
         percent: 0,
@@ -1137,7 +1221,7 @@ fn schedule_gc(ctx: &PublishContext<'_>, committed_generation: i64) -> CommandRe
     };
     let row = OperationRow {
         operation_id: gc_op_id,
-        library_id: ctx.library_id.to_owned(),
+        library_id: library_id.to_owned(),
         operation_kind: OperationKind::Gc,
         // RetryWait with a future next_attempt_at_ms enforces the safety
         // delay: the executor skips operations whose next_attempt is in the
@@ -1155,7 +1239,7 @@ fn schedule_gc(ctx: &PublishContext<'_>, committed_generation: i64) -> CommandRe
         created_at_ms: now,
         updated_at_ms: now,
     };
-    upsert_operation(ctx.control_db, &row)?;
+    upsert_operation(connection, &row)?;
     Ok(())
 }
 

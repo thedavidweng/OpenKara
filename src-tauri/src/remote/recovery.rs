@@ -114,11 +114,73 @@ pub fn run_recovery(
     // crash left operation=Pending but local_state=Clean.
     force_dirty_for_active_publish_ops(connection, clock)?;
 
+    // 5. Repair repositories left Dirty/Publishing after operation Completed
+    // when the process died between the two writes (pre-atomic completion)
+    // and no non-terminal publish intent remains.
+    repair_completed_repository_state(connection, clock)?;
+
     // PR#4: After recovery transitions, the caller (startup hook) invokes
     // `retry_pending_operations` to drive pending/retry_wait operations
     // through the executor. This is done in a separate call so the recovery
     // pass itself remains fast and testable without a provider.
     Ok(report)
+}
+
+/// When operation=Completed but repository stayed Dirty/Publishing (crash
+/// between the two writes) and no non-terminal publish ops remain, restore
+/// Clean from the latest completed operation.
+fn repair_completed_repository_state(connection: &Connection, clock: &Clock) -> CommandResult<()> {
+    use crate::remote::control_db::{list_operations_for_library, OperationKind};
+    use std::collections::HashSet;
+
+    let now = (clock)();
+    let completed = list_operations_in_states(connection, &[OperationState::Completed])?;
+    let mut libraries: HashSet<String> = HashSet::new();
+    for op in &completed {
+        if op.operation_kind == OperationKind::Publish {
+            libraries.insert(op.library_id.clone());
+        }
+    }
+    for library_id in libraries {
+        let Some(mut repo) = get_repository_state(connection, &library_id)? else {
+            continue;
+        };
+        if matches!(repo.local_state, LocalState::Clean | LocalState::Conflicted) {
+            continue;
+        }
+        let all = list_operations_for_library(connection, &library_id)?;
+        let has_outstanding = all
+            .iter()
+            .any(|op| op.operation_kind == OperationKind::Publish && !op.state.is_terminal());
+        if has_outstanding {
+            continue;
+        }
+        // Latest completed publish for generation/digest recovery.
+        let mut completed_ops: Vec<_> = all
+            .into_iter()
+            .filter(|op| {
+                op.operation_kind == OperationKind::Publish && op.state == OperationState::Completed
+            })
+            .collect();
+        completed_ops.sort_by_key(|op| op.updated_at_ms);
+        let Some(last) = completed_ops.last() else {
+            continue;
+        };
+        if let Some(gen) = last.target_generation {
+            repo.committed_generation = gen;
+            repo.local_base_generation = gen;
+        }
+        if let Some(digest) = last.candidate_db_digest.clone() {
+            repo.local_db_digest = Some(digest);
+        }
+        repo.local_state = LocalState::Clean;
+        repo.active_operation_id = None;
+        repo.last_success_at_ms = Some(now);
+        repo.last_error_code = None;
+        repo.updated_at_ms = now;
+        upsert_repository_state(connection, &repo)?;
+    }
+    Ok(())
 }
 
 /// Force repository local_state to Dirty whenever a non-terminal publish
@@ -175,7 +237,10 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
         execute_gc, execute_publish, generate_repository_id, generate_writer_id, PublishContext,
     };
     use crate::remote::provider::create_provider;
-    use crate::remote::sync::{load_registered_remote_library, merge_pending_ops_for_publish};
+    use crate::remote::sync::{
+        load_registered_remote_library, may_have_crossed_cas_boundary,
+        merge_pending_ops_for_publish, select_library_publish_primary,
+    };
     use crate::remote::types::load_app_config;
     use std::collections::HashMap;
 
@@ -201,18 +266,22 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
 
     let now = crate::remote::types::current_unix_time_ms();
 
-    // Partition GC vs Publish. Publish ops are grouped by library so
-    // coalescing runs once per library (same protocol as immediate publish).
+    // Partition GC vs Publish. Publish ops are grouped by library so the
+    // durable queue runs once per library (CAS-boundary first, then merge).
+    // Future RetryWait publish ops are still included so they can be merged
+    // into the shared-DB survivor (library waits on max backoff).
     let mut gc_ops = Vec::new();
     let mut publish_by_library: HashMap<String, Vec<OperationRow>> = HashMap::new();
     for op in pending {
-        if let Some(next_attempt) = op.next_attempt_at_ms {
-            if next_attempt > now {
-                continue;
-            }
-        }
         match op.operation_kind {
-            OperationKind::Gc => gc_ops.push(op),
+            OperationKind::Gc => {
+                if let Some(next_attempt) = op.next_attempt_at_ms {
+                    if next_attempt > now {
+                        continue;
+                    }
+                }
+                gc_ops.push(op);
+            }
             OperationKind::Publish => {
                 publish_by_library
                     .entry(op.library_id.clone())
@@ -246,29 +315,11 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
         let _ = execute_gc(provider.as_ref(), &exec_conn, library_id, &op.operation_id);
     }
 
-    for (library_id, mut ops) in publish_by_library {
-        // Stable primary: earliest created among ready ops.
-        ops.sort_by_key(|o| o.created_at_ms);
-        let Some(primary) = ops.first().cloned() else {
-            continue;
-        };
-
+    for (library_id, ops) in publish_by_library {
         let commit_lock = state.remote.commit_lock(&library_id);
         let _commit_guard = commit_lock
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-
-        // Re-check primary under the lock — a concurrent immediate publish
-        // may already have cancelled/merged it.
-        {
-            let conn = state.remote.control_db.lock().map_err(|_| {
-                crate::commands::error::state_lock_error("control DB lock was poisoned")
-            })?;
-            match crate::remote::control_db::get_operation(&conn, &primary.operation_id)? {
-                Some(op) if !op.state.is_terminal() => {}
-                _ => continue,
-            }
-        }
 
         let remote_library =
             match load_registered_remote_library(&state.shell.app_data_dir, &library_id) {
@@ -287,9 +338,90 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
             Err(_) => continue,
         };
 
-        // Shared coalesce path with immediate publish: union song_ids,
-        // cancel secondaries, rebind generation, invalidate stale candidates.
-        // CAS-boundary ops and rate-limited RetryWait peers are left alone.
+        // Phase 1: CAS-boundary ops first (accepted-commit / freeze resume).
+        let cas_ops: Vec<OperationRow> = {
+            let mut cas: Vec<OperationRow> = ops
+                .iter()
+                .filter(|op| may_have_crossed_cas_boundary(op))
+                .cloned()
+                .collect();
+            // Also re-read under lock in case concurrent publish advanced state.
+            if let Ok(conn) = state.remote.control_db.lock() {
+                if let Ok(all) =
+                    crate::remote::control_db::list_operations_for_library(&conn, &library_id)
+                {
+                    cas = all
+                        .into_iter()
+                        .filter(|op| {
+                            op.operation_kind == OperationKind::Publish
+                                && !op.state.is_terminal()
+                                && may_have_crossed_cas_boundary(op)
+                        })
+                        .collect();
+                }
+            }
+            cas.sort_by_key(|op| op.created_at_ms);
+            cas
+        };
+        for cas_op in cas_ops {
+            let payload =
+                crate::remote::control_db::OperationPayload::from_json(&cas_op.payload_json)
+                    .unwrap_or_default();
+            for song_id in &payload.song_ids {
+                let _ = crate::remote::sync::reupload_song_assets_for_recovery(
+                    state,
+                    &remote_library,
+                    &remote_root,
+                    song_id,
+                );
+            }
+            let control_db_path =
+                crate::remote::control_db::control_db_path(&state.shell.app_data_dir);
+            if let Ok(exec_conn) = crate::remote::control_db::open_control_db(&control_db_path) {
+                let (repository_id, writer_id) = {
+                    let conn = state.remote.control_db.lock().ok();
+                    let repo = conn
+                        .as_ref()
+                        .and_then(|c| get_repository_state(c, &library_id).ok().flatten());
+                    let repository_id = repo
+                        .as_ref()
+                        .and_then(|r| r.repository_id.clone())
+                        .unwrap_or_else(generate_repository_id);
+                    let writer_id = repo
+                        .as_ref()
+                        .and_then(|r| r.writer_id.clone())
+                        .unwrap_or_else(generate_writer_id);
+                    (repository_id, writer_id)
+                };
+                let ctx = PublishContext {
+                    control_db: &exec_conn,
+                    provider: provider.as_ref(),
+                    working_copy_root: remote_root.root(),
+                    library_id: &library_id,
+                    writer_id: &writer_id,
+                    repository_id: &repository_id,
+                };
+                let _ = execute_publish(&ctx, &cas_op.operation_id);
+            }
+        }
+
+        // Phase 2: merge remaining Pending/RetryWait (including future backoff).
+        let primary = {
+            let conn = match state.remote.control_db.lock() {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            let all =
+                match crate::remote::control_db::list_operations_for_library(&conn, &library_id) {
+                    Ok(ops) => ops,
+                    Err(_) => continue,
+                };
+            match select_library_publish_primary(&all) {
+                Some(op) if !may_have_crossed_cas_boundary(&op) => op,
+                _ => continue, // only CAS left (handled) or empty
+            }
+        };
+
         let (operation_id, song_ids) = match merge_pending_ops_for_publish(
             state,
             &library_id,
@@ -309,7 +441,7 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
             }
         };
 
-        // Coalesce may preserve a future Retry-After on the survivor.
+        // Shared-DB survivor inherits max Retry-After — wait, do not freeze.
         {
             let conn = state.remote.control_db.lock().map_err(|_| {
                 crate::commands::error::state_lock_error("control DB lock was poisoned")
@@ -987,6 +1119,28 @@ mod tests {
         // Still exactly one row.
         let all = control_db::list_operations(&conn).unwrap();
         assert_eq!(all.len(), 1);
+    }
+
+    #[test]
+    fn recovery_repairs_dirty_repo_after_completed_op_when_no_outstanding() {
+        // Crash between operation=Completed and repository=Clean.
+        let (_dir, conn) = fresh_db();
+        let mut op = make_operation("op-done", "lib-1", OperationState::Completed, None, None);
+        op.target_generation = Some(3);
+        op.candidate_db_digest = Some("cand-digest".to_owned());
+        upsert_operation(&conn, &op).unwrap();
+        let mut repo = make_repo_state("lib-1", 2);
+        repo.local_state = LocalState::Publishing;
+        repo.active_operation_id = Some("op-done".to_owned());
+        upsert_repository_state(&conn, &repo).unwrap();
+
+        run_recovery(&conn, &NullDigestResolver, &fixed_clock(9000)).unwrap();
+
+        let repo = get_repository_state(&conn, "lib-1").unwrap().unwrap();
+        assert_eq!(repo.local_state, LocalState::Clean);
+        assert_eq!(repo.committed_generation, 3);
+        assert_eq!(repo.local_db_digest.as_deref(), Some("cand-digest"));
+        assert!(repo.active_operation_id.is_none());
     }
 
     // --- Per-library commit serialization ---
