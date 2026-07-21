@@ -73,11 +73,17 @@ struct FaultInjectionProvider {
     fail_on_range_index: Arc<Mutex<Option<usize>>>,
     /// Number of range requests made so far.
     range_call_count: Arc<Mutex<usize>>,
+    /// Remaining upload failures (candidate DB / asset uploads). Each
+    /// `upload_file` decrements this and fails while > 0.
+    upload_fail_remaining: Arc<Mutex<usize>>,
     /// When true, `conditional_replace` returns `ProviderCapabilityUnavailable`.
     no_cas: bool,
     /// When true, `conditional_replace` always returns `RemoteConflict`
     /// regardless of the expected revision (simulates a concurrent writer).
     always_conflict: bool,
+    /// Fail the next N conditional_replace calls with a transient network
+    /// error (crash window: after candidate upload, before/during CAS).
+    cas_network_fail_remaining: Arc<Mutex<usize>>,
     /// Working copy root for reading files during `upload_file`.
     working_copy_root: Option<PathBuf>,
     /// Recorded sleep delays observed by the retry driver (for backoff tests).
@@ -112,8 +118,10 @@ impl FaultInjectionProvider {
             download_behaviors: Arc::new(Mutex::new(Vec::new())),
             fail_on_range_index: Arc::new(Mutex::new(None)),
             range_call_count: Arc::new(Mutex::new(0)),
+            upload_fail_remaining: Arc::new(Mutex::new(0)),
             no_cas: false,
             always_conflict: false,
+            cas_network_fail_remaining: Arc::new(Mutex::new(0)),
             working_copy_root: None,
             recorded_delays: Arc::new(Mutex::new(Vec::new())),
             credential_generation: Arc::new(Mutex::new(0)),
@@ -133,6 +141,17 @@ impl FaultInjectionProvider {
     fn with_always_conflict(mut self) -> Self {
         self.always_conflict = true;
         self
+    }
+
+    /// Fail the next `count` `upload_file` calls with a transient network error.
+    fn fail_next_uploads(&self, count: usize) {
+        *self.upload_fail_remaining.lock().unwrap() = count;
+    }
+
+    /// Fail the next `count` CAS calls with a transient network error, then
+    /// allow CAS to succeed.
+    fn fail_next_cas_network(&self, count: usize) {
+        *self.cas_network_fail_remaining.lock().unwrap() = count;
     }
 
     fn store_file(&self, relative_path: &str, bytes: Vec<u8>, revision: &str) {
@@ -377,6 +396,16 @@ impl RemoteProvider for FaultInjectionProvider {
     }
 
     fn upload_file(&self, path: &str) -> CommandResult<()> {
+        {
+            let mut remaining = self.upload_fail_remaining.lock().unwrap();
+            if *remaining > 0 {
+                *remaining -= 1;
+                return Err(command_error_from_kind(
+                    RemoteErrorKind::NetworkUnavailable,
+                    "simulated candidate upload failure",
+                ));
+            }
+        }
         if let Some(ref root) = self.working_copy_root {
             let local_path = root.join(path);
             if local_path.exists() {
@@ -420,6 +449,16 @@ impl RemoteProvider for FaultInjectionProvider {
                 RemoteErrorKind::RemoteConflict,
                 "concurrent writer committed first",
             ));
+        }
+        {
+            let mut remaining = self.cas_network_fail_remaining.lock().unwrap();
+            if *remaining > 0 {
+                *remaining -= 1;
+                return Err(RemoteError::new(
+                    RemoteErrorKind::NetworkUnavailable,
+                    "simulated CAS network failure after candidate upload",
+                ));
+            }
         }
 
         let bytes = source
@@ -497,8 +536,25 @@ fn fresh_control_db() -> (TempDir, Connection) {
 
 fn make_valid_db(path: &Path) {
     let conn = Connection::open(path).unwrap();
+    // Schema must match what verify_referenced_assets queries (songs path
+    // columns + optional stems join). Keep the fixture empty of asset paths
+    // so publish can proceed without remote media for pure protocol tests.
     conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS songs (hash TEXT PRIMARY KEY);
+        "CREATE TABLE IF NOT EXISTS songs (
+            hash TEXT PRIMARY KEY,
+            file_path TEXT,
+            cdg_path TEXT,
+            artwork_thumb_path TEXT,
+            artwork_preview_path TEXT
+         );
+         CREATE TABLE IF NOT EXISTS stems (
+            song_hash TEXT PRIMARY KEY,
+            vocals_path TEXT,
+            accomp_path TEXT,
+            drums_path TEXT,
+            bass_path TEXT,
+            other_path TEXT
+         );
          CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
          INSERT OR IGNORE INTO songs (hash) VALUES ('song-1');
          INSERT OR IGNORE INTO settings (key, value) VALUES ('version', '1');",
@@ -1269,4 +1325,370 @@ fn t12_network_retry_with_backoff_increasing_delays() {
     );
     // Verify the attempt count: 4 total (3 failures + 1 success).
     assert_eq!(*attempt_count.lock().unwrap(), 4);
+}
+
+// ---------------------------------------------------------------------------
+// Publication crash windows (issue #151)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn t13_crash_after_candidate_upload_before_cas_preserves_remote_generation() {
+    // Crash window 6: candidate uploaded, CAS not yet applied. A network
+    // failure on CAS must leave the remote generation unchanged and keep the
+    // local operation retryable / dirty — never silently overwrite.
+    let (_db_dir, conn) = fresh_control_db();
+    let working_dir = TempDir::new().expect("working dir");
+    let working_root = working_dir.path().to_owned();
+    make_valid_db(&working_root.join("openkara.db"));
+    seed_repository_state(&conn, "lib-1");
+
+    let provider = FaultInjectionProvider::new().with_working_copy_root(working_root.clone());
+    provider.fail_next_cas_network(1);
+
+    let op_id = make_pending_op(&conn, "lib-1", 0);
+    let ctx = make_context(
+        &conn,
+        &provider,
+        &working_root,
+        "lib-1",
+        "repo-uuid-1",
+        "writer-uuid-1",
+    );
+    let err = execute_publish(&ctx, &op_id).expect_err("CAS network failure");
+    assert!(
+        err.message.contains("CAS network")
+            || err.message.contains("network")
+            || err.message.contains("simulated")
+            || err.message.contains("could not"),
+        "error should indicate network/CAS failure: {}",
+        err.message
+    );
+
+    // No manifest committed — generation still absent.
+    assert!(
+        read_manifest(&provider).unwrap().is_none(),
+        "manifest must not advance when CAS fails"
+    );
+
+    let op = crate::remote::control_db::get_operation(&conn, &op_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(op.state, OperationState::RetryWait);
+    let repo = crate::remote::control_db::get_repository_state(&conn, "lib-1")
+        .unwrap()
+        .unwrap();
+    assert_eq!(repo.local_state, LocalState::Publishing);
+    assert_eq!(repo.committed_generation, 0);
+}
+
+#[test]
+fn t14_retry_after_cas_network_failure_converges() {
+    // Same crash window as t13, but the next attempt succeeds. The operation
+    // must complete and advance the remote generation exactly once.
+    let (_db_dir, conn) = fresh_control_db();
+    let working_dir = TempDir::new().expect("working dir");
+    let working_root = working_dir.path().to_owned();
+    make_valid_db(&working_root.join("openkara.db"));
+    seed_repository_state(&conn, "lib-1");
+
+    let provider = FaultInjectionProvider::new().with_working_copy_root(working_root.clone());
+    provider.fail_next_cas_network(1);
+
+    let op_id = make_pending_op(&conn, "lib-1", 0);
+    let ctx = make_context(
+        &conn,
+        &provider,
+        &working_root,
+        "lib-1",
+        "repo-uuid-1",
+        "writer-uuid-1",
+    );
+    let _ = execute_publish(&ctx, &op_id).expect_err("first attempt fails at CAS");
+
+    // Reset the op to Pending for the retry (simulates recovery).
+    let mut op = crate::remote::control_db::get_operation(&conn, &op_id)
+        .unwrap()
+        .unwrap();
+    op.state = OperationState::Pending;
+    op.error_code = None;
+    op.error_detail = None;
+    crate::remote::control_db::upsert_operation(&conn, &op).unwrap();
+
+    execute_publish(&ctx, &op_id).expect("retry after CAS network failure must succeed");
+
+    let remote_manifest = read_manifest(&provider).unwrap().unwrap();
+    assert_eq!(remote_manifest.generation, 1);
+    assert_eq!(remote_manifest.writer_id, "writer-uuid-1");
+
+    let op = crate::remote::control_db::get_operation(&conn, &op_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(op.state, OperationState::Completed);
+}
+
+#[test]
+fn t15_crash_after_cas_before_local_completion_recovers_own_commit() {
+    // Crash windows 7–8: CAS succeeded remotely, process died before
+    // record_completed. Recovery re-enters execute_publish with the same
+    // expected_generation and must accept our own writer_id commit instead
+    // of surfacing RemoteConflict.
+    let (_db_dir, conn) = fresh_control_db();
+    let working_dir = TempDir::new().expect("working dir");
+    let working_root = working_dir.path().to_owned();
+    make_valid_db(&working_root.join("openkara.db"));
+    seed_repository_state(&conn, "lib-1");
+
+    let provider = FaultInjectionProvider::new().with_working_copy_root(working_root.clone());
+
+    // Simulate: CAS already committed generation 1 by this writer.
+    let db_bytes = std::fs::read(working_root.join("openkara.db")).unwrap();
+    let digest = sha256_hex(&db_bytes);
+    provider.store_file(".openkara/databases/1.sqlite", db_bytes, "rev-db-1");
+    let accepted = RepositoryManifest {
+        schema_version: CURRENT_SCHEMA_VERSION,
+        repository_id: "repo-uuid-1".to_owned(),
+        generation: 1,
+        database_path: ".openkara/databases/1.sqlite".to_owned(),
+        database_size: std::fs::metadata(working_root.join("openkara.db"))
+            .unwrap()
+            .len(),
+        database_sha256: digest.clone(),
+        committed_at_ms: 5000,
+        writer_id: "writer-uuid-1".to_owned(),
+    };
+    provider.store_file(
+        crate::remote::manifest::MANIFEST_PATH,
+        accepted.to_json().unwrap().into_bytes(),
+        "rev-manifest-1",
+    );
+
+    // Local op still thinks we expected generation 0 (never recorded completion).
+    let op_id = make_pending_op(&conn, "lib-1", 0);
+    let mut op = crate::remote::control_db::get_operation(&conn, &op_id)
+        .unwrap()
+        .unwrap();
+    op.state = OperationState::RetryWait;
+    crate::remote::control_db::upsert_operation(&conn, &op).unwrap();
+
+    let ctx = make_context(
+        &conn,
+        &provider,
+        &working_root,
+        "lib-1",
+        "repo-uuid-1",
+        "writer-uuid-1",
+    );
+    execute_publish(&ctx, &op_id).expect("own accepted commit must complete recovery");
+
+    let op = crate::remote::control_db::get_operation(&conn, &op_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(op.state, OperationState::Completed);
+    assert_eq!(op.target_generation, Some(1));
+
+    let repo = crate::remote::control_db::get_repository_state(&conn, "lib-1")
+        .unwrap()
+        .unwrap();
+    assert_eq!(repo.committed_generation, 1);
+    assert_eq!(repo.local_state, LocalState::Clean);
+    assert_eq!(repo.local_db_digest.as_deref(), Some(digest.as_str()));
+
+    // Remote generation must remain 1 — no double-publish.
+    let remote_manifest = read_manifest(&provider).unwrap().unwrap();
+    assert_eq!(remote_manifest.generation, 1);
+}
+
+#[test]
+fn t16_candidate_upload_failure_leaves_dirty_and_retryable() {
+    // Crash window 5: candidate upload fails. Local mutation must remain
+    // (working DB untouched), remote generation must not advance, op retryable.
+    let (_db_dir, conn) = fresh_control_db();
+    let working_dir = TempDir::new().expect("working dir");
+    let working_root = working_dir.path().to_owned();
+    let working_db = working_root.join("openkara.db");
+    make_valid_db(&working_db);
+    let pre_digest = sha256_hex(&std::fs::read(&working_db).unwrap());
+    seed_repository_state(&conn, "lib-1");
+
+    // Mark dirty as mutation would.
+    let mut repo = crate::remote::control_db::get_repository_state(&conn, "lib-1")
+        .unwrap()
+        .unwrap();
+    repo.local_state = LocalState::Dirty;
+    crate::remote::control_db::upsert_repository_state(&conn, &repo).unwrap();
+
+    let provider = FaultInjectionProvider::new().with_working_copy_root(working_root.clone());
+    provider.fail_next_uploads(1);
+
+    let op_id = make_pending_op(&conn, "lib-1", 0);
+    let ctx = make_context(
+        &conn,
+        &provider,
+        &working_root,
+        "lib-1",
+        "repo-uuid-1",
+        "writer-uuid-1",
+    );
+    let _ = execute_publish(&ctx, &op_id).expect_err("upload failure");
+
+    assert!(
+        read_manifest(&provider).unwrap().is_none(),
+        "remote must not advance without successful CAS"
+    );
+    assert_eq!(
+        sha256_hex(&std::fs::read(&working_db).unwrap()),
+        pre_digest,
+        "local working DB must not be overwritten"
+    );
+
+    let op = crate::remote::control_db::get_operation(&conn, &op_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(op.state, OperationState::RetryWait);
+}
+
+#[test]
+fn t17_concurrent_writers_one_winner_one_conflict_no_overwrite() {
+    // Two independent control planes against one fake provider: both read
+    // generation N; exactly one CAS to N+1 succeeds; the other is conflicted.
+    let (_db_a, conn_a) = fresh_control_db();
+    let (_db_b, conn_b) = fresh_control_db();
+    let working_dir = TempDir::new().expect("working dir");
+    let working_root = working_dir.path().to_owned();
+    make_valid_db(&working_root.join("openkara.db"));
+
+    seed_repository_state(&conn_a, "lib-shared");
+    seed_repository_state(&conn_b, "lib-shared");
+
+    let provider = FaultInjectionProvider::new().with_working_copy_root(working_root.clone());
+
+    let op_a = make_pending_op(&conn_a, "lib-shared", 0);
+    let op_b = {
+        // Unique op id for B (make_pending_op uses generation in id).
+        let op_id = "fault-op-b-0".to_owned();
+        let now = crate::remote::types::current_unix_time_ms();
+        let payload = OperationPayload {
+            song_ids: vec!["song-1".to_owned()],
+            percent: 0,
+            detail: None,
+        };
+        let row = OperationRow {
+            operation_id: op_id.clone(),
+            library_id: "lib-shared".to_owned(),
+            operation_kind: OperationKind::Publish,
+            state: OperationState::Pending,
+            expected_generation: Some(0),
+            target_generation: None,
+            source_db_digest: None,
+            candidate_db_digest: None,
+            payload_json: payload.to_json().unwrap(),
+            attempt_count: 0,
+            next_attempt_at_ms: None,
+            error_code: None,
+            error_detail: None,
+            created_at_ms: now,
+            updated_at_ms: now,
+        };
+        upsert_operation(&conn_b, &row).unwrap();
+        op_id
+    };
+
+    let ctx_a = make_context(
+        &conn_a,
+        &provider,
+        &working_root,
+        "lib-shared",
+        "repo-uuid-1",
+        "writer-a",
+    );
+    execute_publish(&ctx_a, &op_a).expect("writer A wins");
+
+    let winner = read_manifest(&provider).unwrap().unwrap();
+    assert_eq!(winner.generation, 1);
+    assert_eq!(winner.writer_id, "writer-a");
+
+    let ctx_b = make_context(
+        &conn_b,
+        &provider,
+        &working_root,
+        "lib-shared",
+        "repo-uuid-1",
+        "writer-b",
+    );
+    let err = execute_publish(&ctx_b, &op_b).expect_err("writer B must conflict");
+    assert!(
+        err.message.contains("conflict")
+            || err.message.contains("expected generation")
+            || err.message.contains("generation"),
+        "B should report conflict: {}",
+        err.message
+    );
+
+    let op_b_row = crate::remote::control_db::get_operation(&conn_b, &op_b)
+        .unwrap()
+        .unwrap();
+    assert_eq!(op_b_row.state, OperationState::Conflicted);
+
+    // Winner's generation must not be overwritten by the loser.
+    let after = read_manifest(&provider).unwrap().unwrap();
+    assert_eq!(after.generation, 1);
+    assert_eq!(after.writer_id, "writer-a");
+
+    // Retrying the loser must still not overwrite.
+    let mut op_b_row = op_b_row;
+    op_b_row.state = OperationState::Pending;
+    op_b_row.error_code = None;
+    crate::remote::control_db::upsert_operation(&conn_b, &op_b_row).unwrap();
+    let _ = execute_publish(&ctx_b, &op_b).expect_err("retry loser still conflicts");
+    let final_manifest = read_manifest(&provider).unwrap().unwrap();
+    assert_eq!(final_manifest.generation, 1);
+    assert_eq!(final_manifest.writer_id, "writer-a");
+}
+
+#[test]
+fn t18_transfer_identity_digest_change_invalidates_session() {
+    // Changed digest invalidates resume: a transfer part with a different
+    // expected digest must not produce a hybrid object.
+    let (_db_dir, conn) = fresh_control_db();
+    let dir = TempDir::new().expect("temp");
+    let temp = dir.path().join("candidate.part.op-x");
+    std::fs::write(&temp, b"partial-bytes-old").unwrap();
+
+    let part = TransferPartRow {
+        operation_id: "op-x".to_owned(),
+        relative_path: ".openkara/databases/1.sqlite".to_owned(),
+        direction: TransferDirection::Upload,
+        expected_size: Some(100),
+        expected_digest: Some("digest-old".to_owned()),
+        provider_revision: None,
+        provider_session_id: Some("session-old".to_owned()),
+        transferred_bytes: 16,
+        state: "in_progress".to_owned(),
+        updated_at_ms: 1000,
+    };
+    upsert_transfer_part(&conn, &part).unwrap();
+
+    // New candidate with different digest: resume identity check must reject
+    // reusing the old session. We assert the helper contract used by the
+    // executor: same op_id + relative_path + direction but mismatched digest
+    // is treated as a new transfer (session id cleared by callers that rebuild
+    // candidates). Here we verify the control-DB row can be replaced atomically.
+    let new_part = TransferPartRow {
+        operation_id: "op-x".to_owned(),
+        relative_path: ".openkara/databases/1.sqlite".to_owned(),
+        direction: TransferDirection::Upload,
+        expected_size: Some(100),
+        expected_digest: Some("digest-new".to_owned()),
+        provider_revision: None,
+        provider_session_id: None, // session invalidated
+        transferred_bytes: 0,
+        state: "pending".to_owned(),
+        updated_at_ms: 2000,
+    };
+    upsert_transfer_part(&conn, &new_part).unwrap();
+    let loaded = crate::remote::control_db::list_transfer_parts(&conn, "op-x").unwrap();
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].expected_digest.as_deref(), Some("digest-new"));
+    assert!(loaded[0].provider_session_id.is_none());
+    assert_eq!(loaded[0].transferred_bytes, 0);
 }

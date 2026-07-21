@@ -13,7 +13,7 @@ use crate::{
         },
     },
 };
-use reqwest::{blocking::Client, Method, Url};
+use reqwest::{Method, Url};
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -249,7 +249,7 @@ fn google_drive_refresh_access_token(
 
     let body = form_urlencoded_body(&params)?;
 
-    let response = Client::new()
+    let response = crate::remote::net_policy::shared_http_client()
         .post("https://oauth2.googleapis.com/token")
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(body)
@@ -297,7 +297,9 @@ fn google_drive_authorized_request(
     url: Url,
 ) -> CommandResult<reqwest::blocking::RequestBuilder> {
     let token = google_drive_refresh_access_token(app_data_dir, secret)?;
-    Ok(Client::new().request(method, url).bearer_auth(token))
+    Ok(crate::remote::net_policy::shared_http_client()
+        .request(method, url)
+        .bearer_auth(token))
 }
 
 fn google_drive_request_with_access_token(
@@ -305,7 +307,9 @@ fn google_drive_request_with_access_token(
     method: Method,
     url: Url,
 ) -> reqwest::blocking::RequestBuilder {
-    Client::new().request(method, url).bearer_auth(access_token)
+    crate::remote::net_policy::shared_http_client()
+        .request(method, url)
+        .bearer_auth(access_token)
 }
 
 fn google_drive_escape_query_value(value: &str) -> String {
@@ -647,7 +651,7 @@ pub(crate) fn google_drive_query_resumable_offset(
     access_token: &str,
     total_size: u64,
 ) -> CommandResult<u64> {
-    let response = reqwest::blocking::Client::new()
+    let response = crate::remote::net_policy::shared_http_client()
         .put(session_url)
         .bearer_auth(access_token)
         .header("Content-Range", format!("bytes */{total_size}"))
@@ -703,7 +707,7 @@ pub(crate) fn google_drive_upload_chunk(
     chunk: &[u8],
 ) -> CommandResult<()> {
     let end = start + chunk.len() as u64 - 1;
-    let response = reqwest::blocking::Client::new()
+    let response = crate::remote::net_policy::shared_http_client()
         .put(session_url)
         .bearer_auth(access_token)
         .header("Content-Range", format!("bytes {start}-{end}/{total_size}"))
@@ -788,7 +792,7 @@ pub(crate) fn google_drive_resumable_upload(
     // The final chunk (or a status query) returns the file metadata. Query
     // the session to retrieve the committed file metadata.
     // For a complete upload, a final status query returns 200 with metadata.
-    let final_response = reqwest::blocking::Client::new()
+    let final_response = crate::remote::net_policy::shared_http_client()
         .put(&session_url)
         .bearer_auth(&token)
         .header("Content-Range", format!("bytes */{total}"))
@@ -884,7 +888,7 @@ fn google_drive_exchange_code_for_tokens(
 
     let body = form_urlencoded_body(&params)?;
 
-    let response = Client::new()
+    let response = crate::remote::net_policy::shared_http_client()
         .post("https://oauth2.googleapis.com/token")
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(body)
@@ -913,7 +917,7 @@ fn google_drive_fetch_account_id(access_token: &str) -> CommandResult<String> {
             "failed to build Google userinfo URL: {error}"
         )))
     })?;
-    let response = Client::new()
+    let response = crate::remote::net_policy::shared_http_client()
         .get(url)
         .bearer_auth(access_token)
         .send()

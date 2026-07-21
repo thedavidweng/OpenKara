@@ -246,7 +246,7 @@ fn dropbox_refresh_access_token(
 
     let body = form_urlencoded_body(&params)?;
 
-    let response = reqwest::blocking::Client::new()
+    let response = crate::remote::net_policy::shared_http_client()
         .post("https://api.dropboxapi.com/oauth2/token")
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(body)
@@ -295,7 +295,7 @@ fn dropbox_authorized_request(
     url: Url,
 ) -> CommandResult<reqwest::blocking::RequestBuilder> {
     let token = dropbox_refresh_access_token(app_data_dir, secret)?;
-    Ok(reqwest::blocking::Client::new()
+    Ok(crate::remote::net_policy::shared_http_client()
         .request(method, url)
         .bearer_auth(token))
 }
@@ -305,7 +305,7 @@ fn dropbox_request_with_access_token(
     method: Method,
     url: Url,
 ) -> reqwest::blocking::RequestBuilder {
-    reqwest::blocking::Client::new()
+    crate::remote::net_policy::shared_http_client()
         .request(method, url)
         .bearer_auth(access_token)
 }
@@ -327,7 +327,7 @@ fn dropbox_exchange_code_for_tokens(
 
     let body = form_urlencoded_body(&params)?;
 
-    let response = reqwest::blocking::Client::new()
+    let response = crate::remote::net_policy::shared_http_client()
         .post("https://api.dropboxapi.com/oauth2/token")
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(body)

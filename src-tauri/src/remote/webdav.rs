@@ -75,7 +75,13 @@ pub(crate) fn remote_path_display_from_url(url: &str) -> String {
 }
 
 pub(crate) fn webdav_client() -> CommandResult<Client> {
+    use crate::remote::net_policy::RetryPolicy;
+    // WebDAV needs limited redirects in addition to the shared policy timeouts.
+    let policy = RetryPolicy::default();
+    let request_timeout = policy.read_timeout.max(policy.attempt_deadline);
     Client::builder()
+        .connect_timeout(policy.connect_timeout)
+        .timeout(request_timeout)
         .redirect(reqwest::redirect::Policy::limited(10))
         .build()
         .map_err(|error| {
@@ -103,6 +109,9 @@ pub(crate) fn webdav_send(
     if let Some(bytes) = body {
         request = request.body(bytes);
     }
+    // Single-shot send. Callers that can rebuild the request should prefer
+    // `crate::remote::send_with_retry` for transport retries; WebDAV helpers
+    // still apply the shared connect/read timeouts via `webdav_client`.
     request.send().map_err(|_error| {
         tracing::trace!("WebDAV request to {url} failed");
         CommandError::from(LibraryError::Internal(

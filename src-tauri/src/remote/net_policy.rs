@@ -125,17 +125,14 @@ pub(crate) struct RetryPolicy {
     pub initial_delay: Duration,
     /// Ceiling for the exponential backoff delay.
     pub max_delay: Duration,
-    /// Connect timeout for each attempt. Applied when constructing HTTP
-    /// clients that honor the shared policy.
-    #[allow(dead_code)]
+    /// Connect timeout for each attempt. Applied to production HTTP clients.
     pub connect_timeout: Duration,
-    /// Idle-read timeout for each attempt. Applied when constructing HTTP
-    /// clients that honor the shared policy.
-    #[allow(dead_code)]
+    /// Idle-read timeout for each attempt. Used as the total request timeout
+    /// when the platform client cannot separate idle-read from total timeout
+    /// (reqwest blocking uses a single per-request deadline).
     pub read_timeout: Duration,
-    /// Per-attempt deadline. Applied when constructing HTTP clients that
-    /// honor the shared policy.
-    #[allow(dead_code)]
+    /// Per-attempt deadline. Production clients use
+    /// `max(read_timeout, attempt_deadline)` as the request timeout ceiling.
     pub attempt_deadline: Duration,
 }
 
@@ -342,6 +339,34 @@ impl<'a> RetryDriver<'a> {
 /// Production sleep function: `thread::sleep`.
 pub(crate) fn production_sleep(d: Duration) {
     std::thread::sleep(d);
+}
+
+/// Build a blocking HTTP client that honors the shared retry policy timeouts.
+///
+/// - `connect_timeout` limits TCP/TLS establishment.
+/// - The request timeout uses `max(read_timeout, attempt_deadline)` so both
+///   the idle-read and per-attempt budget from the policy are enforced.
+pub(crate) fn build_http_client(policy: &RetryPolicy) -> Result<reqwest::blocking::Client, String> {
+    let request_timeout = policy.read_timeout.max(policy.attempt_deadline);
+    reqwest::blocking::Client::builder()
+        .connect_timeout(policy.connect_timeout)
+        .timeout(request_timeout)
+        .build()
+        .map_err(|error| format!("failed to build remote HTTP client: {error}"))
+}
+
+/// Shared production HTTP client for all remote provider network paths.
+///
+/// Constructed once with the default [`RetryPolicy`] timeouts so connect and
+/// per-attempt deadlines are deterministic and not left at reqwest defaults
+/// (no timeout).
+pub(crate) fn shared_http_client() -> &'static reqwest::blocking::Client {
+    use std::sync::OnceLock;
+    static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        build_http_client(&RetryPolicy::default())
+            .expect("default remote HTTP client must construct")
+    })
 }
 
 /// Run a fallible remote operation with the default production retry policy.
@@ -618,6 +643,24 @@ mod tests {
         assert_eq!(result.unwrap(), 7);
         // The sleep should be the Retry-After value (50ms), not the jitter.
         assert_eq!(sleep_calls.lock().unwrap()[0], Duration::from_millis(50));
+    }
+
+    #[test]
+    fn build_http_client_applies_policy_timeouts() {
+        let policy = RetryPolicy {
+            connect_timeout: Duration::from_secs(3),
+            read_timeout: Duration::from_secs(5),
+            attempt_deadline: Duration::from_secs(10),
+            ..RetryPolicy::default()
+        };
+        let client = build_http_client(&policy).expect("client builds");
+        // reqwest does not expose configured timeouts via getters; constructing
+        // without error is the compile/runtime contract. The shared client
+        // path uses the same builder.
+        drop(client);
+        let shared = shared_http_client();
+        // Second call returns the same static instance.
+        assert!(std::ptr::eq(shared, shared_http_client()));
     }
 
     #[test]

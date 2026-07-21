@@ -161,8 +161,32 @@ fn run_publish_protocol(
     // --- Step 2: Require expected_generation matches ---
     let expected_generation = op.expected_generation.unwrap_or(0);
     let current_generation = current_manifest.as_ref().map(|m| m.generation).unwrap_or(0);
+    let target_generation = expected_generation + 1;
 
     if current_generation != expected_generation {
+        // Crash window after a successful manifest CAS: the remote advanced
+        // exactly one generation by this writer, but local completion was
+        // never recorded. Detect our own accepted commit and finish durably
+        // instead of surfacing a false RemoteConflict that would leave the
+        // working copy dirty forever.
+        if current_generation == target_generation {
+            if let Some(ref m) = current_manifest {
+                if m.writer_id == ctx.writer_id && m.repository_id == ctx.repository_id {
+                    tracing::info!(
+                        "publish recovery: remote generation {} already committed by this writer \
+                         (operation {}); treating as accepted commit",
+                        current_generation,
+                        op.operation_id
+                    );
+                    return Ok(PublishOutcome {
+                        operation_id: op.operation_id.clone(),
+                        target_generation: current_generation,
+                        committed_manifest_revision: manifest_revision,
+                        candidate_db_digest: m.database_sha256.clone(),
+                    });
+                }
+            }
+        }
         // The remote advanced independently — conflict.
         return Err(RemoteError::new(
             RemoteErrorKind::RemoteConflict,
@@ -171,8 +195,6 @@ fn run_publish_protocol(
             ),
         ));
     }
-
-    let target_generation = expected_generation + 1;
 
     // --- Steps 3-4: Asset verification ---
     //

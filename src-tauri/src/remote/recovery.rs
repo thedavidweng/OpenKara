@@ -1009,16 +1009,4 @@ mod tests {
             "transfer part retained for executor decision"
         );
     }
-
-    // Future: an accepted remote commit is detected even when the process
-    // died before recording success. The recovery pass would verify the
-    // remote manifest generation to detect commits that succeeded remotely
-    // but were not recorded locally.
-    #[test]
-    #[ignore = "detect accepted remote commit after process death"]
-    fn recovery_detects_accepted_commit_after_death() {
-        // This test verifies that the recovery pass checks the remote
-        // manifest generation to detect commits that succeeded remotely
-        // but were not recorded locally.
-    }
 }
