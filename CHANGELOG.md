@@ -145,6 +145,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **remote**: Enforce one publication protocol and recovery invariants (#151)
 - **remote**: Recover accepted CAS after crash and harden remaining reliability gaps (#151)
 - **remote**: Close P0 publication recovery, lock scope, and transfer identity gaps (#151)
+- **remote**: Preserve RetryWait, bind batch song_ids, fix refresh/bootstrap races (#151)
 
 ### 📝 Documentation
 
@@ -184,6 +185,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Bump knip to 6.26 and update ignoreBinaries (#119)
 - **deps**: Bump serde_with from 3.18.0 to 3.21.0 in /src-tauri in the cargo group across 1 directory (#122)
 - Upgrade npm and Rust dependencies (#140)
+- Regenerate changelog
 - Regenerate changelog
 - Regenerate changelog
 - Regenerate changelog
