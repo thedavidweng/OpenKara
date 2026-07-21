@@ -894,6 +894,7 @@ fn t6_cas_conflict_on_publish_conflict_surfaced() {
         database_sha256: "abc".to_owned(),
         committed_at_ms: 1000,
         writer_id: "other-device".to_owned(),
+        operation_id: "op-test".to_owned(),
     };
     provider.store_file(
         crate::remote::manifest::MANIFEST_PATH,
@@ -1441,21 +1442,27 @@ fn t15_crash_after_cas_before_local_completion_recovers_own_commit() {
 
     let provider = FaultInjectionProvider::new().with_working_copy_root(working_root.clone());
 
-    // Simulate: CAS already committed generation 1 by this writer.
+    // Simulate: CAS already committed generation 1 by this writer for a
+    // known operation. Local op still expects generation 0 and retains the
+    // immutable candidate identity used at CAS time.
     let db_bytes = std::fs::read(working_root.join("openkara.db")).unwrap();
     let digest = sha256_hex(&db_bytes);
+    let db_size = std::fs::metadata(working_root.join("openkara.db"))
+        .unwrap()
+        .len();
     provider.store_file(".openkara/databases/1.sqlite", db_bytes, "rev-db-1");
+
+    let op_id = make_pending_op(&conn, "lib-1", 0);
     let accepted = RepositoryManifest {
         schema_version: CURRENT_SCHEMA_VERSION,
         repository_id: "repo-uuid-1".to_owned(),
         generation: 1,
         database_path: ".openkara/databases/1.sqlite".to_owned(),
-        database_size: std::fs::metadata(working_root.join("openkara.db"))
-            .unwrap()
-            .len(),
+        database_size: db_size,
         database_sha256: digest.clone(),
         committed_at_ms: 5000,
         writer_id: "writer-uuid-1".to_owned(),
+        operation_id: op_id.clone(),
     };
     provider.store_file(
         crate::remote::manifest::MANIFEST_PATH,
@@ -1463,12 +1470,17 @@ fn t15_crash_after_cas_before_local_completion_recovers_own_commit() {
         "rev-manifest-1",
     );
 
-    // Local op still thinks we expected generation 0 (never recorded completion).
-    let op_id = make_pending_op(&conn, "lib-1", 0);
     let mut op = crate::remote::control_db::get_operation(&conn, &op_id)
         .unwrap()
         .unwrap();
     op.state = OperationState::RetryWait;
+    op.candidate_db_digest = Some(digest.clone());
+    let mut payload =
+        crate::remote::control_db::OperationPayload::from_json(&op.payload_json).unwrap();
+    payload.candidate_sha256 = Some(digest.clone());
+    payload.candidate_size = Some(db_size);
+    payload.protocol_step = Some("candidate_uploaded".to_owned());
+    op.payload_json = payload.to_json().unwrap();
     crate::remote::control_db::upsert_operation(&conn, &op).unwrap();
 
     let ctx = make_context(

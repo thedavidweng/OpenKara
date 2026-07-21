@@ -73,6 +73,12 @@ pub(crate) struct RepositoryManifest {
     /// Installation UUID of the writer that committed this generation. Used
     /// for diagnostics; not a security principal.
     pub writer_id: String,
+    /// Durable publish operation that produced this generation. Required for
+    /// post-CAS crash recovery so an accepted-commit shortcut cannot claim a
+    /// different operation's CAS (e.g. after coalescing expanded the payload).
+    /// Empty when reading manifests written before this field existed.
+    #[serde(default)]
+    pub operation_id: String,
 }
 
 impl RepositoryManifest {
@@ -302,6 +308,7 @@ mod tests {
             database_sha256: "abc123".to_owned(),
             committed_at_ms: 1000,
             writer_id: "writer-1".to_owned(),
+            operation_id: format!("op-gen-{generation}"),
         }
     }
 

@@ -682,6 +682,35 @@ fn is_mergeable_publish_state(state: OperationState) -> bool {
     matches!(state, OperationState::Pending | OperationState::RetryWait)
 }
 
+/// Ops that may already have crossed the manifest CAS boundary must reconcile
+/// alone. Merging them (or into them) would clear candidate identity and let
+/// accepted-commit incorrectly complete a larger change set against an
+/// A-only remote generation.
+fn may_have_crossed_cas_boundary(op: &OperationRow) -> bool {
+    if op.candidate_db_digest.is_some() {
+        return true;
+    }
+    let Ok(payload) = OperationPayload::from_json(&op.payload_json) else {
+        return false;
+    };
+    payload.candidate_sha256.is_some()
+        || payload.candidate_relative_path.is_some()
+        || matches!(
+            payload.protocol_step.as_deref(),
+            Some("candidate_ready" | "candidate_uploaded")
+        )
+}
+
+/// `RetryWait` may only merge once its backoff has elapsed. Pending is always
+/// due. Future `next_attempt_at_ms` must not be bypassed by a new Pending
+/// coalescing a rate-limited peer.
+fn is_due_for_merge(op: &OperationRow, now_ms: i64) -> bool {
+    match op.next_attempt_at_ms {
+        None => true,
+        Some(t) => t <= now_ms,
+    }
+}
+
 /// Under the per-library commit lock: atomically merge every
 /// `Pending`/`RetryWait` Publish op for this library into `primary_op_id`.
 ///
@@ -734,6 +763,10 @@ pub(crate) fn merge_pending_ops_for_publish(
             ))));
         }
 
+        // Post-CAS survivors must reconcile alone — do not absorb peers or
+        // clear their candidate identity before accepted-commit can run.
+        let primary_may_have_cas = may_have_crossed_cas_boundary(&primary);
+
         let mut song_ids: Vec<String> = OperationPayload::from_json(&primary.payload_json)
             .map(|p| p.song_ids)
             .unwrap_or_default();
@@ -749,6 +782,7 @@ pub(crate) fn merge_pending_ops_for_publish(
         let original_song_ids = song_ids.clone();
 
         let mut merged_secondary = false;
+        let mut inherited_next_attempt: Option<i64> = primary.next_attempt_at_ms;
         let all_ops = list_operations_for_library(&tx, library_id)?;
         for mut other in all_ops {
             if other.operation_id == primary_op_id {
@@ -761,6 +795,18 @@ pub(crate) fn merge_pending_ops_for_publish(
             if !is_mergeable_publish_state(other.state) {
                 continue;
             }
+            // Respect Retry-After: do not pull a rate-limited peer forward.
+            if !is_due_for_merge(&other, now) {
+                continue;
+            }
+            // Leave CAS-boundary ops alone for individual reconcile.
+            if may_have_crossed_cas_boundary(&other) {
+                continue;
+            }
+            // Primary already past freeze/CAS cannot absorb new change sets.
+            if primary_may_have_cas {
+                continue;
+            }
             if let Ok(payload) = OperationPayload::from_json(&other.payload_json) {
                 for sid in payload.song_ids {
                     if !song_ids.iter().any(|s| s == &sid) {
@@ -770,6 +816,9 @@ pub(crate) fn merge_pending_ops_for_publish(
                 if let Some(rel) = payload.candidate_relative_path {
                     candidate_paths_to_delete.push(rel);
                 }
+            }
+            if let Some(t) = other.next_attempt_at_ms {
+                inherited_next_attempt = Some(inherited_next_attempt.map_or(t, |cur| cur.max(t)));
             }
             other.state = OperationState::Cancelled;
             other.error_code = Some("merged".to_owned());
@@ -795,8 +844,9 @@ pub(crate) fn merge_pending_ops_for_publish(
         let song_set_changed = sorted_original != sorted_merged;
         // Any new song/change set invalidates a previously frozen candidate —
         // otherwise a RetryWait op would reuse an A-only candidate after
-        // merging B into the payload.
-        let invalidate_candidate = merged_secondary || song_set_changed;
+        // merging B into the payload. CAS-boundary primaries never merge, so
+        // this only clears candidates for pure pre-CAS coalesces.
+        let invalidate_candidate = !primary_may_have_cas && (merged_secondary || song_set_changed);
         if invalidate_candidate {
             if let Some(rel) = payload.candidate_relative_path.take() {
                 candidate_paths_to_delete.push(rel);
@@ -813,9 +863,19 @@ pub(crate) fn merge_pending_ops_for_publish(
             payload.detail = Some("Publishing to remote".to_owned());
         }
         primary.payload_json = payload.to_json()?;
-        primary.expected_generation = Some(committed);
+        // Rebind expected_generation only when we did not freeze a candidate
+        // against a prior generation. CAS-boundary ops keep their original
+        // expected_generation so accepted-commit can match expected+1.
+        if !primary_may_have_cas {
+            primary.expected_generation = Some(committed);
+        }
         primary.state = OperationState::Pending;
-        primary.next_attempt_at_ms = None;
+        // Preserve the latest Retry-After among merged peers (and primary).
+        // Never clear a future backoff by coalescing.
+        primary.next_attempt_at_ms = match inherited_next_attempt {
+            Some(t) if t > now => Some(t),
+            _ => None,
+        };
         primary.updated_at_ms = now;
         upsert_operation(&tx, &primary)?;
 
@@ -1286,13 +1346,16 @@ mod merge_tests {
     }
 
     #[test]
-    fn merge_invalidates_stale_candidate_when_song_set_grows() {
+    fn merge_does_not_absorb_cas_boundary_primary_or_clear_candidate() {
+        // Post-CAS / frozen ops must reconcile alone so accepted-commit can
+        // match their immutable candidate. Merging B would expand payload and
+        // clear candidate identity → false completion of A+B.
         let dir = tempfile::TempDir::new().unwrap();
         let work = dir.path().join("work");
         std::fs::create_dir_all(work.join(".openkara/candidates")).unwrap();
         let candidate_rel = ".openkara/candidates/op-a.sqlite";
         let candidate_path = work.join(candidate_rel);
-        std::fs::write(&candidate_path, b"stale-candidate").unwrap();
+        std::fs::write(&candidate_path, b"frozen-candidate").unwrap();
 
         let path = dir.path().join("remote-state.db");
         let conn = open_control_db(&path).unwrap();
@@ -1321,22 +1384,48 @@ mod merge_tests {
         let (_survivor, songs) =
             merge_pending_ops_for_publish(&state, "lib-1", "op-a", &[], "song-a", Some(&work))
                 .unwrap();
-        assert!(songs.contains(&"song-b".to_owned()));
+        assert_eq!(songs, vec!["song-a".to_owned()]);
 
         let conn = state.remote.control_db.lock().unwrap();
         let a = get_operation(&conn, "op-a").unwrap().unwrap();
         let payload = OperationPayload::from_json(&a.payload_json).unwrap();
-        assert!(payload.candidate_relative_path.is_none());
-        assert!(payload.candidate_sha256.is_none());
-        assert!(payload.candidate_size.is_none());
-        assert!(payload.protocol_step.is_none());
-        assert!(a.candidate_db_digest.is_none());
+        assert_eq!(payload.candidate_sha256.as_deref(), Some("deadbeef"));
+        assert_eq!(a.candidate_db_digest.as_deref(), Some("deadbeef"));
+        let b = get_operation(&conn, "op-b").unwrap().unwrap();
+        assert_eq!(b.state, OperationState::Pending);
         drop(conn);
-
         assert!(
-            !candidate_path.exists(),
-            "stale candidate file must be removed after merge"
+            candidate_path.exists(),
+            "candidate must survive alone-reconcile"
         );
+    }
+
+    #[test]
+    fn merge_skips_rate_limited_retry_wait_secondary() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("remote-state.db");
+        let conn = open_control_db(&path).unwrap();
+        seed_repo(&conn);
+        upsert_operation(
+            &conn,
+            &op("op-a", "lib-1", &["song-a"], OperationState::Pending),
+        )
+        .unwrap();
+        let mut rate_limited = op("op-b", "lib-1", &["song-b"], OperationState::RetryWait);
+        rate_limited.next_attempt_at_ms = Some(i64::MAX);
+        upsert_operation(&conn, &rate_limited).unwrap();
+
+        let mut state = AppState::test_fixture();
+        state.remote.control_db = Arc::new(Mutex::new(conn));
+
+        let (_, songs) =
+            merge_pending_ops_for_publish(&state, "lib-1", "op-a", &[], "song-a", None).unwrap();
+        assert_eq!(songs, vec!["song-a".to_owned()]);
+
+        let conn = state.remote.control_db.lock().unwrap();
+        let b = get_operation(&conn, "op-b").unwrap().unwrap();
+        assert_eq!(b.state, OperationState::RetryWait);
+        assert_eq!(b.next_attempt_at_ms, Some(i64::MAX));
     }
 
     #[test]

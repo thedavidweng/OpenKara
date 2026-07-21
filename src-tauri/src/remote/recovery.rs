@@ -289,6 +289,7 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
 
         // Shared coalesce path with immediate publish: union song_ids,
         // cancel secondaries, rebind generation, invalidate stale candidates.
+        // CAS-boundary ops and rate-limited RetryWait peers are left alone.
         let (operation_id, song_ids) = match merge_pending_ops_for_publish(
             state,
             &library_id,
@@ -307,6 +308,20 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
                 continue;
             }
         };
+
+        // Coalesce may preserve a future Retry-After on the survivor.
+        {
+            let conn = state.remote.control_db.lock().map_err(|_| {
+                crate::commands::error::state_lock_error("control DB lock was poisoned")
+            })?;
+            if let Ok(Some(op)) = crate::remote::control_db::get_operation(&conn, &operation_id) {
+                if let Some(next) = op.next_attempt_at_ms {
+                    if next > crate::remote::types::current_unix_time_ms() {
+                        continue;
+                    }
+                }
+            }
+        }
 
         if song_ids.is_empty() {
             tracing::warn!(

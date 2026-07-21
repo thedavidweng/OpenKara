@@ -697,6 +697,12 @@ pub fn bind_song_ids_mark_pending_and_dirty_tx(
 
     let mut op = get_operation(&tx, operation_id)?
         .ok_or_else(|| internal_error("prepared operation row was not found"))?;
+    if op.library_id != library_id {
+        return Err(internal_error(format!(
+            "refusing to project operation {operation_id}: library_id {} does not match {}",
+            op.library_id, library_id
+        )));
+    }
     if op.state.is_terminal() {
         return Err(internal_error(format!(
             "refusing to reopen terminal operation {operation_id} ({})",
@@ -753,6 +759,12 @@ pub fn mark_pending_and_dirty_tx(
 
     let mut op = get_operation(&tx, operation_id)?
         .ok_or_else(|| internal_error("prepared operation row was not found"))?;
+    if op.library_id != library_id {
+        return Err(internal_error(format!(
+            "refusing to mark operation {operation_id} pending: library_id {} does not match {}",
+            op.library_id, library_id
+        )));
+    }
     if op.state.is_terminal() {
         return Err(internal_error(format!(
             "refusing to reopen terminal operation {operation_id}"
@@ -1469,6 +1481,45 @@ mod tests {
             digest,
             "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
         );
+    }
+
+    #[test]
+    fn bind_song_ids_rejects_library_id_mismatch() {
+        let (_dir, conn) = fresh_db();
+        let now = now_ms();
+        upsert_operation(
+            &conn,
+            &OperationRow {
+                operation_id: "op-a".to_owned(),
+                library_id: "lib-a".to_owned(),
+                operation_kind: OperationKind::Publish,
+                state: OperationState::Prepared,
+                expected_generation: Some(0),
+                target_generation: None,
+                source_db_digest: None,
+                candidate_db_digest: None,
+                payload_json: OperationPayload::default().to_json().unwrap(),
+                attempt_count: 0,
+                next_attempt_at_ms: None,
+                error_code: None,
+                error_detail: None,
+                created_at_ms: now,
+                updated_at_ms: now,
+            },
+        )
+        .unwrap();
+        let err =
+            bind_song_ids_mark_pending_and_dirty_tx(&conn, "op-a", "lib-b", &["song-1".to_owned()])
+                .unwrap_err();
+        assert!(
+            err.message.contains("library_id"),
+            "expected library_id mismatch error, got: {}",
+            err.message
+        );
+        // Operation must remain Prepared — not projected onto wrong library.
+        let op = get_operation(&conn, "op-a").unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Prepared);
+        assert!(get_repository_state(&conn, "lib-b").unwrap().is_none());
     }
 
     #[test]

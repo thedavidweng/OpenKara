@@ -169,12 +169,17 @@ fn run_publish_protocol(
         // never recorded. Detect our own accepted commit and finish durably
         // instead of surfacing a false RemoteConflict that would leave the
         // working copy dirty forever.
+        //
+        // Identity is operation-scoped: writer_id alone is insufficient after
+        // coalescing may have expanded the payload and cleared a prior
+        // candidate. Require operation_id (when present on the manifest) and
+        // an exact match against the durable immutable candidate digest/size.
         if current_generation == target_generation {
             if let Some(ref m) = current_manifest {
-                if m.writer_id == ctx.writer_id && m.repository_id == ctx.repository_id {
+                if is_accepted_commit_for_operation(m, ctx, op) {
                     tracing::info!(
-                        "publish recovery: remote generation {} already committed by this writer \
-                         (operation {}); treating as accepted commit",
+                        "publish recovery: remote generation {} accepted for operation {} \
+                         (digest match); finishing durably",
                         current_generation,
                         op.operation_id
                     );
@@ -446,6 +451,7 @@ fn run_publish_protocol(
         database_sha256: candidate_digest.clone(),
         committed_at_ms: now,
         writer_id: ctx.writer_id.to_owned(),
+        operation_id: op.operation_id.clone(),
     };
     let manifest_json = manifest
         .to_json()
@@ -482,6 +488,7 @@ fn run_publish_protocol(
         || verified_manifest.database_path != db_remote_path
         || verified_manifest.database_size != candidate_size
         || verified_manifest.database_sha256 != candidate_digest
+        || verified_manifest.operation_id != op.operation_id
     {
         return Err(RemoteError::new(
             RemoteErrorKind::RemoteIntegrityFailed,
@@ -871,6 +878,49 @@ fn verify_remote_candidate_digest(
         ));
     }
     Ok(())
+}
+
+/// Whether a remote generation at `expected+1` is this operation's accepted
+/// CAS (post-CAS crash recovery), not some other publish by the same writer.
+///
+/// Requirements (all must hold):
+/// - `writer_id` and `repository_id` match the local context
+/// - when the manifest carries `operation_id`, it must equal this operation
+/// - the operation still has a durable immutable candidate identity
+/// - manifest `database_sha256` (and size when known) match that candidate
+///
+/// Ops whose candidate identity was cleared (e.g. after coalesce expanded the
+/// payload) must not take this shortcut — they would otherwise mark a larger
+/// change set complete against an older A-only remote DB.
+fn is_accepted_commit_for_operation(
+    manifest: &RepositoryManifest,
+    ctx: &PublishContext<'_>,
+    op: &OperationRow,
+) -> bool {
+    if manifest.writer_id != ctx.writer_id || manifest.repository_id != ctx.repository_id {
+        return false;
+    }
+    if !manifest.operation_id.is_empty() && manifest.operation_id != op.operation_id {
+        return false;
+    }
+    let payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
+    let candidate_sha = payload
+        .candidate_sha256
+        .as_deref()
+        .or(op.candidate_db_digest.as_deref());
+    let Some(candidate_sha) = candidate_sha else {
+        // No durable candidate identity → cannot claim a prior CAS.
+        return false;
+    };
+    if manifest.database_sha256 != candidate_sha {
+        return false;
+    }
+    if let Some(size) = payload.candidate_size {
+        if manifest.database_size != size {
+            return false;
+        }
+    }
+    true
 }
 
 /// Transition the operation to a new state, persisting to the control DB and
@@ -2017,6 +2067,7 @@ mod tests {
             database_sha256: "abc".to_owned(),
             committed_at_ms: 1000,
             writer_id: "other-device".to_owned(),
+            operation_id: "op-test".to_owned(),
         };
         provider.store(
             MANIFEST_PATH,
@@ -2374,6 +2425,7 @@ mod tests {
             database_sha256: "abc".to_owned(),
             committed_at_ms: 1000,
             writer_id: "other".to_owned(),
+            operation_id: "op-test".to_owned(),
         };
         provider.store(
             MANIFEST_PATH,
@@ -2534,6 +2586,7 @@ mod tests {
             database_sha256: "abc".to_owned(),
             committed_at_ms: 5000,
             writer_id: "w-1".to_owned(),
+            operation_id: "op-test".to_owned(),
         };
         provider.store(
             MANIFEST_PATH,
@@ -2629,6 +2682,7 @@ mod tests {
             database_sha256: "abc".to_owned(),
             committed_at_ms: 3000,
             writer_id: "w-1".to_owned(),
+            operation_id: "op-test".to_owned(),
         };
         provider.store(
             MANIFEST_PATH,
@@ -2706,6 +2760,7 @@ mod tests {
             database_sha256: "abc".to_owned(),
             committed_at_ms: 2000,
             writer_id: "w-1".to_owned(),
+            operation_id: "op-test".to_owned(),
         };
         provider.store(
             MANIFEST_PATH,
