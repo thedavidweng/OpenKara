@@ -583,13 +583,37 @@ fn run_remote_recovery(remote_state: &RemoteState, app_data_dir: &std::path::Pat
     // Remove stale `*.part.*` temp files left by interrupted downloads in
     // every remote library working copy. This runs after the control-DB
     // recovery pass so the working copies are clean before library startup.
-    // PR#5's running transfers must be excluded once async downloads exist.
-    recover_stale_part_files_for_all_libraries(app_data_dir);
+    // Part files belonging to operations with valid transfer rows are
+    // preserved (resumable); orphaned part files are deleted.
+    let control_db_path = crate::remote::control_db::control_db_path(app_data_dir);
+    if let Ok(part_cleanup_conn) = crate::remote::control_db::open_control_db(&control_db_path) {
+        recover_stale_part_files_for_all_libraries(app_data_dir, &part_cleanup_conn);
+    } else {
+        // Control DB unavailable — delete all part files as orphaned.
+        let empty = std::collections::HashSet::new();
+        let config = match crate::config::load_config(app_data_dir) {
+            Ok(Some(config)) => config,
+            _ => return,
+        };
+        for library in &config.libraries {
+            if !matches!(library, crate::config::RegisteredLibrary::Remote { .. }) {
+                continue;
+            }
+            if let Some(root_path) = library.working_copy_root() {
+                let _ = crate::remote::atomic_download::remove_stale_part_files(&root_path, &empty);
+            }
+        }
+    }
 }
 
 /// Scan every registered remote library's working copy for stale
-/// `*.part.*` temp files and remove them (best-effort).
-fn recover_stale_part_files_for_all_libraries(app_data_dir: &std::path::Path) {
+/// `*.part.*` temp files and remove them (best-effort). Part files
+/// belonging to operations with valid transfer rows in the control DB
+/// are preserved (resumable).
+fn recover_stale_part_files_for_all_libraries(
+    app_data_dir: &std::path::Path,
+    control_db: &rusqlite::Connection,
+) {
     let config = match crate::config::load_config(app_data_dir) {
         Ok(Some(config)) => config,
         _ => return,
@@ -601,7 +625,9 @@ fn recover_stale_part_files_for_all_libraries(app_data_dir: &std::path::Path) {
         let Some(root_path) = library.working_copy_root() else {
             continue;
         };
-        if let Err(error) = crate::remote::recovery::recover_stale_part_files(&root_path) {
+        if let Err(error) =
+            crate::remote::recovery::recover_stale_part_files(&root_path, control_db)
+        {
             eprintln!(
                 "warning: stale part-file recovery failed for {}: {:?}",
                 root_path.display(),

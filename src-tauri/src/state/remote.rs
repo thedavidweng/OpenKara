@@ -28,6 +28,10 @@ pub struct RemoteState {
     /// authoritative local record of remote operation/outbox state, repository
     /// cleanliness, and resumable transfer offsets. Never uploaded.
     pub control_db: Arc<Mutex<rusqlite::Connection>>,
+    /// `true` when the durable control DB could not be opened and the app
+    /// is running on an in-memory fallback. Publication, resumable recovery,
+    /// and automatic pull must fail closed when this is `true`.
+    pub control_db_degraded: bool,
     /// Per-library commit locks. See `CommitLockMap`.
     pub commit_locks: CommitLockMap,
 }
@@ -45,25 +49,35 @@ impl RemoteState {
         // Open the durable control DB. This stays outside every portable
         // library and is never uploaded. WAL mode is enabled on open so
         // concurrent readers (upload-status queries) do not block the writer.
+        //
+        // If the control DB cannot be opened, fall back to an in-memory
+        // connection so the app can still start in a degraded read-only
+        // mode. The in-memory fallback supports local library use and
+        // cached playback, but must NOT be used for durable publication,
+        // resumable recovery, or clean-state guarantees — those require a
+        // writable control DB. The `control_db_degraded` flag below
+        // distinguishes this state so callers can fail closed for
+        // operations that need durable state.
         let control_db_path = control_db::control_db_path(app_data_dir);
-        let control_db_conn =
-            control_db::open_control_db(&control_db_path).unwrap_or_else(|error| {
-                eprintln!(
-                    "warning: failed to open remote control DB at {}: {:?}",
-                    control_db_path.display(),
-                    error
-                );
-                // Fall back to an in-memory connection so the app can still
-                // start; operation state will not persist across restarts in
-                // this degraded mode. Apply migrations so the recovery and
-                // upload-status paths can query remote_operations etc.
-                // without hitting "no such table" errors.
-                let conn = rusqlite::Connection::open_in_memory()
-                    .expect("in-memory control DB fallback should always open");
-                control_db::apply_migrations(&conn)
-                    .expect("in-memory control DB migrations should always succeed");
-                conn
-            });
+        let (control_db_conn, control_db_degraded) =
+            match control_db::open_control_db(&control_db_path) {
+                Ok(conn) => (conn, false),
+                Err(error) => {
+                    eprintln!(
+                        "warning: failed to open remote control DB at {}: {:?}; \
+                         starting in degraded read-only mode — publication and \
+                         resumable recovery are disabled until the control DB \
+                         is repaired",
+                        control_db_path.display(),
+                        error
+                    );
+                    let conn = rusqlite::Connection::open_in_memory()
+                        .expect("in-memory control DB fallback should always open");
+                    control_db::apply_migrations(&conn)
+                        .expect("in-memory control DB migrations should always succeed");
+                    (conn, true)
+                }
+            };
 
         let control_db = Arc::new(Mutex::new(control_db_conn));
 
@@ -89,6 +103,7 @@ impl RemoteState {
             remote_upload_statuses: Arc::new(Mutex::new(HashMap::new())),
             remote_chunk_cache: Arc::new(Mutex::new(remote_chunk_cache)),
             control_db,
+            control_db_degraded,
             commit_locks: Arc::new(Mutex::new(HashMap::new())),
         }
     }

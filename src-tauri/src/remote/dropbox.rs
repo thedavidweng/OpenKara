@@ -3,8 +3,8 @@ use crate::{
     config::RegisteredLibrary,
     library::error::LibraryError,
     remote::errors::{
-        remote_error_from_status, RemoteError, RemoteErrorKind, RemoteObjectMetadata,
-        RemoteProviderCapabilities, RemoteResult,
+        remote_error_from_status, verify_content_range, RemoteError, RemoteErrorKind,
+        RemoteObjectMetadata, RemoteProviderCapabilities, RemoteResult,
     },
     remote::provider::ConditionalSource,
 };
@@ -971,18 +971,27 @@ pub(crate) fn dropbox_download_file(
     path: &str,
     destination: &Path,
 ) -> CommandResult<()> {
+    use crate::remote::errors::{remote_error_from_status, RemoteError, RemoteErrorKind};
+    use crate::remote::send_with_retry;
+
     let url = dropbox_content_url("/2/files/download")?;
-    let response = dropbox_authorized_request(app_data_dir, secret, Method::POST, url)?
-        .header(
-            "Dropbox-API-Arg",
-            serde_json::json!({ "path": path }).to_string(),
-        )
-        .send_network("download Dropbox file")?;
+    let path_owned = path.to_owned();
+    // Rebuild the authorized request on every attempt so the shared network
+    // policy can retry transport failures and rate-limits.
+    let response = send_with_retry("download Dropbox file", || {
+        let builder = dropbox_authorized_request(app_data_dir, secret, Method::POST, url.clone())
+            .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?
+            .header(
+                "Dropbox-API-Arg",
+                serde_json::json!({ "path": path_owned }).to_string(),
+            );
+        Ok(builder)
+    })
+    .map_err(|e| e.to_command_error())?;
     if !response.status().is_success() {
-        return Err(CommandError::from(LibraryError::Internal(format!(
-            "Dropbox download failed with status {}",
-            response.status()
-        ))));
+        return Err(
+            remote_error_from_status(response.status(), "Dropbox download").to_command_error(),
+        );
     }
 
     if let Some(parent) = destination.parent() {
@@ -1160,16 +1169,61 @@ impl super::bootstrap::RemoteBootstrapStorage for DropboxBootstrapStorage<'_> {
         )
     }
 
-    fn probe_remote_database(&mut self) -> CommandResult<Option<Option<String>>> {
+    fn probe_committed_database(
+        &mut self,
+    ) -> CommandResult<Option<super::bootstrap::CommittedDatabaseProbe>> {
+        use super::bootstrap::CommittedDatabaseProbe;
+        use crate::remote::manifest::{RepositoryManifest, MANIFEST_PATH};
+
+        // Prefer the repository manifest: the generation-specific database is
+        // the committed source of truth once a repository has been published
+        // through the transactional protocol.
+        let manifest_remote_path = dropbox_join_path(self.remote_root_path, MANIFEST_PATH);
+        if let Some(metadata) =
+            dropbox_get_metadata(self.app_data_dir, &mut self.secret, &manifest_remote_path)?
+        {
+            let temp_path = std::env::temp_dir().join(format!(
+                "openkara-manifest-probe-{}.json",
+                uuid::Uuid::new_v4()
+            ));
+            dropbox_download_file(
+                self.app_data_dir,
+                &mut self.secret,
+                &manifest_remote_path,
+                &temp_path,
+            )?;
+            let content = fs::read_to_string(&temp_path).map_err(|error| {
+                let _ = fs::remove_file(&temp_path);
+                CommandError::from(LibraryError::Internal(format!(
+                    "failed to read Dropbox manifest: {error}"
+                )))
+            })?;
+            let _ = fs::remove_file(&temp_path);
+            let manifest: RepositoryManifest = serde_json::from_str(&content).map_err(|error| {
+                CommandError::from(LibraryError::Internal(format!(
+                    "failed to parse Dropbox repository manifest: {error}"
+                )))
+            })?;
+            return Ok(Some(CommittedDatabaseProbe {
+                revision: dropbox_metadata_revision(&metadata),
+                database_path: manifest.database_path,
+            }));
+        }
+
+        // Legacy repositories without a manifest: root openkara.db.
         let database_remote_path = dropbox_join_path(self.remote_root_path, "openkara.db");
         Ok(
-            dropbox_get_metadata(self.app_data_dir, &mut self.secret, &database_remote_path)?
-                .map(|metadata| dropbox_metadata_revision(&metadata)),
+            dropbox_get_metadata(self.app_data_dir, &mut self.secret, &database_remote_path)?.map(
+                |metadata| CommittedDatabaseProbe {
+                    revision: dropbox_metadata_revision(&metadata),
+                    database_path: "openkara.db".to_owned(),
+                },
+            ),
         )
     }
 
-    fn download_database(&mut self, destination: &Path) -> CommandResult<()> {
-        let database_remote_path = dropbox_join_path(self.remote_root_path, "openkara.db");
+    fn download_database(&mut self, database_path: &str, destination: &Path) -> CommandResult<()> {
+        let database_remote_path = dropbox_join_path(self.remote_root_path, database_path);
         dropbox_download_file(
             self.app_data_dir,
             &mut self.secret,
@@ -1179,6 +1233,8 @@ impl super::bootstrap::RemoteBootstrapStorage for DropboxBootstrapStorage<'_> {
     }
 
     fn upload_database(&mut self, _source: &Path) -> CommandResult<Option<String>> {
+        // One-time empty-repository seed only. Ongoing publication uses the
+        // executor and generation-specific paths.
         dropbox_upload_relative_file_to_remote(
             self.app_data_dir,
             self.library,
@@ -1403,11 +1459,11 @@ impl RemoteProvider for DropboxProvider<'_> {
         destination: &Path,
         offset: u64,
         length: u64,
-    ) -> RemoteResult<()> {
+    ) -> RemoteResult<u64> {
         use std::io::{Seek, SeekFrom};
 
         if length == 0 {
-            return Ok(());
+            return Ok(0);
         }
 
         let mut secret = self.secret.borrow_mut();
@@ -1433,14 +1489,36 @@ impl RemoteProvider for DropboxProvider<'_> {
                 .header("Range", range_value)
                 .send_network("download Dropbox range")
                 .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
-        if !response.status().is_success() {
+
+        // Validate the response status. A Range request must return 206
+        // Partial Content. A 200 OK means the server ignored the Range
+        // header — only acceptable when offset == 0 (full-body fallback).
+        let status = response.status();
+        if status == reqwest::StatusCode::OK && offset > 0 {
             return Err(RemoteError::new(
                 RemoteErrorKind::NetworkUnavailable,
                 format!(
-                    "Dropbox range download failed with status {}",
-                    response.status()
+                    "Dropbox range download returned 200 OK for nonzero offset {offset} \
+                     — server ignored Range header"
                 ),
             ));
+        }
+        if !status.is_success() {
+            return Err(RemoteError::new(
+                RemoteErrorKind::NetworkUnavailable,
+                format!("Dropbox range download failed with status {status}"),
+            ));
+        }
+
+        // Validate Content-Range header when present.
+        if let Some(content_range) = response.headers().get("content-range") {
+            let cr_str = content_range.to_str().map_err(|e| {
+                RemoteError::new(
+                    RemoteErrorKind::RemoteIntegrityFailed,
+                    format!("invalid Content-Range header: {e}"),
+                )
+            })?;
+            verify_content_range(cr_str, offset, length)?;
         }
 
         if let Some(parent) = destination.parent() {
@@ -1457,6 +1535,21 @@ impl RemoteProvider for DropboxProvider<'_> {
                 format!("failed to read Dropbox response: {error}"),
             )
         })?;
+
+        // Validate body length: must match the requested range length.
+        // A short response would leave gaps; an oversized response would
+        // write beyond the requested range.
+        let actual_len = bytes.len() as u64;
+        if actual_len != length {
+            return Err(RemoteError::new(
+                RemoteErrorKind::RemoteIntegrityFailed,
+                format!(
+                    "Dropbox range download body length mismatch: \
+                     requested {length} bytes at offset {offset}, got {actual_len} bytes"
+                ),
+            ));
+        }
+
         // Open for write at a specific offset. We intentionally do NOT
         // truncate — the file may already contain bytes from a prior range
         // download, and truncating would destroy them.
@@ -1483,7 +1576,7 @@ impl RemoteProvider for DropboxProvider<'_> {
                 format!("failed to write {}: {error}", destination.display()),
             )
         })?;
-        Ok(())
+        Ok(actual_len)
     }
 
     fn get_revision(&self, relative_path: &str) -> CommandResult<Option<String>> {

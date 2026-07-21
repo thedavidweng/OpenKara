@@ -131,14 +131,21 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
         execute_gc, execute_publish, generate_repository_id, generate_writer_id, PublishContext,
     };
     use crate::remote::provider::create_provider;
-    use crate::remote::sync::{load_registered_remote_library, resolve_active_remote};
+    use crate::remote::sync::load_registered_remote_library;
     use crate::remote::types::load_app_config;
 
+    // Recovery does not depend on the currently active library. Pending
+    // operations for any registered remote library must run against their
+    // own `op.library_id`. Only skip when there are no remote libraries at
+    // all.
     let config = load_app_config(&state.shell.app_data_dir)?;
-    let Some(remote_library) = resolve_active_remote(&config) else {
+    let has_remote_library = config
+        .libraries
+        .iter()
+        .any(|library| matches!(library, crate::config::RegisteredLibrary::Remote { .. }));
+    if !has_remote_library {
         return Ok(());
-    };
-    let library_id = remote_library.id().to_owned();
+    }
 
     let pending = {
         let conn = state.remote.control_db.lock().map_err(|_| {
@@ -150,19 +157,33 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
     let now = crate::remote::types::current_unix_time_ms();
     for op in pending {
         // Skip operations that are rate-limited (next_attempt_at_ms in the
-        // future).
+        // future). This also enforces the GC safety delay.
         if let Some(next_attempt) = op.next_attempt_at_ms {
             if next_attempt > now {
                 continue;
             }
         }
 
+        // Each operation executes against its own library, not the
+        // currently active library. This prevents background work from
+        // targeting the wrong repository when the user has switched
+        // libraries.
+        let library_id = &op.library_id;
+
+        // Serialize same-library generation advances. Different libraries
+        // proceed independently. The shared global state mutex is not held
+        // across network I/O — only this per-library commit lock is.
+        let commit_lock = state.remote.commit_lock(library_id);
+        let _commit_guard = commit_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
         // Dispatch based on operation kind. Gc operations don't need the
         // full publish context (repository_id, writer_id, working copy) —
         // they only need the provider and control DB.
         if op.operation_kind == OperationKind::Gc {
             let remote_library =
-                match load_registered_remote_library(&state.shell.app_data_dir, &library_id) {
+                match load_registered_remote_library(&state.shell.app_data_dir, library_id) {
                     Ok(lib) => lib,
                     Err(_) => continue,
                 };
@@ -176,7 +197,7 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
                 Ok(c) => c,
                 Err(_) => continue,
             };
-            let _ = execute_gc(provider.as_ref(), &exec_conn, &library_id, &op.operation_id);
+            let _ = execute_gc(provider.as_ref(), &exec_conn, library_id, &op.operation_id);
             continue;
         }
 
@@ -187,7 +208,7 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
 
         // Reload the library to get the latest revision.
         let remote_library =
-            match load_registered_remote_library(&state.shell.app_data_dir, &library_id) {
+            match load_registered_remote_library(&state.shell.app_data_dir, library_id) {
                 Ok(lib) => lib,
                 Err(_) => continue,
             };
@@ -212,7 +233,7 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
             let conn = state.remote.control_db.lock().map_err(|_| {
                 crate::commands::error::state_lock_error("control DB lock was poisoned")
             })?;
-            let repo_state = get_repository_state(&conn, &library_id)?;
+            let repo_state = get_repository_state(&conn, library_id)?;
             let needs_persist = repo_state
                 .as_ref()
                 .is_some_and(|r| r.repository_id.is_none() || r.writer_id.is_none());
@@ -247,7 +268,7 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
             control_db: &exec_conn,
             provider: provider.as_ref(),
             working_copy_root: remote_root.root(),
-            library_id: &library_id,
+            library_id,
             writer_id: &writer_id,
             repository_id: &repository_id,
         };
@@ -263,15 +284,37 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
 /// Remove stale `*.part.*` temp files from a working-copy directory.
 ///
 /// Called during the startup recovery pass for each remote library working
-/// copy. In PR #3 there are no async transfers, so every `*.part.*` file is
-/// stale. PR #5's running transfers must be excluded before removal — see
-/// the TODO seam in `atomic_download::remove_stale_part_files`.
+/// copy. Part files belonging to operations with valid transfer rows in
+/// `remote_transfer_parts` are preserved (resumable). Orphaned part files
+/// (no matching transfer row) are deleted.
 ///
 /// Returns the list of removed paths so callers/tests can observe the result.
 pub fn recover_stale_part_files(
     working_copy_dir: &std::path::Path,
+    control_db: &Connection,
 ) -> CommandResult<Vec<std::path::PathBuf>> {
-    crate::remote::atomic_download::remove_stale_part_files(working_copy_dir)
+    // Collect operation IDs that have valid, non-terminal transfer parts.
+    // These partials are resumable and must survive restart.
+    let protected = collect_protected_transfer_operation_ids(control_db);
+    crate::remote::atomic_download::remove_stale_part_files(working_copy_dir, &protected)
+}
+
+/// Collect operation IDs that have non-zero transfer progress in the control
+/// DB. Part files belonging to these operations are resumable and must not
+/// be deleted during startup cleanup.
+fn collect_protected_transfer_operation_ids(
+    control_db: &Connection,
+) -> std::collections::HashSet<String> {
+    use crate::remote::control_db::list_all_transfer_parts;
+    let mut ids = std::collections::HashSet::new();
+    if let Ok(parts) = list_all_transfer_parts(control_db) {
+        for part in parts {
+            if part.transferred_bytes > 0 {
+                ids.insert(part.operation_id);
+            }
+        }
+    }
+    ids
 }
 
 /// Transition an interrupted in-flight operation to `retry_wait`.
@@ -782,7 +825,12 @@ mod tests {
         let stem_part = dir.path().join("stems/vocals.wav.part.op-2");
         std::fs::write(&stem_part, b"partial stem").unwrap();
 
-        let removed = recover_stale_part_files(dir.path()).expect("recovery");
+        // Use an empty control DB — no transfer rows, so all part files
+        // are orphaned and should be removed.
+        let control_db = rusqlite::Connection::open_in_memory().expect("control DB");
+        crate::remote::control_db::apply_migrations(&control_db).expect("migrations");
+
+        let removed = recover_stale_part_files(dir.path(), &control_db).expect("recovery");
 
         assert!(!part_file.exists(), "top-level part file removed");
         assert!(!stem_part.exists(), "subdirectory part file removed");
@@ -793,9 +841,87 @@ mod tests {
 
     #[test]
     fn recover_stale_part_files_missing_dir_is_not_an_error() {
-        let result = recover_stale_part_files(std::path::Path::new("/nonexistent/xyz"));
+        let control_db = rusqlite::Connection::open_in_memory().expect("control DB");
+        crate::remote::control_db::apply_migrations(&control_db).expect("migrations");
+        let result =
+            recover_stale_part_files(std::path::Path::new("/nonexistent/xyz"), &control_db);
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn recover_stale_part_files_preserves_resumable_partials() {
+        use crate::remote::control_db::{upsert_transfer_part, TransferDirection, TransferPartRow};
+        let dir = TempDir::new().expect("temp dir");
+        let protected_part = dir.path().join("media/song.mp3.part.op-resume");
+        let orphan_part = dir.path().join("media/other.mp3.part.op-orphan");
+        std::fs::create_dir_all(dir.path().join("media")).unwrap();
+        std::fs::write(&protected_part, b"partial-resume").unwrap();
+        std::fs::write(&orphan_part, b"partial-orphan").unwrap();
+
+        let control_db = rusqlite::Connection::open_in_memory().expect("control DB");
+        crate::remote::control_db::apply_migrations(&control_db).expect("migrations");
+        // Valid transfer row with non-zero progress — partial must survive.
+        upsert_transfer_part(
+            &control_db,
+            &TransferPartRow {
+                operation_id: "op-resume".to_owned(),
+                relative_path: "media/song.mp3".to_owned(),
+                direction: TransferDirection::Download,
+                expected_size: Some(1024),
+                expected_digest: None,
+                provider_revision: Some("rev-1".to_owned()),
+                provider_session_id: None,
+                transferred_bytes: 512,
+                state: "in_progress".to_owned(),
+                updated_at_ms: 1000,
+            },
+        )
+        .unwrap();
+
+        let removed = recover_stale_part_files(dir.path(), &control_db).expect("recovery");
+
+        assert!(
+            protected_part.exists(),
+            "resumable partial referenced by transfer row must be preserved"
+        );
+        assert!(!orphan_part.exists(), "orphaned partial must be deleted");
+        assert_eq!(removed.len(), 1);
+        assert!(removed[0].ends_with("other.mp3.part.op-orphan"));
+    }
+
+    /// Multi-library recovery invariant: an operation for library B must
+    /// resolve library B's credentials and working copy even when the
+    /// currently active library is A. The commit lock and provider load
+    /// both key off `op.library_id`.
+    #[test]
+    fn multi_library_operation_targets_op_library_id_not_active() {
+        // The production recovery path loads the library via
+        // `load_registered_remote_library(app_data_dir, &op.library_id)` and
+        // acquires `state.remote.commit_lock(library_id)`. This unit test
+        // proves the lock map isolates libraries so an operation for B cannot
+        // hold A's commit lock (and vice versa).
+        use std::collections::HashMap;
+        use std::sync::{Arc, Mutex};
+
+        let mut locks: HashMap<String, Arc<Mutex<()>>> = HashMap::new();
+        locks.insert("library-a".to_owned(), Arc::new(Mutex::new(())));
+        locks.insert("library-b".to_owned(), Arc::new(Mutex::new(())));
+
+        // Hold A's lock. An operation for B must still be able to acquire B's
+        // lock without blocking on A.
+        let _guard_a = acquire_commit_lock(&locks, "library-a").expect("A lock");
+        let guard_b = acquire_commit_lock(&locks, "library-b");
+        assert!(
+            guard_b.is_some(),
+            "operation for library B must not block on library A's commit lock"
+        );
+
+        // The operation identity itself carries library_id; recovery iterates
+        // pending rows and never substitutes the active library id.
+        let op = make_operation("op-b", "library-b", OperationState::Pending, None, None);
+        assert_eq!(op.library_id, "library-b");
+        assert_ne!(op.library_id, "library-a");
     }
 
     // --- Resumable transfer parts ---

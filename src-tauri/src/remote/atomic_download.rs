@@ -410,7 +410,7 @@ fn run_resumable_download(
     // Download remaining chunks via Range requests.
     while offset < total {
         let length = RESUMABLE_DOWNLOAD_CHUNK_SIZE.min(total - offset);
-        provider
+        let verified_bytes = provider
             .download_range(opts.relative_path, temp_path, offset, length)
             .map_err(|remote_error| {
                 internal_error(format!(
@@ -419,7 +419,17 @@ fn run_resumable_download(
                 ))
             })?;
 
-        offset += length;
+        // Advance by the verified byte count returned by the provider,
+        // not by the requested length. This handles servers that return
+        // fewer bytes than requested (short response) or a full-body
+        // response for offset == 0.
+        if verified_bytes == 0 {
+            // No progress — avoid an infinite loop.
+            return Err(internal_error(format!(
+                "resumable download made no progress at offset {offset}"
+            )));
+        }
+        offset += verified_bytes;
 
         // Persist progress so a restart can resume from this offset.
         let now = crate::remote::types::current_unix_time_ms();
@@ -915,21 +925,30 @@ pub(crate) fn reconcile_database_state_after_restart(
 
 /// Remove stale `*.part.*` temp files from a working-copy directory tree.
 ///
-/// Called during the startup recovery pass. In PR #3 there are no async
-/// transfers, so every `*.part.*` file is stale. PR #5's running transfers
-/// must be excluded before removal — see the TODO seam.
+/// Called during the startup recovery pass. A `*.part.*` file is stale
+/// unless its operation ID matches a row in `remote_transfer_parts` with a
+/// non-zero `transferred_bytes` — those partials are resumable and must be
+/// preserved across restart. Orphaned partials (no matching transfer row)
+/// are deleted.
 ///
 /// Scans recursively so part files in subdirectories (`media/`, `stems/`,
 /// `artwork/`) are recovered too.
 ///
 /// Returns the list of removed paths so callers/tests can observe the result.
-pub(crate) fn remove_stale_part_files(working_copy_dir: &Path) -> CommandResult<Vec<PathBuf>> {
+pub(crate) fn remove_stale_part_files(
+    working_copy_dir: &Path,
+    protected_operation_ids: &std::collections::HashSet<String>,
+) -> CommandResult<Vec<PathBuf>> {
     let mut removed = Vec::new();
-    remove_stale_part_files_recursive(working_copy_dir, &mut removed)?;
+    remove_stale_part_files_recursive(working_copy_dir, &mut removed, protected_operation_ids)?;
     Ok(removed)
 }
 
-fn remove_stale_part_files_recursive(dir: &Path, removed: &mut Vec<PathBuf>) -> CommandResult<()> {
+fn remove_stale_part_files_recursive(
+    dir: &Path,
+    removed: &mut Vec<PathBuf>,
+    protected_operation_ids: &std::collections::HashSet<String>,
+) -> CommandResult<()> {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -950,7 +969,7 @@ fn remove_stale_part_files_recursive(dir: &Path, removed: &mut Vec<PathBuf>) -> 
         if file_type.is_dir() {
             // Recurse into subdirectories (media, stems, artwork, etc.).
             // Skip the library marker and hidden directories.
-            remove_stale_part_files_recursive(&path, removed)?;
+            remove_stale_part_files_recursive(&path, removed, protected_operation_ids)?;
             continue;
         }
         if !file_type.is_file() {
@@ -960,16 +979,35 @@ fn remove_stale_part_files_recursive(dir: &Path, removed: &mut Vec<PathBuf>) -> 
             continue;
         };
         if is_part_file(file_name) {
-            // All `*.part.*` files are stale — resumable transfers use the
-            // `remote_transfer_parts` control DB table to track progress, not
-            // lingering temp files. A part file without a matching in-flight
-            // operation row is safe to remove.
+            // Extract the operation ID from the `.part.<op-id>` suffix.
+            // If this operation has a valid transfer row, the partial is
+            // resumable and must be preserved. Otherwise it is orphaned.
+            let op_id = extract_part_operation_id(file_name);
+            let is_protected = op_id
+                .as_deref()
+                .is_some_and(|id| protected_operation_ids.contains(id));
+            if is_protected {
+                // Resumable partial — preserve for cross-process resume.
+                continue;
+            }
             if fs::remove_file(&path).is_ok() {
                 removed.push(path);
             }
         }
     }
     Ok(())
+}
+
+/// Extract the operation ID from a `.part.<op-id>` filename suffix.
+/// Returns `None` if the suffix cannot be parsed.
+fn extract_part_operation_id(file_name: &str) -> Option<String> {
+    let part_index = file_name.find(".part.")?;
+    let suffix = &file_name[part_index + ".part.".len()..];
+    if suffix.is_empty() {
+        None
+    } else {
+        Some(suffix.to_owned())
+    }
 }
 
 /// A file is a stale partial-download temp file if its name contains the
@@ -1659,7 +1697,8 @@ mod tests {
         let lkg = dir.path().join("openkara.db.lkg");
         std::fs::write(&lkg, b"lkg").unwrap();
 
-        let removed = remove_stale_part_files(dir.path()).expect("recovery");
+        let removed = remove_stale_part_files(dir.path(), &std::collections::HashSet::new())
+            .expect("recovery");
 
         assert!(!part1.exists());
         assert!(!part2.exists());
@@ -1670,9 +1709,29 @@ mod tests {
 
     #[test]
     fn remove_stale_part_files_missing_dir_is_not_an_error() {
-        let result = remove_stale_part_files(Path::new("/nonexistent/dir/xyz"));
+        let result = remove_stale_part_files(
+            Path::new("/nonexistent/dir/xyz"),
+            &std::collections::HashSet::new(),
+        );
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn remove_stale_part_files_preserves_protected_operation_ids() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let protected = dir.path().join("file.part.op-keep");
+        let orphan = dir.path().join("file.part.op-drop");
+        std::fs::write(&protected, b"keep").unwrap();
+        std::fs::write(&orphan, b"drop").unwrap();
+
+        let mut protected_ids = std::collections::HashSet::new();
+        protected_ids.insert("op-keep".to_owned());
+
+        let removed = remove_stale_part_files(dir.path(), &protected_ids).expect("recovery");
+        assert!(protected.exists(), "protected partial must survive");
+        assert!(!orphan.exists(), "orphan partial must be deleted");
+        assert_eq!(removed.len(), 1);
     }
 
     // ---- Helper tests ----
@@ -1784,7 +1843,7 @@ mod tests {
             destination: &Path,
             offset: u64,
             length: u64,
-        ) -> crate::remote::errors::RemoteResult<()> {
+        ) -> crate::remote::errors::RemoteResult<u64> {
             let mut count = self.range_call_count.lock().unwrap();
             let call_index = *count;
             *count += 1;
@@ -1845,7 +1904,7 @@ mod tests {
                     format!("failed to write chunk: {e}"),
                 )
             })?;
-            Ok(())
+            Ok(chunk.len() as u64)
         }
 
         fn upload_file(&self, _relative_path: &str) -> CommandResult<()> {

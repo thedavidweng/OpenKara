@@ -822,6 +822,26 @@ pub fn list_transfer_parts(
     Ok(rows)
 }
 
+/// List all transfer part rows across all operations. Used during startup
+/// recovery to identify which `.part.*` files are resumable (have valid
+/// transfer state) and must not be deleted.
+pub fn list_all_transfer_parts(connection: &Connection) -> CommandResult<Vec<TransferPartRow>> {
+    let mut stmt = connection
+        .prepare(
+            "SELECT operation_id, relative_path, direction,
+                    expected_size, expected_digest, provider_revision, provider_session_id,
+                    transferred_bytes, state, updated_at_ms
+             FROM remote_transfer_parts",
+        )
+        .map_err(|e| database_error(format!("failed to prepare transfer part query: {e}")))?;
+    let rows = stmt
+        .query_map([], map_transfer_part_row)
+        .map_err(|e| database_error(format!("failed to list all transfer parts: {e}")))?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| database_error(format!("failed to collect transfer parts: {e}")))?;
+    Ok(rows)
+}
+
 // used by PR#5: resumable uploads/downloads
 #[allow(dead_code)]
 fn map_transfer_part_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TransferPartRow> {

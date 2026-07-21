@@ -68,23 +68,33 @@ pub(crate) trait RemoteProvider {
     fn download_file(&self, relative_path: &str, destination: &Path) -> CommandResult<()>;
 
     /// Download a byte range `[offset, offset + length)` from a remote object
-    /// and append it to the destination file at the given offset. Used by the
+    /// and write it to the destination file at the given offset. Used by the
     /// resumable download path to resume from a verified offset after an
     /// interrupted transfer.
+    ///
+    /// Returns the actual number of verified bytes written. The caller
+    /// advances its offset by this count, not by the requested `length`,
+    /// so a short or full-body response is handled correctly.
+    ///
+    /// Implementations MUST:
+    /// - Require `206 Partial Content` (or a deliberately supported full-body
+    ///   fallback when `offset == 0`).
+    /// - Validate the `Content-Range` header when present.
+    /// - Validate the response body length matches the requested range (or
+    ///   the full file size for a full-body fallback).
+    /// - Reject short and oversized responses.
     ///
     /// The default implementation returns
     /// [`RemoteErrorKind::ProviderCapabilityUnavailable`] so providers opt in.
     /// A provider that does not support Range requests must NOT silently
     /// download the full file — the caller checks `range_download` first.
-    // used by PR#5: resumable downloads
-    #[allow(dead_code)]
     fn download_range(
         &self,
         _relative_path: &str,
         _destination: &Path,
         _offset: u64,
         _length: u64,
-    ) -> RemoteResult<()> {
+    ) -> RemoteResult<u64> {
         Err(RemoteError::from_kind(
             RemoteErrorKind::ProviderCapabilityUnavailable,
         ))

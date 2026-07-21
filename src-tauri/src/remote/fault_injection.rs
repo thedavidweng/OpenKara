@@ -321,7 +321,7 @@ impl RemoteProvider for FaultInjectionProvider {
         destination: &Path,
         offset: u64,
         length: u64,
-    ) -> RemoteResult<()> {
+    ) -> RemoteResult<u64> {
         let mut count = self.range_call_count.lock().unwrap();
         let call_index = *count;
         *count += 1;
@@ -373,7 +373,7 @@ impl RemoteProvider for FaultInjectionProvider {
             .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.to_string()))?;
         file.write_all(chunk)
             .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.to_string()))?;
-        Ok(())
+        Ok(chunk.len() as u64)
     }
 
     fn upload_file(&self, path: &str) -> CommandResult<()> {

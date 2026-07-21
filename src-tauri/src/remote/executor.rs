@@ -788,10 +788,17 @@ fn record_failure(
     Ok(())
 }
 
+/// Safety delay before GC may begin deleting previous generations. Retaining
+/// only `committed_generation - 1` is not sufficient without a time-based
+/// guarantee: a reader that started a pull just before the manifest advanced
+/// needs wall-clock time to finish. 5 minutes is the minimum safety window.
+const GC_SAFETY_DELAY_MS: i64 = 300_000;
+
 /// Schedule a deferred GC operation row for unreachable staging data and old
-/// database generations. The GC executor (`execute_gc`) picks up the row and
-/// deletes generations older than `committed_generation - 1` (the previous
-/// generation is retained as a rollback safety net).
+/// database generations. The GC executor (`execute_gc`) picks up the row after
+/// the safety delay and deletes generations older than
+/// `committed_generation - 1` (the previous generation is retained as a
+/// rollback safety net for the delay window).
 fn schedule_gc(ctx: &PublishContext<'_>, committed_generation: i64) -> CommandResult<()> {
     let now = current_unix_time_ms();
     let gc_op_id = format!("gc-{}-{}", ctx.library_id, now);
@@ -806,14 +813,17 @@ fn schedule_gc(ctx: &PublishContext<'_>, committed_generation: i64) -> CommandRe
         operation_id: gc_op_id,
         library_id: ctx.library_id.to_owned(),
         operation_kind: OperationKind::Gc,
-        state: OperationState::Pending,
+        // RetryWait with a future next_attempt_at_ms enforces the safety
+        // delay: the executor skips operations whose next_attempt is in the
+        // future, so GC cannot run immediately after publish.
+        state: OperationState::RetryWait,
         expected_generation: Some(committed_generation),
         target_generation: None,
         source_db_digest: None,
         candidate_db_digest: None,
         payload_json: payload.to_json()?,
         attempt_count: 0,
-        next_attempt_at_ms: None,
+        next_attempt_at_ms: Some(now + GC_SAFETY_DELAY_MS),
         error_code: None,
         error_detail: None,
         created_at_ms: now,
@@ -889,6 +899,13 @@ pub(crate) fn execute_gc(
     // Delete old database generations: 1..=retain_floor-1.
     // Generation 0 is reserved (no manifest). We delete generations from 1
     // up to (but not including) retain_floor.
+    //
+    // A missing object (404) is idempotent success — it may have already
+    // been cleaned up by a prior GC. A transient failure (network, rate
+    // limit, server error) leaves the GC operation retryable so the next
+    // executor pass can try again. The GC is not marked Completed until
+    // every target has been successfully deleted or confirmed absent.
+    let mut transient_failures = 0;
     for gen in 1..retain_floor {
         let db_path = database_path_for_generation(gen);
         match provider.delete_path(&db_path) {
@@ -896,18 +913,45 @@ pub(crate) fn execute_gc(
                 tracing::debug!("GC deleted old database generation {} at {}", gen, db_path);
             }
             Err(e) => {
-                // A missing file is not an error — it may have already been
-                // cleaned up by a prior GC. Log and continue.
-                tracing::debug!(
-                    "GC could not delete {} (may be absent): {}",
-                    db_path,
-                    e.message
-                );
+                // A non-retryable error from delete typically means the
+                // object is already absent (404 maps to a non-retryable
+                // permission error in the current HTTP status mapping).
+                // Treat non-retryable errors as idempotent success — the
+                // object is gone or permanently inaccessible, either way
+                // GC has nothing more to do for it.
+                if e.retryable {
+                    tracing::warn!(
+                        "GC transient failure deleting {} (will retry): {}",
+                        db_path,
+                        e.message
+                    );
+                    transient_failures += 1;
+                } else {
+                    tracing::debug!(
+                        "GC confirmed absence of old database generation {} at {}: {}",
+                        gen,
+                        db_path,
+                        e.message
+                    );
+                }
             }
         }
     }
 
-    // Mark the GC operation as completed.
+    if transient_failures > 0 {
+        // Leave the GC operation retryable — do NOT mark it Completed.
+        // Schedule a retry with a safety delay so the executor picks it
+        // up again on the next pass.
+        let mut updated = op.clone();
+        updated.state = OperationState::RetryWait;
+        updated.next_attempt_at_ms = Some(now + GC_RETRY_BACKOFF_MS);
+        updated.updated_at_ms = now;
+        upsert_operation(control_db, &updated)?;
+        return Ok(());
+    }
+
+    // Mark the GC operation as completed only after every target has been
+    // successfully deleted or confirmed absent.
     let mut updated = op.clone();
     updated.state = OperationState::Completed;
     updated.updated_at_ms = now;
@@ -918,6 +962,11 @@ pub(crate) fn execute_gc(
 
 /// Retry backoff for retryable errors (network/rate-limit).
 const RETRY_BACKOFF_MS: i64 = 30_000;
+
+/// Safety delay before retrying a GC operation after a transient delete
+/// failure. GC is low-priority background work, so the delay is longer
+/// than the publish retry backoff.
+const GC_RETRY_BACKOFF_MS: i64 = 60_000;
 
 /// Current wall-clock milliseconds.
 fn current_unix_time_ms() -> i64 {
@@ -1749,16 +1798,29 @@ mod tests {
         let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
         execute_publish(&ctx, &op_id).expect("publish should succeed");
 
-        // Verify a GC operation was scheduled.
-        let all_ops =
-            crate::remote::control_db::list_operations_in_states(&conn, &[OperationState::Pending])
-                .unwrap();
+        // Verify a GC operation was scheduled with a safety delay.
+        let all_ops = crate::remote::control_db::list_operations_in_states(
+            &conn,
+            &[OperationState::Pending, OperationState::RetryWait],
+        )
+        .unwrap();
         let gc_ops: Vec<_> = all_ops
             .iter()
             .filter(|op| op.operation_kind == OperationKind::Gc)
             .collect();
         assert_eq!(gc_ops.len(), 1, "one GC operation should be scheduled");
         assert_eq!(gc_ops[0].expected_generation, Some(1));
+        assert_eq!(
+            gc_ops[0].state,
+            OperationState::RetryWait,
+            "GC must start in RetryWait so the safety delay is enforced"
+        );
+        assert!(
+            gc_ops[0]
+                .next_attempt_at_ms
+                .is_some_and(|t| t > current_unix_time_ms()),
+            "GC safety delay must put next_attempt_at_ms in the future"
+        );
     }
 
     #[test]

@@ -819,14 +819,21 @@ pub(crate) fn google_drive_download_file(
     file_id: &str,
     destination: &Path,
 ) -> CommandResult<()> {
+    use crate::remote::errors::{remote_error_from_status, RemoteError, RemoteErrorKind};
+    use crate::remote::send_with_retry;
+
     let url = google_drive_api_url(&format!("/drive/v3/files/{file_id}?alt=media"))?;
-    let response = google_drive_authorized_request(app_data_dir, secret, Method::GET, url)?
-        .send_network("download Google Drive file")?;
+    let response = send_with_retry("download Google Drive file", || {
+        let builder =
+            google_drive_authorized_request(app_data_dir, secret, Method::GET, url.clone())
+                .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
+        Ok(builder)
+    })
+    .map_err(|e| e.to_command_error())?;
     if !response.status().is_success() {
-        return Err(CommandError::from(LibraryError::Internal(format!(
-            "Google Drive download failed with status {}",
-            response.status()
-        ))));
+        return Err(
+            remote_error_from_status(response.status(), "Google Drive download").to_command_error(),
+        );
     }
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(|error| {
@@ -1286,32 +1293,79 @@ impl super::bootstrap::RemoteBootstrapStorage for GoogleDriveBootstrapStorage<'_
         )
     }
 
-    fn probe_remote_database(&mut self) -> CommandResult<Option<Option<String>>> {
+    fn probe_committed_database(
+        &mut self,
+    ) -> CommandResult<Option<super::bootstrap::CommittedDatabaseProbe>> {
+        use super::bootstrap::CommittedDatabaseProbe;
+        use crate::remote::manifest::{RepositoryManifest, MANIFEST_PATH};
+
+        // Prefer the repository manifest when present.
+        if let Some(manifest_entry) = google_drive_find_relative_entry(
+            self.app_data_dir,
+            &mut self.secret,
+            self.root_folder_id,
+            MANIFEST_PATH,
+        )? {
+            let temp_path = std::env::temp_dir().join(format!(
+                "openkara-manifest-probe-{}.json",
+                uuid::Uuid::new_v4()
+            ));
+            google_drive_download_file(
+                self.app_data_dir,
+                &mut self.secret,
+                &manifest_entry.id,
+                &temp_path,
+            )?;
+            let content = fs::read_to_string(&temp_path).map_err(|error| {
+                let _ = fs::remove_file(&temp_path);
+                CommandError::from(LibraryError::Internal(format!(
+                    "failed to read Google Drive manifest: {error}"
+                )))
+            })?;
+            let _ = fs::remove_file(&temp_path);
+            let manifest: RepositoryManifest = serde_json::from_str(&content).map_err(|error| {
+                CommandError::from(LibraryError::Internal(format!(
+                    "failed to parse Google Drive repository manifest: {error}"
+                )))
+            })?;
+            return Ok(Some(CommittedDatabaseProbe {
+                revision: manifest_entry
+                    .head_revision_id
+                    .or(manifest_entry.modified_time),
+                database_path: manifest.database_path,
+            }));
+        }
+
+        // Legacy repositories without a manifest: root openkara.db.
         Ok(google_drive_find_relative_entry(
             self.app_data_dir,
             &mut self.secret,
             self.root_folder_id,
             "openkara.db",
         )?
-        .map(|entry| entry.head_revision_id.or(entry.modified_time)))
+        .map(|entry| CommittedDatabaseProbe {
+            revision: entry.head_revision_id.or(entry.modified_time),
+            database_path: "openkara.db".to_owned(),
+        }))
     }
 
-    fn download_database(&mut self, destination: &Path) -> CommandResult<()> {
+    fn download_database(&mut self, database_path: &str, destination: &Path) -> CommandResult<()> {
         let entry = google_drive_find_relative_entry(
             self.app_data_dir,
             &mut self.secret,
             self.root_folder_id,
-            "openkara.db",
+            database_path,
         )?
         .ok_or_else(|| {
-            CommandError::from(LibraryError::Internal(
-                "Google Drive database was not found".to_owned(),
-            ))
+            CommandError::from(LibraryError::Internal(format!(
+                "Google Drive database {database_path} was not found"
+            )))
         })?;
         google_drive_download_file(self.app_data_dir, &mut self.secret, &entry.id, destination)
     }
 
     fn upload_database(&mut self, _source: &Path) -> CommandResult<Option<String>> {
+        // One-time empty-repository seed only.
         google_drive_upload_relative_file_to_remote(
             self.app_data_dir,
             self.library,
@@ -1713,7 +1767,11 @@ impl RemoteProvider for GoogleDriveProvider<'_> {
         destination: &Path,
         offset: u64,
         length: u64,
-    ) -> RemoteResult<()> {
+    ) -> RemoteResult<u64> {
+        if length == 0 {
+            return Ok(0);
+        }
+
         let mut secret = self.secret.borrow_mut();
         let root_folder_id = self.library.remote_root_locator().ok_or_else(|| {
             RemoteError::new(
@@ -1744,21 +1802,57 @@ impl RemoteProvider for GoogleDriveProvider<'_> {
             .header("Range", format!("bytes={offset}-{end}"))
             .send_network("download Google Drive file range")
             .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
-        if !response.status().is_success() {
+
+        // Validate the response status. A Range request must return 206
+        // Partial Content. A 200 OK means the server ignored the Range
+        // header — only acceptable when offset == 0 (full-body fallback).
+        let status = response.status();
+        if status == reqwest::StatusCode::OK && offset > 0 {
             return Err(RemoteError::new(
                 RemoteErrorKind::NetworkUnavailable,
                 format!(
-                    "Google Drive range download failed with status {}",
-                    response.status()
+                    "Google Drive range download returned 200 OK for nonzero offset {offset} \
+                     — server ignored Range header"
                 ),
             ));
         }
+        if !status.is_success() {
+            return Err(RemoteError::new(
+                RemoteErrorKind::NetworkUnavailable,
+                format!("Google Drive range download failed with status {status}"),
+            ));
+        }
+
+        // Validate Content-Range header when present.
+        if let Some(content_range) = response.headers().get("content-range") {
+            let cr_str = content_range.to_str().map_err(|e| {
+                RemoteError::new(
+                    RemoteErrorKind::RemoteIntegrityFailed,
+                    format!("invalid Content-Range header: {e}"),
+                )
+            })?;
+            crate::remote::errors::verify_content_range(cr_str, offset, length)?;
+        }
+
         let body = response.bytes().map_err(|error| {
             RemoteError::new(
                 RemoteErrorKind::NetworkUnavailable,
                 format!("failed to read Google Drive range response: {error}"),
             )
         })?;
+
+        // Validate body length: must match the requested range length.
+        let actual_len = body.len() as u64;
+        if actual_len != length {
+            return Err(RemoteError::new(
+                RemoteErrorKind::RemoteIntegrityFailed,
+                format!(
+                    "Google Drive range download body length mismatch: \
+                     requested {length} bytes at offset {offset}, got {actual_len} bytes"
+                ),
+            ));
+        }
+
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent).map_err(|error| {
                 RemoteError::new(
@@ -1793,7 +1887,7 @@ impl RemoteProvider for GoogleDriveProvider<'_> {
                 format!("failed to write {}: {}", destination.display(), error),
             )
         })?;
-        Ok(())
+        Ok(actual_len)
     }
 }
 

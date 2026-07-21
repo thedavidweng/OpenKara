@@ -283,6 +283,62 @@ pub(crate) fn remote_error_from_status(status: reqwest::StatusCode, context: &st
     RemoteError::new(kind, format!("{context} failed with HTTP {status}"))
 }
 
+/// Validate a `Content-Range` header against the requested byte range.
+///
+/// The header format is `bytes <start>-<end>/<total>` (or `bytes */<total>`
+/// for an unsatisfied range). This verifies that `start` and `end` match
+/// the requested `offset` and `offset + length - 1`.
+pub(crate) fn verify_content_range(header: &str, offset: u64, length: u64) -> RemoteResult<()> {
+    let expected_start = offset;
+    let expected_end = offset + length - 1;
+
+    // Strip the "bytes " prefix.
+    let rest = header.strip_prefix("bytes").unwrap_or(header).trim();
+
+    // Handle unsatisfied range: "*/<total>"
+    if rest.starts_with('*') {
+        return Err(RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!(
+                "Content-Range indicates unsatisfied range ({header}) \
+                 — requested {expected_start}-{expected_end}"
+            ),
+        ));
+    }
+
+    // Parse "<start>-<end>/<total>"
+    let (range_part, _total_part) = rest.split_once('/').unwrap_or((rest, ""));
+    let (start_str, end_str) = range_part.split_once('-').ok_or_else(|| {
+        RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!("malformed Content-Range header: {header}"),
+        )
+    })?;
+    let start: u64 = start_str.parse().map_err(|_| {
+        RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!("malformed Content-Range start: {header}"),
+        )
+    })?;
+    let end: u64 = end_str.parse().map_err(|_| {
+        RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!("malformed Content-Range end: {header}"),
+        )
+    })?;
+
+    if start != expected_start || end != expected_end {
+        return Err(RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!(
+                "Content-Range mismatch: header says {start}-{end}, \
+                 requested {expected_start}-{expected_end}"
+            ),
+        ));
+    }
+    Ok(())
+}
+
 /// Result alias for operations that produce a typed `RemoteError`.
 pub(crate) type RemoteResult<T> = std::result::Result<T, RemoteError>;
 
@@ -392,5 +448,29 @@ mod tests {
         let non_retryable = RemoteError::from_kind(RemoteErrorKind::RemoteConflict);
         let cmd = non_retryable.to_command_error();
         assert!(!cmd.retryable);
+    }
+
+    #[test]
+    fn content_range_accepts_exact_match() {
+        verify_content_range("bytes 100-199/1000", 100, 100).expect("valid range");
+        verify_content_range("bytes 0-0/1", 0, 1).expect("single byte");
+    }
+
+    #[test]
+    fn content_range_rejects_wrong_start_or_end() {
+        let err = verify_content_range("bytes 0-99/1000", 100, 100).unwrap_err();
+        assert_eq!(err.kind, RemoteErrorKind::RemoteIntegrityFailed);
+
+        let err = verify_content_range("bytes 100-150/1000", 100, 100).unwrap_err();
+        assert_eq!(err.kind, RemoteErrorKind::RemoteIntegrityFailed);
+    }
+
+    #[test]
+    fn content_range_rejects_unsatisfied_and_malformed() {
+        let err = verify_content_range("bytes */1000", 0, 100).unwrap_err();
+        assert_eq!(err.kind, RemoteErrorKind::RemoteIntegrityFailed);
+
+        let err = verify_content_range("bytes garbage", 0, 100).unwrap_err();
+        assert_eq!(err.kind, RemoteErrorKind::RemoteIntegrityFailed);
     }
 }

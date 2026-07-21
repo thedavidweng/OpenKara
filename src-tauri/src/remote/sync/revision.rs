@@ -1,6 +1,6 @@
 use crate::{
     commands::error::{CommandError, CommandResult},
-    config::{AppConfig, RegisteredLibrary, RemoteLibraryProvider},
+    config::{AppConfig, RegisteredLibrary},
     library::error::LibraryError,
     remote::atomic_download::{
         atomic_database_pull, reconcile_database_state_after_restart, DatabasePullOptions,
@@ -82,6 +82,7 @@ pub(crate) fn remote_database_revision_is_stale(
     provider_revision.is_some_and(|revision| Some(revision) != stored_revision)
 }
 
+#[cfg(test)]
 pub(crate) fn remote_database_conflict_error(provider_revision: Option<&str>) -> CommandError {
     let revision_detail = provider_revision
         .map(|revision| format!(" Remote revision: {revision}."))
@@ -103,10 +104,23 @@ pub(crate) fn sync_remote_database_from_provider(
     // update before deciding whether to pull again.
     reconcile_after_restart(control_db_conn, app_data_dir, library)?;
 
-    let provider = create_provider(app_data_dir, library)?;
-    let revision = provider.initialize_or_sync()?;
-    update_remote_revision_in_config(app_data_dir, library.id(), revision)?;
-    load_registered_remote_library(app_data_dir, library.id())
+    // Unified read protocol: resolve the committed database through the
+    // manifest (or the legacy root openkara.db when no manifest exists).
+    // Do NOT call provider.initialize_or_sync() here — that bootstrap path
+    // always downloads root openkara.db and would silently replace a
+    // generation-specific working copy with a stale legacy object after
+    // the repository has been migrated to the manifest protocol.
+    let provider_revision = remote_database_revision(app_data_dir, library)?;
+    if !remote_database_revision_is_stale(library.remote_revision(), provider_revision.as_deref()) {
+        // Already up to date — no download needed.
+        return Ok(library.clone());
+    }
+    pull_remote_database_atomically(
+        control_db_conn,
+        app_data_dir,
+        library,
+        provider_revision.as_deref(),
+    )
 }
 
 /// Reconcile repository state if a prior pull completed the rename but not the
@@ -173,16 +187,22 @@ pub(crate) fn prepare_remote_database_for_mutation(
 
 /// Decide whether an automatic pull may overwrite the working copy. Only
 /// `Clean` allows it; every other state preserves the working copy.
+///
+/// If the control DB is unreadable, fail closed: do NOT allow an automatic
+/// pull. The atomic pull validates the remote candidate, but that does not
+/// prove the local database has no unpublished edits. Overwriting a dirty
+/// working copy when the control plane is unavailable would silently lose
+/// local mutations.
 fn should_allow_automatic_pull(control_db_conn: &Connection, library: &RegisteredLibrary) -> bool {
     match get_repository_state(control_db_conn, library.id()) {
         Ok(Some(state)) => matches!(state.local_state, LocalState::Clean),
         // No state row yet (e.g. a library registered before the control DB
         // existed): allow the pull so first-time refresh works.
         Ok(None) => true,
-        // If the control DB is unreadable, do not block the user — allow the
-        // pull. The atomic pull itself validates the candidate, so a corrupt
-        // control DB cannot cause a bad overwrite.
-        Err(_) => true,
+        // If the control DB is unreadable, fail closed. Do not allow an
+        // automatic pull over the working copy — the local database may
+        // contain unpublished edits that the control plane cannot verify.
+        Err(_) => false,
     }
 }
 
@@ -288,47 +308,6 @@ fn pull_remote_database_atomically(
     }
 }
 
-pub(crate) fn ensure_remote_database_upload_safe(
-    app_data_dir: &Path,
-    library: &RegisteredLibrary,
-) -> CommandResult<()> {
-    let provider_revision = remote_database_revision(app_data_dir, library)?;
-    if remote_database_revision_is_stale(library.remote_revision(), provider_revision.as_deref()) {
-        return Err(remote_database_conflict_error(provider_revision.as_deref()));
-    }
-    Ok(())
-}
-
-pub(crate) fn upload_remote_database(
-    app_data_dir: &Path,
-    library: &RegisteredLibrary,
-) -> CommandResult<()> {
-    ensure_remote_database_upload_safe(app_data_dir, library)?;
-
-    let provider = create_provider(app_data_dir, library)?;
-    provider.upload_file("openkara.db")?;
-    let new_revision = provider.get_revision("openkara.db")?;
-    // WebDAV servers that don't return an ETag yield Ok(None) here; that is
-    // acceptable — we persist None as the revision rather than failing a
-    // successful upload.
-    if new_revision.is_none()
-        && matches!(
-            library.provider(),
-            Some(RemoteLibraryProvider::GoogleDrive) | Some(RemoteLibraryProvider::Dropbox)
-        )
-    {
-        return Err(CommandError::from(LibraryError::Internal(format!(
-            "{} database file is missing after upload",
-            match library.provider() {
-                Some(RemoteLibraryProvider::GoogleDrive) => "Google Drive",
-                Some(RemoteLibraryProvider::Dropbox) => "Dropbox",
-                _ => "Remote",
-            }
-        ))));
-    }
-    update_remote_revision_in_config(app_data_dir, library.id(), new_revision)
-}
-
 pub fn active_remote_library(app_data_dir: &Path) -> CommandResult<Option<RegisteredLibrary>> {
     let config = load_app_config(app_data_dir)?;
     let Some(active_library) = config.active_library() else {
@@ -338,14 +317,6 @@ pub fn active_remote_library(app_data_dir: &Path) -> CommandResult<Option<Regist
         return Ok(None);
     }
     Ok(Some(active_library.clone()))
-}
-
-#[allow(dead_code)] // used by mutation::sync_backend in non-test builds
-pub fn sync_active_remote_database_if_needed(app_data_dir: &Path) -> CommandResult<()> {
-    let Some(library) = active_remote_library(app_data_dir)? else {
-        return Ok(());
-    };
-    upload_remote_database(app_data_dir, &library)
 }
 
 #[allow(dead_code)] // used by mutation::sync_backend in non-test builds
@@ -457,6 +428,17 @@ pub(crate) fn resolve_active_remote(config: &AppConfig) -> Option<RegisteredLibr
 }
 
 pub(crate) fn sync_active_remote_library(state: &AppState) -> CommandResult<()> {
+    // Fail closed when the durable control plane is unavailable. An in-memory
+    // fallback cannot prove the working copy is clean, so automatic refresh
+    // must not overwrite it.
+    if state.remote.control_db_degraded {
+        return Err(CommandError::from(LibraryError::Internal(
+            "remote control database is unavailable; automatic refresh is \
+             disabled until the control plane is repaired"
+                .to_string(),
+        )));
+    }
+
     let config = load_app_config(&state.shell.app_data_dir)?;
     let Some(active_library) = config.active_library() else {
         return Err(CommandError::from(LibraryError::Internal(

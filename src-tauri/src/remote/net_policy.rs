@@ -31,10 +31,9 @@
 //! The driver checks the cancel flag between attempts and aborts without
 //! further retries when set.
 //!
-//! PR#5 provides the shared policy infrastructure. The provider upload/download
-//! paths will adopt the `RetryDriver` incrementally; the classification and
-//! jitter helpers are already shared with `audio/remote_source.rs`.
-#![allow(dead_code)]
+//! Production provider paths call [`run_with_default_retry`] for transport-
+//! level retries. The classification and jitter helpers are also shared with
+//! `audio/remote_source.rs` and the reconnect policy.
 
 use crate::remote::errors::{
     kind_from_http_status, kind_from_io_error, RemoteError, RemoteErrorKind,
@@ -72,10 +71,12 @@ pub(crate) trait JitterRng: Send + Sync {
 
 /// A deterministic xorshift RNG for tests. Produces a reproducible sequence
 /// from a fixed seed so backoff assertions are stable.
+#[cfg(test)]
 pub(crate) struct SeededJitter {
     state: std::sync::Mutex<u64>,
 }
 
+#[cfg(test)]
 impl SeededJitter {
     pub(crate) fn new(seed: u64) -> Self {
         Self {
@@ -84,6 +85,7 @@ impl SeededJitter {
     }
 }
 
+#[cfg(test)]
 impl JitterRng for SeededJitter {
     fn next_bounded(&self, max: u64) -> u64 {
         if max == 0 {
@@ -123,11 +125,17 @@ pub(crate) struct RetryPolicy {
     pub initial_delay: Duration,
     /// Ceiling for the exponential backoff delay.
     pub max_delay: Duration,
-    /// Connect timeout for each attempt.
+    /// Connect timeout for each attempt. Applied when constructing HTTP
+    /// clients that honor the shared policy.
+    #[allow(dead_code)]
     pub connect_timeout: Duration,
-    /// Idle-read timeout for each attempt.
+    /// Idle-read timeout for each attempt. Applied when constructing HTTP
+    /// clients that honor the shared policy.
+    #[allow(dead_code)]
     pub read_timeout: Duration,
-    /// Per-attempt deadline.
+    /// Per-attempt deadline. Applied when constructing HTTP clients that
+    /// honor the shared policy.
+    #[allow(dead_code)]
     pub attempt_deadline: Duration,
 }
 
@@ -248,7 +256,7 @@ pub(crate) trait RetryProgress: Send + Sync {
 }
 
 /// A no-op progress recorder for operations that do not have a control DB row
-/// (e.g. the streaming range fetcher hot path).
+/// (e.g. the streaming range fetcher hot path and one-shot provider requests).
 pub(crate) struct NoopProgress;
 
 impl RetryProgress for NoopProgress {
@@ -334,6 +342,30 @@ impl<'a> RetryDriver<'a> {
 /// Production sleep function: `thread::sleep`.
 pub(crate) fn production_sleep(d: Duration) {
     std::thread::sleep(d);
+}
+
+/// Run a fallible remote operation with the default production retry policy.
+///
+/// Callers rebuild the request inside `operation` on every attempt so the
+/// driver can retry after transport failures, 429, and 5xx without holding a
+/// consumed `RequestBuilder`. Permanent failures (400/403/404/409/412,
+/// integrity, capability) must return a non-retryable [`RemoteError`].
+pub(crate) fn run_with_default_retry<T, F>(operation: F) -> Result<T, RemoteError>
+where
+    F: FnMut() -> AttemptOutcome<T>,
+{
+    let policy = RetryPolicy::default();
+    let rng = ThreadJitter;
+    let progress = NoopProgress;
+    let driver = RetryDriver {
+        policy: &policy,
+        rng: &rng,
+        cancel: None,
+        progress: Some(&progress),
+        sleep_fn: &production_sleep,
+        now_ms: &|| crate::remote::types::current_unix_time_ms(),
+    };
+    driver.run(operation)
 }
 
 /// Extend `RemoteError` with an optional `Retry-After` delay parsed from the

@@ -32,19 +32,22 @@
 //! Each entry point encodes a real protocol variant that the caller knows
 //! and the module cannot infer:
 //!
-//! | Wrapper                              | prepare | sync_db | publish         | When                                   |
-//! |--------------------------------------|---------|---------|-----------------|----------------------------------------|
-//! | `run_imported_songs_mutation`        | yes     | no      | songs (imported)| additive import; publish uploads DB    |
-//! | `run_updated_songs_mutation`         | yes     | no      | songs (extracted)| metadata update; publish uploads DB   |
-//! | `run_song_database_mutation`         | yes     | yes     | single song     | single-song DB-level change            |
-//! | `run_song_database_mutation_with_result` | yes | yes     | song from result| same, song id only known after mutation|
-//! | `run_songs_database_mutation`        | yes     | yes     | songs (extracted)| multi-song DB-level change            |
-//! | `run_active_library_mirror_mutation` | no      | no      | mirror          | whole-library re-sync (e.g. maintenance)|
-//! | `run_database_then_library_mirror_mutation` | yes | yes | mirror        | DB change + whole-library re-sync      |
+//! | Wrapper                              | prepare | publish         | When                                   |
+//! |--------------------------------------|---------|-----------------|----------------------------------------|
+//! | `run_imported_songs_mutation`        | yes     | songs (imported)| additive import; publish via executor  |
+//! | `run_updated_songs_mutation`         | yes     | songs (extracted)| metadata update; publish via executor |
+//! | `run_song_database_mutation`         | yes     | single song     | single-song DB-level change            |
+//! | `run_song_database_mutation_with_result` | yes | song from result| same, song id only known after mutation|
+//! | `run_songs_database_mutation`        | yes     | songs (extracted)| multi-song DB-level change            |
+//! | `run_active_library_mirror_mutation` | no      | mirror          | whole-library re-sync (e.g. maintenance)|
+//! | `run_database_then_library_mirror_mutation` | yes | mirror     | DB change + whole-library re-sync      |
+//!
+//! Publication is driven by the durable operation executor (manifest CAS).
+//! There is no separate root `openkara.db` upload step after local mutation.
 //!
 //! The deletion test confirms the set earns its keep: inlining
-//! `prepare → mutate → sync_db → publish` at 18 call sites would scatter
-//! the Pre-Mutation Refresh / Pre-Publish Conflict protocol across the
+//! `prepare → mutate → publish` at 18 call sites would scatter the
+//! Pre-Mutation Refresh / Pre-Publish Conflict protocol across the
 //! command layer. The typed wrappers concentrate it here.
 
 use crate::{commands::error::CommandResult, library::Song, AppState};
@@ -74,7 +77,6 @@ mod sync_backend {
     };
     use crate::remote::sync::active_remote_library;
     use crate::AppState;
-    use std::path::Path;
     use tauri::AppHandle;
 
     pub fn prepare(state: &AppState) -> CommandResult<()> {
@@ -85,10 +87,6 @@ mod sync_backend {
             &control_db_conn,
             &state.shell.app_data_dir,
         )
-    }
-
-    pub fn sync_db(app_data_dir: &Path) -> CommandResult<()> {
-        sync::sync_active_remote_database_if_needed(app_data_dir)
     }
 
     pub fn publish_song<R: tauri::Runtime>(
@@ -254,13 +252,11 @@ mod sync_backend {
     use crate::commands::error::{CommandError, CommandResult};
     use crate::AppState;
     use std::cell::RefCell;
-    use std::path::Path;
     use tauri::AppHandle;
 
     #[derive(Debug, Clone, PartialEq)]
     pub(super) enum SyncCall {
         Prepare,
-        SyncDb,
         PublishSong(String),
         PublishSongs(Vec<String>),
         Mirror,
@@ -269,7 +265,6 @@ mod sync_backend {
     thread_local! {
         static CALLS: RefCell<Vec<SyncCall>> = const { RefCell::new(Vec::new()) };
         static PREPARE_RESULT: RefCell<Result<(), CommandError>> = const { RefCell::new(Ok(())) };
-        static SYNC_DB_RESULT: RefCell<Result<(), CommandError>> = const { RefCell::new(Ok(())) };
         static PUBLISH_RESULT: RefCell<Result<(), CommandError>> = const { RefCell::new(Ok(())) };
         static MIRROR_RESULT: RefCell<Result<(), CommandError>> = const { RefCell::new(Ok(())) };
     }
@@ -277,7 +272,6 @@ mod sync_backend {
     pub fn reset() {
         CALLS.with(|c| c.borrow_mut().clear());
         PREPARE_RESULT.with(|r| *r.borrow_mut() = Ok(()));
-        SYNC_DB_RESULT.with(|r| *r.borrow_mut() = Ok(()));
         PUBLISH_RESULT.with(|r| *r.borrow_mut() = Ok(()));
         MIRROR_RESULT.with(|r| *r.borrow_mut() = Ok(()));
     }
@@ -288,10 +282,6 @@ mod sync_backend {
 
     pub fn set_prepare_result(result: Result<(), CommandError>) {
         PREPARE_RESULT.with(|r| *r.borrow_mut() = result);
-    }
-
-    pub fn set_sync_db_result(result: Result<(), CommandError>) {
-        SYNC_DB_RESULT.with(|r| *r.borrow_mut() = result);
     }
 
     #[allow(dead_code)]
@@ -307,11 +297,6 @@ mod sync_backend {
     pub fn prepare(_state: &AppState) -> CommandResult<()> {
         CALLS.with(|c| c.borrow_mut().push(SyncCall::Prepare));
         PREPARE_RESULT.with(|r| r.borrow().clone())
-    }
-
-    pub fn sync_db(_app_data_dir: &Path) -> CommandResult<()> {
-        CALLS.with(|c| c.borrow_mut().push(SyncCall::SyncDb));
-        SYNC_DB_RESULT.with(|r| r.borrow().clone())
     }
 
     pub fn publish_song<R: tauri::Runtime>(
@@ -458,8 +443,16 @@ where
     R: tauri::Runtime,
     F: FnOnce() -> CommandResult<T>,
 {
-    let result = prepare_and_mutate(state, mutation)?;
-    sync_backend::sync_db(&state.shell.app_data_dir)?;
+    // Record the durable outbox row with the known song_id so publish reuses
+    // the same operation identity instead of creating a second placeholder.
+    // Publication is driven solely by the durable executor (manifest CAS) —
+    // there is no separate root openkara.db upload step.
+    sync_backend::prepare(state)?;
+    let prepared = sync_backend::record_prepared_operation(state, &[song_id.to_owned()])?;
+    let result = mutation()?;
+    if let Some(ref prepared) = prepared {
+        sync_backend::mark_operation_pending_and_dirty(state, prepared)?;
+    }
     sync_backend::publish_song(state, app_handle, song_id)?;
     Ok(result)
 }
@@ -477,7 +470,6 @@ where
 {
     let result = prepare_and_mutate(state, mutation)?;
     if let Some(song_id) = song_id(&result) {
-        sync_backend::sync_db(&state.shell.app_data_dir)?;
         sync_backend::publish_song(state, app_handle, &song_id)?;
     }
     Ok(result)
@@ -497,7 +489,6 @@ where
     let result = prepare_and_mutate(state, mutation)?;
     let song_ids = song_ids(&result);
     if !song_ids.is_empty() {
-        sync_backend::sync_db(&state.shell.app_data_dir)?;
         sync_backend::publish_songs(state, app_handle, &song_ids)?;
     }
     Ok(result)
@@ -530,7 +521,6 @@ where
     F: FnOnce() -> CommandResult<T>,
 {
     let result = prepare_and_mutate(state, mutation)?;
-    sync_backend::sync_db(&state.shell.app_data_dir)?;
     sync_backend::mirror(state, app_handle)?;
     Ok(result)
 }
@@ -632,7 +622,7 @@ mod tests {
     }
 
     #[test]
-    fn song_database_mutation_prepares_syncs_publishes() {
+    fn song_database_mutation_prepares_and_publishes() {
         reset();
         let state = test_state();
         let handle = test_app_handle();
@@ -641,16 +631,12 @@ mod tests {
 
         assert_eq!(
             calls(),
-            vec![
-                SyncCall::Prepare,
-                SyncCall::SyncDb,
-                SyncCall::PublishSong("s1".into()),
-            ]
+            vec![SyncCall::Prepare, SyncCall::PublishSong("s1".into()),]
         );
     }
 
     #[test]
-    fn mutation_with_result_some_id_syncs_and_publishes() {
+    fn mutation_with_result_some_id_publishes() {
         reset();
         let state = test_state();
         let handle = test_app_handle();
@@ -667,14 +653,13 @@ mod tests {
             calls(),
             vec![
                 SyncCall::Prepare,
-                SyncCall::SyncDb,
                 SyncCall::PublishSong("resolved-id".into()),
             ]
         );
     }
 
     #[test]
-    fn mutation_with_result_none_skips_sync_and_publish() {
+    fn mutation_with_result_none_skips_publish() {
         reset();
         let state = test_state();
         let handle = test_app_handle();
@@ -685,7 +670,7 @@ mod tests {
     }
 
     #[test]
-    fn songs_database_mutation_nonempty_syncs_and_publishes() {
+    fn songs_database_mutation_nonempty_publishes() {
         reset();
         let state = test_state();
         let handle = test_app_handle();
@@ -697,14 +682,13 @@ mod tests {
             calls(),
             vec![
                 SyncCall::Prepare,
-                SyncCall::SyncDb,
                 SyncCall::PublishSongs(vec!["a".into(), "b".into()]),
             ]
         );
     }
 
     #[test]
-    fn songs_database_mutation_empty_skips_sync_and_publish() {
+    fn songs_database_mutation_empty_skips_publish() {
         reset();
         let state = test_state();
         let handle = test_app_handle();
@@ -733,10 +717,7 @@ mod tests {
 
         run_database_then_library_mirror_mutation(&state, &handle, || Ok("done")).unwrap();
 
-        assert_eq!(
-            calls(),
-            vec![SyncCall::Prepare, SyncCall::SyncDb, SyncCall::Mirror]
-        );
+        assert_eq!(calls(), vec![SyncCall::Prepare, SyncCall::Mirror]);
     }
 
     #[test]
@@ -762,25 +743,5 @@ mod tests {
         assert_eq!(err.message, "prepare failed");
         assert!(!mutation_ran.get());
         assert_eq!(calls(), vec![SyncCall::Prepare]);
-    }
-
-    #[test]
-    fn sync_db_error_returns_without_publishing() {
-        reset();
-        let state = test_state();
-        let handle = test_app_handle();
-        let mutation_ran = std::cell::Cell::new(false);
-
-        sync_backend::set_sync_db_result(Err(internal_error("sync failed")));
-
-        let err = run_song_database_mutation(&state, &handle, "s1", || {
-            mutation_ran.set(true);
-            Ok(())
-        })
-        .unwrap_err();
-
-        assert_eq!(err.message, "sync failed");
-        assert!(mutation_ran.get());
-        assert_eq!(calls(), vec![SyncCall::Prepare, SyncCall::SyncDb]);
     }
 }
