@@ -150,6 +150,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **remote**: Exact operation identity, batch CAS, SQLite TX, library outbox (#151)
 - **ci**: Regenerate db-schema and silence unused pending helpers
 - **remote**: Atomic library outbox with song mutation transaction (#151)
+- **remote**: Bind publish to op.library_id and coalesce pending ops (#151)
 
 ### 📝 Documentation
 
@@ -198,12 +199,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Regenerate changelog
 - Regenerate changelog
 - Regenerate changelog
+- Regenerate changelog
 
 ### 🧪 Tests
 
 - Add 13 new test files for untested modules
 - **audio**: Backport crossfade regression tests from original #89 branch (#137)
 - **audio**: Assert incoming resampler cache cleared after crossfade abort
+- **remote**: Fault-injection recovery for library outbox crash windows (#151)
 
 ## [0.9.0] - 2026-06-14
 
