@@ -373,6 +373,7 @@ jobs:
       - name: Download release assets and generate SHA256SUMS
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
         run: |
           set -euo pipefail
