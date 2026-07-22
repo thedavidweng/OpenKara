@@ -200,23 +200,25 @@ if (
 ensureSystemTool("tar");
 
 // .nupkg (NuGet) files are ZIP archives, not tar. macOS bsdtar can extract
-// ZIPs transparently, but GNU tar (Git Bash on Windows) cannot. Use
-// .NET ZipFile on Windows (Expand-Archive rejects .nupkg extensions).
-// For .tgz archives, GNU tar also needs --force-local so "C:\path" is not
-// parsed as host:path.
+// ZIPs transparently, but GNU tar (Git Bash on Windows) cannot. On Windows,
+// copy to a .zip stub and use PowerShell Expand-Archive (which only accepts
+// .zip extensions). For .tgz archives, GNU tar also needs --force-local so
+// "C:\path" is not parsed as host:path.
 function extractArchive(archivePath, destDir, isZip) {
   if (isZip && process.platform === "win32") {
+    const zipStub = archivePath + ".zip";
+    cpSync(archivePath, zipStub);
     execFileSync(
       "powershell",
       [
         "-NoProfile",
         "-NonInteractive",
         "-Command",
-        "Add-Type -AssemblyName System.IO.Compression.FileSystem; " +
-          `[System.IO.Compression.ZipFile]::ExtractToDirectory('${archivePath}', '${destDir}', $true)`,
+        `Expand-Archive -LiteralPath '${zipStub}' -DestinationPath '${destDir}' -Force`,
       ],
       { stdio: "inherit" },
     );
+    rmSync(zipStub, { force: true });
     return;
   }
 
