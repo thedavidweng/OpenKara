@@ -72,10 +72,16 @@ jobs:
               "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
               > changed-files.txt
           elif [ "$EVENT_NAME" = "push" ]; then
+            # Use the GitHub API instead of git diff: the checkout is shallow
+            # (fetch-depth: 1) so the BEFORE SHA is not in local history.
             if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-              git diff --name-only HEAD~1..HEAD > changed-files.txt
+              gh api --jq '.files[].filename' \
+                "repos/${GITHUB_REPOSITORY}/commits/${AFTER}" \
+                > changed-files.txt
             else
-              git diff --name-only "$BEFORE".."$AFTER" > changed-files.txt
+              gh api --paginate --jq '.files[].filename' \
+                "repos/${GITHUB_REPOSITORY}/compare/${BEFORE}...${AFTER}" \
+                > changed-files.txt
             fi
           else
             : > changed-files.txt
