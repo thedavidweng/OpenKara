@@ -199,9 +199,33 @@ if (
 
 ensureSystemTool("tar");
 
-// GNU tar (as shipped with Git Bash on Windows) interprets "C:\path" as a
-// remote host:path. --force-local makes it treat colons literally.
-const tarArgs = process.platform === "win32" ? ["--force-local"] : [];
+// .nupkg (NuGet) files are ZIP archives, not tar. macOS bsdtar can extract
+// ZIPs transparently, but GNU tar (Git Bash on Windows) cannot. Use
+// PowerShell Expand-Archive for ZIPs on Windows. For .tgz archives, GNU tar
+// also needs --force-local so "C:\path" is not parsed as host:path.
+function extractArchive(archivePath, destDir, isZip) {
+  if (isZip && process.platform === "win32") {
+    execFileSync(
+      "powershell",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `Expand-Archive -LiteralPath '${archivePath}' -DestinationPath '${destDir}' -Force`,
+      ],
+      { stdio: "inherit" },
+    );
+    return;
+  }
+
+  const tarArgs =
+    process.platform === "win32" ? ["--force-local"] : [];
+  execFileSync("tar", ["-xf", archivePath, "-C", destDir, ...tarArgs], {
+    stdio: "inherit",
+  });
+}
+
+const isNugetPackage = config.sourceKind === "nuget-package";
 
 const tempRoot = mkdtempSync(join(os.tmpdir(), "openkara-ort-"));
 const archivePath = join(tempRoot, config.archiveName);
@@ -221,9 +245,7 @@ try {
 
   const archiveBytes = Buffer.from(await response.arrayBuffer());
   writeFileSync(archivePath, archiveBytes);
-  execFileSync("tar", ["-xf", archivePath, "-C", extractedDir, ...tarArgs], {
-    stdio: "inherit",
-  });
+  extractArchive(archivePath, extractedDir, isNugetPackage);
 
   for (const dependencyPackage of config.dependencyPackages ?? []) {
     const dependencyUrl = archiveUrlForPackage(
@@ -244,11 +266,8 @@ try {
       dependencyArchivePath,
       Buffer.from(await dependencyResponse.arrayBuffer()),
     );
-    execFileSync(
-      "tar",
-      ["-xf", dependencyArchivePath, "-C", extractedDir, ...tarArgs],
-      { stdio: "inherit" },
-    );
+    // Dependency packages from NuGet are also ZIP (.nupkg) archives.
+    extractArchive(dependencyArchivePath, extractedDir, isNugetPackage);
   }
 
   const runtimeCandidate = walkFiles(extractedDir).find((filePath) =>
