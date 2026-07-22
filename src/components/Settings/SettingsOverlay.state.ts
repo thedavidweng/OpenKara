@@ -169,6 +169,17 @@ export function createSettingsOverlayActions(
   const applyModelVariant = async (variant: ModelVariant) => {
     try {
       const current = controls.getSnapshot();
+
+      // Guard against concurrent calls for the same variant. Without this,
+      // a second call that arrives while the first is still downloading
+      // would see `status.downloaded` as false and start a duplicate
+      // download. The backend also guards against this, but the frontend
+      // guard prevents the redundant IPC call and keeps `downloadingModel`
+      // state consistent.
+      if (current.state.downloadingModel === variant) {
+        return;
+      }
+
       const status = current.state.modelStatuses[variant];
 
       if (!status?.downloaded) {

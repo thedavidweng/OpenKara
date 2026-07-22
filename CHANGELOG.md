@@ -42,6 +42,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Unify mock song data and IPC mechanism between website preview and E2E tests (#132)
 - Add equal-power crossfade between consecutive tracks (#131)
 - **romanize**: Sync romanized lyrics to fullscreen audience window (#142)
+- **remote**: Durable remote-state.db control plane with operation state machine and startup recovery (#151)
+- **remote**: Versioned manifest, transactional publish, CAS conflict handling
+- **remote**: Resumable provider transfers and shared network retry policy (#151)
+- **remote**: Persistent verified cache catalog with bounded eviction (#151)
+- **remote**: Playback reconnect and source replacement with timeline preservation (#151)
+- **remote**: Frontend states, conflict actions, diagnostics, and fault-injection suite (#151)
+- **remote**: Verify referenced assets before manifest CAS (#151)
+- **remote**: Manifest-based pull, GC executor, resumable uploads, range downloads (#151)
 
 ### 🐛 Bug Fixes
 
@@ -115,6 +123,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **website**: Restore desktop preview fill while keeping mobile bleed (#148)
 - **cover-art**: Resolve ambience backdrop revocation race on song change (#149)
 - **romanize**: Scale pronunciation and bg_words lines with lyricsFontStep (#153)
+- **remote**: Route stems_remote around single-file streaming and verify complete stem sets (#151)
+- **remote**: Download remote stems in fallback path and clean temps on failure
+- **remote**: Unique batch operation ids, filter phantom uploads, migrate fallback DB
+- **remote**: Atomic verified downloads and dirty working-copy protection (#151)
+- **remote**: Use size-only cache fast-path and sanitize revision in operation id
+- **remote**: Reset terminal ops on re-publish, reject missing CAS token, cancel stale batch rows
+- **clippy**: Use is_some_and instead of map_or(false, ...)
+- **remote**: Revert unimplemented capability flags, reset transfer progress on failure
+- **remote**: Skip eviction on verified hits, restore fast-path skip, wire persist_ranges
+- **remote**: Preserve reconnect cache pin guard and fetch event listener
+- **remote**: Use as_str for diagnostics, regenerate changelog
+- **remote**: Apply migrations on fallback in-memory control DB, fix test TS type
+- **remote**: Replace park-thread pin leak with RemoteStreamingRuntime
+- **remote**: Use UUID operation IDs, stop reusing terminal rows
+- **remote**: Start durable operation executor on app startup
+- **clippy**: Use sort_by_key with Reverse in control_db
+- **remote**: Don't hold control DB Mutex across network I/O
+- **remote**: Dispatch Gc operations in startup executor and reload credentials in single-flight waiters
+- **remote**: Block on condvar for refresh waiters, guard duplicate model downloads, align contract docs
+- **remote**: Enforce one publication protocol and recovery invariants (#151)
+- **remote**: Recover accepted CAS after crash and harden remaining reliability gaps (#151)
+- **remote**: Close P0 publication recovery, lock scope, and transfer identity gaps (#151)
+- **remote**: Preserve RetryWait, bind batch song_ids, fix refresh/bootstrap races (#151)
+- **remote**: Project durable status only after executor; atomic song_id bind (#151)
+- **remote**: Exact operation identity, batch CAS, SQLite TX, library outbox (#151)
+- **ci**: Regenerate db-schema and silence unused pending helpers
+- **remote**: Atomic library outbox with song mutation transaction (#151)
+- **remote**: Bind publish to op.library_id and coalesce pending ops (#151)
 
 ### 📝 Documentation
 
@@ -137,7 +173,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **flatpak**: Reclaim host disk and disable builder cache (#121)
 - Triage PR by changed paths and skip irrelevant jobs (#150)
 - **release**: Append installation section to GitHub Release Notes (#154)
-- Replace paths-filter with checked-in classifier and harden CI Gate
+- Replace paths-filter with checked-in classifier and harden CI Gate (#156)
 
 ### 🔧 Chores
 
@@ -154,12 +190,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Bump knip to 6.26 and update ignoreBinaries (#119)
 - **deps**: Bump serde_with from 3.18.0 to 3.21.0 in /src-tauri in the cargo group across 1 directory (#122)
 - Upgrade npm and Rust dependencies (#140)
+- Regenerate changelog
+- Regenerate changelog
+- Regenerate changelog
+- Regenerate changelog
+- Regenerate changelog
+- Regenerate changelog
+- Regenerate changelog
+- Regenerate changelog
+- Regenerate changelog
+- Regenerate changelog
 
 ### 🧪 Tests
 
 - Add 13 new test files for untested modules
 - **audio**: Backport crossfade regression tests from original #89 branch (#137)
 - **audio**: Assert incoming resampler cache cleared after crossfade abort
+- **remote**: Fault-injection recovery for library outbox crash windows (#151)
 
 ## [0.9.0] - 2026-06-14
 

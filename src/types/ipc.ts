@@ -586,3 +586,65 @@ export interface IntegrityCleanupResult {
   deleted_song_hashes: string[];
   skipped_song_hashes: string[];
 }
+
+// ---------------------------------------------------------------------------
+// Remote streaming cache + diagnostics (PR #8, issue #151)
+// ---------------------------------------------------------------------------
+
+export interface CacheUsage {
+  used_bytes: number;
+  limit_bytes: number;
+  entry_count: number;
+  pinned_count: number;
+}
+
+export interface RemoteOperationDiagnostic {
+  operation_id: string;
+  operation_kind: string;
+  state: string;
+  expected_generation: number | null;
+  target_generation: number | null;
+  attempt_count: number;
+  error_code: string | null;
+  error_detail: string | null;
+  created_at_ms: number;
+  updated_at_ms: number;
+}
+
+export interface RemoteDiagnostics {
+  has_active_remote: boolean;
+  repository_id: string | null;
+  writer_id: string | null;
+  committed_generation: number;
+  local_base_generation: number;
+  local_state: string;
+  local_db_digest: string | null;
+  active_operation_id: string | null;
+  last_success_at_ms: number | null;
+  last_error_code: string | null;
+  recent_operations: RemoteOperationDiagnostic[];
+}
+
+// ---------------------------------------------------------------------------
+// Remote playback reconnect events (PR #7/#8, issue #151)
+// ---------------------------------------------------------------------------
+
+export interface RemotePlaybackReconnectEvent {
+  song_id: string;
+  request_id: number;
+  attempt: number;
+  max_attempts: number;
+  reason: string;
+}
+
+export interface RemotePlaybackResyncEvent {
+  song_id: string;
+  requested_position_ms: number;
+  actual_position_ms: number;
+}
+
+export interface RemotePlaybackFailedEvent {
+  song_id: string;
+  request_id: number;
+  reason: string;
+}

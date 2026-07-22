@@ -63,6 +63,15 @@ impl ChunkedCache {
             .truncate(false)
             .open(&data_path)?;
 
+        // Pre-allocate the file to the expected size so that partial downloads
+        // (where only some ranges have been written) still report the correct
+        // file length. Without this, a file with ranges [0,50) and [100,50)
+        // would be 150 bytes, not `file_size`, and the persistent catalog's
+        // startup reconciliation would discard it as a size mismatch.
+        if file.metadata()?.len() < file_size {
+            file.set_len(file_size)?;
+        }
+
         let downloaded = if index_path.exists() {
             let json = fs::read_to_string(&index_path)?;
             serde_json::from_str(&json).unwrap_or_else(|_| RangeSet::new())
@@ -75,6 +84,43 @@ impl ChunkedCache {
             inner: Mutex::new(CacheInner {
                 file,
                 downloaded,
+                file_size,
+                last_access: Instant::now(),
+            }),
+            data_available: Condvar::new(),
+        })
+    }
+
+    /// Open a cache file and initialize the downloaded range set from the
+    /// persistent catalog instead of the `.index` sidecar. Used by the
+    /// persistent cache catalog (PR#6) so ranges survive restart even when
+    /// the `.index` sidecar was deleted on completion.
+    pub fn open_with_ranges(
+        cache_dir: &Path,
+        cache_key: &str,
+        file_size: u64,
+        ranges: RangeSet,
+    ) -> Result<Self, CacheError> {
+        let data_path = cache_dir.join(format!("{cache_key}.cache"));
+
+        let file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .truncate(false)
+            .open(&data_path)?;
+
+        // Pre-allocate to `file_size` so partial entries report the correct
+        // length during startup reconciliation.
+        if file.metadata()?.len() < file_size {
+            file.set_len(file_size)?;
+        }
+
+        Ok(Self {
+            path: data_path,
+            inner: Mutex::new(CacheInner {
+                file,
+                downloaded: ranges,
                 file_size,
                 last_access: Instant::now(),
             }),
@@ -496,7 +542,9 @@ mod tests {
         let c2 = mgr.get_or_create("b", 2000).unwrap();
         c2.write_at(0, &[0u8; 200]).unwrap();
 
-        assert_eq!(mgr.total_bytes(), 300);
+        // Files are pre-allocated to their declared size so partial downloads
+        // report the correct length for the persistent catalog reconciliation.
+        assert_eq!(mgr.total_bytes(), 3000);
 
         cleanup(&dir);
     }
@@ -540,14 +588,17 @@ mod tests {
         let dir = temp_dir("data_bytes");
         let cache = ChunkedCache::open(&dir, "db1", 500).unwrap();
 
-        assert_eq!(cache.data_bytes(), 0);
+        // File is pre-allocated to the declared size so partial downloads
+        // report the correct length for the persistent catalog reconciliation.
+        assert_eq!(cache.data_bytes(), 500);
 
         cache.write_at(0, &[0u8; 100]).unwrap();
-        assert_eq!(cache.data_bytes(), 100);
+        assert_eq!(cache.data_bytes(), 500);
 
-        // Non-contiguous write extends the file.
+        // Non-contiguous write does not extend the file past the pre-allocated
+        // size.
         cache.write_at(300, &[0u8; 50]).unwrap();
-        assert_eq!(cache.data_bytes(), 350);
+        assert_eq!(cache.data_bytes(), 500);
 
         cleanup(&dir);
     }

@@ -492,8 +492,8 @@ pub struct AppConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub theme_preference: Option<ThemePreference>,
     /// When set, the cache directory is trimmed to stay under this limit,
-    /// deleting the least-recently-used files. When absent the cache grows
-    /// unbounded.
+    /// deleting the least-recently-used files. When absent the cache defaults
+    /// to a finite 2 GiB budget (see `DEFAULT_CACHE_BYTES_LIMIT`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote_cache_bytes_limit: Option<u64>,
     /// Crash-recovery marker for mirror operations. `mirror_local_library_to_remote`

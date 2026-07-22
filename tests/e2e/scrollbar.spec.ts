@@ -106,6 +106,10 @@ async function assertRealOverflow(locator: import("@playwright/test").Locator) {
 
 /** Generate N fixture songs with unique hashes for overflow testing. */
 function generateSongs(count: number) {
+  // Fixed imported_at so recently_imported keeps index order (song 0 first).
+  // Date.now() in a loop can span milliseconds and put song 0 at the bottom
+  // of a virtualized list where getByText("Test Song 0") cannot find it.
+  const baseImportedAt = 1_700_000_000_000;
   return Array.from({ length: count }, (_, i) => ({
     hash: `s${String(i).padStart(4, "0")}`,
     file_path: `/music/song_${i}.mp3`,
@@ -119,9 +123,28 @@ function generateSongs(count: number) {
     album: `Album ${i}`,
     duration_ms: 180000,
     cover_art: null,
-    imported_at: Date.now(),
+    imported_at: baseImportedAt - i,
     original_ext: ".mp3",
   }));
+}
+
+/** Reload the library mock via the same envelope the app channel expects. */
+async function reloadMockLibrary(
+  page: import("@playwright/test").Page,
+  tauriMock: { setMockSongs: (songs: unknown[]) => Promise<void> },
+  songs: ReturnType<typeof generateSongs>,
+) {
+  await tauriMock.setMockSongs(songs);
+  await page.evaluate(() => {
+    const channel = new BroadcastChannel("openkara.library");
+    // Must use the webview-sync envelope; raw `{ revision }` is ignored by
+    // some receivers and is not what production publishers emit.
+    channel.postMessage({
+      originId: "e2e-scrollbar-test",
+      payload: { revision: Date.now() },
+    });
+    channel.close();
+  });
 }
 
 /** Generate a lyrics payload with N synced lines for overflow testing. */
@@ -285,17 +308,14 @@ test.describe("scrollbar platform contract", () => {
     // sync.  This avoids registering a second addInitScript that depends on
     // window.__OPENKARA_E2E__ being defined by the fixture's init script —
     // Playwright does not guarantee init-script evaluation order.
-    await tauriMock.setMockSongs(songs);
-    await page.evaluate(() => {
-      const channel = new BroadcastChannel("openkara.library");
-      channel.postMessage({ revision: 1 });
-      channel.close();
-    });
+    await reloadMockLibrary(page, tauriMock, songs);
 
     const songList = page.getByTestId("song-list");
     await expect(songList).toBeVisible();
+    // Song 0 is newest under fixed imported_at ordering and must be in the
+    // virtualizer viewport at the top of a 400px list.
     await expect(page.getByText("Test Song 0")).toBeVisible({
-      timeout: 5000,
+      timeout: 15_000,
     });
 
     await assertRealOverflow(songList);
@@ -346,14 +366,9 @@ test.describe("scrollbar platform contract", () => {
     // sync.  This avoids registering a second addInitScript that depends on
     // window.__OPENKARA_E2E__ being defined by the fixture's init script —
     // Playwright does not guarantee init-script evaluation order.
-    await tauriMock.setMockSongs(songs);
-    await page.evaluate(() => {
-      const channel = new BroadcastChannel("openkara.library");
-      channel.postMessage({ revision: 1 });
-      channel.close();
-    });
+    await reloadMockLibrary(page, tauriMock, songs);
     await expect(page.getByText("Test Song 0")).toBeVisible({
-      timeout: 5000,
+      timeout: 15_000,
     });
 
     // Push 40 song hashes into the queue store via BroadcastChannel. The

@@ -14,6 +14,20 @@
 //! - **Register Repository** (first attach) uses [`BootstrapMode::CreateOrOpen`]
 //!   to create the marker + layout directories and seed `openkara.db` when the
 //!   remote root is empty.
+//!
+//! ## Legacy migration
+//!
+//! Repositories created before the manifest protocol store the database at
+//! `openkara.db` in the remote root and have no `.openkara-repository.json`
+//! manifest. Bootstrap probes the manifest first; only repositories without a
+//! manifest use the legacy root database path. On first publication the
+//! executor treats a missing manifest as generation 0 and publishes
+//! generation 1. A deferred GC later removes the legacy root `openkara.db`
+//! once the migration is safely committed.
+//!
+//! Empty repository creation (CreateOrOpen with no remote database) may still
+//! seed a root `openkara.db`. That seed is a one-time bootstrap artifact, not
+//! the ongoing publication path.
 
 use crate::{
     cache,
@@ -29,8 +43,26 @@ pub(crate) enum BootstrapMode {
     /// Register / first open: ensure layout dirs, create marker if missing,
     /// upload local DB when remote has none.
     CreateOrOpen,
-    /// Reauthorize / strict open: remote marker + openkara.db must already exist.
+    /// Reauthorize / strict open: remote marker + committed database must
+    /// already exist (manifest generation DB or legacy openkara.db).
     RequireExisting,
+}
+
+/// Result of probing the committed remote database during bootstrap.
+#[derive(Debug, Clone)]
+pub(crate) struct CommittedDatabaseProbe {
+    /// Staleness token for the visibility switch (manifest revision when
+    /// present, otherwise the legacy openkara.db revision).
+    pub revision: Option<String>,
+    /// Relative path of the database object that [`RemoteBootstrapStorage::download_database`]
+    /// must fetch.
+    pub database_path: String,
+    /// Manifest generation when a manifest was found; 0 for legacy root DB.
+    pub generation: i64,
+    /// Expected byte length from the manifest (or None for legacy).
+    pub database_size: Option<u64>,
+    /// Expected hex SHA-256 from the manifest (or None for legacy).
+    pub database_sha256: Option<String>,
 }
 
 /// Provider-owned remote storage ops used by the shared bootstrap protocol.
@@ -50,16 +82,26 @@ pub(crate) trait RemoteBootstrapStorage {
 
     fn upload_marker(&mut self, marker_bytes: &[u8]) -> CommandResult<()>;
 
-    /// Probe remote `openkara.db`.
+    /// Probe the committed remote database.
     ///
-    /// Return `Ok(None)` only when the file is absent. When present, return
-    /// `Ok(Some(revision))` even if the provider cannot supply a revision
-    /// token (`revision` may be `None`) — callers must not treat a missing
-    /// etag as a missing file (that would overwrite a populated remote DB).
-    fn probe_remote_database(&mut self) -> CommandResult<Option<Option<String>>>;
+    /// Prefer the repository manifest (`.openkara-repository.json`) and the
+    /// generation-specific database it references. Fall back to the legacy
+    /// root `openkara.db` only when no manifest exists.
+    ///
+    /// Return `Ok(None)` only when neither a manifest database nor a legacy
+    /// root database is present. When a database is present, return
+    /// `Ok(Some(probe))` even if the provider cannot supply a revision token
+    /// (`probe.revision` may be `None`) — callers must not treat a missing
+    /// etag as a missing file.
+    fn probe_committed_database(&mut self) -> CommandResult<Option<CommittedDatabaseProbe>>;
 
-    fn download_database(&mut self, destination: &Path) -> CommandResult<()>;
+    /// Download the database path discovered by the most recent successful
+    /// [`probe_committed_database`] call into `destination`.
+    fn download_database(&mut self, database_path: &str, destination: &Path) -> CommandResult<()>;
 
+    /// Seed a new empty repository with a root `openkara.db`. Used only when
+    /// CreateOrOpen finds no committed database. Ongoing publication never
+    /// uses this path — the executor uploads generation-specific databases.
     fn upload_database(&mut self, source: &Path) -> CommandResult<Option<String>>;
 }
 
@@ -85,18 +127,20 @@ pub(crate) fn bootstrap_remote_library(
                 storage.upload_marker(marker_bytes)?;
             }
 
-            match storage.probe_remote_database()? {
-                Some(revision) => {
-                    storage.download_database(&root.database_path())?;
-                    Ok(revision)
+            match storage.probe_committed_database()? {
+                Some(probe) => {
+                    activate_committed_database(storage, &root, &probe)?;
+                    Ok(probe.revision)
                 }
                 None => {
+                    // Empty repository seed: one-time root openkara.db upload.
+                    // First publication migrates to the manifest protocol.
                     let uploaded = storage.upload_database(&root.database_path())?;
                     Ok(match uploaded {
                         Some(revision) => Some(revision),
                         None => storage
-                            .probe_remote_database()?
-                            .and_then(|revision| revision),
+                            .probe_committed_database()?
+                            .and_then(|probe| probe.revision),
                     })
                 }
             }
@@ -110,19 +154,65 @@ pub(crate) fn bootstrap_remote_library(
                     storage.location_label()
                 ))));
             }
-            let revision = match storage.probe_remote_database()? {
-                Some(revision) => revision,
+            let probe = match storage.probe_committed_database()? {
+                Some(probe) => probe,
                 None => {
                     return Err(CommandError::from(LibraryError::Internal(format!(
-                        "The selected {} is missing openkara.db.",
+                        "The selected {} is missing a committed database \
+                         (.openkara-repository.json or openkara.db).",
                         storage.location_label()
                     ))));
                 }
             };
-            storage.download_database(&root.database_path())?;
-            Ok(revision)
+            activate_committed_database(storage, &root, &probe)?;
+            Ok(probe.revision)
         }
     }
+}
+
+/// Download the committed remote database to a temp path, verify size and
+/// SHA-256 when known, then activate via the shared database activation
+/// helper (integrity + schema + fsync + LKG restore on rename failure).
+/// Register/Reauthorize must not write a corrupt or truncated generation DB
+/// directly to the final path, and must not diverge from ordinary pull.
+fn activate_committed_database(
+    storage: &mut dyn RemoteBootstrapStorage,
+    root: &LibraryRoot,
+    probe: &CommittedDatabaseProbe,
+) -> CommandResult<()> {
+    let destination = root.database_path();
+    let temp_path = destination.with_extension(format!("db.part.bootstrap-{}", probe.generation));
+    // Download to temp (never directly to the final working path).
+    let _ = fs::remove_file(&temp_path);
+    storage.download_database(&probe.database_path, &temp_path)?;
+
+    let actual_size = fs::metadata(&temp_path)
+        .map(|m| m.len())
+        .map_err(|e| internal_error(format!("failed to stat bootstrap candidate: {e}")))?;
+    if let Some(expected_size) = probe.database_size {
+        if actual_size != expected_size {
+            let _ = fs::remove_file(&temp_path);
+            return Err(internal_error(format!(
+                "bootstrap database size mismatch: expected {expected_size}, got {actual_size}"
+            )));
+        }
+    }
+
+    if let Some(ref expected_sha) = probe.database_sha256 {
+        let actual = crate::remote::control_db::sha256_file(&temp_path)
+            .map_err(|e| internal_error(e.message))?;
+        if !actual.eq_ignore_ascii_case(expected_sha) {
+            let _ = fs::remove_file(&temp_path);
+            return Err(internal_error(format!(
+                "bootstrap database digest mismatch: expected {expected_sha}, got {actual}"
+            )));
+        }
+    }
+
+    // Shared activation with ordinary atomic pull: integrity, schema
+    // compatibility, fsync, LKG preserve, rename-with-restore.
+    crate::remote::atomic_download::activate_verified_database_candidate(&temp_path, &destination)?;
+    Ok(())
 }
 
 fn open_or_create_local_working_copy(library: &RegisteredLibrary) -> CommandResult<LibraryRoot> {

@@ -378,6 +378,26 @@ export function createTauriMock(data: any): TauriMockResult {
     },
     get_all_separation_statuses: () => clone(Object.values(separationStatuses)),
     get_all_upload_statuses: {},
+    get_remote_cache_usage: () => ({
+      used_bytes: 512 * 1024 * 1024,
+      limit_bytes: 2 * 1024 * 1024 * 1024,
+      entry_count: 3,
+      pinned_count: 0,
+    }),
+    clear_remote_cache: () => 0,
+    get_remote_diagnostics: () => ({
+      has_active_remote: false,
+      repository_id: null,
+      writer_id: null,
+      committed_generation: 0,
+      local_base_generation: 0,
+      local_state: "clean",
+      local_db_digest: null,
+      active_operation_id: null,
+      last_success_at_ms: null,
+      last_error_code: null,
+      recent_operations: [],
+    }),
 
     get_playback_state: () => clone(currentPlaybackSnapshot),
     play: (args: any) => {

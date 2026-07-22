@@ -7,7 +7,7 @@ Do **not** edit it by hand. Regenerate after any migration change:
 node scripts/generate-db-schema.mjs
 ```
 
-Source migrations: `001_init.sql`, `002_stems.sql`, `003_lyrics.sql`, `004_portable_paths.sql`, `005_audio_source_kind.sql`, `005_individual_stem_paths.sql`, `006_stem_model_variant.sql`, `007_song_instrumental.sql`, `008_playlists.sql`, `009_singer_rotation.sql`, `010_fts5_songs.sql`, `011_waveforms.sql`, `012_artwork_derivatives.sql`.
+Source migrations: `001_init.sql`, `002_stems.sql`, `003_lyrics.sql`, `004_portable_paths.sql`, `005_audio_source_kind.sql`, `005_individual_stem_paths.sql`, `006_stem_model_variant.sql`, `007_song_instrumental.sql`, `008_playlists.sql`, `009_singer_rotation.sql`, `010_fts5_songs.sql`, `011_waveforms.sql`, `012_artwork_derivatives.sql`, `013_remote_publish_outbox.sql`.
 
 ## `songs`
 
@@ -121,6 +121,19 @@ Created by `011_waveforms.sql`.
 | `buckets`   | `INTEGER` | NOT NULL |
 | `peaks`     | `BLOB`    | NOT NULL |
 
+## `remote_publish_outbox`
+
+Created by `013_remote_publish_outbox.sql`.
+
+| Column                | Type      | Notes       |
+| --------------------- | --------- | ----------- |
+| `operation_id`        | `TEXT`    | Primary key |
+| `song_ids_json`       | `TEXT`    | NOT NULL    |
+| `expected_generation` | `INTEGER` |             |
+| `source_db_digest`    | `TEXT`    |             |
+| `created_at_ms`       | `INTEGER` | NOT NULL    |
+| `projected_at_ms`     | `INTEGER` |             |
+
 ## Migration History
 
 1. `001_init.sql` — CREATE TABLE IF NOT EXISTS songs (
@@ -136,3 +149,4 @@ Created by `011_waveforms.sql`.
 11. `010_fts5_songs.sql` — FTS5 virtual table for fast full-text search on song metadata.
 12. `011_waveforms.sql` — CREATE TABLE IF NOT EXISTS waveforms (
 13. `012_artwork_derivatives.sql` — Artwork derivative paths (thumbnail and preview WebP files).
+14. `013_remote_publish_outbox.sql` — Durable publish change-set stored inside the library SQLite database.

@@ -8,6 +8,7 @@ import { SeekBar } from "./SeekBar";
 import { VolumeSliders } from "./VolumeSliders";
 import { QueueButton } from "./QueueButton";
 import { AudioLevelSlider } from "./AudioLevelSlider";
+import { RemoteReconnectIndicator } from "./RemoteReconnectIndicator";
 import {
   getPlaybackBarCenterMinWidth,
   getPlaybackBarDensity,
@@ -123,11 +124,16 @@ export function PlaybackBar({
 
         <div
           data-playback-zone="center"
-          className="grid min-w-0 items-center"
+          className="relative grid min-w-0 items-center"
           style={centerZoneStyle}
         >
           <PlayControls density={density} previewMode={previewMode} />
           <SeekBar density={density} />
+          {/* Reconnect indicator overlays the seek bar area so it does not
+              disturb the 2-column grid layout. */}
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <RemoteReconnectIndicator />
+          </div>
         </div>
 
         <div

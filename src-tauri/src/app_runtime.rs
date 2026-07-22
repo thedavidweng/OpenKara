@@ -174,6 +174,13 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         .as_ref()
         .and_then(|config| config.remote_cache_bytes_limit);
     let remote_state = RemoteState::new_with_limit(&app_data_dir, remote_cache_bytes_limit);
+
+    // Run startup recovery for the durable remote control plane. This
+    // transitions interrupted operations to safe states but does NOT
+    // re-execute them (PR#4/#5 drive re-execution). The recovery pass must
+    // not block library startup — it runs after the control DB is open.
+    run_remote_recovery(&remote_state, &app_data_dir);
+
     let shell_state = AppShell::new(
         Arc::clone(&library),
         app_data_dir.clone(),
@@ -217,7 +224,13 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
     app.manage(separation_state);
     app.manage(remote_state);
     app.manage(shell_state);
-    app.manage(app_state);
+    app.manage(app_state.clone());
+
+    // Start the durable operation executor. This spawns a background thread
+    // that periodically retries pending/retry_wait operations (e.g. uploads
+    // that failed during a previous session). Without this, operations left
+    // in RetryWait by the startup recovery pass would never be re-executed.
+    spawn_durable_operation_executor(app_state);
 
     // Spawn the PlaybackCoordinator before pre-warming the output thread.
     // The coordinator serializes all control-plane mutations; the receiver
@@ -520,6 +533,379 @@ pub(crate) fn spawn_model_bootstrap_worker<R: Runtime>(
         };
         let _ = app_handle.emit(event, snapshot);
     });
+}
+
+/// Run the startup recovery pass for the durable remote control plane.
+///
+/// This transitions interrupted operations (running/committing/verifying →
+/// retry_wait, prepared → cancelled/pending/conflicted) but does NOT
+/// re-execute them. PR#4/#5 will drive re-execution once credentials and the
+/// active library are available.
+///
+/// The recovery pass runs after the control DB is open and must not block
+/// library startup. Errors are logged but do not abort app startup — a
+/// failed recovery leaves operations in their pre-recovery states, which is
+/// safe because the next startup will retry recovery.
+fn run_remote_recovery(remote_state: &RemoteState, app_data_dir: &std::path::Path) {
+    use crate::remote::recovery::{run_recovery, Clock, FileDigestResolver};
+
+    // Rebuild control-DB operations from library outbox rows that were
+    // committed with the local mutation but never projected (crash between
+    // library commit and remote-state.db write).
+    project_library_outboxes_into_control_db(remote_state, app_data_dir);
+
+    let recovery_result = {
+        let conn = match remote_state.control_db.lock() {
+            Ok(conn) => conn,
+            Err(_) => {
+                eprintln!("warning: remote control DB lock was poisoned during recovery");
+                return;
+            }
+        };
+
+        // Resolve the working DB path for a library via the config. This is
+        // used to compute the current digest for `prepared` operations.
+        let app_data_dir_owned = app_data_dir.to_path_buf();
+        let resolver = FileDigestResolver::new(move |library_id: &str| {
+            let config = crate::config::load_config(&app_data_dir_owned)
+                .ok()
+                .flatten()?;
+            let library = config.libraries.iter().find(|l| l.id() == library_id)?;
+            let root_path = library.working_copy_root()?;
+            let root = crate::library_root::LibraryRoot::open(&root_path).ok()?;
+            Some(root.database_path())
+        });
+
+        let clock: Clock = Box::new(crate::remote::types::current_unix_time_ms);
+
+        run_recovery(&conn, &resolver, &clock)
+    };
+
+    if let Err(error) = recovery_result {
+        eprintln!("warning: remote control DB recovery failed: {:?}", error);
+    }
+
+    // Remove stale `*.part.*` temp files left by interrupted downloads in
+    // every remote library working copy. This runs after the control-DB
+    // recovery pass so the working copies are clean before library startup.
+    // Part files belonging to operations with valid transfer rows are
+    // preserved (resumable); orphaned part files are deleted.
+    let control_db_path = crate::remote::control_db::control_db_path(app_data_dir);
+    if let Ok(part_cleanup_conn) = crate::remote::control_db::open_control_db(&control_db_path) {
+        recover_stale_part_files_for_all_libraries(app_data_dir, &part_cleanup_conn);
+    } else {
+        // Fail closed: without the control plane we cannot tell which
+        // partials are resumable. Leave every `*.part.*` file in place
+        // rather than deleting them as orphans.
+        eprintln!(
+            "warning: control DB unavailable during part-file recovery; \
+             preserving all partial downloads (fail-closed)"
+        );
+    }
+}
+
+/// Project unprojected library-DB publish outbox rows into remote-state.db.
+/// Fail closed: never delete / mark projected unless control projection
+/// succeeded. Leave outbox retryable on any error.
+/// Whether a residual library outbox row may be deleted because a terminal
+/// control-DB operation already covers its intent.
+///
+/// Safe only when:
+/// - operation `library_id` matches the outbox library
+/// - terminal payload is non-empty
+/// - every outbox song id is in the terminal payload (outbox ⊆ payload)
+///
+/// Empty terminal payload must never authorize deleting a non-empty outbox.
+/// `payload ⊆ outbox` is intentionally rejected so a partial payload cannot
+/// discard unmerged songs still sitting in the outbox.
+fn residual_outbox_safe_to_drop(
+    op_library_id: &str,
+    outbox_library_id: &str,
+    outbox_song_ids: &[String],
+    terminal_payload_song_ids: &[String],
+) -> bool {
+    if op_library_id != outbox_library_id {
+        return false;
+    }
+    if terminal_payload_song_ids.is_empty() {
+        return false;
+    }
+    outbox_song_ids
+        .iter()
+        .all(|s| terminal_payload_song_ids.contains(s))
+}
+
+fn project_library_outboxes_into_control_db(
+    remote_state: &RemoteState,
+    app_data_dir: &std::path::Path,
+) {
+    use crate::remote::control_db::{
+        bind_song_ids_mark_pending_and_dirty_tx, get_operation, upsert_operation, OperationKind,
+        OperationPayload, OperationRow, OperationState,
+    };
+    use crate::remote::library_outbox::{
+        delete_library_publish_outbox, list_unprojected_library_outbox,
+    };
+
+    let config = match crate::config::load_config(app_data_dir) {
+        Ok(Some(config)) => config,
+        _ => return,
+    };
+    for library in &config.libraries {
+        if !matches!(library, crate::config::RegisteredLibrary::Remote { .. }) {
+            continue;
+        }
+        let library_id = library.id().to_owned();
+        let Some(root_path) = library.working_copy_root() else {
+            continue;
+        };
+        let Ok(root) = crate::library_root::LibraryRoot::open(&root_path) else {
+            continue;
+        };
+        let Ok(lib_conn) = crate::cache::open_database(&root.database_path()) else {
+            continue;
+        };
+        if let Err(error) = crate::cache::apply_migrations(&lib_conn) {
+            eprintln!(
+                "warning: library migrations failed during outbox projection for {}: {error}",
+                root_path.display()
+            );
+            continue;
+        }
+        let rows = match list_unprojected_library_outbox(&lib_conn) {
+            Ok(rows) => rows,
+            Err(error) => {
+                eprintln!(
+                    "warning: failed to list library outbox for {}: {:?}",
+                    root_path.display(),
+                    error
+                );
+                continue;
+            }
+        };
+        if rows.is_empty() {
+            continue;
+        }
+        let Ok(control) = remote_state.control_db.lock() else {
+            eprintln!("warning: control DB lock poisoned during outbox projection");
+            continue;
+        };
+        let now = crate::remote::types::current_unix_time_ms();
+        for row in rows {
+            if row.song_ids.is_empty() {
+                continue;
+            }
+            let projected = match get_operation(&control, &row.operation_id) {
+                Ok(Some(existing)) if existing.state.is_terminal() => {
+                    // Projection already finished (or op completed). Do not
+                    // reopen a terminal row — only drop residual outbox when
+                    // residual_outbox_safe_to_drop says the intent is covered.
+                    let payload_ids = crate::remote::control_db::OperationPayload::from_json(
+                        &existing.payload_json,
+                    )
+                    .map(|p| p.song_ids)
+                    .unwrap_or_default();
+                    if residual_outbox_safe_to_drop(
+                        &existing.library_id,
+                        &library_id,
+                        &row.song_ids,
+                        &payload_ids,
+                    ) {
+                        true
+                    } else {
+                        eprintln!(
+                            "warning: residual outbox {} not covered by terminal op; keeping",
+                            row.operation_id
+                        );
+                        false
+                    }
+                }
+                Ok(Some(_)) => bind_song_ids_mark_pending_and_dirty_tx(
+                    &control,
+                    &row.operation_id,
+                    &library_id,
+                    &row.song_ids,
+                )
+                .is_ok(),
+                Ok(None) => {
+                    let payload = OperationPayload {
+                        song_ids: row.song_ids.clone(),
+                        percent: 0,
+                        detail: Some("Recovered from library outbox".to_owned()),
+                        ..Default::default()
+                    };
+                    let payload_json = match payload.to_json() {
+                        Ok(json) => json,
+                        Err(error) => {
+                            eprintln!(
+                                "warning: outbox payload serialize failed for {}: {:?}",
+                                row.operation_id, error
+                            );
+                            continue;
+                        }
+                    };
+                    let op = OperationRow {
+                        operation_id: row.operation_id.clone(),
+                        library_id: library_id.clone(),
+                        operation_kind: OperationKind::Publish,
+                        state: OperationState::Pending,
+                        expected_generation: row.expected_generation,
+                        target_generation: None,
+                        source_db_digest: row.source_db_digest.clone(),
+                        candidate_db_digest: None,
+                        payload_json,
+                        attempt_count: 0,
+                        next_attempt_at_ms: None,
+                        error_code: None,
+                        error_detail: None,
+                        created_at_ms: row.created_at_ms,
+                        updated_at_ms: now,
+                    };
+                    match upsert_operation(&control, &op) {
+                        Ok(()) => bind_song_ids_mark_pending_and_dirty_tx(
+                            &control,
+                            &row.operation_id,
+                            &library_id,
+                            &row.song_ids,
+                        )
+                        .is_ok(),
+                        Err(error) => {
+                            eprintln!(
+                                "warning: control projection upsert failed for {}: {:?}",
+                                row.operation_id, error
+                            );
+                            false
+                        }
+                    }
+                }
+                Err(error) => {
+                    eprintln!(
+                        "warning: control get_operation failed for {}: {:?}",
+                        row.operation_id, error
+                    );
+                    false
+                }
+            };
+            // Only remove the library outbox after control projection succeeds.
+            if projected {
+                if let Err(error) = delete_library_publish_outbox(&lib_conn, &row.operation_id) {
+                    eprintln!(
+                        "warning: failed to delete projected outbox {}: {:?}",
+                        row.operation_id, error
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Scan every registered remote library's working copy for stale
+/// `*.part.*` temp files and remove them (best-effort). Part files
+/// belonging to operations with valid transfer rows in the control DB
+/// are preserved (resumable).
+fn recover_stale_part_files_for_all_libraries(
+    app_data_dir: &std::path::Path,
+    control_db: &rusqlite::Connection,
+) {
+    let config = match crate::config::load_config(app_data_dir) {
+        Ok(Some(config)) => config,
+        _ => return,
+    };
+    for library in &config.libraries {
+        if !matches!(library, crate::config::RegisteredLibrary::Remote { .. }) {
+            continue;
+        }
+        let Some(root_path) = library.working_copy_root() else {
+            continue;
+        };
+        if let Err(error) =
+            crate::remote::recovery::recover_stale_part_files(&root_path, control_db)
+        {
+            eprintln!(
+                "warning: stale part-file recovery failed for {}: {:?}",
+                root_path.display(),
+                error
+            );
+        }
+    }
+}
+
+/// Spawn a background thread that periodically retries pending and
+/// retry_wait durable operations. This ensures that operations left in a
+/// non-terminal state by a previous session (or by a transient failure
+/// during the current session) are eventually re-executed.
+///
+/// The thread runs an immediate pass on startup (to handle operations
+/// transitioned to RetryWait by `run_remote_recovery`), then polls every
+/// 30 seconds. Rate-limited operations (next_attempt_at_ms in the future)
+/// are skipped by `retry_pending_operations` itself.
+fn spawn_durable_operation_executor(app_state: AppState) {
+    std::thread::spawn(move || {
+        // Immediate pass on startup.
+        if let Err(error) = crate::remote::recovery::retry_pending_operations(&app_state) {
+            eprintln!(
+                "warning: durable operation executor initial pass failed: {:?}",
+                error
+            );
+        }
+
+        // Periodic retry loop. Polls every 30 seconds.
+        let poll_interval = std::time::Duration::from_secs(30);
+        loop {
+            std::thread::sleep(poll_interval);
+            if let Err(error) = crate::remote::recovery::retry_pending_operations(&app_state) {
+                eprintln!(
+                    "warning: durable operation executor periodic pass failed: {:?}",
+                    error
+                );
+            }
+        }
+    });
+}
+
+#[cfg(test)]
+mod residual_outbox_tests {
+    use super::residual_outbox_safe_to_drop;
+
+    #[test]
+    fn equal_sets_are_safe() {
+        let ids = vec!["a".to_owned(), "b".to_owned()];
+        assert!(residual_outbox_safe_to_drop("lib", "lib", &ids, &ids));
+    }
+
+    #[test]
+    fn outbox_subset_of_payload_is_safe() {
+        let outbox = vec!["a".to_owned()];
+        let payload = vec!["a".to_owned(), "b".to_owned()];
+        assert!(residual_outbox_safe_to_drop(
+            "lib", "lib", &outbox, &payload
+        ));
+    }
+
+    #[test]
+    fn payload_subset_of_outbox_is_not_safe() {
+        // Terminal payload only [A] must not authorize deleting outbox [A,B].
+        let outbox = vec!["a".to_owned(), "b".to_owned()];
+        let payload = vec!["a".to_owned()];
+        assert!(!residual_outbox_safe_to_drop(
+            "lib", "lib", &outbox, &payload
+        ));
+    }
+
+    #[test]
+    fn empty_terminal_payload_never_authorizes_delete() {
+        let outbox = vec!["a".to_owned()];
+        let payload: Vec<String> = vec![];
+        assert!(!residual_outbox_safe_to_drop(
+            "lib", "lib", &outbox, &payload
+        ));
+    }
+
+    #[test]
+    fn library_mismatch_is_not_safe() {
+        let ids = vec!["a".to_owned()];
+        assert!(!residual_outbox_safe_to_drop("lib-a", "lib-b", &ids, &ids));
+    }
 }
 
 #[cfg(test)]

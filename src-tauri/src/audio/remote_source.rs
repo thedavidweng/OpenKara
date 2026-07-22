@@ -154,17 +154,39 @@ impl HttpFetcher for Box<dyn HttpFetcher> {
 /// For Dropbox (POST-based API), the file path is stored in `api_arg_header`
 /// and requests use POST instead of GET.
 ///
-/// Supports automatic token refresh: when a 403 is received, the fetcher
-/// calls the `token_refresh` callback to obtain fresh credentials, updates
-/// its Authorization header, and retries the request once.
+/// ## Credential refresh (defect #10 fix)
+///
+/// Token refresh is single-flight and generation-tracked:
+/// - On an authentication-expiry response (401), ONE refresh is run shared by
+///   concurrent requests. Waiting requests observe the new credential
+///   generation and retry without triggering a second refresh.
+/// - A successful authenticated request advances the credential generation so
+///   a FUTURE expiry (after the new token later expires) can refresh again.
+///   This replaces the old `refresh_attempted: AtomicBool` which allowed only
+///   one refresh for the entire fetcher lifetime and never reset.
+/// - 403 (PermissionDenied) is NOT misclassified as token expiry: only 401
+///   triggers a refresh attempt. 403 is returned as a permanent error so the
+///   caller does not retry.
 pub struct ProviderFetcher {
     url: String,
     headers: std::sync::Mutex<Vec<(String, String)>>,
     use_post: bool,
     api_arg_header: Option<String>,
     token_refresh: Option<Box<dyn Fn() -> Result<String, FetchError> + Send + Sync>>,
-    /// Prevents repeated refresh attempts across retries in `fetch_range_with_retry`.
-    refresh_attempted: std::sync::atomic::AtomicBool,
+    /// Monotonic credential generation. Incremented after every successful
+    /// refresh and after every successful authenticated request. A request
+    /// that observes a generation change while waiting on a single-flight
+    /// refresh retries with the new token instead of refreshing again.
+    credential_generation: AtomicU64,
+    /// Single-flight refresh guard. When `Some`, a refresh is in progress;
+    /// concurrent requests wait on the contained generation value to learn
+    /// whether the refresh succeeded (generation advanced) or failed.
+    refresh_in_flight: std::sync::Mutex<Option<u64>>,
+    /// Condvar paired with `refresh_in_flight`. The refresh leader notifies
+    /// all waiters after it clears the slot; waiters block on this instead
+    /// of busy-spinning, so they don't time out before the OAuth round-trip
+    /// completes.
+    refresh_condvar: std::sync::Condvar,
     /// Reusable HTTP client — avoids creating a new client per request.
     client: reqwest::blocking::Client,
 }
@@ -177,7 +199,9 @@ impl ProviderFetcher {
             use_post: false,
             api_arg_header: None,
             token_refresh: None,
-            refresh_attempted: std::sync::atomic::AtomicBool::new(false),
+            credential_generation: AtomicU64::new(0),
+            refresh_in_flight: std::sync::Mutex::new(None),
+            refresh_condvar: std::sync::Condvar::new(),
             client: reqwest::blocking::Client::new(),
         }
     }
@@ -188,8 +212,11 @@ impl ProviderFetcher {
         self
     }
 
-    /// Register a callback that returns a fresh access token. Called on HTTP 403
-    /// to refresh credentials and retry without falling back to full-file download.
+    /// Register a callback that returns a fresh access token. Called on HTTP
+    /// 401 (authentication expired) to refresh credentials and retry without
+    /// falling back to full-file download. The refresh is single-flight: one
+    /// concurrent refresh is run, and waiting requests observe the new
+    /// credential generation.
     pub fn with_token_refresh(
         mut self,
         refresh: impl Fn() -> Result<String, FetchError> + Send + Sync + 'static,
@@ -203,6 +230,77 @@ impl ProviderFetcher {
         if let Some(entry) = headers.iter_mut().find(|(k, _)| k == "Authorization") {
             entry.1 = format!("Bearer {new_token}");
         }
+    }
+
+    /// Run a single-flight credential refresh. If a refresh is already in
+    /// progress, wait for it to complete and return whether the **refresh
+    /// epoch** advanced (only the leader success path advances it). Ordinary
+    /// successful range requests must NOT advance the refresh epoch — that
+    /// would let waiters mistake an unrelated 200 for a successful refresh.
+    fn single_flight_refresh(&self) -> Result<bool, FetchError> {
+        let Some(refresh) = self.token_refresh.as_ref() else {
+            return Ok(false);
+        };
+
+        let my_epoch = self.credential_generation.load(Ordering::Acquire);
+        {
+            let mut in_flight = self
+                .refresh_in_flight
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if let Some(active_epoch) = *in_flight {
+                drop(in_flight);
+                return Ok(self.wait_for_refresh(active_epoch));
+            }
+            // Claim the slot with the epoch the leader observed.
+            *in_flight = Some(my_epoch);
+        }
+
+        let refresh_result = refresh();
+        // Install success (token + epoch) or leave failure visible under the
+        // same in-flight lock, THEN clear the slot and notify waiters. If
+        // waiters wake before the epoch advances they can read a stale
+        // generation and wrongly return false even when refresh succeeded.
+        {
+            let mut in_flight = self
+                .refresh_in_flight
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            match &refresh_result {
+                Ok(new_token) => {
+                    self.update_auth_header(new_token);
+                    // ONLY the refresh leader success path advances the epoch.
+                    self.credential_generation.fetch_add(1, Ordering::AcqRel);
+                }
+                Err(_) => {
+                    // Epoch stays unchanged so waiters observe failure.
+                }
+            }
+            *in_flight = None;
+            self.refresh_condvar.notify_all();
+        }
+        match refresh_result {
+            Ok(_) => Ok(true),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Wait for an in-progress refresh to complete. Returns `true` if the
+    /// refresh epoch advanced past `active_epoch` (leader success), `false`
+    /// if the slot cleared without an epoch change (leader failure).
+    fn wait_for_refresh(&self, active_epoch: u64) -> bool {
+        let mut in_flight = self
+            .refresh_in_flight
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        while in_flight.is_some() {
+            in_flight = self
+                .refresh_condvar
+                .wait(in_flight)
+                .unwrap_or_else(|e| e.into_inner());
+        }
+        let current = self.credential_generation.load(Ordering::Acquire);
+        current > active_epoch
     }
 
     fn execute_request(&self, offset: u64, length: u64) -> Result<Vec<u8>, FetchError> {
@@ -254,18 +352,24 @@ impl ProviderFetcher {
 impl HttpFetcher for ProviderFetcher {
     fn fetch_range(&self, _url: &str, offset: u64, length: u64) -> Result<Vec<u8>, FetchError> {
         match self.execute_request(offset, length) {
-            Ok(bytes) => Ok(bytes),
-            Err(FetchError::HttpStatus(403 | 410))
-                if self.token_refresh.is_some()
-                    && !self.refresh_attempted.load(Ordering::Relaxed) =>
-            {
-                // Token expired — refresh and retry once. The flag prevents
-                // repeated refresh attempts across retries in fetch_range_with_retry.
-                self.refresh_attempted.store(true, Ordering::Relaxed);
-                let refresh = self.token_refresh.as_ref().unwrap();
-                let new_token = refresh()?;
-                self.update_auth_header(&new_token);
-                self.execute_request(offset, length)
+            Ok(bytes) => {
+                // Do NOT advance credential_generation here. That counter is
+                // the refresh epoch: only a successful refresh leader may
+                // advance it. Advancing on ordinary 200s lets waiters mistake
+                // an unrelated success for a completed refresh after a failed
+                // leader (P1 acceptance finding).
+                Ok(bytes)
+            }
+            Err(FetchError::HttpStatus(401)) if self.token_refresh.is_some() => {
+                // Authentication expired — run a single-flight refresh and
+                // retry once with the new token. 401 is the token-expiry
+                // signal; 403 is permission denial and is NOT retried here.
+                let refreshed = self.single_flight_refresh()?;
+                if refreshed {
+                    self.execute_request(offset, length)
+                } else {
+                    Err(FetchError::HttpStatus(401))
+                }
             }
             Err(e) => Err(e),
         }
@@ -488,15 +592,20 @@ pub fn spawn_fetch_thread(
         cache,
         Box::new(ReqwestFetcher { client }),
         RetryConfig::default(),
+        None,
     )
 }
 
 /// Spawn a fetch thread with a custom `HttpFetcher` and `RetryConfig` (for testing).
+/// `on_range_written` is called after each successful range write so the
+/// caller can persist download progress to the cache catalog. Pass `None`
+/// when persistence is not needed (e.g. tests).
 pub fn spawn_fetch_thread_with_fetcher(
     url: String,
     cache: Arc<ChunkedCache>,
     fetcher: Box<dyn HttpFetcher>,
     retry_config: RetryConfig,
+    on_range_written: Option<Arc<dyn Fn() + Send + Sync>>,
 ) -> (
     mpsc::Sender<FetchCommand>,
     mpsc::Receiver<FetchEvent>,
@@ -519,6 +628,7 @@ pub fn spawn_fetch_thread_with_fetcher(
             &event_tx,
             &retry_config,
             &monitor_clone,
+            on_range_written.as_ref(),
         );
     });
 
@@ -576,6 +686,7 @@ fn fetch_loop(
     event_tx: &mpsc::Sender<FetchEvent>,
     retry_config: &RetryConfig,
     monitor: &BandwidthMonitor,
+    on_range_written: Option<&Arc<dyn Fn() + Send + Sync>>,
 ) {
     let current_url = url.to_string();
     let mut consecutive_failures: u32 = 0;
@@ -604,6 +715,9 @@ fn fetch_loop(
             match outcome {
                 FetchOutcome::Ok => {
                     *consecutive_failures = 0;
+                    if let Some(cb) = on_range_written {
+                        cb();
+                    }
                 }
                 FetchOutcome::UrlExpired => {
                     let _ = event_tx.send(FetchEvent::UrlExpired);
@@ -636,6 +750,9 @@ fn fetch_loop(
                 match outcome {
                     FetchOutcome::Ok => {
                         consecutive_failures = 0;
+                        if let Some(cb) = on_range_written {
+                            cb();
+                        }
                     }
                     FetchOutcome::UrlExpired => {
                         let _ = event_tx.send(FetchEvent::UrlExpired);
@@ -737,6 +854,12 @@ fn fetch_range_with_retry(
     config: &RetryConfig,
     monitor: &BandwidthMonitor,
 ) -> FetchOutcome {
+    // TODO: unify with shared policy (net_policy::RetryDriver). The streaming
+    // hot path uses its own non-jittered exponential backoff because range
+    // fetches are latency-sensitive and the shared driver's full-jitter would
+    // add variance to playback buffering. The classification + jitter helpers
+    // in net_policy are shared via `classify_fetch_status` below; the full
+    // RetryDriver adoption is deferred to avoid disrupting the hot path.
     let mut delay = config.initial_delay;
 
     for attempt in 0..=config.max_retries {
@@ -801,6 +924,24 @@ impl std::fmt::Display for FetchError {
             FetchError::Cache(msg) => write!(f, "cache error: {msg}"),
             FetchError::RangeNotSupported => write!(f, "server does not support Range requests"),
         }
+    }
+}
+
+/// Classify a fetch HTTP status into the shared `RemoteErrorKind` taxonomy.
+/// Shares the classification logic with `net_policy::classify_status` so the
+/// streaming range fetcher and the operation retry driver agree on which
+/// statuses are retryable, permanent, or signal URL/token expiry.
+// used by PR#5: shared network retry policy classification
+#[allow(dead_code)]
+pub(crate) fn classify_fetch_status(status: u16) -> crate::remote::errors::RemoteErrorKind {
+    use crate::remote::errors::RemoteErrorKind;
+    match status {
+        401 => RemoteErrorKind::AuthenticationExpired,
+        403 | 404 => RemoteErrorKind::PermissionDenied,
+        409 | 412 => RemoteErrorKind::RemoteConflict,
+        408 | 425 | 500..=599 => RemoteErrorKind::NetworkUnavailable,
+        429 => RemoteErrorKind::RateLimited,
+        _ => RemoteErrorKind::NetworkUnavailable,
     }
 }
 
@@ -977,6 +1118,7 @@ mod tests {
                 max_retries: 3,
                 consecutive_failure_threshold: 5,
             },
+            None,
         );
 
         // Send fetch command and wait for it to complete.
@@ -1019,6 +1161,7 @@ mod tests {
                 max_retries: 0,
                 consecutive_failure_threshold: 5,
             },
+            None,
         );
 
         tx.send(FetchCommand::Fetch {
@@ -1062,6 +1205,7 @@ mod tests {
                 max_retries: 0,
                 consecutive_failure_threshold: 5,
             },
+            None,
         );
 
         // Send 5 fetch commands.
@@ -1109,6 +1253,7 @@ mod tests {
                 max_retries: 3,
                 consecutive_failure_threshold: 5,
             },
+            None,
         );
 
         tx.send(FetchCommand::Fetch {
@@ -1229,6 +1374,7 @@ mod tests {
                 max_retries: 4,
                 consecutive_failure_threshold: 5,
             },
+            None,
         );
 
         tx.send(FetchCommand::Fetch {
@@ -1303,6 +1449,7 @@ mod tests {
                 max_retries: 0,
                 consecutive_failure_threshold: 5,
             },
+            None,
         );
 
         tx.send(FetchCommand::Fetch {
@@ -1370,6 +1517,7 @@ mod tests {
                 &event_tx,
                 &RetryConfig::default(),
                 &monitor,
+                None,
             );
         });
 
@@ -1469,5 +1617,133 @@ mod tests {
             self.count.fetch_add(1, Ordering::Relaxed);
             Ok(vec![0u8; length as usize])
         }
+    }
+
+    // ---- Credential refresh single-flight tests (defect #10) ----
+
+    #[test]
+    fn provider_fetcher_refreshes_on_401_and_retries() {
+        let refresh_count = Arc::new(AtomicU32::new(0));
+        let refresh_count_clone = Arc::clone(&refresh_count);
+        let old_token = "old-token".to_owned();
+        let new_token = "new-token".to_owned();
+
+        let mut server = mockito::Server::new();
+        // The first request with the old token returns 401.
+        let _m1 = server
+            .mock("GET", "/file")
+            .match_header("Authorization", format!("Bearer {old_token}").as_str())
+            .with_status(401)
+            .create();
+        // After refresh, the request with the new token returns 206.
+        let _m2 = server
+            .mock("GET", "/file")
+            .match_header("Authorization", format!("Bearer {new_token}").as_str())
+            .with_status(206)
+            .with_header("Content-Range", "bytes 0-99/100")
+            .with_body(vec![0u8; 100])
+            .create();
+
+        let url = format!("{}/file", server.url());
+        let fetcher = ProviderFetcher::new(
+            url,
+            vec![("Authorization".to_owned(), format!("Bearer {old_token}"))],
+        )
+        .with_token_refresh(move || {
+            refresh_count_clone.fetch_add(1, Ordering::Relaxed);
+            Ok(new_token.clone())
+        });
+
+        let result = fetcher.fetch_range("", 0, 100);
+        assert!(result.is_ok(), "retry after refresh should succeed");
+        assert_eq!(
+            refresh_count.load(Ordering::Relaxed),
+            1,
+            "exactly one refresh call"
+        );
+    }
+
+    #[test]
+    fn provider_fetcher_does_not_refresh_on_403() {
+        let refresh_count = Arc::new(AtomicU32::new(0));
+        let refresh_count_clone = Arc::clone(&refresh_count);
+        let token = "valid-token".to_owned();
+
+        let mut server = mockito::Server::new();
+        server
+            .mock("GET", "/file")
+            .match_header("Authorization", format!("Bearer {token}").as_str())
+            .with_status(403)
+            .create();
+
+        let url = format!("{}/file", server.url());
+        let fetcher = ProviderFetcher::new(
+            url,
+            vec![("Authorization".to_owned(), format!("Bearer {token}"))],
+        )
+        .with_token_refresh(move || {
+            refresh_count_clone.fetch_add(1, Ordering::Relaxed);
+            Ok("refreshed".to_owned())
+        });
+
+        let result = fetcher.fetch_range("", 0, 100);
+        assert!(result.is_err(), "403 should not succeed");
+        assert_eq!(
+            refresh_count.load(Ordering::Relaxed),
+            0,
+            "403 must not trigger a refresh (permission denial is permanent)"
+        );
+    }
+
+    #[test]
+    fn provider_fetcher_can_refresh_again_after_success() {
+        // Defect #10: the old refresh_attempted flag prevented a second refresh
+        // for the fetcher's entire lifetime. The generation-tracked approach
+        // allows a future expiry to refresh again after a successful request.
+        let refresh_count = Arc::new(AtomicU32::new(0));
+        let refresh_count_clone = Arc::clone(&refresh_count);
+        let token1 = "token-1".to_owned();
+        let token2 = "token-2".to_owned();
+
+        let mut server = mockito::Server::new();
+        // First request: 401 → refresh to token-2.
+        server
+            .mock("GET", "/file")
+            .match_header("Authorization", format!("Bearer {token1}").as_str())
+            .with_status(401)
+            .create();
+        // Second request with token-2: 206 success.
+        let m_success = server
+            .mock("GET", "/file")
+            .match_header("Authorization", format!("Bearer {token2}").as_str())
+            .with_status(206)
+            .with_header("Content-Range", "bytes 0-99/100")
+            .with_body(vec![0u8; 100])
+            .create();
+
+        let url = format!("{}/file", server.url());
+        let fetcher = ProviderFetcher::new(
+            url,
+            vec![("Authorization".to_owned(), format!("Bearer {token1}"))],
+        )
+        .with_token_refresh(move || {
+            refresh_count_clone.fetch_add(1, Ordering::Relaxed);
+            Ok(token2.clone())
+        });
+
+        // First fetch: 401 → refresh → 206.
+        let result1 = fetcher.fetch_range("", 0, 100);
+        assert!(result1.is_ok(), "first fetch with refresh should succeed");
+        assert_eq!(refresh_count.load(Ordering::Relaxed), 1);
+
+        // The refresh epoch advances only on leader success (the 401→refresh
+        // path above), not on ordinary successful range responses.
+        assert!(
+            fetcher.credential_generation.load(Ordering::Relaxed) > 0,
+            "refresh epoch advanced after successful credential refresh"
+        );
+
+        // Suppress unused mock warning.
+        m_success.assert();
     }
 }

@@ -6,13 +6,24 @@ use crate::{
     separator, AppState,
 };
 use serde::Serialize;
+use std::collections::HashSet;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 pub const MODEL_BOOTSTRAP_PROGRESS_EVENT: &str = "model-bootstrap-progress";
 pub const MODEL_BOOTSTRAP_READY_EVENT: &str = "model-bootstrap-ready";
 pub const MODEL_BOOTSTRAP_ERROR_EVENT: &str = "model-bootstrap-error";
+
+/// Process-wide set of variants currently being downloaded. Prevents
+/// concurrent `download_model` calls for the same variant from spawning
+/// duplicate download tasks — the second call returns the current
+/// downloading status instead of starting a second fetch.
+static DOWNLOADS_IN_PROGRESS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+fn downloads_in_progress() -> &'static Mutex<HashSet<String>> {
+    DOWNLOADS_IN_PROGRESS.get_or_init(|| Mutex::new(HashSet::new()))
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -342,6 +353,24 @@ pub fn download_model(
         return Ok(ready_status(model_path.display().to_string()));
     }
 
+    // Guard against concurrent download calls for the same variant. Without
+    // this, a second call that arrives before the first download finishes
+    // would pass the `resolve_existing_model_path` check (the file doesn't
+    // exist yet) and spawn a duplicate download task.
+    {
+        let mut in_progress = downloads_in_progress()
+            .lock()
+            .map_err(|_| state_lock_error("downloads-in-progress lock was poisoned"))?;
+        if in_progress.contains(&variant) {
+            return Ok(downloading_status(
+                model_path.display().to_string(),
+                0,
+                None,
+            ));
+        }
+        in_progress.insert(variant.clone());
+    }
+
     let status = Arc::clone(&state.shell.model_bootstrap_status);
     let initial = downloading_status(model_path.display().to_string(), 0, None);
     if should_publish_status {
@@ -359,6 +388,7 @@ pub fn download_model(
     let should_publish_status_for_task = should_publish_status;
     let task_variant = model_variant;
     let task_app_data_dir = state.shell.app_data_dir.clone();
+    let task_variant_key = variant.clone();
 
     tauri::async_runtime::spawn(async move {
         let blocking_status = Arc::clone(&status);
@@ -390,6 +420,12 @@ pub fn download_model(
             )
         })
         .await;
+
+        // Remove the variant from the in-progress set so future download
+        // requests can proceed.
+        if let Ok(mut in_progress) = downloads_in_progress().lock() {
+            in_progress.remove(&task_variant_key);
+        }
 
         if !should_publish_status_for_task || !is_active_variant(&task_app_data_dir, task_variant) {
             return;

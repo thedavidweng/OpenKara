@@ -3,16 +3,27 @@
 //! IPC entry points live in `crate::commands::remote_library` as thin adapters.
 //! Domain callers (import, lyrics, separation, playback_source, etc.) import from here.
 
+pub(crate) mod atomic_download;
 mod auth;
 mod auth_binding;
 mod bootstrap;
+pub(crate) mod cache_catalog;
+pub(crate) mod control_db;
 mod dropbox;
+pub(crate) mod errors;
+pub(crate) mod executor;
+#[cfg(test)]
+mod fault_injection;
 mod google_drive;
+pub(crate) mod library_outbox;
+pub(crate) mod manifest;
 mod mutation;
+pub(crate) mod net_policy;
 pub(crate) mod provider;
+pub(crate) mod recovery;
 mod registry;
 mod sync;
-mod types;
+pub(crate) mod types;
 mod webdav;
 
 use crate::{
@@ -37,13 +48,81 @@ impl RequestSendExt for reqwest::blocking::RequestBuilder {
         op: &'static str,
     ) -> std::result::Result<reqwest::blocking::Response, crate::commands::error::CommandError>
     {
-        self.send().map_err(|_error| {
-            tracing::trace!("{op} request failed");
+        // Single attempt. Callers that can rebuild the request should prefer
+        // `net_policy::run_with_default_retry` so transport failures and
+        // rate-limits are retried with the shared production policy.
+        self.send().map_err(|error| {
+            tracing::trace!("{op} request failed: {error}");
             crate::commands::error::CommandError::from(LibraryError::Internal(format!(
                 "{op} could not be completed"
             )))
         })
     }
+}
+
+/// Send a rebuildable HTTP request with the shared production retry policy.
+///
+/// `build` is invoked once per attempt so the driver can retry after
+/// transport failures, 429, and 5xx. Permanent HTTP failures (400/403/404/
+/// 409/412) are returned as successful `Response` values so the caller can
+/// classify them.
+pub(crate) fn send_with_retry<F>(
+    op: &'static str,
+    mut build: F,
+) -> std::result::Result<reqwest::blocking::Response, crate::remote::errors::RemoteError>
+where
+    F: FnMut() -> std::result::Result<
+        reqwest::blocking::RequestBuilder,
+        crate::remote::errors::RemoteError,
+    >,
+{
+    use crate::remote::errors::{RemoteError, RemoteErrorKind};
+    use crate::remote::net_policy::{
+        classify_reqwest_error, classify_status, parse_retry_after, remote_error_with_retry_after,
+        run_with_default_retry, AttemptOutcome,
+    };
+
+    run_with_default_retry(|| match build() {
+        Ok(builder) => match builder.send() {
+            Ok(response) => {
+                let status = response.status();
+                if status.is_success() || status.as_u16() == 206 {
+                    return AttemptOutcome::Ok(response);
+                }
+                let kind = classify_status(status);
+                if kind.retryable() {
+                    let retry_after = response
+                        .headers()
+                        .get(reqwest::header::RETRY_AFTER)
+                        .and_then(|value| value.to_str().ok())
+                        .and_then(parse_retry_after);
+                    // Drop the response body so the connection can be reused
+                    // on the next attempt.
+                    drop(response);
+                    AttemptOutcome::Err(remote_error_with_retry_after(
+                        kind,
+                        format!("{op} failed with HTTP {status}"),
+                        retry_after,
+                    ))
+                } else {
+                    // Permanent failure — hand the response to the caller.
+                    AttemptOutcome::Ok(response)
+                }
+            }
+            Err(error) => AttemptOutcome::Err(RemoteError::new(
+                classify_reqwest_error(&error),
+                format!("{op} could not be completed"),
+            )),
+        },
+        Err(error) => AttemptOutcome::Err(error),
+    })
+    .map_err(|error| {
+        if error.kind == RemoteErrorKind::NetworkUnavailable {
+            RemoteError::new(error.kind, format!("{op} could not be completed"))
+        } else {
+            error
+        }
+    })
 }
 
 pub(crate) use auth::{begin_remote_auth, cancel_remote_auth, open_external_url, poll_remote_auth};

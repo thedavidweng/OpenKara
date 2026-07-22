@@ -2781,6 +2781,7 @@ dependencies = [
  "filetime",
  "flate2",
  "hound",
+ "httpdate",
  "image",
  "libc",
  "lofty",

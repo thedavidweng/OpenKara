@@ -169,10 +169,7 @@ fn fetch_lyrics_phase3(
     song_hash: &str,
     online_result: Result<Option<LyricsFetchResult>, LyricsError>,
 ) -> CommandResult<LyricsPayload> {
-    let library_root = state.library_root()?;
-    let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
-
-    remote::run_song_database_mutation(state, app_handle, song_id, || {
+    remote::run_song_database_mutation(state, app_handle, song_id, |connection| {
         let result: Result<LyricsPayload, LyricsError> = match online_result {
             Ok(Some(fetched)) => {
                 let lines = lyrics::fetch::parse_lyrics_auto(&fetched.raw_lrc)
@@ -183,7 +180,7 @@ fn fetch_lyrics_phase3(
                     .offset_ms
                     .unwrap_or(0);
                 cache::lyrics::upsert_lyrics_cache_entry(
-                    &connection,
+                    connection,
                     &LyricsCacheEntry {
                         song_hash: song_hash.to_owned(),
                         lrc: fetched.raw_lrc,
@@ -204,7 +201,7 @@ fn fetch_lyrics_phase3(
                 })
             }
             Ok(None) => {
-                cache_negative_lyrics_lookup(&connection, song_hash)?;
+                cache_negative_lyrics_lookup(connection, song_hash)?;
                 Ok(empty_lyrics_payload(song_hash.to_owned()))
             }
             Err(_) => Ok(empty_lyrics_payload(song_hash.to_owned())),
@@ -235,11 +232,8 @@ fn set_lyrics_offset_on_thread(
     song_id: &str,
     ms: i64,
 ) -> CommandResult<()> {
-    let library = state.library_root()?;
-    let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
-
-    remote::run_song_database_mutation(state, app_handle, song_id, || {
-        set_lyrics_offset_in_connection(&connection, song_id, ms).map_err(Into::into)
+    remote::run_song_database_mutation(state, app_handle, song_id, |connection| {
+        set_lyrics_offset_in_connection(connection, song_id, ms).map_err(Into::into)
     })
 }
 
@@ -388,11 +382,8 @@ fn save_manual_lyrics_on_thread(
     song_id: &str,
     text: String,
 ) -> CommandResult<LyricsPayload> {
-    let library = state.library_root()?;
-    let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
-
     let publish_song_id = song_id.to_owned();
-    remote::run_song_database_mutation(state, app_handle, song_id, || {
+    remote::run_song_database_mutation(state, app_handle, song_id, |connection| {
         let lines = match lyrics::fetch::parse_lyrics_auto(&text) {
             Ok(parsed) if !parsed.is_empty() => parsed,
             _ => plain_text_to_lines(&text),
@@ -429,7 +420,7 @@ fn save_manual_lyrics_on_thread(
             current_unix_timestamp().map_err(|e| LyricsError::Internal(e.to_string()))?;
 
         cache::lyrics::upsert_lyrics_cache_entry(
-            &connection,
+            connection,
             &LyricsCacheEntry {
                 song_hash: publish_song_id.clone(),
                 lrc: text,
@@ -484,14 +475,11 @@ fn import_lyrics_files_on_thread(
     app_handle: &AppHandle,
     paths: Vec<String>,
 ) -> CommandResult<ImportLyricsResult> {
-    let library = state.library_root()?;
-    let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
-
     remote::run_songs_database_mutation(
         state,
         app_handle,
-        || {
-            let all_songs = cache::list_songs(&connection).map_err(database_error)?;
+        |connection| {
+            let all_songs = cache::list_songs(connection).map_err(database_error)?;
 
             let mut matched = Vec::new();
             let mut unmatched = Vec::new();
@@ -557,7 +545,7 @@ fn import_lyrics_files_on_thread(
                         fetched_at,
                     };
 
-                    if let Err(e) = cache::lyrics::upsert_lyrics_cache_entry(&connection, &entry) {
+                    if let Err(e) = cache::lyrics::upsert_lyrics_cache_entry(connection, &entry) {
                         eprintln!(
                             "failed to cache lyrics for {} ({}): {e}",
                             song.hash, path_str
@@ -610,11 +598,9 @@ fn extract_embedded_lyrics_on_thread(
     song_id: &str,
 ) -> CommandResult<LyricsPayload> {
     let library_root = state.library_root()?;
-    let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
-
     let publish_song_id = song_id.to_owned();
-    remote::run_song_database_mutation(state, app_handle, song_id, || {
-        let song = cache::get_song_by_hash(&connection, &publish_song_id)
+    remote::run_song_database_mutation(state, app_handle, song_id, |connection| {
+        let song = cache::get_song_by_hash(connection, &publish_song_id)
             .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?
             .ok_or(LyricsError::SongNotFound(publish_song_id.clone()))?;
 
@@ -647,7 +633,7 @@ fn extract_embedded_lyrics_on_thread(
             current_unix_timestamp().map_err(|e| LyricsError::Internal(e.to_string()))?;
 
         cache::lyrics::upsert_lyrics_cache_entry(
-            &connection,
+            connection,
             &LyricsCacheEntry {
                 song_hash: publish_song_id.clone(),
                 lrc: embedded,
@@ -750,13 +736,10 @@ fn fetch_lyrics_online_phase3(
     song_hash: &str,
     online_result: Result<Option<LyricsFetchResult>, LyricsError>,
 ) -> CommandResult<LyricsPayload> {
-    let library_root = state.library_root()?;
-    let connection = cache::open_database(&library_root.database_path()).map_err(database_error)?;
-
     remote::run_song_database_mutation_with_result(
         state,
         app_handle,
-        || {
+        |connection| {
             let result: Result<LyricsPayload, LyricsError> = match online_result {
                 Ok(Some(fetched)) => {
                     let lines = lyrics::fetch::parse_lyrics_auto(&fetched.raw_lrc)
@@ -770,7 +753,7 @@ fn fetch_lyrics_online_phase3(
                         .map_err(|e| LyricsError::Internal(e.to_string()))?;
 
                     cache::lyrics::upsert_lyrics_cache_entry(
-                        &connection,
+                        connection,
                         &LyricsCacheEntry {
                             song_hash: song_hash.to_owned(),
                             lrc: fetched.raw_lrc,

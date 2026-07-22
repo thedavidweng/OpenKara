@@ -91,6 +91,57 @@ payload 为完整的 `ModelBootstrapStatusSnapshot`，其中：
 - `error.code = "model_unavailable"`
 - `error.fallback = "retry"`
 
+## Model management commands (Settings)
+
+These commands let the Settings UI inspect and manage model installations
+per variant. They are separate from the startup bootstrap flow.
+
+### Command: `get_model_status`
+
+**Input:** `variant: String` (`"htdemucs"` or `"htdemucs_ft"`)
+
+**Output:** `ModelStatusSnapshot`
+
+```json
+{
+  "variant": "htdemucs",
+  "downloaded": true,
+  "legacy_install_present": false,
+  "file_size": 52428800
+}
+```
+
+### Shared type: `ModelStatusSnapshot`
+
+| Field                    | Type          | Notes                                                                               |
+| ------------------------ | ------------- | ----------------------------------------------------------------------------------- |
+| `variant`                | `String`      | The variant queried                                                                 |
+| `downloaded`             | `bool`        | True when the managed file exists and its SHA-256 matches the pinned release        |
+| `legacy_install_present` | `bool`        | True when the managed file exists but its SHA-256 does not match the pinned release |
+| `file_size`              | `Option<u64>` | Size of the managed file in bytes, if it exists                                     |
+
+### Command: `download_model`
+
+**Input:** `variant: String`
+
+**Output:** `ModelBootstrapStatusSnapshot`
+
+Downloads the model for the given variant to `<app_data_dir>/models/<filename>`.
+The download is single-flight per variant: a concurrent call for the same
+variant while a download is in progress returns the current downloading
+status instead of spawning a duplicate task. If the model is already
+verified on disk, returns `ready` immediately without downloading.
+
+### Command: `delete_model`
+
+**Input:** `variant: String`
+
+**Output:** `()`
+
+Removes the managed model file and its verification manifest for the given
+variant. The user invokes this from Settings to clear a legacy/incorrect
+install before re-downloading.
+
 ## Runtime path resolution semantics
 
 1. 优先使用活动模型 variant 对应的 `<app_data_dir>/models/<descriptor.filename>`
@@ -99,7 +150,9 @@ payload 为完整的 `ModelBootstrapStatusSnapshot`，其中：
    `<filename>.verified.json`。后续启动时若该 manifest 的文件名、pinned
    SHA-256、文件大小和修改时间都匹配当前模型文件，则直接进入 `ready`，不再读取整个
    ONNX 文件；manifest 缺失或不匹配时必须重新执行完整 SHA-256 校验，并在通过后重写
-   manifest。
+   manifest。The installation is resolved (file exists, metadata is current)
+   before the manifest is trusted, so a stale manifest from a replaced file
+   is always detected via metadata mismatch.
 4. 若运行时安装目录模型存在但校验失败（含旧版本 pin 不匹配），进入 `outdated`，**保留**托管文件以便用户在设置的危险区删除；不会静默删除后再下载
 5. 若运行时安装目录缺失，但开发目录 `src-tauri/models/<descriptor.filename>` 存在且校验通过，则直接进入 `ready`。开发目录同样允许写入本地 manifest；该目录仍只是开发/测试缓存，不是生产运行时依赖。
 6. 只有当两处都没有可用模型时，才会在后台从固定 URL 下载到运行时安装目录
