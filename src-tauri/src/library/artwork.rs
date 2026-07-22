@@ -239,15 +239,18 @@ fn write_derivative_bytes(final_abs: &Path, webp_bytes: &[u8], expected_size: u3
     }
 }
 
-/// Both source and destination paths are resolved through the strict
-/// content-addressed parser; the destination write is atomic and never
-/// follows an existing symlink.
-pub(crate) fn copy_artwork_derivative(
+/// Copy a validated derivative under a filename addressed by the derivative
+/// bytes themselves, not only by the source cover bytes.
+///
+/// Encoder upgrades can legitimately produce different WebP bytes for the same
+/// cover. A byte-addressed remote path prevents a losing concurrent publisher
+/// from overwriting artwork referenced by the committed generation.
+pub(crate) fn copy_artwork_derivative_content_addressed(
     source_library: &LibraryRoot,
     destination_library: &LibraryRoot,
     relative_path: &str,
     expected_size: u32,
-) -> Result<()> {
+) -> Result<String> {
     let (source, source_size) = resolve_existing_artwork_path(source_library, relative_path)?;
     if source_size.expected_dimension() != expected_size
         || !validate_derivative_file(&source, expected_size)
@@ -260,11 +263,15 @@ pub(crate) fn copy_artwork_derivative(
         anyhow::bail!("artwork derivative source changed while being copied");
     }
 
-    let (destination, destination_size) = resolve_artwork_path(destination_library, relative_path)?;
+    let digest = cover_sha256(&bytes);
+    let destination_relative = derivative_relative_path(source_size, &digest);
+    let (destination, destination_size) =
+        resolve_artwork_path(destination_library, &destination_relative)?;
     if destination_size != source_size {
         anyhow::bail!("artwork derivative destination size does not match source");
     }
-    write_derivative_bytes(&destination, &bytes, expected_size)
+    write_derivative_bytes(&destination, &bytes, expected_size)?;
+    Ok(destination_relative)
 }
 
 /// Ensures every error/unwind path cleans up its own temp file.
@@ -569,6 +576,28 @@ mod tests {
 
         assert_eq!(d1.thumb_path, d2.thumb_path);
         assert_eq!(d1.preview_path, d2.preview_path);
+    }
+
+    #[test]
+    fn remote_copy_is_addressed_by_derivative_bytes() {
+        let (_tmp, lib) = test_library();
+        let original = make_test_jpeg(300);
+        let derivatives = generate_artwork_derivatives(&lib, &original).unwrap();
+
+        let remote_path = copy_artwork_derivative_content_addressed(
+            &lib,
+            &lib,
+            &derivatives.thumb_path,
+            THUMB_SIZE,
+        )
+        .unwrap();
+        let bytes = read_artwork_derivative(&lib, &remote_path, THUMB_SIZE)
+            .unwrap()
+            .expect("content-addressed derivative");
+        assert_eq!(
+            remote_path,
+            derivative_relative_path(ArtworkSize::Thumb, &cover_sha256(&bytes))
+        );
     }
 
     #[test]

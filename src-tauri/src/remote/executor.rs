@@ -40,11 +40,16 @@ use crate::remote::control_db::{
 };
 use crate::remote::errors::{RemoteError, RemoteErrorKind};
 use crate::remote::manifest::{
-    database_path_for_generation, read_manifest, RepositoryManifest, CURRENT_SCHEMA_VERSION,
+    database_directory_for_generation, database_path_for_generation, database_path_for_operation,
+    read_manifest, RepositoryManifest, CURRENT_SCHEMA_VERSION,
 };
 use crate::remote::provider::{ConditionalSource, RemoteProvider};
 use rusqlite::Connection;
-use std::path::Path;
+use sha2::{Digest, Sha256};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 use uuid::Uuid;
 
 /// Context required to execute a publish operation. All dependencies are
@@ -202,37 +207,48 @@ fn run_publish_protocol(
         ));
     }
 
-    // --- Steps 3-4: Asset verification ---
-    //
-    // Asset uploads are performed by the caller (`publish_song_internal`)
-    // before the executor runs. The executor's job here is step 4: verify
-    // every asset referenced by the working database is present remotely with
-    // the expected size. This is the invariant "remote readers cannot observe
-    // a database that references missing assets" — a failed or truncated
-    // upload must fail closed BEFORE the manifest CAS, leaving the committed
-    // manifest unchanged.
-    //
-    // The working database and the candidate copy (step 5) reference the same
-    // assets, and the per-library commit lock is held, so verifying against
-    // the working DB here is equivalent to verifying against the candidate.
-    transition_state(
-        ctx,
-        op,
-        OperationState::Running,
-        now,
-        15,
-        "Verifying remote assets",
-    )?;
-
+    let payload = OperationPayload::from_json(&op.payload_json).map_err(|error| {
+        RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!(
+                "publish operation {} has invalid payload JSON: {}",
+                op.operation_id, error.message
+            ),
+        )
+    })?;
+    let persisted_candidate = load_persisted_candidate(ctx, op, &payload)?;
     let working_db_path = ctx.working_copy_root.join("openkara.db");
-    verify_referenced_assets(ctx.provider, ctx.working_copy_root, &working_db_path)?;
 
-    // --- Step 5: Freeze an immutable candidate (or reuse a persisted one) ---
+    // --- Steps 3-4: Asset verification for a new freeze ---
     //
-    // The candidate is operation-scoped and survives process restarts. A retry
-    // MUST resume against the same bytes — never rebuild from a working DB that
-    // may have changed since the original freeze. Upload sessions bind to the
-    // candidate's SHA-256 so a hybrid of old+new bytes cannot be finished.
+    // Before the first freeze, the working DB is stable under the per-library
+    // commit lock. Capture a deterministic fingerprint of every candidate-
+    // referenced remote object's size/revision so retries can verify the same
+    // asset set without consulting mutable local files.
+    let fresh_asset_fingerprint = if persisted_candidate.is_none() {
+        transition_state(
+            ctx,
+            op,
+            OperationState::Running,
+            now,
+            15,
+            "Verifying remote assets",
+        )?;
+        Some(verify_referenced_assets(
+            ctx.provider,
+            ctx.working_copy_root,
+            &working_db_path,
+            true,
+        )?)
+    } else {
+        None
+    };
+
+    // --- Steps 5-6: Freeze an immutable candidate or resume the exact bytes ---
+    //
+    // Once identity is persisted, missing or mismatched bytes are an integrity
+    // failure. Rebuilding from the current working DB would silently absorb
+    // later local mutations into this older operation.
     transition_state(
         ctx,
         op,
@@ -242,145 +258,149 @@ fn run_publish_protocol(
         "Preparing candidate database",
     )?;
 
-    let payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
-    let candidate_relative = payload
-        .candidate_relative_path
-        .clone()
-        .unwrap_or_else(|| format!(".openkara/candidates/{}.sqlite", op.operation_id));
-    let candidate_path = ctx.working_copy_root.join(&candidate_relative);
-
-    let (candidate_digest, candidate_size, op) = {
-        let reusable = payload
-            .candidate_sha256
-            .as_ref()
-            .zip(payload.candidate_size)
-            .and_then(|(digest, size)| {
-                if !candidate_path.exists() {
-                    return None;
-                }
-                let actual = sha256_file(&candidate_path).ok()?;
-                let actual_size = std::fs::metadata(&candidate_path).ok()?.len();
-                if actual == *digest && actual_size == size {
-                    Some((digest.clone(), size))
-                } else {
-                    None
-                }
-            });
-
-        if let Some((digest, size)) = reusable {
-            tracing::info!(
-                "reusing immutable candidate for operation {} (sha256={})",
-                op.operation_id,
-                digest
-            );
-            (digest, size, op.clone())
-        } else {
-            if let Some(parent) = candidate_path.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| {
-                    RemoteError::new(
-                        RemoteErrorKind::NetworkUnavailable,
-                        format!("failed to create candidate dir: {e}"),
-                    )
-                })?;
-            }
-            // Discard a mismatched partial candidate before freezing.
-            let _ = std::fs::remove_file(&candidate_path);
-            std::fs::copy(&working_db_path, &candidate_path).map_err(|e| {
+    let (
+        candidate_relative,
+        candidate_path,
+        candidate_digest,
+        candidate_size,
+        candidate_assets_fingerprint,
+        op,
+    ) = if let Some(candidate) = persisted_candidate {
+        // The candidate DB, not the mutable working DB, defines this retry's
+        // asset set. Recompute remote metadata and require the exact fingerprint
+        // captured before the original freeze. This detects missing, truncated,
+        // or replaced remote assets without reading newer local bytes.
+        let actual_fingerprint =
+            verify_referenced_assets(ctx.provider, ctx.working_copy_root, &candidate.path, false)?;
+        if actual_fingerprint != candidate.asset_fingerprint {
+            return Err(RemoteError::new(
+                RemoteErrorKind::RemoteIntegrityFailed,
+                format!(
+                    "remote asset fingerprint changed for operation {}",
+                    op.operation_id
+                ),
+            ));
+        }
+        tracing::info!(
+            "reusing immutable candidate for operation {} (sha256={})",
+            op.operation_id,
+            candidate.digest
+        );
+        (
+            candidate.relative_path,
+            candidate.path,
+            candidate.digest,
+            candidate.size,
+            candidate.asset_fingerprint,
+            op.clone(),
+        )
+    } else {
+        let relative = format!(".openkara/candidates/{}.sqlite", op.operation_id);
+        let path = ctx.working_copy_root.join(&relative);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
                 RemoteError::new(
                     RemoteErrorKind::NetworkUnavailable,
-                    format!("failed to copy working DB to candidate: {e}"),
+                    format!("failed to create candidate dir: {e}"),
                 )
             })?;
+        }
+        let _ = std::fs::remove_file(&path);
+        std::fs::copy(&working_db_path, &path).map_err(|e| {
+            RemoteError::new(
+                RemoteErrorKind::NetworkUnavailable,
+                format!("failed to copy working DB to candidate: {e}"),
+            )
+        })?;
 
-            // Machine-local control metadata must not ship with a generation
-            // candidate. Fail closed: open/cleanup failure aborts publication
-            // before integrity/digest/upload so outbox rows cannot CAS.
-            {
-                let cand = rusqlite::Connection::open(&candidate_path).map_err(|e| {
-                    let _ = std::fs::remove_file(&candidate_path);
+        // Machine-local control metadata must not ship with a generation
+        // candidate. Fail closed: open/cleanup failure aborts publication
+        // before integrity/digest/upload so outbox rows cannot CAS.
+        {
+            let cand = rusqlite::Connection::open(&path).map_err(|e| {
+                let _ = std::fs::remove_file(&path);
+                RemoteError::new(
+                    RemoteErrorKind::RemoteIntegrityFailed,
+                    format!("failed to open candidate for outbox sanitation: {e}"),
+                )
+            })?;
+            crate::remote::library_outbox::clear_all_library_publish_outbox(&cand).map_err(
+                |e| {
+                    let _ = std::fs::remove_file(&path);
                     RemoteError::new(
-                        RemoteErrorKind::RemoteIntegrityFailed,
-                        format!("failed to open candidate for outbox sanitation: {e}"),
-                    )
-                })?;
-                crate::remote::library_outbox::clear_all_library_publish_outbox(&cand).map_err(
-                    |e| {
-                        let _ = std::fs::remove_file(&candidate_path);
-                        RemoteError::new(
-                            RemoteErrorKind::RemoteIntegrityFailed,
-                            format!(
-                                "failed to clear machine-local outbox from candidate: {}",
-                                e.message
-                            ),
-                        )
-                    },
-                )?;
-                // Confirm the table is empty (or absent) before proceeding.
-                // Fail closed: query errors must not be reinterpreted as 0.
-                let remaining: i64 =
-                    match cand.query_row("SELECT COUNT(*) FROM remote_publish_outbox", [], |row| {
-                        row.get(0)
-                    }) {
-                        Ok(n) => n,
-                        Err(e) => {
-                            let msg = e.to_string();
-                            if msg.contains("no such table") {
-                                // Table absent after clear_all's missing-table
-                                // success path is equivalent to zero rows.
-                                0
-                            } else {
-                                let _ = std::fs::remove_file(&candidate_path);
-                                return Err(RemoteError::new(
-                                    RemoteErrorKind::RemoteIntegrityFailed,
-                                    format!("failed to verify outbox cleanup on candidate: {e}"),
-                                ));
-                            }
-                        }
-                    };
-                if remaining > 0 {
-                    let _ = std::fs::remove_file(&candidate_path);
-                    return Err(RemoteError::new(
                         RemoteErrorKind::RemoteIntegrityFailed,
                         format!(
-                            "candidate still has {remaining} remote_publish_outbox row(s) after cleanup"
+                            "failed to clear machine-local outbox from candidate: {}",
+                            e.message
                         ),
-                    ));
-                }
-            }
-
-            // --- Step 6: SQLite integrity checks + SHA-256 digest ---
-            verify_sqlite_integrity_pub(&candidate_path).map_err(|e| {
-                let _ = std::fs::remove_file(&candidate_path);
-                RemoteError::new(RemoteErrorKind::RemoteIntegrityFailed, e.message)
-            })?;
-
-            let digest = sha256_file(&candidate_path).map_err(|e| {
-                let _ = std::fs::remove_file(&candidate_path);
-                RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message)
-            })?;
-            let size = std::fs::metadata(&candidate_path)
-                .map(|m| m.len())
-                .map_err(|e| {
-                    let _ = std::fs::remove_file(&candidate_path);
-                    RemoteError::new(
-                        RemoteErrorKind::NetworkUnavailable,
-                        format!("failed to stat candidate: {e}"),
                     )
-                })?;
-            let updated = persist_candidate_identity(
-                ctx,
-                op,
-                &candidate_relative,
-                size,
-                &digest,
-                "candidate_ready",
+                },
             )?;
-            (digest, size, updated)
+            let remaining: i64 =
+                match cand.query_row("SELECT COUNT(*) FROM remote_publish_outbox", [], |row| {
+                    row.get(0)
+                }) {
+                    Ok(n) => n,
+                    Err(e) => {
+                        let msg = e.to_string();
+                        if msg.contains("no such table") {
+                            0
+                        } else {
+                            let _ = std::fs::remove_file(&path);
+                            return Err(RemoteError::new(
+                                RemoteErrorKind::RemoteIntegrityFailed,
+                                format!("failed to verify outbox cleanup on candidate: {e}"),
+                            ));
+                        }
+                    }
+                };
+            if remaining > 0 {
+                let _ = std::fs::remove_file(&path);
+                return Err(RemoteError::new(
+                    RemoteErrorKind::RemoteIntegrityFailed,
+                    format!(
+                        "candidate still has {remaining} remote_publish_outbox row(s) after cleanup"
+                    ),
+                ));
+            }
         }
+
+        verify_sqlite_integrity_pub(&path).map_err(|e| {
+            let _ = std::fs::remove_file(&path);
+            RemoteError::new(RemoteErrorKind::RemoteIntegrityFailed, e.message)
+        })?;
+
+        let digest = sha256_file(&path).map_err(|e| {
+            let _ = std::fs::remove_file(&path);
+            RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message)
+        })?;
+        let size = std::fs::metadata(&path).map(|m| m.len()).map_err(|e| {
+            let _ = std::fs::remove_file(&path);
+            RemoteError::new(
+                RemoteErrorKind::NetworkUnavailable,
+                format!("failed to stat candidate: {e}"),
+            )
+        })?;
+        let asset_fingerprint = fresh_asset_fingerprint.ok_or_else(|| {
+            RemoteError::new(
+                RemoteErrorKind::RemoteIntegrityFailed,
+                "new candidate is missing its verified remote asset fingerprint",
+            )
+        })?;
+        let updated = persist_candidate_identity(
+            ctx,
+            op,
+            &relative,
+            size,
+            &digest,
+            &asset_fingerprint,
+            "candidate_ready",
+        )?;
+        (relative, path, digest, size, asset_fingerprint, updated)
     };
 
-    // --- Step 7: Upload the candidate to .openkara/databases/<target>.sqlite ---
-    let db_remote_path = database_path_for_generation(target_generation);
+    // --- Step 7: Upload candidate to an operation-scoped generation object ---
+    let db_remote_path = database_path_for_operation(target_generation, &op.operation_id);
     let candidate_bytes = std::fs::read(&candidate_path).map_err(|e| {
         RemoteError::new(
             RemoteErrorKind::NetworkUnavailable,
@@ -417,6 +437,7 @@ fn run_publish_protocol(
         &candidate_relative,
         candidate_size,
         &candidate_digest,
+        &candidate_assets_fingerprint,
         "candidate_uploaded",
     )?;
 
@@ -440,6 +461,21 @@ fn run_publish_protocol(
                 ),
             ));
         }
+    }
+
+    // Close the candidate-upload race window: immediately before manifest CAS,
+    // re-stat every candidate-referenced asset and require the exact metadata
+    // fingerprint captured before freeze.
+    let pre_cas_asset_fingerprint =
+        verify_referenced_assets(ctx.provider, ctx.working_copy_root, &candidate_path, false)?;
+    if pre_cas_asset_fingerprint != candidate_assets_fingerprint {
+        return Err(RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!(
+                "remote asset fingerprint changed before manifest CAS for operation {}",
+                op.operation_id
+            ),
+        ));
     }
 
     // --- Step 9: Build the next manifest ---
@@ -503,6 +539,153 @@ fn run_publish_protocol(
         committed_manifest_revision: committed_meta.revision,
         candidate_db_digest: candidate_digest,
     })
+}
+
+#[derive(Debug)]
+struct PersistedCandidate {
+    relative_path: String,
+    path: PathBuf,
+    digest: String,
+    size: u64,
+    asset_fingerprint: String,
+}
+
+/// Load and validate an operation-scoped immutable candidate.
+///
+/// Once any candidate identity field is present, the operation has crossed the
+/// freeze boundary. Recovery must either resume the exact same bytes and remote
+/// asset identity or fail closed; it must never rebuild from a working DB that
+/// may contain later local mutations.
+fn load_persisted_candidate(
+    ctx: &PublishContext<'_>,
+    op: &OperationRow,
+    payload: &OperationPayload,
+) -> Result<Option<PersistedCandidate>, RemoteError> {
+    let identity_claimed = payload.candidate_relative_path.is_some()
+        || payload.candidate_size.is_some()
+        || payload.candidate_sha256.is_some()
+        || payload.candidate_assets_fingerprint.is_some()
+        || op.candidate_db_digest.is_some();
+    if !identity_claimed {
+        return Ok(None);
+    }
+
+    let incomplete_identity = |field: &str| {
+        RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!(
+                "persisted candidate identity for operation {} is incomplete: missing {field}",
+                op.operation_id
+            ),
+        )
+    };
+    let relative_path = payload
+        .candidate_relative_path
+        .clone()
+        .ok_or_else(|| incomplete_identity("candidate_relative_path"))?;
+    let expected_size = payload
+        .candidate_size
+        .ok_or_else(|| incomplete_identity("candidate_size"))?;
+    let expected_digest = payload
+        .candidate_sha256
+        .clone()
+        .ok_or_else(|| incomplete_identity("candidate_sha256"))?;
+    let expected_asset_fingerprint = payload
+        .candidate_assets_fingerprint
+        .clone()
+        .ok_or_else(|| incomplete_identity("candidate_assets_fingerprint"))?;
+    let row_digest = op
+        .candidate_db_digest
+        .as_deref()
+        .ok_or_else(|| incomplete_identity("candidate_db_digest"))?;
+    if row_digest != expected_digest.as_str() {
+        return Err(RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!(
+                "persisted candidate digest identity mismatch for operation {}",
+                op.operation_id
+            ),
+        ));
+    }
+
+    let expected_relative_path = format!(".openkara/candidates/{}.sqlite", op.operation_id);
+    if relative_path != expected_relative_path {
+        return Err(RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!(
+                "persisted candidate path for operation {} is not operation-scoped: {}",
+                op.operation_id, relative_path
+            ),
+        ));
+    }
+
+    let candidate_path = ctx.working_copy_root.join(&relative_path);
+    let metadata = std::fs::metadata(&candidate_path).map_err(|error| {
+        RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!(
+                "persisted candidate for operation {} is missing or unreadable: {error}",
+                op.operation_id
+            ),
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err(RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!(
+                "persisted candidate for operation {} is not a regular file",
+                op.operation_id
+            ),
+        ));
+    }
+    if metadata.len() != expected_size {
+        return Err(RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!(
+                "persisted candidate size mismatch for operation {}: expected {}, got {}",
+                op.operation_id,
+                expected_size,
+                metadata.len()
+            ),
+        ));
+    }
+
+    let actual_digest = sha256_file(&candidate_path).map_err(|error| {
+        RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!(
+                "failed to hash persisted candidate for operation {}: {}",
+                op.operation_id, error.message
+            ),
+        )
+    })?;
+    if actual_digest != expected_digest {
+        return Err(RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!(
+                "persisted candidate digest mismatch for operation {}: expected {}, got {}",
+                op.operation_id, expected_digest, actual_digest
+            ),
+        ));
+    }
+
+    verify_sqlite_integrity_pub(&candidate_path).map_err(|error| {
+        RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!(
+                "persisted candidate integrity check failed for operation {}: {}",
+                op.operation_id, error.message
+            ),
+        )
+    })?;
+
+    Ok(Some(PersistedCandidate {
+        relative_path,
+        path: candidate_path,
+        digest: expected_digest,
+        size: expected_size,
+        asset_fingerprint: expected_asset_fingerprint,
+    }))
 }
 
 /// Managed top-level directories that hold repository assets. A database
@@ -599,43 +782,28 @@ fn validate_asset_path(path: &str) -> Result<(), RemoteError> {
     Ok(())
 }
 
-/// Publication-protocol step 4: verify every asset referenced by the working
-/// database is present remotely with the expected size.
+/// Publication-protocol step 4: verify every asset referenced by the selected
+/// database snapshot and return a deterministic fingerprint of remote metadata.
 ///
-/// Opens the database read-only, enumerates every non-empty path column across
-/// `songs` and `stems`, and for each referenced path:
-///
-/// 1. Validates the path is a relative, managed-asset path (no traversal,
-///    no absolute paths, no paths outside `media`/`media-g`/`stems`/`artwork`).
-/// 2. `provider.stat(path)` — fail closed with `RemoteIntegrityFailed` if the
-///    object is absent. A missing asset means the upload did not complete, so
-///    the manifest must NOT commit.
-/// 3. When the local working copy has the file at that path and the provider
-///    reports a remote size, compare the local byte size to the remote size.
-///    A mismatch indicates truncation or a wrong object and fails closed.
-///
-/// Songs whose `audio_source_kind` is not `"original"` are treated the same as
-/// local originals for this check: their referenced paths (stems for
-/// `stems_remote`, media for `original_remote`, artwork for both) must all be
-/// present remotely. The candidate database is what remote readers will see,
-/// so every path it references must resolve.
-///
-/// A failed verification NEVER commits the manifest. The caller records the
-/// operation as `failed` and emits `upload-error`.
+/// For a new freeze, `database_path` is the locked working DB and
+/// `compare_local_size` is true, so provider size is checked against local asset
+/// bytes. For a retry, `database_path` is the immutable candidate and local
+/// files are ignored because they may already belong to a newer mutation.
+/// Remote path, size, and revision are fingerprinted in both modes, allowing a
+/// retry to detect a missing, truncated, or replaced remote object.
 fn verify_referenced_assets(
     provider: &dyn RemoteProvider,
     working_copy_root: &Path,
     database_path: &Path,
-) -> Result<(), RemoteError> {
+    compare_local_size: bool,
+) -> Result<String, RemoteError> {
     let conn = open_readonly(database_path).map_err(|e| {
         RemoteError::new(
             RemoteErrorKind::RemoteIntegrityFailed,
-            format!(
-                "failed to open working DB for asset verification: {}",
-                e.message
-            ),
+            format!("failed to open DB for asset verification: {}", e.message),
         )
     })?;
+    let mut remote_identities: BTreeMap<String, (Option<u64>, Option<String>)> = BTreeMap::new();
 
     let has_cdg_path = crate::cache::column_exists(&conn, "songs", "cdg_path")
         .map_err(|e| RemoteError::new(RemoteErrorKind::RemoteIntegrityFailed, e.to_string()))?;
@@ -711,29 +879,41 @@ fn verify_referenced_assets(
                 )
             })?;
 
-            // Best-effort size check: when the local working copy has the
-            // file and the provider reports a size, a mismatch indicates
-            // truncation or a wrong object. If the local file is absent
-            // (e.g. a song published by another device whose assets we did
-            // not download), only presence is verified.
-            if let Some(remote_size) = remote_meta.size {
-                let local_path = working_copy_root.join(path);
-                if let Ok(local_meta) = std::fs::metadata(&local_path) {
-                    let local_size = local_meta.len();
-                    if local_size != remote_size {
-                        return Err(RemoteError::new(
-                            RemoteErrorKind::RemoteIntegrityFailed,
-                            format!(
-                                "asset size mismatch for {path}: local {local_size}, remote {remote_size}"
-                            ),
-                        ));
+            // Local files are authoritative only before the first candidate
+            // freeze. On retry, the same path may contain bytes from a newer
+            // local mutation; the persisted remote fingerprint is authoritative.
+            if compare_local_size {
+                if let Some(remote_size) = remote_meta.size {
+                    let local_path = working_copy_root.join(path);
+                    if let Ok(local_meta) = std::fs::metadata(&local_path) {
+                        let local_size = local_meta.len();
+                        if local_size != remote_size {
+                            return Err(RemoteError::new(
+                                RemoteErrorKind::RemoteIntegrityFailed,
+                                format!(
+                                    "asset size mismatch for {path}: local {local_size}, remote {remote_size}"
+                                ),
+                            ));
+                        }
                     }
                 }
             }
+            remote_identities.insert(
+                path.to_owned(),
+                (remote_meta.size, remote_meta.revision.clone()),
+            );
         }
     }
 
-    Ok(())
+    let encoded = serde_json::to_vec(&remote_identities).map_err(|error| {
+        RemoteError::new(
+            RemoteErrorKind::RemoteIntegrityFailed,
+            format!("failed to encode remote asset fingerprint: {error}"),
+        )
+    })?;
+    let mut hasher = Sha256::new();
+    hasher.update(encoded);
+    Ok(crate::hash::hex_lower(hasher.finalize()))
 }
 
 /// Upload the immutable candidate database to the generation-specific remote
@@ -958,13 +1138,16 @@ fn persist_candidate_identity(
     candidate_relative_path: &str,
     candidate_size: u64,
     candidate_sha256: &str,
+    candidate_assets_fingerprint: &str,
     protocol_step: &str,
 ) -> Result<OperationRow, RemoteError> {
     let now = current_unix_time_ms();
-    let mut payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
+    let mut payload = OperationPayload::from_json(&op.payload_json)
+        .map_err(|error| RemoteError::new(RemoteErrorKind::RemoteIntegrityFailed, error.message))?;
     payload.candidate_relative_path = Some(candidate_relative_path.to_owned());
     payload.candidate_size = Some(candidate_size);
     payload.candidate_sha256 = Some(candidate_sha256.to_owned());
+    payload.candidate_assets_fingerprint = Some(candidate_assets_fingerprint.to_owned());
     payload.protocol_step = Some(protocol_step.to_owned());
     let mut updated = op.clone();
     updated.candidate_db_digest = Some(candidate_sha256.to_owned());
@@ -1032,6 +1215,7 @@ fn record_completed(
                         .map(|p| {
                             p.candidate_sha256.is_some()
                                 || p.candidate_relative_path.is_some()
+                                || p.candidate_assets_fingerprint.is_some()
                                 || matches!(
                                     p.protocol_step.as_deref(),
                                     Some("candidate_ready" | "candidate_uploaded")
@@ -1307,78 +1491,56 @@ pub(crate) fn execute_gc(
     }
 
     // Delete old database generations: 1..=retain_floor-1.
-    // Generation 0 is reserved (no manifest). We delete generations from 1
-    // up to (but not including) retain_floor.
+    // Generation 0 is reserved. Both the legacy `<generation>.sqlite` object
+    // and the operation-scoped `<generation>/` directory are attempted so
+    // repositories created before and after this hardening remain collectible.
     //
-    // A missing object (404) is idempotent success — it may have already
-    // been cleaned up by a prior GC. A transient failure (network, rate
-    // limit, server error) leaves the GC operation retryable so the next
-    // executor pass can try again. The GC is not marked Completed until
-    // every target has been successfully deleted or confirmed absent.
+    // Never delete the global `.openkara/staging` root here. Another device can
+    // have an in-flight WebDAV staged upload under that prefix; deleting the
+    // shared root would let a local GC corrupt a concurrent writer before CAS.
     let mut transient_failures = 0;
     let mut permanent_failures = 0;
     for gen in 1..retain_floor {
-        let db_path = database_path_for_generation(gen);
-        match provider.delete_path(&db_path) {
-            Ok(()) => {
-                tracing::debug!("GC deleted old database generation {} at {}", gen, db_path);
-            }
-            Err(e) => {
-                // Only explicit missing-object (404 / not found) is idempotent
-                // success. 403 permission, auth, and unsupported errors must
-                // leave GC failed — never Completed.
-                let msg = e.message.to_ascii_lowercase();
-                let is_not_found = msg.contains("not found")
-                    || msg.contains("404")
-                    || msg.contains("does not exist")
-                    || msg.contains("was not found");
-                if is_not_found {
-                    tracing::debug!(
-                        "GC confirmed absence of old database generation {} at {}: {}",
-                        gen,
-                        db_path,
-                        e.message
-                    );
-                } else if e.retryable {
-                    tracing::warn!(
-                        "GC transient failure deleting {} (will retry): {}",
-                        db_path,
-                        e.message
-                    );
-                    transient_failures += 1;
-                } else {
-                    tracing::warn!(
-                        "GC permanent failure deleting {} (will not complete): {}",
-                        db_path,
-                        e.message
-                    );
-                    permanent_failures += 1;
+        for db_path in [
+            database_path_for_generation(gen),
+            database_directory_for_generation(gen),
+        ] {
+            match provider.delete_path(&db_path) {
+                Ok(()) => {
+                    tracing::debug!("GC deleted old database generation {} at {}", gen, db_path);
                 }
-            }
-        }
-    }
-
-    // Best-effort cleanup of operation-scoped staging paths under
-    // `.openkara/staging/` and leftover candidates for completed ops.
-    // Failures here are retryable and do not delete media/stems/artwork.
-    // Staging is provider-relative; attempt delete of known prefix.
-    // Missing staging roots are success. Staging cleanup is best-effort and
-    // does not delete media/stems/artwork.
-    let staging_root = ".openkara/staging";
-    match provider.delete_path(staging_root) {
-        Ok(()) => {
-            tracing::debug!("GC cleaned staging root {staging_root}");
-        }
-        Err(e) => {
-            let msg = e.message.to_ascii_lowercase();
-            if e.retryable {
-                transient_failures += 1;
-                tracing::warn!("GC staging cleanup transient failure: {}", e.message);
-            } else if !(msg.contains("not found")
-                || msg.contains("404")
-                || msg.contains("does not exist"))
-            {
-                tracing::warn!("GC staging cleanup permanent failure: {}", e.message);
+                Err(e) => {
+                    // Only explicit missing-object (404 / not found) is
+                    // idempotent success. Permission/auth/capability errors
+                    // must keep GC non-completed.
+                    let msg = e.message.to_ascii_lowercase();
+                    let is_not_found = msg.contains("not found")
+                        || msg.contains("404")
+                        || msg.contains("does not exist")
+                        || msg.contains("was not found");
+                    if is_not_found {
+                        tracing::debug!(
+                            "GC confirmed absence of old database generation {} at {}: {}",
+                            gen,
+                            db_path,
+                            e.message
+                        );
+                    } else if e.retryable {
+                        tracing::warn!(
+                            "GC transient failure deleting {} (will retry): {}",
+                            db_path,
+                            e.message
+                        );
+                        transient_failures += 1;
+                    } else {
+                        tracing::warn!(
+                            "GC permanent failure deleting {} (will not complete): {}",
+                            db_path,
+                            e.message
+                        );
+                        permanent_failures += 1;
+                    }
+                }
             }
         }
     }
@@ -1765,6 +1927,9 @@ mod tests {
         no_cas: bool,
         /// Working copy root for reading files during upload_file.
         working_copy_root: Option<PathBuf>,
+        /// Test hook: replace one remote asset immediately after a generation
+        /// database upload, simulating a race before manifest CAS.
+        mutate_asset_on_candidate_upload: Option<(String, Vec<u8>, String)>,
     }
 
     impl FakeProvider {
@@ -1774,6 +1939,7 @@ mod tests {
                 revisions: Arc::new(Mutex::new(HashMap::new())),
                 no_cas: false,
                 working_copy_root: None,
+                mutate_asset_on_candidate_upload: None,
             }
         }
 
@@ -1783,11 +1949,23 @@ mod tests {
                 revisions: Arc::new(Mutex::new(HashMap::new())),
                 no_cas: true,
                 working_copy_root: None,
+                mutate_asset_on_candidate_upload: None,
             }
         }
 
         fn with_working_copy_root(mut self, root: PathBuf) -> Self {
             self.working_copy_root = Some(root);
+            self
+        }
+
+        fn with_asset_mutation_on_candidate_upload(
+            mut self,
+            path: &str,
+            bytes: Vec<u8>,
+            revision: &str,
+        ) -> Self {
+            self.mutate_asset_on_candidate_upload =
+                Some((path.to_owned(), bytes, revision.to_owned()));
             self
         }
 
@@ -1861,6 +2039,13 @@ mod tests {
                         .insert(path.to_owned(), rev.clone());
                     // Store size for stat verification.
                     let _ = size;
+                    if path.starts_with(".openkara/databases/") {
+                        if let Some((asset_path, bytes, revision)) =
+                            &self.mutate_asset_on_candidate_upload
+                        {
+                            self.store(asset_path, bytes.clone(), revision);
+                        }
+                    }
                 }
             }
             Ok(())
@@ -2034,6 +2219,35 @@ mod tests {
         };
         upsert_operation(conn, &row).unwrap();
         op_id
+    }
+
+    fn persist_test_candidate(
+        conn: &Connection,
+        provider: &dyn RemoteProvider,
+        working_root: &Path,
+        operation_id: &str,
+    ) -> PathBuf {
+        let relative = format!(".openkara/candidates/{operation_id}.sqlite");
+        let candidate = working_root.join(&relative);
+        std::fs::create_dir_all(candidate.parent().unwrap()).unwrap();
+        std::fs::copy(working_root.join("openkara.db"), &candidate).unwrap();
+        let digest = sha256_file(&candidate).unwrap();
+        let size = std::fs::metadata(&candidate).unwrap().len();
+        let asset_fingerprint =
+            verify_referenced_assets(provider, working_root, &candidate, true).unwrap();
+
+        let mut op = get_operation(conn, operation_id).unwrap().unwrap();
+        let mut payload = OperationPayload::from_json(&op.payload_json).unwrap();
+        payload.candidate_relative_path = Some(relative);
+        payload.candidate_size = Some(size);
+        payload.candidate_sha256 = Some(digest.clone());
+        payload.candidate_assets_fingerprint = Some(asset_fingerprint);
+        payload.protocol_step = Some("candidate_ready".to_owned());
+        op.candidate_db_digest = Some(digest);
+        op.payload_json = payload.to_json().unwrap();
+        op.state = OperationState::RetryWait;
+        upsert_operation(conn, &op).unwrap();
+        candidate
     }
 
     #[test]
@@ -2223,14 +2437,19 @@ mod tests {
         let manifest_bytes = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
         let manifest: RepositoryManifest =
             serde_json::from_slice(&manifest_bytes.unwrap()).unwrap();
-        assert_eq!(manifest.database_path, ".openkara/databases/1.sqlite");
+        assert!(
+            manifest.database_path.starts_with(".openkara/databases/1/"),
+            "generation DB must be operation-scoped"
+        );
+        assert_ne!(manifest.database_path, ".openkara/databases/1.sqlite");
 
-        // Verify the database was uploaded to the correct path.
+        // Verify the database was uploaded to the exact immutable path named
+        // by the committed manifest.
         let db_bytes = provider
             .files
             .lock()
             .unwrap()
-            .get(".openkara/databases/1.sqlite")
+            .get(&manifest.database_path)
             .cloned();
         assert!(db_bytes.is_some(), "candidate database should be uploaded");
 
@@ -2488,6 +2707,217 @@ mod tests {
 
         let manifest = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
         assert!(manifest.is_some(), "manifest should be committed");
+    }
+
+    #[test]
+    fn executor_retry_uses_candidate_not_newer_working_db() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+        insert_song_with_media(
+            &working_root.join("openkara.db"),
+            "song-1",
+            "media/song-1.mp3",
+            &working_root,
+        );
+
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        provider.upload_file("media/song-1.mp3").unwrap();
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        persist_test_candidate(&conn, &provider, &working_root, &op_id);
+
+        // A later local mutation changes the shared working DB and references
+        // an asset that is not remote yet. The older operation must ignore it.
+        insert_song_with_media(
+            &working_root.join("openkara.db"),
+            "song-2",
+            "media/song-2.mp3",
+            &working_root,
+        );
+
+        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        execute_publish(&ctx, &op_id).expect("retry should publish the immutable candidate");
+
+        let manifest_bytes = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
+        let manifest: RepositoryManifest =
+            serde_json::from_slice(&manifest_bytes.expect("manifest committed")).unwrap();
+        let uploaded = provider
+            .files
+            .lock()
+            .unwrap()
+            .get(&manifest.database_path)
+            .cloned()
+            .expect("candidate uploaded");
+        let uploaded_path = working_root.join("uploaded-candidate.sqlite");
+        std::fs::write(&uploaded_path, uploaded).unwrap();
+        let uploaded_conn = Connection::open(&uploaded_path).unwrap();
+        let song_2_count: i64 = uploaded_conn
+            .query_row(
+                "SELECT COUNT(*) FROM songs WHERE hash = 'song-2'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            song_2_count, 0,
+            "newer mutation must not leak into old operation"
+        );
+
+        let repo = get_repository_state(&conn, "lib-1").unwrap().unwrap();
+        assert_eq!(repo.local_state, LocalState::Dirty);
+    }
+
+    #[test]
+    fn executor_retry_detects_remote_asset_identity_change() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+        insert_song_with_media(
+            &working_root.join("openkara.db"),
+            "song-1",
+            "media/song-1.mp3",
+            &working_root,
+        );
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        provider.upload_file("media/song-1.mp3").unwrap();
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        persist_test_candidate(&conn, &provider, &working_root, &op_id);
+
+        // Same byte length, different bytes and revision. Size-only retry logic
+        // would miss this; the persisted metadata fingerprint must reject it.
+        provider.store("media/song-1.mp3", b"other-bytes".to_vec(), "rev-replaced");
+
+        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        assert!(execute_publish(&ctx, &op_id).is_err());
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Failed);
+        assert_eq!(op.error_code.as_deref(), Some("remote_integrity_failed"));
+        assert!(provider.files.lock().unwrap().get(MANIFEST_PATH).is_none());
+    }
+
+    #[test]
+    fn executor_rechecks_asset_fingerprint_before_manifest_cas() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+        insert_song_with_media(
+            &working_root.join("openkara.db"),
+            "song-1",
+            "media/song-1.mp3",
+            &working_root,
+        );
+        let provider = FakeProvider::new()
+            .with_working_copy_root(working_root.clone())
+            .with_asset_mutation_on_candidate_upload(
+                "media/song-1.mp3",
+                b"other-bytes".to_vec(),
+                "rev-raced",
+            );
+        provider.upload_file("media/song-1.mp3").unwrap();
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+
+        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        assert!(execute_publish(&ctx, &op_id).is_err());
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Failed);
+        assert_eq!(op.error_code.as_deref(), Some("remote_integrity_failed"));
+        assert!(provider.files.lock().unwrap().get(MANIFEST_PATH).is_none());
+    }
+
+    #[test]
+    fn executor_does_not_rebuild_missing_persisted_candidate() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        let candidate = persist_test_candidate(&conn, &provider, &working_root, &op_id);
+        std::fs::remove_file(&candidate).unwrap();
+
+        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        assert!(execute_publish(&ctx, &op_id).is_err());
+        assert!(
+            !candidate.exists(),
+            "missing candidate must not be regenerated"
+        );
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Failed);
+        assert_eq!(op.error_code.as_deref(), Some("remote_integrity_failed"));
+        assert!(provider.files.lock().unwrap().get(MANIFEST_PATH).is_none());
+    }
+
+    #[test]
+    fn executor_does_not_rebuild_corrupted_persisted_candidate() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+        let candidate = persist_test_candidate(&conn, &provider, &working_root, &op_id);
+        std::fs::write(&candidate, b"corrupt-candidate").unwrap();
+
+        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        assert!(execute_publish(&ctx, &op_id).is_err());
+        assert_eq!(
+            std::fs::read(&candidate).unwrap(),
+            b"corrupt-candidate".to_vec()
+        );
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Failed);
+        assert_eq!(op.error_code.as_deref(), Some("remote_integrity_failed"));
+        assert!(provider.files.lock().unwrap().get(MANIFEST_PATH).is_none());
+    }
+
+    #[test]
+    fn executor_rejects_partial_persisted_candidate_identity() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+
+        let mut op = get_operation(&conn, &op_id).unwrap().unwrap();
+        let mut payload = OperationPayload::from_json(&op.payload_json).unwrap();
+        payload.candidate_relative_path =
+            Some(format!(".openkara/candidates/{}.sqlite", op.operation_id));
+        op.payload_json = payload.to_json().unwrap();
+        op.state = OperationState::RetryWait;
+        upsert_operation(&conn, &op).unwrap();
+
+        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        assert!(execute_publish(&ctx, &op_id).is_err());
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Failed);
+        assert_eq!(op.error_code.as_deref(), Some("remote_integrity_failed"));
+        assert!(provider.files.lock().unwrap().get(MANIFEST_PATH).is_none());
+    }
+
+    #[test]
+    fn executor_rejects_invalid_publish_payload_instead_of_rebuilding() {
+        let (_db_dir, conn) = fresh_control_db();
+        let working_dir = TempDir::new().unwrap();
+        let working_root = working_dir.path().to_owned();
+        make_valid_db(&working_root.join("openkara.db"));
+        let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
+        let op_id = make_pending_op(&conn, "lib-1", 0);
+
+        let mut op = get_operation(&conn, &op_id).unwrap().unwrap();
+        op.payload_json = "{not-json".to_owned();
+        op.state = OperationState::RetryWait;
+        upsert_operation(&conn, &op).unwrap();
+
+        let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
+        assert!(execute_publish(&ctx, &op_id).is_err());
+        let op = get_operation(&conn, &op_id).unwrap().unwrap();
+        assert_eq!(op.state, OperationState::Failed);
+        assert_eq!(op.error_code.as_deref(), Some("remote_integrity_failed"));
+        assert!(provider.files.lock().unwrap().get(MANIFEST_PATH).is_none());
     }
 
     #[test]

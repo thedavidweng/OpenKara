@@ -21,7 +21,7 @@ use super::super::types::{
     load_app_config, load_remote_root, upsert_stem_entry, UploadState, UploadStatusSnapshot,
 };
 
-use super::file_ops::{copy_directory_recursive, copy_remote_song_assets};
+use super::file_ops::copy_remote_song_assets;
 use super::revision::{
     load_registered_remote_library, prepare_remote_database_for_mutation, resolve_active_remote,
 };
@@ -39,7 +39,7 @@ fn publish_artwork_derivatives(
     remote_connection: &rusqlite::Connection,
     provider: &dyn super::super::provider::RemoteProvider,
     song_id: &str,
-    same_root: bool,
+    _same_root: bool,
 ) -> CommandResult<()> {
     let record = cache::get_artwork_record(local_connection, song_id)
         .map_err(|error| database_error(error.to_string()))?;
@@ -119,48 +119,187 @@ fn publish_artwork_derivatives(
         }
     };
 
-    // Copy derivative files to the remote working copy (unless same
-    // root) and upload to cloud storage. Persist the remote DB paths only
-    // after both files are present remotely — never commit DB paths that
-    // reference files omitted from the same publish operation.
-    for (path, expected_size) in [
-        (&thumb_path, artwork::THUMB_SIZE),
-        (&preview_path, artwork::PREVIEW_SIZE),
-    ] {
-        if !same_root {
-            if let Err(e) =
-                artwork::copy_artwork_derivative(local_root, remote_root, path, expected_size)
-            {
-                tracing::warn!(
-                    "failed to copy validated artwork derivative {path} to remote working copy: {e}"
-                );
-                return Ok(());
-            }
-        } else if artwork::read_artwork_derivative(local_root, path, expected_size)
-            .map(|bytes| bytes.is_none())
-            .unwrap_or(true)
-        {
-            tracing::warn!("artwork derivative source missing or invalid locally: {path}");
+    // Publish under paths addressed by the derivative bytes themselves.
+    // The local cache may use a cover-addressed filename, but encoder changes
+    // can produce different WebP bytes for the same cover. Byte-addressed remote
+    // paths prevent a losing writer from overwriting committed artwork.
+    let remote_thumb = match artwork::copy_artwork_derivative_content_addressed(
+        local_root,
+        remote_root,
+        &thumb_path,
+        artwork::THUMB_SIZE,
+    ) {
+        Ok(path) => path,
+        Err(error) => {
+            tracing::warn!("failed to stage thumbnail for remote publish: {error}");
             return Ok(());
         }
-        if let Err(e) = provider.upload_file(path) {
-            tracing::warn!("failed to upload artwork derivative {path}: {}", e.message);
+    };
+    let remote_preview = match artwork::copy_artwork_derivative_content_addressed(
+        local_root,
+        remote_root,
+        &preview_path,
+        artwork::PREVIEW_SIZE,
+    ) {
+        Ok(path) => path,
+        Err(error) => {
+            tracing::warn!("failed to stage artwork preview for remote publish: {error}");
+            return Ok(());
+        }
+    };
+    for path in [&remote_thumb, &remote_preview] {
+        if let Err(error) = provider.upload_file(path) {
+            tracing::warn!(
+                "failed to upload artwork derivative {path}: {}",
+                error.message
+            );
             return Ok(());
         }
     }
 
-    // Both derivative files are present in the remote working copy and cloud —
-    // safe to persist the paths in the remote DB.
+    // Both immutable derivative objects are present remotely. Persist only
+    // their byte-addressed paths in the candidate database.
     if let Err(error) = cache::update_artwork_derivative_paths(
         remote_connection,
         song_id,
-        Some(&thumb_path),
-        Some(&preview_path),
+        Some(&remote_thumb),
+        Some(&remote_preview),
     ) {
         tracing::warn!("failed to persist remote artwork derivatives for {song_id}: {error}");
     }
 
     Ok(())
+}
+
+fn content_addressed_asset_relative_path(
+    source_relative_path: &str,
+    digest: &str,
+) -> CommandResult<String> {
+    let source = std::path::Path::new(source_relative_path);
+    if source.is_absolute()
+        || source
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return Err(CommandError::from(LibraryError::Internal(format!(
+            "asset path {source_relative_path} is not a safe relative path"
+        ))));
+    }
+    let top_level = source
+        .components()
+        .next()
+        .and_then(|component| match component {
+            std::path::Component::Normal(value) => value.to_str(),
+            _ => None,
+        })
+        .filter(|value| matches!(*value, "media" | "media-g" | "stems"))
+        .ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(format!(
+                "asset path {source_relative_path} is outside managed directories"
+            )))
+        })?;
+    let extension = source
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(str::to_ascii_lowercase)
+        .filter(|value| {
+            !value.is_empty()
+                && value.len() <= 16
+                && value.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        })
+        .ok_or_else(|| {
+            CommandError::from(LibraryError::Internal(format!(
+                "asset path {source_relative_path} has an invalid extension"
+            )))
+        })?;
+    Ok(format!("{top_level}/content/{digest}.{extension}"))
+}
+
+fn publish_content_addressed_asset(
+    local_root: &LibraryRoot,
+    remote_root: &LibraryRoot,
+    provider: &dyn super::super::provider::RemoteProvider,
+    source_relative_path: &str,
+) -> CommandResult<String> {
+    let source = local_root.resolve(source_relative_path);
+    let digest = crate::remote::atomic_download::sha256_file(&source)?;
+    let remote_relative_path =
+        content_addressed_asset_relative_path(source_relative_path, &digest)?;
+    let destination = remote_root.resolve(&remote_relative_path);
+    if source != destination {
+        copy_remote_song_assets(
+            local_root,
+            remote_root,
+            source_relative_path,
+            &remote_relative_path,
+        )?;
+    }
+
+    // The destination filename claims `digest`; prove the staged bytes match
+    // before and after provider upload so a concurrently modified source cannot
+    // be published under a false content address.
+    let staged_digest = crate::remote::atomic_download::sha256_file(&destination)?;
+    if staged_digest != digest {
+        return Err(CommandError::from(LibraryError::Internal(format!(
+            "asset changed while staging {source_relative_path}"
+        ))));
+    }
+    let local_size = std::fs::metadata(&destination)
+        .map_err(|error| {
+            database_error(format!("failed to stat {}: {error}", destination.display()))
+        })?
+        .len();
+
+    provider.upload_file(&remote_relative_path)?;
+    let post_upload_digest = crate::remote::atomic_download::sha256_file(&destination)?;
+    if post_upload_digest != digest {
+        return Err(CommandError::from(LibraryError::Internal(format!(
+            "asset changed during upload: {remote_relative_path}"
+        ))));
+    }
+
+    let remote_metadata = provider.stat(&remote_relative_path)?.ok_or_else(|| {
+        CommandError::from(LibraryError::Internal(format!(
+            "remote asset {remote_relative_path} was not found after upload"
+        )))
+    })?;
+    if remote_metadata.size.is_some_and(|size| size != local_size) {
+        return Err(CommandError::from(LibraryError::Internal(format!(
+            "remote asset size mismatch for {remote_relative_path}"
+        ))));
+    }
+    Ok(remote_relative_path)
+}
+
+fn publish_content_addressed_stem_entry(
+    entry: &crate::cache::stems::StemCacheEntry,
+    local_root: &LibraryRoot,
+    remote_root: &LibraryRoot,
+    provider: &dyn super::super::provider::RemoteProvider,
+) -> CommandResult<crate::cache::stems::StemCacheEntry> {
+    let mut remote_entry = entry.clone();
+    remote_entry.vocals_path =
+        publish_content_addressed_asset(local_root, remote_root, provider, &entry.vocals_path)?;
+    if !entry.accomp_path.trim().is_empty() {
+        remote_entry.accomp_path =
+            publish_content_addressed_asset(local_root, remote_root, provider, &entry.accomp_path)?;
+    }
+    remote_entry.drums_path = entry
+        .drums_path
+        .as_deref()
+        .map(|path| publish_content_addressed_asset(local_root, remote_root, provider, path))
+        .transpose()?;
+    remote_entry.bass_path = entry
+        .bass_path
+        .as_deref()
+        .map(|path| publish_content_addressed_asset(local_root, remote_root, provider, path))
+        .transpose()?;
+    remote_entry.other_path = entry
+        .other_path
+        .as_deref()
+        .map(|path| publish_content_addressed_asset(local_root, remote_root, provider, path))
+        .transpose()?;
+    Ok(remote_entry)
 }
 
 fn delete_remote_stem_cache_if_present(
@@ -696,14 +835,13 @@ fn upload_one_song_assets(
                     "song {song_id} must have cached stems before publishing to a remote repository"
                 )))
             })?;
-        if !same_root {
-            let source_stems_dir = local_root.resolve(&format!("stems/{song_id}"));
-            let destination_stems_dir = remote_root.resolve(&format!("stems/{song_id}"));
-            copy_directory_recursive(&source_stems_dir, &destination_stems_dir)?;
-        }
-        upsert_stem_entry(remote_connection, &stem_entry)?;
+        // Fixed `stems/<song-id>/<name>` paths are unsafe with concurrent
+        // writers: a CAS loser can overwrite assets referenced by the winner.
+        // Store every stem at a path derived from its bytes instead.
+        let remote_stem_entry =
+            publish_content_addressed_stem_entry(&stem_entry, local_root, remote_root, provider)?;
+        upsert_stem_entry(remote_connection, &remote_stem_entry)?;
         update_remote_song(remote_connection, song.clone(), "stems_remote")?;
-        provider.upload_directory(&format!("stems/{song_id}"))?;
         publish_artwork_derivatives(
             local_connection,
             local_root,
@@ -715,20 +853,28 @@ fn upload_one_song_assets(
         )?;
         sync_song_lyrics_to_remote(local_connection, remote_connection, song_id)?;
     } else {
+        // Store original/Media+G objects under byte-addressed paths as well.
+        // This supports legacy logical song IDs and prevents an overwrite race
+        // even when two writers publish different bytes for the same old path.
+        let mut remote_song = song.clone();
         if let Some(file_path) = song.file_path.as_deref() {
-            if !same_root {
-                copy_remote_song_assets(local_root, remote_root, file_path, file_path)?;
-            }
-            provider.upload_file(file_path)?;
+            remote_song.file_path = Some(publish_content_addressed_asset(
+                local_root,
+                remote_root,
+                provider,
+                file_path,
+            )?);
         }
         if let Some(cdg_path) = song.cdg_path.as_deref() {
-            if !same_root {
-                copy_remote_song_assets(local_root, remote_root, cdg_path, cdg_path)?;
-            }
-            provider.upload_file(cdg_path)?;
+            remote_song.cdg_path = Some(publish_content_addressed_asset(
+                local_root,
+                remote_root,
+                provider,
+                cdg_path,
+            )?);
         }
         delete_remote_stem_cache_if_present(remote_connection, remote_root, song_id)?;
-        update_remote_song(remote_connection, song.clone(), "original_remote")?;
+        update_remote_song(remote_connection, remote_song, "original_remote")?;
         publish_artwork_derivatives(
             local_connection,
             local_root,
@@ -780,14 +926,11 @@ pub(crate) fn reconcile_cas_boundary_ops(
     };
 
     for op in cas_ops {
-        // Asset reupload is best-effort because a post-CAS accepted-commit
-        // does not need another upload. The executor remains authoritative:
-        // for a pre-CAS candidate it verifies every referenced asset and
-        // persists the exact durable failure state on error.
-        let payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
-        for song_id in &payload.song_ids {
-            let _ = reupload_song_assets_for_recovery(state, remote_library, remote_root, song_id);
-        }
+        // Candidate-bound operations already completed asset upload and
+        // size-aware verification. Never replay assets from the mutable working
+        // copy here: a newer mutation may have replaced the same stem/artwork
+        // path. The executor verifies the immutable candidate plus its persisted
+        // remote-asset fingerprint before it can reach manifest CAS.
         // A CAS-boundary failure must stop this library queue. Continuing with
         // a younger Pending operation would either observe the unresolved CAS
         // as a false conflict or freeze the shared working DB while the older
@@ -846,6 +989,7 @@ pub(crate) fn may_have_crossed_cas_boundary(op: &OperationRow) -> bool {
     };
     payload.candidate_sha256.is_some()
         || payload.candidate_relative_path.is_some()
+        || payload.candidate_assets_fingerprint.is_some()
         || matches!(
             payload.protocol_step.as_deref(),
             Some("candidate_ready" | "candidate_uploaded")
@@ -1023,6 +1167,7 @@ pub(crate) fn merge_pending_ops_for_publish(
             }
             payload.candidate_size = None;
             payload.candidate_sha256 = None;
+            payload.candidate_assets_fingerprint = None;
             payload.protocol_step = None;
             primary.candidate_db_digest = None;
             let _ = crate::remote::control_db::delete_transfer_parts(&tx, primary_op_id);
@@ -1240,74 +1385,29 @@ fn commit_via_executor(
     execute_publish(&ctx, operation_id)
 }
 
-/// Re-upload song assets for a durable operation after a crash between the
-/// local mutation and the executor. Uploads are idempotent (overwrite /
-/// re-put). Assets are always read from the **operation's library working
-/// copy** (`remote_root`), never from the currently active library — the user
-/// may have switched libraries since the operation was created.
+/// Re-upload song assets for a durable pre-freeze operation after a crash.
+/// The same content-addressed publication helper is used as the immediate path;
+/// recovery must never resurrect the legacy mutable stem filenames.
 pub(crate) fn reupload_song_assets_for_recovery(
     state: &AppState,
     remote_library: &RegisteredLibrary,
     remote_root: &LibraryRoot,
     song_id: &str,
 ) -> CommandResult<()> {
-    // Source of truth is the operation library working copy.
-    let same_root = true;
     let local_connection = cache::open_database(&remote_root.database_path())
         .map_err(|error| database_error(error.to_string()))?;
     let mut remote_connection = cache::open_database(&remote_root.database_path())
         .map_err(|error| database_error(error.to_string()))?;
-    let song = cache::get_song_by_hash(&local_connection, song_id)
-        .map_err(|error| database_error(error.to_string()))?
-        .ok_or_else(|| {
-            CommandError::from(LibraryError::Internal(format!(
-                "song {song_id} was not found for publish recovery"
-            )))
-        })?;
     let provider = create_provider(&state.shell.app_data_dir, remote_library)?;
-
-    if song.is_separable() {
-        let stem_entry = cache::stems::get_cached_stem_entry(&local_connection, song_id)
-            .map_err(|error| database_error(error.to_string()))?
-            .ok_or_else(|| {
-                CommandError::from(LibraryError::Internal(format!(
-                    "song {song_id} must have cached stems before publishing to a remote repository"
-                )))
-            })?;
-        upsert_stem_entry(&remote_connection, &stem_entry)?;
-        update_remote_song(&mut remote_connection, song.clone(), "stems_remote")?;
-        provider.upload_directory(&format!("stems/{song_id}"))?;
-        publish_artwork_derivatives(
-            &local_connection,
-            remote_root,
-            remote_root,
-            &remote_connection,
-            &*provider,
-            song_id,
-            same_root,
-        )?;
-        sync_song_lyrics_to_remote(&local_connection, &remote_connection, song_id)?;
-    } else {
-        if let Some(file_path) = song.file_path.as_deref() {
-            provider.upload_file(file_path)?;
-        }
-        if let Some(cdg_path) = song.cdg_path.as_deref() {
-            provider.upload_file(cdg_path)?;
-        }
-        delete_remote_stem_cache_if_present(&remote_connection, remote_root, song_id)?;
-        update_remote_song(&mut remote_connection, song.clone(), "original_remote")?;
-        publish_artwork_derivatives(
-            &local_connection,
-            remote_root,
-            remote_root,
-            &remote_connection,
-            &*provider,
-            song_id,
-            same_root,
-        )?;
-        sync_song_lyrics_to_remote(&local_connection, &remote_connection, song_id)?;
-    }
-    Ok(())
+    upload_one_song_assets(
+        &local_connection,
+        &mut remote_connection,
+        remote_root,
+        remote_root,
+        provider.as_ref(),
+        song_id,
+        true,
+    )
 }
 
 pub(crate) fn publish_song_to_remote<R: tauri::Runtime>(
@@ -1418,6 +1518,7 @@ mod merge_tests {
         payload.candidate_relative_path = Some(candidate_rel.to_owned());
         payload.candidate_sha256 = Some(candidate_sha.to_owned());
         payload.candidate_size = Some(42);
+        payload.candidate_assets_fingerprint = Some("asset-fingerprint".to_owned());
         payload.protocol_step = Some("candidate_ready".to_owned());
         row.payload_json = payload.to_json().unwrap();
         row.candidate_db_digest = Some(candidate_sha.to_owned());
@@ -1443,6 +1544,18 @@ mod merge_tests {
             },
         )
         .unwrap();
+    }
+
+    #[test]
+    fn content_addressed_asset_paths_change_with_content_digest() {
+        let first =
+            super::content_addressed_asset_relative_path("stems/song/vocals.ogg", &"a".repeat(64))
+                .unwrap();
+        let second =
+            super::content_addressed_asset_relative_path("stems/song/vocals.ogg", &"b".repeat(64))
+                .unwrap();
+        assert_ne!(first, second);
+        assert_eq!(first, format!("stems/content/{}.ogg", "a".repeat(64)));
     }
 
     #[test]

@@ -811,6 +811,9 @@ pub(crate) fn refresh_existing_webdav_library(
     )
 }
 
+// Legacy path-relative upload helper. CAS publish hashes local staged bytes
+// and uploads via content-addressed paths instead.
+#[allow(dead_code)]
 pub(crate) fn upload_relative_file_to_remote(
     library: &RegisteredLibrary,
     secret: &WebDavSecret,
@@ -852,6 +855,8 @@ pub(crate) fn upload_relative_file_to_remote(
     Ok(())
 }
 
+// Kept for RemoteProvider::upload_directory; CAS publish no longer bulk-uploads.
+#[allow(dead_code)]
 pub(crate) fn upload_directory_to_remote(
     library: &RegisteredLibrary,
     secret: &WebDavSecret,

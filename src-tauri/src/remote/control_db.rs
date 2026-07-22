@@ -241,7 +241,8 @@ impl TransferDirection {
 ///   "protocol_step": "assets_done",
 ///   "candidate_relative_path": ".openkara/candidates/<op>.sqlite",
 ///   "candidate_size": 1234,
-///   "candidate_sha256": "..."
+///   "candidate_sha256": "...",
+///   "candidate_assets_fingerprint": "..."
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -272,6 +273,10 @@ pub struct OperationPayload {
     /// Hex SHA-256 of the immutable candidate. Upload sessions bind to this.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub candidate_sha256: Option<String>,
+    /// SHA-256 of the canonical path → (remote size, remote revision) map
+    /// captured before candidate freeze. Retry must reproduce this fingerprint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub candidate_assets_fingerprint: Option<String>,
 }
 
 impl OperationPayload {

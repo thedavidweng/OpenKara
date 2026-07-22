@@ -1061,18 +1061,17 @@ fn update_repository_state_after_pull(
     upsert_repository_state(connection, &row)
 }
 
-/// Reconcile repository state after a restart that completed the rename but
-/// not the local-state update.
+/// Reconcile repository state after a restart that completed a verified pull
+/// rename but not the final local-state update.
 ///
-/// If the active `openkara.db` digest differs from the recorded
-/// `local_db_digest`, the rename happened but the control DB was not updated.
-/// This updates `local_db_digest` to match the now-active database and marks
-/// the repository `Clean` (the candidate already passed integrity checks
-/// before the rename in the prior run).
+/// Digest divergence alone is not proof of a completed pull: a Dirty or
+/// Publishing working copy can differ because it contains unpublished local
+/// edits. Only a repository already known Clean with no active operation is
+/// eligible for this narrow crash-window repair. Every other state fails
+/// closed so automatic refresh cannot overwrite local mutations.
 ///
 /// Returns `Some(new_digest)` when reconciliation updated state, `None` when
-/// the recorded digest already matched (or no state row / no active DB
-/// exists).
+/// the recorded digest already matched or reconciliation was not provably safe.
 pub(crate) fn reconcile_database_state_after_restart(
     control_db_conn: &Connection,
     library_root: &LibraryRoot,
@@ -1081,6 +1080,9 @@ pub(crate) fn reconcile_database_state_after_restart(
     let Some(state) = get_repository_state(control_db_conn, library_id)? else {
         return Ok(None);
     };
+    if state.local_state != LocalState::Clean || state.active_operation_id.is_some() {
+        return Ok(None);
+    }
     let db_path = library_root.database_path();
     if !db_path.exists() {
         return Ok(None);
@@ -1789,13 +1791,14 @@ mod tests {
     // ---- Restart reconciliation tests ----
 
     #[test]
-    fn reconcile_after_restart_updates_stale_digest() {
+    fn reconcile_after_restart_updates_stale_digest_only_from_clean_state() {
         let (_lib_dir, root) = fresh_library_root();
         let (_db_dir, conn) = fresh_control_db();
         make_valid_library_db(&root.database_path());
         let digest = sha256_file(&root.database_path()).unwrap();
 
-        // Record a stale digest (simulates rename happened, state update did not).
+        // A verified pull starts from Clean. A crash after rename but before
+        // state update leaves Clean plus the previous digest.
         upsert_repository_state(
             &conn,
             &RepositoryStateRow {
@@ -1804,7 +1807,7 @@ mod tests {
                 committed_manifest_revision: None,
                 local_base_generation: 0,
                 local_db_digest: Some("stale-digest".to_owned()),
-                local_state: LocalState::Dirty,
+                local_state: LocalState::Clean,
                 active_operation_id: None,
                 last_success_at_ms: None,
                 last_error_code: None,
@@ -1824,6 +1827,46 @@ mod tests {
             .unwrap();
         assert_eq!(state.local_db_digest.as_deref(), Some(digest.as_str()));
         assert_eq!(state.local_state, LocalState::Clean);
+    }
+
+    #[test]
+    fn reconcile_after_restart_preserves_dirty_divergent_working_copy() {
+        let (_lib_dir, root) = fresh_library_root();
+        let (_db_dir, conn) = fresh_control_db();
+        make_valid_library_db(&root.database_path());
+
+        upsert_repository_state(
+            &conn,
+            &RepositoryStateRow {
+                library_id: "lib-1".to_owned(),
+                committed_generation: 3,
+                committed_manifest_revision: Some("manifest-rev-3".to_owned()),
+                local_base_generation: 3,
+                local_db_digest: Some("committed-digest".to_owned()),
+                local_state: LocalState::Dirty,
+                active_operation_id: Some("publish-local-edit".to_owned()),
+                last_success_at_ms: None,
+                last_error_code: None,
+                updated_at_ms: 1000,
+                repository_id: None,
+                writer_id: None,
+            },
+        )
+        .unwrap();
+
+        let updated =
+            reconcile_database_state_after_restart(&conn, &root, "lib-1").expect("reconcile");
+        assert!(updated.is_none());
+
+        let state = crate::remote::control_db::get_repository_state(&conn, "lib-1")
+            .unwrap()
+            .unwrap();
+        assert_eq!(state.local_state, LocalState::Dirty);
+        assert_eq!(state.local_db_digest.as_deref(), Some("committed-digest"));
+        assert_eq!(
+            state.active_operation_id.as_deref(),
+            Some("publish-local-edit")
+        );
     }
 
     #[test]

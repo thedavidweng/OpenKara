@@ -1057,6 +1057,8 @@ pub(crate) fn dropbox_upload_relative_file_to_remote(
     Ok(())
 }
 
+// Kept for RemoteProvider::upload_directory; CAS publish no longer bulk-uploads.
+#[allow(dead_code)]
 pub(crate) fn dropbox_upload_directory_to_remote(
     app_data_dir: &Path,
     library: &RegisteredLibrary,

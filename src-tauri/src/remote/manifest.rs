@@ -27,7 +27,9 @@
 //! .openkara-repository.json
 //! .openkara/
 //!   databases/
-//!     <generation>.sqlite
+//!     <generation>/
+//!       <operation-hash>.sqlite
+//!     <generation>.sqlite  # legacy read/GC compatibility
 //!   staging/
 //!     <operation-id>/...
 //!   tombstones/
@@ -40,6 +42,7 @@
 use crate::commands::error::{internal_error, CommandResult};
 use crate::remote::provider::RemoteProvider;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 
 /// Relative path of the manifest at the remote repository root.
@@ -178,6 +181,7 @@ pub(crate) fn validate_manifest(manifest: &RepositoryManifest) -> CommandResult<
             "repository manifest database_path must not be empty",
         ));
     }
+    validate_database_path(&manifest.database_path, manifest.generation)?;
     if manifest.database_sha256.trim().is_empty() {
         return Err(internal_error(
             "repository manifest database_sha256 must not be empty",
@@ -191,10 +195,79 @@ pub(crate) fn validate_manifest(manifest: &RepositoryManifest) -> CommandResult<
     Ok(())
 }
 
-/// Build the relative database path for a generation:
+/// Build the legacy relative database path for a generation:
 /// `.openkara/databases/<generation>.sqlite`.
+///
+/// New publications use [`database_path_for_operation`]. This helper remains
+/// for reading and collecting repositories written before operation-scoped
+/// database objects were introduced.
 pub(crate) fn database_path_for_generation(generation: i64) -> String {
     format!(".openkara/databases/{generation}.sqlite")
+}
+
+/// Directory containing every immutable candidate that raced for a generation.
+pub(crate) fn database_directory_for_generation(generation: i64) -> String {
+    format!(".openkara/databases/{generation}")
+}
+
+/// Build an operation-scoped immutable database path.
+///
+/// Two concurrent writers expecting the same generation must never upload to
+/// the same object before manifest CAS. Hashing the durable operation identity
+/// gives each writer a path-safe unique object while keeping the manifest schema
+/// unchanged and backward compatible.
+pub(crate) fn database_path_for_operation(generation: i64, operation_id: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(operation_id.as_bytes());
+    let operation_hash = crate::hash::hex_lower(hasher.finalize());
+    format!(
+        "{}/{operation_hash}.sqlite",
+        database_directory_for_generation(generation)
+    )
+}
+
+fn validate_database_path(path: &str, generation: i64) -> CommandResult<()> {
+    let prefix = ".openkara/databases/";
+    let Some(rest) = path.strip_prefix(prefix) else {
+        return Err(internal_error(
+            "repository manifest database_path must stay under .openkara/databases/",
+        ));
+    };
+
+    // Legacy schema-v1 path.
+    if rest == format!("{generation}.sqlite") {
+        return Ok(());
+    }
+
+    // Hardened schema-v1 path: `<generation>/<64-lower-hex>.sqlite`.
+    let Some((generation_part, filename)) = rest.split_once('/') else {
+        return Err(internal_error(
+            "repository manifest database_path has an invalid layout",
+        ));
+    };
+    if generation_part != generation.to_string()
+        || filename.contains('/')
+        || filename.contains('\\')
+    {
+        return Err(internal_error(
+            "repository manifest database_path generation does not match the manifest",
+        ));
+    }
+    let Some(digest) = filename.strip_suffix(".sqlite") else {
+        return Err(internal_error(
+            "repository manifest database_path must end in .sqlite",
+        ));
+    };
+    let valid_digest = digest.len() == 64
+        && digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'));
+    if !valid_digest {
+        return Err(internal_error(
+            "repository manifest database_path operation hash is invalid",
+        ));
+    }
+    Ok(())
 }
 
 /// Build the relative staging directory path for an operation:
@@ -324,6 +397,25 @@ mod tests {
     fn validate_rejects_unknown_schema_version() {
         let mut manifest = sample_manifest(1);
         manifest.schema_version = 99;
+        assert!(validate_manifest(&manifest).is_err());
+    }
+
+    #[test]
+    fn operation_database_paths_are_unique_within_one_generation() {
+        let first = database_path_for_operation(7, "operation-a");
+        let second = database_path_for_operation(7, "operation-b");
+        assert_ne!(first, second);
+        assert!(first.starts_with(".openkara/databases/7/"));
+        assert!(first.ends_with(".sqlite"));
+    }
+
+    #[test]
+    fn validate_rejects_database_path_traversal_and_generation_mismatch() {
+        let mut manifest = sample_manifest(3);
+        manifest.database_path = ".openkara/databases/../../outside.sqlite".to_owned();
+        assert!(validate_manifest(&manifest).is_err());
+
+        manifest.database_path = database_path_for_operation(4, "wrong-generation");
         assert!(validate_manifest(&manifest).is_err());
     }
 
