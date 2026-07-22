@@ -117,7 +117,7 @@ pub fn run_recovery(
     // 5. Repair repositories left Dirty/Publishing after operation Completed
     // when the process died between the two writes (pre-atomic completion)
     // and no non-terminal publish intent remains.
-    repair_completed_repository_state(connection, clock)?;
+    repair_completed_repository_state(connection, digest_resolver, clock)?;
 
     // PR#4: After recovery transitions, the caller (startup hook) invokes
     // `retry_pending_operations` to drive pending/retry_wait operations
@@ -128,8 +128,14 @@ pub fn run_recovery(
 
 /// When operation=Completed but repository stayed Dirty/Publishing (crash
 /// between the two writes) and no non-terminal publish ops remain, restore
-/// Clean from the latest completed operation.
-fn repair_completed_repository_state(connection: &Connection, clock: &Clock) -> CommandResult<()> {
+/// committed metadata from the latest completed operation. The repository is
+/// marked Clean only when the current working DB digest still equals that
+/// committed candidate; unknown or divergent bytes remain Dirty (fail closed).
+fn repair_completed_repository_state(
+    connection: &Connection,
+    digest_resolver: &dyn DigestResolver,
+    clock: &Clock,
+) -> CommandResult<()> {
     use crate::remote::control_db::{list_operations_for_library, OperationKind};
     use std::collections::HashSet;
 
@@ -145,7 +151,9 @@ fn repair_completed_repository_state(connection: &Connection, clock: &Clock) -> 
         let Some(mut repo) = get_repository_state(connection, &library_id)? else {
             continue;
         };
-        if matches!(repo.local_state, LocalState::Clean | LocalState::Conflicted) {
+        // Never erase a conflict or credential failure. This repair is only
+        // for the historical completion crash window.
+        if !matches!(repo.local_state, LocalState::Dirty | LocalState::Publishing) {
             continue;
         }
         let all = list_operations_for_library(connection, &library_id)?;
@@ -155,29 +163,51 @@ fn repair_completed_repository_state(connection: &Connection, clock: &Clock) -> 
         if has_outstanding {
             continue;
         }
-        // Latest completed publish for generation/digest recovery.
-        let mut completed_ops: Vec<_> = all
+
+        // Recover from the highest committed generation, not wall-clock order.
+        // Multiple completions can share a millisecond, and clocks can move
+        // backwards; target_generation is the repository ordering contract.
+        let latest = all
             .into_iter()
             .filter(|op| {
                 op.operation_kind == OperationKind::Publish && op.state == OperationState::Completed
             })
-            .collect();
-        completed_ops.sort_by_key(|op| op.updated_at_ms);
-        let Some(last) = completed_ops.last() else {
+            .filter_map(|op| {
+                Some((
+                    op.target_generation?,
+                    op.candidate_db_digest?,
+                    op.updated_at_ms,
+                ))
+            })
+            .max_by_key(|(generation, _, updated_at_ms)| (*generation, *updated_at_ms));
+        let Some((generation, committed_digest, _)) = latest else {
+            // We cannot prove what was committed. Collapse stale Publishing
+            // to Dirty, but never advertise a Clean repository.
+            repo.local_state = LocalState::Dirty;
+            repo.active_operation_id = None;
+            repo.updated_at_ms = now;
+            upsert_repository_state(connection, &repo)?;
             continue;
         };
-        if let Some(gen) = last.target_generation {
-            repo.committed_generation = gen;
-            repo.local_base_generation = gen;
-        }
-        if let Some(digest) = last.candidate_db_digest.clone() {
-            repo.local_db_digest = Some(digest);
-        }
-        repo.local_state = LocalState::Clean;
+
+        repo.committed_generation = generation;
+        repo.local_base_generation = generation;
+        repo.local_db_digest = Some(committed_digest.clone());
         repo.active_operation_id = None;
-        repo.last_success_at_ms = Some(now);
-        repo.last_error_code = None;
         repo.updated_at_ms = now;
+
+        let working_matches_committed = digest_resolver.working_db_digest(&library_id).as_deref()
+            == Some(committed_digest.as_str());
+        if working_matches_committed {
+            repo.local_state = LocalState::Clean;
+            repo.last_success_at_ms = Some(now);
+            repo.last_error_code = None;
+        } else {
+            // The completed generation is real, but the working copy contains
+            // additional or unknown bytes. Preserve it as unpublished state.
+            repo.local_state = LocalState::Dirty;
+            repo.last_error_code = Some("working_copy_diverged".to_owned());
+        }
         upsert_repository_state(connection, &repo)?;
     }
     Ok(())
@@ -239,7 +269,7 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
     use crate::remote::provider::create_provider;
     use crate::remote::sync::{
         load_registered_remote_library, may_have_crossed_cas_boundary,
-        merge_pending_ops_for_publish, select_library_publish_primary,
+        merge_pending_ops_for_publish, reconcile_cas_boundary_ops, select_library_publish_primary,
     };
     use crate::remote::types::load_app_config;
     use std::collections::HashMap;
@@ -315,7 +345,7 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
         let _ = execute_gc(provider.as_ref(), &exec_conn, library_id, &op.operation_id);
     }
 
-    for (library_id, ops) in publish_by_library {
+    for library_id in publish_by_library.into_keys() {
         let commit_lock = state.remote.commit_lock(&library_id);
         let _commit_guard = commit_lock
             .lock()
@@ -339,70 +369,15 @@ pub fn retry_pending_operations(state: &crate::AppState) -> CommandResult<()> {
         };
 
         // Phase 1: CAS-boundary ops first (accepted-commit / freeze resume).
-        let cas_ops: Vec<OperationRow> = {
-            let mut cas: Vec<OperationRow> = ops
-                .iter()
-                .filter(|op| may_have_crossed_cas_boundary(op))
-                .cloned()
-                .collect();
-            // Also re-read under lock in case concurrent publish advanced state.
-            if let Ok(conn) = state.remote.control_db.lock() {
-                if let Ok(all) =
-                    crate::remote::control_db::list_operations_for_library(&conn, &library_id)
-                {
-                    cas = all
-                        .into_iter()
-                        .filter(|op| {
-                            op.operation_kind == OperationKind::Publish
-                                && !op.state.is_terminal()
-                                && may_have_crossed_cas_boundary(op)
-                        })
-                        .collect();
-                }
-            }
-            cas.sort_by_key(|op| op.created_at_ms);
-            cas
-        };
-        for cas_op in cas_ops {
-            let payload =
-                crate::remote::control_db::OperationPayload::from_json(&cas_op.payload_json)
-                    .unwrap_or_default();
-            for song_id in &payload.song_ids {
-                let _ = crate::remote::sync::reupload_song_assets_for_recovery(
-                    state,
-                    &remote_library,
-                    &remote_root,
-                    song_id,
-                );
-            }
-            let control_db_path =
-                crate::remote::control_db::control_db_path(&state.shell.app_data_dir);
-            if let Ok(exec_conn) = crate::remote::control_db::open_control_db(&control_db_path) {
-                let (repository_id, writer_id) = {
-                    let conn = state.remote.control_db.lock().ok();
-                    let repo = conn
-                        .as_ref()
-                        .and_then(|c| get_repository_state(c, &library_id).ok().flatten());
-                    let repository_id = repo
-                        .as_ref()
-                        .and_then(|r| r.repository_id.clone())
-                        .unwrap_or_else(generate_repository_id);
-                    let writer_id = repo
-                        .as_ref()
-                        .and_then(|r| r.writer_id.clone())
-                        .unwrap_or_else(generate_writer_id);
-                    (repository_id, writer_id)
-                };
-                let ctx = PublishContext {
-                    control_db: &exec_conn,
-                    provider: provider.as_ref(),
-                    working_copy_root: remote_root.root(),
-                    library_id: &library_id,
-                    writer_id: &writer_id,
-                    repository_id: &repository_id,
-                };
-                let _ = execute_publish(&ctx, &cas_op.operation_id);
-            }
+        if let Err(error) =
+            reconcile_cas_boundary_ops(state, &library_id, &remote_library, &remote_root)
+        {
+            tracing::warn!(
+                "CAS-boundary recovery blocked publish queue for {}: {}",
+                library_id,
+                error.message
+            );
+            continue;
         }
 
         // Phase 2: merge remaining Pending/RetryWait (including future backoff).
@@ -1134,13 +1109,103 @@ mod tests {
         repo.active_operation_id = Some("op-done".to_owned());
         upsert_repository_state(&conn, &repo).unwrap();
 
-        run_recovery(&conn, &NullDigestResolver, &fixed_clock(9000)).unwrap();
+        let resolver = MapDigestResolver::new(
+            [("lib-1".to_owned(), "cand-digest".to_owned())]
+                .into_iter()
+                .collect(),
+        );
+        run_recovery(&conn, &resolver, &fixed_clock(9000)).unwrap();
 
         let repo = get_repository_state(&conn, "lib-1").unwrap().unwrap();
         assert_eq!(repo.local_state, LocalState::Clean);
         assert_eq!(repo.committed_generation, 3);
         assert_eq!(repo.local_db_digest.as_deref(), Some("cand-digest"));
         assert!(repo.active_operation_id.is_none());
+    }
+
+    #[test]
+    fn recovery_keeps_repo_dirty_when_completed_digest_differs_from_working_db() {
+        let (_dir, conn) = fresh_db();
+        let mut op = make_operation("op-done", "lib-1", OperationState::Completed, None, None);
+        op.target_generation = Some(3);
+        op.candidate_db_digest = Some("cand-digest".to_owned());
+        upsert_operation(&conn, &op).unwrap();
+        let mut repo = make_repo_state("lib-1", 2);
+        repo.local_state = LocalState::Publishing;
+        repo.active_operation_id = Some("op-done".to_owned());
+        upsert_repository_state(&conn, &repo).unwrap();
+
+        let resolver = MapDigestResolver::new(
+            [("lib-1".to_owned(), "new-local-edit".to_owned())]
+                .into_iter()
+                .collect(),
+        );
+        run_recovery(&conn, &resolver, &fixed_clock(9000)).unwrap();
+
+        let repo = get_repository_state(&conn, "lib-1").unwrap().unwrap();
+        assert_eq!(repo.local_state, LocalState::Dirty);
+        assert_eq!(repo.committed_generation, 3);
+        assert_eq!(repo.local_db_digest.as_deref(), Some("cand-digest"));
+        assert_eq!(
+            repo.last_error_code.as_deref(),
+            Some("working_copy_diverged")
+        );
+        assert!(repo.active_operation_id.is_none());
+    }
+
+    #[test]
+    fn recovery_keeps_repo_dirty_when_working_digest_is_unavailable() {
+        let (_dir, conn) = fresh_db();
+        let mut op = make_operation("op-done", "lib-1", OperationState::Completed, None, None);
+        op.target_generation = Some(3);
+        op.candidate_db_digest = Some("cand-digest".to_owned());
+        upsert_operation(&conn, &op).unwrap();
+        let mut repo = make_repo_state("lib-1", 2);
+        repo.local_state = LocalState::Dirty;
+        upsert_repository_state(&conn, &repo).unwrap();
+
+        run_recovery(&conn, &NullDigestResolver, &fixed_clock(9000)).unwrap();
+
+        let repo = get_repository_state(&conn, "lib-1").unwrap().unwrap();
+        assert_eq!(repo.local_state, LocalState::Dirty);
+        assert_eq!(
+            repo.last_error_code.as_deref(),
+            Some("working_copy_diverged")
+        );
+    }
+
+    #[test]
+    fn recovery_repairs_from_highest_completed_generation_not_latest_timestamp() {
+        let (_dir, conn) = fresh_db();
+        let mut older_generation =
+            make_operation("op-old", "lib-1", OperationState::Completed, None, None);
+        older_generation.target_generation = Some(2);
+        older_generation.candidate_db_digest = Some("digest-2".to_owned());
+        older_generation.updated_at_ms = 20_000;
+        upsert_operation(&conn, &older_generation).unwrap();
+
+        let mut newer_generation =
+            make_operation("op-new", "lib-1", OperationState::Completed, None, None);
+        newer_generation.target_generation = Some(3);
+        newer_generation.candidate_db_digest = Some("digest-3".to_owned());
+        newer_generation.updated_at_ms = 10_000;
+        upsert_operation(&conn, &newer_generation).unwrap();
+
+        let mut repo = make_repo_state("lib-1", 1);
+        repo.local_state = LocalState::Publishing;
+        upsert_repository_state(&conn, &repo).unwrap();
+        let resolver = MapDigestResolver::new(
+            [("lib-1".to_owned(), "digest-3".to_owned())]
+                .into_iter()
+                .collect(),
+        );
+
+        run_recovery(&conn, &resolver, &fixed_clock(30_000)).unwrap();
+
+        let repo = get_repository_state(&conn, "lib-1").unwrap().unwrap();
+        assert_eq!(repo.local_state, LocalState::Clean);
+        assert_eq!(repo.committed_generation, 3);
+        assert_eq!(repo.local_db_digest.as_deref(), Some("digest-3"));
     }
 
     // --- Per-library commit serialization ---

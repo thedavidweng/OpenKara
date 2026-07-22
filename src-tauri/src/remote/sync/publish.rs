@@ -757,7 +757,7 @@ fn upload_one_song_assets(
 /// lock, oldest first. Blocks later freezes until post-CAS completion is
 /// durable so a younger Pending cannot observe a foreign generation as
 /// conflict while the true CAS survivor is still RetryWait.
-fn reconcile_cas_boundary_ops(
+pub(crate) fn reconcile_cas_boundary_ops(
     state: &AppState,
     library_id: &str,
     remote_library: &RegisteredLibrary,
@@ -780,19 +780,47 @@ fn reconcile_cas_boundary_ops(
     };
 
     for op in cas_ops {
-        // Best-effort asset reupload for candidate_ready (not yet CAS'd).
-        // Accepted-commit path inside the executor is cheap and idempotent.
+        // Asset reupload is best-effort because a post-CAS accepted-commit
+        // does not need another upload. The executor remains authoritative:
+        // for a pre-CAS candidate it verifies every referenced asset and
+        // persists the exact durable failure state on error.
         let payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
         for song_id in &payload.song_ids {
             let _ = reupload_song_assets_for_recovery(state, remote_library, remote_root, song_id);
         }
-        let _ = commit_via_executor(
+        // A CAS-boundary failure must stop this library queue. Continuing with
+        // a younger Pending operation would either observe the unresolved CAS
+        // as a false conflict or freeze the shared working DB while the older
+        // change set is no longer represented by a live operation.
+        commit_via_executor(
             state,
             remote_library,
             library_id,
             &op.operation_id,
             remote_root,
-        );
+        )?;
+    }
+
+    // Defensive invariant: successful reconciliation must leave no live
+    // candidate-bound operation behind. Callers may start the merge/freeze
+    // phase only after this check succeeds.
+    let unresolved = {
+        let conn = state.remote.control_db.lock().map_err(|_| {
+            crate::commands::error::state_lock_error("control DB lock was poisoned")
+        })?;
+        list_operations_for_library(&conn, library_id)?
+            .into_iter()
+            .find(|op| {
+                op.operation_kind == OperationKind::Publish
+                    && !op.state.is_terminal()
+                    && may_have_crossed_cas_boundary(op)
+            })
+    };
+    if let Some(op) = unresolved {
+        return Err(CommandError::from(LibraryError::Internal(format!(
+            "publish queue remains blocked by unresolved CAS-boundary operation {}",
+            op.operation_id
+        ))));
     }
     Ok(())
 }
