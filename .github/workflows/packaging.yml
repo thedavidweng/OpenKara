@@ -72,9 +72,22 @@ jobs:
               "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
               > changed-files.txt
           elif [ "$EVENT_NAME" = "push" ]; then
+            # Fetch BEFORE so we can diff locally. The GitHub compare/commit
+            # APIs cap their `files` arrays at 300 entries, which would
+            # silently drop changed paths; a local git diff has no such
+            # limit. The checkout is shallow (fetch-depth: 1) so BEFORE is
+            # not in local history until we fetch it.
             if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-              git diff --name-only HEAD~1..HEAD > changed-files.txt
+              # New branch — deepen by one to get the parent of AFTER.
+              git fetch --no-tags --deepen=1 origin
+              if git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
+                git diff --name-only HEAD~1..HEAD > changed-files.txt
+              else
+                # Initial commit (no parent) — list all tracked files.
+                git ls-tree -r --name-only HEAD > changed-files.txt
+              fi
             else
+              git fetch --no-tags --depth=1 origin "$BEFORE"
               git diff --name-only "$BEFORE".."$AFTER" > changed-files.txt
             fi
           else
