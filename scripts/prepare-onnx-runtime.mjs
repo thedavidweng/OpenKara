@@ -199,6 +199,10 @@ if (
 
 ensureSystemTool("tar");
 
+// GNU tar (as shipped with Git Bash on Windows) interprets "C:\path" as a
+// remote host:path. --force-local makes it treat colons literally.
+const tarArgs = process.platform === "win32" ? ["--force-local"] : [];
+
 const tempRoot = mkdtempSync(join(os.tmpdir(), "openkara-ort-"));
 const archivePath = join(tempRoot, config.archiveName);
 const extractedDir = join(tempRoot, "extracted");
@@ -217,7 +221,7 @@ try {
 
   const archiveBytes = Buffer.from(await response.arrayBuffer());
   writeFileSync(archivePath, archiveBytes);
-  execFileSync("tar", ["-xf", archivePath, "-C", extractedDir], {
+  execFileSync("tar", ["-xf", archivePath, "-C", extractedDir, ...tarArgs], {
     stdio: "inherit",
   });
 
@@ -240,9 +244,11 @@ try {
       dependencyArchivePath,
       Buffer.from(await dependencyResponse.arrayBuffer()),
     );
-    execFileSync("tar", ["-xf", dependencyArchivePath, "-C", extractedDir], {
-      stdio: "inherit",
-    });
+    execFileSync(
+      "tar",
+      ["-xf", dependencyArchivePath, "-C", extractedDir, ...tarArgs],
+      { stdio: "inherit" },
+    );
   }
 
   const runtimeCandidate = walkFiles(extractedDir).find((filePath) =>
