@@ -15,7 +15,7 @@ jobs:
   apply-and-verify:
     if: github.head_ref == 'agent/fix-runtime-and-playback-clock'
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6.0.3
         with:
@@ -24,6 +24,9 @@ jobs:
 
       - name: Apply deterministic source patch
         run: python3 scripts/agent-runtime-playback-fix.py
+
+      - name: Prepare model and runtime test fixtures
+        run: bash scripts/setup.sh
 
       - name: Format
         working-directory: src-tauri
