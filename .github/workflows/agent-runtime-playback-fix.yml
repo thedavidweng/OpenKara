@@ -43,27 +43,26 @@ jobs:
 
       - name: Verify focused regressions
         working-directory: src-tauri
-        shell: bash
         run: |
-          set -o pipefail
-          {
-            cargo test -q audio::output::tests::resample_ratio_is_output_rate_over_input_rate
-            cargo test -q commands::runtime_bootstrap
-            cargo test -q separator::runtime_bootstrap
-          } 2>&1 | tee /tmp/focused-regressions.log
-
-      - name: Upload focused failure log
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: focused-regressions-log
-          path: /tmp/focused-regressions.log
-          if-no-files-found: error
-          retention-days: 1
+          cargo test -q audio::output::tests::resample_ratio_is_output_rate_over_input_rate
+          cargo test -q commands::runtime_bootstrap
+          cargo test -q separator::runtime_bootstrap
 
       - name: Verify Rust suite
         working-directory: src-tauri
-        run: cargo test -q
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test -q 2>&1 | tee /tmp/rust-suite.log
+
+      - name: Upload Rust suite failure log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-suite-log
+          path: /tmp/rust-suite.log
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Verify clippy
         working-directory: src-tauri
