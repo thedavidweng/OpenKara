@@ -1,0 +1,64 @@
+name: One-shot fix PR 176
+
+on:
+  push:
+    branches: [perf/bounded-separation-171]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: perf/bounded-separation-171
+          fetch-depth: 0
+      - name: Apply output-contract correction
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src-tauri/src/separator/inference.rs')
+          text = path.read_text()
+          old = '''    // Check for two-stem bundle: exactly 2 outputs with stem-like shapes.
+              if output_infos.len() == 2 {
+                  let both_stem_like = output_infos
+                      .iter()
+                      .all(|(_, dims)| looks_like_single_stem_output(dims, channels));
+                  if both_stem_like {
+                      return Ok(ModelOutputContract::TwoStemBundle);
+                  }
+              }
+          '''
+          new = '''    // A two-stem bundle is valid only when both outputs have stem-like
+              // shapes and their names unambiguously identify vocals and accompaniment.
+              // Generic names such as output_0/output_1 cannot be routed safely later.
+              if output_infos.len() == 2 {
+                  let both_stem_like = output_infos
+                      .iter()
+                      .all(|(_, dims)| looks_like_single_stem_output(dims, channels));
+                  let has_vocals = output_infos
+                      .iter()
+                      .any(|(name, _)| name == "vocals" || name.contains("vocal"));
+                  let has_accompaniment = output_infos.iter().any(|(name, _)| {
+                      name == "accompaniment" || name.contains("accomp")
+                  });
+                  if both_stem_like && has_vocals && has_accompaniment {
+                      return Ok(ModelOutputContract::TwoStemBundle);
+                  }
+              }
+          '''
+          if old not in text:
+              raise SystemExit('expected two-stem detector block not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          rm .github/workflows/one-shot-fix-176.yml
+          cargo fmt --manifest-path src-tauri/Cargo.toml --all
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src-tauri/src/separator/inference.rs .github/workflows/one-shot-fix-176.yml
+          git commit -m "fix(separator): require named two-stem outputs"
+          git push origin HEAD:perf/bounded-separation-171
