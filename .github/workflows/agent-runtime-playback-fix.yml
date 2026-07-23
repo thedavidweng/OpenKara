@@ -24,14 +24,115 @@ jobs:
 
       - name: Apply deterministic source patch
         run: |
-          python3 scripts/agent-runtime-playback-fix.py
           python3 <<'PY'
           from pathlib import Path
+
           path = Path("src-tauri/src/separator/model.rs")
           text = path.read_text()
           start = text.index("pub fn resolve_runtime_library_path_for_tests(")
           end = text.index("pub(crate) fn read_model_runtime_metadata", start)
           path.write_text(text[:start] + text[end:])
+          PY
+
+          python3 scripts/agent-runtime-playback-fix.py
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: Path, old: str, new: str) -> None:
+              text = path.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one match, found {count}: {old[:80]!r}")
+              path.write_text(text.replace(old, new, 1))
+
+          inference = Path("src-tauri/tests/phase3_inference.rs")
+          replace_once(
+              inference,
+              '''fn cleanup_dir(path: &Path) {
+              if path.exists() {
+                  fs::remove_dir_all(path).expect("temporary output directory should be removable");
+              }
+          }
+          ''',
+              '''fn cleanup_dir(path: &Path) {
+              if path.exists() {
+                  fs::remove_dir_all(path).expect("temporary output directory should be removable");
+              }
+          }
+
+          fn initialize_test_runtime() {
+              let runtime_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                  .join("generated")
+                  .join("onnxruntime")
+                  .join(model::ORT_RUNTIME_FILENAME);
+              model::ensure_runtime_loaded_from_path(&runtime_path)
+                  .expect("CI-prepared runtime should initialize explicitly for inference tests");
+          }
+          ''',
+          )
+          replace_once(
+              inference,
+              '''fn separates_fixture_audio_into_named_stems_and_writes_wavs() {
+              let loaded_model = model::load_from_path(''',
+              '''fn separates_fixture_audio_into_named_stems_and_writes_wavs() {
+              initialize_test_runtime();
+              let loaded_model = model::load_from_path(''',
+          )
+          replace_once(
+              inference,
+              '''fn separates_audio_longer_than_a_single_demucs_window() {
+              let loaded_model = model::load_from_path(''',
+              '''fn separates_audio_longer_than_a_single_demucs_window() {
+              initialize_test_runtime();
+              let loaded_model = model::load_from_path(''',
+          )
+
+          preprocess = Path("src-tauri/tests/phase3_preprocess.rs")
+          replace_once(
+              preprocess,
+              '''fn fixture_path(directory: &str, filename: &str) -> PathBuf {
+              PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                  .join("tests")
+                  .join("fixtures")
+                  .join(directory)
+                  .join(filename)
+          }
+          ''',
+              '''fn fixture_path(directory: &str, filename: &str) -> PathBuf {
+              PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                  .join("tests")
+                  .join("fixtures")
+                  .join(directory)
+                  .join(filename)
+          }
+
+          fn initialize_test_runtime() {
+              let runtime_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                  .join("generated")
+                  .join("onnxruntime")
+                  .join(model::ORT_RUNTIME_FILENAME);
+              model::ensure_runtime_loaded_from_path(&runtime_path)
+                  .expect("CI-prepared runtime should initialize explicitly for preprocess tests");
+          }
+          ''',
+          )
+          replace_once(
+              preprocess,
+              '''fn preprocesses_stereo_audio_into_channels_first_model_tensor() {
+              let loaded_model = model::load_from_path(''',
+              '''fn preprocesses_stereo_audio_into_channels_first_model_tensor() {
+              initialize_test_runtime();
+              let loaded_model = model::load_from_path(''',
+          )
+          replace_once(
+              preprocess,
+              '''fn prepares_model_input_from_pre_normalized_audio_without_re_normalizing() {
+              let loaded_model = model::load_from_path(''',
+              '''fn prepares_model_input_from_pre_normalized_audio_without_re_normalizing() {
+              initialize_test_runtime();
+              let loaded_model = model::load_from_path(''',
+          )
           PY
 
       - name: Prepare model and runtime test fixtures
