@@ -133,6 +133,40 @@ jobs:
               initialize_test_runtime();
               let loaded_model = model::load_from_path(''',
           )
+
+          job = Path("src-tauri/tests/phase3_job.rs")
+          replace_once(
+              job,
+              '''fn cleanup_dir(path: &Path) {
+              if path.exists() {
+                  fs::remove_dir_all(path).expect("temporary cache directory should be removable");
+              }
+          }
+          ''',
+              '''fn cleanup_dir(path: &Path) {
+              if path.exists() {
+                  fs::remove_dir_all(path).expect("temporary cache directory should be removable");
+              }
+          }
+
+          fn initialize_test_runtime() {
+              let runtime_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                  .join("generated")
+                  .join("onnxruntime")
+                  .join(model::ORT_RUNTIME_FILENAME);
+              model::ensure_runtime_loaded_from_path(&runtime_path)
+                  .expect("CI-prepared runtime should initialize explicitly for job tests");
+          }
+          ''',
+          )
+          replace_once(
+              job,
+              '''fn separation_job_reports_monotonic_progress_and_hits_cache_on_second_run() {
+              let connection''',
+              '''fn separation_job_reports_monotonic_progress_and_hits_cache_on_second_run() {
+              initialize_test_runtime();
+              let connection''',
+          )
           PY
 
       - name: Prepare model and runtime test fixtures
