@@ -201,12 +201,20 @@ fn detect_output_contract(model: &LoadedModel, channels: usize) -> Result<ModelO
         bail!("model has no outputs");
     }
 
-    // Check for two-stem bundle: exactly 2 outputs with stem-like shapes.
+    // A two-stem bundle is valid only when both outputs have stem-like
+    // shapes and their names unambiguously identify vocals and accompaniment.
+    // Generic names such as output_0/output_1 cannot be routed safely later.
     if output_infos.len() == 2 {
         let both_stem_like = output_infos
             .iter()
             .all(|(_, dims)| looks_like_single_stem_output(dims, channels));
-        if both_stem_like {
+        let has_vocals = output_infos
+            .iter()
+            .any(|(name, _)| name == "vocals" || name.contains("vocal"));
+        let has_accompaniment = output_infos
+            .iter()
+            .any(|(name, _)| name == "accompaniment" || name.contains("accomp"));
+        if both_stem_like && has_vocals && has_accompaniment {
             return Ok(ModelOutputContract::TwoStemBundle);
         }
     }
