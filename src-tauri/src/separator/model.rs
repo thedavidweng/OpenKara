@@ -10,7 +10,6 @@ use std::{
 
 pub const EMBEDDED_MODEL_FILENAME: &str = "htdemucs.onnx";
 pub const ORT_RUNTIME_VERSION: &str = "1.26.0";
-pub const ORT_RUNTIME_STAGING_DIR: &str = "generated/onnxruntime";
 
 #[cfg(target_os = "windows")]
 pub const ORT_RUNTIME_FILENAME: &str = "onnxruntime.dll";
@@ -67,77 +66,6 @@ pub fn default_model_path() -> PathBuf {
     default_model_path_for_filename(EMBEDDED_MODEL_FILENAME)
 }
 
-pub fn default_runtime_library_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join(ORT_RUNTIME_STAGING_DIR)
-        .join(ORT_RUNTIME_FILENAME)
-}
-
-fn bundled_runtime_library_path(resource_dir: &Path) -> PathBuf {
-    resource_dir.join("onnxruntime").join(ORT_RUNTIME_FILENAME)
-}
-
-#[cfg(target_vendor = "apple")]
-fn bundled_framework_runtime_library_path(resource_dir: &Path) -> Option<PathBuf> {
-    resource_dir
-        .parent()
-        .map(|contents_dir| contents_dir.join("Frameworks").join(ORT_RUNTIME_FILENAME))
-}
-
-fn resolve_runtime_library_path_with_staging(
-    resource_dir: Option<&Path>,
-    staged_path: &Path,
-) -> Result<PathBuf> {
-    if let Some(resource_dir) = resource_dir {
-        let bundled_path = bundled_runtime_library_path(resource_dir);
-        if bundled_path.is_file() {
-            return Ok(bundled_path);
-        }
-
-        #[cfg(target_vendor = "apple")]
-        if let Some(framework_path) = bundled_framework_runtime_library_path(resource_dir) {
-            if framework_path.is_file() {
-                return Ok(framework_path);
-            }
-        }
-    }
-
-    if staged_path.is_file() {
-        return Ok(staged_path.to_path_buf());
-    }
-
-    Err(anyhow::anyhow!(
-        "missing ONNX Runtime shared library {}; run ./scripts/setup.sh or node scripts/prepare-onnx-runtime.mjs",
-        staged_path.display()
-    ))
-}
-
-pub fn resolve_runtime_library_path(resource_dir: Option<&Path>) -> Result<PathBuf> {
-    resolve_runtime_library_path_with_staging(resource_dir, &default_runtime_library_path())
-}
-
-pub fn ensure_runtime_loaded(resource_dir: Option<&Path>) -> Result<&'static Path> {
-    if let Some(path) = ORT_RUNTIME_PATH.get() {
-        return Ok(path.as_path());
-    }
-
-    let _init_guard = ORT_RUNTIME_INIT_LOCK
-        .lock()
-        .map_err(|_| anyhow::anyhow!("onnx runtime initialization lock was poisoned"))?;
-    if let Some(path) = ORT_RUNTIME_PATH.get() {
-        return Ok(path.as_path());
-    }
-
-    let runtime_path = resolve_runtime_library_path(resource_dir)?;
-    init_ort_from_path(&runtime_path)?;
-    Ok(ORT_RUNTIME_PATH
-        .get()
-        .expect("runtime path should be stored after successful initialization")
-        .as_path())
-}
-
-/// Load the ORT runtime from a specific path. Used when the runtime is
-/// resolved from the managed app-data location rather than bundled resources.
 pub fn ensure_runtime_loaded_from_path(runtime_path: &Path) -> Result<&'static Path> {
     if let Some(path) = ORT_RUNTIME_PATH.get() {
         return Ok(path.as_path());
@@ -167,13 +95,6 @@ fn init_ort_from_path(runtime_path: &Path) -> Result<()> {
 
     let _ = ORT_RUNTIME_PATH.set(runtime_path.to_path_buf());
     Ok(())
-}
-
-pub fn resolve_runtime_library_path_for_tests(
-    resource_dir: Option<&Path>,
-    staged_path: &Path,
-) -> Result<PathBuf> {
-    resolve_runtime_library_path_with_staging(resource_dir, staged_path)
 }
 
 pub(crate) fn read_model_runtime_metadata(path: &Path) -> Result<ModelRuntimeMetadata> {
@@ -248,7 +169,10 @@ pub fn provider_diagnostic_summary(preference: ExecutionProviderPreference) -> S
 }
 
 fn load_with_ep(path: &Path, ep_preference: ExecutionProviderPreference) -> Result<LoadedModel> {
-    ensure_runtime_loaded(None)?;
+    anyhow::ensure!(
+        ORT_RUNTIME_PATH.get().is_some(),
+        "ONNX Runtime is not initialized; the managed runtime bootstrap must complete before model loading"
+    );
     let runtime_metadata = read_model_runtime_metadata(path)?;
 
     let model_path = path.to_path_buf();

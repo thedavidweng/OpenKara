@@ -33,6 +33,10 @@ pub struct ResamplerCache {
 }
 
 /// A cached resampler plus reusable scratch buffers for its input/output.
+fn resample_ratio(src_rate: u32, dst_rate: u32) -> f64 {
+    dst_rate as f64 / src_rate as f64
+}
+
 struct ResamplerEntry {
     resampler: Async<f32>,
     /// Reusable planar input buffer (1 channel, resized per callback).
@@ -103,7 +107,7 @@ impl ResamplerCache {
                 // trailing zeros on every call and producing repeating phase
                 // artifacts at callback boundaries.
                 let resampler = Async::<f32>::new_sinc(
-                    src_rate as f64 / dst_rate as f64,
+                    resample_ratio(src_rate, dst_rate),
                     1.1, // max relative ratio
                     &params,
                     output_chunk, // chunk_size = output frames per call
@@ -1828,7 +1832,20 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{forward_rendered_audio_to_airplay, render_output_buffer, write_output_samples};
+    use super::{
+        forward_rendered_audio_to_airplay, render_output_buffer, resample_ratio,
+        write_output_samples,
+    };
+
+    #[test]
+    fn resample_ratio_is_output_rate_over_input_rate() {
+        let upsample = resample_ratio(44_100, 48_000);
+        let downsample = resample_ratio(48_000, 44_100);
+        assert!((upsample - 48_000.0 / 44_100.0).abs() < f64::EPSILON);
+        assert!((downsample - 44_100.0 / 48_000.0).abs() < f64::EPSILON);
+        assert!(upsample > 1.0);
+        assert!(downsample < 1.0);
+    }
     use crate::airplay_stream::AirPlayAudioTap;
     use crate::audio::eq::EqProcessor;
     use crate::audio::playback::PlaybackController;

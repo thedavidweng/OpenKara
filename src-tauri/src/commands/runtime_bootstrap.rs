@@ -179,17 +179,26 @@ pub fn ensure_runtime_ready_or_install_blocking(
     emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
 ) -> CommandResult<PathBuf> {
     let snapshot = get_runtime_bootstrap_status_from_state(status)?;
+    if snapshot.state == RuntimeBootstrapState::Downloading {
+        return Err(model_bootstrap_error(format!(
+            "ONNX Runtime is still downloading to {}",
+            snapshot.runtime_path
+        )));
+    }
 
-    match snapshot.state {
-        RuntimeBootstrapState::Ready => {
-            let path = runtime_bootstrap::ensure_runtime_verified(app_data_dir)
-                .or_else(|_| crate::separator::model::resolve_runtime_library_path(None))
-                .map_err(|error| model_bootstrap_error(error.to_string()))?;
+    match runtime_bootstrap::resolve_runtime_installation(app_data_dir)
+        .map_err(|error| model_bootstrap_error(error.to_string()))?
+    {
+        runtime_bootstrap::RuntimeResolution::Ready(path) => {
             crate::separator::model::ensure_runtime_loaded_from_path(&path)
                 .map_err(|error| model_bootstrap_error(error.to_string()))?;
+            let ready = ready_snapshot(&path);
+            store_snapshot(status, ready.clone());
+            emit(RUNTIME_BOOTSTRAP_READY_EVENT, ready);
             Ok(path)
         }
-        RuntimeBootstrapState::Missing | RuntimeBootstrapState::Corrupt => {
+        runtime_bootstrap::RuntimeResolution::Corrupt(_) => {
+            let _ = runtime_bootstrap::delete_runtime(app_data_dir);
             install_and_load_runtime_blocking(app_data_dir, status, emit).map_err(|error| {
                 let command_error = model_bootstrap_error(error.to_string());
                 let failed = failed_snapshot(
@@ -201,16 +210,18 @@ pub fn ensure_runtime_ready_or_install_blocking(
                 command_error
             })
         }
-        RuntimeBootstrapState::Downloading => Err(model_bootstrap_error(format!(
-            "ONNX Runtime is still downloading to {}",
-            snapshot.runtime_path
-        ))),
-        RuntimeBootstrapState::Failed => Err(snapshot.error.unwrap_or_else(|| {
-            model_bootstrap_error(format!(
-                "ONNX Runtime bootstrap failed for {}",
-                snapshot.runtime_path
-            ))
-        })),
+        runtime_bootstrap::RuntimeResolution::Absent => {
+            install_and_load_runtime_blocking(app_data_dir, status, emit).map_err(|error| {
+                let command_error = model_bootstrap_error(error.to_string());
+                let failed = failed_snapshot(
+                    &runtime_bootstrap::managed_runtime_path(app_data_dir),
+                    command_error.clone(),
+                );
+                store_snapshot(status, failed.clone());
+                emit(RUNTIME_BOOTSTRAP_ERROR_EVENT, failed);
+                command_error
+            })
+        }
     }
 }
 
