@@ -40,12 +40,22 @@ fn model_path() -> PathBuf {
         .join("htdemucs.onnx")
 }
 
+fn initialize_test_runtime() {
+    let runtime_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("generated")
+        .join("onnxruntime")
+        .join(model::ORT_RUNTIME_FILENAME);
+    model::ensure_runtime_loaded_from_path(&runtime_path)
+        .expect("CI-prepared runtime should initialize explicitly for inference tests");
+}
+
 /// Run streaming FourStem separation on the given audio and return the
 /// output directory with the four stem OGG files.
 fn separate_four_stem_to_dir(
     decoded: openkara_lib::audio::decode::DecodedAudio,
     output_dir: &Path,
 ) -> openkara_lib::audio::decode::DecodedAudio {
+    initialize_test_runtime();
     let loaded_model = model::load_from_path(&model_path(), ExecutionProviderPreference::Cpu)
         .expect("demucs model should load");
 
