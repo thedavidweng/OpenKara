@@ -219,8 +219,8 @@ pub fn ensure_runtime_ready_or_install_blocking(
                 command_error
             })
         }
-        RuntimeResolution::Absent => {
-            install_and_load_runtime_blocking(app_data_dir, status, emit).map_err(|error| {
+        RuntimeResolution::Absent => install_and_load_runtime_blocking(app_data_dir, status, emit)
+            .map_err(|error| {
                 let command_error = model_bootstrap_error(error.to_string());
                 let failed = failed_snapshot(
                     &runtime_bootstrap::managed_runtime_path(app_data_dir),
@@ -229,8 +229,7 @@ pub fn ensure_runtime_ready_or_install_blocking(
                 store_snapshot(status, failed.clone());
                 emit(RUNTIME_BOOTSTRAP_ERROR_EVENT, failed);
                 command_error
-            })
-        }
+            }),
     }
 }
 
