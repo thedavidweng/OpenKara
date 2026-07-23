@@ -39,6 +39,8 @@ fn cleanup_dir(path: &Path) {
     }
 }
 
+// Tests initialize the CI-prepared shared library explicitly. Product code must
+// still resolve and verify Runtime exclusively through the managed installer.
 fn initialize_test_runtime() {
     let runtime_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("generated")
