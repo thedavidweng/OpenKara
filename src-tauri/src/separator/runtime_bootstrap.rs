@@ -101,14 +101,6 @@ pub fn managed_runtime_path(app_data_dir: &Path) -> PathBuf {
     managed_runtime_dir(app_data_dir).join(ORT_RUNTIME_FILENAME)
 }
 
-/// Development fallback: the staged runtime used during development builds.
-pub fn development_runtime_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("generated")
-        .join("onnxruntime")
-        .join(ORT_RUNTIME_FILENAME)
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeResolution {
     Ready(PathBuf),
@@ -123,15 +115,6 @@ pub fn resolve_runtime_installation(app_data_dir: &Path) -> Result<RuntimeResolu
             Ok(RuntimeResolution::Ready(managed))
         } else {
             Ok(RuntimeResolution::Corrupt(managed))
-        };
-    }
-
-    let dev = development_runtime_path();
-    if dev.is_file() {
-        return if verify_runtime_install(&dev)? {
-            Ok(RuntimeResolution::Ready(dev))
-        } else {
-            Ok(RuntimeResolution::Corrupt(dev))
         };
     }
 

@@ -29,8 +29,18 @@ fn cleanup_dir(path: &Path) {
     }
 }
 
+fn initialize_test_runtime() {
+    let runtime_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("generated")
+        .join("onnxruntime")
+        .join(model::ORT_RUNTIME_FILENAME);
+    model::ensure_runtime_loaded_from_path(&runtime_path)
+        .expect("CI-prepared runtime should initialize explicitly for inference tests");
+}
+
 #[test]
 fn separates_fixture_audio_into_named_stems_and_writes_wavs() {
+    initialize_test_runtime();
     let loaded_model = model::load_from_path(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("models")
@@ -86,6 +96,7 @@ fn separates_fixture_audio_into_named_stems_and_writes_wavs() {
 
 #[test]
 fn separates_audio_longer_than_a_single_demucs_window() {
+    initialize_test_runtime();
     let loaded_model = model::load_from_path(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("models")

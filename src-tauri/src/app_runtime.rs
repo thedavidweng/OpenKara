@@ -36,10 +36,8 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         )
     })?;
 
-    // The runtime may come from:
-    // 1. Bundled resources (legacy)
-    // 2. Managed app-data location (externalized path)
-    // 3. Development fallback (staged by prepare-onnx-runtime.mjs)
+    // ONNX Runtime has one installation authority: the verified managed
+    // app-data location. Development and packaged builds use the same path.
     let runtime_status_snapshot =
         separator::runtime_bootstrap::runtime_status_snapshot(&app_data_dir);
     let runtime_bootstrap_status = Arc::new(Mutex::new(
@@ -48,46 +46,18 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         ),
     ));
 
-    // Attempt to load the runtime if available. If not, the app starts
-    // without it — separation commands will gate on runtime readiness.
     if runtime_status_snapshot.status == separator::runtime_bootstrap::RuntimeStatus::Ready {
-        let runtime_path = separator::runtime_bootstrap::ensure_runtime_verified(&app_data_dir)
-            .or_else(|_| separator::model::resolve_runtime_library_path(Some(&app_resource_dir)));
-        match runtime_path {
+        match separator::runtime_bootstrap::ensure_runtime_verified(&app_data_dir) {
             Ok(path) => {
                 if let Err(err) = separator::model::ensure_runtime_loaded_from_path(&path) {
                     eprintln!(
-                        "warning: failed to load ONNX Runtime from {}: {err:#}",
+                        "warning: failed to load managed ONNX Runtime from {}: {err:#}",
                         path.display()
                     );
                 }
             }
             Err(err) => {
-                eprintln!("warning: ONNX Runtime not available: {err:#}");
-            }
-        }
-    } else {
-        // Try the legacy bundled path as a fallback.
-        match separator::model::resolve_runtime_library_path(Some(&app_resource_dir)) {
-            Ok(path) => {
-                if let Err(err) = separator::model::ensure_runtime_loaded_from_path(&path) {
-                    eprintln!("warning: failed to load bundled ONNX Runtime: {err:#}");
-                }
-                let ready_snapshot = commands::runtime_bootstrap::RuntimeBootstrapStatusSnapshot {
-                    state: commands::runtime_bootstrap::RuntimeBootstrapState::Ready,
-                    runtime_path: path.display().to_string(),
-                    downloaded_bytes: None,
-                    total_bytes: None,
-                    version: separator::runtime_bootstrap::ORT_RUNTIME_VERSION.to_owned(),
-                    error: None,
-                };
-                if let Ok(mut current) = runtime_bootstrap_status.lock() {
-                    *current = ready_snapshot;
-                }
-            }
-            Err(err) => {
-                eprintln!("warning: ONNX Runtime not available at startup: {err:#}");
-                eprintln!("  Separation will be unavailable until the runtime is downloaded.");
+                eprintln!("warning: managed ONNX Runtime verification failed: {err:#}");
             }
         }
     }

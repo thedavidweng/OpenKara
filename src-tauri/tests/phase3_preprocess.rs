@@ -14,8 +14,18 @@ fn fixture_path(directory: &str, filename: &str) -> PathBuf {
         .join(filename)
 }
 
+fn initialize_test_runtime() {
+    let runtime_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("generated")
+        .join("onnxruntime")
+        .join(model::ORT_RUNTIME_FILENAME);
+    model::ensure_runtime_loaded_from_path(&runtime_path)
+        .expect("CI-prepared runtime should initialize explicitly for preprocess tests");
+}
+
 #[test]
 fn preprocesses_stereo_audio_into_channels_first_model_tensor() {
+    initialize_test_runtime();
     let loaded_model = model::load_from_path(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("models")
@@ -68,6 +78,7 @@ fn resamples_audio_with_a_non_demucs_sample_rate() {
 
 #[test]
 fn prepares_model_input_from_pre_normalized_audio_without_re_normalizing() {
+    initialize_test_runtime();
     let loaded_model = model::load_from_path(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("models")

@@ -115,8 +115,10 @@ describe("Tooltip", () => {
   });
 
   test("shows after hover delay and hides after pointer leave", async () => {
+    // Use a delay well above user.hover() latency so the "not yet shown"
+    // assertion is reliable under parallel test load.
     renderTooltip(
-      <Tooltip label="Import files" delayDuration={20}>
+      <Tooltip label="Import files" delayDuration={300}>
         <button type="button">Import</button>
       </Tooltip>,
     );
@@ -126,13 +128,13 @@ describe("Tooltip", () => {
     expect(getTooltip()).toBeNull();
 
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await new Promise((resolve) => setTimeout(resolve, 350));
     });
     expect(getTooltip()?.textContent).toContain("Import files");
 
     await user.unhover(wrapper);
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 130));
+      await new Promise((resolve) => setTimeout(resolve, 200));
     });
     expect(getTooltip()).toBeNull();
   });
