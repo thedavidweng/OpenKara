@@ -167,6 +167,40 @@ jobs:
               initialize_test_runtime();
               let connection''',
           )
+
+          flow = Path("src-tauri/tests/phase5_flow.rs")
+          replace_once(
+              flow,
+              '''fn cleanup_dir(path: &Path) {
+              if path.exists() {
+                  fs::remove_dir_all(path).expect("temporary directory should be removable");
+              }
+          }
+          ''',
+              '''fn cleanup_dir(path: &Path) {
+              if path.exists() {
+                  fs::remove_dir_all(path).expect("temporary directory should be removable");
+              }
+          }
+
+          fn initialize_test_runtime() {
+              let runtime_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                  .join("generated")
+                  .join("onnxruntime")
+                  .join(model::ORT_RUNTIME_FILENAME);
+              model::ensure_runtime_loaded_from_path(&runtime_path)
+                  .expect("CI-prepared runtime should initialize explicitly for backend flow tests");
+          }
+          ''',
+          )
+          replace_once(
+              flow,
+              '''fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode() {
+              let connection''',
+              '''fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode() {
+              initialize_test_runtime();
+              let connection''',
+          )
           PY
 
       - name: Prepare model and runtime test fixtures
