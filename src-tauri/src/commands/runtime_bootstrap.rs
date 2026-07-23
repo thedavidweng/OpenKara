@@ -1,8 +1,6 @@
 use crate::{
     commands::error::{internal_error, model_bootstrap_error, CommandError, CommandResult},
-    separator::runtime_bootstrap::{
-        self, RuntimeResolution, RuntimeStatus, RuntimeStatusSnapshot,
-    },
+    separator::runtime_bootstrap::{self, RuntimeResolution, RuntimeStatus, RuntimeStatusSnapshot},
     AppState,
 };
 use anyhow::Context;
