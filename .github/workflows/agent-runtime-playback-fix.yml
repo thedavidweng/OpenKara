@@ -23,7 +23,16 @@ jobs:
           ref: agent/fix-runtime-and-playback-clock
 
       - name: Apply deterministic source patch
-        run: python3 scripts/agent-runtime-playback-fix.py
+        run: |
+          python3 scripts/agent-runtime-playback-fix.py
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path("src-tauri/src/separator/model.rs")
+          text = path.read_text()
+          start = text.index("pub fn resolve_runtime_library_path_for_tests(")
+          end = text.index("pub(crate) fn read_model_runtime_metadata", start)
+          path.write_text(text[:start] + text[end:])
+          PY
 
       - name: Prepare model and runtime test fixtures
         run: bash scripts/setup.sh
