@@ -1,6 +1,8 @@
 use crate::{
     commands::error::{internal_error, model_bootstrap_error, CommandError, CommandResult},
-    separator::runtime_bootstrap::{self, RuntimeStatus, RuntimeStatusSnapshot},
+    separator::runtime_bootstrap::{
+        self, RuntimeResolution, RuntimeStatus, RuntimeStatusSnapshot,
+    },
     AppState,
 };
 use anyhow::Context;
@@ -173,23 +175,32 @@ pub fn install_and_load_runtime_blocking(
     Ok(installed)
 }
 
+fn download_state_blocks_recovery(
+    state: &RuntimeBootstrapState,
+    resolution: &RuntimeResolution,
+) -> bool {
+    *state == RuntimeBootstrapState::Downloading
+        && !matches!(resolution, RuntimeResolution::Ready(_))
+}
+
 pub fn ensure_runtime_ready_or_install_blocking(
     app_data_dir: &Path,
     status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
     emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
 ) -> CommandResult<PathBuf> {
     let snapshot = get_runtime_bootstrap_status_from_state(status)?;
-    if snapshot.state == RuntimeBootstrapState::Downloading {
+    let resolution = runtime_bootstrap::resolve_runtime_installation(app_data_dir)
+        .map_err(|error| model_bootstrap_error(error.to_string()))?;
+
+    if download_state_blocks_recovery(&snapshot.state, &resolution) {
         return Err(model_bootstrap_error(format!(
             "ONNX Runtime is still downloading to {}",
             snapshot.runtime_path
         )));
     }
 
-    match runtime_bootstrap::resolve_runtime_installation(app_data_dir)
-        .map_err(|error| model_bootstrap_error(error.to_string()))?
-    {
-        runtime_bootstrap::RuntimeResolution::Ready(path) => {
+    match resolution {
+        RuntimeResolution::Ready(path) => {
             crate::separator::model::ensure_runtime_loaded_from_path(&path)
                 .map_err(|error| model_bootstrap_error(error.to_string()))?;
             let ready = ready_snapshot(&path);
@@ -197,7 +208,7 @@ pub fn ensure_runtime_ready_or_install_blocking(
             emit(RUNTIME_BOOTSTRAP_READY_EVENT, ready);
             Ok(path)
         }
-        runtime_bootstrap::RuntimeResolution::Corrupt(_) => {
+        RuntimeResolution::Corrupt(_) => {
             let _ = runtime_bootstrap::delete_runtime(app_data_dir);
             install_and_load_runtime_blocking(app_data_dir, status, emit).map_err(|error| {
                 let command_error = model_bootstrap_error(error.to_string());
@@ -210,7 +221,7 @@ pub fn ensure_runtime_ready_or_install_blocking(
                 command_error
             })
         }
-        runtime_bootstrap::RuntimeResolution::Absent => {
+        RuntimeResolution::Absent => {
             install_and_load_runtime_blocking(app_data_dir, status, emit).map_err(|error| {
                 let command_error = model_bootstrap_error(error.to_string());
                 let failed = failed_snapshot(
@@ -298,4 +309,33 @@ pub fn sync_runtime_bootstrap_status(
     })?;
     *guard = bootstrap_snapshot.clone();
     Ok(bootstrap_snapshot)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{download_state_blocks_recovery, RuntimeBootstrapState};
+    use crate::separator::runtime_bootstrap::RuntimeResolution;
+    use std::path::PathBuf;
+
+    #[test]
+    fn stale_downloading_state_yields_to_ready_disk_installation() {
+        let resolution = RuntimeResolution::Ready(PathBuf::from("managed-runtime"));
+
+        assert!(!download_state_blocks_recovery(
+            &RuntimeBootstrapState::Downloading,
+            &resolution,
+        ));
+    }
+
+    #[test]
+    fn active_download_remains_blocked_until_disk_installation_is_ready() {
+        assert!(download_state_blocks_recovery(
+            &RuntimeBootstrapState::Downloading,
+            &RuntimeResolution::Absent,
+        ));
+        assert!(download_state_blocks_recovery(
+            &RuntimeBootstrapState::Downloading,
+            &RuntimeResolution::Corrupt(PathBuf::from("managed-runtime")),
+        ));
+    }
 }
