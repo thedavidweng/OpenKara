@@ -1,15 +1,6 @@
 from pathlib import Path
 
 
-def replace_once(path: str, old: str, new: str) -> None:
-    p = Path(path)
-    text = p.read_text()
-    count = text.count(old)
-    if count != 1:
-        raise SystemExit(f"{path}: expected one match, found {count}: {old[:80]!r}")
-    p.write_text(text.replace(old, new, 1))
-
-
 output = Path("src-tauri/src/audio/output.rs")
 text = output.read_text()
 old = """                let resampler = Async::<f32>::new_sinc(
@@ -134,11 +125,8 @@ replacement = '''pub fn ensure_runtime_ready_or_install_blocking(
             emit(RUNTIME_BOOTSTRAP_READY_EVENT, ready);
             Ok(path)
         }
-        runtime_bootstrap::RuntimeResolution::Corrupt(path) => {
-            let _ = std::fs::remove_file(&path);
-            if let Ok(manifest) = crate::separator::verified_manifest::verified_manifest_path(&path) {
-                let _ = std::fs::remove_file(manifest);
-            }
+        runtime_bootstrap::RuntimeResolution::Corrupt(_) => {
+            let _ = runtime_bootstrap::delete_runtime(app_data_dir);
             install_and_load_runtime_blocking(app_data_dir, status, emit).map_err(|error| {
                 let command_error = model_bootstrap_error(error.to_string());
                 let failed = failed_snapshot(
@@ -199,11 +187,70 @@ replacement = '''    // ONNX Runtime has one installation authority: the verifie
 '''
 app_runtime.write_text(text[:start] + replacement + text[end:])
 
+phase3_model = Path("src-tauri/tests/phase3_model.rs")
+text = phase3_model.read_text()
+text = text.replace(
+    "use openkara_lib::{config::ExecutionProviderPreference, separator::model};",
+    "use openkara_lib::{\n    config::ExecutionProviderPreference,\n    separator::{model, runtime_bootstrap},\n};",
+)
+start = text.index("#[test]\nfn resolves_staged_runtime_library_path()")
+end = text.index("#[test]\nfn loads_embedded_demucs_model_session()", start)
+replacement = '''#[test]
+fn managed_runtime_path_is_the_only_installation_location() {
+    let app_data_dir = support::unique_temp_path("phase3-managed-runtime");
+    let runtime_path = runtime_bootstrap::managed_runtime_path(&app_data_dir);
+
+    assert_eq!(
+        runtime_path,
+        app_data_dir
+            .join("runtime")
+            .join(model::ORT_RUNTIME_FILENAME)
+    );
+}
+
+fn initialize_test_runtime() {
+    let runtime_path = repo_root()
+        .join("generated")
+        .join("onnxruntime")
+        .join(model::ORT_RUNTIME_FILENAME);
+    model::ensure_runtime_loaded_from_path(&runtime_path)
+        .expect("CI-prepared runtime should initialize explicitly for model tests");
+}
+
+'''
+text = text[:start] + replacement + text[end:]
+text = text.replace(
+    "fn loads_embedded_demucs_model_session() {\n    let loaded = model::load_from_path(",
+    "fn loads_embedded_demucs_model_session() {\n    initialize_test_runtime();\n    let loaded = model::load_from_path(",
+    1,
+)
+text = text.replace(
+    "fn fails_with_clear_error_for_missing_model_file() {\n    let missing_path",
+    "fn fails_with_clear_error_for_missing_model_file() {\n    initialize_test_runtime();\n    let missing_path",
+    1,
+)
+missing_start = text.index("#[test]\nfn fails_with_clear_error_for_missing_runtime_library()")
+missing_end = text.index("#[test]\nfn describes_cpu_only_provider_path()", missing_start)
+text = text[:missing_start] + text[missing_end:]
+text = text.replace(
+    "fn loads_embedded_demucs_model_with_xnnpack_preference() {\n    let loaded = model::load_from_path(",
+    "fn loads_embedded_demucs_model_with_xnnpack_preference() {\n    initialize_test_runtime();\n    let loaded = model::load_from_path(",
+    1,
+)
+phase3_model.write_text(text)
+
 for p in Path("src-tauri").rglob("*.rs"):
     if p == model:
         continue
-    if "resolve_runtime_library_path_for_tests" in p.read_text():
-        raise SystemExit(f"retired resolver still referenced by {p}")
+    t = p.read_text()
+    for retired in (
+        "resolve_runtime_library_path_for_tests",
+        "resolve_runtime_library_path(",
+        "default_runtime_library_path",
+        "ORT_RUNTIME_STAGING_DIR",
+    ):
+        if retired in t:
+            raise SystemExit(f"retired runtime resolver {retired!r} still referenced by {p}")
 
 Path(".github/workflows/agent-runtime-playback-fix.yml").unlink()
 Path("scripts/agent-runtime-playback-fix.py").unlink()
