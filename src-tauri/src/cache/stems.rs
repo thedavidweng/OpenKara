@@ -1,5 +1,4 @@
 use crate::commands::unix_timestamp;
-use crate::separator::{inference::SeparationResult, mix};
 use crate::{config::StemMode, library::Song, library_root::LibraryRoot, metadata};
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection};
@@ -46,39 +45,6 @@ pub fn stem_cache_root(stems_base: &Path) -> PathBuf {
 
 pub fn stem_directory(stems_base: &Path, song_hash: &str) -> PathBuf {
     stems_base.join(song_hash)
-}
-
-pub fn get_or_create_stem_cache<F>(
-    connection: &Connection,
-    stems_base: &Path,
-    library_root: &LibraryRoot,
-    source_song: &Song,
-    source_audio_path: &Path,
-    song_hash: &str,
-    stem_mode: StemMode,
-    model_variant: &str,
-    generate: F,
-) -> Result<StemCacheResult>
-where
-    F: FnOnce() -> Result<SeparationResult>,
-{
-    ensure_song_exists(connection, song_hash)?;
-
-    if let Some(existing) = get_valid_cached_stem_entry(connection, library_root, song_hash)? {
-        return Ok(existing);
-    }
-
-    let separation = generate().context("failed to generate stems for cache population")?;
-    store_generated_stem_cache(
-        connection,
-        stems_base,
-        source_song,
-        source_audio_path,
-        song_hash,
-        &separation,
-        stem_mode,
-        model_variant,
-    )
 }
 
 pub fn list_all_stem_entries(connection: &Connection) -> rusqlite::Result<Vec<StemCacheEntry>> {
@@ -134,17 +100,10 @@ pub fn get_valid_cached_stem_entry(
     Ok(None)
 }
 
-pub fn store_generated_stem_cache(
-    connection: &Connection,
-    stems_base: &Path,
-    source_song: &Song,
-    source_audio_path: &Path,
-    song_hash: &str,
-    separation: &SeparationResult,
-    stem_mode: StemMode,
-    model_variant: &str,
-) -> Result<StemCacheResult> {
-    ensure_song_exists(connection, song_hash)?;
+/// Prepare a clean stem cache directory for a streaming separation run.
+/// Any previous final files, temporary files, and obsolete checkpoint data
+/// are removed. Interrupted runs restart from chunk 0.
+pub fn prepare_stem_directory(stems_base: &Path, song_hash: &str) -> Result<PathBuf> {
     let stem_directory = stem_directory(stems_base, song_hash);
 
     if stem_directory.exists() {
@@ -162,91 +121,56 @@ pub fn store_generated_stem_cache(
         )
     })?;
 
+    Ok(stem_directory)
+}
+
+/// Register a stem cache entry in the database after the streaming OGG
+/// writers have finalized their output files. The streaming writers
+/// handle file creation, metadata preservation, and atomic promotion;
+/// this function only records the DB entry.
+///
+/// The caller must ensure the OGG files already exist at the expected
+/// paths (created by `StreamingOggWriter::finish`).
+pub fn register_streamed_stem_cache(
+    connection: &Connection,
+    stems_base: &Path,
+    song_hash: &str,
+    stem_mode: StemMode,
+    model_variant: &str,
+) -> Result<StemCacheResult> {
+    ensure_song_exists(connection, song_hash)?;
+    let stem_directory = stem_directory(stems_base, song_hash);
+
     let entry = match stem_mode {
-        StemMode::TwoStem => {
-            // Cached stems intentionally stay in OGG/Vorbis so large libraries do
-            // not balloon in size after separation jobs. The original imported
-            // song remains in `media/`, so this cache favors compact playback.
-            let vocals_stem = separation
-                .stems
-                .iter()
-                .find(|s| s.name == "vocals")
-                .context("separation result missing vocals stem")?;
-            let vocals_path = stem_directory.join(VOCALS_FILENAME);
-            write_stem_with_metadata(
-                source_audio_path,
-                &vocals_path,
-                &stem_title(source_song, source_audio_path, "Acapella")?,
-                &vocals_stem.audio,
-            )
-            .context("failed to write vocals ogg into cache")?;
-
-            let accompaniment = mix::mix_accompaniment(separation)
-                .context("failed to mix accompaniment for stem cache")?;
-            let accompaniment_path = stem_directory.join(ACCOMPANIMENT_FILENAME);
-            write_stem_with_metadata(
-                source_audio_path,
-                &accompaniment_path,
-                &stem_title(source_song, source_audio_path, "Instrumental")?,
-                &accompaniment,
-            )
-            .context("failed to write accompaniment ogg into cache")?;
-
-            StemCacheEntry {
-                song_hash: song_hash.to_owned(),
-                vocals_path: format!("{STEMS_CACHE_DIRECTORY}/{song_hash}/{VOCALS_FILENAME}"),
-                accomp_path: format!(
-                    "{STEMS_CACHE_DIRECTORY}/{song_hash}/{ACCOMPANIMENT_FILENAME}"
-                ),
-                separated_at: unix_timestamp(),
-                drums_path: None,
-                bass_path: None,
-                other_path: None,
-                model_variant: model_variant.to_owned(),
-            }
-        }
-        StemMode::FourStem => {
-            // Keep the four-stem cache in the same compact format for the same
-            // reason: these files are reusable playback artifacts, not master exports.
-            for stem in &separation.stems {
-                let output_path = stem_directory.join(format!("{}.ogg", stem.name));
-                let stem_title = match stem.name.as_str() {
-                    "vocals" => stem_title(source_song, source_audio_path, "Acapella")?,
-                    "drums" => stem_title(source_song, source_audio_path, "Drums")?,
-                    "bass" => stem_title(source_song, source_audio_path, "Bass")?,
-                    "other" => stem_title(source_song, source_audio_path, "Other")?,
-                    other => {
-                        return Err(anyhow::anyhow!(
-                            "unexpected stem name {other} in separation result"
-                        ));
-                    }
-                };
-                write_stem_with_metadata(source_audio_path, &output_path, &stem_title, &stem.audio)
-                    .with_context(|| {
-                        format!("failed to write {} ogg into cache", stem.name.as_str())
-                    })?;
-            }
-
-            StemCacheEntry {
-                song_hash: song_hash.to_owned(),
-                vocals_path: format!("{STEMS_CACHE_DIRECTORY}/{song_hash}/{VOCALS_FILENAME}"),
-                // `accomp_path` stays non-null because older cache/schema callers
-                // assume the column is always present even when FourStem mode uses
-                // the individual drums/bass/other files instead.
-                accomp_path: String::new(),
-                separated_at: unix_timestamp(),
-                drums_path: Some(format!(
-                    "{STEMS_CACHE_DIRECTORY}/{song_hash}/{DRUMS_FILENAME}"
-                )),
-                bass_path: Some(format!(
-                    "{STEMS_CACHE_DIRECTORY}/{song_hash}/{BASS_FILENAME}"
-                )),
-                other_path: Some(format!(
-                    "{STEMS_CACHE_DIRECTORY}/{song_hash}/{OTHER_FILENAME}"
-                )),
-                model_variant: model_variant.to_owned(),
-            }
-        }
+        StemMode::TwoStem => StemCacheEntry {
+            song_hash: song_hash.to_owned(),
+            vocals_path: format!("{STEMS_CACHE_DIRECTORY}/{song_hash}/{VOCALS_FILENAME}"),
+            accomp_path: format!("{STEMS_CACHE_DIRECTORY}/{song_hash}/{ACCOMPANIMENT_FILENAME}"),
+            separated_at: unix_timestamp(),
+            drums_path: None,
+            bass_path: None,
+            other_path: None,
+            model_variant: model_variant.to_owned(),
+        },
+        StemMode::FourStem => StemCacheEntry {
+            song_hash: song_hash.to_owned(),
+            vocals_path: format!("{STEMS_CACHE_DIRECTORY}/{song_hash}/{VOCALS_FILENAME}"),
+            // `accomp_path` stays non-null because older cache/schema callers
+            // assume the column is always present even when FourStem mode uses
+            // the individual drums/bass/other files instead.
+            accomp_path: String::new(),
+            separated_at: unix_timestamp(),
+            drums_path: Some(format!(
+                "{STEMS_CACHE_DIRECTORY}/{song_hash}/{DRUMS_FILENAME}"
+            )),
+            bass_path: Some(format!(
+                "{STEMS_CACHE_DIRECTORY}/{song_hash}/{BASS_FILENAME}"
+            )),
+            other_path: Some(format!(
+                "{STEMS_CACHE_DIRECTORY}/{song_hash}/{OTHER_FILENAME}"
+            )),
+            model_variant: model_variant.to_owned(),
+        },
     };
 
     upsert_stem_cache_entry(connection, &entry).context("failed to persist stem cache entry")?;

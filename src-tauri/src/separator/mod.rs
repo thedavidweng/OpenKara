@@ -1,11 +1,11 @@
 pub mod bootstrap;
-pub mod checkpoint;
 pub mod error;
 pub mod inference;
 pub mod job;
-pub mod mix;
 pub mod model;
 pub mod model_cache;
+pub mod ola;
 pub mod preprocess;
 pub mod runtime_bootstrap;
 pub mod verified_manifest;
+pub mod workspace;

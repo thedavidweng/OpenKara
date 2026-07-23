@@ -1,463 +1,795 @@
+//! Streaming stem separation with bounded memory.
+//!
+//! The separation path uses a reusable workspace (`SeparationWorkspace`),
+//! OLA ring buffers (`OlaRing`), and streaming OGG writers
+//! (`StreamingOggWriter`) so that application memory is independent of
+//! song duration for the additional output working set. One normalized
+//! full-song input PCM buffer remains by design; finalized output frames
+//! are flushed as soon as future overlap chunks can no longer modify them.
+//!
+//! TwoStem mode produces vocals and accompaniment only. When the model
+//! bundle provides a verified `karaoke_2stem` output contract, vocals
+//! and accompaniment are read directly. Otherwise, a four-output bundle
+//! is used and drums+bass+other are summed per-sample into the
+//! accompaniment scratch buffer — no full-song drums/bass/other buffers
+//! are retained.
+//!
+//! FourStem mode produces four independent stems (drums, bass, other,
+//! vocals) with no accompaniment computation.
+
 use crate::{
     audio::decode::DecodedAudio,
-    separator::{checkpoint, model::LoadedModel, preprocess},
+    audio::encode::StreamingOggWriter,
+    config::StemMode,
+    separator::{model::LoadedModel, preprocess, workspace::SeparationWorkspace},
 };
 use anyhow::{bail, Context, Result};
-use ort::value::Tensor;
-use std::{
-    collections::HashSet,
-    fs,
-    path::{Path, PathBuf},
-};
+use ort::{session::SessionInputValue, value::TensorRef};
 
 pub const DEMUCS_STEM_NAMES: [&str; 4] = ["drums", "bass", "other", "vocals"];
+/// Stem name order for two-stem bundles that provide vocals + accompaniment
+/// directly. The model output contract must name these outputs explicitly.
+pub const TWO_STEM_OUTPUT_NAMES: [&str; 2] = ["vocals", "accompaniment"];
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct SeparatedStem {
-    pub name: String,
-    pub audio: DecodedAudio,
+/// The model's output contract, detected from the ORT session outputs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelOutputContract {
+    /// Four stems in a single stacked tensor: `[4, channels, frames]`.
+    FourStemStacked,
+    /// Four separate stem tensors, each `[channels, frames]`.
+    FourStemSeparate,
+    /// Two-stem bundle: vocals + accompaniment as two separate tensors.
+    TwoStemBundle,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct SeparationResult {
-    pub stems: Vec<SeparatedStem>,
+/// Streaming OGG writers for one separation run. The number of writers
+/// matches the stem mode: 2 for TwoStem, 4 for FourStem.
+pub struct StemWriters {
+    pub mode: StemMode,
+    pub vocals: StreamingOggWriter,
+    pub accompaniment: Option<StreamingOggWriter>,
+    pub drums: Option<StreamingOggWriter>,
+    pub bass: Option<StreamingOggWriter>,
+    pub other: Option<StreamingOggWriter>,
 }
 
-/// Takes `&LoadedModel` (not `&mut`) so the model cache lock can be
-/// released before calling this function. The ONNX session is thread-safe and
-/// only requires shared access for `session.run()`.
-///
-/// Takes ownership of `decoded_audio` so the original buffer is
-/// consumed during normalization, preventing two full-song PCM copies.
-pub fn separate_audio(
-    model: &LoadedModel,
-    decoded_audio: DecodedAudio,
-    mut on_chunk_complete: impl FnMut(usize, usize),
-    checkpoint_dir: Option<&Path>,
-    song_hash: &str,
-) -> Result<SeparationResult> {
-    let normalized_audio = preprocess::normalize_audio_for_model(decoded_audio)?;
-    let input_frame_count = normalized_audio.samples.len() / normalized_audio.channels;
-    let target_frame_count = preprocess::target_frame_count(model, input_frame_count)?;
-
-    if input_frame_count > target_frame_count {
-        return separate_chunked_audio(
-            model,
-            &normalized_audio,
-            target_frame_count,
-            &mut on_chunk_complete,
-            checkpoint_dir,
-            song_hash,
-        );
+impl StemWriters {
+    fn write_vocals(&mut self, pcm: &[f32]) -> Result<()> {
+        self.vocals
+            .accept_frames(pcm)
+            .context("failed to write vocals frames")
     }
 
-    let result = separate_window_audio(model, &normalized_audio, input_frame_count)?;
-    on_chunk_complete(1, 1);
-    Ok(result)
-}
-
-fn separate_window_audio(
-    model: &LoadedModel,
-    decoded_audio: &DecodedAudio,
-    trim_frame_count: usize,
-) -> Result<SeparationResult> {
-    let prepared_input = preprocess::prepare_model_input_from_normalized(model, decoded_audio)?;
-    let session_inputs = build_session_inputs(model, decoded_audio, prepared_input)
-        .context("failed to prepare Demucs inputs")?;
-    let mut session_guard = model
-        .session
-        .lock()
-        .map_err(|_| anyhow::anyhow!("ONNX session lock was poisoned"))?;
-    let outputs = session_guard
-        .run(session_inputs)
-        .context("failed to run Demucs inference")?;
-
-    if outputs.len() == 0 {
-        bail!("Demucs inference returned no output tensors");
+    fn write_accompaniment(&mut self, pcm: &[f32]) -> Result<()> {
+        self.accompaniment
+            .as_mut()
+            .context("TwoStem requires accompaniment writer")?
+            .accept_frames(pcm)
+            .context("failed to write accompaniment frames")
     }
 
-    for (_, output_value) in outputs.iter() {
-        let dims = tensor_dims(&output_value)?;
-        if looks_like_stacked_stem_output(&dims, decoded_audio.channels) {
-            let stems = stems_from_stacked_output(&output_value, decoded_audio, trim_frame_count)?;
-            return Ok(SeparationResult { stems });
+    fn write_drums(&mut self, pcm: &[f32]) -> Result<()> {
+        self.drums
+            .as_mut()
+            .context("FourStem requires drums writer")?
+            .accept_frames(pcm)
+            .context("failed to write drums frames")
+    }
+
+    fn write_bass(&mut self, pcm: &[f32]) -> Result<()> {
+        self.bass
+            .as_mut()
+            .context("FourStem requires bass writer")?
+            .accept_frames(pcm)
+            .context("failed to write bass frames")
+    }
+
+    fn write_other(&mut self, pcm: &[f32]) -> Result<()> {
+        self.other
+            .as_mut()
+            .context("FourStem requires other writer")?
+            .accept_frames(pcm)
+            .context("failed to write other frames")
+    }
+
+    /// Finalize all writers. If a later writer fails after an earlier file
+    /// was promoted, remove every final path from this run before returning
+    /// the error so the filesystem cannot expose a partial stem set.
+    pub fn finish_all(self) -> Result<()> {
+        let StemWriters {
+            mode,
+            vocals,
+            accompaniment,
+            drums,
+            bass,
+            other,
+        } = self;
+
+        let mut final_paths = vec![vocals.final_path().to_path_buf()];
+        for writer in [
+            accompaniment.as_ref(),
+            drums.as_ref(),
+            bass.as_ref(),
+            other.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            final_paths.push(writer.final_path().to_path_buf());
         }
-    }
 
-    if outputs.len() >= DEMUCS_STEM_NAMES.len() {
-        let matching_outputs = outputs
-            .iter()
-            .filter(|(_, output_value)| {
-                tensor_dims(output_value)
-                    .map(|dims| looks_like_single_stem_output(&dims, decoded_audio.channels))
-                    .unwrap_or(false)
-            })
-            .collect::<Vec<_>>();
+        let result: Result<()> = match mode {
+            StemMode::TwoStem => (|| {
+                vocals
+                    .finish()
+                    .context("failed to finalize vocals writer")?;
+                accompaniment
+                    .context("TwoStem must have accompaniment writer")?
+                    .finish()
+                    .context("failed to finalize accompaniment writer")?;
+                Ok(())
+            })(),
+            StemMode::FourStem => (|| {
+                vocals
+                    .finish()
+                    .context("failed to finalize vocals writer")?;
+                drums
+                    .context("FourStem must have drums writer")?
+                    .finish()
+                    .context("failed to finalize drums writer")?;
+                bass.context("FourStem must have bass writer")?
+                    .finish()
+                    .context("failed to finalize bass writer")?;
+                other
+                    .context("FourStem must have other writer")?
+                    .finish()
+                    .context("failed to finalize other writer")?;
+                Ok(())
+            })(),
+        };
 
-        if matching_outputs.len() == DEMUCS_STEM_NAMES.len() {
-            let mut stems = Vec::with_capacity(DEMUCS_STEM_NAMES.len());
-            for (stem_name, (_, output_value)) in DEMUCS_STEM_NAMES.iter().zip(matching_outputs) {
-                stems.push(stem_from_single_output(
-                    stem_name,
-                    &output_value,
-                    decoded_audio,
-                    trim_frame_count,
-                )?);
+        if result.is_err() {
+            for path in final_paths {
+                let _ = std::fs::remove_file(path);
             }
-            return Ok(SeparationResult { stems });
+        }
+        result
+    }
+}
+
+/// The outcome of a streaming separation run.
+#[derive(Debug, Clone)]
+pub struct SeparationOutcome {
+    pub stem_mode: StemMode,
+    pub vocals_path: String,
+    pub accomp_path: String,
+    pub drums_path: Option<String>,
+    pub bass_path: Option<String>,
+    pub other_path: Option<String>,
+    pub frames_written: usize,
+}
+
+/// Detect the model's output contract from the ORT session outputs.
+///
+/// The detection logic checks output shapes against the expected stem
+/// layouts. It does NOT guess the stem mode from the output — the stem
+/// mode is a user decision. It only determines how to read the tensors.
+fn detect_output_contract(model: &LoadedModel, channels: usize) -> Result<ModelOutputContract> {
+    // Collect output metadata into owned data so the session guard can be
+    // dropped before we process the shapes.
+    let output_infos: Vec<(String, Vec<i64>)> = {
+        let session = model
+            .session
+            .lock()
+            .map_err(|_| anyhow::anyhow!("ONNX session lock was poisoned"))?;
+        session
+            .outputs()
+            .iter()
+            .map(|output| {
+                let name = output.name().to_owned();
+                let dims = output
+                    .dtype()
+                    .tensor_shape()
+                    .map(|s| s.iter().copied().collect())
+                    .unwrap_or_default();
+                (name, dims)
+            })
+            .collect()
+    };
+
+    if output_infos.is_empty() {
+        bail!("model has no outputs");
+    }
+
+    // Check for two-stem bundle: exactly 2 outputs with stem-like shapes.
+    if output_infos.len() == 2 {
+        let both_stem_like = output_infos
+            .iter()
+            .all(|(_, dims)| looks_like_single_stem_output(dims, channels));
+        if both_stem_like {
+            return Ok(ModelOutputContract::TwoStemBundle);
         }
     }
 
-    let output_shapes = outputs
+    // Check for stacked four-stem output: 1 output with [4, channels, frames].
+    if output_infos.len() == 1 && looks_like_stacked_stem_output(&output_infos[0].1, channels) {
+        return Ok(ModelOutputContract::FourStemStacked);
+    }
+
+    // Check for separate four-stem output: 4+ outputs with stem-like shapes.
+    let stem_like_count = output_infos
         .iter()
-        .map(|(name, output_value)| {
-            let dims = tensor_dims(&output_value)
-                .map(|dims| format!("{dims:?}"))
-                .unwrap_or_else(|error| format!("unreadable ({error:#})"));
-            format!("{name}: {dims}")
-        })
+        .filter(|(_, dims)| looks_like_single_stem_output(dims, channels))
+        .count();
+
+    if stem_like_count >= DEMUCS_STEM_NAMES.len() {
+        return Ok(ModelOutputContract::FourStemSeparate);
+    }
+
+    let shapes = output_infos
+        .iter()
+        .map(|(name, dims)| format!("{name}: {dims:?}"))
         .collect::<Vec<_>>();
     bail!(
-        "Demucs inference did not expose a final stem output; saw {}",
-        output_shapes.join(", ")
-    )
+        "could not detect model output contract; saw: {}",
+        shapes.join(", ")
+    );
 }
 
-/// Generate a Hann window of the given size for overlap-add processing.
-/// Sine window satisfying the squared constant-overlap-add constraint at 50%
-/// overlap: w[n]^2 + w[n + N/2]^2 = 1.
+/// Run streaming separation, writing finalized PCM directly to OGG writers.
 ///
-/// This is equivalent to `sqrt(hann)` and is the standard choice for
-/// overlap-add processing where chunks are windowed, processed, then
-/// overlap-added with the same window (squared normalization).
-fn hann_window(size: usize) -> Vec<f32> {
-    (0..size)
-        .map(|i| {
-            let phase = std::f64::consts::TAU * i as f64 / size as f64;
-            (0.5 * (1.0 - phase.cos())).sqrt() as f32
-        })
-        .collect()
-}
-
-fn separate_chunked_audio(
+/// This function does NOT return a `SeparationResult` with full-song PCM.
+/// Finalized frames are streamed to the writers as chunks complete, so
+/// memory is bounded by the workspace size (chunk_size * channels).
+///
+/// The caller is responsible for creating the `StemWriters` with the
+/// correct output paths and for finalizing them after this function
+/// returns successfully. On error, the writers are dropped and their
+/// temp files are cleaned up automatically.
+#[allow(clippy::too_many_arguments)]
+pub fn separate_streaming(
     model: &LoadedModel,
-    decoded_audio: &DecodedAudio,
-    target_frame_count: usize,
-    on_chunk_complete: &mut impl FnMut(usize, usize),
-    checkpoint_dir: Option<&Path>,
-    song_hash: &str,
-) -> Result<SeparationResult> {
-    let channels = decoded_audio.channels;
-    let input_frame_count = decoded_audio.samples.len() / channels;
+    normalized_audio: &DecodedAudio,
+    stem_mode: StemMode,
+    writers: &mut StemWriters,
+    workspace: &mut SeparationWorkspace,
+    mut on_chunk_complete: impl FnMut(usize, usize),
+) -> Result<SeparationOutcome> {
+    let channels = normalized_audio.channels;
+    let input_frame_count = normalized_audio.samples.len() / channels;
+    let chunk_size = preprocess::target_frame_count(model, input_frame_count)?;
+    let hop_size = chunk_size / 2;
 
-    let hop_size = target_frame_count / 2;
-    let total_chunks = if input_frame_count <= target_frame_count {
-        1
-    } else {
-        (input_frame_count - target_frame_count).div_ceil(hop_size) + 1
-    };
+    let output_contract = detect_output_contract(model, channels)?;
+    configure_model_inputs(model, workspace)?;
 
-    let completed_set: HashSet<usize> = if let Some(dir) = checkpoint_dir {
-        let manifest = checkpoint::CheckpointManifest {
-            song_hash: song_hash.to_string(),
-            total_chunks,
-            target_frame_count,
-            input_frame_count,
-            channels,
-            sample_rate: decoded_audio.sample_rate,
-            stem_count: DEMUCS_STEM_NAMES.len(),
-        };
-        checkpoint::write_manifest(dir, &manifest)?;
-        checkpoint::list_completed_chunks(dir)?
-            .into_iter()
-            .collect()
-    } else {
-        HashSet::new()
-    };
-
-    let output_sample_count = decoded_audio.samples.len();
-    let mut merged_stems = DEMUCS_STEM_NAMES
-        .iter()
-        .map(|stem_name| SeparatedStem {
-            name: (*stem_name).to_string(),
-            audio: DecodedAudio {
-                sample_rate: decoded_audio.sample_rate,
-                channels,
-                duration_ms: decoded_audio.duration_ms,
-                samples: vec![0.0_f32; output_sample_count],
-            },
-        })
-        .collect::<Vec<_>>();
-
-    let mut overlap_norm = vec![0.0_f32; output_sample_count];
-
-    if let Some(dir) = checkpoint_dir {
-        for &completed_idx in &completed_set {
-            let chunk_start_frame = completed_idx * hop_size;
-            if chunk_start_frame >= input_frame_count {
-                continue;
-            }
-            let chunk_frame_count = (input_frame_count - chunk_start_frame).min(target_frame_count);
-            let chunk_data = checkpoint::read_chunk(dir, completed_idx)?;
-            let window = hann_window(target_frame_count);
-            let samples_per_stem = chunk_frame_count * channels;
-            for (stem_idx, stem) in merged_stems.iter_mut().enumerate() {
-                let src_offset = stem_idx * samples_per_stem;
-                let dst_start = chunk_start_frame * channels;
-                for (frame, &w) in window.iter().take(chunk_frame_count).enumerate() {
-                    for ch in 0..channels {
-                        let src_idx = src_offset + frame * channels + ch;
-                        let dst_idx = dst_start + frame * channels + ch;
-                        stem.audio.samples[dst_idx] += chunk_data[src_idx] * w * w;
-                    }
-                }
-            }
-            for (frame, &w) in window.iter().take(chunk_frame_count).enumerate() {
-                let w2 = w * w;
-                let base = (chunk_start_frame + frame) * channels;
-                for ch in 0..channels {
-                    overlap_norm[base + ch] += w2;
-                }
-            }
+    // Verify the output contract is compatible with the requested stem mode.
+    match (&output_contract, stem_mode) {
+        (ModelOutputContract::TwoStemBundle, StemMode::TwoStem) => {}
+        (ModelOutputContract::FourStemStacked, _) => {}
+        (ModelOutputContract::FourStemSeparate, _) => {}
+        (ModelOutputContract::TwoStemBundle, StemMode::FourStem) => {
+            bail!(
+                "cannot use FourStem mode with a two-stem model bundle; \
+                 select TwoStem mode or install a four-output bundle"
+            );
         }
     }
 
-    let window = hann_window(target_frame_count);
-    let mut chunk_index = 0_usize;
+    let total_chunks = if input_frame_count <= chunk_size {
+        1
+    } else {
+        (input_frame_count - chunk_size).div_ceil(hop_size) + 1
+    };
+
+    // Interrupted runs always restart from chunk 0. Vorbis encoder and OLA
+    // state are intentionally not serialized.
+    let window = workspace.window().to_vec();
+
+    let mut chunk_index = 0usize;
     for chunk_start_frame in (0..input_frame_count).step_by(hop_size) {
-        let chunk_frame_count = (input_frame_count - chunk_start_frame).min(target_frame_count);
+        let chunk_frame_count = (input_frame_count - chunk_start_frame).min(chunk_size);
 
-        if completed_set.contains(&chunk_index) {
-            chunk_index += 1;
-            on_chunk_complete(chunk_index, total_chunks);
-            continue;
-        }
-
-        let chunk_audio = build_chunk_audio(
-            decoded_audio,
+        // 1. Fill planar input directly from the normalized source.
+        workspace.fill_planar_input(
+            &normalized_audio.samples,
             chunk_start_frame,
             chunk_frame_count,
-            target_frame_count,
         );
-        let chunk_result = separate_window_audio(model, &chunk_audio, chunk_frame_count)
-            .with_context(|| {
-                format!("failed to separate chunk starting at frame {chunk_start_frame}")
-            })?;
 
-        for (stem_index, chunk_stem) in chunk_result.stems.iter().enumerate() {
-            let destination = &mut merged_stems[stem_index].audio.samples;
-            let dst_start = chunk_start_frame * channels;
-            for (frame, &w) in window.iter().take(chunk_frame_count).enumerate() {
-                for ch in 0..channels {
-                    let src_idx = frame * channels + ch;
-                    let dst_idx = dst_start + frame * channels + ch;
-                    destination[dst_idx] += chunk_stem.audio.samples[src_idx] * w * w;
+        // 2. Build borrowed ORT inputs and run inference.
+        // The session guard must stay alive while we read the output tensors
+        // because SessionOutputs borrows from the session. We process the
+        // outputs (reading tensor data into workspace buffers) within this
+        // scope so the guard can be released before I/O.
+        let session_inputs = build_session_inputs(workspace)?;
+        {
+            let mut session_guard = model
+                .session
+                .lock()
+                .map_err(|_| anyhow::anyhow!("ONNX session lock was poisoned"))?;
+            let outputs = session_guard
+                .run(session_inputs)
+                .context("failed to run Demucs inference")?;
+
+            // 4. Read output tensor views and feed to OLA rings.
+            // The writers are passed so add_chunk can flush to them when
+            // it auto-shifts the OLA ring.
+            match stem_mode {
+                StemMode::TwoStem => {
+                    process_two_stem_chunk(
+                        &outputs,
+                        output_contract,
+                        workspace,
+                        writers,
+                        chunk_frame_count,
+                        &window,
+                        chunk_start_frame,
+                    )?;
+                }
+                StemMode::FourStem => {
+                    process_four_stem_chunk(
+                        &outputs,
+                        output_contract,
+                        workspace,
+                        writers,
+                        chunk_frame_count,
+                        &window,
+                        chunk_start_frame,
+                    )?;
                 }
             }
         }
+        // Session guard and outputs are both dropped here.
 
-        for (frame, &w) in window.iter().take(chunk_frame_count).enumerate() {
-            let w2 = w * w;
-            let base = (chunk_start_frame + frame) * channels;
-            for ch in 0..channels {
-                overlap_norm[base + ch] += w2;
-            }
-        }
-
-        // Persist the chunk to disk for crash recovery.
-        if let Some(dir) = checkpoint_dir {
-            let chunk_sample_count = chunk_frame_count * channels;
-            let mut chunk_data = Vec::with_capacity(chunk_sample_count * DEMUCS_STEM_NAMES.len());
-            for stem in &chunk_result.stems {
-                chunk_data.extend_from_slice(&stem.audio.samples[..chunk_sample_count]);
-            }
-            checkpoint::write_chunk(dir, chunk_index, &chunk_data)?;
-        }
+        // 5. Flush finalized frames to writers.
+        // After processing chunk N (starting at chunk_start_frame), frames
+        // before chunk_start_frame are safe because the next chunk starts
+        // at chunk_start_frame + hop_size and only covers from there.
+        let safe_through = chunk_start_frame;
+        flush_finalized_to_writers(workspace, stem_mode, safe_through, writers)?;
 
         chunk_index += 1;
         on_chunk_complete(chunk_index, total_chunks);
     }
 
-    for stem in merged_stems.iter_mut() {
-        for (i, sample) in stem.audio.samples.iter_mut().enumerate() {
-            let norm = overlap_norm[i];
-            if norm > 1e-8 {
-                *sample /= norm;
-            }
-        }
-    }
+    // Flush all remaining frames.
+    flush_finalized_to_writers(workspace, stem_mode, input_frame_count, writers)?;
+    let finalized_frames = input_frame_count;
 
-    Ok(SeparationResult {
-        stems: merged_stems,
+    let vocals_path = writers
+        .vocals
+        .final_path()
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("vocals.ogg")
+        .to_string();
+    let accomp_path = writers
+        .accompaniment
+        .as_ref()
+        .map(|w| {
+            w.final_path()
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("accompaniment.ogg")
+                .to_string()
+        })
+        .unwrap_or_default();
+    let drums_path = writers.drums.as_ref().map(|w| {
+        w.final_path()
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("drums.ogg")
+            .to_string()
+    });
+    let bass_path = writers.bass.as_ref().map(|w| {
+        w.final_path()
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("bass.ogg")
+            .to_string()
+    });
+    let other_path = writers.other.as_ref().map(|w| {
+        w.final_path()
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("other.ogg")
+            .to_string()
+    });
+
+    Ok(SeparationOutcome {
+        stem_mode,
+        vocals_path,
+        accomp_path,
+        drums_path,
+        bass_path,
+        other_path,
+        frames_written: finalized_frames,
     })
 }
 
-pub fn write_stems_to_directory(
-    separation: &SeparationResult,
-    output_directory: &Path,
-) -> Result<Vec<PathBuf>> {
-    fs::create_dir_all(output_directory).with_context(|| {
-        format!(
-            "failed to create stem output directory at {}",
-            output_directory.display()
-        )
-    })?;
+/// Process a TwoStem chunk: read vocals and accompaniment from the model
+/// output and feed them to the OLA rings.
+///
+/// If the model provides a `karaoke_2stem` bundle, vocals and accompaniment
+/// are read directly. Otherwise, drums+bass+other are summed per-sample
+/// into the accompaniment scratch buffer.
+fn process_two_stem_chunk(
+    outputs: &ort::session::SessionOutputs,
+    contract: ModelOutputContract,
+    workspace: &mut SeparationWorkspace,
+    writers: &mut StemWriters,
+    chunk_frame_count: usize,
+    window: &[f32],
+    chunk_start_frame: usize,
+) -> Result<()> {
+    let channels = workspace.channels;
 
-    let mut written_paths = Vec::with_capacity(separation.stems.len());
-    for stem in &separation.stems {
-        let output_path = output_directory.join(format!("{}.ogg", stem.name));
-        crate::audio::encode::write_ogg_file(&output_path, &stem.audio)?;
-        written_paths.push(output_path);
-    }
-
-    Ok(written_paths)
-}
-
-fn stems_from_stacked_output(
-    output_value: &ort::value::DynValue,
-    decoded_audio: &DecodedAudio,
-    input_frame_count: usize,
-) -> Result<Vec<SeparatedStem>> {
-    let (shape, data) = output_value
-        .try_extract_tensor::<f32>()
-        .context("Demucs stacked output tensor was not f32")?;
-    let dims: Vec<i64> = shape.iter().copied().collect();
-    let (stem_count, channel_count, output_frame_count) = match dims.as_slice() {
-        [stem_count, channel_count, frame_count] => (
-            usize_from_dim(*stem_count, "stem count")?,
-            usize_from_dim(*channel_count, "channel count")?,
-            usize_from_dim(*frame_count, "frame count")?,
-        ),
-        [batch_size, stem_count, channel_count, frame_count] => {
-            let batch_size = usize_from_dim(*batch_size, "batch size")?;
-            if batch_size != 1 {
-                bail!("Demucs stacked output batch size must be 1, got {batch_size}");
+    match contract {
+        ModelOutputContract::TwoStemBundle => {
+            // Read vocals and accompaniment directly from two output tensors.
+            // Phase 1: read into reusable stem buffers.
+            for buf in workspace.stem_output_buffers.iter_mut() {
+                buf[..chunk_frame_count * channels].fill(0.0);
             }
-            (
-                usize_from_dim(*stem_count, "stem count")?,
-                usize_from_dim(*channel_count, "channel count")?,
-                usize_from_dim(*frame_count, "frame count")?,
-            )
+
+            let mut vocals_idx = None;
+            let mut accomp_idx = None;
+            for (name, output_value) in outputs.iter() {
+                let (shape, data) = output_value
+                    .try_extract_tensor::<f32>()
+                    .context("two-stem output tensor was not f32")?;
+                let dims: Vec<i64> = shape.iter().copied().collect();
+                let (ch, frames) = extract_stem_dims(&dims, name, channels)?;
+
+                if name == "vocals" || name.contains("vocal") {
+                    deinterleave_to_interleaved(
+                        data,
+                        ch,
+                        frames,
+                        channels,
+                        &mut workspace.stem_output_buffers[0],
+                        chunk_frame_count,
+                    );
+                    vocals_idx = Some(0);
+                } else if name == "accompaniment" || name.contains("accomp") {
+                    deinterleave_to_interleaved(
+                        data,
+                        ch,
+                        frames,
+                        channels,
+                        &mut workspace.stem_output_buffers[1],
+                        chunk_frame_count,
+                    );
+                    accomp_idx = Some(1);
+                }
+            }
+
+            let v_idx = vocals_idx.context("two-stem bundle missing vocals output")?;
+            let a_idx = accomp_idx.context("two-stem bundle missing accompaniment output")?;
+
+            // Phase 2: feed to OLA rings. The rings and buffers are disjoint
+            // fields in the workspace, so NLL allows simultaneous borrows.
+            // The sink closures write to the streaming writers when the ring
+            // auto-shifts.
+            let sample_count = chunk_frame_count * channels;
+            let rings = workspace
+                .two_stem_rings
+                .as_mut()
+                .context("TwoStem mode requires two_stem_rings in workspace")?;
+            let vocals_buf = &workspace.stem_output_buffers[v_idx][..sample_count];
+            rings.vocals.add_chunk(
+                chunk_start_frame,
+                chunk_frame_count,
+                vocals_buf,
+                window,
+                |pcm| writers.write_vocals(pcm),
+            )?;
+            let accomp_buf = &workspace.stem_output_buffers[a_idx][..sample_count];
+            rings.accompaniment.add_chunk(
+                chunk_start_frame,
+                chunk_frame_count,
+                accomp_buf,
+                window,
+                |pcm| writers.write_accompaniment(pcm),
+            )?;
         }
-        _ => {
-            bail!(
-                "Demucs stacked output rank must be 3 or 4, got {} dimensions",
-                dims.len()
-            )
+        ModelOutputContract::FourStemStacked | ModelOutputContract::FourStemSeparate => {
+            // Phase 1: read four stems into reusable buffers.
+            read_four_stems_into(outputs, contract, channels, chunk_frame_count, workspace)?;
+
+            // Phase 2: sum drums+bass+other into accompaniment scratch.
+            let sample_count = chunk_frame_count * channels;
+            let scratch = &mut workspace.accompaniment_scratch[..sample_count];
+            scratch.fill(0.0);
+            for stem_idx in 0..3 {
+                let stem = &workspace.stem_output_buffers[stem_idx][..sample_count];
+                for (dst, &src) in scratch.iter_mut().zip(stem) {
+                    *dst += src;
+                }
+            }
+
+            // Phase 3: feed vocals and accompaniment to OLA rings.
+            let rings = workspace
+                .two_stem_rings
+                .as_mut()
+                .context("TwoStem mode requires two_stem_rings in workspace")?;
+            let vocals_buf = &workspace.stem_output_buffers[3][..sample_count];
+            rings.vocals.add_chunk(
+                chunk_start_frame,
+                chunk_frame_count,
+                vocals_buf,
+                window,
+                |pcm| writers.write_vocals(pcm),
+            )?;
+            let accomp_buf = &workspace.accompaniment_scratch[..sample_count];
+            rings.accompaniment.add_chunk(
+                chunk_start_frame,
+                chunk_frame_count,
+                accomp_buf,
+                window,
+                |pcm| writers.write_accompaniment(pcm),
+            )?;
         }
-    };
-
-    if stem_count != DEMUCS_STEM_NAMES.len() {
-        bail!(
-            "Demucs stacked output must contain {} stems, got {stem_count}",
-            DEMUCS_STEM_NAMES.len()
-        );
     }
 
-    if channel_count != decoded_audio.channels {
-        bail!(
-            "Demucs stacked output must contain {} channels, got {channel_count}",
-            decoded_audio.channels
-        );
-    }
-
-    if output_frame_count < input_frame_count {
-        bail!(
-            "Demucs stacked output contained {output_frame_count} frames, fewer than the input {input_frame_count}"
-        );
-    }
-
-    let source_stride = channel_count * output_frame_count;
-    let mut stems = Vec::with_capacity(stem_count);
-
-    // Demucs exports the four standard source stems in fixed order.
-    for (stem_index, stem_name) in DEMUCS_STEM_NAMES.iter().enumerate() {
-        let source_offset = stem_index * source_stride;
-        let source_data = &data[source_offset..source_offset + source_stride];
-        stems.push(build_stem_from_channels_first(
-            stem_name,
-            source_data,
-            output_frame_count,
-            decoded_audio,
-            input_frame_count,
-        )?);
-    }
-
-    Ok(stems)
+    Ok(())
 }
 
-fn stem_from_single_output(
-    stem_name: &str,
-    output_value: &ort::value::DynValue,
-    decoded_audio: &DecodedAudio,
-    input_frame_count: usize,
-) -> Result<SeparatedStem> {
-    let (shape, data) = output_value
-        .try_extract_tensor::<f32>()
-        .with_context(|| format!("Demucs output tensor for {stem_name} was not f32"))?;
-    let dims: Vec<i64> = shape.iter().copied().collect();
-    let (channel_count, output_frame_count) = match dims.as_slice() {
-        [channel_count, frame_count] => (
-            usize_from_dim(*channel_count, "channel count")?,
-            usize_from_dim(*frame_count, "frame count")?,
-        ),
-        [batch_size, channel_count, frame_count] => {
-            let batch_size = usize_from_dim(*batch_size, "batch size")?;
-            if batch_size != 1 {
+/// Process a FourStem chunk: read four stems and feed each to its OLA ring.
+fn process_four_stem_chunk(
+    outputs: &ort::session::SessionOutputs,
+    contract: ModelOutputContract,
+    workspace: &mut SeparationWorkspace,
+    writers: &mut StemWriters,
+    chunk_frame_count: usize,
+    window: &[f32],
+    chunk_start_frame: usize,
+) -> Result<()> {
+    let channels = workspace.channels;
+
+    // Phase 1: read four stems into reusable buffers.
+    read_four_stems_into(outputs, contract, channels, chunk_frame_count, workspace)?;
+
+    // Phase 2: feed each stem to its OLA ring. The sink closures write to
+    // the streaming writers when the ring auto-shifts.
+    let sample_count = chunk_frame_count * channels;
+    let rings = workspace
+        .four_stem_rings
+        .as_mut()
+        .context("FourStem mode requires four_stem_rings in workspace")?;
+
+    let drums_buf = &workspace.stem_output_buffers[0][..sample_count];
+    rings.drums.add_chunk(
+        chunk_start_frame,
+        chunk_frame_count,
+        drums_buf,
+        window,
+        |pcm| writers.write_drums(pcm),
+    )?;
+
+    let bass_buf = &workspace.stem_output_buffers[1][..sample_count];
+    rings.bass.add_chunk(
+        chunk_start_frame,
+        chunk_frame_count,
+        bass_buf,
+        window,
+        |pcm| writers.write_bass(pcm),
+    )?;
+
+    let other_buf = &workspace.stem_output_buffers[2][..sample_count];
+    rings.other.add_chunk(
+        chunk_start_frame,
+        chunk_frame_count,
+        other_buf,
+        window,
+        |pcm| writers.write_other(pcm),
+    )?;
+
+    let vocals_buf = &workspace.stem_output_buffers[3][..sample_count];
+    rings.vocals.add_chunk(
+        chunk_start_frame,
+        chunk_frame_count,
+        vocals_buf,
+        window,
+        |pcm| writers.write_vocals(pcm),
+    )?;
+
+    Ok(())
+}
+
+/// Read four stems from the model output into the workspace's reusable
+/// stem output buffers. No per-chunk allocation — buffers are reused.
+fn read_four_stems_into(
+    outputs: &ort::session::SessionOutputs,
+    contract: ModelOutputContract,
+    channels: usize,
+    chunk_frame_count: usize,
+    workspace: &mut SeparationWorkspace,
+) -> Result<()> {
+    // Zero the active region of all stem buffers.
+    for buf in workspace.stem_output_buffers.iter_mut() {
+        buf[..chunk_frame_count * channels].fill(0.0);
+    }
+
+    match contract {
+        ModelOutputContract::FourStemStacked => {
+            for (_, output_value) in outputs.iter() {
+                let (shape, data) = output_value
+                    .try_extract_tensor::<f32>()
+                    .context("stacked output tensor was not f32")?;
+                let dims: Vec<i64> = shape.iter().copied().collect();
+                if !looks_like_stacked_stem_output(&dims, channels) {
+                    continue;
+                }
+                let (stem_count, ch, frames) = match dims.as_slice() {
+                    [sc, c, f] => (
+                        usize_from_dim(*sc, "stem count")?,
+                        usize_from_dim(*c, "channel count")?,
+                        usize_from_dim(*f, "frame count")?,
+                    ),
+                    [1, sc, c, f] => (
+                        usize_from_dim(*sc, "stem count")?,
+                        usize_from_dim(*c, "channel count")?,
+                        usize_from_dim(*f, "frame count")?,
+                    ),
+                    _ => bail!("unexpected stacked output rank"),
+                };
+                if stem_count != DEMUCS_STEM_NAMES.len() {
+                    bail!(
+                        "stacked output must have {} stems, got {stem_count}",
+                        DEMUCS_STEM_NAMES.len()
+                    );
+                }
+                let stride = ch * frames;
+                for (stem_idx, stem_buf) in workspace.stem_output_buffers.iter_mut().enumerate() {
+                    let offset = stem_idx * stride;
+                    deinterleave_to_interleaved(
+                        &data[offset..offset + stride],
+                        ch,
+                        frames,
+                        channels,
+                        stem_buf,
+                        chunk_frame_count,
+                    );
+                }
+                return Ok(());
+            }
+            bail!("no stacked stem output found in model outputs");
+        }
+        ModelOutputContract::FourStemSeparate => {
+            let matching: Vec<_> = outputs
+                .iter()
+                .filter(|(_, v)| {
+                    v.try_extract_tensor::<f32>()
+                        .map(|(shape, _)| {
+                            let dims: Vec<i64> = shape.iter().copied().collect();
+                            looks_like_single_stem_output(&dims, channels)
+                        })
+                        .unwrap_or(false)
+                })
+                .collect();
+
+            if matching.len() < DEMUCS_STEM_NAMES.len() {
                 bail!(
-                    "Demucs output tensor for {stem_name} must have batch size 1, got {batch_size}"
+                    "expected {} separate stem outputs, found {}",
+                    DEMUCS_STEM_NAMES.len(),
+                    matching.len()
                 );
             }
-            (
-                usize_from_dim(*channel_count, "channel count")?,
-                usize_from_dim(*frame_count, "frame count")?,
-            )
+
+            for (stem_idx, (_, output_value)) in
+                matching.iter().take(DEMUCS_STEM_NAMES.len()).enumerate()
+            {
+                let (shape, data) = output_value
+                    .try_extract_tensor::<f32>()
+                    .context("separate stem output was not f32")?;
+                let dims: Vec<i64> = shape.iter().copied().collect();
+                let (ch, frames) = match dims.as_slice() {
+                    [c, f] => (
+                        usize_from_dim(*c, "channel count")?,
+                        usize_from_dim(*f, "frame count")?,
+                    ),
+                    [1, c, f] => (
+                        usize_from_dim(*c, "channel count")?,
+                        usize_from_dim(*f, "frame count")?,
+                    ),
+                    _ => bail!("unexpected separate output rank"),
+                };
+                deinterleave_to_interleaved(
+                    data,
+                    ch,
+                    frames,
+                    channels,
+                    &mut workspace.stem_output_buffers[stem_idx],
+                    chunk_frame_count,
+                );
+            }
+            Ok(())
         }
-        _ => {
-            bail!(
-                "Demucs output tensor for {stem_name} must have rank 2 or 3, got {} dimensions",
-                dims.len()
-            )
+        ModelOutputContract::TwoStemBundle => {
+            bail!("cannot read four stems from a two-stem bundle");
         }
-    };
-
-    if channel_count != decoded_audio.channels {
-        bail!(
-            "Demucs output tensor for {stem_name} must contain {} channels, got {channel_count}",
-            decoded_audio.channels
-        );
     }
-
-    if output_frame_count < input_frame_count {
-        bail!(
-            "Demucs output tensor for {stem_name} contained {output_frame_count} frames, fewer than the input {input_frame_count}"
-        );
-    }
-
-    build_stem_from_channels_first(
-        stem_name,
-        data,
-        output_frame_count,
-        decoded_audio,
-        input_frame_count,
-    )
 }
 
-fn build_session_inputs(
-    model: &LoadedModel,
-    decoded_audio: &DecodedAudio,
-    prepared_input: preprocess::PreparedModelInput,
-) -> Result<Vec<(String, Tensor<f32>)>> {
+/// Convert channels-first (planar) tensor data to interleaved PCM.
+///
+/// `planar_data` is `[channel, frame]` layout. The output is `[frame, channel]`
+/// (interleaved). Only `chunk_frame_count` frames are copied; the rest are
+/// ignored (the model may output more frames than the chunk needs).
+fn deinterleave_to_interleaved(
+    planar_data: &[f32],
+    planar_channels: usize,
+    planar_frames: usize,
+    expected_channels: usize,
+    output: &mut [f32],
+    chunk_frame_count: usize,
+) {
+    let channels = planar_channels.min(expected_channels);
+    let frames = planar_frames.min(chunk_frame_count);
+    for frame in 0..frames {
+        for ch in 0..channels {
+            let src = ch * planar_frames + frame;
+            let dst = frame * expected_channels + ch;
+            if dst < output.len() && src < planar_data.len() {
+                output[dst] = planar_data[src];
+            }
+        }
+    }
+}
+
+/// Flush finalized frames from the OLA rings to the streaming writers.
+fn flush_finalized_to_writers(
+    workspace: &mut SeparationWorkspace,
+    stem_mode: StemMode,
+    safe_through: usize,
+    writers: &mut StemWriters,
+) -> Result<()> {
+    match stem_mode {
+        StemMode::TwoStem => {
+            let rings = workspace
+                .two_stem_rings
+                .as_mut()
+                .context("TwoStem requires two_stem_rings")?;
+            rings
+                .vocals
+                .flush_finalized(safe_through, |pcm| writers.write_vocals(pcm))?;
+            rings
+                .accompaniment
+                .flush_finalized(safe_through, |pcm| writers.write_accompaniment(pcm))?;
+        }
+        StemMode::FourStem => {
+            let rings = workspace
+                .four_stem_rings
+                .as_mut()
+                .context("FourStem requires four_stem_rings")?;
+            rings
+                .drums
+                .flush_finalized(safe_through, |pcm| writers.write_drums(pcm))?;
+            rings
+                .bass
+                .flush_finalized(safe_through, |pcm| writers.write_bass(pcm))?;
+            rings
+                .other
+                .flush_finalized(safe_through, |pcm| writers.write_other(pcm))?;
+            rings
+                .vocals
+                .flush_finalized(safe_through, |pcm| writers.write_vocals(pcm))?;
+        }
+    }
+    Ok(())
+}
+
+/// Resolve and cache the model input contract once per separation run.
+fn configure_model_inputs(model: &LoadedModel, workspace: &mut SeparationWorkspace) -> Result<()> {
     let session = model
         .session
         .lock()
         .map_err(|_| anyhow::anyhow!("ONNX session lock was poisoned"))?;
-    let mut session_inputs = Vec::with_capacity(session.inputs().len());
-    let expected_audio_shape = prepared_input.shape.clone();
-    let preprocess::PreparedModelInput {
-        shape: audio_shape,
-        samples: audio_samples,
-    } = prepared_input;
+    let expected_shape = workspace.input_shape().to_vec();
+    let mut audio_input_name = None;
+    let mut auxiliary_inputs = Vec::new();
 
     for input in session.inputs() {
         let input_shape = input
@@ -465,24 +797,18 @@ fn build_session_inputs(
             .tensor_shape()
             .with_context(|| format!("Demucs input {} is not a tensor", input.name()))?;
         let dims: Vec<i64> = input_shape.iter().copied().collect();
-        let tensor = if looks_like_audio_input(&dims, decoded_audio.channels) {
-            if dims != expected_audio_shape {
+        if looks_like_audio_input(&dims, workspace.channels) {
+            if dims != expected_shape {
                 bail!(
                     "Demucs audio input {} expected shape {:?}, prepared shape was {:?}",
                     input.name(),
                     dims,
-                    expected_audio_shape
+                    expected_shape
                 );
             }
-
-            Tensor::<f32>::from_array((audio_shape.clone(), audio_samples.clone())).with_context(
-                || {
-                    format!(
-                        "failed to build Demucs audio input tensor for {}",
-                        input.name()
-                    )
-                },
-            )?
+            if audio_input_name.replace(input.name().to_owned()).is_some() {
+                bail!("Demucs model has more than one audio input");
+            }
         } else {
             let zero_count = num_elements_for_dims(&dims).with_context(|| {
                 format!(
@@ -491,76 +817,53 @@ fn build_session_inputs(
                     dims
                 )
             })?;
-            let zero_tensor = vec![0.0_f32; zero_count];
-            Tensor::<f32>::from_array((dims.clone(), zero_tensor)).with_context(|| {
-                format!(
-                    "failed to build zero tensor for Demucs auxiliary input {}",
-                    input.name()
-                )
-            })?
-        };
-
-        session_inputs.push((input.name().to_owned(), tensor));
-    }
-
-    Ok(session_inputs)
-}
-
-fn build_stem_from_channels_first(
-    stem_name: &str,
-    channels_first_samples: &[f32],
-    output_frame_count: usize,
-    decoded_audio: &DecodedAudio,
-    input_frame_count: usize,
-) -> Result<SeparatedStem> {
-    let channel_count = decoded_audio.channels;
-    let expected_sample_count = channel_count * output_frame_count;
-    if channels_first_samples.len() < expected_sample_count {
-        bail!(
-            "Demucs output for {stem_name} contained {} samples, fewer than expected {expected_sample_count}",
-            channels_first_samples.len()
-        );
-    }
-
-    let mut interleaved_samples = vec![0.0_f32; channel_count * input_frame_count];
-    for frame_index in 0..input_frame_count {
-        for channel_index in 0..channel_count {
-            let source_offset = channel_index * output_frame_count + frame_index;
-            let interleaved_offset = frame_index * channel_count + channel_index;
-            interleaved_samples[interleaved_offset] = channels_first_samples[source_offset];
+            auxiliary_inputs.push((input.name().to_owned(), dims, vec![0.0; zero_count]));
         }
     }
 
-    Ok(SeparatedStem {
-        name: stem_name.to_owned(),
-        audio: DecodedAudio {
-            sample_rate: decoded_audio.sample_rate,
-            channels: channel_count,
-            duration_ms: decoded_audio.duration_ms,
-            samples: interleaved_samples,
-        },
-    })
+    workspace.configure_model_inputs(
+        audio_input_name.context("Demucs model has no stereo audio input")?,
+        auxiliary_inputs,
+    );
+    Ok(())
 }
 
-fn build_chunk_audio(
-    decoded_audio: &DecodedAudio,
-    chunk_start_frame: usize,
-    chunk_frame_count: usize,
-    target_frame_count: usize,
-) -> DecodedAudio {
-    let channels = decoded_audio.channels;
-    let chunk_start_sample = chunk_start_frame * channels;
-    let chunk_end_sample = chunk_start_sample + chunk_frame_count * channels;
-    let mut padded_samples = vec![0.0_f32; target_frame_count * channels];
-    padded_samples[..chunk_frame_count * channels]
-        .copy_from_slice(&decoded_audio.samples[chunk_start_sample..chunk_end_sample]);
+/// Build zero-copy session inputs from the workspace's persistent backing.
+fn build_session_inputs<'a>(
+    workspace: &'a SeparationWorkspace,
+) -> Result<Vec<(&'a str, SessionInputValue<'a>)>> {
+    let mut session_inputs = Vec::with_capacity(1 + workspace.auxiliary_inputs().len());
+    let audio_name = workspace
+        .audio_input_name()
+        .context("Demucs audio input contract was not configured")?;
+    let audio_tensor =
+        TensorRef::from_array_view((workspace.input_shape(), workspace.tensor_input()))
+            .context("failed to build borrowed Demucs audio input tensor")?;
+    session_inputs.push((audio_name, audio_tensor.into()));
 
-    DecodedAudio {
-        sample_rate: decoded_audio.sample_rate,
-        channels,
-        duration_ms: ((chunk_frame_count as f64 / decoded_audio.sample_rate as f64) * 1000.0)
-            .round() as u64,
-        samples: padded_samples,
+    for (name, dims, zero_data) in workspace.auxiliary_inputs() {
+        let tensor = TensorRef::from_array_view((dims.as_slice(), zero_data.as_slice()))
+            .with_context(|| format!("failed to build borrowed zero tensor for {name}"))?;
+        session_inputs.push((name.as_str(), tensor.into()));
+    }
+    Ok(session_inputs)
+}
+
+fn extract_stem_dims(
+    dims: &[i64],
+    name: &str,
+    _expected_channels: usize,
+) -> Result<(usize, usize)> {
+    match dims {
+        [ch, frames] => Ok((
+            usize_from_dim(*ch, "channel count")?,
+            usize_from_dim(*frames, "frame count")?,
+        )),
+        [1, ch, frames] => Ok((
+            usize_from_dim(*ch, "channel count")?,
+            usize_from_dim(*frames, "frame count")?,
+        )),
+        _ => bail!("stem output {} has unexpected rank {}", name, dims.len()),
     }
 }
 
@@ -592,41 +895,14 @@ fn looks_like_single_stem_output(dims: &[i64], channel_count: usize) -> bool {
         || matches!(dims, [1, channels, frame_count] if *channels == channel_count as i64 && *frame_count > 0)
 }
 
-fn tensor_dims(output_value: &ort::value::DynValue) -> Result<Vec<i64>> {
-    let (shape, _) = output_value
-        .try_extract_tensor::<f32>()
-        .context("Demucs output tensor was not readable as f32")?;
-    Ok(shape.iter().copied().collect())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn hann_window_has_correct_properties() {
-        let n = 1024;
-        let w = hann_window(n);
-
-        assert_eq!(w.len(), n);
-        // First value is exactly 0; last value is small but non-zero
-        // for the periodic form (≈π/N for large N).
-        assert!(w[0] < 1e-6, "Hann window should start at 0");
-        assert!(w[n - 1] < 0.01, "Hann window should end near 0");
-        assert!(
-            w[n - 1] > 1e-6,
-            "Hann window end should be non-zero (periodic form)"
-        );
-        assert!(
-            (w[n / 2] - 1.0).abs() < 1e-6,
-            "Hann window should peak at 1.0"
-        );
-    }
-
-    #[test]
     fn hann_window_constant_overlap_add_constraint() {
         let n = 1024;
-        let w = hann_window(n);
+        let w = crate::separator::workspace::hann_window(n);
         let hop = n / 2;
 
         for i in 0..hop {
@@ -640,53 +916,52 @@ mod tests {
     }
 
     #[test]
-    fn overlap_add_reconstructs_constant_signal() {
-        let channels = 2;
-        let target_frames = 256;
-        let input_frames = target_frames * 3; // 3 non-overlapping would have seams
+    fn deinterleave_converts_channels_first_to_interleaved() {
+        // channels-first: [ch0: [1, 2, 3], ch1: [4, 5, 6]]
+        let planar = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let mut output = vec![0.0; 6];
+        deinterleave_to_interleaved(&planar, 2, 3, 2, &mut output, 3);
 
-        let input_samples = vec![1.0_f32; input_frames * channels];
-        let decoded = DecodedAudio {
-            sample_rate: 44100,
-            channels,
-            duration_ms: (input_frames as f64 / 44.1) as u64,
-            samples: input_samples,
+        // interleaved: [1, 4, 2, 5, 3, 6]
+        assert_eq!(output, vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
+    }
+
+    #[test]
+    fn deinterleave_truncates_to_chunk_frame_count() {
+        let planar = vec![1.0, 2.0, 3.0, 4.0, 4.0, 5.0, 6.0, 6.0];
+        let mut output = vec![0.0; 4]; // 2 frames * 2 channels
+        deinterleave_to_interleaved(&planar, 2, 4, 2, &mut output, 2);
+
+        // Only first 2 frames: [1, 4, 2, 5]
+        assert_eq!(output, vec![1.0, 4.0, 2.0, 5.0]);
+    }
+
+    #[test]
+    fn finish_all_removes_already_promoted_files_after_late_failure() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let vocals_path = dir.path().join("vocals.ogg");
+        let mut vocals =
+            StreamingOggWriter::new(&vocals_path, 44_100, 2, None, None).expect("writer");
+        vocals
+            .accept_frames(&vec![0.0_f32; 2 * 2_048])
+            .expect("write frames");
+
+        let writers = StemWriters {
+            mode: StemMode::TwoStem,
+            vocals,
+            accompaniment: None,
+            drums: None,
+            bass: None,
+            other: None,
         };
 
-        let hop_size = target_frames / 2;
-        let window = hann_window(target_frames);
-        let mut output = vec![0.0_f32; input_frames * channels];
-        let mut norm = vec![0.0_f32; input_frames * channels];
-
-        for chunk_start in (0..input_frames).step_by(hop_size) {
-            let chunk_frames = (input_frames - chunk_start).min(target_frames);
-            for (frame, &w) in window.iter().take(chunk_frames).enumerate() {
-                let w2 = w * w;
-                for ch in 0..channels {
-                    let idx = (chunk_start + frame) * channels + ch;
-                    // "Inference" just passes through the input.
-                    output[idx] += decoded.samples[idx] * w2;
-                    norm[idx] += w2;
-                }
-            }
-        }
-
-        for (i, sample) in output.iter_mut().enumerate() {
-            if norm[i] > 1e-8 {
-                *sample /= norm[i];
-            }
-        }
-
-        // Interior samples (where window norm > 0) should reconstruct to ~1.0.
-        // Boundary samples at the very start/end where the Hann window is 0
-        // cannot be reconstructed — that's expected, not a bug.
-        for (i, (&sample, &n)) in output.iter().zip(norm.iter()).enumerate() {
-            if n > 0.1 {
-                assert!(
-                    (sample - 1.0).abs() < 0.01,
-                    "sample[{i}] = {sample}, expected ~1.0 (overlap-add should reconstruct constant signal)"
-                );
-            }
-        }
+        let error = writers
+            .finish_all()
+            .expect_err("missing accompaniment must fail");
+        assert!(error.to_string().contains("accompaniment writer"));
+        assert!(
+            !vocals_path.exists(),
+            "promoted vocals file must be cleaned up"
+        );
     }
 }

@@ -1,5 +1,4 @@
 use std::{
-    cell::Cell,
     fs,
     path::{Path, PathBuf},
 };
@@ -15,12 +14,11 @@ use lofty::{
     tag::{Tag, TagType},
 };
 use openkara_lib::{
-    audio::decode::DecodedAudio,
+    audio::encode::StreamingOggWriter,
     cache::{self, stems},
     config::StemMode,
     library::Song,
     library_root::LibraryRoot,
-    separator::inference::{SeparatedStem, SeparationResult},
 };
 use rusqlite::Connection;
 
@@ -42,27 +40,6 @@ fn unique_library_root() -> LibraryRoot {
 fn cleanup_dir(path: &Path) {
     if path.exists() {
         fs::remove_dir_all(path).expect("temporary cache directory should be removable");
-    }
-}
-
-fn sample_separation() -> SeparationResult {
-    let make_stem = |name: &str, sample: f32| SeparatedStem {
-        name: name.to_owned(),
-        audio: DecodedAudio {
-            sample_rate: 44_100,
-            channels: 2,
-            duration_ms: 1,
-            samples: vec![sample, sample, -sample, -sample],
-        },
-    };
-
-    SeparationResult {
-        stems: vec![
-            make_stem("drums", 0.2),
-            make_stem("bass", 0.3),
-            make_stem("other", 0.1),
-            make_stem("vocals", 0.4),
-        ],
     }
 }
 
@@ -143,6 +120,119 @@ fn assert_preserved_artist_album_and_cover(path: &Path) {
     assert_eq!(tag.pictures().len(), 1);
 }
 
+/// Write dummy stem OGG files using the streaming writer and register
+/// the cache entry. This simulates the output of a streaming separation
+/// run without requiring the actual Demucs model.
+fn populate_stem_cache(
+    connection: &Connection,
+    library: &LibraryRoot,
+    song: &Song,
+    song_hash: &str,
+    stem_mode: StemMode,
+    model_variant: &str,
+) -> stems::StemCacheResult {
+    let source_audio_path = library.resolve(song.file_path.as_deref().unwrap());
+    let stems_base = library.stems_dir();
+
+    // Prepare the stem directory.
+    let stem_directory =
+        stems::prepare_stem_directory(&stems_base, song_hash).expect("stem dir should prepare");
+
+    let sample_rate = 44_100;
+    let channels = 2;
+    let title_base = song.title.as_deref().unwrap_or("Fixture Song MP3");
+
+    // Write dummy PCM data through streaming writers.
+    let dummy_pcm = vec![0.5_f32; 1024 * channels];
+
+    match stem_mode {
+        StemMode::TwoStem => {
+            let vocals_path = stem_directory.join("vocals.ogg");
+            let accomp_path = stem_directory.join("accompaniment.ogg");
+
+            let mut vocals_writer = StreamingOggWriter::new(
+                &vocals_path,
+                sample_rate,
+                channels,
+                Some(&source_audio_path),
+                Some(&format!("{title_base} (Acapella)")),
+            )
+            .expect("vocals writer");
+            vocals_writer
+                .accept_frames(&dummy_pcm)
+                .expect("vocals frames");
+            vocals_writer.finish().expect("vocals finalize");
+
+            let mut accomp_writer = StreamingOggWriter::new(
+                &accomp_path,
+                sample_rate,
+                channels,
+                Some(&source_audio_path),
+                Some(&format!("{title_base} (Instrumental)")),
+            )
+            .expect("accompaniment writer");
+            accomp_writer
+                .accept_frames(&dummy_pcm)
+                .expect("accompaniment frames");
+            accomp_writer.finish().expect("accompaniment finalize");
+        }
+        StemMode::FourStem => {
+            for (filename, suffix) in [
+                ("vocals.ogg", "Acapella"),
+                ("drums.ogg", "Drums"),
+                ("bass.ogg", "Bass"),
+                ("other.ogg", "Other"),
+            ] {
+                let path = stem_directory.join(filename);
+                let mut writer = StreamingOggWriter::new(
+                    &path,
+                    sample_rate,
+                    channels,
+                    Some(&source_audio_path),
+                    Some(&format!("{title_base} ({suffix})")),
+                )
+                .expect("stem writer");
+                writer.accept_frames(&dummy_pcm).expect("stem frames");
+                writer.finish().expect("stem finalize");
+            }
+        }
+    }
+
+    // Register the DB entry.
+    stems::register_streamed_stem_cache(
+        connection,
+        &stems_base,
+        song_hash,
+        stem_mode,
+        model_variant,
+    )
+    .expect("cache entry should register")
+}
+
+#[test]
+fn prepare_stem_directory_removes_legacy_checkpoint_and_partial_output() {
+    let root = support::unique_temp_path("phase3-cache-restart-from-zero");
+    let stems_base = root.join("stems");
+    let stem_directory = stems_base.join("legacy-checkpoint");
+    fs::create_dir_all(stem_directory.join(".chunks"))
+        .expect("legacy checkpoint directory should be created");
+    fs::write(stem_directory.join(".chunks/manifest.json"), b"legacy")
+        .expect("legacy checkpoint fixture should be written");
+    fs::write(stem_directory.join("vocals.ogg.tmp"), b"partial")
+        .expect("partial output fixture should be written");
+    fs::write(stem_directory.join("vocals.ogg"), b"stale")
+        .expect("stale final output fixture should be written");
+
+    let prepared = stems::prepare_stem_directory(&stems_base, "legacy-checkpoint")
+        .expect("stem directory should reset");
+
+    assert!(prepared.exists());
+    assert!(!prepared.join(".chunks").exists());
+    assert!(!prepared.join("vocals.ogg.tmp").exists());
+    assert!(!prepared.join("vocals.ogg").exists());
+    cleanup_dir(&root);
+}
+
 #[test]
 fn caches_stems_under_hash_directory_and_hits_cache_on_second_request() {
     let connection = Connection::open_in_memory().expect("in-memory database should open");
@@ -150,28 +240,17 @@ fn caches_stems_under_hash_directory_and_hits_cache_on_second_request() {
     let library = unique_library_root();
     let library_root_path = library.root().to_owned();
     let song = tagged_song_in_library(&library, "song-hash");
-    let source_audio_path = library.resolve(song.file_path.as_deref().unwrap());
     cache::upsert_song(&connection, &song).expect("song insert should succeed");
-    let generation_count = Cell::new(0_usize);
 
-    let first = stems::get_or_create_stem_cache(
+    let first = populate_stem_cache(
         &connection,
-        &library.stems_dir(),
         &library,
         &song,
-        &source_audio_path,
         "song-hash",
         StemMode::TwoStem,
         "htdemucs",
-        || {
-            generation_count.set(generation_count.get() + 1);
-            Ok(sample_separation())
-        },
-    )
-    .expect("first separation should populate cache");
-
+    );
     assert!(!first.cache_hit);
-    assert_eq!(generation_count.get(), 1);
     assert!(library
         .stems_dir()
         .join("song-hash")
@@ -183,24 +262,11 @@ fn caches_stems_under_hash_directory_and_hits_cache_on_second_request() {
         .join("accompaniment.ogg")
         .exists());
 
-    let second = stems::get_or_create_stem_cache(
-        &connection,
-        &library.stems_dir(),
-        &library,
-        &song,
-        &source_audio_path,
-        "song-hash",
-        StemMode::TwoStem,
-        "htdemucs",
-        || {
-            generation_count.set(generation_count.get() + 1);
-            Ok(sample_separation())
-        },
-    )
-    .expect("second separation should hit cache");
-
+    // Second request should hit the cache.
+    let second = stems::get_valid_cached_stem_entry(&connection, &library, "song-hash")
+        .expect("cache lookup should succeed")
+        .expect("cache entry should exist");
     assert!(second.cache_hit);
-    assert_eq!(generation_count.get(), 1);
 
     let cached_entry = stems::get_cached_stem_entry(&connection, "song-hash")
         .expect("cache lookup should succeed")
@@ -218,21 +284,16 @@ fn two_stem_cache_preserves_metadata_and_overrides_titles() {
     let library = unique_library_root();
     let library_root_path = library.root().to_owned();
     let song = tagged_song_in_library(&library, "song-two-stem");
-    let source_audio_path = library.resolve(song.file_path.as_deref().unwrap());
     cache::upsert_song(&connection, &song).expect("song insert should succeed");
 
-    let cached = stems::get_or_create_stem_cache(
+    let cached = populate_stem_cache(
         &connection,
-        &library.stems_dir(),
         &library,
         &song,
-        &source_audio_path,
         "song-two-stem",
         StemMode::TwoStem,
         "htdemucs",
-        || Ok(sample_separation()),
-    )
-    .expect("two-stem cache should populate");
+    );
 
     let vocals_path = library.resolve(&cached.entry.vocals_path);
     let accompaniment_path = library.resolve(&cached.entry.accomp_path);
@@ -258,21 +319,16 @@ fn four_stem_cache_writes_per_stem_titles() {
     let library = unique_library_root();
     let library_root_path = library.root().to_owned();
     let song = tagged_song_in_library(&library, "song-four-stem");
-    let source_audio_path = library.resolve(song.file_path.as_deref().unwrap());
     cache::upsert_song(&connection, &song).expect("song insert should succeed");
 
-    let cached = stems::get_or_create_stem_cache(
+    let cached = populate_stem_cache(
         &connection,
-        &library.stems_dir(),
         &library,
         &song,
-        &source_audio_path,
         "song-four-stem",
         StemMode::FourStem,
         "htdemucs",
-        || Ok(sample_separation()),
-    )
-    .expect("four-stem cache should populate");
+    );
 
     assert_eq!(
         read_tagged_title(&library.resolve(&cached.entry.vocals_path)),
@@ -301,21 +357,16 @@ fn downgrade_to_two_stem_rewrites_accompaniment_metadata() {
     let library = unique_library_root();
     let library_root_path = library.root().to_owned();
     let song = tagged_song_in_library(&library, "song-downgrade");
-    let source_audio_path = library.resolve(song.file_path.as_deref().unwrap());
     cache::upsert_song(&connection, &song).expect("song insert should succeed");
 
-    stems::get_or_create_stem_cache(
+    populate_stem_cache(
         &connection,
-        &library.stems_dir(),
         &library,
         &song,
-        &source_audio_path,
         "song-downgrade",
         StemMode::FourStem,
         "htdemucs",
-        || Ok(sample_separation()),
-    )
-    .expect("four-stem cache should populate");
+    );
 
     let (updated_entry, _) = stems::downgrade_to_two_stem(&connection, &library, "song-downgrade")
         .expect("downgrade should succeed");
@@ -327,4 +378,88 @@ fn downgrade_to_two_stem_rewrites_accompaniment_metadata() {
     assert_preserved_artist_album_and_cover(&library.resolve(&updated_entry.accomp_path));
 
     cleanup_dir(&library_root_path);
+}
+
+/// Verify that the streaming OGG writer produces a valid file that can
+/// be decoded back, confirming the streaming path produces correct output.
+#[test]
+fn streaming_ogg_writer_produces_valid_ogg() {
+    let output_dir = support::unique_temp_path("phase3-streaming-ogg");
+    fs::create_dir_all(&output_dir).expect("output dir should be created");
+    let output_path = output_dir.join("test.ogg");
+
+    let sample_rate = 44_100;
+    let channels = 2;
+    let pcm = vec![0.5_f32; 44_100 * channels]; // 1 second of audio
+
+    let mut writer = StreamingOggWriter::new(&output_path, sample_rate, channels, None, None)
+        .expect("writer should be created");
+    writer
+        .accept_frames(&pcm)
+        .expect("frames should be accepted");
+    writer.finish().expect("writer should finalize");
+
+    assert!(output_path.exists(), "output file should exist");
+
+    // Decode the file back to verify it's valid.
+    let decoded = openkara_lib::audio::decode::decode_file(&output_path)
+        .expect("streaming OGG should decode");
+    assert_eq!(decoded.sample_rate, sample_rate);
+    assert_eq!(decoded.channels, channels);
+
+    cleanup_dir(&output_dir);
+}
+
+/// Verify that dropping a writer without finishing cleans up the temp file.
+#[test]
+fn streaming_ogg_writer_drop_cleans_up_temp_file() {
+    let output_dir = support::unique_temp_path("phase3-streaming-drop");
+    fs::create_dir_all(&output_dir).expect("output dir should be created");
+    let output_path = output_dir.join("dropped.ogg");
+    let temp_path = output_path.with_extension("ogg.tmp");
+
+    {
+        let _writer = StreamingOggWriter::new(&output_path, 44_100, 2, None, None)
+            .expect("writer should be created");
+        assert!(
+            temp_path.exists(),
+            "temp file should exist while writer is alive"
+        );
+        // Writer is dropped here without finishing.
+    }
+
+    assert!(
+        !temp_path.exists(),
+        "temp file should be cleaned up on drop"
+    );
+    assert!(!output_path.exists(), "final file should not exist");
+
+    cleanup_dir(&output_dir);
+}
+
+/// Verify that the streaming writer's atomic promotion works: the final
+/// file appears only after finish, not before.
+#[test]
+fn streaming_ogg_writer_atomic_promotion() {
+    let output_dir = support::unique_temp_path("phase3-streaming-atomic");
+    fs::create_dir_all(&output_dir).expect("output dir should be created");
+    let output_path = output_dir.join("atomic.ogg");
+
+    let pcm = vec![0.3_f32; 1024 * 2];
+
+    let mut writer = StreamingOggWriter::new(&output_path, 44_100, 2, None, None)
+        .expect("writer should be created");
+
+    writer
+        .accept_frames(&pcm)
+        .expect("frames should be accepted");
+    assert!(
+        !output_path.exists(),
+        "final file should not exist before finish"
+    );
+
+    writer.finish().expect("writer should finalize");
+    assert!(output_path.exists(), "final file should exist after finish");
+
+    cleanup_dir(&output_dir);
 }
