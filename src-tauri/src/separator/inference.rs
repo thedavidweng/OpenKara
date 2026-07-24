@@ -197,6 +197,17 @@ fn detect_output_contract(model: &LoadedModel, channels: usize) -> Result<ModelO
             .collect()
     };
 
+    classify_output_contract(&output_infos, channels)
+}
+
+/// Classify the model output contract from owned output metadata.
+///
+/// Separated from `detect_output_contract` so the classification rules can
+/// be unit-tested without an ORT session.
+fn classify_output_contract(
+    output_infos: &[(String, Vec<i64>)],
+    channels: usize,
+) -> Result<ModelOutputContract> {
     if output_infos.is_empty() {
         bail!("model has no outputs");
     }
@@ -244,6 +255,23 @@ fn detect_output_contract(model: &LoadedModel, channels: usize) -> Result<ModelO
     );
 }
 
+/// Compute the hop size and total chunk count for the streaming loop.
+///
+/// A short input is one inference window even when it exceeds half of the
+/// model window. Longer inputs retain the 50% overlap schedule. The returned
+/// hop drives `(0..input_frame_count).step_by(hop_size)`, and the chunk
+/// count equals the number of loop iterations so progress never exceeds
+/// the reported total.
+fn chunk_schedule(input_frame_count: usize, chunk_size: usize) -> (usize, usize) {
+    let hop_size = if input_frame_count <= chunk_size {
+        input_frame_count.max(1)
+    } else {
+        (chunk_size / 2).max(1)
+    };
+    let total_chunks = input_frame_count.div_ceil(hop_size);
+    (hop_size, total_chunks)
+}
+
 /// Run streaming separation, writing finalized PCM directly to OGG writers.
 ///
 /// This function does NOT return a `SeparationResult` with full-song PCM.
@@ -266,13 +294,7 @@ pub fn separate_streaming(
     let channels = normalized_audio.channels;
     let input_frame_count = normalized_audio.samples.len() / channels;
     let chunk_size = preprocess::target_frame_count(model, input_frame_count)?;
-    // A short input is one inference window even when it exceeds half of the
-    // model window. Longer inputs retain the 50% overlap schedule.
-    let hop_size = if input_frame_count <= chunk_size {
-        input_frame_count.max(1)
-    } else {
-        chunk_size / 2
-    };
+    let (hop_size, total_chunks) = chunk_schedule(input_frame_count, chunk_size);
 
     let output_contract = detect_output_contract(model, channels)?;
     configure_model_inputs(model, workspace)?;
@@ -289,12 +311,6 @@ pub fn separate_streaming(
             );
         }
     }
-
-    let total_chunks = if input_frame_count <= chunk_size {
-        1
-    } else {
-        (input_frame_count - chunk_size).div_ceil(hop_size) + 1
-    };
 
     // Interrupted runs always restart from chunk 0. Vorbis encoder and OLA
     // state are intentionally not serialized.
@@ -948,6 +964,114 @@ mod tests {
 
         // Only first 2 frames: [1, 4, 2, 5]
         assert_eq!(output, vec![1.0, 4.0, 2.0, 5.0]);
+    }
+
+    fn owned_outputs(outputs: &[(&str, &[i64])]) -> Vec<(String, Vec<i64>)> {
+        outputs
+            .iter()
+            .map(|(name, dims)| (name.to_string(), dims.to_vec()))
+            .collect()
+    }
+
+    #[test]
+    fn classify_rejects_generic_two_output_model() {
+        // Regression: generic output_0/output_1 must not be accepted as a
+        // two-stem bundle even when both shapes are stem-like, because the
+        // processing path cannot route unnamed outputs.
+        let outputs = owned_outputs(&[("output_0", &[2, 44_100]), ("output_1", &[2, 44_100])]);
+        let error = classify_output_contract(&outputs, 2)
+            .expect_err("generic two-output model must be rejected");
+        assert!(error.to_string().contains("could not detect"));
+    }
+
+    #[test]
+    fn classify_rejects_two_output_model_missing_accompaniment_name() {
+        let outputs = owned_outputs(&[("vocals", &[2, 44_100]), ("output_1", &[2, 44_100])]);
+        classify_output_contract(&outputs, 2)
+            .expect_err("two-output model without accompaniment name must be rejected");
+    }
+
+    #[test]
+    fn classify_accepts_named_two_stem_bundle() {
+        let outputs = owned_outputs(&[("vocals", &[2, 44_100]), ("accompaniment", &[2, 44_100])]);
+        let contract = classify_output_contract(&outputs, 2).expect("named bundle");
+        assert_eq!(contract, ModelOutputContract::TwoStemBundle);
+    }
+
+    #[test]
+    fn classify_detects_stacked_four_stem_output() {
+        let outputs = owned_outputs(&[("output", &[4, 2, 44_100])]);
+        let contract = classify_output_contract(&outputs, 2).expect("stacked output");
+        assert_eq!(contract, ModelOutputContract::FourStemStacked);
+    }
+
+    #[test]
+    fn classify_detects_separate_four_stem_outputs() {
+        let outputs = owned_outputs(&[
+            ("drums", &[2, 44_100]),
+            ("bass", &[2, 44_100]),
+            ("other", &[2, 44_100]),
+            ("vocals", &[2, 44_100]),
+        ]);
+        let contract = classify_output_contract(&outputs, 2).expect("separate outputs");
+        assert_eq!(contract, ModelOutputContract::FourStemSeparate);
+    }
+
+    fn loop_iterations(input_frame_count: usize, hop_size: usize) -> usize {
+        (0..input_frame_count).step_by(hop_size).count()
+    }
+
+    #[test]
+    fn chunk_schedule_keeps_short_audio_on_one_window() {
+        let chunk_size = 343_980;
+
+        // Regression: audio longer than half a window but shorter than a
+        // full window must run as a single inference window.
+        for input in [1, chunk_size / 2, chunk_size / 2 + 1, chunk_size] {
+            let (hop, total) = chunk_schedule(input, chunk_size);
+            assert_eq!(total, 1, "input {input} should be one chunk");
+            assert_eq!(loop_iterations(input, hop), total);
+        }
+    }
+
+    #[test]
+    fn chunk_schedule_total_matches_loop_iterations_for_long_audio() {
+        let chunk_size = 343_980;
+
+        for input in [
+            chunk_size + 1,
+            chunk_size * 3 / 2,
+            chunk_size * 2,
+            chunk_size * 23 + 17,
+        ] {
+            let (hop, total) = chunk_schedule(input, chunk_size);
+            assert_eq!(hop, chunk_size / 2);
+            assert_eq!(
+                loop_iterations(input, hop),
+                total,
+                "input {input} chunk count must match loop iterations"
+            );
+        }
+    }
+
+    #[test]
+    fn chunk_schedule_covers_every_frame() {
+        let chunk_size = 64;
+
+        for input in 1..=chunk_size * 4 {
+            let (hop, total) = chunk_schedule(input, chunk_size);
+            // Consecutive chunk starts are `hop <= chunk_size` apart, so the
+            // schedule is gapless as long as the final chunk reaches the end.
+            assert!(
+                hop <= chunk_size,
+                "input {input}: hop must not exceed chunk"
+            );
+            let last_start = (total - 1) * hop;
+            assert!(
+                last_start + chunk_size >= input,
+                "input {input}: final chunk starting at {last_start} must reach the end"
+            );
+        }
     }
 
     #[test]
