@@ -266,7 +266,13 @@ pub fn separate_streaming(
     let channels = normalized_audio.channels;
     let input_frame_count = normalized_audio.samples.len() / channels;
     let chunk_size = preprocess::target_frame_count(model, input_frame_count)?;
-    let hop_size = chunk_size / 2;
+    // A short input is one inference window even when it exceeds half of the
+    // model window. Longer inputs retain the 50% overlap schedule.
+    let hop_size = if input_frame_count <= chunk_size {
+        input_frame_count.max(1)
+    } else {
+        chunk_size / 2
+    };
 
     let output_contract = detect_output_contract(model, channels)?;
     configure_model_inputs(model, workspace)?;
