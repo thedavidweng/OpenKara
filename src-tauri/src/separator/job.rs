@@ -1,9 +1,16 @@
 use crate::{
     audio::decode,
+    audio::encode::StreamingOggWriter,
     cache,
     config::{ExecutionProviderPreference, StemMode},
     library_root::LibraryRoot,
-    separator::{checkpoint, inference, model, model_cache::ModelCache},
+    separator::{
+        inference::{self, StemWriters},
+        model,
+        model_cache::ModelCache,
+        preprocess,
+        workspace::SeparationWorkspace,
+    },
 };
 use anyhow::{Context, Result};
 use rusqlite::Connection;
@@ -106,7 +113,152 @@ pub fn separate_song_into_cache(
     };
     // model_cache lock is now released. The Arc<LoadedModel> keeps the model alive.
 
-    let checkpoint_dir = checkpoint::checkpoint_dir(&library_root.stems_dir(), song_hash);
+    // Normalize the decoded audio to the model's expected sample rate and
+    // channel layout. The normalized audio is the input to the streaming
+    // separation path. Takes ownership to avoid holding two full-song PCM
+    // copies in memory simultaneously.
+    let normalized_audio = preprocess::normalize_audio_for_model(decoded_audio)
+        .context("failed to normalize audio for model")?;
+
+    let channels = normalized_audio.channels;
+    let input_frame_count = normalized_audio.samples.len() / channels;
+    let chunk_size = preprocess::target_frame_count(&loaded_model, input_frame_count)?;
+    let hop_size = chunk_size / 2;
+
+    // Prepare a clean stem directory. Interrupted runs restart from chunk 0.
+    let stems_base = library_root.stems_dir();
+    let stem_directory = cache::stems::prepare_stem_directory(&stems_base, song_hash)
+        .context("failed to prepare stem cache directory")?;
+
+    // Create streaming OGG writers. The writers write to temp files and
+    // atomically promote on finish, so a crash never leaves a partial cache.
+    let source_path_for_metadata = &absolute_path;
+    let vocals_title = format!(
+        "{} (Acapella)",
+        song.title.as_deref().unwrap_or_else(|| {
+            source_path_for_metadata
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Unknown")
+        })
+    );
+    let accomp_title = format!(
+        "{} (Instrumental)",
+        song.title.as_deref().unwrap_or_else(|| {
+            source_path_for_metadata
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Unknown")
+        })
+    );
+    let drums_title = format!(
+        "{} (Drums)",
+        song.title.as_deref().unwrap_or_else(|| {
+            source_path_for_metadata
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Unknown")
+        })
+    );
+    let bass_title = format!(
+        "{} (Bass)",
+        song.title.as_deref().unwrap_or_else(|| {
+            source_path_for_metadata
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Unknown")
+        })
+    );
+    let other_title = format!(
+        "{} (Other)",
+        song.title.as_deref().unwrap_or_else(|| {
+            source_path_for_metadata
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Unknown")
+        })
+    );
+
+    let sample_rate = normalized_audio.sample_rate;
+    let vocals_path = stem_directory.join("vocals.ogg");
+    let accomp_path = stem_directory.join("accompaniment.ogg");
+    let drums_path = stem_directory.join("drums.ogg");
+    let bass_path = stem_directory.join("bass.ogg");
+    let other_path = stem_directory.join("other.ogg");
+
+    let mut writers = match stem_mode {
+        StemMode::TwoStem => StemWriters {
+            mode: StemMode::TwoStem,
+            vocals: StreamingOggWriter::new(
+                &vocals_path,
+                sample_rate,
+                channels,
+                Some(source_path_for_metadata.as_path()),
+                Some(&vocals_title),
+            )
+            .context("failed to create vocals streaming writer")?,
+            accompaniment: Some(
+                StreamingOggWriter::new(
+                    &accomp_path,
+                    sample_rate,
+                    channels,
+                    Some(source_path_for_metadata.as_path()),
+                    Some(&accomp_title),
+                )
+                .context("failed to create accompaniment streaming writer")?,
+            ),
+            drums: None,
+            bass: None,
+            other: None,
+        },
+        StemMode::FourStem => StemWriters {
+            mode: StemMode::FourStem,
+            vocals: StreamingOggWriter::new(
+                &vocals_path,
+                sample_rate,
+                channels,
+                Some(source_path_for_metadata.as_path()),
+                Some(&vocals_title),
+            )
+            .context("failed to create vocals streaming writer")?,
+            accompaniment: None,
+            drums: Some(
+                StreamingOggWriter::new(
+                    &drums_path,
+                    sample_rate,
+                    channels,
+                    Some(source_path_for_metadata.as_path()),
+                    Some(&drums_title),
+                )
+                .context("failed to create drums streaming writer")?,
+            ),
+            bass: Some(
+                StreamingOggWriter::new(
+                    &bass_path,
+                    sample_rate,
+                    channels,
+                    Some(source_path_for_metadata.as_path()),
+                    Some(&bass_title),
+                )
+                .context("failed to create bass streaming writer")?,
+            ),
+            other: Some(
+                StreamingOggWriter::new(
+                    &other_path,
+                    sample_rate,
+                    channels,
+                    Some(source_path_for_metadata.as_path()),
+                    Some(&other_title),
+                )
+                .context("failed to create other streaming writer")?,
+            ),
+        },
+    };
+
+    // Create the reusable workspace with bounded memory.
+    let mut workspace =
+        SeparationWorkspace::new(stem_mode, channels, chunk_size, hop_size, input_frame_count);
+
     let inference_progress = |completed: usize, total: usize| {
         if total > 0 {
             let fraction = completed as f64 / total as f64;
@@ -115,30 +267,37 @@ pub fn separate_song_into_cache(
             report_progress(percent.round() as u8);
         }
     };
-    let separation = inference::separate_audio(
+
+    // Run the streaming separation. Finalized frames are written to the
+    // OGG writers incrementally; memory is bounded by the workspace size.
+    let _outcome = inference::separate_streaming(
         &loaded_model,
-        decoded_audio,
+        &normalized_audio,
+        stem_mode,
+        &mut writers,
+        &mut workspace,
         inference_progress,
-        Some(checkpoint_dir.as_path()),
-        song_hash,
     )
     .with_context(|| format!("failed to separate stems for song {song_hash}"))?;
 
     report_progress(CACHE_WRITE_PROGRESS);
-    let stems_base = library_root.stems_dir();
-    let cached = cache::stems::store_generated_stem_cache(
+
+    // Finalize all writers — atomically promote temp files to final paths.
+    // If any writer fails, the remaining writers are dropped and their
+    // temp files cleaned up, so no partial cache is published.
+    writers
+        .finish_all()
+        .context("failed to finalize streaming OGG writers")?;
+
+    // Register the DB entry now that the OGG files exist.
+    let cached = cache::stems::register_streamed_stem_cache(
         connection,
         &stems_base,
-        &song,
-        &absolute_path,
         song_hash,
-        &separation,
         stem_mode,
         model_variant,
     )
-    .with_context(|| format!("failed to cache generated stems for song {song_hash}"))?;
-
-    let _ = checkpoint::cleanup(&checkpoint_dir);
+    .with_context(|| format!("failed to register streamed stem cache for song {song_hash}"))?;
 
     report_progress(COMPLETE_PROGRESS);
     Ok(artifacts_from_cache_entry(cached.entry, false))

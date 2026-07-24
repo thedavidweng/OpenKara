@@ -162,6 +162,8 @@
 4. 如果数据库记录存在但文件丢失，后端会重新生成并覆盖目录
 5. 生成的 OGG stem 会复制原曲 metadata，并把 `title` 改写为对应 stem 后缀
 6. 命令层现在通过共享分离 helper 统一管理 running 状态复用、进度事件和最终状态写回，避免三个入口出现行为漂移
+7. **Streaming OGG writers:** stem 输出通过 streaming writer 增量写入临时文件，完成后原子重命名为最终文件。崩溃或取消不会留下部分缓存文件。
+8. **Bounded output working set:** 分离输出使用 OLA ring buffer 和可复用 workspace；除一份完整 normalized 输入 PCM 外，额外内存仅取决于推理窗口大小。
 
 ## Required dependencies
 
@@ -173,20 +175,21 @@
 
 ## Limits & expectations
 
-| Dimension              | Measured value / policy                                                                                                                                                                                                     |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| File size              | No hard cap upstream of the model. Tested with 200 MB / ~18 min WAV on Apple Silicon (M2, 16 GB) — peak RSS ~2.5 GB, ~4× real-time. Larger files increase peak memory linearly; 1 GB+ files may cause OOM on 8 GB machines. |
-| Duration               | No hard cap. Long audio is split into fixed Demucs windows and reassembled. A 60-minute MP3 at 256 kbps completes with peak RSS ~3.8 GB on a 16 GB machine.                                                                 |
-| Peak memory            | 2-stem: ~1.8 GB (44.1 kHz, 16-bit stereo). 4-stem: ~3.2 GB. Increases with input sample rate and channels due to internal resampling to 44.1 kHz.                                                                           |
-| Disk (stems)           | 2-stem: ~1 MB per minute of audio (OGG ~128 kbps). 4-stem: ~2–2.5× 2-stem due to four track files.                                                                                                                          |
-| Cancellation           | Mid-separation cancellation removes the partial cache entry; the song reverts to `idle` state. Restart re-runs inference from scratch.                                                                                      |
-| Checkpoint             | Per-chunk checkpointing writes completed windows to temp directory; if the process crashes mid-way, the next run restarts from last checkpoint.                                                                             |
-| Concurrent runs        | One separation per process (singleton worker). A second `separate()` call for a different song returns `running` for the first job; the second is queued.                                                                   |
-| Instrumental exemption | Songs with `instrumental = true` never enter the AI separation path and return `completed` immediately with no-op.                                                                                                          |
+| Dimension              | Measured value / policy                                                                                                                                                                            |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| File size              | No hard cap. The input is decoded and normalized once, then processed in fixed-size chunks. One normalized full-song PCM buffer remains by design.                                                 |
+| Duration               | No hard cap. Long audio is processed through fixed Demucs windows and streaming OLA output. Additional output/OLA/encoder working memory stays fixed as duration grows.                            |
+| Peak memory            | One normalized full-song input buffer plus fixed-size model/session, OLA, planar input, window, accompaniment scratch, and encoder staging buffers. No full-song stem output buffers are retained. |
+| Disk (stems)           | 2-stem: ~1 MB per minute of audio (OGG ~128 kbps). 4-stem: ~2–2.5× 2-stem due to four track files.                                                                                                 |
+| Cancellation           | Mid-separation cancellation drops streaming-writer temp files; no partial cache entry is published. The next attempt restarts from chunk 0.                                                        |
+| Checkpoint             | No partial-encoding resume. Vorbis encoder and OLA state are not serialized. An interrupted run is cleaned up and restarted from chunk 0.                                                          |
+| Concurrent runs        | One separation per process (singleton worker). A second `separate()` call for a different song returns `running` for the first job; the second is queued.                                          |
+| Instrumental exemption | Songs with `instrumental = true` never enter the AI separation path and return `completed` immediately with no-op.                                                                                 |
 
 **Reference measurement** (for comparison when evaluating future regressions):
 
 - Hardware: Apple M2, 16 GB RAM, macOS 15.4
 - File: 44.1 kHz / 16-bit / stereo WAV, 4:32 duration, 45 MB
-- 2-stem: 42 s inference, peak RSS 1.9 GB, output 4.1 MB (vocals) + 4.3 MB (accomp) OGG
-- 4-stem: 96 s inference, peak RSS 3.4 GB, output 4.1 + 4.3 + 2.8 (drums) + 2.6 (bass) + 3.1 (other) MB OGG
+- Architecture: one normalized full-song input buffer plus fixed-size streaming OLA rings and atomic streaming OGG writers
+- No full-song vocals/drums/bass/other/accompaniment output buffers are retained
+- Output: 2-stem produces vocals.ogg + accompaniment.ogg; 4-stem produces vocals/drums/bass/other.ogg
