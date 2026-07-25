@@ -1,14 +1,13 @@
-//! End-to-end spectral session path (issue #172 PR 2).
+//! End-to-end spectral session path (issue #172).
 //!
-//! Runs the full streaming separation through a spectral-core model and,
-//! when the dev waveform model is present, compares the decoded stem output
-//! against the waveform path on the same audio (codec-tolerant thresholds:
-//! both paths encode with identical Vorbis settings, so a composition bug —
-//! wrong stem order, missing time branch, broken premix — shows up orders
-//! of magnitude above the tolerance).
+//! Runs the full streaming separation through a spectral-core model and
+//! sanity-checks the decoded stems (finite, non-empty, finite RMS). The
+//! spectral-core session is the only production separation path, so there is
+//! no waveform reference to compare against.
 //!
-//! Gated on `OPENKARA_SPECTRAL_MODEL`: the spectral-core artifact is not in
-//! the stable catalog yet, so CI cannot provision it. Locally:
+//! Gated on `OPENKARA_SPECTRAL_MODEL`: the migrated `phase3_*` tests exercise
+//! the spectral path with the CI-provisioned catalog model, while this suite
+//! runs against a locally supplied spectral export. Locally:
 //!
 //! ```text
 //! OPENKARA_SPECTRAL_MODEL=/path/to/htdemucs.spectral.onnx \
@@ -29,8 +28,7 @@ use openkara_lib::{
     config::{ExecutionProviderPreference, StemMode},
     separator::{
         inference::{self, StemWriters},
-        model::{self, TensorInterface},
-        preprocess,
+        model, preprocess,
         workspace::SeparationWorkspace,
     },
 };
@@ -144,30 +142,6 @@ fn assert_sane_stem(path: &Path) {
     assert!(rms.is_finite(), "{} rms must be finite", path.display());
 }
 
-/// Codec-tolerant comparison of two decoded stems. Vorbis noise is bounded
-/// well below real composition errors (stem swap / missing time branch are
-/// full-signal-scale differences).
-fn assert_stems_close(label: &str, a: &Path, b: &Path) {
-    let sa = decoded_samples(a);
-    let sb = decoded_samples(b);
-    let n = sa.len().min(sb.len());
-    assert!(n > 0, "{label}: no overlapping samples");
-    let mut sq = 0.0f64;
-    let mut energy = 0.0f64;
-    for i in 0..n {
-        let d = (sa[i] - sb[i]) as f64;
-        sq += d * d;
-        energy += (sa[i] as f64) * (sa[i] as f64);
-    }
-    let rms = (sq / n as f64).sqrt();
-    let signal_rms = (energy / n as f64).sqrt();
-    eprintln!("{label}: diff rms {rms:.4e}, signal rms {signal_rms:.4e}");
-    assert!(
-        rms < 0.02,
-        "{label}: spectral and waveform paths diverge (diff rms {rms:.4e})"
-    );
-}
-
 #[test]
 fn spectral_streaming_end_to_end_four_stem() {
     let Some(model_path) = spectral_model_path() else {
@@ -178,8 +152,8 @@ fn spectral_streaming_end_to_end_four_stem() {
 
     let loaded = model::load_from_path(&model_path, ExecutionProviderPreference::Cpu)
         .expect("spectral model should load");
-    assert_eq!(loaded.tensor_interface, TensorInterface::SpectralCore);
-    assert!(loaded.spectral.is_some());
+    // A loaded model always carries a verified spectral interface.
+    assert!(loaded.spectral.segment_frames > 0);
     drop(loaded);
 
     let out_dir = support::unique_temp_path("phase7-spectral-four");
@@ -190,18 +164,6 @@ fn spectral_streaming_end_to_end_four_stem() {
         assert_sane_stem(&out_dir.join(stem));
     }
 
-    // Cross-path equivalence when the dev waveform model is available.
-    let waveform_model = model::default_model_path();
-    if waveform_model.is_file() {
-        let ref_dir = support::unique_temp_path("phase7-waveform-four");
-        separate_to_dir(&waveform_model, StemMode::FourStem, &ref_dir);
-        for stem in ["vocals.ogg", "drums.ogg", "bass.ogg", "other.ogg"] {
-            assert_stems_close(stem, &ref_dir.join(stem), &out_dir.join(stem));
-        }
-        fs::remove_dir_all(&ref_dir).ok();
-    } else {
-        eprintln!("no dev waveform model; skipping cross-path comparison");
-    }
     fs::remove_dir_all(&out_dir).ok();
 }
 
@@ -220,17 +182,6 @@ fn spectral_streaming_end_to_end_two_stem() {
     assert_sane_stem(&out_dir.join("vocals.ogg"));
     assert_sane_stem(&out_dir.join("accompaniment.ogg"));
 
-    let waveform_model = model::default_model_path();
-    if waveform_model.is_file() {
-        let ref_dir = support::unique_temp_path("phase7-waveform-two");
-        separate_to_dir(&waveform_model, StemMode::TwoStem, &ref_dir);
-        for stem in ["vocals.ogg", "accompaniment.ogg"] {
-            assert_stems_close(stem, &ref_dir.join(stem), &out_dir.join(stem));
-        }
-        fs::remove_dir_all(&ref_dir).ok();
-    } else {
-        eprintln!("no dev waveform model; skipping cross-path comparison");
-    }
     fs::remove_dir_all(&out_dir).ok();
 }
 
@@ -250,11 +201,7 @@ fn spectral_cancellation_publishes_nothing_and_restarts_from_zero() {
 
     let loaded = model::load_from_path(&model_path, ExecutionProviderPreference::Cpu)
         .expect("spectral model should load");
-    let segment = loaded
-        .spectral
-        .as_ref()
-        .expect("verified interface")
-        .segment_frames;
+    let segment = loaded.spectral.segment_frames;
 
     // 1.5 windows -> two chunks at 50% overlap.
     let channels = 2usize;
