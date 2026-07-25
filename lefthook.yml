@@ -3,7 +3,10 @@ pre-commit:
   commands:
     oxfmt:
       glob: "*.{ts,tsx,js,jsx,json,css,md,html,yml,yaml}"
-      exclude: "pnpm-lock.yaml"
+      # src-tauri is entirely in oxfmt's ignorePatterns; passing only
+      # ignored files (e.g. a catalog snapshot bump) makes oxfmt exit
+      # non-zero with "no files to format" and blocks the commit.
+      exclude: 'pnpm-lock\.yaml|^src-tauri/'
       run: pnpm exec oxfmt {staged_files}
       stage_fixed: true
     cargo-fmt:
