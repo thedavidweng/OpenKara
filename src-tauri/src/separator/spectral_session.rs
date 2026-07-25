@@ -335,8 +335,10 @@ pub(crate) fn process_spectral_chunk(
 
     // Composition happens inside the session-output scope; the composed
     // stems land in the workspace stem buffers (interleaved) before the
-    // guard drops.
-    let compose_result = {
+    // guard drops. No `?` may fire between the take of the forward buffer
+    // and its restore below — every fallible step stays inside this
+    // closure so the buffer survives errors unconditionally.
+    let compose_result = (|| -> Result<()> {
         let spectral_tensor =
             TensorRef::from_array_view((spectral_shape.as_slice(), spectral.as_slice()))
                 .context("failed to build borrowed spectral input tensor")?;
@@ -354,30 +356,28 @@ pub(crate) fn process_spectral_chunk(
             .map_err(|_| anyhow::anyhow!("ONNX session lock was poisoned"))?;
         let outputs = session_guard
             .run(session_inputs)
-            .context("failed to run spectral-core inference");
+            .context("failed to run spectral-core inference")?;
 
-        outputs.and_then(|outputs| {
-            let (_, spectral_out) = outputs
-                .get(SPECTRAL_OUTPUT_NAME)
-                .context("spectral-core did not produce its spectral output")?
-                .try_extract_tensor::<f32>()
-                .context("spectral-core spectral output was not f32")?;
-            let (_, time_out) = outputs
-                .get(TIME_OUTPUT_NAME)
-                .context("spectral-core did not produce its time output")?
-                .try_extract_tensor::<f32>()
-                .context("spectral-core time output was not f32")?;
-            compose_outputs_into_buffers(
-                state,
-                iface,
-                spectral_out,
-                time_out,
-                stem_mode,
-                &mut workspace.stem_output_buffers,
-                chunk_frame_count,
-            )
-        })
-    };
+        let (_, spectral_out) = outputs
+            .get(SPECTRAL_OUTPUT_NAME)
+            .context("spectral-core did not produce its spectral output")?
+            .try_extract_tensor::<f32>()
+            .context("spectral-core spectral output was not f32")?;
+        let (_, time_out) = outputs
+            .get(TIME_OUTPUT_NAME)
+            .context("spectral-core did not produce its time output")?
+            .try_extract_tensor::<f32>()
+            .context("spectral-core time output was not f32")?;
+        compose_outputs_into_buffers(
+            state,
+            iface,
+            spectral_out,
+            time_out,
+            stem_mode,
+            &mut workspace.stem_output_buffers,
+            chunk_frame_count,
+        )
+    })();
     // The reused forward buffer goes back into the state even on error.
     state.spectral_in = spectral;
     compose_result?;
