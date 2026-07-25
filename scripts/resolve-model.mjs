@@ -16,7 +16,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
-const manifestPath = join(scriptDir, "..", "src-tauri", "catalog", "release-manifest.json");
+const manifestPath = join(
+  scriptDir,
+  "..",
+  "src-tauri",
+  "catalog",
+  "release-manifest.json",
+);
 
 function parseArgs(argv) {
   const args = { variant: "htdemucs", field: null };
@@ -38,10 +44,14 @@ const args = parseArgs(process.argv.slice(2));
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 
 if (manifest.schema_version !== "openkara.catalog/release-v1") {
-  throw new Error(`unsupported release manifest schema: ${manifest.schema_version}`);
+  throw new Error(
+    `unsupported release manifest schema: ${manifest.schema_version}`,
+  );
 }
 
-const matches = manifest.artifacts.models.filter((model) => model.variant === args.variant);
+const matches = manifest.artifacts.models.filter(
+  (model) => model.variant === args.variant,
+);
 if (matches.length !== 1) {
   throw new Error(
     `catalog snapshot must list exactly one model for variant ${args.variant}, found ${matches.length}`,
