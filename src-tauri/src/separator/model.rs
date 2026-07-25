@@ -20,12 +20,55 @@ static ORT_RUNTIME_INIT_LOCK: Mutex<()> = Mutex::new(());
 
 const MODEL_CACHE_KEY_METADATA: &str = "openkara.model_cache_key";
 const OPTIMIZED_BY_METADATA: &str = "openkara.optimized_by";
+const TENSOR_INTERFACE_METADATA: &str = "openkara.tensor_interface";
+const SPECTRAL_CONTRACT_METADATA: &str = "openkara.spectral_contract";
 const ONNXRUNTIME_OPTIMIZED_BY_VALUE: &str = "onnxruntime";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct ModelRuntimeMetadata {
     pub model_cache_key: Option<String>,
     pub optimized_by: Option<String>,
+    pub tensor_interface: Option<String>,
+    pub spectral_contract: Option<String>,
+}
+
+/// The model's public tensor interface, declared by embedded model metadata.
+///
+/// This is the ONLY dispatch point between the waveform and spectral session
+/// paths — output-rank or filename heuristics are forbidden (issue #172).
+/// Models without an `openkara.tensor_interface` declaration are the
+/// established waveform artifacts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TensorInterface {
+    /// `audio [1, C, frames]` in, waveform stems out (conv-DFT era graphs).
+    Waveform,
+    /// Spectral-core boundary per `openkara.spectral-contract/v1`: the app
+    /// runs the transforms (`separator::spectral`) and the graph consumes /
+    /// produces contract spectral tensors.
+    SpectralCore,
+}
+
+pub(crate) fn tensor_interface_from_metadata(
+    metadata: &ModelRuntimeMetadata,
+) -> Result<TensorInterface> {
+    match metadata.tensor_interface.as_deref() {
+        None | Some("waveform") => Ok(TensorInterface::Waveform),
+        Some("spectral-core") => {
+            let contract = metadata.spectral_contract.as_deref();
+            anyhow::ensure!(
+                contract == Some(crate::separator::spectral::SPECTRAL_CONTRACT_VERSION),
+                "spectral-core model declares unsupported contract {:?} \
+                 (this build implements {}); refusing before session creation",
+                contract,
+                crate::separator::spectral::SPECTRAL_CONTRACT_VERSION
+            );
+            Ok(TensorInterface::SpectralCore)
+        }
+        Some(other) => anyhow::bail!(
+            "model declares unknown tensor interface {other:?}; \
+             refusing before session creation"
+        ),
+    }
 }
 
 pub struct LoadedModel {
@@ -34,6 +77,12 @@ pub struct LoadedModel {
     pub outputs: Vec<String>,
     pub input_shape: Vec<i64>,
     pub input_tensor_type: TensorElementType,
+    /// Declared tensor interface (from embedded model metadata).
+    pub tensor_interface: TensorInterface,
+    /// Verified spectral-core session interface. `Some` exactly when
+    /// `tensor_interface == SpectralCore`; verification happens at load time
+    /// so a non-conforming graph fails before any separation starts.
+    pub spectral: Option<crate::separator::spectral_session::SpectralInterface>,
     // Mutex allows &self access to session.run() since ort::Session is thread-safe
     // and run() only needs exclusive access to its internal state, not the model.
     pub(crate) session: std::sync::Mutex<ort::session::Session>,
@@ -47,6 +96,7 @@ impl std::fmt::Debug for LoadedModel {
             .field("outputs", &self.outputs)
             .field("input_shape", &self.input_shape)
             .field("input_tensor_type", &self.input_tensor_type)
+            .field("tensor_interface", &self.tensor_interface)
             .finish_non_exhaustive()
     }
 }
@@ -172,7 +222,7 @@ pub(crate) fn session_cache_key(
     provider: ExecutionProviderPreference,
     metadata: &ModelRuntimeMetadata,
 ) -> String {
-    match metadata.model_cache_key.as_deref() {
+    let mut key = match metadata.model_cache_key.as_deref() {
         Some(model_cache_key) => format!(
             "{}::{}::{}",
             model_path.display(),
@@ -180,7 +230,18 @@ pub(crate) fn session_cache_key(
             model_cache_key
         ),
         None => format!("{}::{}", model_path.display(), provider.as_str()),
+    };
+    // Session identity depends on the transform semantics for spectral-core
+    // models: a contract revision must never reuse a cached session (issue
+    // #172). Waveform keys are unchanged so existing installs keep their
+    // cache identity.
+    if metadata.tensor_interface.as_deref() == Some("spectral-core") {
+        if let Some(contract) = metadata.spectral_contract.as_deref() {
+            key.push_str("::");
+            key.push_str(contract);
+        }
     }
+    key
 }
 
 pub fn load_from_path(
@@ -238,6 +299,10 @@ fn load_with_ep(path: &Path, ep_preference: ExecutionProviderPreference) -> Resu
         "ONNX Runtime is not initialized; the managed runtime bootstrap must complete before model loading"
     );
     let runtime_metadata = read_model_runtime_metadata(path)?;
+    // Unknown interfaces and unsupported spectral contract versions fail
+    // HERE, before any ORT session is created (issue #172 requirement).
+    let tensor_interface = tensor_interface_from_metadata(&runtime_metadata)
+        .with_context(|| format!("cannot load model {}", path.display()))?;
 
     let model_path = path.to_path_buf();
     let num_threads = std::thread::available_parallelism()
@@ -291,12 +356,12 @@ fn load_with_ep(path: &Path, ep_preference: ExecutionProviderPreference) -> Resu
         commit_start.elapsed()
     );
 
-    let inputs = session
+    let inputs: Vec<String> = session
         .inputs()
         .iter()
         .map(|input| input.name().to_owned())
         .collect();
-    let outputs = session
+    let outputs: Vec<String> = session
         .outputs()
         .iter()
         .map(|output| output.name().to_owned())
@@ -317,12 +382,59 @@ fn load_with_ep(path: &Path, ep_preference: ExecutionProviderPreference) -> Resu
         .tensor_type()
         .context("model input tensor type is missing")?;
 
+    // A spectral-core declaration must be backed by the exact contract
+    // tensor interface; a mismatched graph fails at load, not mid-song.
+    let spectral = match tensor_interface {
+        TensorInterface::SpectralCore => {
+            let input_infos: Vec<(String, Vec<i64>)> = session
+                .inputs()
+                .iter()
+                .map(|io| {
+                    let dims = io
+                        .dtype()
+                        .tensor_shape()
+                        .map(|s| s.iter().copied().collect())
+                        .unwrap_or_default();
+                    (io.name().to_owned(), dims)
+                })
+                .collect();
+            let output_infos: Vec<(String, Vec<i64>)> = session
+                .outputs()
+                .iter()
+                .map(|io| {
+                    let dims = io
+                        .dtype()
+                        .tensor_shape()
+                        .map(|s| s.iter().copied().collect())
+                        .unwrap_or_default();
+                    (io.name().to_owned(), dims)
+                })
+                .collect();
+            Some(
+                crate::separator::spectral_session::verify_spectral_interface(
+                    &input_infos,
+                    &output_infos,
+                )
+                .with_context(|| {
+                    format!(
+                        "model {} declares spectral-core but its graph does not \
+                         match the contract tensor interface",
+                        path.display()
+                    )
+                })?,
+            )
+        }
+        TensorInterface::Waveform => None,
+    };
+
     Ok(LoadedModel {
         model_path,
         inputs,
         outputs,
         input_shape,
         input_tensor_type,
+        tensor_interface,
+        spectral,
         session: std::sync::Mutex::new(session),
     })
 }
@@ -388,6 +500,8 @@ fn parse_model_runtime_metadata(bytes: &[u8]) -> ModelRuntimeMetadata {
             match key.as_str() {
                 MODEL_CACHE_KEY_METADATA => metadata.model_cache_key = Some(value),
                 OPTIMIZED_BY_METADATA => metadata.optimized_by = Some(value),
+                TENSOR_INTERFACE_METADATA => metadata.tensor_interface = Some(value),
+                SPECTRAL_CONTRACT_METADATA => metadata.spectral_contract = Some(value),
                 _ => {}
             }
             continue;
@@ -593,6 +707,7 @@ mod tests {
         let metadata = ModelRuntimeMetadata {
             model_cache_key: Some("cache-key-123".to_owned()),
             optimized_by: Some("onnxruntime".to_owned()),
+            ..Default::default()
         };
 
         assert_eq!(
@@ -607,11 +722,86 @@ mod tests {
         let metadata = ModelRuntimeMetadata {
             model_cache_key: Some("cache-key-123".to_owned()),
             optimized_by: None,
+            ..Default::default()
         };
 
         assert_eq!(
             session_cache_key(model_path, ExecutionProviderPreference::Xnnpack, &metadata),
             "/tmp/models/htdemucs.onnx::xnnpack::cache-key-123"
+        );
+    }
+
+    #[test]
+    fn parses_spectral_interface_metadata_from_model_bytes() {
+        let metadata = parse_model_runtime_metadata(&model_with_metadata(&[
+            ("openkara.tensor_interface", "spectral-core"),
+            (
+                "openkara.spectral_contract",
+                "openkara.spectral-contract/v1",
+            ),
+        ]));
+
+        assert_eq!(metadata.tensor_interface.as_deref(), Some("spectral-core"));
+        assert_eq!(
+            metadata.spectral_contract.as_deref(),
+            Some("openkara.spectral-contract/v1")
+        );
+    }
+
+    #[test]
+    fn absent_interface_metadata_is_the_waveform_interface() {
+        let metadata = ModelRuntimeMetadata::default();
+        assert_eq!(
+            tensor_interface_from_metadata(&metadata).expect("waveform default"),
+            TensorInterface::Waveform
+        );
+    }
+
+    #[test]
+    fn spectral_interface_requires_the_supported_contract_version() {
+        let mut metadata = ModelRuntimeMetadata {
+            tensor_interface: Some("spectral-core".to_owned()),
+            ..Default::default()
+        };
+        tensor_interface_from_metadata(&metadata)
+            .expect_err("missing contract version must fail before session creation");
+
+        metadata.spectral_contract = Some("openkara.spectral-contract/v2".to_owned());
+        tensor_interface_from_metadata(&metadata)
+            .expect_err("unsupported contract version must fail before session creation");
+
+        metadata.spectral_contract =
+            Some(crate::separator::spectral::SPECTRAL_CONTRACT_VERSION.to_owned());
+        assert_eq!(
+            tensor_interface_from_metadata(&metadata).expect("supported contract"),
+            TensorInterface::SpectralCore
+        );
+    }
+
+    #[test]
+    fn unknown_tensor_interface_fails_before_session_creation() {
+        let metadata = ModelRuntimeMetadata {
+            tensor_interface: Some("holographic".to_owned()),
+            ..Default::default()
+        };
+        let error = tensor_interface_from_metadata(&metadata)
+            .expect_err("unknown interface must be rejected");
+        assert!(error.to_string().contains("unknown tensor interface"));
+    }
+
+    #[test]
+    fn spectral_session_cache_key_carries_the_contract_version() {
+        let model_path = Path::new("/tmp/models/htdemucs.spectral.onnx");
+        let metadata = ModelRuntimeMetadata {
+            model_cache_key: Some("cache-key-123".to_owned()),
+            optimized_by: Some("onnxruntime".to_owned()),
+            tensor_interface: Some("spectral-core".to_owned()),
+            spectral_contract: Some("openkara.spectral-contract/v1".to_owned()),
+        };
+
+        assert_eq!(
+            session_cache_key(model_path, ExecutionProviderPreference::Cpu, &metadata),
+            "/tmp/models/htdemucs.spectral.onnx::cpu::cache-key-123::openkara.spectral-contract/v1"
         );
     }
 }

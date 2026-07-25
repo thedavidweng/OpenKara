@@ -592,9 +592,13 @@ fn validate_manifest(manifest: &ReleaseManifest) -> Result<()> {
                 model.model.format
             );
         }
-        if model.model.tensor_interface != "waveform" {
+        if !matches!(
+            model.model.tensor_interface.as_str(),
+            "waveform" | "spectral-core"
+        ) {
             bail!(
-                "model {} tensor interface {} is not consumable (expected waveform)",
+                "model {} tensor interface {} is not consumable \
+                 (expected waveform or spectral-core)",
                 model.artifact_id,
                 model.model.tensor_interface
             );
@@ -1037,6 +1041,17 @@ mod tests {
         })
         .expect_err("unknown tensor interface must be rejected");
         assert!(error.to_string().contains("tensor interface"));
+    }
+
+    #[test]
+    fn accepts_spectral_core_tensor_interface() {
+        // Spectral-core artifacts (openkara-models#23) are consumable; the
+        // session path is selected by the model's own embedded metadata.
+        parse_mutated(|manifest| {
+            manifest["artifacts"]["models"][0]["model"]["tensor_interface"] =
+                "spectral-core".into();
+        })
+        .expect("spectral-core tensor interface must be accepted");
     }
 
     #[test]

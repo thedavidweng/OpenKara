@@ -66,9 +66,26 @@ tolerances) requires a `/v2` contract and new golden vectors. Session and cache
 identities that depend on the transform semantics must carry the contract
 version string (`SPECTRAL_CONTRACT_VERSION`).
 
-The pure DSP layer (this document, issue #172 PR 1) carries **no** production
-model path. The typed spectral session path — filling ORT input buffers from
-`spec`, running the spectral-core model, and feeding its output to native
-`ispec` — arrives with **issue #172 PR 2**, once `openkara-models#23` publishes
-the spectral-core artifacts that declare `openkara.spectral_contract` in their
-metadata and catalog entries.
+The pure DSP layer (issue #172 PR 1) carries no production model path. The
+typed spectral session path (issue #172 PR 2) lives in
+`src-tauri/src/separator/spectral_session.rs`:
+
+- Dispatch is decided ONLY by the model's embedded metadata
+  (`openkara.tensor_interface = "spectral-core"` +
+  `openkara.spectral_contract`); output-rank and filename heuristics are
+  forbidden. Unknown interfaces and unsupported contract versions fail at
+  model load, before any ORT session is created.
+- The tensor interface (`spectral`/`mix` → `spectral_out`/`time_out`, fixed
+  contract shapes) is verified at load time
+  (`spectral_session::verify_spectral_interface`).
+- Stems compose as `stems[s] = ispec(spectral_out[:, s]) + time_out[:, s]`.
+  FourStem composes each source; TwoStem composes vocals directly and
+  pre-mixes the accompaniment in the spectral domain (contract linearity —
+  one inverse transform instead of three).
+- The session cache key of a spectral-core model carries the contract
+  version (`model::session_cache_key`), so a `/v2` contract can never reuse
+  a `/v1` session.
+
+Catalog entries for spectral-core artifacts declare
+`model.tensor_interface = "spectral-core"`; the embedded catalog gate accepts
+exactly the `waveform` and `spectral-core` interfaces.
