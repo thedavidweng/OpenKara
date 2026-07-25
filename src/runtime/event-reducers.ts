@@ -1,4 +1,5 @@
 import type {
+  SeparationCancelledEvent,
   SeparationErrorEvent,
   SeparationProgressEvent,
   SeparationStatusSnapshot,
@@ -43,6 +44,24 @@ export function separationErrorStatus(
     other_path: null,
     model_variant: null,
     error: event.error,
+  };
+}
+
+export function separationCancelledStatus(
+  event: SeparationCancelledEvent,
+): SeparationStatusSnapshot {
+  return {
+    song_id: event.song_id,
+    state: "idle",
+    percent: 0,
+    cache_hit: false,
+    vocals_path: null,
+    accomp_path: null,
+    drums_path: null,
+    bass_path: null,
+    other_path: null,
+    model_variant: null,
+    error: null,
   };
 }
 

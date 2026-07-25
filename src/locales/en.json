@@ -158,7 +158,9 @@
       "confirmMessage": "Import {{songCount}} songs?",
       "confirmOk": "Import"
     },
-    "modelPreparing": "Preparing separation model…"
+    "modelPreparing": "Preparing separation model…",
+    "cancelSeparation": "Cancel separation",
+    "usingCachedSeparation": "Using cached separation"
   },
   "player": {
     "previous": "Previous",

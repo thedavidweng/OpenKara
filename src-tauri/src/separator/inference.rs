@@ -21,10 +21,13 @@ use crate::{
     audio::decode::DecodedAudio,
     audio::encode::StreamingOggWriter,
     config::StemMode,
-    separator::{model::LoadedModel, preprocess, workspace::SeparationWorkspace},
+    separator::{
+        error::SeparationError, model::LoadedModel, preprocess, workspace::SeparationWorkspace,
+    },
 };
 use anyhow::{bail, Context, Result};
 use ort::{session::SessionInputValue, value::TensorRef};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub const DEMUCS_STEM_NAMES: [&str; 4] = ["drums", "bass", "other", "vocals"];
 /// Stem name order for two-stem bundles that provide vocals + accompaniment
@@ -282,6 +285,11 @@ fn chunk_schedule(input_frame_count: usize, chunk_size: usize) -> (usize, usize)
 /// correct output paths and for finalizing them after this function
 /// returns successfully. On error, the writers are dropped and their
 /// temp files are cleaned up automatically.
+///
+/// `cancel` is checked at the top of every chunk iteration. When it is set,
+/// the loop returns `SeparationError::Cancelled` without finalizing any
+/// writer, so an aborted run leaves no partial stem set (matching the
+/// interrupted-run restart-from-chunk-0 guarantee).
 #[allow(clippy::too_many_arguments)]
 pub fn separate_streaming(
     model: &LoadedModel,
@@ -289,6 +297,7 @@ pub fn separate_streaming(
     stem_mode: StemMode,
     writers: &mut StemWriters,
     workspace: &mut SeparationWorkspace,
+    cancel: &AtomicBool,
     mut on_chunk_complete: impl FnMut(usize, usize),
 ) -> Result<SeparationOutcome> {
     let channels = normalized_audio.channels;
@@ -318,6 +327,12 @@ pub fn separate_streaming(
 
     let mut chunk_index = 0usize;
     for chunk_start_frame in (0..input_frame_count).step_by(hop_size) {
+        // Cancellation checkpoint: bail before doing any work for this chunk.
+        // The writers are dropped on the error path, cleaning up temp files.
+        if cancel.load(Ordering::Relaxed) {
+            return Err(SeparationError::Cancelled.into());
+        }
+
         let chunk_frame_count = (input_frame_count - chunk_start_frame).min(chunk_size);
 
         // 1. Fill planar input directly from the normalized source.

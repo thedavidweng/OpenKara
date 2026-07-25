@@ -477,6 +477,10 @@ export interface SeparationErrorEvent {
   error: CommandError;
 }
 
+export interface SeparationCancelledEvent {
+  song_id: string;
+}
+
 export type UploadState = "idle" | "running" | "completed" | "failed";
 
 export interface UploadStatusSnapshot {

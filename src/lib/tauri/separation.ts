@@ -5,6 +5,10 @@ export function separate(songId: string): Promise<SeparationStatusSnapshot> {
   return invoke<SeparationStatusSnapshot>("separate", { songId });
 }
 
+export function cancelSeparation(songId: string): Promise<void> {
+  return invoke<void>("cancel_separation", { songId });
+}
+
 export function getSeparationStatus(
   songId: string,
 ): Promise<SeparationStatusSnapshot> {

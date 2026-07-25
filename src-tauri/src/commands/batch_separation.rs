@@ -65,5 +65,12 @@ pub fn cancel_batch_separation(state: State<'_, AppState>) -> CommandResult<()> 
         );
     }
     state.separation.batch_cancel.store(true, Ordering::Relaxed);
+    // Also flag the in-flight song so the batch stops mid-song rather than
+    // after the current track finishes.
+    if let Ok(current) = state.separation.batch_current_song.lock() {
+        if let Some(song_id) = current.as_ref() {
+            separation::request_cancel(&state.separation.separation_cancels, song_id);
+        }
+    }
     Ok(())
 }

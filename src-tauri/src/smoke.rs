@@ -203,6 +203,7 @@ pub fn run_local_audio_smoke(config: LocalAudioSmokeConfig) -> Result<LocalAudio
                             StemMode::default(),
                             "htdemucs",
                             ep_preference,
+                            &std::sync::atomic::AtomicBool::new(false),
                             |_| {},
                         ) {
                             Ok(artifacts) => (

@@ -94,6 +94,7 @@ fn separation_job_reports_monotonic_progress_and_hits_cache_on_second_run() {
         StemMode::default(),
         "htdemucs",
         ExecutionProviderPreference::Cpu,
+        &std::sync::atomic::AtomicBool::new(false),
         |percent| first_progress.push(percent),
     )
     .expect("first separation should succeed");
@@ -116,6 +117,7 @@ fn separation_job_reports_monotonic_progress_and_hits_cache_on_second_run() {
         StemMode::default(),
         "htdemucs",
         ExecutionProviderPreference::Cpu,
+        &std::sync::atomic::AtomicBool::new(false),
         |percent| second_progress.push(percent),
     )
     .expect("second separation should hit cache");
