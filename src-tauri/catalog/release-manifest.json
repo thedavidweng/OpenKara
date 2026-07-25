@@ -8,9 +8,10 @@
         "artifact_id": "htdemucs.balanced.fp32.onnx",
         "byte_size": 354970480,
         "deprecation": {
-          "deprecated": false,
-          "replacement_artifact_id": null,
-          "sunset_generation": null
+          "deprecated": true,
+          "reason": "Waveform-graph artifact superseded by the spectral-core contract (issue #23); sunset at generation 11.",
+          "replacement_artifact_id": "htdemucs.spectral.fp32.onnx",
+          "sunset_generation": 11
         },
         "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/model-v2.1.0/htdemucs.onnx",
         "extracted_file_digests": {
@@ -49,28 +50,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "fdd16c68830373fc743bdf9037dca372ee8326b4dd5f1fec5afa8d458223018f",
-            "size": 435,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/NOTICE"
+            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
+            "size": 439,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3204b34c3ae0cf6fca22a07d1e6519f6aa40b7222ed5a97503ff3bec0d2640ea",
-            "size": 4534,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/provenance.json"
+            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
+            "size": 6386,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "2968adab77a0ebcafdcf50282f657e17fb806e9074a687351db55b28c841154e",
-            "size": 8730,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/sbom.spdx.json"
+            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "size": 12252,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
           }
         },
         "target_triple": null,
@@ -87,9 +88,9 @@
         "byte_size": 1421207127,
         "deprecation": {
           "deprecated": true,
-          "reason": "Superseded by the initializer-deduplicated artifact (bit-identical outputs, 22.6% smaller).",
-          "replacement_artifact_id": "htdemucs_ft.quality.fp32.dedup.onnx",
-          "sunset_generation": null
+          "reason": "Waveform-graph artifact superseded by the spectral-core contract (issue #23); sunset at generation 11.",
+          "replacement_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
+          "sunset_generation": 11
         },
         "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/model-ft-v2.1.0/htdemucs_ft.onnx",
         "extracted_file_digests": {
@@ -128,28 +129,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "fdd16c68830373fc743bdf9037dca372ee8326b4dd5f1fec5afa8d458223018f",
-            "size": 435,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/NOTICE"
+            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
+            "size": 439,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3204b34c3ae0cf6fca22a07d1e6519f6aa40b7222ed5a97503ff3bec0d2640ea",
-            "size": 4534,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/provenance.json"
+            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
+            "size": 6386,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "2968adab77a0ebcafdcf50282f657e17fb806e9074a687351db55b28c841154e",
-            "size": 8730,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/sbom.spdx.json"
+            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "size": 12252,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
           }
         },
         "target_triple": null,
@@ -165,9 +166,10 @@
         "artifact_id": "htdemucs_ft.quality.fp32.dedup.onnx",
         "byte_size": 1099527345,
         "deprecation": {
-          "deprecated": false,
-          "replacement_artifact_id": null,
-          "sunset_generation": null
+          "deprecated": true,
+          "reason": "Waveform-graph artifact superseded by the spectral-core contract (issue #23); sunset at generation 11.",
+          "replacement_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
+          "sunset_generation": 11
         },
         "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/model-derived-v1.0.0/htdemucs_ft.dedup.fp32.onnx",
         "extracted_file_digests": {
@@ -206,28 +208,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "fdd16c68830373fc743bdf9037dca372ee8326b4dd5f1fec5afa8d458223018f",
-            "size": 435,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/NOTICE"
+            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
+            "size": 439,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3204b34c3ae0cf6fca22a07d1e6519f6aa40b7222ed5a97503ff3bec0d2640ea",
-            "size": 4534,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/provenance.json"
+            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
+            "size": 6386,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "2968adab77a0ebcafdcf50282f657e17fb806e9074a687351db55b28c841154e",
-            "size": 8730,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/sbom.spdx.json"
+            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "size": 12252,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
           }
         },
         "target_triple": null,
@@ -243,9 +245,10 @@
         "artifact_id": "htdemucs.dual.fp32.onnx.tar.gz",
         "byte_size": 228999756,
         "deprecation": {
-          "deprecated": false,
-          "replacement_artifact_id": null,
-          "sunset_generation": null
+          "deprecated": true,
+          "reason": "Waveform-graph artifact superseded by the spectral-core contract (issue #23); sunset at generation 11.",
+          "replacement_artifact_id": "htdemucs.spectral.fp32.onnx",
+          "sunset_generation": 11
         },
         "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/model-derived-v1.2.0/htdemucs.dual.fp32.onnx.tar.gz",
         "extracted_file_digests": {
@@ -284,28 +287,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "fdd16c68830373fc743bdf9037dca372ee8326b4dd5f1fec5afa8d458223018f",
-            "size": 435,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/NOTICE"
+            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
+            "size": 439,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3204b34c3ae0cf6fca22a07d1e6519f6aa40b7222ed5a97503ff3bec0d2640ea",
-            "size": 4534,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/provenance.json"
+            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
+            "size": 6386,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "2968adab77a0ebcafdcf50282f657e17fb806e9074a687351db55b28c841154e",
-            "size": 8730,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/sbom.spdx.json"
+            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "size": 12252,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
           }
         },
         "target_triple": null,
@@ -321,9 +324,10 @@
         "artifact_id": "htdemucs_ft.dual.fp32.onnx.tar.gz",
         "byte_size": 654101720,
         "deprecation": {
-          "deprecated": false,
-          "replacement_artifact_id": null,
-          "sunset_generation": null
+          "deprecated": true,
+          "reason": "Waveform-graph artifact superseded by the spectral-core contract (issue #23); sunset at generation 11.",
+          "replacement_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
+          "sunset_generation": 11
         },
         "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/model-derived-v1.2.0/htdemucs_ft.dual.fp32.onnx.tar.gz",
         "extracted_file_digests": {
@@ -362,28 +366,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "fdd16c68830373fc743bdf9037dca372ee8326b4dd5f1fec5afa8d458223018f",
-            "size": 435,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/NOTICE"
+            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
+            "size": 439,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3204b34c3ae0cf6fca22a07d1e6519f6aa40b7222ed5a97503ff3bec0d2640ea",
-            "size": 4534,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/provenance.json"
+            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
+            "size": 6386,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "2968adab77a0ebcafdcf50282f657e17fb806e9074a687351db55b28c841154e",
-            "size": 8730,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/sbom.spdx.json"
+            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "size": 12252,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
           }
         },
         "target_triple": null,
@@ -416,10 +420,15 @@
           "cache_key": "htdemucs-spectral-fp32-model-spectral-v1.0.0",
           "compatible_runtime_ids": [
             "onnxruntime-1.27.1-openkara-aarch64-apple-darwin",
+            "onnxruntime-1.27.1-openkara-aarch64-apple-darwin-reduced",
             "onnxruntime-1.27.1-openkara-aarch64-unknown-linux-gnu",
+            "onnxruntime-1.27.1-openkara-aarch64-unknown-linux-gnu-reduced",
             "onnxruntime-1.27.1-openkara-x86_64-apple-darwin",
+            "onnxruntime-1.27.1-openkara-x86_64-apple-darwin-reduced",
             "onnxruntime-1.27.1-openkara-x86_64-pc-windows-msvc",
-            "onnxruntime-1.27.1-openkara-x86_64-unknown-linux-gnu"
+            "onnxruntime-1.27.1-openkara-x86_64-pc-windows-msvc-reduced",
+            "onnxruntime-1.27.1-openkara-x86_64-unknown-linux-gnu",
+            "onnxruntime-1.27.1-openkara-x86_64-unknown-linux-gnu-reduced"
           ],
           "format": "onnx",
           "input_semantics": "spectral=[1,2,2,2048,336] contract-v1 spec(mix); mix=[1,2,343980] stereo 44.1 kHz waveform",
@@ -440,28 +449,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "fdd16c68830373fc743bdf9037dca372ee8326b4dd5f1fec5afa8d458223018f",
-            "size": 435,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/NOTICE"
+            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
+            "size": 439,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3204b34c3ae0cf6fca22a07d1e6519f6aa40b7222ed5a97503ff3bec0d2640ea",
-            "size": 4534,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/provenance.json"
+            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
+            "size": 6386,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "2968adab77a0ebcafdcf50282f657e17fb806e9074a687351db55b28c841154e",
-            "size": 8730,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/sbom.spdx.json"
+            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "size": 12252,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
           }
         },
         "target_triple": null,
@@ -494,10 +503,15 @@
           "cache_key": "htdemucs-ft-spectral-fp32-model-ft-spectral-v1.0.0",
           "compatible_runtime_ids": [
             "onnxruntime-1.27.1-openkara-aarch64-apple-darwin",
+            "onnxruntime-1.27.1-openkara-aarch64-apple-darwin-reduced",
             "onnxruntime-1.27.1-openkara-aarch64-unknown-linux-gnu",
+            "onnxruntime-1.27.1-openkara-aarch64-unknown-linux-gnu-reduced",
             "onnxruntime-1.27.1-openkara-x86_64-apple-darwin",
+            "onnxruntime-1.27.1-openkara-x86_64-apple-darwin-reduced",
             "onnxruntime-1.27.1-openkara-x86_64-pc-windows-msvc",
-            "onnxruntime-1.27.1-openkara-x86_64-unknown-linux-gnu"
+            "onnxruntime-1.27.1-openkara-x86_64-pc-windows-msvc-reduced",
+            "onnxruntime-1.27.1-openkara-x86_64-unknown-linux-gnu",
+            "onnxruntime-1.27.1-openkara-x86_64-unknown-linux-gnu-reduced"
           ],
           "format": "onnx",
           "input_semantics": "spectral=[1,2,2,2048,336] contract-v1 spec(mix); mix=[1,2,343980] stereo 44.1 kHz waveform",
@@ -518,28 +532,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "fdd16c68830373fc743bdf9037dca372ee8326b4dd5f1fec5afa8d458223018f",
-            "size": 435,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/NOTICE"
+            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
+            "size": 439,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3204b34c3ae0cf6fca22a07d1e6519f6aa40b7222ed5a97503ff3bec0d2640ea",
-            "size": 4534,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/provenance.json"
+            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
+            "size": 6386,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "2968adab77a0ebcafdcf50282f657e17fb806e9074a687351db55b28c841154e",
-            "size": 8730,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/sbom.spdx.json"
+            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "size": 12252,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
           }
         },
         "target_triple": null,
@@ -557,9 +571,10 @@
         "artifact_id": "onnxruntime-1.27.1-openkara-aarch64-apple-darwin",
         "byte_size": 7203505,
         "deprecation": {
-          "deprecated": false,
-          "replacement_artifact_id": null,
-          "sunset_generation": null
+          "deprecated": true,
+          "reason": "Full operator-set runtime superseded by the spectral operator-set reduced build (issue #73); sunset at generation 11.",
+          "replacement_artifact_id": "onnxruntime-1.27.1-openkara-aarch64-apple-darwin-reduced",
+          "sunset_generation": 11
         },
         "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/ort-v1.0.2/onnxruntime-1.27.1-openkara-aarch64-apple-darwin.tar.gz",
         "extracted_file_digests": {
@@ -612,28 +627,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "fdd16c68830373fc743bdf9037dca372ee8326b4dd5f1fec5afa8d458223018f",
-            "size": 435,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/NOTICE"
+            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
+            "size": 439,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3204b34c3ae0cf6fca22a07d1e6519f6aa40b7222ed5a97503ff3bec0d2640ea",
-            "size": 4534,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/provenance.json"
+            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
+            "size": 6386,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "2968adab77a0ebcafdcf50282f657e17fb806e9074a687351db55b28c841154e",
-            "size": 8730,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/sbom.spdx.json"
+            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "size": 12252,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
           }
         },
         "target_triple": "aarch64-apple-darwin",
@@ -676,9 +691,10 @@
         "artifact_id": "onnxruntime-1.27.1-openkara-aarch64-unknown-linux-gnu",
         "byte_size": 9582414,
         "deprecation": {
-          "deprecated": false,
-          "replacement_artifact_id": null,
-          "sunset_generation": null
+          "deprecated": true,
+          "reason": "Full operator-set runtime superseded by the spectral operator-set reduced build (issue #73); sunset at generation 11.",
+          "replacement_artifact_id": "onnxruntime-1.27.1-openkara-aarch64-unknown-linux-gnu-reduced",
+          "sunset_generation": 11
         },
         "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/ort-v1.0.2/onnxruntime-1.27.1-openkara-aarch64-unknown-linux-gnu.tar.gz",
         "extracted_file_digests": {
@@ -731,28 +747,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "fdd16c68830373fc743bdf9037dca372ee8326b4dd5f1fec5afa8d458223018f",
-            "size": 435,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/NOTICE"
+            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
+            "size": 439,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3204b34c3ae0cf6fca22a07d1e6519f6aa40b7222ed5a97503ff3bec0d2640ea",
-            "size": 4534,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/provenance.json"
+            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
+            "size": 6386,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "2968adab77a0ebcafdcf50282f657e17fb806e9074a687351db55b28c841154e",
-            "size": 8730,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/sbom.spdx.json"
+            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "size": 12252,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
           }
         },
         "target_triple": "aarch64-unknown-linux-gnu",
@@ -793,9 +809,10 @@
         "artifact_id": "onnxruntime-1.27.1-openkara-x86_64-apple-darwin",
         "byte_size": 7849828,
         "deprecation": {
-          "deprecated": false,
-          "replacement_artifact_id": null,
-          "sunset_generation": null
+          "deprecated": true,
+          "reason": "Full operator-set runtime superseded by the spectral operator-set reduced build (issue #73); sunset at generation 11.",
+          "replacement_artifact_id": "onnxruntime-1.27.1-openkara-x86_64-apple-darwin-reduced",
+          "sunset_generation": 11
         },
         "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/ort-v1.0.2/onnxruntime-1.27.1-openkara-x86_64-apple-darwin.tar.gz",
         "extracted_file_digests": {
@@ -848,28 +865,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "fdd16c68830373fc743bdf9037dca372ee8326b4dd5f1fec5afa8d458223018f",
-            "size": 435,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/NOTICE"
+            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
+            "size": 439,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3204b34c3ae0cf6fca22a07d1e6519f6aa40b7222ed5a97503ff3bec0d2640ea",
-            "size": 4534,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/provenance.json"
+            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
+            "size": 6386,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "2968adab77a0ebcafdcf50282f657e17fb806e9074a687351db55b28c841154e",
-            "size": 8730,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/sbom.spdx.json"
+            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "size": 12252,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
           }
         },
         "target_triple": "x86_64-apple-darwin",
@@ -912,9 +929,10 @@
         "artifact_id": "onnxruntime-1.27.1-openkara-x86_64-unknown-linux-gnu",
         "byte_size": 10272293,
         "deprecation": {
-          "deprecated": false,
-          "replacement_artifact_id": null,
-          "sunset_generation": null
+          "deprecated": true,
+          "reason": "Full operator-set runtime superseded by the spectral operator-set reduced build (issue #73); sunset at generation 11.",
+          "replacement_artifact_id": "onnxruntime-1.27.1-openkara-x86_64-unknown-linux-gnu-reduced",
+          "sunset_generation": 11
         },
         "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/ort-v1.0.2/onnxruntime-1.27.1-openkara-x86_64-unknown-linux-gnu.tar.gz",
         "extracted_file_digests": {
@@ -967,28 +985,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "fdd16c68830373fc743bdf9037dca372ee8326b4dd5f1fec5afa8d458223018f",
-            "size": 435,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/NOTICE"
+            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
+            "size": 439,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3204b34c3ae0cf6fca22a07d1e6519f6aa40b7222ed5a97503ff3bec0d2640ea",
-            "size": 4534,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/provenance.json"
+            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
+            "size": 6386,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "2968adab77a0ebcafdcf50282f657e17fb806e9074a687351db55b28c841154e",
-            "size": 8730,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/sbom.spdx.json"
+            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "size": 12252,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
           }
         },
         "target_triple": "x86_64-unknown-linux-gnu",
@@ -1029,9 +1047,10 @@
         "artifact_id": "onnxruntime-1.27.1-openkara-x86_64-pc-windows-msvc",
         "byte_size": 16066827,
         "deprecation": {
-          "deprecated": false,
-          "replacement_artifact_id": null,
-          "sunset_generation": null
+          "deprecated": true,
+          "reason": "Full operator-set runtime superseded by the spectral operator-set reduced build (issue #73); sunset at generation 11.",
+          "replacement_artifact_id": "onnxruntime-1.27.1-openkara-x86_64-pc-windows-msvc-reduced",
+          "sunset_generation": 11
         },
         "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/ort-v1.0.2/onnxruntime-1.27.1-openkara-x86_64-pc-windows-msvc.zip",
         "extracted_file_digests": {
@@ -1090,28 +1109,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "fdd16c68830373fc743bdf9037dca372ee8326b4dd5f1fec5afa8d458223018f",
-            "size": 435,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/NOTICE"
+            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
+            "size": 439,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3204b34c3ae0cf6fca22a07d1e6519f6aa40b7222ed5a97503ff3bec0d2640ea",
-            "size": 4534,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/provenance.json"
+            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
+            "size": 6386,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "2968adab77a0ebcafdcf50282f657e17fb806e9074a687351db55b28c841154e",
-            "size": 8730,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/sbom.spdx.json"
+            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "size": 12252,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
           }
         },
         "target_triple": "x86_64-pc-windows-msvc",
@@ -1132,6 +1151,586 @@
             "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL",
             "-Dprotobuf_MSVC_STATIC_RUNTIME=OFF",
             "-Dabsl_MSVC_STATIC_RUNTIME=OFF"
+          ],
+          "compiler": "MSVC (VS 2022)",
+          "deployment_target": "n/a",
+          "image": "windows-2022",
+          "submodule_state": {
+            "cmake/external/emsdk": "c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56",
+            "cmake/external/libprotobuf-mutator": "7a2ed51a6b682a83e345ff49fc4cfd7ca47550db",
+            "cmake/external/onnx": "be2b5fde82d9c8874f3d19328bdfe3b6962dc67b"
+          }
+        },
+        "upstream": {
+          "commit_sha": "df2ba1cf8108aa63627cf4cdf8f807880b938616",
+          "project": "microsoft/onnxruntime",
+          "tag": "v1.27.1"
+        },
+        "variant": "onnxruntime"
+      },
+      {
+        "arch": "aarch64",
+        "archive_digest": "bf8fea238ff272dcbb11ea1114e33e42414ff107a41d211443c659c43122abaf",
+        "artifact_id": "onnxruntime-1.27.1-openkara-aarch64-apple-darwin-reduced",
+        "byte_size": 6748305,
+        "deprecation": {
+          "deprecated": false,
+          "replacement_artifact_id": null,
+          "sunset_generation": null
+        },
+        "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/ort-v1.1.0/onnxruntime-1.27.1-openkara-aarch64-apple-darwin-reduced.tar.gz",
+        "extracted_file_digests": {
+          "LICENSE.onnxruntime": {
+            "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+            "size": 1073
+          },
+          "NOTICE.onnxruntime": {
+            "sha256": "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2",
+            "size": 325054
+          },
+          "libonnxruntime.dylib": {
+            "sha256": "61a34aba2f826ffa1f78f52e6e6af1259f8308d6904377fad15d5304b2793879",
+            "size": 22925176
+          },
+          "provenance.json": {
+            "sha256": "7dd7deff1f0fbec719df4fe90f10af226d56186df5bb7c00e7bcfbed050f2b6c",
+            "size": 2213
+          },
+          "sbom.spdx.json": {
+            "sha256": "26e071757302b430ceef8547c2d2cee1c4a6adb2113e69ab1b150131b35a8ac5",
+            "size": 6726
+          }
+        },
+        "filename": "onnxruntime-1.27.1-openkara-aarch64-apple-darwin-reduced.tar.gz",
+        "kind": "runtime",
+        "os": "macos",
+        "runtime": {
+          "companion_files": [],
+          "deployment_target": "15.0",
+          "execution_providers": [
+            "cpu",
+            "coreml"
+          ],
+          "ort_c_api_level": "27",
+          "supported_model_artifact_ids": [
+            "htdemucs.spectral.fp32.onnx",
+            "htdemucs_ft.spectral.fp32.onnx"
+          ],
+          "version": "v1.27.1"
+        },
+        "supply_chain": {
+          "license": {
+            "digest_algorithm": "sha256",
+            "kind": "license-file",
+            "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
+            "size": 1061,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+          },
+          "notice": {
+            "digest_algorithm": "sha256",
+            "kind": "notice-file",
+            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
+            "size": 439,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+          },
+          "provenance": {
+            "digest_algorithm": "sha256",
+            "kind": "commit-provenance",
+            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
+            "size": 6386,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+          },
+          "sbom": {
+            "digest_algorithm": "sha256",
+            "kind": "spdx-json",
+            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "size": 12252,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+          }
+        },
+        "target_triple": "aarch64-apple-darwin",
+        "toolchain": {
+          "cmake_flags": [
+            "-Donnxruntime_BUILD_SHARED_LIB=ON",
+            "-DORT_ENABLE_TRAINING=OFF",
+            "-DORT_ENABLE_PYTHON=OFF",
+            "-Dbuild_ort_onnx_flaky_tests=OFF",
+            "-Dbuild_ort_perf_tests=OFF",
+            "-Donnxruntime_BUILD_UNIT_TESTS=OFF",
+            "-Donnxruntime_PREFER_SYSTEM_LIB=OFF",
+            "-Donnxruntime_USE_COREML=ON",
+            "-Donnxruntime_USE_XNNPACK=OFF",
+            "-Donnxruntime_USE_CPU=ON",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMAKE_OSX_DEPLOYMENT_TARGET=15.0",
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+            "-DCMAKE_SKIP_INSTALL_RULES=ON",
+            "-Donnxruntime_DISABLE_ML_OPS=ON"
+          ],
+          "compiler": "clang (Xcode 16.0)",
+          "deployment_target": "15.0",
+          "image": "macos-15",
+          "submodule_state": {
+            "cmake/external/emsdk": "c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56",
+            "cmake/external/libprotobuf-mutator": "7a2ed51a6b682a83e345ff49fc4cfd7ca47550db",
+            "cmake/external/onnx": "be2b5fde82d9c8874f3d19328bdfe3b6962dc67b"
+          }
+        },
+        "upstream": {
+          "commit_sha": "df2ba1cf8108aa63627cf4cdf8f807880b938616",
+          "project": "microsoft/onnxruntime",
+          "tag": "v1.27.1"
+        },
+        "variant": "onnxruntime"
+      },
+      {
+        "arch": "aarch64",
+        "archive_digest": "7115205ce9e537323ba4bdfd959604cd238351b2e0f04574fb726bc365b00e7c",
+        "artifact_id": "onnxruntime-1.27.1-openkara-aarch64-unknown-linux-gnu-reduced",
+        "byte_size": 9034217,
+        "deprecation": {
+          "deprecated": false,
+          "replacement_artifact_id": null,
+          "sunset_generation": null
+        },
+        "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/ort-v1.1.0/onnxruntime-1.27.1-openkara-aarch64-unknown-linux-gnu-reduced.tar.gz",
+        "extracted_file_digests": {
+          "LICENSE.onnxruntime": {
+            "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+            "size": 1073
+          },
+          "NOTICE.onnxruntime": {
+            "sha256": "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2",
+            "size": 325054
+          },
+          "libonnxruntime.so": {
+            "sha256": "b858ec824ae99953015310527ddfb44f53830bd2846681e895c8197895b6febb",
+            "size": 25884920
+          },
+          "provenance.json": {
+            "sha256": "fd9f5ee9c8d74997a4643c48abe45102276d42ca98aad5babcc065979da8fc4e",
+            "size": 2223
+          },
+          "sbom.spdx.json": {
+            "sha256": "d2c86ac759f9a84da244d5eb18fdca4720daf99893aeb952e478085f08dcb2b1",
+            "size": 6746
+          }
+        },
+        "filename": "onnxruntime-1.27.1-openkara-aarch64-unknown-linux-gnu-reduced.tar.gz",
+        "kind": "runtime",
+        "os": "linux",
+        "runtime": {
+          "companion_files": [],
+          "deployment_target": "n/a",
+          "execution_providers": [
+            "cpu",
+            "xnnpack"
+          ],
+          "ort_c_api_level": "27",
+          "supported_model_artifact_ids": [
+            "htdemucs.spectral.fp32.onnx",
+            "htdemucs_ft.spectral.fp32.onnx"
+          ],
+          "version": "v1.27.1"
+        },
+        "supply_chain": {
+          "license": {
+            "digest_algorithm": "sha256",
+            "kind": "license-file",
+            "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
+            "size": 1061,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+          },
+          "notice": {
+            "digest_algorithm": "sha256",
+            "kind": "notice-file",
+            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
+            "size": 439,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+          },
+          "provenance": {
+            "digest_algorithm": "sha256",
+            "kind": "commit-provenance",
+            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
+            "size": 6386,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+          },
+          "sbom": {
+            "digest_algorithm": "sha256",
+            "kind": "spdx-json",
+            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "size": 12252,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+          }
+        },
+        "target_triple": "aarch64-unknown-linux-gnu",
+        "toolchain": {
+          "cmake_flags": [
+            "-Donnxruntime_BUILD_SHARED_LIB=ON",
+            "-DORT_ENABLE_TRAINING=OFF",
+            "-DORT_ENABLE_PYTHON=OFF",
+            "-Dbuild_ort_onnx_flaky_tests=OFF",
+            "-Dbuild_ort_perf_tests=OFF",
+            "-Donnxruntime_BUILD_UNIT_TESTS=OFF",
+            "-Donnxruntime_PREFER_SYSTEM_LIB=OFF",
+            "-Donnxruntime_USE_XNNPACK=ON",
+            "-Donnxruntime_USE_CPU=ON",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+            "-DCMAKE_SKIP_INSTALL_RULES=ON",
+            "-DCMAKE_SHARED_LINKER_FLAGS=-static-libstdc++ -static-libgcc",
+            "-Donnxruntime_DISABLE_ML_OPS=ON"
+          ],
+          "compiler": "gcc 13",
+          "deployment_target": "n/a",
+          "image": "ubuntu-24.04-arm",
+          "submodule_state": {
+            "cmake/external/emsdk": "c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56",
+            "cmake/external/libprotobuf-mutator": "7a2ed51a6b682a83e345ff49fc4cfd7ca47550db",
+            "cmake/external/onnx": "be2b5fde82d9c8874f3d19328bdfe3b6962dc67b"
+          }
+        },
+        "upstream": {
+          "commit_sha": "df2ba1cf8108aa63627cf4cdf8f807880b938616",
+          "project": "microsoft/onnxruntime",
+          "tag": "v1.27.1"
+        },
+        "variant": "onnxruntime"
+      },
+      {
+        "arch": "x86_64",
+        "archive_digest": "627e9178165e506596a65df6026883352f14c69cd37db5f4533bd79c91c0ca17",
+        "artifact_id": "onnxruntime-1.27.1-openkara-x86_64-apple-darwin-reduced",
+        "byte_size": 7348363,
+        "deprecation": {
+          "deprecated": false,
+          "replacement_artifact_id": null,
+          "sunset_generation": null
+        },
+        "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/ort-v1.1.0/onnxruntime-1.27.1-openkara-x86_64-apple-darwin-reduced.tar.gz",
+        "extracted_file_digests": {
+          "LICENSE.onnxruntime": {
+            "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+            "size": 1073
+          },
+          "NOTICE.onnxruntime": {
+            "sha256": "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2",
+            "size": 325054
+          },
+          "libonnxruntime.dylib": {
+            "sha256": "a74be41b0d70ca0410f81fde12b8517834afc7be3881c43774ff289215e590c2",
+            "size": 24391440
+          },
+          "provenance.json": {
+            "sha256": "ff768c2b13da06f6dab544c3bf69b9779ead39cc33db2b150d8179397543ad12",
+            "size": 2212
+          },
+          "sbom.spdx.json": {
+            "sha256": "d75e92718e44e52ff157024d7b3effb127ee1d506ec7c984fdf96f4beec08061",
+            "size": 6722
+          }
+        },
+        "filename": "onnxruntime-1.27.1-openkara-x86_64-apple-darwin-reduced.tar.gz",
+        "kind": "runtime",
+        "os": "macos",
+        "runtime": {
+          "companion_files": [],
+          "deployment_target": "13.0",
+          "execution_providers": [
+            "cpu",
+            "xnnpack"
+          ],
+          "ort_c_api_level": "27",
+          "supported_model_artifact_ids": [
+            "htdemucs.spectral.fp32.onnx",
+            "htdemucs_ft.spectral.fp32.onnx"
+          ],
+          "version": "v1.27.1"
+        },
+        "supply_chain": {
+          "license": {
+            "digest_algorithm": "sha256",
+            "kind": "license-file",
+            "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
+            "size": 1061,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+          },
+          "notice": {
+            "digest_algorithm": "sha256",
+            "kind": "notice-file",
+            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
+            "size": 439,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+          },
+          "provenance": {
+            "digest_algorithm": "sha256",
+            "kind": "commit-provenance",
+            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
+            "size": 6386,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+          },
+          "sbom": {
+            "digest_algorithm": "sha256",
+            "kind": "spdx-json",
+            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "size": 12252,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+          }
+        },
+        "target_triple": "x86_64-apple-darwin",
+        "toolchain": {
+          "cmake_flags": [
+            "-Donnxruntime_BUILD_SHARED_LIB=ON",
+            "-DORT_ENABLE_TRAINING=OFF",
+            "-DORT_ENABLE_PYTHON=OFF",
+            "-Dbuild_ort_onnx_flaky_tests=OFF",
+            "-Dbuild_ort_perf_tests=OFF",
+            "-Donnxruntime_BUILD_UNIT_TESTS=OFF",
+            "-Donnxruntime_PREFER_SYSTEM_LIB=OFF",
+            "-Donnxruntime_USE_XNNPACK=ON",
+            "-Donnxruntime_USE_CPU=ON",
+            "-Donnxruntime_USE_COREML=OFF",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMAKE_OSX_DEPLOYMENT_TARGET=13.0",
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+            "-DCMAKE_SKIP_INSTALL_RULES=ON",
+            "-Donnxruntime_DISABLE_ML_OPS=ON"
+          ],
+          "compiler": "clang (Xcode 16.0)",
+          "deployment_target": "13.0",
+          "image": "macos-15-intel",
+          "submodule_state": {
+            "cmake/external/emsdk": "c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56",
+            "cmake/external/libprotobuf-mutator": "7a2ed51a6b682a83e345ff49fc4cfd7ca47550db",
+            "cmake/external/onnx": "be2b5fde82d9c8874f3d19328bdfe3b6962dc67b"
+          }
+        },
+        "upstream": {
+          "commit_sha": "df2ba1cf8108aa63627cf4cdf8f807880b938616",
+          "project": "microsoft/onnxruntime",
+          "tag": "v1.27.1"
+        },
+        "variant": "onnxruntime"
+      },
+      {
+        "arch": "x86_64",
+        "archive_digest": "fc71dfb273978b8cf4cc5e84df091a4ee0712d681d27487ca4c4e3083def27eb",
+        "artifact_id": "onnxruntime-1.27.1-openkara-x86_64-unknown-linux-gnu-reduced",
+        "byte_size": 9680198,
+        "deprecation": {
+          "deprecated": false,
+          "replacement_artifact_id": null,
+          "sunset_generation": null
+        },
+        "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/ort-v1.1.0/onnxruntime-1.27.1-openkara-x86_64-unknown-linux-gnu-reduced.tar.gz",
+        "extracted_file_digests": {
+          "LICENSE.onnxruntime": {
+            "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+            "size": 1073
+          },
+          "NOTICE.onnxruntime": {
+            "sha256": "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2",
+            "size": 325054
+          },
+          "libonnxruntime.so": {
+            "sha256": "4c70160469b56613775d1e27274d86876760a90d123c65d9a06b1c8e0336fffe",
+            "size": 27580480
+          },
+          "provenance.json": {
+            "sha256": "fd7b1727dd3d622c96c8239a9b370f9e976f2247dbb95b9c85c4d68b29c6af48",
+            "size": 2220
+          },
+          "sbom.spdx.json": {
+            "sha256": "1dd5bb0e3a3a5d640bc858dfb1da4ec42413f1b80249f47c784e7e4dda4c788f",
+            "size": 6742
+          }
+        },
+        "filename": "onnxruntime-1.27.1-openkara-x86_64-unknown-linux-gnu-reduced.tar.gz",
+        "kind": "runtime",
+        "os": "linux",
+        "runtime": {
+          "companion_files": [],
+          "deployment_target": "n/a",
+          "execution_providers": [
+            "cpu",
+            "xnnpack"
+          ],
+          "ort_c_api_level": "27",
+          "supported_model_artifact_ids": [
+            "htdemucs.spectral.fp32.onnx",
+            "htdemucs_ft.spectral.fp32.onnx"
+          ],
+          "version": "v1.27.1"
+        },
+        "supply_chain": {
+          "license": {
+            "digest_algorithm": "sha256",
+            "kind": "license-file",
+            "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
+            "size": 1061,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+          },
+          "notice": {
+            "digest_algorithm": "sha256",
+            "kind": "notice-file",
+            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
+            "size": 439,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+          },
+          "provenance": {
+            "digest_algorithm": "sha256",
+            "kind": "commit-provenance",
+            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
+            "size": 6386,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+          },
+          "sbom": {
+            "digest_algorithm": "sha256",
+            "kind": "spdx-json",
+            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "size": 12252,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+          }
+        },
+        "target_triple": "x86_64-unknown-linux-gnu",
+        "toolchain": {
+          "cmake_flags": [
+            "-Donnxruntime_BUILD_SHARED_LIB=ON",
+            "-DORT_ENABLE_TRAINING=OFF",
+            "-DORT_ENABLE_PYTHON=OFF",
+            "-Dbuild_ort_onnx_flaky_tests=OFF",
+            "-Dbuild_ort_perf_tests=OFF",
+            "-Donnxruntime_BUILD_UNIT_TESTS=OFF",
+            "-Donnxruntime_PREFER_SYSTEM_LIB=OFF",
+            "-Donnxruntime_USE_XNNPACK=ON",
+            "-Donnxruntime_USE_CPU=ON",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+            "-DCMAKE_SKIP_INSTALL_RULES=ON",
+            "-DCMAKE_SHARED_LINKER_FLAGS=-static-libstdc++ -static-libgcc",
+            "-Donnxruntime_DISABLE_ML_OPS=ON"
+          ],
+          "compiler": "gcc 13",
+          "deployment_target": "n/a",
+          "image": "ubuntu-latest (manylinux_2_28 container)",
+          "submodule_state": {
+            "cmake/external/emsdk": "c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56",
+            "cmake/external/libprotobuf-mutator": "7a2ed51a6b682a83e345ff49fc4cfd7ca47550db",
+            "cmake/external/onnx": "be2b5fde82d9c8874f3d19328bdfe3b6962dc67b"
+          }
+        },
+        "upstream": {
+          "commit_sha": "df2ba1cf8108aa63627cf4cdf8f807880b938616",
+          "project": "microsoft/onnxruntime",
+          "tag": "v1.27.1"
+        },
+        "variant": "onnxruntime"
+      },
+      {
+        "arch": "x86_64",
+        "archive_digest": "cf5e4487be600eebe893310d4e942034bd89fe704fa5151a21b493a2542333e8",
+        "artifact_id": "onnxruntime-1.27.1-openkara-x86_64-pc-windows-msvc-reduced",
+        "byte_size": 15770628,
+        "deprecation": {
+          "deprecated": false,
+          "replacement_artifact_id": null,
+          "sunset_generation": null
+        },
+        "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/ort-v1.1.0/onnxruntime-1.27.1-openkara-x86_64-pc-windows-msvc-reduced.zip",
+        "extracted_file_digests": {
+          "DirectML.dll": {
+            "sha256": "9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1",
+            "size": 18527776
+          },
+          "LICENSE.onnxruntime": {
+            "sha256": "c250d6278f0b47a6439fb7592b08b58a55eb9f535aa49a1db63211c3f982b674",
+            "size": 1094
+          },
+          "NOTICE.onnxruntime": {
+            "sha256": "fb0af774b4d7cffc5b9d046f2aaeade2f37df2f80abf8033c95dfffcc77a8866",
+            "size": 331175
+          },
+          "onnxruntime.dll": {
+            "sha256": "7b1960d0e35af898592334c872b9aa8b953035030ecfeba94067a36904b564f9",
+            "size": 19783680
+          },
+          "provenance.json": {
+            "sha256": "3de686e1a2925044723154d9fa87357d72780023c9a6e1c8bd29f02e2a212ab3",
+            "size": 2265
+          },
+          "sbom.spdx.json": {
+            "sha256": "360a82ec2430e76c33917121ad08651f67f40938fbade75dd48582d81c1210a9",
+            "size": 6735
+          }
+        },
+        "filename": "onnxruntime-1.27.1-openkara-x86_64-pc-windows-msvc-reduced.zip",
+        "kind": "runtime",
+        "os": "windows",
+        "runtime": {
+          "companion_files": [
+            "DirectML.dll"
+          ],
+          "deployment_target": "n/a",
+          "execution_providers": [
+            "cpu",
+            "directml"
+          ],
+          "ort_c_api_level": "27",
+          "supported_model_artifact_ids": [
+            "htdemucs.spectral.fp32.onnx",
+            "htdemucs_ft.spectral.fp32.onnx"
+          ],
+          "version": "v1.27.1"
+        },
+        "supply_chain": {
+          "license": {
+            "digest_algorithm": "sha256",
+            "kind": "license-file",
+            "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
+            "size": 1061,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+          },
+          "notice": {
+            "digest_algorithm": "sha256",
+            "kind": "notice-file",
+            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
+            "size": 439,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+          },
+          "provenance": {
+            "digest_algorithm": "sha256",
+            "kind": "commit-provenance",
+            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
+            "size": 6386,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+          },
+          "sbom": {
+            "digest_algorithm": "sha256",
+            "kind": "spdx-json",
+            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "size": 12252,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+          }
+        },
+        "target_triple": "x86_64-pc-windows-msvc",
+        "toolchain": {
+          "cmake_flags": [
+            "-Donnxruntime_BUILD_SHARED_LIB=ON",
+            "-DORT_ENABLE_TRAINING=OFF",
+            "-DORT_ENABLE_PYTHON=OFF",
+            "-Dbuild_ort_onnx_flaky_tests=OFF",
+            "-Dbuild_ort_perf_tests=OFF",
+            "-Donnxruntime_BUILD_UNIT_TESTS=OFF",
+            "-Donnxruntime_PREFER_SYSTEM_LIB=OFF",
+            "-Donnxruntime_USE_CPU=ON",
+            "-Donnxruntime_USE_DML=ON",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+            "-DCMAKE_SKIP_INSTALL_RULES=ON",
+            "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL",
+            "-Dprotobuf_MSVC_STATIC_RUNTIME=OFF",
+            "-Dabsl_MSVC_STATIC_RUNTIME=OFF",
+            "-Donnxruntime_DISABLE_ML_OPS=ON"
           ],
           "compiler": "MSVC (VS 2022)",
           "deployment_target": "n/a",
@@ -1641,19 +2240,159 @@
       "runtime_artifact_id": "onnxruntime-1.27.1-openkara-x86_64-pc-windows-msvc",
       "status": "supported",
       "target_triple": "x86_64-pc-windows-msvc"
+    },
+    {
+      "execution_provider": "cpu",
+      "model_artifact_id": "htdemucs.spectral.fp32.onnx",
+      "runtime_artifact_id": "onnxruntime-1.27.1-openkara-aarch64-apple-darwin-reduced",
+      "status": "supported",
+      "target_triple": "aarch64-apple-darwin"
+    },
+    {
+      "execution_provider": "coreml",
+      "model_artifact_id": "htdemucs.spectral.fp32.onnx",
+      "runtime_artifact_id": "onnxruntime-1.27.1-openkara-aarch64-apple-darwin-reduced",
+      "status": "supported",
+      "target_triple": "aarch64-apple-darwin"
+    },
+    {
+      "execution_provider": "cpu",
+      "model_artifact_id": "htdemucs.spectral.fp32.onnx",
+      "runtime_artifact_id": "onnxruntime-1.27.1-openkara-aarch64-unknown-linux-gnu-reduced",
+      "status": "supported",
+      "target_triple": "aarch64-unknown-linux-gnu"
+    },
+    {
+      "execution_provider": "xnnpack",
+      "model_artifact_id": "htdemucs.spectral.fp32.onnx",
+      "runtime_artifact_id": "onnxruntime-1.27.1-openkara-aarch64-unknown-linux-gnu-reduced",
+      "status": "supported",
+      "target_triple": "aarch64-unknown-linux-gnu"
+    },
+    {
+      "execution_provider": "cpu",
+      "model_artifact_id": "htdemucs.spectral.fp32.onnx",
+      "runtime_artifact_id": "onnxruntime-1.27.1-openkara-x86_64-apple-darwin-reduced",
+      "status": "supported",
+      "target_triple": "x86_64-apple-darwin"
+    },
+    {
+      "execution_provider": "xnnpack",
+      "model_artifact_id": "htdemucs.spectral.fp32.onnx",
+      "runtime_artifact_id": "onnxruntime-1.27.1-openkara-x86_64-apple-darwin-reduced",
+      "status": "supported",
+      "target_triple": "x86_64-apple-darwin"
+    },
+    {
+      "execution_provider": "cpu",
+      "model_artifact_id": "htdemucs.spectral.fp32.onnx",
+      "runtime_artifact_id": "onnxruntime-1.27.1-openkara-x86_64-unknown-linux-gnu-reduced",
+      "status": "supported",
+      "target_triple": "x86_64-unknown-linux-gnu"
+    },
+    {
+      "execution_provider": "xnnpack",
+      "model_artifact_id": "htdemucs.spectral.fp32.onnx",
+      "runtime_artifact_id": "onnxruntime-1.27.1-openkara-x86_64-unknown-linux-gnu-reduced",
+      "status": "supported",
+      "target_triple": "x86_64-unknown-linux-gnu"
+    },
+    {
+      "execution_provider": "cpu",
+      "model_artifact_id": "htdemucs.spectral.fp32.onnx",
+      "runtime_artifact_id": "onnxruntime-1.27.1-openkara-x86_64-pc-windows-msvc-reduced",
+      "status": "supported",
+      "target_triple": "x86_64-pc-windows-msvc"
+    },
+    {
+      "execution_provider": "directml",
+      "model_artifact_id": "htdemucs.spectral.fp32.onnx",
+      "runtime_artifact_id": "onnxruntime-1.27.1-openkara-x86_64-pc-windows-msvc-reduced",
+      "status": "supported",
+      "target_triple": "x86_64-pc-windows-msvc"
+    },
+    {
+      "execution_provider": "cpu",
+      "model_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
+      "runtime_artifact_id": "onnxruntime-1.27.1-openkara-aarch64-apple-darwin-reduced",
+      "status": "supported",
+      "target_triple": "aarch64-apple-darwin"
+    },
+    {
+      "execution_provider": "coreml",
+      "model_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
+      "runtime_artifact_id": "onnxruntime-1.27.1-openkara-aarch64-apple-darwin-reduced",
+      "status": "supported",
+      "target_triple": "aarch64-apple-darwin"
+    },
+    {
+      "execution_provider": "cpu",
+      "model_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
+      "runtime_artifact_id": "onnxruntime-1.27.1-openkara-aarch64-unknown-linux-gnu-reduced",
+      "status": "supported",
+      "target_triple": "aarch64-unknown-linux-gnu"
+    },
+    {
+      "execution_provider": "xnnpack",
+      "model_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
+      "runtime_artifact_id": "onnxruntime-1.27.1-openkara-aarch64-unknown-linux-gnu-reduced",
+      "status": "supported",
+      "target_triple": "aarch64-unknown-linux-gnu"
+    },
+    {
+      "execution_provider": "cpu",
+      "model_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
+      "runtime_artifact_id": "onnxruntime-1.27.1-openkara-x86_64-apple-darwin-reduced",
+      "status": "supported",
+      "target_triple": "x86_64-apple-darwin"
+    },
+    {
+      "execution_provider": "xnnpack",
+      "model_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
+      "runtime_artifact_id": "onnxruntime-1.27.1-openkara-x86_64-apple-darwin-reduced",
+      "status": "supported",
+      "target_triple": "x86_64-apple-darwin"
+    },
+    {
+      "execution_provider": "cpu",
+      "model_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
+      "runtime_artifact_id": "onnxruntime-1.27.1-openkara-x86_64-unknown-linux-gnu-reduced",
+      "status": "supported",
+      "target_triple": "x86_64-unknown-linux-gnu"
+    },
+    {
+      "execution_provider": "xnnpack",
+      "model_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
+      "runtime_artifact_id": "onnxruntime-1.27.1-openkara-x86_64-unknown-linux-gnu-reduced",
+      "status": "supported",
+      "target_triple": "x86_64-unknown-linux-gnu"
+    },
+    {
+      "execution_provider": "cpu",
+      "model_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
+      "runtime_artifact_id": "onnxruntime-1.27.1-openkara-x86_64-pc-windows-msvc-reduced",
+      "status": "supported",
+      "target_triple": "x86_64-pc-windows-msvc"
+    },
+    {
+      "execution_provider": "directml",
+      "model_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
+      "runtime_artifact_id": "onnxruntime-1.27.1-openkara-x86_64-pc-windows-msvc-reduced",
+      "status": "supported",
+      "target_triple": "x86_64-pc-windows-msvc"
     }
   ],
-  "created_at": "2026-07-25T11:30:00Z",
-  "generation": 8,
+  "created_at": "2026-07-25T15:30:00Z",
+  "generation": 9,
   "minimum_consumer_schema": "openkara.catalog/release-v1",
-  "notes": "Generation 8: adds the first spectral-core model artifacts (issue #23 PR 3, openkara.spectral-contract/v1) built and validated by convert.yml runs 30153749817 (htdemucs) and 30153749971 (htdemucs_ft): the waveform<->spectral transforms run in the application, so these graphs carry no STFT/ISTFT nodes and no dense DFT filter-bank constants (htdemucs 199.8 MB vs 338.6 MB raw waveform; htdemucs_ft 800.2 MB vs 1104 MB dedup). Both validated stage-level and end-to-end against the PyTorch reference (composed MSE 3.4e-09 / 4.3e-10). Existing waveform model and runtime artifacts are unchanged from generation 7. This generation is published to the CANDIDATE channel; the stable switch is coordinated with the OpenKara native-FFT session path (OpenKara#172 PR 4/5).",
+  "notes": "Generation 9: adds five spectral operator-set reduced ONNX Runtime builds (23 ops / 2 domains, ort v1.27.1, produced by ort-publish.yml run 30174230398, artifact ids onnxruntime-1.27.1-openkara-<target>-reduced) covering the same five targets as the full runtimes. The reduced operator set is generated from the spectral-core graphs, so only the two spectral models (htdemucs.spectral.fp32.onnx, htdemucs_ft.spectral.fp32.onnx) declare them as compatible; the reduced builds are deliberately NOT wired to any waveform graph because their operator coverage is not guaranteed for waveform models. The five full-operator runtimes and all five waveform model artifacts (htdemucs.balanced.fp32.onnx, htdemucs_ft.quality.fp32.onnx, htdemucs_ft.quality.fp32.dedup.onnx, htdemucs.dual.fp32.onnx.tar.gz, htdemucs_ft.dual.fp32.onnx.tar.gz) are deprecated with sunset_generation 11; each waveform model points at the same-variant spectral-core replacement and each full runtime points at its -reduced replacement. Spectral model artifact bytes are unchanged from generation 8. This generation is published to the CANDIDATE channel and awaits OpenKara cross-target validation of the reduced runtimes before the stable switch.",
   "producer": {
-    "commit_sha": "a6629940c99334de6b8c4b58948e83841e22ca19",
+    "commit_sha": "56ecb8b6f7a2067476b95b14e194a3cb5b17fc61",
     "repo": "thedavidweng/openkara-models",
-    "run_id": "30153749971",
-    "workflow": "convert.yml"
+    "run_id": "30174230398",
+    "workflow": "ort-publish.yml"
   },
-  "release_id": "2026-07-25-005",
+  "release_id": "2026-07-25-006",
   "schema_version": "openkara.catalog/release-v1",
   "supply_chain": {
     "license": {
@@ -1661,28 +2400,28 @@
       "kind": "license-file",
       "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
       "size": 1061,
-      "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/LICENSE"
+      "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
     },
     "notice": {
       "digest_algorithm": "sha256",
       "kind": "notice-file",
-      "sha256": "fdd16c68830373fc743bdf9037dca372ee8326b4dd5f1fec5afa8d458223018f",
-      "size": 435,
-      "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/NOTICE"
+      "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
+      "size": 439,
+      "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
     },
     "provenance": {
       "digest_algorithm": "sha256",
       "kind": "commit-provenance",
-      "sha256": "3204b34c3ae0cf6fca22a07d1e6519f6aa40b7222ed5a97503ff3bec0d2640ea",
-      "size": 4534,
-      "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/provenance.json"
+      "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
+      "size": 6386,
+      "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
     },
     "sbom": {
       "digest_algorithm": "sha256",
       "kind": "spdx-json",
-      "sha256": "2968adab77a0ebcafdcf50282f657e17fb806e9074a687351db55b28c841154e",
-      "size": 8730,
-      "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-005/sbom.spdx.json"
+      "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+      "size": 12252,
+      "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
     }
   }
 }

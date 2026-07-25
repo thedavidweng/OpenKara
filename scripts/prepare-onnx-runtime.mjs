@@ -82,12 +82,17 @@ function resolveCatalogRuntime(targetTriple) {
       `unsupported release manifest schema: ${catalog.schema_version}`,
     );
   }
+  // Superseded runtimes stay listed for provenance but deprecated; only the
+  // active delivery per target is a provisioning candidate (mirrors the Rust
+  // resolve_runtime rule).
   const matches = catalog.artifacts.runtimes.filter(
-    (runtime) => runtime.target_triple === targetTriple,
+    (runtime) =>
+      runtime.target_triple === targetTriple &&
+      !runtime.deprecation?.deprecated,
   );
   if (matches.length !== 1) {
     throw new Error(
-      `catalog snapshot must list exactly one runtime for target ${targetTriple}, found ${matches.length}`,
+      `catalog snapshot must list exactly one active runtime for target ${targetTriple}, found ${matches.length}`,
     );
   }
   return { catalog, runtime: matches[0] };

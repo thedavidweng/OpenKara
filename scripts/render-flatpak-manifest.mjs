@@ -39,12 +39,15 @@ const catalog = JSON.parse(
   readFileSync(join("src-tauri", "catalog", "release-manifest.json"), "utf8"),
 );
 const catalogRuntime = (target) => {
+  // Deprecated (superseded) runtimes stay listed for provenance; only the
+  // active delivery per target may be bundled (mirrors resolve_runtime).
   const matches = catalog.artifacts.runtimes.filter(
-    (runtime) => runtime.target_triple === target,
+    (runtime) =>
+      runtime.target_triple === target && !runtime.deprecation?.deprecated,
   );
   if (matches.length !== 1) {
     throw new Error(
-      `catalog snapshot must list exactly one runtime for ${target}`,
+      `catalog snapshot must list exactly one active runtime for ${target}`,
     );
   }
   return matches[0];
