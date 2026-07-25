@@ -1,14 +1,16 @@
-name: Spectral candidate (cross-target)
+name: Catalog candidate (cross-target)
 
-# Cross-target validation of a spectral-core catalog candidate (issue #172
-# PR 4). Resolves the model from the openkara-models CANDIDATE channel
-# (manifest bytes SHA-256-verified against the pointer), then on every
-# supported target: runs the golden-stage suite, the real-model equivalence
-# and streaming tests, the cancellation/restart contract, and the
-# measurement harness (size / cold load / warm latency / RTF / peak RSS).
+# Cross-target validation of a separator-model catalog candidate. Resolves
+# the model from the openkara-models CANDIDATE channel (manifest bytes
+# SHA-256-verified against the pointer), then on every supported target:
+# runs the golden-stage suite, the real-model streaming tests, the
+# cancellation/restart contract, and the measurement harness
+# (size / cold load / warm latency / RTF / peak RSS).
 #
 # The stable channel and the embedded snapshot are untouched: promotion
-# happens only after every target here reports green (issue #172 PR 5).
+# happens only after every target here reports green. New model weights,
+# contract revisions, and runtime updates all gate through this workflow
+# before a candidate is promoted.
 
 on:
   workflow_dispatch:
@@ -23,7 +25,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: spectral-candidate-${{ github.ref }}
+  group: catalog-candidate-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -63,7 +65,7 @@ jobs:
       - name: Restore Rust cache
         uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: spectral-candidate-${{ matrix.os }}
+          shared-key: catalog-candidate-${{ matrix.os }}
           workspaces: ./src-tauri -> target
           cache-bin: false
 
@@ -81,20 +83,8 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libxdo-dev
 
-      - name: Resolve waveform model from catalog snapshot
-        id: waveform
-        shell: bash
-        run: |
-          {
-            echo "url=$(node scripts/resolve-model.mjs --field url)"
-            echo "sha256=$(node scripts/resolve-model.mjs --field sha256)"
-            echo "file=$(node scripts/resolve-model.mjs --field filename)"
-            echo "file_sha256=$(node scripts/resolve-model.mjs --field file_sha256)"
-            echo "archived=$(node scripts/resolve-model.mjs --field archived)"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Resolve spectral candidate from the ${{ inputs.channel }} channel
-        id: spectral
+      - name: Resolve candidate model from the ${{ inputs.channel }} channel
+        id: model
         shell: bash
         env:
           CHANNEL: ${{ inputs.channel }}
@@ -109,23 +99,16 @@ jobs:
       - name: Restore model cache
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: |
-            src-tauri/models/${{ steps.waveform.outputs.file }}
-            src-tauri/models/${{ steps.spectral.outputs.file }}
-          key: spectral-candidate-models-${{ steps.waveform.outputs.file_sha256 }}-${{ steps.spectral.outputs.sha256 }}
+          path: src-tauri/models/${{ steps.model.outputs.file }}
+          key: catalog-candidate-model-${{ steps.model.outputs.sha256 }}
           enableCrossOsArchive: true
 
-      - name: Download and verify models
+      - name: Download and verify model
         shell: bash
         env:
-          WAVEFORM_URL: ${{ steps.waveform.outputs.url }}
-          WAVEFORM_SHA256: ${{ steps.waveform.outputs.sha256 }}
-          WAVEFORM_FILE: ${{ steps.waveform.outputs.file }}
-          WAVEFORM_FILE_SHA256: ${{ steps.waveform.outputs.file_sha256 }}
-          WAVEFORM_ARCHIVED: ${{ steps.waveform.outputs.archived }}
-          SPECTRAL_URL: ${{ steps.spectral.outputs.url }}
-          SPECTRAL_SHA256: ${{ steps.spectral.outputs.sha256 }}
-          SPECTRAL_FILE: ${{ steps.spectral.outputs.file }}
+          MODEL_URL: ${{ steps.model.outputs.url }}
+          MODEL_SHA256: ${{ steps.model.outputs.sha256 }}
+          MODEL_FILE: ${{ steps.model.outputs.file }}
         run: |
           # sha256sum -c is GNU-only (macOS runners ship a BSD variant without
           # check mode); hash with Node streaming instead — identical on all
@@ -135,20 +118,10 @@ jobs:
           }
           verified() { [ -f "$1" ] && [ "$(sha256 "$1")" = "$2" ]; }
           mkdir -p src-tauri/models
-          if ! verified "src-tauri/models/$WAVEFORM_FILE" "$WAVEFORM_FILE_SHA256"; then
-            curl -L --fail "$WAVEFORM_URL" -o /tmp/waveform-download
-            verified /tmp/waveform-download "$WAVEFORM_SHA256" || { echo "waveform download digest mismatch"; exit 1; }
-            if [ "$WAVEFORM_ARCHIVED" = "true" ]; then
-              tar -xzf /tmp/waveform-download -C src-tauri/models "$WAVEFORM_FILE"
-            else
-              mv /tmp/waveform-download "src-tauri/models/$WAVEFORM_FILE"
-            fi
+          if ! verified "src-tauri/models/$MODEL_FILE" "$MODEL_SHA256"; then
+            curl -L --fail "$MODEL_URL" -o "src-tauri/models/$MODEL_FILE"
           fi
-          verified "src-tauri/models/$WAVEFORM_FILE" "$WAVEFORM_FILE_SHA256" || { echo "waveform model digest mismatch"; exit 1; }
-          if ! verified "src-tauri/models/$SPECTRAL_FILE" "$SPECTRAL_SHA256"; then
-            curl -L --fail "$SPECTRAL_URL" -o "src-tauri/models/$SPECTRAL_FILE"
-          fi
-          verified "src-tauri/models/$SPECTRAL_FILE" "$SPECTRAL_SHA256" || { echo "spectral model digest mismatch"; exit 1; }
+          verified "src-tauri/models/$MODEL_FILE" "$MODEL_SHA256" || { echo "model digest mismatch"; exit 1; }
 
       - name: Restore ONNX Runtime cache
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
@@ -172,26 +145,25 @@ jobs:
         shell: bash
         run: cargo nextest run --no-fail-fast -E 'binary(phase7_spectral) or test(spectral)'
 
-      - name: Candidate equivalence + streaming + cancellation
+      - name: Candidate streaming + cancellation
         working-directory: src-tauri
         shell: bash
         env:
-          OPENKARA_SPECTRAL_MODEL: ${{ github.workspace }}/src-tauri/models/${{ steps.spectral.outputs.file }}
-        run: |
-          cargo nextest run --no-fail-fast -E 'binary(phase7_spectral_session) or test(spectral_core_matches_waveform_model_on_one_window)'
+          OPENKARA_SPECTRAL_MODEL: ${{ github.workspace }}/src-tauri/models/${{ steps.model.outputs.file }}
+        run: cargo nextest run --no-fail-fast -E 'binary(phase7_spectral_session)'
 
       - name: Measurement harness
         working-directory: src-tauri
         shell: bash
         env:
-          OPENKARA_SPECTRAL_MODEL: ${{ github.workspace }}/src-tauri/models/${{ steps.spectral.outputs.file }}
-          OPENKARA_BENCH_OUT: ${{ github.workspace }}/spectral-bench-${{ matrix.ort_target }}.json
+          OPENKARA_SPECTRAL_MODEL: ${{ github.workspace }}/src-tauri/models/${{ steps.model.outputs.file }}
+          OPENKARA_BENCH_OUT: ${{ github.workspace }}/candidate-bench-${{ matrix.ort_target }}.json
           BENCH_TARGET: ${{ matrix.ort_target }}
-          BENCH_RELEASE: ${{ steps.spectral.outputs.release }}
+          BENCH_RELEASE: ${{ steps.model.outputs.release }}
         run: |
           cargo test -q --release --test phase7_spectral_bench -- --nocapture
           {
-            echo "### Spectral candidate bench (${BENCH_TARGET}, release ${BENCH_RELEASE})"
+            echo "### Catalog candidate bench (${BENCH_TARGET}, release ${BENCH_RELEASE})"
             echo '```json'
             cat "$OPENKARA_BENCH_OUT"
             echo '```'
@@ -200,7 +172,7 @@ jobs:
       - name: Upload bench report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: spectral-bench-${{ matrix.ort_target }}
-          path: spectral-bench-${{ matrix.ort_target }}.json
+          name: candidate-bench-${{ matrix.ort_target }}
+          path: candidate-bench-${{ matrix.ort_target }}.json
           if-no-files-found: error
           retention-days: 30
