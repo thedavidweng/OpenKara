@@ -974,16 +974,28 @@ mod tests {
     fn effective_execution_provider_defaults_to_platform_default() {
         let config = AppConfig::default();
 
+        // Host-conditional expectations mirror the measured policy table
+        // (issue #170): Windows -> DirectML, Apple Silicon -> XNNPACK,
+        // everything else -> the ORT CPU EP.
         #[cfg(target_os = "windows")]
         assert_eq!(
             config.effective_execution_provider(),
             ExecutionProviderPreference::DirectMl
         );
 
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         assert_eq!(
             config.effective_execution_provider(),
             ExecutionProviderPreference::Xnnpack
+        );
+
+        #[cfg(not(any(
+            target_os = "windows",
+            all(target_os = "macos", target_arch = "aarch64")
+        )))]
+        assert_eq!(
+            config.effective_execution_provider(),
+            ExecutionProviderPreference::Cpu
         );
     }
 
