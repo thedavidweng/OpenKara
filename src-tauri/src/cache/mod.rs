@@ -192,6 +192,7 @@ fn migrate_legacy_song_schema(connection: &Connection) -> rusqlite::Result<()> {
             cdg_path           TEXT,
             media_g_container  TEXT,
             instrumental       INTEGER NOT NULL DEFAULT 0,
+            language           TEXT,
             audio_source_kind  TEXT NOT NULL DEFAULT 'original'
         );
         INSERT INTO songs_new (
@@ -207,6 +208,7 @@ fn migrate_legacy_song_schema(connection: &Connection) -> rusqlite::Result<()> {
             cdg_path,
             media_g_container,
             instrumental,
+            language,
             audio_source_kind
         )
         SELECT
@@ -222,6 +224,7 @@ fn migrate_legacy_song_schema(connection: &Connection) -> rusqlite::Result<()> {
             cdg_path,
             media_g_container,
             instrumental,
+            language,
             COALESCE(audio_source_kind, 'original')
         FROM songs;
         DROP TABLE songs;
@@ -754,6 +757,121 @@ mod tests {
 
         assert_eq!(file_path.as_deref(), Some("media/song-1.mp3"));
         assert_eq!(audio_source_kind, "original");
+    }
+
+    /// Regression for #219: the legacy-schema rebuild must carry `language`
+    /// across the table recreation. A pre-1.0 database that already holds
+    /// per-song language annotations must keep them after the rebuild, and the
+    /// column-dependent `list_songs` query must still succeed.
+    #[test]
+    fn migrate_legacy_song_schema_preserves_language() {
+        let connection = Connection::open_in_memory().expect("in-memory database should open");
+
+        // Legacy 0.x shape that triggers the rebuild: file_path is NOT NULL and
+        // audio_source_kind is absent, but the row already carries a populated
+        // `language` column (added by an earlier inline ALTER in the wild).
+        connection
+            .execute_batch(
+                "
+                CREATE TABLE songs (
+                    hash        TEXT PRIMARY KEY,
+                    file_path   TEXT NOT NULL,
+                    title       TEXT,
+                    artist      TEXT,
+                    album       TEXT,
+                    duration_ms INTEGER,
+                    cover_art   BLOB,
+                    imported_at INTEGER NOT NULL,
+                    language    TEXT
+                );
+                INSERT INTO songs (
+                    hash, file_path, title, artist, album, duration_ms, cover_art, imported_at, language
+                ) VALUES (
+                    'song-ja',
+                    'media/song-ja.mp3',
+                    'Song',
+                    'Artist',
+                    'Album',
+                    1234,
+                    X'',
+                    1,
+                    'ja'
+                );
+                ",
+            )
+            .expect("legacy schema with language data should create");
+
+        apply_migrations(&connection).expect("legacy schema migration should succeed");
+
+        // The rebuild must not silently drop the per-song language value.
+        let language: Option<String> = connection
+            .query_row(
+                "SELECT language FROM songs WHERE hash = 'song-ja'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("migrated song row should load");
+        assert_eq!(language.as_deref(), Some("ja"));
+
+        // list_songs selects the `language` column; before the fix the rebuilt
+        // table lacked it and this query failed with "no such column: language".
+        let songs = list_songs(&connection).expect("list_songs should succeed after rebuild");
+        assert_eq!(songs.len(), 1);
+        assert_eq!(songs[0].language.as_deref(), Some("ja"));
+    }
+
+    /// Regression for #219: after the legacy rebuild the songs table must expose
+    /// exactly the same set of columns as a freshly initialized database, so no
+    /// column (language included) is dropped by the recreation.
+    #[test]
+    fn legacy_rebuild_matches_fresh_install_column_set() {
+        fn song_columns(connection: &Connection) -> Vec<String> {
+            let mut names: Vec<String> = connection
+                .prepare("PRAGMA table_info(songs)")
+                .expect("pragma prepare")
+                .query_map([], |row| row.get::<_, String>(1))
+                .expect("pragma query")
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .expect("pragma rows");
+            names.sort();
+            names
+        }
+
+        // Fresh install: apply migrations against an empty database.
+        let fresh = Connection::open_in_memory().expect("fresh in-memory database should open");
+        apply_migrations(&fresh).expect("fresh migrations should succeed");
+        let fresh_columns = song_columns(&fresh);
+
+        // Legacy upgrade: a 0.x database that forces migrate_legacy_song_schema
+        // to rebuild the songs table.
+        let legacy = Connection::open_in_memory().expect("legacy in-memory database should open");
+        legacy
+            .execute_batch(
+                "
+                CREATE TABLE songs (
+                    hash        TEXT PRIMARY KEY,
+                    file_path   TEXT NOT NULL,
+                    title       TEXT,
+                    artist      TEXT,
+                    album       TEXT,
+                    duration_ms INTEGER,
+                    cover_art   BLOB,
+                    imported_at INTEGER NOT NULL
+                );
+                ",
+            )
+            .expect("legacy schema should create");
+        apply_migrations(&legacy).expect("legacy migrations should succeed");
+        let legacy_columns = song_columns(&legacy);
+
+        assert_eq!(
+            legacy_columns, fresh_columns,
+            "rebuilt songs table columns must match a fresh install"
+        );
+        assert!(
+            legacy_columns.iter().any(|name| name == "language"),
+            "language column must be present after the legacy rebuild"
+        );
     }
 
     fn test_db() -> Connection {
