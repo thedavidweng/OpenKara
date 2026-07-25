@@ -1,0 +1,199 @@
+name: Spectral candidate (cross-target)
+
+# Cross-target validation of a spectral-core catalog candidate (issue #172
+# PR 4). Resolves the model from the openkara-models CANDIDATE channel
+# (manifest bytes SHA-256-verified against the pointer), then on every
+# supported target: runs the golden-stage suite, the real-model equivalence
+# and streaming tests, the cancellation/restart contract, and the
+# measurement harness (size / cold load / warm latency / RTF / peak RSS).
+#
+# The stable channel and the embedded snapshot are untouched: promotion
+# happens only after every target here reports green (issue #172 PR 5).
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Catalog channel to validate"
+        type: choice
+        options: [candidate, stable]
+        default: candidate
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spectral-candidate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            ort_target: aarch64-apple-darwin
+          - os: macos-15-intel
+            ort_target: x86_64-apple-darwin
+          - os: ubuntu-latest
+            ort_target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            ort_target: aarch64-unknown-linux-gnu
+          - os: windows-2022
+            ort_target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+
+      - name: Restore Rust cache
+        uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: spectral-candidate-${{ matrix.os }}
+          workspaces: ./src-tauri -> target
+          cache-bin: false
+
+      - name: Install Linux test dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            libasound2-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev
+
+      - name: Resolve waveform model from catalog snapshot
+        id: waveform
+        shell: bash
+        run: |
+          {
+            echo "url=$(node scripts/resolve-model.mjs --field url)"
+            echo "sha256=$(node scripts/resolve-model.mjs --field sha256)"
+            echo "file=$(node scripts/resolve-model.mjs --field filename)"
+            echo "file_sha256=$(node scripts/resolve-model.mjs --field file_sha256)"
+            echo "archived=$(node scripts/resolve-model.mjs --field archived)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Resolve spectral candidate from the ${{ inputs.channel }} channel
+        id: spectral
+        shell: bash
+        env:
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          {
+            echo "url=$(node scripts/fetch-candidate-model.mjs --channel "$CHANNEL" --field url)"
+            echo "sha256=$(node scripts/fetch-candidate-model.mjs --channel "$CHANNEL" --field sha256)"
+            echo "file=$(node scripts/fetch-candidate-model.mjs --channel "$CHANNEL" --field filename)"
+            echo "release=$(node scripts/fetch-candidate-model.mjs --channel "$CHANNEL" --field release_id)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Restore model cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            src-tauri/models/${{ steps.waveform.outputs.file }}
+            src-tauri/models/${{ steps.spectral.outputs.file }}
+          key: spectral-candidate-models-${{ steps.waveform.outputs.file_sha256 }}-${{ steps.spectral.outputs.sha256 }}
+          enableCrossOsArchive: true
+
+      - name: Download and verify models
+        shell: bash
+        env:
+          WAVEFORM_URL: ${{ steps.waveform.outputs.url }}
+          WAVEFORM_SHA256: ${{ steps.waveform.outputs.sha256 }}
+          WAVEFORM_FILE: ${{ steps.waveform.outputs.file }}
+          WAVEFORM_FILE_SHA256: ${{ steps.waveform.outputs.file_sha256 }}
+          WAVEFORM_ARCHIVED: ${{ steps.waveform.outputs.archived }}
+          SPECTRAL_URL: ${{ steps.spectral.outputs.url }}
+          SPECTRAL_SHA256: ${{ steps.spectral.outputs.sha256 }}
+          SPECTRAL_FILE: ${{ steps.spectral.outputs.file }}
+        run: |
+          mkdir -p src-tauri/models
+          if ! echo "$WAVEFORM_FILE_SHA256  src-tauri/models/$WAVEFORM_FILE" | sha256sum -c --status 2>/dev/null; then
+            curl -L --fail "$WAVEFORM_URL" -o /tmp/waveform-download
+            echo "$WAVEFORM_SHA256  /tmp/waveform-download" | sha256sum -c
+            if [ "$WAVEFORM_ARCHIVED" = "true" ]; then
+              tar -xzf /tmp/waveform-download -C src-tauri/models "$WAVEFORM_FILE"
+            else
+              mv /tmp/waveform-download "src-tauri/models/$WAVEFORM_FILE"
+            fi
+          fi
+          echo "$WAVEFORM_FILE_SHA256  src-tauri/models/$WAVEFORM_FILE" | sha256sum -c
+          if ! echo "$SPECTRAL_SHA256  src-tauri/models/$SPECTRAL_FILE" | sha256sum -c --status 2>/dev/null; then
+            curl -L --fail "$SPECTRAL_URL" -o "src-tauri/models/$SPECTRAL_FILE"
+          fi
+          echo "$SPECTRAL_SHA256  src-tauri/models/$SPECTRAL_FILE" | sha256sum -c
+
+      - name: Restore ONNX Runtime cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: src-tauri/generated/onnxruntime
+          key: onnxruntime-${{ matrix.ort_target }}-${{ hashFiles('scripts/prepare-onnx-runtime.mjs', 'src-tauri/catalog/release-manifest.json') }}
+
+      - name: Prepare ONNX Runtime
+        env:
+          ORT_TARGET: ${{ matrix.ort_target }}
+        shell: bash
+        run: node scripts/prepare-onnx-runtime.mjs --target "${ORT_TARGET}"
+
+      - name: Install nextest
+        uses: taiki-e/install-action@7a562dfa955aa2e4d5b0fd6ebd57ff9715c07b0b # v2.73.0
+        with:
+          tool: nextest
+
+      - name: Golden stages + spectral unit suite
+        working-directory: src-tauri
+        shell: bash
+        run: cargo nextest run --no-fail-fast -E 'binary(phase7_spectral) or test(spectral)'
+
+      - name: Candidate equivalence + streaming + cancellation
+        working-directory: src-tauri
+        shell: bash
+        env:
+          OPENKARA_SPECTRAL_MODEL: ${{ github.workspace }}/src-tauri/models/${{ steps.spectral.outputs.file }}
+        run: |
+          cargo nextest run --no-fail-fast -E 'binary(phase7_spectral_session) or test(spectral_core_matches_waveform_model_on_one_window)'
+
+      - name: Measurement harness
+        working-directory: src-tauri
+        shell: bash
+        env:
+          OPENKARA_SPECTRAL_MODEL: ${{ github.workspace }}/src-tauri/models/${{ steps.spectral.outputs.file }}
+          OPENKARA_BENCH_OUT: ${{ github.workspace }}/spectral-bench-${{ matrix.ort_target }}.json
+          BENCH_TARGET: ${{ matrix.ort_target }}
+          BENCH_RELEASE: ${{ steps.spectral.outputs.release }}
+        run: |
+          cargo test -q --release --test phase7_spectral_bench -- --nocapture
+          {
+            echo "### Spectral candidate bench (${BENCH_TARGET}, release ${BENCH_RELEASE})"
+            echo '```json'
+            cat "$OPENKARA_BENCH_OUT"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload bench report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: spectral-bench-${{ matrix.ort_target }}
+          path: spectral-bench-${{ matrix.ort_target }}.json
+          if-no-files-found: error
+          retention-days: 30

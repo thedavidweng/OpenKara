@@ -233,3 +233,107 @@ fn spectral_streaming_end_to_end_two_stem() {
     }
     fs::remove_dir_all(&out_dir).ok();
 }
+
+/// Interruption contract (issue #172 PR 4): a cancelled spectral run
+/// publishes nothing and a fresh run restarts from chunk 0 successfully.
+/// No checkpoint state exists by design (#171).
+#[test]
+fn spectral_cancellation_publishes_nothing_and_restarts_from_zero() {
+    use openkara_lib::audio::decode::DecodedAudio;
+    use std::sync::atomic::Ordering;
+
+    let Some(model_path) = spectral_model_path() else {
+        eprintln!("skipping: OPENKARA_SPECTRAL_MODEL is not set");
+        return;
+    };
+    initialize_test_runtime();
+
+    let loaded = model::load_from_path(&model_path, ExecutionProviderPreference::Cpu)
+        .expect("spectral model should load");
+    let segment = loaded
+        .spectral
+        .as_ref()
+        .expect("verified interface")
+        .segment_frames;
+
+    // 1.5 windows -> two chunks at 50% overlap.
+    let channels = 2usize;
+    let frames = segment + segment / 2;
+    let samples: Vec<f32> = (0..frames * channels)
+        .map(|i| 0.1 * ((i as f32) * 0.001).sin())
+        .collect();
+    let audio = DecodedAudio {
+        sample_rate: 44_100,
+        channels,
+        duration_ms: ((frames as f64 / 44_100.0) * 1000.0).round() as u64,
+        samples,
+    };
+
+    let chunk_size = preprocess::target_frame_count(&loaded, frames).expect("chunk size");
+    let hop_size = chunk_size / 2;
+    let out_dir = support::unique_temp_path("phase7-spectral-cancel");
+    fs::create_dir_all(&out_dir).expect("output dir");
+
+    let make_writers = |dir: &Path| StemWriters {
+        mode: StemMode::TwoStem,
+        vocals: StreamingOggWriter::new(&dir.join("vocals.ogg"), 44_100, channels, None, None)
+            .expect("vocals writer"),
+        accompaniment: Some(
+            StreamingOggWriter::new(&dir.join("accompaniment.ogg"), 44_100, channels, None, None)
+                .expect("accompaniment writer"),
+        ),
+        drums: None,
+        bass: None,
+        other: None,
+    };
+
+    // First run: cancel after the first chunk completes.
+    let cancel = AtomicBool::new(false);
+    let mut writers = make_writers(&out_dir);
+    let mut workspace =
+        SeparationWorkspace::new(StemMode::TwoStem, channels, chunk_size, hop_size, frames);
+    let error = inference::separate_streaming(
+        &loaded,
+        &audio,
+        StemMode::TwoStem,
+        &mut writers,
+        &mut workspace,
+        &cancel,
+        |done, _| {
+            if done >= 1 {
+                cancel.store(true, Ordering::Relaxed);
+            }
+        },
+    )
+    .expect_err("cancelled run must not complete");
+    assert!(
+        openkara_lib::separator::error::is_cancelled(&error),
+        "error must be the cancellation sentinel, got {error:#}"
+    );
+    drop(writers); // writers drop without finish_all -> temp files cleaned up
+
+    assert!(
+        !out_dir.join("vocals.ogg").exists() && !out_dir.join("accompaniment.ogg").exists(),
+        "a cancelled run must publish no stem files"
+    );
+
+    // Second run: from zero, to completion, same directory.
+    let mut writers = make_writers(&out_dir);
+    let mut workspace =
+        SeparationWorkspace::new(StemMode::TwoStem, channels, chunk_size, hop_size, frames);
+    let outcome = inference::separate_streaming(
+        &loaded,
+        &audio,
+        StemMode::TwoStem,
+        &mut writers,
+        &mut workspace,
+        &AtomicBool::new(false),
+        |_, _| {},
+    )
+    .expect("restarted run must succeed");
+    writers.finish_all().expect("writers finalize");
+    assert_eq!(outcome.frames_written, frames);
+    assert_sane_stem(&out_dir.join("vocals.ogg"));
+    assert_sane_stem(&out_dir.join("accompaniment.ogg"));
+    fs::remove_dir_all(&out_dir).ok();
+}
