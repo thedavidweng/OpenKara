@@ -9,7 +9,6 @@ use std::{
 };
 
 pub const EMBEDDED_MODEL_FILENAME: &str = "htdemucs.onnx";
-pub const ORT_RUNTIME_VERSION: &str = "1.26.0";
 
 #[cfg(target_os = "windows")]
 pub const ORT_RUNTIME_FILENAME: &str = "onnxruntime.dll";

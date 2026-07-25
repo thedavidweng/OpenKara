@@ -127,6 +127,7 @@ export const MOCK_DATA: MockData = {
     crossfade_duration_ms: 3000,
     library_sort_mode: "recently_imported",
     theme_preference: "dark",
+    update_policy: "notify",
   },
 
   // Website preview starts at a real lyric timestamp with playback active so

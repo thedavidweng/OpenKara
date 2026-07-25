@@ -38,6 +38,39 @@ impl LibrarySortMode {
     }
 }
 
+/// How runtime/model updates from the infrastructure catalog are handled.
+/// Activation of a staged runtime always requires a restart regardless of
+/// policy; the policy only governs checking and downloading.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdatePolicy {
+    Manual,
+    /// Check on startup and surface available updates without downloading.
+    /// The conservative default until release data justifies auto-download.
+    #[default]
+    Notify,
+    AutoDownload,
+}
+
+impl UpdatePolicy {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::Notify => "notify",
+            Self::AutoDownload => "auto_download",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "manual" => Some(Self::Manual),
+            "notify" => Some(Self::Notify),
+            "auto_download" => Some(Self::AutoDownload),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ThemePreference {
@@ -491,6 +524,8 @@ pub struct AppConfig {
     pub library_sort_mode: Option<LibrarySortMode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub theme_preference: Option<ThemePreference>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub update_policy: Option<UpdatePolicy>,
     /// When set, the cache directory is trimmed to stay under this limit,
     /// deleting the least-recently-used files. When absent the cache defaults
     /// to a finite 2 GiB budget (see `DEFAULT_CACHE_BYTES_LIMIT`).
@@ -600,6 +635,10 @@ impl AppConfig {
     pub fn effective_theme_preference(&self) -> ThemePreference {
         self.theme_preference.unwrap_or_default()
     }
+
+    pub fn effective_update_policy(&self) -> UpdatePolicy {
+        self.update_policy.unwrap_or_default()
+    }
 }
 
 /// Returns `Ok(None)` if the file does not exist.
@@ -704,6 +743,7 @@ mod tests {
             execution_provider: None,
             library_sort_mode: None,
             theme_preference: None,
+            update_policy: None,
             library_path: None,
             eq_enabled: None,
             eq_gains_db: None,
@@ -747,6 +787,7 @@ mod tests {
             crossfade_duration_ms: None,
             library_sort_mode: None,
             theme_preference: None,
+            update_policy: None,
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
@@ -780,6 +821,7 @@ mod tests {
             crossfade_duration_ms: None,
             library_sort_mode: None,
             theme_preference: None,
+            update_policy: None,
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
@@ -807,6 +849,7 @@ mod tests {
             crossfade_duration_ms: None,
             library_sort_mode: None,
             theme_preference: None,
+            update_policy: None,
             remote_cache_bytes_limit: None,
             pending_mirror_restore: false,
             pending_mirror_restore_active_library_id: None,
@@ -821,6 +864,7 @@ mod tests {
             execution_provider: Some(ExecutionProviderPreference::Xnnpack),
             library_sort_mode: None,
             theme_preference: None,
+            update_policy: None,
             ..AppConfig::default()
         };
         let json = serde_json::to_string(&config).unwrap();
@@ -849,6 +893,7 @@ mod tests {
             crossfade_duration_ms: None,
             library_sort_mode: None,
             theme_preference: None,
+            update_policy: None,
             libraries: vec![],
             active_library_id: None,
             remote_cache_bytes_limit: None,
@@ -993,6 +1038,7 @@ mod tests {
         let config = AppConfig {
             library_sort_mode: None,
             theme_preference: None,
+            update_policy: None,
             ..AppConfig::default()
         };
         let json = serde_json::to_string(&config).unwrap();
@@ -1009,6 +1055,7 @@ mod tests {
             let config = AppConfig {
                 library_sort_mode: Some(mode),
                 theme_preference: None,
+                update_policy: None,
                 ..AppConfig::default()
             };
             let json = serde_json::to_string(&config).unwrap();
@@ -1169,6 +1216,7 @@ mod tests {
         let config = AppConfig {
             library_sort_mode: Some(LibrarySortMode::ArtistAsc),
             theme_preference: None,
+            update_policy: None,
             ..AppConfig::default()
         };
         save_config(tmp.path(), &config).unwrap();

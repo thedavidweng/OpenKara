@@ -223,41 +223,70 @@ Per-variant `state` is one of `not_installed`, `up_to_date`,
 5. 若运行时安装目录缺失，但开发目录 `src-tauri/models/<descriptor.filename>` 存在且校验通过，则直接进入 `ready`。开发目录同样允许写入本地 manifest；该目录仍只是开发/测试缓存，不是生产运行时依赖。
 6. 只有当两处都没有可用模型时，才会在后台从固定 URL 下载到运行时安装目录
 
-## ONNX Runtime path resolution semantics
+## ONNX Runtime lifecycle semantics (catalog-driven, slot-based)
 
-1. **Runtime 外部化:** ONNX Runtime 不再打包在安装包中。应用启动时按以下顺序查找：
-   1. **Managed app-data:** `<app_data_dir>/runtime/<platform-lib>`（已验证 SHA-256）
-   2. **Development fallback:** `src-tauri/generated/onnxruntime/<platform-lib>`（开发构建用）
-   3. **Legacy bundled:** 打包资源目录 `onnxruntime/<platform-lib>`（过渡期兼容）
-2. 若 managed 路径存在但 SHA-256 不匹配，状态标记为 `corrupt` 并删除无效文件
-3. 若所有路径都找不到运行时，应用以 Runtime 缺失状态启动；分离 worker 会在实际推理前自动下载并校验 Runtime
-4. Rust 侧固定使用 `ort 2.0.0-rc.12` 的 `load-dynamic` + `api-24` 模式；
-   不允许重新打开 `download-binaries` 或 `copy-dylibs`
-5. macOS / Linux 使用官方 ONNX Runtime 1.26.0 release 动态库；Windows 使用
-   `Microsoft.ML.OnnxRuntime.DirectML` 1.24.4 NuGet runtime。
-6. macOS 发布产物必须按目标架构分别准备 `arm64` / `x86_64` 动态库，不允许再把
-   universal2 ORT 放进两个安装包里浪费体积
-7. macOS 发布包启用 hardened runtime 时必须携带
-   `com.apple.security.cs.disable-library-validation` entitlement；官方 ORT dylib
-   由 Microsoft Developer ID 签名，应用需要该最小豁免才能在启动阶段加载它。
-8. **Runtime status IPC:**
+1. **Runtime 外部化 + catalog 授权:** ONNX Runtime 不打包在安装包中，也不再
+   有任何硬编码的版本/URL/SHA 常量。运行时工件来自 openkara-models catalog
+   （每个 target triple 一个工件，源码构建，携带逐文件摘要与
+   `ort_c_api_level`）。开发/CI 通过 `scripts/prepare-onnx-runtime.mjs`
+   把同一 catalog 工件 stage 到 `src-tauri/generated/onnxruntime/`。
+2. **槽位化安装布局:**
+   - `<app_data_dir>/runtimes/<artifact_id>/` — 不可变安装目录（解压文件 +
+     `record.json`，即统一安装记录 `openkara.app/installed-artifact-v1`）
+   - `<app_data_dir>/runtimes/slots.json` — `active` / `candidate` /
+     `previous` 槽位 + `activation_pending` 崩溃安全标记
+   - `<app_data_dir>/runtime/<platform-lib>` — 旧版（pre-slot）安装；其
+     verified.json 自洽时仍可加载，首次 catalog runtime 激活后删除
+3. **安装事务** (`install_runtime_artifact`)：流式下载（固定内存、传输中哈
+   希、先验证归档大小 + SHA-256）→ 安全解压（拒绝绝对路径/穿越/链接/重复
+   路径/成员数与展开体积超限）→ 按 catalog 逐文件摘要验证（未声明的文件
+   同样拒绝）→ 写入记录 → 原子 rename 到最终目录。部分安装永远不可见。
+4. **启动激活事务** (`begin_startup`)：
+   - 存在有效 candidate → 先持久化槽位交换（带 `activation_pending`），再
+     加载动态库；加载成功 → `finish_activation_success`（清标记、修剪多余
+     代次、删除 legacy）；加载失败 → `rollback_failed_activation`（恢复
+     previous、记录失败、删除失败目录），状态
+     `activation_failed_previous_restored`。
+   - 上次启动在交换后崩溃（`activation_pending` 残留）→ 自动回滚到
+     previous。
+   - candidate 验证失败 → 丢弃并记录，active 不受影响。
+   - **已加载进程内的 runtime 永远不被原地替换**：更新一律走 candidate +
+     重启激活；仅首次安装（进程内无 runtime）允许立即激活加载。
+5. Rust 侧固定使用 `ort 2.0.0-rc.12` 的 `load-dynamic` 模式；crate 的
+   `api-N` 特性与 catalog runtime 的 `ort_c_api_level` 兼容性由 CI 的
+   `scripts/ci/check-ort-api-level.mjs` 把关（要求 crate N ≤ runtime 级别）。
+6. macOS 发布包启用 hardened runtime 时必须携带
+   `com.apple.security.cs.disable-library-validation` entitlement 以加载
+   外部 ORT 动态库。
+7. **Runtime lifecycle IPC:**
    - `get_runtime_bootstrap_status() -> RuntimeBootstrapStatusSnapshot`
-   - `download_runtime() -> RuntimeBootstrapStatusSnapshot`
+   - `download_runtime() -> RuntimeBootstrapStatusSnapshot` — 首次安装立即
+     激活加载；已有 active/legacy 时下载为 candidate（状态
+     `downloading_candidate` → `candidate_ready_restart_required`）
+   - `check_runtime_updates() -> RuntimeUpdateReport` — 与模型更新共享
+     stable catalog 获取与缓存；检查失败绝不影响已安装 runtime 的就绪状态
    - `delete_runtime() -> ()`
+   - 状态机：`missing | downloading | ready | update_available |
+downloading_candidate | candidate_ready_restart_required |
+activation_failed_previous_restored | corrupt | failed`
+   - 快照字段新增 `active_artifact_id`、`target_triple`、
+     `candidate_version`、`restart_required`；`version` 为 ACTIVE runtime
+     的上游版本（如 `v1.27.1`），legacy 安装报告 `legacy`，未安装时报告
+     catalog pin 版本。**不存在全局单一版本常量** —— 每个平台报告它实际
+     安装的工件。
+8. **更新策略** (`update_policy`，默认 `notify`)：`manual`（仅手动检查）/
+   `notify`（启动后台检查并提示）/ `auto_download`（后台下载 candidate，
+   激活仍需重启）。
 9. **Runtime/model state matrix:**
 
-   | Runtime     | Model   | Settings model action        | Separation action                                       |
-   | ----------- | ------- | ---------------------------- | ------------------------------------------------------- |
-   | Missing     | Missing | Disabled; show runtime CTA   | Download runtime -> download model -> separate          |
-   | Missing     | Present | Disabled; show runtime CTA   | Download runtime -> separate                            |
-   | Present     | Missing | Enabled                      | Download model -> separate                              |
-   | Present     | Present | Enabled for management       | Separate                                                |
-   | Downloading | Any     | Disabled until runtime ready | Wait for the active runtime task, then re-check         |
-   | Corrupt     | Any     | Disabled; show runtime CTA   | Delete invalid artifact -> download runtime -> re-check |
-
-10. **Runtime verification manifest:** 管理的运行时文件在 SHA-256 校验通过后，会在同目录写入
-    `<filename>.verified.json`。后续启动时若该 manifest 的文件名、SHA-256、文件大小和修改时间
-    都匹配当前运行时文件，则直接进入 `ready`，不再读取整个动态库文件。
+   | Runtime                                                                 | Model   | Settings model action      | Separation action                               |
+   | ----------------------------------------------------------------------- | ------- | -------------------------- | ----------------------------------------------- |
+   | Missing                                                                 | Missing | Disabled; show runtime CTA | Download runtime -> download model -> separate  |
+   | Missing                                                                 | Present | Disabled; show runtime CTA | Download runtime -> separate                    |
+   | Active (any state with a loaded runtime, incl. update/candidate states) | Missing | Enabled                    | Download model -> separate                      |
+   | Active                                                                  | Present | Enabled for management     | Separate                                        |
+   | Downloading (first install)                                             | Any     | Disabled until ready       | Wait for the active runtime task, then re-check |
+   | Corrupt / Failed                                                        | Any     | Disabled; show runtime CTA | Repair via delete + re-download                 |
 
 ## Product UX target
 

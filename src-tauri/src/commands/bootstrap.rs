@@ -320,7 +320,7 @@ pub fn get_model_status(
     let file_size = separator::bootstrap::model_file_size(&app_data_dir, model_variant);
     let installed_version = if downloaded {
         separator::catalog::read_installed_identity(&model_path)
-            .map(|identity| identity.upstream_tag)
+            .map(|identity| identity.upstream_version)
             .or_else(|| Some(descriptor.upstream_tag.clone()))
     } else {
         None
@@ -417,7 +417,9 @@ pub async fn check_model_updates(state: State<'_, AppState>) -> CommandResult<Mo
                 models.push(ModelUpdateCheckSnapshot {
                     variant: variant.as_str().to_owned(),
                     state: comparison.state,
-                    installed_version: comparison.installed.map(|identity| identity.upstream_tag),
+                    installed_version: comparison
+                        .installed
+                        .map(|identity| identity.upstream_version),
                     available_version: catalog_model.upstream.tag.clone(),
                     available_bytes: catalog_model.byte_size,
                 });
@@ -466,7 +468,7 @@ pub fn download_model(
         if installed.generation > descriptor.identity.generation {
             return Err(model_bootstrap_error(format!(
                 "installed model {} is from catalog generation {}, newer than the available generation {}; downgrades require deleting the model first",
-                installed.upstream_tag, installed.generation, descriptor.identity.generation
+                installed.upstream_version, installed.generation, descriptor.identity.generation
             )));
         }
     }

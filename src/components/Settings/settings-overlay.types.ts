@@ -14,8 +14,10 @@ import type {
   ModelVariant,
   RegisteredLibrary,
   RuntimeBootstrapState,
+  RuntimeUpdateReport,
   StemMode,
   ThemePreference,
+  UpdatePolicy,
 } from "@/types/ipc";
 
 export type DangerDialog =
@@ -46,7 +48,17 @@ export interface RuntimeStatusView {
   state: RuntimeBootstrapState;
   version: string;
   runtime_path: string;
+  active_artifact_id: string | null;
+  target_triple: string;
+  candidate_version: string | null;
+  restart_required: boolean;
   error: string | null;
+}
+
+export interface RuntimeUpdateView {
+  status: "checking" | "checked" | "failed";
+  error: string | null;
+  report: RuntimeUpdateReport | null;
 }
 
 export interface SettingsOverlayState {
@@ -61,6 +73,7 @@ export interface SettingsOverlayState {
   downloadingModel: ModelVariant | null;
   modelUpdate: ModelUpdateView | null;
   runtimeStatus: RuntimeStatusView | null;
+  runtimeUpdate: RuntimeUpdateView | null;
   language: string;
   hideBatchSeparate: boolean;
   coverArtBackdrop: boolean;
@@ -72,6 +85,7 @@ export interface SettingsOverlayState {
   crossfadeDurationMs: number;
   librarySortMode: LibrarySortMode;
   themePreference: ThemePreference;
+  updatePolicy: UpdatePolicy;
   integrityReport: IntegrityReport | null;
   integritySelection: Set<string>;
   integritySkippedCount: number | null;
@@ -122,6 +136,9 @@ export interface SettingsOverlayActions {
   setCrossfadeEnabled: (enabled: boolean) => Promise<void>;
   setCrossfadeDurationMs: (durationMs: number) => Promise<void>;
   setThemePreference: (preference: ThemePreference) => Promise<void>;
+  setUpdatePolicy: (policy: UpdatePolicy) => Promise<void>;
+  checkRuntimeUpdates: () => Promise<void>;
+  updateRuntime: () => Promise<void>;
   openDeleteStemsDialog: () => Promise<void>;
   confirmDeleteStems: () => Promise<void>;
   openDowngradeDialog: () => Promise<void>;
@@ -149,6 +166,7 @@ export interface SettingsOverlayControllerDependencies {
     | "deleteAllCachedLyrics"
     | "deleteAllStems"
     | "checkModelUpdates"
+    | "checkRuntimeUpdates"
     | "deleteModel"
     | "deleteRuntime"
     | "downloadModel"
@@ -183,6 +201,7 @@ export interface SettingsOverlayControllerDependencies {
     | "setCrossfadeEnabled"
     | "setCrossfadeDurationMs"
     | "setThemePreference"
+    | "setUpdatePolicy"
     | "checkLibraryIntegrity"
     | "removeMissingLibraryEntries"
   >;
@@ -213,6 +232,7 @@ export interface SettingsOverlayControllerDependencies {
     | "setCrossfadeEnabled"
     | "setCrossfadeDurationMs"
     | "setThemePreference"
+    | "setUpdatePolicy"
   >;
 }
 

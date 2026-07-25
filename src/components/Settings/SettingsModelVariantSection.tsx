@@ -43,7 +43,16 @@ export function SettingsModelVariantSection() {
   const { t } = useTranslation();
   const { state, meta, actions } = useSettingsOverlay();
 
-  const runtimeReady = state.runtimeStatus?.state === "ready";
+  // Every lifecycle state that keeps an active runtime loaded counts as ready
+  // for model gating. Only "missing"/"downloading" (first install) and the
+  // "corrupt"/"failed" fault states block model actions.
+  const runtimeState = state.runtimeStatus?.state;
+  const runtimeReady =
+    runtimeState === "ready" ||
+    runtimeState === "update_available" ||
+    runtimeState === "downloading_candidate" ||
+    runtimeState === "candidate_ready_restart_required" ||
+    runtimeState === "activation_failed_previous_restored";
 
   const modelStatusLabel = (variant: ModelVariant) => {
     if (!runtimeReady) {
@@ -83,7 +92,6 @@ export function SettingsModelVariantSection() {
   // and failed downloads get their own message so the user is never stuck
   // in an unexplained install loop.
   if (!runtimeReady && state.runtimeStatus?.state !== "downloading") {
-    const runtimeState = state.runtimeStatus?.state;
     const runtimeMessage =
       runtimeState === "corrupt"
         ? t("settings.runtime.corrupt")

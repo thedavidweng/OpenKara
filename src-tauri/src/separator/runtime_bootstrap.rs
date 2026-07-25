@@ -1,691 +1,839 @@
+//! Catalog-driven ONNX Runtime installation with staged activation.
+//!
+//! Runtimes install into immutable per-artifact directories under
+//! `<app_data>/runtimes/<artifact_id>/`, each carrying the shared installed
+//! artifact record (`record.json`). A small slot file (`slots.json`) names
+//! the active, candidate, and previous artifacts:
+//!
+//! - **active** — the runtime the app loads at startup.
+//! - **candidate** — a verified update staged for activation on the next
+//!   launch. A runtime loaded by the current process is never replaced in
+//!   place (issue #168 invariant 9).
+//! - **previous** — the last verified generation, kept for explicit
+//!   recovery when a candidate fails to activate.
+//!
+//! Activation is transactional: the slot swap is persisted with an
+//! `activation_pending` marker before the dynamic library is loaded, so a
+//! crash mid-activation is detected on the next launch and rolled back to
+//! the previous verified runtime.
+//!
+//! A pre-slot legacy install (`<app_data>/runtime/<library>`) is still
+//! loadable so existing users keep working audio until the first catalog
+//! runtime is installed; it is deleted once a slot runtime becomes active.
+
+use crate::separator::artifacts;
+use crate::separator::catalog::{
+    read_artifact_record, record_from_catalog_runtime, write_artifact_record, CatalogRuntime,
+    InstalledArtifactRecord, VerifiedCatalog,
+};
 use crate::separator::verified_manifest::{
-    sha256_hex, verified_manifest_matches, verified_manifest_path, write_verified_manifest,
+    verified_manifest_matches, verified_manifest_path, VerifiedManifest,
 };
 use anyhow::{bail, Context, Result};
-use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io::Read,
     path::{Path, PathBuf},
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-pub use super::model::{ORT_RUNTIME_FILENAME, ORT_RUNTIME_VERSION};
+pub use super::model::ORT_RUNTIME_FILENAME;
 
-const RUNTIME_DIR_NAME: &str = "runtime";
+pub const RUNTIME_SLOTS_SCHEMA_VERSION: &str = "openkara.app/runtime-slots-v1";
+pub const RUNTIME_RECORD_FILENAME: &str = "record.json";
 
-pub struct RuntimeDescriptor {
-    pub archive_name: &'static str,
-    pub download_url: &'static str,
-    pub sha256: &'static str,
-    pub archive_kind: RuntimeArchiveKind,
-    pub companion_files: &'static [&'static str],
+const RUNTIMES_DIR_NAME: &str = "runtimes";
+const LEGACY_RUNTIME_DIR_NAME: &str = "runtime";
+const SLOTS_FILENAME: &str = "slots.json";
+
+// ---------------------------------------------------------------------------
+// Disk layout
+// ---------------------------------------------------------------------------
+
+pub fn runtimes_root(app_data_dir: &Path) -> PathBuf {
+    app_data_dir.join(RUNTIMES_DIR_NAME)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RuntimeArchiveKind {
-    TarGz,
-    Zip,
+pub fn runtime_artifact_dir(app_data_dir: &Path, artifact_id: &str) -> PathBuf {
+    runtimes_root(app_data_dir).join(artifact_id)
 }
 
-#[cfg(all(target_vendor = "apple", target_arch = "aarch64"))]
-pub const RUNTIME_DESCRIPTOR: RuntimeDescriptor = RuntimeDescriptor {
-    archive_name: "onnxruntime-osx-arm64-1.26.0.tgz",
-    download_url: "https://github.com/microsoft/onnxruntime/releases/download/v1.26.0/onnxruntime-osx-arm64-1.26.0.tgz",
-    sha256: "872533f130f1839a5bc01788ddb4f75c83a189763441ba1178788ed965449289",
-    archive_kind: RuntimeArchiveKind::TarGz,
-    companion_files: &[],
-};
+fn slots_path(app_data_dir: &Path) -> PathBuf {
+    runtimes_root(app_data_dir).join(SLOTS_FILENAME)
+}
 
-#[cfg(all(target_vendor = "apple", target_arch = "x86_64"))]
-pub const RUNTIME_DESCRIPTOR: RuntimeDescriptor = RuntimeDescriptor {
-    archive_name: "onnxruntime-osx-x86_64-1.23.2.tgz",
-    download_url: "https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-osx-x86_64-1.23.2.tgz",
-    sha256: "5d10075ec63c585991d70a3c3b424fa114a49860d75b6e43bf20e3359e3f0a52",
-    archive_kind: RuntimeArchiveKind::TarGz,
-    companion_files: &[],
-};
+pub fn legacy_runtime_path(app_data_dir: &Path) -> PathBuf {
+    app_data_dir
+        .join(LEGACY_RUNTIME_DIR_NAME)
+        .join(ORT_RUNTIME_FILENAME)
+}
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-pub const RUNTIME_DESCRIPTOR: RuntimeDescriptor = RuntimeDescriptor {
-    archive_name: "onnxruntime-linux-x64-1.26.0.tgz",
-    download_url: "https://github.com/microsoft/onnxruntime/releases/download/v1.26.0/onnxruntime-linux-x64-1.26.0.tgz",
-    sha256: "33410f30c9d228081f9ca3547d484ca8f910be0db3a539bf7c7d7f0bde173c22",
-    archive_kind: RuntimeArchiveKind::TarGz,
-    companion_files: &[],
-};
-
-#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-pub const RUNTIME_DESCRIPTOR: RuntimeDescriptor = RuntimeDescriptor {
-    archive_name: "onnxruntime-linux-aarch64-1.26.0.tgz",
-    download_url: "https://github.com/microsoft/onnxruntime/releases/download/v1.26.0/onnxruntime-linux-aarch64-1.26.0.tgz",
-    sha256: "7c7cb9988f058b8531a6dc8edcf3bcdb96d409532f1a139a9e5470ec69084f36",
-    archive_kind: RuntimeArchiveKind::TarGz,
-    companion_files: &[],
-};
-
-#[cfg(target_os = "windows")]
-pub const RUNTIME_DESCRIPTOR: RuntimeDescriptor = RuntimeDescriptor {
-    archive_name: "Microsoft.ML.OnnxRuntime.DirectML.1.24.4.nupkg",
-    download_url: "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime.DirectML/1.24.4",
-    sha256: "4a0fcf8d9a432726600906e60bd601a0a428a1874d25910e5b7b486e2e581f14",
-    archive_kind: RuntimeArchiveKind::Zip,
-    companion_files: &["onnxruntime_providers_shared.dll"],
-};
+// ---------------------------------------------------------------------------
+// Slots
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RuntimeStatus {
-    Missing,
-    Downloading,
-    Ready,
-    Corrupt,
+pub struct ActivationFailure {
+    pub artifact_id: String,
+    pub error: String,
+    pub at_unix: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct RuntimeStatusSnapshot {
-    pub status: RuntimeStatus,
-    pub runtime_path: String,
-    pub downloaded_bytes: Option<u64>,
-    pub total_bytes: Option<u64>,
-    pub version: String,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RuntimeSlots {
+    pub schema: String,
+    pub active: Option<String>,
+    pub candidate: Option<String>,
+    pub previous: Option<String>,
+    /// True between persisting a candidate promotion and proving the
+    /// promoted library loads. A pending marker found at startup means the
+    /// previous activation crashed and must be rolled back.
+    pub activation_pending: bool,
+    pub last_failure: Option<ActivationFailure>,
 }
 
-/// Path where the managed runtime library is installed.
-pub fn managed_runtime_dir(app_data_dir: &Path) -> PathBuf {
-    app_data_dir.join(RUNTIME_DIR_NAME)
-}
-
-pub fn managed_runtime_path(app_data_dir: &Path) -> PathBuf {
-    managed_runtime_dir(app_data_dir).join(ORT_RUNTIME_FILENAME)
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RuntimeResolution {
-    Ready(PathBuf),
-    Corrupt(PathBuf),
-    Absent,
-}
-
-pub fn resolve_runtime_installation(app_data_dir: &Path) -> Result<RuntimeResolution> {
-    let managed = managed_runtime_path(app_data_dir);
-    if managed.is_file() {
-        return if verify_runtime_install(&managed)? {
-            Ok(RuntimeResolution::Ready(managed))
-        } else {
-            Ok(RuntimeResolution::Corrupt(managed))
-        };
-    }
-
-    Ok(RuntimeResolution::Absent)
-}
-
-pub fn is_runtime_available(app_data_dir: &Path) -> bool {
-    matches!(
-        resolve_runtime_installation(app_data_dir),
-        Ok(RuntimeResolution::Ready(_))
-    )
-}
-
-pub fn runtime_status_snapshot(app_data_dir: &Path) -> RuntimeStatusSnapshot {
-    let path = managed_runtime_path(app_data_dir);
-    let path_display = path.display().to_string();
-
-    match resolve_runtime_installation(app_data_dir) {
-        Ok(RuntimeResolution::Ready(_)) => RuntimeStatusSnapshot {
-            status: RuntimeStatus::Ready,
-            runtime_path: path_display,
-            downloaded_bytes: None,
-            total_bytes: None,
-            version: ORT_RUNTIME_VERSION.to_owned(),
-        },
-        Ok(RuntimeResolution::Corrupt(_)) => RuntimeStatusSnapshot {
-            status: RuntimeStatus::Corrupt,
-            runtime_path: path_display,
-            downloaded_bytes: None,
-            total_bytes: None,
-            version: ORT_RUNTIME_VERSION.to_owned(),
-        },
-        Ok(RuntimeResolution::Absent) => RuntimeStatusSnapshot {
-            status: RuntimeStatus::Missing,
-            runtime_path: path_display,
-            downloaded_bytes: None,
-            total_bytes: None,
-            version: ORT_RUNTIME_VERSION.to_owned(),
-        },
-        Err(_) => RuntimeStatusSnapshot {
-            status: RuntimeStatus::Missing,
-            runtime_path: path_display,
-            downloaded_bytes: None,
-            total_bytes: None,
-            version: ORT_RUNTIME_VERSION.to_owned(),
-        },
-    }
-}
-
-/// Download and install the runtime to the managed location with SHA-256
-/// verification.
-pub fn download_and_install_runtime(
-    app_data_dir: &Path,
-    progress: impl FnMut(u64, Option<u64>),
-) -> Result<PathBuf> {
-    let descriptor = &RUNTIME_DESCRIPTOR;
-    let destination = managed_runtime_path(app_data_dir);
-
-    download_and_install_runtime_to(&destination, descriptor, progress)?;
-    Ok(destination)
-}
-
-/// Does NOT download — callers that want
-/// auto-download should call `download_and_install_runtime` first.
-pub fn ensure_runtime_verified(app_data_dir: &Path) -> Result<PathBuf> {
-    match resolve_runtime_installation(app_data_dir)? {
-        RuntimeResolution::Ready(path) => Ok(path),
-        RuntimeResolution::Corrupt(path) => {
-            // Delete the corrupt file so the next attempt starts clean.
-            let _ = fs::remove_file(&path);
-            let manifest = verified_manifest_path(&path)?;
-            let _ = fs::remove_file(&manifest);
-            bail!(
-                "ONNX Runtime at {} is corrupt (SHA-256 mismatch); deleted; re-download required",
-                path.display()
-            );
-        }
-        RuntimeResolution::Absent => {
-            bail!(
-                "ONNX Runtime is not installed; download it from Settings or allow separation to auto-bootstrap"
-            );
+impl Default for RuntimeSlots {
+    fn default() -> Self {
+        Self {
+            schema: RUNTIME_SLOTS_SCHEMA_VERSION.to_owned(),
+            active: None,
+            candidate: None,
+            previous: None,
+            activation_pending: false,
+            last_failure: None,
         }
     }
 }
 
-/// Delete the managed runtime and its verification manifest.
-pub fn delete_runtime(app_data_dir: &Path) -> Result<()> {
-    let path = managed_runtime_path(app_data_dir);
-    if path.exists() {
-        fs::remove_file(&path)
-            .with_context(|| format!("failed to delete runtime {}", path.display()))?;
+pub fn read_slots(app_data_dir: &Path) -> RuntimeSlots {
+    let path = slots_path(app_data_dir);
+    let Ok(contents) = fs::read_to_string(&path) else {
+        return RuntimeSlots::default();
+    };
+    match serde_json::from_str::<RuntimeSlots>(&contents) {
+        Ok(slots) if slots.schema == RUNTIME_SLOTS_SCHEMA_VERSION => slots,
+        // A corrupt or unknown-schema slot file must not brick the runtime
+        // path: fall back to defaults and let inventory rebuild state.
+        _ => RuntimeSlots::default(),
     }
-    let manifest = verified_manifest_path(&path)?;
-    if manifest.exists() {
-        fs::remove_file(&manifest).with_context(|| {
-            format!(
-                "failed to delete runtime verification manifest {}",
-                manifest.display()
-            )
-        })?;
+}
+
+pub fn write_slots(app_data_dir: &Path, slots: &RuntimeSlots) -> Result<()> {
+    let path = slots_path(app_data_dir);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
     }
+    let json = serde_json::to_string_pretty(slots).context("failed to serialize runtime slots")?;
+    let temp = path.with_extension("json.tmp");
+    fs::write(&temp, json)
+        .with_context(|| format!("failed to write runtime slots {}", temp.display()))?;
+    fs::rename(&temp, &path)
+        .with_context(|| format!("failed to promote runtime slots {}", path.display()))?;
     Ok(())
 }
 
-fn download_and_install_runtime_to(
-    destination: &Path,
-    descriptor: &RuntimeDescriptor,
-    mut progress: impl FnMut(u64, Option<u64>),
-) -> Result<()> {
-    let client = Client::builder()
-        .build()
-        .context("failed to build runtime download client")?;
+// ---------------------------------------------------------------------------
+// Installed runtimes
+// ---------------------------------------------------------------------------
 
-    let mut response = client
-        .get(descriptor.download_url)
-        .send()
-        .and_then(|r| r.error_for_status())
-        .with_context(|| {
+#[derive(Debug, Clone)]
+pub struct InstalledRuntime {
+    pub record: InstalledArtifactRecord,
+    pub dir: PathBuf,
+    pub library_path: PathBuf,
+}
+
+/// Read the installed runtime for an artifact id, when its record is valid
+/// and the main library file exists. File digests are NOT re-verified here —
+/// call `verify_runtime_files` before trusting it for activation.
+pub fn installed_runtime(app_data_dir: &Path, artifact_id: &str) -> Option<InstalledRuntime> {
+    let dir = runtime_artifact_dir(app_data_dir, artifact_id);
+    let record = read_artifact_record(&dir.join(RUNTIME_RECORD_FILENAME))?;
+    if record.kind != "runtime" || record.artifact_id != artifact_id {
+        return None;
+    }
+    let library_path = dir.join(ORT_RUNTIME_FILENAME);
+    library_path.is_file().then_some(InstalledRuntime {
+        record,
+        dir,
+        library_path,
+    })
+}
+
+/// Verify every file the record declares by size and streaming SHA-256.
+pub fn verify_runtime_files(runtime: &InstalledRuntime) -> Result<bool> {
+    for file in &runtime.record.files {
+        let path = runtime.dir.join(&file.path);
+        let Ok(metadata) = fs::metadata(&path) else {
+            return Ok(false);
+        };
+        if metadata.len() != file.size {
+            return Ok(false);
+        }
+        if artifacts::sha256_file(&path)? != file.sha256 {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// Install a catalog runtime artifact into its immutable directory:
+/// stream-download with digest verification, safely extract into a staging
+/// directory, verify every declared file, write the installed record, then
+/// atomically rename the staging directory into place. Idempotent: a
+/// verified existing install is returned as-is.
+pub fn install_runtime_artifact(
+    app_data_dir: &Path,
+    runtime: &CatalogRuntime,
+    catalog: &VerifiedCatalog,
+    progress: impl FnMut(u64, Option<u64>),
+) -> Result<InstalledRuntime> {
+    if let Some(existing) = installed_runtime(app_data_dir, &runtime.artifact_id) {
+        if verify_runtime_files(&existing)? {
+            return Ok(existing);
+        }
+        // A failed prior install must never stay visible at the final path.
+        fs::remove_dir_all(&existing.dir).with_context(|| {
             format!(
-                "failed to download ONNX Runtime from {}",
-                descriptor.download_url
+                "failed to remove unverifiable runtime install {}",
+                existing.dir.display()
             )
         })?;
-
-    let total_bytes = response.content_length();
-    let mut last_emit_bytes = 0_u64;
-    let mut last_emit_at = Instant::now();
-    let emit_interval = Duration::from_millis(150);
-    let emit_min_step: u64 = 256 * 1024;
-
-    let mut emit = |downloaded: u64, total: Option<u64>, force: bool| {
-        let step_ok = downloaded.saturating_sub(last_emit_bytes) >= emit_min_step;
-        let time_ok = last_emit_at.elapsed() >= emit_interval;
-        if force || step_ok || time_ok {
-            progress(downloaded, total);
-            last_emit_bytes = downloaded;
-            last_emit_at = Instant::now();
-        }
-    };
-
-    emit(0, total_bytes, true);
-
-    let mut archive_bytes = Vec::new();
-    let mut downloaded_bytes = 0_u64;
-    let mut buffer = [0_u8; 64 * 1024];
-
-    loop {
-        let read = response
-            .read(&mut buffer)
-            .context("failed while streaming ONNX Runtime download")?;
-        if read == 0 {
-            break;
-        }
-        archive_bytes.extend_from_slice(&buffer[..read]);
-        downloaded_bytes += read as u64;
-        emit(downloaded_bytes, total_bytes, false);
     }
 
-    emit(downloaded_bytes, total_bytes, true);
+    let root = runtimes_root(app_data_dir);
+    fs::create_dir_all(&root)
+        .with_context(|| format!("failed to create runtimes directory {}", root.display()))?;
 
-    let extracted = extract_runtime_from_archive(&archive_bytes, descriptor)?;
+    let staging = artifacts::unique_temp_path(&root, "staging");
+    let result = install_into_staging(&staging, runtime, catalog, progress);
 
-    let actual_sha256 = sha256_hex(&extracted);
-    if actual_sha256 != descriptor.sha256 {
+    match result {
+        Ok(()) => {
+            let final_dir = runtime_artifact_dir(app_data_dir, &runtime.artifact_id);
+            if final_dir.exists() {
+                fs::remove_dir_all(&final_dir).with_context(|| {
+                    format!("failed to clear stale install {}", final_dir.display())
+                })?;
+            }
+            fs::rename(&staging, &final_dir).with_context(|| {
+                format!(
+                    "failed to activate runtime install at {}",
+                    final_dir.display()
+                )
+            })?;
+            installed_runtime(app_data_dir, &runtime.artifact_id)
+                .context("freshly installed runtime failed to resolve")
+        }
+        Err(error) => {
+            let _ = fs::remove_dir_all(&staging);
+            Err(error)
+        }
+    }
+}
+
+fn install_into_staging(
+    staging: &Path,
+    runtime: &CatalogRuntime,
+    catalog: &VerifiedCatalog,
+    progress: impl FnMut(u64, Option<u64>),
+) -> Result<()> {
+    fs::create_dir_all(staging)
+        .with_context(|| format!("failed to create staging directory {}", staging.display()))?;
+
+    let archive = artifacts::download_verified_to_temp(
+        &runtime.download_url,
+        runtime.byte_size,
+        &runtime.archive_digest,
+        staging,
+        progress,
+    )?;
+
+    let kind = artifacts::archive_kind_for_filename(&runtime.filename)?;
+    let extracted = artifacts::extract_archive_safely(&archive, kind, staging)?;
+    fs::remove_file(&archive)
+        .with_context(|| format!("failed to remove archive temp {}", archive.display()))?;
+
+    // The extracted listing still contains the archive temp's siblings only
+    // if extraction wrote them — verify strictly against the catalog.
+    artifacts::verify_extracted_files(staging, &runtime.extracted_file_digests, &extracted)?;
+
+    if !runtime
+        .extracted_file_digests
+        .contains_key(ORT_RUNTIME_FILENAME)
+    {
         bail!(
-            "ONNX Runtime checksum mismatch: expected {}, got {}",
-            descriptor.sha256,
-            actual_sha256
+            "runtime artifact {} does not declare the platform library {}",
+            runtime.artifact_id,
+            ORT_RUNTIME_FILENAME
         );
     }
 
-    let parent = destination.parent().with_context(|| {
-        format!(
-            "runtime destination {} has no parent directory",
-            destination.display()
-        )
-    })?;
-    fs::create_dir_all(parent)
-        .with_context(|| format!("failed to create runtime directory {}", parent.display()))?;
-
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let temp_path = destination.with_extension(format!("download.{timestamp}.tmp"));
-    fs::write(&temp_path, &extracted).with_context(|| {
-        format!(
-            "failed to write runtime to temp file {}",
-            temp_path.display()
-        )
-    })?;
-    fs::rename(&temp_path, destination).with_context(|| {
-        format!(
-            "failed to move verified runtime from {} to {}",
-            temp_path.display(),
-            destination.display()
-        )
-    })?;
-
-    write_verified_manifest(destination, descriptor.sha256)?;
-    install_runtime_companions(parent, &archive_bytes, descriptor)?;
-
+    let record = record_from_catalog_runtime(runtime, catalog);
+    write_artifact_record(&staging.join(RUNTIME_RECORD_FILENAME), &record)?;
     Ok(())
 }
 
-fn extract_runtime_from_archive(
-    archive_bytes: &[u8],
-    descriptor: &RuntimeDescriptor,
-) -> Result<Vec<u8>> {
-    match descriptor.archive_kind {
-        RuntimeArchiveKind::TarGz => extract_runtime_from_tgz(archive_bytes, descriptor),
-        RuntimeArchiveKind::Zip => extract_runtime_from_zip(archive_bytes, descriptor),
+// ---------------------------------------------------------------------------
+// Legacy (pre-slot) install
+// ---------------------------------------------------------------------------
+
+/// A legacy install is trusted when its verification sidecar's recorded
+/// digest still matches the file. The sidecar digest is the identity the
+/// old app verified at install time; the pinned constants it was checked
+/// against no longer exist.
+pub fn legacy_runtime_ready(app_data_dir: &Path) -> Option<PathBuf> {
+    let path = legacy_runtime_path(app_data_dir);
+    if !path.is_file() {
+        return None;
     }
+    let manifest_path = verified_manifest_path(&path).ok()?;
+    let contents = fs::read_to_string(&manifest_path).ok()?;
+    let manifest: VerifiedManifest = serde_json::from_str(&contents).ok()?;
+    if verified_manifest_matches(&path, &manifest.sha256).ok()? {
+        return Some(path);
+    }
+    let actual = artifacts::sha256_file(&path).ok()?;
+    (actual == manifest.sha256).then_some(path)
 }
 
-fn extract_runtime_from_tgz(
-    archive_bytes: &[u8],
-    descriptor: &RuntimeDescriptor,
-) -> Result<Vec<u8>> {
-    let decoder = flate2::read::GzDecoder::new(archive_bytes);
-    let mut archive = tar::Archive::new(decoder);
+pub fn delete_legacy_runtime(app_data_dir: &Path) -> Result<()> {
+    let dir = app_data_dir.join(LEGACY_RUNTIME_DIR_NAME);
+    if dir.exists() {
+        fs::remove_dir_all(&dir)
+            .with_context(|| format!("failed to delete legacy runtime {}", dir.display()))?;
+    }
+    Ok(())
+}
 
-    for entry in archive
-        .entries()
-        .context("failed to read archive entries")?
-    {
-        let mut entry = entry.context("failed to read archive entry")?;
-        let path = entry
-            .path()
-            .context("failed to read entry path")?
-            .to_path_buf();
+// ---------------------------------------------------------------------------
+// Startup activation transaction
+// ---------------------------------------------------------------------------
 
-        if path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|name| runtime_filename_matches(name, ORT_RUNTIME_FILENAME))
-        {
-            let mut contents = Vec::new();
-            entry
-                .read_to_end(&mut contents)
-                .context("failed to read runtime library from archive")?;
-            return Ok(contents);
+#[derive(Debug, Clone)]
+pub struct StartupLoadPlan {
+    pub library_path: PathBuf,
+    pub record: Option<InstalledArtifactRecord>,
+    /// True when this load is proving a freshly promoted candidate. The
+    /// caller must report the load result through
+    /// `finish_activation_success` or `rollback_failed_activation`.
+    pub proving_candidate: bool,
+    pub is_legacy: bool,
+}
+
+/// Prepare the runtime to load at startup. Promotes a valid candidate to
+/// active (persisting the `activation_pending` marker first), rolls back an
+/// interrupted activation from a previous crash, and falls back to the
+/// legacy install when no slot runtime exists.
+pub fn begin_startup(app_data_dir: &Path) -> Result<Option<StartupLoadPlan>> {
+    let mut slots = read_slots(app_data_dir);
+
+    if slots.activation_pending {
+        // The last launch crashed between the slot swap and a successful
+        // load. Roll back to the previous verified runtime.
+        let failed_id = slots.active.take();
+        slots.active = slots.previous.take();
+        slots.activation_pending = false;
+        if let Some(failed_id) = failed_id {
+            slots.last_failure = Some(ActivationFailure {
+                artifact_id: failed_id.clone(),
+                error: "activation was interrupted before the runtime loaded".to_owned(),
+                at_unix: unix_now(),
+            });
+            let _ = fs::remove_dir_all(runtime_artifact_dir(app_data_dir, &failed_id));
+        }
+        write_slots(app_data_dir, &slots)?;
+    }
+
+    if let Some(candidate_id) = slots.candidate.clone() {
+        match installed_runtime(app_data_dir, &candidate_id) {
+            Some(candidate) if verify_runtime_files(&candidate)? => {
+                // Promote: persist the swap with the pending marker BEFORE
+                // loading so a crash is detected and rolled back next launch.
+                let old_active = slots.active.take();
+                slots.previous = old_active;
+                slots.active = Some(candidate_id);
+                slots.candidate = None;
+                slots.activation_pending = true;
+                write_slots(app_data_dir, &slots)?;
+                return Ok(Some(StartupLoadPlan {
+                    library_path: candidate.library_path,
+                    record: Some(candidate.record),
+                    proving_candidate: true,
+                    is_legacy: false,
+                }));
+            }
+            _ => {
+                // An unverifiable candidate never becomes active.
+                slots.candidate = None;
+                slots.last_failure = Some(ActivationFailure {
+                    artifact_id: candidate_id.clone(),
+                    error: "staged runtime candidate failed verification".to_owned(),
+                    at_unix: unix_now(),
+                });
+                let _ = fs::remove_dir_all(runtime_artifact_dir(app_data_dir, &candidate_id));
+                write_slots(app_data_dir, &slots)?;
+            }
         }
     }
 
-    bail!(
-        "failed to find {} in archive {}",
-        ORT_RUNTIME_FILENAME,
-        descriptor.archive_name
-    )
+    if let Some(active_id) = slots.active.clone() {
+        match installed_runtime(app_data_dir, &active_id) {
+            Some(active) if verify_runtime_files(&active)? => {
+                return Ok(Some(StartupLoadPlan {
+                    library_path: active.library_path,
+                    record: Some(active.record),
+                    proving_candidate: false,
+                    is_legacy: false,
+                }));
+            }
+            _ => {
+                // Corrupt active install: surface as missing so the install
+                // flow can repair it; never load unverified bytes.
+                let _ = fs::remove_dir_all(runtime_artifact_dir(app_data_dir, &active_id));
+                slots.active = None;
+                slots.last_failure = Some(ActivationFailure {
+                    artifact_id: active_id,
+                    error: "active runtime failed verification".to_owned(),
+                    at_unix: unix_now(),
+                });
+                write_slots(app_data_dir, &slots)?;
+            }
+        }
+    }
+
+    if let Some(legacy_path) = legacy_runtime_ready(app_data_dir) {
+        return Ok(Some(StartupLoadPlan {
+            library_path: legacy_path,
+            record: None,
+            proving_candidate: false,
+            is_legacy: true,
+        }));
+    }
+
+    Ok(None)
 }
 
-fn extract_runtime_from_zip(
-    archive_bytes: &[u8],
-    descriptor: &RuntimeDescriptor,
-) -> Result<Vec<u8>> {
-    let cursor = std::io::Cursor::new(archive_bytes);
-    let mut archive = zip::ZipArchive::new(cursor)
-        .with_context(|| format!("failed to read archive {}", descriptor.archive_name))?;
+/// Clear the pending marker after a promoted candidate loaded successfully,
+/// dropping any generation older than `previous` and the legacy install.
+pub fn finish_activation_success(app_data_dir: &Path) -> Result<()> {
+    let mut slots = read_slots(app_data_dir);
+    slots.activation_pending = false;
+    slots.last_failure = None;
+    write_slots(app_data_dir, &slots)?;
+    prune_unreferenced_runtimes(app_data_dir, &slots);
+    let _ = delete_legacy_runtime(app_data_dir);
+    Ok(())
+}
 
-    for index in 0..archive.len() {
-        let mut entry = archive
-            .by_index(index)
-            .context("failed to read zip archive entry")?;
-        if entry.is_dir() {
+/// Roll back a candidate whose dynamic load failed: restore the previous
+/// verified runtime as active, record the failure, and delete the failed
+/// install. Returns the restored runtime, when one exists.
+pub fn rollback_failed_activation(
+    app_data_dir: &Path,
+    failed_artifact_id: &str,
+    error: &str,
+) -> Result<Option<InstalledRuntime>> {
+    let mut slots = read_slots(app_data_dir);
+    slots.active = slots.previous.take();
+    slots.activation_pending = false;
+    slots.last_failure = Some(ActivationFailure {
+        artifact_id: failed_artifact_id.to_owned(),
+        error: error.to_owned(),
+        at_unix: unix_now(),
+    });
+    write_slots(app_data_dir, &slots)?;
+    let _ = fs::remove_dir_all(runtime_artifact_dir(app_data_dir, failed_artifact_id));
+
+    let Some(active_id) = slots.active else {
+        return Ok(None);
+    };
+    let restored = installed_runtime(app_data_dir, &active_id)
+        .filter(|runtime| verify_runtime_files(runtime).unwrap_or(false));
+    Ok(restored)
+}
+
+/// Record a runtime as active without a restart. Only valid when no runtime
+/// is loaded in the current process (first install).
+pub fn activate_first_install(app_data_dir: &Path, artifact_id: &str) -> Result<()> {
+    let mut slots = read_slots(app_data_dir);
+    slots.previous = slots.active.take();
+    slots.active = Some(artifact_id.to_owned());
+    slots.candidate = None;
+    slots.activation_pending = false;
+    slots.last_failure = None;
+    write_slots(app_data_dir, &slots)?;
+    prune_unreferenced_runtimes(app_data_dir, &slots);
+    let _ = delete_legacy_runtime(app_data_dir);
+    Ok(())
+}
+
+/// Stage a verified install as the next-launch candidate.
+pub fn stage_candidate(app_data_dir: &Path, artifact_id: &str) -> Result<()> {
+    let mut slots = read_slots(app_data_dir);
+    slots.candidate = Some(artifact_id.to_owned());
+    write_slots(app_data_dir, &slots)?;
+    Ok(())
+}
+
+/// Remove artifact directories not referenced by any slot. Keeps disk usage
+/// bounded to active + candidate + one previous generation.
+fn prune_unreferenced_runtimes(app_data_dir: &Path, slots: &RuntimeSlots) {
+    let root = runtimes_root(app_data_dir);
+    let Ok(entries) = fs::read_dir(&root) else {
+        return;
+    };
+    let referenced: Vec<&String> = [&slots.active, &slots.candidate, &slots.previous]
+        .into_iter()
+        .flatten()
+        .collect();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
             continue;
         }
-        let Some(name) = Path::new(entry.name()).file_name().and_then(|n| n.to_str()) else {
-            continue;
-        };
-        if runtime_filename_matches(name, ORT_RUNTIME_FILENAME) {
-            let mut contents = Vec::new();
-            entry
-                .read_to_end(&mut contents)
-                .context("failed to read runtime library from zip archive")?;
-            return Ok(contents);
-        }
-    }
-
-    bail!(
-        "failed to find {} in archive {}",
-        ORT_RUNTIME_FILENAME,
-        descriptor.archive_name
-    )
-}
-
-fn install_runtime_companions(
-    runtime_dir: &Path,
-    archive_bytes: &[u8],
-    descriptor: &RuntimeDescriptor,
-) -> Result<()> {
-    if descriptor.companion_files.is_empty() {
-        return Ok(());
-    }
-
-    match descriptor.archive_kind {
-        RuntimeArchiveKind::TarGz => {
-            install_runtime_companions_from_tgz(runtime_dir, archive_bytes, descriptor)
-        }
-        RuntimeArchiveKind::Zip => {
-            install_runtime_companions_from_zip(runtime_dir, archive_bytes, descriptor)
-        }
-    }
-}
-
-fn install_runtime_companions_from_tgz(
-    runtime_dir: &Path,
-    archive_bytes: &[u8],
-    descriptor: &RuntimeDescriptor,
-) -> Result<()> {
-    let decoder = flate2::read::GzDecoder::new(archive_bytes);
-    let mut archive = tar::Archive::new(decoder);
-
-    for entry in archive
-        .entries()
-        .context("failed to read archive entries")?
-    {
-        let mut entry = entry.context("failed to read archive entry")?;
-        let path = entry
-            .path()
-            .context("failed to read entry path")?
-            .to_path_buf();
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
             continue;
         };
-        if descriptor.companion_files.contains(&name) {
-            let mut contents = Vec::new();
-            entry
-                .read_to_end(&mut contents)
-                .context("failed to read runtime companion from archive")?;
-            fs::write(runtime_dir.join(name), contents)
-                .with_context(|| format!("failed to write runtime companion {name}"))?;
+        if !referenced.iter().any(|id| id.as_str() == name) {
+            let _ = fs::remove_dir_all(&path);
         }
     }
-
-    ensure_runtime_companions_exist(runtime_dir, descriptor)
 }
 
-fn install_runtime_companions_from_zip(
-    runtime_dir: &Path,
-    archive_bytes: &[u8],
-    descriptor: &RuntimeDescriptor,
-) -> Result<()> {
-    let cursor = std::io::Cursor::new(archive_bytes);
-    let mut archive = zip::ZipArchive::new(cursor)
-        .with_context(|| format!("failed to read archive {}", descriptor.archive_name))?;
+// ---------------------------------------------------------------------------
+// Inventory (facts for the command-layer state machine)
+// ---------------------------------------------------------------------------
 
-    for index in 0..archive.len() {
-        let mut entry = archive
-            .by_index(index)
-            .context("failed to read zip archive entry")?;
-        if entry.is_dir() {
-            continue;
-        }
-        let Some(name) = Path::new(entry.name())
-            .file_name()
-            .and_then(|n| n.to_str())
-            .map(str::to_owned)
-        else {
-            continue;
-        };
-        if descriptor.companion_files.contains(&name.as_str()) {
-            let mut contents = Vec::new();
-            entry
-                .read_to_end(&mut contents)
-                .context("failed to read runtime companion from zip archive")?;
-            fs::write(runtime_dir.join(&name), contents)
-                .with_context(|| format!("failed to write runtime companion {name}"))?;
-        }
-    }
-
-    ensure_runtime_companions_exist(runtime_dir, descriptor)
+#[derive(Debug, Clone)]
+pub struct RuntimeInventory {
+    pub active: Option<InstalledRuntime>,
+    pub candidate: Option<InstalledRuntime>,
+    pub legacy_path: Option<PathBuf>,
+    pub last_failure: Option<ActivationFailure>,
 }
 
-fn ensure_runtime_companions_exist(
-    runtime_dir: &Path,
-    descriptor: &RuntimeDescriptor,
-) -> Result<()> {
-    for companion in descriptor.companion_files {
-        let path = runtime_dir.join(companion);
-        if !path.is_file() {
-            bail!(
-                "failed to find runtime companion {} in archive {}",
-                companion,
-                descriptor.archive_name
-            );
-        }
+pub fn runtime_inventory(app_data_dir: &Path) -> RuntimeInventory {
+    let slots = read_slots(app_data_dir);
+    let active = slots
+        .active
+        .as_deref()
+        .and_then(|id| installed_runtime(app_data_dir, id));
+    let candidate = slots
+        .candidate
+        .as_deref()
+        .and_then(|id| installed_runtime(app_data_dir, id));
+    RuntimeInventory {
+        active,
+        candidate,
+        legacy_path: legacy_runtime_ready(app_data_dir),
+        last_failure: slots.last_failure,
     }
+}
+
+/// True when a runtime is present that separation can load (active slot or
+/// legacy install). Used by flows that only need a yes/no readiness fact.
+pub fn is_runtime_available(app_data_dir: &Path) -> bool {
+    let inventory = runtime_inventory(app_data_dir);
+    inventory.active.is_some() || inventory.legacy_path.is_some()
+}
+
+/// Delete every managed runtime install (slots, artifact directories, and
+/// the legacy directory). The caller is responsible for confirming no
+/// runtime is required by in-flight work.
+pub fn delete_runtime(app_data_dir: &Path) -> Result<()> {
+    let root = runtimes_root(app_data_dir);
+    if root.exists() {
+        fs::remove_dir_all(&root)
+            .with_context(|| format!("failed to delete runtimes at {}", root.display()))?;
+    }
+    delete_legacy_runtime(app_data_dir)?;
     Ok(())
 }
 
-fn runtime_filename_matches(candidate: &str, expected: &str) -> bool {
-    if expected.ends_with(".dylib") {
-        // Match "libonnxruntime.dylib" or "libonnxruntime.VERSION.dylib"
-        // but NOT "libonnxruntime_providers.dylib" or similar.
-        candidate.starts_with("libonnxruntime")
-            && candidate.ends_with(".dylib")
-            && !candidate.contains("providers")
-    } else if expected.ends_with(".so") {
-        candidate.starts_with("libonnxruntime.so") && !candidate.contains("providers")
-    } else {
-        candidate == expected
-    }
-}
-
-fn verify_runtime_install(path: &Path) -> Result<bool> {
-    let expected_sha256 = &RUNTIME_DESCRIPTOR.sha256;
-    // Fast path: check the verification manifest first.
-    if verified_manifest_matches(path, expected_sha256)? {
-        return Ok(true);
-    }
-
-    // Slow path: read the full file and compute SHA-256.
-    let bytes = fs::read(path)
-        .with_context(|| format!("failed to read runtime file {}", path.display()))?;
-    let actual = sha256_hex(&bytes);
-
-    if actual == *expected_sha256 {
-        write_verified_manifest(path, expected_sha256)?;
-        return Ok(true);
-    }
-
-    Ok(false)
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
+    use crate::separator::catalog::{self, embedded_catalog, resolve_runtime};
+    use crate::separator::verified_manifest::{sha256_hex, write_verified_manifest};
 
-    #[test]
-    fn managed_runtime_path_is_under_app_data_runtime_dir() {
-        let app_data = Path::new("/tmp/test-app-data");
-        let path = managed_runtime_path(app_data);
-        assert!(path.starts_with(app_data.join("runtime")));
-        assert!(path.to_string_lossy().contains(ORT_RUNTIME_FILENAME));
+    fn catalog_runtime() -> (&'static VerifiedCatalog, &'static CatalogRuntime) {
+        let catalog = embedded_catalog();
+        let runtime = resolve_runtime(&catalog.manifest, catalog::current_target_triple())
+            .expect("embedded catalog must resolve the current target runtime");
+        (catalog, runtime)
+    }
+
+    /// Write a fake installed runtime whose record digests match the files.
+    fn write_fake_install(app_data: &Path, artifact_id: &str, library_bytes: &[u8]) {
+        let (catalog, runtime) = catalog_runtime();
+        let dir = runtime_artifact_dir(app_data, artifact_id);
+        fs::create_dir_all(&dir).expect("create artifact dir");
+        fs::write(dir.join(ORT_RUNTIME_FILENAME), library_bytes).expect("write library");
+
+        let mut record = record_from_catalog_runtime(runtime, catalog);
+        record.artifact_id = artifact_id.to_owned();
+        record.files = vec![crate::separator::catalog::InstalledFileRecord {
+            path: ORT_RUNTIME_FILENAME.to_owned(),
+            size: library_bytes.len() as u64,
+            sha256: sha256_hex(library_bytes),
+        }];
+        write_artifact_record(&dir.join(RUNTIME_RECORD_FILENAME), &record).expect("write record");
     }
 
     #[test]
-    fn runtime_status_snapshot_has_correct_version() {
-        let tmp = tempfile::tempdir().unwrap();
-        let snapshot = runtime_status_snapshot(tmp.path());
-        assert_eq!(snapshot.version, ORT_RUNTIME_VERSION);
-        // In dev environments the staged runtime may exist, so we can't
-        // assert Missing unconditionally. Just verify the snapshot structure.
-        assert!(
-            matches!(
-                snapshot.status,
-                RuntimeStatus::Missing | RuntimeStatus::Ready | RuntimeStatus::Corrupt
-            ),
-            "unexpected status: {:?}",
-            snapshot.status
-        );
-    }
-
-    #[test]
-    fn runtime_status_reports_corrupt_when_sha256_mismatch() {
-        let tmp = tempfile::tempdir().unwrap();
-        let runtime_dir = managed_runtime_dir(tmp.path());
-        fs::create_dir_all(&runtime_dir).unwrap();
-        let runtime_path = managed_runtime_path(tmp.path());
-        // Write a file that doesn't match the expected SHA-256.
-        fs::write(&runtime_path, b"dummy content that won't match sha256").unwrap();
-
-        let snapshot = runtime_status_snapshot(tmp.path());
-        // The file exists but SHA-256 doesn't match, so it should be Corrupt
-        // (or Absent if the dev fallback also doesn't match).
-        assert!(
-            snapshot.status == RuntimeStatus::Corrupt || snapshot.status == RuntimeStatus::Ready,
-            "unexpected status: {:?}",
-            snapshot.status
-        );
-    }
-
-    #[test]
-    fn delete_runtime_removes_file_and_manifest() {
-        let tmp = tempfile::tempdir().unwrap();
-        let runtime_dir = managed_runtime_dir(tmp.path());
-        fs::create_dir_all(&runtime_dir).unwrap();
-        let runtime_path = managed_runtime_path(tmp.path());
-        fs::write(&runtime_path, b"dummy").unwrap();
-        let manifest_path = verified_manifest_path(&runtime_path).unwrap();
-        fs::write(&manifest_path, "{}").unwrap();
-
-        delete_runtime(tmp.path()).unwrap();
-
-        assert!(!runtime_path.exists());
-        assert!(!manifest_path.exists());
-    }
-
-    #[test]
-    fn delete_runtime_is_idempotent() {
-        let tmp = tempfile::tempdir().unwrap();
-        delete_runtime(tmp.path()).unwrap();
-    }
-
-    #[test]
-    fn runtime_resolution_absent_when_no_managed_and_no_dev_fallback() {
-        // This test only passes when the development fallback doesn't exist.
-        // In the CI/dev environment, the staged runtime may exist at
-        // src-tauri/generated/onnxruntime/, so we test the managed path logic
-        // by verifying the managed path is Absent.
-        let tmp = tempfile::tempdir().unwrap();
-        let managed = managed_runtime_path(tmp.path());
-        assert!(
-            !managed.exists(),
-            "managed path should not exist in temp dir"
-        );
-    }
-
-    #[test]
-    fn runtime_filename_matches_dylib_variants() {
-        assert!(runtime_filename_matches(
-            "libonnxruntime.1.26.0.dylib",
-            "libonnxruntime.dylib"
-        ));
-        assert!(runtime_filename_matches(
-            "libonnxruntime.dylib",
-            "libonnxruntime.dylib"
-        ));
-        assert!(!runtime_filename_matches(
-            "libonnxruntime_providers.dylib",
-            "libonnxruntime.dylib"
-        ));
-    }
-
-    #[test]
-    fn runtime_filename_matches_so_variants() {
-        assert!(runtime_filename_matches(
-            "libonnxruntime.so.1.26.0",
-            "libonnxruntime.so"
-        ));
-        assert!(runtime_filename_matches(
-            "libonnxruntime.so",
-            "libonnxruntime.so"
-        ));
-    }
-
-    #[test]
-    fn runtime_descriptors_have_sha256_values_for_release_targets() {
-        assert_eq!(RUNTIME_DESCRIPTOR.sha256.len(), 64);
-        assert!(
-            RUNTIME_DESCRIPTOR
-                .sha256
-                .chars()
-                .all(|ch| ch.is_ascii_hexdigit()),
-            "runtime SHA-256 must be a real lowercase hex digest"
-        );
-    }
-
-    #[test]
-    fn zip_runtime_extractor_reads_windows_nupkg_layout() {
-        let cursor = std::io::Cursor::new(Vec::<u8>::new());
-        let mut writer = zip::ZipWriter::new(cursor);
-        let options = zip::write::SimpleFileOptions::default();
-        writer
-            .start_file(format!("runtimes/native/{ORT_RUNTIME_FILENAME}"), options)
-            .unwrap();
-        std::io::Write::write_all(&mut writer, b"runtime").unwrap();
-        let cursor = writer.finish().unwrap();
-        let bytes = cursor.into_inner();
-        let descriptor = RuntimeDescriptor {
-            archive_name: "test.nupkg",
-            download_url: "https://example.invalid/test.nupkg",
-            sha256: "unused",
-            archive_kind: RuntimeArchiveKind::Zip,
-            companion_files: &[],
+    fn slots_round_trip_and_default_on_corruption() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let slots = RuntimeSlots {
+            active: Some("rt-a".to_owned()),
+            candidate: Some("rt-b".to_owned()),
+            ..RuntimeSlots::default()
         };
+        write_slots(tmp.path(), &slots).expect("write slots");
+        assert_eq!(read_slots(tmp.path()), slots);
 
-        let extracted = extract_runtime_from_archive(&bytes, &descriptor).unwrap();
+        fs::write(slots_path(tmp.path()), b"{corrupt").expect("corrupt slots");
+        assert_eq!(read_slots(tmp.path()), RuntimeSlots::default());
+    }
 
-        assert_eq!(extracted, b"runtime");
+    #[test]
+    fn begin_startup_with_nothing_installed_returns_none() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        assert!(begin_startup(tmp.path()).expect("startup").is_none());
+    }
+
+    #[test]
+    fn valid_candidate_is_promoted_with_pending_marker() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        write_fake_install(tmp.path(), "rt-old", b"old-runtime");
+        write_fake_install(tmp.path(), "rt-new", b"new-runtime");
+        let slots = RuntimeSlots {
+            active: Some("rt-old".to_owned()),
+            candidate: Some("rt-new".to_owned()),
+            ..RuntimeSlots::default()
+        };
+        write_slots(tmp.path(), &slots).expect("write slots");
+
+        let plan = begin_startup(tmp.path())
+            .expect("startup")
+            .expect("plan should load the promoted candidate");
+        assert!(plan.proving_candidate);
+        assert_eq!(
+            plan.record.as_ref().map(|r| r.artifact_id.as_str()),
+            Some("rt-new")
+        );
+
+        let slots = read_slots(tmp.path());
+        assert_eq!(slots.active.as_deref(), Some("rt-new"));
+        assert_eq!(slots.previous.as_deref(), Some("rt-old"));
+        assert_eq!(slots.candidate, None);
+        assert!(slots.activation_pending);
+
+        finish_activation_success(tmp.path()).expect("finish");
+        let slots = read_slots(tmp.path());
+        assert!(!slots.activation_pending);
+        assert!(slots.last_failure.is_none());
+    }
+
+    #[test]
+    fn corrupt_candidate_is_dropped_and_recorded() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        write_fake_install(tmp.path(), "rt-old", b"old-runtime");
+        write_fake_install(tmp.path(), "rt-bad", b"bad-runtime");
+        // Corrupt the staged candidate after recording.
+        fs::write(
+            runtime_artifact_dir(tmp.path(), "rt-bad").join(ORT_RUNTIME_FILENAME),
+            b"tampered",
+        )
+        .expect("tamper");
+        let slots = RuntimeSlots {
+            active: Some("rt-old".to_owned()),
+            candidate: Some("rt-bad".to_owned()),
+            ..RuntimeSlots::default()
+        };
+        write_slots(tmp.path(), &slots).expect("write slots");
+
+        let plan = begin_startup(tmp.path())
+            .expect("startup")
+            .expect("plan should fall back to the active runtime");
+        assert!(!plan.proving_candidate);
+        assert_eq!(
+            plan.record.as_ref().map(|r| r.artifact_id.as_str()),
+            Some("rt-old")
+        );
+
+        let slots = read_slots(tmp.path());
+        assert_eq!(slots.active.as_deref(), Some("rt-old"));
+        assert_eq!(slots.candidate, None);
+        assert_eq!(
+            slots.last_failure.as_ref().map(|f| f.artifact_id.as_str()),
+            Some("rt-bad")
+        );
+        assert!(!runtime_artifact_dir(tmp.path(), "rt-bad").exists());
+    }
+
+    #[test]
+    fn interrupted_activation_rolls_back_to_previous() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        write_fake_install(tmp.path(), "rt-old", b"old-runtime");
+        write_fake_install(tmp.path(), "rt-new", b"new-runtime");
+        // Simulate a crash after promotion, before the load was proven.
+        let slots = RuntimeSlots {
+            active: Some("rt-new".to_owned()),
+            previous: Some("rt-old".to_owned()),
+            activation_pending: true,
+            ..RuntimeSlots::default()
+        };
+        write_slots(tmp.path(), &slots).expect("write slots");
+
+        let plan = begin_startup(tmp.path())
+            .expect("startup")
+            .expect("plan should restore the previous runtime");
+        assert_eq!(
+            plan.record.as_ref().map(|r| r.artifact_id.as_str()),
+            Some("rt-old")
+        );
+
+        let slots = read_slots(tmp.path());
+        assert_eq!(slots.active.as_deref(), Some("rt-old"));
+        assert!(!slots.activation_pending);
+        assert_eq!(
+            slots.last_failure.as_ref().map(|f| f.artifact_id.as_str()),
+            Some("rt-new")
+        );
+        assert!(!runtime_artifact_dir(tmp.path(), "rt-new").exists());
+    }
+
+    #[test]
+    fn rollback_failed_activation_restores_previous() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        write_fake_install(tmp.path(), "rt-old", b"old-runtime");
+        write_fake_install(tmp.path(), "rt-new", b"new-runtime");
+        let slots = RuntimeSlots {
+            active: Some("rt-new".to_owned()),
+            previous: Some("rt-old".to_owned()),
+            activation_pending: true,
+            ..RuntimeSlots::default()
+        };
+        write_slots(tmp.path(), &slots).expect("write slots");
+
+        let restored = rollback_failed_activation(tmp.path(), "rt-new", "dlopen failed")
+            .expect("rollback")
+            .expect("previous runtime should be restored");
+        assert_eq!(restored.record.artifact_id, "rt-old");
+        assert!(!runtime_artifact_dir(tmp.path(), "rt-new").exists());
+
+        let slots = read_slots(tmp.path());
+        assert_eq!(slots.active.as_deref(), Some("rt-old"));
+        assert_eq!(
+            slots.last_failure.as_ref().map(|f| f.error.as_str()),
+            Some("dlopen failed")
+        );
+    }
+
+    #[test]
+    fn corrupt_active_install_is_removed_and_reported_missing() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        write_fake_install(tmp.path(), "rt-a", b"runtime-bytes");
+        fs::write(
+            runtime_artifact_dir(tmp.path(), "rt-a").join(ORT_RUNTIME_FILENAME),
+            b"tampered-bytes",
+        )
+        .expect("tamper");
+        let slots = RuntimeSlots {
+            active: Some("rt-a".to_owned()),
+            ..RuntimeSlots::default()
+        };
+        write_slots(tmp.path(), &slots).expect("write slots");
+
+        assert!(begin_startup(tmp.path()).expect("startup").is_none());
+        let slots = read_slots(tmp.path());
+        assert_eq!(slots.active, None);
+        assert!(slots.last_failure.is_some());
+    }
+
+    #[test]
+    fn legacy_install_is_loadable_until_replaced() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let legacy = legacy_runtime_path(tmp.path());
+        fs::create_dir_all(legacy.parent().expect("parent")).expect("legacy dir");
+        fs::write(&legacy, b"legacy-runtime").expect("write legacy");
+        write_verified_manifest(&legacy, &sha256_hex(b"legacy-runtime")).expect("sidecar");
+
+        let plan = begin_startup(tmp.path())
+            .expect("startup")
+            .expect("legacy plan");
+        assert!(plan.is_legacy);
+        assert_eq!(plan.library_path, legacy);
+
+        // Installing and activating a slot runtime deletes the legacy copy.
+        write_fake_install(tmp.path(), "rt-new", b"new-runtime");
+        activate_first_install(tmp.path(), "rt-new").expect("activate");
+        assert!(!legacy.exists());
+    }
+
+    #[test]
+    fn tampered_legacy_install_is_not_loadable() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let legacy = legacy_runtime_path(tmp.path());
+        fs::create_dir_all(legacy.parent().expect("parent")).expect("legacy dir");
+        fs::write(&legacy, b"legacy-runtime").expect("write legacy");
+        write_verified_manifest(&legacy, &sha256_hex(b"legacy-runtime")).expect("sidecar");
+        // Tamper AFTER verification: the metadata fast path misses, the
+        // rehash against the sidecar digest catches the modification.
+        fs::write(&legacy, b"legacy-runtime-tampered").expect("tamper");
+
+        assert!(legacy_runtime_ready(tmp.path()).is_none());
+    }
+
+    #[test]
+    fn prune_keeps_only_referenced_generations() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        write_fake_install(tmp.path(), "rt-a", b"a");
+        write_fake_install(tmp.path(), "rt-b", b"b");
+        write_fake_install(tmp.path(), "rt-c", b"c");
+        let slots = RuntimeSlots {
+            active: Some("rt-b".to_owned()),
+            previous: Some("rt-a".to_owned()),
+            ..RuntimeSlots::default()
+        };
+        write_slots(tmp.path(), &slots).expect("write slots");
+
+        prune_unreferenced_runtimes(tmp.path(), &slots);
+
+        assert!(runtime_artifact_dir(tmp.path(), "rt-a").exists());
+        assert!(runtime_artifact_dir(tmp.path(), "rt-b").exists());
+        assert!(!runtime_artifact_dir(tmp.path(), "rt-c").exists());
+    }
+
+    #[test]
+    fn delete_runtime_removes_everything() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        write_fake_install(tmp.path(), "rt-a", b"a");
+        let legacy = legacy_runtime_path(tmp.path());
+        fs::create_dir_all(legacy.parent().expect("parent")).expect("legacy dir");
+        fs::write(&legacy, b"legacy").expect("legacy");
+
+        delete_runtime(tmp.path()).expect("delete");
+
+        assert!(!runtimes_root(tmp.path()).exists());
+        assert!(!legacy.exists());
+        assert!(delete_runtime(tmp.path()).is_ok(), "idempotent");
+    }
+
+    #[test]
+    fn embedded_catalog_resolves_a_runtime_for_this_target() {
+        let (_, runtime) = catalog_runtime();
+        assert!(runtime
+            .extracted_file_digests
+            .contains_key(ORT_RUNTIME_FILENAME));
+        assert_eq!(runtime.runtime.ort_c_api_level, "27");
     }
 }

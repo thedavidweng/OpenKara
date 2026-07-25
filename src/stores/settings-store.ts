@@ -12,6 +12,7 @@ import type {
   ModelVariant,
   StemMode,
   ThemePreference,
+  UpdatePolicy,
 } from "@/types/ipc";
 
 export interface AppSettingsSnapshot {
@@ -30,6 +31,7 @@ export interface AppSettingsSnapshot {
   crossfadeDurationMs: number;
   librarySortMode: LibrarySortMode;
   themePreference: ThemePreference;
+  updatePolicy: UpdatePolicy;
 }
 
 interface SettingsState {
@@ -49,8 +51,11 @@ interface SettingsState {
   crossfadeDurationMs: AppSettingsSnapshot["crossfadeDurationMs"];
   librarySortMode: AppSettingsSnapshot["librarySortMode"];
   themePreference: AppSettingsSnapshot["themePreference"];
+  updatePolicy: AppSettingsSnapshot["updatePolicy"];
   /** Monotonic generation for optimistic theme-preference mutations. */
   themePreferenceMutationGeneration: number;
+  /** Monotonic generation for optimistic update-policy mutations. */
+  updatePolicyMutationGeneration: number;
   toggle: () => void;
   close: () => void;
   open: () => void;
@@ -69,6 +74,7 @@ interface SettingsState {
   setCrossfadeDurationMs: (durationMs: number) => Promise<void>;
   setLibrarySortMode: (mode: LibrarySortMode) => Promise<void>;
   setThemePreference: (preference: ThemePreference) => Promise<void>;
+  setUpdatePolicy: (policy: UpdatePolicy) => Promise<void>;
   getAppSettingsSnapshot: () => AppSettingsSnapshot;
 }
 
@@ -88,6 +94,7 @@ export const DEFAULT_APP_SETTINGS: AppSettingsSnapshot = {
   crossfadeDurationMs: 3_000,
   librarySortMode: "recently_imported",
   themePreference: "dark",
+  updatePolicy: "notify",
 };
 
 function toAppSettingsSnapshot(settings: AppSettings): AppSettingsSnapshot {
@@ -109,6 +116,7 @@ function toAppSettingsSnapshot(settings: AppSettings): AppSettingsSnapshot {
     crossfadeDurationMs: settings.crossfade_duration_ms ?? 3_000,
     librarySortMode: settings.library_sort_mode,
     themePreference: settings.theme_preference,
+    updatePolicy: settings.update_policy ?? "notify",
   };
 }
 
@@ -131,6 +139,7 @@ function selectAppSettingsSnapshot(
     crossfadeDurationMs: state.crossfadeDurationMs,
     librarySortMode: state.librarySortMode,
     themePreference: state.themePreference,
+    updatePolicy: state.updatePolicy,
   };
 }
 
@@ -166,6 +175,7 @@ function applySettingsSyncSnapshot(
     crossfadeDurationMs: snapshot.crossfadeDurationMs,
     librarySortMode: snapshot.librarySortMode,
     themePreference: snapshot.themePreference,
+    updatePolicy: snapshot.updatePolicy,
   });
 }
 
@@ -301,6 +311,7 @@ export function createSettingsStore(
       isOpen: false,
       ...DEFAULT_APP_SETTINGS,
       themePreferenceMutationGeneration: 0,
+      updatePolicyMutationGeneration: 0,
       toggle: () => syncPatch({ isOpen: !get().isOpen }),
       close: () => syncPatch({ isOpen: false }),
       open: () => syncPatch({ isOpen: true }),
@@ -482,6 +493,39 @@ export function createSettingsStore(
             syncPatch({
               themePreference: previousSnapshot.themePreference,
               themePreferenceMutationGeneration: generation,
+            });
+            notifyError(error);
+          }
+        }
+      },
+      setUpdatePolicy: async (policy) => {
+        if (get().updatePolicy === policy) {
+          return;
+        }
+
+        const generation = get().updatePolicyMutationGeneration + 1;
+        const previousSnapshot = selectAppSettingsSnapshot(get());
+
+        syncPatch({
+          updatePolicy: policy,
+          updatePolicyMutationGeneration: generation,
+        });
+
+        try {
+          const settings = await api.setUpdatePolicy(policy);
+          if (get().updatePolicyMutationGeneration === generation) {
+            // Reconcile through syncAppSettings so pending EQ / sort-mode
+            // optimistic fields are not clobbered by the full snapshot.
+            syncAppSettings(settings);
+          }
+        } catch (error) {
+          // Only roll back the update policy that failed. Restoring the full
+          // pre-attempt snapshot would wipe concurrent settings edits that
+          // landed while the IPC call was in flight.
+          if (get().updatePolicyMutationGeneration === generation) {
+            syncPatch({
+              updatePolicy: previousSnapshot.updatePolicy,
+              updatePolicyMutationGeneration: generation,
             });
             notifyError(error);
           }

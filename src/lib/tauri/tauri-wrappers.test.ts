@@ -617,6 +617,32 @@ describe("settings", () => {
     expect(returned).toBe(appSettings);
   });
 
+  test("setUpdatePolicy invokes set_update_policy", async () => {
+    mockInvoke.mockResolvedValueOnce(appSettings);
+    const returned = await settings.setUpdatePolicy("auto_download");
+    expect(mockInvoke).toHaveBeenCalledWith("set_update_policy", {
+      policy: "auto_download",
+    });
+    expect(returned).toBe(appSettings);
+  });
+
+  test("checkRuntimeUpdates invokes check_runtime_updates", async () => {
+    const report = {
+      generation: 3,
+      release_id: "2026-08-01-001",
+      target_triple: "aarch64-apple-darwin",
+      state: "up_to_date" as const,
+      installed_version: "v1.27.1",
+      available_version: "v1.27.1",
+      available_bytes: 0,
+      restart_required: true,
+    };
+    mockInvoke.mockResolvedValueOnce(report);
+    const returned = await settings.checkRuntimeUpdates();
+    expect(mockInvoke).toHaveBeenCalledWith("check_runtime_updates");
+    expect(returned).toBe(report);
+  });
+
   test("restartApp invokes restart_app", async () => {
     mockInvoke.mockResolvedValueOnce(undefined);
     const returned = await settings.restartApp();

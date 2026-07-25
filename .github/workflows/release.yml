@@ -122,10 +122,32 @@ jobs:
           retention-days: 5
 
   release-separation-smoke:
-    name: Release separation smoke
-    runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    # Native full-window inference on every supported target with the exact
+    # catalog runtime/model pair the release ships. A runtime that cannot
+    # load or infer natively blocks the release.
+    name: Release separation smoke (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     needs: prepare-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            os: ubuntu-22.04
+            ort_target: x86_64-unknown-linux-gnu
+          - name: Linux arm64
+            os: ubuntu-24.04-arm
+            ort_target: aarch64-unknown-linux-gnu
+          - name: macOS (Apple Silicon)
+            os: macos-14
+            ort_target: aarch64-apple-darwin
+          - name: macOS (Intel)
+            os: macos-15-intel
+            ort_target: x86_64-apple-darwin
+          - name: Windows
+            os: windows-latest
+            ort_target: x86_64-pc-windows-msvc
 
     steps:
       - name: Checkout
@@ -147,13 +169,14 @@ jobs:
       - name: Restore Rust cache
         uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.workflow }}-ubuntu-22.04-smoke
+          shared-key: ${{ github.workflow }}-${{ matrix.os }}-smoke
           workspaces: ./src-tauri -> target
           cache-bin: false
-          key: ubuntu-22.04-smoke
+          key: ${{ matrix.os }}-smoke
           lookup-only: true # release workflow: restore only, never save
 
       - name: Install Linux smoke dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -167,11 +190,30 @@ jobs:
             libxdo-dev
 
       - name: Download runtime and model
+        shell: bash
+        env:
+          OPENKARA_ORT_TARGET: ${{ matrix.ort_target }}
         run: ./scripts/setup.sh
 
+      - name: Record catalog artifact identities
+        shell: bash
+        run: |
+          echo "Staged runtime:" && cat src-tauri/generated/onnxruntime/manifest.json
+          echo "Pinned model:" && node scripts/resolve-model.mjs
+
       - name: Run real separation smoke
+        shell: bash
+        env:
+          # Hosted runners have no GPU; pin the smoke to CPU so provider
+          # fallback noise cannot make the run nondeterministic.
+          OPENKARA_SMOKE_EP: cpu
         run: |
           set -euo pipefail
+
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            # Dependent DLLs (DirectML.dll) resolve via PATH on Windows.
+            export PATH="$(pwd)/src-tauri/generated/onnxruntime:$PATH"
+          fi
 
           input_dir="${RUNNER_TEMP}/openkara-smoke-input"
           output_dir="${RUNNER_TEMP}/openkara-smoke-output"
@@ -181,6 +223,7 @@ jobs:
           ./scripts/run-local-smoke.sh "${input_dir}" "${output_dir}"
 
       - name: Validate real separation smoke report
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -242,8 +285,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: release-separation-smoke-report
-          path: ${{ runner.temp }}/openkara-smoke-output/local-audio-smoke-report.*
+          name: release-separation-smoke-report-${{ matrix.ort_target }}
+          path: |
+            ${{ runner.temp }}/openkara-smoke-output/local-audio-smoke-report.*
+            src-tauri/generated/onnxruntime/manifest.json
           if-no-files-found: warn
           retention-days: 14
 
@@ -262,12 +307,17 @@ jobs:
             os: macos-14
             args: --target aarch64-apple-darwin
             ort_target: aarch64-apple-darwin
-            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            rust_targets: aarch64-apple-darwin
+          # Native Intel runner: the Intel app must be built, and its runtime
+          # loaded, on the architecture it ships for — cross-compiling from
+          # Apple Silicon proves neither. macos-15-intel is GitHub's supported
+          # x86_64 image through August 2027; a self-hosted Intel replacement
+          # must be established before hosted Intel runners retire.
           - name: macOS (Intel)
-            os: macos-14
+            os: macos-15-intel
             args: --target x86_64-apple-darwin
             ort_target: x86_64-apple-darwin
-            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            rust_targets: x86_64-apple-darwin
           - name: Windows
             os: windows-latest
             args: ""
@@ -330,7 +380,7 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: src-tauri/generated/onnxruntime
-          key: onnxruntime-${{ matrix.ort_target }}-${{ hashFiles('scripts/prepare-onnx-runtime.mjs') }}
+          key: onnxruntime-${{ matrix.ort_target }}-${{ hashFiles('scripts/prepare-onnx-runtime.mjs', 'src-tauri/catalog/release-manifest.json') }}
           lookup-only: true # release workflow: restore only, never save
 
       - name: Prepare ONNX Runtime

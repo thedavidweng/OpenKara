@@ -356,12 +356,41 @@
       "download": "Download"
     },
     "runtime": {
+      "label": "ONNX Runtime",
+      "description": "The runtime library that powers AI stem separation.",
       "installRequired": "The ONNX Runtime library is required for AI stem separation. Install it to enable model downloads.",
       "installButton": "Install ONNX Runtime",
       "downloading": "Downloading ONNX Runtime...",
       "corrupt": "The installed ONNX Runtime is corrupt. Reinstall it to enable model downloads.",
       "downloadFailed": "The ONNX Runtime download failed. Check your connection and try again.",
-      "retryButton": "Reinstall ONNX Runtime"
+      "retryButton": "Reinstall ONNX Runtime",
+      "statusReady": "Installed and ready.",
+      "statusMissing": "Not installed.",
+      "version": "Version {{version}}",
+      "checkButton": "Check for updates",
+      "checking": "Checking for updates...",
+      "upToDate": "The runtime is up to date.",
+      "checkFailed": "Update check failed.",
+      "updateAvailable": "Runtime update available ({{version}})",
+      "updateButton": "Update",
+      "downloadingCandidate": "Downloading runtime update...",
+      "candidateReadyRestartRequired": "Runtime update {{version}} is staged. Restart to apply it.",
+      "restartButton": "Restart to apply",
+      "activationFailedPreviousRestored": "The staged runtime update failed to activate; the previous runtime was restored.",
+      "updatePolicy": {
+        "label": "Runtime updates",
+        "description": "Choose how runtime updates are handled. Applying an update always requires a restart.",
+        "manual": "Manual",
+        "manualDescription": "Only check for updates when you ask.",
+        "notify": "Notify",
+        "notifyDescription": "Check on startup and let you know when an update is available.",
+        "autoDownload": "Auto-download",
+        "autoDownloadDescription": "Download updates automatically; apply them on the next restart."
+      },
+      "banner": {
+        "updateReady": "A runtime update is ready — restart to apply.",
+        "activationFailed": "The runtime update failed to activate; the previous runtime was restored."
+      }
     },
     "hideBatchSeparate": {
       "hide": "Hide “Separate All”",

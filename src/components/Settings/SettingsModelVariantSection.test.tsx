@@ -24,6 +24,10 @@ const readyRuntime: RuntimeStatusView = {
   state: "ready",
   version: "1.27.1",
   runtime_path: "/tmp/runtime",
+  active_artifact_id: "rt-1.27.1",
+  target_triple: "aarch64-apple-darwin",
+  candidate_version: null,
+  restart_required: false,
   error: null,
 };
 

@@ -1,6 +1,6 @@
 use crate::config::ModelVariant;
 use crate::separator::catalog::{
-    self, identity_from_catalog_model, read_installed_identity, InstalledModelIdentity,
+    self, identity_from_catalog_model, read_installed_identity, InstalledArtifactRecord,
     VerifiedCatalog,
 };
 use crate::separator::verified_manifest::{
@@ -29,7 +29,7 @@ pub struct ModelDescriptor {
     pub byte_size: u64,
     pub artifact_id: String,
     pub upstream_tag: String,
-    pub identity: InstalledModelIdentity,
+    pub identity: InstalledArtifactRecord,
 }
 
 pub fn descriptor_from_catalog(
@@ -140,8 +140,8 @@ pub fn resolve_model_installation(
         // record carries the digest that install verified; a catalog refresh
         // failure or an older app binary must not invalidate it.
         if let Some(identity) = read_installed_identity(managed_path) {
-            let identity_ok =
-                verify_model_install(managed_path, &identity.sha256).with_context(|| {
+            let identity_ok = verify_model_install(managed_path, &identity.archive_sha256)
+                .with_context(|| {
                     format!(
                         "failed to verify managed model {} against its identity record",
                         managed_path.display()

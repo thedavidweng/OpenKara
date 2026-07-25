@@ -143,6 +143,10 @@ describe("SettingsOverlay sections", () => {
           state: "ready",
           version: "1.26.0",
           runtime_path: "/test/runtime",
+          active_artifact_id: "rt-1.26.0",
+          target_triple: "aarch64-apple-darwin",
+          candidate_version: null,
+          restart_required: false,
           error: null,
         },
         modelStatuses: {
@@ -182,6 +186,10 @@ describe("SettingsOverlay sections", () => {
           state: "ready",
           version: "1.26.0",
           runtime_path: "/test/runtime",
+          active_artifact_id: "rt-1.26.0",
+          target_triple: "aarch64-apple-darwin",
+          candidate_version: null,
+          restart_required: false,
           error: null,
         },
         modelStatuses: {

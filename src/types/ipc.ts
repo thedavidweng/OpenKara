@@ -237,6 +237,7 @@ export type ExecutionProvider = "cpu" | "xnnpack" | "directml";
 export type LibrarySortMode = "recently_imported" | "title_asc" | "artist_asc";
 export type ThemePreference = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
+export type UpdatePolicy = "manual" | "notify" | "auto_download";
 
 export interface AppSettings {
   stem_mode: StemMode;
@@ -253,6 +254,7 @@ export interface AppSettings {
   crossfade_duration_ms: number;
   library_sort_mode: LibrarySortMode;
   theme_preference: ThemePreference;
+  update_policy: UpdatePolicy;
 }
 
 export interface ModelStatusSnapshot {
@@ -578,6 +580,10 @@ export type RuntimeBootstrapState =
   | "missing"
   | "downloading"
   | "ready"
+  | "update_available"
+  | "downloading_candidate"
+  | "candidate_ready_restart_required"
+  | "activation_failed_previous_restored"
   | "corrupt"
   | "failed";
 
@@ -586,8 +592,28 @@ export interface RuntimeBootstrapStatusSnapshot {
   runtime_path: string;
   downloaded_bytes: number | null;
   total_bytes: number | null;
+  /**
+   * Upstream version of the ACTIVE runtime (`v1.27.1`), the string `legacy`
+   * for a pre-catalog install, or the pinned catalog version when nothing is
+   * installed yet.
+   */
   version: string;
+  active_artifact_id: string | null;
+  target_triple: string;
+  candidate_version: string | null;
+  restart_required: boolean;
   error: CommandError | null;
+}
+
+export interface RuntimeUpdateReport {
+  generation: number;
+  release_id: string;
+  target_triple: string;
+  state: ModelUpdateState;
+  installed_version: string | null;
+  available_version: string;
+  available_bytes: number;
+  restart_required: boolean;
 }
 
 export interface ManagedAssetIssue {

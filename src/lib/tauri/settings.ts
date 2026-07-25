@@ -7,7 +7,9 @@ import type {
   ModelStatusSnapshot,
   ModelUpdateReport,
   RuntimeBootstrapStatusSnapshot,
+  RuntimeUpdateReport,
   ThemePreference,
+  UpdatePolicy,
   WindowShellStateSnapshot,
 } from "@/types/ipc";
 
@@ -109,6 +111,14 @@ export function setThemePreference(
   preference: ThemePreference,
 ): Promise<AppSettings> {
   return invoke<AppSettings>("set_theme_preference", { preference });
+}
+
+export function setUpdatePolicy(policy: UpdatePolicy): Promise<AppSettings> {
+  return invoke<AppSettings>("set_update_policy", { policy });
+}
+
+export function checkRuntimeUpdates(): Promise<RuntimeUpdateReport> {
+  return invoke<RuntimeUpdateReport>("check_runtime_updates");
 }
 
 export function restartApp(): Promise<void> {

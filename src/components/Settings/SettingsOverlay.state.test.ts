@@ -37,6 +37,7 @@ vi.mock("@/stores/settings-store", () => ({
         crossfadeDurationMs: 3_000,
         librarySortMode: "recently_imported",
         themePreference: "dark",
+        updatePolicy: "notify",
       }),
     }),
   },
@@ -58,6 +59,7 @@ function createDependencies(): SettingsOverlayControllerDependencies {
       deleteAllCachedLyrics: vi.fn(),
       deleteAllStems: vi.fn(),
       checkModelUpdates: vi.fn(),
+      checkRuntimeUpdates: vi.fn(),
       deleteModel: vi.fn(),
       deleteRuntime: vi.fn(),
       downloadModel: vi.fn(),
@@ -92,6 +94,7 @@ function createDependencies(): SettingsOverlayControllerDependencies {
       setCrossfadeEnabled: vi.fn(),
       setCrossfadeDurationMs: vi.fn(),
       setThemePreference: vi.fn(),
+      setUpdatePolicy: vi.fn(),
       checkLibraryIntegrity: vi.fn(),
       removeMissingLibraryEntries: vi.fn(),
     },
@@ -133,6 +136,7 @@ function createDependencies(): SettingsOverlayControllerDependencies {
           crossfadeDurationMs: 3_000,
           librarySortMode: "recently_imported",
           themePreference: "dark",
+          updatePolicy: "notify",
         }),
       ),
       hydrateAppSettings: vi.fn(),
@@ -142,6 +146,7 @@ function createDependencies(): SettingsOverlayControllerDependencies {
       setCrossfadeEnabled: vi.fn(),
       setCrossfadeDurationMs: vi.fn(),
       setThemePreference: vi.fn(),
+      setUpdatePolicy: vi.fn(),
     },
   };
 }
@@ -167,6 +172,7 @@ function createHarness(overrides?: {
           crossfadeDurationMs: 3_000,
           librarySortMode: "recently_imported",
           themePreference: "dark",
+          updatePolicy: "notify",
           ...overrides.initialSettings,
         }
       : undefined,
@@ -208,6 +214,7 @@ describe("createInitialSettingsOverlaySnapshot", () => {
         downloadingModel: null,
         modelUpdate: null,
         runtimeStatus: null,
+        runtimeUpdate: null,
         language: "zh-CN",
         hideBatchSeparate: false,
         coverArtBackdrop: true,
@@ -219,6 +226,7 @@ describe("createInitialSettingsOverlaySnapshot", () => {
         crossfadeDurationMs: 3_000,
         librarySortMode: "recently_imported",
         themePreference: "dark",
+        updatePolicy: "notify",
         integrityReport: null,
         integritySelection: expect.any(Set),
         integritySkippedCount: null,
@@ -254,6 +262,7 @@ describe("createInitialSettingsOverlaySnapshot", () => {
       crossfadeDurationMs: 3_000,
       librarySortMode: "recently_imported",
       themePreference: "dark",
+      updatePolicy: "notify",
     });
 
     expect(snapshot.state.language).toBe("en");
@@ -279,6 +288,7 @@ describe("createInitialSettingsOverlaySnapshot", () => {
       crossfadeDurationMs: 3_000,
       librarySortMode: "recently_imported",
       themePreference: "dark",
+      updatePolicy: "notify",
     });
 
     expect(snapshot.state.language).toBe("ko");
@@ -320,6 +330,7 @@ describe("createSettingsOverlayActions - initialize", () => {
       crossfade_duration_ms: 3_000,
       library_sort_mode: "recently_imported",
       theme_preference: "dark",
+      update_policy: "notify",
     });
     vi.mocked(harness.dependencies.api.getModelStatus)
       .mockResolvedValueOnce({
@@ -346,6 +357,10 @@ describe("createSettingsOverlayActions - initialize", () => {
       runtime_path: "/tmp/runtime",
       downloaded_bytes: null,
       total_bytes: null,
+      active_artifact_id: "rt-1.0.0",
+      target_triple: "aarch64-apple-darwin",
+      candidate_version: null,
+      restart_required: false,
       error: null,
     });
 
@@ -368,6 +383,7 @@ describe("createSettingsOverlayActions - initialize", () => {
       crossfade_duration_ms: 3_000,
       library_sort_mode: "recently_imported",
       theme_preference: "dark",
+      update_policy: "notify",
     });
     expect(harness.getSnapshot().state.libraryPath).toBe("/music");
     expect(harness.getSnapshot().state.stemMode).toBe("two_stem");
@@ -398,6 +414,7 @@ describe("createSettingsOverlayActions - initialize", () => {
       crossfade_duration_ms: 3_000,
       library_sort_mode: "recently_imported",
       theme_preference: "dark",
+      update_policy: "notify",
     });
     vi.mocked(harness.dependencies.api.getModelStatus)
       .mockResolvedValueOnce({
@@ -424,6 +441,10 @@ describe("createSettingsOverlayActions - initialize", () => {
       runtime_path: "/tmp/runtime",
       downloaded_bytes: null,
       total_bytes: null,
+      active_artifact_id: "rt-1.0.0",
+      target_triple: "aarch64-apple-darwin",
+      candidate_version: null,
+      restart_required: false,
       error: null,
     });
 
@@ -472,6 +493,10 @@ describe("createSettingsOverlayActions - initialize", () => {
       runtime_path: "/tmp/runtime",
       downloaded_bytes: null,
       total_bytes: null,
+      active_artifact_id: "rt-1.0.0",
+      target_triple: "aarch64-apple-darwin",
+      candidate_version: null,
+      restart_required: false,
       error: null,
     });
 
@@ -520,6 +545,10 @@ describe("createSettingsOverlayActions - initialize", () => {
       runtime_path: "/tmp/runtime",
       downloaded_bytes: null,
       total_bytes: null,
+      active_artifact_id: "rt-1.0.0",
+      target_triple: "aarch64-apple-darwin",
+      candidate_version: null,
+      restart_required: false,
       error: null,
     });
 
@@ -527,5 +556,125 @@ describe("createSettingsOverlayActions - initialize", () => {
 
     expect(harness.dependencies.notifyError).toHaveBeenCalledTimes(2);
     expect(harness.getSnapshot().meta.isInitializing).toBe(false);
+  });
+});
+
+describe("createSettingsOverlayActions - runtime updates", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("checkRuntimeUpdates caches the report and refreshes runtime status", async () => {
+    const harness = createHarness();
+
+    const report = {
+      generation: 7,
+      release_id: "2026-08-01-001",
+      target_triple: "aarch64-apple-darwin",
+      state: "update_available" as const,
+      installed_version: "v1.27.1",
+      available_version: "v1.28.0",
+      available_bytes: 42_000_000,
+      restart_required: true,
+    };
+    vi.mocked(harness.dependencies.api.checkRuntimeUpdates).mockResolvedValue(
+      report,
+    );
+    vi.mocked(
+      harness.dependencies.api.getRuntimeBootstrapStatus,
+    ).mockResolvedValue({
+      state: "update_available",
+      version: "v1.27.1",
+      runtime_path: "/tmp/runtime",
+      downloaded_bytes: null,
+      total_bytes: null,
+      active_artifact_id: "rt-1.27.1",
+      target_triple: "aarch64-apple-darwin",
+      candidate_version: null,
+      restart_required: false,
+      error: null,
+    });
+
+    await harness.actions.checkRuntimeUpdates();
+
+    expect(harness.dependencies.api.checkRuntimeUpdates).toHaveBeenCalledOnce();
+    expect(
+      harness.dependencies.api.getRuntimeBootstrapStatus,
+    ).toHaveBeenCalled();
+    const runtimeUpdate = harness.getSnapshot().state.runtimeUpdate;
+    expect(runtimeUpdate?.status).toBe("checked");
+    expect(runtimeUpdate?.report).toEqual(report);
+  });
+
+  test("checkRuntimeUpdates records a failure without notifying", async () => {
+    const harness = createHarness();
+
+    vi.mocked(harness.dependencies.api.checkRuntimeUpdates).mockRejectedValue(
+      new Error("offline"),
+    );
+
+    await harness.actions.checkRuntimeUpdates();
+
+    const runtimeUpdate = harness.getSnapshot().state.runtimeUpdate;
+    expect(runtimeUpdate?.status).toBe("failed");
+    expect(runtimeUpdate?.error).toBe("offline");
+    expect(harness.dependencies.notifyError).not.toHaveBeenCalled();
+  });
+
+  test("updateRuntime stages the candidate and mirrors the returned status", async () => {
+    const harness = createHarness();
+
+    vi.mocked(harness.dependencies.api.downloadRuntime).mockResolvedValue({
+      state: "candidate_ready_restart_required",
+      version: "v1.27.1",
+      runtime_path: "/tmp/runtime",
+      downloaded_bytes: null,
+      total_bytes: null,
+      active_artifact_id: "rt-1.27.1",
+      target_triple: "aarch64-apple-darwin",
+      candidate_version: "v1.28.0",
+      restart_required: true,
+      error: null,
+    });
+
+    await harness.actions.updateRuntime();
+
+    expect(harness.dependencies.api.downloadRuntime).toHaveBeenCalledOnce();
+    const runtimeStatus = harness.getSnapshot().state.runtimeStatus;
+    expect(runtimeStatus?.state).toBe("candidate_ready_restart_required");
+    expect(runtimeStatus?.candidate_version).toBe("v1.28.0");
+    expect(runtimeStatus?.restart_required).toBe(true);
+  });
+
+  test("setUpdatePolicy routes through the settings store and mirrors the result", async () => {
+    const harness = createHarness();
+
+    vi.mocked(
+      harness.dependencies.settingsStore.getAppSettingsSnapshot,
+    ).mockReturnValue({
+      hydrated: true,
+      stemMode: "four_stem",
+      modelVariant: "htdemucs_ft",
+      language: "zh-CN",
+      hideBatchSeparate: false,
+      coverArtBackdrop: true,
+      lyricsFontStep: 0,
+      executionProvider: "xnnpack",
+      availableExecutionProviders: ["cpu", "xnnpack"],
+      eqEnabled: false,
+      eqGainsDb: [0, 0, 0, 0, 0],
+      crossfadeEnabled: false,
+      crossfadeDurationMs: 3_000,
+      librarySortMode: "recently_imported",
+      themePreference: "dark",
+      updatePolicy: "auto_download",
+    });
+
+    await harness.actions.setUpdatePolicy("auto_download");
+
+    expect(
+      harness.dependencies.settingsStore.setUpdatePolicy,
+    ).toHaveBeenCalledWith("auto_download");
+    expect(harness.getSnapshot().state.updatePolicy).toBe("auto_download");
   });
 });

@@ -98,9 +98,16 @@ const CATEGORY_PATTERNS = {
     "src-tauri/deny.toml",
     "rust-toolchain.toml",
     "patches/**",
+    // The pinned catalog snapshot is compiled into the binary and drives
+    // model/runtime resolution — a pin bump must run the full Rust suite.
+    "src-tauri/catalog/**",
   ],
 
-  model_runtime: ["scripts/prepare-onnx-runtime.mjs"],
+  model_runtime: [
+    "scripts/prepare-onnx-runtime.mjs",
+    "scripts/resolve-model.mjs",
+    "src-tauri/catalog/**",
+  ],
 
   deps_js: ["package.json", "pnpm-lock.yaml"],
 

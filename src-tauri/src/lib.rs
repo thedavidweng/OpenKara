@@ -185,6 +185,7 @@ pub fn run() {
             commands::settings::set_crossfade_duration_ms,
             commands::settings::set_library_sort_mode,
             commands::settings::set_theme_preference,
+            commands::settings::set_update_policy,
             commands::settings::restart_app,
             crate::window_shell::get_window_shell_state,
             crate::window_shell::set_native_sidebar_visibility,
@@ -195,6 +196,7 @@ pub fn run() {
             commands::bootstrap::check_model_updates,
             commands::runtime_bootstrap::get_runtime_bootstrap_status,
             commands::runtime_bootstrap::download_runtime,
+            commands::runtime_bootstrap::check_runtime_updates,
             commands::runtime_bootstrap::delete_runtime
         ]);
 

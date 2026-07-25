@@ -356,12 +356,41 @@
       "download": "下载"
     },
     "runtime": {
+      "label": "ONNX 运行时",
+      "description": "为 AI 音轨分离提供支持的运行时库。",
       "installRequired": "AI 音轨分离需要 ONNX 运行时库。安装后才能下载模型。",
       "installButton": "安装 ONNX 运行时",
       "downloading": "正在下载 ONNX 运行时...",
       "corrupt": "已安装的 ONNX 运行时已损坏。请重新安装以启用模型下载。",
       "downloadFailed": "ONNX 运行时下载失败。请检查网络后重试。",
-      "retryButton": "重新安装 ONNX 运行时"
+      "retryButton": "重新安装 ONNX 运行时",
+      "statusReady": "已安装并就绪。",
+      "statusMissing": "尚未安装。",
+      "version": "版本 {{version}}",
+      "checkButton": "检查更新",
+      "checking": "正在检查更新...",
+      "upToDate": "运行时已是最新版本。",
+      "checkFailed": "检查更新失败。",
+      "updateAvailable": "有可用的运行时更新（{{version}}）",
+      "updateButton": "更新",
+      "downloadingCandidate": "正在下载运行时更新...",
+      "candidateReadyRestartRequired": "运行时更新 {{version}} 已就绪，请重启以应用。",
+      "restartButton": "重启以应用",
+      "activationFailedPreviousRestored": "暂存的运行时更新未能激活，已恢复到先前的运行时。",
+      "updatePolicy": {
+        "label": "运行时更新",
+        "description": "选择运行时更新的处理方式。应用更新始终需要重启。",
+        "manual": "手动",
+        "manualDescription": "仅在你手动检查时查找更新。",
+        "notify": "提醒",
+        "notifyDescription": "启动时检查，并在有可用更新时通知你。",
+        "autoDownload": "自动下载",
+        "autoDownloadDescription": "自动下载更新，并在下次重启时应用。"
+      },
+      "banner": {
+        "updateReady": "运行时更新已就绪 — 请重启以应用。",
+        "activationFailed": "运行时更新未能激活，已恢复到先前的运行时。"
+      }
     },
     "hideBatchSeparate": {
       "hide": "隐藏“全部分离”按钮",

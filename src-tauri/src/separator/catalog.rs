@@ -36,7 +36,33 @@ pub const STABLE_POINTER_URL: &str =
 
 pub const POINTER_SCHEMA_VERSION: &str = "openkara.catalog/channel-v1";
 pub const RELEASE_SCHEMA_VERSION: &str = "openkara.catalog/release-v1";
-pub const INSTALLED_IDENTITY_SCHEMA_VERSION: &str = "openkara.app/installed-model-v1";
+pub const INSTALLED_IDENTITY_SCHEMA_VERSION: &str = "openkara.app/installed-artifact-v1";
+
+/// The target triple this build installs runtime artifacts for. The catalog
+/// keys runtimes by target triple, so this is the single remaining
+/// per-platform constant in the runtime path.
+pub fn current_target_triple() -> &'static str {
+    #[cfg(all(target_vendor = "apple", target_arch = "aarch64"))]
+    {
+        "aarch64-apple-darwin"
+    }
+    #[cfg(all(target_vendor = "apple", target_arch = "x86_64"))]
+    {
+        "x86_64-apple-darwin"
+    }
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        "x86_64-unknown-linux-gnu"
+    }
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    {
+        "aarch64-unknown-linux-gnu"
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "x86_64-pc-windows-msvc"
+    }
+}
 
 /// The pointer is a tiny JSON object; anything larger is malformed or hostile.
 const MAX_POINTER_BYTES: u64 = 64 * 1024;
@@ -111,10 +137,19 @@ pub struct CatalogModelMetadata {
 pub struct CatalogRuntime {
     pub artifact_id: String,
     pub target_triple: Option<String>,
+    pub filename: String,
     pub byte_size: u64,
     pub archive_digest: String,
     pub download_url: String,
+    /// Per-file digests of the archive contents, keyed by relative path.
+    pub extracted_file_digests: std::collections::BTreeMap<String, CatalogFileDigest>,
     pub runtime: CatalogRuntimeMetadata,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CatalogFileDigest {
+    pub sha256: String,
+    pub size: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -124,6 +159,7 @@ pub struct CatalogRuntimeMetadata {
     pub ort_c_api_level: String,
     pub execution_providers: Vec<String>,
     pub supported_model_artifact_ids: Vec<String>,
+    pub companion_files: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -145,27 +181,69 @@ pub struct VerifiedCatalog {
 }
 
 // ---------------------------------------------------------------------------
-// Installed identity
+// Installed artifact records (one schema for models and runtimes)
 // ---------------------------------------------------------------------------
 
-/// Identity of an installed model, written next to the model file as
-/// `<model>.identity.json` after a verified install. This is what makes a
-/// model installed from a newer catalog generation stay usable when the app
-/// binary still embeds an older snapshot, and what update comparisons run
-/// against.
+/// A file installed as part of an artifact, relative to the artifact's
+/// install directory, with the digest verified at install time.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct InstalledModelIdentity {
+pub struct InstalledFileRecord {
+    pub path: String,
+    pub size: u64,
+    pub sha256: String,
+}
+
+/// Identity of an installed artifact — the ONE record schema shared by
+/// models and runtimes. For models it is written next to the model file as
+/// `<model>.identity.json`; for runtimes it is `record.json` inside the
+/// artifact's install directory. This is what makes an artifact installed
+/// from a newer catalog generation stay usable when the app binary still
+/// embeds an older snapshot, and what update comparisons run against.
+///
+/// `installed_at_unix` is informational metadata only — identity decisions
+/// never rely on it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstalledArtifactRecord {
     pub record_schema: String,
+    pub catalog_schema: String,
     pub generation: u64,
     pub release_id: String,
     pub artifact_id: String,
-    pub variant: String,
-    pub upstream_tag: String,
-    pub format: String,
-    pub tensor_interface: String,
-    pub sha256: String,
-    pub byte_size: u64,
-    pub compatible_runtime_ids: Vec<String>,
+    pub kind: String,
+    pub target: Option<String>,
+    pub variant: Option<String>,
+    pub profile: Option<String>,
+    pub format: Option<String>,
+    pub precision: Option<String>,
+    pub tensor_interface: Option<String>,
+    pub upstream_version: String,
+    pub download_url: String,
+    pub archive_size: u64,
+    pub archive_sha256: String,
+    pub files: Vec<InstalledFileRecord>,
+    pub compatible_ids: Vec<String>,
+    pub installed_at_unix: u64,
+}
+
+impl InstalledArtifactRecord {
+    fn is_structurally_valid(&self) -> bool {
+        self.record_schema == INSTALLED_IDENTITY_SCHEMA_VERSION
+            && is_sha256_hex(&self.archive_sha256)
+            && self.archive_size > 0
+            && self.generation > 0
+            && !self.artifact_id.is_empty()
+            && self
+                .files
+                .iter()
+                .all(|file| is_sha256_hex(&file.sha256) && !file.path.is_empty())
+    }
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default()
 }
 
 pub fn installed_identity_path(model_path: &Path) -> Result<PathBuf> {
@@ -179,31 +257,42 @@ pub fn installed_identity_path(model_path: &Path) -> Result<PathBuf> {
 /// Read and structurally validate the installed identity for a model file.
 /// Returns `None` when the record is absent, unreadable, or malformed —
 /// callers treat that the same as "identity unknown".
-pub fn read_installed_identity(model_path: &Path) -> Option<InstalledModelIdentity> {
+pub fn read_installed_identity(model_path: &Path) -> Option<InstalledArtifactRecord> {
     let identity_path = installed_identity_path(model_path).ok()?;
-    let contents = std::fs::read_to_string(&identity_path).ok()?;
-    let identity: InstalledModelIdentity = serde_json::from_str(&contents).ok()?;
-    if identity.record_schema != INSTALLED_IDENTITY_SCHEMA_VERSION
-        || !is_sha256_hex(&identity.sha256)
-        || identity.byte_size == 0
-        || identity.generation == 0
-    {
-        return None;
-    }
-    Some(identity)
+    read_artifact_record(&identity_path)
+}
+
+/// Read and structurally validate an installed artifact record at an exact
+/// path (`<model>.identity.json` for models, `record.json` for runtimes).
+pub fn read_artifact_record(record_path: &Path) -> Option<InstalledArtifactRecord> {
+    let contents = std::fs::read_to_string(record_path).ok()?;
+    let record: InstalledArtifactRecord = serde_json::from_str(&contents).ok()?;
+    record.is_structurally_valid().then_some(record)
 }
 
 pub fn write_installed_identity(
     model_path: &Path,
-    identity: &InstalledModelIdentity,
+    identity: &InstalledArtifactRecord,
 ) -> Result<()> {
     let identity_path = installed_identity_path(model_path)?;
+    write_artifact_record(&identity_path, identity)
+}
+
+/// Atomically persist an installed artifact record (temp file + rename).
+pub fn write_artifact_record(record_path: &Path, record: &InstalledArtifactRecord) -> Result<()> {
     let json =
-        serde_json::to_string_pretty(identity).context("failed to serialize model identity")?;
-    std::fs::write(&identity_path, json).with_context(|| {
+        serde_json::to_string_pretty(record).context("failed to serialize artifact record")?;
+    let temp_path = record_path.with_extension("json.tmp");
+    std::fs::write(&temp_path, json).with_context(|| {
         format!(
-            "failed to write model identity record {}",
-            identity_path.display()
+            "failed to write artifact record temp file {}",
+            temp_path.display()
+        )
+    })?;
+    std::fs::rename(&temp_path, record_path).with_context(|| {
+        format!(
+            "failed to promote artifact record {}",
+            record_path.display()
         )
     })?;
     Ok(())
@@ -225,19 +314,68 @@ pub fn delete_installed_identity(model_path: &Path) -> Result<()> {
 pub fn identity_from_catalog_model(
     model: &CatalogModel,
     catalog: &VerifiedCatalog,
-) -> InstalledModelIdentity {
-    InstalledModelIdentity {
+) -> InstalledArtifactRecord {
+    InstalledArtifactRecord {
         record_schema: INSTALLED_IDENTITY_SCHEMA_VERSION.to_owned(),
+        catalog_schema: catalog.manifest.schema_version.clone(),
         generation: catalog.generation,
         release_id: catalog.release_id.clone(),
         artifact_id: model.artifact_id.clone(),
-        variant: model.variant.clone(),
-        upstream_tag: model.upstream.tag.clone(),
-        format: model.model.format.clone(),
-        tensor_interface: model.model.tensor_interface.clone(),
-        sha256: model.archive_digest.clone(),
-        byte_size: model.byte_size,
-        compatible_runtime_ids: model.model.compatible_runtime_ids.clone(),
+        kind: "model".to_owned(),
+        target: None,
+        variant: Some(model.variant.clone()),
+        profile: Some(model.profile.clone()),
+        format: Some(model.model.format.clone()),
+        precision: Some(model.model.precision.clone()),
+        tensor_interface: Some(model.model.tensor_interface.clone()),
+        upstream_version: model.upstream.tag.clone(),
+        download_url: model.download_url.clone(),
+        archive_size: model.byte_size,
+        archive_sha256: model.archive_digest.clone(),
+        // Models are published unarchived: the single installed file has the
+        // same digest as the download payload.
+        files: vec![InstalledFileRecord {
+            path: model.filename.clone(),
+            size: model.byte_size,
+            sha256: model.archive_digest.clone(),
+        }],
+        compatible_ids: model.model.compatible_runtime_ids.clone(),
+        installed_at_unix: unix_now(),
+    }
+}
+
+pub fn record_from_catalog_runtime(
+    runtime: &CatalogRuntime,
+    catalog: &VerifiedCatalog,
+) -> InstalledArtifactRecord {
+    InstalledArtifactRecord {
+        record_schema: INSTALLED_IDENTITY_SCHEMA_VERSION.to_owned(),
+        catalog_schema: catalog.manifest.schema_version.clone(),
+        generation: catalog.generation,
+        release_id: catalog.release_id.clone(),
+        artifact_id: runtime.artifact_id.clone(),
+        kind: "runtime".to_owned(),
+        target: runtime.target_triple.clone(),
+        variant: None,
+        profile: None,
+        format: None,
+        precision: None,
+        tensor_interface: None,
+        upstream_version: runtime.runtime.version.clone(),
+        download_url: runtime.download_url.clone(),
+        archive_size: runtime.byte_size,
+        archive_sha256: runtime.archive_digest.clone(),
+        files: runtime
+            .extracted_file_digests
+            .iter()
+            .map(|(path, digest)| InstalledFileRecord {
+                path: path.clone(),
+                size: digest.size,
+                sha256: digest.sha256.clone(),
+            })
+            .collect(),
+        compatible_ids: runtime.runtime.supported_model_artifact_ids.clone(),
+        installed_at_unix: unix_now(),
     }
 }
 
@@ -494,6 +632,26 @@ fn load_embedded_catalog() -> Result<VerifiedCatalog> {
 // Model resolution
 // ---------------------------------------------------------------------------
 
+/// Resolve the runtime artifact for a target triple. Exactly one runtime per
+/// target is expected in a valid manifest.
+pub fn resolve_runtime<'a>(
+    manifest: &'a ReleaseManifest,
+    target_triple: &str,
+) -> Result<&'a CatalogRuntime> {
+    let mut matches = manifest
+        .artifacts
+        .runtimes
+        .iter()
+        .filter(|runtime| runtime.target_triple.as_deref() == Some(target_triple));
+    let resolved = matches
+        .next()
+        .with_context(|| format!("catalog has no runtime for target {target_triple}"))?;
+    if matches.next().is_some() {
+        bail!("catalog lists more than one runtime for target {target_triple}");
+    }
+    Ok(resolved)
+}
+
 pub fn resolve_model(manifest: &ReleaseManifest, variant: ModelVariant) -> Result<&CatalogModel> {
     let mut matches = manifest
         .artifacts
@@ -599,22 +757,25 @@ pub enum ModelUpdateState {
 #[derive(Debug, Clone)]
 pub struct ModelUpdateComparison {
     pub state: ModelUpdateState,
-    pub installed: Option<InstalledModelIdentity>,
+    pub installed: Option<InstalledArtifactRecord>,
 }
 
-/// Compare an installed model against a catalog artifact.
+/// Compare an installed artifact record against the catalog's current
+/// artifact for the same slot (a model variant, or the target's runtime).
 ///
-/// Implicit downgrades are rejected: when the installed identity's generation
-/// is newer than the catalog's, the catalog is stale for this model and the
-/// comparison fails instead of offering the older artifact as an "update".
-pub fn compare_installed_model(
-    installed: Option<InstalledModelIdentity>,
-    catalog_model: &CatalogModel,
+/// Implicit downgrades are rejected: when the installed record's generation
+/// is newer than the catalog's, the catalog is stale for this artifact and
+/// the comparison fails instead of offering the older artifact as an
+/// "update".
+pub fn compare_installed_artifact(
+    installed: Option<InstalledArtifactRecord>,
+    catalog_artifact_id: &str,
+    catalog_archive_digest: &str,
     catalog: &VerifiedCatalog,
-    model_file_exists: bool,
+    file_exists: bool,
 ) -> Result<ModelUpdateComparison> {
     let Some(identity) = installed else {
-        let state = if model_file_exists {
+        let state = if file_exists {
             ModelUpdateState::InstalledWithoutIdentity
         } else {
             ModelUpdateState::NotInstalled
@@ -627,14 +788,14 @@ pub fn compare_installed_model(
 
     if identity.generation > catalog.generation {
         bail!(
-            "catalog generation {} is older than the installed model generation {}; refusing implicit downgrade",
+            "catalog generation {} is older than the installed artifact generation {}; refusing implicit downgrade",
             catalog.generation,
             identity.generation
         );
     }
 
-    let state = if identity.artifact_id == catalog_model.artifact_id
-        && identity.sha256 == catalog_model.archive_digest
+    let state = if identity.artifact_id == catalog_artifact_id
+        && identity.archive_sha256 == catalog_archive_digest
     {
         ModelUpdateState::UpToDate
     } else {
@@ -645,6 +806,21 @@ pub fn compare_installed_model(
         state,
         installed: Some(identity),
     })
+}
+
+pub fn compare_installed_model(
+    installed: Option<InstalledArtifactRecord>,
+    catalog_model: &CatalogModel,
+    catalog: &VerifiedCatalog,
+    model_file_exists: bool,
+) -> Result<ModelUpdateComparison> {
+    compare_installed_artifact(
+        installed,
+        &catalog_model.artifact_id,
+        &catalog_model.archive_digest,
+        catalog,
+        model_file_exists,
+    )
 }
 
 #[cfg(test)]
@@ -872,7 +1048,7 @@ mod tests {
         let catalog = embedded_catalog();
         let model = resolve_model(&catalog.manifest, ModelVariant::Htdemucs).expect("model");
         let mut identity = identity_from_catalog_model(model, catalog);
-        identity.sha256 = "1".repeat(64);
+        identity.archive_sha256 = "1".repeat(64);
         identity.artifact_id = "htdemucs.balanced.fp32.older".to_owned();
         let comparison =
             compare_installed_model(Some(identity), model, catalog, true).expect("comparison");
@@ -885,7 +1061,7 @@ mod tests {
         let model = resolve_model(&catalog.manifest, ModelVariant::Htdemucs).expect("model");
         let mut identity = identity_from_catalog_model(model, catalog);
         identity.generation = catalog.generation + 1;
-        identity.sha256 = "1".repeat(64);
+        identity.archive_sha256 = "1".repeat(64);
         let error = compare_installed_model(Some(identity), model, catalog, true)
             .expect_err("downgrade must be rejected");
         assert!(error.to_string().contains("refusing implicit downgrade"));

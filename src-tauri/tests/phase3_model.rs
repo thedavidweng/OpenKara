@@ -20,12 +20,19 @@ fn resolves_default_demucs_model_path() {
 }
 
 #[test]
-fn managed_runtime_path_is_the_only_installation_location() {
+fn managed_runtime_installs_live_under_the_runtimes_root() {
     let app_data_dir = support::unique_temp_path("phase3-managed-runtime");
-    let runtime_path = runtime_bootstrap::managed_runtime_path(&app_data_dir);
+    let artifact_dir =
+        runtime_bootstrap::runtime_artifact_dir(&app_data_dir, "onnxruntime-test-artifact");
 
     assert_eq!(
-        runtime_path,
+        artifact_dir,
+        app_data_dir
+            .join("runtimes")
+            .join("onnxruntime-test-artifact")
+    );
+    assert_eq!(
+        runtime_bootstrap::legacy_runtime_path(&app_data_dir),
         app_data_dir
             .join("runtime")
             .join(model::ORT_RUNTIME_FILENAME)
