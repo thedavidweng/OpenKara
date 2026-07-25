@@ -1,12 +1,6 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 import en from "./en.json";
 import zh from "./zh-CN.json";
-
-const here = dirname(fileURLToPath(import.meta.url));
-const srcRoot = resolve(here, "..");
 
 // i18next resolves count-aware keys through plural suffixes, so treat a key as
 // present when either the literal key or any of its plural variants exists.
@@ -62,27 +56,35 @@ describe("locale copy", () => {
   });
 });
 
-// The parity test in this suite only compares en↔zh key sets, so a key missing
-// from BOTH locales passes silently while an inline `defaultValue` masks the gap
-// in dev. This guard scans the remote-library flow for static `t("literal")`
-// calls and fails when a referenced key (with or without a `defaultValue`) is
-// absent from either locale — the exact footgun that shipped English strings to
-// zh-CN users (issue #209).
+// Load the remote-library flow source files as raw strings at build time via
+// Vite's import.meta.glob. This intentionally avoids Node's fs/path modules,
+// which are not part of the app's DOM/bundler tsconfig (`tsconfig.json`) and
+// would fail the CI `tsc --noEmit` gate. Each pattern is an exact file so the
+// keys of the returned record double as a presence check for the flow.
+const REMOTE_FLOW_SOURCES = import.meta.glob(
+  [
+    "../components/Settings/SettingsLibrarySection.tsx",
+    "../components/Settings/SettingsRemoteCacheSection.tsx",
+    "../components/Settings/SettingsRemoteDiagnosticsSection.tsx",
+    "../components/Settings/LibrarySetup.tsx",
+    "../components/Settings/RemoteLibraryWizard.tsx",
+    "../components/Settings/remote-library-copy.ts",
+    "../components/Settings/remote-library-flow.ts",
+    "../components/Library/SongListItem.tsx",
+    "../components/Layout/GlobalProgressBar.tsx",
+    "../components/Player/RemoteReconnectIndicator.tsx",
+  ],
+  { query: "?raw", import: "default", eager: true },
+) as Record<string, string>;
+
+// The parity test above only compares en↔zh key sets, so a key missing from
+// BOTH locales passes silently while an inline `defaultValue` masks the gap in
+// dev. This guard scans the remote-library flow for static `t("literal")` calls
+// and fails when a referenced key (with or without a `defaultValue`) is absent
+// from either locale — the exact footgun that shipped English strings to zh-CN
+// users (issue #209).
 describe("remote-library flow i18n completeness", () => {
-  // Files that make up the remote-repository setup, wizard, progress, and
-  // diagnostics flow flagged in issue #209.
-  const REMOTE_FLOW_FILES = [
-    "components/Settings/SettingsLibrarySection.tsx",
-    "components/Settings/SettingsRemoteCacheSection.tsx",
-    "components/Settings/SettingsRemoteDiagnosticsSection.tsx",
-    "components/Settings/LibrarySetup.tsx",
-    "components/Settings/RemoteLibraryWizard.tsx",
-    "components/Settings/remote-library-copy.ts",
-    "components/Settings/remote-library-flow.ts",
-    "components/Library/SongListItem.tsx",
-    "components/Layout/GlobalProgressBar.tsx",
-    "components/Player/RemoteReconnectIndicator.tsx",
-  ];
+  const EXPECTED_FILE_COUNT = 10;
 
   // Matches `t("literal"` / `t('literal'` (allowing whitespace/newlines after
   // the paren). Dynamically built keys — `t(variable)` — are intentionally
@@ -91,8 +93,7 @@ describe("remote-library flow i18n completeness", () => {
 
   function collectKeys(): string[] {
     const keys = new Set<string>();
-    for (const relative of REMOTE_FLOW_FILES) {
-      const source = readFileSync(resolve(srcRoot, relative), "utf8");
+    for (const source of Object.values(REMOTE_FLOW_SOURCES)) {
       for (const match of source.matchAll(T_CALL)) {
         keys.add(match[1]);
       }
@@ -100,9 +101,13 @@ describe("remote-library flow i18n completeness", () => {
     return [...keys].sort();
   }
 
+  test("resolves every remote-library flow source file", () => {
+    // Guards against a moved/renamed file silently shrinking the scan surface.
+    expect(Object.keys(REMOTE_FLOW_SOURCES)).toHaveLength(EXPECTED_FILE_COUNT);
+  });
+
   test("every referenced key resolves in en.json and zh-CN.json", () => {
     const keys = collectKeys();
-    // Guard against the regex silently matching nothing (e.g. a moved file).
     expect(keys.length).toBeGreaterThan(0);
 
     const missing = keys
