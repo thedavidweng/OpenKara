@@ -76,6 +76,53 @@ fn imports_fixture_audio_and_persists_library_rows() {
     assert_eq!(library.len(), 2);
 }
 
+/// #206: a truncated/partial file left at the content-addressed media path from
+/// an interrupted copy must not be silently accepted on re-import. The import
+/// must re-copy so the on-disk media ends up byte-identical (equal size and
+/// sha256) to the source.
+#[test]
+fn reimport_repairs_truncated_content_addressed_media() {
+    let connection = Connection::open_in_memory().expect("in-memory database should open");
+    cache::apply_migrations(&connection).expect("migrations should succeed");
+    let (_tmp, library) = temp_library();
+
+    let source = fixture_path("fixture.mp3");
+    let source_bytes = fs::read(&source).expect("fixture bytes should read");
+
+    // First import lands a complete copy at the canonical path.
+    let first = import_songs_from_paths(&connection, &library, std::slice::from_ref(&source));
+    assert_eq!(first.imported.len(), 1);
+    let media_rel = first.imported[0]
+        .file_path
+        .clone()
+        .expect("imported song should have a file path");
+    let media_abs = library.resolve(&media_rel);
+    assert_eq!(
+        fs::read(&media_abs).expect("media bytes should read"),
+        source_bytes,
+        "first import should copy the source verbatim"
+    );
+
+    // Simulate a truncated leftover from a crash/ENOSPC mid-copy: the file
+    // "exists" at the canonical path but holds fewer bytes than the source.
+    fs::write(&media_abs, &source_bytes[..source_bytes.len() / 2])
+        .expect("truncation should write");
+    assert!(
+        fs::metadata(&media_abs).unwrap().len() < source_bytes.len() as u64,
+        "media file should now be truncated"
+    );
+
+    // Re-importing the same source must repair the truncated file.
+    let second = import_songs_from_paths(&connection, &library, std::slice::from_ref(&source));
+    assert_eq!(second.imported.len(), 1);
+    assert!(second.failed.is_empty());
+    assert_eq!(
+        fs::read(&media_abs).expect("repaired media bytes should read"),
+        source_bytes,
+        "re-import must repair the truncated media to match the source exactly"
+    );
+}
+
 #[test]
 fn reports_failures_without_aborting_other_imports() {
     let connection = Connection::open_in_memory().expect("in-memory database should open");

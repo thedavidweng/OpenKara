@@ -380,6 +380,109 @@ fn downgrade_to_two_stem_rewrites_accompaniment_metadata() {
     cleanup_dir(&library_root_path);
 }
 
+/// #207: `downgrade_to_two_stem` must report the NET disk reclaimed, i.e. the
+/// deleted drums+bass+other bytes minus the newly written accompaniment.ogg —
+/// not the gross sum of the deleted stems.
+#[test]
+fn downgrade_freed_bytes_nets_out_written_accompaniment() {
+    let connection = Connection::open_in_memory().expect("in-memory database should open");
+    cache::apply_migrations(&connection).expect("migrations should succeed");
+    let library = unique_library_root();
+    let library_root_path = library.root().to_owned();
+    let song = tagged_song_in_library(&library, "song-downgrade-net");
+    cache::upsert_song(&connection, &song).expect("song insert should succeed");
+
+    let cached = populate_stem_cache(
+        &connection,
+        &library,
+        &song,
+        "song-downgrade-net",
+        StemMode::FourStem,
+        "htdemucs",
+    );
+
+    // Sizes of the individual stems on disk, captured before they are deleted.
+    let file_len = |rel: &str| {
+        fs::metadata(library.resolve(rel))
+            .expect("stem metadata")
+            .len()
+    };
+    let deleted_bytes = file_len(cached.entry.drums_path.as_ref().unwrap())
+        + file_len(cached.entry.bass_path.as_ref().unwrap())
+        + file_len(cached.entry.other_path.as_ref().unwrap());
+
+    let (updated_entry, freed_bytes) =
+        stems::downgrade_to_two_stem(&connection, &library, "song-downgrade-net")
+            .expect("downgrade should succeed");
+
+    let accompaniment_bytes = fs::metadata(library.resolve(&updated_entry.accomp_path))
+        .expect("accompaniment metadata")
+        .len();
+
+    assert!(
+        accompaniment_bytes > 0,
+        "a new accompaniment.ogg should have been written"
+    );
+    assert_eq!(
+        freed_bytes,
+        deleted_bytes.saturating_sub(accompaniment_bytes),
+        "freed bytes must net out the newly written accompaniment"
+    );
+    assert!(
+        freed_bytes < deleted_bytes,
+        "net savings must be less than the gross deleted-stem sum"
+    );
+
+    cleanup_dir(&library_root_path);
+}
+
+/// #207: `estimate_downgrade_savings` must net out an accompaniment estimate
+/// (the existing vocals stem is used as a same-encoding proxy) rather than
+/// returning the raw drums+bass+other sum.
+#[test]
+fn estimate_downgrade_savings_nets_out_accompaniment_proxy() {
+    let connection = Connection::open_in_memory().expect("in-memory database should open");
+    cache::apply_migrations(&connection).expect("migrations should succeed");
+    let library = unique_library_root();
+    let library_root_path = library.root().to_owned();
+    let song = tagged_song_in_library(&library, "song-estimate-net");
+    cache::upsert_song(&connection, &song).expect("song insert should succeed");
+
+    let cached = populate_stem_cache(
+        &connection,
+        &library,
+        &song,
+        "song-estimate-net",
+        StemMode::FourStem,
+        "htdemucs",
+    );
+
+    let file_len = |rel: &str| {
+        fs::metadata(library.resolve(rel))
+            .expect("stem metadata")
+            .len()
+    };
+    let deleted_bytes = file_len(cached.entry.drums_path.as_ref().unwrap())
+        + file_len(cached.entry.bass_path.as_ref().unwrap())
+        + file_len(cached.entry.other_path.as_ref().unwrap());
+    let vocals_proxy = file_len(&cached.entry.vocals_path);
+
+    let estimate =
+        stems::estimate_downgrade_savings(&connection, &library).expect("estimate should succeed");
+
+    assert_eq!(
+        estimate,
+        deleted_bytes.saturating_sub(vocals_proxy),
+        "estimate must net out the vocals-sized accompaniment proxy"
+    );
+    assert!(
+        estimate < deleted_bytes,
+        "estimate must be less than the gross deleted-stem sum"
+    );
+
+    cleanup_dir(&library_root_path);
+}
+
 /// Verify that the streaming OGG writer produces a valid file that can
 /// be decoded back, confirming the streaming path produces correct output.
 #[test]
