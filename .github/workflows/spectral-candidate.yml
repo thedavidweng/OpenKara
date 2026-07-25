@@ -127,21 +127,28 @@ jobs:
           SPECTRAL_SHA256: ${{ steps.spectral.outputs.sha256 }}
           SPECTRAL_FILE: ${{ steps.spectral.outputs.file }}
         run: |
+          # sha256sum -c is GNU-only (macOS runners ship a BSD variant without
+          # check mode); hash with Node streaming instead — identical on all
+          # five targets.
+          sha256() {
+            node -e 'const{createHash}=require("crypto");const h=createHash("sha256");require("fs").createReadStream(process.argv[1]).on("data",(d)=>h.update(d)).on("end",()=>console.log(h.digest("hex"))).on("error",()=>process.exit(1))' "$1"
+          }
+          verified() { [ -f "$1" ] && [ "$(sha256 "$1")" = "$2" ]; }
           mkdir -p src-tauri/models
-          if ! echo "$WAVEFORM_FILE_SHA256  src-tauri/models/$WAVEFORM_FILE" | sha256sum -c --status 2>/dev/null; then
+          if ! verified "src-tauri/models/$WAVEFORM_FILE" "$WAVEFORM_FILE_SHA256"; then
             curl -L --fail "$WAVEFORM_URL" -o /tmp/waveform-download
-            echo "$WAVEFORM_SHA256  /tmp/waveform-download" | sha256sum -c
+            verified /tmp/waveform-download "$WAVEFORM_SHA256" || { echo "waveform download digest mismatch"; exit 1; }
             if [ "$WAVEFORM_ARCHIVED" = "true" ]; then
               tar -xzf /tmp/waveform-download -C src-tauri/models "$WAVEFORM_FILE"
             else
               mv /tmp/waveform-download "src-tauri/models/$WAVEFORM_FILE"
             fi
           fi
-          echo "$WAVEFORM_FILE_SHA256  src-tauri/models/$WAVEFORM_FILE" | sha256sum -c
-          if ! echo "$SPECTRAL_SHA256  src-tauri/models/$SPECTRAL_FILE" | sha256sum -c --status 2>/dev/null; then
+          verified "src-tauri/models/$WAVEFORM_FILE" "$WAVEFORM_FILE_SHA256" || { echo "waveform model digest mismatch"; exit 1; }
+          if ! verified "src-tauri/models/$SPECTRAL_FILE" "$SPECTRAL_SHA256"; then
             curl -L --fail "$SPECTRAL_URL" -o "src-tauri/models/$SPECTRAL_FILE"
           fi
-          echo "$SPECTRAL_SHA256  src-tauri/models/$SPECTRAL_FILE" | sha256sum -c
+          verified "src-tauri/models/$SPECTRAL_FILE" "$SPECTRAL_SHA256" || { echo "spectral model digest mismatch"; exit 1; }
 
       - name: Restore ONNX Runtime cache
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
