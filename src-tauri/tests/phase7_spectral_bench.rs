@@ -147,20 +147,14 @@ fn run_mode(
     (outcome.frames_written, chunk_times)
 }
 
-#[test]
-fn spectral_candidate_bench() {
-    let Some(model_path) = std::env::var_os("OPENKARA_SPECTRAL_MODEL") else {
-        eprintln!("skipping spectral bench: OPENKARA_SPECTRAL_MODEL is not set");
-        return;
-    };
-    let model_path = PathBuf::from(model_path);
-    initialize_test_runtime();
-
-    let artifact_bytes = fs::metadata(&model_path).expect("model metadata").len();
-
+/// Bench one execution-provider preference end to end.
+fn bench_preference(
+    model_path: &Path,
+    preference: ExecutionProviderPreference,
+) -> serde_json::Value {
     let cold_start = Instant::now();
-    let model = model::load_from_path(&model_path, ExecutionProviderPreference::Cpu)
-        .expect("spectral model should load");
+    let model = model::load_from_path(model_path, preference)
+        .expect("spectral model should load via the preference's fallback chain");
     let cold_load_s = cold_start.elapsed().as_secs_f64();
     // A loaded model always carries a verified spectral interface.
     let segment = model.spectral.segment_frames;
@@ -194,11 +188,8 @@ fn spectral_candidate_bench() {
         median_and_p95(warm)
     };
 
-    let report = serde_json::json!({
-        "schema_version": "openkara.spectral-bench/v1",
-        "target": format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
-        "model_path": model_path.display().to_string(),
-        "artifact_bytes": artifact_bytes,
+    serde_json::json!({
+        "preference": preference.as_str(),
         "segment_frames": segment,
         "cold_load_s": cold_load_s,
         "first_window_s": first_window_s,
@@ -206,7 +197,42 @@ fn spectral_candidate_bench() {
         "warm_p95_s": warm_p95_s,
         "rtf_four_stem": four_wall / audio_seconds,
         "rtf_two_stem": two_wall / audio_seconds,
+    })
+}
+
+#[test]
+fn spectral_candidate_bench() {
+    let Some(model_path) = std::env::var_os("OPENKARA_SPECTRAL_MODEL") else {
+        eprintln!("skipping spectral bench: OPENKARA_SPECTRAL_MODEL is not set");
+        return;
+    };
+    let model_path = PathBuf::from(model_path);
+    initialize_test_runtime();
+
+    let artifact_bytes = fs::metadata(&model_path).expect("model metadata").len();
+
+    // Baseline (CPU EP) plus the product's platform default (XNNPACK on
+    // unix, DirectML on Windows) — measured side by side so per-target
+    // provider selection (#170) is data-driven from every dispatch of the
+    // cross-target workflow, with no manual experiments. On machines
+    // without the accelerator the default preference measures its fallback
+    // chain, which is exactly what users on that hardware experience.
+    let cpu = bench_preference(&model_path, ExecutionProviderPreference::Cpu);
+    let platform_default = ExecutionProviderPreference::default_for_current_platform();
+    let accelerated = if platform_default == ExecutionProviderPreference::Cpu {
+        serde_json::Value::Null
+    } else {
+        bench_preference(&model_path, platform_default)
+    };
+
+    let report = serde_json::json!({
+        "schema_version": "openkara.spectral-bench/v2",
+        "target": format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
+        "model_path": model_path.display().to_string(),
+        "artifact_bytes": artifact_bytes,
         "peak_rss_kb": peak_rss_kb(),
+        "cpu": cpu,
+        "platform_default": accelerated,
     });
     let line = serde_json::to_string(&report).expect("bench json");
     println!("SPECTRAL_BENCH_JSON: {line}");
