@@ -43,7 +43,9 @@ const catalogRuntime = (target) => {
     (runtime) => runtime.target_triple === target,
   );
   if (matches.length !== 1) {
-    throw new Error(`catalog snapshot must list exactly one runtime for ${target}`);
+    throw new Error(
+      `catalog snapshot must list exactly one runtime for ${target}`,
+    );
   }
   return matches[0];
 };

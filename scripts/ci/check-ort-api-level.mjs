@@ -12,7 +12,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT_DIR = fileURLToPath(new URL("../..", import.meta.url));
-const cargoToml = readFileSync(join(ROOT_DIR, "src-tauri", "Cargo.toml"), "utf8");
+const cargoToml = readFileSync(
+  join(ROOT_DIR, "src-tauri", "Cargo.toml"),
+  "utf8",
+);
 const manifest = JSON.parse(
   readFileSync(
     join(ROOT_DIR, "src-tauri", "catalog", "release-manifest.json"),
@@ -24,7 +27,9 @@ const ortLine = cargoToml
   .split("\n")
   .find((line) => line.trimStart().startsWith("ort = "));
 if (!ortLine) {
-  throw new Error("failed to find the `ort` dependency in src-tauri/Cargo.toml");
+  throw new Error(
+    "failed to find the `ort` dependency in src-tauri/Cargo.toml",
+  );
 }
 
 const apiFeatures = [...ortLine.matchAll(/"api-(\d+)"/g)].map((match) =>
