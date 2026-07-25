@@ -110,12 +110,53 @@ pub struct CatalogModel {
     pub profile: String,
     pub filename: String,
     pub byte_size: u64,
-    /// For models this is the digest of the raw `.onnx` payload (models are
-    /// published unarchived; the catalog reuses the archive field name).
+    /// Digest of the downloaded payload. For unarchived models this equals
+    /// the `.onnx` file digest; for compressed models it is the archive.
     pub archive_digest: String,
     pub download_url: String,
+    /// Per-file digests of the installed content. For unarchived models this
+    /// holds the single `.onnx` entry.
+    pub extracted_file_digests: std::collections::BTreeMap<String, CatalogFileDigest>,
+    #[serde(default)]
+    pub deprecation: CatalogDeprecation,
     pub upstream: CatalogUpstream,
     pub model: CatalogModelMetadata,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct CatalogDeprecation {
+    #[serde(default)]
+    pub deprecated: bool,
+    #[serde(default)]
+    pub replacement_artifact_id: Option<String>,
+}
+
+impl CatalogModel {
+    /// The installed `.onnx` file this artifact provides. Compressed
+    /// artifacts extract it from the archive; raw artifacts ARE it.
+    pub fn primary_model_file(&self) -> Result<(&str, &CatalogFileDigest)> {
+        let mut onnx_entries = self
+            .extracted_file_digests
+            .iter()
+            .filter(|(path, _)| path.ends_with(".onnx"));
+        let (path, digest) = onnx_entries
+            .next()
+            .with_context(|| format!("model {} declares no .onnx file", self.artifact_id))?;
+        if onnx_entries.next().is_some() {
+            bail!(
+                "model {} declares more than one .onnx file",
+                self.artifact_id
+            );
+        }
+        Ok((path.as_str(), digest))
+    }
+
+    /// True when the download payload is an archive that must be extracted.
+    pub fn is_archived(&self) -> bool {
+        self.filename.ends_with(".tar.gz")
+            || self.filename.ends_with(".tgz")
+            || self.filename.ends_with(".zip")
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -332,13 +373,15 @@ pub fn identity_from_catalog_model(
         download_url: model.download_url.clone(),
         archive_size: model.byte_size,
         archive_sha256: model.archive_digest.clone(),
-        // Models are published unarchived: the single installed file has the
-        // same digest as the download payload.
-        files: vec![InstalledFileRecord {
-            path: model.filename.clone(),
-            size: model.byte_size,
-            sha256: model.archive_digest.clone(),
-        }],
+        files: model
+            .extracted_file_digests
+            .iter()
+            .map(|(path, digest)| InstalledFileRecord {
+                path: path.clone(),
+                size: digest.size,
+                sha256: digest.sha256.clone(),
+            })
+            .collect(),
         compatible_ids: model.model.compatible_runtime_ids.clone(),
         installed_at_unix: unix_now(),
     }
@@ -541,6 +584,7 @@ fn validate_manifest(manifest: &ReleaseManifest) -> Result<()> {
                 model.filename
             );
         }
+        model.primary_model_file()?;
         if model.model.format != "onnx" {
             bail!(
                 "model {} format {} is not consumable (expected onnx)",
@@ -652,22 +696,19 @@ pub fn resolve_runtime<'a>(
     Ok(resolved)
 }
 
+/// Resolve the preferred artifact for a variant. Newer generations publish
+/// several deliveries per variant (raw kept for older consumers, compressed
+/// preferred); among non-deprecated candidates the smallest download wins —
+/// deterministic, and exactly the upstream preference order (compressed
+/// dual < deduplicated raw < raw).
 pub fn resolve_model(manifest: &ReleaseManifest, variant: ModelVariant) -> Result<&CatalogModel> {
-    let mut matches = manifest
+    manifest
         .artifacts
         .models
         .iter()
-        .filter(|model| model.variant == variant.as_str());
-    let resolved = matches
-        .next()
-        .with_context(|| format!("catalog has no model for variant {}", variant.as_str()))?;
-    if matches.next().is_some() {
-        bail!(
-            "catalog lists more than one model for variant {}",
-            variant.as_str()
-        );
-    }
-    Ok(resolved)
+        .filter(|model| model.variant == variant.as_str() && !model.deprecation.deprecated)
+        .min_by_key(|model| model.byte_size)
+        .with_context(|| format!("catalog has no model for variant {}", variant.as_str()))
 }
 
 // ---------------------------------------------------------------------------
@@ -854,8 +895,10 @@ mod tests {
     #[test]
     fn embedded_snapshot_is_self_consistent() {
         let catalog = load_embedded_catalog().expect("embedded catalog must load");
-        assert!(catalog.generation >= 3);
-        assert_eq!(catalog.manifest.artifacts.models.len(), 2);
+        assert!(catalog.generation >= 6);
+        // Generations publish several deliveries per variant (raw kept for
+        // older consumers, compressed preferred); both variants must resolve.
+        assert!(catalog.manifest.artifacts.models.len() >= 2);
         assert_eq!(catalog.manifest.artifacts.runtimes.len(), 5);
         assert!(!catalog.manifest.compatibility.is_empty());
     }
@@ -865,13 +908,21 @@ mod tests {
         let catalog = embedded_catalog();
         let htdemucs =
             resolve_model(&catalog.manifest, ModelVariant::Htdemucs).expect("htdemucs model");
-        assert_eq!(htdemucs.filename, "htdemucs.onnx");
+        // The compressed dual delivery is the smallest non-deprecated
+        // artifact and therefore the preferred resolution.
+        assert!(htdemucs.is_archived(), "compressed delivery preferred");
+        assert!(!htdemucs.deprecation.deprecated);
+        let (model_file, _) = htdemucs.primary_model_file().expect("primary file");
+        assert!(model_file.ends_with(".onnx"));
         assert_eq!(htdemucs.model.precision, "fp32");
         assert!(!htdemucs.model.compatible_runtime_ids.is_empty());
 
         let ft = resolve_model(&catalog.manifest, ModelVariant::HtdemucsFt).expect("ft model");
-        assert_eq!(ft.filename, "htdemucs_ft.onnx");
+        assert!(!ft.deprecation.deprecated);
         assert_ne!(ft.artifact_id, htdemucs.artifact_id);
+        // The smallest ft delivery is the 654 MB dual archive, not the
+        // deprecated 1.4 GB raw or the 1.1 GB dedup.
+        assert!(ft.is_archived());
     }
 
     #[test]

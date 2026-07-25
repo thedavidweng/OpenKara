@@ -73,7 +73,7 @@ impl AppShell {
         match crate::separator::bootstrap::resolve_model_installation(
             &managed,
             &dev_path,
-            &descriptor.sha256,
+            &descriptor.file_sha256,
         )
         .map_err(|error| crate::commands::error::internal_error(error.to_string()))?
         {

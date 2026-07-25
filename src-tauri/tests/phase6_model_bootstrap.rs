@@ -139,9 +139,18 @@ fn descriptors_resolve_from_the_embedded_catalog_snapshot() {
                 .expect("embedded catalog must resolve every variant");
 
         assert_eq!(descriptor.download_url, catalog_model.download_url);
-        assert_eq!(descriptor.sha256, catalog_model.archive_digest);
-        assert_eq!(descriptor.filename, catalog_model.filename);
-        assert_eq!(descriptor.byte_size, catalog_model.byte_size);
+        assert_eq!(descriptor.download_sha256, catalog_model.archive_digest);
+        assert_eq!(descriptor.download_filename, catalog_model.filename);
+        assert_eq!(descriptor.download_size, catalog_model.byte_size);
+        let (model_file, model_digest) = catalog_model
+            .primary_model_file()
+            .expect("catalog model must declare its .onnx file");
+        assert_eq!(descriptor.filename, model_file);
+        assert_eq!(descriptor.file_sha256, model_digest.sha256);
+        assert_eq!(
+            descriptor.archived,
+            catalog_model.filename.ends_with(".tar.gz")
+        );
         assert_eq!(descriptor.artifact_id, catalog_model.artifact_id);
         assert_eq!(descriptor.upstream_tag, catalog_model.upstream.tag);
         assert!(
@@ -300,7 +309,11 @@ fn delete_model_file_removes_verification_manifest() {
 
     bootstrap::install_verified_model_bytes(&managed_path, payload, &sha256_hex(payload))
         .expect("verified model should install with manifest");
-    let manifest_path = managed_path.with_file_name("htdemucs.onnx.verified.json");
+    let manifest_filename = format!(
+        "{}.verified.json",
+        bootstrap::descriptor_for(ModelVariant::Htdemucs).filename
+    );
+    let manifest_path = managed_path.with_file_name(manifest_filename);
     assert!(manifest_path.exists());
 
     bootstrap::delete_model_file(&temp_dir, ModelVariant::Htdemucs)

@@ -36,9 +36,7 @@ fn cleanup_dir(path: &Path) {
 }
 
 fn model_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("models")
-        .join("htdemucs.onnx")
+    openkara_lib::separator::model::default_model_path()
 }
 
 fn initialize_test_runtime() {

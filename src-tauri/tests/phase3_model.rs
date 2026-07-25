@@ -3,7 +3,7 @@ mod support;
 use std::path::PathBuf;
 
 use openkara_lib::{
-    config::ExecutionProviderPreference,
+    config::{ExecutionProviderPreference, ModelVariant},
     separator::{model, runtime_bootstrap},
 };
 
@@ -15,7 +15,9 @@ fn repo_root() -> PathBuf {
 fn resolves_default_demucs_model_path() {
     let model_path = model::default_model_path();
 
-    assert!(model_path.ends_with("src-tauri/models/htdemucs.onnx"));
+    let expected_name =
+        &openkara_lib::separator::bootstrap::descriptor_for(ModelVariant::Htdemucs).filename;
+    assert!(model_path.ends_with(format!("src-tauri/models/{expected_name}")));
     assert!(model_path.exists());
 }
 
@@ -52,7 +54,7 @@ fn initialize_test_runtime() {
 fn loads_embedded_demucs_model_session() {
     initialize_test_runtime();
     let loaded = model::load_from_path(
-        &repo_root().join("models").join("htdemucs.onnx"),
+        &model::default_model_path(),
         ExecutionProviderPreference::Cpu,
     )
     .expect("demucs model should load");
@@ -101,7 +103,7 @@ fn describes_directml_full_fallback_provider_path() {
 fn loads_embedded_demucs_model_with_xnnpack_preference() {
     initialize_test_runtime();
     let loaded = model::load_from_path(
-        &repo_root().join("models").join("htdemucs.onnx"),
+        &model::default_model_path(),
         ExecutionProviderPreference::Xnnpack,
     )
     .expect("demucs model should load with XNNPACK preference");

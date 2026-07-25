@@ -119,7 +119,7 @@ pub fn ensure_active_model_ready_or_install_blocking(
     match separator::bootstrap::resolve_model_installation(
         &managed_path,
         &dev_path,
-        &descriptor.sha256,
+        &descriptor.file_sha256,
     )
     .map_err(|error| internal_error(format!("failed to inspect model status: {error}")))?
     {
@@ -201,7 +201,7 @@ pub fn sync_active_model_bootstrap_status(
         app_data_dir,
         &development_model_path,
         active_variant,
-        &descriptor.sha256,
+        &descriptor.file_sha256,
     )
     .map_err(|error| internal_error(format!("failed to derive bootstrap status: {error}")))?;
 
@@ -309,7 +309,7 @@ pub fn get_model_status(
     let resolved = separator::bootstrap::resolve_model_installation(
         &model_path,
         &app_data_dir.join("__no_dev_fallback_model__"),
-        &descriptor.sha256,
+        &descriptor.file_sha256,
     )
     .map_err(|error| internal_error(format!("failed to inspect model status: {error}")))?;
     let (downloaded, legacy_install_present) = match resolved {
@@ -399,7 +399,7 @@ pub async fn check_model_updates(state: State<'_, AppState>) -> CommandResult<Mo
                     let matches_pin = separator::bootstrap::resolve_existing_model_path(
                         &model_path,
                         &app_data_dir.join("__no_dev_fallback_model__"),
-                        &descriptor.sha256,
+                        &descriptor.file_sha256,
                     )
                     .ok()
                     .flatten()
@@ -476,7 +476,7 @@ pub fn download_model(
     // The download targets one exact artifact. "Already installed" means the
     // managed file matches THAT artifact's digest — an identity-verified
     // older install must not short-circuit an update download.
-    if separator::bootstrap::model_matches_digest(&model_path, &descriptor.sha256)
+    if separator::bootstrap::model_matches_digest(&model_path, &descriptor.file_sha256)
         .map_err(|error| internal_error(format!("failed to inspect model status: {error}")))?
     {
         return Ok(ready_status(model_path.display().to_string()));

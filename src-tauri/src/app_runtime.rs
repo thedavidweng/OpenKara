@@ -460,7 +460,7 @@ fn build_startup_model_bootstrap(
         app_data_dir,
         &separator::model::default_model_path_for_filename(&descriptor.filename),
         active_variant,
-        &descriptor.sha256,
+        &descriptor.file_sha256,
     )?;
 
     Ok(StartupBootstrapResources {

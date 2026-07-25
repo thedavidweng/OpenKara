@@ -8,8 +8,6 @@ use std::{
     time::Instant,
 };
 
-pub const EMBEDDED_MODEL_FILENAME: &str = "htdemucs.onnx";
-
 #[cfg(target_os = "windows")]
 pub const ORT_RUNTIME_FILENAME: &str = "onnxruntime.dll";
 #[cfg(target_os = "linux")]
@@ -61,8 +59,12 @@ pub fn default_model_path_for_filename(filename: &str) -> PathBuf {
         .join(filename)
 }
 
+/// The development-fallback path of the standard model, resolved through
+/// the catalog descriptor so the filename tracks the pinned artifact.
 pub fn default_model_path() -> PathBuf {
-    default_model_path_for_filename(EMBEDDED_MODEL_FILENAME)
+    let descriptor =
+        crate::separator::bootstrap::descriptor_for(crate::config::ModelVariant::Htdemucs);
+    default_model_path_for_filename(&descriptor.filename)
 }
 
 /// The runtime library committed into this process, when one is loaded.

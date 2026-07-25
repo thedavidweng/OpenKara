@@ -91,7 +91,7 @@ fn identity_verified_model_stays_ready_when_pin_moves() {
     let resolution = bootstrap::resolve_model_installation(
         &managed_path,
         &temp_dir.join("__no_dev_fallback__"),
-        &descriptor.sha256,
+        &descriptor.file_sha256,
     )
     .expect("resolution should succeed");
 
@@ -122,7 +122,7 @@ fn tampered_file_with_identity_record_is_not_ready() {
     let resolution = bootstrap::resolve_model_installation(
         &managed_path,
         &temp_dir.join("__no_dev_fallback__"),
-        &descriptor.sha256,
+        &descriptor.file_sha256,
     )
     .expect("resolution should succeed");
 
@@ -218,8 +218,8 @@ fn embedded_catalog_resolves_offline_for_both_variants() {
     for variant in [ModelVariant::Htdemucs, ModelVariant::HtdemucsFt] {
         let descriptor = bootstrap::descriptor_for(variant);
         assert!(!descriptor.download_url.is_empty());
-        assert_eq!(descriptor.sha256.len(), 64);
-        assert!(descriptor.byte_size > 0);
+        assert_eq!(descriptor.file_sha256.len(), 64);
+        assert!(descriptor.download_size > 0);
         assert!(!descriptor.identity.compatible_ids.is_empty());
     }
 }

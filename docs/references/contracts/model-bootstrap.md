@@ -56,7 +56,17 @@
   后才解析**；拒绝 generation 低于内嵌快照的指针（stable 通道单调递增）。
 - 清单结构校验：artifact ID 唯一、digest 为 64 位十六进制、URL 必须 HTTPS、
   `tensor_interface` 必须为 `waveform`、每个模型的
-  `compatible_runtime_ids` 非空且指向已知 runtime、兼容性边非空。
+  `compatible_runtime_ids` 非空且指向已知 runtime、兼容性边非空、每个模型
+  必须声明恰好一个 `.onnx` 安装文件。
+- **多工件解析**（generation ≥ 5）：同一变体可有多个交付形态（raw 保留给旧
+  消费者、压缩 dual 为首选）。确定性规则：非弃用工件中**下载体积最小者**
+  胜出——与上游偏好序一致（压缩 dual < 去重 raw < raw）。
+- **压缩交付**：下载负载按 `archive_digest` 验证，安全解压后再按
+  `extracted_file_digests` 验证安装的 `.onnx`；raw 交付两者为同一字节。
+- **dual 双输出模型**：`outputs[0]=[1,4,2,N]` 四轨堆叠 +
+  `outputs[1]=[1,2,2,N]`（vocals/accompaniment）。TwoStem 直接读输出 1（无
+  需三轨求和下混），FourStem 读输出 0。推理层按形状识别
+  （`ModelOutputContract::DualStacked`），与输出名无关。
 - 每次成功安装都会在模型旁写入 `<model>.identity.json`
   （schema `openkara.app/installed-model-v1`），记录 generation、release ID、
   artifact ID、上游 tag、digest、字节数与兼容 runtime 列表。
