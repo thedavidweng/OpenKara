@@ -96,12 +96,14 @@ jobs:
       - name: Resolve spectral candidate from the ${{ inputs.channel }} channel
         id: spectral
         shell: bash
+        env:
+          CHANNEL: ${{ inputs.channel }}
         run: |
           {
-            echo "url=$(node scripts/fetch-candidate-model.mjs --channel "${{ inputs.channel }}" --field url)"
-            echo "sha256=$(node scripts/fetch-candidate-model.mjs --channel "${{ inputs.channel }}" --field sha256)"
-            echo "file=$(node scripts/fetch-candidate-model.mjs --channel "${{ inputs.channel }}" --field filename)"
-            echo "release=$(node scripts/fetch-candidate-model.mjs --channel "${{ inputs.channel }}" --field release_id)"
+            echo "url=$(node scripts/fetch-candidate-model.mjs --channel "$CHANNEL" --field url)"
+            echo "sha256=$(node scripts/fetch-candidate-model.mjs --channel "$CHANNEL" --field sha256)"
+            echo "file=$(node scripts/fetch-candidate-model.mjs --channel "$CHANNEL" --field filename)"
+            echo "release=$(node scripts/fetch-candidate-model.mjs --channel "$CHANNEL" --field release_id)"
           } >> "$GITHUB_OUTPUT"
 
       - name: Restore model cache
@@ -177,10 +179,12 @@ jobs:
         env:
           OPENKARA_SPECTRAL_MODEL: ${{ github.workspace }}/src-tauri/models/${{ steps.spectral.outputs.file }}
           OPENKARA_BENCH_OUT: ${{ github.workspace }}/spectral-bench-${{ matrix.ort_target }}.json
+          BENCH_TARGET: ${{ matrix.ort_target }}
+          BENCH_RELEASE: ${{ steps.spectral.outputs.release }}
         run: |
           cargo test -q --release --test phase7_spectral_bench -- --nocapture
           {
-            echo '### Spectral candidate bench (${{ matrix.ort_target }}, release ${{ steps.spectral.outputs.release }})'
+            echo "### Spectral candidate bench (${BENCH_TARGET}, release ${BENCH_RELEASE})"
             echo '```json'
             cat "$OPENKARA_BENCH_OUT"
             echo '```'
