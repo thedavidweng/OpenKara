@@ -71,9 +71,13 @@ export function SettingsRuntimeSection() {
       : null;
 
   const report = update?.status === "checked" ? update.report : null;
+  // A staged candidate supersedes the update CTA: showing both a Restart
+  // button and an enabled Update button would offer a redundant re-download
+  // of the runtime that is already staged.
   const updateAvailable =
-    report?.state === "update_available" ||
-    report?.state === "installed_without_identity";
+    (report?.state === "update_available" ||
+      report?.state === "installed_without_identity") &&
+    !restartRequired;
   const downloadingCandidate = runtimeState === "downloading_candidate";
 
   return (

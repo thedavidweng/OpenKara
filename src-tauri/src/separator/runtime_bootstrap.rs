@@ -86,10 +86,21 @@ pub struct RuntimeSlots {
     pub previous: Option<String>,
     /// True between persisting a candidate promotion and proving the
     /// promoted library loads. A pending marker found at startup means the
-    /// previous activation crashed and must be rolled back.
+    /// previous launch did not persist a success acknowledgement.
     pub activation_pending: bool,
+    /// Number of launches that attempted to prove the pending runtime.
+    /// A pending marker with attempts left is retried (a successful load
+    /// whose acknowledgement failed to persist must not lose the runtime);
+    /// exhausted attempts mean the load itself is crashing and the
+    /// activation rolls back.
+    #[serde(default)]
+    pub activation_attempts: u32,
     pub last_failure: Option<ActivationFailure>,
 }
+
+/// One promotion launch plus one retry launch. A load that crashes the
+/// process twice in a row is treated as failed.
+const MAX_ACTIVATION_ATTEMPTS: u32 = 2;
 
 impl Default for RuntimeSlots {
     fn default() -> Self {
@@ -99,6 +110,7 @@ impl Default for RuntimeSlots {
             candidate: None,
             previous: None,
             activation_pending: false,
+            activation_attempts: 0,
             last_failure: None,
         }
     }
@@ -329,20 +341,47 @@ pub fn begin_startup(app_data_dir: &Path) -> Result<Option<StartupLoadPlan>> {
     let mut slots = read_slots(app_data_dir);
 
     if slots.activation_pending {
-        // The last launch crashed between the slot swap and a successful
-        // load. Roll back to the previous verified runtime.
-        let failed_id = slots.active.take();
-        slots.active = slots.previous.take();
-        slots.activation_pending = false;
-        if let Some(failed_id) = failed_id {
-            slots.last_failure = Some(ActivationFailure {
-                artifact_id: failed_id.clone(),
-                error: "activation was interrupted before the runtime loaded".to_owned(),
-                at_unix: unix_now(),
-            });
-            let _ = fs::remove_dir_all(runtime_artifact_dir(app_data_dir, &failed_id));
+        // The last launch did not persist a success acknowledgement. That is
+        // ambiguous: the load may have crashed, or it may have succeeded and
+        // the process died before the acknowledgement landed. Retry the
+        // pending runtime while attempts remain — deleting a runtime that
+        // actually loaded fine would silently lose a proven update — and
+        // only roll back once the attempt budget shows the load itself is
+        // what keeps failing.
+        let pending_id = slots.active.clone();
+        let retryable = pending_id
+            .as_deref()
+            .and_then(|id| installed_runtime(app_data_dir, id))
+            .filter(|runtime| verify_runtime_files(runtime).unwrap_or(false))
+            .filter(|_| slots.activation_attempts < MAX_ACTIVATION_ATTEMPTS);
+
+        match retryable {
+            Some(pending) => {
+                slots.activation_attempts += 1;
+                write_slots(app_data_dir, &slots)?;
+                return Ok(Some(StartupLoadPlan {
+                    library_path: pending.library_path,
+                    record: Some(pending.record),
+                    proving_candidate: true,
+                    is_legacy: false,
+                }));
+            }
+            None => {
+                let failed_id = slots.active.take();
+                slots.active = slots.previous.take();
+                slots.activation_pending = false;
+                slots.activation_attempts = 0;
+                if let Some(failed_id) = failed_id {
+                    slots.last_failure = Some(ActivationFailure {
+                        artifact_id: failed_id.clone(),
+                        error: "runtime activation kept failing and was rolled back".to_owned(),
+                        at_unix: unix_now(),
+                    });
+                    let _ = fs::remove_dir_all(runtime_artifact_dir(app_data_dir, &failed_id));
+                }
+                write_slots(app_data_dir, &slots)?;
+            }
         }
-        write_slots(app_data_dir, &slots)?;
     }
 
     if let Some(candidate_id) = slots.candidate.clone() {
@@ -355,6 +394,7 @@ pub fn begin_startup(app_data_dir: &Path) -> Result<Option<StartupLoadPlan>> {
                 slots.active = Some(candidate_id);
                 slots.candidate = None;
                 slots.activation_pending = true;
+                slots.activation_attempts = 1;
                 write_slots(app_data_dir, &slots)?;
                 return Ok(Some(StartupLoadPlan {
                     library_path: candidate.library_path,
@@ -411,6 +451,10 @@ pub fn begin_startup(app_data_dir: &Path) -> Result<Option<StartupLoadPlan>> {
         }));
     }
 
+    // Nothing loadable: opportunistically remove leftovers a partial
+    // Windows delete could not unlink while the library was mapped.
+    prune_unreferenced_runtimes(app_data_dir, &slots);
+
     Ok(None)
 }
 
@@ -419,6 +463,7 @@ pub fn begin_startup(app_data_dir: &Path) -> Result<Option<StartupLoadPlan>> {
 pub fn finish_activation_success(app_data_dir: &Path) -> Result<()> {
     let mut slots = read_slots(app_data_dir);
     slots.activation_pending = false;
+    slots.activation_attempts = 0;
     slots.last_failure = None;
     write_slots(app_data_dir, &slots)?;
     prune_unreferenced_runtimes(app_data_dir, &slots);
@@ -437,6 +482,7 @@ pub fn rollback_failed_activation(
     let mut slots = read_slots(app_data_dir);
     slots.active = slots.previous.take();
     slots.activation_pending = false;
+    slots.activation_attempts = 0;
     slots.last_failure = Some(ActivationFailure {
         artifact_id: failed_artifact_id.to_owned(),
         error: error.to_owned(),
@@ -461,6 +507,7 @@ pub fn activate_first_install(app_data_dir: &Path, artifact_id: &str) -> Result<
     slots.active = Some(artifact_id.to_owned());
     slots.candidate = None;
     slots.activation_pending = false;
+    slots.activation_attempts = 0;
     slots.last_failure = None;
     write_slots(app_data_dir, &slots)?;
     prune_unreferenced_runtimes(app_data_dir, &slots);
@@ -544,8 +591,22 @@ pub fn is_runtime_available(app_data_dir: &Path) -> bool {
 pub fn delete_runtime(app_data_dir: &Path) -> Result<()> {
     let root = runtimes_root(app_data_dir);
     if root.exists() {
-        fs::remove_dir_all(&root)
-            .with_context(|| format!("failed to delete runtimes at {}", root.display()))?;
+        // Clear the slot state FIRST so the store's source of truth is
+        // consistent even when file removal is partial: on Windows the
+        // currently-loaded library is mapped and cannot be unlinked, so
+        // artifact directories are removed best-effort and any leftovers
+        // are pruned on the next launch, after the mapping is gone.
+        write_slots(app_data_dir, &RuntimeSlots::default())?;
+        if let Ok(entries) = fs::read_dir(&root) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    let _ = fs::remove_dir_all(&path);
+                }
+            }
+        }
+        let _ = fs::remove_file(slots_path(app_data_dir));
+        let _ = fs::remove_dir(&root);
     }
     delete_legacy_runtime(app_data_dir)?;
     Ok(())
@@ -680,15 +741,55 @@ mod tests {
     }
 
     #[test]
-    fn interrupted_activation_rolls_back_to_previous() {
+    fn interrupted_activation_retries_the_pending_runtime_first() {
         let tmp = tempfile::tempdir().expect("tempdir");
         write_fake_install(tmp.path(), "rt-old", b"old-runtime");
         write_fake_install(tmp.path(), "rt-new", b"new-runtime");
-        // Simulate a crash after promotion, before the load was proven.
+        // A pending marker after a crash is ambiguous: the load may have
+        // succeeded and only the acknowledgement was lost. With attempts
+        // remaining, the pending runtime is retried — never deleted.
         let slots = RuntimeSlots {
             active: Some("rt-new".to_owned()),
             previous: Some("rt-old".to_owned()),
             activation_pending: true,
+            activation_attempts: 1,
+            ..RuntimeSlots::default()
+        };
+        write_slots(tmp.path(), &slots).expect("write slots");
+
+        let plan = begin_startup(tmp.path())
+            .expect("startup")
+            .expect("plan should retry the pending runtime");
+        assert!(plan.proving_candidate);
+        assert_eq!(
+            plan.record.as_ref().map(|r| r.artifact_id.as_str()),
+            Some("rt-new")
+        );
+        assert!(runtime_artifact_dir(tmp.path(), "rt-new").exists());
+
+        let slots = read_slots(tmp.path());
+        assert_eq!(slots.activation_attempts, 2);
+        assert!(slots.activation_pending);
+
+        // A successful load acknowledges and resets the budget.
+        finish_activation_success(tmp.path()).expect("finish");
+        let slots = read_slots(tmp.path());
+        assert!(!slots.activation_pending);
+        assert_eq!(slots.activation_attempts, 0);
+        assert_eq!(slots.active.as_deref(), Some("rt-new"));
+    }
+
+    #[test]
+    fn exhausted_activation_attempts_roll_back_to_previous() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        write_fake_install(tmp.path(), "rt-old", b"old-runtime");
+        write_fake_install(tmp.path(), "rt-new", b"new-runtime");
+        // The attempt budget is spent: the load itself keeps crashing.
+        let slots = RuntimeSlots {
+            active: Some("rt-new".to_owned()),
+            previous: Some("rt-old".to_owned()),
+            activation_pending: true,
+            activation_attempts: 2,
             ..RuntimeSlots::default()
         };
         write_slots(tmp.path(), &slots).expect("write slots");
@@ -696,6 +797,7 @@ mod tests {
         let plan = begin_startup(tmp.path())
             .expect("startup")
             .expect("plan should restore the previous runtime");
+        assert!(!plan.proving_candidate);
         assert_eq!(
             plan.record.as_ref().map(|r| r.artifact_id.as_str()),
             Some("rt-old")
@@ -709,6 +811,26 @@ mod tests {
             Some("rt-new")
         );
         assert!(!runtime_artifact_dir(tmp.path(), "rt-new").exists());
+    }
+
+    #[test]
+    fn delete_runtime_clears_slots_even_when_files_linger() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        write_fake_install(tmp.path(), "rt-a", b"runtime-bytes");
+        let slots = RuntimeSlots {
+            active: Some("rt-a".to_owned()),
+            ..RuntimeSlots::default()
+        };
+        write_slots(tmp.path(), &slots).expect("write slots");
+
+        delete_runtime(tmp.path()).expect("delete");
+
+        // The slot state is the source of truth: nothing is active anymore
+        // regardless of whether every file could be unlinked (Windows keeps
+        // a loaded library mapped until restart).
+        let slots = read_slots(tmp.path());
+        assert_eq!(slots.active, None);
+        assert!(!is_runtime_available(tmp.path()));
     }
 
     #[test]

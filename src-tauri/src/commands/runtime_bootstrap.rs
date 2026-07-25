@@ -13,6 +13,11 @@ use std::{
 use tauri::{AppHandle, Emitter, State};
 
 pub const RUNTIME_BOOTSTRAP_PROGRESS_EVENT: &str = "runtime-bootstrap-progress";
+
+/// Process-wide flag preventing concurrent `download_runtime` invocations
+/// from racing on the shared artifact directory and slot file.
+static RUNTIME_DOWNLOAD_IN_PROGRESS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 pub const RUNTIME_BOOTSTRAP_READY_EVENT: &str = "runtime-bootstrap-ready";
 pub const RUNTIME_BOOTSTRAP_ERROR_EVENT: &str = "runtime-bootstrap-error";
 
@@ -251,7 +256,10 @@ pub fn install_and_load_runtime_blocking(
         },
     )?;
 
-    runtime_bootstrap::activate_first_install(app_data_dir, &installed.record.artifact_id)?;
+    // Prove the dynamic load BEFORE persisting activation: a runtime whose
+    // files verify but whose library cannot load must never become the
+    // recorded active runtime (it would report Ready while separation
+    // fails, with no recovery path).
     crate::separator::model::ensure_runtime_loaded_from_path(&installed.library_path)
         .with_context(|| {
             format!(
@@ -259,6 +267,7 @@ pub fn install_and_load_runtime_blocking(
                 installed.library_path.display()
             )
         })?;
+    runtime_bootstrap::activate_first_install(app_data_dir, &installed.record.artifact_id)?;
 
     let snapshot = snapshot_from_disk(app_data_dir);
     store_snapshot(status, snapshot.clone());
@@ -337,6 +346,13 @@ pub fn ensure_runtime_ready_or_install_blocking(
     status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
     emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
 ) -> CommandResult<PathBuf> {
+    // A runtime committed into this process is what separation will use,
+    // regardless of what the slots say (e.g. after delete + reinstall the
+    // old library stays mapped until restart).
+    if let Some(loaded) = crate::separator::model::loaded_runtime_path() {
+        return Ok(loaded.to_path_buf());
+    }
+
     let snapshot = get_runtime_bootstrap_status_from_state(status)?;
     let inventory = runtime_bootstrap::runtime_inventory(app_data_dir);
 
@@ -394,8 +410,19 @@ pub fn download_runtime(
     let status = Arc::clone(&state.shell.runtime_bootstrap_status);
     let (catalog, ()) = download_runtime_source(&state.shell.catalog_cache)?;
 
+    if RUNTIME_DOWNLOAD_IN_PROGRESS.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        // A download is already running; report its current state instead
+        // of spawning a second install racing on the same directories.
+        return get_runtime_bootstrap_status_from_state(&status);
+    }
+
     let inventory = runtime_bootstrap::runtime_inventory(&app_data_dir);
-    let is_update = inventory.active.is_some() || inventory.legacy_path.is_some();
+    // A runtime loaded into this process can never be replaced in place,
+    // even when the slots were just deleted — treat any loaded runtime as
+    // the update (candidate + restart) flow.
+    let is_update = inventory.active.is_some()
+        || inventory.legacy_path.is_some()
+        || crate::separator::model::loaded_runtime_path().is_some();
 
     let base = snapshot_from_disk(&app_data_dir);
     let initial_state = if is_update {
@@ -433,6 +460,8 @@ pub fn download_runtime(
             }
         })
         .await;
+
+        RUNTIME_DOWNLOAD_IN_PROGRESS.store(false, std::sync::atomic::Ordering::SeqCst);
 
         let flattened = match result {
             Ok(inner) => inner,

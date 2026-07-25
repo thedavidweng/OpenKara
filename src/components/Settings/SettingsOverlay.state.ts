@@ -241,6 +241,9 @@ export function createSettingsOverlayActions(
   // restart banner / button drive activation.
   const updateRuntimeAction = async () => {
     await downloadRuntimeAction();
+    // The staged candidate supersedes the check report; clearing it keeps a
+    // later manual check honest instead of re-offering the staged update.
+    patchState({ runtimeUpdate: null });
   };
 
   const checkRuntimeUpdatesAction = async () => {

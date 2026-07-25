@@ -297,6 +297,29 @@ pub fn extract_archive_safely(
 
 type ArchiveMembers = Vec<(PathBuf, Vec<u8>)>;
 
+/// Read one archive member with the expanded-size budget enforced on the
+/// ACTUAL decompressed bytes. Archive headers can lie about sizes; trusting
+/// them for allocation or budget accounting lets a hostile archive expand
+/// far past the cap before any digest check runs.
+fn read_member_bounded(
+    reader: &mut impl Read,
+    declared_size: u64,
+    budget_remaining: u64,
+) -> Result<Vec<u8>> {
+    if declared_size > budget_remaining {
+        bail!("archive exceeds the expanded size limit while reading");
+    }
+    let mut bytes = Vec::new();
+    let mut limited = reader.take(declared_size + 1);
+    limited
+        .read_to_end(&mut bytes)
+        .context("failed to read archive member")?;
+    if bytes.len() as u64 > declared_size {
+        bail!("archive member expands past its declared size");
+    }
+    Ok(bytes)
+}
+
 fn strip_shared_top_level(members: ArchiveMembers) -> Result<ArchiveMembers> {
     let shared_root: Option<PathBuf> = members
         .iter()
@@ -362,15 +385,13 @@ fn collect_tar_members(archive_path: &Path) -> Result<ArchiveMembers> {
         if members.len() + 1 > MAX_ARCHIVE_MEMBERS {
             bail!("archive exceeds the member count limit while reading");
         }
-        expanded = expanded.saturating_add(entry.size());
-        if expanded > MAX_ARCHIVE_EXPANDED_BYTES {
-            bail!("archive exceeds the expanded size limit while reading");
-        }
-
-        let mut bytes = Vec::with_capacity(entry.size() as usize);
-        entry
-            .read_to_end(&mut bytes)
-            .context("failed to read archive member")?;
+        let declared = entry.size();
+        let bytes = read_member_bounded(
+            &mut entry,
+            declared,
+            MAX_ARCHIVE_EXPANDED_BYTES.saturating_sub(expanded),
+        )?;
+        expanded = expanded.saturating_add(bytes.len() as u64);
         members.push((relative, bytes));
     }
     Ok(members)
@@ -401,15 +422,13 @@ fn collect_zip_members(archive_path: &Path) -> Result<ArchiveMembers> {
         if members.len() + 1 > MAX_ARCHIVE_MEMBERS {
             bail!("archive exceeds the member count limit while reading");
         }
-        expanded = expanded.saturating_add(entry.size());
-        if expanded > MAX_ARCHIVE_EXPANDED_BYTES {
-            bail!("archive exceeds the expanded size limit while reading");
-        }
-
-        let mut bytes = Vec::with_capacity(entry.size() as usize);
-        entry
-            .read_to_end(&mut bytes)
-            .context("failed to read archive member")?;
+        let declared = entry.size();
+        let bytes = read_member_bounded(
+            &mut entry,
+            declared,
+            MAX_ARCHIVE_EXPANDED_BYTES.saturating_sub(expanded),
+        )?;
+        expanded = expanded.saturating_add(bytes.len() as u64);
         members.push((relative, bytes));
     }
     Ok(members)
@@ -664,6 +683,27 @@ mod tests {
         let payload = vec![7_u8; 300 * 1024];
         fs::write(&path, &payload).expect("write");
         assert_eq!(sha256_file(&path).expect("hash"), sha256_hex(&payload));
+    }
+
+    #[test]
+    fn bounded_member_read_rejects_lying_headers_and_budget_overruns() {
+        // Actual bytes exceed the declared size (a lying header).
+        let payload = vec![1_u8; 100];
+        let mut reader = std::io::Cursor::new(&payload);
+        let error = read_member_bounded(&mut reader, 50, 1_000)
+            .expect_err("member expanding past its declared size must be rejected");
+        assert!(error.to_string().contains("declared size"));
+
+        // Declared size exceeds the remaining budget.
+        let mut reader = std::io::Cursor::new(&payload);
+        let error = read_member_bounded(&mut reader, 100, 99)
+            .expect_err("member past the expanded budget must be rejected");
+        assert!(error.to_string().contains("expanded size limit"));
+
+        // Honest member within budget.
+        let mut reader = std::io::Cursor::new(&payload);
+        let bytes = read_member_bounded(&mut reader, 100, 1_000).expect("honest member");
+        assert_eq!(bytes.len(), 100);
     }
 
     #[test]

@@ -57,6 +57,41 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
                         "warning: failed to load ONNX Runtime from {}: {err:#}",
                         plan.library_path.display()
                     );
+                    if !plan.proving_candidate && !plan.is_legacy {
+                        // An established active runtime that no longer loads
+                        // (ABI break, OS upgrade) must not keep reporting
+                        // Ready: roll back to a previous generation when one
+                        // exists, otherwise surface an honest failure state.
+                        let failed_id = plan
+                            .record
+                            .as_ref()
+                            .map(|record| record.artifact_id.clone())
+                            .unwrap_or_default();
+                        match separator::runtime_bootstrap::rollback_failed_activation(
+                            &app_data_dir,
+                            &failed_id,
+                            &err.to_string(),
+                        ) {
+                            Ok(Some(previous)) => {
+                                if let Err(load_err) =
+                                    separator::model::ensure_runtime_loaded_from_path(
+                                        &previous.library_path,
+                                    )
+                                {
+                                    eprintln!(
+                                        "warning: failed to load previous ONNX Runtime {}: {load_err:#}",
+                                        previous.library_path.display()
+                                    );
+                                }
+                            }
+                            Ok(None) => {}
+                            Err(rollback_err) => {
+                                eprintln!(
+                                    "warning: failed to record runtime load failure: {rollback_err:#}"
+                                );
+                            }
+                        }
+                    }
                     if plan.proving_candidate {
                         let failed_id = plan
                             .record
