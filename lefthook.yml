@@ -2,12 +2,13 @@ pre-commit:
   parallel: true
   commands:
     oxfmt:
-      glob: "*.{ts,tsx,js,jsx,json,css,md,html,yml,yaml}"
-      # src-tauri is entirely in oxfmt's ignorePatterns; passing only
-      # ignored files (e.g. a catalog snapshot bump) makes oxfmt exit
-      # non-zero with "no files to format" and blocks the commit.
+      glob: "*.{ts,tsx,js,jsx,mjs,cjs,json,css,md,html,yml,yaml}"
+      # src-tauri is entirely in oxfmt's ignorePatterns. The exclude keeps
+      # those paths out of {staged_files}, and the emptiness guard covers
+      # commits where every glob match was excluded (e.g. a catalog
+      # snapshot bump) — oxfmt exits non-zero on an empty file list.
       exclude: 'pnpm-lock\.yaml|^src-tauri/'
-      run: pnpm exec oxfmt {staged_files}
+      run: 'files="{staged_files}"; [ -z "$files" ] || pnpm exec oxfmt $files'
       stage_fixed: true
     cargo-fmt:
       glob: "*.rs"

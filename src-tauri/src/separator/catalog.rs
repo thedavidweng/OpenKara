@@ -185,6 +185,8 @@ pub struct CatalogRuntime {
     /// Per-file digests of the archive contents, keyed by relative path.
     pub extracted_file_digests: std::collections::BTreeMap<String, CatalogFileDigest>,
     pub runtime: CatalogRuntimeMetadata,
+    #[serde(default)]
+    pub deprecation: CatalogDeprecation,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -686,16 +688,18 @@ pub fn resolve_runtime<'a>(
     manifest: &'a ReleaseManifest,
     target_triple: &str,
 ) -> Result<&'a CatalogRuntime> {
-    let mut matches = manifest
-        .artifacts
-        .runtimes
-        .iter()
-        .filter(|runtime| runtime.target_triple.as_deref() == Some(target_triple));
+    // Superseded runtimes stay listed for provenance (generation 9 keeps the
+    // full-operator builds deprecated next to their reduced replacements), so
+    // resolution must skip them the same way resolve_model skips deprecated
+    // and non-loadable model deliveries.
+    let mut matches = manifest.artifacts.runtimes.iter().filter(|runtime| {
+        runtime.target_triple.as_deref() == Some(target_triple) && !runtime.deprecation.deprecated
+    });
     let resolved = matches
         .next()
-        .with_context(|| format!("catalog has no runtime for target {target_triple}"))?;
+        .with_context(|| format!("catalog has no active runtime for target {target_triple}"))?;
     if matches.next().is_some() {
-        bail!("catalog lists more than one runtime for target {target_triple}");
+        bail!("catalog lists more than one active runtime for target {target_triple}");
     }
     Ok(resolved)
 }
@@ -919,7 +923,21 @@ mod tests {
         // Generations publish several deliveries per variant (raw kept for
         // older consumers, compressed preferred); both variants must resolve.
         assert!(catalog.manifest.artifacts.models.len() >= 2);
-        assert_eq!(catalog.manifest.artifacts.runtimes.len(), 5);
+        // Superseded runtimes stay listed but deprecated; exactly one active
+        // runtime per supported target must remain resolvable.
+        let active: Vec<_> = catalog
+            .manifest
+            .artifacts
+            .runtimes
+            .iter()
+            .filter(|runtime| !runtime.deprecation.deprecated)
+            .collect();
+        assert_eq!(active.len(), 5);
+        let targets: std::collections::BTreeSet<_> = active
+            .iter()
+            .filter_map(|r| r.target_triple.as_deref())
+            .collect();
+        assert_eq!(targets.len(), 5, "one active runtime per target");
         assert!(!catalog.manifest.compatibility.is_empty());
     }
 
