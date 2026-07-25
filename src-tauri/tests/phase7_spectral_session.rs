@@ -61,8 +61,22 @@ fn separate_to_dir(
     stem_mode: StemMode,
     output_dir: &Path,
 ) -> openkara_lib::separator::inference::SeparationOutcome {
-    let loaded_model = model::load_from_path(model_path, ExecutionProviderPreference::Cpu)
-        .expect("model should load");
+    separate_to_dir_with_preference(
+        model_path,
+        stem_mode,
+        output_dir,
+        ExecutionProviderPreference::Cpu,
+    )
+}
+
+/// Run streaming separation with an explicit execution-provider preference.
+fn separate_to_dir_with_preference(
+    model_path: &Path,
+    stem_mode: StemMode,
+    output_dir: &Path,
+    preference: ExecutionProviderPreference,
+) -> openkara_lib::separator::inference::SeparationOutcome {
+    let loaded_model = model::load_from_path(model_path, preference).expect("model should load");
 
     let decoded = decode::decode_file(&fixture_path("audio", "fixture.wav"))
         .expect("fixture audio should decode");
@@ -280,6 +294,39 @@ fn spectral_cancellation_publishes_nothing_and_restarts_from_zero() {
     .expect("restarted run must succeed");
     writers.finish_all().expect("writers finalize");
     assert_eq!(outcome.frames_written, frames);
+    assert_sane_stem(&out_dir.join("vocals.ogg"));
+    assert_sane_stem(&out_dir.join("accompaniment.ogg"));
+    fs::remove_dir_all(&out_dir).ok();
+}
+
+/// The product's platform-default execution-provider preference must always
+/// yield a working session and a sane separation — on machines WITHOUT the
+/// accelerator (e.g. GPU-less Windows attempting DirectML) the provider
+/// chain has to fall back gracefully rather than fail or corrupt output.
+/// On accelerator-equipped machines the same test exercises the real EP.
+#[test]
+fn spectral_separation_with_default_platform_preference_is_stable() {
+    let Some(model_path) = spectral_model_path() else {
+        eprintln!("skipping: OPENKARA_SPECTRAL_MODEL is not set");
+        return;
+    };
+    initialize_test_runtime();
+
+    let preference =
+        openkara_lib::config::ExecutionProviderPreference::default_for_current_platform();
+    eprintln!(
+        "platform-default provider preference: {}",
+        preference.as_str()
+    );
+
+    let loaded = model::load_from_path(&model_path, preference)
+        .expect("platform-default preference must load via its fallback chain");
+    drop(loaded);
+
+    let out_dir = support::unique_temp_path("phase7-spectral-default-ep");
+    let outcome =
+        separate_to_dir_with_preference(&model_path, StemMode::TwoStem, &out_dir, preference);
+    assert_eq!(outcome.stem_mode, StemMode::TwoStem);
     assert_sane_stem(&out_dir.join("vocals.ogg"));
     assert_sane_stem(&out_dir.join("accompaniment.ogg"));
     fs::remove_dir_all(&out_dir).ok();
