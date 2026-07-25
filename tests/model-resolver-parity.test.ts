@@ -29,21 +29,42 @@ describe("model resolver parity", () => {
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 
   test.each(["htdemucs", "htdemucs_ft"])(
-    "resolves %s exactly as the catalog snapshot declares",
+    "resolves %s to the smallest non-deprecated delivery",
     (variant) => {
       const resolved = resolve(variant);
-      const catalogModel = manifest.artifacts.models.find(
-        (model: { variant: string }) => model.variant === variant,
+      const candidates = manifest.artifacts.models.filter(
+        (model: { variant: string; deprecation?: { deprecated?: boolean } }) =>
+          model.variant === variant && !model.deprecation?.deprecated,
+      );
+      const catalogModel = candidates.reduce(
+        (smallest: { byte_size: number }, candidate: { byte_size: number }) =>
+          candidate.byte_size < smallest.byte_size ? candidate : smallest,
       );
 
       expect(catalogModel).toBeDefined();
       expect(resolved.url).toBe(catalogModel.download_url);
       expect(resolved.sha256).toBe(catalogModel.archive_digest);
-      expect(resolved.filename).toBe(catalogModel.filename);
+      expect(resolved.download_filename).toBe(catalogModel.filename);
       expect(resolved.size).toBe(catalogModel.byte_size);
       expect(resolved.tag).toBe(catalogModel.upstream.tag);
       expect(resolved.artifact_id).toBe(catalogModel.artifact_id);
       expect(resolved.generation).toBe(manifest.generation);
+
+      // The installed file is the extracted .onnx with its own digest.
+      const onnxEntries = Object.entries(
+        catalogModel.extracted_file_digests,
+      ).filter(([path]) => path.endsWith(".onnx"));
+      expect(onnxEntries).toHaveLength(1);
+      const [file, digest] = onnxEntries[0] as [
+        string,
+        { sha256: string; size: number },
+      ];
+      expect(resolved.filename).toBe(file);
+      expect(resolved.file_sha256).toBe(digest.sha256);
+      expect(resolved.file_size).toBe(digest.size);
+      expect(resolved.archived).toBe(
+        /\.(tar\.gz|tgz|zip)$/.test(catalogModel.filename),
+      );
     },
   );
 
@@ -61,8 +82,14 @@ describe("model resolver parity", () => {
     expect(() => resolve("htdemucs_v5")).toThrow();
   });
 
-  test("the snapshot pins exactly two portable models with compatibility", () => {
-    expect(manifest.artifacts.models).toHaveLength(2);
+  test("the snapshot pins portable models for both variants with compatibility", () => {
+    for (const variant of ["htdemucs", "htdemucs_ft"]) {
+      const candidates = manifest.artifacts.models.filter(
+        (model: { variant: string; deprecation?: { deprecated?: boolean } }) =>
+          model.variant === variant && !model.deprecation?.deprecated,
+      );
+      expect(candidates.length).toBeGreaterThan(0);
+    }
     for (const model of manifest.artifacts.models) {
       expect(model.model.tensor_interface).toBe("waveform");
       expect(model.model.compatible_runtime_ids.length).toBeGreaterThan(0);

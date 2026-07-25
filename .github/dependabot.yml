@@ -1,5 +1,33 @@
 version: 2
 updates:
+  # Rust binding updates (including the `ort` crate). Native ONNX Runtime
+  # library versions are owned by openkara-models through the catalog — the
+  # Rust `ort` binding and the native runtime update independently, and CI's
+  # dependency-surface check verifies their C API levels stay compatible.
+  - package-ecosystem: "cargo"
+    directory: "/src-tauri"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore(deps):"
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "ci(deps):"
+    cooldown:
+      default-days: 7
+
   - package-ecosystem: "npm"
     directory: "/"
     schedule:

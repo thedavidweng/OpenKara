@@ -27,36 +27,71 @@ function readCargoLockPackages() {
 }
 
 describe("ONNX Runtime packaging", () => {
-  test("uses the DirectML NuGet runtime for Windows instead of the CPU release zip", () => {
+  test("stages runtimes from the catalog snapshot without hardcoded pins", () => {
     const prepareScript = readProjectFile("scripts/prepare-onnx-runtime.mjs");
 
-    expect(prepareScript).toContain("Microsoft.ML.OnnxRuntime.DirectML");
-    expect(prepareScript).toContain("Microsoft.AI.DirectML");
-    expect(prepareScript).toContain("api/v2/package");
-    expect(prepareScript).toContain("onnxruntime_providers_shared.dll");
-    expect(prepareScript).toContain("DirectML.dll");
-    expect(prepareScript).not.toContain(
-      "onnxruntime-win-x64-${ORT_VERSION}.zip",
+    // The catalog snapshot is the single source for runtime identity — the
+    // prepare script must carry no version, URL, or digest constants.
+    expect(prepareScript).toContain("src-tauri");
+    expect(prepareScript).toContain("release-manifest.json");
+    expect(prepareScript).not.toContain("microsoft/onnxruntime/releases");
+    expect(prepareScript).not.toContain("api/v2/package");
+    expect(prepareScript).not.toMatch(/const ORT_VERSION =/);
+
+    // Windows ships the DirectML companion inside the catalog artifact.
+    const catalog = JSON.parse(
+      readProjectFile("src-tauri/catalog/release-manifest.json"),
     );
+    const windowsRuntime = catalog.artifacts.runtimes.find(
+      (runtime: { target_triple: string | null }) =>
+        runtime.target_triple === "x86_64-pc-windows-msvc",
+    );
+    expect(windowsRuntime).toBeDefined();
+    expect(windowsRuntime.runtime.execution_providers).toContain("directml");
+    expect(Object.keys(windowsRuntime.extracted_file_digests)).toContain(
+      "DirectML.dll",
+    );
+    expect(windowsRuntime.runtime.companion_files).toContain("DirectML.dll");
   });
 
-  test("keeps Flatpak ONNX Runtime source aligned with the prepared runtime version", () => {
-    const prepareScript = readProjectFile("scripts/prepare-onnx-runtime.mjs");
+  test("keeps Flatpak ONNX Runtime sources aligned with the catalog snapshot", () => {
     const manifestTemplate = readProjectFile(
       "packaging/flatpak/io.github.thedavidweng.OpenKara.yml.in",
     );
-    const runtimeVersion = prepareScript.match(
-      /const ORT_VERSION = "([^"]+)";/,
-    )?.[1];
+    const renderer = readProjectFile("scripts/render-flatpak-manifest.mjs");
 
-    expect(runtimeVersion).toBeDefined();
-    expect(manifestTemplate).toContain(`\\"version\\":\\"${runtimeVersion}\\"`);
-    expect(manifestTemplate).toContain(
-      `onnxruntime-linux-x64-${runtimeVersion}.tgz`,
+    // The template must reference runtimes only through renderer
+    // placeholders, and the renderer must resolve them from the catalog.
+    for (const token of [
+      "@@ORT_VERSION@@",
+      "@@ORT_X64_URL@@",
+      "@@ORT_X64_SHA256@@",
+      "@@ORT_ARM64_URL@@",
+      "@@ORT_ARM64_SHA256@@",
+    ]) {
+      expect(manifestTemplate).toContain(token);
+      expect(renderer).toContain(token);
+    }
+    expect(manifestTemplate).not.toContain("microsoft/onnxruntime/releases");
+    expect(renderer).toContain("release-manifest.json");
+
+    const catalog = JSON.parse(
+      readProjectFile("src-tauri/catalog/release-manifest.json"),
     );
-    expect(manifestTemplate).toContain(
-      `onnxruntime-linux-aarch64-${runtimeVersion}.tgz`,
-    );
+    const linuxTargets = [
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
+    ];
+    for (const target of linuxTargets) {
+      const runtime = catalog.artifacts.runtimes.find(
+        (candidate: { target_triple: string | null }) =>
+          candidate.target_triple === target,
+      );
+      expect(runtime).toBeDefined();
+      expect(Object.keys(runtime.extracted_file_digests)).toContain(
+        "libonnxruntime.so",
+      );
+    }
   });
 
   test("keeps Flatpak Cargo vendor sources aligned with Cargo.lock", () => {

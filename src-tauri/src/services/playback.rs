@@ -1057,6 +1057,11 @@ mod tests {
                         downloaded_bytes: None,
                         total_bytes: None,
                         version: "test".to_owned(),
+                        active_artifact_id: None,
+                        target_triple: crate::separator::catalog::current_target_triple()
+                            .to_owned(),
+                        candidate_version: None,
+                        restart_required: false,
                         error: None,
                     },
                 )),

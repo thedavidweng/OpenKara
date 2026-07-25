@@ -19,6 +19,10 @@ function makeSnapshot(
     downloaded_bytes: 0,
     total_bytes: null,
     version: "1.0.0",
+    active_artifact_id: null,
+    target_triple: "aarch64-apple-darwin",
+    candidate_version: null,
+    restart_required: false,
     error: null,
     ...overrides,
   };
@@ -166,6 +170,32 @@ describe("runtime-bootstrap-store", () => {
       useRuntimeBootstrapStore.getState().updateStatus(readyStatus);
 
       expect(useRuntimeBootstrapStore.getState().status).toEqual(readyStatus);
+    });
+
+    test("carries candidate lifecycle fields through a state transition", () => {
+      useRuntimeBootstrapStore.setState({
+        status: makeSnapshot({
+          downloaded_bytes: 500,
+          total_bytes: 1000,
+        }),
+      });
+
+      const candidateReady = makeSnapshot({
+        state: "candidate_ready_restart_required",
+        downloaded_bytes: null,
+        total_bytes: null,
+        active_artifact_id: "rt-1.27.1",
+        candidate_version: "v1.28.0",
+        restart_required: true,
+      });
+
+      useRuntimeBootstrapStore.getState().updateStatus(candidateReady);
+
+      const status = useRuntimeBootstrapStore.getState().status!;
+      expect(status.state).toBe("candidate_ready_restart_required");
+      expect(status.candidate_version).toBe("v1.28.0");
+      expect(status.restart_required).toBe(true);
+      expect(status.active_artifact_id).toBe("rt-1.27.1");
     });
 
     test("replaces status when runtime_path changes", () => {

@@ -49,6 +49,7 @@ export function createInitialSettingsOverlaySnapshot(
       downloadingModel: null,
       modelUpdate: null,
       runtimeStatus: null,
+      runtimeUpdate: null,
       language: initialSettings.language ?? "en",
       hideBatchSeparate: initialSettings.hideBatchSeparate,
       coverArtBackdrop: initialSettings.coverArtBackdrop,
@@ -60,6 +61,7 @@ export function createInitialSettingsOverlaySnapshot(
       crossfadeDurationMs: initialSettings.crossfadeDurationMs,
       librarySortMode: initialSettings.librarySortMode,
       themePreference: initialSettings.themePreference,
+      updatePolicy: initialSettings.updatePolicy,
       integrityReport: null,
       integritySelection: new Set(),
       integritySkippedCount: null,
@@ -164,6 +166,10 @@ export function createSettingsOverlayActions(
           state: status.state,
           version: status.version,
           runtime_path: status.runtime_path,
+          active_artifact_id: status.active_artifact_id,
+          target_triple: status.target_triple,
+          candidate_version: status.candidate_version,
+          restart_required: status.restart_required,
           error: status.error?.message ?? null,
         },
       });
@@ -214,6 +220,10 @@ export function createSettingsOverlayActions(
           state: status.state,
           version: status.version,
           runtime_path: status.runtime_path,
+          active_artifact_id: status.active_artifact_id,
+          target_triple: status.target_triple,
+          candidate_version: status.candidate_version,
+          restart_required: status.restart_required,
           error: status.error?.message ?? null,
         },
       });
@@ -222,6 +232,65 @@ export function createSettingsOverlayActions(
     } catch (error) {
       dependencies.notifyError(error);
     }
+  };
+
+  // Update path: `download_runtime` stages a candidate when a runtime is
+  // already loaded. The running process keeps its active runtime until the
+  // next launch, so the ready event reports
+  // `candidate_ready_restart_required`. We mirror that state and let the
+  // restart banner / button drive activation.
+  const updateRuntimeAction = async () => {
+    await downloadRuntimeAction();
+    // The staged candidate supersedes the check report; clearing it keeps a
+    // later manual check honest instead of re-offering the staged update.
+    patchState({ runtimeUpdate: null });
+  };
+
+  const checkRuntimeUpdatesAction = async () => {
+    patchState({
+      runtimeUpdate: {
+        status: "checking",
+        error: null,
+        report: null,
+      },
+    });
+    try {
+      const report = await dependencies.api.checkRuntimeUpdates();
+      patchState({
+        runtimeUpdate: {
+          status: "checked",
+          error: null,
+          report,
+        },
+      });
+      // The backend flips Ready → UpdateAvailable when an update exists; mirror
+      // the refreshed lifecycle state so the section copy updates.
+      await refreshRuntimeStatus();
+    } catch (error) {
+      // An update-check failure never affects the installed runtime's
+      // readiness; it is reported on its own line in the runtime section.
+      patchState({
+        runtimeUpdate: {
+          status: "failed",
+          error: error instanceof Error ? error.message : String(error),
+          report: null,
+        },
+      });
+    }
+  };
+
+  const setUpdatePolicyAction = async (
+    policy: SettingsOverlayState["updatePolicy"],
+  ) => {
+    // The store action is optimistic with generation-based rollback; the
+    // overlay state mirrors the store so the radio reflects the pending choice
+    // immediately. The store action handles IPC and rollback.
+    patchState({ updatePolicy: policy });
+    await dependencies.settingsStore.setUpdatePolicy(policy);
+    patchState({
+      updatePolicy:
+        dependencies.settingsStore.getAppSettingsSnapshot().updatePolicy,
+    });
   };
 
   const deleteRuntimeAction = async () => {
@@ -296,6 +365,7 @@ export function createSettingsOverlayActions(
           crossfadeDurationMs: settingsResult.value.crossfade_duration_ms,
           librarySortMode: settingsResult.value.library_sort_mode,
           themePreference: settingsResult.value.theme_preference,
+          updatePolicy: settingsResult.value.update_policy,
         });
       } else {
         dependencies.notifyError(settingsResult.reason);
@@ -310,6 +380,9 @@ export function createSettingsOverlayActions(
     refreshModelStatuses,
     refreshRuntimeStatus,
     downloadRuntime: downloadRuntimeAction,
+    updateRuntime: updateRuntimeAction,
+    checkRuntimeUpdates: checkRuntimeUpdatesAction,
+    setUpdatePolicy: setUpdatePolicyAction,
     deleteRuntime: deleteRuntimeAction,
     openDeleteRuntimeDialog: () => {
       patchMeta({ dangerDialog: "delete_runtime" });

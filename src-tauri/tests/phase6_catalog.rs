@@ -48,13 +48,13 @@ fn install_records_identity_and_delete_removes_it() {
     bootstrap::install_verified_model_bytes(&managed_path, payload, &sha256_hex(payload))
         .expect("verified payload should install");
     let mut identity = descriptor.identity.clone();
-    identity.sha256 = sha256_hex(payload);
-    identity.byte_size = payload.len() as u64;
+    identity.archive_sha256 = sha256_hex(payload);
+    identity.archive_size = payload.len() as u64;
     catalog::write_installed_identity(&managed_path, &identity).expect("identity should persist");
 
     let read_back = read_installed_identity(&managed_path).expect("identity should read back");
     assert_eq!(read_back.artifact_id, descriptor.artifact_id);
-    assert_eq!(read_back.upstream_tag, descriptor.upstream_tag);
+    assert_eq!(read_back.upstream_version, descriptor.upstream_tag);
 
     bootstrap::delete_model_file(&temp_dir, ModelVariant::Htdemucs)
         .expect("model deletion should succeed");
@@ -84,9 +84,9 @@ fn identity_verified_model_stays_ready_when_pin_moves() {
     identity.generation += 1;
     identity.release_id = "2099-01-01-001".to_owned();
     identity.artifact_id = "htdemucs.balanced.fp32.newer".to_owned();
-    identity.upstream_tag = "model-v9.9.9".to_owned();
-    identity.sha256 = newer_sha;
-    identity.byte_size = newer_payload.len() as u64;
+    identity.upstream_version = "model-v9.9.9".to_owned();
+    identity.archive_sha256 = newer_sha;
+    identity.archive_size = newer_payload.len() as u64;
     catalog::write_installed_identity(&managed_path, &identity).expect("identity should persist");
 
     // The embedded pin's digest does NOT match this file, but the identity
@@ -94,7 +94,7 @@ fn identity_verified_model_stays_ready_when_pin_moves() {
     let resolution = bootstrap::resolve_model_installation(
         &managed_path,
         &temp_dir.join("__no_dev_fallback__"),
-        &descriptor.sha256,
+        &descriptor.file_sha256,
     )
     .expect("resolution should succeed");
 
@@ -119,13 +119,13 @@ fn tampered_file_with_identity_record_is_not_ready() {
     fs::create_dir_all(managed_path.parent().expect("parent")).expect("create models dir");
     fs::write(&managed_path, b"tampered-bytes").expect("write model file");
     let mut identity = descriptor.identity.clone();
-    identity.sha256 = sha256_hex(b"the-original-bytes");
+    identity.archive_sha256 = sha256_hex(b"the-original-bytes");
     catalog::write_installed_identity(&managed_path, &identity).expect("identity should persist");
 
     let resolution = bootstrap::resolve_model_installation(
         &managed_path,
         &temp_dir.join("__no_dev_fallback__"),
-        &descriptor.sha256,
+        &descriptor.file_sha256,
     )
     .expect("resolution should succeed");
 
@@ -199,7 +199,7 @@ fn update_comparison_covers_install_update_and_downgrade() {
     let mut older = identity.clone();
     older.generation = catalog.generation.saturating_sub(1).max(1);
     older.artifact_id = "htdemucs.balanced.fp32.older".to_owned();
-    older.sha256 = "2".repeat(64);
+    older.archive_sha256 = "2".repeat(64);
     let comparison = compare_installed_model(Some(older), model, catalog, true)
         .expect("comparison should succeed");
     assert_eq!(comparison.state, ModelUpdateState::UpdateAvailable);
@@ -208,7 +208,7 @@ fn update_comparison_covers_install_update_and_downgrade() {
     // rejected instead of being reported as an update.
     let mut newer = identity;
     newer.generation = catalog.generation + 1;
-    newer.sha256 = "3".repeat(64);
+    newer.archive_sha256 = "3".repeat(64);
     let error = compare_installed_model(Some(newer), model, catalog, true)
         .expect_err("downgrade must be rejected");
     assert!(error.to_string().contains("refusing implicit downgrade"));
@@ -221,8 +221,8 @@ fn embedded_catalog_resolves_offline_for_both_variants() {
     for variant in [ModelVariant::Htdemucs, ModelVariant::HtdemucsFt] {
         let descriptor = bootstrap::descriptor_for(variant);
         assert!(!descriptor.download_url.is_empty());
-        assert_eq!(descriptor.sha256.len(), 64);
-        assert!(descriptor.byte_size > 0);
-        assert!(!descriptor.identity.compatible_runtime_ids.is_empty());
+        assert_eq!(descriptor.file_sha256.len(), 64);
+        assert!(descriptor.download_size > 0);
+        assert!(!descriptor.identity.compatible_ids.is_empty());
     }
 }

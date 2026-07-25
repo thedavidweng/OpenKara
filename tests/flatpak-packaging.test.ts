@@ -149,8 +149,11 @@ describe("Flatpak packaging", () => {
     );
 
     expect(manifestTemplate).toContain("onnxruntime-source");
-    expect(manifestTemplate).toContain("onnxruntime-linux-x64");
-    expect(manifestTemplate).toContain("onnxruntime-linux-aarch64");
+    // Runtime archives are injected by the renderer from the catalog
+    // snapshot; the template carries per-arch placeholders, not URLs.
+    expect(manifestTemplate).toContain("@@ORT_X64_URL@@");
+    expect(manifestTemplate).toContain("@@ORT_ARM64_URL@@");
+    expect(manifestTemplate).toContain("only-arches");
     expect(manifestTemplate).toContain("${FLATPAK_DEST}/share/licenses");
     expect(manifestTemplate).not.toContain("build_shared_lib");
   });

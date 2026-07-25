@@ -6,6 +6,7 @@ import type {
   LibraryRegistrySnapshot,
   RegisteredLibrary,
   ThemePreference,
+  UpdatePolicy,
 } from "@/types/ipc";
 import type {
   SettingsActionContext,
@@ -104,6 +105,7 @@ function createHarness(overrides?: {
       downloadingModel: null,
       modelUpdate: null,
       runtimeStatus: null,
+      runtimeUpdate: null,
       language: "en",
       hideBatchSeparate: false,
       coverArtBackdrop: false,
@@ -115,6 +117,7 @@ function createHarness(overrides?: {
       crossfadeDurationMs: 3_000,
       librarySortMode: "recently_imported",
       themePreference: "dark",
+      updatePolicy: "notify",
       integrityReport: null,
       integritySelection: new Set(),
       integritySkippedCount: null,
@@ -153,6 +156,7 @@ function createHarness(overrides?: {
       deleteAllCachedLyrics: vi.fn(),
       deleteAllStems: vi.fn(),
       checkModelUpdates: vi.fn(),
+      checkRuntimeUpdates: vi.fn(),
       deleteModel: vi.fn(),
       deleteRuntime: vi.fn(),
       downloadModel: vi.fn(),
@@ -173,6 +177,7 @@ function createHarness(overrides?: {
       setEqGains: vi.fn(),
       setCrossfadeEnabled: vi.fn(),
       setCrossfadeDurationMs: vi.fn(),
+      setUpdatePolicy: vi.fn(),
       checkLibraryIntegrity: vi.fn(),
       removeMissingLibraryEntries: vi.fn(),
     },
@@ -206,6 +211,7 @@ function createHarness(overrides?: {
         crossfadeDurationMs: 3_000,
         librarySortMode: "recently_imported" as const,
         themePreference: "dark" as ThemePreference,
+        updatePolicy: "notify" as UpdatePolicy,
       })),
       hydrateAppSettings: vi.fn(),
       patchAppSettings: vi.fn(),
@@ -214,6 +220,7 @@ function createHarness(overrides?: {
       setCrossfadeEnabled: vi.fn(),
       setCrossfadeDurationMs: vi.fn(),
       setThemePreference: vi.fn(),
+      setUpdatePolicy: vi.fn(),
     },
   };
 

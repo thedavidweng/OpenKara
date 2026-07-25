@@ -639,6 +639,23 @@ export function createTauriMock(data: any): TauriMockResult {
       };
       return settingsSnapshot;
     },
+    set_update_policy: (args: any) => {
+      settingsSnapshot = {
+        ...settingsSnapshot,
+        update_policy: (args && args.policy) || "notify",
+      };
+      return settingsSnapshot;
+    },
+    check_runtime_updates: () => ({
+      generation: 1,
+      release_id: "mock-release",
+      target_triple: "aarch64-apple-darwin",
+      state: "up_to_date",
+      installed_version: "v1.27.1",
+      available_version: "v1.27.1",
+      available_bytes: 0,
+      restart_required: true,
+    }),
     set_crossfade_enabled: (args: any) => {
       settingsSnapshot = {
         ...settingsSnapshot,

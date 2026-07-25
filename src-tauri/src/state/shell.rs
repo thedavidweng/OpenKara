@@ -73,7 +73,7 @@ impl AppShell {
         match crate::separator::bootstrap::resolve_model_installation(
             &managed,
             &dev_path,
-            &descriptor.sha256,
+            &descriptor.file_sha256,
         )
         .map_err(|error| crate::commands::error::internal_error(error.to_string()))?
         {
@@ -108,6 +108,10 @@ impl AppShell {
                     downloaded_bytes: None,
                     total_bytes: None,
                     version: "test".to_owned(),
+                    active_artifact_id: None,
+                    target_triple: crate::separator::catalog::current_target_triple().to_owned(),
+                    candidate_version: None,
+                    restart_required: false,
                     error: None,
                 },
             )),

@@ -49,23 +49,43 @@ if (manifest.schema_version !== "openkara.catalog/release-v1") {
   );
 }
 
+// Mirror the Rust resolver: among non-deprecated artifacts for the
+// variant, the smallest download wins (compressed deliveries preferred).
 const matches = manifest.artifacts.models.filter(
-  (model) => model.variant === args.variant,
+  (model) => model.variant === args.variant && !model.deprecation?.deprecated,
 );
-if (matches.length !== 1) {
+if (matches.length === 0) {
   throw new Error(
-    `catalog snapshot must list exactly one model for variant ${args.variant}, found ${matches.length}`,
+    `catalog snapshot must list exactly one model for variant ${args.variant}, found 0`,
   );
 }
+const model = matches.reduce((smallest, candidate) =>
+  candidate.byte_size < smallest.byte_size ? candidate : smallest,
+);
 
-const model = matches[0];
+const onnxEntries = Object.entries(model.extracted_file_digests).filter(
+  ([path]) => path.endsWith(".onnx"),
+);
+if (onnxEntries.length !== 1) {
+  throw new Error(
+    `model ${model.artifact_id} must declare exactly one .onnx file, found ${onnxEntries.length}`,
+  );
+}
+const [modelFile, modelDigest] = onnxEntries[0];
+
 const resolved = {
   variant: model.variant,
   artifact_id: model.artifact_id,
-  filename: model.filename,
+  // The installed .onnx file (extraction target for archived deliveries).
+  filename: modelFile,
+  file_sha256: modelDigest.sha256,
+  file_size: modelDigest.size,
+  // The download payload (an archive for compressed deliveries).
+  download_filename: model.filename,
   url: model.download_url,
   sha256: model.archive_digest,
   size: model.byte_size,
+  archived: /\.(tar\.gz|tgz|zip)$/.test(model.filename),
   tag: model.upstream.tag,
   generation: manifest.generation,
   release_id: manifest.release_id,

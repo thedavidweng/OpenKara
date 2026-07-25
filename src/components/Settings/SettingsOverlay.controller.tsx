@@ -90,6 +90,7 @@ export function SettingsOverlayProvider({
         setCrossfadeDurationMs:
           useSettingsStore.getState().setCrossfadeDurationMs,
         setThemePreference: useSettingsStore.getState().setThemePreference,
+        setUpdatePolicy: useSettingsStore.getState().setUpdatePolicy,
       },
     }),
     [i18n],
@@ -130,6 +131,10 @@ export function SettingsOverlayProvider({
           state: runtimeBootstrapStatus.state,
           version: runtimeBootstrapStatus.version,
           runtime_path: runtimeBootstrapStatus.runtime_path,
+          active_artifact_id: runtimeBootstrapStatus.active_artifact_id,
+          target_triple: runtimeBootstrapStatus.target_triple,
+          candidate_version: runtimeBootstrapStatus.candidate_version,
+          restart_required: runtimeBootstrapStatus.restart_required,
           error: runtimeBootstrapStatus.error?.message ?? null,
         },
       },

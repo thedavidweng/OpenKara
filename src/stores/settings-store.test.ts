@@ -14,6 +14,7 @@ const {
   mockSetCrossfadeDurationMs,
   mockSetLibrarySortMode,
   mockSetThemePreference,
+  mockSetUpdatePolicy,
   mockNotifyError,
 } = vi.hoisted(() => ({
   mockSetLyricsFontStep: vi.fn<(step: number) => Promise<AppSettings>>(),
@@ -29,6 +30,7 @@ const {
     vi.fn<(durationMs: number) => Promise<AppSettings>>(),
   mockSetLibrarySortMode: vi.fn<(mode: string) => Promise<AppSettings>>(),
   mockSetThemePreference: vi.fn<(preference: string) => Promise<AppSettings>>(),
+  mockSetUpdatePolicy: vi.fn<(policy: string) => Promise<AppSettings>>(),
   mockNotifyError: vi.fn(),
 }));
 
@@ -40,6 +42,7 @@ vi.mock("@/lib/tauri", () => ({
   setCrossfadeDurationMs: mockSetCrossfadeDurationMs,
   setLibrarySortMode: mockSetLibrarySortMode,
   setThemePreference: mockSetThemePreference,
+  setUpdatePolicy: mockSetUpdatePolicy,
 }));
 
 vi.mock("@/lib/errors", () => ({
@@ -76,6 +79,7 @@ function makeAppSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     crossfade_duration_ms: 3_000,
     library_sort_mode: "recently_imported",
     theme_preference: "dark",
+    update_policy: "notify",
     ...overrides,
   };
 }
@@ -161,6 +165,7 @@ describe("settings-store actions", () => {
       crossfadeDurationMs: 3_000,
       librarySortMode: "recently_imported",
       themePreference: "dark",
+      updatePolicy: "notify",
     });
     mockSetLyricsFontStep.mockReset();
     mockSetEqEnabled.mockReset();
@@ -169,6 +174,7 @@ describe("settings-store actions", () => {
     mockSetCrossfadeDurationMs.mockReset();
     mockSetLibrarySortMode.mockReset();
     mockSetThemePreference.mockReset();
+    mockSetUpdatePolicy.mockReset();
     mockNotifyError.mockReset();
   });
 
@@ -545,6 +551,7 @@ describe("settings-store actions", () => {
       crossfadeDurationMs: 3_000,
       librarySortMode: "title_asc",
       themePreference: "dark",
+      updatePolicy: "notify",
     });
     expect(snapshot).not.toHaveProperty("isOpen");
   });
@@ -1012,5 +1019,34 @@ describe("settings-store actions", () => {
     // The second mutation wins; the first's syncPatch is skipped because the
     // generation no longer matches.
     expect(store.getState().themePreference).toBe("system");
+  });
+
+  test("setUpdatePolicy updates state on success", async () => {
+    const returned = makeAppSettings({ update_policy: "auto_download" });
+    mockSetUpdatePolicy.mockResolvedValue(returned);
+
+    await store.getState().setUpdatePolicy("auto_download");
+
+    expect(mockSetUpdatePolicy).toHaveBeenCalledWith("auto_download");
+    expect(store.getState().updatePolicy).toBe("auto_download");
+  });
+
+  test("setUpdatePolicy is a no-op when the policy is unchanged", async () => {
+    store.setState({ updatePolicy: "notify" });
+
+    await store.getState().setUpdatePolicy("notify");
+
+    expect(mockSetUpdatePolicy).not.toHaveBeenCalled();
+  });
+
+  test("setUpdatePolicy rolls back and notifies on failure", async () => {
+    store.setState({ updatePolicy: "notify" });
+    const error = new Error("ipc failure");
+    mockSetUpdatePolicy.mockRejectedValue(error);
+
+    await store.getState().setUpdatePolicy("manual");
+
+    expect(store.getState().updatePolicy).toBe("notify");
+    expect(mockNotifyError).toHaveBeenCalledWith(error);
   });
 });

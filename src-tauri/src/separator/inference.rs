@@ -43,6 +43,11 @@ pub enum ModelOutputContract {
     FourStemSeparate,
     /// Two-stem bundle: vocals + accompaniment as two separate tensors.
     TwoStemBundle,
+    /// Dual-output model: one stacked four-stem tensor plus one stacked
+    /// two-stem tensor (`[1, 2, channels, frames]`, vocals then
+    /// accompaniment). TwoStem mode reads the two-stem output directly —
+    /// no drums+bass+other mixdown — and FourStem reads the stacked four.
+    DualStacked,
 }
 
 /// Streaming OGG writers for one separation run. The number of writers
@@ -215,6 +220,20 @@ fn classify_output_contract(
         bail!("model has no outputs");
     }
 
+    // A dual-output model carries one stacked four-stem tensor and one
+    // stacked two-stem tensor. Shapes are decisive; names are irrelevant.
+    if output_infos.len() == 2 {
+        let has_stacked_four = output_infos
+            .iter()
+            .any(|(_, dims)| looks_like_stacked_stem_output(dims, channels));
+        let has_stacked_two = output_infos
+            .iter()
+            .any(|(_, dims)| looks_like_stacked_two_stem_output(dims, channels));
+        if has_stacked_four && has_stacked_two {
+            return Ok(ModelOutputContract::DualStacked);
+        }
+    }
+
     // A two-stem bundle is valid only when both outputs have stem-like
     // shapes and their names unambiguously identify vocals and accompaniment.
     // Generic names such as output_0/output_1 cannot be routed safely later.
@@ -313,6 +332,7 @@ pub fn separate_streaming(
         (ModelOutputContract::TwoStemBundle, StemMode::TwoStem) => {}
         (ModelOutputContract::FourStemStacked, _) => {}
         (ModelOutputContract::FourStemSeparate, _) => {}
+        (ModelOutputContract::DualStacked, _) => {}
         (ModelOutputContract::TwoStemBundle, StemMode::FourStem) => {
             bail!(
                 "cannot use FourStem mode with a two-stem model bundle; \
@@ -539,6 +559,71 @@ fn process_two_stem_chunk(
                 |pcm| writers.write_accompaniment(pcm),
             )?;
         }
+        ModelOutputContract::DualStacked => {
+            // The dual model provides vocals + accompaniment as a stacked
+            // two-stem tensor — read it directly, no mixdown needed.
+            for buf in workspace.stem_output_buffers.iter_mut().take(2) {
+                buf[..chunk_frame_count * channels].fill(0.0);
+            }
+
+            let mut found = false;
+            for (_, output_value) in outputs.iter() {
+                let (shape, data) = output_value
+                    .try_extract_tensor::<f32>()
+                    .context("dual two-stem output tensor was not f32")?;
+                let dims: Vec<i64> = shape.iter().copied().collect();
+                if !looks_like_stacked_two_stem_output(&dims, channels) {
+                    continue;
+                }
+                let (ch, frames) = match dims.as_slice() {
+                    [2, c, f] | [1, 2, c, f] => (
+                        usize_from_dim(*c, "channel count")?,
+                        usize_from_dim(*f, "frame count")?,
+                    ),
+                    _ => bail!("unexpected stacked two-stem output rank"),
+                };
+                let stride = ch * frames;
+                // Stem order per the catalog contract: vocals, accompaniment.
+                for stem_idx in 0..2 {
+                    let offset = stem_idx * stride;
+                    deinterleave_to_interleaved(
+                        &data[offset..offset + stride],
+                        ch,
+                        frames,
+                        channels,
+                        &mut workspace.stem_output_buffers[stem_idx],
+                        chunk_frame_count,
+                    );
+                }
+                found = true;
+                break;
+            }
+            if !found {
+                bail!("dual model did not produce its stacked two-stem output");
+            }
+
+            let sample_count = chunk_frame_count * channels;
+            let rings = workspace
+                .two_stem_rings
+                .as_mut()
+                .context("TwoStem mode requires two_stem_rings in workspace")?;
+            let vocals_buf = &workspace.stem_output_buffers[0][..sample_count];
+            rings.vocals.add_chunk(
+                chunk_start_frame,
+                chunk_frame_count,
+                vocals_buf,
+                window,
+                |pcm| writers.write_vocals(pcm),
+            )?;
+            let accomp_buf = &workspace.stem_output_buffers[1][..sample_count];
+            rings.accompaniment.add_chunk(
+                chunk_start_frame,
+                chunk_frame_count,
+                accomp_buf,
+                window,
+                |pcm| writers.write_accompaniment(pcm),
+            )?;
+        }
         ModelOutputContract::FourStemStacked | ModelOutputContract::FourStemSeparate => {
             // Phase 1: read four stems into reusable buffers.
             read_four_stems_into(outputs, contract, channels, chunk_frame_count, workspace)?;
@@ -658,7 +743,7 @@ fn read_four_stems_into(
     }
 
     match contract {
-        ModelOutputContract::FourStemStacked => {
+        ModelOutputContract::FourStemStacked | ModelOutputContract::DualStacked => {
             for (_, output_value) in outputs.iter() {
                 let (shape, data) = output_value
                     .try_extract_tensor::<f32>()
@@ -930,6 +1015,11 @@ fn looks_like_audio_input(dims: &[i64], channel_count: usize) -> bool {
     matches!(dims, [1, channels, frame_count] if *channels == channel_count as i64 && *frame_count > 0)
 }
 
+fn looks_like_stacked_two_stem_output(dims: &[i64], channel_count: usize) -> bool {
+    matches!(dims, [2, channels, frame_count] if *channels == channel_count as i64 && *frame_count > 0)
+        || matches!(dims, [1, 2, channels, frame_count] if *channels == channel_count as i64 && *frame_count > 0)
+}
+
 fn looks_like_stacked_stem_output(dims: &[i64], channel_count: usize) -> bool {
     matches!(dims, [stem_count, channels, frame_count] if *stem_count == DEMUCS_STEM_NAMES.len() as i64 && *channels == channel_count as i64 && *frame_count > 0)
         || matches!(dims, [1, stem_count, channels, frame_count] if *stem_count == DEMUCS_STEM_NAMES.len() as i64 && *channels == channel_count as i64 && *frame_count > 0)
@@ -1011,6 +1101,23 @@ mod tests {
         let outputs = owned_outputs(&[("vocals", &[2, 44_100]), ("accompaniment", &[2, 44_100])]);
         let contract = classify_output_contract(&outputs, 2).expect("named bundle");
         assert_eq!(contract, ModelOutputContract::TwoStemBundle);
+    }
+
+    #[test]
+    fn classify_detects_dual_stacked_output() {
+        // The dual model: outputs[0] stacked four-stem, outputs[1] stacked
+        // two-stem. Names are generic — shapes are decisive.
+        let outputs = owned_outputs(&[
+            ("output_0", &[1, 4, 2, 44_100]),
+            ("output_1", &[1, 2, 2, 44_100]),
+        ]);
+        let contract = classify_output_contract(&outputs, 2).expect("dual output");
+        assert_eq!(contract, ModelOutputContract::DualStacked);
+
+        // Order must not matter.
+        let outputs = owned_outputs(&[("two", &[1, 2, 2, 44_100]), ("four", &[4, 2, 44_100])]);
+        let contract = classify_output_contract(&outputs, 2).expect("dual output");
+        assert_eq!(contract, ModelOutputContract::DualStacked);
     }
 
     #[test]

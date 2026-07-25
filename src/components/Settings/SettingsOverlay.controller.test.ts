@@ -30,6 +30,7 @@ function createControllerHarness() {
       deleteAllCachedLyrics: vi.fn(),
       deleteAllStems: vi.fn(),
       checkModelUpdates: vi.fn(),
+      checkRuntimeUpdates: vi.fn(),
       deleteModel: vi.fn(),
       deleteRuntime: vi.fn(),
       downloadModel: vi.fn(),
@@ -64,6 +65,7 @@ function createControllerHarness() {
       setCrossfadeEnabled: vi.fn(),
       setCrossfadeDurationMs: vi.fn(),
       setThemePreference: vi.fn(),
+      setUpdatePolicy: vi.fn(),
       checkLibraryIntegrity: vi.fn(),
       removeMissingLibraryEntries: vi.fn(),
     },
@@ -105,6 +107,7 @@ function createControllerHarness() {
           crossfadeDurationMs: 3_000,
           librarySortMode: "recently_imported",
           themePreference: "dark",
+          updatePolicy: "notify",
         }),
       ),
       hydrateAppSettings: vi.fn(),
@@ -114,6 +117,7 @@ function createControllerHarness() {
       setCrossfadeEnabled: vi.fn(),
       setCrossfadeDurationMs: vi.fn(),
       setThemePreference: vi.fn(),
+      setUpdatePolicy: vi.fn(),
     },
   };
 
@@ -168,6 +172,7 @@ describe("SettingsOverlay controller", () => {
       crossfade_duration_ms: 3_000,
       library_sort_mode: "recently_imported",
       theme_preference: "dark",
+      update_policy: "notify",
     });
     vi.mocked(harness.dependencies.api.getModelStatus)
       .mockResolvedValueOnce({
@@ -209,6 +214,7 @@ describe("SettingsOverlay controller", () => {
       crossfade_duration_ms: 3_000,
       library_sort_mode: "recently_imported",
       theme_preference: "dark",
+      update_policy: "notify",
     });
     expect(harness.getSnapshot()).toMatchObject({
       state: {
@@ -616,6 +622,7 @@ describe("SettingsOverlay controller", () => {
       crossfade_duration_ms: 3_000,
       library_sort_mode: "recently_imported",
       theme_preference: "dark",
+      update_policy: "notify",
     });
 
     await harness.actions.selectModelVariant("htdemucs");
@@ -767,6 +774,7 @@ describe("SettingsOverlay controller", () => {
       crossfade_duration_ms: 3_000,
       library_sort_mode: "recently_imported",
       theme_preference: "dark",
+      update_policy: "notify",
     });
 
     await harness.actions.toggleHideBatchSeparate(true);

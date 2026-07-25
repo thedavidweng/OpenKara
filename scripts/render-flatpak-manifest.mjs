@@ -33,10 +33,37 @@ const manifestTemplate = readFileSync(
   "utf8",
 );
 
+// ONNX Runtime sources come from the pinned catalog snapshot — the same
+// contract fixture the application and prepare-onnx-runtime.mjs consume.
+const catalog = JSON.parse(
+  readFileSync(join("src-tauri", "catalog", "release-manifest.json"), "utf8"),
+);
+const catalogRuntime = (target) => {
+  const matches = catalog.artifacts.runtimes.filter(
+    (runtime) => runtime.target_triple === target,
+  );
+  if (matches.length !== 1) {
+    throw new Error(
+      `catalog snapshot must list exactly one runtime for ${target}`,
+    );
+  }
+  return matches[0];
+};
+const ortX64 = catalogRuntime("x86_64-unknown-linux-gnu");
+const ortArm64 = catalogRuntime("aarch64-unknown-linux-gnu");
+if (ortX64.runtime.version !== ortArm64.runtime.version) {
+  throw new Error("catalog Linux runtimes disagree on the ORT version");
+}
+
 const replacements = new Map([
   ["@@SOURCE_URL@@", sourceUrl],
   ["@@SOURCE_SHA256@@", sourceSha256],
   ["@@NODE_SOURCES@@", nodeSourcesYaml],
+  ["@@ORT_VERSION@@", ortX64.runtime.version],
+  ["@@ORT_X64_URL@@", ortX64.download_url],
+  ["@@ORT_X64_SHA256@@", ortX64.archive_digest],
+  ["@@ORT_ARM64_URL@@", ortArm64.download_url],
+  ["@@ORT_ARM64_SHA256@@", ortArm64.archive_digest],
 ]);
 
 const replaceTokens = (content) => {

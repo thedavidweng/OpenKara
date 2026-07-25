@@ -72,3 +72,8 @@ strip = true
 lto = "fat"
 opt-level = "s"
 codegen-units = 1
+
+[target.'cfg(windows)'.dependencies]
+# Pre-loads digest-verified runtime companions (DirectML.dll) so ORT's
+# LoadLibrary-by-name resolves them from the artifact directory.
+libloading = "0.9"

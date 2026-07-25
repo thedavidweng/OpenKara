@@ -8,6 +8,7 @@ import { SettingsExecutionProviderSection } from "./SettingsExecutionProviderSec
 import { SettingsGeneralSection } from "./SettingsGeneralSection";
 import { SettingsLibrarySection } from "./SettingsLibrarySection";
 import { SettingsModelVariantSection } from "./SettingsModelVariantSection";
+import { SettingsRuntimeSection } from "./SettingsRuntimeSection";
 import { SettingsOverlayProvider } from "./SettingsOverlay.controller";
 import { SettingsRemoteCacheSection } from "./SettingsRemoteCacheSection";
 import { SettingsRemoteDiagnosticsSection } from "./SettingsRemoteDiagnosticsSection";
@@ -41,6 +42,7 @@ export function SettingsOverlay() {
           <SettingsLibrarySection />
           <SettingsStemModeSection />
           <SettingsModelVariantSection />
+          <SettingsRuntimeSection />
           <SettingsExecutionProviderSection />
           <SettingsGeneralSection />
           <SettingsEqSection />

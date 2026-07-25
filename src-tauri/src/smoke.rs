@@ -338,7 +338,7 @@ fn resolve_model_status(config: &LocalAudioSmokeConfig) -> Result<SmokeModelStat
             let resolved = bootstrap::resolve_existing_model_path(
                 &placeholder_managed_path,
                 &dev_model_path,
-                &bootstrap::descriptor_for(crate::config::ModelVariant::Htdemucs).sha256,
+                &bootstrap::descriptor_for(crate::config::ModelVariant::Htdemucs).file_sha256,
             )?;
 
             match resolved {

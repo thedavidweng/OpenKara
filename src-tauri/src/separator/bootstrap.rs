@@ -1,35 +1,42 @@
 use crate::config::ModelVariant;
 use crate::separator::catalog::{
-    self, identity_from_catalog_model, read_installed_identity, InstalledModelIdentity,
+    self, identity_from_catalog_model, read_installed_identity, InstalledArtifactRecord,
     VerifiedCatalog,
 };
 use crate::separator::verified_manifest::{
     sha256_hex, verified_manifest_matches, verified_manifest_path, write_verified_manifest,
 };
 use anyhow::{bail, Context, Result};
-use reqwest::blocking::Client;
 use std::sync::OnceLock;
 use std::{
     fs,
-    io::Read,
     path::{Path, PathBuf},
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 /// Everything needed to install and verify one model artifact. Descriptors
 /// are resolved from the openkara-models catalog — the embedded snapshot by
 /// default, or a freshly verified catalog for updates — never from
 /// hand-maintained URL/SHA constants.
+///
+/// Newer generations deliver models as compressed archives: the download is
+/// verified against `download_sha256`, the installed `.onnx` against
+/// `file_sha256`. For raw deliveries the two are the same bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelDescriptor {
     pub variant: ModelVariant,
+    /// Installed `.onnx` filename under `models/`.
     pub filename: String,
+    pub file_sha256: String,
+    pub file_size: u64,
+    pub download_filename: String,
     pub download_url: String,
-    pub sha256: String,
-    pub byte_size: u64,
+    pub download_sha256: String,
+    pub download_size: u64,
+    pub archived: bool,
     pub artifact_id: String,
     pub upstream_tag: String,
-    pub identity: InstalledModelIdentity,
+    pub identity: InstalledArtifactRecord,
 }
 
 pub fn descriptor_from_catalog(
@@ -37,12 +44,17 @@ pub fn descriptor_from_catalog(
     variant: ModelVariant,
 ) -> Result<ModelDescriptor> {
     let model = catalog::resolve_model(&catalog.manifest, variant)?;
+    let (model_file, model_digest) = model.primary_model_file()?;
     Ok(ModelDescriptor {
         variant,
-        filename: model.filename.clone(),
+        filename: model_file.to_owned(),
+        file_sha256: model_digest.sha256.clone(),
+        file_size: model_digest.size,
+        download_filename: model.filename.clone(),
         download_url: model.download_url.clone(),
-        sha256: model.archive_digest.clone(),
-        byte_size: model.byte_size,
+        download_sha256: model.archive_digest.clone(),
+        download_size: model.byte_size,
+        archived: model.is_archived(),
         artifact_id: model.artifact_id.clone(),
         upstream_tag: model.upstream.tag.clone(),
         identity: identity_from_catalog_model(model, catalog),
@@ -140,8 +152,8 @@ pub fn resolve_model_installation(
         // record carries the digest that install verified; a catalog refresh
         // failure or an older app binary must not invalidate it.
         if let Some(identity) = read_installed_identity(managed_path) {
-            let identity_ok =
-                verify_model_install(managed_path, &identity.sha256).with_context(|| {
+            let identity_ok = verify_model_install(managed_path, &identity.archive_sha256)
+                .with_context(|| {
                     format!(
                         "failed to verify managed model {} against its identity record",
                         managed_path.display()
@@ -247,60 +259,93 @@ pub fn install_verified_model_bytes(
     Ok(())
 }
 
+/// Download and install a model through the shared artifact plumbing:
+/// stream to a temp file with fixed memory, verify the download digest,
+/// extract archived deliveries safely, verify the installed `.onnx` digest,
+/// and promote atomically. No full-payload buffer exists at any point.
 pub fn download_and_install_model(
     destination: &Path,
     descriptor: &ModelDescriptor,
-    mut progress: impl FnMut(u64, Option<u64>),
+    progress: impl FnMut(u64, Option<u64>),
 ) -> Result<()> {
-    let download_url = descriptor.download_url.as_str();
-    let expected_sha256 = descriptor.sha256.as_str();
-    let client = Client::builder()
-        .build()
-        .context("failed to build model download client")?;
-    let mut response = client
-        .get(download_url)
-        .send()
-        .and_then(|response| response.error_for_status())
-        .with_context(|| format!("failed to download ONNX model from {download_url}"))?;
+    let parent = destination.parent().with_context(|| {
+        format!(
+            "model destination {} is missing a parent directory",
+            destination.display()
+        )
+    })?;
+    fs::create_dir_all(parent).with_context(|| {
+        format!(
+            "failed to create model destination directory {}",
+            parent.display()
+        )
+    })?;
 
-    let total_bytes = response.content_length();
-    let mut last_emit_bytes = 0_u64;
-    let mut last_emit_at = Instant::now();
-    let emit_interval = Duration::from_millis(150);
-    let emit_min_step: u64 = 256 * 1024;
+    let downloaded = crate::separator::artifacts::download_verified_to_temp(
+        &descriptor.download_url,
+        descriptor.download_size,
+        &descriptor.download_sha256,
+        parent,
+        progress,
+    )?;
 
-    let mut emit = |downloaded: u64, total: Option<u64>, force: bool| {
-        let step_ok = downloaded.saturating_sub(last_emit_bytes) >= emit_min_step;
-        let time_ok = last_emit_at.elapsed() >= emit_interval;
-        if force || step_ok || time_ok {
-            progress(downloaded, total);
-            last_emit_bytes = downloaded;
-            last_emit_at = Instant::now();
+    let install_result = (|| -> Result<()> {
+        if descriptor.archived {
+            let kind = crate::separator::artifacts::archive_kind_for_filename(
+                &descriptor.download_filename,
+            )?;
+            let extract_dir =
+                crate::separator::artifacts::unique_temp_path(parent, "model-extract");
+            let extraction = (|| -> Result<()> {
+                crate::separator::artifacts::extract_archive_safely(
+                    &downloaded,
+                    kind,
+                    &extract_dir,
+                )?;
+                let extracted_model = extract_dir.join(&descriptor.filename);
+                let metadata = fs::metadata(&extracted_model).with_context(|| {
+                    format!(
+                        "archive did not contain the declared model file {}",
+                        descriptor.filename
+                    )
+                })?;
+                if metadata.len() != descriptor.file_size {
+                    bail!(
+                        "extracted model has size {}, expected {}",
+                        metadata.len(),
+                        descriptor.file_size
+                    );
+                }
+                let actual = crate::separator::artifacts::sha256_file(&extracted_model)?;
+                if actual != descriptor.file_sha256 {
+                    bail!("extracted model digest mismatch");
+                }
+                fs::rename(&extracted_model, destination).with_context(|| {
+                    format!(
+                        "failed to promote extracted model to {}",
+                        destination.display()
+                    )
+                })?;
+                Ok(())
+            })();
+            let _ = fs::remove_dir_all(&extract_dir);
+            extraction?;
+        } else {
+            // Raw delivery: the verified download IS the model file.
+            fs::rename(&downloaded, destination).with_context(|| {
+                format!(
+                    "failed to promote downloaded model to {}",
+                    destination.display()
+                )
+            })?;
         }
-    };
+        Ok(())
+    })();
 
-    emit(0, total_bytes, true);
+    let _ = fs::remove_file(&downloaded);
+    install_result?;
 
-    let mut payload = Vec::new();
-    let mut downloaded_bytes = 0_u64;
-    let mut buffer = [0_u8; 64 * 1024];
-
-    loop {
-        let read = response
-            .read(&mut buffer)
-            .context("failed while streaming ONNX model download")?;
-        if read == 0 {
-            break;
-        }
-
-        payload.extend_from_slice(&buffer[..read]);
-        downloaded_bytes += read as u64;
-        emit(downloaded_bytes, total_bytes, false);
-    }
-
-    emit(downloaded_bytes, total_bytes, true);
-
-    install_verified_model_bytes(destination, &payload, expected_sha256)?;
+    write_verified_manifest(destination, &descriptor.file_sha256)?;
     // The identity record is what update comparisons run against and what
     // keeps this install verifiable if the app's embedded pin later moves.
     catalog::write_installed_identity(destination, &descriptor.identity)?;

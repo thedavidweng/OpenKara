@@ -1115,6 +1115,7 @@ describe("AppSettings shape matches Rust AppSettings", () => {
       crossfade_duration_ms: 3_000,
       library_sort_mode: "recently_imported",
       theme_preference: "dark",
+      update_policy: "notify",
     };
     expect(settings).toHaveProperty("stem_mode");
     expect(settings).toHaveProperty("model_variant");
@@ -1128,6 +1129,7 @@ describe("AppSettings shape matches Rust AppSettings", () => {
     expect(settings).toHaveProperty("eq_gains_db");
     expect(settings).toHaveProperty("library_sort_mode");
     expect(settings).toHaveProperty("theme_preference");
+    expect(settings).toHaveProperty("update_policy");
   });
 
   test("stem_mode values match Rust StemMode enum", () => {

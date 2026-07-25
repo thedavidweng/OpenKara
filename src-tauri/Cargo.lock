@@ -2784,6 +2784,7 @@ dependencies = [
  "httpdate",
  "image",
  "libc",
+ "libloading 0.9.0",
  "lofty",
  "mockito",
  "open",

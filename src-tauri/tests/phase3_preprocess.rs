@@ -27,9 +27,7 @@ fn initialize_test_runtime() {
 fn preprocesses_stereo_audio_into_channels_first_model_tensor() {
     initialize_test_runtime();
     let loaded_model = model::load_from_path(
-        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("models")
-            .join("htdemucs.onnx"),
+        &model::default_model_path(),
         ExecutionProviderPreference::Cpu,
     )
     .expect("demucs model should load");
@@ -80,9 +78,7 @@ fn resamples_audio_with_a_non_demucs_sample_rate() {
 fn prepares_model_input_from_pre_normalized_audio_without_re_normalizing() {
     initialize_test_runtime();
     let loaded_model = model::load_from_path(
-        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("models")
-            .join("htdemucs.onnx"),
+        &model::default_model_path(),
         ExecutionProviderPreference::Cpu,
     )
     .expect("demucs model should load");

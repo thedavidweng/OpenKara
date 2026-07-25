@@ -27,6 +27,7 @@ pub struct AppSettings {
     pub crossfade_duration_ms: u32,
     pub library_sort_mode: String,
     pub theme_preference: String,
+    pub update_policy: String,
 }
 
 fn settings_from_config(config: &AppConfig) -> AppSettings {
@@ -53,6 +54,7 @@ fn settings_from_config(config: &AppConfig) -> AppSettings {
         crossfade_duration_ms: config.effective_crossfade_duration_ms(),
         library_sort_mode: sort_mode.as_str().to_owned(),
         theme_preference: config.effective_theme_preference().as_str().to_owned(),
+        update_policy: config.effective_update_policy().as_str().to_owned(),
     }
 }
 
@@ -500,6 +502,23 @@ pub fn set_theme_preference(
         .map_err(|e| internal_error(format!("failed to load config: {e}")))?
         .unwrap_or_default();
     config.theme_preference = Some(theme);
+    config::save_config(&app_data_dir, &config)
+        .map_err(|e| internal_error(format!("failed to save config: {e}")))?;
+    Ok(settings_from_config(&config))
+}
+
+#[tauri::command]
+pub fn set_update_policy(app_handle: AppHandle, policy: String) -> CommandResult<AppSettings> {
+    let update_policy = config::UpdatePolicy::parse(&policy)
+        .ok_or_else(|| internal_error(format!("invalid update policy: {policy}")))?;
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| internal_error(format!("failed to get app data dir: {e}")))?;
+    let mut config = config::load_config(&app_data_dir)
+        .map_err(|e| internal_error(format!("failed to load config: {e}")))?
+        .unwrap_or_default();
+    config.update_policy = Some(update_policy);
     config::save_config(&app_data_dir, &config)
         .map_err(|e| internal_error(format!("failed to save config: {e}")))?;
     Ok(settings_from_config(&config))

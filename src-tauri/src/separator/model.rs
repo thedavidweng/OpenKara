@@ -8,9 +8,6 @@ use std::{
     time::Instant,
 };
 
-pub const EMBEDDED_MODEL_FILENAME: &str = "htdemucs.onnx";
-pub const ORT_RUNTIME_VERSION: &str = "1.26.0";
-
 #[cfg(target_os = "windows")]
 pub const ORT_RUNTIME_FILENAME: &str = "onnxruntime.dll";
 #[cfg(target_os = "linux")]
@@ -62,12 +59,31 @@ pub fn default_model_path_for_filename(filename: &str) -> PathBuf {
         .join(filename)
 }
 
+/// The development-fallback path of the standard model, resolved through
+/// the catalog descriptor so the filename tracks the pinned artifact.
 pub fn default_model_path() -> PathBuf {
-    default_model_path_for_filename(EMBEDDED_MODEL_FILENAME)
+    let descriptor =
+        crate::separator::bootstrap::descriptor_for(crate::config::ModelVariant::Htdemucs);
+    default_model_path_for_filename(&descriptor.filename)
+}
+
+/// The runtime library committed into this process, when one is loaded.
+/// ORT cannot be unloaded or swapped in place — a different runtime only
+/// takes effect after a restart.
+pub fn loaded_runtime_path() -> Option<&'static Path> {
+    ORT_RUNTIME_PATH.get().map(|path| path.as_path())
 }
 
 pub fn ensure_runtime_loaded_from_path(runtime_path: &Path) -> Result<&'static Path> {
     if let Some(path) = ORT_RUNTIME_PATH.get() {
+        // A committed runtime is process-final. Pretending a different path
+        // loaded would report an artifact the process is not running.
+        anyhow::ensure!(
+            path.as_path() == runtime_path,
+            "a different ONNX Runtime is already loaded from {}; restart to use {}",
+            path.display(),
+            runtime_path.display()
+        );
         return Ok(path.as_path());
     }
 
@@ -75,6 +91,12 @@ pub fn ensure_runtime_loaded_from_path(runtime_path: &Path) -> Result<&'static P
         .lock()
         .map_err(|_| anyhow::anyhow!("onnx runtime initialization lock was poisoned"))?;
     if let Some(path) = ORT_RUNTIME_PATH.get() {
+        anyhow::ensure!(
+            path.as_path() == runtime_path,
+            "a different ONNX Runtime is already loaded from {}; restart to use {}",
+            path.display(),
+            runtime_path.display()
+        );
         return Ok(path.as_path());
     }
 
@@ -85,7 +107,49 @@ pub fn ensure_runtime_loaded_from_path(runtime_path: &Path) -> Result<&'static P
         .as_path())
 }
 
+/// ONNX Runtime resolves provider companions (DirectML.dll) with the
+/// standard Windows search order, which does not include the artifact
+/// directory the main library loads from. Pre-loading the companions makes
+/// LoadLibrary-by-name resolve the already-mapped modules instead of
+/// falling back to a missing or version-skewed System32 copy.
+#[cfg(target_os = "windows")]
+fn preload_runtime_companions(runtime_path: &Path) {
+    let Some(runtime_dir) = runtime_path.parent() else {
+        return;
+    };
+    let Ok(entries) = std::fs::read_dir(runtime_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_companion_dll =
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| {
+                    name.to_ascii_lowercase().ends_with(".dll")
+                        && !name.eq_ignore_ascii_case(ORT_RUNTIME_FILENAME)
+                });
+        if !is_companion_dll {
+            continue;
+        }
+        // SAFETY: loading a library runs its initialization code; these are
+        // the digest-verified companions installed next to the runtime.
+        match unsafe { libloading::Library::new(&path) } {
+            Ok(library) => std::mem::forget(library),
+            Err(error) => {
+                eprintln!(
+                    "warning: failed to preload runtime companion {}: {error}",
+                    path.display()
+                );
+            }
+        }
+    }
+}
+
 fn init_ort_from_path(runtime_path: &Path) -> Result<()> {
+    #[cfg(target_os = "windows")]
+    preload_runtime_companions(runtime_path);
+
     let committed = ort::init_from(runtime_path)?.with_name("openkara").commit();
     anyhow::ensure!(
         committed,

@@ -4,6 +4,7 @@ import { GlobalProgressBar } from "@/components/Layout/GlobalProgressBar";
 import { PlaybackStage } from "@/components/Playback/PlaybackStage";
 import { SettingsOverlay } from "@/components/Settings/SettingsOverlay";
 import { ModelBootstrapBanner } from "@/components/Bootstrap/ModelBootstrapBanner";
+import { RuntimeUpdateBanner } from "@/components/Bootstrap/RuntimeUpdateBanner";
 import { PlaybackBar } from "@/components/Player/PlaybackBar";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useQueueStore } from "@/stores/queue-store";
@@ -64,6 +65,7 @@ export function MainContentView({
       >
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <ModelBootstrapBanner />
+          <RuntimeUpdateBanner />
           <PlaybackStage />
         </div>
         {queueShouldRender && (

@@ -25,7 +25,7 @@ modules:
     build-commands:
       - mkdir -p .cargo
       - printf '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "cargo/vendor"\n' > .cargo/config.toml
-      - sh -c 'mkdir -p src-tauri/generated/onnxruntime && runtime_path="$(find src-tauri/generated/onnxruntime-source -name "libonnxruntime.so*" ! -name "*providers*" ! -name "*.a" | sort | head -n 1)" && test -n "$runtime_path" && cp -f "$runtime_path" src-tauri/generated/onnxruntime/libonnxruntime.so && printf "{\"version\":\"1.26.0\",\"target\":\"flatpak-linux\",\"sourceArchive\":\"flatpak-builder-source\"}\n" > src-tauri/generated/onnxruntime/manifest.json'
+      - sh -c 'mkdir -p src-tauri/generated/onnxruntime && runtime_path="$(find src-tauri/generated/onnxruntime-source -name "libonnxruntime.so*" ! -name "*providers*" ! -name "*.a" | sort | head -n 1)" && test -n "$runtime_path" && cp -f "$runtime_path" src-tauri/generated/onnxruntime/libonnxruntime.so && printf "{\"version\":\"@@ORT_VERSION@@\",\"target\":\"flatpak-linux\",\"sourceArchive\":\"flatpak-builder-source\"}\n" > src-tauri/generated/onnxruntime/manifest.json'
       - npm install -g --prefix /run/build/openkara/pnpm-install ./pnpm-package
       # pnpm 11 indexes the offline store in store-dir/v11/index.db (SQLite +
       # msgpackr). Populate reuses pnpm's extract worker so CAFS + index.db match
@@ -44,7 +44,7 @@ modules:
       - PATH="/run/build/openkara/pnpm-install/bin:$PATH" pnpm tauri build --config packaging/flatpak/tauri.flatpak.conf.json --no-bundle
       - install -Dm0755 src-tauri/target/release/openkara ${FLATPAK_DEST}/bin/openkara
       - install -Dm0644 src-tauri/generated/onnxruntime/libonnxruntime.so ${FLATPAK_DEST}/lib/openkara/onnxruntime/libonnxruntime.so
-      - install -Dm0644 src-tauri/generated/onnxruntime-source/LICENSE ${FLATPAK_DEST}/share/licenses/io.github.thedavidweng.OpenKara/onnxruntime/LICENSE
+      - install -Dm0644 src-tauri/generated/onnxruntime-source/LICENSE.onnxruntime ${FLATPAK_DEST}/share/licenses/io.github.thedavidweng.OpenKara/onnxruntime/LICENSE
       - install -Dm0644 LICENSE ${FLATPAK_DEST}/share/licenses/io.github.thedavidweng.OpenKara/LICENSE
       - install -Dm0644 packaging/flatpak/io.github.thedavidweng.OpenKara.desktop ${FLATPAK_DEST}/share/applications/io.github.thedavidweng.OpenKara.desktop
       - install -Dm0644 packaging/flatpak/io.github.thedavidweng.OpenKara.metainfo.xml ${FLATPAK_DEST}/share/metainfo/io.github.thedavidweng.OpenKara.metainfo.xml
@@ -60,15 +60,20 @@ modules:
         url: https://registry.npmjs.org/pnpm/-/pnpm-11.13.0.tgz
         sha256: 865c76bd9111a45ca41f6eeed4067ff0ecdfee9eac83aad24179c83ffebe7599
         dest: pnpm-package
+      # ONNX Runtime archives come from the openkara-models catalog snapshot;
+      # the renderer injects the URL and digest so no version is hand-pinned
+      # here. The catalog archives are flat (no directory prefix).
       - type: archive
-        url: https://github.com/microsoft/onnxruntime/releases/download/v1.26.0/onnxruntime-linux-x64-1.26.0.tgz
-        sha256: 1254da24fb389cf39dc0ff3451ab48301740ffbfcbaf646849df92f80ee92c57
+        url: @@ORT_X64_URL@@
+        sha256: @@ORT_X64_SHA256@@
+        strip-components: 0
         dest: src-tauri/generated/onnxruntime-source
         only-arches:
           - x86_64
       - type: archive
-        url: https://github.com/microsoft/onnxruntime/releases/download/v1.26.0/onnxruntime-linux-aarch64-1.26.0.tgz
-        sha256: 34ff1c2d0f12e2cf3d33a0c5f82e39792e1d581fbd6968fd7c30d173654be01a
+        url: @@ORT_ARM64_URL@@
+        sha256: @@ORT_ARM64_SHA256@@
+        strip-components: 0
         dest: src-tauri/generated/onnxruntime-source
         only-arches:
           - aarch64

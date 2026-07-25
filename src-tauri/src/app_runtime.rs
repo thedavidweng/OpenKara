@@ -36,31 +36,109 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         )
     })?;
 
-    // ONNX Runtime has one installation authority: the verified managed
-    // app-data location. Development and packaged builds use the same path.
-    let runtime_status_snapshot =
-        separator::runtime_bootstrap::runtime_status_snapshot(&app_data_dir);
-    let runtime_bootstrap_status = Arc::new(Mutex::new(
-        commands::runtime_bootstrap::RuntimeBootstrapStatusSnapshot::from(
-            runtime_status_snapshot.clone(),
-        ),
-    ));
-
-    if runtime_status_snapshot.status == separator::runtime_bootstrap::RuntimeStatus::Ready {
-        match separator::runtime_bootstrap::ensure_runtime_verified(&app_data_dir) {
-            Ok(path) => {
-                if let Err(err) = separator::model::ensure_runtime_loaded_from_path(&path) {
+    // ONNX Runtime activation transaction: promote a staged candidate (or
+    // roll back an interrupted activation), then load the active runtime.
+    // The slot swap persists an activation-pending marker BEFORE the dynamic
+    // load so a crash here is detected and rolled back on the next launch.
+    match separator::runtime_bootstrap::begin_startup(&app_data_dir) {
+        Ok(Some(plan)) => {
+            match separator::model::ensure_runtime_loaded_from_path(&plan.library_path) {
+                Ok(_) => {
+                    if plan.proving_candidate {
+                        if let Err(err) =
+                            separator::runtime_bootstrap::finish_activation_success(&app_data_dir)
+                        {
+                            eprintln!("warning: failed to finalize runtime activation: {err:#}");
+                        }
+                    }
+                }
+                Err(err) => {
                     eprintln!(
-                        "warning: failed to load managed ONNX Runtime from {}: {err:#}",
-                        path.display()
+                        "warning: failed to load ONNX Runtime from {}: {err:#}",
+                        plan.library_path.display()
                     );
+                    if !plan.proving_candidate && !plan.is_legacy {
+                        // An established active runtime that no longer loads
+                        // (ABI break, OS upgrade) must not keep reporting
+                        // Ready: roll back to a previous generation when one
+                        // exists, otherwise surface an honest failure state.
+                        let failed_id = plan
+                            .record
+                            .as_ref()
+                            .map(|record| record.artifact_id.clone())
+                            .unwrap_or_default();
+                        match separator::runtime_bootstrap::rollback_failed_activation(
+                            &app_data_dir,
+                            &failed_id,
+                            &err.to_string(),
+                        ) {
+                            Ok(Some(previous)) => {
+                                if let Err(load_err) =
+                                    separator::model::ensure_runtime_loaded_from_path(
+                                        &previous.library_path,
+                                    )
+                                {
+                                    eprintln!(
+                                        "warning: failed to load previous ONNX Runtime {}: {load_err:#}",
+                                        previous.library_path.display()
+                                    );
+                                }
+                            }
+                            Ok(None) => {}
+                            Err(rollback_err) => {
+                                eprintln!(
+                                    "warning: failed to record runtime load failure: {rollback_err:#}"
+                                );
+                            }
+                        }
+                    }
+                    if plan.proving_candidate {
+                        let failed_id = plan
+                            .record
+                            .as_ref()
+                            .map(|record| record.artifact_id.clone())
+                            .unwrap_or_default();
+                        match separator::runtime_bootstrap::rollback_failed_activation(
+                            &app_data_dir,
+                            &failed_id,
+                            &err.to_string(),
+                        ) {
+                            Ok(Some(previous)) => {
+                                if let Err(load_err) =
+                                    separator::model::ensure_runtime_loaded_from_path(
+                                        &previous.library_path,
+                                    )
+                                {
+                                    eprintln!(
+                                    "warning: failed to restore previous ONNX Runtime {}: {load_err:#}",
+                                    previous.library_path.display()
+                                );
+                                }
+                            }
+                            Ok(None) => {
+                                eprintln!(
+                                "warning: no previous ONNX Runtime available after failed activation"
+                            );
+                            }
+                            Err(rollback_err) => {
+                                eprintln!(
+                                "warning: failed to roll back runtime activation: {rollback_err:#}"
+                            );
+                            }
+                        }
+                    }
                 }
             }
-            Err(err) => {
-                eprintln!("warning: managed ONNX Runtime verification failed: {err:#}");
-            }
+        }
+        Ok(None) => {}
+        Err(err) => {
+            eprintln!("warning: runtime startup resolution failed: {err:#}");
         }
     }
+
+    let runtime_bootstrap_status = Arc::new(Mutex::new(
+        commands::runtime_bootstrap::snapshot_from_disk(&app_data_dir),
+    ));
 
     let app_config = config::load_config(&app_data_dir).with_context(|| {
         format!(
@@ -159,6 +237,8 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         Arc::clone(&model_bootstrap_status),
         Arc::clone(&runtime_bootstrap_status),
     );
+    let catalog_cache_for_updates = Arc::clone(&shell_state.catalog_cache);
+    let runtime_status_for_updates = Arc::clone(&shell_state.runtime_bootstrap_status);
 
     // Register domain states — commands can extract State<'_, PlaybackState> etc.
     // Clone before manage() since ensure_output_thread needs refs below.
@@ -241,7 +321,123 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         );
     }
 
+    let update_policy = app_config
+        .as_ref()
+        .map(|config| config.effective_update_policy())
+        .unwrap_or_default();
+    if update_policy != config::UpdatePolicy::Manual {
+        spawn_runtime_update_check_worker(
+            app.handle().clone(),
+            app_data_dir.clone(),
+            Arc::clone(&catalog_cache_for_updates),
+            Arc::clone(&runtime_status_for_updates),
+            update_policy,
+        );
+    }
+
     Ok(())
+}
+
+/// Background startup check for runtime updates, governed by the update
+/// policy. `notify` surfaces availability through the lifecycle state;
+/// `auto_download` also stages the candidate for next-launch activation.
+/// A failed check is logged and changes nothing.
+fn spawn_runtime_update_check_worker<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    app_data_dir: PathBuf,
+    catalog_cache: Arc<Mutex<Option<separator::catalog::VerifiedCatalog>>>,
+    status: Arc<Mutex<commands::runtime_bootstrap::RuntimeBootstrapStatusSnapshot>>,
+    policy: config::UpdatePolicy,
+) {
+    tauri::async_runtime::spawn(async move {
+        // Give startup I/O a head start; the check is not urgent.
+        tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            let catalog = match separator::catalog::fetch_stable_catalog() {
+                Ok(catalog) => catalog,
+                Err(error) => {
+                    eprintln!("runtime update check skipped: {error:#}");
+                    return;
+                }
+            };
+            let Ok(runtime) = separator::catalog::resolve_runtime(
+                &catalog.manifest,
+                separator::catalog::current_target_triple(),
+            ) else {
+                return;
+            };
+
+            let inventory = separator::runtime_bootstrap::runtime_inventory(&app_data_dir);
+            if inventory.candidate.is_some() {
+                return;
+            }
+            let installed = inventory
+                .active
+                .as_ref()
+                .map(|active| active.record.clone());
+            let file_exists = inventory.active.is_some() || inventory.legacy_path.is_some();
+            let comparison = match separator::catalog::compare_installed_artifact(
+                installed,
+                &runtime.artifact_id,
+                &runtime.archive_digest,
+                &catalog,
+                file_exists,
+            ) {
+                Ok(comparison) => comparison,
+                Err(error) => {
+                    eprintln!("runtime update check skipped: {error:#}");
+                    return;
+                }
+            };
+
+            if let Ok(mut cache) = catalog_cache.lock() {
+                *cache = Some(catalog.clone());
+            }
+
+            let update_available = matches!(
+                comparison.state,
+                separator::catalog::ModelUpdateState::UpdateAvailable
+                    | separator::catalog::ModelUpdateState::InstalledWithoutIdentity
+            ) && file_exists;
+            if !update_available {
+                return;
+            }
+
+            match policy {
+                config::UpdatePolicy::AutoDownload => {
+                    let mut emit = |event, snapshot| {
+                        let _ = app_handle.emit(event, snapshot);
+                    };
+                    if let Err(error) =
+                        commands::runtime_bootstrap::download_and_stage_candidate_blocking(
+                            &app_data_dir,
+                            &catalog,
+                            &status,
+                            &mut emit,
+                        )
+                    {
+                        eprintln!("automatic runtime update download failed: {error:#}");
+                    }
+                }
+                config::UpdatePolicy::Notify | config::UpdatePolicy::Manual => {
+                    if let Ok(mut current) = status.lock() {
+                        if current.state
+                            == commands::runtime_bootstrap::RuntimeBootstrapState::Ready
+                        {
+                            current.state =
+                                commands::runtime_bootstrap::RuntimeBootstrapState::UpdateAvailable;
+                            let _ = app_handle.emit(
+                                commands::runtime_bootstrap::RUNTIME_BOOTSTRAP_PROGRESS_EVENT,
+                                current.clone(),
+                            );
+                        }
+                    }
+                }
+            }
+        })
+        .await;
+    });
 }
 
 struct StartupBootstrapResources {
@@ -264,7 +460,7 @@ fn build_startup_model_bootstrap(
         app_data_dir,
         &separator::model::default_model_path_for_filename(&descriptor.filename),
         active_variant,
-        &descriptor.sha256,
+        &descriptor.file_sha256,
     )?;
 
     Ok(StartupBootstrapResources {
