@@ -181,10 +181,45 @@ describe("lyrics-store fetchLyrics", () => {
 
     await useLyricsStore.getState().fetchLyrics("song-1");
 
-    expect(mockFetchLyricsOnline).toHaveBeenCalledWith("song-1");
+    expect(mockFetchLyricsOnline).toHaveBeenCalledWith("song-1", false);
     const state = useLyricsStore.getState();
     expect(state.lines).toEqual(synced.lines);
     expect(state.source).toBe("lrc_lib");
+  });
+
+  // Issue #203: user-authored/user-provided sources must never trigger the
+  // silent auto-upgrade, which could overwrite them with a wrong online match.
+  test.each([
+    "manual",
+    "manual_ttml",
+    "manual_lys",
+    "sidecar",
+    "sidecar_ttml",
+    "sidecar_lys",
+  ] as const)("does not auto-upgrade when source is %s", async (source) => {
+    const unsynced = {
+      song_id: "song-1",
+      lines: [
+        {
+          time_ms: 0,
+          text: "Hand written",
+          words: [],
+          bg_words: null,
+          section: null,
+        },
+      ],
+      source,
+      offset_ms: 0,
+      raw_lrc: "Hand written",
+    };
+    mockFetchLyrics.mockResolvedValue(unsynced);
+
+    await useLyricsStore.getState().fetchLyrics("song-1");
+
+    expect(mockFetchLyricsOnline).not.toHaveBeenCalled();
+    const state = useLyricsStore.getState();
+    expect(state.lines).toEqual(unsynced.lines);
+    expect(state.source).toBe(source);
   });
 
   test("does not auto-upgrade when source is lrc_lib", async () => {

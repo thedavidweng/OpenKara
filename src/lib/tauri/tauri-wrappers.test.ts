@@ -720,11 +720,12 @@ describe("lyrics", () => {
     expect(returned).toBe(lyricsPayload);
   });
 
-  test("fetchLyricsOnline invokes fetch_lyrics_online", async () => {
+  test("fetchLyricsOnline invokes fetch_lyrics_online with userInitiated", async () => {
     mockInvoke.mockResolvedValueOnce(lyricsPayload);
-    const returned = await lyrics.fetchLyricsOnline("song-1");
+    const returned = await lyrics.fetchLyricsOnline("song-1", true);
     expect(mockInvoke).toHaveBeenCalledWith("fetch_lyrics_online", {
       songId: "song-1",
+      userInitiated: true,
     });
     expect(returned).toBe(lyricsPayload);
   });

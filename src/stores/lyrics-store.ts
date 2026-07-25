@@ -16,6 +16,21 @@ import type { LyricLine, LyricsSource } from "@/types/ipc";
 // Generation counter to prevent stale fetch results from overwriting current lyrics.
 let fetchGeneration = 0;
 
+// Sources that hold user-authored or user-provided lyrics. The silent
+// auto-upgrade must never replace these with an online match (issue #203): a
+// wrong match for a mistagged song would destroy hand-entered or bundled
+// lyrics with no prompt and no undo. Only embedded (and absent) origins are
+// silently upgraded; the explicit "fetch lyrics online" action still works.
+const AUTO_UPGRADE_PROTECTED_SOURCES: ReadonlySet<LyricsSource> =
+  new Set<LyricsSource>([
+    "manual",
+    "manual_ttml",
+    "manual_lys",
+    "sidecar",
+    "sidecar_ttml",
+    "sidecar_lys",
+  ]);
+
 function getSongLanguage(songId: string | null): SongLanguage | null {
   if (!songId) return null;
   const song = useLibraryStore.getState().songs.find((s) => s.hash === songId);
@@ -97,15 +112,22 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
         isLoading: false,
       });
 
-      // Auto-upgrade: if lyrics are unsynced (all time_ms === 0) and not
-      // from LrcLib, try fetching synced lyrics from the network silently.
+      // Auto-upgrade: if lyrics are unsynced (all time_ms === 0), not from
+      // LrcLib, and not user-authored/user-provided, try fetching synced
+      // lyrics from the network silently. User-authored sources are excluded
+      // so the upgrade cannot silently overwrite manual/sidecar lyrics
+      // (issue #203).
       if (
         payload.lines.length > 0 &&
         payload.source !== "lrc_lib" &&
+        !(
+          payload.source !== null &&
+          AUTO_UPGRADE_PROTECTED_SOURCES.has(payload.source)
+        ) &&
         payload.lines.every((l) => l.time_ms === 0)
       ) {
         try {
-          const online = await api.fetchLyricsOnline(songId);
+          const online = await api.fetchLyricsOnline(songId, false);
           if (
             gen === fetchGeneration &&
             get().songId === songId &&

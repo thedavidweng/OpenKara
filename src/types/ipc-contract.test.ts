@@ -246,7 +246,7 @@ const LYRICS_COMMANDS: CommandContract[] = [
     frontendFile: "src/lib/tauri/lyrics.ts",
     frontendFn: "fetchLyricsOnline",
     hasArgs: true,
-    rustParams: ["song_id"],
+    rustParams: ["song_id", "user_initiated"],
   },
   {
     command: "save_manual_lyrics",
