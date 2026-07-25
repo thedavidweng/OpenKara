@@ -133,6 +133,46 @@ function Harness(props: {
   );
 }
 
+function defineNumber(el: Element, prop: string, value: number) {
+  Object.defineProperty(el, prop, { value, configurable: true });
+}
+
+// Harness with real line elements so the scroll engine can measure geometry
+// (offsetTop / clientHeight) for the re-anchor tests (#201 / #202). jsdom does
+// not lay out, so the test defines geometry on the mounted nodes directly.
+function ScrollHarness(props: { lyricsFontStep: number; songId?: string }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [domReady, setDomReady] = useState(false);
+  useLayoutEffect(() => {
+    setDomReady(true);
+  }, []);
+
+  useLyricsEngine({
+    containerRef,
+    isPlainText: false,
+    lyricsFontStep: props.lyricsFontStep,
+    presentation: "standard",
+    songId: props.songId ?? "song-1",
+    viewportActive: domReady,
+    lineRuntime: mockLineRuntime,
+  });
+
+  return (
+    <div
+      ref={containerRef}
+      data-testid="scroll-viewport"
+      style={{ height: 100, overflow: "auto" }}
+    >
+      <div data-lyrics-line-index="0" className="w-full">
+        a
+      </div>
+      <div data-lyrics-line-index="1" className="w-full">
+        b
+      </div>
+    </div>
+  );
+}
+
 describe("useLyricsEngine", () => {
   let root: Root;
   let host: HTMLDivElement;
@@ -354,5 +394,152 @@ describe("useLyricsEngine", () => {
     });
 
     expect(mockLyricsState.setActiveLineIndex).toHaveBeenCalled();
+  });
+
+  test("changing the font size re-anchors in place instead of resetting scrollTop to 0 (#201)", () => {
+    // Held on line index 1 (adjustedMs 6000 ≥ the line-1 time of 5000).
+    mockPlayerState.positionMs = 6000;
+
+    act(() => {
+      root.render(<ScrollHarness lyricsFontStep={0} />);
+    });
+
+    const viewport = host.querySelector(
+      "[data-testid='scroll-viewport']",
+    ) as HTMLDivElement;
+    defineNumber(viewport, "clientHeight", 100);
+    defineNumber(viewport, "scrollHeight", 500);
+    const line0 = viewport.querySelector("[data-lyrics-line-index='0']")!;
+    const line1 = viewport.querySelector("[data-lyrics-line-index='1']")!;
+    defineNumber(line0, "offsetTop", 0);
+    defineNumber(line0, "clientHeight", 40);
+    defineNumber(line1, "offsetTop", 200);
+    defineNumber(line1, "clientHeight", 40);
+
+    // Settle onto the held active line: centered target = 200 + 20 - 50 = 170.
+    act(() => {
+      rafCb?.(1000);
+    });
+    expect(viewport.scrollTop).toBe(170);
+
+    // Font size changes mid-song; the active line grows and shifts down.
+    defineNumber(line1, "offsetTop", 260);
+    act(() => {
+      root.render(<ScrollHarness lyricsFontStep={2} />);
+    });
+
+    // The engine effect re-ran, but a layout/font change (same song) must NOT
+    // reset the viewport to the top.
+    expect(viewport.scrollTop).toBe(170);
+    expect(viewport.scrollTop).not.toBe(0);
+
+    // The next frame snaps directly to the recomputed centered target for the
+    // current active line (260 + 20 - 50 = 230) — no animate-from-zero.
+    act(() => {
+      rafCb?.(1100);
+    });
+    expect(viewport.scrollTop).toBe(230);
+    expect(viewport.scrollTop).not.toBe(0);
+  });
+
+  test("re-centers the held active line when the viewport is resized (#202)", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let resizeCb: ResizeObserverCallback | null = null;
+    class MockResizeObserver {
+      constructor(cb: ResizeObserverCallback) {
+        resizeCb = cb;
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+
+    mockLyricsState.activeLineIndex = 1;
+    mockPlayerState.positionMs = 6000;
+
+    act(() => {
+      root.render(<ScrollHarness lyricsFontStep={0} />);
+    });
+
+    const viewport = host.querySelector(
+      "[data-testid='scroll-viewport']",
+    ) as HTMLDivElement;
+    defineNumber(viewport, "clientWidth", 300);
+    defineNumber(viewport, "clientHeight", 100);
+    defineNumber(viewport, "scrollHeight", 500);
+    const line0 = viewport.querySelector("[data-lyrics-line-index='0']")!;
+    const line1 = viewport.querySelector("[data-lyrics-line-index='1']")!;
+    defineNumber(line0, "offsetTop", 0);
+    defineNumber(line0, "clientHeight", 40);
+    defineNumber(line1, "offsetTop", 200);
+    defineNumber(line1, "clientHeight", 40);
+
+    // Held line 1 sits at the target for the current (100px) viewport height.
+    act(() => {
+      rafCb?.(1000);
+    });
+    expect(viewport.scrollTop).toBe(170);
+
+    // Window grows taller (100 → 200). Without a resize observer the engine
+    // would pin scrollTop at the stale 170 until the next line change.
+    defineNumber(viewport, "clientHeight", 200);
+    act(() => {
+      resizeCb?.([], {} as ResizeObserver);
+      vi.advanceTimersByTime(200);
+    });
+
+    // Re-centered for the SAME active line at the new size: 200 + 20 - 100 = 120.
+    expect(viewport.scrollTop).toBe(120);
+
+    vi.useRealTimers();
+  });
+
+  test("does not re-center on resize while the user is browsing (#202)", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let resizeCb: ResizeObserverCallback | null = null;
+    class MockResizeObserver {
+      constructor(cb: ResizeObserverCallback) {
+        resizeCb = cb;
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+
+    mockLyricsState.activeLineIndex = 1;
+    mockPlayerState.positionMs = 6000;
+
+    act(() => {
+      root.render(<ScrollHarness lyricsFontStep={0} />);
+    });
+
+    const viewport = host.querySelector(
+      "[data-testid='scroll-viewport']",
+    ) as HTMLDivElement;
+    defineNumber(viewport, "clientWidth", 300);
+    defineNumber(viewport, "clientHeight", 100);
+    defineNumber(viewport, "scrollHeight", 500);
+    const line1 = viewport.querySelector("[data-lyrics-line-index='1']")!;
+    defineNumber(line1, "offsetTop", 200);
+    defineNumber(line1, "clientHeight", 40);
+
+    // User scrolls away to browse (guard unlocks) and parks at 400.
+    act(() => {
+      viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: 80 }));
+    });
+    viewport.scrollTop = 400;
+
+    // A resize while browsing must not yank the user back to the active line.
+    defineNumber(viewport, "clientHeight", 200);
+    act(() => {
+      resizeCb?.([], {} as ResizeObserver);
+      vi.advanceTimersByTime(200);
+    });
+
+    expect(viewport.scrollTop).toBe(400);
+
+    vi.useRealTimers();
   });
 });

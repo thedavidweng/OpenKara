@@ -66,7 +66,11 @@ vi.mock("@/components/Cdg/CdgCanvas", () => ({
 }));
 
 vi.mock("@/components/Lyrics/LyricsPanel", () => ({
-  LyricsPanel: () => <div data-testid="lyrics-panel">Lyrics</div>,
+  LyricsPanel: () => (
+    <div data-testid="lyrics-panel">
+      <div data-testid="lyrics-scroll-viewport">Lyrics</div>
+    </div>
+  ),
 }));
 
 vi.mock("@/lib/tauri/library", () => ({
@@ -176,5 +180,82 @@ describe("PlaybackStage", () => {
     await act(async () => {
       root.unmount();
     });
+  });
+
+  test("keeps the lyrics scroll viewport mounted when the ambience backdrop resolves mid-song (#200)", async () => {
+    mockCdgState.hasCdg = false;
+    mockLibraryState.songs = [
+      {
+        hash: "song-async-cover",
+        file_path: "song.mp3",
+        audio_source_kind: "original",
+        cdg_path: null,
+        media_g_container: null,
+        instrumental: false,
+        title: "Async Cover",
+        artist: null,
+        album: null,
+        duration_ms: 1000,
+        // No inlined cover_art: the backdrop is fetched on-demand and flips
+        // stageAmbience false→true a second into playback.
+        cover_art: null,
+        has_cover_art: true,
+        imported_at: 0,
+        original_ext: "mp3",
+      },
+    ] as Song[];
+    mockPlayerState.snapshot = { song_id: "song-async-cover" };
+
+    let resolveFetch: (bytes: number[]) => void = () => {};
+    mockGetCoverArtPreview.mockReturnValue(
+      new Promise<number[]>((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<PlaybackStage />);
+    });
+
+    // Before the backdrop resolves the stage is the plain (non-ambience) lyric
+    // stage, and the scroll viewport is mounted.
+    const stage = container.querySelector("[data-stage-visual-variant]");
+    expect(stage?.getAttribute("data-stage-visual-variant")).toBe("default");
+    const viewportBefore = container.querySelector(
+      "[data-testid='lyrics-scroll-viewport']",
+    ) as HTMLDivElement;
+    expect(viewportBefore).toBeTruthy();
+    // Simulate mid-song follow position: the user is a few lines in.
+    viewportBefore.scrollTop = 240;
+
+    // The async cover-art preview lands mid-playback → ambience flips on.
+    await act(async () => {
+      resolveFetch([0xff, 0xd8, 0x00]);
+      await Promise.resolve();
+    });
+
+    const stageAfter = container.querySelector("[data-stage-visual-variant]");
+    expect(stageAfter?.getAttribute("data-stage-visual-variant")).toBe(
+      "ambience",
+    );
+    expect(
+      container.querySelector("[data-native-stage-backdrop='true']"),
+    ).toBeTruthy();
+
+    const viewportAfter = container.querySelector(
+      "[data-testid='lyrics-scroll-viewport']",
+    ) as HTMLDivElement;
+    // Same DOM node instance: the panel was not remounted, so the line-runtime
+    // springs are intact (no gather replay) and scrollTop is preserved.
+    expect(viewportAfter).toBe(viewportBefore);
+    expect(viewportAfter.scrollTop).toBe(240);
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
   });
 });

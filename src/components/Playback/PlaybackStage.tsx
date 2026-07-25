@@ -61,6 +61,7 @@ export function PlaybackStage({
     !hasCdg &&
     !currentSongHasCdg &&
     nativeBackdropUrl != null;
+  const showCdg = hasCdg || currentSongHasCdg;
 
   return (
     <div
@@ -72,29 +73,41 @@ export function PlaybackStage({
           : undefined
       }
     >
-      {stageAmbience ? (
+      {showCdg ? (
+        <CdgCanvas />
+      ) : (
+        // RATIONALE (#200): The ambience backdrop resolves mid-song (async
+        // getCoverArtPreview flips nativeBackdropUrl → stageAmbience false→true).
+        // Rendering LyricsPanel inside the ambience-conditional subtree changed
+        // the element type at its slot, remounting it — which cleared the line
+        // springs (gather replay) and forced scrollTop=0 a second into playback.
+        // Keep LyricsPanel in one stable, keyed slot and toggle the backdrop as
+        // an absolutely-positioned sibling behind it so ambience never remounts
+        // the scroll viewport. CdgCanvas↔LyricsPanel is a genuine media switch
+        // (hasCdg / song metadata), not driven by async cover load.
         <>
-          <div className="absolute inset-0" data-native-stage-backdrop="true">
-            <div
-              className="absolute inset-[-6%] scale-[1.06] bg-center bg-cover"
-              style={{
-                ...(nativeBackdropUrl
-                  ? { backgroundImage: `url(${nativeBackdropUrl})` }
-                  : {}),
-                opacity: "var(--ambience-backdrop-opacity)",
-                filter: "var(--ambience-backdrop-filter)",
-              }}
-            />
-            <div className="absolute inset-0 bg-[var(--ambience-scrim)]" />
-          </div>
-          <div className="relative z-10 flex min-h-0 flex-1 overflow-hidden">
+          {stageAmbience ? (
+            <div className="absolute inset-0" data-native-stage-backdrop="true">
+              <div
+                className="absolute inset-[-6%] scale-[1.06] bg-center bg-cover"
+                style={{
+                  ...(nativeBackdropUrl
+                    ? { backgroundImage: `url(${nativeBackdropUrl})` }
+                    : {}),
+                  opacity: "var(--ambience-backdrop-opacity)",
+                  filter: "var(--ambience-backdrop-filter)",
+                }}
+              />
+              <div className="absolute inset-0 bg-[var(--ambience-scrim)]" />
+            </div>
+          ) : null}
+          <div
+            key="lyrics-stage-slot"
+            className="relative z-10 flex min-h-0 flex-1 overflow-hidden"
+          >
             <LyricsPanel presentation={presentation} />
           </div>
         </>
-      ) : hasCdg || currentSongHasCdg ? (
-        <CdgCanvas />
-      ) : (
-        <LyricsPanel presentation={presentation} />
       )}
     </div>
   );
