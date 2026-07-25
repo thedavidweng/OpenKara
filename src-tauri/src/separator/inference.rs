@@ -22,7 +22,10 @@ use crate::{
     audio::encode::StreamingOggWriter,
     config::StemMode,
     separator::{
-        error::SeparationError, model::LoadedModel, preprocess, workspace::SeparationWorkspace,
+        error::SeparationError,
+        model::{LoadedModel, TensorInterface},
+        preprocess, spectral_session,
+        workspace::SeparationWorkspace,
     },
 };
 use anyhow::{bail, Context, Result};
@@ -324,20 +327,46 @@ pub fn separate_streaming(
     let chunk_size = preprocess::target_frame_count(model, input_frame_count)?;
     let (hop_size, total_chunks) = chunk_schedule(input_frame_count, chunk_size);
 
-    let output_contract = detect_output_contract(model, channels)?;
-    configure_model_inputs(model, workspace)?;
-
-    // Verify the output contract is compatible with the requested stem mode.
-    match (&output_contract, stem_mode) {
-        (ModelOutputContract::TwoStemBundle, StemMode::TwoStem) => {}
-        (ModelOutputContract::FourStemStacked, _) => {}
-        (ModelOutputContract::FourStemSeparate, _) => {}
-        (ModelOutputContract::DualStacked, _) => {}
-        (ModelOutputContract::TwoStemBundle, StemMode::FourStem) => {
-            bail!(
-                "cannot use FourStem mode with a two-stem model bundle; \
-                 select TwoStem mode or install a four-output bundle"
+    // Session-path dispatch is decided ONLY by the model's declared tensor
+    // interface (verified at load time) — never by output ranks or names.
+    let mut spectral_path = None;
+    let mut output_contract = None;
+    match model.tensor_interface {
+        TensorInterface::SpectralCore => {
+            let iface = model
+                .spectral
+                .as_ref()
+                .context("spectral-core model is missing its verified interface")?;
+            anyhow::ensure!(
+                chunk_size == iface.segment_frames,
+                "spectral-core window is fixed at {} frames, chunk size was {}",
+                iface.segment_frames,
+                chunk_size
             );
+            // The transform plans/scratch are created once per run and
+            // reused across every chunk. Both stem modes are supported:
+            // the core always exposes four sources; TwoStem pre-mixes the
+            // accompaniment in the spectral domain.
+            spectral_path = Some((iface, crate::separator::spectral::SpectralPlans::new()));
+        }
+        TensorInterface::Waveform => {
+            let contract = detect_output_contract(model, channels)?;
+            configure_model_inputs(model, workspace)?;
+
+            // Verify the output contract is compatible with the requested stem mode.
+            match (&contract, stem_mode) {
+                (ModelOutputContract::TwoStemBundle, StemMode::TwoStem) => {}
+                (ModelOutputContract::FourStemStacked, _) => {}
+                (ModelOutputContract::FourStemSeparate, _) => {}
+                (ModelOutputContract::DualStacked, _) => {}
+                (ModelOutputContract::TwoStemBundle, StemMode::FourStem) => {
+                    bail!(
+                        "cannot use FourStem mode with a two-stem model bundle; \
+                         select TwoStem mode or install a four-output bundle"
+                    );
+                }
+            }
+            output_contract = Some(contract);
         }
     }
 
@@ -362,50 +391,69 @@ pub fn separate_streaming(
             chunk_frame_count,
         );
 
-        // 2. Build borrowed ORT inputs and run inference.
-        // The session guard must stay alive while we read the output tensors
-        // because SessionOutputs borrows from the session. We process the
-        // outputs (reading tensor data into workspace buffers) within this
-        // scope so the guard can be released before I/O.
-        let session_inputs = build_session_inputs(workspace)?;
-        {
-            let mut session_guard = model
-                .session
-                .lock()
-                .map_err(|_| anyhow::anyhow!("ONNX session lock was poisoned"))?;
-            let outputs = session_guard
-                .run(session_inputs)
-                .context("failed to run Demucs inference")?;
+        // 2-4. Run inference and feed the OLA rings, on the path selected by
+        // the model's declared tensor interface.
+        if let Some((iface, plans)) = spectral_path.as_mut() {
+            spectral_session::process_spectral_chunk(
+                model,
+                iface,
+                plans,
+                workspace,
+                writers,
+                stem_mode,
+                chunk_frame_count,
+                &window,
+                chunk_start_frame,
+            )?;
+        } else {
+            let output_contract =
+                output_contract.context("waveform path requires a detected output contract")?;
+            // Build borrowed ORT inputs and run inference.
+            // The session guard must stay alive while we read the output
+            // tensors because SessionOutputs borrows from the session. We
+            // process the outputs (reading tensor data into workspace
+            // buffers) within this scope so the guard can be released
+            // before I/O.
+            let session_inputs = build_session_inputs(workspace)?;
+            {
+                let mut session_guard = model
+                    .session
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("ONNX session lock was poisoned"))?;
+                let outputs = session_guard
+                    .run(session_inputs)
+                    .context("failed to run Demucs inference")?;
 
-            // 4. Read output tensor views and feed to OLA rings.
-            // The writers are passed so add_chunk can flush to them when
-            // it auto-shifts the OLA ring.
-            match stem_mode {
-                StemMode::TwoStem => {
-                    process_two_stem_chunk(
-                        &outputs,
-                        output_contract,
-                        workspace,
-                        writers,
-                        chunk_frame_count,
-                        &window,
-                        chunk_start_frame,
-                    )?;
-                }
-                StemMode::FourStem => {
-                    process_four_stem_chunk(
-                        &outputs,
-                        output_contract,
-                        workspace,
-                        writers,
-                        chunk_frame_count,
-                        &window,
-                        chunk_start_frame,
-                    )?;
+                // Read output tensor views and feed to OLA rings. The
+                // writers are passed so add_chunk can flush to them when
+                // it auto-shifts the OLA ring.
+                match stem_mode {
+                    StemMode::TwoStem => {
+                        process_two_stem_chunk(
+                            &outputs,
+                            output_contract,
+                            workspace,
+                            writers,
+                            chunk_frame_count,
+                            &window,
+                            chunk_start_frame,
+                        )?;
+                    }
+                    StemMode::FourStem => {
+                        process_four_stem_chunk(
+                            &outputs,
+                            output_contract,
+                            workspace,
+                            writers,
+                            chunk_frame_count,
+                            &window,
+                            chunk_start_frame,
+                        )?;
+                    }
                 }
             }
+            // Session guard and outputs are both dropped here.
         }
-        // Session guard and outputs are both dropped here.
 
         // 5. Flush finalized frames to writers.
         // After processing chunk N (starting at chunk_start_frame), frames
@@ -537,26 +585,14 @@ fn process_two_stem_chunk(
             // fields in the workspace, so NLL allows simultaneous borrows.
             // The sink closures write to the streaming writers when the ring
             // auto-shifts.
-            let sample_count = chunk_frame_count * channels;
-            let rings = workspace
-                .two_stem_rings
-                .as_mut()
-                .context("TwoStem mode requires two_stem_rings in workspace")?;
-            let vocals_buf = &workspace.stem_output_buffers[v_idx][..sample_count];
-            rings.vocals.add_chunk(
-                chunk_start_frame,
+            feed_two_stem_rings(
+                workspace,
+                writers,
+                v_idx,
+                a_idx,
                 chunk_frame_count,
-                vocals_buf,
                 window,
-                |pcm| writers.write_vocals(pcm),
-            )?;
-            let accomp_buf = &workspace.stem_output_buffers[a_idx][..sample_count];
-            rings.accompaniment.add_chunk(
                 chunk_start_frame,
-                chunk_frame_count,
-                accomp_buf,
-                window,
-                |pcm| writers.write_accompaniment(pcm),
             )?;
         }
         ModelOutputContract::DualStacked => {
@@ -602,26 +638,14 @@ fn process_two_stem_chunk(
                 bail!("dual model did not produce its stacked two-stem output");
             }
 
-            let sample_count = chunk_frame_count * channels;
-            let rings = workspace
-                .two_stem_rings
-                .as_mut()
-                .context("TwoStem mode requires two_stem_rings in workspace")?;
-            let vocals_buf = &workspace.stem_output_buffers[0][..sample_count];
-            rings.vocals.add_chunk(
-                chunk_start_frame,
+            feed_two_stem_rings(
+                workspace,
+                writers,
+                0,
+                1,
                 chunk_frame_count,
-                vocals_buf,
                 window,
-                |pcm| writers.write_vocals(pcm),
-            )?;
-            let accomp_buf = &workspace.stem_output_buffers[1][..sample_count];
-            rings.accompaniment.add_chunk(
                 chunk_start_frame,
-                chunk_frame_count,
-                accomp_buf,
-                window,
-                |pcm| writers.write_accompaniment(pcm),
             )?;
         }
         ModelOutputContract::FourStemStacked | ModelOutputContract::FourStemSeparate => {
@@ -666,10 +690,48 @@ fn process_two_stem_chunk(
     Ok(())
 }
 
-/// Process a FourStem chunk: read four stems and feed each to its OLA ring.
-fn process_four_stem_chunk(
-    outputs: &ort::session::SessionOutputs,
-    contract: ModelOutputContract,
+/// Feed vocals + accompaniment OLA rings from two workspace stem buffers.
+///
+/// Shared by every path whose vocals/accompaniment already sit in stem
+/// output buffers (two-stem bundles, dual-stacked reads, and the spectral
+/// session's composed stems).
+pub(crate) fn feed_two_stem_rings(
+    workspace: &mut SeparationWorkspace,
+    writers: &mut StemWriters,
+    vocals_idx: usize,
+    accomp_idx: usize,
+    chunk_frame_count: usize,
+    window: &[f32],
+    chunk_start_frame: usize,
+) -> Result<()> {
+    let channels = workspace.channels;
+    let sample_count = chunk_frame_count * channels;
+    let rings = workspace
+        .two_stem_rings
+        .as_mut()
+        .context("TwoStem mode requires two_stem_rings in workspace")?;
+    let vocals_buf = &workspace.stem_output_buffers[vocals_idx][..sample_count];
+    rings.vocals.add_chunk(
+        chunk_start_frame,
+        chunk_frame_count,
+        vocals_buf,
+        window,
+        |pcm| writers.write_vocals(pcm),
+    )?;
+    let accomp_buf = &workspace.stem_output_buffers[accomp_idx][..sample_count];
+    rings.accompaniment.add_chunk(
+        chunk_start_frame,
+        chunk_frame_count,
+        accomp_buf,
+        window,
+        |pcm| writers.write_accompaniment(pcm),
+    )?;
+    Ok(())
+}
+
+/// Feed the four stem OLA rings from the workspace stem buffers
+/// (drums, bass, other, vocals in buffer order 0..3).
+pub(crate) fn feed_four_stem_rings(
     workspace: &mut SeparationWorkspace,
     writers: &mut StemWriters,
     chunk_frame_count: usize,
@@ -677,12 +739,6 @@ fn process_four_stem_chunk(
     chunk_start_frame: usize,
 ) -> Result<()> {
     let channels = workspace.channels;
-
-    // Phase 1: read four stems into reusable buffers.
-    read_four_stems_into(outputs, contract, channels, chunk_frame_count, workspace)?;
-
-    // Phase 2: feed each stem to its OLA ring. The sink closures write to
-    // the streaming writers when the ring auto-shifts.
     let sample_count = chunk_frame_count * channels;
     let rings = workspace
         .four_stem_rings
@@ -726,6 +782,32 @@ fn process_four_stem_chunk(
     )?;
 
     Ok(())
+}
+
+/// Process a FourStem chunk: read four stems and feed each to its OLA ring.
+fn process_four_stem_chunk(
+    outputs: &ort::session::SessionOutputs,
+    contract: ModelOutputContract,
+    workspace: &mut SeparationWorkspace,
+    writers: &mut StemWriters,
+    chunk_frame_count: usize,
+    window: &[f32],
+    chunk_start_frame: usize,
+) -> Result<()> {
+    let channels = workspace.channels;
+
+    // Phase 1: read four stems into reusable buffers.
+    read_four_stems_into(outputs, contract, channels, chunk_frame_count, workspace)?;
+
+    // Phase 2: feed each stem to its OLA ring. The sink closures write to
+    // the streaming writers when the ring auto-shifts.
+    feed_four_stem_rings(
+        workspace,
+        writers,
+        chunk_frame_count,
+        window,
+        chunk_start_frame,
+    )
 }
 
 /// Read four stems from the model output into the workspace's reusable

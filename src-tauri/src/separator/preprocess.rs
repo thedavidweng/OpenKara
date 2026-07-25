@@ -13,6 +13,13 @@ pub struct PreparedModelInput {
 }
 
 pub fn target_frame_count(model: &LoadedModel, fallback_frame_count: usize) -> Result<usize> {
+    // Spectral-core models carry their fixed window in the verified session
+    // interface (the first graph input is the rank-5 spectral tensor, so the
+    // waveform rank-3 rule below does not apply).
+    if let Some(spectral) = &model.spectral {
+        return Ok(spectral.segment_frames);
+    }
+
     if model.input_shape.len() != 3 {
         bail!(
             "Demucs model input rank must be 3, got {} dimensions",
