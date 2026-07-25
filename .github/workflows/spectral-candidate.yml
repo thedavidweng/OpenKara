@@ -81,18 +81,6 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libxdo-dev
 
-      - name: Resolve waveform model from catalog snapshot
-        id: waveform
-        shell: bash
-        run: |
-          {
-            echo "url=$(node scripts/resolve-model.mjs --field url)"
-            echo "sha256=$(node scripts/resolve-model.mjs --field sha256)"
-            echo "file=$(node scripts/resolve-model.mjs --field filename)"
-            echo "file_sha256=$(node scripts/resolve-model.mjs --field file_sha256)"
-            echo "archived=$(node scripts/resolve-model.mjs --field archived)"
-          } >> "$GITHUB_OUTPUT"
-
       - name: Resolve spectral candidate from the ${{ inputs.channel }} channel
         id: spectral
         shell: bash
@@ -109,20 +97,13 @@ jobs:
       - name: Restore model cache
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: |
-            src-tauri/models/${{ steps.waveform.outputs.file }}
-            src-tauri/models/${{ steps.spectral.outputs.file }}
-          key: spectral-candidate-models-${{ steps.waveform.outputs.file_sha256 }}-${{ steps.spectral.outputs.sha256 }}
+          path: src-tauri/models/${{ steps.spectral.outputs.file }}
+          key: spectral-candidate-models-${{ steps.spectral.outputs.sha256 }}
           enableCrossOsArchive: true
 
-      - name: Download and verify models
+      - name: Download and verify the candidate model
         shell: bash
         env:
-          WAVEFORM_URL: ${{ steps.waveform.outputs.url }}
-          WAVEFORM_SHA256: ${{ steps.waveform.outputs.sha256 }}
-          WAVEFORM_FILE: ${{ steps.waveform.outputs.file }}
-          WAVEFORM_FILE_SHA256: ${{ steps.waveform.outputs.file_sha256 }}
-          WAVEFORM_ARCHIVED: ${{ steps.waveform.outputs.archived }}
           SPECTRAL_URL: ${{ steps.spectral.outputs.url }}
           SPECTRAL_SHA256: ${{ steps.spectral.outputs.sha256 }}
           SPECTRAL_FILE: ${{ steps.spectral.outputs.file }}
@@ -135,16 +116,6 @@ jobs:
           }
           verified() { [ -f "$1" ] && [ "$(sha256 "$1")" = "$2" ]; }
           mkdir -p src-tauri/models
-          if ! verified "src-tauri/models/$WAVEFORM_FILE" "$WAVEFORM_FILE_SHA256"; then
-            curl -L --fail "$WAVEFORM_URL" -o /tmp/waveform-download
-            verified /tmp/waveform-download "$WAVEFORM_SHA256" || { echo "waveform download digest mismatch"; exit 1; }
-            if [ "$WAVEFORM_ARCHIVED" = "true" ]; then
-              tar -xzf /tmp/waveform-download -C src-tauri/models "$WAVEFORM_FILE"
-            else
-              mv /tmp/waveform-download "src-tauri/models/$WAVEFORM_FILE"
-            fi
-          fi
-          verified "src-tauri/models/$WAVEFORM_FILE" "$WAVEFORM_FILE_SHA256" || { echo "waveform model digest mismatch"; exit 1; }
           if ! verified "src-tauri/models/$SPECTRAL_FILE" "$SPECTRAL_SHA256"; then
             curl -L --fail "$SPECTRAL_URL" -o "src-tauri/models/$SPECTRAL_FILE"
           fi
@@ -172,13 +143,13 @@ jobs:
         shell: bash
         run: cargo nextest run --no-fail-fast -E 'binary(phase7_spectral) or test(spectral)'
 
-      - name: Candidate equivalence + streaming + cancellation
+      - name: Candidate streaming + cancellation suite
         working-directory: src-tauri
         shell: bash
         env:
           OPENKARA_SPECTRAL_MODEL: ${{ github.workspace }}/src-tauri/models/${{ steps.spectral.outputs.file }}
         run: |
-          cargo nextest run --no-fail-fast -E 'binary(phase7_spectral_session) or test(spectral_core_matches_waveform_model_on_one_window)'
+          cargo nextest run --no-fail-fast -E 'binary(phase7_spectral_session)'
 
       - name: Measurement harness
         working-directory: src-tauri

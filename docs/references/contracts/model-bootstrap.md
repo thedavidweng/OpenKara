@@ -55,12 +55,14 @@
 - 网络刷新时：先按指针声明的字节数与 SHA-256 验证清单原始字节，**验证通过
   后才解析**；拒绝 generation 低于内嵌快照的指针（stable 通道单调递增）。
 - 清单结构校验：artifact ID 唯一、digest 为 64 位十六进制、URL 必须 HTTPS、
-  `tensor_interface` 必须为 `waveform`、每个模型的
+  `tensor_interface` 必须为 `waveform` 或 `spectral-core`、每个模型的
   `compatible_runtime_ids` 非空且指向已知 runtime、兼容性边非空、每个模型
   必须声明恰好一个 `.onnx` 安装文件。
-- **多工件解析**（generation ≥ 5）：同一变体可有多个交付形态（raw 保留给旧
-  消费者、压缩 dual 为首选）。确定性规则：非弃用工件中**下载体积最小者**
-  胜出——与上游偏好序一致（压缩 dual < 去重 raw < raw）。
+- **多工件解析**（generation ≥ 8）：同一变体可有多个交付形态（历史 waveform
+  交付保留在清单中供 provenance）。确定性规则：先过滤到**可加载接口**
+  （`tensor_interface == "spectral-core"`，频谱会话是唯一生产路径）且非弃用的
+  工件，再取**下载体积最小者**——体积规则绝不允许跨接口比较（ft 变体的
+  waveform dual 比 spectral 交付更小，若不过滤会解析出加载器拒绝的工件）。
 - **压缩交付**：下载负载按 `archive_digest` 验证，安全解压后再按
   `extracted_file_digests` 验证安装的 `.onnx`；raw 交付两者为同一字节。
 - **dual 双输出波形模型**（历史工件）：`outputs[0]=[1,4,2,N]` 四轨堆叠 +
