@@ -659,6 +659,10 @@ pub async fn fetch_lyrics_online(
     state: State<'_, AppState>,
     app_handle: AppHandle,
     song_id: String,
+    // True only for the explicit "fetch lyrics online" action. The silent
+    // auto-upgrade fired on song open passes false so it cannot clobber
+    // user-authored lyrics (issue #203).
+    user_initiated: bool,
 ) -> CommandResult<LyricsPayload> {
     let background_state = state.inner().clone();
     let song_id_for_phase1 = song_id.clone();
@@ -691,6 +695,7 @@ pub async fn fetch_lyrics_online(
                     &handle_for_phase3,
                     &song_hash,
                     online_result,
+                    user_initiated,
                 )
             })
             .await
@@ -735,56 +740,95 @@ fn fetch_lyrics_online_phase3(
     app_handle: &AppHandle,
     song_hash: &str,
     online_result: Result<Option<LyricsFetchResult>, LyricsError>,
+    user_initiated: bool,
 ) -> CommandResult<LyricsPayload> {
     remote::run_song_database_mutation_with_result(
         state,
         app_handle,
         |connection| {
-            let result: Result<LyricsPayload, LyricsError> = match online_result {
-                Ok(Some(fetched)) => {
-                    let lines = lyrics::fetch::parse_lyrics_auto(&fetched.raw_lrc)
-                        .map_err(|e| LyricsError::LyricsNotReady(e.to_string()))?;
-                    let raw_lrc = fetched.raw_lrc.clone();
-                    let source = fetched.source.clone();
-                    let offset_ms = lyrics::parser::parse_lrc_metadata(&raw_lrc)
-                        .offset_ms
-                        .unwrap_or(0);
-                    let fetched_at = current_unix_timestamp()
-                        .map_err(|e| LyricsError::Internal(e.to_string()))?;
-
-                    cache::lyrics::upsert_lyrics_cache_entry(
-                        connection,
-                        &LyricsCacheEntry {
-                            song_hash: song_hash.to_owned(),
-                            lrc: fetched.raw_lrc,
-                            source: source.clone(),
-                            offset_ms,
-                            fetched_at,
-                        },
-                    )
-                    .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?;
-
-                    Ok(LyricsPayload {
-                        song_id: song_hash.to_owned(),
-                        lines,
-                        source: Some(source),
-                        offset_ms,
-                        raw_lrc,
-                    })
-                }
-                Ok(None) => Ok(LyricsPayload {
-                    song_id: song_hash.to_owned(),
-                    lines: Vec::new(),
-                    source: None,
-                    offset_ms: 0,
-                    raw_lrc: String::new(),
-                }),
-                Err(e) => Err(e),
-            };
-            result.map_err(Into::into)
+            apply_online_lyrics_result(connection, song_hash, online_result, user_initiated)
+                .map_err(Into::into)
         },
         |payload| payload.source.as_ref().map(|_| payload.song_id.clone()),
     )
+}
+
+/// Cache sources that a silent auto-upgrade (non-user-initiated online fetch)
+/// is allowed to overwrite. Embedded lyrics and the negative-cache marker are
+/// derived, not user-authored, so upgrading them to online synced lyrics is
+/// safe. Every other source — `Manual*`, `Sidecar*`, and already-online
+/// results — is user-authored or user-provided and must never be clobbered by
+/// a background upgrade (issue #203).
+fn is_auto_upgradable_source(source: &LyricsSource) -> bool {
+    matches!(source, LyricsSource::Embedded | LyricsSource::Absent)
+}
+
+/// Applies an online lyrics fetch result to the cache and returns the payload.
+///
+/// When `user_initiated` is false (the silent auto-upgrade fired on song open),
+/// an existing cache entry whose source is not auto-upgradable is preserved and
+/// returned unchanged instead of being overwritten — this is the belt-and-
+/// suspenders guard that keeps a wrong online match from destroying hand-entered
+/// or user-provided lyrics. When `user_initiated` is true (the explicit "fetch
+/// lyrics online" action), the online result always replaces the cache entry.
+fn apply_online_lyrics_result(
+    connection: &Connection,
+    song_hash: &str,
+    online_result: Result<Option<LyricsFetchResult>, LyricsError>,
+    user_initiated: bool,
+) -> Result<LyricsPayload, LyricsError> {
+    match online_result {
+        Ok(Some(fetched)) => {
+            if !user_initiated {
+                if let Some(existing) = cache::lyrics::get_lyrics_cache_entry(connection, song_hash)
+                    .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?
+                {
+                    if !is_auto_upgradable_source(&existing.source) {
+                        // Preserve the user-authored/provided entry untouched.
+                        return payload_from_cached_entry(song_hash.to_owned(), existing);
+                    }
+                }
+            }
+
+            let lines = lyrics::fetch::parse_lyrics_auto(&fetched.raw_lrc)
+                .map_err(|e| LyricsError::LyricsNotReady(e.to_string()))?;
+            let raw_lrc = fetched.raw_lrc.clone();
+            let source = fetched.source.clone();
+            let offset_ms = lyrics::parser::parse_lrc_metadata(&raw_lrc)
+                .offset_ms
+                .unwrap_or(0);
+            let fetched_at =
+                current_unix_timestamp().map_err(|e| LyricsError::Internal(e.to_string()))?;
+
+            cache::lyrics::upsert_lyrics_cache_entry(
+                connection,
+                &LyricsCacheEntry {
+                    song_hash: song_hash.to_owned(),
+                    lrc: fetched.raw_lrc,
+                    source: source.clone(),
+                    offset_ms,
+                    fetched_at,
+                },
+            )
+            .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?;
+
+            Ok(LyricsPayload {
+                song_id: song_hash.to_owned(),
+                lines,
+                source: Some(source),
+                offset_ms,
+                raw_lrc,
+            })
+        }
+        Ok(None) => Ok(LyricsPayload {
+            song_id: song_hash.to_owned(),
+            lines: Vec::new(),
+            source: None,
+            offset_ms: 0,
+            raw_lrc: String::new(),
+        }),
+        Err(e) => Err(e),
+    }
 }
 
 fn plain_text_to_lines(text: &str) -> Vec<LyricLine> {
@@ -877,5 +921,146 @@ mod tests {
         let now = current_unix_timestamp().unwrap();
         let entry = absent_entry(now);
         assert!(!is_negative_cache_expired(&entry));
+    }
+
+    fn test_db() -> Connection {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        cache::apply_migrations(&conn).expect("migrations");
+        conn
+    }
+
+    fn insert_song(conn: &Connection, hash: &str) {
+        let song = crate::library::Song {
+            hash: hash.to_owned(),
+            file_path: Some(format!("media/{hash}.mp3")),
+            cdg_path: None,
+            media_g_container: None,
+            instrumental: false,
+            language: None,
+            audio_source_kind: "original".to_owned(),
+            title: Some("Title".to_owned()),
+            artist: Some("Artist".to_owned()),
+            album: None,
+            duration_ms: 0,
+            cover_art: None,
+            has_cover_art: false,
+            imported_at: 0,
+            original_ext: None,
+        };
+        cache::upsert_song(conn, &song).expect("insert song");
+    }
+
+    fn seed_entry(conn: &Connection, hash: &str, source: LyricsSource, lrc: &str) {
+        cache::lyrics::upsert_lyrics_cache_entry(
+            conn,
+            &LyricsCacheEntry {
+                song_hash: hash.to_owned(),
+                lrc: lrc.to_owned(),
+                source,
+                offset_ms: 0,
+                fetched_at: 1_000_000,
+            },
+        )
+        .expect("seed lyrics entry");
+    }
+
+    fn synced_online_result() -> Result<Option<LyricsFetchResult>, LyricsError> {
+        Ok(Some(LyricsFetchResult {
+            source: LyricsSource::LrcLib,
+            raw_lrc: "[00:01.00]Online line one\n[00:02.00]Online line two\n".to_owned(),
+        }))
+    }
+
+    // Issue #203: the silent auto-upgrade must never overwrite hand-entered
+    // lyrics with an online match (which may be a wrong match for a mistagged
+    // song).
+    #[test]
+    fn auto_upgrade_does_not_clobber_manual_entry() {
+        let conn = test_db();
+        insert_song(&conn, "song-manual");
+        let manual_lrc = "Hand written line one\nHand written line two\n";
+        seed_entry(&conn, "song-manual", LyricsSource::Manual, manual_lrc);
+
+        let payload =
+            apply_online_lyrics_result(&conn, "song-manual", synced_online_result(), false)
+                .expect("apply should succeed");
+
+        // The returned payload and the cache entry both stay Manual.
+        assert_eq!(payload.source, Some(LyricsSource::Manual));
+        assert_eq!(payload.raw_lrc, manual_lrc);
+
+        let stored = cache::lyrics::get_lyrics_cache_entry(&conn, "song-manual")
+            .expect("get")
+            .expect("entry exists");
+        assert_eq!(stored.source, LyricsSource::Manual);
+        assert_eq!(stored.lrc, manual_lrc);
+    }
+
+    #[test]
+    fn auto_upgrade_preserves_manual_ttml_and_lys_and_sidecar() {
+        for (hash, source) in [
+            ("h-manual-ttml", LyricsSource::ManualTtml),
+            ("h-manual-lys", LyricsSource::ManualLys),
+            ("h-sidecar", LyricsSource::Sidecar),
+            ("h-sidecar-ttml", LyricsSource::SidecarTtml),
+            ("h-sidecar-lys", LyricsSource::SidecarLys),
+        ] {
+            let conn = test_db();
+            insert_song(&conn, hash);
+            seed_entry(&conn, hash, source.clone(), "user provided lyric\n");
+
+            let payload = apply_online_lyrics_result(&conn, hash, synced_online_result(), false)
+                .expect("apply should succeed");
+            assert_eq!(payload.source, Some(source.clone()), "source {source:?}");
+
+            let stored = cache::lyrics::get_lyrics_cache_entry(&conn, hash)
+                .expect("get")
+                .expect("entry exists");
+            assert_eq!(stored.source, source, "cache source {source:?}");
+        }
+    }
+
+    #[test]
+    fn user_initiated_fetch_replaces_manual_entry() {
+        let conn = test_db();
+        insert_song(&conn, "song-manual");
+        seed_entry(&conn, "song-manual", LyricsSource::Manual, "Hand written\n");
+
+        // The explicit "fetch lyrics online" action overwrites the manual entry.
+        let payload =
+            apply_online_lyrics_result(&conn, "song-manual", synced_online_result(), true)
+                .expect("apply should succeed");
+
+        assert_eq!(payload.source, Some(LyricsSource::LrcLib));
+
+        let stored = cache::lyrics::get_lyrics_cache_entry(&conn, "song-manual")
+            .expect("get")
+            .expect("entry exists");
+        assert_eq!(stored.source, LyricsSource::LrcLib);
+        assert!(stored.lrc.contains("Online line one"));
+    }
+
+    #[test]
+    fn auto_upgrade_replaces_embedded_entry() {
+        let conn = test_db();
+        insert_song(&conn, "song-embedded");
+        seed_entry(
+            &conn,
+            "song-embedded",
+            LyricsSource::Embedded,
+            "Embedded plain line\n",
+        );
+
+        // Embedded lyrics are derived, not user-authored — auto-upgrade applies.
+        let payload =
+            apply_online_lyrics_result(&conn, "song-embedded", synced_online_result(), false)
+                .expect("apply should succeed");
+
+        assert_eq!(payload.source, Some(LyricsSource::LrcLib));
+
+        let stored = cache::lyrics::get_lyrics_cache_entry(&conn, "song-embedded")
+            .expect("get")
+            .expect("entry exists");
+        assert_eq!(stored.source, LyricsSource::LrcLib);
     }
 }

@@ -26,6 +26,15 @@ export function extractEmbeddedLyrics(songId: string): Promise<LyricsPayload> {
   return invoke<LyricsPayload>("extract_embedded_lyrics", { songId });
 }
 
-export function fetchLyricsOnline(songId: string): Promise<LyricsPayload> {
-  return invoke<LyricsPayload>("fetch_lyrics_online", { songId });
+// `userInitiated` is true only for the explicit "fetch lyrics online" action.
+// The silent auto-upgrade fired on song open passes false so the backend will
+// not overwrite user-authored lyrics (issue #203).
+export function fetchLyricsOnline(
+  songId: string,
+  userInitiated: boolean,
+): Promise<LyricsPayload> {
+  return invoke<LyricsPayload>("fetch_lyrics_online", {
+    songId,
+    userInitiated,
+  });
 }
