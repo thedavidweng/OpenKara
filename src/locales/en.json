@@ -27,6 +27,7 @@
     "dialogTitleCreate": "Choose a location for your Karaoke Library",
     "dialogTitleOpen": "Open an existing Karaoke Library",
     "chooseLanguage": "Choose a language",
+    "openRemoteLibrary": "Choose a remote provider",
     "openRemoteLibraryDescription": "Connect Google Drive, Dropbox, or WebDAV to your remote repository.",
     "remoteProvider": {
       "googleDrive": {
@@ -183,6 +184,7 @@
   },
   "progress": {
     "separating": "Separating: {{title}}",
+    "uploadingToRemote": "Publishing to remote repository: {{title}}",
     "modelDownloadComplete": "Model download complete"
   },
   "queue": {

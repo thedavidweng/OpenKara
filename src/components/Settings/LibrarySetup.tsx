@@ -444,9 +444,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                 />
               </div>
               <h1 className="text-2xl font-bold text-[var(--color-text)]">
-                {t("setup.openRemoteLibrary", {
-                  defaultValue: "Choose a remote provider",
-                })}
+                {t("setup.openRemoteLibrary")}
               </h1>
               <p className="text-[14px] leading-relaxed text-[var(--color-text-dim)]">
                 {t("setup.openRemoteLibraryDescription", {

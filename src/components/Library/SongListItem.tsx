@@ -305,9 +305,6 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
               <TaskProgressBar
                 label={t("progress.uploadingToRemote", {
                   title: getSongDisplayName(song),
-                  defaultValue: `Publishing to remote repository: ${getSongDisplayName(
-                    song,
-                  )}`,
                 })}
                 percent={uploadStatus.percent}
               />
