@@ -1083,6 +1083,51 @@ jobs:
       - name: Run Playwright UI smoke tests
         run: node --run test:ui-smoke
 
+      # Count flaky tests (passed only after a retry) from the JSON report and
+      # surface them in the job summary. retries:1 keeps the job green when a
+      # test flakes, so without this a flaking test would degrade silently.
+      # Runs on always() so failures still get a flaky breakdown.
+      - name: Report flaky tests
+        if: always()
+        run: |
+          set -euo pipefail
+          report="playwright-report/results.json"
+          if [ ! -f "$report" ]; then
+            {
+              echo "## Playwright UI smoke — flaky tests"
+              echo ""
+              echo "_No JSON report at ${report}; skipping flaky analysis._"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          flaky=$(jq '.stats.flaky // 0' "$report")
+          unexpected=$(jq '.stats.unexpected // 0' "$report")
+          flaky_list=$(jq -r '
+            [ .. | .specs? // empty | .[] ]
+            | map(select(.tests | any(.status == "flaky")))
+            | .[] | "- `\(.title)`"
+          ' "$report")
+
+          {
+            echo "## Playwright UI smoke — flaky tests"
+            echo ""
+            echo "**Flaky (passed on retry):** ${flaky}"
+            echo "**Failed:** ${unexpected}"
+            echo ""
+            if [ "$flaky" -gt 0 ]; then
+              echo "These passed only after a retry — retries:1 masked them, so investigate:"
+              echo ""
+              echo "$flaky_list"
+            else
+              echo "No flaky tests detected."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$flaky" -gt 0 ]; then
+            echo "::warning::${flaky} flaky Playwright test(s) detected — passed only on retry (retries:1)."
+          fi
+
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

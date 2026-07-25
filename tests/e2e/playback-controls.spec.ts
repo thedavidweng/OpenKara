@@ -246,24 +246,42 @@ test.describe("Playback controls geometry and pressed state", () => {
       const sel = '[data-playback-action="vocals-mute"]';
       const btn = page.locator(sel);
       await btn.click();
+
+      // Semantic terminal state: muted (aria-pressed) with no selected chrome.
+      // The absence of data-active is exactly what keeps the background fill
+      // transparent — assert the attribute contract instead of sampling the
+      // computed backgroundColor, which reads the :hover / transition value
+      // right after a mouse click (the WebKit flake source).
       await expect(btn).toHaveAttribute("aria-pressed", "true");
       await expect(btn).not.toHaveAttribute("data-active", "true");
 
-      const info = await page.evaluate((s) => {
-        const el = document.querySelector(s) as HTMLElement;
-        const cs = window.getComputedStyle(el);
-        const rootCs = window.getComputedStyle(document.documentElement);
-        return {
-          color: cs.color,
-          backgroundColor: cs.backgroundColor,
-          dimmerToken: rootCs.getPropertyValue("--color-text-dimmer").trim(),
-        };
-      }, sel);
-      // No selected fill — background stays transparent.
-      expect(info.backgroundColor).toMatch(
-        /rgba?\(0,\s*0,\s*0,\s*0\)|transparent/,
-      );
-      expect(info.dimmerToken).not.toBe("");
+      // The muted icon settles to the --color-text-dimmer token. color
+      // transitions on click, so poll for the resolved terminal value (built-in
+      // retry) rather than sampling once mid-transition. Resolve the token via
+      // a probe injected into the button's OWN cascade scope: the token is
+      // re-defined for the [data-window-chrome-platform="desktop"] subtree the
+      // app renders inside, so a document.body probe would resolve a different
+      // value. Comparing rgb-to-rgb in-scope keeps this theme-agnostic.
+      await expect
+        .poll(async () =>
+          page.evaluate((s) => {
+            const el = document.querySelector(s) as HTMLElement;
+            const scopedDimmer = window
+              .getComputedStyle(el)
+              .getPropertyValue("--color-text-dimmer")
+              .trim();
+            if (scopedDimmer === "") {
+              return false;
+            }
+            const probe = document.createElement("span");
+            probe.style.color = "var(--color-text-dimmer)";
+            (el.parentElement ?? el).appendChild(probe);
+            const dimmerRgb = window.getComputedStyle(probe).color;
+            probe.remove();
+            return window.getComputedStyle(el).color === dimmerRgb;
+          }, sel),
+        )
+        .toBe(true);
     });
 
     test("queue button geometry does not change when panel opens", async ({

@@ -60,6 +60,7 @@ public/dict/
 # Playwright
 test-results/
 blob-report/
+playwright-report/
 
 # CommandCode / Taste (auto-managed by CommandCode)
 .commandcode/
