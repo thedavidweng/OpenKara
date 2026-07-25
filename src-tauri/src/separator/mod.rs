@@ -8,5 +8,6 @@ pub mod model_cache;
 pub mod ola;
 pub mod preprocess;
 pub mod runtime_bootstrap;
+pub mod spectral;
 pub mod verified_manifest;
 pub mod workspace;

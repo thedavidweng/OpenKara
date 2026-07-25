@@ -2791,6 +2791,7 @@ dependencies = [
  "quick-xml",
  "rand 0.10.2",
  "rayon",
+ "realfft",
  "regex-lite",
  "reqwest",
  "ringbuf",
