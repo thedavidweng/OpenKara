@@ -458,9 +458,14 @@ pub fn downgrade_to_two_stem(
     )
     .context("failed to write accompaniment.ogg")?;
 
-    let freed_bytes = file_size_or_zero(&drums_abs)
+    // Net disk reclaimed = bytes of the deleted individual stems minus the bytes
+    // of the accompaniment.ogg we just wrote in their place. Reporting only the
+    // deleted stems over-states the savings by roughly one stem's worth (#207).
+    let deleted_bytes = file_size_or_zero(&drums_abs)
         + file_size_or_zero(&bass_abs)
         + file_size_or_zero(&other_abs);
+    let accompaniment_bytes = file_size_or_zero(&accomp_abs);
+    let freed_bytes = deleted_bytes.saturating_sub(accompaniment_bytes);
 
     fs::remove_file(&drums_abs)
         .with_context(|| format!("failed to remove {}", drums_abs.display()))?;
@@ -516,7 +521,16 @@ pub fn batch_downgrade_to_two_stem(
     Ok((count, total_freed))
 }
 
-/// Estimate the disk space that would be freed by downgrading all 4-stem entries to 2-stem.
+/// Estimate the disk space that would be freed by downgrading all 4-stem entries
+/// to 2-stem.
+///
+/// Downgrading deletes the drums/bass/other stems but writes a new
+/// accompaniment.ogg in their place, so the net reclaimed space is the deleted
+/// bytes minus the accompaniment. The accompaniment does not exist yet at
+/// estimate time, so we approximate its size with the existing vocals stem: it
+/// is a single stem encoded with the same OGG/Vorbis settings, making it a close
+/// proxy for the accompaniment mix. Without this offset the estimate over-reports
+/// by roughly one stem's worth (#207).
 pub fn estimate_downgrade_savings(
     connection: &Connection,
     library_root: &LibraryRoot,
@@ -526,12 +540,19 @@ pub fn estimate_downgrade_savings(
 
     let mut total = 0u64;
     for entry in entries.iter().filter(|e| e.has_individual_stems()) {
+        let mut deleted_bytes = 0u64;
         for rel_path in [&entry.drums_path, &entry.bass_path, &entry.other_path]
             .into_iter()
             .flatten()
         {
-            total += file_size_or_zero(&library_root.resolve(rel_path));
+            deleted_bytes += file_size_or_zero(&library_root.resolve(rel_path));
         }
+
+        // Approximate the accompaniment that would be written using the existing
+        // vocals stem as a same-encoding proxy.
+        let accompaniment_estimate = file_size_or_zero(&library_root.resolve(&entry.vocals_path));
+
+        total += deleted_bytes.saturating_sub(accompaniment_estimate);
     }
 
     Ok(total)
