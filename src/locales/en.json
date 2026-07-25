@@ -555,7 +555,8 @@
     "openSettingsToUpgrade": "Open Settings",
     "downloadFailed": "Model download failed: {{error}}",
     "unknownError": "Unknown error",
-    "separationUnavailable": "Separation unavailable"
+    "downloadFailedHint": "Check your connection, then retry the download.",
+    "retryDownload": "Retry"
   },
   "playlist": {
     "create": "New Playlist",

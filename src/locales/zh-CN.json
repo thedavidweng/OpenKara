@@ -555,7 +555,8 @@
     "openSettingsToUpgrade": "打开设置",
     "downloadFailed": "模型下载失败：{{error}}",
     "unknownError": "未知错误",
-    "separationUnavailable": "分离不可用"
+    "downloadFailedHint": "请检查网络连接后重试下载。",
+    "retryDownload": "重试"
   },
   "playlist": {
     "create": "新建播放列表",
