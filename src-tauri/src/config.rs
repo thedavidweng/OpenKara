@@ -149,7 +149,9 @@ pub enum ExecutionProviderPreference {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
 enum ExecutionProviderPlatform {
-    Macos,
+    /// Apple Silicon: XNNPACK's NEON kernels beat the ORT CPU EP here.
+    MacosAppleSilicon,
+    MacosIntel,
     Windows,
     Linux,
     Other,
@@ -157,9 +159,13 @@ enum ExecutionProviderPlatform {
 
 impl ExecutionProviderPlatform {
     fn current() -> Self {
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         {
-            Self::Macos
+            Self::MacosAppleSilicon
+        }
+        #[cfg(all(target_os = "macos", not(target_arch = "aarch64")))]
+        {
+            Self::MacosIntel
         }
         #[cfg(target_os = "windows")]
         {
@@ -187,18 +193,29 @@ impl ExecutionProviderPreference {
     fn available_for(platform: ExecutionProviderPlatform) -> &'static [Self] {
         match platform {
             ExecutionProviderPlatform::Windows => &[Self::Cpu, Self::Xnnpack, Self::DirectMl],
-            ExecutionProviderPlatform::Macos
+            ExecutionProviderPlatform::MacosAppleSilicon
+            | ExecutionProviderPlatform::MacosIntel
             | ExecutionProviderPlatform::Linux
             | ExecutionProviderPlatform::Other => &[Self::Cpu, Self::Xnnpack],
         }
     }
 
+    /// Measured defaults (issue #170; five-target dual-preference bench on
+    /// the spectral-core stable artifact, run 30164564615, archived on the
+    /// issue): XNNPACK wins on Apple Silicon (warm 2.15 s vs 2.39 s on CI,
+    /// 2.67 s vs 5.08 s on an M-series dev machine) but LOSES to the ORT CPU
+    /// EP by ~1.6–2.1x on Linux x64/arm64 and Intel macOS (e.g. Linux x64
+    /// warm 6.27 s vs 3.01 s). Windows keeps DirectML: with a GPU it
+    /// accelerates, and the measured no-GPU fallback is cost-free
+    /// (identical numbers to the CPU EP). Tuning never changes StemMode or
+    /// overlap (#173).
     fn default_for(platform: ExecutionProviderPlatform) -> Self {
         match platform {
             ExecutionProviderPlatform::Windows => Self::DirectMl,
-            ExecutionProviderPlatform::Macos
+            ExecutionProviderPlatform::MacosAppleSilicon => Self::Xnnpack,
+            ExecutionProviderPlatform::MacosIntel
             | ExecutionProviderPlatform::Linux
-            | ExecutionProviderPlatform::Other => Self::Xnnpack,
+            | ExecutionProviderPlatform::Other => Self::Cpu,
         }
     }
 
@@ -976,13 +993,15 @@ mod tests {
     fn execution_provider_available_table_is_exact_and_ordered() {
         use ExecutionProviderPlatform::*;
 
-        assert_eq!(
-            ExecutionProviderPreference::available_for(Macos),
-            &[
-                ExecutionProviderPreference::Cpu,
-                ExecutionProviderPreference::Xnnpack
-            ]
-        );
+        for macos in [MacosAppleSilicon, MacosIntel] {
+            assert_eq!(
+                ExecutionProviderPreference::available_for(macos),
+                &[
+                    ExecutionProviderPreference::Cpu,
+                    ExecutionProviderPreference::Xnnpack
+                ]
+            );
+        }
         assert_eq!(
             ExecutionProviderPreference::available_for(Linux),
             &[
@@ -1018,7 +1037,7 @@ mod tests {
     #[test]
     fn directml_is_present_only_for_windows() {
         use ExecutionProviderPlatform::*;
-        for &platform in &[Macos, Linux, Other] {
+        for &platform in &[MacosAppleSilicon, MacosIntel, Linux, Other] {
             assert!(!ExecutionProviderPreference::available_for(platform)
                 .contains(&ExecutionProviderPreference::DirectMl));
         }
@@ -1029,7 +1048,7 @@ mod tests {
     #[test]
     fn cpu_and_xnnpack_are_present_for_every_target() {
         use ExecutionProviderPlatform::*;
-        for &platform in &[Macos, Windows, Linux, Other] {
+        for &platform in &[MacosAppleSilicon, MacosIntel, Windows, Linux, Other] {
             let list = ExecutionProviderPreference::available_for(platform);
             assert!(list.contains(&ExecutionProviderPreference::Cpu));
             assert!(list.contains(&ExecutionProviderPreference::Xnnpack));
@@ -1070,7 +1089,7 @@ mod tests {
     #[test]
     fn every_target_default_is_a_member_of_its_list() {
         use ExecutionProviderPlatform::*;
-        for &platform in &[Macos, Windows, Linux, Other] {
+        for &platform in &[MacosAppleSilicon, MacosIntel, Windows, Linux, Other] {
             let default = ExecutionProviderPreference::default_for(platform);
             assert!(default.is_available_for(platform));
         }
@@ -1084,7 +1103,7 @@ mod tests {
             ..AppConfig::default()
         };
         assert_eq!(
-            config.effective_execution_provider_for(Macos),
+            config.effective_execution_provider_for(MacosAppleSilicon),
             ExecutionProviderPreference::Cpu
         );
         assert_eq!(
@@ -1129,16 +1148,20 @@ mod tests {
             ..AppConfig::default()
         };
         assert_eq!(
-            config.effective_execution_provider_for(Macos),
+            config.effective_execution_provider_for(MacosAppleSilicon),
             ExecutionProviderPreference::Xnnpack
+        );
+        assert_eq!(
+            config.effective_execution_provider_for(MacosIntel),
+            ExecutionProviderPreference::Cpu
         );
         assert_eq!(
             config.effective_execution_provider_for(Linux),
-            ExecutionProviderPreference::Xnnpack
+            ExecutionProviderPreference::Cpu
         );
         assert_eq!(
             config.effective_execution_provider_for(Other),
-            ExecutionProviderPreference::Xnnpack
+            ExecutionProviderPreference::Cpu
         );
         assert_eq!(
             config.effective_execution_provider_for(Windows),
@@ -1169,7 +1192,7 @@ mod tests {
             ..AppConfig::default()
         };
         assert_eq!(
-            config.effective_execution_provider_for(Macos),
+            config.effective_execution_provider_for(MacosAppleSilicon),
             ExecutionProviderPreference::Xnnpack
         );
         assert_eq!(
@@ -1177,8 +1200,12 @@ mod tests {
             ExecutionProviderPreference::DirectMl
         );
         assert_eq!(
+            config.effective_execution_provider_for(MacosIntel),
+            ExecutionProviderPreference::Cpu
+        );
+        assert_eq!(
             config.effective_execution_provider_for(Linux),
-            ExecutionProviderPreference::Xnnpack
+            ExecutionProviderPreference::Cpu
         );
     }
 
@@ -1186,8 +1213,10 @@ mod tests {
     fn current_target_wrappers_agree_with_compile_target() {
         use ExecutionProviderPlatform::*;
         let current = ExecutionProviderPlatform::current();
-        #[cfg(target_os = "macos")]
-        assert_eq!(current, Macos);
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        assert_eq!(current, MacosAppleSilicon);
+        #[cfg(all(target_os = "macos", not(target_arch = "aarch64")))]
+        assert_eq!(current, MacosIntel);
         #[cfg(target_os = "windows")]
         assert_eq!(current, Windows);
         #[cfg(target_os = "linux")]
