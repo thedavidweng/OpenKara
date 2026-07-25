@@ -29,6 +29,7 @@ function createControllerHarness() {
       createLocalLibrary: vi.fn(),
       deleteAllCachedLyrics: vi.fn(),
       deleteAllStems: vi.fn(),
+      checkModelUpdates: vi.fn(),
       deleteModel: vi.fn(),
       deleteRuntime: vi.fn(),
       downloadModel: vi.fn(),
@@ -174,12 +175,16 @@ describe("SettingsOverlay controller", () => {
         downloaded: true,
         legacy_install_present: false,
         file_size: 123,
+        installed_version: null,
+        pinned_version: "model-v2.1.0",
       })
       .mockResolvedValueOnce({
         variant: "htdemucs_ft",
         downloaded: false,
         legacy_install_present: false,
         file_size: null,
+        installed_version: null,
+        pinned_version: "model-v2.1.0",
       });
 
     await harness.actions.initialize();
@@ -249,11 +254,15 @@ describe("SettingsOverlay controller", () => {
             downloaded: true,
             legacy_install_present: false,
             file_size: 123,
+            installed_version: null,
+            pinned_version: "model-v2.1.0",
           },
           htdemucs_ft: {
             downloaded: false,
             legacy_install_present: false,
             file_size: null,
+            installed_version: null,
+            pinned_version: "model-v2.1.0",
           },
         },
       },
@@ -334,12 +343,16 @@ describe("SettingsOverlay controller", () => {
         downloaded: true,
         legacy_install_present: false,
         file_size: 1,
+        installed_version: null,
+        pinned_version: "model-v2.1.0",
       })
       .mockResolvedValueOnce({
         variant: "htdemucs_ft",
         downloaded: false,
         legacy_install_present: false,
         file_size: null,
+        installed_version: null,
+        pinned_version: "model-v2.1.0",
       });
 
     await harness.actions.switchLibrary("remote:library-1");
@@ -420,12 +433,16 @@ describe("SettingsOverlay controller", () => {
         downloaded: true,
         legacy_install_present: false,
         file_size: 1,
+        installed_version: null,
+        pinned_version: "model-v2.1.0",
       })
       .mockResolvedValueOnce({
         variant: "htdemucs_ft",
         downloaded: false,
         legacy_install_present: false,
         file_size: null,
+        installed_version: null,
+        pinned_version: "model-v2.1.0",
       });
 
     await harness.actions.refreshRemoteRepository("remote:library-1");
@@ -545,11 +562,15 @@ describe("SettingsOverlay controller", () => {
             downloaded: false,
             legacy_install_present: false,
             file_size: null,
+            installed_version: null,
+            pinned_version: "model-v2.1.0",
           },
           htdemucs_ft: {
             downloaded: true,
             legacy_install_present: false,
             file_size: 10,
+            installed_version: null,
+            pinned_version: "model-v2.1.0",
           },
         },
       },
@@ -569,12 +590,16 @@ describe("SettingsOverlay controller", () => {
         downloaded: true,
         legacy_install_present: false,
         file_size: 2048,
+        installed_version: null,
+        pinned_version: "model-v2.1.0",
       })
       .mockResolvedValueOnce({
         variant: "htdemucs_ft",
         downloaded: true,
         legacy_install_present: false,
         file_size: 4096,
+        installed_version: null,
+        pinned_version: "model-v2.1.0",
       });
     vi.mocked(harness.dependencies.api.setModelVariant).mockResolvedValue({
       stem_mode: "two_stem",
@@ -627,11 +652,15 @@ describe("SettingsOverlay controller", () => {
             downloaded: true,
             legacy_install_present: false,
             file_size: 100,
+            installed_version: null,
+            pinned_version: "model-v2.1.0",
           },
           htdemucs_ft: {
             downloaded: false,
             legacy_install_present: false,
             file_size: null,
+            installed_version: null,
+            pinned_version: "model-v2.1.0",
           },
         },
       },
@@ -647,12 +676,16 @@ describe("SettingsOverlay controller", () => {
         downloaded: false,
         legacy_install_present: false,
         file_size: null,
+        installed_version: null,
+        pinned_version: "model-v2.1.0",
       })
       .mockResolvedValueOnce({
         variant: "htdemucs_ft",
         downloaded: false,
         legacy_install_present: false,
         file_size: null,
+        installed_version: null,
+        pinned_version: "model-v2.1.0",
       });
 
     await harness.actions.deleteModel("htdemucs");
@@ -674,11 +707,15 @@ describe("SettingsOverlay controller", () => {
             downloaded: false,
             legacy_install_present: true,
             file_size: 999,
+            installed_version: null,
+            pinned_version: "model-v2.1.0",
           },
           htdemucs_ft: {
             downloaded: false,
             legacy_install_present: false,
             file_size: null,
+            installed_version: null,
+            pinned_version: "model-v2.1.0",
           },
         },
       },
@@ -694,12 +731,16 @@ describe("SettingsOverlay controller", () => {
         downloaded: false,
         legacy_install_present: false,
         file_size: null,
+        installed_version: null,
+        pinned_version: "model-v2.1.0",
       })
       .mockResolvedValueOnce({
         variant: "htdemucs_ft",
         downloaded: false,
         legacy_install_present: false,
         file_size: null,
+        installed_version: null,
+        pinned_version: "model-v2.1.0",
       });
 
     await harness.actions.deleteModel("htdemucs");

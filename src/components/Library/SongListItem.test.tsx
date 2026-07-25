@@ -8,7 +8,11 @@ const {
   mockPlayerState,
   mockLyricsState,
   mockSettingsState,
+  mockBootstrapState,
 } = vi.hoisted(() => ({
+  mockBootstrapState: {
+    status: null as { state: string } | null,
+  },
   mockLibraryState: {
     selectedSongIds: new Set<string>(),
     selectSong: vi.fn(),
@@ -39,6 +43,16 @@ vi.mock("react-i18next", () => ({
     t: (key: string, vars?: Record<string, string | number>) =>
       vars?.title ? `${key}:${vars.title}` : key,
   }),
+}));
+
+vi.mock("@/stores/bootstrap-store", () => ({
+  useBootstrapStore: Object.assign(
+    (selector: (state: typeof mockBootstrapState) => unknown) =>
+      selector(mockBootstrapState),
+    {
+      getState: () => ({ loadStatus: vi.fn() }),
+    },
+  ),
 }));
 
 vi.mock("@/stores/library-store", () => ({
@@ -642,5 +656,70 @@ describe("SongListItem", () => {
     );
 
     expect(markup).not.toContain("library.separate");
+  });
+
+  test("disables the separate button while the model is still downloading", () => {
+    mockBootstrapState.status = { state: "downloading" };
+
+    const markup = renderToStaticMarkup(
+      <SongListItem
+        song={{
+          hash: "song-preparing",
+          file_path: "Artist/Song.mp3",
+          audio_source_kind: "original",
+          cdg_path: null,
+          media_g_container: null,
+          instrumental: false,
+          language: null,
+          title: "Song",
+          artist: "Artist",
+          album: null,
+          duration_ms: 180000,
+          cover_art: null,
+          has_cover_art: false,
+          imported_at: 0,
+          original_ext: "mp3",
+        }}
+        orderedHashes={["song-preparing"]}
+      />,
+    );
+
+    expect(markup).toContain("library.separate");
+    expect(markup).toContain("disabled");
+    expect(markup).toContain("library.modelPreparing");
+
+    mockBootstrapState.status = null;
+  });
+
+  test("keeps the separate button enabled when the model is ready", () => {
+    mockBootstrapState.status = { state: "ready" };
+
+    const markup = renderToStaticMarkup(
+      <SongListItem
+        song={{
+          hash: "song-ready",
+          file_path: "Artist/Song.mp3",
+          audio_source_kind: "original",
+          cdg_path: null,
+          media_g_container: null,
+          instrumental: false,
+          language: null,
+          title: "Song",
+          artist: "Artist",
+          album: null,
+          duration_ms: 180000,
+          cover_art: null,
+          has_cover_art: false,
+          imported_at: 0,
+          original_ext: "mp3",
+        }}
+        orderedHashes={["song-ready"]}
+      />,
+    );
+
+    expect(markup).toContain("library.separate");
+    expect(markup).not.toContain("library.modelPreparing");
+
+    mockBootstrapState.status = null;
   });
 });

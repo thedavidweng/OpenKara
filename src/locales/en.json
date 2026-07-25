@@ -157,7 +157,8 @@
       "confirmTitle": "Confirm import",
       "confirmMessage": "Import {{songCount}} songs?",
       "confirmOk": "Import"
-    }
+    },
+    "modelPreparing": "Preparing separation model…"
   },
   "player": {
     "previous": "Previous",
@@ -357,7 +358,10 @@
     "runtime": {
       "installRequired": "The ONNX Runtime library is required for AI stem separation. Install it to enable model downloads.",
       "installButton": "Install ONNX Runtime",
-      "downloading": "Downloading ONNX Runtime..."
+      "downloading": "Downloading ONNX Runtime...",
+      "corrupt": "The installed ONNX Runtime is corrupt. Reinstall it to enable model downloads.",
+      "downloadFailed": "The ONNX Runtime download failed. Check your connection and try again.",
+      "retryButton": "Reinstall ONNX Runtime"
     },
     "hideBatchSeparate": {
       "hide": "Hide “Separate All”",
@@ -499,6 +503,14 @@
       "lastError": "Last error",
       "recentOps": "Recent operations",
       "refresh": "Refresh"
+    },
+    "modelUpdate": {
+      "checkButton": "Check for updates",
+      "checking": "Checking for updates...",
+      "upToDate": "All models are up to date.",
+      "checkFailed": "Update check failed.",
+      "updateAvailable": "{{variant}} update available ({{version}})",
+      "updateButton": "Update"
     }
   },
   "bootstrap": {

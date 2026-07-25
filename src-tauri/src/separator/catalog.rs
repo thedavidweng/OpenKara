@@ -1,0 +1,941 @@
+//! Typed consumer for the openkara-models infrastructure catalog.
+//!
+//! The catalog has two layers:
+//!
+//! 1. A mutable **stable pointer** (`catalog/channels/stable.json` on the
+//!    `openkara-models` default branch) naming the current generation and the
+//!    immutable release manifest's URL, byte size, and SHA-256.
+//! 2. An immutable **release manifest** (a content-addressed release asset)
+//!    listing model and runtime artifacts with digests and reciprocal
+//!    compatibility data.
+//!
+//! A verbatim snapshot of both files ships inside the binary
+//! (`src-tauri/catalog/`). That snapshot is the offline trust anchor: model
+//! resolution never requires the network, and a catalog refresh failure can
+//! never invalidate a verified installed model. The same snapshot is consumed
+//! by `scripts/resolve-model.mjs`, `scripts/setup.sh`, and CI so every
+//! consumer resolves artifacts from one contract fixture.
+//!
+//! Network refreshes fetch the pointer, verify the manifest bytes against the
+//! pointer's declared size and SHA-256 **before parsing**, and reject any
+//! generation older than the embedded snapshot or the installed model.
+
+use crate::config::ModelVariant;
+use crate::separator::verified_manifest::sha256_hex;
+use anyhow::{bail, Context, Result};
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
+/// Where the stable channel pointer lives. The repository is the trust root;
+/// manifest bytes fetched through it are still digest-verified.
+pub const STABLE_POINTER_URL: &str =
+    "https://raw.githubusercontent.com/thedavidweng/openkara-models/main/catalog/channels/stable.json";
+
+pub const POINTER_SCHEMA_VERSION: &str = "openkara.catalog/channel-v1";
+pub const RELEASE_SCHEMA_VERSION: &str = "openkara.catalog/release-v1";
+pub const INSTALLED_IDENTITY_SCHEMA_VERSION: &str = "openkara.app/installed-model-v1";
+
+/// The pointer is a tiny JSON object; anything larger is malformed or hostile.
+const MAX_POINTER_BYTES: u64 = 64 * 1024;
+/// Release manifests grow with artifact count but stay far below this bound.
+const MAX_MANIFEST_BYTES: u64 = 8 * 1024 * 1024;
+
+const EMBEDDED_POINTER_JSON: &str = include_str!("../../catalog/stable-pointer.json");
+const EMBEDDED_MANIFEST_JSON: &str = include_str!("../../catalog/release-manifest.json");
+
+// ---------------------------------------------------------------------------
+// Catalog wire types (field names match the published catalog verbatim).
+// Unknown fields are tolerated: the catalog is additive across generations.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct StablePointer {
+    pub schema_version: String,
+    pub channel: String,
+    pub generation: u64,
+    pub release_id: String,
+    pub release_manifest_url: String,
+    pub release_manifest_sha256: String,
+    pub release_manifest_size: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReleaseManifest {
+    pub schema_version: String,
+    pub generation: u64,
+    pub release_id: String,
+    pub artifacts: CatalogArtifacts,
+    pub compatibility: Vec<CompatibilityEdge>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CatalogArtifacts {
+    pub models: Vec<CatalogModel>,
+    pub runtimes: Vec<CatalogRuntime>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CatalogModel {
+    pub artifact_id: String,
+    pub variant: String,
+    pub profile: String,
+    pub filename: String,
+    pub byte_size: u64,
+    /// For models this is the digest of the raw `.onnx` payload (models are
+    /// published unarchived; the catalog reuses the archive field name).
+    pub archive_digest: String,
+    pub download_url: String,
+    pub upstream: CatalogUpstream,
+    pub model: CatalogModelMetadata,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CatalogUpstream {
+    pub tag: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CatalogModelMetadata {
+    pub cache_key: String,
+    pub compatible_runtime_ids: Vec<String>,
+    pub format: String,
+    pub precision: String,
+    pub tensor_interface: String,
+    pub stem_profile: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CatalogRuntime {
+    pub artifact_id: String,
+    pub target_triple: Option<String>,
+    pub byte_size: u64,
+    pub archive_digest: String,
+    pub download_url: String,
+    pub runtime: CatalogRuntimeMetadata,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CatalogRuntimeMetadata {
+    pub version: String,
+    /// Published as a string (e.g. `"27"`).
+    pub ort_c_api_level: String,
+    pub execution_providers: Vec<String>,
+    pub supported_model_artifact_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CompatibilityEdge {
+    pub execution_provider: String,
+    pub model_artifact_id: String,
+    pub runtime_artifact_id: String,
+    pub status: String,
+    pub target_triple: String,
+}
+
+/// A manifest whose bytes have been verified against a pointer and whose
+/// content passed structural validation.
+#[derive(Debug, Clone)]
+pub struct VerifiedCatalog {
+    pub generation: u64,
+    pub release_id: String,
+    pub manifest: ReleaseManifest,
+}
+
+// ---------------------------------------------------------------------------
+// Installed identity
+// ---------------------------------------------------------------------------
+
+/// Identity of an installed model, written next to the model file as
+/// `<model>.identity.json` after a verified install. This is what makes a
+/// model installed from a newer catalog generation stay usable when the app
+/// binary still embeds an older snapshot, and what update comparisons run
+/// against.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstalledModelIdentity {
+    pub record_schema: String,
+    pub generation: u64,
+    pub release_id: String,
+    pub artifact_id: String,
+    pub variant: String,
+    pub upstream_tag: String,
+    pub format: String,
+    pub tensor_interface: String,
+    pub sha256: String,
+    pub byte_size: u64,
+    pub compatible_runtime_ids: Vec<String>,
+}
+
+pub fn installed_identity_path(model_path: &Path) -> Result<PathBuf> {
+    let filename = model_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .with_context(|| format!("path {} has no filename", model_path.display()))?;
+    Ok(model_path.with_file_name(format!("{filename}.identity.json")))
+}
+
+/// Read and structurally validate the installed identity for a model file.
+/// Returns `None` when the record is absent, unreadable, or malformed —
+/// callers treat that the same as "identity unknown".
+pub fn read_installed_identity(model_path: &Path) -> Option<InstalledModelIdentity> {
+    let identity_path = installed_identity_path(model_path).ok()?;
+    let contents = std::fs::read_to_string(&identity_path).ok()?;
+    let identity: InstalledModelIdentity = serde_json::from_str(&contents).ok()?;
+    if identity.record_schema != INSTALLED_IDENTITY_SCHEMA_VERSION
+        || !is_sha256_hex(&identity.sha256)
+        || identity.byte_size == 0
+        || identity.generation == 0
+    {
+        return None;
+    }
+    Some(identity)
+}
+
+pub fn write_installed_identity(
+    model_path: &Path,
+    identity: &InstalledModelIdentity,
+) -> Result<()> {
+    let identity_path = installed_identity_path(model_path)?;
+    let json =
+        serde_json::to_string_pretty(identity).context("failed to serialize model identity")?;
+    std::fs::write(&identity_path, json).with_context(|| {
+        format!(
+            "failed to write model identity record {}",
+            identity_path.display()
+        )
+    })?;
+    Ok(())
+}
+
+pub fn delete_installed_identity(model_path: &Path) -> Result<()> {
+    let identity_path = installed_identity_path(model_path)?;
+    if identity_path.exists() {
+        std::fs::remove_file(&identity_path).with_context(|| {
+            format!(
+                "failed to delete model identity record {}",
+                identity_path.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+pub fn identity_from_catalog_model(
+    model: &CatalogModel,
+    catalog: &VerifiedCatalog,
+) -> InstalledModelIdentity {
+    InstalledModelIdentity {
+        record_schema: INSTALLED_IDENTITY_SCHEMA_VERSION.to_owned(),
+        generation: catalog.generation,
+        release_id: catalog.release_id.clone(),
+        artifact_id: model.artifact_id.clone(),
+        variant: model.variant.clone(),
+        upstream_tag: model.upstream.tag.clone(),
+        format: model.model.format.clone(),
+        tensor_interface: model.model.tensor_interface.clone(),
+        sha256: model.archive_digest.clone(),
+        byte_size: model.byte_size,
+        compatible_runtime_ids: model.model.compatible_runtime_ids.clone(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Parsing and validation
+// ---------------------------------------------------------------------------
+
+fn is_sha256_hex(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn is_trusted_https_url(value: &str) -> bool {
+    value.starts_with("https://")
+}
+
+pub fn parse_stable_pointer(bytes: &[u8]) -> Result<StablePointer> {
+    let pointer: StablePointer =
+        serde_json::from_slice(bytes).context("failed to parse stable catalog pointer")?;
+
+    if pointer.schema_version != POINTER_SCHEMA_VERSION {
+        bail!(
+            "unsupported catalog pointer schema {} (expected {})",
+            pointer.schema_version,
+            POINTER_SCHEMA_VERSION
+        );
+    }
+    if pointer.channel != "stable" {
+        bail!("unexpected catalog channel {}", pointer.channel);
+    }
+    if pointer.generation == 0 {
+        bail!("catalog pointer generation must be positive");
+    }
+    if pointer.release_id.is_empty() {
+        bail!("catalog pointer release_id is empty");
+    }
+    if !is_sha256_hex(&pointer.release_manifest_sha256) {
+        bail!(
+            "catalog pointer manifest digest {} is not a SHA-256 hex string",
+            pointer.release_manifest_sha256
+        );
+    }
+    if pointer.release_manifest_size == 0 || pointer.release_manifest_size > MAX_MANIFEST_BYTES {
+        bail!(
+            "catalog pointer manifest size {} is outside the accepted bounds",
+            pointer.release_manifest_size
+        );
+    }
+    if !is_trusted_https_url(&pointer.release_manifest_url) {
+        bail!(
+            "catalog pointer manifest URL {} is not HTTPS",
+            pointer.release_manifest_url
+        );
+    }
+
+    Ok(pointer)
+}
+
+/// Verify manifest bytes against the pointer's declared size and SHA-256,
+/// then parse and structurally validate the manifest. The parse only happens
+/// after the byte-level verification succeeds.
+pub fn verify_and_parse_manifest(bytes: &[u8], pointer: &StablePointer) -> Result<ReleaseManifest> {
+    if bytes.len() as u64 != pointer.release_manifest_size {
+        bail!(
+            "release manifest size mismatch: pointer declares {} bytes, got {}",
+            pointer.release_manifest_size,
+            bytes.len()
+        );
+    }
+    let actual_sha256 = sha256_hex(bytes);
+    if actual_sha256 != pointer.release_manifest_sha256 {
+        bail!(
+            "release manifest digest mismatch: pointer declares {}, got {}",
+            pointer.release_manifest_sha256,
+            actual_sha256
+        );
+    }
+
+    let manifest: ReleaseManifest =
+        serde_json::from_slice(bytes).context("failed to parse release manifest")?;
+
+    if manifest.schema_version != RELEASE_SCHEMA_VERSION {
+        bail!(
+            "unsupported release manifest schema {} (expected {})",
+            manifest.schema_version,
+            RELEASE_SCHEMA_VERSION
+        );
+    }
+    if manifest.generation != pointer.generation {
+        bail!(
+            "release manifest generation {} does not match pointer generation {}",
+            manifest.generation,
+            pointer.generation
+        );
+    }
+    if manifest.release_id != pointer.release_id {
+        bail!(
+            "release manifest release_id {} does not match pointer release_id {}",
+            manifest.release_id,
+            pointer.release_id
+        );
+    }
+
+    validate_manifest(&manifest)?;
+    Ok(manifest)
+}
+
+fn validate_manifest(manifest: &ReleaseManifest) -> Result<()> {
+    if manifest.artifacts.models.is_empty() {
+        bail!("release manifest lists no models");
+    }
+    if manifest.artifacts.runtimes.is_empty() {
+        bail!("release manifest lists no runtimes");
+    }
+    if manifest.compatibility.is_empty() {
+        bail!("release manifest has no compatibility edges");
+    }
+
+    let mut artifact_ids = HashSet::new();
+    let mut runtime_ids = HashSet::new();
+
+    for runtime in &manifest.artifacts.runtimes {
+        if !artifact_ids.insert(runtime.artifact_id.as_str()) {
+            bail!("duplicate artifact id {}", runtime.artifact_id);
+        }
+        runtime_ids.insert(runtime.artifact_id.as_str());
+        if runtime.byte_size == 0 {
+            bail!("runtime {} declares zero byte size", runtime.artifact_id);
+        }
+        if !is_sha256_hex(&runtime.archive_digest) {
+            bail!(
+                "runtime {} digest is not a SHA-256 hex string",
+                runtime.artifact_id
+            );
+        }
+        if !is_trusted_https_url(&runtime.download_url) {
+            bail!("runtime {} URL is not HTTPS", runtime.artifact_id);
+        }
+    }
+
+    for model in &manifest.artifacts.models {
+        if !artifact_ids.insert(model.artifact_id.as_str()) {
+            bail!("duplicate artifact id {}", model.artifact_id);
+        }
+        if model.byte_size == 0 {
+            bail!("model {} declares zero byte size", model.artifact_id);
+        }
+        if !is_sha256_hex(&model.archive_digest) {
+            bail!(
+                "model {} digest is not a SHA-256 hex string",
+                model.artifact_id
+            );
+        }
+        if !is_trusted_https_url(&model.download_url) {
+            bail!("model {} URL is not HTTPS", model.artifact_id);
+        }
+        if model.filename.is_empty()
+            || model.filename.contains('/')
+            || model.filename.contains('\\')
+        {
+            bail!(
+                "model {} filename {:?} is not a plain file name",
+                model.artifact_id,
+                model.filename
+            );
+        }
+        if model.model.format != "onnx" {
+            bail!(
+                "model {} format {} is not consumable (expected onnx)",
+                model.artifact_id,
+                model.model.format
+            );
+        }
+        if model.model.tensor_interface != "waveform" {
+            bail!(
+                "model {} tensor interface {} is not consumable (expected waveform)",
+                model.artifact_id,
+                model.model.tensor_interface
+            );
+        }
+        if model.model.compatible_runtime_ids.is_empty() {
+            bail!(
+                "model {} declares no compatible runtimes",
+                model.artifact_id
+            );
+        }
+        for runtime_id in &model.model.compatible_runtime_ids {
+            if !runtime_ids.contains(runtime_id.as_str()) {
+                bail!(
+                    "model {} references unknown runtime {}",
+                    model.artifact_id,
+                    runtime_id
+                );
+            }
+        }
+        let has_edge = manifest
+            .compatibility
+            .iter()
+            .any(|edge| edge.model_artifact_id == model.artifact_id);
+        if !has_edge {
+            bail!("model {} has no compatibility edges", model.artifact_id);
+        }
+    }
+
+    for edge in &manifest.compatibility {
+        if !runtime_ids.contains(edge.runtime_artifact_id.as_str()) {
+            bail!(
+                "compatibility edge references unknown runtime {}",
+                edge.runtime_artifact_id
+            );
+        }
+        if !manifest
+            .artifacts
+            .models
+            .iter()
+            .any(|model| model.artifact_id == edge.model_artifact_id)
+        {
+            bail!(
+                "compatibility edge references unknown model {}",
+                edge.model_artifact_id
+            );
+        }
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Embedded snapshot (offline trust anchor)
+// ---------------------------------------------------------------------------
+
+/// The catalog snapshot compiled into the binary. Panics only when the
+/// checked-in snapshot itself is inconsistent, which the test suite rejects
+/// before such a build could ship.
+pub fn embedded_catalog() -> &'static VerifiedCatalog {
+    static EMBEDDED: OnceLock<VerifiedCatalog> = OnceLock::new();
+    EMBEDDED.get_or_init(|| {
+        load_embedded_catalog().expect("embedded catalog snapshot must be self-consistent")
+    })
+}
+
+fn load_embedded_catalog() -> Result<VerifiedCatalog> {
+    let pointer = parse_stable_pointer(EMBEDDED_POINTER_JSON.as_bytes())
+        .context("embedded stable pointer is invalid")?;
+    let manifest = verify_and_parse_manifest(EMBEDDED_MANIFEST_JSON.as_bytes(), &pointer)
+        .context("embedded release manifest is invalid")?;
+    Ok(VerifiedCatalog {
+        generation: manifest.generation,
+        release_id: manifest.release_id.clone(),
+        manifest,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Model resolution
+// ---------------------------------------------------------------------------
+
+pub fn resolve_model(manifest: &ReleaseManifest, variant: ModelVariant) -> Result<&CatalogModel> {
+    let mut matches = manifest
+        .artifacts
+        .models
+        .iter()
+        .filter(|model| model.variant == variant.as_str());
+    let resolved = matches
+        .next()
+        .with_context(|| format!("catalog has no model for variant {}", variant.as_str()))?;
+    if matches.next().is_some() {
+        bail!(
+            "catalog lists more than one model for variant {}",
+            variant.as_str()
+        );
+    }
+    Ok(resolved)
+}
+
+// ---------------------------------------------------------------------------
+// Network refresh
+// ---------------------------------------------------------------------------
+
+fn read_bounded(response: &mut impl Read, max_bytes: u64) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = response.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&buffer[..read]);
+        if bytes.len() as u64 > max_bytes {
+            bail!("response exceeded the {max_bytes}-byte bound");
+        }
+    }
+    Ok(bytes)
+}
+
+/// Fetch and verify the current stable catalog from the network.
+///
+/// The fetched generation must be at least the embedded snapshot's
+/// generation — the stable channel is monotonic, so anything older is a
+/// stale mirror or a rollback attempt and is rejected.
+pub fn fetch_stable_catalog() -> Result<VerifiedCatalog> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .context("failed to build catalog HTTP client")?;
+
+    let mut pointer_response = client
+        .get(STABLE_POINTER_URL)
+        .send()
+        .and_then(|response| response.error_for_status())
+        .with_context(|| format!("failed to fetch catalog pointer from {STABLE_POINTER_URL}"))?;
+    let pointer_bytes = read_bounded(&mut pointer_response, MAX_POINTER_BYTES)
+        .context("failed while reading catalog pointer")?;
+    let pointer = parse_stable_pointer(&pointer_bytes)?;
+
+    if pointer.generation < embedded_catalog().generation {
+        bail!(
+            "stable catalog generation {} is older than the embedded snapshot generation {}",
+            pointer.generation,
+            embedded_catalog().generation
+        );
+    }
+
+    let mut manifest_response = client
+        .get(&pointer.release_manifest_url)
+        .send()
+        .and_then(|response| response.error_for_status())
+        .with_context(|| {
+            format!(
+                "failed to fetch release manifest from {}",
+                pointer.release_manifest_url
+            )
+        })?;
+    let manifest_bytes = read_bounded(&mut manifest_response, MAX_MANIFEST_BYTES)
+        .context("failed while reading release manifest")?;
+    let manifest = verify_and_parse_manifest(&manifest_bytes, &pointer)?;
+
+    Ok(VerifiedCatalog {
+        generation: manifest.generation,
+        release_id: manifest.release_id.clone(),
+        manifest,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Update comparison
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelUpdateState {
+    NotInstalled,
+    UpToDate,
+    UpdateAvailable,
+    /// A model file is installed but carries no identity record (installed by
+    /// an older app build). Downloading the catalog artifact adopts it.
+    InstalledWithoutIdentity,
+}
+
+#[derive(Debug, Clone)]
+pub struct ModelUpdateComparison {
+    pub state: ModelUpdateState,
+    pub installed: Option<InstalledModelIdentity>,
+}
+
+/// Compare an installed model against a catalog artifact.
+///
+/// Implicit downgrades are rejected: when the installed identity's generation
+/// is newer than the catalog's, the catalog is stale for this model and the
+/// comparison fails instead of offering the older artifact as an "update".
+pub fn compare_installed_model(
+    installed: Option<InstalledModelIdentity>,
+    catalog_model: &CatalogModel,
+    catalog: &VerifiedCatalog,
+    model_file_exists: bool,
+) -> Result<ModelUpdateComparison> {
+    let Some(identity) = installed else {
+        let state = if model_file_exists {
+            ModelUpdateState::InstalledWithoutIdentity
+        } else {
+            ModelUpdateState::NotInstalled
+        };
+        return Ok(ModelUpdateComparison {
+            state,
+            installed: None,
+        });
+    };
+
+    if identity.generation > catalog.generation {
+        bail!(
+            "catalog generation {} is older than the installed model generation {}; refusing implicit downgrade",
+            catalog.generation,
+            identity.generation
+        );
+    }
+
+    let state = if identity.artifact_id == catalog_model.artifact_id
+        && identity.sha256 == catalog_model.archive_digest
+    {
+        ModelUpdateState::UpToDate
+    } else {
+        ModelUpdateState::UpdateAvailable
+    };
+
+    Ok(ModelUpdateComparison {
+        state,
+        installed: Some(identity),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn embedded_pointer() -> StablePointer {
+        parse_stable_pointer(EMBEDDED_POINTER_JSON.as_bytes()).expect("embedded pointer")
+    }
+
+    fn manifest_json() -> serde_json::Value {
+        serde_json::from_str(EMBEDDED_MANIFEST_JSON).expect("embedded manifest JSON")
+    }
+
+    /// Re-point a pointer at mutated manifest bytes so validation reaches the
+    /// structural checks instead of failing on digest mismatch.
+    fn pointer_for(bytes: &[u8]) -> StablePointer {
+        let mut pointer = embedded_pointer();
+        pointer.release_manifest_sha256 = sha256_hex(bytes);
+        pointer.release_manifest_size = bytes.len() as u64;
+        pointer
+    }
+
+    fn parse_mutated(mutate: impl FnOnce(&mut serde_json::Value)) -> Result<ReleaseManifest> {
+        let mut manifest = manifest_json();
+        mutate(&mut manifest);
+        let bytes = serde_json::to_vec(&manifest).expect("serialize mutated manifest");
+        verify_and_parse_manifest(&bytes, &pointer_for(&bytes))
+    }
+
+    #[test]
+    fn embedded_snapshot_is_self_consistent() {
+        let catalog = load_embedded_catalog().expect("embedded catalog must load");
+        assert!(catalog.generation >= 3);
+        assert_eq!(catalog.manifest.artifacts.models.len(), 2);
+        assert_eq!(catalog.manifest.artifacts.runtimes.len(), 5);
+        assert!(!catalog.manifest.compatibility.is_empty());
+    }
+
+    #[test]
+    fn resolves_both_model_variants_from_embedded_snapshot() {
+        let catalog = embedded_catalog();
+        let htdemucs =
+            resolve_model(&catalog.manifest, ModelVariant::Htdemucs).expect("htdemucs model");
+        assert_eq!(htdemucs.filename, "htdemucs.onnx");
+        assert_eq!(htdemucs.model.precision, "fp32");
+        assert!(!htdemucs.model.compatible_runtime_ids.is_empty());
+
+        let ft = resolve_model(&catalog.manifest, ModelVariant::HtdemucsFt).expect("ft model");
+        assert_eq!(ft.filename, "htdemucs_ft.onnx");
+        assert_ne!(ft.artifact_id, htdemucs.artifact_id);
+    }
+
+    #[test]
+    fn every_runtime_in_embedded_snapshot_records_api_level_27() {
+        for runtime in &embedded_catalog().manifest.artifacts.runtimes {
+            assert_eq!(
+                runtime.runtime.ort_c_api_level, "27",
+                "runtime {} must record ORT C API level 27",
+                runtime.artifact_id
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_manifest_digest_mismatch() {
+        let mut pointer = embedded_pointer();
+        pointer.release_manifest_sha256 = "0".repeat(64);
+        let error = verify_and_parse_manifest(EMBEDDED_MANIFEST_JSON.as_bytes(), &pointer)
+            .expect_err("digest mismatch must be rejected");
+        assert!(error.to_string().contains("digest mismatch"));
+    }
+
+    #[test]
+    fn rejects_manifest_size_mismatch() {
+        let mut pointer = embedded_pointer();
+        pointer.release_manifest_size += 1;
+        let error = verify_and_parse_manifest(EMBEDDED_MANIFEST_JSON.as_bytes(), &pointer)
+            .expect_err("size mismatch must be rejected");
+        assert!(error.to_string().contains("size mismatch"));
+    }
+
+    #[test]
+    fn rejects_unsupported_pointer_schema() {
+        let mut pointer_json: serde_json::Value =
+            serde_json::from_str(EMBEDDED_POINTER_JSON).expect("pointer JSON");
+        pointer_json["schema_version"] = "openkara.catalog/channel-v999".into();
+        let bytes = serde_json::to_vec(&pointer_json).expect("serialize pointer");
+        let error =
+            parse_stable_pointer(&bytes).expect_err("unsupported pointer schema must be rejected");
+        assert!(error
+            .to_string()
+            .contains("unsupported catalog pointer schema"));
+    }
+
+    #[test]
+    fn rejects_unsupported_release_schema() {
+        let error = parse_mutated(|manifest| {
+            manifest["schema_version"] = "openkara.catalog/release-v999".into();
+        })
+        .expect_err("unsupported release schema must be rejected");
+        assert!(error
+            .to_string()
+            .contains("unsupported release manifest schema"));
+    }
+
+    #[test]
+    fn rejects_generation_mismatch_between_pointer_and_manifest() {
+        let error = parse_mutated(|manifest| {
+            manifest["generation"] = 999.into();
+        })
+        .expect_err("generation mismatch must be rejected");
+        assert!(error
+            .to_string()
+            .contains("does not match pointer generation"));
+    }
+
+    #[test]
+    fn rejects_duplicate_artifact_ids() {
+        let error = parse_mutated(|manifest| {
+            let duplicate = manifest["artifacts"]["models"][0].clone();
+            manifest["artifacts"]["models"]
+                .as_array_mut()
+                .expect("models array")
+                .push(duplicate);
+        })
+        .expect_err("duplicate artifact ids must be rejected");
+        assert!(error.to_string().contains("duplicate artifact id"));
+    }
+
+    #[test]
+    fn rejects_malformed_model_digest() {
+        let error = parse_mutated(|manifest| {
+            manifest["artifacts"]["models"][0]["archive_digest"] = "not-a-digest".into();
+        })
+        .expect_err("malformed digest must be rejected");
+        assert!(error.to_string().contains("not a SHA-256 hex string"));
+    }
+
+    #[test]
+    fn rejects_zero_model_size() {
+        let error = parse_mutated(|manifest| {
+            manifest["artifacts"]["models"][0]["byte_size"] = 0.into();
+        })
+        .expect_err("zero byte size must be rejected");
+        assert!(error.to_string().contains("zero byte size"));
+    }
+
+    #[test]
+    fn rejects_non_https_model_url() {
+        let error = parse_mutated(|manifest| {
+            manifest["artifacts"]["models"][0]["download_url"] =
+                "http://example.com/htdemucs.onnx".into();
+        })
+        .expect_err("non-HTTPS URL must be rejected");
+        assert!(error.to_string().contains("not HTTPS"));
+    }
+
+    #[test]
+    fn rejects_wrong_tensor_interface() {
+        let error = parse_mutated(|manifest| {
+            manifest["artifacts"]["models"][0]["model"]["tensor_interface"] = "spectral".into();
+        })
+        .expect_err("unknown tensor interface must be rejected");
+        assert!(error.to_string().contains("tensor interface"));
+    }
+
+    #[test]
+    fn rejects_model_without_runtime_compatibility() {
+        let error = parse_mutated(|manifest| {
+            manifest["artifacts"]["models"][0]["model"]["compatible_runtime_ids"] =
+                serde_json::Value::Array(Vec::new());
+        })
+        .expect_err("empty runtime compatibility must be rejected");
+        assert!(error.to_string().contains("no compatible runtimes"));
+    }
+
+    #[test]
+    fn rejects_model_without_compatibility_edges() {
+        let error = parse_mutated(|manifest| {
+            let model_id = manifest["artifacts"]["models"][0]["artifact_id"]
+                .as_str()
+                .expect("model artifact id")
+                .to_owned();
+            let edges = manifest["compatibility"].as_array().expect("edges").clone();
+            manifest["compatibility"] = serde_json::Value::Array(
+                edges
+                    .into_iter()
+                    .filter(|edge| edge["model_artifact_id"] != model_id.as_str())
+                    .collect(),
+            );
+        })
+        .expect_err("model without edges must be rejected");
+        assert!(error.to_string().contains("no compatibility edges"));
+    }
+
+    #[test]
+    fn update_comparison_reports_not_installed() {
+        let catalog = embedded_catalog();
+        let model = resolve_model(&catalog.manifest, ModelVariant::Htdemucs).expect("model");
+        let comparison = compare_installed_model(None, model, catalog, false).expect("comparison");
+        assert_eq!(comparison.state, ModelUpdateState::NotInstalled);
+    }
+
+    #[test]
+    fn update_comparison_reports_legacy_install_without_identity() {
+        let catalog = embedded_catalog();
+        let model = resolve_model(&catalog.manifest, ModelVariant::Htdemucs).expect("model");
+        let comparison = compare_installed_model(None, model, catalog, true).expect("comparison");
+        assert_eq!(comparison.state, ModelUpdateState::InstalledWithoutIdentity);
+    }
+
+    #[test]
+    fn update_comparison_reports_up_to_date_for_same_artifact() {
+        let catalog = embedded_catalog();
+        let model = resolve_model(&catalog.manifest, ModelVariant::Htdemucs).expect("model");
+        let identity = identity_from_catalog_model(model, catalog);
+        let comparison =
+            compare_installed_model(Some(identity), model, catalog, true).expect("comparison");
+        assert_eq!(comparison.state, ModelUpdateState::UpToDate);
+    }
+
+    #[test]
+    fn update_comparison_reports_update_for_changed_digest() {
+        let catalog = embedded_catalog();
+        let model = resolve_model(&catalog.manifest, ModelVariant::Htdemucs).expect("model");
+        let mut identity = identity_from_catalog_model(model, catalog);
+        identity.sha256 = "1".repeat(64);
+        identity.artifact_id = "htdemucs.balanced.fp32.older".to_owned();
+        let comparison =
+            compare_installed_model(Some(identity), model, catalog, true).expect("comparison");
+        assert_eq!(comparison.state, ModelUpdateState::UpdateAvailable);
+    }
+
+    #[test]
+    fn update_comparison_rejects_implicit_downgrade() {
+        let catalog = embedded_catalog();
+        let model = resolve_model(&catalog.manifest, ModelVariant::Htdemucs).expect("model");
+        let mut identity = identity_from_catalog_model(model, catalog);
+        identity.generation = catalog.generation + 1;
+        identity.sha256 = "1".repeat(64);
+        let error = compare_installed_model(Some(identity), model, catalog, true)
+            .expect_err("downgrade must be rejected");
+        assert!(error.to_string().contains("refusing implicit downgrade"));
+    }
+
+    #[test]
+    fn corrupt_installed_identity_reads_as_none() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let model_path = dir.path().join("htdemucs.onnx");
+        std::fs::write(&model_path, b"model").expect("write model");
+        let identity_path = installed_identity_path(&model_path).expect("identity path");
+        std::fs::write(&identity_path, b"{not json").expect("write corrupt identity");
+        assert!(read_installed_identity(&model_path).is_none());
+
+        // A record with the wrong schema is also treated as unknown.
+        std::fs::write(
+            &identity_path,
+            serde_json::json!({
+                "record_schema": "openkara.app/installed-model-v999",
+                "generation": 3,
+                "release_id": "r",
+                "artifact_id": "a",
+                "variant": "htdemucs",
+                "upstream_tag": "t",
+                "format": "onnx",
+                "tensor_interface": "waveform",
+                "sha256": "0".repeat(64),
+                "byte_size": 5,
+                "compatible_runtime_ids": ["x"],
+            })
+            .to_string(),
+        )
+        .expect("write wrong-schema identity");
+        assert!(read_installed_identity(&model_path).is_none());
+    }
+
+    #[test]
+    fn identity_round_trips_through_disk() {
+        let catalog = embedded_catalog();
+        let model = resolve_model(&catalog.manifest, ModelVariant::Htdemucs).expect("model");
+        let identity = identity_from_catalog_model(model, catalog);
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let model_path = dir.path().join("htdemucs.onnx");
+        std::fs::write(&model_path, b"model").expect("write model");
+        write_installed_identity(&model_path, &identity).expect("write identity");
+        let read_back = read_installed_identity(&model_path).expect("read identity");
+        assert_eq!(read_back, identity);
+
+        delete_installed_identity(&model_path).expect("delete identity");
+        assert!(read_installed_identity(&model_path).is_none());
+    }
+}

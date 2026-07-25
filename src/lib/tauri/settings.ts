@@ -5,6 +5,7 @@ import type {
   LibrarySortMode,
   ModelBootstrapStatusSnapshot,
   ModelStatusSnapshot,
+  ModelUpdateReport,
   RuntimeBootstrapStatusSnapshot,
   ThemePreference,
   WindowShellStateSnapshot,
@@ -50,6 +51,10 @@ export function deleteModel(variant: string): Promise<void> {
 
 export function getModelStatus(variant: string): Promise<ModelStatusSnapshot> {
   return invoke<ModelStatusSnapshot>("get_model_status", { variant });
+}
+
+export function checkModelUpdates(): Promise<ModelUpdateReport> {
+  return invoke<ModelUpdateReport>("check_model_updates");
 }
 
 export function setLanguage(language: string): Promise<AppSettings> {

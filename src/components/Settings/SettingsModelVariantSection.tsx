@@ -63,9 +63,13 @@ export function SettingsModelVariantSection() {
     }
 
     if (status?.downloaded) {
-      return `${t("settings.modelVariant.downloaded")}${
-        status.file_size ? ` (${formatBytes(status.file_size)})` : ""
-      }`;
+      const size = status.file_size
+        ? ` (${formatBytes(status.file_size)})`
+        : "";
+      const version = status.installed_version
+        ? ` · ${status.installed_version}`
+        : "";
+      return `${t("settings.modelVariant.downloaded")}${size}${version}`;
     }
 
     return t("settings.modelVariant.notDownloaded");
@@ -75,8 +79,22 @@ export function SettingsModelVariantSection() {
   const controlsDisabled =
     meta.isInitializing || state.downloadingModel !== null || !runtimeReady;
 
-  // B3: Show runtime install CTA when runtime is missing.
+  // B3: Show runtime install CTA when runtime is missing. Corrupt installs
+  // and failed downloads get their own message so the user is never stuck
+  // in an unexplained install loop.
   if (!runtimeReady && state.runtimeStatus?.state !== "downloading") {
+    const runtimeState = state.runtimeStatus?.state;
+    const runtimeMessage =
+      runtimeState === "corrupt"
+        ? t("settings.runtime.corrupt")
+        : runtimeState === "failed"
+          ? t("settings.runtime.downloadFailed")
+          : t("settings.runtime.installRequired");
+    const runtimeButtonLabel =
+      runtimeState === "corrupt" || runtimeState === "failed"
+        ? t("settings.runtime.retryButton")
+        : t("settings.runtime.installButton");
+
     return (
       <SettingsSectionCard
         title={t("settings.modelVariant.label")}
@@ -84,13 +102,18 @@ export function SettingsModelVariantSection() {
       >
         <div className="flex flex-col gap-2">
           <p className="text-[12px] text-[var(--color-text-dim)]">
-            {t("settings.runtime.installRequired")}
+            {runtimeMessage}
           </p>
+          {state.runtimeStatus?.error ? (
+            <p className="text-[11px] text-[var(--color-danger,#e5484d)] opacity-90">
+              {state.runtimeStatus.error}
+            </p>
+          ) : null}
           <button
             onClick={() => void actions.downloadRuntime()}
             className="self-start rounded-md bg-[var(--color-control-primary)] px-3 py-1.5 text-[12px] text-[var(--color-control-primary-foreground)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-control-primary)_88%,white)]"
           >
-            {t("settings.runtime.installButton")}
+            {runtimeButtonLabel}
           </button>
         </div>
       </SettingsSectionCard>
@@ -109,6 +132,12 @@ export function SettingsModelVariantSection() {
       </SettingsSectionCard>
     );
   }
+
+  const update = state.modelUpdate;
+  const updatableModels =
+    update?.status === "checked"
+      ? update.models.filter((model) => model.state === "update_available")
+      : [];
 
   return (
     <SettingsSectionCard
@@ -132,6 +161,72 @@ export function SettingsModelVariantSection() {
           status={modelStatusLabel("htdemucs_ft")}
           onClick={() => void actions.selectModelVariant("htdemucs_ft")}
         />
+      </div>
+
+      <div className="mt-3 flex flex-col gap-2 border-t border-[var(--color-border-light)] pt-3">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => void actions.checkModelUpdates()}
+            disabled={
+              meta.isInitializing ||
+              state.downloadingModel !== null ||
+              update?.status === "checking"
+            }
+            className="rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] disabled:opacity-50"
+          >
+            {update?.status === "checking"
+              ? t("settings.modelUpdate.checking")
+              : t("settings.modelUpdate.checkButton")}
+          </button>
+          {update?.status === "checked" && updatableModels.length === 0 ? (
+            <span className="text-[11px] text-[var(--color-text-dim)]">
+              {t("settings.modelUpdate.upToDate")}
+            </span>
+          ) : null}
+        </div>
+
+        {update?.status === "failed" ? (
+          <p className="text-[11px] text-[var(--color-danger,#e5484d)] opacity-90">
+            {t("settings.modelUpdate.checkFailed")}
+            {update.error ? ` ${update.error}` : ""}
+          </p>
+        ) : null}
+
+        {updatableModels.map((model) => (
+          <div
+            key={model.variant}
+            className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2"
+          >
+            <div className="flex flex-col">
+              <span className="text-[12px] text-[var(--color-text)]">
+                {t("settings.modelUpdate.updateAvailable", {
+                  variant:
+                    model.variant === "htdemucs"
+                      ? t("settings.modelVariant.htdemucs")
+                      : t("settings.modelVariant.htdemucsFt"),
+                  version: model.available_version,
+                })}
+              </span>
+              <span className="text-[10px] text-[var(--color-text-dim)]">
+                {model.installed_version
+                  ? `${model.installed_version} → ${model.available_version}`
+                  : model.available_version}
+                {` · ${formatBytes(model.available_bytes)}`}
+              </span>
+            </div>
+            <button
+              onClick={() =>
+                void actions.updateModel(model.variant as ModelVariant)
+              }
+              disabled={state.downloadingModel !== null}
+              className="rounded-md bg-[var(--color-control-primary)] px-3 py-1.5 text-[12px] text-[var(--color-control-primary-foreground)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-control-primary)_88%,white)] disabled:opacity-50"
+            >
+              {state.downloadingModel === model.variant
+                ? t("settings.modelVariant.downloading")
+                : t("settings.modelUpdate.updateButton")}
+            </button>
+          </div>
+        ))}
       </div>
     </SettingsSectionCard>
   );

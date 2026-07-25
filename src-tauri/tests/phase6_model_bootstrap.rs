@@ -126,31 +126,33 @@ fn install_verified_model_bytes_rejects_checksum_mismatch_without_creating_desti
 }
 
 #[test]
-fn htdemucs_descriptor_points_at_v2_release_asset() {
-    let descriptor = bootstrap::descriptor_for(ModelVariant::Htdemucs);
+fn descriptors_resolve_from_the_embedded_catalog_snapshot() {
+    // Descriptors must be derived from the pinned catalog snapshot — the
+    // same contract fixture scripts/resolve-model.mjs, setup.sh, and CI
+    // consume — never from hand-maintained constants.
+    let catalog = openkara_lib::separator::catalog::embedded_catalog();
 
-    assert_eq!(
-        descriptor.download_url,
-        "https://github.com/thedavidweng/openkara-models/releases/download/model-v2.0.1/htdemucs.onnx"
-    );
-    assert_eq!(
-        descriptor.sha256,
-        "8fa3dab679c59aeb049dd229f57a212c9339b3fc17ebf50541daad9e799364a1"
-    );
-}
+    for variant in [ModelVariant::Htdemucs, ModelVariant::HtdemucsFt] {
+        let descriptor = bootstrap::descriptor_for(variant);
+        let catalog_model =
+            openkara_lib::separator::catalog::resolve_model(&catalog.manifest, variant)
+                .expect("embedded catalog must resolve every variant");
 
-#[test]
-fn htdemucs_ft_descriptor_points_at_v2_release_asset() {
-    let descriptor = bootstrap::descriptor_for(ModelVariant::HtdemucsFt);
-
-    assert_eq!(
-        descriptor.download_url,
-        "https://github.com/thedavidweng/openkara-models/releases/download/model-ft-v2.0.1/htdemucs_ft.onnx"
-    );
-    assert_eq!(
-        descriptor.sha256,
-        "0f2efbd7044182c10a6e8169b670392a3a91f904635e29329d6a3667375f5c94"
-    );
+        assert_eq!(descriptor.download_url, catalog_model.download_url);
+        assert_eq!(descriptor.sha256, catalog_model.archive_digest);
+        assert_eq!(descriptor.filename, catalog_model.filename);
+        assert_eq!(descriptor.byte_size, catalog_model.byte_size);
+        assert_eq!(descriptor.artifact_id, catalog_model.artifact_id);
+        assert_eq!(descriptor.upstream_tag, catalog_model.upstream.tag);
+        assert!(
+            descriptor
+                .download_url
+                .starts_with("https://github.com/thedavidweng/openkara-models/releases/download/"),
+            "model artifacts must come from openkara-models releases"
+        );
+        assert_eq!(descriptor.identity.generation, catalog.generation);
+        assert_eq!(descriptor.identity.release_id, catalog.release_id);
+    }
 }
 
 #[test]

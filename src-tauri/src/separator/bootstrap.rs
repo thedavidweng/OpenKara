@@ -1,9 +1,14 @@
 use crate::config::ModelVariant;
+use crate::separator::catalog::{
+    self, identity_from_catalog_model, read_installed_identity, InstalledModelIdentity,
+    VerifiedCatalog,
+};
 use crate::separator::verified_manifest::{
     sha256_hex, verified_manifest_matches, verified_manifest_path, write_verified_manifest,
 };
 use anyhow::{bail, Context, Result};
 use reqwest::blocking::Client;
+use std::sync::OnceLock;
 use std::{
     fs,
     io::Read,
@@ -11,33 +16,53 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+/// Everything needed to install and verify one model artifact. Descriptors
+/// are resolved from the openkara-models catalog — the embedded snapshot by
+/// default, or a freshly verified catalog for updates — never from
+/// hand-maintained URL/SHA constants.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelDescriptor {
-    pub filename: &'static str,
-    pub download_url: &'static str,
-    pub sha256: &'static str,
+    pub variant: ModelVariant,
+    pub filename: String,
+    pub download_url: String,
+    pub sha256: String,
+    pub byte_size: u64,
+    pub artifact_id: String,
+    pub upstream_tag: String,
+    pub identity: InstalledModelIdentity,
 }
 
-pub const HTDEMUCS: ModelDescriptor = ModelDescriptor {
-    filename: "htdemucs.onnx",
-    download_url: "https://github.com/thedavidweng/openkara-models/releases/download/model-v2.0.1/htdemucs.onnx",
-    sha256: "8fa3dab679c59aeb049dd229f57a212c9339b3fc17ebf50541daad9e799364a1",
-};
+pub fn descriptor_from_catalog(
+    catalog: &VerifiedCatalog,
+    variant: ModelVariant,
+) -> Result<ModelDescriptor> {
+    let model = catalog::resolve_model(&catalog.manifest, variant)?;
+    Ok(ModelDescriptor {
+        variant,
+        filename: model.filename.clone(),
+        download_url: model.download_url.clone(),
+        sha256: model.archive_digest.clone(),
+        byte_size: model.byte_size,
+        artifact_id: model.artifact_id.clone(),
+        upstream_tag: model.upstream.tag.clone(),
+        identity: identity_from_catalog_model(model, catalog),
+    })
+}
 
-pub const HTDEMUCS_FT: ModelDescriptor = ModelDescriptor {
-    filename: "htdemucs_ft.onnx",
-    download_url: "https://github.com/thedavidweng/openkara-models/releases/download/model-ft-v2.0.1/htdemucs_ft.onnx",
-    sha256: "0f2efbd7044182c10a6e8169b670392a3a91f904635e29329d6a3667375f5c94",
-};
-
-/// Backward-compatible aliases used by existing code and tests.
-pub const MODEL_DOWNLOAD_URL: &str = HTDEMUCS.download_url;
-pub const MODEL_SHA256: &str = HTDEMUCS.sha256;
-
+/// The pinned descriptor for a variant, resolved once from the embedded
+/// catalog snapshot. This is the offline baseline: it requires no network and
+/// no configuration, and it is what startup readiness verifies against.
 pub fn descriptor_for(variant: ModelVariant) -> &'static ModelDescriptor {
-    match variant {
-        ModelVariant::Htdemucs => &HTDEMUCS,
-        ModelVariant::HtdemucsFt => &HTDEMUCS_FT,
-    }
+    static HTDEMUCS: OnceLock<ModelDescriptor> = OnceLock::new();
+    static HTDEMUCS_FT: OnceLock<ModelDescriptor> = OnceLock::new();
+    let (slot, variant) = match variant {
+        ModelVariant::Htdemucs => (&HTDEMUCS, ModelVariant::Htdemucs),
+        ModelVariant::HtdemucsFt => (&HTDEMUCS_FT, ModelVariant::HtdemucsFt),
+    };
+    slot.get_or_init(|| {
+        descriptor_from_catalog(catalog::embedded_catalog(), variant)
+            .expect("embedded catalog must resolve every model variant")
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,11 +87,11 @@ pub enum ModelInstallationResolution {
 }
 
 pub fn managed_model_path(app_data_dir: &Path) -> PathBuf {
-    managed_model_path_for(app_data_dir, &HTDEMUCS)
+    managed_model_path_for(app_data_dir, descriptor_for(ModelVariant::Htdemucs))
 }
 
 pub fn managed_model_path_for(app_data_dir: &Path, descriptor: &ModelDescriptor) -> PathBuf {
-    app_data_dir.join("models").join(descriptor.filename)
+    app_data_dir.join("models").join(&descriptor.filename)
 }
 
 pub fn model_file_size(app_data_dir: &Path, variant: ModelVariant) -> Option<u64> {
@@ -91,6 +116,7 @@ pub fn delete_model_file(app_data_dir: &Path, variant: ModelVariant) -> Result<(
             )
         })?;
     }
+    catalog::delete_installed_identity(&path)?;
     Ok(())
 }
 
@@ -108,6 +134,25 @@ pub fn resolve_model_installation(
                 path: managed_path.to_path_buf(),
                 source: ModelSource::ManagedInstall,
             }));
+        }
+        // The file does not match the embedded pin, but it may be a model
+        // installed from a *newer* verified catalog generation. Its identity
+        // record carries the digest that install verified; a catalog refresh
+        // failure or an older app binary must not invalidate it.
+        if let Some(identity) = read_installed_identity(managed_path) {
+            let identity_ok =
+                verify_model_install(managed_path, &identity.sha256).with_context(|| {
+                    format!(
+                        "failed to verify managed model {} against its identity record",
+                        managed_path.display()
+                    )
+                })?;
+            if identity_ok {
+                return Ok(ModelInstallationResolution::Ready(ResolvedModelPath {
+                    path: managed_path.to_path_buf(),
+                    source: ModelSource::ManagedInstall,
+                }));
+            }
         }
         true
     } else {
@@ -131,6 +176,16 @@ pub fn resolve_model_installation(
     }
 
     Ok(ModelInstallationResolution::Absent)
+}
+
+/// True when a file exists at `path` and its digest matches `expected_sha256`.
+/// Unlike `resolve_model_installation`, this never falls back to an identity
+/// record — it answers "is this exact artifact installed".
+pub fn model_matches_digest(path: &Path, expected_sha256: &str) -> Result<bool> {
+    if !path.exists() {
+        return Ok(false);
+    }
+    verify_model_install(path, expected_sha256)
 }
 
 pub fn resolve_existing_model_path(
@@ -194,10 +249,11 @@ pub fn install_verified_model_bytes(
 
 pub fn download_and_install_model(
     destination: &Path,
-    download_url: &str,
-    expected_sha256: &str,
+    descriptor: &ModelDescriptor,
     mut progress: impl FnMut(u64, Option<u64>),
 ) -> Result<()> {
+    let download_url = descriptor.download_url.as_str();
+    let expected_sha256 = descriptor.sha256.as_str();
     let client = Client::builder()
         .build()
         .context("failed to build model download client")?;
@@ -244,7 +300,11 @@ pub fn download_and_install_model(
 
     emit(downloaded_bytes, total_bytes, true);
 
-    install_verified_model_bytes(destination, &payload, expected_sha256)
+    install_verified_model_bytes(destination, &payload, expected_sha256)?;
+    // The identity record is what update comparisons run against and what
+    // keeps this install verifiable if the app's embedded pin later moves.
+    catalog::write_installed_identity(destination, &descriptor.identity)?;
+    Ok(())
 }
 
 fn verify_model_install(path: &Path, expected_sha256: &str) -> Result<bool> {

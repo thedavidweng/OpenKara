@@ -26,18 +26,46 @@
    动态库下载并规整到 `src-tauri/generated/onnxruntime/`
 4. 面向终端用户时，默认安装位置是 `<app_data_dir>/models/`，不是仓库目录；
    但打包产物会随应用一起分发 ONNX Runtime 动态库
-5. 后续如果调整模型来源、运行时库版本或文件名，必须同时更新：
-   - 本契约
-   - `scripts/setup.sh`
-   - `scripts/prepare-onnx-runtime.mjs`
-   - `src-tauri/models/README.md`
-6. 当前 pinned 的 release 资源为：
-   - `htdemucs`: `model-v2.0.1/htdemucs.onnx`
-   - `htdemucs_ft`: `model-ft-v2.0.1/htdemucs_ft.onnx`
-7. `openkara-models v2.0.1` 资源会携带：
+5. 模型的 URL、SHA-256、文件名和版本 **只** 来自 pinned catalog 快照
+   `src-tauri/catalog/release-manifest.json`（见下节）。应用（Rust catalog
+   客户端）、`scripts/resolve-model.mjs`、`scripts/setup.sh` 与 CI 全部消费同
+   一份快照；任何地方都不允许再出现手写的模型 URL/SHA 常量。更新模型 pin
+   = 更新该快照文件（连同 `src-tauri/catalog/stable-pointer.json`）。
+6. `openkara-models` 模型资源会携带：
    - `openkara.model_cache_key`
    - `openkara.optimized_by=onnxruntime`
      Rust 运行时必须把前者纳入 session cache key 失效条件，并对后者关闭重复图优化。
+
+## Catalog-driven model resolution (openkara-models)
+
+模型基础设施的权威来源是 `thedavidweng/openkara-models` 发布的两层 catalog：
+
+1. **稳定指针**（可变，位于该仓库 `main` 分支
+   `catalog/channels/stable.json`）：声明当前 generation、release ID，以及
+   不可变清单的 URL、字节数与 SHA-256。schema 为
+   `openkara.catalog/channel-v1`。
+2. **不可变发布清单**（内容寻址的 release 资产）：列出模型与 runtime 工件
+   （artifact ID、digest、byte size、下载 URL、兼容性边）。schema 为
+   `openkara.catalog/release-v1`。
+
+应用侧规则（`src-tauri/src/separator/catalog.rs`）：
+
+- 二进制内嵌一份指针 + 清单的逐字快照（`src-tauri/catalog/`），作为离线信任
+  锚：模型解析永不依赖网络；catalog 刷新失败绝不使已验证的安装失效。
+- 网络刷新时：先按指针声明的字节数与 SHA-256 验证清单原始字节，**验证通过
+  后才解析**；拒绝 generation 低于内嵌快照的指针（stable 通道单调递增）。
+- 清单结构校验：artifact ID 唯一、digest 为 64 位十六进制、URL 必须 HTTPS、
+  `tensor_interface` 必须为 `waveform`、每个模型的
+  `compatible_runtime_ids` 非空且指向已知 runtime、兼容性边非空。
+- 每次成功安装都会在模型旁写入 `<model>.identity.json`
+  （schema `openkara.app/installed-model-v1`），记录 generation、release ID、
+  artifact ID、上游 tag、digest、字节数与兼容 runtime 列表。
+- 就绪判定：文件 digest 匹配内嵌 pin，**或** 匹配其 identity 记录（因此从更
+  新 generation 安装的模型在旧二进制/离线状态下仍可用）。identity 记录损坏
+  时按未知处理，回退到 pin 校验。
+- 更新判定：比较 identity 的 artifact ID 与 digest 和 catalog 目标工件；
+  catalog generation 低于已安装 generation 时拒绝（隐式降级被禁止，恢复需要
+  用户显式删除模型）。
 
 ## Inputs / outputs / required dependencies
 
@@ -107,18 +135,22 @@ per variant. They are separate from the startup bootstrap flow.
   "variant": "htdemucs",
   "downloaded": true,
   "legacy_install_present": false,
-  "file_size": 52428800
+  "file_size": 52428800,
+  "installed_version": "model-v2.1.0",
+  "pinned_version": "model-v2.1.0"
 }
 ```
 
 ### Shared type: `ModelStatusSnapshot`
 
-| Field                    | Type          | Notes                                                                               |
-| ------------------------ | ------------- | ----------------------------------------------------------------------------------- |
-| `variant`                | `String`      | The variant queried                                                                 |
-| `downloaded`             | `bool`        | True when the managed file exists and its SHA-256 matches the pinned release        |
-| `legacy_install_present` | `bool`        | True when the managed file exists but its SHA-256 does not match the pinned release |
-| `file_size`              | `Option<u64>` | Size of the managed file in bytes, if it exists                                     |
+| Field                    | Type             | Notes                                                                                             |
+| ------------------------ | ---------------- | ------------------------------------------------------------------------------------------------- |
+| `variant`                | `String`         | The variant queried                                                                               |
+| `downloaded`             | `bool`           | True when the managed file matches the pinned release digest or a valid installed identity record |
+| `legacy_install_present` | `bool`           | True when the managed file exists but matches neither the pin nor its identity record             |
+| `file_size`              | `Option<u64>`    | Size of the managed file in bytes, if it exists                                                   |
+| `installed_version`      | `Option<String>` | Upstream release tag of the verified install (identity record, or pin when digests match)         |
+| `pinned_version`         | `String`         | Upstream release tag pinned by the embedded catalog snapshot                                      |
 
 ### Command: `download_model`
 
@@ -138,9 +170,43 @@ verified on disk, returns `ready` immediately without downloading.
 
 **Output:** `()`
 
-Removes the managed model file and its verification manifest for the given
-variant. The user invokes this from Settings to clear a legacy/incorrect
-install before re-downloading.
+Removes the managed model file, its verification manifest, and its installed
+identity record for the given variant. The user invokes this from Settings to
+clear a legacy/incorrect install before re-downloading.
+
+### Command: `check_model_updates`
+
+**Input:** none
+
+**Output:** `ModelUpdateReport`
+
+```json
+{
+  "generation": 3,
+  "release_id": "2026-07-23-003",
+  "models": [
+    {
+      "variant": "htdemucs",
+      "state": "up_to_date",
+      "installed_version": "model-v2.1.0",
+      "available_version": "model-v2.1.0",
+      "available_bytes": 354970480
+    }
+  ]
+}
+```
+
+Fetches and verifies the current stable catalog from the network, compares
+each variant's installed identity against the catalog artifact, and caches the
+verified catalog so a subsequent `download_model` installs the newer artifact.
+Per-variant `state` is one of `not_installed`, `up_to_date`,
+`update_available`, `installed_without_identity`（该变体已安装但没有 identity
+记录，来自旧版应用；下载 catalog 工件后即被收编）。
+
+失败语义：检查失败返回普通 `CommandError`，**只** 影响"检查更新"这一 UI 状
+态，绝不影响已安装模型的就绪状态。当 catalog 提供的 generation 低于某已安
+装模型的 generation 时，本命令同样报错（拒绝把旧工件当作"更新"呈现）；
+`download_model` 侧也会拒绝隐式降级——降级需要用户显式删除模型后重新下载。
 
 ## Runtime path resolution semantics
 

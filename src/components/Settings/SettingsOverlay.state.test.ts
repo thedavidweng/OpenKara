@@ -57,6 +57,7 @@ function createDependencies(): SettingsOverlayControllerDependencies {
       createLocalLibrary: vi.fn(),
       deleteAllCachedLyrics: vi.fn(),
       deleteAllStems: vi.fn(),
+      checkModelUpdates: vi.fn(),
       deleteModel: vi.fn(),
       deleteRuntime: vi.fn(),
       downloadModel: vi.fn(),
@@ -205,6 +206,7 @@ describe("createInitialSettingsOverlaySnapshot", () => {
         modelVariant: "htdemucs_ft",
         modelStatuses: {},
         downloadingModel: null,
+        modelUpdate: null,
         runtimeStatus: null,
         language: "zh-CN",
         hideBatchSeparate: false,
@@ -325,12 +327,16 @@ describe("createSettingsOverlayActions - initialize", () => {
         downloaded: true,
         legacy_install_present: false,
         file_size: 100,
+        installed_version: null,
+        pinned_version: "model-v2.1.0",
       })
       .mockResolvedValueOnce({
         variant: "htdemucs_ft",
         downloaded: false,
         legacy_install_present: false,
         file_size: null,
+        installed_version: null,
+        pinned_version: "model-v2.1.0",
       });
     vi.mocked(
       harness.dependencies.api.getRuntimeBootstrapStatus,
@@ -399,12 +405,16 @@ describe("createSettingsOverlayActions - initialize", () => {
         downloaded: true,
         legacy_install_present: false,
         file_size: 100,
+        installed_version: null,
+        pinned_version: "model-v2.1.0",
       })
       .mockResolvedValueOnce({
         variant: "htdemucs_ft",
         downloaded: true,
         legacy_install_present: false,
         file_size: 200,
+        installed_version: null,
+        pinned_version: "model-v2.1.0",
       });
     vi.mocked(
       harness.dependencies.api.getRuntimeBootstrapStatus,
@@ -443,12 +453,16 @@ describe("createSettingsOverlayActions - initialize", () => {
         downloaded: false,
         legacy_install_present: false,
         file_size: null,
+        installed_version: null,
+        pinned_version: "model-v2.1.0",
       })
       .mockResolvedValueOnce({
         variant: "htdemucs_ft",
         downloaded: false,
         legacy_install_present: false,
         file_size: null,
+        installed_version: null,
+        pinned_version: "model-v2.1.0",
       });
     vi.mocked(
       harness.dependencies.api.getRuntimeBootstrapStatus,
@@ -487,12 +501,16 @@ describe("createSettingsOverlayActions - initialize", () => {
         downloaded: false,
         legacy_install_present: false,
         file_size: null,
+        installed_version: null,
+        pinned_version: "model-v2.1.0",
       })
       .mockResolvedValueOnce({
         variant: "htdemucs_ft",
         downloaded: false,
         legacy_install_present: false,
         file_size: null,
+        installed_version: null,
+        pinned_version: "model-v2.1.0",
       });
     vi.mocked(
       harness.dependencies.api.getRuntimeBootstrapStatus,

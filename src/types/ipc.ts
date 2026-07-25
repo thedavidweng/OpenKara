@@ -261,6 +261,30 @@ export interface ModelStatusSnapshot {
   /** Managed file exists but SHA-256 does not match the pinned release. */
   legacy_install_present: boolean;
   file_size: number | null;
+  /** Upstream release tag of the verified installed model, when known. */
+  installed_version: string | null;
+  /** Upstream release tag pinned by the app's embedded catalog snapshot. */
+  pinned_version: string;
+}
+
+export type ModelUpdateState =
+  | "not_installed"
+  | "up_to_date"
+  | "update_available"
+  | "installed_without_identity";
+
+export interface ModelUpdateCheckSnapshot {
+  variant: string;
+  state: ModelUpdateState;
+  installed_version: string | null;
+  available_version: string;
+  available_bytes: number;
+}
+
+export interface ModelUpdateReport {
+  generation: number;
+  release_id: string;
+  models: ModelUpdateCheckSnapshot[];
 }
 
 export type WindowShellChromeVariant = "desktop" | "mac";

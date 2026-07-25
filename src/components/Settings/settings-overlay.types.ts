@@ -10,6 +10,7 @@ import type {
   IntegrityReport,
   LibraryRegistrySnapshot,
   LibrarySortMode,
+  ModelUpdateCheckSnapshot,
   ModelVariant,
   RegisteredLibrary,
   RuntimeBootstrapState,
@@ -30,12 +31,22 @@ export interface ModelStatusView {
   downloaded: boolean;
   legacy_install_present: boolean;
   file_size: number | null;
+  installed_version: string | null;
+  pinned_version: string;
+}
+
+export interface ModelUpdateView {
+  status: "checking" | "checked" | "failed";
+  error: string | null;
+  generation: number | null;
+  models: ModelUpdateCheckSnapshot[];
 }
 
 export interface RuntimeStatusView {
   state: RuntimeBootstrapState;
   version: string;
   runtime_path: string;
+  error: string | null;
 }
 
 export interface SettingsOverlayState {
@@ -48,6 +59,7 @@ export interface SettingsOverlayState {
   modelVariant: ModelVariant;
   modelStatuses: Partial<Record<ModelVariant, ModelStatusView>>;
   downloadingModel: ModelVariant | null;
+  modelUpdate: ModelUpdateView | null;
   runtimeStatus: RuntimeStatusView | null;
   language: string;
   hideBatchSeparate: boolean;
@@ -98,6 +110,8 @@ export interface SettingsOverlayActions {
   selectModelVariant: (variant: ModelVariant) => Promise<void>;
   confirmFtModel: () => Promise<void>;
   deleteModel: (variant: ModelVariant) => Promise<void>;
+  checkModelUpdates: () => Promise<void>;
+  updateModel: (variant: ModelVariant) => Promise<void>;
   toggleHideBatchSeparate: (value: boolean) => Promise<void>;
   toggleCoverArtBackdrop: (value: boolean) => Promise<void>;
   setEqEnabled: (enabled: boolean) => Promise<void>;
@@ -134,6 +148,7 @@ export interface SettingsOverlayControllerDependencies {
     | "createLocalLibrary"
     | "deleteAllCachedLyrics"
     | "deleteAllStems"
+    | "checkModelUpdates"
     | "deleteModel"
     | "deleteRuntime"
     | "downloadModel"
