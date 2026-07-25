@@ -27,6 +27,7 @@
     "dialogTitleCreate": "选择卡拉OK曲库的存放位置",
     "dialogTitleOpen": "打开已有的卡拉OK曲库",
     "chooseLanguage": "选择语言",
+    "openRemoteLibrary": "选择远程服务商",
     "openRemoteLibraryDescription": "连接 Google Drive、Dropbox 或 WebDAV 作为你的远程资料库。",
     "remoteProvider": {
       "googleDrive": {
@@ -183,6 +184,7 @@
   },
   "progress": {
     "separating": "正在分离：{{title}}",
+    "uploadingToRemote": "正在发布到远程资料库：{{title}}",
     "modelDownloadComplete": "模型下载完成"
   },
   "queue": {
