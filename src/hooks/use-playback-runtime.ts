@@ -9,12 +9,13 @@ import { useLyricsStore } from "@/stores/lyrics-store";
 import { useBootstrapStore } from "@/stores/bootstrap-store";
 import { useRuntimeBootstrapStore } from "@/stores/runtime-bootstrap-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { notifyError } from "@/lib/errors";
+import { notifyError, notifySuccess } from "@/lib/errors";
 import i18next, { detectSystemLanguage } from "@/lib/i18n";
 import * as api from "@/lib/tauri";
 import {
   createBatchSeparationClearScheduler,
   createStatusClearScheduler,
+  separationCancelledStatus,
   separationErrorStatus,
   separationProgressStatus,
   uploadCompleteStatus,
@@ -32,6 +33,7 @@ import type {
   RemotePlaybackReconnectEvent,
   RemotePlaybackResyncEvent,
   RuntimeBootstrapStatusSnapshot,
+  SeparationCancelledEvent,
   SeparationCompleteEvent,
   SeparationErrorEvent,
   SeparationProgressEvent,
@@ -143,6 +145,13 @@ function useSeparationEvents(enabled: boolean) {
           if (cancelled) return;
           updateSeparationStatus(e.payload.status);
 
+          // An instant completion whose stems were already cached: surface a
+          // lightweight cue instead of leaving it indistinguishable from a
+          // fresh run.
+          if (e.payload.status.cache_hit) {
+            notifySuccess(i18next.t("library.usingCachedSeparation"));
+          }
+
           if (e.payload.song_id === currentSongIdRef.current) {
             loadStems().catch((err) => notifyError(err));
           }
@@ -159,12 +168,28 @@ function useSeparationEvents(enabled: boolean) {
         },
       );
 
+      // Cancelled runs reset the row to idle with no error toast.
+      const cancelledUnlisten = await listen<SeparationCancelledEvent>(
+        "separation-cancelled",
+        (e) => {
+          if (!cancelled) {
+            updateSeparationStatus(separationCancelledStatus(e.payload));
+          }
+        },
+      );
+
       if (cancelled) {
         progressUnlisten();
         completeUnlisten();
         errorUnlisten();
+        cancelledUnlisten();
       } else {
-        unlisteners.push(progressUnlisten, completeUnlisten, errorUnlisten);
+        unlisteners.push(
+          progressUnlisten,
+          completeUnlisten,
+          errorUnlisten,
+          cancelledUnlisten,
+        );
       }
     };
 

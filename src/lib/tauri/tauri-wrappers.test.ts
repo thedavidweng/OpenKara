@@ -728,6 +728,14 @@ describe("separation", () => {
     expect(returned).toBe(sepStatus);
   });
 
+  test("cancelSeparation invokes cancel_separation with songId", async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await separation.cancelSeparation("song-1");
+    expect(mockInvoke).toHaveBeenCalledWith("cancel_separation", {
+      songId: "song-1",
+    });
+  });
+
   test("getSeparationStatus invokes get_separation_status", async () => {
     mockInvoke.mockResolvedValueOnce(sepStatus);
     const returned = await separation.getSeparationStatus("song-1");

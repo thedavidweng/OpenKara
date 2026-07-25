@@ -1,6 +1,7 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 mod support;
@@ -109,6 +110,7 @@ fn separate_four_stem_to_dir(
         StemMode::FourStem,
         &mut writers,
         &mut workspace,
+        &AtomicBool::new(false),
         |_, _| {},
     )
     .expect("streaming separation should succeed");
@@ -116,6 +118,164 @@ fn separate_four_stem_to_dir(
     writers.finish_all().expect("writers should finalize");
 
     normalized
+}
+
+/// Run a cancellable FourStem streaming pass. The writers are intentionally
+/// NOT finalized, so on the cancel path they are dropped and their temp files
+/// cleaned up — no final stem files should ever be promoted.
+fn run_streaming_with_cancel(
+    decoded: openkara_lib::audio::decode::DecodedAudio,
+    output_dir: &Path,
+    cancel: &AtomicBool,
+    on_chunk: impl FnMut(usize, usize),
+) -> anyhow::Result<()> {
+    initialize_test_runtime();
+    let loaded_model = model::load_from_path(&model_path(), ExecutionProviderPreference::Cpu)
+        .expect("demucs model should load");
+
+    let normalized =
+        preprocess::normalize_audio_for_model(decoded).expect("audio should normalize for model");
+
+    let channels = normalized.channels;
+    let input_frame_count = normalized.samples.len() / channels;
+    let chunk_size =
+        preprocess::target_frame_count(&loaded_model, input_frame_count).expect("chunk size");
+    let hop_size = chunk_size / 2;
+
+    fs::create_dir_all(output_dir).expect("output dir should be created");
+
+    let sample_rate = normalized.sample_rate;
+    let mut writers = StemWriters {
+        mode: StemMode::FourStem,
+        vocals: StreamingOggWriter::new(
+            &output_dir.join("vocals.ogg"),
+            sample_rate,
+            channels,
+            None,
+            None,
+        )
+        .expect("vocals writer"),
+        accompaniment: None,
+        drums: Some(
+            StreamingOggWriter::new(
+                &output_dir.join("drums.ogg"),
+                sample_rate,
+                channels,
+                None,
+                None,
+            )
+            .expect("drums writer"),
+        ),
+        bass: Some(
+            StreamingOggWriter::new(
+                &output_dir.join("bass.ogg"),
+                sample_rate,
+                channels,
+                None,
+                None,
+            )
+            .expect("bass writer"),
+        ),
+        other: Some(
+            StreamingOggWriter::new(
+                &output_dir.join("other.ogg"),
+                sample_rate,
+                channels,
+                None,
+                None,
+            )
+            .expect("other writer"),
+        ),
+    };
+
+    let mut workspace = SeparationWorkspace::new(
+        StemMode::FourStem,
+        channels,
+        chunk_size,
+        hop_size,
+        input_frame_count,
+    );
+
+    inference::separate_streaming(
+        &loaded_model,
+        &normalized,
+        StemMode::FourStem,
+        &mut writers,
+        &mut workspace,
+        cancel,
+        on_chunk,
+    )
+    .map(|_| ())
+}
+
+fn assert_no_stem_files(output_dir: &Path) {
+    for stem_name in ["vocals", "drums", "bass", "other"] {
+        let stem_path = output_dir.join(format!("{stem_name}.ogg"));
+        assert!(
+            !stem_path.exists(),
+            "{} must not exist after a cancelled run",
+            stem_path.display()
+        );
+    }
+}
+
+#[test]
+fn streaming_separation_cancelled_before_first_chunk_writes_no_stems() {
+    let decoded = decode::decode_file(&fixture_path("audio", "fixture.wav"))
+        .expect("wav fixture should decode");
+
+    let output_dir = unique_output_dir();
+    cleanup_dir(&output_dir);
+
+    let cancel = AtomicBool::new(true);
+    let result = run_streaming_with_cancel(decoded, &output_dir, &cancel, |_, _| {});
+
+    let error = result.expect_err("a pre-cancelled run must return an error");
+    assert!(
+        openkara_lib::separator::error::is_cancelled(&error),
+        "error should be the cancellation sentinel, got: {error:?}"
+    );
+    assert_no_stem_files(&output_dir);
+
+    cleanup_dir(&output_dir);
+}
+
+#[test]
+fn streaming_separation_cancelled_after_first_chunk_writes_no_stems() {
+    let fixture = decode::decode_file(&fixture_path("audio", "fixture.wav"))
+        .expect("wav fixture should decode");
+    // Repeat so the schedule spans multiple chunks and a later iteration hits
+    // the cancellation checkpoint.
+    let mut long_audio = fixture.clone();
+    long_audio.samples = fixture.samples.repeat(8);
+
+    let output_dir = unique_output_dir();
+    cleanup_dir(&output_dir);
+
+    let cancel = AtomicBool::new(false);
+    let mut chunks_completed = 0usize;
+    let result =
+        run_streaming_with_cancel(long_audio, &output_dir, &cancel, |completed, _total| {
+            chunks_completed = completed;
+            // Flag cancellation after the first chunk finishes; the next iteration
+            // checkpoint returns early.
+            if completed == 1 {
+                cancel.store(true, Ordering::SeqCst);
+            }
+        });
+
+    let error = result.expect_err("a mid-run cancellation must return an error");
+    assert!(
+        openkara_lib::separator::error::is_cancelled(&error),
+        "error should be the cancellation sentinel, got: {error:?}"
+    );
+    assert!(
+        chunks_completed >= 1,
+        "at least one chunk should complete before cancellation"
+    );
+    assert_no_stem_files(&output_dir);
+
+    cleanup_dir(&output_dir);
 }
 
 #[test]

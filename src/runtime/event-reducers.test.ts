@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   createBatchSeparationClearScheduler,
   createStatusClearScheduler,
+  separationCancelledStatus,
   separationErrorStatus,
   separationProgressStatus,
   uploadCompleteStatus,
@@ -32,6 +33,14 @@ describe("event reducers", () => {
       state: "failed",
       percent: 0,
       error,
+    });
+
+    expect(separationCancelledStatus({ song_id: "song-1" })).toMatchObject({
+      song_id: "song-1",
+      state: "idle",
+      percent: 0,
+      cache_hit: false,
+      error: null,
     });
   });
 

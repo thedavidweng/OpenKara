@@ -1,6 +1,10 @@
+// @vitest-environment jsdom
+
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import { GlobalProgressBar } from "./GlobalProgressBar";
+import * as api from "@/lib/tauri";
 import type {
   SeparationStatusSnapshot,
   Song,
@@ -39,6 +43,7 @@ vi.mock("@/stores/bootstrap-store", () => ({
 
 vi.mock("@/lib/tauri", () => ({
   cancelBatchSeparation: vi.fn(() => Promise.resolve()),
+  cancelSeparation: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("@/lib/errors", () => ({
@@ -46,6 +51,38 @@ vi.mock("@/lib/errors", () => ({
 }));
 
 describe("GlobalProgressBar", () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  test("cancels a single-song separation when its cancel affordance is clicked", () => {
+    mockLibraryState.batchSeparation = null;
+    mockLibraryState.uploadStatuses = {};
+    mockLibraryState.separationStatuses = {
+      "song-cancel": {
+        song_id: "song-cancel",
+        state: "running",
+        percent: 20,
+        cache_hit: false,
+        vocals_path: null,
+        accomp_path: null,
+        drums_path: null,
+        bass_path: null,
+        other_path: null,
+        model_variant: null,
+        error: null,
+      },
+    };
+    mockLibraryState.songs = [];
+
+    const { getByRole } = render(<GlobalProgressBar />);
+    fireEvent.click(getByRole("button"));
+
+    expect(api.cancelSeparation).toHaveBeenCalledWith("song-cancel");
+
+    mockLibraryState.separationStatuses = {};
+  });
   test("renders separation and upload tasks with the shared task bar", () => {
     mockLibraryState.separationStatuses = {
       "song-separate": {

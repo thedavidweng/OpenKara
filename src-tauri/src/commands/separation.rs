@@ -15,9 +15,9 @@ use tauri::{AppHandle, State};
 // Re-export contract types and helpers for callers/tests that import from commands.
 pub use crate::services::separation::{
     completed_status, completed_status_with_model, failed_status, get_separation_status_from_map,
-    idle_status, running_status, SeparationCompleteEvent, SeparationErrorEvent,
-    SeparationProgressEvent, SeparationState, SEPARATION_COMPLETE_EVENT, SEPARATION_ERROR_EVENT,
-    SEPARATION_PROGRESS_EVENT,
+    idle_status, running_status, SeparationCancelledEvent, SeparationCompleteEvent,
+    SeparationErrorEvent, SeparationProgressEvent, SeparationState, SEPARATION_CANCELLED_EVENT,
+    SEPARATION_COMPLETE_EVENT, SEPARATION_ERROR_EVENT, SEPARATION_PROGRESS_EVENT,
 };
 
 #[tauri::command]
@@ -95,6 +95,14 @@ pub fn get_separation_status(
     song_id: String,
 ) -> CommandResult<SeparationStatusSnapshot> {
     separation::get_separation_status_from_map(&state.separation.separation_statuses, &song_id)
+}
+
+/// Request cancellation of a running single-song separation. No-op success if
+/// the song is not currently separating.
+#[tauri::command]
+pub fn cancel_separation(state: State<'_, AppState>, song_id: String) -> CommandResult<()> {
+    separation::request_cancel(&state.separation.separation_cancels, &song_id);
+    Ok(())
 }
 
 /// Returns separation statuses for all songs that have cached stems in the database.

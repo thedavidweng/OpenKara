@@ -26,6 +26,7 @@ use tauri::{AppHandle, Emitter, Manager, Runtime};
 pub const SEPARATION_PROGRESS_EVENT: &str = "separation-progress";
 pub const SEPARATION_COMPLETE_EVENT: &str = "separation-complete";
 pub const SEPARATION_ERROR_EVENT: &str = "separation-error";
+pub const SEPARATION_CANCELLED_EVENT: &str = "separation-cancelled";
 
 pub const BATCH_SEPARATION_PROGRESS_EVENT: &str = "batch-separation-progress";
 pub const BATCH_SEPARATION_COMPLETE_EVENT: &str = "batch-separation-complete";
@@ -71,6 +72,11 @@ pub struct SeparationCompleteEvent {
 pub struct SeparationErrorEvent {
     pub song_id: String,
     pub error: CommandError,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SeparationCancelledEvent {
+    pub song_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -192,6 +198,8 @@ pub struct SeparationExecutionContext {
     pub runtime_bootstrap_status: Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
     pub statuses: Arc<Mutex<HashMap<String, SeparationStatusSnapshot>>>,
     pub model_cache: Arc<Mutex<ModelCache<LoadedModel>>>,
+    pub cancels: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
+    pub batch_current_song: Arc<Mutex<Option<String>>>,
 }
 
 pub fn build_execution_context(state: &AppState) -> CommandResult<SeparationExecutionContext> {
@@ -223,7 +231,57 @@ pub fn build_execution_context(state: &AppState) -> CommandResult<SeparationExec
         runtime_bootstrap_status: Arc::clone(&state.shell.runtime_bootstrap_status),
         statuses: Arc::clone(&state.separation.separation_statuses),
         model_cache: Arc::clone(&state.separation.separator_model_cache),
+        cancels: Arc::clone(&state.separation.separation_cancels),
+        batch_current_song: Arc::clone(&state.separation.batch_current_song),
     })
+}
+
+/// Registry alias for per-song cancellation flags.
+pub type CancelRegistry = Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>;
+
+/// Register a fresh cancellation flag for `song_id` and return it. The caller
+/// keeps the returned handle for the duration of the job and must call
+/// [`deregister_cancel_flag`] on exit (both success and failure paths).
+pub fn register_cancel_flag(cancels: &CancelRegistry, song_id: &str) -> Arc<AtomicBool> {
+    let flag = Arc::new(AtomicBool::new(false));
+    if let Ok(mut map) = cancels.lock() {
+        map.insert(song_id.to_owned(), Arc::clone(&flag));
+    }
+    flag
+}
+
+pub fn deregister_cancel_flag(cancels: &CancelRegistry, song_id: &str) {
+    if let Ok(mut map) = cancels.lock() {
+        map.remove(song_id);
+    }
+}
+
+/// Request cancellation of `song_id`. Returns `true` if the song was currently
+/// separating (a flag was set), `false` if it was not — a no-op success.
+pub fn request_cancel(cancels: &CancelRegistry, song_id: &str) -> bool {
+    if let Ok(map) = cancels.lock() {
+        if let Some(flag) = map.get(song_id) {
+            flag.store(true, Ordering::Relaxed);
+            return true;
+        }
+    }
+    false
+}
+
+/// Emit `separation-cancelled` and reset the song's status to idle. Cancelled
+/// runs never surface a `separation-error` event or an error toast.
+pub fn emit_separation_cancelled<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    statuses: &Arc<Mutex<HashMap<String, SeparationStatusSnapshot>>>,
+    song_id: &str,
+) {
+    store_status(statuses, song_id, idle_status(song_id));
+    let _ = app_handle.emit(
+        SEPARATION_CANCELLED_EVENT,
+        SeparationCancelledEvent {
+            song_id: song_id.to_owned(),
+        },
+    );
 }
 
 /// Seam: production path uses command bootstrap helpers; tests can call
@@ -405,6 +463,7 @@ pub fn validate_song_can_be_separated(
 }
 
 /// Does not touch bootstrap or remote publish — those are caller responsibilities.
+#[allow(clippy::too_many_arguments)]
 pub fn run_job_blocking(
     library_root: &LibraryRoot,
     model_cache: &Arc<Mutex<ModelCache<LoadedModel>>>,
@@ -413,6 +472,7 @@ pub fn run_job_blocking(
     stem_mode: StemMode,
     model_variant: &str,
     ep_preference: ExecutionProviderPreference,
+    cancel: &AtomicBool,
     report_progress: impl FnMut(u8),
 ) -> CommandResult<SeparationArtifacts> {
     let connection = cache::open_database(&library_root.database_path())
@@ -426,6 +486,7 @@ pub fn run_job_blocking(
         stem_mode,
         model_variant,
         ep_preference,
+        cancel,
         report_progress,
     )
     .map_err(|error| SeparationError::Failed(error.to_string()).into())
@@ -448,15 +509,20 @@ pub fn start_job<R: Runtime>(
         runtime_bootstrap_status,
         statuses,
         model_cache,
+        cancels,
         stem_mode: _,
+        batch_current_song: _,
     } = execution_context;
     let progress_song_id = song_id.clone();
     let progress_app_handle = app_handle.clone();
     let progress_statuses = Arc::clone(&statuses);
 
+    let cancel_flag = register_cancel_flag(&cancels, &song_id);
+
     tauri::async_runtime::spawn(async move {
         let worker_library_root = library_root.clone();
         let worker_song_id = song_id.clone();
+        let worker_cancel = Arc::clone(&cancel_flag);
         let prerequisite_app_handle = app_handle.clone();
         let prerequisite_app_data_dir = app_data_dir.clone();
         let prerequisite_model_status = Arc::clone(&model_bootstrap_status);
@@ -485,6 +551,7 @@ pub fn start_job<R: Runtime>(
                 stem_mode,
                 &model_variant,
                 ep_preference,
+                &worker_cancel,
                 |percent| {
                     report_progress_to_status_and_events(
                         &progress_app_handle,
@@ -496,6 +563,16 @@ pub fn start_job<R: Runtime>(
             )
         })
         .await;
+
+        let requested_cancel = cancel_flag.load(Ordering::Relaxed);
+        deregister_cancel_flag(&cancels, &song_id);
+
+        // A run that finished successfully completed before cancellation could
+        // take effect, so only failures are reinterpreted as cancellations.
+        if requested_cancel && !matches!(result, Ok(Ok(_))) {
+            emit_separation_cancelled(&app_handle, &statuses, &song_id);
+            return;
+        }
 
         let final_status = match result {
             Ok(Ok(artifacts)) => status_from_job_result(&song_id, Ok(artifacts)),
@@ -589,6 +666,8 @@ pub fn start_batch_job<R: Runtime>(
         runtime_bootstrap_status,
         statuses: separation_statuses,
         model_cache,
+        cancels,
+        batch_current_song,
     } = execution_context;
 
     let total = plan.to_separate.len();
@@ -697,6 +776,13 @@ pub fn start_batch_job<R: Runtime>(
                 }
             }
 
+            // Register this song's cancel flag and mark it current so a batch
+            // cancel can flag it and stop mid-song.
+            let cancel_flag = register_cancel_flag(&cancels, song_id);
+            if let Ok(mut current) = batch_current_song.lock() {
+                *current = Some(song_id.clone());
+            }
+
             let _ = app_handle.emit(
                 BATCH_SEPARATION_PROGRESS_EVENT,
                 BatchSeparationProgress {
@@ -714,6 +800,7 @@ pub fn start_batch_job<R: Runtime>(
             let worker_song_id = song_id.clone();
             let worker_statuses = Arc::clone(&separation_statuses);
             let worker_model_cache = Arc::clone(&model_cache);
+            let worker_cancel = Arc::clone(&cancel_flag);
             let progress_song_id = song_id.clone();
             let progress_app_handle = app_handle.clone();
             let batch_progress_app_handle = app_handle.clone();
@@ -732,6 +819,7 @@ pub fn start_batch_job<R: Runtime>(
                     stem_mode,
                     &worker_model_variant,
                     ep_preference,
+                    &worker_cancel,
                     |percent| {
                         report_progress_to_status_and_events(
                             &progress_app_handle,
@@ -755,6 +843,12 @@ pub fn start_batch_job<R: Runtime>(
             })
             .await;
 
+            let requested_cancel = cancel_flag.load(Ordering::Relaxed);
+            deregister_cancel_flag(&cancels, song_id);
+            if let Ok(mut current) = batch_current_song.lock() {
+                *current = None;
+            }
+
             match result {
                 Ok(Ok(artifacts)) => {
                     let status = status_from_job_result(song_id, Ok(artifacts));
@@ -765,15 +859,24 @@ pub fn start_batch_job<R: Runtime>(
                     completed += 1;
                 }
                 Ok(Err(error)) => {
-                    let status = status_from_job_result(song_id, Err(error));
-                    emit_terminal_status(&app_handle, &separation_statuses, status, |_| {});
-                    failed_count += 1;
+                    if requested_cancel {
+                        emit_separation_cancelled(&app_handle, &separation_statuses, song_id);
+                    } else {
+                        let status = status_from_job_result(song_id, Err(error));
+                        emit_terminal_status(&app_handle, &separation_statuses, status, |_| {});
+                        failed_count += 1;
+                    }
                 }
                 Err(error) => {
-                    let cmd_error: CommandError = SeparationError::Failed(error.to_string()).into();
-                    let status = status_from_job_result(song_id, Err(cmd_error));
-                    emit_terminal_status(&app_handle, &separation_statuses, status, |_| {});
-                    failed_count += 1;
+                    if requested_cancel {
+                        emit_separation_cancelled(&app_handle, &separation_statuses, song_id);
+                    } else {
+                        let cmd_error: CommandError =
+                            SeparationError::Failed(error.to_string()).into();
+                        let status = status_from_job_result(song_id, Err(cmd_error));
+                        emit_terminal_status(&app_handle, &separation_statuses, status, |_| {});
+                        failed_count += 1;
+                    }
                 }
             }
         }
@@ -885,11 +988,14 @@ pub fn downgrade_to_two_stem_and_publish<R: Runtime>(
         cache::stems::downgrade_to_two_stem(&connection, &library_root, song_id)
             .map_err(|e| SeparationError::Failed(e.to_string()))?;
 
+    // `cache_hit` drives the "Using cached separation" cue on the completion
+    // event. A downgrade is an explicit user action, not a cache-served
+    // separation request, so it must not raise that cue.
     let completed = completed_status(
         song_id,
         &updated_entry.vocals_path,
         &updated_entry.accomp_path,
-        true,
+        false,
         updated_entry.drums_path,
         updated_entry.bass_path,
         updated_entry.other_path,
@@ -1021,6 +1127,44 @@ mod tests {
             .expect_err("instrumental songs should be rejected");
 
         assert!(error.message.contains("marked instrumental"));
+    }
+
+    #[test]
+    fn request_cancel_flags_only_the_target_song() {
+        let cancels: CancelRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let flag_a = register_cancel_flag(&cancels, "song-a");
+        let flag_b = register_cancel_flag(&cancels, "song-b");
+
+        assert!(
+            request_cancel(&cancels, "song-a"),
+            "cancelling a registered song should report success"
+        );
+        assert!(flag_a.load(Ordering::Relaxed), "target flag must be set");
+        assert!(
+            !flag_b.load(Ordering::Relaxed),
+            "unrelated song flag must be untouched"
+        );
+    }
+
+    #[test]
+    fn request_cancel_is_a_noop_for_unknown_song() {
+        let cancels: CancelRegistry = Arc::new(Mutex::new(HashMap::new()));
+        assert!(
+            !request_cancel(&cancels, "never-registered"),
+            "cancelling an unregistered song must be a no-op returning false"
+        );
+    }
+
+    #[test]
+    fn deregister_cancel_flag_removes_the_entry() {
+        let cancels: CancelRegistry = Arc::new(Mutex::new(HashMap::new()));
+        register_cancel_flag(&cancels, "song-a");
+        deregister_cancel_flag(&cancels, "song-a");
+
+        assert!(
+            !request_cancel(&cancels, "song-a"),
+            "a deregistered song can no longer be cancelled"
+        );
     }
 
     #[test]

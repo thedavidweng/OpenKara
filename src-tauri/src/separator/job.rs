@@ -16,7 +16,7 @@ use anyhow::{Context, Result};
 use rusqlite::Connection;
 use std::{
     path::Path,
-    sync::{Arc, LazyLock, Mutex},
+    sync::{atomic::AtomicBool, Arc, LazyLock, Mutex},
 };
 
 /// Global lock that serializes audio decoding for separation jobs.
@@ -40,6 +40,7 @@ pub struct SeparationArtifacts {
     pub other_path: Option<String>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn separate_song_into_cache(
     connection: &Connection,
     library_root: &LibraryRoot,
@@ -49,6 +50,7 @@ pub fn separate_song_into_cache(
     stem_mode: StemMode,
     model_variant: &str,
     ep_preference: ExecutionProviderPreference,
+    cancel: &AtomicBool,
     mut report_progress: impl FnMut(u8),
 ) -> Result<SeparationArtifacts> {
     if let Some(cached) =
@@ -276,6 +278,7 @@ pub fn separate_song_into_cache(
         stem_mode,
         &mut writers,
         &mut workspace,
+        cancel,
         inference_progress,
     )
     .with_context(|| format!("failed to separate stems for song {song_hash}"))?;

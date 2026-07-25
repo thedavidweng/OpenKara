@@ -1,5 +1,9 @@
+// @vitest-environment jsdom
+
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { cleanup, fireEvent, render } from "@testing-library/react";
+import * as api from "@/lib/tauri";
 import { SongListItem } from "./SongListItem";
 import { buildSongListContextMenuItems } from "./song-list-item-menu";
 
@@ -97,6 +101,7 @@ vi.mock("@/stores/queue-store", () => ({
 
 vi.mock("@/lib/tauri", () => ({
   separate: vi.fn(),
+  cancelSeparation: vi.fn(() => Promise.resolve()),
   deleteSongs: vi.fn(),
   batchSeparate: vi.fn(),
   extractEmbeddedLyrics: vi.fn(),
@@ -131,6 +136,59 @@ vi.mock("./SongPropertiesDialog", () => ({
 }));
 
 describe("SongListItem", () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  test("shows a cancel affordance while separating and calls the API on click", () => {
+    mockLibraryState.selectedSongIds = new Set();
+    mockLibraryState.separationStatuses = {
+      "song-cancel": {
+        song_id: "song-cancel",
+        state: "running",
+        percent: 30,
+        cache_hit: false,
+        vocals_path: null,
+        accomp_path: null,
+        drums_path: null,
+        bass_path: null,
+        other_path: null,
+        model_variant: null,
+        error: null,
+      },
+    };
+
+    const { getByLabelText } = render(
+      <SongListItem
+        song={{
+          hash: "song-cancel",
+          file_path: "Artist/Song.mp3",
+          audio_source_kind: "original",
+          cdg_path: null,
+          media_g_container: null,
+          instrumental: false,
+          language: null,
+          title: "Song",
+          artist: "Artist",
+          album: null,
+          duration_ms: 180000,
+          cover_art: null,
+          has_cover_art: false,
+          imported_at: 0,
+          original_ext: "mp3",
+        }}
+        orderedHashes={["song-cancel"]}
+      />,
+    );
+
+    fireEvent.click(getByLabelText("library.cancelSeparation"));
+
+    expect(api.cancelSeparation).toHaveBeenCalledWith("song-cancel");
+
+    mockLibraryState.separationStatuses = {};
+  });
+
   test("renders media-g badges and duration in the trailing metadata slot", () => {
     const markup = renderToStaticMarkup(
       <SongListItem
