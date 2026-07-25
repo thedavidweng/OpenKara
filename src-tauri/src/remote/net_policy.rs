@@ -38,9 +38,10 @@
 use crate::remote::errors::{
     kind_from_http_status, kind_from_io_error, RemoteError, RemoteErrorKind,
 };
+use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Maximum `Retry-After` value honored (seconds). Absurd/unbounded values are
 /// ignored so a misbehaving server cannot stall an operation indefinitely.
@@ -369,6 +370,78 @@ pub(crate) fn shared_http_client() -> &'static reqwest::blocking::Client {
     })
 }
 
+/// Read buffer size for streaming downloads. reqwest's blocking `Read` impl
+/// applies the client's configured `timeout` as a fresh deadline for each
+/// read once the response body is streaming, so every 64 KiB read is bounded
+/// individually.
+const DOWNLOAD_STREAM_BUFFER: usize = 64 * 1024;
+
+/// Total wall-clock ceiling for streaming a single download body/chunk. The
+/// per-read idle timeout (the client's `timeout`) bounds a stalled read; this
+/// bounds a pathological trickle that stays just under the idle timeout
+/// forever. It is deliberately generous — a genuinely slow-but-steady link
+/// (2G-class, tens of KB/s) completes well within it — so it never clips a
+/// legitimate weak-network transfer.
+const DOWNLOAD_STREAM_TOTAL_BUDGET: Duration = Duration::from_secs(60 * 60);
+
+/// Stream a blocking HTTP response body into `writer`, returning the number of
+/// bytes written.
+///
+/// This replaces `response.bytes()` for downloads. `response.bytes()` wraps the
+/// ENTIRE body read in one `timeout` deadline (a total-body deadline), so any
+/// body that cannot fully arrive within that single window fails outright —
+/// imports on 2G-class links time out with zero durable progress (issue #205).
+/// Reading in a loop makes reqwest's blocking `Read` apply the client `timeout`
+/// as a fresh per-read deadline, i.e. an idle timeout: a slow-but-steady link
+/// keeps making progress, while a stalled/half-open connection still trips a
+/// bounded timeout. Bytes are written as they arrive, so an interruption leaves
+/// durable partial progress on disk that the resumable path can continue from.
+///
+/// `max_bytes` caps the accepted body length. When the body would exceed it the
+/// stream is rejected with an error (the overflowing chunk is not written), so
+/// a misbehaving server cannot grow the destination without bound. Pass
+/// `u64::MAX` (or [`stream_response_body`]) when the length is validated later.
+pub(crate) fn stream_response_body_capped<W: Write>(
+    response: &mut reqwest::blocking::Response,
+    writer: &mut W,
+    max_bytes: u64,
+) -> std::io::Result<u64> {
+    let started = Instant::now();
+    let mut total: u64 = 0;
+    let mut buffer = [0u8; DOWNLOAD_STREAM_BUFFER];
+    loop {
+        if started.elapsed() > DOWNLOAD_STREAM_TOTAL_BUDGET {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "download exceeded the total time budget",
+            ));
+        }
+        let read = response.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        total = total.saturating_add(read as u64);
+        if total > max_bytes {
+            return Err(std::io::Error::other(format!(
+                "download body exceeded the maximum of {max_bytes} bytes"
+            )));
+        }
+        writer.write_all(&buffer[..read])?;
+    }
+    Ok(total)
+}
+
+/// Stream a blocking HTTP response body into `writer` with no length cap,
+/// returning the number of bytes written. See [`stream_response_body_capped`]
+/// for the per-read idle-timeout rationale. Callers that know the expected
+/// length (range chunks) should prefer the capped variant.
+pub(crate) fn stream_response_body<W: Write>(
+    response: &mut reqwest::blocking::Response,
+    writer: &mut W,
+) -> std::io::Result<u64> {
+    stream_response_body_capped(response, writer, u64::MAX)
+}
+
 /// Run a fallible remote operation with the default production retry policy.
 ///
 /// Callers rebuild the request inside `operation` on every attempt so the
@@ -681,5 +754,182 @@ mod tests {
             classify_status(reqwest::StatusCode::INTERNAL_SERVER_ERROR),
             RemoteErrorKind::NetworkUnavailable
         );
+    }
+
+    // ---- streaming download body tests (issue #205) ----
+
+    use std::net::TcpListener;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::atomic::Ordering as AtomicOrdering;
+
+    /// A single-connection mock HTTP server. It sends a `200 OK` with the given
+    /// `content_length`, then writes `first_body` immediately, then trickles
+    /// `trailing_body` in `chunk_size` pieces separated by `gap`. When `stall`
+    /// is set it stops after `first_body` and holds the connection open (no
+    /// further bytes) until `stop` is set — simulating a half-open/stalled peer.
+    struct MockBodyServer {
+        url: String,
+        stop: Arc<AtomicBool>,
+        handle: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl MockBodyServer {
+        fn spawn(
+            content_length: usize,
+            first_body: Vec<u8>,
+            trailing_body: Vec<u8>,
+            chunk_size: usize,
+            gap: Duration,
+            stall: bool,
+        ) -> Self {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock server");
+            let addr = listener.local_addr().expect("addr");
+            let stop = Arc::new(AtomicBool::new(false));
+            let stop_thread = Arc::clone(&stop);
+            let handle = std::thread::spawn(move || {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    return;
+                };
+                // Consume the request headers (best effort).
+                let mut req = [0u8; 2048];
+                let _ = stream.read(&mut req);
+                let headers = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {content_length}\r\nAccept-Ranges: bytes\r\n\r\n"
+                );
+                if stream.write_all(headers.as_bytes()).is_err() {
+                    return;
+                }
+                let _ = stream.write_all(&first_body);
+                let _ = stream.flush();
+                if stall {
+                    // Hold the connection open with no further body so the
+                    // client's per-read idle timeout must fire.
+                    while !stop_thread.load(AtomicOrdering::Relaxed) {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    return;
+                }
+                for piece in trailing_body.chunks(chunk_size.max(1)) {
+                    std::thread::sleep(gap);
+                    if stream.write_all(piece).is_err() {
+                        return;
+                    }
+                    let _ = stream.flush();
+                }
+                // Keep the socket open briefly so the client can drain the last
+                // bytes before EOF.
+                while !stop_thread.load(AtomicOrdering::Relaxed) {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+            });
+            Self {
+                url: format!("http://{addr}/body"),
+                stop,
+                handle: Some(handle),
+            }
+        }
+    }
+
+    impl Drop for MockBodyServer {
+        fn drop(&mut self) {
+            self.stop.store(true, AtomicOrdering::Relaxed);
+            if let Some(handle) = self.handle.take() {
+                let _ = handle.join();
+            }
+        }
+    }
+
+    fn short_timeout_client(read_timeout: Duration) -> reqwest::blocking::Client {
+        reqwest::blocking::Client::builder()
+            .connect_timeout(Duration::from_secs(2))
+            .timeout(read_timeout)
+            .build()
+            .expect("client builds")
+    }
+
+    #[test]
+    fn stream_response_body_succeeds_on_slow_but_steady_trickle() {
+        // Acceptance (#205 criterion 1 & 3): a body that arrives steadily but
+        // whose TOTAL transfer time exceeds the client timeout must succeed.
+        // `response.bytes()` applies the timeout as a single total-body
+        // deadline (which this transfer would blow); the streaming loop applies
+        // it as a per-read idle timeout, which every gap stays under.
+        let total = 128 * 1024usize;
+        let body: Vec<u8> = (0..total).map(|i| (i % 251) as u8).collect();
+        let read_timeout = Duration::from_millis(300);
+        // 16 KiB chunks, 120 ms apart => ~0.96 s total, each gap < 300 ms.
+        let server = MockBodyServer::spawn(
+            total,
+            Vec::new(),
+            body.clone(),
+            16 * 1024,
+            Duration::from_millis(120),
+            false,
+        );
+        let client = short_timeout_client(read_timeout);
+        let mut response = client.get(&server.url).send().expect("send");
+
+        let started = Instant::now();
+        let mut sink: Vec<u8> = Vec::new();
+        let written = stream_response_body(&mut response, &mut sink).expect("stream succeeds");
+        let elapsed = started.elapsed();
+
+        assert_eq!(written, total as u64);
+        assert_eq!(sink, body);
+        // The transfer genuinely outlasted the client timeout, proving the fix
+        // (a total-body deadline of `read_timeout` would have failed here).
+        assert!(
+            elapsed > read_timeout,
+            "transfer ({elapsed:?}) should exceed the client timeout ({read_timeout:?})"
+        );
+    }
+
+    #[test]
+    fn stream_response_body_times_out_on_stall_and_keeps_partial() {
+        // Acceptance (#205 criterion 2, partial-write half): a stalled peer must
+        // return a bounded error, and the bytes received before the stall must
+        // already be durable in the writer (so the resumable path can continue).
+        let prefix = vec![7u8; 4096];
+        let server = MockBodyServer::spawn(
+            1_000_000,
+            prefix.clone(),
+            Vec::new(),
+            0,
+            Duration::ZERO,
+            true,
+        );
+        let client = short_timeout_client(Duration::from_millis(250));
+        let mut response = client.get(&server.url).send().expect("send");
+
+        let started = Instant::now();
+        let mut sink: Vec<u8> = Vec::new();
+        let result = stream_response_body(&mut response, &mut sink);
+        let elapsed = started.elapsed();
+
+        assert!(result.is_err(), "a stalled body must error, not hang");
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "stall must be bounded, took {elapsed:?}"
+        );
+        assert_eq!(sink, prefix, "bytes received before the stall are durable");
+    }
+
+    #[test]
+    fn stream_response_body_capped_rejects_oversized_body() {
+        let body = vec![1u8; 4096];
+        let server = MockBodyServer::spawn(
+            body.len(),
+            body.clone(),
+            Vec::new(),
+            0,
+            Duration::ZERO,
+            false,
+        );
+        let client = short_timeout_client(Duration::from_secs(2));
+        let mut response = client.get(&server.url).send().expect("send");
+        let mut sink: Vec<u8> = Vec::new();
+        // Cap below the body length: the stream must be rejected.
+        let result = stream_response_body_capped(&mut response, &mut sink, 1024);
+        assert!(result.is_err(), "body over the cap must error");
     }
 }

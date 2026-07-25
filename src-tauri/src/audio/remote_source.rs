@@ -191,8 +191,50 @@ pub struct ProviderFetcher {
     client: reqwest::blocking::Client,
 }
 
+/// Connect timeout for the streaming range fetcher's HTTP client.
+const STREAMING_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Per-request timeout for the streaming range fetcher's HTTP client.
+///
+/// Because [`ProviderFetcher::execute_request`] and [`ReqwestFetcher`] consume
+/// the body with a streaming `read()` loop rather than `response.bytes()`,
+/// reqwest's blocking `Read` applies this value as a fresh deadline PER READ —
+/// i.e. an idle timeout. A half-open/stalled connection trips it within this
+/// bound and surfaces a normal `FetchError` (so `fetch_range_with_retry` runs
+/// its backoff and `ConsecutiveFailures` can drive mid-song reconnect), while a
+/// slow-but-steady weak-network transfer keeps making progress and is not
+/// killed (issue #204).
+const STREAMING_READ_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Build the blocking HTTP client used for streaming range fetches with an
+/// explicit connect and per-request (idle) timeout. Falls back to a default
+/// client only if the builder fails (e.g. a TLS backend init error); the
+/// timeouts are the whole point, so the fallback is a last resort.
+fn build_streaming_client(
+    connect_timeout: Duration,
+    read_timeout: Duration,
+) -> reqwest::blocking::Client {
+    reqwest::blocking::Client::builder()
+        .connect_timeout(connect_timeout)
+        .timeout(read_timeout)
+        .build()
+        .unwrap_or_else(|_| reqwest::blocking::Client::new())
+}
+
 impl ProviderFetcher {
     pub fn new(url: String, headers: Vec<(String, String)>) -> Self {
+        Self::with_client(
+            url,
+            headers,
+            build_streaming_client(STREAMING_CONNECT_TIMEOUT, STREAMING_READ_TIMEOUT),
+        )
+    }
+
+    fn with_client(
+        url: String,
+        headers: Vec<(String, String)>,
+        client: reqwest::blocking::Client,
+    ) -> Self {
         Self {
             url,
             headers: std::sync::Mutex::new(headers),
@@ -202,8 +244,24 @@ impl ProviderFetcher {
             credential_generation: AtomicU64::new(0),
             refresh_in_flight: std::sync::Mutex::new(None),
             refresh_condvar: std::sync::Condvar::new(),
-            client: reqwest::blocking::Client::new(),
+            client,
         }
+    }
+
+    /// Test-only constructor that injects a short-timeout client so the stall
+    /// path can be exercised without waiting the production timeout.
+    #[cfg(test)]
+    fn with_read_timeout_for_test(
+        url: String,
+        headers: Vec<(String, String)>,
+        connect_timeout: Duration,
+        read_timeout: Duration,
+    ) -> Self {
+        Self::with_client(
+            url,
+            headers,
+            build_streaming_client(connect_timeout, read_timeout),
+        )
     }
 
     pub fn with_post(mut self, api_arg_header: String) -> Self {
@@ -325,7 +383,7 @@ impl ProviderFetcher {
             builder = builder.header("Dropbox-API-Arg", arg.as_str());
         }
 
-        let response = builder.send().map_err(FetchError::Http)?;
+        let mut response = builder.send().map_err(FetchError::Http)?;
         let status = response.status().as_u16();
 
         if status == 416 {
@@ -344,8 +402,9 @@ impl ProviderFetcher {
             return Err(FetchError::HttpStatus(status));
         }
 
-        let bytes = response.bytes().map_err(FetchError::Http)?;
-        Ok(bytes.to_vec())
+        // Stream the body with a per-read idle timeout instead of buffering it
+        // all under a single total-body deadline. See `STREAMING_READ_TIMEOUT`.
+        read_range_body(&mut response, length)
     }
 }
 
@@ -586,7 +645,9 @@ pub fn spawn_fetch_thread(
     Arc<BandwidthMonitor>,
     std::thread::JoinHandle<()>,
 ) {
-    let client = reqwest::blocking::Client::new();
+    // Build the client with explicit connect + per-request (idle) timeouts so a
+    // half-open/stalled connection cannot hang the fetch thread forever (#204).
+    let client = build_streaming_client(STREAMING_CONNECT_TIMEOUT, STREAMING_READ_TIMEOUT);
     spawn_fetch_thread_with_fetcher(
         url,
         cache,
@@ -644,7 +705,7 @@ impl HttpFetcher for ReqwestFetcher {
         let end = offset + length - 1;
         let range_header = format!("bytes={offset}-{end}");
 
-        let response = self
+        let mut response = self
             .client
             .get(url)
             .header("Range", &range_header)
@@ -673,8 +734,9 @@ impl HttpFetcher for ReqwestFetcher {
             return Err(FetchError::RateLimited(retry_after));
         }
 
-        let bytes = response.bytes().map_err(FetchError::Http)?;
-        Ok(bytes.to_vec())
+        // Stream the body with a per-read idle timeout instead of buffering it
+        // all under a single total-body deadline. See `STREAMING_READ_TIMEOUT`.
+        read_range_body(&mut response, length)
     }
 }
 
@@ -905,6 +967,11 @@ pub enum FetchError {
     HttpStatus(u16),
     RateLimited(Option<Duration>),
     Cache(String),
+    /// An IO error while streaming the response body — includes a per-read
+    /// idle-timeout on a stalled/half-open connection (issue #204). Treated as
+    /// a transient failure so `fetch_range_with_retry` retries and, past the
+    /// threshold, emits `ConsecutiveFailures` to drive reconnect.
+    Io(io::Error),
     /// The server does not support Range requests (HTTP 416 or missing Accept-Ranges).
     RangeNotSupported,
 }
@@ -922,9 +989,46 @@ impl std::fmt::Display for FetchError {
                 Ok(())
             }
             FetchError::Cache(msg) => write!(f, "cache error: {msg}"),
+            FetchError::Io(e) => write!(f, "IO error while streaming range: {e}"),
             FetchError::RangeNotSupported => write!(f, "server does not support Range requests"),
         }
     }
+}
+
+/// Maximum bytes buffered for a single streaming range response. Range chunks
+/// are at most `MAX_PREFETCH_BYTES` (512 KiB); this ceiling only guards against
+/// a server that ignores the Range header and streams a huge body, which the
+/// old `response.bytes()` would have buffered without any bound.
+const MAX_RANGE_RESPONSE_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Read a range response body into memory with a per-read idle timeout.
+///
+/// reqwest's blocking `Read` impl applies the client's configured `timeout` as
+/// a fresh deadline for each read once the body is streaming, so a stalled or
+/// half-open connection trips a bounded timeout (surfaced as `FetchError::Io`)
+/// instead of parking the fetch thread forever (issue #204). A slow-but-steady
+/// weak link keeps making progress and is not killed by a single total-body
+/// deadline. `expected_length` sizes the initial buffer.
+fn read_range_body(
+    response: &mut reqwest::blocking::Response,
+    expected_length: u64,
+) -> Result<Vec<u8>, FetchError> {
+    let capacity = expected_length.min(MAX_RANGE_RESPONSE_BYTES) as usize;
+    let mut body = Vec::with_capacity(capacity);
+    let mut chunk = [0u8; 64 * 1024];
+    loop {
+        let read = response.read(&mut chunk).map_err(FetchError::Io)?;
+        if read == 0 {
+            break;
+        }
+        if body.len() as u64 + read as u64 > MAX_RANGE_RESPONSE_BYTES {
+            return Err(FetchError::Io(io::Error::other(
+                "range response exceeded the maximum buffered size",
+            )));
+        }
+        body.extend_from_slice(&chunk[..read]);
+    }
+    Ok(body)
 }
 
 /// Classify a fetch HTTP status into the shared `RemoteErrorKind` taxonomy.
@@ -1745,5 +1849,146 @@ mod tests {
 
         // Suppress unused mock warning.
         m_success.assert();
+    }
+
+    // ---- streaming range fetcher timeout tests (issue #204) ----
+
+    /// A single-connection mock server that accepts the request, sends 206
+    /// headers promising a body, then never writes the body — a half-open /
+    /// stalled peer. Holds the connection open until dropped so the client's
+    /// per-read idle timeout (not an EOF) is what ends the read.
+    struct StallingRangeServer {
+        url: String,
+        stop: Arc<AtomicBool>,
+        handle: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl StallingRangeServer {
+        fn spawn() -> Self {
+            use std::io::{Read as _, Write as _};
+            use std::net::TcpListener;
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind stalling server");
+            let addr = listener.local_addr().expect("addr");
+            let stop = Arc::new(AtomicBool::new(false));
+            let stop_thread = Arc::clone(&stop);
+            let handle = std::thread::spawn(move || {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    return;
+                };
+                let mut req = [0u8; 2048];
+                let _ = stream.read(&mut req);
+                let _ = stream.write_all(
+                    b"HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-999999/1000000\r\n\
+                      Content-Length: 1000000\r\n\r\n",
+                );
+                let _ = stream.flush();
+                // Hold the connection open without a body until told to stop.
+                while !stop_thread.load(Ordering::Relaxed) {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+            });
+            Self {
+                url: format!("http://{addr}/file"),
+                stop,
+                handle: Some(handle),
+            }
+        }
+    }
+
+    impl Drop for StallingRangeServer {
+        fn drop(&mut self) {
+            self.stop.store(true, Ordering::Relaxed);
+            if let Some(handle) = self.handle.take() {
+                let _ = handle.join();
+            }
+        }
+    }
+
+    #[test]
+    fn provider_fetcher_times_out_on_stalled_body_instead_of_hanging() {
+        // Acceptance (#204): a half-open connection that accepts the Range
+        // request then never writes the body must make `fetch_range` return an
+        // error within a bounded time (~ the read timeout), not block forever.
+        let server = StallingRangeServer::spawn();
+        let fetcher = ProviderFetcher::with_read_timeout_for_test(
+            server.url.clone(),
+            Vec::new(),
+            Duration::from_millis(300),
+            Duration::from_millis(300),
+        );
+
+        let started = std::time::Instant::now();
+        let result = fetcher.fetch_range("", 0, 100);
+        let elapsed = started.elapsed();
+
+        assert!(result.is_err(), "a stalled body must error, not hang");
+        assert!(
+            matches!(result, Err(FetchError::Io(_))),
+            "stall surfaces as an IO/timeout error"
+        );
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "fetch must be bounded by the read timeout, took {elapsed:?}"
+        );
+    }
+
+    #[test]
+    fn timed_out_fetch_drives_consecutive_failures_and_thread_exits() {
+        // Acceptance (#204): a timed-out range fetch surfaces as a normal
+        // failure, so `fetch_range_with_retry` runs and, past the threshold,
+        // `ConsecutiveFailures` is emitted to drive reconnect — and the fetch
+        // thread exits cleanly on Shutdown (no leaked thread/socket).
+        let dir = temp_dir("io_timeout_consec");
+        let cache = Arc::new(ChunkedCache::open(&dir, "io1", 100).unwrap());
+
+        let timed_out = || {
+            Err(FetchError::Io(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "simulated stalled connection",
+            )))
+        };
+        let mock = MockFetcher::new(vec![
+            timed_out(),
+            timed_out(),
+            timed_out(),
+            timed_out(),
+            timed_out(),
+        ]);
+
+        let (tx, event_rx, _monitor, handle) = spawn_fetch_thread_with_fetcher(
+            "http://example.com/test.mp3".to_string(),
+            Arc::clone(&cache),
+            Box::new(mock),
+            RetryConfig {
+                initial_delay: Duration::from_millis(1),
+                max_delay: Duration::from_millis(5),
+                max_retries: 0,
+                consecutive_failure_threshold: 5,
+            },
+            None,
+        );
+
+        for i in 0..5u64 {
+            tx.send(FetchCommand::Fetch {
+                offset: i * 100,
+                length: 100,
+            })
+            .unwrap();
+        }
+
+        let event = event_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("ConsecutiveFailures must be emitted for repeated timeouts");
+        assert!(matches!(
+            event,
+            FetchEvent::ConsecutiveFailures { count: 5 }
+        ));
+
+        // The thread must join promptly after Shutdown — the timed-out fetches
+        // returned instead of parking the thread, so no thread/socket leaks.
+        tx.send(FetchCommand::Shutdown).unwrap();
+        handle.join().expect("fetch thread exits after Shutdown");
+
+        cleanup(&dir);
     }
 }

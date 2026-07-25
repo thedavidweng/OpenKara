@@ -216,6 +216,21 @@ fn run_atomic_download(
     Ok(())
 }
 
+/// Durable on-disk length of a streaming download's part file, used to persist
+/// sub-chunk resume progress after a `download_range` interruption.
+///
+/// Providers stream range bytes straight to the part file, so its length is the
+/// true count of bytes received so far. It is at least `floor` (the last
+/// confirmed chunk-boundary offset) and never more than `expected_size`. When
+/// the file cannot be stat-ed, `floor` is returned so progress never regresses.
+fn durable_part_len(temp_path: &Path, floor: u64, expected_size: u64) -> u64 {
+    fs::metadata(temp_path)
+        .map(|m| m.len())
+        .unwrap_or(floor)
+        .max(floor)
+        .min(expected_size)
+}
+
 /// Build the temp path `<destination>.part.<operation_id>`.
 fn part_path(destination: &Path, operation_id: &str) -> PathBuf {
     let file_name = destination
@@ -440,6 +455,12 @@ fn download_to_part_resumable(
             .download_range(relative_path, temp_path, offset, length)
             .map_err(|remote_error| {
                 // Persist progress before returning so a restart resumes.
+                // Providers stream range bytes straight to the part file, so a
+                // mid-chunk interruption leaves durable bytes on disk. Persist
+                // the actual on-disk length (not the chunk start) so the resume
+                // continues from within the chunk instead of re-downloading it
+                // (issue #205 sub-chunk resume).
+                let durable = durable_part_len(temp_path, offset, expected_size);
                 let now = crate::remote::types::current_unix_time_ms();
                 let _ = crate::remote::control_db::upsert_transfer_part(
                     control_db,
@@ -451,7 +472,7 @@ fn download_to_part_resumable(
                         expected_digest: expected_digest.map(str::to_owned),
                         provider_revision: None,
                         provider_session_id: None,
-                        transferred_bytes: offset as i64,
+                        transferred_bytes: durable as i64,
                         state: "in_progress".to_owned(),
                         updated_at_ms: now,
                     },
@@ -511,19 +532,51 @@ fn run_resumable_download(
 
     // Open the temp file in append mode for resumed chunks. If the file does
     // not exist (e.g. the temp was cleaned up but the DB row remained), start
-    // from offset 0.
+    // from offset 0. Otherwise clamp the resume point to the file's actual
+    // length: providers stream range bytes straight to the part file, so a
+    // prior interruption may have left MORE durable bytes than the last
+    // chunk-boundary offset (sub-chunk progress). Resuming from the true
+    // on-disk length avoids re-downloading bytes already on disk, and never
+    // leaves a gap (we never resume past what was written).
     if !temp_path.exists() {
         offset = 0;
+    } else {
+        let file_len = fs::metadata(temp_path).map(|m| m.len()).unwrap_or(offset);
+        offset = offset.max(file_len).min(total);
     }
 
     // Download remaining chunks via Range requests.
     while offset < total {
         let length = RESUMABLE_DOWNLOAD_CHUNK_SIZE.min(total - offset);
+        let chunk_start = offset;
         let verified_bytes = provider
             .download_range(opts.relative_path, temp_path, offset, length)
             .map_err(|remote_error| {
+                // Streaming providers leave durable bytes on a mid-chunk
+                // interruption; persist the actual on-disk length so a restart
+                // resumes from within the chunk instead of re-downloading it
+                // (issue #205 sub-chunk resume).
+                let durable = durable_part_len(temp_path, chunk_start, total);
+                if durable > existing.transferred_bytes.max(0) as u64 {
+                    let now = crate::remote::types::current_unix_time_ms();
+                    let _ = crate::remote::control_db::upsert_transfer_part(
+                        opts.control_db,
+                        &crate::remote::control_db::TransferPartRow {
+                            operation_id: opts.operation_id.to_owned(),
+                            relative_path: opts.relative_path.to_owned(),
+                            direction: crate::remote::control_db::TransferDirection::Download,
+                            expected_size: Some(opts.expected_size as i64),
+                            expected_digest: opts.expected_digest.map(str::to_owned),
+                            provider_revision: opts.provider_revision.map(str::to_owned),
+                            provider_session_id: None,
+                            transferred_bytes: durable as i64,
+                            state: "in_progress".to_owned(),
+                            updated_at_ms: now,
+                        },
+                    );
+                }
                 internal_error(format!(
-                    "resumable download range failed at offset {offset}: {}",
+                    "resumable download range failed at offset {chunk_start}: {}",
                     remote_error.detail.as_deref().unwrap_or(&remote_error.code)
                 ))
             })?;
@@ -1988,6 +2041,11 @@ mod tests {
         revisions: Arc<Mutex<HashMap<String, String>>>,
         /// Fail the Nth range request (0-indexed) by returning an error.
         fail_on_range: Arc<Mutex<Option<usize>>>,
+        /// On the Nth range request (0-indexed), stream only the first M bytes
+        /// of the requested chunk to the destination file, then fail — modeling
+        /// a streaming provider interrupted mid-chunk (issue #205 sub-chunk
+        /// resume). `(call_index, partial_bytes)`.
+        partial_then_fail: Arc<Mutex<Option<(usize, u64)>>>,
         range_call_count: Arc<Mutex<usize>>,
     }
 
@@ -1997,6 +2055,7 @@ mod tests {
                 files: Arc::new(Mutex::new(HashMap::new())),
                 revisions: Arc::new(Mutex::new(HashMap::new())),
                 fail_on_range: Arc::new(Mutex::new(None)),
+                partial_then_fail: Arc::new(Mutex::new(None)),
                 range_call_count: Arc::new(Mutex::new(0)),
             }
         }
@@ -2014,6 +2073,10 @@ mod tests {
 
         fn fail_on_range(&self, index: usize) {
             *self.fail_on_range.lock().unwrap() = Some(index);
+        }
+
+        fn partial_then_fail(&self, index: usize, partial_bytes: u64) {
+            *self.partial_then_fail.lock().unwrap() = Some((index, partial_bytes));
         }
 
         fn range_call_count(&self) -> usize {
@@ -2097,7 +2160,18 @@ mod tests {
                 ));
             }
             let chunk = &data[start..end];
-            // Append the chunk to the destination file at the given offset.
+            // A streaming provider interrupted mid-chunk has already written
+            // the bytes received so far. Model that: write only the first
+            // `partial_bytes` to the file, then fail with a transient error.
+            let partial = {
+                let guard = self.partial_then_fail.lock().unwrap();
+                guard.and_then(|(idx, bytes)| (idx == call_index).then_some(bytes))
+            };
+            let to_write: &[u8] = match partial {
+                Some(bytes) => &chunk[..(bytes as usize).min(chunk.len())],
+                None => chunk,
+            };
+            // Append the bytes to the destination file at the given offset.
             use std::io::Seek;
             let mut file = std::fs::OpenOptions::new()
                 .create(true)
@@ -2116,13 +2190,19 @@ mod tests {
                     format!("failed to seek: {e}"),
                 )
             })?;
-            std::io::Write::write_all(&mut file, chunk).map_err(|e| {
+            std::io::Write::write_all(&mut file, to_write).map_err(|e| {
                 crate::remote::errors::RemoteError::new(
                     crate::remote::errors::RemoteErrorKind::NetworkUnavailable,
                     format!("failed to write chunk: {e}"),
                 )
             })?;
-            Ok(chunk.len() as u64)
+            if partial.is_some() {
+                return Err(crate::remote::errors::RemoteError::new(
+                    crate::remote::errors::RemoteErrorKind::NetworkUnavailable,
+                    "simulated mid-chunk interruption after partial write",
+                ));
+            }
+            Ok(to_write.len() as u64)
         }
 
         fn upload_file(&self, _relative_path: &str) -> CommandResult<()> {
@@ -2347,6 +2427,101 @@ mod tests {
         assert!(
             temp_path.exists(),
             "partial must survive transient range failure for cross-restart resume"
+        );
+    }
+
+    #[test]
+    fn resumable_download_resumes_from_sub_chunk_offset_and_verifies_digest() {
+        // Acceptance (#205 criterion 2): a mid-chunk interruption after N bytes
+        // must resume from ~N bytes written (not the chunk start), and the
+        // completed download must verify against the expected digest.
+        let dir = TempDir::new().expect("temp dir");
+        let dest = dir.path().join("media/song.mp3");
+        let provider = ResumableFakeProvider::new();
+        // 20 MiB file → chunked at 8 MiB. Seed one full chunk (8 MiB) done.
+        let data = vec![0x5Au8; 20 * 1024 * 1024];
+        let digest = sha256_bytes(&data);
+        provider.store_file("media/song.mp3", data.clone(), "rev-1");
+
+        let chunk_start = 8 * 1024 * 1024u64;
+        let partial = 3 * 1024 * 1024u64; // 3 MiB into the second chunk.
+                                          // The first range request writes only 3 MiB of its 8 MiB chunk, then
+                                          // fails — modeling a streaming provider dropped mid-chunk.
+        provider.partial_then_fail(0, partial);
+
+        let (_db_dir, conn) = fresh_control_db();
+
+        let temp_path = part_path(&dest, "op-1");
+        std::fs::create_dir_all(temp_path.parent().unwrap()).unwrap();
+        std::fs::write(&temp_path, &data[..chunk_start as usize]).unwrap();
+        crate::remote::control_db::upsert_transfer_part(
+            &conn,
+            &crate::remote::control_db::TransferPartRow {
+                operation_id: "op-1".to_owned(),
+                relative_path: "media/song.mp3".to_owned(),
+                direction: crate::remote::control_db::TransferDirection::Download,
+                expected_size: Some(data.len() as i64),
+                expected_digest: Some(digest.clone()),
+                provider_revision: Some("rev-1".to_owned()),
+                provider_session_id: None,
+                transferred_bytes: chunk_start as i64,
+                state: "in_progress".to_owned(),
+                updated_at_ms: 1000,
+            },
+        )
+        .unwrap();
+
+        // First attempt: interrupted mid-chunk after `partial` bytes.
+        let result = resumable_atomic_download(
+            &provider,
+            ResumableDownloadOptions {
+                relative_path: "media/song.mp3",
+                destination: &dest,
+                expected_size: data.len() as u64,
+                expected_digest: Some(&digest),
+                operation_id: "op-1",
+                control_db: &conn,
+                provider_revision: Some("rev-1"),
+            },
+        );
+        assert!(result.is_err(), "mid-chunk interruption should propagate");
+
+        // Sub-chunk progress persisted: the offset advanced past the chunk
+        // start by the partially-written bytes (not left at the chunk start).
+        let parts = crate::remote::control_db::list_transfer_parts(&conn, "op-1").unwrap();
+        assert_eq!(parts.len(), 1, "transfer part retained after failure");
+        assert_eq!(
+            parts[0].transferred_bytes as u64,
+            chunk_start + partial,
+            "resume offset must reflect the sub-chunk bytes written to disk"
+        );
+        assert_eq!(
+            std::fs::metadata(&temp_path).unwrap().len(),
+            chunk_start + partial,
+            "durable bytes on disk match the persisted offset"
+        );
+
+        // Second attempt: resumes from the sub-chunk offset and completes.
+        resumable_atomic_download(
+            &provider,
+            ResumableDownloadOptions {
+                relative_path: "media/song.mp3",
+                destination: &dest,
+                expected_size: data.len() as u64,
+                expected_digest: Some(&digest),
+                operation_id: "op-1",
+                control_db: &conn,
+                provider_revision: Some("rev-1"),
+            },
+        )
+        .expect("resume completes and verifies the digest");
+
+        assert_eq!(std::fs::read(&dest).unwrap(), data, "final file matches");
+        assert!(
+            crate::remote::control_db::list_transfer_parts(&conn, "op-1")
+                .unwrap()
+                .is_empty(),
+            "transfer part deleted on success"
         );
     }
 }
