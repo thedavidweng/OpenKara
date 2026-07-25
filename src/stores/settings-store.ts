@@ -74,7 +74,7 @@ interface SettingsState {
 
 export const DEFAULT_APP_SETTINGS: AppSettingsSnapshot = {
   hydrated: false,
-  stemMode: "two_stem",
+  stemMode: "four_stem",
   modelVariant: "htdemucs",
   language: null,
   hideBatchSeparate: false,

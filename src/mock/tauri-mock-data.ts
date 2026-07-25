@@ -113,7 +113,7 @@ export const MOCK_DATA: MockData = {
   },
 
   settings: {
-    stem_mode: "two_stem",
+    stem_mode: "four_stem",
     model_variant: "htdemucs",
     language: "en",
     hide_batch_separate: false,
@@ -146,7 +146,7 @@ export const MOCK_DATA: MockData = {
     volume: 0.8,
     stem_volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
     has_stems: true,
-    stem_mode: "two_stem",
+    stem_mode: "four_stem",
   },
 
   bootstrapStatus: {
