@@ -140,12 +140,21 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         commands::runtime_bootstrap::snapshot_from_disk(&app_data_dir),
     ));
 
-    let app_config = config::load_config(&app_data_dir).with_context(|| {
-        format!(
-            "failed to load application config from {}",
-            app_data_dir.display()
-        )
-    })?;
+    // A config problem must never brick startup (issue #208). `load_config`
+    // already quarantines a corrupt file and returns `Ok(None)`; a residual
+    // I/O error here is treated as recoverable too, falling back to defaults
+    // instead of aborting the app.
+    let app_config = match config::load_config(&app_data_dir) {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!(
+                "warning: failed to load application config from {} ({err:#}); \
+                 starting with default settings",
+                app_data_dir.display()
+            );
+            None
+        }
+    };
 
     // Crash recovery: if a mirror operation was interrupted mid-sync, the
     // config's active_library_id may still point at the remote library.

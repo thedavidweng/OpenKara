@@ -907,8 +907,8 @@ mod tests {
 
     /// Persistence failure: coordinator succeeds, but save_config fails.
     /// The coordinator should be reverted to the old value, and the error
-    /// should propagate. We simulate this by making the config file
-    /// read-only so save_config's fs::write fails.
+    /// should propagate. We simulate this by making the config *directory*
+    /// read-only so the atomic save cannot create its temp file.
     #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread")]
     async fn eq_enabled_persistence_failure_reverts_coordinator() {
@@ -925,15 +925,18 @@ mod tests {
 
         let (tx, rx) = mpsc::channel::<PlaybackCommand>();
 
-        // Make the config file read-only so save_config's fs::write fails.
-        // On Unix, writing an existing file requires the file's write bit,
-        // not the directory's.
-        let config_path = temp_dir.path().join("config.json");
-        let mut perms = std::fs::metadata(&config_path)
-            .expect("config metadata")
+        // Make the config directory read-only so the atomic save fails when it
+        // tries to create its temp file. A read-only *file* would not work:
+        // save_config now replaces config.json via a temp-file + atomic rename,
+        // and on Unix rename is governed by the directory's write bit, not the
+        // target file's — so only a non-writable directory reliably fails the
+        // save and drives the revert path.
+        let mut dir_perms = std::fs::metadata(temp_dir.path())
+            .expect("dir metadata")
             .permissions();
-        perms.set_mode(0o444);
-        std::fs::set_permissions(&config_path, perms).expect("should set config read-only");
+        dir_perms.set_mode(0o555);
+        std::fs::set_permissions(temp_dir.path(), dir_perms)
+            .expect("should set config dir read-only");
 
         // The coordinator should receive the forward command (enabled=true)
         // and then a revert command (enabled=false).
@@ -967,12 +970,12 @@ mod tests {
 
         let _ = handle.await;
 
-        // Restore permissions so temp_dir cleanup works.
-        let mut perms = std::fs::metadata(&config_path)
-            .expect("metadata")
+        // Restore directory permissions so temp_dir cleanup works.
+        let mut dir_perms = std::fs::metadata(temp_dir.path())
+            .expect("dir metadata")
             .permissions();
-        perms.set_mode(0o644);
-        let _ = std::fs::set_permissions(&config_path, perms);
+        dir_perms.set_mode(0o755);
+        let _ = std::fs::set_permissions(temp_dir.path(), dir_perms);
     }
 
     /// Same persistence-failure revert test for eq_gains.
@@ -990,12 +993,14 @@ mod tests {
 
         let (tx, rx) = mpsc::channel::<PlaybackCommand>();
 
-        let config_path = temp_dir.path().join("config.json");
-        let mut perms = std::fs::metadata(&config_path)
-            .expect("config metadata")
+        // Read-only config directory: fails the atomic save's temp-file create.
+        // (A read-only file no longer suffices — see the eq_enabled test.)
+        let mut dir_perms = std::fs::metadata(temp_dir.path())
+            .expect("dir metadata")
             .permissions();
-        perms.set_mode(0o444);
-        std::fs::set_permissions(&config_path, perms).expect("should set config read-only");
+        dir_perms.set_mode(0o555);
+        std::fs::set_permissions(temp_dir.path(), dir_perms)
+            .expect("should set config dir read-only");
 
         let handle = tokio::spawn(async move {
             let forward_gains = respond_to_set_eq_gains(&rx, Ok(()));
@@ -1025,11 +1030,11 @@ mod tests {
 
         let _ = handle.await;
 
-        let mut perms = std::fs::metadata(&config_path)
-            .expect("metadata")
+        let mut dir_perms = std::fs::metadata(temp_dir.path())
+            .expect("dir metadata")
             .permissions();
-        perms.set_mode(0o644);
-        let _ = std::fs::set_permissions(&config_path, perms);
+        dir_perms.set_mode(0o755);
+        let _ = std::fs::set_permissions(temp_dir.path(), dir_perms);
     }
 
     #[test]

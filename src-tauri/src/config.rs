@@ -4,10 +4,18 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     fs,
+    io::Write,
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 const CONFIG_FILENAME: &str = "config.json";
+
+/// Per-process counter appended to atomic-write temp file names so two saves
+/// racing within the same nanosecond never target the same temp path (and thus
+/// never interleave bytes into one temp that is then renamed over the config).
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -662,6 +670,13 @@ impl AppConfig {
 }
 
 /// Returns `Ok(None)` if the file does not exist.
+///
+/// Corruption recovery (issue #208): if the file exists but cannot be parsed
+/// — truncated, 0-length, or garbage, e.g. left behind by a non-atomic write
+/// interrupted by a crash, kill, or power loss — the bad file is moved aside
+/// to `config.json.corrupt-<unix-millis>` and `Ok(None)` is returned. Callers
+/// then fall back to defaults instead of the app aborting startup forever on
+/// a single interrupted save. Genuine I/O read failures still return `Err`.
 pub fn load_config(app_data_dir: &Path) -> Result<Option<AppConfig>> {
     let config_path = config_path(app_data_dir);
     if !config_path.exists() {
@@ -670,8 +685,25 @@ pub fn load_config(app_data_dir: &Path) -> Result<Option<AppConfig>> {
 
     let contents = fs::read_to_string(&config_path)
         .with_context(|| format!("failed to read config at {}", config_path.display()))?;
-    let mut config: AppConfig = serde_json::from_str(&contents)
-        .with_context(|| format!("failed to parse config at {}", config_path.display()))?;
+    let mut config: AppConfig = match serde_json::from_str(&contents) {
+        Ok(config) => config,
+        Err(parse_err) => {
+            // A corrupt config must never brick the app. Preserve the bad
+            // bytes for diagnostics, then recover with defaults.
+            match quarantine_corrupt_config(&config_path) {
+                Ok(backup) => eprintln!(
+                    "warning: config at {} is corrupt ({parse_err}); moved aside to {} and starting with defaults",
+                    config_path.display(),
+                    backup.display()
+                ),
+                Err(move_err) => eprintln!(
+                    "warning: config at {} is corrupt ({parse_err}) and could not be moved aside ({move_err}); starting with defaults",
+                    config_path.display()
+                ),
+            }
+            return Ok(None);
+        }
+    };
 
     if config.libraries.is_empty() {
         if let Some(library_path) = config.library_path.clone() {
@@ -696,10 +728,111 @@ pub fn save_config(app_data_dir: &Path, config: &AppConfig) -> Result<()> {
     let config_path = config_path(app_data_dir);
     let json = serde_json::to_string_pretty(&config.clone().normalize_for_save())
         .context("failed to serialize config")?;
-    fs::write(&config_path, json)
+    write_atomically(&config_path, json.as_bytes())
         .with_context(|| format!("failed to write config to {}", config_path.display()))?;
 
     Ok(())
+}
+
+/// Durably write `contents` to `path` using the write-temp + fsync + atomic
+/// rename pattern already used across the codebase (`remote::atomic_download`,
+/// `cache::stems`). A crash, kill, or power loss at any point leaves either the
+/// previous file fully intact (the rename never happened) or the new file fully
+/// written (the rename completed) — never a truncated or 0-length `path`.
+///
+/// The temp file is a sibling in the same directory so `fs::rename` stays on
+/// one filesystem, which POSIX and same-volume Windows both guarantee to be
+/// atomic. On any failure the temp file is cleaned up so no partial file
+/// lingers next to the real config.
+fn write_atomically(path: &Path, contents: &[u8]) -> Result<()> {
+    let tmp_path = temp_path_for(path);
+
+    // Remove a stale temp left by a previously interrupted save so we always
+    // start from a fresh file.
+    let _ = fs::remove_file(&tmp_path);
+
+    let write_result = (|| -> Result<()> {
+        let mut file = fs::File::create(&tmp_path)
+            .with_context(|| format!("failed to create temp config {}", tmp_path.display()))?;
+        file.write_all(contents)
+            .with_context(|| format!("failed to write temp config {}", tmp_path.display()))?;
+        // fsync the bytes so they are durable before the rename makes the temp
+        // the live config.
+        file.sync_all()
+            .with_context(|| format!("failed to fsync temp config {}", tmp_path.display()))?;
+        Ok(())
+    })();
+    if let Err(err) = write_result {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(err);
+    }
+
+    // Atomically replace the destination. On POSIX rename replaces the target
+    // atomically; on Windows a same-volume rename also replaces it.
+    if let Err(err) = fs::rename(&tmp_path, path) {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(anyhow::Error::from(err).context(format!(
+            "failed to atomically rename {} -> {}",
+            tmp_path.display(),
+            path.display()
+        )));
+    }
+
+    // fsync the parent directory so the rename itself survives power loss on
+    // POSIX. Best-effort: the file is already written and renamed, so a dir
+    // fsync failure does not invalidate the save.
+    fsync_parent_dir(path);
+
+    Ok(())
+}
+
+/// Build the sibling temp path for an atomic write:
+/// `<name>.tmp.<pid>.<nanos>.<counter>`. The pid + high-resolution timestamp +
+/// per-process counter keep concurrent or rapid successive saves from sharing
+/// a temp file, so two racing writers never interleave bytes into one temp that
+/// is then renamed over the config.
+fn temp_path_for(path: &Path) -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    let file_name = path
+        .file_name()
+        .map(|name| format!("{}.tmp.{pid}.{nanos}.{counter}", name.to_string_lossy()))
+        .unwrap_or_else(|| format!("{CONFIG_FILENAME}.tmp.{pid}.{nanos}.{counter}"));
+    path.with_file_name(file_name)
+}
+
+/// fsync the parent directory so a completed rename survives power loss on
+/// POSIX. No-op on non-Unix (Windows has no meaningful directory fsync).
+fn fsync_parent_dir(path: &Path) {
+    #[cfg(unix)]
+    if let Some(parent) = path.parent() {
+        if let Ok(dir) = fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+}
+
+/// Move a corrupt config file aside to a timestamped sibling
+/// (`<name>.corrupt-<unix-millis>`) so the next save can write a clean file
+/// while the bad bytes remain for diagnostics. Returns the backup path.
+fn quarantine_corrupt_config(config_path: &Path) -> std::io::Result<PathBuf> {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let file_name = config_path
+        .file_name()
+        .map(|name| format!("{}.corrupt-{millis}", name.to_string_lossy()))
+        .unwrap_or_else(|| format!("{CONFIG_FILENAME}.corrupt-{millis}"));
+    let backup_path = config_path.with_file_name(file_name);
+    fs::rename(config_path, &backup_path)?;
+    Ok(backup_path)
 }
 
 fn config_path(app_data_dir: &Path) -> PathBuf {
@@ -1357,5 +1490,149 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(config.effective_crossfade_duration_ms(), 10_000);
+    }
+
+    // ── Atomic write + corruption recovery (issue #208) ──────────────────
+
+    /// Collect the sibling files created next to `config.json` so tests can
+    /// assert quarantine backups exist and no temp files linger.
+    fn sibling_file_names(dir: &Path) -> Vec<String> {
+        fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect()
+    }
+
+    /// (a) A corrupt config must not error: `load_config` returns `Ok(None)`
+    /// and moves the bad file aside to a `config.json.corrupt-*` backup.
+    #[test]
+    fn load_recovers_from_corrupt_config_and_quarantines_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join(CONFIG_FILENAME);
+        fs::write(&config_path, "{ this is not valid json ]").unwrap();
+
+        let loaded = load_config(tmp.path()).unwrap();
+        assert!(loaded.is_none(), "corrupt config recovers to defaults");
+
+        // The bad file is moved aside, not left in place.
+        assert!(
+            !config_path.exists(),
+            "corrupt config.json is moved out of the way"
+        );
+        let names = sibling_file_names(tmp.path());
+        assert!(
+            names
+                .iter()
+                .any(|name| name.starts_with("config.json.corrupt-")),
+            "a corrupt-* backup is created, found: {names:?}"
+        );
+    }
+
+    /// A 0-length config (the classic truncate-then-crash outcome of a
+    /// non-atomic write) is treated as corrupt and recovered.
+    #[test]
+    fn load_recovers_from_empty_config_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join(CONFIG_FILENAME);
+        fs::write(&config_path, "").unwrap();
+
+        let loaded = load_config(tmp.path()).unwrap();
+        assert!(loaded.is_none());
+        assert!(!config_path.exists());
+        assert!(sibling_file_names(tmp.path())
+            .iter()
+            .any(|name| name.starts_with("config.json.corrupt-")));
+    }
+
+    /// After recovery the app can save a fresh config that loads cleanly, so
+    /// the corruption is self-healing rather than a permanent boot brick.
+    #[test]
+    fn save_after_corruption_recovery_round_trips() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join(CONFIG_FILENAME), "garbage").unwrap();
+
+        assert!(load_config(tmp.path()).unwrap().is_none());
+
+        let config = AppConfig {
+            stem_mode: Some(StemMode::TwoStem),
+            ..AppConfig::default()
+        };
+        save_config(tmp.path(), &config).unwrap();
+        let reloaded = load_config(tmp.path()).unwrap().unwrap();
+        assert_eq!(reloaded.stem_mode, Some(StemMode::TwoStem));
+    }
+
+    /// (b) A save interrupted before the rename (its bytes only ever reach the
+    /// temp file) leaves the previous valid config.json fully intact. We
+    /// simulate the crash window by writing a garbage temp sibling and never
+    /// renaming it, then asserting the committed config is unchanged.
+    #[test]
+    fn interrupted_save_leaves_previous_config_intact() {
+        let tmp = tempfile::tempdir().unwrap();
+
+        // Commit a known-good config.
+        let good = AppConfig {
+            stem_mode: Some(StemMode::FourStem),
+            ..AppConfig::default()
+        };
+        save_config(tmp.path(), &good).unwrap();
+        let good_bytes = fs::read(tmp.path().join(CONFIG_FILENAME)).unwrap();
+
+        // Simulate a save killed after the temp write but before the rename:
+        // a partial/garbage temp file exists next to config.json.
+        let leftover_tmp = temp_path_for(&tmp.path().join(CONFIG_FILENAME));
+        fs::write(&leftover_tmp, "half-written garbage {").unwrap();
+
+        // The committed config is byte-for-byte unchanged and still loads.
+        assert_eq!(
+            fs::read(tmp.path().join(CONFIG_FILENAME)).unwrap(),
+            good_bytes,
+            "interrupted save never touched the live config.json"
+        );
+        let loaded = load_config(tmp.path()).unwrap().unwrap();
+        assert_eq!(loaded.stem_mode, Some(StemMode::FourStem));
+    }
+
+    /// A successful atomic save leaves no `.tmp` residue behind.
+    #[test]
+    fn atomic_save_leaves_no_temp_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        save_config(tmp.path(), &AppConfig::default()).unwrap();
+
+        let leftovers: Vec<String> = sibling_file_names(tmp.path())
+            .into_iter()
+            .filter(|name| name.contains(".tmp."))
+            .collect();
+        assert!(leftovers.is_empty(), "no temp file lingers: {leftovers:?}");
+    }
+
+    /// Overwriting an existing config atomically replaces it in place with no
+    /// intermediate truncated state and no leftover temp file.
+    #[test]
+    fn atomic_save_overwrites_existing_config() {
+        let tmp = tempfile::tempdir().unwrap();
+        save_config(
+            tmp.path(),
+            &AppConfig {
+                stem_mode: Some(StemMode::TwoStem),
+                ..AppConfig::default()
+            },
+        )
+        .unwrap();
+        save_config(
+            tmp.path(),
+            &AppConfig {
+                stem_mode: Some(StemMode::FourStem),
+                ..AppConfig::default()
+            },
+        )
+        .unwrap();
+
+        let loaded = load_config(tmp.path()).unwrap().unwrap();
+        assert_eq!(loaded.stem_mode, Some(StemMode::FourStem));
+        assert!(sibling_file_names(tmp.path())
+            .iter()
+            .all(|name| !name.contains(".tmp.")));
     }
 }
