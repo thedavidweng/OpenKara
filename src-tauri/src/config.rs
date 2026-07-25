@@ -12,8 +12,11 @@ const CONFIG_FILENAME: &str = "config.json";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum StemMode {
-    #[default]
     TwoStem,
+    /// The default: the model natively outputs four stems, and writing all
+    /// four costs no extra inference time — only disk, which the optional
+    /// compress-to-two-stem maintenance action can reclaim (#182).
+    #[default]
     FourStem,
 }
 
@@ -725,7 +728,7 @@ mod tests {
     #[test]
     fn effective_stem_mode_defaults_to_two_stem() {
         let config = AppConfig::default();
-        assert_eq!(config.effective_stem_mode(), StemMode::TwoStem);
+        assert_eq!(config.effective_stem_mode(), StemMode::FourStem);
     }
 
     #[test]

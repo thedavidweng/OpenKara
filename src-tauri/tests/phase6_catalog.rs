@@ -30,9 +30,12 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 #[test]
-fn stem_mode_default_remains_two_stem() {
-    // Catalog consumption must never change the user's stem mode decision.
-    assert_eq!(StemMode::default(), StemMode::TwoStem);
+fn stem_mode_defaults_to_four_stem() {
+    // Product decision #182: the model natively outputs four stems and
+    // two-stem output costs the same inference time, so four-stem is the
+    // default for new separations. Catalog consumption must never change
+    // the user's stem mode decision.
+    assert_eq!(StemMode::default(), StemMode::FourStem);
 }
 
 #[test]

@@ -113,6 +113,8 @@ export const MOCK_DATA: MockData = {
   },
 
   settings: {
+    // E2E fixtures pin two_stem: the Playwright geometry specs cover the
+    // two-stem slider layout. Four-stem is the product default (#182).
     stem_mode: "two_stem",
     model_variant: "htdemucs",
     language: "en",

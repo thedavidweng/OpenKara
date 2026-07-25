@@ -200,7 +200,11 @@ pub fn run_local_audio_smoke(config: LocalAudioSmokeConfig) -> Result<LocalAudio
                             &separator_model_cache,
                             Path::new(model_path),
                             &song.hash,
-                            StemMode::default(),
+                            // The release validator asserts the vocals +
+                            // accompaniment artifact pair, so the smoke pins
+                            // TwoStem regardless of the product default
+                            // (four-stem writes no accompaniment).
+                            StemMode::TwoStem,
                             "htdemucs",
                             ep_preference,
                             &std::sync::atomic::AtomicBool::new(false),

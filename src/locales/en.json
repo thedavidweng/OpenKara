@@ -333,7 +333,7 @@
     },
     "stemMode": {
       "label": "Stem Separation Mode",
-      "description": "Controls how new songs are separated. Existing separations are not affected.",
+      "description": "Controls how new songs are separated. Four-stem is the default — the model outputs four stems natively at the same processing time. Existing separations are not affected, and songs can be compressed to two stems later to save space.",
       "twoStem": "2-Stem",
       "twoStemDescription": "Vocals + Accompaniment",
       "fourStem": "4-Stem",
