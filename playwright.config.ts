@@ -19,11 +19,19 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: 1,
-  // Generate both the list reporter (for live CI logs) and the HTML report
-  // (for the playwright-report/ artifact upload). The CI workflow uploads
-  // playwright-report/ with if-no-files-found: error, so the config and
-  // workflow must agree on HTML report generation.
-  reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
+  // Generate the list reporter (for live CI logs), the HTML report (for the
+  // playwright-report/ artifact upload), and a machine-readable JSON report.
+  // The CI workflow uploads playwright-report/ with if-no-files-found: error,
+  // so the config and workflow must agree on HTML report generation. The JSON
+  // report feeds the "Report flaky tests" step, which counts status=flaky
+  // results so retries:1 can no longer silently absorb flakes.
+  reporter: process.env.CI
+    ? [
+        ["list"],
+        ["html", { open: "never" }],
+        ["json", { outputFile: "playwright-report/results.json" }],
+      ]
+    : "list",
   timeout: 30_000,
 
   use: {

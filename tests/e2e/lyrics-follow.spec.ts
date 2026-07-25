@@ -45,30 +45,6 @@ async function readScrollTop(page: import("@playwright/test").Page) {
   return page.locator(VIEWPORT).evaluate((el) => el.scrollTop);
 }
 
-/**
- * Wait until wheel/trackpad inertia finishes. Each wheel event re-arms the
- * follow idle timer, so measuring the pause from mid-inertia falsely fails.
- * Require three consecutive stable readings (300ms) to avoid false positives
- * when WebKit's smooth-scroll animation briefly pauses between frames.
- */
-async function waitForScrollSettle(
-  page: import("@playwright/test").Page,
-): Promise<number> {
-  let last = -1;
-  let stable = 0;
-  for (let i = 0; i < 60; i++) {
-    const top = await readScrollTop(page);
-    if (last >= 0 && Math.abs(top - last) < 1) {
-      if (++stable >= 3) return top;
-    } else {
-      stable = 0;
-    }
-    last = top;
-    await page.waitForTimeout(100);
-  }
-  return last;
-}
-
 async function emitLayoutDrivenScroll(page: import("@playwright/test").Page) {
   await page.locator(VIEWPORT).evaluate((el) => {
     // Model the bare scroll event WKWebView can emit when active-line layout
@@ -234,35 +210,55 @@ test.describe("Lyrics auto-follow", () => {
   test("user wheel unlocks follow and Follow button re-locks", async ({
     page,
   }) => {
-    await page.waitForTimeout(2500);
+    // Plain advance wait so the engine has locked onto the playing line before
+    // we take over scrollTop. This is NOT a race against the 4s re-lock — the
+    // idle timer only starts once the user scroll below unlocks follow.
+    await page.waitForTimeout(1000);
 
-    const viewport = page.locator(VIEWPORT);
-    const box = await viewport.boundingBox();
-    if (!box) throw new Error("viewport not visible");
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    // Scroll far below the playing line so the re-lock target differs clearly.
-    await page.mouse.wheel(0, 800);
-    await page.waitForTimeout(200);
-    await page.mouse.wheel(0, 800);
-
-    // Follow button pins visible (data-visible) once the user unlocks follow.
     const followButton = page.locator("[data-testid='lyrics-follow-playing']");
-    await expect(followButton).toHaveAttribute("data-visible", "true");
 
-    // Wait for wheel momentum to finish before sampling the resting position.
-    const unlockedTop = await waitForScrollSettle(page);
+    // Deterministic user scroll: write scrollTop far below the playing line and
+    // dispatch a real WheelEvent in the same synchronous frame. This exercises
+    // the follow guard's wheel path directly — no page.mouse.wheel (WebKit
+    // silently drops synthetic wheel deltas) and no smooth-scroll inertia
+    // stream that would keep re-arming USER_SCROLL_PAUSE_MS mid-test. A
+    // synthetic (untrusted) WheelEvent performs no native scroll, so scrollTop
+    // stays exactly where we wrote it.
+    await page.locator(VIEWPORT).evaluate((el) => {
+      el.scrollTop = 900;
+      el.dispatchEvent(
+        new WheelEvent("wheel", {
+          deltaY: 240,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+
+    // State assertion (built-in retry): unlocking pins the Follow button.
+    await expect(followButton).toHaveAttribute("data-visible", "true");
+    const unlockedTop = await readScrollTop(page);
     expect(unlockedTop).toBeGreaterThan(400);
-    await page.waitForTimeout(800);
+
+    // While unlocked the engine tracks the user's viewport and never writes
+    // scrollTop. Confirm auto-scroll stays released: sampled well inside the 4s
+    // idle window, the view holds its browse position and follow is still
+    // unlocked (no fixed sleep that races the re-lock).
+    await expect
+      .poll(async () => Math.abs((await readScrollTop(page)) - unlockedTop) < 2)
+      .toBe(true);
+    await expect(followButton).toHaveAttribute("data-visible", "true");
     const stillTop = await readScrollTop(page);
-    expect(Math.abs(stillTop - unlockedTop)).toBeLessThan(2);
 
     // Clicking Follow re-locks to the playing line (far above) and unpins it.
     // Requires pointer-events-auto on the control (parent overlay is none).
     await followButton.click();
     await expect(followButton).toHaveAttribute("data-visible", "false");
-    await page.waitForTimeout(300);
-    const relockedTop = await readScrollTop(page);
-    expect(relockedTop).toBeLessThan(stillTop - 200);
+    // Re-lock snaps scrollTop back to the playing line on the next rAF; poll
+    // the resting position instead of a fixed post-click sleep.
+    await expect
+      .poll(async () => (await readScrollTop(page)) < stillTop - 200)
+      .toBe(true);
   });
 
   test("idle timeout re-locks follow and returns scrollTop to the playing line", async ({
