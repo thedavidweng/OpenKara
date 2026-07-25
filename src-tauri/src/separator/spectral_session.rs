@@ -155,18 +155,140 @@ pub fn verify_spectral_interface(
     })
 }
 
-/// Compose one stem: `ispec(spectral_slice) + time_slice`, planar `[C, len]`.
-fn compose_stem(
+/// Per-run spectral session state: reusable transform plans plus every
+/// buffer the chunk loop writes, so steady-state chunk processing performs
+/// no heap allocation in the transform/composition path (issue #172 PR 3 —
+/// "transform working memory is fixed per chunk").
+pub(crate) struct SpectralSessionState {
+    pub(crate) plans: SpectralPlans,
+    /// Forward-transform output (the borrowed ORT `spectral` input view).
+    spectral_in: Vec<f32>,
+    /// Composed stem waveform, planar `[C, segment]`. One buffer serves all
+    /// compositions of a chunk: each stem is copied into its workspace
+    /// buffer before the next composition reuses it.
+    wave: Vec<f32>,
+    /// TwoStem spectral-domain accompaniment pre-mix accumulators.
+    premix_spectral: Vec<f32>,
+    premix_time: Vec<f32>,
+}
+
+impl SpectralSessionState {
+    pub(crate) fn new() -> Self {
+        Self {
+            plans: SpectralPlans::new(),
+            spectral_in: Vec::new(),
+            wave: Vec::new(),
+            premix_spectral: Vec::new(),
+            premix_time: Vec::new(),
+        }
+    }
+}
+
+/// Compose one stem into `state.wave`: `ispec(spectral_slice) + time_slice`,
+/// planar `[C, len]`. The buffer is reused across calls.
+fn compose_stem_into(
     plans: &mut SpectralPlans,
+    wave: &mut Vec<f32>,
     spectral_slice: &[f32],
     time_slice: &[f32],
     length: usize,
-) -> Vec<f32> {
-    let mut wave = plans.ispec(spectral_slice, CHANNELS, length);
+) {
+    plans.ispec_into(spectral_slice, CHANNELS, length, wave);
     for (w, &t) in wave.iter_mut().zip(time_slice.iter()) {
         *w += t;
     }
-    wave
+}
+
+/// Compose the core outputs into the workspace stem buffers for the given
+/// stem mode. Pure over the extracted output slices, so the explicit stem
+/// layouts are unit-testable without an ORT session.
+fn compose_outputs_into_buffers(
+    state: &mut SpectralSessionState,
+    iface: &SpectralInterface,
+    spectral_out: &[f32],
+    time_out: &[f32],
+    stem_mode: StemMode,
+    stem_buffers: &mut [Vec<f32>; 4],
+    chunk_frame_count: usize,
+) -> Result<()> {
+    let segment = iface.segment_frames;
+    let spectral_stride = iface.spectral_stride();
+    let time_stride = iface.time_stride();
+    anyhow::ensure!(
+        spectral_out.len() == SPECTRAL_SOURCES.len() * spectral_stride
+            && time_out.len() == SPECTRAL_SOURCES.len() * time_stride,
+        "spectral-core output sizes do not match the verified interface"
+    );
+
+    let source_spectral = |s: usize| &spectral_out[s * spectral_stride..(s + 1) * spectral_stride];
+    let source_time = |s: usize| &time_out[s * time_stride..(s + 1) * time_stride];
+
+    match stem_mode {
+        StemMode::FourStem => {
+            // Explicit FourStem layout: one composition per source, in
+            // contract order (drums, bass, other, vocals).
+            for (s, stem_buf) in stem_buffers.iter_mut().enumerate() {
+                compose_stem_into(
+                    &mut state.plans,
+                    &mut state.wave,
+                    source_spectral(s),
+                    source_time(s),
+                    segment,
+                );
+                planar_to_buffer(&state.wave, segment, CHANNELS, stem_buf, chunk_frame_count);
+            }
+        }
+        StemMode::TwoStem => {
+            // Explicit TwoStem layout: vocals composed directly;
+            // accompaniment pre-mixed in the spectral domain (contract
+            // linearity: ispec(Σ drums/bass/other) == Σ ispec(each)),
+            // so one inverse transform replaces three. The shared wave
+            // buffer requires copying vocals out before the accompaniment
+            // composition reuses it.
+            compose_stem_into(
+                &mut state.plans,
+                &mut state.wave,
+                source_spectral(VOCALS),
+                source_time(VOCALS),
+                segment,
+            );
+            planar_to_buffer(
+                &state.wave,
+                segment,
+                CHANNELS,
+                &mut stem_buffers[0],
+                chunk_frame_count,
+            );
+
+            state.premix_spectral.clear();
+            state.premix_spectral.extend_from_slice(source_spectral(0));
+            state.premix_time.clear();
+            state.premix_time.extend_from_slice(source_time(0));
+            for s in 1..VOCALS {
+                for (dst, &src) in state.premix_spectral.iter_mut().zip(source_spectral(s)) {
+                    *dst += src;
+                }
+                for (dst, &src) in state.premix_time.iter_mut().zip(source_time(s)) {
+                    *dst += src;
+                }
+            }
+            compose_stem_into(
+                &mut state.plans,
+                &mut state.wave,
+                &state.premix_spectral,
+                &state.premix_time,
+                segment,
+            );
+            planar_to_buffer(
+                &state.wave,
+                segment,
+                CHANNELS,
+                &mut stem_buffers[1],
+                chunk_frame_count,
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Run one spectral-core inference window and feed the OLA rings.
@@ -179,7 +301,7 @@ fn compose_stem(
 pub(crate) fn process_spectral_chunk(
     model: &LoadedModel,
     iface: &SpectralInterface,
-    plans: &mut SpectralPlans,
+    state: &mut SpectralSessionState,
     workspace: &mut SeparationWorkspace,
     writers: &mut StemWriters,
     stem_mode: StemMode,
@@ -194,8 +316,12 @@ pub(crate) fn process_spectral_chunk(
     );
     let segment = iface.segment_frames;
 
-    // 1. Forward transform of the full (zero-tail-padded) window.
-    let spectral = plans.spec(workspace.tensor_input(), channels, segment);
+    // 1. Forward transform of the full (zero-tail-padded) window into the
+    // reused input buffer.
+    let mut spectral = std::mem::take(&mut state.spectral_in);
+    state
+        .plans
+        .spec_into(workspace.tensor_input(), channels, segment, &mut spectral);
 
     // 2. Typed session run: named contract tensors, borrowed input views.
     let spectral_shape: [i64; 5] = [
@@ -207,13 +333,12 @@ pub(crate) fn process_spectral_chunk(
     ];
     let mix_shape: [i64; 3] = [1, channels as i64, segment as i64];
 
-    let spectral_stride = iface.spectral_stride();
-    let time_stride = iface.time_stride();
-
     // Composition happens inside the session-output scope; the composed
     // stems land in the workspace stem buffers (interleaved) before the
-    // guard drops.
-    {
+    // guard drops. No `?` may fire between the take of the forward buffer
+    // and its restore below — every fallible step stays inside this
+    // closure so the buffer survives errors unconditionally.
+    let compose_result = (|| -> Result<()> {
         let spectral_tensor =
             TensorRef::from_array_view((spectral_shape.as_slice(), spectral.as_slice()))
                 .context("failed to build borrowed spectral input tensor")?;
@@ -243,68 +368,19 @@ pub(crate) fn process_spectral_chunk(
             .context("spectral-core did not produce its time output")?
             .try_extract_tensor::<f32>()
             .context("spectral-core time output was not f32")?;
-        anyhow::ensure!(
-            spectral_out.len() == SPECTRAL_SOURCES.len() * spectral_stride
-                && time_out.len() == SPECTRAL_SOURCES.len() * time_stride,
-            "spectral-core output sizes do not match the verified interface"
-        );
-
-        let source_spectral =
-            |s: usize| &spectral_out[s * spectral_stride..(s + 1) * spectral_stride];
-        let source_time = |s: usize| &time_out[s * time_stride..(s + 1) * time_stride];
-
-        match stem_mode {
-            StemMode::FourStem => {
-                // Explicit FourStem layout: one composition per source, in
-                // contract order (drums, bass, other, vocals).
-                for s in 0..SPECTRAL_SOURCES.len() {
-                    let wave = compose_stem(plans, source_spectral(s), source_time(s), segment);
-                    planar_to_buffer(
-                        &wave,
-                        segment,
-                        channels,
-                        &mut workspace.stem_output_buffers[s],
-                        chunk_frame_count,
-                    );
-                }
-            }
-            StemMode::TwoStem => {
-                // Explicit TwoStem layout: vocals composed directly;
-                // accompaniment pre-mixed in the spectral domain (contract
-                // linearity: ispec(Σ drums/bass/other) == Σ ispec(each)),
-                // so one inverse transform replaces three.
-                let vocals =
-                    compose_stem(plans, source_spectral(VOCALS), source_time(VOCALS), segment);
-
-                let mut accomp_spectral = source_spectral(0).to_vec();
-                let mut accomp_time = source_time(0).to_vec();
-                for s in 1..VOCALS {
-                    for (dst, &src) in accomp_spectral.iter_mut().zip(source_spectral(s)) {
-                        *dst += src;
-                    }
-                    for (dst, &src) in accomp_time.iter_mut().zip(source_time(s)) {
-                        *dst += src;
-                    }
-                }
-                let accompaniment = compose_stem(plans, &accomp_spectral, &accomp_time, segment);
-
-                planar_to_buffer(
-                    &vocals,
-                    segment,
-                    channels,
-                    &mut workspace.stem_output_buffers[0],
-                    chunk_frame_count,
-                );
-                planar_to_buffer(
-                    &accompaniment,
-                    segment,
-                    channels,
-                    &mut workspace.stem_output_buffers[1],
-                    chunk_frame_count,
-                );
-            }
-        }
-    }
+        compose_outputs_into_buffers(
+            state,
+            iface,
+            spectral_out,
+            time_out,
+            stem_mode,
+            &mut workspace.stem_output_buffers,
+            chunk_frame_count,
+        )
+    })();
+    // The reused forward buffer goes back into the state even on error.
+    state.spectral_in = spectral;
+    compose_result?;
 
     // 3. Feed the OLA rings from the composed stem buffers.
     match stem_mode {
@@ -355,6 +431,18 @@ mod tests {
 
     const SEGMENT: i64 = 343_980;
     const T: i64 = 336;
+
+    /// Allocating wrapper over [`compose_stem_into`] for test readability.
+    fn compose_stem(
+        plans: &mut SpectralPlans,
+        spectral_slice: &[f32],
+        time_slice: &[f32],
+        length: usize,
+    ) -> Vec<f32> {
+        let mut wave = Vec::new();
+        compose_stem_into(plans, &mut wave, spectral_slice, time_slice, length);
+        wave
+    }
 
     fn contract_inputs() -> Vec<(String, Vec<i64>)> {
         vec![
@@ -426,6 +514,116 @@ mod tests {
         inputs[1].1 = vec![1, 2, -1];
         verify_spectral_interface(&inputs, &contract_outputs())
             .expect_err("symbolic mix frames must be rejected");
+    }
+
+    fn small_iface() -> SpectralInterface {
+        SpectralInterface {
+            segment_frames: 10_240,
+            spectral_frames: crate::separator::spectral::forward_frames(10_240),
+        }
+    }
+
+    fn synthetic_outputs(iface: &SpectralInterface) -> (Vec<f32>, Vec<f32>) {
+        let mut state = 0x853C_49E6_748F_EA9B_u64;
+        let mut next = move || {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (((state >> 33) as f32 / (1u64 << 31) as f32) - 1.0) * 0.1
+        };
+        let spectral_out: Vec<f32> = (0..SPECTRAL_SOURCES.len() * iface.spectral_stride())
+            .map(|_| next())
+            .collect();
+        let time_out: Vec<f32> = (0..SPECTRAL_SOURCES.len() * iface.time_stride())
+            .map(|_| next())
+            .collect();
+        (spectral_out, time_out)
+    }
+
+    #[test]
+    fn compose_outputs_matches_per_stem_composition() {
+        let iface = small_iface();
+        let (spectral_out, time_out) = synthetic_outputs(&iface);
+        let segment = iface.segment_frames;
+        let chunk = segment;
+        let mut buffers: [Vec<f32>; 4] = std::array::from_fn(|_| vec![0.0; chunk * CHANNELS]);
+
+        let mut state = SpectralSessionState::new();
+        compose_outputs_into_buffers(
+            &mut state,
+            &iface,
+            &spectral_out,
+            &time_out,
+            StemMode::FourStem,
+            &mut buffers,
+            chunk,
+        )
+        .expect("four-stem composition");
+
+        let mut plans = SpectralPlans::new();
+        for s in 0..SPECTRAL_SOURCES.len() {
+            let expected_planar = compose_stem(
+                &mut plans,
+                &spectral_out[s * iface.spectral_stride()..(s + 1) * iface.spectral_stride()],
+                &time_out[s * iface.time_stride()..(s + 1) * iface.time_stride()],
+                segment,
+            );
+            let mut expected = vec![0.0; chunk * CHANNELS];
+            planar_to_buffer(&expected_planar, segment, CHANNELS, &mut expected, chunk);
+            assert_eq!(buffers[s], expected, "source {s} composition");
+        }
+    }
+
+    #[test]
+    fn compose_outputs_reuses_buffers_across_chunks() {
+        let iface = small_iface();
+        let (spectral_out, time_out) = synthetic_outputs(&iface);
+        let chunk = iface.segment_frames;
+        let mut buffers: [Vec<f32>; 4] = std::array::from_fn(|_| vec![0.0; chunk * CHANNELS]);
+
+        let mut state = SpectralSessionState::new();
+        compose_outputs_into_buffers(
+            &mut state,
+            &iface,
+            &spectral_out,
+            &time_out,
+            StemMode::TwoStem,
+            &mut buffers,
+            chunk,
+        )
+        .expect("first chunk");
+        let first_vocals = buffers[0].clone();
+        let first_accomp = buffers[1].clone();
+        let wave_ptr = state.wave.as_ptr();
+        let premix_spec_ptr = state.premix_spectral.as_ptr();
+        let premix_time_ptr = state.premix_time.as_ptr();
+
+        compose_outputs_into_buffers(
+            &mut state,
+            &iface,
+            &spectral_out,
+            &time_out,
+            StemMode::TwoStem,
+            &mut buffers,
+            chunk,
+        )
+        .expect("second chunk");
+
+        // Fixed per-chunk working memory: no buffer was reallocated, and
+        // scratch reuse cannot change the output.
+        assert_eq!(state.wave.as_ptr(), wave_ptr, "wave buffer reallocated");
+        assert_eq!(
+            state.premix_spectral.as_ptr(),
+            premix_spec_ptr,
+            "premix spectral buffer reallocated"
+        );
+        assert_eq!(
+            state.premix_time.as_ptr(),
+            premix_time_ptr,
+            "premix time buffer reallocated"
+        );
+        assert_eq!(buffers[0], first_vocals);
+        assert_eq!(buffers[1], first_accomp);
     }
 
     #[test]
