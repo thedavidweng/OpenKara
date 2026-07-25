@@ -20,25 +20,11 @@ pub struct SeparationWorkspace {
     /// Hann window values for OLA. Size: `chunk_size`.
     pub window: Vec<f32>,
 
-    /// Channels-first backing storage for the ORT audio input tensor.
-    /// It is filled directly from the normalized interleaved source and
-    /// borrowed by `TensorRef`, so no per-chunk audio tensor copy occurs.
+    /// Channels-first backing storage for the mix window. It is filled
+    /// directly from the normalized interleaved source and borrowed by the
+    /// spectral session's forward transform and its `mix` input tensor, so no
+    /// per-chunk copy of the window occurs.
     pub tensor_input_backing: Vec<f32>,
-
-    /// Input tensor shape `[1, channels, chunk_size]`.
-    pub input_shape: Vec<i64>,
-
-    /// Audio input name resolved once from the loaded model.
-    audio_input_name: Option<String>,
-
-    /// Auxiliary input name, shape, and zero-filled backing storage resolved
-    /// once from the loaded model and reused for every chunk.
-    auxiliary_inputs: Vec<(String, Vec<i64>, Vec<f32>)>,
-
-    /// Accompaniment scratch buffer for TwoStem mode. Drums, bass, and
-    /// other are summed here per-sample before writing to the accompaniment
-    /// OLA ring. Size: `chunk_size * channels`.
-    pub accompaniment_scratch: Vec<f32>,
 
     /// Reusable interleaved stem output buffers. Used to hold one chunk's
     /// worth of interleaved PCM for each stem before feeding to OLA rings.
@@ -110,10 +96,6 @@ impl SeparationWorkspace {
         Self {
             window: hann_window(chunk_size),
             tensor_input_backing: vec![0.0; sample_count],
-            input_shape: vec![1, channels as i64, chunk_size as i64],
-            audio_input_name: None,
-            auxiliary_inputs: Vec::new(),
-            accompaniment_scratch: vec![0.0; sample_count],
             stem_output_buffers: [
                 vec![0.0; sample_count],
                 vec![0.0; sample_count],
@@ -153,58 +135,12 @@ impl SeparationWorkspace {
         }
     }
 
-    /// Cache the loaded model's input contract once for the full separation run.
-    pub fn configure_model_inputs(
-        &mut self,
-        audio_input_name: String,
-        auxiliary_inputs: Vec<(String, Vec<i64>, Vec<f32>)>,
-    ) {
-        self.audio_input_name = Some(audio_input_name);
-        self.auxiliary_inputs = auxiliary_inputs;
-    }
-
-    pub fn audio_input_name(&self) -> Option<&str> {
-        self.audio_input_name.as_deref()
-    }
-
-    pub fn auxiliary_inputs(&self) -> &[(String, Vec<i64>, Vec<f32>)] {
-        &self.auxiliary_inputs
-    }
-
-    /// Reset the accompaniment scratch buffer to zero before summing
-    /// drums, bass, and other for a new chunk.
-    pub fn reset_accompaniment_scratch(&mut self) {
-        self.accompaniment_scratch.fill(0.0);
-    }
-
-    /// Sum one stem's chunk output into the accompaniment scratch buffer.
-    /// `stem_samples` is interleaved PCM for `chunk_frame_count` frames.
-    pub fn add_to_accompaniment(&mut self, stem_samples: &[f32], chunk_frame_count: usize) {
-        let channels = self.channels;
-        for frame in 0..chunk_frame_count {
-            let base = frame * channels;
-            for ch in 0..channels {
-                self.accompaniment_scratch[base + ch] += stem_samples[base + ch];
-            }
-        }
-    }
-
-    /// Get the accompaniment scratch buffer for the current chunk.
-    pub fn accompaniment(&self) -> &[f32] {
-        &self.accompaniment_scratch
-    }
-
     /// Get the window values.
     pub fn window(&self) -> &[f32] {
         &self.window
     }
 
-    /// Get the input shape for ORT tensor construction.
-    pub fn input_shape(&self) -> &[i64] {
-        &self.input_shape
-    }
-
-    /// Get the tensor input backing storage.
+    /// Get the tensor input backing storage (the planar mix window).
     pub fn tensor_input(&self) -> &[f32] {
         &self.tensor_input_backing
     }
@@ -246,7 +182,6 @@ mod tests {
 
         // All buffers should be chunk_size * channels, not total_frames.
         assert_eq!(ws.tensor_input_backing.len(), chunk_size * channels);
-        assert_eq!(ws.accompaniment_scratch.len(), chunk_size * channels);
         assert_eq!(ws.window.len(), chunk_size);
     }
 
@@ -281,7 +216,7 @@ mod tests {
     }
 
     #[test]
-    fn workspace_reuses_tensor_and_auxiliary_backing() {
+    fn workspace_reuses_tensor_backing() {
         let channels = 2;
         let chunk_size = 8;
         let mut ws = SeparationWorkspace::new(
@@ -291,48 +226,15 @@ mod tests {
             chunk_size / 2,
             chunk_size * 4,
         );
-        ws.configure_model_inputs(
-            "audio".to_string(),
-            vec![("aux".to_string(), vec![1, 4], vec![0.0; 4])],
-        );
 
+        // The planar mix backing is allocated once and reused across every
+        // chunk fill — no per-chunk reallocation.
         let tensor_ptr = ws.tensor_input().as_ptr();
-        let aux_ptr = ws.auxiliary_inputs()[0].2.as_ptr();
         let source = vec![0.25_f32; chunk_size * channels * 2];
         ws.fill_planar_input(&source, 0, chunk_size);
         ws.fill_planar_input(&source, chunk_size, chunk_size);
 
         assert_eq!(ws.tensor_input().as_ptr(), tensor_ptr);
-        assert_eq!(ws.auxiliary_inputs()[0].2.as_ptr(), aux_ptr);
-        assert_eq!(ws.audio_input_name(), Some("audio"));
-    }
-
-    #[test]
-    fn workspace_accompaniment_scratch_sums_stems() {
-        let channels = 2;
-        let chunk_size = 4;
-        let mut ws = SeparationWorkspace::new(
-            StemMode::TwoStem,
-            channels,
-            chunk_size,
-            chunk_size / 2,
-            chunk_size * 2,
-        );
-
-        let drums = vec![1.0, 0.5, 1.0, 0.5];
-        let bass = vec![0.3, 0.3, 0.3, 0.3];
-        let other = vec![0.2, 0.2, 0.2, 0.2];
-
-        ws.reset_accompaniment_scratch();
-        ws.add_to_accompaniment(&drums, 2);
-        ws.add_to_accompaniment(&bass, 2);
-        ws.add_to_accompaniment(&other, 2);
-
-        // Sum: [1.5, 1.0, 1.5, 1.0]
-        assert_eq!(ws.accompaniment()[0], 1.5);
-        assert_eq!(ws.accompaniment()[1], 1.0);
-        assert_eq!(ws.accompaniment()[2], 1.5);
-        assert_eq!(ws.accompaniment()[3], 1.0);
     }
 
     #[test]

@@ -29,12 +29,21 @@ describe("model resolver parity", () => {
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 
   test.each(["htdemucs", "htdemucs_ft"])(
-    "resolves %s to the smallest non-deprecated delivery",
+    "resolves %s to the smallest loadable non-deprecated delivery",
     (variant) => {
       const resolved = resolve(variant);
+      // Mirror the Rust rule: only spectral-core artifacts are loadable
+      // (the spectral session is the sole production path); waveform
+      // deliveries remain listed for compatibility but are not candidates.
       const candidates = manifest.artifacts.models.filter(
-        (model: { variant: string; deprecation?: { deprecated?: boolean } }) =>
-          model.variant === variant && !model.deprecation?.deprecated,
+        (model: {
+          variant: string;
+          deprecation?: { deprecated?: boolean };
+          model: { tensor_interface: string };
+        }) =>
+          model.variant === variant &&
+          model.model.tensor_interface === "spectral-core" &&
+          !model.deprecation?.deprecated,
       );
       const catalogModel = candidates.reduce(
         (smallest: { byte_size: number }, candidate: { byte_size: number }) =>
@@ -82,16 +91,28 @@ describe("model resolver parity", () => {
     expect(() => resolve("htdemucs_v5")).toThrow();
   });
 
-  test("the snapshot pins portable models for both variants with compatibility", () => {
+  test("the snapshot pins loadable models for both variants with compatibility", () => {
     for (const variant of ["htdemucs", "htdemucs_ft"]) {
+      // Every variant must have at least one loadable (spectral-core)
+      // delivery — otherwise resolution dead-ends at the loader.
       const candidates = manifest.artifacts.models.filter(
-        (model: { variant: string; deprecation?: { deprecated?: boolean } }) =>
-          model.variant === variant && !model.deprecation?.deprecated,
+        (model: {
+          variant: string;
+          deprecation?: { deprecated?: boolean };
+          model: { tensor_interface: string };
+        }) =>
+          model.variant === variant &&
+          model.model.tensor_interface === "spectral-core" &&
+          !model.deprecation?.deprecated,
       );
       expect(candidates.length).toBeGreaterThan(0);
     }
     for (const model of manifest.artifacts.models) {
-      expect(model.model.tensor_interface).toBe("waveform");
+      // Manifests may keep listing waveform deliveries for compatibility,
+      // but every entry must declare a known interface and runtimes.
+      expect(["waveform", "spectral-core"]).toContain(
+        model.model.tensor_interface,
+      );
       expect(model.model.compatible_runtime_ids.length).toBeGreaterThan(0);
     }
     expect(manifest.compatibility.length).toBeGreaterThan(0);

@@ -27,8 +27,7 @@ use openkara_lib::{
     config::{ExecutionProviderPreference, StemMode},
     separator::{
         inference::{self, StemWriters},
-        model::{self, TensorInterface},
-        preprocess,
+        model, preprocess,
         workspace::SeparationWorkspace,
     },
 };
@@ -163,12 +162,8 @@ fn spectral_candidate_bench() {
     let model = model::load_from_path(&model_path, ExecutionProviderPreference::Cpu)
         .expect("spectral model should load");
     let cold_load_s = cold_start.elapsed().as_secs_f64();
-    assert_eq!(model.tensor_interface, TensorInterface::SpectralCore);
-    let segment = model
-        .spectral
-        .as_ref()
-        .expect("verified interface")
-        .segment_frames;
+    // A loaded model always carries a verified spectral interface.
+    let segment = model.spectral.segment_frames;
 
     // Two full windows (three chunks at 50% overlap) of program material.
     let audio = synthetic_audio(segment * 2);

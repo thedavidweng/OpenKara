@@ -49,10 +49,17 @@ if (manifest.schema_version !== "openkara.catalog/release-v1") {
   );
 }
 
-// Mirror the Rust resolver: among non-deprecated artifacts for the
-// variant, the smallest download wins (compressed deliveries preferred).
+// Mirror the Rust resolver: among non-deprecated artifacts of the variant
+// with a LOADABLE tensor interface, the smallest download wins. The
+// spectral session is the sole production path, so waveform deliveries —
+// still listed in manifests for compatibility — are never candidates
+// (for the ft variant the waveform dual archive is smaller than the
+// spectral delivery; a size-only rule would resolve an unloadable model).
 const matches = manifest.artifacts.models.filter(
-  (model) => model.variant === args.variant && !model.deprecation?.deprecated,
+  (model) =>
+    model.variant === args.variant &&
+    model.model?.tensor_interface === "spectral-core" &&
+    !model.deprecation?.deprecated,
 );
 if (matches.length === 0) {
   throw new Error(

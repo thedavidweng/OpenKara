@@ -700,19 +700,35 @@ pub fn resolve_runtime<'a>(
     Ok(resolved)
 }
 
+/// The only tensor interface this build can load (the spectral session is
+/// the sole production path). Resolution must never select an artifact the
+/// loader will refuse: manifests keep listing waveform deliveries for
+/// compatibility, but they are not candidates here.
+const LOADABLE_TENSOR_INTERFACE: &str = "spectral-core";
+
 /// Resolve the preferred artifact for a variant. Newer generations publish
-/// several deliveries per variant (raw kept for older consumers, compressed
-/// preferred); among non-deprecated candidates the smallest download wins —
-/// deterministic, and exactly the upstream preference order (compressed
-/// dual < deduplicated raw < raw).
+/// several deliveries per variant; among non-deprecated candidates with a
+/// loadable tensor interface the smallest download wins — deterministic,
+/// and never an artifact the model loader would refuse (the fine-tuned
+/// variant's waveform dual archive is smaller than its spectral-core
+/// delivery, so a size-only rule would resolve a model that cannot load).
 pub fn resolve_model(manifest: &ReleaseManifest, variant: ModelVariant) -> Result<&CatalogModel> {
     manifest
         .artifacts
         .models
         .iter()
-        .filter(|model| model.variant == variant.as_str() && !model.deprecation.deprecated)
+        .filter(|model| {
+            model.variant == variant.as_str()
+                && !model.deprecation.deprecated
+                && model.model.tensor_interface == LOADABLE_TENSOR_INTERFACE
+        })
         .min_by_key(|model| model.byte_size)
-        .with_context(|| format!("catalog has no model for variant {}", variant.as_str()))
+        .with_context(|| {
+            format!(
+                "catalog has no loadable ({LOADABLE_TENSOR_INTERFACE}) model for variant {}",
+                variant.as_str()
+            )
+        })
 }
 
 // ---------------------------------------------------------------------------
@@ -912,9 +928,6 @@ mod tests {
         let catalog = embedded_catalog();
         let htdemucs =
             resolve_model(&catalog.manifest, ModelVariant::Htdemucs).expect("htdemucs model");
-        // The compressed dual delivery is the smallest non-deprecated
-        // artifact and therefore the preferred resolution.
-        assert!(htdemucs.is_archived(), "compressed delivery preferred");
         assert!(!htdemucs.deprecation.deprecated);
         let (model_file, _) = htdemucs.primary_model_file().expect("primary file");
         assert!(model_file.ends_with(".onnx"));
@@ -924,9 +937,20 @@ mod tests {
         let ft = resolve_model(&catalog.manifest, ModelVariant::HtdemucsFt).expect("ft model");
         assert!(!ft.deprecation.deprecated);
         assert_ne!(ft.artifact_id, htdemucs.artifact_id);
-        // The smallest ft delivery is the 654 MB dual archive, not the
-        // deprecated 1.4 GB raw or the 1.1 GB dedup.
-        assert!(ft.is_archived());
+
+        // Every resolved artifact must be LOADABLE: the spectral session is
+        // the sole production path, and for the ft variant the smallest
+        // artifact by size is a waveform archive the loader would refuse —
+        // interface-blind resolution would brick the fine-tuned variant.
+        for resolved in [htdemucs, ft] {
+            assert_eq!(
+                resolved.model.tensor_interface, "spectral-core",
+                "resolved artifact {} must be loadable",
+                resolved.artifact_id
+            );
+        }
+        assert_eq!(htdemucs.artifact_id, "htdemucs.spectral.fp32.onnx");
+        assert_eq!(ft.artifact_id, "htdemucs_ft.spectral.fp32.onnx");
     }
 
     #[test]
