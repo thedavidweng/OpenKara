@@ -130,6 +130,7 @@ export function SettingsOverlayProvider({
           state: runtimeBootstrapStatus.state,
           version: runtimeBootstrapStatus.version,
           runtime_path: runtimeBootstrapStatus.runtime_path,
+          error: runtimeBootstrapStatus.error?.message ?? null,
         },
       },
     }));

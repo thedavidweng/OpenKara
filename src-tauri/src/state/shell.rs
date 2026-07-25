@@ -15,6 +15,11 @@ pub struct AppShell {
     pub model_path: PathBuf,
     pub model_bootstrap_status: Arc<Mutex<ModelBootstrapStatusSnapshot>>,
     pub runtime_bootstrap_status: Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
+    /// The most recent network-verified catalog, populated by
+    /// `check_model_updates`. Model downloads resolve against this when it is
+    /// newer than the embedded snapshot, which is how an update install picks
+    /// up artifacts the shipped binary does not pin.
+    pub catalog_cache: Arc<Mutex<Option<crate::separator::catalog::VerifiedCatalog>>>,
     pub shutdown: Arc<AtomicBool>,
 }
 
@@ -34,6 +39,7 @@ impl AppShell {
             model_path,
             model_bootstrap_status,
             runtime_bootstrap_status,
+            catalog_cache: Arc::new(Mutex::new(None)),
             shutdown: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -63,11 +69,11 @@ impl AppShell {
         let managed =
             crate::separator::bootstrap::managed_model_path_for(&self.app_data_dir, descriptor);
         let dev_path =
-            crate::separator::model::default_model_path_for_filename(descriptor.filename);
+            crate::separator::model::default_model_path_for_filename(&descriptor.filename);
         match crate::separator::bootstrap::resolve_model_installation(
             &managed,
             &dev_path,
-            descriptor.sha256,
+            &descriptor.sha256,
         )
         .map_err(|error| crate::commands::error::internal_error(error.to_string()))?
         {

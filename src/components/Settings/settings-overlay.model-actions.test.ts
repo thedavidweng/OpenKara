@@ -144,4 +144,110 @@ describe("createModelSettingsActions", () => {
       expect(context.dependencies.api.deleteModel).toHaveBeenCalledOnce();
     });
   });
+
+  describe("checkModelUpdates", () => {
+    test("stores the update report when the check succeeds", async () => {
+      const report = {
+        generation: 4,
+        release_id: "2026-08-01-001",
+        models: [
+          {
+            variant: "htdemucs",
+            state: "update_available" as const,
+            installed_version: "model-v2.1.0",
+            available_version: "model-v2.2.0",
+            available_bytes: 355_000_000,
+          },
+        ],
+      };
+      context.dependencies.api.checkModelUpdates = vi
+        .fn()
+        .mockResolvedValue(report);
+      actions = createModelSettingsActions(context);
+
+      await actions.checkModelUpdates();
+
+      expect(context.patchState).toHaveBeenCalledWith({
+        modelUpdate: {
+          status: "checking",
+          error: null,
+          generation: null,
+          models: [],
+        },
+      });
+      expect(context.patchState).toHaveBeenLastCalledWith({
+        modelUpdate: {
+          status: "checked",
+          error: null,
+          generation: 4,
+          models: report.models,
+        },
+      });
+    });
+
+    test("reports a failed check without touching model readiness", async () => {
+      context.dependencies.api.checkModelUpdates = vi
+        .fn()
+        .mockRejectedValue(new Error("offline"));
+      actions = createModelSettingsActions(context);
+
+      await actions.checkModelUpdates();
+
+      expect(context.patchState).toHaveBeenLastCalledWith({
+        modelUpdate: {
+          status: "failed",
+          error: "offline",
+          generation: null,
+          models: [],
+        },
+      });
+      expect(context.dependencies.notifyError).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("updateModel", () => {
+    test("downloads the update and refreshes statuses", async () => {
+      vi.mocked(context.dependencies.api.downloadModel).mockResolvedValue(
+        {} as never,
+      );
+
+      await actions.updateModel("htdemucs");
+
+      expect(context.patchState).toHaveBeenCalledWith({
+        downloadingModel: "htdemucs",
+      });
+      expect(context.dependencies.api.downloadModel).toHaveBeenCalledWith(
+        "htdemucs",
+      );
+      expect(context.refreshModelStatuses).toHaveBeenCalledOnce();
+      expect(context.patchState).toHaveBeenLastCalledWith({
+        downloadingModel: null,
+      });
+    });
+
+    test("ignores a second call while the variant is already downloading", async () => {
+      vi.mocked(context.controls.getSnapshot).mockReturnValue({
+        state: { downloadingModel: "htdemucs", modelStatuses: {} },
+      } as never);
+
+      await actions.updateModel("htdemucs");
+
+      expect(context.dependencies.api.downloadModel).not.toHaveBeenCalled();
+    });
+
+    test("clears the downloading flag and notifies on failure", async () => {
+      vi.mocked(context.dependencies.api.downloadModel).mockRejectedValue(
+        new Error("download failed"),
+      );
+
+      await actions.updateModel("htdemucs_ft");
+
+      expect(context.patchState).toHaveBeenLastCalledWith({
+        downloadingModel: null,
+      });
+      expect(context.dependencies.notifyError).toHaveBeenCalledWith(
+        expect.any(Error),
+      );
+    });
+  });
 });

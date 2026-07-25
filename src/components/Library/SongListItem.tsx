@@ -2,6 +2,7 @@ import { useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { Loader2 } from "lucide-react";
 import { CoverArtThumbnail } from "@/components/Shared/CoverArtThumbnail";
+import { useBootstrapStore } from "@/stores/bootstrap-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { usePlayerStore } from "@/stores/player-store";
 import { useLyricsStore } from "@/stores/lyrics-store";
@@ -61,6 +62,11 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
   const sepState = separationStatus?.state ?? "idle";
   const isMediaG = song.media_g_container != null;
   const canSeparateSong = songCanBeSeparated(song);
+  // While the separation model is still being fetched (first run), the
+  // Separate button waits instead of failing with a raw backend error.
+  const modelPreparing = useBootstrapStore(
+    (s) => s.status?.state === "pending" || s.status?.state === "downloading",
+  );
   const mediaGBadgeLabel =
     song.media_g_container === "paired"
       ? "CDG"
@@ -216,7 +222,9 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
             {sepState === "idle" && canSeparateSong && (
               <button
                 onClick={handleSeparate}
-                className={`rounded border px-1.5 py-0.5 text-[10px] ${
+                disabled={modelPreparing}
+                title={modelPreparing ? t("library.modelPreparing") : undefined}
+                className={`rounded border px-1.5 py-0.5 text-[10px] disabled:cursor-default disabled:opacity-50 ${
                   isSelected
                     ? "border-[var(--sidebar-control-border)] bg-[var(--sidebar-control-bg)] text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
                     : "border-[var(--sidebar-control-border)] bg-[var(--sidebar-control-bg)] text-[var(--color-text-dim)] hover:bg-[var(--sidebar-row-overlay-bg)]"

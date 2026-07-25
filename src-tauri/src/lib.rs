@@ -192,6 +192,7 @@ pub fn run() {
             commands::bootstrap::download_model,
             commands::bootstrap::delete_model,
             commands::bootstrap::get_model_status,
+            commands::bootstrap::check_model_updates,
             commands::runtime_bootstrap::get_runtime_bootstrap_status,
             commands::runtime_bootstrap::download_runtime,
             commands::runtime_bootstrap::delete_runtime

@@ -15,8 +15,6 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  MODEL_URL: https://github.com/thedavidweng/openkara-models/releases/download/model-v2.0.1/htdemucs.onnx
-  MODEL_SHA256: 8fa3dab679c59aeb049dd229f57a212c9339b3fc17ebf50541daad9e799364a1
 
 jobs:
   # ── Triage ───────────────────────────────────────────────────────────
@@ -208,14 +206,28 @@ jobs:
           node-version: 24
           package-manager-cache: false
 
+      # Model identity comes from the pinned catalog snapshot
+      # (src-tauri/catalog/release-manifest.json) via the same resolver
+      # setup.sh uses, so CI, local setup, and the app share one contract.
+      - name: Resolve separation model from catalog snapshot
+        id: model
+        run: |
+          {
+            echo "url=$(node scripts/resolve-model.mjs --field url)"
+            echo "sha256=$(node scripts/resolve-model.mjs --field sha256)"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Restore separation model cache
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: src-tauri/models/htdemucs.onnx
-          key: separation-model-${{ env.MODEL_SHA256 }}
+          key: separation-model-${{ steps.model.outputs.sha256 }}
           enableCrossOsArchive: true
 
       - name: Download and verify separation model
+        env:
+          MODEL_URL: ${{ steps.model.outputs.url }}
+          MODEL_SHA256: ${{ steps.model.outputs.sha256 }}
         run: |
           if echo "$MODEL_SHA256  src-tauri/models/htdemucs.onnx" | sha256sum -c --status 2>/dev/null; then
             echo "Model already present and verified"

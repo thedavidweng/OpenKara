@@ -114,12 +114,12 @@ pub fn ensure_active_model_ready_or_install_blocking(
         .unwrap_or_default();
     let descriptor = separator::bootstrap::descriptor_for(active_variant);
     let managed_path = separator::bootstrap::managed_model_path_for(app_data_dir, descriptor);
-    let dev_path = separator::model::default_model_path_for_filename(descriptor.filename);
+    let dev_path = separator::model::default_model_path_for_filename(&descriptor.filename);
 
     match separator::bootstrap::resolve_model_installation(
         &managed_path,
         &dev_path,
-        descriptor.sha256,
+        &descriptor.sha256,
     )
     .map_err(|error| internal_error(format!("failed to inspect model status: {error}")))?
     {
@@ -146,8 +146,7 @@ pub fn ensure_active_model_ready_or_install_blocking(
             let progress_path = managed_path.display().to_string();
             let download_result = separator::bootstrap::download_and_install_model(
                 &managed_path,
-                descriptor.download_url,
-                descriptor.sha256,
+                descriptor,
                 |downloaded_bytes, total_bytes| {
                     let snapshot = downloading_status(
                         progress_path.clone(),
@@ -197,12 +196,12 @@ pub fn sync_active_model_bootstrap_status(
         .effective_model_variant();
     let descriptor = separator::bootstrap::descriptor_for(active_variant);
     let development_model_path =
-        separator::model::default_model_path_for_filename(descriptor.filename);
+        separator::model::default_model_path_for_filename(&descriptor.filename);
     let startup = crate::derive_startup_model_bootstrap(
         app_data_dir,
         &development_model_path,
         active_variant,
-        descriptor.sha256,
+        &descriptor.sha256,
     )
     .map_err(|error| internal_error(format!("failed to derive bootstrap status: {error}")))?;
 
@@ -287,6 +286,11 @@ pub struct ModelStatusSnapshot {
     /// True when `models/<variant>.onnx` exists but its SHA-256 does not match the pinned release.
     pub legacy_install_present: bool,
     pub file_size: Option<u64>,
+    /// Upstream release tag of the verified installed model (from its
+    /// identity record, or the embedded pin when the file matches it).
+    pub installed_version: Option<String>,
+    /// Upstream release tag pinned by the embedded catalog snapshot.
+    pub pinned_version: String,
 }
 
 #[tauri::command]
@@ -305,7 +309,7 @@ pub fn get_model_status(
     let resolved = separator::bootstrap::resolve_model_installation(
         &model_path,
         &app_data_dir.join("__no_dev_fallback_model__"),
-        descriptor.sha256,
+        &descriptor.sha256,
     )
     .map_err(|error| internal_error(format!("failed to inspect model status: {error}")))?;
     let (downloaded, legacy_install_present) = match resolved {
@@ -314,12 +318,127 @@ pub fn get_model_status(
         separator::bootstrap::ModelInstallationResolution::Absent => (false, false),
     };
     let file_size = separator::bootstrap::model_file_size(&app_data_dir, model_variant);
+    let installed_version = if downloaded {
+        separator::catalog::read_installed_identity(&model_path)
+            .map(|identity| identity.upstream_tag)
+            .or_else(|| Some(descriptor.upstream_tag.clone()))
+    } else {
+        None
+    };
     Ok(ModelStatusSnapshot {
         variant,
         downloaded,
         legacy_install_present,
         file_size,
+        installed_version,
+        pinned_version: descriptor.upstream_tag.clone(),
     })
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModelUpdateCheckSnapshot {
+    pub variant: String,
+    pub state: separator::catalog::ModelUpdateState,
+    pub installed_version: Option<String>,
+    pub available_version: String,
+    pub available_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModelUpdateReport {
+    pub generation: u64,
+    pub release_id: String,
+    pub models: Vec<ModelUpdateCheckSnapshot>,
+}
+
+/// Resolve the descriptor a download should install: the freshest verified
+/// catalog when `check_model_updates` cached one newer than the embedded
+/// snapshot, otherwise the embedded pin.
+fn download_descriptor_for(
+    catalog_cache: &Arc<Mutex<Option<separator::catalog::VerifiedCatalog>>>,
+    variant: ModelVariant,
+) -> CommandResult<separator::bootstrap::ModelDescriptor> {
+    let embedded = separator::bootstrap::descriptor_for(variant);
+    let cache = catalog_cache
+        .lock()
+        .map_err(|_| state_lock_error("catalog cache lock was poisoned"))?;
+    if let Some(catalog) = cache.as_ref() {
+        if catalog.generation > separator::catalog::embedded_catalog().generation {
+            return separator::bootstrap::descriptor_from_catalog(catalog, variant)
+                .map_err(|error| internal_error(format!("failed to resolve model: {error}")));
+        }
+    }
+    Ok(embedded.clone())
+}
+
+/// Check the stable catalog for model updates. A failed check is an ordinary
+/// command error and never affects the readiness of installed models.
+#[tauri::command]
+pub async fn check_model_updates(state: State<'_, AppState>) -> CommandResult<ModelUpdateReport> {
+    let app_data_dir = state.shell.app_data_dir.clone();
+    let catalog_cache = Arc::clone(&state.shell.catalog_cache);
+
+    let report =
+        tauri::async_runtime::spawn_blocking(move || -> CommandResult<ModelUpdateReport> {
+            let catalog = separator::catalog::fetch_stable_catalog()
+                .map_err(|error| model_bootstrap_error(format!("update check failed: {error}")))?;
+
+            let mut models = Vec::new();
+            for variant in [ModelVariant::Htdemucs, ModelVariant::HtdemucsFt] {
+                let catalog_model = separator::catalog::resolve_model(&catalog.manifest, variant)
+                    .map_err(|error| {
+                    model_bootstrap_error(format!("update check failed: {error}"))
+                })?;
+                let descriptor = separator::bootstrap::descriptor_for(variant);
+                let model_path =
+                    separator::bootstrap::managed_model_path_for(&app_data_dir, descriptor);
+                let installed = separator::catalog::read_installed_identity(&model_path);
+                // A file that matches the embedded pin but predates identity
+                // records is a known install of the pinned release.
+                let installed = installed.or_else(|| {
+                    let matches_pin = separator::bootstrap::resolve_existing_model_path(
+                        &model_path,
+                        &app_data_dir.join("__no_dev_fallback_model__"),
+                        &descriptor.sha256,
+                    )
+                    .ok()
+                    .flatten()
+                    .is_some();
+                    matches_pin.then(|| descriptor.identity.clone())
+                });
+                let comparison = separator::catalog::compare_installed_model(
+                    installed,
+                    catalog_model,
+                    &catalog,
+                    model_path.exists(),
+                )
+                .map_err(|error| model_bootstrap_error(format!("update check failed: {error}")))?;
+
+                models.push(ModelUpdateCheckSnapshot {
+                    variant: variant.as_str().to_owned(),
+                    state: comparison.state,
+                    installed_version: comparison.installed.map(|identity| identity.upstream_tag),
+                    available_version: catalog_model.upstream.tag.clone(),
+                    available_bytes: catalog_model.byte_size,
+                });
+            }
+
+            let report = ModelUpdateReport {
+                generation: catalog.generation,
+                release_id: catalog.release_id.clone(),
+                models,
+            };
+
+            if let Ok(mut cache) = catalog_cache.lock() {
+                *cache = Some(catalog);
+            }
+
+            Ok(report)
+        })
+        .await
+        .map_err(|error| internal_error(format!("update check task failed: {error}")))??;
+
+    Ok(report)
 }
 
 #[tauri::command]
@@ -334,22 +453,30 @@ pub fn download_model(
 
     let model_variant = ModelVariant::parse(&variant)
         .ok_or_else(|| internal_error(format!("invalid model variant: {variant}")))?;
-    let descriptor = separator::bootstrap::descriptor_for(model_variant);
+    // Resolve against the freshest verified catalog so this command serves
+    // both first installs and updates to a newer generation.
+    let descriptor = download_descriptor_for(&state.shell.catalog_cache, model_variant)?;
     let model_path =
-        separator::bootstrap::managed_model_path_for(&state.shell.app_data_dir, descriptor);
+        separator::bootstrap::managed_model_path_for(&state.shell.app_data_dir, &descriptor);
     let should_publish_status = is_active_variant(&state.shell.app_data_dir, model_variant);
 
-    if separator::bootstrap::resolve_existing_model_path(
-        &model_path,
-        &state.shell.app_data_dir.join("__no_dev_fallback_model__"),
-        descriptor.sha256,
-    )
-    .map_err(|error| internal_error(format!("failed to inspect model status: {error}")))?
-    .is_some()
+    // Refuse implicit downgrades: an explicit user download must never
+    // replace a verified newer install with an older catalog artifact.
+    if let Some(installed) = separator::catalog::read_installed_identity(&model_path) {
+        if installed.generation > descriptor.identity.generation {
+            return Err(model_bootstrap_error(format!(
+                "installed model {} is from catalog generation {}, newer than the available generation {}; downgrades require deleting the model first",
+                installed.upstream_tag, installed.generation, descriptor.identity.generation
+            )));
+        }
+    }
+
+    // The download targets one exact artifact. "Already installed" means the
+    // managed file matches THAT artifact's digest — an identity-verified
+    // older install must not short-circuit an update download.
+    if separator::bootstrap::model_matches_digest(&model_path, &descriptor.sha256)
+        .map_err(|error| internal_error(format!("failed to inspect model status: {error}")))?
     {
-        // An explicit download button is about installing the managed copy for
-        // this variant. A verified dev fallback is enough to run locally, but it
-        // should not make the managed install appear already downloaded.
         return Ok(ready_status(model_path.display().to_string()));
     }
 
@@ -382,8 +509,7 @@ pub fn download_model(
         }
     }
 
-    let download_url = descriptor.download_url.to_owned();
-    let sha256 = descriptor.sha256.to_owned();
+    let task_descriptor = descriptor.clone();
     let progress_path = model_path.display().to_string();
     let should_publish_status_for_task = should_publish_status;
     let task_variant = model_variant;
@@ -400,8 +526,7 @@ pub fn download_model(
         let result = tauri::async_runtime::spawn_blocking(move || {
             separator::bootstrap::download_and_install_model(
                 &blocking_model_path,
-                &download_url,
-                &sha256,
+                &task_descriptor,
                 |downloaded_bytes, total_bytes| {
                     if should_publish_status_for_task
                         && is_active_variant(&blocking_app_data_dir, task_variant)

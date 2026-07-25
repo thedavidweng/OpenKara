@@ -47,6 +47,7 @@ export function createInitialSettingsOverlaySnapshot(
       modelVariant: initialSettings.modelVariant,
       modelStatuses: {},
       downloadingModel: null,
+      modelUpdate: null,
       runtimeStatus: null,
       language: initialSettings.language ?? "en",
       hideBatchSeparate: initialSettings.hideBatchSeparate,
@@ -137,11 +138,15 @@ export function createSettingsOverlayActions(
             downloaded: standard.downloaded,
             legacy_install_present: standard.legacy_install_present,
             file_size: standard.file_size,
+            installed_version: standard.installed_version,
+            pinned_version: standard.pinned_version,
           },
           htdemucs_ft: {
             downloaded: hq.downloaded,
             legacy_install_present: hq.legacy_install_present,
             file_size: hq.file_size,
+            installed_version: hq.installed_version,
+            pinned_version: hq.pinned_version,
           },
         },
       });
@@ -159,6 +164,7 @@ export function createSettingsOverlayActions(
           state: status.state,
           version: status.version,
           runtime_path: status.runtime_path,
+          error: status.error?.message ?? null,
         },
       });
     } catch {
@@ -208,6 +214,7 @@ export function createSettingsOverlayActions(
           state: status.state,
           version: status.version,
           runtime_path: status.runtime_path,
+          error: status.error?.message ?? null,
         },
       });
       // Refresh model statuses too since model actions may now be enabled.

@@ -1,4 +1,5 @@
 pub mod bootstrap;
+pub mod catalog;
 pub mod error;
 pub mod inference;
 pub mod job;

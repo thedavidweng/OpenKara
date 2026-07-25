@@ -262,9 +262,9 @@ fn build_startup_model_bootstrap(
     let descriptor = separator::bootstrap::descriptor_for(active_variant);
     let startup_bootstrap = derive_startup_model_bootstrap(
         app_data_dir,
-        &separator::model::default_model_path_for_filename(descriptor.filename),
+        &separator::model::default_model_path_for_filename(&descriptor.filename),
         active_variant,
-        descriptor.sha256,
+        &descriptor.sha256,
     )?;
 
     Ok(StartupBootstrapResources {
@@ -454,8 +454,7 @@ pub(crate) fn spawn_model_bootstrap_worker<R: Runtime>(
         let result = tauri::async_runtime::spawn_blocking(move || {
             separator::bootstrap::download_and_install_model(
                 &blocking_model_path,
-                descriptor.download_url,
-                descriptor.sha256,
+                descriptor,
                 |downloaded_bytes, total_bytes| {
                     let snapshot = commands::bootstrap::downloading_status(
                         progress_path.clone(),

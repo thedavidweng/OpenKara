@@ -4,10 +4,6 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODELS_DIR="$ROOT_DIR/src-tauri/models"
-MODEL_FILENAME="htdemucs.onnx"
-MODEL_PATH="$MODELS_DIR/$MODEL_FILENAME"
-MODEL_URL="https://github.com/thedavidweng/openkara-models/releases/download/model-v2.0.1/htdemucs.onnx"
-MODEL_SHA256="8fa3dab679c59aeb049dd229f57a212c9339b3fc17ebf50541daad9e799364a1"
 
 require_tool() {
   local tool="$1"
@@ -29,6 +25,13 @@ verify_checksum() {
 require_tool curl
 require_tool node
 require_tool shasum
+
+# Model identity comes from the pinned catalog snapshot — the same contract
+# fixture the application embeds. Never hardcode model URLs or digests here.
+MODEL_FILENAME="$(node "$ROOT_DIR/scripts/resolve-model.mjs" --field filename)"
+MODEL_PATH="$MODELS_DIR/$MODEL_FILENAME"
+MODEL_URL="$(node "$ROOT_DIR/scripts/resolve-model.mjs" --field url)"
+MODEL_SHA256="$(node "$ROOT_DIR/scripts/resolve-model.mjs" --field sha256)"
 
 mkdir -p "$MODELS_DIR"
 
