@@ -6,31 +6,12 @@ use rubato::{Fft, FixedSync, Resampler, WindowFunction};
 pub const DEMUCS_SAMPLE_RATE: u32 = 44_100;
 pub const DEMUCS_CHANNELS: usize = 2;
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct PreparedModelInput {
-    pub shape: Vec<i64>,
-    pub samples: Vec<f32>,
-}
-
-pub fn target_frame_count(model: &LoadedModel, fallback_frame_count: usize) -> Result<usize> {
-    // Spectral-core models carry their fixed window in the verified session
-    // interface (the first graph input is the rank-5 spectral tensor, so the
-    // waveform rank-3 rule below does not apply).
-    if let Some(spectral) = &model.spectral {
-        return Ok(spectral.segment_frames);
-    }
-
-    if model.input_shape.len() != 3 {
-        bail!(
-            "Demucs model input rank must be 3, got {} dimensions",
-            model.input_shape.len()
-        );
-    }
-
-    Ok(match model.input_shape.get(2).copied() {
-        Some(frame_count_hint) if frame_count_hint > 0 => frame_count_hint as usize,
-        _ => fallback_frame_count,
-    })
+/// The spectral-core inference window, fixed by the model's verified session
+/// interface. The former waveform rank-3 input fallback was removed with the
+/// waveform production path (issue #172); every loaded model is spectral-core,
+/// so the window is always the contract segment length.
+pub fn target_frame_count(model: &LoadedModel, _fallback_frame_count: usize) -> Result<usize> {
+    Ok(model.spectral.segment_frames)
 }
 
 /// Takes ownership of the decoded audio buffer to avoid holding two
@@ -85,62 +66,5 @@ pub fn normalize_audio_for_model(decoded_audio: DecodedAudio) -> Result<DecodedA
         channels: decoded_audio.channels,
         duration_ms: ((output_frames as f64 / DEMUCS_SAMPLE_RATE as f64) * 1000.0).round() as u64,
         samples: output_samples,
-    })
-}
-
-pub fn prepare_model_input(
-    model: &LoadedModel,
-    decoded_audio: DecodedAudio,
-) -> Result<PreparedModelInput> {
-    let decoded_audio = normalize_audio_for_model(decoded_audio)?;
-    prepare_model_input_from_normalized(model, &decoded_audio)
-}
-
-pub fn prepare_model_input_from_normalized(
-    model: &LoadedModel,
-    decoded_audio: &DecodedAudio,
-) -> Result<PreparedModelInput> {
-    // Chunked separation reuses one normalized buffer across many windows.
-    // Keeping a direct entrypoint avoids cloning the full PCM buffer every
-    // time a window is prepared for inference.
-    if decoded_audio.sample_rate != DEMUCS_SAMPLE_RATE {
-        bail!(
-            "Demucs preprocessing expects {} Hz normalized audio, got {} Hz",
-            DEMUCS_SAMPLE_RATE,
-            decoded_audio.sample_rate
-        );
-    }
-
-    if decoded_audio.channels != DEMUCS_CHANNELS {
-        bail!(
-            "Demucs preprocessing expects {} channels after normalization, got {}",
-            DEMUCS_CHANNELS,
-            decoded_audio.channels
-        );
-    }
-
-    let frame_count = decoded_audio.samples.len() / decoded_audio.channels;
-    let target_frame_count = target_frame_count(model, frame_count)?;
-
-    if frame_count > target_frame_count {
-        bail!(
-            "Demucs preprocessing currently supports audio up to {target_frame_count} frames, got {frame_count}"
-        );
-    }
-
-    let mut channels_first = vec![0.0_f32; decoded_audio.channels * target_frame_count];
-
-    for frame_index in 0..frame_count {
-        let interleaved_offset = frame_index * decoded_audio.channels;
-        for channel_index in 0..decoded_audio.channels {
-            let channels_first_offset = channel_index * target_frame_count + frame_index;
-            channels_first[channels_first_offset] =
-                decoded_audio.samples[interleaved_offset + channel_index];
-        }
-    }
-
-    Ok(PreparedModelInput {
-        shape: vec![1, decoded_audio.channels as i64, target_frame_count as i64],
-        samples: channels_first,
     })
 }

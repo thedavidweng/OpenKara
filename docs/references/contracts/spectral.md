@@ -56,7 +56,7 @@ last `n_fft` (4096) samples of a reconstructed window lose overlap-add
 contributions from the cropped frames (interior error ~`1e-10`, transition band
 up to ~`3e-6`). Any application that stitches segments MUST overlap at least
 `4096` samples per side and cross-fade so only interior samples are used. This
-matches the shipped waveform models identically. (No OLA integration ships in
+matches the original waveform models identically. (No OLA integration ships in
 this contract layer; it is provided by the streaming separation path.)
 
 ## Versioning and status
@@ -66,15 +66,18 @@ tolerances) requires a `/v2` contract and new golden vectors. Session and cache
 identities that depend on the transform semantics must carry the contract
 version string (`SPECTRAL_CONTRACT_VERSION`).
 
-The pure DSP layer (issue #172 PR 1) carries no production model path. The
-typed spectral session path (issue #172 PR 2) lives in
-`src-tauri/src/separator/spectral_session.rs`:
+The typed spectral session path (issue #172,
+`src-tauri/src/separator/spectral_session.rs`) is the ONLY production
+separation path. The waveform graph path — graph transform/layout adapters,
+output-contract detection, and fallback selection — was removed in PR 5:
 
-- Dispatch is decided ONLY by the model's embedded metadata
-  (`openkara.tensor_interface = "spectral-core"` +
+- The only supported interface is spectral-core, selected from the model's
+  embedded metadata (`openkara.tensor_interface = "spectral-core"` +
   `openkara.spectral_contract`); output-rank and filename heuristics are
-  forbidden. Unknown interfaces and unsupported contract versions fail at
-  model load, before any ORT session is created.
+  forbidden. A model with no interface declaration, the legacy `waveform`
+  declaration, an unknown interface, or an unsupported contract version is
+  refused at model load, before any ORT session is created
+  (`model::ensure_spectral_core_metadata`).
 - The tensor interface (`spectral`/`mix` → `spectral_out`/`time_out`, fixed
   contract shapes) is verified at load time
   (`spectral_session::verify_spectral_interface`).
@@ -87,5 +90,8 @@ typed spectral session path (issue #172 PR 2) lives in
   a `/v1` session.
 
 Catalog entries for spectral-core artifacts declare
-`model.tensor_interface = "spectral-core"`; the embedded catalog gate accepts
-exactly the `waveform` and `spectral-core` interfaces.
+`model.tensor_interface = "spectral-core"`; the embedded catalog gate still
+accepts both the `waveform` and `spectral-core` interfaces so existing
+manifests continue to parse. A waveform artifact that remains in a manifest can
+no longer be loaded at runtime, however — loading one fails at
+`model::ensure_spectral_core_metadata`.

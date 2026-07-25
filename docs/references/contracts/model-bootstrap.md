@@ -63,10 +63,11 @@
   胜出——与上游偏好序一致（压缩 dual < 去重 raw < raw）。
 - **压缩交付**：下载负载按 `archive_digest` 验证，安全解压后再按
   `extracted_file_digests` 验证安装的 `.onnx`；raw 交付两者为同一字节。
-- **dual 双输出模型**：`outputs[0]=[1,4,2,N]` 四轨堆叠 +
-  `outputs[1]=[1,2,2,N]`（vocals/accompaniment）。TwoStem 直接读输出 1（无
-  需三轨求和下混），FourStem 读输出 0。推理层按形状识别
-  （`ModelOutputContract::DualStacked`），与输出名无关。
+- **dual 双输出波形模型**（历史工件）：`outputs[0]=[1,4,2,N]` 四轨堆叠 +
+  `outputs[1]=[1,2,2,N]`（vocals/accompaniment）。gen-8 之前作为首选交付形态，
+  清单中仍列出以兼容旧消费者；但波形生产路径已在 issue #172 PR 5 删除，运行时
+  已无法加载波形模型（`model::ensure_spectral_core_metadata` 会拒绝），因此这些
+  工件只在清单解析层保留，不再有推理层读取逻辑。
 - 每次成功安装都会在模型旁写入 `<model>.identity.json`
   （schema `openkara.app/installed-model-v1`），记录 generation、release ID、
   artifact ID、上游 tag、digest、字节数与兼容 runtime 列表。

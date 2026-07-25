@@ -912,9 +912,10 @@ mod tests {
         let catalog = embedded_catalog();
         let htdemucs =
             resolve_model(&catalog.manifest, ModelVariant::Htdemucs).expect("htdemucs model");
-        // The compressed dual delivery is the smallest non-deprecated
-        // artifact and therefore the preferred resolution.
-        assert!(htdemucs.is_archived(), "compressed delivery preferred");
+        // gen-8 (spectral-core stable) publishes the raw spectral delivery as
+        // htdemucs's smallest non-deprecated artifact, so it is the preferred
+        // resolution (smaller than the legacy compressed dual archive).
+        assert!(!htdemucs.is_archived(), "raw spectral delivery preferred");
         assert!(!htdemucs.deprecation.deprecated);
         let (model_file, _) = htdemucs.primary_model_file().expect("primary file");
         assert!(model_file.ends_with(".onnx"));
