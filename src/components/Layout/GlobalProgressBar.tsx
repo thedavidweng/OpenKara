@@ -174,6 +174,8 @@ function useActiveTasks(modelDownloadCompleteFlash: boolean): ActiveTask[] {
         key: `sep-${runningSep.song_id}`,
         label: t("progress.separating", { title }),
         percent: runningSep.percent,
+        onCancel: () =>
+          api.cancelSeparation(runningSep.song_id).catch(notifyError),
       });
     }
   }

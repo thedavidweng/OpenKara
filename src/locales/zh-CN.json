@@ -158,7 +158,9 @@
       "confirmMessage": "是否导入 {{songCount}} 首歌曲？",
       "confirmOk": "导入"
     },
-    "modelPreparing": "正在准备分离模型…"
+    "modelPreparing": "正在准备分离模型…",
+    "cancelSeparation": "取消分离",
+    "usingCachedSeparation": "已使用缓存的分离结果"
   },
   "player": {
     "previous": "上一首",

@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
-import { Loader2 } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { CoverArtThumbnail } from "@/components/Shared/CoverArtThumbnail";
 import { useBootstrapStore } from "@/stores/bootstrap-store";
 import { useLibraryStore } from "@/stores/library-store";
@@ -87,6 +87,11 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
   const handleSeparate = (e: React.MouseEvent) => {
     e.stopPropagation();
     api.separate(song.hash).catch((err) => notifyError(err));
+  };
+
+  const handleCancelSeparation = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    api.cancelSeparation(song.hash).catch((err) => notifyError(err));
   };
 
   const handleDeleteSongs = async (songIds: string[]) => {
@@ -238,6 +243,15 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
               <div className="flex items-center gap-1 text-[11px] text-[var(--color-text-dim)]">
                 <Loader2 size={10} className="animate-spin" />
                 <span>{separationStatus?.percent ?? 0}%</span>
+                <button
+                  onClick={handleCancelSeparation}
+                  title={t("library.cancelSeparation")}
+                  aria-label={t("library.cancelSeparation")}
+                  className="motion-icon-button rounded p-0.5 text-[var(--color-text-dim)] hover:bg-[var(--sidebar-row-overlay-bg)] hover:text-[var(--color-text)]"
+                  data-native-overlay-surface="song-action"
+                >
+                  <X size={12} />
+                </button>
               </div>
             )}
             {sepState === "completed" && (

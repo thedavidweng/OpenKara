@@ -155,6 +155,7 @@ pub fn run() {
             commands::batch_separation::batch_separate,
             commands::batch_separation::cancel_batch_separation,
             commands::separation::separate,
+            commands::separation::cancel_separation,
             commands::separation::get_separation_status,
             commands::separation::get_all_separation_statuses,
             commands::separation::upgrade_to_four_stem,

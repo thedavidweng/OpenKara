@@ -15,13 +15,17 @@ import type {
   TrackTransitionedEvent,
 } from "@/types/ipc";
 
-const { mockListen, mockSetPreloadCandidate, mockNotifyError } = vi.hoisted(
-  () => ({
-    mockListen: vi.fn(),
-    mockSetPreloadCandidate: vi.fn(),
-    mockNotifyError: vi.fn(),
-  }),
-);
+const {
+  mockListen,
+  mockSetPreloadCandidate,
+  mockNotifyError,
+  mockNotifySuccess,
+} = vi.hoisted(() => ({
+  mockListen: vi.fn(),
+  mockSetPreloadCandidate: vi.fn(),
+  mockNotifyError: vi.fn(),
+  mockNotifySuccess: vi.fn(),
+}));
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: mockListen,
@@ -37,6 +41,7 @@ vi.mock("@/lib/tauri", async (importOriginal) => {
 
 vi.mock("@/lib/errors", () => ({
   notifyError: mockNotifyError,
+  notifySuccess: mockNotifySuccess,
 }));
 
 // Track every rendered root so afterEach can unmount them all. Without this,
@@ -124,6 +129,7 @@ describe("usePreloadCandidateEffect", () => {
     mockSetPreloadCandidate.mockReset();
     mockSetPreloadCandidate.mockResolvedValue(undefined);
     mockNotifyError.mockReset();
+    mockNotifySuccess.mockReset();
     usePlayerStore.setState({
       snapshot: null,
       positionMs: 0,
@@ -210,6 +216,7 @@ describe("useTrackTransitionedQueueReconcile", () => {
     mockSetPreloadCandidate.mockReset();
     mockSetPreloadCandidate.mockResolvedValue(undefined);
     mockNotifyError.mockReset();
+    mockNotifySuccess.mockReset();
     usePlayerStore.setState({
       snapshot: null,
       positionMs: 0,
@@ -289,6 +296,7 @@ describe("usePlaybackPositionSubscription", () => {
     mockSetPreloadCandidate.mockReset();
     mockSetPreloadCandidate.mockResolvedValue(undefined);
     mockNotifyError.mockReset();
+    mockNotifySuccess.mockReset();
     usePlayerStore.setState({
       snapshot: null,
       positionMs: 0,
@@ -408,6 +416,7 @@ describe("useSeparationEvents", () => {
     mockSetPreloadCandidate.mockReset();
     mockSetPreloadCandidate.mockResolvedValue(undefined);
     mockNotifyError.mockReset();
+    mockNotifySuccess.mockReset();
     usePlayerStore.setState({
       snapshot: null,
       positionMs: 0,
@@ -549,6 +558,62 @@ describe("useSeparationEvents", () => {
 
     expect(updateSeparationStatus).toHaveBeenCalled();
     expect(mockNotifyError).toHaveBeenCalledWith("decode failed");
+  });
+
+  test("resets separation status to idle on separation-cancelled events", async () => {
+    const updateSeparationStatus = vi.fn();
+    useLibraryStore.setState({ updateSeparationStatus } as never);
+
+    const listeners = new Map<string, (e: { payload: unknown }) => void>();
+    mockListen.mockImplementation(
+      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
+        listeners.set(eventName, handler);
+        return () => {};
+      },
+    );
+
+    const { useEventListeners } = await import("./use-playback-runtime");
+    await renderHook(() => useEventListeners(true));
+
+    const handler = listeners.get("separation-cancelled");
+    expect(handler).not.toBeUndefined();
+
+    handler!({ payload: { song_id: "song-a" } });
+
+    expect(updateSeparationStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ song_id: "song-a", state: "idle" }),
+    );
+    expect(mockNotifyError).not.toHaveBeenCalled();
+  });
+
+  test("surfaces a cache-hit toast when separation-complete reports cache_hit", async () => {
+    const updateSeparationStatus = vi.fn();
+    const loadStems = vi.fn().mockResolvedValue(undefined);
+    usePlayerStore.setState({ loadStems } as never);
+    useLibraryStore.setState({ updateSeparationStatus } as never);
+
+    const listeners = new Map<string, (e: { payload: unknown }) => void>();
+    mockListen.mockImplementation(
+      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
+        listeners.set(eventName, handler);
+        return () => {};
+      },
+    );
+
+    const { useEventListeners } = await import("./use-playback-runtime");
+    await renderHook(() => useEventListeners(true));
+
+    const handler = listeners.get("separation-complete");
+    expect(handler).not.toBeUndefined();
+
+    handler!({
+      payload: {
+        song_id: "song-a",
+        status: { state: "completed", cache_hit: true },
+      },
+    });
+
+    expect(mockNotifySuccess).toHaveBeenCalledOnce();
   });
 
   test("updates separation status on separation-progress events", async () => {

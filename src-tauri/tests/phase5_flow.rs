@@ -101,6 +101,7 @@ fn backend_karaoke_flow_imports_plays_separates_fetches_lyrics_and_switches_mode
         StemMode::default(),
         "htdemucs",
         ExecutionProviderPreference::Cpu,
+        &std::sync::atomic::AtomicBool::new(false),
         |_| {},
     )
     .expect("separation should succeed for the imported fixture");
