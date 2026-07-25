@@ -13,7 +13,6 @@ use std::{
     cell::RefCell,
     collections::HashMap,
     fs,
-    io::Write,
     net::{Ipv4Addr, SocketAddrV4, TcpListener},
     path::Path,
     sync::{Arc, Mutex, OnceLock},
@@ -978,7 +977,7 @@ pub(crate) fn dropbox_download_file(
     let path_owned = path.to_owned();
     // Rebuild the authorized request on every attempt so the shared network
     // policy can retry transport failures and rate-limits.
-    let response = send_with_retry("download Dropbox file", || {
+    let mut response = send_with_retry("download Dropbox file", || {
         let builder = dropbox_authorized_request(app_data_dir, secret, Method::POST, url.clone())
             .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?
             .header(
@@ -1002,21 +1001,19 @@ pub(crate) fn dropbox_download_file(
             )))
         })?;
     }
-    let bytes = response.bytes().map_err(|error| {
-        CommandError::from(LibraryError::Internal(format!(
-            "failed to read Dropbox response: {error}"
-        )))
-    })?;
+    // Stream to disk as bytes arrive rather than buffering the whole file with
+    // `response.bytes()`, so the client timeout acts as a per-read idle timeout
+    // and slow links complete instead of failing at a single total-body
+    // deadline (issue #205).
     let mut file = fs::File::create(destination).map_err(|error| {
         CommandError::from(LibraryError::Internal(format!(
             "failed to create {}: {error}",
             destination.display()
         )))
     })?;
-    file.write_all(bytes.as_ref()).map_err(|error| {
+    crate::remote::net_policy::stream_response_body(&mut response, &mut file).map_err(|error| {
         CommandError::from(LibraryError::Internal(format!(
-            "failed to write {}: {error}",
-            destination.display()
+            "failed to stream Dropbox response: {error}"
         )))
     })?;
     Ok(())
@@ -1504,7 +1501,7 @@ impl RemoteProvider for DropboxProvider<'_> {
         // Dropbox's content download endpoint honors a standard HTTP Range
         // header: bytes=<start>-<end> (inclusive end).
         let range_value = format!("bytes={}-{}", offset, offset + length - 1);
-        let response =
+        let mut response =
             dropbox_authorized_request(self.app_data_dir, &mut secret, Method::POST, url)
                 .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?
                 .header(
@@ -1561,27 +1558,6 @@ impl RemoteProvider for DropboxProvider<'_> {
                 )
             })?;
         }
-        let bytes = response.bytes().map_err(|error| {
-            RemoteError::new(
-                RemoteErrorKind::NetworkUnavailable,
-                format!("failed to read Dropbox response: {error}"),
-            )
-        })?;
-
-        // Validate body length: must match the requested range length.
-        // A short response would leave gaps; an oversized response would
-        // write beyond the requested range.
-        let actual_len = bytes.len() as u64;
-        if actual_len != length {
-            return Err(RemoteError::new(
-                RemoteErrorKind::RemoteIntegrityFailed,
-                format!(
-                    "Dropbox range download body length mismatch: \
-                     requested {length} bytes at offset {offset}, got {actual_len} bytes"
-                ),
-            ));
-        }
-
         // Open for write at a specific offset. We intentionally do NOT
         // truncate — the file may already contain bytes from a prior range
         // download, and truncating would destroy them.
@@ -1602,13 +1578,46 @@ impl RemoteProvider for DropboxProvider<'_> {
                 format!("failed to seek {}: {error}", destination.display()),
             )
         })?;
-        file.write_all(bytes.as_ref()).map_err(|error| {
-            RemoteError::new(
+
+        // Stream the body straight to disk as it arrives instead of buffering
+        // the whole chunk with `response.bytes()`. The buffered call imposed
+        // one total-body deadline per 8 MiB chunk; streaming makes the client
+        // timeout a per-read idle timeout so slow links make progress, and an
+        // interruption leaves the received bytes durable for sub-chunk resume
+        // (issue #205).
+        let written = crate::remote::net_policy::stream_response_body(&mut response, &mut file)
+            .map_err(|error| {
+                RemoteError::new(
+                    RemoteErrorKind::NetworkUnavailable,
+                    format!("failed to stream Dropbox range response: {error}"),
+                )
+            })?;
+
+        // Validate body length. For a 206 the body must be exactly `length`
+        // bytes; for a 200 full-body fallback (offset == 0 only) it must be at
+        // least `length`. A truncated transfer is a transport failure, not
+        // corruption, so it stays retryable and the partial bytes on disk are
+        // preserved for resume.
+        if status == reqwest::StatusCode::PARTIAL_CONTENT {
+            if written != length {
+                return Err(RemoteError::new(
+                    RemoteErrorKind::NetworkUnavailable,
+                    format!(
+                        "Dropbox range download body length mismatch: \
+                         requested {length} bytes at offset {offset}, got {written} bytes"
+                    ),
+                ));
+            }
+        } else if written < length {
+            return Err(RemoteError::new(
                 RemoteErrorKind::NetworkUnavailable,
-                format!("failed to write {}: {error}", destination.display()),
-            )
-        })?;
-        Ok(actual_len)
+                format!(
+                    "Dropbox full-body response shorter than requested range: \
+                     requested {length} bytes, got {written} bytes"
+                ),
+            ));
+        }
+        Ok(written)
     }
 
     fn get_revision(&self, relative_path: &str) -> CommandResult<Option<String>> {

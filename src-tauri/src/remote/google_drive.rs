@@ -18,7 +18,7 @@ use std::{
     cell::RefCell,
     collections::HashMap,
     fs,
-    io::{Seek, SeekFrom, Write},
+    io::{Seek, SeekFrom},
     net::{Ipv4Addr, SocketAddrV4, TcpListener},
     path::Path,
     sync::{Arc, Mutex, OnceLock},
@@ -827,7 +827,7 @@ pub(crate) fn google_drive_download_file(
     use crate::remote::send_with_retry;
 
     let url = google_drive_api_url(&format!("/drive/v3/files/{file_id}?alt=media"))?;
-    let response = send_with_retry("download Google Drive file", || {
+    let mut response = send_with_retry("download Google Drive file", || {
         let builder =
             google_drive_authorized_request(app_data_dir, secret, Method::GET, url.clone())
                 .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
@@ -847,21 +847,19 @@ pub(crate) fn google_drive_download_file(
             )))
         })?;
     }
-    let bytes = response.bytes().map_err(|error| {
-        CommandError::from(LibraryError::Internal(format!(
-            "failed to read Google Drive response: {error}"
-        )))
-    })?;
+    // Stream to disk as bytes arrive rather than buffering the whole file with
+    // `response.bytes()`, so the client timeout acts as a per-read idle timeout
+    // and slow links complete instead of failing at a single total-body
+    // deadline (issue #205).
     let mut file = fs::File::create(destination).map_err(|error| {
         CommandError::from(LibraryError::Internal(format!(
             "failed to create {}: {error}",
             destination.display()
         )))
     })?;
-    file.write_all(bytes.as_ref()).map_err(|error| {
+    crate::remote::net_policy::stream_response_body(&mut response, &mut file).map_err(|error| {
         CommandError::from(LibraryError::Internal(format!(
-            "failed to write {}: {error}",
-            destination.display()
+            "failed to stream Google Drive response: {error}"
         )))
     })?;
     Ok(())
@@ -1810,7 +1808,7 @@ impl RemoteProvider for GoogleDriveProvider<'_> {
         let url = google_drive_api_url(&format!("/drive/v3/files/{}?alt=media", entry.id))
             .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
         let end = offset + length - 1;
-        let response = google_drive_request_with_access_token(&token, Method::GET, url)
+        let mut response = google_drive_request_with_access_token(&token, Method::GET, url)
             .header("Range", format!("bytes={offset}-{end}"))
             .send_network("download Google Drive file range")
             .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
@@ -1852,25 +1850,6 @@ impl RemoteProvider for GoogleDriveProvider<'_> {
             crate::remote::errors::verify_content_range(cr_str, offset, length)?;
         }
 
-        let body = response.bytes().map_err(|error| {
-            RemoteError::new(
-                RemoteErrorKind::NetworkUnavailable,
-                format!("failed to read Google Drive range response: {error}"),
-            )
-        })?;
-
-        // Validate body length: must match the requested range length.
-        let actual_len = body.len() as u64;
-        if actual_len != length {
-            return Err(RemoteError::new(
-                RemoteErrorKind::RemoteIntegrityFailed,
-                format!(
-                    "Google Drive range download body length mismatch: \
-                     requested {length} bytes at offset {offset}, got {actual_len} bytes"
-                ),
-            ));
-        }
-
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent).map_err(|error| {
                 RemoteError::new(
@@ -1899,13 +1878,46 @@ impl RemoteProvider for GoogleDriveProvider<'_> {
                 format!("failed to seek {}: {}", destination.display(), error),
             )
         })?;
-        file.write_all(&body).map_err(|error| {
-            RemoteError::new(
+
+        // Stream the body straight to disk as it arrives instead of buffering
+        // the whole chunk with `response.bytes()`. The buffered call imposed
+        // one total-body deadline per 8 MiB chunk; streaming makes the client
+        // timeout a per-read idle timeout so slow links make progress, and an
+        // interruption leaves the received bytes durable for sub-chunk resume
+        // (issue #205).
+        let written = crate::remote::net_policy::stream_response_body(&mut response, &mut file)
+            .map_err(|error| {
+                RemoteError::new(
+                    RemoteErrorKind::NetworkUnavailable,
+                    format!("failed to stream Google Drive range response: {error}"),
+                )
+            })?;
+
+        // Validate body length. For a 206 the body must be exactly `length`
+        // bytes; for a 200 full-body fallback (offset == 0 only) it must be at
+        // least `length`. A truncated transfer is a transport failure, not
+        // corruption, so it stays retryable and the partial bytes on disk are
+        // preserved for resume.
+        if status == reqwest::StatusCode::PARTIAL_CONTENT {
+            if written != length {
+                return Err(RemoteError::new(
+                    RemoteErrorKind::NetworkUnavailable,
+                    format!(
+                        "Google Drive range download body length mismatch: \
+                         requested {length} bytes at offset {offset}, got {written} bytes"
+                    ),
+                ));
+            }
+        } else if written < length {
+            return Err(RemoteError::new(
                 RemoteErrorKind::NetworkUnavailable,
-                format!("failed to write {}: {}", destination.display(), error),
-            )
-        })?;
-        Ok(actual_len)
+                format!(
+                    "Google Drive full-body response shorter than requested range: \
+                     requested {length} bytes, got {written} bytes"
+                ),
+            ));
+        }
+        Ok(written)
     }
 }
 

@@ -16,7 +16,7 @@ use reqwest::{
 };
 use std::{
     fs::{self, OpenOptions},
-    io::{Seek, SeekFrom, Write},
+    io::{Seek, SeekFrom},
     path::Path,
 };
 
@@ -231,7 +231,7 @@ pub(crate) fn download_webdav_file(
     username: &str,
     password: &str,
 ) -> CommandResult<Option<String>> {
-    let response = webdav_send(client, Method::GET, url, username, password, None, None)?;
+    let mut response = webdav_send(client, Method::GET, url, username, password, None, None)?;
     if response.status() == StatusCode::NOT_FOUND {
         return Ok(None);
     }
@@ -254,21 +254,20 @@ pub(crate) fn download_webdav_file(
         .get(ETAG)
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned);
-    let bytes = response.bytes().map_err(|error| {
-        CommandError::from(LibraryError::Internal(format!(
-            "failed to read WebDAV response: {error}"
-        )))
-    })?;
+    // Stream the body to disk as it arrives instead of buffering the whole
+    // file with `response.bytes()`. The buffered call imposed a single
+    // total-body deadline; streaming makes the client timeout a per-read idle
+    // timeout, so slow-but-steady links complete instead of failing at the
+    // deadline (issue #205).
     let mut file = fs::File::create(destination).map_err(|error| {
         CommandError::from(LibraryError::Internal(format!(
             "failed to create {}: {error}",
             destination.display()
         )))
     })?;
-    file.write_all(bytes.as_ref()).map_err(|error| {
+    crate::remote::net_policy::stream_response_body(&mut response, &mut file).map_err(|error| {
         CommandError::from(LibraryError::Internal(format!(
-            "failed to write {}: {error}",
-            destination.display()
+            "failed to stream WebDAV response: {error}"
         )))
     })?;
     Ok(etag)
@@ -1076,7 +1075,7 @@ impl RemoteProvider for WebDAVProvider<'_> {
             })?;
         let range_header = format!("bytes={offset}-{end}");
 
-        let response = client
+        let mut response = client
             .request(Method::GET, &url)
             .basic_auth(&self.secret.username, Some(&self.secret.password))
             .header("Range", &range_header)
@@ -1129,37 +1128,6 @@ impl RemoteProvider for WebDAVProvider<'_> {
             crate::remote::errors::verify_content_range(cr_str, offset, length)?;
         }
 
-        let bytes = response.bytes().map_err(|error| {
-            RemoteError::new(
-                RemoteErrorKind::NetworkUnavailable,
-                format!("failed to read WebDAV range response: {error}"),
-            )
-        })?;
-
-        // Validate body length. For a 206 response, the body must be exactly
-        // `length` bytes. For a 200 full-body response (offset == 0 only),
-        // the body must be at least `length` bytes.
-        let actual_len = bytes.len() as u64;
-        if status == StatusCode::PARTIAL_CONTENT {
-            if actual_len != length {
-                return Err(RemoteError::new(
-                    RemoteErrorKind::RemoteIntegrityFailed,
-                    format!(
-                        "WebDAV range download body length mismatch: \
-                         requested {length} bytes at offset {offset}, got {actual_len} bytes"
-                    ),
-                ));
-            }
-        } else if actual_len < length {
-            return Err(RemoteError::new(
-                RemoteErrorKind::RemoteIntegrityFailed,
-                format!(
-                    "WebDAV full-body response shorter than requested range: \
-                     requested {length} bytes, got {actual_len} bytes"
-                ),
-            ));
-        }
-
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent).map_err(|error| {
                 RemoteError::new(
@@ -1190,22 +1158,47 @@ impl RemoteProvider for WebDAVProvider<'_> {
             )
         })?;
 
-        // For a 206 response, write the partial body. For a 200 full-body
-        // response (offset == 0 only), write only the requested `length`
-        // bytes.
-        let to_write: &[u8] = if status == StatusCode::PARTIAL_CONTENT {
-            bytes.as_ref()
-        } else {
-            // Full-body response (offset == 0): slice to the requested length.
-            &bytes[..(length as usize).min(bytes.len())]
-        };
-        let written = to_write.len() as u64;
-        file.write_all(to_write).map_err(|error| {
-            RemoteError::new(
+        // Stream the body straight to the destination as it arrives instead of
+        // buffering the whole chunk with `response.bytes()`. The buffered call
+        // imposed one total-body deadline per chunk (an 8 MiB chunk needed
+        // >= 68 KB/s just to finish); streaming makes the client timeout a
+        // per-read idle timeout, so a slow-but-steady link makes progress and
+        // an interruption leaves the bytes received so far durable on disk for
+        // sub-chunk resume (issue #205). For a 206 the body is exactly
+        // `length` bytes; for a 200 full-body fallback (offset == 0 only) the
+        // whole file arrives and is written from the start.
+        let written = crate::remote::net_policy::stream_response_body(&mut response, &mut file)
+            .map_err(|error| {
+                RemoteError::new(
+                    RemoteErrorKind::NetworkUnavailable,
+                    format!("failed to stream WebDAV range response: {error}"),
+                )
+            })?;
+
+        // Validate body length. For a 206 response, the body must be exactly
+        // `length` bytes. For a 200 full-body response (offset == 0 only),
+        // the body must be at least `length` bytes. A truncated transfer is a
+        // transport failure, not corruption, so it stays retryable and the
+        // partial bytes on disk are preserved for resume.
+        if status == StatusCode::PARTIAL_CONTENT {
+            if written != length {
+                return Err(RemoteError::new(
+                    RemoteErrorKind::NetworkUnavailable,
+                    format!(
+                        "WebDAV range download body length mismatch: \
+                         requested {length} bytes at offset {offset}, got {written} bytes"
+                    ),
+                ));
+            }
+        } else if written < length {
+            return Err(RemoteError::new(
                 RemoteErrorKind::NetworkUnavailable,
-                format!("failed to write {}: {error}", destination.display()),
-            )
-        })?;
+                format!(
+                    "WebDAV full-body response shorter than requested range: \
+                     requested {length} bytes, got {written} bytes"
+                ),
+            ));
+        }
 
         Ok(written)
     }
@@ -1663,5 +1656,32 @@ mod tests {
         assert!(error.message.contains("not an OpenKara remote repository"));
         assert!(!server.directory_exists("/MovedOpenKara/"));
         assert!(server.file("/MovedOpenKara/openkara.db").is_none());
+    }
+
+    #[test]
+    fn download_webdav_file_streams_full_body_to_disk() {
+        // Regression for issue #205: the full-file download now streams the
+        // body to disk instead of buffering it with `response.bytes()`. Verify
+        // the streamed file matches the source byte-for-byte through the real
+        // provider helper.
+        let server = TestWebDavServer::start();
+        let client = webdav_client().unwrap();
+        let url = join_url(&server.base_url, "song.bin").unwrap();
+        let body: Vec<u8> = (0..200_000).map(|i| (i % 256) as u8).collect();
+        upload_webdav_bytes(&client, &url, body.clone(), "openkara", "secret").unwrap();
+
+        let dest_dir = tempdir().unwrap();
+        let dest_path = dest_dir.path().join("nested/out.bin");
+        let etag = download_webdav_file(&client, &url, &dest_path, "openkara", "secret").unwrap();
+
+        assert!(
+            etag.is_some(),
+            "ETag surfaced from headers before streaming"
+        );
+        assert_eq!(
+            std::fs::read(&dest_path).unwrap(),
+            body,
+            "streamed file matches"
+        );
     }
 }
