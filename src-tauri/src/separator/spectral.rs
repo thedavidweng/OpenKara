@@ -268,6 +268,16 @@ impl SpectralPlans {
     ///
     /// Panics if `x.len() != channels * samples`.
     pub fn spec(&mut self, x: &[f32], channels: usize, samples: usize) -> Vec<f32> {
+        let mut out = Vec::new();
+        self.spec_into(x, channels, samples, &mut out);
+        out
+    }
+
+    /// [`Self::spec`] into a caller-owned buffer: `out` is cleared and
+    /// resized to `channels · 2 · CONTRACT_FREQS · le`, so a buffer reused
+    /// across same-size calls performs no steady-state allocation
+    /// (issue #172 PR 3).
+    pub fn spec_into(&mut self, x: &[f32], channels: usize, samples: usize, out: &mut Vec<f32>) {
         assert_eq!(
             x.len(),
             channels * samples,
@@ -277,7 +287,8 @@ impl SpectralPlans {
         let pad_r = OUTER_PAD + le * HOP - samples;
         let t = le;
         let norm = Self::norm();
-        let mut out = vec![0.0f32; channels * 2 * CONTRACT_FREQS * t];
+        out.clear();
+        out.resize(channels * 2 * CONTRACT_FREQS * t, 0.0f32);
 
         for c in 0..channels {
             let chan = &x[c * samples..(c + 1) * samples];
@@ -318,7 +329,6 @@ impl SpectralPlans {
                 }
             }
         }
-        out
     }
 
     /// Inverse transform: spectral tensor `[C, 2, CONTRACT_FREQS, T]` → waveform
@@ -334,6 +344,15 @@ impl SpectralPlans {
     ///
     /// Panics if `z.len()` is not a multiple of `channels · 2 · CONTRACT_FREQS`.
     pub fn ispec(&mut self, z: &[f32], channels: usize, length: usize) -> Vec<f32> {
+        let mut out = Vec::new();
+        self.ispec_into(z, channels, length, &mut out);
+        out
+    }
+
+    /// [`Self::ispec`] into a caller-owned buffer: `out` is cleared and
+    /// resized to `channels · length`, so a buffer reused across same-size
+    /// calls performs no steady-state allocation (issue #172 PR 3).
+    pub fn ispec_into(&mut self, z: &[f32], channels: usize, length: usize, out: &mut Vec<f32>) {
         let per_chan = 2 * CONTRACT_FREQS;
         assert_eq!(
             z.len() % (channels * per_chan),
@@ -345,7 +364,8 @@ impl SpectralPlans {
         let out_len_full = N_FFT + HOP * (n_frames - 1);
         let norm = Self::norm();
         let front = N_FFT / 2;
-        let mut out = vec![0.0f32; channels * length];
+        out.clear();
+        out.resize(channels * length, 0.0f32);
 
         for c in 0..channels {
             self.signal.clear();
@@ -404,13 +424,41 @@ impl SpectralPlans {
                 out[c * length + k] = (self.signal[idx] / env) as f32;
             }
         }
-        out
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn into_variants_match_allocating_apis_and_reuse_buffers() {
+        let mut plans = SpectralPlans::new();
+        let samples = 10_240;
+        let x: Vec<f32> = (0..CHANNELS * samples)
+            .map(|i| ((i as f32 * 0.37).sin()) * 0.1)
+            .collect();
+
+        let z = plans.spec(&x, CHANNELS, samples);
+        let y = plans.ispec(&z, CHANNELS, samples);
+
+        let mut z_buf = Vec::new();
+        let mut y_buf = Vec::new();
+        plans.spec_into(&x, CHANNELS, samples, &mut z_buf);
+        plans.ispec_into(&z_buf, CHANNELS, samples, &mut y_buf);
+        assert_eq!(z, z_buf, "spec_into must match spec exactly");
+        assert_eq!(y, y_buf, "ispec_into must match ispec exactly");
+
+        // Same-size reuse performs no reallocation (issue #172 PR 3).
+        let z_ptr = z_buf.as_ptr();
+        let y_ptr = y_buf.as_ptr();
+        plans.spec_into(&x, CHANNELS, samples, &mut z_buf);
+        plans.ispec_into(&z_buf, CHANNELS, samples, &mut y_buf);
+        assert_eq!(z_buf.as_ptr(), z_ptr, "spec_into reallocated its buffer");
+        assert_eq!(y_buf.as_ptr(), y_ptr, "ispec_into reallocated its buffer");
+        assert_eq!(z, z_buf);
+        assert_eq!(y, y_buf);
+    }
 
     #[test]
     fn window_is_periodic_hann() {

@@ -343,11 +343,12 @@ pub fn separate_streaming(
                 iface.segment_frames,
                 chunk_size
             );
-            // The transform plans/scratch are created once per run and
-            // reused across every chunk. Both stem modes are supported:
-            // the core always exposes four sources; TwoStem pre-mixes the
+            // The transform plans and every chunk-loop buffer are created
+            // once per run and reused across every chunk (fixed working
+            // memory per chunk). Both stem modes are supported: the core
+            // always exposes four sources; TwoStem pre-mixes the
             // accompaniment in the spectral domain.
-            spectral_path = Some((iface, crate::separator::spectral::SpectralPlans::new()));
+            spectral_path = Some((iface, spectral_session::SpectralSessionState::new()));
         }
         TensorInterface::Waveform => {
             let contract = detect_output_contract(model, channels)?;
@@ -393,11 +394,11 @@ pub fn separate_streaming(
 
         // 2-4. Run inference and feed the OLA rings, on the path selected by
         // the model's declared tensor interface.
-        if let Some((iface, plans)) = spectral_path.as_mut() {
+        if let Some((iface, state)) = spectral_path.as_mut() {
             spectral_session::process_spectral_chunk(
                 model,
                 iface,
-                plans,
+                state,
                 workspace,
                 writers,
                 stem_mode,
