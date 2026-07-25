@@ -57,6 +57,7 @@ tar = "0.4"
 httpdate = "1.0.3"
 tokio = { version = "1.53", features = ["sync"] }
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
+realfft = "3.5.0"
 
 [dev-dependencies]
 filetime = "0.2.29"

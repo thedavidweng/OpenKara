@@ -1,0 +1,218 @@
+{
+  "contract_version": "openkara.spectral-contract/v1",
+  "distribution": "release assets, tag spectral-golden-v1",
+  "fixtures": {
+    "bandlimited-noise-10240": {
+      "input": {
+        "dtype": "float32",
+        "sha256": "ede91dda64f432271f8ce0f58f5bd15b6ce326128499a5af90489cad6161d048",
+        "shape": [
+          1,
+          2,
+          10240
+        ]
+      },
+      "magnitude": {
+        "dtype": "float32",
+        "sha256": "79ce297b0433876976d6d5064b38a1aa015e093eade58e031cb2e764b42143a1",
+        "shape": [
+          1,
+          4,
+          2048,
+          10
+        ]
+      },
+      "roundtrip": {
+        "dtype": "float32",
+        "sha256": "f5577a5095e803929959a79a459500d452e5198aaf4717801e51c0a0be790557",
+        "shape": [
+          1,
+          2,
+          10240
+        ]
+      },
+      "spectral": {
+        "dtype": "float32",
+        "sha256": "79ce297b0433876976d6d5064b38a1aa015e093eade58e031cb2e764b42143a1",
+        "shape": [
+          1,
+          2,
+          2,
+          2048,
+          10
+        ]
+      }
+    },
+    "impulse-10240": {
+      "input": {
+        "dtype": "float32",
+        "sha256": "54fa645b1da58cc5cbe2edfca5d6324cd50427e7194caf22704c6bbf2fed91c2",
+        "shape": [
+          1,
+          2,
+          10240
+        ]
+      },
+      "magnitude": {
+        "dtype": "float32",
+        "sha256": "e92f024d782a3ec5faa7b1533944c2d96a3fc0e5681c4a16ba37790b539f69e6",
+        "shape": [
+          1,
+          4,
+          2048,
+          10
+        ]
+      },
+      "roundtrip": {
+        "dtype": "float32",
+        "sha256": "099831736e3388009cc295322f0a598c0faf31a186795488e2bf12cd366c2f53",
+        "shape": [
+          1,
+          2,
+          10240
+        ]
+      },
+      "spectral": {
+        "dtype": "float32",
+        "sha256": "e92f024d782a3ec5faa7b1533944c2d96a3fc0e5681c4a16ba37790b539f69e6",
+        "shape": [
+          1,
+          2,
+          2,
+          2048,
+          10
+        ]
+      }
+    },
+    "silence-10240": {
+      "input": {
+        "dtype": "float32",
+        "sha256": "fa569e2360c540e6280e34a4627516770f1a5f34d81d35689334a99cc1013357",
+        "shape": [
+          1,
+          2,
+          10240
+        ]
+      },
+      "magnitude": {
+        "dtype": "float32",
+        "sha256": "dae4d3dce1bb0a9414f61a65ee07622fa225ec01e6efe6df6e78f9ad5c58480d",
+        "shape": [
+          1,
+          4,
+          2048,
+          10
+        ]
+      },
+      "roundtrip": {
+        "dtype": "float32",
+        "sha256": "fa569e2360c540e6280e34a4627516770f1a5f34d81d35689334a99cc1013357",
+        "shape": [
+          1,
+          2,
+          10240
+        ]
+      },
+      "spectral": {
+        "dtype": "float32",
+        "sha256": "dae4d3dce1bb0a9414f61a65ee07622fa225ec01e6efe6df6e78f9ad5c58480d",
+        "shape": [
+          1,
+          2,
+          2,
+          2048,
+          10
+        ]
+      }
+    },
+    "sweep-10000": {
+      "input": {
+        "dtype": "float32",
+        "sha256": "3545048e66c7d280de4ddb7d11c2a9a24827ea43ef65bd26d5d33be0cacd5def",
+        "shape": [
+          1,
+          2,
+          10000
+        ]
+      },
+      "magnitude": {
+        "dtype": "float32",
+        "sha256": "ef51642a6f3004d52a626220144568ab1d42323f33bb56dd40166350c274a010",
+        "shape": [
+          1,
+          4,
+          2048,
+          10
+        ]
+      },
+      "roundtrip": {
+        "dtype": "float32",
+        "sha256": "e12ca92388650f8f6046785ebe99d4b4ee0f636ca0dbc9af34e212734226524f",
+        "shape": [
+          1,
+          2,
+          10000
+        ]
+      },
+      "spectral": {
+        "dtype": "float32",
+        "sha256": "ef51642a6f3004d52a626220144568ab1d42323f33bb56dd40166350c274a010",
+        "shape": [
+          1,
+          2,
+          2,
+          2048,
+          10
+        ]
+      }
+    },
+    "tone440-10240": {
+      "input": {
+        "dtype": "float32",
+        "sha256": "5e017914daefac1983ac775ba1bb0e7686fc7ce32b5595fd7e930f37a793cb0d",
+        "shape": [
+          1,
+          2,
+          10240
+        ]
+      },
+      "magnitude": {
+        "dtype": "float32",
+        "sha256": "6df8cfb4db3ea96881c842a0376bb2d3dcb19da8b1e7028db6b0bb92eef225b7",
+        "shape": [
+          1,
+          4,
+          2048,
+          10
+        ]
+      },
+      "roundtrip": {
+        "dtype": "float32",
+        "sha256": "3c030df5148fd23f27fba9243b932213ad3cba3a09b78a7b13a6c482ab0cc071",
+        "shape": [
+          1,
+          2,
+          10240
+        ]
+      },
+      "spectral": {
+        "dtype": "float32",
+        "sha256": "6df8cfb4db3ea96881c842a0376bb2d3dcb19da8b1e7028db6b0bb92eef225b7",
+        "shape": [
+          1,
+          2,
+          2,
+          2048,
+          10
+        ]
+      }
+    }
+  },
+  "generator": "scripts/generate_spectral_golden_vectors.py",
+  "reference": "scripts/spectral_reference.py",
+  "schema_version": "openkara.spectral-golden/v1",
+  "tolerances": {
+    "fp32_implementation_max_abs": 0.001,
+    "fp64_implementation_max_abs": 1e-06
+  }
+}
