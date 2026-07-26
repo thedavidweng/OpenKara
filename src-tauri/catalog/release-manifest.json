@@ -50,28 +50,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
-            "size": 439,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+            "sha256": "e6c4bb64747533778b256f19a6e75ac40243587bb0a8d1e634411d210da84af3",
+            "size": 454,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
-            "size": 6386,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+            "sha256": "be27f17a4fb9fae9f2bd0b0dea56c77e5b06d5e20d3940ec2fc197d7ea817284",
+            "size": 6401,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "sha256": "4fd9edf1563b68b44b80c16e8babf5802c654602111cce110aca682022dad101",
             "size": 12252,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/sbom.spdx.json"
           }
         },
         "target_triple": null,
@@ -129,28 +129,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
-            "size": 439,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+            "sha256": "e6c4bb64747533778b256f19a6e75ac40243587bb0a8d1e634411d210da84af3",
+            "size": 454,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
-            "size": 6386,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+            "sha256": "be27f17a4fb9fae9f2bd0b0dea56c77e5b06d5e20d3940ec2fc197d7ea817284",
+            "size": 6401,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "sha256": "4fd9edf1563b68b44b80c16e8babf5802c654602111cce110aca682022dad101",
             "size": 12252,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/sbom.spdx.json"
           }
         },
         "target_triple": null,
@@ -208,28 +208,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
-            "size": 439,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+            "sha256": "e6c4bb64747533778b256f19a6e75ac40243587bb0a8d1e634411d210da84af3",
+            "size": 454,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
-            "size": 6386,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+            "sha256": "be27f17a4fb9fae9f2bd0b0dea56c77e5b06d5e20d3940ec2fc197d7ea817284",
+            "size": 6401,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "sha256": "4fd9edf1563b68b44b80c16e8babf5802c654602111cce110aca682022dad101",
             "size": 12252,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/sbom.spdx.json"
           }
         },
         "target_triple": null,
@@ -287,28 +287,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
-            "size": 439,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+            "sha256": "e6c4bb64747533778b256f19a6e75ac40243587bb0a8d1e634411d210da84af3",
+            "size": 454,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
-            "size": 6386,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+            "sha256": "be27f17a4fb9fae9f2bd0b0dea56c77e5b06d5e20d3940ec2fc197d7ea817284",
+            "size": 6401,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "sha256": "4fd9edf1563b68b44b80c16e8babf5802c654602111cce110aca682022dad101",
             "size": 12252,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/sbom.spdx.json"
           }
         },
         "target_triple": null,
@@ -366,28 +366,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
-            "size": 439,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+            "sha256": "e6c4bb64747533778b256f19a6e75ac40243587bb0a8d1e634411d210da84af3",
+            "size": 454,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
-            "size": 6386,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+            "sha256": "be27f17a4fb9fae9f2bd0b0dea56c77e5b06d5e20d3940ec2fc197d7ea817284",
+            "size": 6401,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "sha256": "4fd9edf1563b68b44b80c16e8babf5802c654602111cce110aca682022dad101",
             "size": 12252,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/sbom.spdx.json"
           }
         },
         "target_triple": null,
@@ -449,28 +449,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
-            "size": 439,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+            "sha256": "e6c4bb64747533778b256f19a6e75ac40243587bb0a8d1e634411d210da84af3",
+            "size": 454,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
-            "size": 6386,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+            "sha256": "be27f17a4fb9fae9f2bd0b0dea56c77e5b06d5e20d3940ec2fc197d7ea817284",
+            "size": 6401,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "sha256": "4fd9edf1563b68b44b80c16e8babf5802c654602111cce110aca682022dad101",
             "size": 12252,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/sbom.spdx.json"
           }
         },
         "target_triple": null,
@@ -532,28 +532,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
-            "size": 439,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+            "sha256": "e6c4bb64747533778b256f19a6e75ac40243587bb0a8d1e634411d210da84af3",
+            "size": 454,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
-            "size": 6386,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+            "sha256": "be27f17a4fb9fae9f2bd0b0dea56c77e5b06d5e20d3940ec2fc197d7ea817284",
+            "size": 6401,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "sha256": "4fd9edf1563b68b44b80c16e8babf5802c654602111cce110aca682022dad101",
             "size": 12252,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/sbom.spdx.json"
           }
         },
         "target_triple": null,
@@ -585,6 +585,10 @@
           "NOTICE.onnxruntime": {
             "sha256": "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2",
             "size": 325054
+          },
+          "build-manifest.json": {
+            "sha256": "20213252f1b3d0103b3c50d3b38b2f68b6535a3ecfbdb08c656c33ce4bef759d",
+            "size": 2943
           },
           "libonnxruntime.dylib": {
             "sha256": "332aa721a30ed8eb90b61008f0b2ff159432f28859560f3011bfe51b29687a37",
@@ -627,28 +631,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
-            "size": 439,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+            "sha256": "e6c4bb64747533778b256f19a6e75ac40243587bb0a8d1e634411d210da84af3",
+            "size": 454,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
-            "size": 6386,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+            "sha256": "be27f17a4fb9fae9f2bd0b0dea56c77e5b06d5e20d3940ec2fc197d7ea817284",
+            "size": 6401,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "sha256": "4fd9edf1563b68b44b80c16e8babf5802c654602111cce110aca682022dad101",
             "size": 12252,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/sbom.spdx.json"
           }
         },
         "target_triple": "aarch64-apple-darwin",
@@ -706,6 +710,10 @@
             "sha256": "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2",
             "size": 325054
           },
+          "build-manifest.json": {
+            "sha256": "9e973dcbf4f206fcc75d2cb82be6b3a5cf10fc9d52863a57eba952c462d37598",
+            "size": 2950
+          },
           "libonnxruntime.so": {
             "sha256": "c38c070160c8b2d0d9c31d6df9fa24c38bf2ec10da358536706d0f2de826188c",
             "size": 27813272
@@ -747,28 +755,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
-            "size": 439,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+            "sha256": "e6c4bb64747533778b256f19a6e75ac40243587bb0a8d1e634411d210da84af3",
+            "size": 454,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
-            "size": 6386,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+            "sha256": "be27f17a4fb9fae9f2bd0b0dea56c77e5b06d5e20d3940ec2fc197d7ea817284",
+            "size": 6401,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "sha256": "4fd9edf1563b68b44b80c16e8babf5802c654602111cce110aca682022dad101",
             "size": 12252,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/sbom.spdx.json"
           }
         },
         "target_triple": "aarch64-unknown-linux-gnu",
@@ -824,6 +832,10 @@
             "sha256": "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2",
             "size": 325054
           },
+          "build-manifest.json": {
+            "sha256": "8ce396f5259bb6d6ccada982d2567ff2ee694c424b393775bbef7e06117ede5c",
+            "size": 2942
+          },
           "libonnxruntime.dylib": {
             "sha256": "ca95fb28e298da6d95798866094844a79edf9dad5c065306cde76f2b044389ee",
             "size": 26336864
@@ -865,28 +877,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
-            "size": 439,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+            "sha256": "e6c4bb64747533778b256f19a6e75ac40243587bb0a8d1e634411d210da84af3",
+            "size": 454,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
-            "size": 6386,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+            "sha256": "be27f17a4fb9fae9f2bd0b0dea56c77e5b06d5e20d3940ec2fc197d7ea817284",
+            "size": 6401,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "sha256": "4fd9edf1563b68b44b80c16e8babf5802c654602111cce110aca682022dad101",
             "size": 12252,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/sbom.spdx.json"
           }
         },
         "target_triple": "x86_64-apple-darwin",
@@ -944,6 +956,10 @@
             "sha256": "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2",
             "size": 325054
           },
+          "build-manifest.json": {
+            "sha256": "c072e61ca3d874d5507e4d07888baa21fd51988c7b9cdbff9ae42ae09e917c0d",
+            "size": 2947
+          },
           "libonnxruntime.so": {
             "sha256": "ce079c3ef9524c90935f894ca21a5e8508886817640a740f1c0a1f5f2d504aef",
             "size": 29579640
@@ -985,28 +1001,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
-            "size": 439,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+            "sha256": "e6c4bb64747533778b256f19a6e75ac40243587bb0a8d1e634411d210da84af3",
+            "size": 454,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
-            "size": 6386,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+            "sha256": "be27f17a4fb9fae9f2bd0b0dea56c77e5b06d5e20d3940ec2fc197d7ea817284",
+            "size": 6401,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "sha256": "4fd9edf1563b68b44b80c16e8babf5802c654602111cce110aca682022dad101",
             "size": 12252,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/sbom.spdx.json"
           }
         },
         "target_triple": "x86_64-unknown-linux-gnu",
@@ -1066,6 +1082,10 @@
             "sha256": "fb0af774b4d7cffc5b9d046f2aaeade2f37df2f80abf8033c95dfffcc77a8866",
             "size": 331175
           },
+          "build-manifest.json": {
+            "sha256": "a61fc3fc2e4580bd8534877b2d364adae61ec19d3caa238775aa5f6b3914ef80",
+            "size": 3128
+          },
           "onnxruntime.dll": {
             "sha256": "6249692f5f3f197aeaab4b931951d03f057a9b27c6457151ed72d4aefb3cf526",
             "size": 20709888
@@ -1109,28 +1129,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
-            "size": 439,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+            "sha256": "e6c4bb64747533778b256f19a6e75ac40243587bb0a8d1e634411d210da84af3",
+            "size": 454,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
-            "size": 6386,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+            "sha256": "be27f17a4fb9fae9f2bd0b0dea56c77e5b06d5e20d3940ec2fc197d7ea817284",
+            "size": 6401,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "sha256": "4fd9edf1563b68b44b80c16e8babf5802c654602111cce110aca682022dad101",
             "size": 12252,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/sbom.spdx.json"
           }
         },
         "target_triple": "x86_64-pc-windows-msvc",
@@ -1188,6 +1208,10 @@
             "sha256": "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2",
             "size": 325054
           },
+          "build-manifest.json": {
+            "sha256": "5d784a052e810573e57c0e2b4ce058747fa0e186b26b781395fb66c7c8afd966",
+            "size": 3104
+          },
           "libonnxruntime.dylib": {
             "sha256": "61a34aba2f826ffa1f78f52e6e6af1259f8308d6904377fad15d5304b2793879",
             "size": 22925176
@@ -1224,28 +1248,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
-            "size": 439,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+            "sha256": "e6c4bb64747533778b256f19a6e75ac40243587bb0a8d1e634411d210da84af3",
+            "size": 454,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
-            "size": 6386,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+            "sha256": "be27f17a4fb9fae9f2bd0b0dea56c77e5b06d5e20d3940ec2fc197d7ea817284",
+            "size": 6401,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "sha256": "4fd9edf1563b68b44b80c16e8babf5802c654602111cce110aca682022dad101",
             "size": 12252,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/sbom.spdx.json"
           }
         },
         "target_triple": "aarch64-apple-darwin",
@@ -1303,6 +1327,10 @@
             "sha256": "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2",
             "size": 325054
           },
+          "build-manifest.json": {
+            "sha256": "d5b57b54cf46359e95beb818859f27bdd102cafdd49dccfa39aa701ea7c30ed4",
+            "size": 3111
+          },
           "libonnxruntime.so": {
             "sha256": "b858ec824ae99953015310527ddfb44f53830bd2846681e895c8197895b6febb",
             "size": 25884920
@@ -1339,28 +1367,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
-            "size": 439,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+            "sha256": "e6c4bb64747533778b256f19a6e75ac40243587bb0a8d1e634411d210da84af3",
+            "size": 454,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
-            "size": 6386,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+            "sha256": "be27f17a4fb9fae9f2bd0b0dea56c77e5b06d5e20d3940ec2fc197d7ea817284",
+            "size": 6401,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "sha256": "4fd9edf1563b68b44b80c16e8babf5802c654602111cce110aca682022dad101",
             "size": 12252,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/sbom.spdx.json"
           }
         },
         "target_triple": "aarch64-unknown-linux-gnu",
@@ -1417,6 +1445,10 @@
             "sha256": "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2",
             "size": 325054
           },
+          "build-manifest.json": {
+            "sha256": "541b1c585817928df1eb9c806909524cb3a153662d9b296714ce25d0db71bb54",
+            "size": 3103
+          },
           "libonnxruntime.dylib": {
             "sha256": "a74be41b0d70ca0410f81fde12b8517834afc7be3881c43774ff289215e590c2",
             "size": 24391440
@@ -1453,28 +1485,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
-            "size": 439,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+            "sha256": "e6c4bb64747533778b256f19a6e75ac40243587bb0a8d1e634411d210da84af3",
+            "size": 454,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
-            "size": 6386,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+            "sha256": "be27f17a4fb9fae9f2bd0b0dea56c77e5b06d5e20d3940ec2fc197d7ea817284",
+            "size": 6401,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "sha256": "4fd9edf1563b68b44b80c16e8babf5802c654602111cce110aca682022dad101",
             "size": 12252,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/sbom.spdx.json"
           }
         },
         "target_triple": "x86_64-apple-darwin",
@@ -1532,6 +1564,10 @@
             "sha256": "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2",
             "size": 325054
           },
+          "build-manifest.json": {
+            "sha256": "26db7f479fdf17b2f018359da422bbeaed434cc18b2fa8edcf5852da9c2a4608",
+            "size": 3108
+          },
           "libonnxruntime.so": {
             "sha256": "4c70160469b56613775d1e27274d86876760a90d123c65d9a06b1c8e0336fffe",
             "size": 27580480
@@ -1568,28 +1604,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
-            "size": 439,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+            "sha256": "e6c4bb64747533778b256f19a6e75ac40243587bb0a8d1e634411d210da84af3",
+            "size": 454,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
-            "size": 6386,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+            "sha256": "be27f17a4fb9fae9f2bd0b0dea56c77e5b06d5e20d3940ec2fc197d7ea817284",
+            "size": 6401,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "sha256": "4fd9edf1563b68b44b80c16e8babf5802c654602111cce110aca682022dad101",
             "size": 12252,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/sbom.spdx.json"
           }
         },
         "target_triple": "x86_64-unknown-linux-gnu",
@@ -1650,6 +1686,10 @@
             "sha256": "fb0af774b4d7cffc5b9d046f2aaeade2f37df2f80abf8033c95dfffcc77a8866",
             "size": 331175
           },
+          "build-manifest.json": {
+            "sha256": "a71ef73c119f12e53aadabd5673223570823b83114ddd8376c592bbd5395999e",
+            "size": 3289
+          },
           "onnxruntime.dll": {
             "sha256": "7b1960d0e35af898592334c872b9aa8b953035030ecfeba94067a36904b564f9",
             "size": 19783680
@@ -1688,28 +1728,28 @@
             "kind": "license-file",
             "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
             "size": 1061,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/LICENSE"
           },
           "notice": {
             "digest_algorithm": "sha256",
             "kind": "notice-file",
-            "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
-            "size": 439,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+            "sha256": "e6c4bb64747533778b256f19a6e75ac40243587bb0a8d1e634411d210da84af3",
+            "size": 454,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/NOTICE"
           },
           "provenance": {
             "digest_algorithm": "sha256",
             "kind": "commit-provenance",
-            "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
-            "size": 6386,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+            "sha256": "be27f17a4fb9fae9f2bd0b0dea56c77e5b06d5e20d3940ec2fc197d7ea817284",
+            "size": 6401,
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/provenance.json"
           },
           "sbom": {
             "digest_algorithm": "sha256",
             "kind": "spdx-json",
-            "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+            "sha256": "4fd9edf1563b68b44b80c16e8babf5802c654602111cce110aca682022dad101",
             "size": 12252,
-            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+            "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/sbom.spdx.json"
           }
         },
         "target_triple": "x86_64-pc-windows-msvc",
@@ -2382,17 +2422,17 @@
       "target_triple": "x86_64-pc-windows-msvc"
     }
   ],
-  "created_at": "2026-07-25T15:30:00Z",
-  "generation": 9,
+  "created_at": "2026-07-26T03:30:00Z",
+  "generation": 10,
   "minimum_consumer_schema": "openkara.catalog/release-v1",
-  "notes": "Generation 9: adds five spectral operator-set reduced ONNX Runtime builds (23 ops / 2 domains, ort v1.27.1, produced by ort-publish.yml run 30174230398, artifact ids onnxruntime-1.27.1-openkara-<target>-reduced) covering the same five targets as the full runtimes. The reduced operator set is generated from the spectral-core graphs, so only the two spectral models (htdemucs.spectral.fp32.onnx, htdemucs_ft.spectral.fp32.onnx) declare them as compatible; the reduced builds are deliberately NOT wired to any waveform graph because their operator coverage is not guaranteed for waveform models. The five full-operator runtimes and all five waveform model artifacts (htdemucs.balanced.fp32.onnx, htdemucs_ft.quality.fp32.onnx, htdemucs_ft.quality.fp32.dedup.onnx, htdemucs.dual.fp32.onnx.tar.gz, htdemucs_ft.dual.fp32.onnx.tar.gz) are deprecated with sunset_generation 11; each waveform model points at the same-variant spectral-core replacement and each full runtime points at its -reduced replacement. Spectral model artifact bytes are unchanged from generation 8. This generation is published to the CANDIDATE channel and awaits OpenKara cross-target validation of the reduced runtimes before the stable switch.",
+  "notes": "Generation 10: re-declares every packed member of the ten published ONNX Runtime archives. extracted_file_digests came from each build manifest's own files map, which cannot list the manifest itself, so gen-7 full and gen-9 reduced archives alike under-declared build-manifest.json and a consumer verifying the extracted tree against the declaration refused the package (OpenKara#236). The archives, their archive_digest values, byte sizes, models, and compatibility matrix are unchanged and re-verified byte-for-byte against the published assets; only the runtime file declarations gain the missing member. Generator fixed for future publishes in #83.",
   "producer": {
     "commit_sha": "56ecb8b6f7a2067476b95b14e194a3cb5b17fc61",
     "repo": "thedavidweng/openkara-models",
-    "run_id": "30174230398",
-    "workflow": "ort-publish.yml"
+    "run_id": "manual",
+    "workflow": "generate_runtime_catalog_entries.py"
   },
-  "release_id": "2026-07-25-006",
+  "release_id": "2026-07-26-001",
   "schema_version": "openkara.catalog/release-v1",
   "supply_chain": {
     "license": {
@@ -2400,28 +2440,28 @@
       "kind": "license-file",
       "sha256": "02d7a40913647c7755c74e307b822bba33b5c238191658dfbca7c4fc30947d78",
       "size": 1061,
-      "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/LICENSE"
+      "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/LICENSE"
     },
     "notice": {
       "digest_algorithm": "sha256",
       "kind": "notice-file",
-      "sha256": "07dbabf87bfc5f5e5182bbba4c4f7d44b9c05105495db803b0ac1caaeeef67a2",
-      "size": 439,
-      "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/NOTICE"
+      "sha256": "e6c4bb64747533778b256f19a6e75ac40243587bb0a8d1e634411d210da84af3",
+      "size": 454,
+      "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/NOTICE"
     },
     "provenance": {
       "digest_algorithm": "sha256",
       "kind": "commit-provenance",
-      "sha256": "3d80600dcc6058f3b2d272e974d55d1ab764bbc18fcc75981c5e59f3fad46c7c",
-      "size": 6386,
-      "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/provenance.json"
+      "sha256": "be27f17a4fb9fae9f2bd0b0dea56c77e5b06d5e20d3940ec2fc197d7ea817284",
+      "size": 6401,
+      "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/provenance.json"
     },
     "sbom": {
       "digest_algorithm": "sha256",
       "kind": "spdx-json",
-      "sha256": "d04db7d2d970b5b6777398a353e1eeafad4383ec1013099d8376cc608b016f68",
+      "sha256": "4fd9edf1563b68b44b80c16e8babf5802c654602111cce110aca682022dad101",
       "size": 12252,
-      "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-25-006/sbom.spdx.json"
+      "url": "https://github.com/thedavidweng/openkara-models/releases/download/infra-2026-07-26-001/sbom.spdx.json"
     }
   }
 }
