@@ -192,6 +192,12 @@
     "uploadingToRemote": "Publication sur le dépôt distant : {{title}}",
     "modelDownloadComplete": "Téléchargement du modèle terminé"
   },
+  "notifications": {
+    "separationComplete": "Séparation terminée",
+    "separationFailed": "Échec de la séparation",
+    "batchSeparationComplete": "Séparation par lot terminée",
+    "batchSeparationSummary": "{{done}} terminées, {{failed}} en échec"
+  },
   "queue": {
     "title": "File d'attente",
     "upNext": "À suivre",

@@ -190,6 +190,12 @@
     "uploadingToRemote": "Menerbitkan ke repositori jarak jauh: {{title}}",
     "modelDownloadComplete": "Unduhan model selesai"
   },
+  "notifications": {
+    "separationComplete": "Pemisahan selesai",
+    "separationFailed": "Pemisahan gagal",
+    "batchSeparationComplete": "Pemisahan massal selesai",
+    "batchSeparationSummary": "{{done}} selesai, {{failed}} gagal"
+  },
   "queue": {
     "title": "Antrean",
     "upNext": "Berikutnya",

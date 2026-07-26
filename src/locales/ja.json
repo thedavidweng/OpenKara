@@ -190,6 +190,12 @@
     "uploadingToRemote": "リモートリポジトリに公開中: {{title}}",
     "modelDownloadComplete": "モデルのダウンロードが完了しました"
   },
+  "notifications": {
+    "separationComplete": "分離が完了しました",
+    "separationFailed": "分離に失敗しました",
+    "batchSeparationComplete": "一括分離が完了しました",
+    "batchSeparationSummary": "{{done}} 件完了、{{failed}} 件失敗"
+  },
   "queue": {
     "title": "キュー",
     "upNext": "次に再生",

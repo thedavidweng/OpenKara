@@ -192,6 +192,12 @@
     "uploadingToRemote": "Publicando no repositório remoto: {{title}}",
     "modelDownloadComplete": "Download do modelo concluído"
   },
+  "notifications": {
+    "separationComplete": "Separação concluída",
+    "separationFailed": "Falha na separação",
+    "batchSeparationComplete": "Separação em lote concluída",
+    "batchSeparationSummary": "{{done}} concluídas, {{failed}} com falha"
+  },
   "queue": {
     "title": "Fila",
     "upNext": "A seguir",

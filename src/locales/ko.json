@@ -190,6 +190,12 @@
     "uploadingToRemote": "원격 저장소에 게시 중: {{title}}",
     "modelDownloadComplete": "모델 다운로드 완료"
   },
+  "notifications": {
+    "separationComplete": "분리 완료",
+    "separationFailed": "분리 실패",
+    "batchSeparationComplete": "일괄 분리 완료",
+    "batchSeparationSummary": "{{done}}개 완료, {{failed}}개 실패"
+  },
   "queue": {
     "title": "대기열",
     "upNext": "다음 곡",

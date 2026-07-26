@@ -63,6 +63,7 @@ So my no-compromise solution was born: OpenKara uses open-source AI to separate 
 - **Dual Separation Modes** — Choose between 2-stem (vocals + accompaniment) or 4-stem (vocals + drums + bass + other). Upgrade individual songs from 2-stem to 4-stem on demand.
 - **Efficient Stem Storage** — Separated stems are cached compactly to keep library storage practical.
 - **Resumable Separation** — Per-chunk checkpointing means separation resumes from where it left off if the app is closed mid-process.
+- **Background Completion Alerts** — A native notification when a separation finishes while OpenKara is in the background, so minutes of inference do not need watching.
 
 ## OpenMusic Series
 

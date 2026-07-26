@@ -191,6 +191,12 @@
     "uploadingToRemote": "正在发布到远程资料库：{{title}}",
     "modelDownloadComplete": "模型下载完成"
   },
+  "notifications": {
+    "separationComplete": "分离完成",
+    "separationFailed": "分离失败",
+    "batchSeparationComplete": "批量分离完成",
+    "batchSeparationSummary": "{{done}} 首完成，{{failed}} 首失败"
+  },
   "queue": {
     "title": "队列",
     "upNext": "即将播放",

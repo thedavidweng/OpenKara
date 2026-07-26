@@ -192,6 +192,12 @@
     "uploadingToRemote": "Pubblicazione sul repository remoto: {{title}}",
     "modelDownloadComplete": "Download del modello completato"
   },
+  "notifications": {
+    "separationComplete": "Separazione completata",
+    "separationFailed": "Separazione non riuscita",
+    "batchSeparationComplete": "Separazione in blocco completata",
+    "batchSeparationSummary": "{{done}} completate, {{failed}} non riuscite"
+  },
   "queue": {
     "title": "Coda",
     "upNext": "A seguire",

@@ -190,6 +190,12 @@
     "uploadingToRemote": "正在發佈至遠端儲存庫：{{title}}",
     "modelDownloadComplete": "模型下載完成"
   },
+  "notifications": {
+    "separationComplete": "分離完成",
+    "separationFailed": "分離失敗",
+    "batchSeparationComplete": "批次分離完成",
+    "batchSeparationSummary": "{{done}} 首完成，{{failed}} 首失敗"
+  },
   "queue": {
     "title": "佇列",
     "upNext": "即將播放",
