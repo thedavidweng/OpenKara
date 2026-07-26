@@ -17,6 +17,7 @@ function makeSong(overrides: Partial<Song> & { hash: string }): Song {
     duration_ms: 0,
     cover_art: null,
     has_cover_art: false,
+    artwork_thumb_path: null,
     imported_at: 0,
     original_ext: null,
     ...overrides,

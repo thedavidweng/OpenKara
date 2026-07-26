@@ -195,6 +195,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
       <CoverArtThumbnail
         songHash={song.hash}
         coverArt={song.cover_art}
+        thumbnailPath={song.artwork_thumb_path}
         alt={`${getSongDisplayName(song)} cover art`}
         className="h-11 w-11 shrink-0"
       />

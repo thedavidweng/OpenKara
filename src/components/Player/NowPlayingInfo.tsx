@@ -50,6 +50,7 @@ export function NowPlayingInfo({
         <CoverArtThumbnail
           songHash={snapshot.song_id}
           coverArt={song?.cover_art}
+          thumbnailPath={song?.artwork_thumb_path}
           alt={`${title} cover art`}
           className="h-12 w-12 shrink-0"
         />

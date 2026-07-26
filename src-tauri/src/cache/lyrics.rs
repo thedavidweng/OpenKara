@@ -145,6 +145,7 @@ mod tests {
             duration_ms: 0,
             cover_art: None,
             has_cover_art: false,
+            artwork_thumb_path: None,
             imported_at: 0,
             original_ext: None,
         };

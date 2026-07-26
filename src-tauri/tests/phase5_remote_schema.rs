@@ -23,6 +23,7 @@ fn cache_round_trip_preserves_nullable_file_path_and_audio_source_kind() {
         duration_ms: 123_456,
         cover_art: None,
         has_cover_art: true,
+        artwork_thumb_path: None,
         imported_at: 1,
         original_ext: Some("mp3".to_owned()),
         audio_source_kind: "stems_remote".to_owned(),
@@ -61,6 +62,7 @@ fn remote_stems_song_plays_from_cached_stems_without_a_local_file_path() {
         duration_ms: 1_000,
         cover_art: None,
         has_cover_art: true,
+        artwork_thumb_path: None,
         imported_at: 1,
         original_ext: Some("ogg".to_owned()),
     };

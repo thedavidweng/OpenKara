@@ -24,6 +24,7 @@ const { mockPlayerState, mockLibraryState } = vi.hoisted(() => ({
         duration_ms: 242000,
         cover_art: [0xff, 0xd8, 0x00],
         has_cover_art: true,
+        artwork_thumb_path: null,
         imported_at: 0,
         original_ext: "mp3",
       },

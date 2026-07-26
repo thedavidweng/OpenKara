@@ -150,6 +150,7 @@ describe("useCdgSync — render coverage", () => {
           duration_ms: 100000,
           cover_art: null,
           has_cover_art: false,
+          artwork_thumb_path: null,
           imported_at: 0,
           original_ext: null,
         },

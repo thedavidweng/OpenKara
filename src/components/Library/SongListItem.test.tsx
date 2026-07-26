@@ -175,6 +175,7 @@ describe("SongListItem", () => {
           duration_ms: 180000,
           cover_art: null,
           has_cover_art: false,
+          artwork_thumb_path: null,
           imported_at: 0,
           original_ext: "mp3",
         }}
@@ -206,6 +207,7 @@ describe("SongListItem", () => {
           duration_ms: 246000,
           cover_art: null,
           has_cover_art: false,
+          artwork_thumb_path: null,
           imported_at: 0,
           original_ext: "mp3",
         }}
@@ -240,6 +242,7 @@ describe("SongListItem", () => {
           duration_ms: 226000,
           cover_art: [0xff, 0xd8, 0x00],
           has_cover_art: true,
+          artwork_thumb_path: null,
           imported_at: 0,
           original_ext: "mp3",
         }}
@@ -273,6 +276,7 @@ describe("SongListItem", () => {
           duration_ms: 270000,
           cover_art: null,
           has_cover_art: false,
+          artwork_thumb_path: null,
           imported_at: 0,
           original_ext: "mp3",
         }}
@@ -304,6 +308,7 @@ describe("SongListItem", () => {
           duration_ms: 240000,
           cover_art: null,
           has_cover_art: false,
+          artwork_thumb_path: null,
           imported_at: 0,
           original_ext: "mp3",
         }}
@@ -345,6 +350,7 @@ describe("SongListItem", () => {
           duration_ms: 240000,
           cover_art: null,
           has_cover_art: false,
+          artwork_thumb_path: null,
           imported_at: 0,
           original_ext: "mp3",
         }}
@@ -402,6 +408,7 @@ describe("SongListItem", () => {
           duration_ms: 240000,
           cover_art: null,
           has_cover_art: false,
+          artwork_thumb_path: null,
           imported_at: 0,
           original_ext: "mp3",
         }}
@@ -439,6 +446,7 @@ describe("SongListItem", () => {
           duration_ms: 67000,
           cover_art: new Uint8Array([0xff, 0xd8, 0x00]),
           has_cover_art: true,
+          artwork_thumb_path: null,
           imported_at: 0,
           original_ext: "m4a",
         }}
@@ -706,6 +714,7 @@ describe("SongListItem", () => {
           duration_ms: 180000,
           cover_art: null,
           has_cover_art: false,
+          artwork_thumb_path: null,
           imported_at: 0,
           original_ext: "mp3",
         }}
@@ -735,6 +744,7 @@ describe("SongListItem", () => {
           duration_ms: 180000,
           cover_art: null,
           has_cover_art: false,
+          artwork_thumb_path: null,
           imported_at: 0,
           original_ext: "mp3",
         }}
@@ -768,6 +778,7 @@ describe("SongListItem", () => {
           duration_ms: 180000,
           cover_art: null,
           has_cover_art: false,
+          artwork_thumb_path: null,
           imported_at: 0,
           original_ext: "mp3",
         }}
