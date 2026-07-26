@@ -591,6 +591,7 @@
       "system": "System",
       "catalog": "Katalog",
       "model": "Model",
+      "modelPath": "Plik modelu",
       "runtime": "Środowisko",
       "executionProvider": "Dostawca wykonania",
       "logFile": "Plik dziennika",

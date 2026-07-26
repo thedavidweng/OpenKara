@@ -588,6 +588,7 @@
       "system": "系統",
       "catalog": "目錄",
       "model": "模型",
+      "modelPath": "模型檔案",
       "runtime": "執行環境",
       "executionProvider": "執行提供者",
       "logFile": "記錄檔",

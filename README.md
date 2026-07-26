@@ -170,6 +170,16 @@ OpenKara uses custom ONNX builds of [Demucs](https://github.com/adefossez/demucs
 
 On first launch, OpenKara automatically downloads the standard `openkara-models` asset pinned by the app's embedded catalog snapshot (currently generation 9) into the app data directory. Settings offers an update check that installs newer catalog generations without waiting for an app release. The current standard model is ~199.8 MiB on disk, and the optional high quality model is ~800.1 MiB. Both assets are ONNX Runtime-optimized and carry metadata used for cache invalidation. See the [openkara-models README](https://github.com/thedavidweng/openkara-models#readme) for details on the conversion pipeline. For local development and deterministic tests, run `./scripts/setup.sh` to populate `src-tauri/models/`.
 
+### Installing a model by hand
+
+The download resumes after a network failure, but a slow or restricted connection can still make it impractical. You can place the file yourself: OpenKara checks the managed model path at startup and adopts whatever is there once its SHA-256 matches the catalog pin.
+
+1. **Settings → About → Model file** shows the exact path your build expects, including the file name for the active variant.
+2. Download that file from [openkara-models releases](https://github.com/thedavidweng/openkara-models/releases).
+3. Put it at that path and restart OpenKara.
+
+A file whose digest does not match the pin is ignored and the normal download runs instead, so a partial or wrong file cannot corrupt the install.
+
 ## Tech Stack
 
 | Layer             | Technology                                                                                              | Purpose                         |

@@ -46,6 +46,10 @@ pub struct DebugInfo {
     pub model_installed_version: Option<String>,
     /// Upstream tag pinned by the embedded catalog for the active variant.
     pub model_pinned_version: String,
+    /// Where the active variant's model file is expected on disk. Surfaced so a
+    /// user on a slow connection can place a verified download there by hand
+    /// instead of guessing the app data layout (#270).
+    pub model_path: String,
     /// Bootstrap state of the ONNX Runtime (`ready` / `missing` / …).
     pub runtime_state: String,
     /// Active runtime upstream version (or the pinned version when absent).
@@ -100,6 +104,7 @@ pub fn assemble_debug_info(
     model_installed: bool,
     model_installed_version: Option<String>,
     model_pinned_version: String,
+    model_path: String,
     runtime_state: &str,
     runtime_version: String,
     runtime_artifact_id: Option<String>,
@@ -119,6 +124,7 @@ pub fn assemble_debug_info(
         model_installed,
         model_installed_version,
         model_pinned_version,
+        model_path,
         runtime_state: runtime_state.to_owned(),
         runtime_version,
         runtime_artifact_id,
@@ -189,6 +195,7 @@ pub fn get_debug_info(
         model_installed,
         model_installed_version,
         descriptor.upstream_tag.clone(),
+        managed_model_path.display().to_string(),
         runtime_state_label(&runtime_snapshot.state),
         runtime_snapshot.version.clone(),
         runtime_snapshot.active_artifact_id.clone(),
@@ -215,6 +222,8 @@ mod tests {
             true,
             Some("model-v2.1.0".to_owned()),
             "model-v2.1.0".to_owned(),
+            "/Users/me/Library/Application Support/com.openkara.desktop/models/htdemucs.onnx"
+                .to_owned(),
             "ready",
             "v1.27.1".to_owned(),
             Some("onnxruntime-1.27.1-openkara-aarch64-apple-darwin".to_owned()),
@@ -235,6 +244,10 @@ mod tests {
         assert_eq!(info.catalog_release_id, "2026-07-25-006");
         assert_eq!(info.model_variant, "htdemucs");
         assert_eq!(info.model_state, "ready");
+        assert_eq!(
+            info.model_path,
+            "/Users/me/Library/Application Support/com.openkara.desktop/models/htdemucs.onnx"
+        );
         assert!(info.model_installed);
         assert_eq!(
             info.model_installed_version.as_deref(),
@@ -314,6 +327,7 @@ mod tests {
             false,
             None,
             "model-v2.1.0".to_owned(),
+            "/home/me/.local/share/com.openkara.desktop/models/htdemucs_ft.onnx".to_owned(),
             "missing",
             "v1.27.1".to_owned(),
             None,

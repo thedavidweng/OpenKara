@@ -589,6 +589,7 @@
       "system": "Sistem",
       "catalog": "Katalog",
       "model": "Model",
+      "modelPath": "Model dosyası",
       "runtime": "Çalışma zamanı",
       "executionProvider": "Yürütme sağlayıcısı",
       "logFile": "Günlük dosyası",

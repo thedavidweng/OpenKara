@@ -590,6 +590,7 @@
       "system": "Sistema",
       "catalog": "Catálogo",
       "model": "Modelo",
+      "modelPath": "Archivo del modelo",
       "runtime": "Runtime",
       "executionProvider": "Proveedor de ejecución",
       "logFile": "Archivo de registro",

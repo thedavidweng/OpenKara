@@ -588,6 +588,7 @@
       "system": "Sistem",
       "catalog": "Katalog",
       "model": "Model",
+      "modelPath": "Berkas model",
       "runtime": "Runtime",
       "executionProvider": "Penyedia eksekusi",
       "logFile": "Berkas log",

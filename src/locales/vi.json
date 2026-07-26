@@ -588,6 +588,7 @@
       "system": "Hệ thống",
       "catalog": "Danh mục",
       "model": "Mô hình",
+      "modelPath": "Tệp mô hình",
       "runtime": "Runtime",
       "executionProvider": "Trình thực thi",
       "logFile": "Tệp nhật ký",

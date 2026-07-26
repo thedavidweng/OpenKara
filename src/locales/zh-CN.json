@@ -589,6 +589,7 @@
       "system": "系统",
       "catalog": "目录",
       "model": "模型",
+      "modelPath": "模型文件",
       "runtime": "运行时",
       "executionProvider": "执行提供程序",
       "logFile": "日志文件",

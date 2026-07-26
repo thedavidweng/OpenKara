@@ -589,6 +589,7 @@
       "system": "System",
       "catalog": "Katalog",
       "model": "Modell",
+      "modelPath": "Modelldatei",
       "runtime": "Runtime",
       "executionProvider": "Ausführungsanbieter",
       "logFile": "Protokolldatei",

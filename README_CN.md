@@ -139,6 +139,16 @@ OpenKara 使用自定义 ONNX 格式的 [Demucs](https://github.com/adefossez/de
 
 首次启动时，OpenKara 会将标准 `openkara-models` 资源（当前锁定为 generation 9）下载到应用数据目录。当前标准模型磁盘大小约为 199.8 MiB，可选的高质量模型约为 800.1 MiB。两者都已完成 ONNX Runtime 离线优化，并携带用于缓存失效的 metadata。详见 [openkara-models README](https://github.com/thedavidweng/openkara-models#readme) 了解转换流水线。开发环境和需要稳定输入的测试可运行 `./scripts/setup.sh` 填充 `src-tauri/models/`。
 
+### 手动放置模型文件
+
+下载中断后会断点续传，但网络太慢或受限时仍可能不现实。你可以自己放文件：OpenKara 启动时会检查托管模型路径，只要 SHA-256 与 catalog pin 一致就直接采用。
+
+1. **设置 → 关于 → 模型文件** 显示你这个构建期望的完整路径，含当前变体的文件名。
+2. 从 [openkara-models releases](https://github.com/thedavidweng/openkara-models/releases) 下载该文件。
+3. 放到那个路径，重启 OpenKara。
+
+摘要对不上的文件会被忽略并照常触发下载，所以放错或放了半个文件都不会污染安装。
+
 ## 技术栈
 
 | 层级     | 技术                                                                                                    | 用途                         |
