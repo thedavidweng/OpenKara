@@ -101,9 +101,28 @@ describe("RemoteLibraryWizard", () => {
     );
 
     expect(markup).toContain("settings.library.openRemoteLibrary");
+    expect(markup).toContain("settings.library.connectRemoteGoogleDrive");
     expect(markup).toContain("settings.library.displayName");
     expect(markup).not.toContain("Open Remote Library");
     expect(markup).not.toContain("Display name");
+  });
+
+  test("labels the primary action per provider instead of a generic open label", () => {
+    const value = createSettingsOverlayTestContextValue();
+
+    const dropboxMarkup = renderToStaticMarkup(
+      <SettingsOverlayContext value={value}>
+        <RemoteLibraryWizard onClose={() => {}} initialProvider="dropbox" />
+      </SettingsOverlayContext>,
+    );
+    expect(dropboxMarkup).toContain("settings.library.connectRemoteDropbox");
+
+    const webdavMarkup = renderToStaticMarkup(
+      <SettingsOverlayContext value={value}>
+        <RemoteLibraryWizard onClose={() => {}} initialProvider="webdav" />
+      </SettingsOverlayContext>,
+    );
+    expect(webdavMarkup).toContain("settings.library.connectRemoteWebdav");
   });
 
   test("renders reauthorization copy and preselects the requested provider", () => {
@@ -341,7 +360,9 @@ describe("RemoteLibraryWizard", () => {
 
     const openRemoteButtons = [...container.querySelectorAll("button")].filter(
       (button) =>
-        button.textContent?.includes("settings.library.openRemoteLibrary"),
+        button.textContent?.includes(
+          "settings.library.connectRemoteGoogleDrive",
+        ),
     );
     const connectButton = openRemoteButtons[openRemoteButtons.length - 1];
     expect(connectButton).toBeTruthy();
@@ -389,7 +410,7 @@ describe("RemoteLibraryWizard", () => {
     const buttons = [...container.querySelectorAll("button")];
     const closeButton = buttons[0];
     const openRemoteButtons = buttons.filter((button) =>
-      button.textContent?.includes("settings.library.openRemoteLibrary"),
+      button.textContent?.includes("settings.library.connectRemoteGoogleDrive"),
     );
     const connectButton = openRemoteButtons[openRemoteButtons.length - 1];
     expect(closeButton).toBeTruthy();
@@ -447,7 +468,7 @@ describe("RemoteLibraryWizard", () => {
     const buttons = [...container.querySelectorAll("button")];
     const closeButton = buttons[0];
     const openRemoteButtons = buttons.filter((button) =>
-      button.textContent?.includes("settings.library.openRemoteLibrary"),
+      button.textContent?.includes("settings.library.connectRemoteGoogleDrive"),
     );
     const connectButton = openRemoteButtons[openRemoteButtons.length - 1];
 
@@ -497,7 +518,9 @@ describe("RemoteLibraryWizard", () => {
 
     const openRemoteButtons = [...container.querySelectorAll("button")].filter(
       (button) =>
-        button.textContent?.includes("settings.library.openRemoteLibrary"),
+        button.textContent?.includes(
+          "settings.library.connectRemoteGoogleDrive",
+        ),
     );
     const connectButton = openRemoteButtons[openRemoteButtons.length - 1];
 
@@ -550,7 +573,9 @@ describe("RemoteLibraryWizard", () => {
 
     const openRemoteButtons = [...container.querySelectorAll("button")].filter(
       (button) =>
-        button.textContent?.includes("settings.library.openRemoteLibrary"),
+        button.textContent?.includes(
+          "settings.library.connectRemoteGoogleDrive",
+        ),
     );
     const connectButton = openRemoteButtons[openRemoteButtons.length - 1];
 
@@ -595,7 +620,9 @@ describe("RemoteLibraryWizard", () => {
 
     const openRemoteButtons = [...container.querySelectorAll("button")].filter(
       (button) =>
-        button.textContent?.includes("settings.library.openRemoteLibrary"),
+        button.textContent?.includes(
+          "settings.library.connectRemoteGoogleDrive",
+        ),
     );
     const connectButton = openRemoteButtons[openRemoteButtons.length - 1];
 

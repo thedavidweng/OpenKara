@@ -10,6 +10,7 @@ import {
   runRemoteLibraryRegistrationFlow,
 } from "./remote-library-flow";
 import {
+  getRemoteProviderConnectLabel,
   getRemoteProviderDisplayName,
   getRemoteProviderLabel,
 } from "./remote-library-copy";
@@ -243,9 +244,6 @@ export function RemoteLibraryWizard({
   const descriptionKey = isReauthorizeFlow
     ? "settings.library.reauthorizeRemoteRepositoryDescription"
     : "settings.library.addRemoteLibraryDescription";
-  const connectKey = isReauthorizeFlow
-    ? "settings.library.reauthorizeRemoteRepository"
-    : "settings.library.openRemoteLibrary";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -464,11 +462,11 @@ export function RemoteLibraryWizard({
                 ? t("settings.library.createRemoteLibraryAndStartMirror", {
                     defaultValue: "Create Remote Repository And Start Mirror",
                   })
-                : t(connectKey, {
-                    defaultValue: isReauthorizeFlow
-                      ? "Reauthorize remote repository"
-                      : "Open Remote Repository",
-                  })}
+                : isReauthorizeFlow
+                  ? t("settings.library.reauthorizeRemoteRepository", {
+                      defaultValue: "Reauthorize remote repository",
+                    })
+                  : getRemoteProviderConnectLabel(t, provider)}
           </button>
 
           {authorizationUrl && (

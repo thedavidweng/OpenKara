@@ -331,7 +331,10 @@
       "remoteLibraryConnected": "远程资料库已连接。",
       "remoteLibraryCreatedAndMirroring": "远程资料库已创建，并正在镜像 {{displayName}}。",
       "createRemoteLibraryAndStartMirror": "创建远程资料库并开始镜像",
-      "existingRemoteLibraries": "已有远程资料库"
+      "existingRemoteLibraries": "已有远程资料库",
+      "connectRemoteGoogleDrive": "连接到 Google Drive",
+      "connectRemoteDropbox": "连接到 Dropbox",
+      "connectRemoteWebdav": "连接"
     },
     "stemMode": {
       "label": "音轨分离模式",

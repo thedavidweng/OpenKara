@@ -331,7 +331,10 @@
       "remoteLibraryConnected": "Remote repository connected.",
       "remoteLibraryCreatedAndMirroring": "Remote repository created and now mirroring {{displayName}}.",
       "createRemoteLibraryAndStartMirror": "Create Remote Repository And Start Mirror",
-      "existingRemoteLibraries": "Existing Remote Repositories"
+      "existingRemoteLibraries": "Existing Remote Repositories",
+      "connectRemoteGoogleDrive": "Connect to Google Drive",
+      "connectRemoteDropbox": "Connect to Dropbox",
+      "connectRemoteWebdav": "Connect"
     },
     "stemMode": {
       "label": "Stem Separation Mode",
