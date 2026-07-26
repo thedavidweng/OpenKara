@@ -418,14 +418,35 @@ jobs:
           OPENKARA_GOOGLE_DRIVE_OAUTH_CLIENT_JSON: ${{ secrets.OPENKARA_GOOGLE_DRIVE_OAUTH_CLIENT_JSON }}
           OPENKARA_DROPBOX_APP_KEY: ${{ secrets.OPENKARA_DROPBOX_APP_KEY }}
           OPENKARA_DROPBOX_APP_SECRET: ${{ secrets.OPENKARA_DROPBOX_APP_SECRET }}
+          # In-app updater (#255): the minisign private key signs the updater
+          # payloads. Its public half lives in tauri.conf.json
+          # plugins.updater.pubkey — the two must be a pair, or the updater
+          # rejects every download. Only this signed release build produces the
+          # .sig files and latest.json.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ needs.prepare-release.outputs.tag }}
           releaseName: OpenKara v${{ needs.prepare-release.outputs.version }}
           releaseBody: ${{ needs.prepare-release.outputs.release_body }}
           releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
+          # Prerelease only for suffixed tags (v1.0.0-rc.1). GitHub's
+          # /releases/latest — the URL the in-app updater polls — resolves only
+          # the newest non-draft, non-prerelease release, so plain tags (v1.0.0)
+          # must publish as full releases or the updater never sees them.
+          prerelease: ${{ contains(needs.prepare-release.outputs.tag, '-') }}
+          # DELIBERATE DIVERGENCE from the base config (#255): createUpdaterArtifacts
+          # is NOT set in src-tauri/tauri.conf.json — OpenKara's verification
+          # contract runs a full `pnpm tauri build` everywhere and PR CI must stay
+          # keyless. The overlay flips it on for this signed release build only.
+          args: ${{ matrix.args }} --config src-tauri/tauri.release.conf.json
           tauriScript: pnpm tauri
+        # No explicit latest.json upload step: tauri-action's uploadUpdaterJson
+        # (default true) both uploads latest.json AND, on each subsequent matrix
+        # job, downloads the release's existing latest.json and merges that
+        # platform's signatures into it — so all targets accumulate into one
+        # manifest. A manual `gh release upload --clobber` would overwrite the
+        # merge and strip every other platform, so it is intentionally omitted.
 
   generate-checksums:
     name: Generate SHA256SUMS

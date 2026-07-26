@@ -48,3 +48,53 @@ git push origin :refs/tags/v1.0.0
 git tag v1.0.0
 git push origin v1.0.0
 ```
+
+## In-app updater and signing
+
+DMG/NSIS/AppImage installs update themselves through the first-party
+`tauri-plugin-updater` (issue #255). The app polls
+`https://github.com/thedavidweng/OpenKara/releases/latest/download/latest.json`
+on launch and installs **only** payloads signed by the minisign key pair whose
+public half lives in `src-tauri/tauri.conf.json` under `plugins.updater.pubkey`.
+The `.deb` and Flatpak paths are not updatable through the plugin and stay on
+the manual/package-manager channel — the in-app banner simply never appears
+there.
+
+The release build signs the updater artifacts (`*.sig` files and `latest.json`)
+using two repository secrets, referenced by name in
+[`release.yml`](../.github/workflows/release.yml):
+
+- `TAURI_SIGNING_PRIVATE_KEY` — the minisign private key matching the pubkey.
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — its password (empty string if none).
+
+Generate a pair with `pnpm tauri signer generate` if one is ever lost. **Key
+custody is load-bearing:** rotating the key orphans every existing install
+(they reject updates signed by the new key), so back the private key up and
+prefer recovering the original over generating a new one.
+
+### Why a separate release config overlay
+
+`bundle.createUpdaterArtifacts` is deliberately **not** set in
+`src-tauri/tauri.conf.json`. OpenKara's verification contract runs a full
+`pnpm tauri build` on every platform, and PR CI builds must stay keyless — a
+base config that demanded a signing key would break both. Instead,
+`src-tauri/tauri.release.conf.json` carries the single
+`createUpdaterArtifacts: true` flag and the release workflow layers it on with
+`--config src-tauri/tauri.release.conf.json`. Only the signed release build
+emits updater artifacts; every keyless build (local `pnpm tauri build`, PR CI)
+is unaffected.
+
+`tauri-action` uploads `latest.json` itself (`uploadUpdaterJson` defaults to
+true) and, across the build matrix, merges each platform's signatures into the
+one manifest on the release — so no manual upload step is needed or wanted (a
+manual clobbering upload would strip the other platforms' entries).
+
+## Prerelease semantics and the updater
+
+GitHub's `/releases/latest` — the URL the in-app updater polls — resolves only
+the newest release that is neither a draft nor a prerelease. The workflow
+therefore derives the prerelease flag from the tag: suffixed tags (`v1.0.0-rc.1`,
+`v1.0.0-beta.1`) publish as prereleases the updater ignores; plain tags
+(`v1.0.0`) publish as full releases the updater picks up **once the draft is
+published**. Existing installs only start auto-updating after the first plain
+tag ships as a published, non-prerelease release.

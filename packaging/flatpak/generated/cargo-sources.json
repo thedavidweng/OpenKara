@@ -119,6 +119,19 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
+    "url": "https://static.crates.io/crates/arbitrary/arbitrary-1.4.2.crate",
+    "sha256": "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1",
+    "dest": "cargo/vendor/arbitrary-1.4.2"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"package\":\"c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1\",\"files\":{}}",
+    "dest": "cargo/vendor/arbitrary-1.4.2",
+    "dest-filename": ".cargo-checksum.json"
+  },
+  {
+    "type": "archive",
+    "archive-type": "tar-gzip",
     "url": "https://static.crates.io/crates/ascii/ascii-1.1.0.crate",
     "sha256": "d92bec98840b8f03a5ff5413de5293bfcd8bf96467cf5452609f939ec6f5de16",
     "dest": "cargo/vendor/ascii-1.1.0"
@@ -1102,6 +1115,19 @@
     "type": "inline",
     "contents": "{\"package\":\"7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c\",\"files\":{}}",
     "dest": "cargo/vendor/deranged-0.5.8",
+    "dest-filename": ".cargo-checksum.json"
+  },
+  {
+    "type": "archive",
+    "archive-type": "tar-gzip",
+    "url": "https://static.crates.io/crates/derive_arbitrary/derive_arbitrary-1.4.2.crate",
+    "sha256": "1e567bd82dcff979e4b03460c307b3cdc9e96fde3d73bed1496d2bc75d9dd62a",
+    "dest": "cargo/vendor/derive_arbitrary-1.4.2"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"package\":\"1e567bd82dcff979e4b03460c307b3cdc9e96fde3d73bed1496d2bc75d9dd62a\",\"files\":{}}",
+    "dest": "cargo/vendor/derive_arbitrary-1.4.2",
     "dest-filename": ".cargo-checksum.json"
   },
   {
@@ -3018,6 +3044,19 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
+    "url": "https://static.crates.io/crates/minisign-verify/minisign-verify-0.2.5.crate",
+    "sha256": "22f9645cb765ea72b8111f36c522475d2daa0d22c957a9826437e97534bc4e9e",
+    "dest": "cargo/vendor/minisign-verify-0.2.5"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"package\":\"22f9645cb765ea72b8111f36c522475d2daa0d22c957a9826437e97534bc4e9e\",\"files\":{}}",
+    "dest": "cargo/vendor/minisign-verify-0.2.5",
+    "dest-filename": ".cargo-checksum.json"
+  },
+  {
+    "type": "archive",
+    "archive-type": "tar-gzip",
     "url": "https://static.crates.io/crates/miniz_oxide/miniz_oxide-0.8.9.crate",
     "sha256": "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316",
     "dest": "cargo/vendor/miniz_oxide-0.8.9"
@@ -3473,6 +3512,19 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
+    "url": "https://static.crates.io/crates/objc2-osa-kit/objc2-osa-kit-0.3.2.crate",
+    "sha256": "f112d1746737b0da274ef79a23aac283376f335f4095a083a267a082f21db0c0",
+    "dest": "cargo/vendor/objc2-osa-kit-0.3.2"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"package\":\"f112d1746737b0da274ef79a23aac283376f335f4095a083a267a082f21db0c0\",\"files\":{}}",
+    "dest": "cargo/vendor/objc2-osa-kit-0.3.2",
+    "dest-filename": ".cargo-checksum.json"
+  },
+  {
+    "type": "archive",
+    "archive-type": "tar-gzip",
     "url": "https://static.crates.io/crates/objc2-quartz-core/objc2-quartz-core-0.3.2.crate",
     "sha256": "96c1358452b371bf9f104e21ec536d37a650eb10f7ee379fff67d2e08d537f1f",
     "dest": "cargo/vendor/objc2-quartz-core-0.3.2"
@@ -3624,6 +3676,19 @@
     "type": "inline",
     "contents": "{\"package\":\"d7b497d21a8b6fbb4b5a544f8fadb77e801a09ae0add9e411d31c6f89e3c1e90\",\"files\":{}}",
     "dest": "cargo/vendor/ort-sys-2.0.0-rc.12",
+    "dest-filename": ".cargo-checksum.json"
+  },
+  {
+    "type": "archive",
+    "archive-type": "tar-gzip",
+    "url": "https://static.crates.io/crates/osakit/osakit-0.3.1.crate",
+    "sha256": "732c71caeaa72c065bb69d7ea08717bd3f4863a4f451402fc9513e29dbd5261b",
+    "dest": "cargo/vendor/osakit-0.3.1"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"package\":\"732c71caeaa72c065bb69d7ea08717bd3f4863a4f451402fc9513e29dbd5261b\",\"files\":{}}",
+    "dest": "cargo/vendor/osakit-0.3.1",
     "dest-filename": ".cargo-checksum.json"
   },
   {
@@ -5652,6 +5717,32 @@
     "type": "inline",
     "contents": "{\"package\":\"b7ecc274121aca0c036a2b42d1cbe83d368d348f54e0bb8a735c2b1548e8f371\",\"files\":{}}",
     "dest": "cargo/vendor/tauri-plugin-fs-2.5.1",
+    "dest-filename": ".cargo-checksum.json"
+  },
+  {
+    "type": "archive",
+    "archive-type": "tar-gzip",
+    "url": "https://static.crates.io/crates/tauri-plugin-process/tauri-plugin-process-2.3.1.crate",
+    "sha256": "d55511a7bf6cd70c8767b02c97bf8134fa434daf3926cfc1be0a0f94132d165a",
+    "dest": "cargo/vendor/tauri-plugin-process-2.3.1"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"package\":\"d55511a7bf6cd70c8767b02c97bf8134fa434daf3926cfc1be0a0f94132d165a\",\"files\":{}}",
+    "dest": "cargo/vendor/tauri-plugin-process-2.3.1",
+    "dest-filename": ".cargo-checksum.json"
+  },
+  {
+    "type": "archive",
+    "archive-type": "tar-gzip",
+    "url": "https://static.crates.io/crates/tauri-plugin-updater/tauri-plugin-updater-2.10.1.crate",
+    "sha256": "806d9dac662c2e4594ff03c647a552f2c9bd544e7d0f683ec58f872f952ce4af",
+    "dest": "cargo/vendor/tauri-plugin-updater-2.10.1"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"package\":\"806d9dac662c2e4594ff03c647a552f2c9bd544e7d0f683ec58f872f952ce4af\",\"files\":{}}",
+    "dest": "cargo/vendor/tauri-plugin-updater-2.10.1",
     "dest-filename": ".cargo-checksum.json"
   },
   {
@@ -7810,6 +7901,19 @@
     "type": "inline",
     "contents": "{\"package\":\"625dc425cab0dca6dc3c3319506e6593dcb08a9f387ea3b284dbd52a92c40555\",\"files\":{}}",
     "dest": "cargo/vendor/zerovec-derive-0.11.3",
+    "dest-filename": ".cargo-checksum.json"
+  },
+  {
+    "type": "archive",
+    "archive-type": "tar-gzip",
+    "url": "https://static.crates.io/crates/zip/zip-4.6.1.crate",
+    "sha256": "caa8cd6af31c3b31c6631b8f483848b91589021b28fffe50adada48d4f4d2ed1",
+    "dest": "cargo/vendor/zip-4.6.1"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"package\":\"caa8cd6af31c3b31c6631b8f483848b91589021b28fffe50adada48d4f4d2ed1\",\"files\":{}}",
+    "dest": "cargo/vendor/zip-4.6.1",
     "dest-filename": ".cargo-checksum.json"
   },
   {

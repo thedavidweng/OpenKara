@@ -203,6 +203,15 @@ pub fn run() {
             commands::runtime_bootstrap::delete_runtime
         ]);
 
+    // In-app updater (#255): the first-party updater + process plugins power the
+    // launch update check, signed download/install, and post-install relaunch.
+    // Both are desktop-only — the updater has no mobile implementation and
+    // OpenKara ships desktop bundles exclusively — so gate them behind `desktop`.
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init());
+
     #[cfg(target_os = "macos")]
     let builder = builder
         .menu(app_menu::build_app_menu)
