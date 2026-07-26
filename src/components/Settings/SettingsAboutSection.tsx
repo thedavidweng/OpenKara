@@ -71,6 +71,7 @@ export function SettingsAboutSection() {
     ? `${info.runtime_state} · ${info.runtime_version}`
     : placeholder;
   const executionProvider = info ? info.execution_provider : placeholder;
+  const modelPath = info ? info.model_path : placeholder;
   const logFile = info ? info.log_file : placeholder;
 
   return (
@@ -83,6 +84,7 @@ export function SettingsAboutSection() {
         <AboutRow label={t("settings.about.system")} value={system} />
         <AboutRow label={t("settings.about.catalog")} value={catalog} />
         <AboutRow label={t("settings.about.model")} value={model} />
+        <AboutRow label={t("settings.about.modelPath")} value={modelPath} />
         <AboutRow label={t("settings.about.runtime")} value={runtime} />
         <AboutRow
           label={t("settings.about.executionProvider")}

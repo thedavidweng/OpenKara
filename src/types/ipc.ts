@@ -282,6 +282,8 @@ export interface DebugInfo {
   model_installed: boolean;
   model_installed_version: string | null;
   model_pinned_version: string;
+  /** Absolute path where the active variant's model file is expected. */
+  model_path: string;
   runtime_state: string;
   runtime_version: string;
   runtime_artifact_id: string | null;

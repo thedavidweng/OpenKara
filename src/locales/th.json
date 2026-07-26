@@ -588,6 +588,7 @@
       "system": "ระบบ",
       "catalog": "แคตตาล็อก",
       "model": "โมเดล",
+      "modelPath": "ไฟล์โมเดล",
       "runtime": "รันไทม์",
       "executionProvider": "ตัวประมวลผล",
       "logFile": "ไฟล์บันทึก",

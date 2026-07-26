@@ -591,6 +591,7 @@
       "system": "Система",
       "catalog": "Каталог",
       "model": "Модель",
+      "modelPath": "Файл модели",
       "runtime": "Среда выполнения",
       "executionProvider": "Провайдер выполнения",
       "logFile": "Файл журнала",

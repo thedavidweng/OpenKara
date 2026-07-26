@@ -588,6 +588,7 @@
       "system": "시스템",
       "catalog": "카탈로그",
       "model": "모델",
+      "modelPath": "모델 파일",
       "runtime": "런타임",
       "executionProvider": "실행 공급자",
       "logFile": "로그 파일",

@@ -18,6 +18,7 @@ const sample: DebugInfo = {
   model_installed: true,
   model_installed_version: "model-v2.1.0",
   model_pinned_version: "model-v2.1.0",
+  model_path: "/tmp/models/htdemucs.onnx",
   runtime_state: "ready",
   runtime_version: "v1.27.1",
   runtime_artifact_id: "onnxruntime-1.27.1-openkara-aarch64-apple-darwin",

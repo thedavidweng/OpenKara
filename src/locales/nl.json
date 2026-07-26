@@ -589,6 +589,7 @@
       "system": "Systeem",
       "catalog": "Catalogus",
       "model": "Model",
+      "modelPath": "Modelbestand",
       "runtime": "Runtime",
       "executionProvider": "Uitvoeringsprovider",
       "logFile": "Logbestand",
