@@ -31,7 +31,6 @@ base64 = "0.22.1"
 cpal = "0.18.1"
 libc = "0.2.186"
 lofty = "0.24.0"
-open = "5.4.0"
 ort = { version = "=2.0.0-rc.12", default-features = false, features = ["std", "ndarray", "tracing", "load-dynamic", "api-24", "directml", "xnnpack"] }
 rand = "0.10.2"
 rayon = "1.12.0"
@@ -45,6 +44,8 @@ sha2 = "0.11.0"
 symphonia = { version = "0.6.0", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mp3", "ogg", "pcm", "vorbis", "wav", "all-meta"] }
 tauri = { version = "2.11.5", features = ["unstable"] }
 tauri-plugin-dialog = "2.7.2"
+tauri-plugin-opener = "2.5.4"
+tauri-plugin-single-instance = "2.4.3"
 uuid = { version = "1.24.0", features = ["v4"] }
 tiny_http = "0.12.0"
 tracing = "0.1"
