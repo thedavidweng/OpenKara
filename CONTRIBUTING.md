@@ -7,35 +7,44 @@ Thanks for your interest in contributing.
 ```bash
 git clone https://github.com/thedavidweng/OpenKara.git
 cd OpenKara
-mise install  # install tools pinned in mise.toml
+mise install        # install tools pinned in mise.toml
 pnpm install
+./scripts/setup.sh  # download the separation model and ONNX Runtime for local dev
 ```
 
 ## Development
 
 ```bash
-# Start dev server (hot-reload)
-pnpm tauri dev
+pnpm tauri dev      # dev server with hot reload
+pnpm tauri build    # release bundle
+```
 
-# Build release binary
-pnpm tauri build
+## Checks
 
-# Run Rust linter
-cargo clippy
+Git hooks run most of these for you. `pre-commit` formats the staged files.
+`pre-push` runs the format check, the lint, and patch coverage. Run the rest
+before you open a pull request.
 
-# Format code
-cargo fmt
+```bash
+node --run lint                                  # frontend lint
+node --run build                                 # typecheck and build the frontend
+pnpm vitest run                                  # frontend tests
+node --run check:i18n                            # locale key parity
 
-# Run tests
-cargo test
+cd src-tauri
+cargo clippy --all-targets -- -D warnings        # Rust lint
+cargo nextest run                                # Rust tests
 ```
 
 ## Pull Requests
 
 1. Fork the repository and create a feature branch.
-2. Make your changes with tests if applicable.
-3. Run `cargo clippy` and `cargo fmt` before you commit.
-4. Open a pull request against `main`.
+2. Make your changes. Add tests when the change has behavior to pin.
+3. Run the checks above for the areas you touched.
+4. Update `docs/references/contracts/*.md` in the same change when you change a
+   public IPC command, payload, or event.
+5. Open a pull request against `main`. The title must follow Conventional
+   Commits, because CI checks it.
 
 ## Commit Messages
 

@@ -50,8 +50,13 @@
 
 - **本地音频导入** — 直接使用你已有的音乐，无需订阅，无需重复购买。
 - **AI 人声分离** — 在本地完成歌曲的人声与伴奏分离。
+- **流式播放** — 环形缓冲流式解码 + 分块缓存，弱网下自动切换带宽感知代理模式，失败按指数退避重试。
+- **远程资料库** — 连接 Google Drive、Dropbox 或 WebDAV 资料库。刷新、发布、重新授权都不会丢失本地状态。
+- **播放列表与轮唱** — 创建播放列表，为队列分配演唱者并轮换，也可按演唱者筛选队列。
 - **同步歌词** — 可从在线来源、内嵌标签或 `.lrc` 伴随文件加载时间同步歌词。
+- **歌词罗马音** — 13 种语言自动罗马音转写，含普通话、粤语、日语、韩语等，可按歌曲覆盖语言。
 - **CD+G 伴随图形** — 如果歌曲旁边有同名 `.cdg` 文件，OpenKara 会在全屏播放时渲染对应图形。
+- **AirPlay 投放** — 把 Karaoke 播放投放到 AirPlay 设备，支持观众端串流。
 - **可移植曲库** — 自包含的曲库目录，可放置在 NAS、USB 硬盘上，跨设备共享。
 - **跨平台** — 支持 macOS、Windows 和 Linux。
 - **四轨混音器** — 人声、鼓、贝斯、其他乐器独立音量控制。可折叠的伴奏滑块，展开查看各轨详情。
@@ -99,7 +104,7 @@ xattr -rd com.apple.quarantine /Applications/OpenKara.app
 **前置条件：**
 
 - [Node.js](https://nodejs.org/) 24（与 CI 一致；仓库根目录含 `.nvmrc`）
-- [pnpm](https://pnpm.io/) 10+
+- [pnpm](https://pnpm.io/) 11
 - [Rust](https://rustup.rs/) stable 工具链
 - [Tauri 2](https://v2.tauri.app/start/prerequisites/) 平台依赖
 
@@ -242,7 +247,7 @@ OpenKara 会写入滚动日志文件（默认 info 级别，错误必录），�
 ### 前置条件
 
 - Node.js 24（`nvm use` 或 `fnm use` 读取 `.nvmrc` / `.node-version`）
-- pnpm 10+
+- pnpm 11
 - 通过 [rustup](https://rustup.rs/) 安装的 Rust stable
 - 对应平台的 [Tauri 2 依赖](https://v2.tauri.app/start/prerequisites/)
 
