@@ -2,7 +2,7 @@
 <component type="desktop-application">
   <id>io.github.thedavidweng.OpenKara</id>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>MIT</project_license>
+  <project_license>Apache-2.0</project_license>
   <name>OpenKara</name>
   <summary>Turn your music library into a karaoke stage</summary>
   <developer id="io.github.thedavidweng">
@@ -31,31 +31,33 @@
   </screenshots>
   <content_rating type="oars-1.1" />
   <releases>
-    <release version="1.0.0" date="2026-06-03">
+    <release version="0.9.0" date="2026-06-14">
       <description>
         <ul>
-          <li>Streaming playback with ring-buffer decode, chunked cache, and bandwidth-aware proxy mode.</li>
+          <li>Streaming playback with ring-buffer decode, chunked cache, and a bandwidth-aware low-bitrate proxy.</li>
           <li>Saved playlists and singer rotation with round-robin queue assignment.</li>
-          <li>Remote repository support for Google Drive, Dropbox, and WebDAV.</li>
-          <li>AirPlay casting with audience streaming and route controls.</li>
-          <li>Lyrics romanization with 13 supported languages.</li>
-          <li>Playback UX improvements and architecture refactoring.</li>
+          <li>Faster startup and render-frame-synced playback position.</li>
+          <li>Stabilized synced lyrics with Spotify-style seekable lines.</li>
+          <li>Hardened Flatpak packaging with CI-generated SHA256SUMS.</li>
         </ul>
       </description>
     </release>
-    <release version="0.8.1" date="2026-05-07">
+    <release version="0.8.0" date="2026-05-07">
       <description>
         <ul>
-          <li>Fix Linux packaging metadata and Flathub source builds.</li>
+          <li>Per-song lyric language selection with romanization for 13 languages.</li>
+          <li>Cantonese romanization via Jyutping.</li>
+          <li>Instant romanization refresh when changing the lyric language during playback.</li>
+          <li>Japanese tokenizer dictionary bundled locally instead of loaded from a CDN.</li>
         </ul>
       </description>
     </release>
-    <release version="0.8.0" date="2026-05-06">
+    <release version="0.7.0" date="2026-04-30">
       <description>
         <ul>
-          <li>Cross-platform desktop karaoke powered by on-device AI stem separation.</li>
-          <li>Portable karaoke library with synced lyrics and CD+G support.</li>
-          <li>Local playback, queueing, and full-screen karaoke presentation.</li>
+          <li>Reduced Dropbox permissions to the scopes required for remote library access.</li>
+          <li>Hardened remote library initialization, upload, sync, and reopen for Dropbox and WebDAV.</li>
+          <li>Fixed packaged macOS app startup and signing for the bundled ONNX Runtime.</li>
         </ul>
       </description>
     </release>

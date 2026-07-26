@@ -65,6 +65,10 @@ xattr -rd com.apple.quarantine /Applications/OpenKara.app
 
 Then open the app again. This only needs to be done once.
 
+### Windows says "Windows protected your PC". What do I do?
+
+OpenKara isn't code-signed yet, so Windows SmartScreen warns before running it. Click **More info**, then **Run anyway** to launch OpenKara. You only need to do this the first time you run a new build.
+
 ## Need more detail?
 
 - [Project README](https://github.com/thedavidweng/OpenKara/blob/main/README.md)

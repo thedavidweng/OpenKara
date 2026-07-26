@@ -65,6 +65,10 @@ xattr -rd com.apple.quarantine /Applications/OpenKara.app
 
 然后重新打开应用就行。只需要做一次。
 
+### Windows 提示"Windows 已保护你的电脑"，怎么办？
+
+OpenKara 目前还没有代码签名，Windows SmartScreen 会在运行前弹出提示。点击**更多信息**，再点击**仍要运行**即可启动 OpenKara。每次运行新版本时只需操作一次。
+
 ## 想了解更多？
 
 - [项目 README](https://github.com/thedavidweng/OpenKara/blob/main/README_CN.md)

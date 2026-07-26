@@ -48,6 +48,12 @@ This project follows [Conventional Commits](https://www.conventionalcommits.org/
 - `refactor:` a code change. It does not fix a bug or add a feature.
 - `test:` add or update tests
 
+## Releasing
+
+Maintainers: see [docs/RELEASING.md](docs/RELEASING.md) for the tag-driven
+release process (bump `package.json`, `pnpm version:sync`, tag, verify the draft
+release assets, publish).
+
 ## License
 
 If you contribute, you accept the project license for your contributions.
