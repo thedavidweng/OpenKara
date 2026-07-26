@@ -29,6 +29,7 @@
     "chooseLanguage": "Scegli una lingua",
     "openRemoteLibrary": "Scegli un provider remoto",
     "openRemoteLibraryDescription": "Connetti Google Drive, Dropbox o WebDAV al tuo repository remoto.",
+    "useRemoteRepository": "Usa repository remoto",
     "remoteProvider": {
       "googleDrive": {
         "title": "Google Drive",
@@ -55,9 +56,6 @@
     "fourStemDetail": "Maggiore controllo sui singoli strumenti, spazio su disco ~2×",
     "getStarted": "Inizia",
     "back": "Indietro",
-    "continue": "Continua",
-    "chooseModel": "Scegli il modello IA",
-    "modelDescription": "Questo modello separa la voce dalla musica. Potrai cambiarlo in seguito nelle impostazioni.",
     "modelDownloadHint": "Il modello e il suo runtime si scaricano automaticamente la prima volta che separi una canzone."
   },
   "sidebar": {

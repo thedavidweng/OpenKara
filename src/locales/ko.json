@@ -29,6 +29,7 @@
     "chooseLanguage": "언어 선택",
     "openRemoteLibrary": "원격 제공자 선택",
     "openRemoteLibraryDescription": "Google Drive, Dropbox 또는 WebDAV를 원격 저장소로 연결하세요.",
+    "useRemoteRepository": "원격 저장소 사용",
     "remoteProvider": {
       "googleDrive": {
         "title": "Google Drive",
@@ -55,9 +56,6 @@
     "fourStemDetail": "개별 악기 조절 가능, 디스크 공간 약 2배",
     "getStarted": "시작하기",
     "back": "뒤로",
-    "continue": "계속",
-    "chooseModel": "AI 모델 선택",
-    "modelDescription": "이 모델은 음악에서 보컬을 분리해요. 나중에 설정에서 바꿀 수 있어요.",
     "modelDownloadHint": "모델과 런타임은 처음 노래를 분리할 때 자동으로 다운로드돼요."
   },
   "sidebar": {

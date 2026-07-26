@@ -29,6 +29,7 @@
     "chooseLanguage": "言語を選択",
     "openRemoteLibrary": "リモートプロバイダーを選択",
     "openRemoteLibraryDescription": "Google ドライブ、Dropbox、または WebDAV をリモートリポジトリに接続します。",
+    "useRemoteRepository": "リモートリポジトリを使う",
     "remoteProvider": {
       "googleDrive": {
         "title": "Google ドライブ",
@@ -55,9 +56,6 @@
     "fourStemDetail": "各楽器を個別に調整可能、ディスク使用量は約2倍",
     "getStarted": "始める",
     "back": "戻る",
-    "continue": "続ける",
-    "chooseModel": "AI モデルを選択",
-    "modelDescription": "このモデルが音楽からボーカルを分離します。後から設定で変更できます。",
     "modelDownloadHint": "モデルとそのランタイムは、初めて楽曲を分離するときに自動でダウンロードされます。"
   },
   "sidebar": {

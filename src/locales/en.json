@@ -29,6 +29,7 @@
     "chooseLanguage": "Choose a language",
     "openRemoteLibrary": "Choose a remote provider",
     "openRemoteLibraryDescription": "Connect Google Drive, Dropbox, or WebDAV to your remote repository.",
+    "useRemoteRepository": "Use remote repository",
     "remoteProvider": {
       "googleDrive": {
         "title": "Google Drive",
@@ -55,9 +56,6 @@
     "fourStemDetail": "More control over individual instruments, ~2× disk space",
     "getStarted": "Get Started",
     "back": "Back",
-    "continue": "Continue",
-    "chooseModel": "Choose AI Model",
-    "modelDescription": "This model separates vocals from the music. You can change it later in settings.",
     "modelDownloadHint": "The model and its runtime download automatically the first time you separate a song."
   },
   "sidebar": {

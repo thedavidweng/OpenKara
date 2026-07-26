@@ -29,6 +29,7 @@
     "chooseLanguage": "Wybierz język",
     "openRemoteLibrary": "Wybierz dostawcę zdalnego",
     "openRemoteLibraryDescription": "Połącz Google Drive, Dropbox lub WebDAV ze swoim zdalnym repozytorium.",
+    "useRemoteRepository": "Użyj zdalnego repozytorium",
     "remoteProvider": {
       "googleDrive": {
         "title": "Google Drive",
@@ -55,9 +56,6 @@
     "fourStemDetail": "Większa kontrola nad poszczególnymi instrumentami, ~2× więcej miejsca na dysku",
     "getStarted": "Rozpocznij",
     "back": "Wstecz",
-    "continue": "Dalej",
-    "chooseModel": "Wybierz model AI",
-    "modelDescription": "Ten model oddziela wokal od muzyki. Możesz go później zmienić w ustawieniach.",
     "modelDownloadHint": "Model i jego środowisko uruchomieniowe pobiorą się automatycznie przy pierwszym rozdzielaniu utworu."
   },
   "sidebar": {
