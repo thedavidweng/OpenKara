@@ -466,6 +466,9 @@ pub fn spawn_audio_forwarder(tap: std::sync::Arc<AirPlayAudioTap>) {
                 current_epoch = next_epoch;
 
                 for chunk in forwardable {
+                    // SAFETY: the bridge copies `len` samples out of the pointer
+                    // before it returns, and `chunk` outlives the call, so the
+                    // slice stays alive and unaliased for the whole call.
                     unsafe {
                         ok_airplay_push_audio_samples(
                             chunk.samples.as_ptr(),
@@ -487,6 +490,8 @@ pub fn spawn_audio_forwarder(tap: std::sync::Arc<AirPlayAudioTap>) {
 }
 
 pub fn notify_audio_epoch(epoch: u64) {
+    // SAFETY: passes a plain integer to the bridge, which stores it under its
+    // own lock. No pointers cross the boundary.
     #[cfg(target_os = "macos")]
     unsafe {
         ok_airplay_set_audio_epoch(epoch);
@@ -562,6 +567,9 @@ fn collect_publish_ip_candidates() -> Result<Vec<PublishIpCandidate>> {
     struct IfAddrsGuard(*mut libc::ifaddrs);
     impl Drop for IfAddrsGuard {
         fn drop(&mut self) {
+            // SAFETY: the guard is only constructed from a pointer a successful
+            // getifaddrs wrote, and Drop runs once, so this frees that list
+            // exactly once.
             unsafe { libc::freeifaddrs(self.0) };
         }
     }
@@ -575,9 +583,14 @@ fn collect_publish_ip_candidates() -> Result<Vec<PublishIpCandidate>> {
         let entry = unsafe { entry.as_ref() };
         let addr = entry.ifa_addr;
         if !addr.is_null() {
+            // SAFETY: getifaddrs guarantees `ifa_name` is a NUL-terminated C
+            // string owned by the list, which outlives this borrow.
             let name = unsafe { CStr::from_ptr(entry.ifa_name) }
                 .to_string_lossy()
                 .into_owned();
+            // SAFETY: `addr` was null-checked above and points at a sockaddr
+            // owned by the list; `sa_family` is present in every sockaddr
+            // variant, so it is readable regardless of the concrete family.
             let family = unsafe { (*addr).sa_family as i32 };
             let flags = entry.ifa_flags as i32;
             let is_up = flags & libc::IFF_UP != 0;
@@ -587,6 +600,8 @@ fn collect_publish_ip_candidates() -> Result<Vec<PublishIpCandidate>> {
 
             if family == libc::AF_INET && is_up && is_running && !is_loopback && !is_point_to_point
             {
+                // SAFETY: reached only when `sa_family == AF_INET`, which is
+                // exactly the tag that makes this sockaddr a sockaddr_in.
                 let socket_addr = unsafe { &*(addr as *const libc::sockaddr_in) };
                 let ip = Ipv4Addr::from(u32::from_be(socket_addr.sin_addr.s_addr));
 

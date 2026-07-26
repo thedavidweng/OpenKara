@@ -92,6 +92,10 @@ pub fn pick_import_paths(default_path: Option<String>) -> CommandResult<Vec<Stri
             .transpose()
             .map_err(internal_error)?;
         let mut count = 0usize;
+        // SAFETY: the optional default path is a CString that outlives the
+        // call, and `count` is a live local the picker writes the result length
+        // into. Ownership of the returned array transfers to us, and is handed
+        // back through openkara_free_import_paths below.
         let raw_paths = unsafe {
             openkara_pick_import_paths(
                 default_path
@@ -107,17 +111,24 @@ pub fn pick_import_paths(default_path: Option<String>) -> CommandResult<Vec<Stri
 
         let mut collected_paths = Vec::with_capacity(count);
         for index in 0..count {
+            // SAFETY: the picker reported `count` entries and the array was
+            // null-checked above, so every index below `count` is in bounds.
             let raw_path = unsafe { *raw_paths.add(index) };
             if raw_path.is_null() {
                 continue;
             }
 
+            // SAFETY: null-checked above, and the picker returns
+            // NUL-terminated strings that stay alive until the free call below.
             let path = unsafe { CStr::from_ptr(raw_path) }
                 .to_string_lossy()
                 .into_owned();
             collected_paths.push(path);
         }
 
+        // SAFETY: frees the array the picker handed us, once, with the length
+        // it reported. Nothing borrows it past this point - the paths were
+        // copied into owned Strings above.
         unsafe {
             openkara_free_import_paths(raw_paths, count);
         }

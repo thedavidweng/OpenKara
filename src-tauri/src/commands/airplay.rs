@@ -721,6 +721,9 @@ mod native {
                 // the invoking webview keeps AppKit coordinates aligned with the
                 // DOM bounds that the frontend reports.
                 webview
+                    // SAFETY: `with_webview` hands back the live platform
+                    // webview pointer for the duration of the closure, and the
+                    // bridge only reads it on the main thread.
                     .with_webview(move |platform_webview| unsafe {
                         ok_airplay_sync_route_picker(
                             platform_webview.inner(),
@@ -769,6 +772,8 @@ mod native {
             internal_error(format!("invalid airplay scene config json: {error}"))
         })?;
 
+        // SAFETY: `config_json` is a CString that outlives the call, so the
+        // bridge receives a valid NUL-terminated pointer.
         unsafe {
             ok_airplay_sync_audience_state(config_json.as_ptr());
         }
@@ -792,6 +797,9 @@ mod native {
             None => (null::<u8>(), 0),
         };
 
+        // SAFETY: `scene_json` is a CString that outlives the call. The frame
+        // pointer is either a slice borrowed for this call or null with length
+        // zero, which the bridge treats as "no frame".
         unsafe {
             ok_airplay_sync_audience_runtime(scene_json.as_ptr(), cdg_frame_ptr, cdg_frame_len);
         }
@@ -800,6 +808,8 @@ mod native {
     }
 
     pub(super) fn step_plain_text_page(direction: i32) -> bool {
+        // SAFETY: passes a plain integer and reads back a bool. No pointers
+        // cross the boundary.
         unsafe { ok_airplay_step_plain_text_page(direction) }
     }
 }
