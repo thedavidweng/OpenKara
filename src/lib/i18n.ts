@@ -13,6 +13,21 @@ import { initReactI18next } from "react-i18next";
 export const NATIVE_LANGUAGE_NAMES: Record<string, string> = {
   en: "English",
   "zh-CN": "简体中文",
+  ja: "日本語",
+  ko: "한국어",
+  "zh-TW": "繁體中文",
+  es: "Español",
+  "pt-BR": "Português (Brasil)",
+  fr: "Français",
+  de: "Deutsch",
+  it: "Italiano",
+  ru: "Русский",
+  id: "Bahasa Indonesia",
+  vi: "Tiếng Việt",
+  th: "ไทย",
+  tr: "Türkçe",
+  pl: "Polski",
+  nl: "Nederlands",
 };
 
 /**
