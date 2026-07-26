@@ -5,6 +5,8 @@ interface AudioLevelSliderProps {
   label: string;
   value: number;
   onChange: (value: number) => void;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
   disabled?: boolean;
   widthClass?: string;
   ariaLabel?: string;
@@ -19,6 +21,8 @@ export function AudioLevelSlider({
   label,
   value,
   onChange,
+  onDragStart,
+  onDragEnd,
   disabled = false,
   widthClass = "w-16",
   ariaLabel,
@@ -33,6 +37,7 @@ export function AudioLevelSlider({
 
     const handlePointerFinish = () => {
       setIsDragging(false);
+      onDragEnd?.();
     };
 
     window.addEventListener("pointerup", handlePointerFinish);
@@ -42,7 +47,7 @@ export function AudioLevelSlider({
       window.removeEventListener("pointerup", handlePointerFinish);
       window.removeEventListener("pointercancel", handlePointerFinish);
     };
-  }, [isDragging]);
+  }, [isDragging, onDragEnd]);
 
   // Keep the native range input so we preserve platform drag semantics and only
   // layer immediate tooltip/highlight behavior on top.
@@ -55,8 +60,14 @@ export function AudioLevelSlider({
         max="100"
         value={Math.round(value * 100)}
         onChange={(e) => onChange(Number(e.target.value) / 100)}
-        onPointerDown={() => setIsDragging(true)}
-        onBlur={() => setIsDragging(false)}
+        onPointerDown={() => {
+          setIsDragging(true);
+          onDragStart?.();
+        }}
+        onBlur={() => {
+          setIsDragging(false);
+          onDragEnd?.();
+        }}
         className={`native-slider audio-level-slider shrink-0 ${widthClass}`}
         disabled={disabled}
         data-dragging={isDragging ? "true" : undefined}

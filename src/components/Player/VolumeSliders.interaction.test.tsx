@@ -161,6 +161,170 @@ describe("VolumeSliders stem popup portal", () => {
     }
   });
 
+  test("fast master drags scale sub-stems from a frozen base so they cannot drift", () => {
+    mockPlayerState.setStemVolume.mockClear();
+
+    act(() => {
+      root.render(<VolumeSliders density="relaxed" />);
+    });
+
+    const accompSlider = container.querySelector(
+      'input[aria-label="Accompaniment"]',
+    ) as HTMLInputElement;
+    expect(accompSlider).not.toBeNull();
+
+    const setSliderValue = (value: string) => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      setter?.call(accompSlider, value);
+      accompSlider.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+
+    // Gesture start freezes the base mix {drums: 0.8, bass: 0.35, other: 0.55}.
+    act(() => {
+      accompSlider.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    });
+
+    // First event commits immediately (leading edge of the rate limiter).
+    act(() => {
+      setSliderValue("100");
+    });
+
+    // Simulate the async backend lag that caused the historical drift: only
+    // drums has been committed to the store snapshot mid-drag.
+    mockPlayerState.snapshot.stem_volumes = {
+      vocals: 0.45,
+      drums: 1,
+      bass: 0.35,
+      other: 0.55,
+    };
+    act(() => {
+      root.render(<VolumeSliders density="relaxed" />);
+    });
+
+    // Further drag events must keep scaling from the frozen base, not the
+    // inconsistent live snapshot.
+    act(() => {
+      setSliderValue("40");
+      setSliderValue("80");
+    });
+
+    // Releasing the pointer flushes the pending trailing value atomically.
+    act(() => {
+      window.dispatchEvent(new Event("pointerup"));
+    });
+
+    const calls = mockPlayerState.setStemVolume.mock.calls as Array<
+      [string, number]
+    >;
+    expect(calls.length % 3).toBe(0);
+    const triples: Array<Record<string, number>> = [];
+    for (let i = 0; i < calls.length; i += 3) {
+      triples.push(Object.fromEntries(calls.slice(i, i + 3)));
+    }
+
+    // Every commit is a consistent triple scaled by one factor from the base.
+    expect(triples[0]).toEqual({
+      drums: 1,
+      bass: 0.35 * (1 / 0.8),
+      other: 0.55 * (1 / 0.8),
+    });
+
+    // Dragging back to the starting value restores the exact original mix —
+    // reversible through the clamp and immune to the stale snapshot.
+    expect(triples[triples.length - 1]).toEqual({
+      drums: 0.8,
+      bass: 0.35,
+      other: 0.55,
+    });
+  });
+
+  test("releases a drag whose slider disappears before the pointer comes up", () => {
+    mockPlayerState.setStemVolume.mockClear();
+
+    act(() => {
+      root.render(<VolumeSliders density="relaxed" />);
+    });
+
+    const accompSlider = container.querySelector(
+      'input[aria-label="Accompaniment"]',
+    ) as HTMLInputElement;
+    const setSliderValue = (value: string) => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      setter?.call(accompSlider, value);
+      accompSlider.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+
+    act(() => {
+      accompSlider.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    });
+    act(() => {
+      setSliderValue("30");
+    });
+
+    // The song ends mid-drag, so the stems go away and the pointerup that
+    // would have ended the gesture never reaches this component.
+    mockPlayerState.snapshot.has_stems = false;
+    act(() => {
+      root.render(<VolumeSliders density="relaxed" />);
+    });
+
+    // A new separated song arrives with an even mix.
+    mockPlayerState.snapshot.has_stems = true;
+    mockPlayerState.snapshot.stem_volumes = {
+      vocals: 1,
+      drums: 1,
+      bass: 1,
+      other: 1,
+    };
+    act(() => {
+      root.render(<VolumeSliders density="relaxed" />);
+    });
+
+    const nextSlider = container.querySelector(
+      'input[aria-label="Accompaniment"]',
+    ) as HTMLInputElement;
+    // The thumb follows the new song's mix instead of staying pinned at the
+    // abandoned gesture value.
+    expect(nextSlider.value).toBe("100");
+
+    mockPlayerState.setStemVolume.mockClear();
+    act(() => {
+      nextSlider.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    });
+    const setNextValue = (value: string) => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      setter?.call(nextSlider, value);
+      nextSlider.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    act(() => {
+      setNextValue("50");
+    });
+    // Release flushes the trailing value (back-to-back gestures in a test run
+    // land inside the 20ms throttle window).
+    act(() => {
+      window.dispatchEvent(new Event("pointerup"));
+    });
+
+    // Scaled from the NEW mix (all 1) — not the previous song's frozen base.
+    const calls = mockPlayerState.setStemVolume.mock.calls as Array<
+      [string, number]
+    >;
+    expect(Object.fromEntries(calls.slice(0, 3))).toEqual({
+      drums: 0.5,
+      bass: 0.5,
+      other: 0.5,
+    });
+  });
+
   test("popup mute button dims the icon when stem is muted", () => {
     mockPlayerState.snapshot.stem_volumes = {
       vocals: 0,
