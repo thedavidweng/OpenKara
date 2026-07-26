@@ -211,6 +211,25 @@ MyKaraokeLibrary/
 
 数据库中的所有路径均为相对路径 — 曲库可以移动到 NAS、USB 硬盘或网络共享目录，任何操作系统上的 OpenKara 实例都可以直接打开使用。每台设备的配置（曲库位置）单独存储在应用数据目录中。
 
+## 报告问题
+
+OpenKara 会写入滚动日志文件（默认 info 级别，错误必录），即使双击启动、没有终端也能在事后排查问题。日志按天滚动，保留最近 7 天。
+
+提交 issue 时，请附上**调试信息**，如有需要再附上**日志文件**：
+
+1. 打开**设置 → 关于**，点击**复制调试信息**，把结果粘贴到反馈中 — 其中包含应用版本、构建 SHA、操作系统/架构、catalog generation、模型与运行时状态、执行提供程序，以及日志文件路径。（macOS 上也可从**帮助 → Copy Debug Info** 导出同样的信息。）
+2. 如果问题可复现，请附上当前的日志文件。
+
+日志文件位置（`<date>` 为滚动日期，例如 `2026-07-25`）：
+
+| 平台    | 路径                                                           |
+| ------- | -------------------------------------------------------------- |
+| macOS   | `~/Library/Logs/com.openkara.desktop/openkara.<date>.log`      |
+| Windows | `%LOCALAPPDATA%\com.openkara.desktop\logs\openkara.<date>.log` |
+| Linux   | `~/.local/share/com.openkara.desktop/logs/openkara.<date>.log` |
+
+需要更详细的日志时，可用 `OPENKARA_LOG=debug` 启动 OpenKara（或使用 [`tracing`](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html) 过滤器，例如 `OPENKARA_LOG=openkara_lib=trace,warn`）。
+
 ## 路线图
 
 - **[Changelog](./CHANGELOG.md)** — 已完成改动和版本记录

@@ -52,6 +52,10 @@ fn build_about_metadata<R: Runtime>(app_handle: &AppHandle<R>) -> AboutMetadata<
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let _pkg_info = app_handle.package_info();
+    // The application menu is only mounted on macOS (see `run()`), and the
+    // About item lives in the macOS app submenu, so its metadata is macOS-only.
+    // Cross-platform version/debug visibility now lives in Settings → About.
+    #[cfg(target_os = "macos")]
     let about_metadata = build_about_metadata(app_handle);
 
     let import_item = MenuItem::with_id(
@@ -88,10 +92,6 @@ pub fn build_app_menu<R: Runtime>(app_handle: &AppHandle<R>) -> tauri::Result<Me
         "Help",
         true,
         &[
-            #[cfg(not(target_os = "macos"))]
-            &PredefinedMenuItem::about(app_handle, None, Some(about_metadata.clone()))?,
-            #[cfg(not(target_os = "macos"))]
-            &PredefinedMenuItem::separator(app_handle)?,
             &copy_debug_info_item,
             #[cfg(target_os = "macos")]
             &PredefinedMenuItem::separator(app_handle)?,

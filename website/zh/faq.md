@@ -69,6 +69,18 @@ xattr -rd com.apple.quarantine /Applications/OpenKara.app
 
 OpenKara 目前还没有代码签名，Windows SmartScreen 会在运行前弹出提示。点击**更多信息**，再点击**仍要运行**即可启动 OpenKara。每次运行新版本时只需操作一次。
 
+### 怎么报告问题、日志在哪里？
+
+打开**设置 → 关于**，点击**复制调试信息**，把结果粘贴到反馈里。其中包含应用版本、构建、操作系统，以及维护者需要的模型/运行时状态。macOS 上也可以从**帮助 → Copy Debug Info** 导出同样的信息。
+
+OpenKara 还会保留一个滚动日志文件，可以一并附上：
+
+- **macOS：** `~/Library/Logs/com.openkara.desktop/openkara.<date>.log`
+- **Windows：** `%LOCALAPPDATA%\com.openkara.desktop\logs\openkara.<date>.log`
+- **Linux：** `~/.local/share/com.openkara.desktop/logs/openkara.<date>.log`
+
+`<date>` 是滚动日期（例如 `2026-07-25`）；上面的调试信息里也会打印确切路径。
+
 ## 想了解更多？
 
 - [项目 README](https://github.com/thedavidweng/OpenKara/blob/main/README_CN.md)

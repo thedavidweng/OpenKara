@@ -20,6 +20,29 @@ use std::{
 use tauri::{Emitter, Manager, Runtime};
 
 pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std::error::Error>> {
+    // Install file logging first so every diagnostic below reaches the rolling
+    // log file. A failure here must not brick startup — logging is a
+    // best-effort aid, not a launch precondition — so we fall back to plain
+    // stderr and carry on.
+    match app.path().app_log_dir() {
+        Ok(log_dir) => {
+            if let Err(err) = crate::logging::init(&log_dir) {
+                // Logging failed to install, so `tracing` is a no-op here —
+                // fall back to raw stderr or the message is lost entirely.
+                eprintln!("warning: failed to initialize file logging: {err:#}");
+            } else {
+                tracing::info!(
+                    log_dir = %log_dir.display(),
+                    "OpenKara starting; file logging initialized"
+                );
+            }
+        }
+        Err(err) => {
+            // No log directory means no subscriber; raw stderr is all we have.
+            eprintln!("warning: could not resolve log directory; file logging disabled: {err:#}");
+        }
+    }
+
     let app_resource_dir = app
         .path()
         .resource_dir()
@@ -48,13 +71,13 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
                         if let Err(err) =
                             separator::runtime_bootstrap::finish_activation_success(&app_data_dir)
                         {
-                            eprintln!("warning: failed to finalize runtime activation: {err:#}");
+                            tracing::warn!("failed to finalize runtime activation: {err:#}");
                         }
                     }
                 }
                 Err(err) => {
-                    eprintln!(
-                        "warning: failed to load ONNX Runtime from {}: {err:#}",
+                    tracing::warn!(
+                        "failed to load ONNX Runtime from {}: {err:#}",
                         plan.library_path.display()
                     );
                     if !plan.proving_candidate && !plan.is_legacy {
@@ -78,16 +101,16 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
                                         &previous.library_path,
                                     )
                                 {
-                                    eprintln!(
-                                        "warning: failed to load previous ONNX Runtime {}: {load_err:#}",
+                                    tracing::warn!(
+                                        "failed to load previous ONNX Runtime {}: {load_err:#}",
                                         previous.library_path.display()
                                     );
                                 }
                             }
                             Ok(None) => {}
                             Err(rollback_err) => {
-                                eprintln!(
-                                    "warning: failed to record runtime load failure: {rollback_err:#}"
+                                tracing::warn!(
+                                    "failed to record runtime load failure: {rollback_err:#}"
                                 );
                             }
                         }
@@ -109,21 +132,21 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
                                         &previous.library_path,
                                     )
                                 {
-                                    eprintln!(
-                                    "warning: failed to restore previous ONNX Runtime {}: {load_err:#}",
-                                    previous.library_path.display()
-                                );
+                                    tracing::warn!(
+                                        "failed to restore previous ONNX Runtime {}: {load_err:#}",
+                                        previous.library_path.display()
+                                    );
                                 }
                             }
                             Ok(None) => {
-                                eprintln!(
-                                "warning: no previous ONNX Runtime available after failed activation"
-                            );
+                                tracing::warn!(
+                                    "no previous ONNX Runtime available after failed activation"
+                                );
                             }
                             Err(rollback_err) => {
-                                eprintln!(
-                                "warning: failed to roll back runtime activation: {rollback_err:#}"
-                            );
+                                tracing::warn!(
+                                    "failed to roll back runtime activation: {rollback_err:#}"
+                                );
                             }
                         }
                     }
@@ -132,7 +155,7 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         }
         Ok(None) => {}
         Err(err) => {
-            eprintln!("warning: runtime startup resolution failed: {err:#}");
+            tracing::warn!("runtime startup resolution failed: {err:#}");
         }
     }
 
@@ -147,8 +170,8 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
     let app_config = match config::load_config(&app_data_dir) {
         Ok(config) => config,
         Err(err) => {
-            eprintln!(
-                "warning: failed to load application config from {} ({err:#}); \
+            tracing::warn!(
+                "failed to load application config from {} ({err:#}); \
                  starting with default settings",
                 app_data_dir.display()
             );
@@ -164,14 +187,14 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
     let app_config = if let Some(mut config) = app_config {
         if config.pending_mirror_restore {
             let original_id = config.pending_mirror_restore_active_library_id.take();
-            eprintln!(
+            tracing::info!(
                 "recovering from interrupted mirror: restoring active_library_id to {:?}",
                 original_id
             );
             config.active_library_id = original_id;
             config.pending_mirror_restore = false;
             if let Err(e) = config::save_config(&app_data_dir, &config) {
-                eprintln!("warning: failed to persist mirror recovery config: {e}");
+                tracing::warn!("failed to persist mirror recovery config: {e}");
             }
         }
         Some(config)
@@ -180,7 +203,7 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
     };
     let configured_window_count = app.webview_windows().len();
     if configured_window_count == 0 {
-        eprintln!("warning: no Tauri webview windows were created during startup");
+        tracing::warn!("no Tauri webview windows were created during startup");
     }
     let window_shell_state = crate::window_shell::initialize_main_window(app, app_config.as_ref());
 
@@ -308,7 +331,7 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         playback_state_for_output.peak_ring.clone(),
         playback_state_for_output.output_format.clone(),
     ) {
-        eprintln!("warning: failed to pre-warm audio output: {err:#}");
+        tracing::warn!("failed to pre-warm audio output: {err:#}");
     }
 
     airplay_stream::spawn_audio_forwarder(Arc::clone(&airplay_audio_tap));
@@ -366,7 +389,7 @@ fn spawn_runtime_update_check_worker<R: Runtime>(
             let catalog = match separator::catalog::fetch_stable_catalog() {
                 Ok(catalog) => catalog,
                 Err(error) => {
-                    eprintln!("runtime update check skipped: {error:#}");
+                    tracing::warn!("runtime update check skipped: {error:#}");
                     return;
                 }
             };
@@ -395,7 +418,7 @@ fn spawn_runtime_update_check_worker<R: Runtime>(
             ) {
                 Ok(comparison) => comparison,
                 Err(error) => {
-                    eprintln!("runtime update check skipped: {error:#}");
+                    tracing::warn!("runtime update check skipped: {error:#}");
                     return;
                 }
             };
@@ -426,7 +449,7 @@ fn spawn_runtime_update_check_worker<R: Runtime>(
                             &mut emit,
                         )
                     {
-                        eprintln!("automatic runtime update download failed: {error:#}");
+                        tracing::warn!("automatic runtime update download failed: {error:#}");
                     }
                 }
                 config::UpdatePolicy::Notify | config::UpdatePolicy::Manual => {
@@ -491,8 +514,8 @@ fn load_library(app_config: Option<&config::AppConfig>) -> Option<LibraryRoot> {
         Ok(lib) => {
             let db_path = lib.database_path();
             if let Err(err) = cache::initialize_library_database(&db_path) {
-                eprintln!(
-                    "warning: failed to apply migrations on library at {}: {}",
+                tracing::warn!(
+                    "failed to apply migrations on library at {}: {}",
                     lib_path.display(),
                     err
                 );
@@ -500,11 +523,7 @@ fn load_library(app_config: Option<&config::AppConfig>) -> Option<LibraryRoot> {
             Some(lib)
         }
         Err(err) => {
-            eprintln!(
-                "warning: could not open library at {}: {}",
-                lib_path.display(),
-                err
-            );
+            tracing::warn!("could not open library at {}: {}", lib_path.display(), err);
             None
         }
     }
@@ -732,7 +751,7 @@ fn run_remote_recovery(remote_state: &RemoteState, app_data_dir: &std::path::Pat
         let conn = match remote_state.control_db.lock() {
             Ok(conn) => conn,
             Err(_) => {
-                eprintln!("warning: remote control DB lock was poisoned during recovery");
+                tracing::warn!("remote control DB lock was poisoned during recovery");
                 return;
             }
         };
@@ -756,7 +775,7 @@ fn run_remote_recovery(remote_state: &RemoteState, app_data_dir: &std::path::Pat
     };
 
     if let Err(error) = recovery_result {
-        eprintln!("warning: remote control DB recovery failed: {:?}", error);
+        tracing::warn!("remote control DB recovery failed: {:?}", error);
     }
 
     // Remove stale `*.part.*` temp files left by interrupted downloads in
@@ -771,8 +790,8 @@ fn run_remote_recovery(remote_state: &RemoteState, app_data_dir: &std::path::Pat
         // Fail closed: without the control plane we cannot tell which
         // partials are resumable. Leave every `*.part.*` file in place
         // rather than deleting them as orphans.
-        eprintln!(
-            "warning: control DB unavailable during part-file recovery; \
+        tracing::warn!(
+            "control DB unavailable during part-file recovery; \
              preserving all partial downloads (fail-closed)"
         );
     }
@@ -840,8 +859,8 @@ fn project_library_outboxes_into_control_db(
             continue;
         };
         if let Err(error) = crate::cache::apply_migrations(&lib_conn) {
-            eprintln!(
-                "warning: library migrations failed during outbox projection for {}: {error}",
+            tracing::warn!(
+                "library migrations failed during outbox projection for {}: {error}",
                 root_path.display()
             );
             continue;
@@ -849,8 +868,8 @@ fn project_library_outboxes_into_control_db(
         let rows = match list_unprojected_library_outbox(&lib_conn) {
             Ok(rows) => rows,
             Err(error) => {
-                eprintln!(
-                    "warning: failed to list library outbox for {}: {:?}",
+                tracing::warn!(
+                    "failed to list library outbox for {}: {:?}",
                     root_path.display(),
                     error
                 );
@@ -861,7 +880,7 @@ fn project_library_outboxes_into_control_db(
             continue;
         }
         let Ok(control) = remote_state.control_db.lock() else {
-            eprintln!("warning: control DB lock poisoned during outbox projection");
+            tracing::warn!("control DB lock poisoned during outbox projection");
             continue;
         };
         let now = crate::remote::types::current_unix_time_ms();
@@ -887,8 +906,8 @@ fn project_library_outboxes_into_control_db(
                     ) {
                         true
                     } else {
-                        eprintln!(
-                            "warning: residual outbox {} not covered by terminal op; keeping",
+                        tracing::warn!(
+                            "residual outbox {} not covered by terminal op; keeping",
                             row.operation_id
                         );
                         false
@@ -911,9 +930,10 @@ fn project_library_outboxes_into_control_db(
                     let payload_json = match payload.to_json() {
                         Ok(json) => json,
                         Err(error) => {
-                            eprintln!(
-                                "warning: outbox payload serialize failed for {}: {:?}",
-                                row.operation_id, error
+                            tracing::warn!(
+                                "outbox payload serialize failed for {}: {:?}",
+                                row.operation_id,
+                                error
                             );
                             continue;
                         }
@@ -944,18 +964,20 @@ fn project_library_outboxes_into_control_db(
                         )
                         .is_ok(),
                         Err(error) => {
-                            eprintln!(
-                                "warning: control projection upsert failed for {}: {:?}",
-                                row.operation_id, error
+                            tracing::warn!(
+                                "control projection upsert failed for {}: {:?}",
+                                row.operation_id,
+                                error
                             );
                             false
                         }
                     }
                 }
                 Err(error) => {
-                    eprintln!(
-                        "warning: control get_operation failed for {}: {:?}",
-                        row.operation_id, error
+                    tracing::warn!(
+                        "control get_operation failed for {}: {:?}",
+                        row.operation_id,
+                        error
                     );
                     false
                 }
@@ -963,9 +985,10 @@ fn project_library_outboxes_into_control_db(
             // Only remove the library outbox after control projection succeeds.
             if projected {
                 if let Err(error) = delete_library_publish_outbox(&lib_conn, &row.operation_id) {
-                    eprintln!(
-                        "warning: failed to delete projected outbox {}: {:?}",
-                        row.operation_id, error
+                    tracing::warn!(
+                        "failed to delete projected outbox {}: {:?}",
+                        row.operation_id,
+                        error
                     );
                 }
             }
@@ -995,8 +1018,8 @@ fn recover_stale_part_files_for_all_libraries(
         if let Err(error) =
             crate::remote::recovery::recover_stale_part_files(&root_path, control_db)
         {
-            eprintln!(
-                "warning: stale part-file recovery failed for {}: {:?}",
+            tracing::warn!(
+                "stale part-file recovery failed for {}: {:?}",
                 root_path.display(),
                 error
             );
@@ -1017,8 +1040,8 @@ fn spawn_durable_operation_executor(app_state: AppState) {
     std::thread::spawn(move || {
         // Immediate pass on startup.
         if let Err(error) = crate::remote::recovery::retry_pending_operations(&app_state) {
-            eprintln!(
-                "warning: durable operation executor initial pass failed: {:?}",
+            tracing::warn!(
+                "durable operation executor initial pass failed: {:?}",
                 error
             );
         }
@@ -1028,8 +1051,8 @@ fn spawn_durable_operation_executor(app_state: AppState) {
         loop {
             std::thread::sleep(poll_interval);
             if let Err(error) = crate::remote::recovery::retry_pending_operations(&app_state) {
-                eprintln!(
-                    "warning: durable operation executor periodic pass failed: {:?}",
+                tracing::warn!(
+                    "durable operation executor periodic pass failed: {:?}",
                     error
                 );
             }

@@ -2,6 +2,7 @@ pub mod airplay;
 pub mod batch_separation;
 pub mod bootstrap;
 pub mod cdg;
+pub mod diagnostics;
 pub mod error;
 pub mod import;
 pub mod integrity;

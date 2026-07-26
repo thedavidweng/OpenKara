@@ -54,6 +54,37 @@ describe("locale copy", () => {
       "正在发布到远程资料库：{{title}}",
     );
   });
+
+  test("defines every Settings → About key in both locales", () => {
+    // The About section is the cross-platform version + debug-export surface;
+    // a key missing from either locale would ship English (or a raw key) to
+    // the other language's users, exactly the gap the completeness guard
+    // below the remote-library flow exists to catch.
+    const aboutKeys = [
+      "settings.about.label",
+      "settings.about.description",
+      "settings.about.version",
+      "settings.about.build",
+      "settings.about.system",
+      "settings.about.catalog",
+      "settings.about.model",
+      "settings.about.runtime",
+      "settings.about.executionProvider",
+      "settings.about.logFile",
+      "settings.about.reportHint",
+      "settings.about.copyDebugInfo",
+      "settings.about.copied",
+    ];
+    const missing = aboutKeys
+      .map((key) => ({ key, en: isPresent(en, key), zh: isPresent(zh, key) }))
+      .filter((entry) => !entry.en || !entry.zh);
+    expect(
+      missing,
+      `Missing About keys: ${missing
+        .map((m) => `${m.key} (en=${m.en}, zh=${m.zh})`)
+        .join(", ")}`,
+    ).toEqual([]);
+  });
 });
 
 // Load the remote-library flow source files as raw strings at build time via

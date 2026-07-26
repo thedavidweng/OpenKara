@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { audioDir } from "@tauri-apps/api/path";
 import { confirm, open } from "@tauri-apps/plugin-dialog";
 import i18next from "@/lib/i18n";
+import { copyDebugInfo } from "@/lib/debug-info";
 import { notifyError } from "@/lib/errors";
 import * as api from "@/lib/tauri";
 import { getShortcutPlatform } from "@/lib/app-shortcuts";
@@ -167,15 +168,14 @@ export async function handleAppMenuAction(
       await importFromDialog();
       return;
     case "copy-debug-info": {
-      // Build a minimal diagnostic string without secrets.
-      // The native About dialog shows the authoritative version + build SHA;
-      // this clipboard export is a quick triage aid.
-      const lines = [
-        `OpenKara (version info in About dialog)`,
-        `Platform: ${navigator.platform}`,
-      ];
-      const text = lines.join("\n");
-      await navigator.clipboard.writeText(text);
+      // Shares the exact data path and plain-text format used by the
+      // Settings → About "Copy debug info" button (see src/lib/debug-info.ts),
+      // so the macOS Help menu produces byte-identical output.
+      try {
+        await copyDebugInfo();
+      } catch (error) {
+        notifyError(error);
+      }
       return;
     }
     default:
