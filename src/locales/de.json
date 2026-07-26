@@ -643,5 +643,14 @@
     "separation_failed": "Trennung fehlgeschlagen",
     "internal": "Interner Fehler",
     "somethingWentWrong": "Etwas ist schiefgelaufen"
+  },
+  "updater": {
+    "available": "Version {{version}} ist verfügbar",
+    "update": "Aktualisieren",
+    "downloading": "Update wird heruntergeladen… {{percent}} %",
+    "installing": "Update wird abgeschlossen…",
+    "restartToApply": "Update bereit — zum Anwenden neu starten",
+    "restart": "Neu starten",
+    "failed": "Update fehlgeschlagen — laden Sie die neueste Version manuell herunter"
   }
 }

@@ -642,5 +642,14 @@
     "separation_failed": "分離に失敗しました",
     "internal": "内部エラー",
     "somethingWentWrong": "問題が発生しました"
+  },
+  "updater": {
+    "available": "バージョン {{version}} が利用可能です",
+    "update": "更新",
+    "downloading": "更新をダウンロード中… {{percent}}%",
+    "installing": "更新をインストール中…",
+    "restartToApply": "更新の準備ができました — 再起動して適用してください",
+    "restart": "再起動",
+    "failed": "更新に失敗しました — 最新リリースを手動でダウンロードしてください"
   }
 }

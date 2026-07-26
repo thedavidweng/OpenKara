@@ -642,5 +642,14 @@
     "separation_failed": "분리 실패",
     "internal": "내부 오류",
     "somethingWentWrong": "문제가 발생했어요"
+  },
+  "updater": {
+    "available": "{{version}} 버전을 사용할 수 있어요",
+    "update": "업데이트",
+    "downloading": "업데이트 다운로드 중… {{percent}}%",
+    "installing": "업데이트 마무리 중…",
+    "restartToApply": "업데이트가 준비됐어요 — 적용하려면 다시 시작하세요",
+    "restart": "다시 시작",
+    "failed": "업데이트 실패 — 최신 릴리스를 직접 다운로드하세요"
   }
 }

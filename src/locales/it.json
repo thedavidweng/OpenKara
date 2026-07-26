@@ -644,5 +644,14 @@
     "separation_failed": "Separazione non riuscita",
     "internal": "Errore interno",
     "somethingWentWrong": "Qualcosa è andato storto"
+  },
+  "updater": {
+    "available": "È disponibile la versione {{version}}",
+    "update": "Aggiorna",
+    "downloading": "Download dell'aggiornamento… {{percent}}%",
+    "installing": "Completamento dell'aggiornamento…",
+    "restartToApply": "Aggiornamento pronto — riavvia per applicare",
+    "restart": "Riavvia",
+    "failed": "Aggiornamento non riuscito — scarica manualmente l'ultima versione"
   }
 }

@@ -642,5 +642,14 @@
     "separation_failed": "Tách thất bại",
     "internal": "Lỗi nội bộ",
     "somethingWentWrong": "Đã xảy ra lỗi"
+  },
+  "updater": {
+    "available": "Đã có phiên bản {{version}}",
+    "update": "Cập nhật",
+    "downloading": "Đang tải bản cập nhật… {{percent}}%",
+    "installing": "Đang hoàn tất cập nhật…",
+    "restartToApply": "Bản cập nhật đã sẵn sàng — khởi động lại để áp dụng",
+    "restart": "Khởi động lại",
+    "failed": "Cập nhật thất bại — hãy tải bản phát hành mới nhất theo cách thủ công"
   }
 }
