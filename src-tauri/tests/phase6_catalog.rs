@@ -45,7 +45,7 @@ fn install_records_identity_and_delete_removes_it() {
     let managed_path = bootstrap::managed_model_path_for(&temp_dir, descriptor);
     let payload = b"fake-model-payload";
 
-    bootstrap::install_verified_model_bytes(&managed_path, payload, &sha256_hex(payload))
+    support::install_verified_model_bytes(&managed_path, payload, &sha256_hex(payload))
         .expect("verified payload should install");
     let mut identity = descriptor.identity.clone();
     identity.archive_sha256 = sha256_hex(payload);
@@ -78,7 +78,7 @@ fn identity_verified_model_stays_ready_when_pin_moves() {
     let newer_payload = b"newer-generation-model";
     let newer_sha = sha256_hex(newer_payload);
 
-    bootstrap::install_verified_model_bytes(&managed_path, newer_payload, &newer_sha)
+    support::install_verified_model_bytes(&managed_path, newer_payload, &newer_sha)
         .expect("verified payload should install");
     let mut identity = descriptor.identity.clone();
     identity.generation += 1;

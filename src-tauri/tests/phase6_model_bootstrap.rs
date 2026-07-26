@@ -91,7 +91,7 @@ fn install_verified_model_bytes_writes_model_to_nested_runtime_directory() {
         .join("htdemucs.onnx");
     let payload = b"fake-model";
 
-    bootstrap::install_verified_model_bytes(&destination, payload, &sha256_hex(payload))
+    support::install_verified_model_bytes(&destination, payload, &sha256_hex(payload))
         .expect("verified payload should install");
 
     assert_eq!(
@@ -116,7 +116,7 @@ fn install_verified_model_bytes_rejects_checksum_mismatch_without_creating_desti
         .join("models")
         .join("htdemucs.onnx");
 
-    let error = bootstrap::install_verified_model_bytes(&destination, b"fake-model", "not-a-sha")
+    let error = support::install_verified_model_bytes(&destination, b"fake-model", "not-a-sha")
         .expect_err("checksum mismatch should fail");
 
     assert!(error.to_string().contains("checksum mismatch"));
@@ -235,12 +235,8 @@ fn startup_bootstrap_uses_existing_verified_manifest_for_managed_model() {
     let development_path = temp_dir.join("dev").join("htdemucs.onnx");
     let managed_bytes = b"managed-model";
 
-    bootstrap::install_verified_model_bytes(
-        &managed_path,
-        managed_bytes,
-        &sha256_hex(managed_bytes),
-    )
-    .expect("verified model should install with manifest");
+    support::install_verified_model_bytes(&managed_path, managed_bytes, &sha256_hex(managed_bytes))
+        .expect("verified model should install with manifest");
 
     let startup = derive_startup_model_bootstrap(
         &temp_dir,
@@ -307,7 +303,7 @@ fn delete_model_file_removes_verification_manifest() {
     let managed_path = bootstrap::managed_model_path(&temp_dir);
     let payload = b"fake-model";
 
-    bootstrap::install_verified_model_bytes(&managed_path, payload, &sha256_hex(payload))
+    support::install_verified_model_bytes(&managed_path, payload, &sha256_hex(payload))
         .expect("verified model should install with manifest");
     let manifest_filename = format!(
         "{}.verified.json",

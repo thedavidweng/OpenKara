@@ -916,7 +916,7 @@ mod tests {
     }
 
     #[test]
-    fn effective_stem_mode_defaults_to_two_stem() {
+    fn effective_stem_mode_defaults_to_four_stem() {
         let config = AppConfig::default();
         assert_eq!(config.effective_stem_mode(), StemMode::FourStem);
     }

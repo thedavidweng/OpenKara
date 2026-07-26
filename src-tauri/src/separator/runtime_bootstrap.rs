@@ -7,8 +7,8 @@
 //!
 //! - **active** — the runtime the app loads at startup.
 //! - **candidate** — a verified update staged for activation on the next
-//!   launch. A runtime loaded by the current process is never replaced in
-//!   place (issue #168 invariant 9).
+//!   launch, upholding the never-replaced-in-place invariant: a runtime
+//!   loaded by the current process is never overwritten under its own path.
 //! - **previous** — the last verified generation, kept for explicit
 //!   recovery when a candidate fails to activate.
 //!
