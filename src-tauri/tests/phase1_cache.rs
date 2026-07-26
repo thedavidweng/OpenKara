@@ -16,6 +16,7 @@ fn sample_song(hash: &str, title: &str, artist: &str, imported_at: i64) -> Song 
         duration_ms: 1_000,
         cover_art: Some(vec![1, 2, 3, 4]),
         has_cover_art: true,
+        artwork_thumb_path: None,
         imported_at,
         original_ext: None,
     }

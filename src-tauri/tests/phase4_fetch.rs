@@ -57,6 +57,7 @@ fn fixture_song(file_path: &Path) -> Song {
         duration_ms: 267_000,
         cover_art: None,
         has_cover_art: true,
+        artwork_thumb_path: None,
         imported_at: 1,
         original_ext: None,
     }
@@ -289,6 +290,7 @@ fn fetch_lyrics_from_connection_propagates_lrc_offset_tag() {
             duration_ms: 267_000,
             cover_art: None,
             has_cover_art: true,
+            artwork_thumb_path: None,
             imported_at: 1,
             original_ext: None,
         },
@@ -358,6 +360,7 @@ fn fetch_lyrics_from_connection_defaults_offset_to_zero_without_tag() {
             duration_ms: 267_000,
             cover_art: None,
             has_cover_art: true,
+            artwork_thumb_path: None,
             imported_at: 1,
             original_ext: None,
         },

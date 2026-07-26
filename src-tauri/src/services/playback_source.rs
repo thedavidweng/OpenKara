@@ -1263,6 +1263,7 @@ mod tests {
             duration_ms: 1000,
             cover_art: None,
             has_cover_art: false,
+            artwork_thumb_path: None,
             imported_at: 1,
             original_ext: Some("wav".to_owned()),
         }

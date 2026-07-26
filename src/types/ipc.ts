@@ -157,6 +157,13 @@ export interface Song {
   duration_ms: number;
   cover_art: CoverArtBytes;
   has_cover_art: boolean;
+  /**
+   * Absolute path of the 80x80 WebP cover-art derivative, or null when the song
+   * has no cover art or the derivative has not been generated yet. The backend
+   * stores it library-relative and absolutizes it at the IPC boundary because
+   * `convertFileSrc` requires an absolute path.
+   */
+  artwork_thumb_path: string | null;
   imported_at: number;
   original_ext: string | null;
 }

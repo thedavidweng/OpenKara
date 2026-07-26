@@ -779,6 +779,7 @@ mod tests {
             duration_ms: 1000,
             cover_art: Some(original.clone()),
             has_cover_art: true,
+            artwork_thumb_path: None,
             imported_at: 0,
             original_ext: Some("mp3".to_owned()),
         };

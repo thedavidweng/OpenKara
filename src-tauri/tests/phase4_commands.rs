@@ -60,6 +60,7 @@ fn fixture_song(hash: &str, file_path: &Path) -> Song {
         duration_ms: 267_000,
         cover_art: None,
         has_cover_art: true,
+        artwork_thumb_path: None,
         imported_at: 1,
         original_ext: None,
     }
@@ -366,6 +367,7 @@ fn extract_embedded_cover_art_updates_a_regular_song_and_persists_it() {
         duration_ms: 1_000,
         cover_art: None,
         has_cover_art: true,
+        artwork_thumb_path: None,
         imported_at: 1,
         original_ext: Some("mp3".to_owned()),
     };
@@ -430,6 +432,7 @@ fn extract_embedded_cover_art_reads_cover_art_from_media_g_zip_audio_bytes() {
         duration_ms: 1_000,
         cover_art: None,
         has_cover_art: true,
+        artwork_thumb_path: None,
         imported_at: 1,
         original_ext: Some("mp3".to_owned()),
     };
@@ -473,6 +476,7 @@ fn extract_embedded_cover_art_keeps_existing_cover_when_a_song_has_no_embedded_a
         duration_ms: 1_000,
         cover_art: Some(vec![1, 2, 3, 4]),
         has_cover_art: true,
+        artwork_thumb_path: None,
         imported_at: 1,
         original_ext: Some("wav".to_owned()),
     };

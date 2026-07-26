@@ -65,6 +65,7 @@ fn fixture_song(hash: &str, library: &LibraryRoot) -> Song {
         duration_ms: 1_000,
         cover_art: None,
         has_cover_art: true,
+        artwork_thumb_path: None,
         imported_at: 1,
         original_ext: Some("wav".to_owned()),
     }

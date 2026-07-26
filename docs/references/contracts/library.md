@@ -153,6 +153,8 @@
 2. 当前不分页
 3. 当前不做软删除过滤，因为还没有删除能力
 4. 顶层命令失败时返回 `CommandError`，而不是自由文本字符串
+5. `Song.artwork_thumb_path` 为 80×80 WebP 派生图的**绝对路径**（无封面或派生图尚未生成时为 `null`）。数据库列存的是 library 相对路径，命令在 IPC 边界改写为绝对路径，因为前端用 `convertFileSrc` 读取，该 API 只接受绝对路径
+6. 返回这些路径的同时，命令会把 library `artwork/` 目录授予 asset protocol scope（非递归）。scope 是内存态且 library 根目录可迁移，所以授权必须发生在交出路径的时刻，而不是 library 激活时
 
 ### Command: `search_library`
 
@@ -172,6 +174,7 @@
 2. 匹配范围：`title`、`artist`、`album`、`file_path`
 3. 排序规则与 `get_library` 相同
 4. 顶层命令失败时返回 `CommandError`
+5. `Song.artwork_thumb_path` 与 asset protocol 授权语义同 `get_library`
 
 ### Command: `extract_embedded_cover_art`
 
@@ -239,6 +242,9 @@
 **Semantics**
 
 1. `async` 命令，磁盘解码在 `spawn_blocking` 线程执行，不阻塞 IPC 线程
+
+   曲库网格不再走这条路径读 `thumb`：它用 `Song.artwork_thumb_path` 经 asset protocol 直接读盘。`get_cover_art` 仍然是 `original` BLOB 的唯一来源，也是派生图缺失时的惰性修复入口——前端 `<img>` 加载失败时回落到这里
+
 2. `thumb` = 80×80 无损 WebP，`preview` = 256×256 无损 WebP，`original` = 数据库 `cover_art` BLOB 原始字节
 3. 派生图文件名以封面字节的 SHA-256 为标识，存储在 library `artwork/` 目录下
 4. 读取派生图时若文件缺失或损坏，会从原始 `cover_art` 惰性重新生成并写回路径（非致命）

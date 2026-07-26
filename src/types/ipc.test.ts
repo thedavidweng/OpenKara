@@ -17,6 +17,7 @@ describe("ipc type shapes", () => {
       duration_ms: 123000,
       cover_art: null,
       has_cover_art: false,
+      artwork_thumb_path: null,
       imported_at: 0,
       original_ext: "mp3",
     };
