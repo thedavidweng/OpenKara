@@ -111,6 +111,91 @@ describe("lyrics-store fetchLyrics", () => {
     expect(mockNotifyError).not.toHaveBeenCalled();
   });
 
+  test("keeps interleaved romaji out of the lyric list and off screen until enabled", async () => {
+    const jp = (timeMs: number, text: string) => ({
+      time_ms: timeMs,
+      text,
+      words: [],
+      bg_words: null,
+      section: null,
+    });
+    mockFetchLyrics.mockResolvedValue({
+      song_id: "song-1",
+      lines: [
+        jp(850, "どうでもいいような 夜だけど"),
+        jp(850, "doudemoiiyouna yorudakedo"),
+        jp(4850, "響めき 煌めきと君も"),
+        jp(4850, "kyoumeki koumekitokunmo"),
+        jp(25810, "まだ止まった 刻む針も"),
+        jp(25810, "madatomatta kizamuharimo"),
+      ],
+      source: "embedded" as const,
+      offset_ms: 0,
+      raw_lrc: "irrelevant",
+    });
+
+    await useLyricsStore.getState().fetchLyrics("song-1");
+
+    const state = useLyricsStore.getState();
+    // Transcriptions are no longer peer lyric lines…
+    expect(state.lines.map((l) => l.text)).toEqual([
+      "どうでもいいような 夜だけど",
+      "響めき 煌めきと君も",
+      "まだ止まった 刻む針も",
+    ]);
+    // …they are the romanization overlay, which starts hidden.
+    expect(state.romanizedLines).toEqual([
+      "doudemoiiyouna yorudakedo",
+      "kyoumeki koumekitokunmo",
+      "madatomatta kizamuharimo",
+    ]);
+    expect(state.showRomanized).toBe(false);
+
+    // Enabling the toggle shows the source transcription without paying for a
+    // romanizer run, because the cache identity matches the fetched lines.
+    useLyricsStore.getState().setRomanizedVisibility(true);
+    expect(useLyricsStore.getState().showRomanized).toBe(true);
+    expect(mockRomanizeLyricsLines).not.toHaveBeenCalled();
+  });
+
+  test("recomputes romanization when the source transcribes only some lines", async () => {
+    const jp = (timeMs: number, text: string) => ({
+      time_ms: timeMs,
+      text,
+      words: [],
+      bg_words: null,
+      section: null,
+    });
+    mockFetchLyrics.mockResolvedValue({
+      song_id: "song-1",
+      lines: [
+        jp(0, "ライン一"),
+        jp(0, "rain ichi"),
+        jp(1000, "ライン二"),
+        jp(1000, "rain ni"),
+        jp(2000, "ライン三"),
+        jp(2000, "rain san"),
+        jp(3000, "ライン四"),
+      ],
+      source: "embedded" as const,
+      offset_ms: 0,
+      raw_lrc: "irrelevant",
+    });
+    mockRomanizeLyricsLines.mockResolvedValue({
+      result: ["rain ichi", "rain ni", "rain san", "rain yon"],
+      requestId: 1,
+    });
+
+    await useLyricsStore.getState().fetchLyrics("song-1");
+    expect(useLyricsStore.getState().romanizedLinesIdentity).toBeNull();
+
+    useLyricsStore.getState().setRomanizedVisibility(true);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mockRomanizeLyricsLines).toHaveBeenCalled();
+  });
+
   test("calls notifyError and clears state on error", async () => {
     const error = new Error("fetch failed");
     mockFetchLyrics.mockRejectedValue(error);
