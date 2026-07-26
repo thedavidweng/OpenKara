@@ -15,35 +15,16 @@ const {
 }));
 
 vi.mock("@/components/Playback/PlaybackStage", () => ({
-  PlaybackStage: ({
-    presentation,
-    bottomInsetPx,
-  }: {
-    presentation?: string;
-    bottomInsetPx?: number;
-  }) => (
-    <div
-      data-testid="playback-stage"
-      data-presentation={presentation}
-      data-bottom-inset={bottomInsetPx}
-    >
+  PlaybackStage: ({ presentation }: { presentation?: string }) => (
+    <div data-testid="playback-stage" data-presentation={presentation}>
       Stage
     </div>
   ),
 }));
 
 vi.mock("./FullscreenControls", () => ({
-  FullscreenControls: ({
-    onHeightChange,
-  }: {
-    onHeightChange?: (height: number) => void;
-  }) => (
-    <div
-      data-testid="fullscreen-controls"
-      data-has-height-change={String(typeof onHeightChange === "function")}
-    >
-      Controls
-    </div>
+  FullscreenControls: () => (
+    <div data-testid="fullscreen-controls">Controls</div>
   ),
 }));
 
@@ -72,7 +53,7 @@ describe("FullscreenPlayerView", () => {
     mockUseLocalAudienceRomanizeReceiver.mockImplementation(() => {});
   });
 
-  test("passes audience presentation and a persistent bottom inset to the stage", () => {
+  test("gives the audience stage the full window with no reserved controls band", () => {
     const markup = renderToStaticMarkup(<FullscreenPlayerView />);
 
     expect(markup).toContain(
@@ -80,9 +61,10 @@ describe("FullscreenPlayerView", () => {
     );
     expect(markup).toContain("flex flex-1 overflow-hidden");
     expect(markup).toContain('data-presentation="audience"');
-    expect(markup).toContain('data-bottom-inset="144"');
-    expect(markup).toContain('data-has-height-change="true"');
     expect(markup).toContain("playback-stage");
+    expect(markup).toContain("fullscreen-controls");
+    // No bottom inset is reserved for the auto-hiding controls.
+    expect(markup).not.toContain("data-bottom-inset");
   });
 
   test("announces when the local audience window opens and closes", async () => {

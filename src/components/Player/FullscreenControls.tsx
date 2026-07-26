@@ -12,33 +12,63 @@ import {
 import { useLyricsStore } from "@/stores/lyrics-store";
 import { usePlayerStore, selectCurrentPositionMs } from "@/stores/player-store";
 
-interface FullscreenControlsProps {
-  onHeightChange?: (height: number) => void;
-}
+/**
+ * Pointer-idle window before the controls fade, matching the convention every
+ * video player uses: the timer keys off pointer *movement* only, so it does
+ * not matter whether playback is running or where the pointer rests.
+ */
+const CONTROLS_IDLE_MS = 3000;
 
-export function FullscreenControls({
-  onHeightChange,
-}: FullscreenControlsProps = {}) {
+export function FullscreenControls() {
   const { t } = useTranslation();
   const [idle, setIdle] = useState(true);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
+  // The one exception to the idle timer: a pointer resting on the control bar
+  // itself keeps it up, so the user can read and aim at a button without the
+  // target fading out from under them.
+  const hoveringControlsRef = useRef(false);
 
   useEffect(() => {
-    const resetTimer = () => {
-      setIdle(false);
+    const armIdleTimer = () => {
       clearTimeout(idleTimerRef.current);
-      idleTimerRef.current = setTimeout(() => setIdle(true), 3000);
+      if (hoveringControlsRef.current) return;
+      idleTimerRef.current = setTimeout(() => setIdle(true), CONTROLS_IDLE_MS);
     };
 
-    resetTimer();
-    window.addEventListener("mousemove", resetTimer);
-    window.addEventListener("mousedown", resetTimer);
+    const wake = () => {
+      setIdle(false);
+      armIdleTimer();
+    };
+
+    const handleControlsEnter = () => {
+      hoveringControlsRef.current = true;
+      clearTimeout(idleTimerRef.current);
+      setIdle(false);
+    };
+
+    const handleControlsLeave = () => {
+      hoveringControlsRef.current = false;
+      armIdleTimer();
+    };
+
+    wake();
+    // Pointer events so pen and touch wake the controls too.
+    window.addEventListener("pointermove", wake);
+    window.addEventListener("pointerdown", wake);
+    // Native (not synthetic) enter/leave: the bar must stay up while the
+    // pointer rests on it, and React's synthetic enter/leave would not fire
+    // once the bar is pointer-events-none mid-fade.
+    const controls = containerRef.current;
+    controls?.addEventListener("pointerenter", handleControlsEnter);
+    controls?.addEventListener("pointerleave", handleControlsLeave);
 
     return () => {
       clearTimeout(idleTimerRef.current);
-      window.removeEventListener("mousemove", resetTimer);
-      window.removeEventListener("mousedown", resetTimer);
+      window.removeEventListener("pointermove", wake);
+      window.removeEventListener("pointerdown", wake);
+      controls?.removeEventListener("pointerenter", handleControlsEnter);
+      controls?.removeEventListener("pointerleave", handleControlsLeave);
     };
   }, []);
 
@@ -127,37 +157,20 @@ export function FullscreenControls({
     };
   }, []);
 
+  // Hide the OS cursor along with the controls so it does not linger as a
+  // bright dot on a projected audience screen.
   useEffect(() => {
-    if (!onHeightChange) {
-      return;
-    }
-
-    const measure = () => {
-      const height = Math.ceil(
-        containerRef.current?.getBoundingClientRect().height ?? 0,
-      );
-      if (height > 0) {
-        onHeightChange(height);
-      }
-    };
-
-    measure();
-
-    if (typeof ResizeObserver !== "undefined" && containerRef.current) {
-      const observer = new ResizeObserver(measure);
-      observer.observe(containerRef.current);
-      return () => observer.disconnect();
-    }
-
-    window.addEventListener("resize", measure);
+    const previousCursor = document.body.style.cursor;
+    document.body.style.cursor = idle ? "none" : "";
     return () => {
-      window.removeEventListener("resize", measure);
+      document.body.style.cursor = previousCursor;
     };
-  }, [onHeightChange]);
+  }, [idle]);
 
   return (
     <div
       ref={containerRef}
+      data-idle={idle ? "true" : "false"}
       className={`absolute inset-x-0 bottom-0 z-50 bg-gradient-to-t from-black/80 to-transparent px-8 pb-6 pt-16 transition-opacity duration-300 ${
         idle ? "pointer-events-none opacity-0" : "opacity-100"
       }`}
