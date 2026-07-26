@@ -11,6 +11,7 @@ pub mod config;
 pub mod hash;
 pub mod library;
 pub mod library_root;
+pub mod logging;
 pub mod lyrics;
 pub mod media_g;
 pub mod metadata;
@@ -84,6 +85,7 @@ pub fn run() {
         .setup(|app| app_runtime::setup_app(app))
         .invoke_handler(tauri::generate_handler![
             commands::bootstrap::get_model_bootstrap_status,
+            commands::diagnostics::get_debug_info,
             commands::import::import_songs,
             commands::import::get_import_candidate_details,
             commands::import::expand_import_paths,

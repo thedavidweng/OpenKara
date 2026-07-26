@@ -257,6 +257,32 @@ export interface AppSettings {
   update_policy: UpdatePolicy;
 }
 
+/**
+ * One-shot diagnostic snapshot assembled by the `get_debug_info` command. The
+ * same payload backs the Settings → About display and the copy-to-clipboard
+ * export (in-app button and the macOS Help menu), so there is a single source
+ * of truth. Field names mirror the Rust struct's snake_case serialization.
+ */
+export interface DebugInfo {
+  app_version: string;
+  build_sha: string;
+  os: string;
+  arch: string;
+  catalog_generation: number;
+  catalog_release_id: string;
+  model_variant: string;
+  model_state: string;
+  model_installed: boolean;
+  model_installed_version: string | null;
+  model_pinned_version: string;
+  runtime_state: string;
+  runtime_version: string;
+  runtime_artifact_id: string | null;
+  runtime_target_triple: string;
+  execution_provider: string;
+  log_file: string;
+}
+
 export interface ModelStatusSnapshot {
   variant: string;
   downloaded: boolean;

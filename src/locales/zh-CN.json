@@ -550,6 +550,21 @@
       "checkFailed": "检查更新失败。",
       "updateAvailable": "{{variant}}有可用更新（{{version}}）",
       "updateButton": "更新"
+    },
+    "about": {
+      "label": "关于",
+      "description": "版本与诊断信息，报告问题时请一并附上。",
+      "version": "版本",
+      "build": "构建",
+      "system": "系统",
+      "catalog": "目录",
+      "model": "模型",
+      "runtime": "运行时",
+      "executionProvider": "执行提供程序",
+      "logFile": "日志文件",
+      "reportHint": "报告问题？请把这些信息复制到反馈中，并附上上方显示的日志文件。",
+      "copyDebugInfo": "复制调试信息",
+      "copied": "已复制！"
     }
   },
   "bootstrap": {

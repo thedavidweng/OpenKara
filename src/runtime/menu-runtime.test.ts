@@ -5,9 +5,12 @@ import {
   type AppMenuAction,
 } from "./menu-runtime";
 
-const { mockGetShortcutPlatform } = vi.hoisted(() => ({
-  mockGetShortcutPlatform: vi.fn(() => "mac"),
-}));
+const { mockGetShortcutPlatform, mockCopyDebugInfo, mockNotifyError } =
+  vi.hoisted(() => ({
+    mockGetShortcutPlatform: vi.fn(() => "mac"),
+    mockCopyDebugInfo: vi.fn(),
+    mockNotifyError: vi.fn(),
+  }));
 
 vi.mock("@/lib/app-shortcuts", async () => {
   const actual = await vi.importActual<typeof import("@/lib/app-shortcuts")>(
@@ -19,6 +22,10 @@ vi.mock("@/lib/app-shortcuts", async () => {
     getShortcutPlatform: mockGetShortcutPlatform,
   };
 });
+
+vi.mock("@/lib/debug-info", () => ({ copyDebugInfo: mockCopyDebugInfo }));
+
+vi.mock("@/lib/errors", () => ({ notifyError: mockNotifyError }));
 
 describe("app menu runtime", () => {
   test("opens settings when the settings menu item is selected", async () => {
@@ -225,6 +232,44 @@ describe("app menu runtime", () => {
       }),
     );
     expect(pickImportPaths).not.toHaveBeenCalled();
+  });
+
+  test("copies debug info when the copy-debug-info menu item is selected", async () => {
+    // This suite has no beforeEach reset; clear the shared spies per test.
+    mockCopyDebugInfo.mockClear();
+    mockNotifyError.mockClear();
+    mockCopyDebugInfo.mockResolvedValueOnce(undefined);
+    const toggleSettings = vi.fn();
+    const importFromDialog = vi.fn();
+    const toggleSidebar = vi.fn();
+
+    await handleAppMenuAction("copy-debug-info", {
+      toggleSettings,
+      importFromDialog,
+      toggleSidebar,
+    });
+
+    expect(mockCopyDebugInfo).toHaveBeenCalledOnce();
+    expect(mockNotifyError).not.toHaveBeenCalled();
+    expect(toggleSettings).not.toHaveBeenCalled();
+  });
+
+  test("surfaces an error when copying debug info fails", async () => {
+    mockCopyDebugInfo.mockClear();
+    mockNotifyError.mockClear();
+    mockCopyDebugInfo.mockRejectedValueOnce(new Error("clipboard blocked"));
+    const toggleSettings = vi.fn();
+    const importFromDialog = vi.fn();
+    const toggleSidebar = vi.fn();
+
+    await handleAppMenuAction("copy-debug-info", {
+      toggleSettings,
+      importFromDialog,
+      toggleSidebar,
+    });
+
+    expect(mockCopyDebugInfo).toHaveBeenCalledOnce();
+    expect(mockNotifyError).toHaveBeenCalledOnce();
   });
 
   test("ignores unknown menu actions", async () => {

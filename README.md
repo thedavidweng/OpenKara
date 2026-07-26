@@ -252,6 +252,34 @@ MyKaraokeLibrary/
 
 All paths in the database are relative — including CD+G sidecars and MP3+G ZIP assets — so the whole library can be moved to a NAS, USB drive, or network share and opened by any OpenKara instance on any OS. Per-machine configuration (library location) is stored separately in the app data directory.
 
+## Reporting a Bug
+
+OpenKara writes a rolling log file (info level by default, errors always) so a
+problem can be diagnosed after the fact — even when the app was double-clicked
+and had no terminal attached. Logs rotate daily and the last 7 days are kept.
+
+When filing an issue, please include your **debug info** and, if relevant,
+attach the **log file**:
+
+1. Open **Settings → About** and click **Copy debug info**. Paste the result
+   into your report — it lists the app version, build SHA, OS/architecture,
+   catalog generation, model and runtime status, execution provider, and the
+   log-file path. (On macOS the same export is also available from
+   **Help → Copy Debug Info**.)
+2. Attach the current log file if the problem is reproducible.
+
+Log file location (`<date>` is the rotation day, e.g. `2026-07-25`):
+
+| Platform | Path                                                           |
+| -------- | -------------------------------------------------------------- |
+| macOS    | `~/Library/Logs/com.openkara.desktop/openkara.<date>.log`      |
+| Windows  | `%LOCALAPPDATA%\com.openkara.desktop\logs\openkara.<date>.log` |
+| Linux    | `~/.local/share/com.openkara.desktop/logs/openkara.<date>.log` |
+
+To raise verbosity for a repro, launch OpenKara with `OPENKARA_LOG=debug` (or a
+[`tracing`](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html)
+filter such as `OPENKARA_LOG=openkara_lib=trace,warn`).
+
 ## Roadmap
 
 - **[Changelog](./CHANGELOG.md)** — Completed changes by version

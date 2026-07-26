@@ -69,6 +69,18 @@ Then open the app again. This only needs to be done once.
 
 OpenKara isn't code-signed yet, so Windows SmartScreen warns before running it. Click **More info**, then **Run anyway** to launch OpenKara. You only need to do this the first time you run a new build.
 
+### How do I report a bug or find the logs?
+
+Open **Settings → About** and click **Copy debug info**, then paste the result into your bug report. It includes the app version, build, OS, and the model/runtime status a maintainer needs. On macOS the same export is available from **Help → Copy Debug Info**.
+
+OpenKara also keeps a rolling log file you can attach:
+
+- **macOS:** `~/Library/Logs/com.openkara.desktop/openkara.<date>.log`
+- **Windows:** `%LOCALAPPDATA%\com.openkara.desktop\logs\openkara.<date>.log`
+- **Linux:** `~/.local/share/com.openkara.desktop/logs/openkara.<date>.log`
+
+`<date>` is the rotation day (for example `2026-07-25`); the debug info above also prints the exact path.
+
 ## Need more detail?
 
 - [Project README](https://github.com/thedavidweng/OpenKara/blob/main/README.md)

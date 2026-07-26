@@ -467,6 +467,14 @@ describe("settings", () => {
     expect(returned).toBe(appSettings);
   });
 
+  test("getDebugInfo invokes get_debug_info", async () => {
+    const debugInfo = { app_version: "0.9.1" };
+    mockInvoke.mockResolvedValueOnce(debugInfo);
+    const returned = await settings.getDebugInfo();
+    expect(mockInvoke).toHaveBeenCalledWith("get_debug_info");
+    expect(returned).toBe(debugInfo);
+  });
+
   test("getWindowShellState invokes get_window_shell_state", async () => {
     const result = {
       chrome_variant: "desktop" as const,

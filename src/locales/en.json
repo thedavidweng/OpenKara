@@ -550,6 +550,21 @@
       "checkFailed": "Update check failed.",
       "updateAvailable": "{{variant}} update available ({{version}})",
       "updateButton": "Update"
+    },
+    "about": {
+      "label": "About",
+      "description": "Version and diagnostic details to include in bug reports.",
+      "version": "Version",
+      "build": "build",
+      "system": "System",
+      "catalog": "Catalog",
+      "model": "Model",
+      "runtime": "Runtime",
+      "executionProvider": "Execution provider",
+      "logFile": "Log file",
+      "reportHint": "Reporting a bug? Copy this info into your report and attach the log file shown above.",
+      "copyDebugInfo": "Copy debug info",
+      "copied": "Copied!"
     }
   },
   "bootstrap": {

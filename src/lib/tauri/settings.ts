@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AppSettings,
+  DebugInfo,
   ExecutionProvider,
   LibrarySortMode,
   ModelBootstrapStatusSnapshot,
@@ -19,6 +20,10 @@ export function getModelBootstrapStatus(): Promise<ModelBootstrapStatusSnapshot>
 
 export function getSettings(): Promise<AppSettings> {
   return invoke<AppSettings>("get_settings");
+}
+
+export function getDebugInfo(): Promise<DebugInfo> {
+  return invoke<DebugInfo>("get_debug_info");
 }
 
 export function getWindowShellState(): Promise<WindowShellStateSnapshot> {

@@ -411,8 +411,8 @@ pub fn downgrade_to_two_stem(
     ] {
         let stem_len = audio.samples.len() as f64;
         if stem_len > 0.0 && (max_len - stem_len) / max_len > 0.01 {
-            eprintln!(
-                "warning: stem {name} length differs from max by >1% ({} vs {max_len})",
+            tracing::warn!(
+                "stem {name} length differs from max by >1% ({} vs {max_len})",
                 audio.samples.len()
             );
         }

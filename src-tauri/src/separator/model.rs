@@ -179,8 +179,8 @@ fn preload_runtime_companions(runtime_path: &Path) {
         match unsafe { libloading::Library::new(&path) } {
             Ok(library) => std::mem::forget(library),
             Err(error) => {
-                eprintln!(
-                    "warning: failed to preload runtime companion {}: {error}",
+                tracing::warn!(
+                    "failed to preload runtime companion {}: {error}",
                     path.display()
                 );
             }
@@ -240,8 +240,8 @@ pub fn load_from_path(
     path: &Path,
     ep_preference: ExecutionProviderPreference,
 ) -> Result<LoadedModel> {
-    eprintln!(
-        "Attempting ONNX session load for {} via {}",
+    tracing::info!(
+        "attempting ONNX session load for {} via {}",
         path.display(),
         provider_diagnostic_summary(ep_preference)
     );
@@ -253,8 +253,8 @@ pub fn load_from_path(
         match load_with_ep(path, provider) {
             Ok(model) => {
                 if index > 0 {
-                    eprintln!(
-                        "Recovered ONNX session load by falling back to {} for {}",
+                    tracing::warn!(
+                        "recovered ONNX session load by falling back to {} for {}",
                         provider.as_str(),
                         path.display()
                     );
@@ -263,7 +263,7 @@ pub fn load_from_path(
             }
             Err(error) => {
                 if index + 1 < provider_chain.len() {
-                    eprintln!(
+                    tracing::warn!(
                         "ONNX session load failed with {} for {}: {error:#}",
                         provider.as_str(),
                         path.display()
@@ -334,8 +334,8 @@ fn load_with_ep(path: &Path, ep_preference: ExecutionProviderPreference) -> Resu
             .map_err(|e| anyhow::anyhow!("failed to configure execution providers: {e}"))?;
     }
 
-    eprintln!(
-        "Committing ONNX session for {} (provider preference: {})",
+    tracing::info!(
+        "committing ONNX session for {} (provider preference: {})",
         path.display(),
         ep_preference.as_str()
     );
@@ -343,8 +343,8 @@ fn load_with_ep(path: &Path, ep_preference: ExecutionProviderPreference) -> Resu
     let session = builder
         .commit_from_file(path)
         .with_context(|| format!("failed to load ONNX model from {}", path.display()))?;
-    eprintln!(
-        "Committed ONNX session for {} in {:?}",
+    tracing::info!(
+        "committed ONNX session for {} in {:?}",
         path.display(),
         commit_start.elapsed()
     );
