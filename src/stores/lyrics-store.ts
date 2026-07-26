@@ -6,6 +6,7 @@ import {
   buildLyricsIdentity,
   type LocalAudienceRomanizeState,
 } from "@/lib/local-audience-romanize";
+import { splitCompanionRomanization } from "@/lib/lyrics-companion-romanization";
 import {
   SONG_LANGUAGES,
   type SongLanguage,
@@ -30,6 +31,35 @@ const AUTO_UPGRADE_PROTECTED_SOURCES: ReadonlySet<LyricsSource> =
     "sidecar_ttml",
     "sidecar_lys",
   ]);
+
+/**
+ * Lift interleaved romaji lines out of a fetched lyric set.
+ *
+ * Bilingual sources ship the transcription as its own timestamped line, which
+ * the parser faithfully turns into a peer lyric. Extracting it here — at the
+ * single point where lines enter the store — keeps romanization out of the
+ * lyric list entirely, so it can only surface as the attached sub-line under
+ * its primary line while the Romanized-lyrics toggle is on.
+ *
+ * A complete source set seeds the romanization cache (identity set), so
+ * enabling the toggle shows the source transcription without running the
+ * romanizer. A partial set is still shown, but the identity stays null so the
+ * romanizer recomputes a full set on enable.
+ */
+function normalizeFetchedLyrics(lines: LyricLine[]): {
+  lines: LyricLine[];
+  romanizedLines: string[];
+  romanizedLinesIdentity: string | null;
+} {
+  const split = splitCompanionRomanization(lines);
+  return {
+    lines: split.lines,
+    romanizedLines: split.romanizedLines,
+    romanizedLinesIdentity: split.complete
+      ? buildLyricsIdentity(split.lines)
+      : null,
+  };
+}
 
 function getSongLanguage(songId: string | null): SongLanguage | null {
   if (!songId) return null;
@@ -103,9 +133,12 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
     try {
       const payload = await api.fetchLyrics(songId);
       if (gen !== fetchGeneration) return;
+      const normalized = normalizeFetchedLyrics(payload.lines);
       set({
         songId: payload.song_id,
-        lines: payload.lines,
+        lines: normalized.lines,
+        romanizedLines: normalized.romanizedLines,
+        romanizedLinesIdentity: normalized.romanizedLinesIdentity,
         source: payload.source,
         offsetMs: payload.offset_ms,
         rawLrc: payload.raw_lrc,
@@ -118,13 +151,13 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
       // so the upgrade cannot silently overwrite manual/sidecar lyrics
       // (issue #203).
       if (
-        payload.lines.length > 0 &&
+        normalized.lines.length > 0 &&
         payload.source !== "lrc_lib" &&
         !(
           payload.source !== null &&
           AUTO_UPGRADE_PROTECTED_SOURCES.has(payload.source)
         ) &&
-        payload.lines.every((l) => l.time_ms === 0)
+        normalized.lines.every((l) => l.time_ms === 0)
       ) {
         try {
           const online = await api.fetchLyricsOnline(songId, false);
@@ -134,9 +167,12 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
             online.lines.length > 0 &&
             online.lines.some((l) => l.time_ms > 0)
           ) {
+            const normalizedOnline = normalizeFetchedLyrics(online.lines);
             set({
               songId: online.song_id,
-              lines: online.lines,
+              lines: normalizedOnline.lines,
+              romanizedLines: normalizedOnline.romanizedLines,
+              romanizedLinesIdentity: normalizedOnline.romanizedLinesIdentity,
               source: online.source,
               offsetMs: online.offset_ms,
               rawLrc: online.raw_lrc,
@@ -190,9 +226,12 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
   saveManualLyrics: async (songId, text) => {
     try {
       const payload = await api.saveManualLyrics(songId, text);
+      const normalized = normalizeFetchedLyrics(payload.lines);
       set({
         songId: payload.song_id,
-        lines: payload.lines,
+        lines: normalized.lines,
+        romanizedLines: normalized.romanizedLines,
+        romanizedLinesIdentity: normalized.romanizedLinesIdentity,
         source: payload.source,
         offsetMs: payload.offset_ms,
         rawLrc: payload.raw_lrc,
