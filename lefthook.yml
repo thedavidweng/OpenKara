@@ -3,14 +3,18 @@ pre-commit:
   commands:
     oxfmt:
       glob: "*.{ts,tsx,js,jsx,mjs,cjs,json,css,md,html,yml,yaml}"
-      # src-tauri is entirely in oxfmt's ignorePatterns. The exclude keeps
-      # those paths out of {staged_files}, and the emptiness guard covers
-      # commits where every glob match was excluded (e.g. a catalog
-      # snapshot bump) — oxfmt exits non-zero on an empty file list.
-      exclude: 'pnpm-lock\.yaml|^src-tauri/'
+      # src-tauri is entirely in oxfmt's ignorePatterns, so it must not reach
+      # oxfmt at all: given only ignored paths, oxfmt exits non-zero with
+      # "Expected at least one target file" and blocks the commit (a catalog
+      # snapshot bump stages nothing else). lefthook v2 matches `exclude` as
+      # glob patterns — a regex here silently matches nothing, so keep these
+      # as globs and let lefthook skip the command when nothing survives.
+      exclude:
+        - "pnpm-lock.yaml"
+        - "src-tauri/**"
       # sh -c with positional args sidesteps word-splitting differences
-      # between sh and zsh parents; zero args (everything excluded) is a
-      # clean pass instead of oxfmt's non-zero "no target files".
+      # between sh and zsh parents; zero args is a clean pass, which also
+      # covers any future ignore rule that empties the list.
       run: 'sh -c ''[ $# -eq 0 ] || pnpm exec oxfmt "$@"'' -- {staged_files}'
       stage_fixed: true
     cargo-fmt:
