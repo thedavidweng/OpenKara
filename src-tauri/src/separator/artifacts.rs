@@ -25,12 +25,17 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
+use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// Hard ceiling on a single downloaded artifact (largest model is ~1.4 GiB).
 const MAX_DOWNLOAD_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 /// Wall-clock ceiling for one download on a slow but live connection.
 const DOWNLOAD_TOTAL_DEADLINE: Duration = Duration::from_secs(60 * 60);
+/// Transport attempts per artifact. Each retry resumes with a Range request,
+/// so an attempt costs a round trip rather than the megabytes already fetched.
+const DOWNLOAD_ATTEMPTS: u32 = 5;
+const DOWNLOAD_RETRY_BACKOFF: Duration = Duration::from_secs(2);
 const DOWNLOAD_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 /// Per-read inactivity timeout (reqwest's `timeout` covers reads on blocking
 /// streams once the response body is being consumed).
@@ -77,15 +82,10 @@ pub fn download_verified_to_temp(
     })?;
 
     let client = download_client()?;
-    let mut response = client
-        .get(url)
-        .send()
-        .and_then(|response| response.error_for_status())
-        .with_context(|| format!("failed to download artifact from {url}"))?;
-
     let temp_path = unique_temp_path(staging_dir, "artifact");
-    let result = stream_response_to_file(
-        &mut response,
+    let result = download_with_resume(
+        &client,
+        url,
         &temp_path,
         expected_size,
         expected_sha256,
@@ -101,20 +101,139 @@ pub fn download_verified_to_temp(
     }
 }
 
-fn stream_response_to_file(
-    response: &mut reqwest::blocking::Response,
+/// Downloads to `temp_path`, resuming after a transport failure instead of
+/// starting over.
+///
+/// The artifacts are hundreds of megabytes. A single stalled read used to
+/// discard everything already on disk, so a user on a slow link could spend an
+/// hour reaching 30% and then start again from zero (#270). A `Range` request
+/// picks up where the stream stopped, and the running hash keeps its state
+/// because no downloaded byte is ever thrown away.
+fn download_with_resume(
+    client: &reqwest::blocking::Client,
+    url: &str,
     temp_path: &Path,
     expected_size: u64,
     expected_sha256: &str,
     progress: &mut impl FnMut(u64, Option<u64>),
 ) -> Result<()> {
-    let mut file = fs::File::create(temp_path)
-        .with_context(|| format!("failed to create download file {}", temp_path.display()))?;
-
     let started_at = Instant::now();
+    let mut state = TransferState::begin(temp_path)?;
+    let mut last_error = None;
+
+    for attempt in 0..DOWNLOAD_ATTEMPTS {
+        if attempt > 0 {
+            thread::sleep(DOWNLOAD_RETRY_BACKOFF * attempt);
+        }
+        if started_at.elapsed() > DOWNLOAD_TOTAL_DEADLINE {
+            bail!("artifact download exceeded the total time budget");
+        }
+
+        let request = if state.downloaded > 0 {
+            client.get(url).header(
+                reqwest::header::RANGE,
+                format!("bytes={}-", state.downloaded),
+            )
+        } else {
+            client.get(url)
+        };
+
+        let mut response = match request
+            .send()
+            .and_then(|response| response.error_for_status())
+        {
+            Ok(response) => response,
+            Err(error) => {
+                last_error = Some(anyhow::anyhow!(
+                    "failed to download artifact from {url}: {}",
+                    error.without_url()
+                ));
+                continue;
+            }
+        };
+
+        // A server that ignores Range answers 200 with the whole body. Taking
+        // it would append a second copy, so restart the transfer instead.
+        if state.downloaded > 0 && response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
+            state = TransferState::restart(temp_path)?;
+        }
+
+        match stream_response_to_file(
+            &mut response,
+            &mut state,
+            started_at,
+            expected_size,
+            progress,
+        ) {
+            Ok(()) if state.downloaded == expected_size => {
+                return state.finish(expected_size, expected_sha256)
+            }
+            // A body that ends short is the common shape of the failure this
+            // exists for: the connection dropped and the reader simply saw EOF.
+            // Retry from where it stopped rather than reporting a truncation.
+            Ok(()) => {
+                last_error = Some(anyhow::anyhow!(
+                    "artifact download ended early at {} of {expected_size} bytes",
+                    state.downloaded
+                ));
+            }
+            Err(error) => last_error = Some(error),
+        }
+    }
+
+    Err(last_error
+        .unwrap_or_else(|| anyhow::anyhow!("artifact download failed with no recorded error")))
+}
+
+/// The bytes already on disk plus the hash of exactly those bytes. Carrying
+/// both across attempts is what makes a resume cheaper than a restart.
+struct TransferState {
+    file: fs::File,
+    hasher: Sha256,
+    downloaded: u64,
+}
+
+impl TransferState {
+    fn begin(temp_path: &Path) -> Result<Self> {
+        let file = fs::File::create(temp_path)
+            .with_context(|| format!("failed to create download file {}", temp_path.display()))?;
+        Ok(Self {
+            file,
+            hasher: Sha256::new(),
+            downloaded: 0,
+        })
+    }
+
+    fn restart(temp_path: &Path) -> Result<Self> {
+        Self::begin(temp_path)
+    }
+
+    fn finish(self, expected_size: u64, expected_sha256: &str) -> Result<()> {
+        if self.downloaded != expected_size {
+            bail!(
+                "artifact download was truncated: expected {expected_size} bytes, got {}",
+                self.downloaded
+            );
+        }
+        let actual_sha256 = crate::hash::hex_lower(self.hasher.finalize());
+        if actual_sha256 != expected_sha256 {
+            bail!("artifact digest mismatch: expected {expected_sha256}, got {actual_sha256}");
+        }
+        self.file
+            .sync_all()
+            .context("failed to sync the downloaded artifact")?;
+        Ok(())
+    }
+}
+
+fn stream_response_to_file(
+    response: &mut reqwest::blocking::Response,
+    state: &mut TransferState,
+    started_at: Instant,
+    expected_size: u64,
+    progress: &mut impl FnMut(u64, Option<u64>),
+) -> Result<()> {
     let total_bytes = Some(expected_size);
-    let mut hasher = Sha256::new();
-    let mut downloaded: u64 = 0;
     let mut buffer = [0_u8; 64 * 1024];
 
     let mut last_emit_bytes = 0_u64;
@@ -131,7 +250,12 @@ fn stream_response_to_file(
         }
     };
 
-    emit(0, true, &mut last_emit_bytes, &mut last_emit_at);
+    emit(
+        state.downloaded,
+        true,
+        &mut last_emit_bytes,
+        &mut last_emit_at,
+    );
 
     loop {
         if started_at.elapsed() > DOWNLOAD_TOTAL_DEADLINE {
@@ -143,30 +267,33 @@ fn stream_response_to_file(
         if read == 0 {
             break;
         }
-        downloaded += read as u64;
-        if downloaded > expected_size {
+        // Written and hashed before `downloaded` advances, so the counter never
+        // claims bytes a resume would then skip.
+        state
+            .file
+            .write_all(&buffer[..read])
+            .context("failed writing the artifact download to disk")?;
+        state.hasher.update(&buffer[..read]);
+        state.downloaded += read as u64;
+        if state.downloaded > expected_size {
             bail!(
                 "artifact download exceeded the declared size of {expected_size} bytes; aborting"
             );
         }
-        hasher.update(&buffer[..read]);
-        file.write_all(&buffer[..read])
-            .with_context(|| format!("failed writing download to {}", temp_path.display()))?;
-        emit(downloaded, false, &mut last_emit_bytes, &mut last_emit_at);
+        emit(
+            state.downloaded,
+            false,
+            &mut last_emit_bytes,
+            &mut last_emit_at,
+        );
     }
 
-    emit(downloaded, true, &mut last_emit_bytes, &mut last_emit_at);
-
-    if downloaded != expected_size {
-        bail!("artifact download was truncated: expected {expected_size} bytes, got {downloaded}");
-    }
-    let actual_sha256 = crate::hash::hex_lower(hasher.finalize());
-    if actual_sha256 != expected_sha256 {
-        bail!("artifact digest mismatch: expected {expected_sha256}, got {actual_sha256}");
-    }
-
-    file.sync_all()
-        .with_context(|| format!("failed to sync download file {}", temp_path.display()))?;
+    emit(
+        state.downloaded,
+        true,
+        &mut last_emit_bytes,
+        &mut last_emit_at,
+    );
     Ok(())
 }
 
