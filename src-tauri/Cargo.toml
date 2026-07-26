@@ -65,6 +65,13 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 tracing-appender = "0.2.3"
 tauri-plugin-window-state = "2.4.1"
 
+# Every `unsafe` block carries a SAFETY comment. The lint is what keeps that
+# true: the FFI bridges are the only unsafe surface in the app, and an
+# undocumented block there is the kind of thing that reads as reviewed when it
+# was not.
+[lints.clippy]
+undocumented_unsafe_blocks = "warn"
+
 [dev-dependencies]
 filetime = "0.2.29"
 hound = "3.5.1"

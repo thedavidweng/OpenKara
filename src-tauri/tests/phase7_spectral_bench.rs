@@ -49,6 +49,7 @@ fn peak_rss_kb() -> Option<u64> {
         // SAFETY: getrusage writes a plain struct for the calling process.
         let rc = unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) };
         if rc == 0 {
+            // SAFETY: getrusage returned 0, so it initialized the struct.
             let usage = unsafe { usage.assume_init() };
             // macOS reports bytes, Linux kilobytes.
             let raw = usage.ru_maxrss as u64;
