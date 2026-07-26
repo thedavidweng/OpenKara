@@ -41,14 +41,17 @@ pub fn import_songs(
 ) -> CommandResult<ImportSongsResult> {
     // Connection + outbox share one library SQLite transaction inside the
     // mutation wrapper — do not open a separate connection here.
-    remote::run_imported_songs_mutation(&state, &app_handle, |connection, library| {
-        import_songs_from_paths_with_options(
-            connection,
-            library,
-            &paths,
-            &options.unwrap_or_default(),
-        )
-    })
+    let mut result =
+        remote::run_imported_songs_mutation(&state, &app_handle, |connection, library| {
+            import_songs_from_paths_with_options(
+                connection,
+                library,
+                &paths,
+                &options.unwrap_or_default(),
+            )
+        })?;
+    absolutize_thumbnail_paths(&app_handle, &mut result.imported, &state.library_root()?);
+    Ok(result)
 }
 
 #[tauri::command]
@@ -137,6 +140,10 @@ pub fn pick_import_paths(default_path: Option<String>) -> CommandResult<Vec<Stri
 /// This is the seam named on `Song::artwork_thumb_path`: the frontend feeds the
 /// value to `convertFileSrc`, which only accepts absolute paths, while the
 /// backend keeps paths relative so a library stays portable across machines.
+///
+/// Every command that hands a `Song` to the frontend must run this, not just
+/// the two that feed the grid: a song returned by an edit command with a
+/// still-relative path renders a failed image request before falling back.
 ///
 /// The scope grant lives here rather than at library activation because this is
 /// the one place the app promises "this path is loadable" — an activation path
@@ -415,7 +422,7 @@ pub fn extract_embedded_cover_art(
 ) -> CommandResult<ExtractEmbeddedCoverArtResult> {
     let library = state.library_root()?;
 
-    remote::run_updated_songs_mutation(
+    let mut result = remote::run_updated_songs_mutation(
         &state,
         &app_handle,
         |connection| {
@@ -424,7 +431,9 @@ pub fn extract_embedded_cover_art(
             ))
         },
         |result| remote::song_ids_from_songs(&result.updated_songs),
-    )
+    )?;
+    absolutize_thumbnail_paths(&app_handle, &mut result.updated_songs, &library);
+    Ok(result)
 }
 
 #[tauri::command]
@@ -435,9 +444,15 @@ pub fn update_song_metadata(
     title: Option<String>,
     artist: Option<String>,
 ) -> CommandResult<Song> {
-    remote::run_song_database_mutation(&state, &app_handle, &hash, |connection| {
+    let mut song = remote::run_song_database_mutation(&state, &app_handle, &hash, |connection| {
         update_song_metadata_in_connection(connection, &hash, title.as_deref(), artist.as_deref())
-    })
+    })?;
+    absolutize_thumbnail_paths(
+        &app_handle,
+        std::slice::from_mut(&mut song),
+        &state.library_root()?,
+    );
+    Ok(song)
 }
 
 #[tauri::command]
@@ -450,9 +465,11 @@ pub fn set_songs_instrumental(
     let library = state.library_root()?;
     let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
 
-    remote::run_database_then_library_mirror_mutation(&state, &app_handle, || {
+    let mut songs = remote::run_database_then_library_mirror_mutation(&state, &app_handle, || {
         set_songs_instrumental_in_connection(&connection, &song_ids, instrumental)
-    })
+    })?;
+    absolutize_thumbnail_paths(&app_handle, &mut songs, &library);
+    Ok(songs)
 }
 
 #[tauri::command]
@@ -465,9 +482,11 @@ pub fn set_songs_language(
     let library = state.library_root()?;
     let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
 
-    remote::run_database_then_library_mirror_mutation(&state, &app_handle, || {
+    let mut songs = remote::run_database_then_library_mirror_mutation(&state, &app_handle, || {
         set_songs_language_in_connection(&connection, &song_ids, language.as_deref())
-    })
+    })?;
+    absolutize_thumbnail_paths(&app_handle, &mut songs, &library);
+    Ok(songs)
 }
 
 #[tauri::command]
