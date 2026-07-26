@@ -55,7 +55,6 @@ use std::time::Duration;
 /// pinned the cache entry for the process lifetime.
 pub(crate) struct RemoteStreamingRuntime {
     /// RAII pin guard. Unpins the cache entry on drop.
-    #[allow(dead_code)]
     pub(crate) cache_pin_guard: Option<CachePinGuard>,
     /// Fetch event receiver. The caller should drain this in a dedicated
     /// listener thread to handle ConsecutiveFailures, UrlExpired, etc.
@@ -415,7 +414,6 @@ impl EventSink for RecordingEventSink {
 /// Production reconnect entry point used by `services::playback`. Wraps
 /// [`run_reconnect`] with the production jitter RNG and sleep function.
 /// Exposed so the playback loop does not need to thread the RNG/sleep itself.
-#[allow(dead_code)]
 pub(crate) fn reconnect_production<S, R, K, C, G, E>(
     song_id: &str,
     request_id: u64,

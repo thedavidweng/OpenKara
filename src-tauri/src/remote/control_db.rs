@@ -194,7 +194,6 @@ impl OperationState {
 ///
 /// Mirrors the `direction` CHECK constraint.
 // used by PR#5: resumable uploads/downloads
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TransferDirection {
@@ -204,7 +203,6 @@ pub enum TransferDirection {
 
 impl TransferDirection {
     // used by PR#5: resumable uploads/downloads
-    #[allow(dead_code)]
     pub fn as_str(self) -> &'static str {
         match self {
             TransferDirection::Upload => "upload",
@@ -834,7 +832,6 @@ pub fn list_operations(connection: &Connection) -> CommandResult<Vec<OperationRo
 
 /// Load all operation rows for a given library.
 // used by PR#4: operation executor
-#[allow(dead_code)]
 pub fn list_operations_for_library(
     connection: &Connection,
     library_id: &str,
@@ -1046,7 +1043,6 @@ fn map_transfer_part_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TransferPa
 /// completes (or is cancelled) so stale offsets do not cause a future restart
 /// to resume against a non-existent remote partial.
 // used by PR#5: resumable uploads/downloads
-#[allow(dead_code)]
 pub fn delete_transfer_parts(connection: &Connection, operation_id: &str) -> CommandResult<()> {
     connection
         .execute(

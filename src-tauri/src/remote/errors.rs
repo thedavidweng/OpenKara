@@ -28,7 +28,6 @@ pub(crate) struct RemoteProviderCapabilities {
     /// The provider supports resumable uploads with offset query/resume.
     /// PR#5 fills this `true` where supported; PR#4 leaves it `false`.
     // used by PR#5: resumable uploads
-    #[allow(dead_code)]
     pub resumable_upload: bool,
     /// The provider supports HTTP Range downloads.
     pub range_download: bool,
@@ -77,10 +76,8 @@ pub(crate) enum RemoteErrorKind {
     /// The authenticated user lacks permission for the operation.
     PermissionDenied,
     /// The local disk is full.
-    #[allow(dead_code)]
     DiskFull,
     /// The operation was cancelled by the user or a coalescing decision.
-    #[allow(dead_code)]
     OperationCancelled,
     /// The playback request that initiated this operation is no longer
     /// current — the user skipped to a different song (or a newer request
@@ -151,7 +148,6 @@ pub(crate) struct RemoteError {
     /// shared retry driver when present and bounded; `None` means the driver
     /// falls back to full-jitter backoff.
     // used by PR#5: shared network retry policy
-    #[allow(dead_code)]
     pub retry_after: Option<std::time::Duration>,
 }
 
@@ -263,7 +259,6 @@ pub(crate) fn kind_from_http_status(status: reqwest::StatusCode) -> RemoteErrorK
 /// file write (e.g. uploading bytes read from disk). Disk-full is detected by
 /// error kind; everything else is treated as a local IO failure (not a remote
 /// kind, but reported as NetworkUnavailable so the operation retries).
-#[allow(dead_code)]
 pub(crate) fn kind_from_io_error(error: &std::io::Error) -> RemoteErrorKind {
     if error.kind() == std::io::ErrorKind::Other {
         // `ErrorKind::Other` may wrap ENOSPC on some platforms via
