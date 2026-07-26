@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect } from "react";
 import { PlaybackStage } from "@/components/Playback/PlaybackStage";
 import { useCdgFrameReceiver } from "@/hooks/use-cdg-frame-receiver";
 import { useLocalAudienceRomanizeReceiver } from "@/hooks/use-local-audience-romanize-receiver";
@@ -9,15 +9,7 @@ import {
 import { announceLocalAudienceOutputActive } from "@/lib/plain-text-page-controls";
 import { FullscreenControls } from "./FullscreenControls";
 
-const FULLSCREEN_STAGE_BOTTOM_INSET_PX = 144;
-
 export function FullscreenPlayerView() {
-  // Keep a conservative default so the first paint never renders beneath the
-  // floating footer before the client measures its actual height.
-  const [bottomInsetPx, setBottomInsetPx] = useState(
-    FULLSCREEN_STAGE_BOTTOM_INSET_PX,
-  );
-
   useFullscreenPlaybackRuntime();
   useLyricsAutoFetch();
   useCdgFrameReceiver();
@@ -39,22 +31,16 @@ export function FullscreenPlayerView() {
     };
   }, []);
 
-  const handleControlsHeightChange = useCallback((height: number) => {
-    const nextHeight = Math.max(
-      FULLSCREEN_STAGE_BOTTOM_INSET_PX,
-      Math.ceil(height),
-    );
-    setBottomInsetPx((current) =>
-      current === nextHeight ? current : nextHeight,
-    );
-  }, []);
-
+  // RATIONALE: the stage spans the full window height. Reserving a permanent
+  // band for the auto-hiding controls left a dead black strip along the
+  // bottom of the audience screen even while the controls were hidden; the
+  // controls float above the lyrics with their own scrim instead.
   return (
     <div className="relative flex h-screen w-screen flex-col bg-black">
       <div className="flex flex-1 overflow-hidden">
-        <PlaybackStage presentation="audience" bottomInsetPx={bottomInsetPx} />
+        <PlaybackStage presentation="audience" />
       </div>
-      <FullscreenControls onHeightChange={handleControlsHeightChange} />
+      <FullscreenControls />
     </div>
   );
 }

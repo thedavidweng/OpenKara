@@ -362,6 +362,13 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
               : undefined
           }
         >
+          {/* Audience windows own the whole screen: a half-viewport spacer at
+              each end lets the first and last lines center like every other
+              line, instead of clamping them against the viewport edge. Paged
+              plain text must fill the viewport exactly, so it gets neither. */}
+          {isAudience && !shouldRenderAudiencePlainTextPages ? (
+            <div className="h-[50vh] w-full shrink-0" />
+          ) : null}
           {visibleLines.map((line, idx) => {
             const absoluteIndex = shouldRenderAudiencePlainTextPages
               ? currentPageStart + idx
@@ -399,7 +406,11 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
             );
           })}
           {/* Keep the last lyric line readable above floating controls */}
-          <div className="h-[30vh] w-full shrink-0" />
+          {shouldRenderAudiencePlainTextPages ? null : (
+            <div
+              className={`w-full shrink-0 ${isAudience ? "h-[50vh]" : "h-[30vh]"}`}
+            />
+          )}
         </div>
       </div>
       {shouldRenderAudiencePlainTextPages ? (

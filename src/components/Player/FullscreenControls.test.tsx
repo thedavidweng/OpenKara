@@ -301,34 +301,112 @@ describe("FullscreenControls Romanize button", () => {
     // The mock lyrics store is the projection; click must not flip it.
     expect(mockLyricsStore.showRomanized).toBe(false);
   });
+});
 
-  test("the measured control footer still reports its new height with the Romanize button present", async () => {
-    const onHeightChange = vi.fn();
-    const fixedHeight = 220;
+describe("FullscreenControls auto-hide", () => {
+  let container: HTMLDivElement;
+  let root: ReturnType<typeof createRoot>;
 
-    await act(async () => {
-      root.render(<FullscreenControls onHeightChange={onHeightChange} />);
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockLyricsStore.showRomanized = false;
+    mockLyricsStore.isRomanizing = false;
+    mockLyricsStore.songId = "song-1";
+    mockLyricsStore.lines = [{ time_ms: 0, text: "hello" }];
+    mockPlayerStore.snapshot = {
+      song_id: "song-1",
+      is_playing: true,
+      volume: 0.5,
+    };
+    document.body.style.cursor = "";
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    vi.useRealTimers();
+  });
+
+  function getFooter(): HTMLElement {
+    return container.firstElementChild as HTMLElement;
+  }
+
+  test("hides once the pointer has been still for the idle window, and wakes on movement", () => {
+    act(() => {
+      root.render(<FullscreenControls />);
     });
 
-    // The FullscreenControls measures its own container ref via
-    // getBoundingClientRect. Patch the rendered footer element's height so
-    // the measure callback reports a non-zero value that includes the
-    // Romanize button row.
-    const footer = container.firstElementChild as HTMLElement;
-    expect(footer).not.toBeNull();
-    expect(footer.contains(getRomanizeButton())).toBe(true);
+    const footer = getFooter();
+    expect(footer.getAttribute("data-idle")).toBe("false");
 
-    const original = footer.getBoundingClientRect.bind(footer);
-    vi.spyOn(footer, "getBoundingClientRect").mockImplementation(() => ({
-      ...original(),
-      height: fixedHeight,
-    }));
+    act(() => {
+      window.dispatchEvent(new Event("pointermove"));
+    });
+    expect(footer.getAttribute("data-idle")).toBe("false");
 
-    await act(async () => {
-      // Trigger a remeasure by dispatching a resize event.
-      window.dispatchEvent(new Event("resize"));
+    act(() => {
+      vi.advanceTimersByTime(3000);
     });
 
-    expect(onHeightChange).toHaveBeenCalledWith(fixedHeight);
+    expect(footer.getAttribute("data-idle")).toBe("true");
+    expect(footer.className).toContain("opacity-0");
+    // The cursor hides with the controls so it cannot linger as a bright dot
+    // on a projected audience screen.
+    expect(document.body.style.cursor).toBe("none");
+
+    act(() => {
+      window.dispatchEvent(new Event("pointermove"));
+    });
+    expect(footer.getAttribute("data-idle")).toBe("false");
+    expect(document.body.style.cursor).toBe("");
+  });
+
+  test("keeps the controls up while the pointer rests on them", () => {
+    act(() => {
+      root.render(<FullscreenControls />);
+    });
+
+    const footer = getFooter();
+
+    act(() => {
+      footer.dispatchEvent(new Event("pointerenter"));
+    });
+    act(() => {
+      vi.advanceTimersByTime(6000);
+    });
+
+    // A stationary pointer over the bar must not fade the button out from
+    // under the user.
+    expect(footer.getAttribute("data-idle")).toBe("false");
+
+    act(() => {
+      footer.dispatchEvent(new Event("pointerleave"));
+    });
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(footer.getAttribute("data-idle")).toBe("true");
+  });
+
+  test("hides while paused, because the idle timer ignores playback state", () => {
+    mockPlayerStore.snapshot = {
+      song_id: "song-1",
+      is_playing: false,
+      volume: 0.5,
+    };
+
+    act(() => {
+      root.render(<FullscreenControls />);
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(getFooter().getAttribute("data-idle")).toBe("true");
   });
 });

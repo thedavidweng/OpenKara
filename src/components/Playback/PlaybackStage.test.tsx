@@ -95,12 +95,12 @@ describe("PlaybackStage", () => {
     expect(markup).not.toContain("lyrics-panel");
   });
 
-  test("applies a bottom inset for audience-safe overlays", () => {
+  test("audience stages reserve no bottom band so lyrics own the whole screen", () => {
     const markup = renderToStaticMarkup(
-      <PlaybackStage presentation="audience" bottomInsetPx={144} />,
+      <PlaybackStage presentation="audience" />,
     );
 
-    expect(markup).toContain('style="padding-bottom:144px"');
+    expect(markup).not.toContain("padding-bottom");
   });
 
   test("renders a cover-art ambience backdrop for standard lyric stages without CDG", () => {

@@ -34,14 +34,18 @@ vi.mock("@tauri-apps/api/window", () => ({
   availableMonitors: mockAvailableMonitors,
 }));
 
+// Monitor geometry mirrors availableMonitors(): PHYSICAL pixels plus the
+// scale factor the implementation must divide by to obtain logical pixels.
 const monitors = [
   {
     position: { x: 0, y: 0 },
     size: { width: 1920, height: 1080 },
+    scaleFactor: 1,
   },
   {
     position: { x: 1920, y: 0 },
-    size: { width: 2560, height: 1440 },
+    size: { width: 5120, height: 2880 },
+    scaleFactor: 2,
   },
 ];
 
@@ -125,21 +129,25 @@ describe("openFullscreenPlayer", () => {
     expect(mockCloseByLabel).toHaveBeenCalledOnce();
   });
 
-  test("creates window on secondary monitor by default when multiple monitors exist", async () => {
+  test("creates a fullscreen window on the secondary monitor in logical pixels", async () => {
     mockGetByLabel.mockResolvedValue(null);
     mockAvailableMonitors.mockResolvedValue(monitors);
 
     await openFullscreenPlayer();
 
+    // The 5120x2880 @ 2x monitor at physical x=1920 must be addressed with
+    // logical (÷ scaleFactor) coordinates or the window misses the monitor.
     expect(mockWebviewWindowConstructor).toHaveBeenCalledWith(
       "fullscreen-player",
       expect.objectContaining({
         url: "index.html?mode=fullscreen-player",
         title: "OpenKara Player",
-        x: 1920,
+        x: 960,
         y: 0,
         width: 2560,
         height: 1440,
+        decorations: false,
+        fullscreen: true,
       }),
     );
   });
@@ -170,10 +178,11 @@ describe("openFullscreenPlayer", () => {
     expect(mockWebviewWindowConstructor).toHaveBeenCalledWith(
       "fullscreen-player",
       expect.objectContaining({
-        x: 1920,
+        x: 960,
         y: 0,
         width: 2560,
         height: 1440,
+        fullscreen: true,
       }),
     );
   });
