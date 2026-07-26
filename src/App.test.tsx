@@ -38,9 +38,14 @@ describe("App", () => {
     expect(markup).not.toContain('data-testid="full-app-layout"');
   });
 
-  test("renders nothing while the library path probe is still pending", () => {
+  test("renders the dark shell skeleton while the library path probe is still pending", () => {
     const markup = renderToStaticMarkup(<App initialLibraryReady={null} />);
 
-    expect(markup).toBe("");
+    // Rendering nothing here made launch jump from a blank surface straight to
+    // the populated layout; the skeleton gives the reveal a frame to start on.
+    expect(markup).toContain('data-testid="app-shell-skeleton"');
+    expect(markup).toContain("bg-[var(--color-surface)]");
+    expect(markup).not.toContain('data-testid="full-app-layout"');
+    expect(markup).not.toContain('data-testid="library-setup"');
   });
 });

@@ -10,7 +10,10 @@
         "height": 800,
         "resizable": true,
         "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "visible": false,
+        "center": true,
+        "backgroundColor": "#121212"
       }
     ]
   }

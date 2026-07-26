@@ -21,7 +21,8 @@
         "height": 800,
         "resizable": true,
         "visible": false,
-        "center": true
+        "center": true,
+        "backgroundColor": "#121212"
       }
     ],
     "security": {

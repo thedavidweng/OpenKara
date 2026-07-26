@@ -9,7 +9,10 @@
         "minWidth": 680,
         "height": 800,
         "resizable": true,
-        "decorations": false
+        "decorations": false,
+        "visible": false,
+        "center": true,
+        "backgroundColor": "#121212"
       }
     ]
   }

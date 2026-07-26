@@ -178,7 +178,15 @@ bool ok_window_shell_configure_main_window(
         // default capability or that affordance becomes a dead button.
         window.movableByWindowBackground = NO;
 
-        window.backgroundColor = [NSColor windowBackgroundColor];
+        // RATIONALE: windowBackgroundColor is near-white under the Light system
+        // appearance, so it painted a white frame behind the WKWebView before
+        // the document's own dark background composited — the white flash seen
+        // at launch. Pin the native backing to the app shell's dark surface
+        // (#121212) so nothing brighter than the UI can ever be exposed.
+        window.backgroundColor = [NSColor colorWithSRGBRed:(18.0 / 255.0)
+                                                    green:(18.0 / 255.0)
+                                                     blue:(18.0 / 255.0)
+                                                    alpha:1.0];
 
         NSWindowStyleMask styleMask = [window styleMask];
         if ((styleMask & NSWindowStyleMaskFullSizeContentView) == 0) {
