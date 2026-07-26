@@ -23,6 +23,7 @@ pub enum WindowChromeVariant {
     // The `Mac` variant is only constructed on macOS, but must exist on all
     // platforms for serde serialization compatibility — the frontend expects
     // `mac` in the JSON payload regardless of the backend platform.
+    #[allow(dead_code)]
     Mac,
 }
 
@@ -30,6 +31,7 @@ pub enum WindowChromeVariant {
 #[serde(rename_all = "snake_case")]
 pub enum WindowShellTier {
     Desktop,
+    #[allow(dead_code)]
     Mac,
 }
 
@@ -57,6 +59,7 @@ impl WindowShellState {
 
     /// macOS-only constructor. Gated because on Linux the `Mac` variants and
     /// `MAC_*` constants are never used; the `Mac` enum variants still exist
+    /// (with `#[allow(dead_code)]`) for serde serialization compatibility.
     #[cfg(target_os = "macos")]
     pub fn mac() -> Self {
         Self {
