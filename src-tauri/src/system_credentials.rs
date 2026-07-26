@@ -329,6 +329,8 @@ mod platform {
             target_alias: ptr::null_mut(),
             user_name: username_utf16.as_mut_ptr(),
         };
+        // SAFETY: every pointer in `credential` borrows a local buffer that
+        // outlives this call, and CredWriteW copies what it stores.
         let ok = unsafe { CredWriteW(&credential, 0) };
         if ok != 0 {
             return Ok(());
@@ -336,6 +338,8 @@ mod platform {
 
         bail!(
             "OpenKara could not store remote credentials in Windows Credential Manager (error {}).",
+            // SAFETY: reads the calling thread's last-error slot. Takes no
+            // arguments and touches no memory we own.
             unsafe { GetLastError() }
         )
     }
@@ -343,6 +347,9 @@ mod platform {
     pub fn load(target: String) -> Result<Option<String>> {
         let mut credential_ptr: *mut CredentialW = ptr::null_mut();
         let target_utf16 = to_utf16(&target);
+        // SAFETY: the target name is a NUL-terminated UTF-16 local that
+        // outlives the call, and `credential_ptr` is a live local the API writes
+        // an owned pointer into - freed by CredFree below.
         let ok = unsafe {
             CredReadW(
                 target_utf16.as_ptr(),
@@ -352,6 +359,7 @@ mod platform {
             )
         };
         if ok == 0 {
+            // SAFETY: reads the calling thread's last-error slot.
             let error = unsafe { GetLastError() };
             if error == ERROR_NOT_FOUND {
                 return Ok(None);
@@ -362,7 +370,11 @@ mod platform {
             );
         }
 
+        // SAFETY: CredReadW returned success, so it wrote a valid pointer that
+        // stays alive until the CredFree below.
         let credential = unsafe { &*credential_ptr };
+        // SAFETY: the blob pointer and its length come from the same struct the
+        // API just filled in, and the borrow ends before CredFree.
         let bytes = unsafe {
             std::slice::from_raw_parts(
                 credential.credential_blob,
@@ -372,6 +384,8 @@ mod platform {
         let value = String::from_utf8(bytes.to_vec()).map_err(|error| {
             anyhow::anyhow!("failed to decode Windows credential payload: {error}")
         });
+        // SAFETY: frees the allocation CredReadW handed us, once. `bytes` was
+        // already copied into an owned Vec, so nothing borrows it here.
         unsafe { CredFree(credential_ptr.cast()) };
         let value = value?;
         Ok(Some(value))
@@ -379,11 +393,14 @@ mod platform {
 
     pub fn delete(target: String) -> Result<()> {
         let target_utf16 = to_utf16(&target);
+        // SAFETY: the target name is a NUL-terminated UTF-16 local that
+        // outlives the call.
         let ok = unsafe { CredDeleteW(target_utf16.as_ptr(), CRED_TYPE_GENERIC, 0) };
         if ok != 0 {
             return Ok(());
         }
 
+        // SAFETY: reads the calling thread's last-error slot.
         let error = unsafe { GetLastError() };
         if error == ERROR_NOT_FOUND {
             return Ok(());

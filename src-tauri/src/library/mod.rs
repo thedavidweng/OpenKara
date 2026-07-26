@@ -33,6 +33,14 @@ pub struct Song {
     pub duration_ms: i64,
     pub cover_art: Option<Vec<u8>>,
     pub has_cover_art: bool,
+    /// Path to the 80 px WebP thumbnail derivative, or `None` when the song has
+    /// no cover art or the derivative has not been generated yet.
+    ///
+    /// SEAM: the database column is library-relative, like `file_path`. The two
+    /// commands that feed the library grid rewrite this to an absolute path
+    /// before it crosses IPC, because `convertFileSrc` needs one. Inside the
+    /// backend, treat it as relative.
+    pub artwork_thumb_path: Option<String>,
     pub imported_at: i64,
     pub original_ext: Option<String>,
 }
@@ -108,6 +116,7 @@ mod tests {
             duration_ms: 1_000,
             cover_art: None,
             has_cover_art: false,
+            artwork_thumb_path: None,
             imported_at: 1,
             original_ext: Some("mp3".to_owned()),
         }

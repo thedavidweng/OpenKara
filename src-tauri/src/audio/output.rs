@@ -1546,6 +1546,7 @@ fn build_output_stream<T>(
     airplay_local_output_suppressed: Arc<AtomicBool>,
     peak_ring: Arc<PeakRing>,
     output_format: OutputFormatState,
+    device_lost: Arc<AtomicBool>,
 ) -> Result<Stream, PlaybackError>
 where
     T: SizedSample + Sample + cpal::FromSample<f32>,
@@ -1664,7 +1665,12 @@ where
                 );
             },
             move |error| {
-                eprintln!("audio output stream error: {error}");
+                // The only portable signal that the device went away. Flagging
+                // it lets the supervising thread rebuild against whatever the
+                // default output device is now, instead of holding a stream
+                // that will never produce sound again.
+                tracing::warn!("audio output stream error: {error}");
+                device_lost.store(true, Ordering::SeqCst);
             },
             None,
         )
@@ -1686,6 +1692,117 @@ fn start_output_thread(
     peak_ring: Arc<PeakRing>,
     output_format: OutputFormatState,
 ) -> Result<(), PlaybackError> {
+    let mut startup_tx = Some(startup_tx);
+
+    // Supervise the stream instead of parking on it. Home karaoke runs on
+    // Bluetooth speakers and HDMI TV audio, where the output device
+    // disappearing mid-song is routine; a stream that outlives its device
+    // produces silence forever and the only recovery used to be restarting the
+    // app.
+    //
+    // Rebuilding is safe because the stream owns none of the playback state:
+    // position, stem lockstep, EQ and crossfade all live in
+    // `PlaybackController`. `build_output_stream` bumps the output-format
+    // generation on every construction, which is exactly the "device restart"
+    // case its own comments already describe.
+    //
+    // ponytail: recovers from disconnects cpal reports through the error
+    // callback. A device that keeps the stream nominally alive but stops
+    // producing sound (some Bluetooth stacks) needs a platform device-change
+    // listener - CoreAudio property listener on macOS - which is a separate
+    // change.
+    let mut rebuild_failure_logged = false;
+    while !shutdown.load(Ordering::Relaxed) {
+        let device_lost = Arc::new(AtomicBool::new(false));
+        let stream = match open_output_stream(
+            &playback,
+            &airplay_audio_tap,
+            &airplay_local_output_suppressed,
+            &peak_ring,
+            &output_format,
+            &device_lost,
+        ) {
+            Ok(stream) => stream,
+            Err(error) => {
+                // The first attempt is the caller's startup path, so a failure
+                // there has to propagate. Later failures mean the device is
+                // gone and nothing has replaced it yet: back off and keep
+                // trying so replugging recovers on its own.
+                if let Some(tx) = startup_tx.take() {
+                    let _ = tx.send(Err(PlaybackError::AudioOutputUnavailable(
+                        error.to_string(),
+                    )));
+                    return Err(error);
+                }
+                if !rebuild_failure_logged {
+                    tracing::warn!("audio output unavailable, retrying: {error}");
+                    rebuild_failure_logged = true;
+                }
+                thread::sleep(OUTPUT_DEVICE_RETRY_INTERVAL);
+                continue;
+            }
+        };
+        rebuild_failure_logged = false;
+
+        // A rebuilt stream carries a prepared track captured at the previous
+        // output-format generation, which would play at the wrong format.
+        if let Ok(mut controller) = playback.try_lock() {
+            controller.cancel_crossfade_and_prepared();
+        }
+
+        if let Err(error) = stream.play() {
+            let error = PlaybackError::AudioOutputUnavailable(format!(
+                "failed to start audio output stream: {error}"
+            ));
+            if let Some(tx) = startup_tx.take() {
+                let _ = tx.send(Err(PlaybackError::AudioOutputUnavailable(
+                    error.to_string(),
+                )));
+                return Err(error);
+            }
+            tracing::warn!("{error}");
+            thread::sleep(OUTPUT_DEVICE_RETRY_INTERVAL);
+            continue;
+        }
+
+        if let Some(tx) = startup_tx.take() {
+            let _ = tx.send(Ok(()));
+        }
+
+        while !shutdown.load(Ordering::Relaxed) && !device_lost.load(Ordering::SeqCst) {
+            thread::sleep(OUTPUT_DEVICE_POLL_INTERVAL);
+        }
+
+        if device_lost.load(Ordering::SeqCst) {
+            tracing::warn!("audio output device went away; rebuilding the stream");
+        }
+        drop(stream);
+    }
+
+    Ok(())
+}
+
+/// How often the supervisor checks whether the stream died. Small enough that
+/// a disconnect is answered well inside the one-second mark a listener would
+/// notice, cheap enough to be irrelevant on an otherwise idle thread.
+const OUTPUT_DEVICE_POLL_INTERVAL: Duration = Duration::from_millis(200);
+/// Backoff when no output device is available at all - the speaker is unplugged
+/// and nothing has taken its place yet.
+const OUTPUT_DEVICE_RETRY_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Opens a stream on the current default output device.
+///
+/// Split out of the supervisor because it runs on every rebuild, and because
+/// resolving the device here rather than once at startup is what makes the
+/// recovery land on whatever the user's new default is.
+fn open_output_stream(
+    playback: &Arc<Mutex<PlaybackController>>,
+    airplay_audio_tap: &Arc<AirPlayAudioTap>,
+    airplay_local_output_suppressed: &Arc<AtomicBool>,
+    peak_ring: &Arc<PeakRing>,
+    output_format: &OutputFormatState,
+    device_lost: &Arc<AtomicBool>,
+) -> Result<Stream, PlaybackError> {
     let host = cpal::default_host();
     let device = host.default_output_device().ok_or_else(|| {
         PlaybackError::AudioOutputUnavailable(
@@ -1697,65 +1814,42 @@ fn start_output_thread(
             "failed to read default audio output config: {e}"
         ))
     })?;
-    // Clone playback so we can cancel active crossfade after the stream
-    // is built (the stream closure takes ownership of the original Arc).
-    let playback_for_cancel = playback.clone();
-    let stream = match config.sample_format() {
+
+    match config.sample_format() {
         SampleFormat::F32 => build_output_stream::<f32>(
             &device,
             config.into(),
-            playback,
-            airplay_audio_tap,
-            airplay_local_output_suppressed,
-            peak_ring,
-            output_format,
-        )?,
+            playback.clone(),
+            airplay_audio_tap.clone(),
+            airplay_local_output_suppressed.clone(),
+            peak_ring.clone(),
+            output_format.clone(),
+            device_lost.clone(),
+        ),
         SampleFormat::I16 => build_output_stream::<i16>(
             &device,
             config.into(),
-            playback,
-            airplay_audio_tap,
-            airplay_local_output_suppressed,
-            peak_ring,
-            output_format,
-        )?,
+            playback.clone(),
+            airplay_audio_tap.clone(),
+            airplay_local_output_suppressed.clone(),
+            peak_ring.clone(),
+            output_format.clone(),
+            device_lost.clone(),
+        ),
         SampleFormat::U16 => build_output_stream::<u16>(
             &device,
             config.into(),
-            playback,
-            airplay_audio_tap,
-            airplay_local_output_suppressed,
-            peak_ring,
-            output_format,
-        )?,
-        sample_format => {
-            return Err(PlaybackError::AudioOutputUnavailable(format!(
-                "unsupported audio output sample format: {sample_format:?}"
-            )));
-        }
-    };
-
-    // Device recreation cancels any active crossfade. The output
-    // format generation has already been incremented in
-    // `build_output_stream`, which invalidates stale preparations through
-    // the generation rule. We also cancel the active crossfade here
-    // because it holds a prepared track captured at the old generation and
-    // would produce audio at the wrong format if allowed to continue.
-    if let Ok(mut controller) = playback_for_cancel.try_lock() {
-        controller.cancel_crossfade_and_prepared();
+            playback.clone(),
+            airplay_audio_tap.clone(),
+            airplay_local_output_suppressed.clone(),
+            peak_ring.clone(),
+            output_format.clone(),
+            device_lost.clone(),
+        ),
+        sample_format => Err(PlaybackError::AudioOutputUnavailable(format!(
+            "unsupported audio output sample format: {sample_format:?}"
+        ))),
     }
-
-    stream.play().map_err(|e| {
-        PlaybackError::AudioOutputUnavailable(format!("failed to start audio output stream: {e}"))
-    })?;
-    let _ = startup_tx.send(Ok(()));
-
-    while !shutdown.load(Ordering::Relaxed) {
-        thread::sleep(Duration::from_secs(60));
-        let _keep_alive = &stream;
-    }
-
-    Ok(())
 }
 
 fn forward_rendered_audio_to_airplay(

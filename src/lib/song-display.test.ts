@@ -19,6 +19,7 @@ function song(overrides: Partial<Song>): Song {
     has_cover_art: false,
     imported_at: 0,
     original_ext: null,
+    artwork_thumb_path: null,
     ...overrides,
   };
 }

@@ -313,7 +313,8 @@ pub fn list_songs(connection: &Connection) -> rusqlite::Result<Vec<Song>> {
             duration_ms,
             CASE WHEN cover_art IS NOT NULL THEN 1 ELSE 0 END,
             imported_at,
-            original_ext
+            original_ext,
+            artwork_thumb_path
         FROM songs
         ORDER BY imported_at DESC, title COLLATE NOCASE ASC, hash ASC",
     )?;
@@ -348,7 +349,8 @@ pub fn search_songs(connection: &Connection, query: &str) -> rusqlite::Result<Ve
             s.duration_ms,
             CASE WHEN s.cover_art IS NOT NULL THEN 1 ELSE 0 END,
             s.imported_at,
-            s.original_ext
+            s.original_ext,
+            s.artwork_thumb_path
         FROM songs s
         INNER JOIN songs_fts fts ON fts.rowid = s.rowid
         WHERE songs_fts MATCH ?1
@@ -389,7 +391,8 @@ pub fn get_song_by_hash(connection: &Connection, hash: &str) -> rusqlite::Result
             duration_ms,
             cover_art,
             imported_at,
-            original_ext
+            original_ext,
+            artwork_thumb_path
         FROM songs
         WHERE hash = ?1
         LIMIT 1",
@@ -576,6 +579,7 @@ fn map_song_row(row: &Row<'_>) -> rusqlite::Result<Song> {
         album: row.get(9)?,
         duration_ms: row.get(10)?,
         has_cover_art: cover_art.is_some(),
+        artwork_thumb_path: row.get(14)?,
         cover_art,
         imported_at: row.get(12)?,
         original_ext: row.get(13)?,
@@ -584,7 +588,8 @@ fn map_song_row(row: &Row<'_>) -> rusqlite::Result<Song> {
 
 /// Map a song row for list/search queries where cover_art BLOB is excluded.
 /// The query must select `CASE WHEN cover_art IS NOT NULL THEN 1 ELSE 0 END`
-/// at column index 11 instead of the raw `cover_art` blob.
+/// at column index 11 instead of the raw `cover_art` blob, and
+/// `artwork_thumb_path` at column index 14.
 fn map_song_row_no_cover_art(row: &Row<'_>) -> rusqlite::Result<Song> {
     let has_cover_art: bool = row.get(11)?;
     Ok(Song {
@@ -600,6 +605,7 @@ fn map_song_row_no_cover_art(row: &Row<'_>) -> rusqlite::Result<Song> {
         album: row.get(9)?,
         duration_ms: row.get(10)?,
         has_cover_art,
+        artwork_thumb_path: row.get(14)?,
         cover_art: None,
         imported_at: row.get(12)?,
         original_ext: row.get(13)?,
@@ -895,6 +901,7 @@ mod tests {
             duration_ms: 180_000,
             cover_art: None,
             has_cover_art: false,
+            artwork_thumb_path: None,
             imported_at: 1000,
             original_ext: Some("mp3".to_owned()),
         }
@@ -1141,6 +1148,7 @@ mod tests {
             duration_ms: 0,
             cover_art: None,
             has_cover_art: false,
+            artwork_thumb_path: None,
             imported_at: 0,
             original_ext: None,
         };

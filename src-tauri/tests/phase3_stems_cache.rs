@@ -58,6 +58,7 @@ fn sample_song(hash: &str, extension: &str) -> Song {
         duration_ms: 1,
         cover_art: None,
         has_cover_art: true,
+        artwork_thumb_path: None,
         imported_at: 1,
         original_ext: Some(extension.to_owned()),
     }
@@ -565,4 +566,50 @@ fn streaming_ogg_writer_atomic_promotion() {
     assert!(output_path.exists(), "final file should exist after finish");
 
     cleanup_dir(&output_dir);
+}
+
+/// #251: the downgrade is recorded before the stems it replaces are deleted, so
+/// the worst an interruption can leave behind is unreferenced files. This pins
+/// the property that makes that ordering safe: a two-stem entry stays usable
+/// even when the old individual stems are still sitting on disk.
+///
+/// Under the previous order the analogous interruption left the row pointing at
+/// files that no longer existed, which invalidated the whole entry and cost the
+/// user the vocals track plus several minutes of inference.
+#[test]
+fn two_stem_entry_stays_usable_with_leftover_individual_stems() {
+    let connection = Connection::open_in_memory().expect("in-memory database should open");
+    cache::apply_migrations(&connection).expect("migrations should succeed");
+    let library = unique_library_root();
+    let library_root_path = library.root().to_owned();
+    let song = tagged_song_in_library(&library, "song-downgrade-leftovers");
+    cache::upsert_song(&connection, &song).expect("song insert should succeed");
+
+    populate_stem_cache(
+        &connection,
+        &library,
+        &song,
+        "song-downgrade-leftovers",
+        StemMode::FourStem,
+        "htdemucs",
+    );
+
+    let (updated_entry, _) =
+        stems::downgrade_to_two_stem(&connection, &library, "song-downgrade-leftovers")
+            .expect("downgrade should succeed");
+    assert!(updated_entry.drums_path.is_none());
+
+    // Stand in for being killed between the row update and the deletes.
+    let stem_dir = library.resolve("stems/song-downgrade-leftovers");
+    for name in ["drums.ogg", "bass.ogg", "other.ogg"] {
+        std::fs::write(stem_dir.join(name), b"leftover").expect("leftover stem should be written");
+    }
+
+    assert!(
+        stems::cache_entry_files_valid(&library, &updated_entry),
+        "the two-stem entry must stay usable; the leftovers are unreferenced and \
+         the integrity scan reports them as orphaned managed files"
+    );
+
+    cleanup_dir(&library_root_path);
 }

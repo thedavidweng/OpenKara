@@ -20,6 +20,7 @@ fn sample_song(hash: &str) -> Song {
         duration_ms: 267_000,
         cover_art: None,
         has_cover_art: true,
+        artwork_thumb_path: None,
         imported_at: 1,
         original_ext: None,
     }

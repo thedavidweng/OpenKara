@@ -896,6 +896,7 @@ mod tests {
             duration_ms: 120000,
             cover_art: None,
             has_cover_art: false,
+            artwork_thumb_path: None,
             imported_at: 1000,
             original_ext: Some("mp3".to_string()),
         };

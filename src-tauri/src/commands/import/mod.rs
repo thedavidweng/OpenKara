@@ -21,9 +21,10 @@ use crate::{
     cache,
     commands::error::{database_error, state_lock_error, CommandError, CommandResult},
     library::{artwork, error::LibraryError, ImportSongsResult, Song},
+    library_root::LibraryRoot,
     remote, AppState,
 };
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 #[cfg(target_os = "macos")]
 use crate::commands::error::internal_error;
@@ -40,14 +41,17 @@ pub fn import_songs(
 ) -> CommandResult<ImportSongsResult> {
     // Connection + outbox share one library SQLite transaction inside the
     // mutation wrapper — do not open a separate connection here.
-    remote::run_imported_songs_mutation(&state, &app_handle, |connection, library| {
-        import_songs_from_paths_with_options(
-            connection,
-            library,
-            &paths,
-            &options.unwrap_or_default(),
-        )
-    })
+    let mut result =
+        remote::run_imported_songs_mutation(&state, &app_handle, |connection, library| {
+            import_songs_from_paths_with_options(
+                connection,
+                library,
+                &paths,
+                &options.unwrap_or_default(),
+            )
+        })?;
+    absolutize_thumbnail_paths(&app_handle, &mut result.imported, &state.library_root()?);
+    Ok(result)
 }
 
 #[tauri::command]
@@ -88,6 +92,10 @@ pub fn pick_import_paths(default_path: Option<String>) -> CommandResult<Vec<Stri
             .transpose()
             .map_err(internal_error)?;
         let mut count = 0usize;
+        // SAFETY: the optional default path is a CString that outlives the
+        // call, and `count` is a live local the picker writes the result length
+        // into. Ownership of the returned array transfers to us, and is handed
+        // back through openkara_free_import_paths below.
         let raw_paths = unsafe {
             openkara_pick_import_paths(
                 default_path
@@ -103,17 +111,24 @@ pub fn pick_import_paths(default_path: Option<String>) -> CommandResult<Vec<Stri
 
         let mut collected_paths = Vec::with_capacity(count);
         for index in 0..count {
+            // SAFETY: the picker reported `count` entries and the array was
+            // null-checked above, so every index below `count` is in bounds.
             let raw_path = unsafe { *raw_paths.add(index) };
             if raw_path.is_null() {
                 continue;
             }
 
+            // SAFETY: null-checked above, and the picker returns
+            // NUL-terminated strings that stay alive until the free call below.
             let path = unsafe { CStr::from_ptr(raw_path) }
                 .to_string_lossy()
                 .into_owned();
             collected_paths.push(path);
         }
 
+        // SAFETY: frees the array the picker handed us, once, with the length
+        // it reported. Nothing borrows it past this point - the paths were
+        // copied into owned Strings above.
         unsafe {
             openkara_free_import_paths(raw_paths, count);
         }
@@ -130,20 +145,72 @@ pub fn pick_import_paths(default_path: Option<String>) -> CommandResult<Vec<Stri
     }
 }
 
-#[tauri::command]
-pub fn get_library(state: State<'_, AppState>) -> CommandResult<Vec<Song>> {
-    let library = state.library_root()?;
-    let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
+/// Rewrite the library-relative thumbnail path stored in the database into an
+/// absolute one, and make sure the asset protocol may serve it.
+///
+/// This is the seam named on `Song::artwork_thumb_path`: the frontend feeds the
+/// value to `convertFileSrc`, which only accepts absolute paths, while the
+/// backend keeps paths relative so a library stays portable across machines.
+///
+/// Every command that hands a `Song` to the frontend must run this, not just
+/// the two that feed the grid: a song returned by an edit command with a
+/// still-relative path renders a failed image request before falling back.
+///
+/// The scope grant lives here rather than at library activation because this is
+/// the one place the app promises "this path is loadable" — an activation path
+/// added later cannot forget it. The grant is a `HashSet` insert, so repeating
+/// it per call costs nothing. A failed grant is not fatal: the `<img>` request
+/// is denied and `CoverArtThumbnail` falls back to reading the bytes over IPC.
+fn absolutize_thumbnail_paths(app_handle: &AppHandle, songs: &mut [Song], library: &LibraryRoot) {
+    let artwork_dir = library.artwork_dir();
+    if let Err(error) = app_handle
+        .asset_protocol_scope()
+        .allow_directory(&artwork_dir, false)
+    {
+        tracing::warn!(
+            "failed to grant asset protocol access to {}: {error}",
+            artwork_dir.display()
+        );
+    }
 
-    get_library_from_connection(&connection).map_err(|error| database_error(error.to_string()))
+    resolve_thumbnail_paths(songs, library);
+}
+
+/// The rewrite half of [`absolutize_thumbnail_paths`], split out so the seam it
+/// implements can be pinned by a test without a Tauri runtime.
+fn resolve_thumbnail_paths(songs: &mut [Song], library: &LibraryRoot) {
+    for song in songs {
+        song.artwork_thumb_path = song
+            .artwork_thumb_path
+            .as_deref()
+            .map(|relative| library.resolve(relative).to_string_lossy().into_owned());
+    }
 }
 
 #[tauri::command]
-pub fn search_library(state: State<'_, AppState>, query: String) -> CommandResult<Vec<Song>> {
+pub fn get_library(app_handle: AppHandle, state: State<'_, AppState>) -> CommandResult<Vec<Song>> {
     let library = state.library_root()?;
     let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
 
-    cache::search_songs(&connection, &query).map_err(|error| database_error(error.to_string()))
+    let mut songs = get_library_from_connection(&connection)
+        .map_err(|error| database_error(error.to_string()))?;
+    absolutize_thumbnail_paths(&app_handle, &mut songs, &library);
+    Ok(songs)
+}
+
+#[tauri::command]
+pub fn search_library(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    query: String,
+) -> CommandResult<Vec<Song>> {
+    let library = state.library_root()?;
+    let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
+
+    let mut songs = cache::search_songs(&connection, &query)
+        .map_err(|error| database_error(error.to_string()))?;
+    absolutize_thumbnail_paths(&app_handle, &mut songs, &library);
+    Ok(songs)
 }
 
 #[derive(Clone, Copy, Debug, serde::Deserialize)]
@@ -160,7 +227,7 @@ pub enum CoverArtSize {
 /// the files.
 fn discard_unpersisted_artwork_derivatives(
     connection: &rusqlite::Connection,
-    library: &crate::library_root::LibraryRoot,
+    library: &LibraryRoot,
     derivatives: &artwork::ArtworkDerivatives,
 ) {
     for path in [&derivatives.thumb_path, &derivatives.preview_path] {
@@ -366,7 +433,7 @@ pub fn extract_embedded_cover_art(
 ) -> CommandResult<ExtractEmbeddedCoverArtResult> {
     let library = state.library_root()?;
 
-    remote::run_updated_songs_mutation(
+    let mut result = remote::run_updated_songs_mutation(
         &state,
         &app_handle,
         |connection| {
@@ -375,7 +442,9 @@ pub fn extract_embedded_cover_art(
             ))
         },
         |result| remote::song_ids_from_songs(&result.updated_songs),
-    )
+    )?;
+    absolutize_thumbnail_paths(&app_handle, &mut result.updated_songs, &library);
+    Ok(result)
 }
 
 #[tauri::command]
@@ -386,9 +455,15 @@ pub fn update_song_metadata(
     title: Option<String>,
     artist: Option<String>,
 ) -> CommandResult<Song> {
-    remote::run_song_database_mutation(&state, &app_handle, &hash, |connection| {
+    let mut song = remote::run_song_database_mutation(&state, &app_handle, &hash, |connection| {
         update_song_metadata_in_connection(connection, &hash, title.as_deref(), artist.as_deref())
-    })
+    })?;
+    absolutize_thumbnail_paths(
+        &app_handle,
+        std::slice::from_mut(&mut song),
+        &state.library_root()?,
+    );
+    Ok(song)
 }
 
 #[tauri::command]
@@ -401,9 +476,11 @@ pub fn set_songs_instrumental(
     let library = state.library_root()?;
     let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
 
-    remote::run_database_then_library_mirror_mutation(&state, &app_handle, || {
+    let mut songs = remote::run_database_then_library_mirror_mutation(&state, &app_handle, || {
         set_songs_instrumental_in_connection(&connection, &song_ids, instrumental)
-    })
+    })?;
+    absolutize_thumbnail_paths(&app_handle, &mut songs, &library);
+    Ok(songs)
 }
 
 #[tauri::command]
@@ -416,9 +493,11 @@ pub fn set_songs_language(
     let library = state.library_root()?;
     let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
 
-    remote::run_database_then_library_mirror_mutation(&state, &app_handle, || {
+    let mut songs = remote::run_database_then_library_mirror_mutation(&state, &app_handle, || {
         set_songs_language_in_connection(&connection, &song_ids, language.as_deref())
-    })
+    })?;
+    absolutize_thumbnail_paths(&app_handle, &mut songs, &library);
+    Ok(songs)
 }
 
 #[tauri::command]
@@ -444,4 +523,61 @@ pub fn get_song_properties(
     }
 
     crate::library::songs::get_song_properties(&connection, &library, &song_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn song_with_thumb(thumb: Option<&str>) -> Song {
+        Song {
+            hash: "song-1".to_owned(),
+            file_path: Some("media/song-1.mp3".to_owned()),
+            cdg_path: None,
+            media_g_container: None,
+            instrumental: false,
+            language: None,
+            audio_source_kind: "original".to_owned(),
+            title: None,
+            artist: None,
+            album: None,
+            duration_ms: 0,
+            cover_art: None,
+            has_cover_art: thumb.is_some(),
+            artwork_thumb_path: thumb.map(str::to_owned),
+            imported_at: 0,
+            original_ext: Some("mp3".to_owned()),
+        }
+    }
+
+    #[test]
+    fn rewrites_stored_relative_thumbnails_to_absolute_paths() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let library = LibraryRoot::create(temp.path()).expect("library");
+        let mut songs = vec![song_with_thumb(Some("artwork/thumb_abc_80.webp"))];
+
+        resolve_thumbnail_paths(&mut songs, &library);
+
+        let resolved = songs[0].artwork_thumb_path.as_deref().expect("path");
+        assert_eq!(
+            std::path::Path::new(resolved),
+            library.resolve("artwork/thumb_abc_80.webp"),
+        );
+        assert!(std::path::Path::new(resolved).is_absolute());
+    }
+
+    #[test]
+    fn leaves_songs_without_a_derivative_untouched() {
+        // A song with no recorded derivative must stay `None`. Mapping it onto
+        // the library root instead would hand the frontend a path to a
+        // directory, and every such row would render a broken image before
+        // falling back.
+        let temp = tempfile::tempdir().expect("temp dir");
+        let library = LibraryRoot::create(temp.path()).expect("library");
+        let mut songs = vec![song_with_thumb(None)];
+
+        resolve_thumbnail_paths(&mut songs, &library);
+
+        assert!(songs[0].artwork_thumb_path.is_none());
+    }
 }

@@ -669,6 +669,7 @@ describe("Song shape matches Rust Song struct", () => {
       duration_ms: 180000,
       cover_art: null,
       has_cover_art: false,
+      artwork_thumb_path: null,
       imported_at: 1700000000,
       original_ext: "mp3",
     };
@@ -706,6 +707,7 @@ describe("Song shape matches Rust Song struct", () => {
       duration_ms: 0,
       cover_art: null,
       has_cover_art: false,
+      artwork_thumb_path: null,
       imported_at: 0,
       original_ext: null,
     };
@@ -1307,6 +1309,7 @@ describe("Serialization compatibility", () => {
       duration_ms: 0, // not durationMs
       cover_art: null, // not coverArt
       has_cover_art: false,
+      artwork_thumb_path: null,
       imported_at: 0, // not importedAt
       original_ext: null, // not originalExt
     };

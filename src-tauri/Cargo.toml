@@ -42,7 +42,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.150"
 sha2 = "0.11.0"
 symphonia = { version = "0.6.0", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mp3", "ogg", "pcm", "vorbis", "wav", "all-meta"] }
-tauri = { version = "2.11.5", features = ["unstable"] }
+tauri = { version = "2.11.5", features = ["unstable", "protocol-asset"] }
 tauri-plugin-dialog = "2.7.2"
 tauri-plugin-opener = "2.5.4"
 tauri-plugin-process = "2.3.1"
@@ -65,6 +65,13 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 tracing-appender = "0.2.3"
 tauri-plugin-notification = "2.3.3"
 tauri-plugin-window-state = "2.4.1"
+
+# Every `unsafe` block carries a SAFETY comment. The lint is what keeps that
+# true: the FFI bridges are the only unsafe surface in the app, and an
+# undocumented block there is the kind of thing that reads as reviewed when it
+# was not.
+[lints.clippy]
+undocumented_unsafe_blocks = "warn"
 
 [dev-dependencies]
 filetime = "0.2.29"
