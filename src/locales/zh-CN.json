@@ -643,5 +643,14 @@
     "separation_failed": "分离失败",
     "internal": "内部错误",
     "somethingWentWrong": "出了点问题"
+  },
+  "updater": {
+    "available": "版本 {{version}} 可用",
+    "update": "更新",
+    "downloading": "正在下载更新… {{percent}}%",
+    "installing": "正在完成更新…",
+    "restartToApply": "更新已就绪 — 重启以应用",
+    "restart": "重启",
+    "failed": "更新失败 — 请手动下载最新版本"
   }
 }

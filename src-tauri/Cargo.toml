@@ -45,7 +45,9 @@ symphonia = { version = "0.6.0", default-features = false, features = ["aac", "a
 tauri = { version = "2.11.5", features = ["unstable"] }
 tauri-plugin-dialog = "2.7.2"
 tauri-plugin-opener = "2.5.4"
+tauri-plugin-process = "2.3.1"
 tauri-plugin-single-instance = "2.4.3"
+tauri-plugin-updater = "2.10.1"
 uuid = { version = "1.24.0", features = ["v4"] }
 tiny_http = "0.12.0"
 tracing = "0.1"

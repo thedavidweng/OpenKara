@@ -643,5 +643,14 @@
     "separation_failed": "Scheiding mislukt",
     "internal": "Interne fout",
     "somethingWentWrong": "Er is iets misgegaan"
+  },
+  "updater": {
+    "available": "Versie {{version}} is beschikbaar",
+    "update": "Bijwerken",
+    "downloading": "Update downloaden… {{percent}}%",
+    "installing": "Update afronden…",
+    "restartToApply": "Update klaar — start opnieuw op om toe te passen",
+    "restart": "Opnieuw opstarten",
+    "failed": "Update mislukt — download de nieuwste release handmatig"
   }
 }

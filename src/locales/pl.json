@@ -645,5 +645,14 @@
     "separation_failed": "Rozdzielanie nie powiodło się",
     "internal": "Błąd wewnętrzny",
     "somethingWentWrong": "Coś poszło nie tak"
+  },
+  "updater": {
+    "available": "Dostępna jest wersja {{version}}",
+    "update": "Aktualizuj",
+    "downloading": "Pobieranie aktualizacji… {{percent}}%",
+    "installing": "Kończenie aktualizacji…",
+    "restartToApply": "Aktualizacja gotowa — uruchom ponownie, aby zastosować",
+    "restart": "Uruchom ponownie",
+    "failed": "Aktualizacja nie powiodła się — pobierz ręcznie najnowsze wydanie"
   }
 }

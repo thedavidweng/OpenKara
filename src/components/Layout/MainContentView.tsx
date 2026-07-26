@@ -5,6 +5,7 @@ import { PlaybackStage } from "@/components/Playback/PlaybackStage";
 import { SettingsOverlay } from "@/components/Settings/SettingsOverlay";
 import { ModelBootstrapBanner } from "@/components/Bootstrap/ModelBootstrapBanner";
 import { RuntimeUpdateBanner } from "@/components/Bootstrap/RuntimeUpdateBanner";
+import { UpdateBanner } from "@/components/Layout/UpdateBanner";
 import { PlaybackBar } from "@/components/Player/PlaybackBar";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useQueueStore } from "@/stores/queue-store";
@@ -66,6 +67,9 @@ export function MainContentView({
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <ModelBootstrapBanner />
           <RuntimeUpdateBanner />
+          {/* App self-update (#255). Preview builds run in a browser with no
+              Tauri IPC, so the launch check would only ever reject — skip it. */}
+          {!previewMode && <UpdateBanner />}
           <PlaybackStage />
         </div>
         {queueShouldRender && (
