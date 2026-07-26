@@ -367,7 +367,57 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         );
     }
 
+    // Last statement on purpose: the deadline must start when the event loop
+    // starts, not when setup starts. See `spawn_window_reveal_watchdog`.
+    spawn_window_reveal_watchdog(app);
+
     Ok(())
+}
+
+/// Deadline for the native reveal watchdog, measured from the end of
+/// `setup_app`.
+///
+/// RATIONALE: the main window starts hidden and the reveal is a frontend
+/// handshake (`window_ready`), but macOS suspends animation frames *and* JS
+/// timers in a WKWebView whose window has never been shown. With both
+/// suspended no frontend path out of the hidden state survives, and the app
+/// runs as an invisible process the user can only kill from Activity Monitor.
+///
+/// 2 s is chosen against the healthy handshake budget: after the event loop
+/// starts it costs at most about 900 ms (the 750 ms native-`setTheme` guard in
+/// `useThemeRuntime` plus the 120 ms reveal backstop, on top of two local IPC
+/// reads), so the flash-free path keeps better than 2x headroom to win.
+const WINDOW_REVEAL_WATCHDOG: Duration = Duration::from_secs(2);
+
+/// Reveals the main window if the frontend handshake never arrives.
+///
+/// Spawned as the last step of `setup_app` because Tauri runs the setup hook
+/// on the main thread before the event loop starts: `window_ready` cannot be
+/// served until setup returns, so an earlier deadline would charge startup
+/// work (an ONNX Runtime load, a library scan) against the frontend's budget
+/// and fire on healthy launches.
+fn spawn_window_reveal_watchdog<R: Runtime>(app: &tauri::App<R>) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+
+    thread::spawn(move || {
+        thread::sleep(WINDOW_REVEAL_WATCHDOG);
+
+        // An unreadable visibility state must not be the reason the app stays
+        // invisible, so a failed query counts as hidden.
+        if window.is_visible().unwrap_or(false) {
+            return;
+        }
+
+        tracing::warn!(
+            "main window still hidden after {:?}; revealing without the frontend handshake",
+            WINDOW_REVEAL_WATCHDOG
+        );
+        if let Err(error) = window.show() {
+            tracing::warn!("reveal watchdog could not show the main window: {error}");
+        }
+    });
 }
 
 /// Background startup check for runtime updates, governed by the update
