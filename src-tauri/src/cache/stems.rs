@@ -450,13 +450,23 @@ pub fn downgrade_to_two_stem(
         anyhow::bail!("song {song_hash} does not have a local file path");
     };
     let source_abs = library_root.resolve(song_path);
+    // Write through a temp file so the final path only ever holds a complete
+    // accompaniment. Nothing references it until the UPDATE below, so this is
+    // about not leaving debris rather than about correctness.
+    let accomp_tmp = accomp_abs.with_extension("ogg.tmp");
     write_stem_with_metadata(
         &source_abs,
-        &accomp_abs,
+        &accomp_tmp,
         &stem_title(&song, &source_abs, "Instrumental")?,
         &mixed_audio,
     )
     .context("failed to write accompaniment.ogg")?;
+    fs::rename(&accomp_tmp, &accomp_abs).with_context(|| {
+        format!(
+            "failed to move accompaniment into place at {}",
+            accomp_abs.display()
+        )
+    })?;
 
     // Net disk reclaimed = bytes of the deleted individual stems minus the bytes
     // of the accompaniment.ogg we just wrote in their place. Reporting only the
@@ -467,19 +477,32 @@ pub fn downgrade_to_two_stem(
     let accompaniment_bytes = file_size_or_zero(&accomp_abs);
     let freed_bytes = deleted_bytes.saturating_sub(accompaniment_bytes);
 
-    fs::remove_file(&drums_abs)
-        .with_context(|| format!("failed to remove {}", drums_abs.display()))?;
-    fs::remove_file(&bass_abs)
-        .with_context(|| format!("failed to remove {}", bass_abs.display()))?;
-    fs::remove_file(&other_abs)
-        .with_context(|| format!("failed to remove {}", other_abs.display()))?;
-
+    // Record the downgrade BEFORE deleting the stems it replaces, so every
+    // interruption point leaves a consistent state instead of a recoverable
+    // one. Killed after the delete but before the update, the old order left
+    // the row pointing at files that no longer exist, `cache_entry_files_exist`
+    // rejected the whole entry, and the user lost the vocals track and several
+    // minutes of inference. In this order the worst case is leftover files that
+    // no row references - which `scan_for_orphans` already reports through the
+    // existing integrity check.
     connection
         .execute(
             "UPDATE stems SET accomp_path = ?2, drums_path = NULL, bass_path = NULL, other_path = NULL WHERE song_hash = ?1",
             params![song_hash, accomp_rel],
         )
         .context("failed to update stem cache entry for downgrade")?;
+
+    // Past this point the downgrade has succeeded. A failed unlink only leaves
+    // an unreferenced file behind, so it must not be reported to the caller as
+    // a failed downgrade.
+    for path in [&drums_abs, &bass_abs, &other_abs] {
+        if let Err(error) = fs::remove_file(path) {
+            tracing::warn!(
+                "downgraded {song_hash} but could not remove {}: {error}",
+                path.display()
+            );
+        }
+    }
 
     let updated_entry = StemCacheEntry {
         song_hash: entry.song_hash,
