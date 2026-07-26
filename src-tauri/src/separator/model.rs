@@ -285,6 +285,92 @@ pub fn provider_diagnostic_summary(preference: ExecutionProviderPreference) -> S
         .join(" -> ")
 }
 
+/// Benchmark/diagnostic override for the ORT intra-op thread count.
+///
+/// Setting `OPENKARA_INTRA_THREADS` forces a specific count; it is how the
+/// #170 thread sweep was measured and how the CI bench harness can sweep
+/// threads later. It is never set in production launches.
+const INTRA_THREADS_ENV: &str = "OPENKARA_INTRA_THREADS";
+
+/// Parse the `OPENKARA_INTRA_THREADS` override into a validated thread count.
+///
+/// Returns `None` when the variable is absent, unparsable, or `< 1`, so that
+/// an empty or garbage value falls through to the measured default rather than
+/// forcing a degenerate thread count.
+fn parse_intra_threads_override(raw: Option<String>) -> Option<usize> {
+    raw.and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|count| *count >= 1)
+}
+
+/// Physical performance-core count, when the platform exposes it.
+///
+/// Apple Silicon partitions its cores into "perf levels": `perflevel0` is the
+/// performance-core cluster and `perflevel1` the efficiency cluster. Reading
+/// `hw.perflevel0.physicalcpu` yields the P-core count directly. Returns `None`
+/// on any sysctl error.
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+fn performance_core_count() -> Option<usize> {
+    let mut value: libc::c_int = 0;
+    let mut size = std::mem::size_of::<libc::c_int>();
+    let name = c"hw.perflevel0.physicalcpu";
+    // SAFETY: `name` is a valid NUL-terminated C string; `value` and `size`
+    // point to a live `c_int` and its byte length. sysctlbyname writes at most
+    // `size` bytes into `value` and updates `size` with the bytes written.
+    let rc = unsafe {
+        libc::sysctlbyname(
+            name.as_ptr(),
+            &mut value as *mut libc::c_int as *mut libc::c_void,
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if rc == 0 && value >= 1 {
+        Some(value as usize)
+    } else {
+        None
+    }
+}
+
+/// Non-Apple-Silicon stub: no performance-core signal is available, so the
+/// caller keeps the previous `available.min(8)` policy unchanged on every other
+/// target.
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+fn performance_core_count() -> Option<usize> {
+    None
+}
+
+/// Choose the ORT intra-op thread count.
+///
+/// Policy, in priority order (measured, #170):
+///   1. an explicit `override_value` (`>= 1`) always wins — the bench/diagnostic knob;
+///   2. else the physical performance-core count when the platform exposes it
+///      (Apple Silicon: `hw.perflevel0.physicalcpu`);
+///   3. else the historical `available.min(8)` fallback.
+///
+/// The result is floored at 1.
+///
+/// Why performance cores on Apple Silicon: a decisive alternating A/B benchmark
+/// on an M3 (4 P-cores + 4 E-cores, order 8/4/8/4/8/4 with cooldowns so thermal
+/// drift cancels) had t=4 (the P-core count) beat t=8 (all logical cores) on
+/// ALL SIX pairwise runs, for both the CPU EP and XNNPACK. `num_threads` also
+/// sizes the XNNPACK worker pool (see `build_execution_provider_list`), so one
+/// policy covers both EPs. Intra-op threads that spill onto the efficiency
+/// cores hurt this latency-sensitive workload; the P-core count is the right
+/// size. Every non-Apple-Silicon target has a `None` performance-core signal,
+/// so its behavior is exactly the previous `available.min(8)` policy.
+fn intra_thread_count(
+    override_value: Option<usize>,
+    performance_cores: Option<usize>,
+    available: usize,
+) -> usize {
+    override_value
+        .filter(|count| *count >= 1)
+        .or_else(|| performance_cores.filter(|count| *count >= 1))
+        .unwrap_or_else(|| available.min(8))
+        .max(1)
+}
+
 fn load_with_ep(path: &Path, ep_preference: ExecutionProviderPreference) -> Result<LoadedModel> {
     anyhow::ensure!(
         ORT_RUNTIME_PATH.get().is_some(),
@@ -298,9 +384,19 @@ fn load_with_ep(path: &Path, ep_preference: ExecutionProviderPreference) -> Resu
         .with_context(|| format!("cannot load model {}", path.display()))?;
 
     let model_path = path.to_path_buf();
-    let num_threads = std::thread::available_parallelism()
-        .map(|n| n.get().min(8))
+    // Size ORT intra-op parallelism to the performance-core count on Apple
+    // Silicon, keeping the previous `available.min(8)` policy everywhere else
+    // (see `intra_thread_count`). The `OPENKARA_INTRA_THREADS` override lets the
+    // bench harness force a specific count. `available_parallelism` errors keep
+    // the historical `.unwrap_or(4)` fallback.
+    let available = std::thread::available_parallelism()
+        .map(|n| n.get())
         .unwrap_or(4);
+    let num_threads = intra_thread_count(
+        parse_intra_threads_override(std::env::var(INTRA_THREADS_ENV).ok()),
+        performance_core_count(),
+        available,
+    );
 
     let mut builder =
         ort::session::Session::builder().context("failed to create ONNX session builder")?;
@@ -798,5 +894,70 @@ mod tests {
             session_cache_key(model_path, ExecutionProviderPreference::Cpu, &metadata),
             "/tmp/models/htdemucs.spectral.onnx::cpu::cache-key-123::openkara.spectral-contract/v1"
         );
+    }
+
+    #[test]
+    fn intra_thread_override_wins_over_everything() {
+        // An explicit override beats both the performance-core count and the
+        // available-parallelism fallback.
+        assert_eq!(intra_thread_count(Some(3), Some(4), 16), 3);
+        assert_eq!(intra_thread_count(Some(1), Some(8), 8), 1);
+    }
+
+    #[test]
+    fn intra_thread_zero_override_is_ignored() {
+        // A zero override is out of range; policy falls through to the next
+        // signal (performance cores here, else the fallback).
+        assert_eq!(intra_thread_count(Some(0), Some(4), 16), 4);
+        assert_eq!(intra_thread_count(Some(0), None, 16), 8);
+    }
+
+    #[test]
+    fn intra_thread_uses_performance_cores_when_present() {
+        // With no override, the performance-core count is preferred over the
+        // available-parallelism fallback (this is the Apple-Silicon path).
+        assert_eq!(intra_thread_count(None, Some(4), 8), 4);
+        assert_eq!(intra_thread_count(None, Some(6), 16), 6);
+    }
+
+    #[test]
+    fn intra_thread_falls_back_to_available_min_eight() {
+        // No override and no performance-core signal reproduces the historical
+        // `available.min(8)` policy exactly (the non-Apple-Silicon path).
+        assert_eq!(intra_thread_count(None, None, 16), 8);
+        assert_eq!(intra_thread_count(None, None, 8), 8);
+        assert_eq!(intra_thread_count(None, None, 4), 4);
+    }
+
+    #[test]
+    fn intra_thread_is_floored_at_one() {
+        assert_eq!(intra_thread_count(None, None, 0), 1);
+        assert_eq!(intra_thread_count(Some(0), Some(0), 0), 1);
+    }
+
+    #[test]
+    fn parses_intra_threads_override_values() {
+        assert_eq!(parse_intra_threads_override(Some("4".to_owned())), Some(4));
+        assert_eq!(
+            parse_intra_threads_override(Some("  6 ".to_owned())),
+            Some(6)
+        );
+        // Out of range, unparsable, and absent all disable the override.
+        assert_eq!(parse_intra_threads_override(Some("0".to_owned())), None);
+        assert_eq!(
+            parse_intra_threads_override(Some("garbage".to_owned())),
+            None
+        );
+        assert_eq!(parse_intra_threads_override(Some("-1".to_owned())), None);
+        assert_eq!(parse_intra_threads_override(Some(String::new())), None);
+        assert_eq!(parse_intra_threads_override(None), None);
+    }
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    #[test]
+    fn performance_core_count_reads_apple_silicon_perflevel0() {
+        // On Apple Silicon the sysctl must resolve to a real P-core count.
+        let cores = performance_core_count().expect("hw.perflevel0.physicalcpu should resolve");
+        assert!(cores >= 1, "performance-core count must be at least 1");
     }
 }
