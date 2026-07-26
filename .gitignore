@@ -50,6 +50,8 @@ src-tauri/icons/black-icon.png
 
 # ONNX models (large binaries, downloaded via setup script)
 src-tauri/models/*.onnx
+# Sidecars the verified-manifest writer drops next to a downloaded model.
+src-tauri/models/*.verified.json
 src-tauri/generated/onnxruntime/
 src-tauri/generated/oauth/google-drive-client.json
 src-tauri/generated/oauth/dropbox-client.json
