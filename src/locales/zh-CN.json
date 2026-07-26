@@ -424,7 +424,22 @@
       "band230": "230 Hz",
       "band910": "910 Hz",
       "band3600": "3.6 kHz",
-      "band14000": "14 kHz"
+      "band14000": "14 kHz",
+      "bandNameBass": "低音",
+      "bandNameLowMid": "中低音",
+      "bandNameMid": "中音",
+      "bandNameHighMid": "中高音",
+      "bandNameTreble": "高音",
+      "presetLabel": "预设",
+      "presetCustom": "自定义",
+      "presetFlat": "平直",
+      "presetVocalBoost": "人声增强",
+      "presetBassBoost": "低音增强",
+      "presetTrebleBoost": "高音增强",
+      "presetWarm": "温暖",
+      "presetBright": "明亮",
+      "presetRock": "摇滚",
+      "presetPop": "流行"
     },
     "crossfade": {
       "label": "淡入淡出",
