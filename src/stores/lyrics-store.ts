@@ -63,6 +63,7 @@ interface LyricsState {
   fetchLyrics: (songId: string) => Promise<void>;
   setOffset: (songId: string, ms: number) => Promise<void>;
   adjustOffset: (songId: string, deltaMs: number) => Promise<void>;
+  resetOffset: (songId: string) => Promise<void>;
   saveManualLyrics: (songId: string, text: string) => Promise<boolean>;
   setActiveLineIndex: (index: number) => void;
   setActiveWordIndex: (index: number) => void;
@@ -185,6 +186,14 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
       }
       notifyError(e);
     }
+  },
+
+  resetOffset: async (songId) => {
+    const currentOffset = get().offsetMs;
+    if (currentOffset === 0) return;
+    // Route through adjustOffset so the reset shares its optimistic update
+    // and backend-failure recovery instead of duplicating them here.
+    await get().adjustOffset(songId, -currentOffset);
   },
 
   saveManualLyrics: async (songId, text) => {

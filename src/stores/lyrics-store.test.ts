@@ -400,6 +400,38 @@ describe("lyrics-store adjustOffset", () => {
   });
 });
 
+describe("lyrics-store resetOffset", () => {
+  beforeEach(resetStore);
+
+  test("no-ops when the offset is already zero", async () => {
+    useLyricsStore.setState({ offsetMs: 0 });
+
+    await useLyricsStore.getState().resetOffset("song-1");
+
+    expect(mockSetLyricsOffset).not.toHaveBeenCalled();
+  });
+
+  test("persists a zero offset and clears offsetMs", async () => {
+    useLyricsStore.setState({ offsetMs: 1500 });
+    mockSetLyricsOffset.mockResolvedValue(undefined);
+
+    await useLyricsStore.getState().resetOffset("song-1");
+
+    expect(mockSetLyricsOffset).toHaveBeenCalledWith("song-1", 0);
+    expect(useLyricsStore.getState().offsetMs).toBe(0);
+  });
+
+  test("resets a negative offset back to zero", async () => {
+    useLyricsStore.setState({ offsetMs: -500 });
+    mockSetLyricsOffset.mockResolvedValue(undefined);
+
+    await useLyricsStore.getState().resetOffset("song-1");
+
+    expect(mockSetLyricsOffset).toHaveBeenCalledWith("song-1", 0);
+    expect(useLyricsStore.getState().offsetMs).toBe(0);
+  });
+});
+
 describe("lyrics-store setActiveLineIndex", () => {
   beforeEach(resetStore);
 
