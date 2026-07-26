@@ -84,62 +84,23 @@ export function SettingsModelVariantSection() {
     return t("settings.modelVariant.notDownloaded");
   };
 
-  // B3: Model download controls are disabled when runtime is missing.
+  // Model *downloads* need a loaded runtime; choosing which variant to use
+  // does not. The runtime is provisioned automatically before the first
+  // separation, and its manual install/repair CTA lives in the ONNX Runtime
+  // card — so this card no longer hides itself (and the model-update button
+  // with it) whenever the runtime is not ready yet.
   const controlsDisabled =
     meta.isInitializing || state.downloadingModel !== null || !runtimeReady;
 
-  // B3: Show runtime install CTA when runtime is missing. Corrupt installs
-  // and failed downloads get their own message so the user is never stuck
-  // in an unexplained install loop.
-  if (!runtimeReady && state.runtimeStatus?.state !== "downloading") {
-    const runtimeMessage =
-      runtimeState === "corrupt"
+  const runtimeNotice = runtimeReady
+    ? null
+    : runtimeState === "downloading"
+      ? t("settings.runtime.downloading")
+      : runtimeState === "corrupt"
         ? t("settings.runtime.corrupt")
         : runtimeState === "failed"
           ? t("settings.runtime.downloadFailed")
-          : t("settings.runtime.installRequired");
-    const runtimeButtonLabel =
-      runtimeState === "corrupt" || runtimeState === "failed"
-        ? t("settings.runtime.retryButton")
-        : t("settings.runtime.installButton");
-
-    return (
-      <SettingsSectionCard
-        title={t("settings.modelVariant.label")}
-        description={t("settings.modelVariant.description")}
-      >
-        <div className="flex flex-col gap-2">
-          <p className="text-[12px] text-[var(--color-text-dim)]">
-            {runtimeMessage}
-          </p>
-          {state.runtimeStatus?.error ? (
-            <p className="text-[11px] text-[var(--color-danger,#e5484d)] opacity-90">
-              {state.runtimeStatus.error}
-            </p>
-          ) : null}
-          <button
-            onClick={() => void actions.downloadRuntime()}
-            className="self-start rounded-md bg-[var(--color-control-primary)] px-3 py-1.5 text-[12px] text-[var(--color-control-primary-foreground)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-control-primary)_88%,white)]"
-          >
-            {runtimeButtonLabel}
-          </button>
-        </div>
-      </SettingsSectionCard>
-    );
-  }
-
-  if (state.runtimeStatus?.state === "downloading") {
-    return (
-      <SettingsSectionCard
-        title={t("settings.modelVariant.label")}
-        description={t("settings.modelVariant.description")}
-      >
-        <p className="text-[12px] text-[var(--color-text-dim)]">
-          {t("settings.runtime.downloading")}
-        </p>
-      </SettingsSectionCard>
-    );
-  }
+          : t("settings.modelVariant.runtimeRequired");
 
   const update = state.modelUpdate;
   const updatableModels =
@@ -152,6 +113,12 @@ export function SettingsModelVariantSection() {
       title={t("settings.modelVariant.label")}
       description={t("settings.modelVariant.description")}
     >
+      {runtimeNotice ? (
+        <p className="mb-2 text-[12px] text-[var(--color-text-dim)]">
+          {runtimeNotice}
+        </p>
+      ) : null}
+
       <div className="flex gap-2">
         <ModelVariantOption
           selected={state.modelVariant === "htdemucs"}

@@ -159,4 +159,66 @@ describe("SettingsRuntimeSection", () => {
 
     expect(html).toContain("settings.runtime.downloadingCandidate");
   });
+
+  test("owns the install CTA when the runtime is missing", () => {
+    const html = render({
+      runtimeStatus: { ...readyRuntime, state: "missing" },
+    });
+
+    expect(html).toContain("settings.runtime.statusMissing");
+    expect(html).toContain("settings.runtime.installRequired");
+    expect(html).toContain("settings.runtime.installButton");
+    expect(html).toContain('data-testid="runtime-install-button"');
+  });
+
+  test("offers a repair CTA with the error text for a corrupt runtime", () => {
+    const html = render({
+      runtimeStatus: {
+        ...readyRuntime,
+        state: "corrupt",
+        error: "checksum mismatch on libonnxruntime",
+      },
+    });
+
+    expect(html).toContain("settings.runtime.corrupt");
+    expect(html).toContain("settings.runtime.retryButton");
+    expect(html).toContain("checksum mismatch on libonnxruntime");
+    expect(html).not.toContain("settings.runtime.installRequired");
+  });
+
+  test("offers a retry CTA after a failed runtime download", () => {
+    const html = render({
+      runtimeStatus: { ...readyRuntime, state: "failed", error: null },
+    });
+
+    expect(html).toContain("settings.runtime.downloadFailed");
+    expect(html).toContain("settings.runtime.retryButton");
+  });
+
+  test("never claims the runtime is up to date when the check says it is not installed", () => {
+    const update: RuntimeUpdateView = {
+      status: "checked",
+      error: null,
+      report: {
+        generation: 4,
+        release_id: "2026-08-01-001",
+        target_triple: "aarch64-apple-darwin",
+        state: "not_installed",
+        installed_version: null,
+        available_version: "v1.27.1",
+        available_bytes: 42_000_000,
+        restart_required: false,
+      },
+    };
+    const html = render({
+      runtimeStatus: { ...readyRuntime, state: "missing" },
+      runtimeUpdate: update,
+    });
+
+    // The old fall-through printed "The runtime is up to date." for every
+    // non-update verdict, so a failed install looked healthy.
+    expect(html).not.toContain("settings.runtime.upToDate");
+    expect(html).toContain("settings.runtime.statusMissing");
+    expect(html).toContain("settings.runtime.installButton");
+  });
 });

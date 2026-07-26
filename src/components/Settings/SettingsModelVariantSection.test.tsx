@@ -62,7 +62,7 @@ describe("SettingsModelVariantSection", () => {
     expect(html).toContain("model-v2.1.0");
   });
 
-  test("shows a distinct message and retry button for a corrupt runtime", () => {
+  test("explains why model downloads are unavailable without owning the runtime install", () => {
     const html = render({
       runtimeStatus: {
         ...readyRuntime,
@@ -72,27 +72,42 @@ describe("SettingsModelVariantSection", () => {
     });
 
     expect(html).toContain("settings.runtime.corrupt");
-    expect(html).toContain("settings.runtime.retryButton");
-    expect(html).toContain("checksum mismatch on libonnxruntime");
-    expect(html).not.toContain("settings.runtime.installRequired");
+    // Installing/repairing the runtime belongs to the ONNX Runtime card.
+    expect(html).not.toContain("settings.runtime.retryButton");
+    expect(html).not.toContain("settings.runtime.installButton");
   });
 
-  test("shows a distinct message for a failed runtime download", () => {
-    const html = render({
-      runtimeStatus: { ...readyRuntime, state: "failed", error: null },
-    });
-
-    expect(html).toContain("settings.runtime.downloadFailed");
-    expect(html).toContain("settings.runtime.retryButton");
-  });
-
-  test("keeps the generic install message for a missing runtime", () => {
+  test("keeps the variant picker and model-update button visible while the runtime is missing", () => {
     const html = render({
       runtimeStatus: { ...readyRuntime, state: "missing" },
     });
 
-    expect(html).toContain("settings.runtime.installRequired");
-    expect(html).toContain("settings.runtime.installButton");
+    // The old behavior replaced this whole card with a runtime install CTA,
+    // which is why there was no way to check for model updates.
+    expect(html).toContain("settings.modelVariant.htdemucs");
+    expect(html).toContain("settings.modelVariant.htdemucsFt");
+    expect(html).toContain("settings.modelUpdate.checkButton");
+    expect(html).toContain("settings.modelVariant.runtimeRequired");
+    expect(html).not.toContain("settings.runtime.installButton");
+  });
+
+  test("surfaces runtime download progress while it is being provisioned", () => {
+    const html = render({
+      runtimeStatus: { ...readyRuntime, state: "downloading" },
+    });
+
+    expect(html).toContain("settings.runtime.downloading");
+    expect(html).toContain("settings.modelUpdate.checkButton");
+  });
+
+  test("disables the variant buttons until the runtime can load models", () => {
+    const html = render({
+      runtimeStatus: { ...readyRuntime, state: "missing" },
+    });
+
+    const disabledVariantButtons = (html.match(/<button disabled=""/g) ?? [])
+      .length;
+    expect(disabledVariantButtons).toBeGreaterThanOrEqual(2);
   });
 
   test("renders the update check button when the runtime is ready", () => {

@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 const mockOpen = vi.hoisted(() => vi.fn());
 const mockCreateLocalLibrary = vi.hoisted(() => vi.fn());
 const mockRunRemoteLibraryRegistrationFlow = vi.hoisted(() => vi.fn());
+const mockSetStemMode = vi.hoisted(() => vi.fn());
+const mockSetModelVariant = vi.hoisted(() => vi.fn());
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -23,7 +25,8 @@ vi.mock("@/lib/tauri", () => ({
   setLanguage: vi.fn().mockResolvedValue(undefined),
   createLocalLibrary: mockCreateLocalLibrary,
   registerLocalLibrary: vi.fn(),
-  setStemMode: vi.fn(),
+  setStemMode: mockSetStemMode,
+  setModelVariant: mockSetModelVariant,
   cancelRemoteAuth: vi.fn(),
 }));
 
@@ -33,6 +36,7 @@ vi.mock("@/stores/settings-store", () => ({
       selector({
         language: "en",
         stemMode: "four_stem",
+        modelVariant: "htdemucs",
         patchAppSettings: vi.fn(),
         hydrateAppSettings: vi.fn(),
       }),
@@ -40,6 +44,7 @@ vi.mock("@/stores/settings-store", () => ({
       getState: () => ({
         language: "en",
         stemMode: "four_stem",
+        modelVariant: "htdemucs",
         patchAppSettings: vi.fn(),
         hydrateAppSettings: vi.fn(),
       }),
@@ -74,6 +79,10 @@ describe("LibrarySetup destructive error surfaces", () => {
     mockOpen.mockReset();
     mockCreateLocalLibrary.mockReset();
     mockRunRemoteLibraryRegistrationFlow.mockReset();
+    mockSetStemMode.mockReset();
+    mockSetStemMode.mockResolvedValue(undefined);
+    mockSetModelVariant.mockReset();
+    mockSetModelVariant.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -153,6 +162,48 @@ describe("LibrarySetup destructive error surfaces", () => {
 
     expect(container.innerHTML).toContain("auth failed");
     expect(container.innerHTML).toContain("text-[var(--color-destructive)]");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  test("persists the model chosen during first run so the first separation downloads it", async () => {
+    const onComplete = vi.fn();
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<LibrarySetup onComplete={onComplete} />);
+    });
+
+    const clickButtonContaining = async (text: string) => {
+      const button = Array.from(container.querySelectorAll("button")).find(
+        (candidate) => candidate.textContent?.includes(text),
+      );
+      expect(button, `no button containing ${text}`).toBeTruthy();
+      await act(async () => {
+        button?.click();
+      });
+    };
+
+    await clickButtonContaining("English");
+
+    mockOpen.mockResolvedValue("/tmp/karaoke");
+    mockCreateLocalLibrary.mockResolvedValue(undefined);
+    await clickButtonContaining("Create new local library");
+
+    // Stem mode → model step.
+    await clickButtonContaining("setup.continue");
+    expect(container.innerHTML).toContain("setup.chooseModel");
+    expect(container.innerHTML).toContain("settings.modelVariant.htdemucs");
+    expect(container.innerHTML).toContain("settings.modelVariant.htdemucsFt");
+
+    await clickButtonContaining("settings.modelVariant.htdemucsFt");
+    await clickButtonContaining("setup.getStarted");
+
+    expect(mockSetStemMode).toHaveBeenCalledWith("four_stem");
+    expect(mockSetModelVariant).toHaveBeenCalledWith("htdemucs_ft");
+    expect(onComplete).toHaveBeenCalled();
 
     await act(async () => {
       root.unmount();

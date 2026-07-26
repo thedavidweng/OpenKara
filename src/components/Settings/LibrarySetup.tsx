@@ -12,19 +12,25 @@ import {
   Mic2,
   ChevronLeft,
   Check,
+  Sparkles,
 } from "lucide-react";
 import { getErrorMessage } from "@/lib/errors";
 import * as api from "@/lib/tauri";
 import i18next, { SUPPORTED_LANGUAGES, detectSystemLanguage } from "@/lib/i18n";
 import { useSettingsStore } from "@/stores/settings-store";
-import type { RemoteLibraryProvider } from "@/types/ipc";
+import type { ModelVariant, RemoteLibraryProvider } from "@/types/ipc";
 import { runRemoteLibraryRegistrationFlow } from "./remote-library-flow";
 import {
   getRemoteLibraryConnectedMessage,
   getRemoteProviderDisplayName,
 } from "./remote-library-copy";
 
-type Step = "language" | "library" | "remoteProvider" | "stemMode";
+type Step =
+  | "language"
+  | "library"
+  | "remoteProvider"
+  | "stemMode"
+  | "modelVariant";
 type LibraryChoiceKind = "create_local" | "open_local" | "open_remote";
 
 interface RemoteProviderChoice {
@@ -94,7 +100,13 @@ interface LibrarySetupProps {
 }
 
 function StepIndicator({ current }: { current: Step }) {
-  const steps: Step[] = ["language", "library", "remoteProvider", "stemMode"];
+  const steps: Step[] = [
+    "language",
+    "library",
+    "remoteProvider",
+    "stemMode",
+    "modelVariant",
+  ];
   const currentIndex = steps.indexOf(current);
 
   return (
@@ -117,6 +129,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
   const { t } = useTranslation();
   const settingsLanguage = useSettingsStore((s) => s.language);
   const settingsStemMode = useSettingsStore((s) => s.stemMode);
+  const settingsModelVariant = useSettingsStore((s) => s.modelVariant);
   const patchAppSettings = useSettingsStore((s) => s.patchAppSettings);
   const hydrateAppSettings = useSettingsStore((s) => s.hydrateAppSettings);
   const [step, setStep] = useState<Step>("language");
@@ -141,6 +154,8 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
   const [selectedStemModeDraft, setSelectedStemModeDraft] = useState<
     "two_stem" | "four_stem" | null
   >(null);
+  const [selectedModelVariantDraft, setSelectedModelVariantDraft] =
+    useState<ModelVariant | null>(null);
   const remoteAuthSessionIdRef = useRef<string | null>(null);
   const selectedLanguage =
     selectedLanguageDraft ??
@@ -148,6 +163,8 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
     i18next.resolvedLanguage ??
     detectSystemLanguage();
   const selectedStemMode = selectedStemModeDraft ?? settingsStemMode;
+  const selectedModelVariant =
+    selectedModelVariantDraft ?? settingsModelVariant;
 
   const resolveSingleDirectory = (selected: string | string[] | null) =>
     typeof selected === "string" ? selected : (selected?.[0] ?? null);
@@ -282,7 +299,10 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
 
   const handleFinish = async () => {
     try {
-      const settings = await api.setStemMode(selectedStemMode);
+      await api.setStemMode(selectedStemMode);
+      // The chosen variant is what the first separation auto-downloads, so it
+      // must be persisted before the user reaches the library.
+      const settings = await api.setModelVariant(selectedModelVariant);
       hydrateAppSettings(settings);
     } catch {
       // non-fatal
@@ -838,6 +858,94 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
             </div>
 
             <button
+              onClick={() => setStep("modelVariant")}
+              className="w-full rounded-lg bg-[var(--color-control-primary)] px-5 py-3 text-[14px] font-medium text-[var(--color-control-primary-foreground)] transition-opacity hover:opacity-90"
+            >
+              {t("setup.continue")}
+            </button>
+
+            <button
+              onClick={() => setStep("library")}
+              className="flex items-center justify-center gap-1 text-[13px] text-[var(--color-text-dim)] transition-colors hover:text-[var(--color-text)]"
+            >
+              <ChevronLeft size={14} />
+              {t("setup.back")}
+            </button>
+          </>
+        )}
+
+        {step === "modelVariant" && (
+          <>
+            <div className="flex flex-col items-center gap-4">
+              <div className="flex items-center justify-center">
+                <Sparkles
+                  size={32}
+                  className="text-[var(--color-control-primary)]"
+                />
+              </div>
+              <h1 className="text-2xl font-bold text-[var(--color-text)]">
+                {t("setup.chooseModel")}
+              </h1>
+              <p className="text-[14px] leading-relaxed text-[var(--color-text-dim)]">
+                {t("setup.modelDescription")}
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              {(
+                [
+                  {
+                    variant: "htdemucs",
+                    title: t("settings.modelVariant.htdemucs"),
+                    subtitle: t("settings.modelVariant.htdemucsDescription"),
+                  },
+                  {
+                    variant: "htdemucs_ft",
+                    title: t("settings.modelVariant.htdemucsFt"),
+                    subtitle: t("settings.modelVariant.htdemucsFtDescription"),
+                  },
+                ] satisfies ReadonlyArray<{
+                  variant: ModelVariant;
+                  title: string;
+                  subtitle: string;
+                }>
+              ).map((option) => (
+                <button
+                  key={option.variant}
+                  onClick={() => setSelectedModelVariantDraft(option.variant)}
+                  className={`flex w-full items-center gap-3 rounded-lg border px-5 py-4 text-left transition-colors ${
+                    selectedModelVariant === option.variant
+                      ? "border-[var(--color-control-selected-border)] bg-[var(--color-control-selected-bg)]"
+                      : "border-[var(--color-border-light)] bg-[var(--color-sidebar)] hover:bg-[var(--color-hover)]"
+                  }`}
+                >
+                  <Sparkles
+                    size={20}
+                    className="shrink-0 text-[var(--color-control-primary)]"
+                  />
+                  <div className="flex-1">
+                    <div className="text-[14px] font-medium text-[var(--color-text)]">
+                      {option.title}
+                    </div>
+                    <div className="text-[12px] text-[var(--color-text-dim)]">
+                      {option.subtitle}
+                    </div>
+                  </div>
+                  {selectedModelVariant === option.variant && (
+                    <Check
+                      size={16}
+                      className="shrink-0 text-[var(--color-control-primary)]"
+                    />
+                  )}
+                </button>
+              ))}
+            </div>
+
+            <p className="text-[12px] text-[var(--color-text-dimmer)]">
+              {t("setup.modelDownloadHint")}
+            </p>
+
+            <button
               onClick={handleFinish}
               className="w-full rounded-lg bg-[var(--color-control-primary)] px-5 py-3 text-[14px] font-medium text-[var(--color-control-primary-foreground)] transition-opacity hover:opacity-90"
             >
@@ -845,7 +953,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
             </button>
 
             <button
-              onClick={() => setStep("library")}
+              onClick={() => setStep("stemMode")}
               className="flex items-center justify-center gap-1 text-[13px] text-[var(--color-text-dim)] transition-colors hover:text-[var(--color-text)]"
             >
               <ChevronLeft size={14} />
