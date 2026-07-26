@@ -116,6 +116,17 @@ function songTitleFor(songId: string): string {
   );
 }
 
+/**
+ * A batch emits a per-song terminal event for every song it separates, on top
+ * of its own summary event. Notifying per song would fire dozens of native
+ * pop-ups for the exact scenario this feature exists to keep calm, so the batch
+ * summary is the only alert during a batch. Mirrors the same branch the
+ * in-app progress bar takes.
+ */
+function batchInProgress(): boolean {
+  return useLibraryStore.getState().batchSeparation != null;
+}
+
 function useSeparationEvents(enabled: boolean) {
   const updateSeparationStatus = useLibraryStore(
     (s) => s.updateSeparationStatus,
@@ -164,7 +175,7 @@ function useSeparationEvents(enabled: boolean) {
           // native notification — it returns before the user could switch away.
           if (e.payload.status.cache_hit) {
             notifySuccess(i18next.t("library.usingCachedSeparation"));
-          } else {
+          } else if (!batchInProgress()) {
             void notifyWhenUnfocused(
               i18next.t("notifications.separationComplete"),
               songTitleFor(e.payload.song_id),
@@ -183,10 +194,12 @@ function useSeparationEvents(enabled: boolean) {
           if (!cancelled) {
             updateSeparationStatus(separationErrorStatus(e.payload));
             notifyError(e.payload.error);
-            void notifyWhenUnfocused(
-              i18next.t("notifications.separationFailed"),
-              songTitleFor(e.payload.song_id),
-            );
+            if (!batchInProgress()) {
+              void notifyWhenUnfocused(
+                i18next.t("notifications.separationFailed"),
+                songTitleFor(e.payload.song_id),
+              );
+            }
           }
         },
       );
