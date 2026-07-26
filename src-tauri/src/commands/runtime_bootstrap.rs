@@ -753,4 +753,37 @@ mod tests {
             assert!(ensure_runtime_ready(&status).is_err());
         }
     }
+
+    #[test]
+    fn staging_candidate_rejects_runtime_that_does_not_support_a_model() {
+        // The manifest validator guarantees same-generation runtime/model
+        // reciprocity, so this defensive gate should never fire in practice.
+        // It must still bail loudly — rather than stage a runtime that cannot
+        // serve an installed model — if that invariant is ever violated. We
+        // reduce the catalog to a single active runtime for the current target
+        // and strip its supported-model list so the gate is the only reachable
+        // outcome; the bail happens before any download, so no I/O is needed.
+        let mut catalog = catalog::embedded_catalog().clone();
+        let mut runtime = catalog.manifest.artifacts.runtimes[0].clone();
+        runtime.target_triple = Some(catalog::current_target_triple().to_owned());
+        runtime.deprecation = catalog::CatalogDeprecation::default();
+        runtime.runtime.supported_model_artifact_ids.clear();
+        catalog.manifest.artifacts.runtimes = vec![runtime];
+
+        let status = Arc::new(Mutex::new(snapshot_from_inventory(&empty_inventory())));
+        let mut emit = |_event: &'static str, _snapshot: RuntimeBootstrapStatusSnapshot| {};
+
+        let error = download_and_stage_candidate_blocking(
+            std::path::Path::new("/nonexistent/openkara-compat-gate"),
+            &catalog,
+            &status,
+            &mut emit,
+        )
+        .expect_err("an incompatible runtime must be rejected before staging");
+
+        assert!(
+            error.to_string().contains("does not support model"),
+            "unexpected error: {error}"
+        );
+    }
 }

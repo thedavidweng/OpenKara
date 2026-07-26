@@ -4,14 +4,13 @@ use crate::separator::catalog::{
     VerifiedCatalog,
 };
 use crate::separator::verified_manifest::{
-    sha256_hex, verified_manifest_matches, verified_manifest_path, write_verified_manifest,
+    verified_manifest_matches, verified_manifest_path, write_verified_manifest,
 };
 use anyhow::{bail, Context, Result};
 use std::sync::OnceLock;
 use std::{
     fs,
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 /// Everything needed to install and verify one model artifact. Descriptors
@@ -215,50 +214,6 @@ pub fn resolve_existing_model_path(
     )
 }
 
-pub fn install_verified_model_bytes(
-    destination: &Path,
-    payload: &[u8],
-    expected_sha256: &str,
-) -> Result<()> {
-    let actual_sha256 = sha256_hex(payload);
-    if actual_sha256 != expected_sha256 {
-        bail!(
-            "downloaded model checksum mismatch: expected {expected_sha256}, got {actual_sha256}"
-        );
-    }
-
-    let parent = destination.parent().with_context(|| {
-        format!(
-            "model destination {} is missing a parent directory",
-            destination.display()
-        )
-    })?;
-    fs::create_dir_all(parent).with_context(|| {
-        format!(
-            "failed to create model destination directory {}",
-            parent.display()
-        )
-    })?;
-
-    let temp_path = temporary_download_path(destination);
-    fs::write(&temp_path, payload).with_context(|| {
-        format!(
-            "failed to write temporary model download {}",
-            temp_path.display()
-        )
-    })?;
-    fs::rename(&temp_path, destination).with_context(|| {
-        format!(
-            "failed to move verified model from {} to {}",
-            temp_path.display(),
-            destination.display()
-        )
-    })?;
-    write_verified_manifest(destination, expected_sha256)?;
-
-    Ok(())
-}
-
 /// Download and install a model through the shared artifact plumbing:
 /// stream to a temp file with fixed memory, verify the download digest,
 /// extract archived deliveries safely, verify the installed `.onnx` digest,
@@ -365,13 +320,4 @@ fn verify_model_install(path: &Path, expected_sha256: &str) -> Result<bool> {
         write_verified_manifest(path, expected_sha256)?;
     }
     Ok(ok)
-}
-
-fn temporary_download_path(destination: &Path) -> PathBuf {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time should be after unix epoch")
-        .as_nanos();
-
-    destination.with_extension(format!("download.{timestamp}.tmp"))
 }

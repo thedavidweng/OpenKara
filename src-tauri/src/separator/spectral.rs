@@ -14,9 +14,12 @@
 //! This is the *pure DSP* layer only: the forward transform ([`SpectralPlans::spec`]),
 //! the inverse transform ([`SpectralPlans::ispec`]), and the neural-core
 //! [`magnitude`] view helper, all validated against the pinned golden vectors
-//! at every intermediate stage. There is **no** production model / ORT session
-//! path here — that arrives with issue #172 PR 2 once `openkara-models#23`
-//! publishes spectral-core artifacts.
+//! at every intermediate stage. The production model / ORT session path that
+//! consumes these transforms lives in the sibling [`spectral_session`] module
+//! (issue #172 PR 2, once `openkara-models#23` published spectral-core
+//! artifacts).
+//!
+//! [`spectral_session`]: super::spectral_session
 //!
 //! # Contract semantics (mirrored operation-by-operation from the reference)
 //!

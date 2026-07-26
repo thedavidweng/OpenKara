@@ -71,7 +71,7 @@
   已无法加载波形模型（`model::ensure_spectral_core_metadata` 会拒绝），因此这些
   工件只在清单解析层保留，不再有推理层读取逻辑。
 - 每次成功安装都会在模型旁写入 `<model>.identity.json`
-  （schema `openkara.app/installed-model-v1`），记录 generation、release ID、
+  （schema `openkara.app/installed-artifact-v1`），记录 generation、release ID、
   artifact ID、上游 tag、digest、字节数与兼容 runtime 列表。
 - 就绪判定：文件 digest 匹配内嵌 pin，**或** 匹配其 identity 记录（因此从更
   新 generation 安装的模型在旧二进制/离线状态下仍可用）。identity 记录损坏
