@@ -11,6 +11,17 @@ const EQ_BAND_KEYS = [
   "settings.eq.band14000",
 ] as const;
 
+// Friendly names shown as the primary band label; the raw center frequency
+// (EQ_BAND_KEYS) stays visible as a secondary caption. Index-aligned with the
+// backend EQ_BAND_FREQUENCIES_HZ = [60, 230, 910, 3600, 14000].
+const EQ_BAND_NAME_KEYS = [
+  "settings.eq.bandNameBass",
+  "settings.eq.bandNameLowMid",
+  "settings.eq.bandNameMid",
+  "settings.eq.bandNameHighMid",
+  "settings.eq.bandNameTreble",
+] as const;
+
 /// Trailing debounce window for slider → IPC commits. Local draft updates
 /// immediately so the slider feels responsive; the complete five-value array
 /// is sent once after this quiet period (or immediately on pointer/key
@@ -18,6 +29,40 @@ const EQ_BAND_KEYS = [
 const EQ_DEBOUNCE_MS = 75;
 
 type EqGains = [number, number, number, number, number];
+
+// Named starting points, ordered [60, 230, 910, 3600, 14000] Hz. Every value
+// must stay within ±12 dB (validate_gains_db rejects the commit otherwise).
+// A preset is nothing more than a gain array pushed through setEqGains.
+const EQ_PRESETS = [
+  { key: "settings.eq.presetFlat", gains: [0, 0, 0, 0, 0] },
+  { key: "settings.eq.presetVocalBoost", gains: [-1, -1, 2, 4, 1] },
+  { key: "settings.eq.presetBassBoost", gains: [6, 3, 0, 0, 1] },
+  { key: "settings.eq.presetTrebleBoost", gains: [0, 0, 0, 3, 6] },
+  { key: "settings.eq.presetWarm", gains: [3, 2, 0, -1, -2] },
+  { key: "settings.eq.presetBright", gains: [-2, -1, 0, 2, 4] },
+  { key: "settings.eq.presetRock", gains: [4, 2, -1, 2, 4] },
+  { key: "settings.eq.presetPop", gains: [2, 1, 2, 3, 2] },
+] as const satisfies ReadonlyArray<{
+  key: string;
+  gains: readonly [number, number, number, number, number];
+}>;
+
+// Sliders move on a 0.5 dB grid, so half a step cleanly separates "matches
+// the preset" from "user nudged a band".
+const EQ_PRESET_MATCH_EPSILON = 0.25;
+
+function matchEqPreset(gains: EqGains): string | null {
+  for (const preset of EQ_PRESETS) {
+    if (
+      preset.gains.every(
+        (gain, band) => Math.abs(gain - gains[band]) < EQ_PRESET_MATCH_EPSILON,
+      )
+    ) {
+      return preset.key;
+    }
+  }
+  return null;
+}
 
 export function SettingsEqSection() {
   const { t } = useTranslation();
@@ -92,6 +137,26 @@ export function SettingsEqSection() {
     });
   };
 
+  // Highlight the preset the current draft matches; null renders as
+  // "Custom". Matching against the draft (not the committed store state)
+  // keeps the chips honest the moment a band slider moves.
+  const activePresetKey = matchEqPreset(draft);
+
+  /// Apply a named preset through the existing commit path. The pending
+  /// debounced band commit is cancelled first so an in-flight slider drag
+  /// cannot fire 75 ms later and clobber the preset.
+  const applyPreset = (
+    gains: readonly [number, number, number, number, number],
+  ) => {
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    pendingRef.current = null;
+    setDraft([...gains] as EqGains);
+    void actions.setEqGains([...gains] as EqGains);
+  };
+
   return (
     <SettingsSectionCard title={t("settings.eq.label")}>
       <div className="space-y-4">
@@ -120,11 +185,47 @@ export function SettingsEqSection() {
             state.eqEnabled ? "" : "opacity-50"
           }`}
         >
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[12px] font-medium text-[var(--color-text-dim)]">
+                {t("settings.eq.presetLabel")}
+              </span>
+              {activePresetKey === null ? (
+                <span className="text-[11px] text-[var(--color-text-dim)]">
+                  {t("settings.eq.presetCustom")}
+                </span>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {EQ_PRESETS.map((preset) => (
+                <button
+                  key={preset.key}
+                  type="button"
+                  onClick={() => applyPreset(preset.gains)}
+                  disabled={meta.isInitializing || !state.eqEnabled}
+                  aria-pressed={activePresetKey === preset.key}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors disabled:opacity-50 ${
+                    activePresetKey === preset.key
+                      ? "border-[var(--color-control-selected-border)] bg-[var(--color-control-selected-bg)] text-[var(--color-text)]"
+                      : "border-[var(--color-border-light)] bg-[var(--color-surface)] text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
+                  }`}
+                >
+                  {t(preset.key)}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {draft.map((gain, band) => (
             <div key={band} className="space-y-1">
               <div className="flex items-center justify-between">
-                <label className="text-[12px] font-medium text-[var(--color-text-dim)]">
-                  {t(EQ_BAND_KEYS[band])}
+                <label className="flex items-baseline gap-2 text-[12px]">
+                  <span className="font-medium text-[var(--color-text)]">
+                    {t(EQ_BAND_NAME_KEYS[band])}
+                  </span>
+                  <span className="text-[10px] text-[var(--color-text-dim)]">
+                    {t(EQ_BAND_KEYS[band])}
+                  </span>
                 </label>
                 <span className="text-[11px] tabular-nums text-[var(--color-text-dim)]">
                   {gain > 0 ? "+" : ""}
@@ -147,6 +248,15 @@ export function SettingsEqSection() {
               />
             </div>
           ))}
+
+          <div
+            aria-hidden="true"
+            className="flex items-center justify-between text-[10px] tabular-nums text-[var(--color-text-dim)]"
+          >
+            <span>-12 dB</span>
+            <span>0</span>
+            <span>+12 dB</span>
+          </div>
 
           <button
             type="button"

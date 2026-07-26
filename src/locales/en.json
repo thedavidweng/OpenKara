@@ -430,7 +430,22 @@
       "band230": "230 Hz",
       "band910": "910 Hz",
       "band3600": "3.6 kHz",
-      "band14000": "14 kHz"
+      "band14000": "14 kHz",
+      "bandNameBass": "Bass",
+      "bandNameLowMid": "Low mid",
+      "bandNameMid": "Mid",
+      "bandNameHighMid": "High mid",
+      "bandNameTreble": "Treble",
+      "presetLabel": "Preset",
+      "presetCustom": "Custom",
+      "presetFlat": "Flat",
+      "presetVocalBoost": "Vocal Boost",
+      "presetBassBoost": "Bass Boost",
+      "presetTrebleBoost": "Treble Boost",
+      "presetWarm": "Warm",
+      "presetBright": "Bright",
+      "presetRock": "Rock",
+      "presetPop": "Pop"
     },
     "crossfade": {
       "label": "Crossfade",

@@ -30,6 +30,21 @@ vi.mock("react-i18next", async (importOriginal) => {
           "settings.eq.band910": "910 Hz",
           "settings.eq.band3600": "3.6 kHz",
           "settings.eq.band14000": "14 kHz",
+          "settings.eq.bandNameBass": "Bass",
+          "settings.eq.bandNameLowMid": "Low mid",
+          "settings.eq.bandNameMid": "Mid",
+          "settings.eq.bandNameHighMid": "High mid",
+          "settings.eq.bandNameTreble": "Treble",
+          "settings.eq.presetLabel": "Preset",
+          "settings.eq.presetCustom": "Custom",
+          "settings.eq.presetFlat": "Flat",
+          "settings.eq.presetVocalBoost": "Vocal Boost",
+          "settings.eq.presetBassBoost": "Bass Boost",
+          "settings.eq.presetTrebleBoost": "Treble Boost",
+          "settings.eq.presetWarm": "Warm",
+          "settings.eq.presetBright": "Bright",
+          "settings.eq.presetRock": "Rock",
+          "settings.eq.presetPop": "Pop",
           "settings.eq.reset": "Reset to flat",
         };
         return map[key] ?? key;
@@ -67,6 +82,127 @@ describe("SettingsEqSection", () => {
     expect(markup).toContain("Reset to flat");
     const sliderCount = (markup.match(/type="range"/g) ?? []).length;
     expect(sliderCount).toBe(5);
+  });
+
+  test("renders friendly band names alongside the Hz captions", () => {
+    const value = createSettingsOverlayTestContextValue({
+      state: {
+        eqEnabled: true,
+        eqGainsDb: [0, 0, 0, 0, 0],
+      },
+    });
+
+    const markup = renderToStaticMarkup(
+      <SettingsOverlayContext value={value}>
+        <SettingsEqSection />
+      </SettingsOverlayContext>,
+    );
+
+    expect(markup).toContain("Bass");
+    expect(markup).toContain("Low mid");
+    expect(markup).toContain("Mid");
+    expect(markup).toContain("High mid");
+    expect(markup).toContain("Treble");
+    // Hz captions remain as the secondary label.
+    expect(markup).toContain("60 Hz");
+    // dB scale ruler anchors the -12..+12 range.
+    expect(markup).toContain("-12 dB");
+    expect(markup).toContain("+12 dB");
+  });
+
+  test("renders preset chips and highlights the matching preset", () => {
+    const value = createSettingsOverlayTestContextValue({
+      state: {
+        eqEnabled: true,
+        // Matches the Bass Boost preset exactly.
+        eqGainsDb: [6, 3, 0, 0, 1],
+      },
+    });
+
+    render(
+      <SettingsOverlayContext value={value}>
+        <SettingsEqSection />
+      </SettingsOverlayContext>,
+    );
+
+    const bassBoost = screen.getByRole("button", { name: "Bass Boost" });
+    expect(bassBoost.getAttribute("aria-pressed")).toBe("true");
+    const flat = screen.getByRole("button", { name: "Flat" });
+    expect(flat.getAttribute("aria-pressed")).toBe("false");
+    // A matching preset means no "Custom" indicator.
+    expect(screen.queryByText("Custom")).toBeNull();
+  });
+
+  test("shows the Custom indicator when gains match no preset", () => {
+    const value = createSettingsOverlayTestContextValue({
+      state: {
+        eqEnabled: true,
+        eqGainsDb: [1.5, -4, 7, 0, 2],
+      },
+    });
+
+    render(
+      <SettingsOverlayContext value={value}>
+        <SettingsEqSection />
+      </SettingsOverlayContext>,
+    );
+
+    expect(screen.getByText("Custom")).not.toBeNull();
+  });
+
+  test("clicking a preset commits its gains through setEqGains", () => {
+    const setEqGains = vi.fn().mockResolvedValue(undefined);
+    const value = createSettingsOverlayTestContextValue(
+      {
+        state: { eqEnabled: true, eqGainsDb: [0, 0, 0, 0, 0] },
+        meta: { isInitializing: false },
+      },
+      { setEqGains },
+    );
+
+    render(
+      <SettingsOverlayContext value={value}>
+        <SettingsEqSection />
+      </SettingsOverlayContext>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Vocal Boost" }));
+
+    expect(setEqGains).toHaveBeenCalledTimes(1);
+    expect(setEqGains).toHaveBeenCalledWith([-1, -1, 2, 4, 1]);
+  });
+
+  test("clicking a preset cancels a pending debounced band commit", () => {
+    vi.useFakeTimers();
+    const setEqGains = vi.fn().mockResolvedValue(undefined);
+    const value = createSettingsOverlayTestContextValue(
+      {
+        state: { eqEnabled: true, eqGainsDb: [0, 0, 0, 0, 0] },
+        meta: { isInitializing: false },
+      },
+      { setEqGains },
+    );
+
+    const { container } = render(
+      <SettingsOverlayContext value={value}>
+        <SettingsEqSection />
+      </SettingsOverlayContext>,
+    );
+
+    const sliders = container.querySelectorAll('input[type="range"]');
+    fireEvent.change(sliders[0], { target: { value: "5" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Flat" }));
+
+    act(() => {
+      vi.advanceTimersByTime(75);
+    });
+
+    // Only the preset commit fires; the in-flight band drag must not clobber
+    // it 75 ms later.
+    expect(setEqGains).toHaveBeenCalledTimes(1);
+    expect(setEqGains).toHaveBeenCalledWith([0, 0, 0, 0, 0]);
+    vi.useRealTimers();
   });
 
   test("shows gain values in dB with sign", () => {
@@ -318,7 +454,7 @@ describe("SettingsEqSection", () => {
       </SettingsOverlayContext>,
     );
 
-    const resetButton = screen.getByRole("button");
+    const resetButton = screen.getByRole("button", { name: "Reset to flat" });
     fireEvent.click(resetButton);
 
     expect(resetEqGains).toHaveBeenCalled();
