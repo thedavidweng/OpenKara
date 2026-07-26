@@ -206,7 +206,7 @@
     "dragOverAfter": "{{title}}, {{overTitle}} sonrasına yerleştirilecek.",
     "dragEndBefore": "{{title}}, {{overTitle}} öncesine bırakıldı.",
     "dragEndAfter": "{{title}}, {{overTitle}} sonrasına bırakıldı.",
-    "dragCancel": "Kuyruk yeniden sıralama iptal edildi."
+    "dragCancel": "Kuyruğu yeniden sıralama iptal edildi."
   },
   "stems": {
     "vocals": "Vokal",
@@ -270,7 +270,7 @@
     "instrumental": "Enstrümantal",
     "mediaGPaired": "CD+G eşli dosyalar",
     "mediaGZip": "MP3+G ZIP",
-    "notApplicable": "Uygulanamaz",
+    "notApplicable": "Geçerli değil",
     "separation": "Ayırma",
     "notSeparated": "Ayrılmadı",
     "separating": "Ayrılıyor…",
@@ -296,7 +296,7 @@
       "openRemoteLibrary": "Uzak Depoyu Aç",
       "openRemoteLibraryDescription": "Bir uzak çalışma kopyası kaydedin ve ona geçin.",
       "createAndMirrorActiveLocal": "Oluştur ve Etkin Yereli Yansıt",
-      "mirrorActiveLocalDescriptionWithName": "{{displayName}} kitaplığını yeni bir uzak depoya yansıt.",
+      "mirrorActiveLocalDescriptionWithName": "{{displayName}} kitaplığını yeni bir uzak depoya yansıtın.",
       "mirrorActiveLocalDescriptionNoLocal": "Önce yansıtmak istediğiniz yerel kitaplığa geçin.",
       "displayName": "Görünen ad",
       "remoteLibraryDisplayName": "OpenKara",
@@ -532,7 +532,7 @@
       "emptyPrimary": "Boş Birincil Medya",
       "missingOptional": "Eksik İsteğe Bağlı Varlıklar",
       "emptyOptional": "Boş İsteğe Bağlı Varlıklar",
-      "orphanedFiles": "Artık Yönetilen Dosyalar",
+      "orphanedFiles": "Sahipsiz Yönetilen Dosyalar",
       "noIssues": "Sorun yok",
       "emptyPath": "(yol yok)",
       "removeSelected": "Seçili girdileri kaldır",
