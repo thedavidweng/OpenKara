@@ -180,7 +180,6 @@ pub(crate) struct StreamingPlaybackSource {
     /// release / track skip / stop), the pin count decrements so the entry
     /// becomes eligible for eviction. `None` for local sources. The field is
     /// never read directly — it exists only for its `Drop` side effect.
-    #[allow(dead_code)]
     pub(crate) cache_pin_guard: Option<CachePinGuard>,
 }
 

@@ -112,7 +112,6 @@ pub(crate) trait RemoteProvider {
     /// The caller checks `resumable_upload` first and falls back to
     /// `upload_file` when unsupported.
     // used by PR#5: resumable uploads
-    #[allow(dead_code)]
     fn resumable_upload_bytes(
         &self,
         _relative_path: &str,

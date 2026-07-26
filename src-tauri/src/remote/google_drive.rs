@@ -567,7 +567,6 @@ const GOOGLE_DRIVE_RESUMABLE_CHUNK_SIZE: usize = 8 * 1024 * 1024;
 /// Initiate a resumable upload session for a new file. Returns the session URL
 /// (from the `Location` header) to persist in
 /// `remote_transfer_parts.provider_session_id`.
-#[allow(dead_code)]
 pub(crate) fn google_drive_begin_resumable_upload(
     app_data_dir: &Path,
     secret: &mut GoogleDriveSecret,
@@ -607,7 +606,6 @@ pub(crate) fn google_drive_begin_resumable_upload(
 /// Initiate a resumable upload session for updating an existing file (by
 /// `file_id`). Used when the file already exists and we want to overwrite it
 /// resumably.
-#[allow(dead_code)]
 pub(crate) fn google_drive_begin_resumable_upload_existing(
     app_data_dir: &Path,
     secret: &mut GoogleDriveSecret,
@@ -645,7 +643,6 @@ pub(crate) fn google_drive_begin_resumable_upload_existing(
 /// `Content-Range: bytes */*` and an empty body. Google Drive responds with
 /// 308 (Permanent Redirect) and a `Range: bytes=0-<committed>` header, or 200
 /// if the upload is complete.
-#[allow(dead_code)]
 pub(crate) fn google_drive_query_resumable_offset(
     session_url: &str,
     access_token: &str,
@@ -698,7 +695,6 @@ pub(crate) fn google_drive_query_resumable_offset(
 
 /// Upload a single chunk to a resumable upload session. `start` is the byte
 /// offset within the file; `chunk` is the chunk bytes.
-#[allow(dead_code)]
 pub(crate) fn google_drive_upload_chunk(
     session_url: &str,
     access_token: &str,
@@ -737,7 +733,6 @@ pub(crate) fn google_drive_upload_chunk(
 ///
 /// For a new file, pass `parent_id` + `file_name`. For an existing file,
 /// pass `file_id` (the session is initiated against the existing file).
-#[allow(dead_code)]
 pub(crate) fn google_drive_resumable_upload(
     app_data_dir: &Path,
     secret: &mut GoogleDriveSecret,
