@@ -195,7 +195,7 @@ pub(crate) fn cancel_remote_auth(state: &AppState, session_id: String) -> Comman
 }
 
 pub(crate) fn open_external_url(url: String) -> CommandResult<()> {
-    open::that_detached(url.clone()).map_err(|_error| {
+    tauri_plugin_opener::open_url(&url, None::<&str>).map_err(|_error| {
         tracing::trace!("failed to open external URL {url}");
         CommandError::from(LibraryError::Internal(
             "Failed to open browser for authentication.".to_owned(),

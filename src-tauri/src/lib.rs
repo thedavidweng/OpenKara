@@ -81,6 +81,18 @@ pub fn derive_startup_model_bootstrap(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
+        // The single-instance guard must be the FIRST plugin so a second launch
+        // short-circuits before any state initializes. The library is a single
+        // SQLite writer and the remote-library outbox/recovery logic assumes one
+        // writer, so a second concurrent instance is a real corruption risk.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            use tauri::Manager;
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| app_runtime::setup_app(app))
         .invoke_handler(tauri::generate_handler![
