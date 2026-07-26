@@ -56,12 +56,21 @@ export function VolumeSliders({
   const throttledSetStemVolumeRef = useRef(
     new Map<StemName, TrailingRateLimiter<number>>(),
   );
+  const accompGroupLimiterRef = useRef<TrailingRateLimiter<{
+    drums: number;
+    bass: number;
+    other: number;
+  }> | null>(null);
 
   useEffect(() => {
     throttledSetStemVolumeRef.current.forEach((limiter) => limiter.cancel());
     throttledSetStemVolumeRef.current = new Map();
-    return () =>
+    accompGroupLimiterRef.current?.cancel();
+    accompGroupLimiterRef.current = null;
+    return () => {
       throttledSetStemVolumeRef.current.forEach((limiter) => limiter.cancel());
+      accompGroupLimiterRef.current?.cancel();
+    };
   }, [setStemVolume]);
 
   const stemVolumes = useMemo(
@@ -83,12 +92,29 @@ export function VolumeSliders({
   const isTwoStem = stemMode === "two_stem";
   const isFourStem = stemMode === "four_stem";
 
-  // Track previous non-zero values for mute/unmute toggle
+  // Track previous non-zero values for mute/unmute toggle. Accompaniment
+  // remembers all three sub-stems so unmuting restores the exact mix
+  // instead of collapsing the three stems to one shared level.
   const prevVocalsRef = useRef(1);
-  const prevAccompRef = useRef(1);
+  const prevAccompRef = useRef({ drums: 1, bass: 1, other: 1 });
   const prevDrumsRef = useRef(1);
   const prevBassRef = useRef(1);
   const prevOtherRef = useRef(1);
+
+  // Frozen per-gesture base for the accompaniment master slider. Captured at
+  // drag start so every slider event maps sub-stems as a pure function of the
+  // master value; recomputing from live (async, per-stem) store values lets
+  // the three stems drift apart during a fast drag.
+  const accompGestureBaseRef = useRef<{
+    drums: number;
+    bass: number;
+    other: number;
+    master: number;
+  } | null>(null);
+  // While a master drag is active the accompaniment slider renders the
+  // gesture value. Deriving it from max(sub-stems) mid-drag pins the thumb
+  // at 1 as soon as the loudest stem clamps.
+  const [accompDragValue, setAccompDragValue] = useState<number | null>(null);
 
   // Floating popup: portal to body so stage overflow / settings z-index cannot clip it.
   const popupRef = useRef<HTMLDivElement>(null);
@@ -168,33 +194,117 @@ export function VolumeSliders({
     [setStemVolume],
   );
 
-  // Accompaniment display value = max of the three sub-stems
+  // Accompaniment resting display value = max of the three sub-stems
   const accompValue = Math.max(
     stemVolumes.drums,
     stemVolumes.bass,
     stemVolumes.other,
   );
 
+  // The three sub-stems are committed through ONE trailing limiter so a
+  // throttled flush always carries a consistent triple; three independent
+  // limiters can flush values sampled at different moments of the drag.
+  const dispatchAccompGroup = useCallback(
+    (drums: number, bass: number, other: number) => {
+      let limiter = accompGroupLimiterRef.current;
+      if (!limiter) {
+        limiter = createTrailingRateLimiter(
+          (triple: { drums: number; bass: number; other: number }) => {
+            setStemVolume("drums", triple.drums);
+            setStemVolume("bass", triple.bass);
+            setStemVolume("other", triple.other);
+          },
+          20,
+        );
+        accompGroupLimiterRef.current = limiter;
+      }
+      limiter({ drums, bass, other });
+    },
+    [setStemVolume],
+  );
+
+  const handleAccompDragStart = useCallback(() => {
+    if (accompGestureBaseRef.current) return;
+    const { drums, bass, other } = stemVolumes;
+    accompGestureBaseRef.current = {
+      drums,
+      bass,
+      other,
+      master: Math.max(drums, bass, other),
+    };
+  }, [stemVolumes]);
+
+  const handleAccompDragEnd = useCallback(() => {
+    accompGroupLimiterRef.current?.flush();
+    accompGestureBaseRef.current = null;
+    // Keep rendering the released value: setStemVolume is an async round-trip,
+    // so falling straight back to max(store stems) makes the thumb hop
+    // backwards for one commit. The effect below hands the display back to the
+    // store as soon as it reflects the release.
+  }, []);
+
+  // A gesture whose slider disappears (the song ends, the mixer popup closes)
+  // never sees pointerup, so the frozen base has to be released explicitly —
+  // otherwise the next drag would scale the current mix by the stale one, and
+  // the thumb would stay pinned at the abandoned gesture value.
+  useEffect(() => {
+    if (stemsAvailable) {
+      return;
+    }
+    accompGroupLimiterRef.current?.cancel();
+    accompGestureBaseRef.current = null;
+    setAccompDragValue(null);
+  }, [stemsAvailable]);
+
+  // Same for a track change mid-drag: a pending triple belongs to the previous
+  // song's mix, so drop it rather than applying it to the new one.
+  useEffect(() => {
+    accompGroupLimiterRef.current?.cancel();
+    accompGestureBaseRef.current = null;
+    setAccompDragValue(null);
+  }, [songId]);
+
+  // Hand the display back to the store once it catches up with the gesture.
+  useEffect(() => {
+    if (accompGestureBaseRef.current !== null) {
+      return;
+    }
+    setAccompDragValue(null);
+  }, [accompValue]);
+
   const handleAccompChange = useCallback(
     (newValue: number) => {
+      const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+      const gestureBase = accompGestureBaseRef.current;
+      if (gestureBase) {
+        setAccompDragValue(newValue);
+      }
       if (isTwoStem) {
         // In 2-stem mode, set all three sub-stems to the same value;
         // the backend uses max gain as the accompaniment gain.
-        handleStemChange("drums", newValue);
-        handleStemChange("bass", newValue);
-        handleStemChange("other", newValue);
-      } else if (accompValue === 0) {
-        handleStemChange("drums", newValue);
-        handleStemChange("bass", newValue);
-        handleStemChange("other", newValue);
-      } else {
-        const ratio = newValue / accompValue;
-        handleStemChange("drums", Math.min(1, stemVolumes.drums * ratio));
-        handleStemChange("bass", Math.min(1, stemVolumes.bass * ratio));
-        handleStemChange("other", Math.min(1, stemVolumes.other * ratio));
+        dispatchAccompGroup(newValue, newValue, newValue);
+        return;
       }
+      // Keyboard adjustments arrive without a pointer gesture; scale from
+      // the current committed mix as a one-shot base.
+      const base = gestureBase ?? {
+        drums: stemVolumes.drums,
+        bass: stemVolumes.bass,
+        other: stemVolumes.other,
+        master: accompValue,
+      };
+      if (base.master === 0) {
+        dispatchAccompGroup(newValue, newValue, newValue);
+        return;
+      }
+      const factor = newValue / base.master;
+      dispatchAccompGroup(
+        clamp01(base.drums * factor),
+        clamp01(base.bass * factor),
+        clamp01(base.other * factor),
+      );
     },
-    [isTwoStem, accompValue, stemVolumes, handleStemChange],
+    [isTwoStem, accompValue, stemVolumes, dispatchAccompGroup],
   );
 
   const handleVocalsMuteToggle = useCallback(() => {
@@ -208,17 +318,21 @@ export function VolumeSliders({
 
   const handleAccompMuteToggle = useCallback(() => {
     if (accompValue > 0) {
-      prevAccompRef.current = accompValue;
+      prevAccompRef.current = {
+        drums: stemVolumes.drums,
+        bass: stemVolumes.bass,
+        other: stemVolumes.other,
+      };
       setStemVolume("drums", 0);
       setStemVolume("bass", 0);
       setStemVolume("other", 0);
     } else {
       const prev = prevAccompRef.current;
-      setStemVolume("drums", prev);
-      setStemVolume("bass", prev);
-      setStemVolume("other", prev);
+      setStemVolume("drums", prev.drums);
+      setStemVolume("bass", prev.bass);
+      setStemVolume("other", prev.other);
     }
-  }, [accompValue, setStemVolume]);
+  }, [accompValue, stemVolumes, setStemVolume]);
 
   const handleDrumsMuteToggle = useCallback(() => {
     if (stemVolumes.drums > 0) {
@@ -318,8 +432,10 @@ export function VolumeSliders({
       <StemSlider
         icon={Music}
         label={t("stems.accompaniment")}
-        value={accompValue}
+        value={accompDragValue ?? accompValue}
         onChange={handleAccompChange}
+        onDragStart={handleAccompDragStart}
+        onDragEnd={handleAccompDragEnd}
         onIconClick={handleAccompMuteToggle}
         sliderWidthClass={popupSliderWidthClass}
         iconButtonVariant="playback_bar"
@@ -431,8 +547,10 @@ export function VolumeSliders({
         <StemSlider
           icon={Music}
           label={t("stems.accompaniment")}
-          value={accompValue}
+          value={accompDragValue ?? accompValue}
           onChange={handleAccompChange}
+          onDragStart={handleAccompDragStart}
+          onDragEnd={handleAccompDragEnd}
           onIconClick={stemsAvailable ? handleAccompMuteToggle : undefined}
           disabled={!stemsAvailable}
           sliderWidthClass={inlineSliderWidthClass}
@@ -475,6 +593,8 @@ interface StemSliderProps {
   label: string;
   value: number;
   onChange: (value: number) => void;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
   onIconClick?: () => void;
   disabled?: boolean;
   sliderWidthClass?: string;
@@ -490,6 +610,8 @@ export function StemSlider({
   label,
   value,
   onChange,
+  onDragStart,
+  onDragEnd,
   onIconClick,
   disabled = false,
   sliderWidthClass = "w-16 mr-[14px]",
@@ -538,6 +660,8 @@ export function StemSlider({
           label={label}
           value={value}
           onChange={onChange}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
           disabled={disabled}
           widthClass={sliderWidthClass}
           ariaLabel={label}
@@ -571,6 +695,8 @@ export function StemSlider({
         label={label}
         value={value}
         onChange={onChange}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
         disabled={disabled}
         widthClass={sliderWidthClass}
         ariaLabel={label}
