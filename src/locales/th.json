@@ -188,6 +188,12 @@
     "uploadingToRemote": "กำลังเผยแพร่ไปยังที่เก็บระยะไกล: {{title}}",
     "modelDownloadComplete": "ดาวน์โหลดโมเดลเสร็จสิ้น"
   },
+  "notifications": {
+    "separationComplete": "แยกเสียงเสร็จแล้ว",
+    "separationFailed": "แยกเสียงไม่สำเร็จ",
+    "batchSeparationComplete": "แยกเสียงเป็นชุดเสร็จแล้ว",
+    "batchSeparationSummary": "สำเร็จ {{done}} ล้มเหลว {{failed}}"
+  },
   "queue": {
     "title": "คิว",
     "upNext": "เล่นถัดไป",

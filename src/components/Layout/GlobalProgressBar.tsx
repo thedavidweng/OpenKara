@@ -7,6 +7,7 @@ import { useRuntimeBootstrapStore } from "@/stores/runtime-bootstrap-store";
 import { formatBytes } from "@/lib/format";
 import * as api from "@/lib/tauri";
 import { notifyError } from "@/lib/errors";
+import { songDisplayTitle } from "@/lib/song-display";
 import type { ModelBootstrapState } from "@/types/ipc";
 
 interface ActiveTask {
@@ -199,8 +200,7 @@ function useActiveTasks(modelDownloadCompleteFlash: boolean): ActiveTask[] {
     );
     if (runningSep) {
       const song = songs.find((s) => s.hash === runningSep.song_id);
-      const title =
-        song?.title ?? song?.file_path?.split("/").pop() ?? song?.hash ?? "";
+      const title = songDisplayTitle(song);
       tasks.push({
         key: `sep-${runningSep.song_id}`,
         label: t("progress.separating", { title }),
@@ -217,8 +217,7 @@ function useActiveTasks(modelDownloadCompleteFlash: boolean): ActiveTask[] {
 
   for (const upload of runningUploads) {
     const song = songs.find((candidate) => candidate.hash === upload.song_id);
-    const title =
-      song?.title ?? song?.file_path?.split("/").pop() ?? song?.hash ?? "";
+    const title = songDisplayTitle(song);
     tasks.push({
       key: `upload-${upload.song_id}`,
       label: t("progress.uploadingToRemote", {

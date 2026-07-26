@@ -188,6 +188,12 @@
     "uploadingToRemote": "Đang đăng lên kho lưu trữ từ xa: {{title}}",
     "modelDownloadComplete": "Tải mô hình hoàn tất"
   },
+  "notifications": {
+    "separationComplete": "Đã tách xong",
+    "separationFailed": "Tách thất bại",
+    "batchSeparationComplete": "Đã tách hàng loạt xong",
+    "batchSeparationSummary": "{{done}} xong, {{failed}} thất bại"
+  },
   "queue": {
     "title": "Hàng chờ",
     "upNext": "Tiếp theo",

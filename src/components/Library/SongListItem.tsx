@@ -23,11 +23,8 @@ import {
   buildSongListContextMenuForSong,
   getSongListContextSongIds,
 } from "./song-list-item-context-menu-build";
+import { songDisplayTitle } from "@/lib/song-display";
 import type { Song } from "@/types/ipc";
-
-function getSongDisplayName(song: Song): string {
-  return song.title ?? song.file_path?.split("/").pop() ?? song.hash;
-}
 
 interface SongListItemProps {
   song: Song;
@@ -196,7 +193,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
         songHash={song.hash}
         coverArt={song.cover_art}
         thumbnailPath={song.artwork_thumb_path}
-        alt={`${getSongDisplayName(song)} cover art`}
+        alt={`${songDisplayTitle(song)} cover art`}
         className="h-11 w-11 shrink-0"
       />
 
@@ -215,7 +212,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
               <div className="w-3 shrink-0" />
             )}
             <span className="truncate text-[15px] font-semibold">
-              {getSongDisplayName(song)}
+              {songDisplayTitle(song)}
             </span>
           </div>
 
@@ -296,8 +293,8 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
             {separationStatus?.state === "running" && (
               <TaskProgressBar
                 label={t("progress.separating", {
-                  title: getSongDisplayName(song),
-                  defaultValue: `Separating: ${getSongDisplayName(song)}`,
+                  title: songDisplayTitle(song),
+                  defaultValue: `Separating: ${songDisplayTitle(song)}`,
                 })}
                 percent={separationStatus.percent}
               />
@@ -305,7 +302,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
             {uploadStatus?.state === "running" && (
               <TaskProgressBar
                 label={t("progress.uploadingToRemote", {
-                  title: getSongDisplayName(song),
+                  title: songDisplayTitle(song),
                 })}
                 percent={uploadStatus.percent}
               />

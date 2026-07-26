@@ -189,6 +189,12 @@
     "uploadingToRemote": "Publiceren naar externe opslag: {{title}}",
     "modelDownloadComplete": "Model gedownload"
   },
+  "notifications": {
+    "separationComplete": "Scheiding voltooid",
+    "separationFailed": "Scheiding mislukt",
+    "batchSeparationComplete": "Batchscheiding voltooid",
+    "batchSeparationSummary": "{{done}} voltooid, {{failed}} mislukt"
+  },
   "queue": {
     "title": "Wachtrij",
     "upNext": "Volgende",

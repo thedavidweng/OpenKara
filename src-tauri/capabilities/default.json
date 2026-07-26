@@ -11,6 +11,7 @@
     "core:webview:default",
     "core:webview:allow-create-webview-window",
     "dialog:default",
+    "notification:default",
     "core:window:allow-close",
     "core:window:allow-destroy",
     "core:window:allow-set-theme",

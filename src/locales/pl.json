@@ -191,6 +191,12 @@
     "uploadingToRemote": "Publikowanie w zdalnym repozytorium: {{title}}",
     "modelDownloadComplete": "Pobieranie modelu zakończone"
   },
+  "notifications": {
+    "separationComplete": "Separacja zakończona",
+    "separationFailed": "Separacja nie powiodła się",
+    "batchSeparationComplete": "Separacja wsadowa zakończona",
+    "batchSeparationSummary": "Ukończono: {{done}}, niepowodzenia: {{failed}}"
+  },
   "queue": {
     "title": "Kolejka",
     "upNext": "Następne",

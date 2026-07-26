@@ -191,6 +191,12 @@
     "uploadingToRemote": "Публикация в удалённый репозиторий: {{title}}",
     "modelDownloadComplete": "Загрузка модели завершена"
   },
+  "notifications": {
+    "separationComplete": "Разделение завершено",
+    "separationFailed": "Не удалось разделить",
+    "batchSeparationComplete": "Пакетное разделение завершено",
+    "batchSeparationSummary": "Готово: {{done}}, с ошибкой: {{failed}}"
+  },
   "queue": {
     "title": "Очередь",
     "upNext": "Далее",

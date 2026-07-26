@@ -189,6 +189,12 @@
     "uploadingToRemote": "Wird im Remote-Repository veröffentlicht: {{title}}",
     "modelDownloadComplete": "Modell-Download abgeschlossen"
   },
+  "notifications": {
+    "separationComplete": "Trennung abgeschlossen",
+    "separationFailed": "Trennung fehlgeschlagen",
+    "batchSeparationComplete": "Stapeltrennung abgeschlossen",
+    "batchSeparationSummary": "{{done}} fertig, {{failed}} fehlgeschlagen"
+  },
   "queue": {
     "title": "Warteschlange",
     "upNext": "Als Nächstes",

@@ -20,11 +20,13 @@ const {
   mockSetPreloadCandidate,
   mockNotifyError,
   mockNotifySuccess,
+  mockNotifyWhenUnfocused,
 } = vi.hoisted(() => ({
   mockListen: vi.fn(),
   mockSetPreloadCandidate: vi.fn(),
   mockNotifyError: vi.fn(),
   mockNotifySuccess: vi.fn(),
+  mockNotifyWhenUnfocused: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -42,6 +44,10 @@ vi.mock("@/lib/tauri", async (importOriginal) => {
 vi.mock("@/lib/errors", () => ({
   notifyError: mockNotifyError,
   notifySuccess: mockNotifySuccess,
+}));
+
+vi.mock("@/lib/notifications", () => ({
+  notifyWhenUnfocused: mockNotifyWhenUnfocused,
 }));
 
 // Track every rendered root so afterEach can unmount them all. Without this,
@@ -150,6 +156,8 @@ describe("usePreloadCandidateEffect", () => {
     mockSetPreloadCandidate.mockResolvedValue(undefined);
     mockNotifyError.mockReset();
     mockNotifySuccess.mockReset();
+    mockNotifyWhenUnfocused.mockReset();
+    mockNotifyWhenUnfocused.mockResolvedValue(undefined);
     usePlayerStore.setState({
       snapshot: null,
       positionMs: 0,
@@ -237,6 +245,8 @@ describe("useTrackTransitionedQueueReconcile", () => {
     mockSetPreloadCandidate.mockResolvedValue(undefined);
     mockNotifyError.mockReset();
     mockNotifySuccess.mockReset();
+    mockNotifyWhenUnfocused.mockReset();
+    mockNotifyWhenUnfocused.mockResolvedValue(undefined);
     usePlayerStore.setState({
       snapshot: null,
       positionMs: 0,
@@ -317,6 +327,8 @@ describe("usePlaybackPositionSubscription", () => {
     mockSetPreloadCandidate.mockResolvedValue(undefined);
     mockNotifyError.mockReset();
     mockNotifySuccess.mockReset();
+    mockNotifyWhenUnfocused.mockReset();
+    mockNotifyWhenUnfocused.mockResolvedValue(undefined);
     usePlayerStore.setState({
       snapshot: null,
       positionMs: 0,
@@ -437,6 +449,8 @@ describe("useSeparationEvents", () => {
     mockSetPreloadCandidate.mockResolvedValue(undefined);
     mockNotifyError.mockReset();
     mockNotifySuccess.mockReset();
+    mockNotifyWhenUnfocused.mockReset();
+    mockNotifyWhenUnfocused.mockResolvedValue(undefined);
     usePlayerStore.setState({
       snapshot: null,
       positionMs: 0,
@@ -578,6 +592,10 @@ describe("useSeparationEvents", () => {
 
     expect(updateSeparationStatus).toHaveBeenCalled();
     expect(mockNotifyError).toHaveBeenCalledWith("decode failed");
+    expect(mockNotifyWhenUnfocused).toHaveBeenCalledWith(
+      "Separation failed",
+      expect.any(String),
+    );
   });
 
   test("resets separation status to idle on separation-cancelled events", async () => {
@@ -634,6 +652,81 @@ describe("useSeparationEvents", () => {
     });
 
     expect(mockNotifySuccess).toHaveBeenCalledOnce();
+    // A cache hit returns before the user could switch away, so it must not
+    // reach the native notification path.
+    expect(mockNotifyWhenUnfocused).not.toHaveBeenCalled();
+  });
+
+  test("stays silent per song while a batch is running", async () => {
+    const updateSeparationStatus = vi.fn();
+    const loadStems = vi.fn().mockResolvedValue(undefined);
+    usePlayerStore.setState({ loadStems } as never);
+    useLibraryStore.setState({
+      updateSeparationStatus,
+      songs: [{ hash: "song-a", title: "Bohemian Rhapsody" }],
+      batchSeparation: { total: 30, completed: 4, skipped: 0, failed: 0 },
+    } as never);
+
+    const listeners = new Map<string, (e: { payload: unknown }) => void>();
+    mockListen.mockImplementation(
+      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
+        listeners.set(eventName, handler);
+        return () => {};
+      },
+    );
+
+    const { useEventListeners } = await import("./use-playback-runtime");
+    await renderHook(() => useEventListeners(true));
+
+    listeners.get("separation-complete")!({
+      payload: {
+        song_id: "song-a",
+        status: { state: "completed", cache_hit: false },
+      },
+    });
+    listeners.get("separation-error")!({
+      payload: { song_id: "song-a", error: "decode failed" },
+    });
+
+    // The batch posts one summary of its own; per-song alerts would make that
+    // dozens of pop-ups.
+    expect(mockNotifyWhenUnfocused).not.toHaveBeenCalled();
+
+    useLibraryStore.setState({ batchSeparation: null } as never);
+  });
+
+  test("posts a native notification naming the song when a fresh separation completes", async () => {
+    const updateSeparationStatus = vi.fn();
+    const loadStems = vi.fn().mockResolvedValue(undefined);
+    usePlayerStore.setState({ loadStems } as never);
+    useLibraryStore.setState({
+      updateSeparationStatus,
+      songs: [{ hash: "song-a", title: "Bohemian Rhapsody" }],
+    } as never);
+
+    const listeners = new Map<string, (e: { payload: unknown }) => void>();
+    mockListen.mockImplementation(
+      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
+        listeners.set(eventName, handler);
+        return () => {};
+      },
+    );
+
+    const { useEventListeners } = await import("./use-playback-runtime");
+    await renderHook(() => useEventListeners(true));
+
+    listeners.get("separation-complete")!({
+      payload: {
+        song_id: "song-a",
+        status: { state: "completed", cache_hit: false },
+      },
+    });
+
+    expect(mockNotifySuccess).not.toHaveBeenCalled();
+    expect(mockNotifyWhenUnfocused).toHaveBeenCalledWith(
+      "Separation complete",
+      "Bohemian Rhapsody",
+    );
   });
 
   test("updates separation status on separation-progress events", async () => {

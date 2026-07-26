@@ -10,6 +10,8 @@ import { useBootstrapStore } from "@/stores/bootstrap-store";
 import { useRuntimeBootstrapStore } from "@/stores/runtime-bootstrap-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { notifyError, notifySuccess } from "@/lib/errors";
+import { notifyWhenUnfocused } from "@/lib/notifications";
+import { songDisplayTitle } from "@/lib/song-display";
 import i18next, { detectSystemLanguage } from "@/lib/i18n";
 import * as api from "@/lib/tauri";
 import {
@@ -103,6 +105,28 @@ function usePlaybackPositionEvents(enabled: boolean) {
   usePlaybackPositionSubscription(enabled, applyPlaybackPositionEvent);
 }
 
+/**
+ * Resolves a song title from the library at event time. Reading the store here
+ * instead of subscribing keeps the listener effect from re-registering on every
+ * library change.
+ */
+function songTitleFor(songId: string): string {
+  return songDisplayTitle(
+    useLibraryStore.getState().songs.find((song) => song.hash === songId),
+  );
+}
+
+/**
+ * A batch emits a per-song terminal event for every song it separates, on top
+ * of its own summary event. Notifying per song would fire dozens of native
+ * pop-ups for the exact scenario this feature exists to keep calm, so the batch
+ * summary is the only alert during a batch. Mirrors the same branch the
+ * in-app progress bar takes.
+ */
+function batchInProgress(): boolean {
+  return useLibraryStore.getState().batchSeparation != null;
+}
+
 function useSeparationEvents(enabled: boolean) {
   const updateSeparationStatus = useLibraryStore(
     (s) => s.updateSeparationStatus,
@@ -147,9 +171,15 @@ function useSeparationEvents(enabled: boolean) {
 
           // An instant completion whose stems were already cached: surface a
           // lightweight cue instead of leaving it indistinguishable from a
-          // fresh run.
+          // fresh run. A cache hit is also the one completion never worth a
+          // native notification — it returns before the user could switch away.
           if (e.payload.status.cache_hit) {
             notifySuccess(i18next.t("library.usingCachedSeparation"));
+          } else if (!batchInProgress()) {
+            void notifyWhenUnfocused(
+              i18next.t("notifications.separationComplete"),
+              songTitleFor(e.payload.song_id),
+            );
           }
 
           if (e.payload.song_id === currentSongIdRef.current) {
@@ -164,6 +194,12 @@ function useSeparationEvents(enabled: boolean) {
           if (!cancelled) {
             updateSeparationStatus(separationErrorStatus(e.payload));
             notifyError(e.payload.error);
+            if (!batchInProgress()) {
+              void notifyWhenUnfocused(
+                i18next.t("notifications.separationFailed"),
+                songTitleFor(e.payload.song_id),
+              );
+            }
           }
         },
       );
@@ -351,8 +387,16 @@ function useBatchSeparationEvents(enabled: boolean) {
       {
         event: "batch-separation-complete",
         handler: (payload) => {
-          updateBatchProgress(payload as BatchSeparationProgress);
+          const progress = payload as BatchSeparationProgress;
+          updateBatchProgress(progress);
           clearSchedulerRef.current.scheduleAfterTerminalProgress();
+          void notifyWhenUnfocused(
+            i18next.t("notifications.batchSeparationComplete"),
+            i18next.t("notifications.batchSeparationSummary", {
+              done: progress.completed,
+              failed: progress.failed,
+            }),
+          );
         },
       },
       {

@@ -189,6 +189,12 @@
     "uploadingToRemote": "Uzak depoya yayımlanıyor: {{title}}",
     "modelDownloadComplete": "Model indirme tamamlandı"
   },
+  "notifications": {
+    "separationComplete": "Ayırma tamamlandı",
+    "separationFailed": "Ayırma başarısız oldu",
+    "batchSeparationComplete": "Toplu ayırma tamamlandı",
+    "batchSeparationSummary": "{{done}} tamamlandı, {{failed}} başarısız"
+  },
   "queue": {
     "title": "Kuyruk",
     "upNext": "Sıradaki",

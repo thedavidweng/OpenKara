@@ -189,6 +189,12 @@
     "uploadingToRemote": "Publishing to remote repository: {{title}}",
     "modelDownloadComplete": "Model download complete"
   },
+  "notifications": {
+    "separationComplete": "Separation complete",
+    "separationFailed": "Separation failed",
+    "batchSeparationComplete": "Batch separation complete",
+    "batchSeparationSummary": "{{done}} done, {{failed}} failed"
+  },
   "queue": {
     "title": "Queue",
     "upNext": "Up Next",

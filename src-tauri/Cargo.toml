@@ -63,6 +63,7 @@ image = { version = "0.25.10", default-features = false, features = ["jpeg", "pn
 realfft = "3.5.0"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 tracing-appender = "0.2.3"
+tauri-plugin-notification = "2.3.3"
 tauri-plugin-window-state = "2.4.1"
 
 # Every `unsafe` block carries a SAFETY comment. The lint is what keeps that

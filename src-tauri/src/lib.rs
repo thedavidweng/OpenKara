@@ -94,6 +94,10 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        // Separation runs for minutes and users switch away; the frontend
+        // posts a native notification when a run finishes while the window
+        // is unfocused (#262).
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| app_runtime::setup_app(app))
         .invoke_handler(tauri::generate_handler![
             commands::bootstrap::get_model_bootstrap_status,
