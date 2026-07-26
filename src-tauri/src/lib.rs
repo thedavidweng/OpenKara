@@ -200,7 +200,8 @@ pub fn run() {
             commands::runtime_bootstrap::get_runtime_bootstrap_status,
             commands::runtime_bootstrap::download_runtime,
             commands::runtime_bootstrap::check_runtime_updates,
-            commands::runtime_bootstrap::delete_runtime
+            commands::runtime_bootstrap::delete_runtime,
+            commands::self_update::self_update_supported
         ]);
 
     // In-app updater (#255): the first-party updater + process plugins power the

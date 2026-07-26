@@ -1,6 +1,7 @@
 import { Download, Loader2, RotateCw, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { invoke } from "@tauri-apps/api/core";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 
@@ -13,14 +14,19 @@ type Phase =
   | "failed";
 
 /**
- * In-app updater banner (#255). Checks once on launch for a signed release
- * newer than the running build, and — only when one exists — surfaces a
- * dismissible strip to download, install, and relaunch.
+ * In-app updater banner (#255). On launch it first asks the Rust side whether
+ * this install can self-update (`self_update_supported`): only the AppImage
+ * (Linux), `.app`/DMG (macOS), and NSIS (Windows) bundles emit signed updater
+ * artifacts, so a Linux `.deb`/Flatpak or a dev binary reports `false` and the
+ * banner stays silent there — the plugin's `check()` has no install-format
+ * guard and would otherwise offer a `.deb` install the AppImage payload, which
+ * only fails on install. When the install is updatable it checks once for a
+ * signed release newer than the running build and — only when one exists —
+ * surfaces a dismissible strip to download, install, and relaunch.
  *
  * A karaoke session must never be interrupted by an updater error, so every
- * failure path is silent: a rejected `check()` (offline, dev build, or a
- * non-updatable install such as a Linux `.deb`/Flatpak, where the plugin either
- * errors or finds nothing) simply leaves the banner unrendered — no toast, no
+ * failure path is silent: a rejected probe or `check()` (offline, dev build, or
+ * a non-updatable install) simply leaves the banner unrendered — no toast, no
  * modal. An install failure downgrades to an inline, dismissible message.
  */
 export function UpdateBanner() {
@@ -32,16 +38,19 @@ export function UpdateBanner() {
 
   useEffect(() => {
     let cancelled = false;
-    check()
-      .then((update) => {
+    void (async () => {
+      try {
+        // Non-updatable installs (Linux .deb/Flatpak, dev builds) stay silent.
+        if (!(await invoke<boolean>("self_update_supported"))) return;
+        const update = await check();
         if (cancelled || !update) return;
         updateRef.current = update;
         setVersion(update.version);
         setPhase("available");
-      })
-      .catch(() => {
+      } catch {
         // Silent by design: no network, dev build, or non-updatable install.
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };

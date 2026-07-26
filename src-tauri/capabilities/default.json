@@ -14,7 +14,8 @@
     "core:window:allow-close",
     "core:window:allow-destroy",
     "core:window:allow-set-theme",
-    "updater:default",
+    "updater:allow-check",
+    "updater:allow-download-and-install",
     "process:allow-restart"
   ]
 }

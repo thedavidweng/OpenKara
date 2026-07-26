@@ -57,8 +57,12 @@ DMG/NSIS/AppImage installs update themselves through the first-party
 on launch and installs **only** payloads signed by the minisign key pair whose
 public half lives in `src-tauri/tauri.conf.json` under `plugins.updater.pubkey`.
 The `.deb` and Flatpak paths are not updatable through the plugin and stay on
-the manual/package-manager channel — the in-app banner simply never appears
-there.
+the manual/package-manager channel. The plugin's own `check()` has no
+install-format guard — on a `.deb` it would fall back to offering the AppImage
+payload and only fail at install time — so the banner is gated on a
+`self_update_supported` command that reports `true` only for the AppImage,
+`.app`/DMG, and NSIS bundles. On a `.deb`, Flatpak, or dev build it returns
+`false` and the in-app banner simply never appears.
 
 The release build signs the updater artifacts (`*.sig` files and `latest.json`)
 using two repository secrets, referenced by name in

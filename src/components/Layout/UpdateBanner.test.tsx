@@ -11,17 +11,20 @@ import {
 import type { DownloadEvent } from "@tauri-apps/plugin-updater";
 import { UpdateBanner } from "./UpdateBanner";
 
-const { mockCheck, mockRelaunch, mockDownloadAndInstall } = vi.hoisted(() => ({
-  mockCheck: vi.fn(),
-  mockRelaunch: vi.fn().mockResolvedValue(undefined),
-  mockDownloadAndInstall: vi.fn().mockResolvedValue(undefined),
-}));
+const { mockInvoke, mockCheck, mockRelaunch, mockDownloadAndInstall } =
+  vi.hoisted(() => ({
+    mockInvoke: vi.fn().mockResolvedValue(true),
+    mockCheck: vi.fn(),
+    mockRelaunch: vi.fn().mockResolvedValue(undefined),
+    mockDownloadAndInstall: vi.fn().mockResolvedValue(undefined),
+  }));
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
   initReactI18next: { type: "3rdParty", init: () => {} },
 }));
 
+vi.mock("@tauri-apps/api/core", () => ({ invoke: mockInvoke }));
 vi.mock("@tauri-apps/plugin-updater", () => ({ check: mockCheck }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: mockRelaunch }));
 
@@ -39,6 +42,7 @@ async function flushCheck() {
 describe("UpdateBanner", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockInvoke.mockResolvedValue(true);
     mockRelaunch.mockResolvedValue(undefined);
     mockDownloadAndInstall.mockResolvedValue(undefined);
   });
@@ -66,6 +70,18 @@ describe("UpdateBanner", () => {
     const { container } = render(<UpdateBanner />);
 
     await flushCheck();
+    expect(container.firstChild).toBeNull();
+  });
+
+  test("stays silent and never checks on a non-updatable install", async () => {
+    // e.g. a Linux .deb/Flatpak: self_update_supported resolves false.
+    mockInvoke.mockResolvedValue(false);
+    mockCheck.mockResolvedValue(updateAvailable());
+    const { container } = render(<UpdateBanner />);
+
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalled());
+    await Promise.resolve();
+    expect(mockCheck).not.toHaveBeenCalled();
     expect(container.firstChild).toBeNull();
   });
 
