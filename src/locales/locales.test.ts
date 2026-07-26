@@ -1,6 +1,36 @@
 import { describe, expect, test } from "vitest";
+import { NATIVE_LANGUAGE_NAMES } from "@/lib/i18n";
+import {
+  analyzeReference,
+  compareLocale,
+  flattenEntries,
+  flattenKeys,
+} from "../../scripts/i18n-key-check.mjs";
 import en from "./en.json";
 import zh from "./zh-CN.json";
+
+// Auto-load every locale JSON the same way src/lib/i18n.ts does, so this suite
+// covers whatever files exist on disk without a hardcoded list. The keys of the
+// returned record are the file paths, which double as the source of truth for
+// WHICH locales ship.
+const localeModules = import.meta.glob("./*.json", {
+  eager: true,
+  import: "default",
+}) as Record<string, Record<string, unknown>>;
+
+function codeFromPath(path: string): string {
+  const file = path.slice(path.lastIndexOf("/") + 1);
+  return file.slice(0, -".json".length);
+}
+
+const LOCALES: Record<string, Record<string, unknown>> = {};
+for (const [path, data] of Object.entries(localeModules)) {
+  LOCALES[codeFromPath(path)] = data;
+}
+
+const REFERENCE = "en";
+const referenceAnalysis = analyzeReference(flattenKeys(LOCALES[REFERENCE]));
+const otherCodes = Object.keys(LOCALES).filter((code) => code !== REFERENCE);
 
 // i18next resolves count-aware keys through plural suffixes, so treat a key as
 // present when either the literal key or any of its plural variants exists.
@@ -24,6 +54,104 @@ function isPresent(locale: unknown, key: string): boolean {
     (suffix) => lookup(locale, `${key}${suffix}`) !== undefined,
   );
 }
+
+/** The set of `{{variable}}` names used in a string, normalized (trimmed, and
+ *  keyed on the name before any `, format` suffix). */
+function placeholders(value: string): Set<string> {
+  const names = new Set<string>();
+  for (const match of value.matchAll(/\{\{\s*([^}]+?)\s*\}\}/g)) {
+    names.add(match[1].split(",")[0].trim());
+  }
+  return names;
+}
+
+describe("locale registry", () => {
+  test("ships at least English and Simplified Chinese", () => {
+    expect(Object.keys(LOCALES)).toEqual(
+      expect.arrayContaining(["en", "zh-CN"]),
+    );
+  });
+
+  // The name map and the files on disk must stay in lock-step: a file with no
+  // native name would render its raw code in the picker, and a name with no
+  // file would offer a language that cannot load. Either is a silent drift.
+  test("every locale file has a native name and vice versa", () => {
+    const fileCodes = Object.keys(LOCALES).sort();
+    const nameCodes = Object.keys(NATIVE_LANGUAGE_NAMES).sort();
+
+    const filesWithoutName = fileCodes.filter(
+      (code) => !(code in NATIVE_LANGUAGE_NAMES),
+    );
+    const namesWithoutFile = nameCodes.filter((code) => !(code in LOCALES));
+
+    expect(
+      filesWithoutName,
+      `locale files missing a NATIVE_LANGUAGE_NAMES entry: ${filesWithoutName.join(", ")}`,
+    ).toEqual([]);
+    expect(
+      namesWithoutFile,
+      `NATIVE_LANGUAGE_NAMES entries with no locale file: ${namesWithoutFile.join(", ")}`,
+    ).toEqual([]);
+  });
+});
+
+describe("locale key structure", () => {
+  test.each(otherCodes)(
+    "%s matches en.json (same key-structure check as check-i18n)",
+    (code) => {
+      const { missing, extra } = compareLocale(
+        referenceAnalysis,
+        flattenKeys(LOCALES[code]),
+        code,
+      );
+      expect(
+        missing,
+        `${code}.json is missing keys: ${missing.join(", ")}`,
+      ).toEqual([]);
+      expect(
+        extra,
+        `${code}.json has keys absent from en.json: ${extra.join(", ")}`,
+      ).toEqual([]);
+    },
+  );
+});
+
+describe("locale values", () => {
+  test.each(Object.keys(LOCALES))(
+    "%s has only non-empty string leaves",
+    (code) => {
+      const bad = flattenEntries(LOCALES[code]).filter(
+        ([, value]) => typeof value !== "string" || value.trim() === "",
+      );
+      expect(
+        bad.map(([key]) => key),
+        `${code}.json has empty or non-string values`,
+      ).toEqual([]);
+    },
+  );
+
+  // Every {{placeholder}} that appears in an en.json value must appear in the
+  // matching value of each locale — a dropped placeholder means a runtime value
+  // (song title, count, …) silently vanishes from the UI.
+  test.each(otherCodes)(
+    "%s preserves every {{placeholder}} set relative to en.json",
+    (code) => {
+      const locale = LOCALES[code];
+      const drift: string[] = [];
+      for (const [key, value] of flattenEntries(LOCALES[REFERENCE])) {
+        if (typeof value !== "string") continue;
+        const target = lookup(locale, key);
+        if (typeof target !== "string") continue; // key absence is a structure concern
+        const expected = [...placeholders(value)].sort();
+        const actual = [...placeholders(target)].sort();
+        if (JSON.stringify(expected) !== JSON.stringify(actual)) {
+          drift.push(`${key}: expected {${expected}} got {${actual}}`);
+        }
+      }
+      expect(drift, `${code}.json placeholder drift`).toEqual([]);
+    },
+  );
+});
 
 describe("locale copy", () => {
   test("uses the approved hide separate-all copy", () => {
@@ -55,11 +183,10 @@ describe("locale copy", () => {
     );
   });
 
-  test("defines every Settings → About key in both locales", () => {
+  test("defines every Settings → About key in all locales", () => {
     // The About section is the cross-platform version + debug-export surface;
-    // a key missing from either locale would ship English (or a raw key) to
-    // the other language's users, exactly the gap the completeness guard
-    // below the remote-library flow exists to catch.
+    // a key missing from any locale would ship English (or a raw key) to that
+    // language's users, exactly the gap the completeness guards below catch.
     const aboutKeys = [
       "settings.about.label",
       "settings.about.description",
@@ -75,15 +202,13 @@ describe("locale copy", () => {
       "settings.about.copyDebugInfo",
       "settings.about.copied",
     ];
-    const missing = aboutKeys
-      .map((key) => ({ key, en: isPresent(en, key), zh: isPresent(zh, key) }))
-      .filter((entry) => !entry.en || !entry.zh);
-    expect(
-      missing,
-      `Missing About keys: ${missing
-        .map((m) => `${m.key} (en=${m.en}, zh=${m.zh})`)
-        .join(", ")}`,
-    ).toEqual([]);
+    const missing: string[] = [];
+    for (const [code, locale] of Object.entries(LOCALES)) {
+      for (const key of aboutKeys) {
+        if (!isPresent(locale, key)) missing.push(`${code}:${key}`);
+      }
+    }
+    expect(missing, `Missing About keys: ${missing.join(", ")}`).toEqual([]);
   });
 });
 
@@ -108,12 +233,12 @@ const REMOTE_FLOW_SOURCES = import.meta.glob(
   { query: "?raw", import: "default", eager: true },
 ) as Record<string, string>;
 
-// The parity test above only compares en↔zh key sets, so a key missing from
-// BOTH locales passes silently while an inline `defaultValue` masks the gap in
-// dev. This guard scans the remote-library flow for static `t("literal")` calls
-// and fails when a referenced key (with or without a `defaultValue`) is absent
-// from either locale — the exact footgun that shipped English strings to zh-CN
-// users (issue #209).
+// The parity test above only compares key sets, so a key missing from EVERY
+// locale passes silently while an inline `defaultValue` masks the gap in dev.
+// This guard scans the remote-library flow for static `t("literal")` calls and
+// fails when a referenced key (with or without a `defaultValue`) is absent from
+// any locale — the exact footgun that shipped English strings to zh-CN users
+// (issue #209).
 describe("remote-library flow i18n completeness", () => {
   const EXPECTED_FILE_COUNT = 10;
 
@@ -137,32 +262,29 @@ describe("remote-library flow i18n completeness", () => {
     expect(Object.keys(REMOTE_FLOW_SOURCES)).toHaveLength(EXPECTED_FILE_COUNT);
   });
 
-  test("every referenced key resolves in en.json and zh-CN.json", () => {
+  test("every referenced key resolves in every locale", () => {
     const keys = collectKeys();
     expect(keys.length).toBeGreaterThan(0);
 
-    const missing = keys
-      .map((key) => ({
-        key,
-        en: isPresent(en, key),
-        zh: isPresent(zh, key),
-      }))
-      .filter((entry) => !entry.en || !entry.zh);
+    const missing: string[] = [];
+    for (const [code, locale] of Object.entries(LOCALES)) {
+      for (const key of keys) {
+        if (!isPresent(locale, key)) missing.push(`${code}:${key}`);
+      }
+    }
 
     expect(
       missing,
-      `Missing locale keys referenced in the remote-library flow: ${missing
-        .map((m) => `${m.key} (en=${m.en}, zh=${m.zh})`)
-        .join(", ")}`,
+      `Missing locale keys referenced in the remote-library flow: ${missing.join(", ")}`,
     ).toEqual([]);
   });
 });
 
 // The bootstrap banners (model + runtime) drive the first-run separation UX,
 // so their Missing/Downloading/Failed copy must never fall back to a raw
-// English `defaultValue` for zh-CN users. Same guard as above, scoped to the
-// banner sources so a newly referenced key without a locale entry fails CI
-// (issue #226 added the runtime banner's three-state copy).
+// English `defaultValue`. Same guard as above, scoped to the banner sources so
+// a newly referenced key without a locale entry fails CI (issue #226 added the
+// runtime banner's three-state copy).
 const BOOTSTRAP_BANNER_SOURCES = import.meta.glob(
   [
     "../components/Bootstrap/ModelBootstrapBanner.tsx",
@@ -192,23 +314,20 @@ describe("bootstrap banner i18n completeness", () => {
     );
   });
 
-  test("every referenced key resolves in en.json and zh-CN.json", () => {
+  test("every referenced key resolves in every locale", () => {
     const keys = collectKeys();
     expect(keys.length).toBeGreaterThan(0);
 
-    const missing = keys
-      .map((key) => ({
-        key,
-        en: isPresent(en, key),
-        zh: isPresent(zh, key),
-      }))
-      .filter((entry) => !entry.en || !entry.zh);
+    const missing: string[] = [];
+    for (const [code, locale] of Object.entries(LOCALES)) {
+      for (const key of keys) {
+        if (!isPresent(locale, key)) missing.push(`${code}:${key}`);
+      }
+    }
 
     expect(
       missing,
-      `Missing locale keys referenced in the bootstrap banners: ${missing
-        .map((m) => `${m.key} (en=${m.en}, zh=${m.zh})`)
-        .join(", ")}`,
+      `Missing locale keys referenced in the bootstrap banners: ${missing.join(", ")}`,
     ).toEqual([]);
   });
 });

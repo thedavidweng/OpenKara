@@ -1,84 +1,98 @@
 #!/usr/bin/env node
 
 /**
- * Check that all locale files have the same key structure.
+ * Check that every locale file in src/locales matches en.json's key structure.
  *
- * Exits 0 on match, non-zero with a diff report on mismatch.
+ * Exits 0 when every locale matches (extra plural categories are tolerated as
+ * warnings), non-zero with a per-file report on any missing or genuinely-extra
+ * key.
  *
  * Usage:
  *   node scripts/check-i18n.mjs
  *
- * Run before release to catch missing translations or stale keys.
+ * Run before release to catch missing translations or stale keys. The pure
+ * comparison logic lives in ./i18n-key-check.mjs so the vitest suite
+ * (src/locales/locales.test.ts) can apply the exact same rules.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  flattenKeys,
+  analyzeReference,
+  compareLocale,
+} from "./i18n-key-check.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const LOCALES_DIR = join(__dirname, "..", "src", "locales");
+const REFERENCE = "en.json";
 
-/** Walk an object and return all leaf paths (e.g. "setup.welcome"). */
-function flattenKeys(obj, prefix = "") {
-  const keys = [];
-  for (const [k, v] of Object.entries(obj)) {
-    const path = prefix ? `${prefix}.${k}` : k;
-    if (v !== null && typeof v === "object" && !Array.isArray(v)) {
-      keys.push(...flattenKeys(v, path));
-    } else {
-      keys.push(path);
-    }
-  }
-  return keys;
-}
-
-/** Parse a locale JSON file and return its flat key set. */
+/** Parse a locale JSON file and return its flat key list. */
 function loadKeys(file) {
   const raw = readFileSync(join(LOCALES_DIR, file), "utf-8");
-  const data = JSON.parse(raw);
-  return new Set(flattenKeys(data));
+  return flattenKeys(JSON.parse(raw));
 }
 
-const files = ["en.json", "zh-CN.json"];
-const keySets = {};
-for (const f of files) {
-  keySets[f] = loadKeys(f);
+// Every locale JSON in the directory — no hardcoded list, so a new
+// src/locales/<code>.json is checked the moment it lands.
+const files = readdirSync(LOCALES_DIR)
+  .filter((f) => f.endsWith(".json"))
+  .sort();
+
+if (!files.includes(REFERENCE)) {
+  console.error(`Reference locale ${REFERENCE} not found in ${LOCALES_DIR}.`);
+  process.exit(1);
 }
 
-// Use en.json as the reference (canonical).
-const reference = "en.json";
-const referenceKeys = keySets[reference];
+const referenceAnalysis = analyzeReference(loadKeys(REFERENCE));
 
 let exitCode = 0;
 
-for (const [file, keys] of Object.entries(keySets)) {
-  if (file === reference) continue;
+for (const file of files) {
+  if (file === REFERENCE) continue;
 
-  // Keys in reference but missing from this file
-  const missing = [...referenceKeys].filter((k) => !keys.has(k));
+  const localeCode = file.slice(0, -".json".length);
+  const { missing, extra, extraPluralWarnings } = compareLocale(
+    referenceAnalysis,
+    loadKeys(file),
+    localeCode,
+  );
+
+  const failed = missing.length > 0 || extra.length > 0;
+
   if (missing.length > 0) {
     console.error(`[ MISSING ] ${file} is missing ${missing.length} key(s):`);
-    for (const k of missing) {
-      console.error(`  - ${k}`);
-    }
+    for (const k of missing) console.error(`  - ${k}`);
     exitCode = 1;
   }
 
-  // Keys in this file but absent from the reference (stale / unused)
-  const extra = [...keys].filter((k) => !referenceKeys.has(k));
   if (extra.length > 0) {
     console.error(
-      `[ EXTRA  ] ${file} has ${extra.length} key(s) not in reference:`,
+      `[ EXTRA   ] ${file} has ${extra.length} key(s) not in ${REFERENCE}:`,
     );
-    for (const k of extra) {
-      console.error(`  - ${k}`);
-    }
-    // Extra keys are a warning, not a failure — they might be references for
-    // i18next plurals (e.g. `_one` / `_other`) or deprecated keys.
+    for (const k of extra) console.error(`  - ${k}`);
+    exitCode = 1;
+  }
+
+  if (extraPluralWarnings.length > 0) {
+    console.warn(
+      `[ WARN    ] ${file} declares ${extraPluralWarnings.length} plural ` +
+        `categor${extraPluralWarnings.length === 1 ? "y" : "ies"} beyond ` +
+        `Intl.PluralRules("${localeCode}") (tolerated):`,
+    );
+    for (const k of extraPluralWarnings) console.warn(`  - ${k}`);
+  }
+
+  if (!failed && extraPluralWarnings.length === 0) {
+    console.log(
+      `[ OK      ] ${file} matches ${REFERENCE} (locale ${localeCode}).`,
+    );
   }
 }
 
 if (exitCode === 0) {
-  console.log("i18n keys OK — all locales match en.json reference.");
+  console.log("\ni18n keys OK — all locales match en.json reference.");
 }
+
 process.exit(exitCode);

@@ -12,6 +12,7 @@ import {
   Mic2,
   ChevronLeft,
   Check,
+  Search,
   Sparkles,
 } from "lucide-react";
 import { getErrorMessage } from "@/lib/errors";
@@ -125,6 +126,18 @@ function StepIndicator({ current }: { current: Step }) {
   );
 }
 
+// A short 2-glyph badge for the language button. Chinese variants get a
+// distinct hanzi; everything else falls back to the uppercased primary subtag
+// (e.g. "pt-BR" -> "PT", "ja" -> "JA").
+function languageBadge(code: string): string {
+  const overrides: Record<string, string> = {
+    en: "EN",
+    "zh-CN": "简",
+    "zh-TW": "繁",
+  };
+  return overrides[code] ?? code.split("-")[0].slice(0, 2).toUpperCase();
+}
+
 export function LibrarySetup({ onComplete }: LibrarySetupProps) {
   const { t } = useTranslation();
   const settingsLanguage = useSettingsStore((s) => s.language);
@@ -151,6 +164,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
   const [selectedLanguageDraft, setSelectedLanguageDraft] = useState<
     string | null
   >(null);
+  const [languageFilter, setLanguageFilter] = useState("");
   const [selectedStemModeDraft, setSelectedStemModeDraft] = useState<
     "two_stem" | "four_stem" | null
   >(null);
@@ -330,32 +344,57 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
             </div>
 
             <div className="space-y-3">
-              {SUPPORTED_LANGUAGES.map((lang) => (
-                <button
-                  key={lang.code}
-                  onClick={() => handleLanguageSelect(lang.code)}
-                  className={`flex w-full items-center gap-3 rounded-lg border px-5 py-4 text-left transition-colors ${
-                    selectedLanguage === lang.code
-                      ? "border-[var(--color-control-selected-border)] bg-[var(--color-control-selected-bg)]"
-                      : "border-[var(--color-border-light)] bg-[var(--color-sidebar)] hover:bg-[var(--color-hover)]"
-                  }`}
-                >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-hover)]">
+              {SUPPORTED_LANGUAGES.length > 6 && (
+                <div className="relative">
+                  <Search
+                    size={16}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-dim)]"
+                  />
+                  <input
+                    type="text"
+                    value={languageFilter}
+                    onChange={(event) => setLanguageFilter(event.target.value)}
+                    placeholder={t("common.search")}
+                    aria-label={t("common.search")}
+                    className="w-full rounded-lg border border-[var(--color-border-light)] bg-[var(--color-sidebar)] py-2.5 pl-9 pr-3 text-[14px] text-[var(--color-text)] focus:border-[var(--color-accent)] focus:outline-none"
+                  />
+                </div>
+              )}
+              <div className="max-h-[22rem] space-y-3 overflow-y-auto">
+                {SUPPORTED_LANGUAGES.filter((lang) => {
+                  const q = languageFilter.trim().toLowerCase();
+                  if (!q) return true;
+                  return (
+                    lang.name.toLowerCase().includes(q) ||
+                    lang.code.toLowerCase().includes(q)
+                  );
+                }).map((lang) => (
+                  <button
+                    key={lang.code}
+                    onClick={() => handleLanguageSelect(lang.code)}
+                    className={`flex w-full items-center gap-3 rounded-lg border px-5 py-4 text-left transition-colors ${
+                      selectedLanguage === lang.code
+                        ? "border-[var(--color-control-selected-border)] bg-[var(--color-control-selected-bg)]"
+                        : "border-[var(--color-border-light)] bg-[var(--color-sidebar)] hover:bg-[var(--color-hover)]"
+                    }`}
+                  >
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-hover)]">
+                      <span className="text-[14px] font-medium text-[var(--color-text)]">
+                        {languageBadge(lang.code)}
+                      </span>
+                    </div>
                     <span className="text-[14px] font-medium text-[var(--color-text)]">
-                      {lang.code === "en" ? "EN" : "中"}
+                      {lang.name}
                     </span>
-                  </div>
-                  <span className="text-[14px] font-medium text-[var(--color-text)]">
-                    {lang.name}
-                  </span>
-                  {selectedLanguage === lang.code && (
-                    <Check
-                      size={16}
-                      className="ml-auto text-[var(--color-control-primary)]"
-                    />
-                  )}
-                </button>
-              ))}
+                    {selectedLanguage === lang.code && (
+                      <Check
+                        size={16}
+                        className="ml-auto text-[var(--color-control-primary)]"
+                      />
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
           </>
         )}
