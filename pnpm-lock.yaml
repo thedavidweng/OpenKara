@@ -37,8 +37,8 @@ importers:
         specifier: ^1.25.0
         version: 1.25.0(react@19.2.7)
       lyric-romanizer:
-        specifier: ^0.2.0
-        version: 0.2.0
+        specifier: ^0.3.0
+        version: 0.3.0
       pinyin-pro:
         specifier: 3.28.1
         version: 3.28.1
@@ -1769,8 +1769,8 @@ packages:
     peerDependencies:
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
-  lyric-romanizer@0.2.0:
-    resolution: {integrity: sha512-OuA1R1zS86InOdXl6wt9z67J7214I644S7GYOVvrGBYe5R4R6G40z0dTmzxKxSTYYJw3DT7iV0NvXP2LJ6frzg==}
+  lyric-romanizer@0.3.0:
+    resolution: {integrity: sha512-NlJ9JJvJzAU2JIOuypr+4bCX+uScm5vcI7M5z8q/ozK+t/a3K8lTt+bJbI3GiK6YIApajg+RAynqXmfqzc5U3A==}
 
   lz-string@1.5.0:
     resolution: {integrity: sha512-h5bgJWpxJNswbU7qCrV0tIKQCaS3blPDrqKWx+QxzuzL1zGUzij9XCWLrSLsJPu5t+eWA/ycetzYAO5IOMcWAQ==}
@@ -1849,6 +1849,9 @@ packages:
 
   pinyin-pro@3.28.1:
     resolution: {integrity: sha512-oqz8ulwRgtUXRi0vbqEfGNly19zpyCxYrjhkk5TibGcgSW6eNwS5woajCXRwqURi8Ehc2yOFTiB4uNoZ+NJOnA==}
+
+  pinyin-pro@3.28.2:
+    resolution: {integrity: sha512-jV38yxXHLfidirMC4hrXasLDozLCSq/4DfX88GnHcSEJ2+GpSedG6I9VOiEXJu6iQ5dbJC/RjmzyMuS5h/wH5A==}
 
   playwright-core@1.61.1:
     resolution: {integrity: sha512-h7Qlt6m4REp25qvIdvbDtVmD4LqVXfpRxhORv9L0jzETM05p4fuPJ3dKyuSXQxDSbXnmS79HAgi9589lGSpLkg==}
@@ -3353,7 +3356,7 @@ snapshots:
     dependencies:
       react: 19.2.7
 
-  lyric-romanizer@0.2.0:
+  lyric-romanizer@0.3.0:
     dependencies:
       '@dehoist/romanize-thai': 1.0.0
       '@indic-transliteration/sanscript': 1.3.3
@@ -3361,7 +3364,7 @@ snapshots:
       '@sglkc/kuroshiro': 1.0.1
       '@sglkc/kuroshiro-analyzer-kuromoji': 1.0.1
       cyrillic-to-translit-js: 3.2.1
-      pinyin-pro: 3.28.1
+      pinyin-pro: 3.28.2
       tamil-romanizer: 1.0.2
       to-jyutping: 3.1.1
       transliteration: 2.6.1
@@ -3494,6 +3497,8 @@ snapshots:
   picomatch@4.0.5: {}
 
   pinyin-pro@3.28.1: {}
+
+  pinyin-pro@3.28.2: {}
 
   playwright-core@1.61.1: {}
 

@@ -1,6 +1,7 @@
 import { isLatinScript } from "lyric-romanizer/detector";
-import type { Romanizer, RomanizeOptions } from "lyric-romanizer";
+import type { Romanizer } from "lyric-romanizer";
 import type { SongLanguage } from "@/components/Library/song-list-item-menu";
+import { romanizeLinesWith } from "./romanize-options";
 
 /// Item 7: Request ID counter for matching worker responses to requests.
 /// Stale responses (with a lower requestId) are discarded when the song or
@@ -16,15 +17,6 @@ async function getRomanizer() {
   return romanizerPromise;
 }
 
-function buildOptions(
-  language: SongLanguage | null,
-): RomanizeOptions | undefined {
-  if (language === "cantonese") {
-    return { script: "chinese", dialect: "cantonese" };
-  }
-  return undefined;
-}
-
 /// Synchronous romanization fallback for non-worker environments (tests).
 async function romanizeLinesDirect(
   lines: readonly string[],
@@ -35,19 +27,7 @@ async function romanizeLinesDirect(
   }
 
   const romanizer = await getRomanizer();
-  const options = buildOptions(language ?? null);
-  const result = await Promise.all(
-    lines.map(async (line) => {
-      if (isLatinScript([line])) return line;
-      try {
-        const r = await romanizer.romanizeLines([line], options);
-        return r.lines[0] ?? line;
-      } catch {
-        return line;
-      }
-    }),
-  );
-  return result;
+  return romanizeLinesWith(romanizer, lines, language);
 }
 
 /// Item 7: Lazy-initialized Web Worker for romanization.

@@ -2,8 +2,9 @@
 // stale responses are ignored when the song changes.
 
 import { isLatinScript } from "lyric-romanizer/detector";
-import type { Romanizer, RomanizeOptions } from "lyric-romanizer";
+import type { Romanizer } from "lyric-romanizer";
 import type { SongLanguage } from "@/components/Library/song-list-item-menu";
+import { romanizeLinesWith } from "@/lib/romanize-options";
 
 interface RomanizeRequest {
   requestId: number;
@@ -25,15 +26,6 @@ async function getRomanizer() {
   return romanizerPromise;
 }
 
-function buildOptions(
-  language: SongLanguage | null,
-): RomanizeOptions | undefined {
-  if (language === "cantonese") {
-    return { script: "chinese", dialect: "cantonese" };
-  }
-  return undefined;
-}
-
 async function romanizeLines(
   lines: readonly string[],
   language?: SongLanguage | null,
@@ -43,19 +35,7 @@ async function romanizeLines(
   }
 
   const romanizer = await getRomanizer();
-  const options = buildOptions(language ?? null);
-  const result = await Promise.all(
-    lines.map(async (line) => {
-      if (isLatinScript([line])) return line;
-      try {
-        const r = await romanizer.romanizeLines([line], options);
-        return r.lines[0] ?? line;
-      } catch {
-        return line;
-      }
-    }),
-  );
-  return result;
+  return romanizeLinesWith(romanizer, lines, language);
 }
 
 self.onmessage = async (event: MessageEvent<RomanizeRequest>) => {

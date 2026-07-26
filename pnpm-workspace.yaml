@@ -12,3 +12,6 @@ patchedDependencies:
 allowBuilds:
   esbuild: true
   lefthook: true
+
+minimumReleaseAgeExclude:
+  - lyric-romanizer@0.3.0

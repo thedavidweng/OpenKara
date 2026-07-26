@@ -44,7 +44,7 @@ describe("romanizeLyricsLines", () => {
     expect(mockRomanizeLines).toHaveBeenCalledTimes(2);
   });
 
-  test("passes cantonese dialect option when language is cantonese", async () => {
+  test("pins the cantonese dialect when language is cantonese", async () => {
     const { romanizeLyricsLines } = await import("./lyrics-romanizer");
 
     await romanizeLyricsLines(["你好"], "cantonese");
@@ -55,27 +55,30 @@ describe("romanizeLyricsLines", () => {
     });
   });
 
-  test("does not pass dialect options for non-cantonese languages", async () => {
+  test("pins the japanese script when language is japanese", async () => {
     const { romanizeLyricsLines } = await import("./lyrics-romanizer");
 
-    await romanizeLyricsLines(["你好"], "mandarin");
+    await romanizeLyricsLines(["恋愛"], "japanese");
 
-    expect(mockRomanizeLines).toHaveBeenCalledWith(["你好"], undefined);
+    expect(mockRomanizeLines).toHaveBeenCalledWith(["恋愛"], {
+      script: "japanese",
+    });
   });
 
-  test("keeps Latin lines unchanged and romanizes only non-Latin lines in mixed content", async () => {
-    mockRomanizeLines.mockResolvedValue({
+  test("passes the whole array in one call when language is unknown", async () => {
+    mockRomanizeLines.mockImplementation(async (lines: readonly string[]) => ({
       script: "chinese",
-      lines: ["ni hao"],
-    });
+      lines: lines.map((line) => (line === "你好" ? "ni hao" : line)),
+    }));
     const { romanizeLyricsLines } = await import("./lyrics-romanizer");
 
     const { result } = await romanizeLyricsLines(["Hello", "你好", "World"]);
 
+    // The library detects the dominant script once for the whole array and
+    // returns pure-Latin lines unchanged; we do not pre-split or pin.
     expect(result).toEqual(["Hello", "ni hao", "World"]);
-    // romanizeLines should only be called for the non-Latin line
     expect(mockRomanizeLines).toHaveBeenCalledTimes(1);
-    expect(mockRomanizeLines).toHaveBeenCalledWith(["你好"], undefined);
+    expect(mockRomanizeLines).toHaveBeenCalledWith(["Hello", "你好", "World"]);
   });
 
   test("returns monotonically increasing requestIds for non-Latin content", async () => {
