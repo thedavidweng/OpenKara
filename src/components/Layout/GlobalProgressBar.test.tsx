@@ -6,22 +6,28 @@ import { cleanup, fireEvent, render } from "@testing-library/react";
 import { GlobalProgressBar } from "./GlobalProgressBar";
 import * as api from "@/lib/tauri";
 import type {
+  RuntimeBootstrapStatusSnapshot,
   SeparationStatusSnapshot,
   Song,
   UploadStatusSnapshot,
 } from "@/types/ipc";
 
-const { mockLibraryState, mockBootstrapState } = vi.hoisted(() => ({
-  mockLibraryState: {
-    separationStatuses: {} as Record<string, SeparationStatusSnapshot>,
-    uploadStatuses: {} as Record<string, UploadStatusSnapshot>,
-    batchSeparation: null as null,
-    songs: [] as Song[],
-  },
-  mockBootstrapState: {
-    status: null as null,
-  },
-}));
+const { mockLibraryState, mockBootstrapState, mockRuntimeState } = vi.hoisted(
+  () => ({
+    mockLibraryState: {
+      separationStatuses: {} as Record<string, SeparationStatusSnapshot>,
+      uploadStatuses: {} as Record<string, UploadStatusSnapshot>,
+      batchSeparation: null as null,
+      songs: [] as Song[],
+    },
+    mockBootstrapState: {
+      status: null as null,
+    },
+    mockRuntimeState: {
+      status: null as RuntimeBootstrapStatusSnapshot | null,
+    },
+  }),
+);
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -39,6 +45,12 @@ vi.mock("@/stores/bootstrap-store", () => ({
   useBootstrapStore: (
     selector: (state: typeof mockBootstrapState) => unknown,
   ) => selector(mockBootstrapState),
+}));
+
+vi.mock("@/stores/runtime-bootstrap-store", () => ({
+  useRuntimeBootstrapStore: (
+    selector: (state: typeof mockRuntimeState) => unknown,
+  ) => selector(mockRuntimeState),
 }));
 
 vi.mock("@/lib/tauri", () => ({
@@ -151,5 +163,34 @@ describe("GlobalProgressBar", () => {
     expect(markup).toContain("progress.separating:Separate Song");
     expect(markup).toContain("progress.uploadingToRemote:Upload Song");
     expect(markup).toContain("motion-surface");
+  });
+
+  test("shows a named runtime download task with live progress while the runtime downloads", () => {
+    mockLibraryState.batchSeparation = null;
+    mockLibraryState.separationStatuses = {};
+    mockLibraryState.uploadStatuses = {};
+    mockLibraryState.songs = [];
+    mockRuntimeState.status = {
+      state: "downloading",
+      runtime_path: "/tmp/runtime",
+      downloaded_bytes: 3_200_000,
+      total_bytes: 6_400_000,
+      version: "v1.27.1",
+      active_artifact_id: null,
+      target_triple: "aarch64-apple-darwin",
+      candidate_version: null,
+      restart_required: false,
+      error: null,
+    };
+
+    const markup = renderToStaticMarkup(<GlobalProgressBar />);
+
+    // A labeled task — not a bare "0%" — is what tells the user the runtime is
+    // downloading rather than the app being frozen (#226).
+    expect(markup).toContain("bootstrap.downloadingRuntime");
+    // 3.2 MB / 6.4 MB → a determinate bar at 50% width.
+    expect(markup).toContain("width:50%");
+
+    mockRuntimeState.status = null;
   });
 });

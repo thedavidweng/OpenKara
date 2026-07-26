@@ -393,7 +393,13 @@
       },
       "banner": {
         "updateReady": "A runtime update is ready — restart to apply.",
-        "activationFailed": "The runtime update failed to activate; the previous runtime was restored."
+        "activationFailed": "The runtime update failed to activate; the previous runtime was restored.",
+        "runtimeRequired": "ONNX Runtime required for AI stem separation.",
+        "runtimeRequiredHint": "It downloads automatically the first time you separate a song.",
+        "downloadingRuntime": "Downloading ONNX Runtime...",
+        "downloadFailed": "ONNX Runtime download failed: {{error}}",
+        "downloadFailedHint": "Check your connection, then retry the download.",
+        "retryDownload": "Retry"
       }
     },
     "hideBatchSeparate": {
@@ -550,6 +556,7 @@
     "modelRequired": "AI separation model required for karaoke mode.",
     "downloadingBackground": "Downloading in background...",
     "downloadingModel": "Downloading AI model...",
+    "downloadingRuntime": "Downloading runtime...",
     "outdatedModel": "The installed model file is from an older release and cannot be used.",
     "outdatedModelHint": "Open Settings → Danger Zone, delete the model file, then download again to upgrade.",
     "openSettingsToUpgrade": "Open Settings",

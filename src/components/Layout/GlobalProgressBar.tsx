@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import { useLibraryStore } from "@/stores/library-store";
 import { useBootstrapStore } from "@/stores/bootstrap-store";
+import { useRuntimeBootstrapStore } from "@/stores/runtime-bootstrap-store";
 import { formatBytes } from "@/lib/format";
 import * as api from "@/lib/tauri";
 import { notifyError } from "@/lib/errors";
@@ -99,6 +100,7 @@ function useModelDownloadCompleteFlash(): boolean {
 function useActiveTasks(modelDownloadCompleteFlash: boolean): ActiveTask[] {
   const { t } = useTranslation();
   const bootstrapStatus = useBootstrapStore((s) => s.status);
+  const runtimeStatus = useRuntimeBootstrapStore((s) => s.status);
   const separationStatuses = useLibraryStore((s) => s.separationStatuses);
   const uploadStatuses = useLibraryStore((s) => s.uploadStatuses);
   const batchSeparation = useLibraryStore((s) => s.batchSeparation);
@@ -111,6 +113,35 @@ function useActiveTasks(modelDownloadCompleteFlash: boolean): ActiveTask[] {
       key: "model-download-complete",
       label: t("progress.modelDownloadComplete"),
       percent: 100,
+    });
+  }
+
+  // Runtime download — the ONNX Runtime is fetched before the model on a
+  // fresh install (and again as a candidate on updates). Surfacing it as a
+  // named task stops the first separation from looking frozen at 0% while the
+  // runtime downloads silently in the background (#226).
+  if (
+    runtimeStatus?.state === "downloading" ||
+    runtimeStatus?.state === "downloading_candidate"
+  ) {
+    const total = runtimeStatus.total_bytes;
+    const down = runtimeStatus.downloaded_bytes;
+    const hasTotal = total != null && total > 0;
+    const hasDown = down != null && down >= 0;
+    const percent =
+      hasTotal && hasDown
+        ? Math.min(100, Math.max(0, (down / total) * 100))
+        : 0;
+    const indeterminate = !hasTotal;
+    tasks.push({
+      key: "runtime-download",
+      label: t("bootstrap.downloadingRuntime"),
+      detail:
+        down != null
+          ? formatBytes(down) + (hasTotal ? ` / ${formatBytes(total!)}` : "")
+          : undefined,
+      percent,
+      indeterminate,
     });
   }
 

@@ -393,7 +393,13 @@
       },
       "banner": {
         "updateReady": "运行时更新已就绪 — 请重启以应用。",
-        "activationFailed": "运行时更新未能激活，已恢复到先前的运行时。"
+        "activationFailed": "运行时更新未能激活，已恢复到先前的运行时。",
+        "runtimeRequired": "AI 分离需要 ONNX 运行时。",
+        "runtimeRequiredHint": "首次分离歌曲时会自动下载。",
+        "downloadingRuntime": "正在下载 ONNX 运行时...",
+        "downloadFailed": "ONNX 运行时下载失败：{{error}}",
+        "downloadFailedHint": "请检查网络连接后重试下载。",
+        "retryDownload": "重试"
       }
     },
     "hideBatchSeparate": {
@@ -550,6 +556,7 @@
     "modelRequired": "卡拉OK模式需要 AI 分离模型。",
     "downloadingBackground": "正在后台下载...",
     "downloadingModel": "正在下载 AI 模型...",
+    "downloadingRuntime": "正在下载运行时...",
     "outdatedModel": "已安装的模型文件来自旧版本，无法继续使用。",
     "outdatedModelHint": "请打开「设置」→「危险区」，删除该模型文件后再重新下载以完成升级。",
     "openSettingsToUpgrade": "打开设置",

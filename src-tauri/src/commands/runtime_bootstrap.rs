@@ -206,6 +206,25 @@ fn store_snapshot(
     }
 }
 
+/// Store the in-flight download snapshot AND emit it as a progress event so
+/// the UI's runtime-download task tracks bytes live. Mirrors the model
+/// bootstrap progress pattern (`MODEL_BOOTSTRAP_PROGRESS_EVENT`): without the
+/// emit, the separation-triggered first install only ever published its
+/// initial 0% snapshot, so the progress bar showed "0%" with no labeled task
+/// and looked frozen while the runtime downloaded (#226).
+fn report_download_progress(
+    status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
+    emit: &mut impl FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
+    base: &RuntimeBootstrapStatusSnapshot,
+    state: RuntimeBootstrapState,
+    downloaded_bytes: u64,
+    total_bytes: Option<u64>,
+) {
+    let snapshot = downloading_snapshot(base, state, downloaded_bytes, total_bytes);
+    store_snapshot(status, snapshot.clone());
+    emit(RUNTIME_BOOTSTRAP_PROGRESS_EVENT, snapshot);
+}
+
 /// Resolve the catalog runtime a download should install: the freshest
 /// verified catalog when `check_*_updates` cached one newer than the
 /// embedded snapshot, otherwise the embedded pin.
@@ -239,20 +258,19 @@ pub fn install_and_load_runtime_blocking(
     store_snapshot(status, initial.clone());
     emit(RUNTIME_BOOTSTRAP_PROGRESS_EVENT, initial);
 
-    let progress_status = Arc::clone(status);
-    let progress_base = base.clone();
     let installed = runtime_bootstrap::install_runtime_artifact(
         app_data_dir,
         runtime,
         catalog,
-        move |downloaded_bytes, total_bytes| {
-            let snapshot = downloading_snapshot(
-                &progress_base,
+        |downloaded_bytes, total_bytes| {
+            report_download_progress(
+                status,
+                emit,
+                &base,
                 RuntimeBootstrapState::Downloading,
                 downloaded_bytes,
                 total_bytes,
             );
-            store_snapshot(&progress_status, snapshot);
         },
     )?;
 
@@ -314,20 +332,19 @@ pub fn download_and_stage_candidate_blocking(
     store_snapshot(status, initial.clone());
     emit(RUNTIME_BOOTSTRAP_PROGRESS_EVENT, initial);
 
-    let progress_status = Arc::clone(status);
-    let progress_base = base.clone();
     let installed = runtime_bootstrap::install_runtime_artifact(
         app_data_dir,
         runtime,
         catalog,
-        move |downloaded_bytes, total_bytes| {
-            let snapshot = downloading_snapshot(
-                &progress_base,
+        |downloaded_bytes, total_bytes| {
+            report_download_progress(
+                status,
+                emit,
+                &base,
                 RuntimeBootstrapState::DownloadingCandidate,
                 downloaded_bytes,
                 total_bytes,
             );
-            store_snapshot(&progress_status, snapshot);
         },
     )?;
 
@@ -672,6 +689,44 @@ mod tests {
             let status = Arc::new(Mutex::new(snapshot));
             assert!(ensure_runtime_ready(&status).is_ok());
         }
+    }
+
+    #[test]
+    fn report_download_progress_stores_and_emits_the_snapshot() {
+        // The separation-triggered first install used to only store the
+        // in-flight snapshot without emitting it, leaving the UI stuck at "0%".
+        // This guards that progress now both persists AND reaches the frontend.
+        let base = snapshot_from_inventory(&empty_inventory());
+        let status = Arc::new(Mutex::new(base.clone()));
+        let mut events: Vec<(&'static str, RuntimeBootstrapStatusSnapshot)> = Vec::new();
+        {
+            let mut emit = |event, snapshot| events.push((event, snapshot));
+            report_download_progress(
+                &status,
+                &mut emit,
+                &base,
+                RuntimeBootstrapState::Downloading,
+                2_048,
+                Some(8_192),
+            );
+        }
+
+        let stored = status.lock().expect("status lock should succeed").clone();
+        assert_eq!(stored.state, RuntimeBootstrapState::Downloading);
+        assert_eq!(stored.downloaded_bytes, Some(2_048));
+        assert_eq!(stored.total_bytes, Some(8_192));
+        assert!(stored.error.is_none());
+
+        assert_eq!(
+            events.len(),
+            1,
+            "exactly one progress event must be emitted"
+        );
+        assert_eq!(events[0].0, RUNTIME_BOOTSTRAP_PROGRESS_EVENT);
+        assert_eq!(
+            events[0].1, stored,
+            "the emitted snapshot must match the stored snapshot"
+        );
     }
 
     #[test]
