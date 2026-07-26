@@ -642,5 +642,14 @@
     "separation_failed": "分離失敗",
     "internal": "內部錯誤",
     "somethingWentWrong": "發生錯誤"
+  },
+  "updater": {
+    "available": "{{version}} 版現已推出",
+    "update": "更新",
+    "downloading": "正在下載更新… {{percent}}%",
+    "installing": "正在完成更新…",
+    "restartToApply": "更新已就緒——請重新啟動以套用",
+    "restart": "重新啟動",
+    "failed": "更新失敗——請手動下載最新版本"
   }
 }

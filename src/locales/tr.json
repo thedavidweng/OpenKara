@@ -643,5 +643,14 @@
     "separation_failed": "Ayırma Başarısız",
     "internal": "İç Hata",
     "somethingWentWrong": "Bir şeyler ters gitti"
+  },
+  "updater": {
+    "available": "Sürüm {{version}} mevcut",
+    "update": "Güncelle",
+    "downloading": "Güncelleme indiriliyor… {{percent}}%",
+    "installing": "Güncelleme tamamlanıyor…",
+    "restartToApply": "Güncelleme hazır — uygulamak için yeniden başlatın",
+    "restart": "Yeniden Başlat",
+    "failed": "Güncelleme başarısız — en son sürümü elle indirin"
   }
 }

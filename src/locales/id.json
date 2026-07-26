@@ -642,5 +642,14 @@
     "separation_failed": "Pemisahan Gagal",
     "internal": "Kesalahan Internal",
     "somethingWentWrong": "Terjadi kesalahan"
+  },
+  "updater": {
+    "available": "Versi {{version}} tersedia",
+    "update": "Perbarui",
+    "downloading": "Mengunduh pembaruan… {{percent}}%",
+    "installing": "Menyelesaikan pembaruan…",
+    "restartToApply": "Pembaruan siap — mulai ulang untuk menerapkan",
+    "restart": "Mulai ulang",
+    "failed": "Pembaruan gagal — unduh rilis terbaru secara manual"
   }
 }
