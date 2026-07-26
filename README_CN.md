@@ -90,6 +90,8 @@ winget install thedavidweng.OpenKara
 xattr -rd com.apple.quarantine /Applications/OpenKara.app
 ```
 
+**Windows SmartScreen 提示：** OpenKara 目前还没有代码签名，Windows 首次运行时可能会弹出"Windows 已保护你的电脑"提示。点击**更多信息**，再点击**仍要运行**即可启动。
+
 首次启动时，OpenKara 会引导你创建 Karaoke 曲库，并在后台开始下载默认 AI 模型。
 
 ### 从源码构建
@@ -129,7 +131,7 @@ OpenKara 使用自定义 ONNX 格式的 [Demucs](https://github.com/adefossez/de
 | `htdemucs`    | 标准 — Hybrid Transformer Demucs | 44.1 kHz 立体声音频（7.8 秒） | 4 条音轨：鼓、贝斯、其他、人声 | ONNX（opset 17） |
 | `htdemucs_ft` | 高质量 — 微调 4 模型集成         | 44.1 kHz 立体声音频（7.8 秒） | 4 条音轨：鼓、贝斯、其他、人声 | ONNX（opset 17） |
 
-首次启动时，OpenKara 会将标准 `openkara-models` v2.0.1 资源下载到应用数据目录。当前标准模型磁盘大小约为 339 MiB，可选的高质量模型约为 1.32 GiB。两者都已完成 ONNX Runtime 离线优化，并携带用于缓存失效的 metadata。详见 [openkara-models README](https://github.com/thedavidweng/openkara-models#readme) 了解转换流水线。开发环境和需要稳定输入的测试可运行 `./scripts/setup.sh` 填充 `src-tauri/models/`。
+首次启动时，OpenKara 会将标准 `openkara-models` 资源（当前锁定为 generation 9）下载到应用数据目录。当前标准模型磁盘大小约为 199.8 MiB，可选的高质量模型约为 800.1 MiB。两者都已完成 ONNX Runtime 离线优化，并携带用于缓存失效的 metadata。详见 [openkara-models README](https://github.com/thedavidweng/openkara-models#readme) 了解转换流水线。开发环境和需要稳定输入的测试可运行 `./scripts/setup.sh` 填充 `src-tauri/models/`。
 
 ## 技术栈
 

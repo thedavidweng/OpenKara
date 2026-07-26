@@ -31,4 +31,24 @@ describe("release workflow", () => {
     expect(ciWorkflow).not.toContain("Release separation smoke");
     expect(ciWorkflow).not.toContain("./scripts/run-local-smoke.sh");
   });
+
+  test("fails fast when the release tag and package.json version disagree", () => {
+    // The bundle version comes from package.json (scripts/sync-version.mjs),
+    // while the tag drives asset naming and the winget/flatpak manifests. If
+    // they drift, the release ships misnamed assets and the distribution
+    // manifests point at assets that do not exist. This gate must stay in
+    // prepare-release so it fails before any build or publish job runs.
+    const releaseWorkflow = readProjectFile(".github/workflows/release.yml");
+
+    expect(releaseWorkflow).toContain(
+      "name: Verify package.json version matches release tag",
+    );
+    expect(releaseWorkflow).toContain(
+      `node -p "require('./package.json').version"`,
+    );
+    expect(releaseWorkflow).toContain("pnpm version:sync");
+    expect(releaseWorkflow).toMatch(
+      /prepare-release:[\s\S]*Verify package\.json version matches release tag[\s\S]*publish:/,
+    );
+  });
 });

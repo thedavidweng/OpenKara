@@ -59,6 +59,21 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
+      - name: Verify package.json version matches release tag
+        env:
+          EXPECTED_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          package_version="$(node -p "require('./package.json').version")"
+          if [ "${package_version}" != "${EXPECTED_VERSION}" ]; then
+            echo "::error::Release ${RELEASE_TAG} expects version ${EXPECTED_VERSION}, but package.json is ${package_version}."
+            echo "The published bundle takes its version from package.json (scripts/sync-version.mjs), so a tag that disagrees with package.json builds assets named OpenKara_${package_version}_* while the winget/flatpak manifests look for OpenKara_${EXPECTED_VERSION}_* and the release fails."
+            echo "To fix: bump package.json to ${EXPECTED_VERSION}, run 'pnpm version:sync', commit, then re-tag that commit."
+            exit 1
+          fi
+          echo "package.json version ${package_version} matches release ${RELEASE_TAG}."
+
       - name: Generate release notes with git-cliff
         id: notes
         env:
