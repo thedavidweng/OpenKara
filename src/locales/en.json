@@ -241,7 +241,11 @@
     "fontSizeResetShort": "Reset",
     "followPlaying": "Follow playing lyric",
     "matchedToast": "Lyrics matched to \"{{song}}\"",
-    "unmatchedToast": "Lyrics file could not be matched to a song: {{file}}"
+    "unmatchedToast": "Lyrics file could not be matched to a song: {{file}}",
+    "offsetDecrease": "Adjust lyrics backward by 0.5 seconds",
+    "offsetIncrease": "Adjust lyrics forward by 0.5 seconds",
+    "offsetReset": "Reset lyrics offset",
+    "offsetResetShort": "Reset"
   },
   "songEdit": {
     "title": "Edit Song Info",

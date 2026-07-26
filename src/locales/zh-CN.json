@@ -241,7 +241,11 @@
     "fontSizeResetShort": "重置",
     "followPlaying": "跟随正在播放的歌词",
     "matchedToast": "歌词已匹配到「{{song}}」",
-    "unmatchedToast": "歌词文件无法匹配到歌曲：{{file}}"
+    "unmatchedToast": "歌词文件无法匹配到歌曲：{{file}}",
+    "offsetDecrease": "歌词后移 0.5 秒",
+    "offsetIncrease": "歌词前移 0.5 秒",
+    "offsetReset": "重置歌词偏移",
+    "offsetResetShort": "重置"
   },
   "songEdit": {
     "title": "编辑歌曲信息",

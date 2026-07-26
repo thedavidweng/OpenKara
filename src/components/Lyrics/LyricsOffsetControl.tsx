@@ -1,4 +1,5 @@
 import type { HTMLAttributes } from "react";
+import { useTranslation } from "react-i18next";
 import { useLyricsStore } from "@/stores/lyrics-store";
 
 type LyricsOffsetControlProps = HTMLAttributes<HTMLDivElement>;
@@ -7,9 +8,11 @@ export function LyricsOffsetControl({
   className = "",
   ...props
 }: LyricsOffsetControlProps) {
+  const { t } = useTranslation();
   const songId = useLyricsStore((s) => s.songId);
   const offsetMs = useLyricsStore((s) => s.offsetMs);
   const adjustOffset = useLyricsStore((s) => s.adjustOffset);
+  const resetOffset = useLyricsStore((s) => s.resetOffset);
 
   if (!songId) return null;
 
@@ -21,7 +24,7 @@ export function LyricsOffsetControl({
       <button
         onClick={() => adjustOffset(songId, -500)}
         className="motion-surface rounded-full border border-[var(--color-border-light)] px-2.5 py-1 font-medium hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[color-mix(in_srgb,var(--color-hover)_72%,transparent)] hover:text-[var(--color-text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
-        aria-label="Adjust lyrics backward by 0.5 seconds"
+        aria-label={t("lyrics.offsetDecrease")}
       >
         -0.5s
       </button>
@@ -40,9 +43,16 @@ export function LyricsOffsetControl({
       <button
         onClick={() => adjustOffset(songId, 500)}
         className="motion-surface rounded-full border border-[var(--color-border-light)] px-2.5 py-1 font-medium hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[color-mix(in_srgb,var(--color-hover)_72%,transparent)] hover:text-[var(--color-text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
-        aria-label="Adjust lyrics forward by 0.5 seconds"
+        aria-label={t("lyrics.offsetIncrease")}
       >
         +0.5s
+      </button>
+      <button
+        onClick={() => void resetOffset(songId)}
+        className="motion-surface rounded-full border border-[var(--color-border-light)] px-2.5 py-1 font-medium hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[color-mix(in_srgb,var(--color-hover)_72%,transparent)] hover:text-[var(--color-text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
+        aria-label={t("lyrics.offsetReset")}
+      >
+        {t("lyrics.offsetResetShort")}
       </button>
     </div>
   );

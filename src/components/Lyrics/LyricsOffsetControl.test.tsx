@@ -7,12 +7,19 @@ const { mockLyricsState } = vi.hoisted(() => ({
     songId: "song-1" as string | null,
     offsetMs: 0,
     adjustOffset: vi.fn(),
+    resetOffset: vi.fn(),
   },
 }));
 
 vi.mock("@/stores/lyrics-store", () => ({
   useLyricsStore: (selector: (state: typeof mockLyricsState) => unknown) =>
     selector(mockLyricsState),
+}));
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+  }),
 }));
 
 describe("LyricsOffsetControl", () => {
@@ -68,5 +75,12 @@ describe("LyricsOffsetControl", () => {
     // display rests in the dim text color rather than the active highlight
     // color.
     expect(markup).not.toContain("text-[var(--color-control-primary)]");
+  });
+
+  test("renders a reset button mirroring the font-size control", () => {
+    const markup = renderToStaticMarkup(<LyricsOffsetControl />);
+
+    expect(markup).toContain("lyrics.offsetReset");
+    expect(markup).toContain("lyrics.offsetResetShort");
   });
 });
