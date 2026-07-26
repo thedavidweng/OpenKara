@@ -223,7 +223,29 @@ pub fn run() {
     #[cfg(desktop)]
     let builder = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init());
+        .plugin(tauri_plugin_process::init())
+        // Window geometry (#263). The flags are spelled out rather than
+        // `StateFlags::all()` because the other three fight designs the app
+        // already committed to: VISIBLE would `show()` during restore and race
+        // the hidden-start reveal handshake (and could persist "hidden" from a
+        // crashed run), FULLSCREEN would reintroduce the AppKit full-screen
+        // state the zoom-button retarget in `window_shell.m` deliberately
+        // avoids, and DECORATIONS would make the saved file a second writer for
+        // a titlebar the native shell pass configures on every launch.
+        //
+        // The fullscreen player is denied: it is created on the monitor the
+        // user picked with geometry derived from that monitor, so a restored
+        // frame would override the selection.
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
+                )
+                .with_denylist(&["fullscreen-player"])
+                .build(),
+        );
 
     #[cfg(target_os = "macos")]
     let builder = builder
