@@ -29,6 +29,7 @@
     "chooseLanguage": "Kies een taal",
     "openRemoteLibrary": "Kies een externe provider",
     "openRemoteLibraryDescription": "Verbind Google Drive, Dropbox of WebDAV met je externe opslag.",
+    "useRemoteRepository": "Externe repository gebruiken",
     "remoteProvider": {
       "googleDrive": {
         "title": "Google Drive",
@@ -55,9 +56,6 @@
     "fourStemDetail": "Meer controle over losse instrumenten, ~2× schijfruimte",
     "getStarted": "Aan de slag",
     "back": "Terug",
-    "continue": "Doorgaan",
-    "chooseModel": "Kies AI-model",
-    "modelDescription": "Dit model scheidt de zang van de muziek. Je kunt dit later wijzigen in de instellingen.",
     "modelDownloadHint": "Het model en de runtime worden automatisch gedownload wanneer je voor het eerst een nummer scheidt."
   },
   "sidebar": {

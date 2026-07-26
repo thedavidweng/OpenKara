@@ -29,6 +29,7 @@
     "chooseLanguage": "Sprache wählen",
     "openRemoteLibrary": "Remote-Anbieter wählen",
     "openRemoteLibraryDescription": "Verbinden Sie Google Drive, Dropbox oder WebDAV mit Ihrem Remote-Repository.",
+    "useRemoteRepository": "Remote-Repository verwenden",
     "remoteProvider": {
       "googleDrive": {
         "title": "Google Drive",
@@ -55,9 +56,6 @@
     "fourStemDetail": "Mehr Kontrolle über einzelne Instrumente, ~2× Speicherplatz",
     "getStarted": "Los geht’s",
     "back": "Zurück",
-    "continue": "Weiter",
-    "chooseModel": "KI-Modell wählen",
-    "modelDescription": "Dieses Modell trennt den Gesang von der Musik. Sie können es später in den Einstellungen ändern.",
     "modelDownloadHint": "Das Modell und seine Laufzeit werden beim ersten Trennen eines Songs automatisch heruntergeladen."
   },
   "sidebar": {

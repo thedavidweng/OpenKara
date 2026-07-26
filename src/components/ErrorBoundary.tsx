@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { windowReady } from "@/lib/tauri";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -24,6 +25,12 @@ export class ErrorBoundary extends Component<
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("Uncaught error:", error, info.componentStack);
+    // The main window starts hidden and is revealed by the `window_ready`
+    // handshake, which a crash on the way to the first screen never reaches.
+    // The native watchdog covers this too, but it only knows the window is
+    // stuck after its deadline — the boundary knows now, so the panel below
+    // becomes visible immediately instead of after a blank pause.
+    void windowReady();
   }
 
   private handleReload = () => {

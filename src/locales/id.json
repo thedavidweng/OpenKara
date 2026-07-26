@@ -29,6 +29,7 @@
     "chooseLanguage": "Pilih bahasa",
     "openRemoteLibrary": "Pilih penyedia jarak jauh",
     "openRemoteLibraryDescription": "Hubungkan Google Drive, Dropbox, atau WebDAV ke repositori jarak jauh Anda.",
+    "useRemoteRepository": "Gunakan repositori jarak jauh",
     "remoteProvider": {
       "googleDrive": {
         "title": "Google Drive",
@@ -55,9 +56,6 @@
     "fourStemDetail": "Lebih banyak kontrol atas tiap instrumen, ~2× ruang disk",
     "getStarted": "Mulai",
     "back": "Kembali",
-    "continue": "Lanjutkan",
-    "chooseModel": "Pilih Model AI",
-    "modelDescription": "Model ini memisahkan vokal dari musik. Anda dapat mengubahnya nanti di pengaturan.",
     "modelDownloadHint": "Model dan runtime-nya diunduh otomatis saat pertama kali Anda memisahkan sebuah lagu."
   },
   "sidebar": {

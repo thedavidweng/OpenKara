@@ -1,11 +1,27 @@
+// @vitest-environment jsdom
+
+import { render, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterAll, describe, expect, test, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { ErrorBoundary } from "./ErrorBoundary";
+
+const mockWindowReady = vi.fn(() => Promise.resolve());
+vi.mock("@/lib/tauri", () => ({
+  windowReady: () => mockWindowReady(),
+}));
 
 const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 afterAll(() => {
   consoleSpy.mockRestore();
 });
+
+beforeEach(() => {
+  mockWindowReady.mockClear();
+});
+
+function Boom(): never {
+  throw new Error("kaboom");
+}
 
 describe("ErrorBoundary", () => {
   test("renders children when no error is thrown", () => {
@@ -37,5 +53,26 @@ describe("ErrorBoundary", () => {
 
     expect(instance.state.hasError).toBe(false);
     expect(instance.state.error).toBeNull();
+  });
+
+  test("reveals the hidden main window when a child crashes", () => {
+    render(
+      <ErrorBoundary>
+        <Boom />
+      </ErrorBoundary>,
+    );
+
+    expect(screen.getByText("Something went wrong")).toBeTruthy();
+    expect(mockWindowReady).toHaveBeenCalledTimes(1);
+  });
+
+  test("does not touch the window on a healthy render", () => {
+    render(
+      <ErrorBoundary>
+        <div>child content</div>
+      </ErrorBoundary>,
+    );
+
+    expect(mockWindowReady).not.toHaveBeenCalled();
   });
 });

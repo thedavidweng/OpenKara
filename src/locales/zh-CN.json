@@ -29,6 +29,7 @@
     "chooseLanguage": "选择语言",
     "openRemoteLibrary": "选择远程服务商",
     "openRemoteLibraryDescription": "连接 Google Drive、Dropbox 或 WebDAV 作为你的远程资料库。",
+    "useRemoteRepository": "使用远程资料库",
     "remoteProvider": {
       "googleDrive": {
         "title": "Google Drive",
@@ -55,9 +56,6 @@
     "fourStemDetail": "可以独立控制各个乐器，约2倍磁盘占用",
     "getStarted": "开始使用",
     "back": "返回",
-    "continue": "继续",
-    "chooseModel": "选择 AI 模型",
-    "modelDescription": "该模型用于将人声从伴奏中分离。之后可在设置中更改。",
     "modelDownloadHint": "首次分离歌曲时会自动下载模型及其运行时。"
   },
   "sidebar": {

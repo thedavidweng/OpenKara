@@ -29,6 +29,7 @@
     "chooseLanguage": "เลือกภาษา",
     "openRemoteLibrary": "เลือกผู้ให้บริการระยะไกล",
     "openRemoteLibraryDescription": "เชื่อมต่อ Google Drive, Dropbox หรือ WebDAV เข้ากับที่เก็บระยะไกลของคุณ",
+    "useRemoteRepository": "ใช้ที่เก็บระยะไกล",
     "remoteProvider": {
       "googleDrive": {
         "title": "Google Drive",
@@ -55,9 +56,6 @@
     "fourStemDetail": "ควบคุมเครื่องดนตรีแต่ละชิ้นได้มากขึ้น ใช้พื้นที่ดิสก์ราว 2 เท่า",
     "getStarted": "เริ่มต้นใช้งาน",
     "back": "ย้อนกลับ",
-    "continue": "ดำเนินการต่อ",
-    "chooseModel": "เลือกโมเดล AI",
-    "modelDescription": "โมเดลนี้ใช้แยกเสียงร้องออกจากดนตรี คุณสามารถเปลี่ยนได้ภายหลังในการตั้งค่า",
     "modelDownloadHint": "โมเดลและรันไทม์จะดาวน์โหลดโดยอัตโนมัติเมื่อคุณแยกเสียงเพลงเป็นครั้งแรก"
   },
   "sidebar": {

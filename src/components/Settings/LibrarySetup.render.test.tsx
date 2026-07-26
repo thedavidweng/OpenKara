@@ -103,6 +103,34 @@ describe("LibrarySetup destructive error surfaces", () => {
     });
   }
 
+  test("counts the remote-provider screen as part of the library step", async () => {
+    const root = createRoot(container);
+    await advanceToLibraryStep(root);
+
+    const remote = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Use remote repository"),
+    );
+    await act(async () => {
+      remote?.click();
+    });
+
+    // Three real stages, and picking a provider must not advance past the
+    // library dot - the provider screen is a branch of that step, not a step.
+    const dots = Array.from(
+      container.querySelectorAll("div.rounded-full.h-1\\.5, div.h-1\\.5"),
+    ).filter((dot) => dot.className.includes("rounded-full"));
+    expect(dots).toHaveLength(3);
+    expect(
+      dots.filter((dot) =>
+        dot.className.includes("bg-[var(--color-control-primary)]"),
+      ),
+    ).toHaveLength(2);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
   test("renders library-step errors with the destructive text token", async () => {
     const root = createRoot(container);
     await advanceToLibraryStep(root);
@@ -132,7 +160,7 @@ describe("LibrarySetup destructive error surfaces", () => {
     await advanceToLibraryStep(root);
 
     const remoteButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Open remote repository"),
+      (button) => button.textContent?.includes("Use remote repository"),
     );
     expect(remoteButton).toBeTruthy();
     await act(async () => {
@@ -192,17 +220,18 @@ describe("LibrarySetup destructive error surfaces", () => {
     mockCreateLocalLibrary.mockResolvedValue(undefined);
     await clickButtonContaining("Create new local library");
 
-    // Stem mode → model step.
-    await clickButtonContaining("setup.continue");
-    expect(container.innerHTML).toContain("setup.chooseModel");
-    expect(container.innerHTML).toContain("settings.modelVariant.htdemucs");
-    expect(container.innerHTML).toContain("settings.modelVariant.htdemucsFt");
+    // Stem mode is the last step: the model choice is not a first-run question.
+    expect(container.innerHTML).not.toContain("settings.modelVariant.htdemucs");
 
-    await clickButtonContaining("settings.modelVariant.htdemucsFt");
+    // Back returns to the library step rather than the deleted model step.
+    await clickButtonContaining("setup.back");
+    expect(container.innerHTML).toContain("Create new local library");
+    await clickButtonContaining("Create new local library");
+
     await clickButtonContaining("setup.getStarted");
 
     expect(mockSetStemMode).toHaveBeenCalledWith("four_stem");
-    expect(mockSetModelVariant).toHaveBeenCalledWith("htdemucs_ft");
+    expect(mockSetModelVariant).not.toHaveBeenCalled();
     expect(onComplete).toHaveBeenCalled();
 
     await act(async () => {
