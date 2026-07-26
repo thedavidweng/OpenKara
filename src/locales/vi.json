@@ -29,6 +29,7 @@
     "chooseLanguage": "Chọn ngôn ngữ",
     "openRemoteLibrary": "Chọn nhà cung cấp từ xa",
     "openRemoteLibraryDescription": "Kết nối Google Drive, Dropbox hoặc WebDAV với kho lưu trữ từ xa của bạn.",
+    "useRemoteRepository": "Dùng kho lưu trữ từ xa",
     "remoteProvider": {
       "googleDrive": {
         "title": "Google Drive",
@@ -55,9 +56,6 @@
     "fourStemDetail": "Kiểm soát từng nhạc cụ tốt hơn, tốn khoảng 2× dung lượng đĩa",
     "getStarted": "Bắt đầu",
     "back": "Quay lại",
-    "continue": "Tiếp tục",
-    "chooseModel": "Chọn mô hình AI",
-    "modelDescription": "Mô hình này tách giọng hát khỏi phần nhạc. Bạn có thể thay đổi sau trong phần cài đặt.",
     "modelDownloadHint": "Mô hình và runtime của nó sẽ tự động tải xuống trong lần đầu bạn tách một bài hát."
   },
   "sidebar": {

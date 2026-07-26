@@ -29,6 +29,7 @@
     "chooseLanguage": "Bir dil seçin",
     "openRemoteLibrary": "Bir uzak sağlayıcı seçin",
     "openRemoteLibraryDescription": "Uzak deponuza Google Drive, Dropbox veya WebDAV bağlayın.",
+    "useRemoteRepository": "Uzak depoyu kullan",
     "remoteProvider": {
       "googleDrive": {
         "title": "Google Drive",
@@ -55,9 +56,6 @@
     "fourStemDetail": "Tek tek enstrümanlar üzerinde daha fazla denetim, ~2× disk alanı",
     "getStarted": "Başla",
     "back": "Geri",
-    "continue": "Devam",
-    "chooseModel": "Yapay Zeka Modelini Seçin",
-    "modelDescription": "Bu model vokalleri müzikten ayırır. Daha sonra ayarlardan değiştirebilirsiniz.",
     "modelDownloadHint": "Model ve çalışma zamanı, bir şarkıyı ilk kez ayırdığınızda otomatik olarak indirilir."
   },
   "sidebar": {

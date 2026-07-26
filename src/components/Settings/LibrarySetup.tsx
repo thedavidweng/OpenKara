@@ -13,25 +13,19 @@ import {
   ChevronLeft,
   Check,
   Search,
-  Sparkles,
 } from "lucide-react";
 import { getErrorMessage } from "@/lib/errors";
 import * as api from "@/lib/tauri";
 import i18next, { SUPPORTED_LANGUAGES, detectSystemLanguage } from "@/lib/i18n";
 import { useSettingsStore } from "@/stores/settings-store";
-import type { ModelVariant, RemoteLibraryProvider } from "@/types/ipc";
+import type { RemoteLibraryProvider } from "@/types/ipc";
 import { runRemoteLibraryRegistrationFlow } from "./remote-library-flow";
 import {
   getRemoteLibraryConnectedMessage,
   getRemoteProviderDisplayName,
 } from "./remote-library-copy";
 
-type Step =
-  | "language"
-  | "library"
-  | "remoteProvider"
-  | "stemMode"
-  | "modelVariant";
+type Step = "language" | "library" | "remoteProvider" | "stemMode";
 type LibraryChoiceKind = "create_local" | "open_local" | "open_remote";
 
 interface RemoteProviderChoice {
@@ -66,7 +60,7 @@ export const librarySetupChoices: LibraryChoice[] = [
   {
     kind: "open_remote",
     icon: Globe,
-    title: "setup.openRemoteLibrary",
+    title: "setup.useRemoteRepository",
     description: "setup.openRemoteLibraryDescription",
   },
 ];
@@ -101,14 +95,13 @@ interface LibrarySetupProps {
 }
 
 function StepIndicator({ current }: { current: Step }) {
-  const steps: Step[] = [
-    "language",
-    "library",
-    "remoteProvider",
-    "stemMode",
-    "modelVariant",
-  ];
-  const currentIndex = steps.indexOf(current);
+  const steps: Step[] = ["language", "library", "stemMode"];
+  // The remote-provider screen is a branch of the library step, not a stage of
+  // its own. Giving it a dot promised a step most users never reach and left
+  // the indicator permanently one short.
+  const currentIndex = steps.indexOf(
+    current === "remoteProvider" ? "library" : current,
+  );
 
   return (
     <div className="flex items-center justify-center gap-2">
@@ -142,7 +135,6 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
   const { t } = useTranslation();
   const settingsLanguage = useSettingsStore((s) => s.language);
   const settingsStemMode = useSettingsStore((s) => s.stemMode);
-  const settingsModelVariant = useSettingsStore((s) => s.modelVariant);
   const patchAppSettings = useSettingsStore((s) => s.patchAppSettings);
   const hydrateAppSettings = useSettingsStore((s) => s.hydrateAppSettings);
   const [step, setStep] = useState<Step>("language");
@@ -168,8 +160,6 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
   const [selectedStemModeDraft, setSelectedStemModeDraft] = useState<
     "two_stem" | "four_stem" | null
   >(null);
-  const [selectedModelVariantDraft, setSelectedModelVariantDraft] =
-    useState<ModelVariant | null>(null);
   const remoteAuthSessionIdRef = useRef<string | null>(null);
   const selectedLanguage =
     selectedLanguageDraft ??
@@ -177,8 +167,6 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
     i18next.resolvedLanguage ??
     detectSystemLanguage();
   const selectedStemMode = selectedStemModeDraft ?? settingsStemMode;
-  const selectedModelVariant =
-    selectedModelVariantDraft ?? settingsModelVariant;
 
   const resolveSingleDirectory = (selected: string | string[] | null) =>
     typeof selected === "string" ? selected : (selected?.[0] ?? null);
@@ -313,10 +301,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
 
   const handleFinish = async () => {
     try {
-      await api.setStemMode(selectedStemMode);
-      // The chosen variant is what the first separation auto-downloads, so it
-      // must be persisted before the user reaches the library.
-      const settings = await api.setModelVariant(selectedModelVariant);
+      const settings = await api.setStemMode(selectedStemMode);
       hydrateAppSettings(settings);
     } catch {
       // non-fatal
@@ -360,7 +345,12 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                   />
                 </div>
               )}
-              <div className="max-h-[22rem] space-y-3 overflow-y-auto">
+              {/* Height follows the window instead of a fixed 22rem, which
+                  was shorter than the viewport on every desktop size and left
+                  the list looking cut off with empty space below it. The bottom
+                  fade is the scroll affordance: without it the clipped row reads
+                  as a broken layout rather than "more below". */}
+              <div className="max-h-[60vh] space-y-3 overflow-y-auto [mask-image:linear-gradient(to_bottom,#000_calc(100%-2.5rem),transparent)]">
                 {SUPPORTED_LANGUAGES.filter((lang) => {
                   const q = languageFilter.trim().toLowerCase();
                   if (!q) return true;
@@ -432,11 +422,11 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                           : handleOpenRemote
                     }
                     disabled={disabled}
-                    className="flex w-full items-center gap-3 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-sidebar)] px-5 py-4 text-left transition-colors hover:bg-[var(--color-hover)] disabled:opacity-50"
+                    className="flex w-full items-start gap-3 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-sidebar)] px-5 py-4 text-left transition-colors hover:bg-[var(--color-hover)] disabled:opacity-50"
                   >
                     <Icon
                       size={20}
-                      className={`shrink-0 ${
+                      className={`mt-0.5 shrink-0 ${
                         choice.kind === "open_remote"
                           ? "text-[var(--color-control-primary)]"
                           : choice.kind === "create_local"
@@ -452,7 +442,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                               ? "Create new local library"
                               : choice.kind === "open_local"
                                 ? "Open existing local library"
-                                : "Open remote repository",
+                                : "Use remote repository",
                         })}
                       </div>
                       <div className="text-[12px] text-[var(--color-text-dim)]">
@@ -835,7 +825,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
             <div className="space-y-3">
               <button
                 onClick={() => setSelectedStemModeDraft("two_stem")}
-                className={`flex w-full items-center gap-3 rounded-lg border px-5 py-4 text-left transition-colors ${
+                className={`flex w-full items-start gap-3 rounded-lg border px-5 py-4 text-left transition-colors ${
                   selectedStemMode === "two_stem"
                     ? "border-[var(--color-control-selected-border)] bg-[var(--color-control-selected-bg)]"
                     : "border-[var(--color-border-light)] bg-[var(--color-sidebar)] hover:bg-[var(--color-hover)]"
@@ -843,7 +833,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
               >
                 <Mic2
                   size={20}
-                  className="shrink-0 text-[var(--color-control-primary)]"
+                  className="mt-0.5 shrink-0 text-[var(--color-control-primary)]"
                 />
                 <div className="flex-1">
                   <div className="text-[14px] font-medium text-[var(--color-text)]">
@@ -859,14 +849,14 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                 {selectedStemMode === "two_stem" && (
                   <Check
                     size={16}
-                    className="shrink-0 text-[var(--color-control-primary)]"
+                    className="mt-0.5 shrink-0 text-[var(--color-control-primary)]"
                   />
                 )}
               </button>
 
               <button
                 onClick={() => setSelectedStemModeDraft("four_stem")}
-                className={`flex w-full items-center gap-3 rounded-lg border px-5 py-4 text-left transition-colors ${
+                className={`flex w-full items-start gap-3 rounded-lg border px-5 py-4 text-left transition-colors ${
                   selectedStemMode === "four_stem"
                     ? "border-[var(--color-control-selected-border)] bg-[var(--color-control-selected-bg)]"
                     : "border-[var(--color-border-light)] bg-[var(--color-sidebar)] hover:bg-[var(--color-hover)]"
@@ -874,7 +864,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
               >
                 <Layers
                   size={20}
-                  className="shrink-0 text-[var(--color-control-primary)]"
+                  className="mt-0.5 shrink-0 text-[var(--color-control-primary)]"
                 />
                 <div className="flex-1">
                   <div className="text-[14px] font-medium text-[var(--color-text)]">
@@ -890,94 +880,10 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                 {selectedStemMode === "four_stem" && (
                   <Check
                     size={16}
-                    className="shrink-0 text-[var(--color-control-primary)]"
+                    className="mt-0.5 shrink-0 text-[var(--color-control-primary)]"
                   />
                 )}
               </button>
-            </div>
-
-            <button
-              onClick={() => setStep("modelVariant")}
-              className="w-full rounded-lg bg-[var(--color-control-primary)] px-5 py-3 text-[14px] font-medium text-[var(--color-control-primary-foreground)] transition-opacity hover:opacity-90"
-            >
-              {t("setup.continue")}
-            </button>
-
-            <button
-              onClick={() => setStep("library")}
-              className="flex items-center justify-center gap-1 text-[13px] text-[var(--color-text-dim)] transition-colors hover:text-[var(--color-text)]"
-            >
-              <ChevronLeft size={14} />
-              {t("setup.back")}
-            </button>
-          </>
-        )}
-
-        {step === "modelVariant" && (
-          <>
-            <div className="flex flex-col items-center gap-4">
-              <div className="flex items-center justify-center">
-                <Sparkles
-                  size={32}
-                  className="text-[var(--color-control-primary)]"
-                />
-              </div>
-              <h1 className="text-2xl font-bold text-[var(--color-text)]">
-                {t("setup.chooseModel")}
-              </h1>
-              <p className="text-[14px] leading-relaxed text-[var(--color-text-dim)]">
-                {t("setup.modelDescription")}
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              {(
-                [
-                  {
-                    variant: "htdemucs",
-                    title: t("settings.modelVariant.htdemucs"),
-                    subtitle: t("settings.modelVariant.htdemucsDescription"),
-                  },
-                  {
-                    variant: "htdemucs_ft",
-                    title: t("settings.modelVariant.htdemucsFt"),
-                    subtitle: t("settings.modelVariant.htdemucsFtDescription"),
-                  },
-                ] satisfies ReadonlyArray<{
-                  variant: ModelVariant;
-                  title: string;
-                  subtitle: string;
-                }>
-              ).map((option) => (
-                <button
-                  key={option.variant}
-                  onClick={() => setSelectedModelVariantDraft(option.variant)}
-                  className={`flex w-full items-center gap-3 rounded-lg border px-5 py-4 text-left transition-colors ${
-                    selectedModelVariant === option.variant
-                      ? "border-[var(--color-control-selected-border)] bg-[var(--color-control-selected-bg)]"
-                      : "border-[var(--color-border-light)] bg-[var(--color-sidebar)] hover:bg-[var(--color-hover)]"
-                  }`}
-                >
-                  <Sparkles
-                    size={20}
-                    className="shrink-0 text-[var(--color-control-primary)]"
-                  />
-                  <div className="flex-1">
-                    <div className="text-[14px] font-medium text-[var(--color-text)]">
-                      {option.title}
-                    </div>
-                    <div className="text-[12px] text-[var(--color-text-dim)]">
-                      {option.subtitle}
-                    </div>
-                  </div>
-                  {selectedModelVariant === option.variant && (
-                    <Check
-                      size={16}
-                      className="shrink-0 text-[var(--color-control-primary)]"
-                    />
-                  )}
-                </button>
-              ))}
             </div>
 
             <p className="text-[12px] text-[var(--color-text-dimmer)]">
@@ -992,7 +898,7 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
             </button>
 
             <button
-              onClick={() => setStep("stemMode")}
+              onClick={() => setStep("library")}
               className="flex items-center justify-center gap-1 text-[13px] text-[var(--color-text-dim)] transition-colors hover:text-[var(--color-text)]"
             >
               <ChevronLeft size={14} />

@@ -29,6 +29,7 @@
     "chooseLanguage": "Выберите язык",
     "openRemoteLibrary": "Выберите удалённого провайдера",
     "openRemoteLibraryDescription": "Подключите Google Drive, Dropbox или WebDAV в качестве удалённого репозитория.",
+    "useRemoteRepository": "Использовать удалённый репозиторий",
     "remoteProvider": {
       "googleDrive": {
         "title": "Google Drive",
@@ -55,9 +56,6 @@
     "fourStemDetail": "Больше контроля над отдельными инструментами, ~2× места на диске",
     "getStarted": "Начать",
     "back": "Назад",
-    "continue": "Продолжить",
-    "chooseModel": "Выберите модель ИИ",
-    "modelDescription": "Эта модель отделяет вокал от музыки. Её можно изменить позже в настройках.",
     "modelDownloadHint": "Модель и её среда выполнения загружаются автоматически при первом разделении песни."
   },
   "sidebar": {
