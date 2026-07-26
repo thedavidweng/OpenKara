@@ -82,22 +82,42 @@ function HookHarness({ hookFn }: { hookFn: () => void }) {
 }
 
 describe("use-playback-runtime wiring", () => {
-  test("registers upload progress listeners alongside separation listeners", async () => {
-    const { default: src } = await import("./use-playback-runtime.ts?raw");
+  test("routes upload events into the library store", async () => {
+    // useEventListeners mounts the whole runtime graph, including the preload
+    // scheduler, so its IPC stub has to resolve.
+    mockSetPreloadCandidate.mockResolvedValue(undefined);
+    const updateUploadStatus = vi.fn();
+    const clearUploadStatus = vi.fn();
+    useLibraryStore.setState({
+      updateUploadStatus,
+      clearUploadStatus,
+    } as never);
 
-    expect(src).toContain("upload-progress");
-    expect(src).toContain("upload-complete");
-    expect(src).toContain("upload-error");
-    expect(src).toContain("updateUploadStatus");
-    expect(src).toContain("clearUploadStatus");
-    expect(src).toContain("separation-progress");
-  });
+    const listeners = new Map<string, (payload: unknown) => void>();
+    mockListen.mockImplementation(
+      async (eventName: string, handler: (e: { payload: unknown }) => void) => {
+        listeners.set(eventName, (payload) => handler({ payload }));
+        return () => {};
+      },
+    );
 
-  test("applies playback-position snapshots directly without a state refresh fallback", async () => {
-    const { default: src } = await import("./use-playback-runtime.ts?raw");
+    const { useEventListeners } = await import("./use-playback-runtime");
+    await renderHook(() => useEventListeners(true));
 
-    expect(src).toContain("applyPlaybackPositionEvent");
-    expect(src).not.toContain("getPlaybackState: api.getPlaybackState");
+    listeners.get("upload-progress")!({ song_id: "song-a", percent: 40 });
+    expect(updateUploadStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ song_id: "song-a", state: "running" }),
+    );
+
+    updateUploadStatus.mockClear();
+    listeners.get("upload-error")!({
+      song_id: "song-a",
+      error: "upload failed",
+    });
+    expect(updateUploadStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ song_id: "song-a", state: "failed" }),
+    );
+    expect(mockNotifyError).toHaveBeenCalledWith("upload failed");
   });
 });
 

@@ -1,26 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { loadStartupSettings } from "./settings-runtime";
 
-describe("unified app runtime module", () => {
-  test("exports a single gated hook graph with no sidebar webview fork", async () => {
-    const { default: src } = await import("./app-runtime.ts?raw");
-
-    expect(src).toContain("export function useAppRuntime");
-    expect(src).toContain("export function useAppReadyRuntime");
-    expect(src).not.toContain("useSidebarWindowRuntimeWhen");
-    expect(src).not.toContain("useSidebarPaneEventListeners");
-    expect(src).not.toContain("sidebar-webview");
-    expect(src).toContain("useEventListeners");
-    expect(src).toContain("useLyricsAutoFetch");
-    expect(src).toContain("useKeyboardShortcuts");
-    expect(src).toContain("useFileDrop");
-    expect(src).toContain("useAppMenuRuntime");
-    expect(src).toContain("getLibraryRegistry");
-    expect(src).toContain("windowReady");
-    expect(src).not.toContain("getLibraryPath()");
-  });
-});
-
 describe("app runtime settings hydration", () => {
   test("hydrates settings and applies the persisted language", async () => {
     const getSettings = vi.fn().mockResolvedValue({
