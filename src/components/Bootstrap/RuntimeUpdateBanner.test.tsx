@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { RuntimeUpdateBanner } from "./RuntimeUpdateBanner";
 import { useRuntimeBootstrapStore } from "@/stores/runtime-bootstrap-store";
 import type {
@@ -9,17 +15,23 @@ import type {
   RuntimeBootstrapStatusSnapshot,
 } from "@/types/ipc";
 
-const { mockRestartApp, mockNotifyError } = vi.hoisted(() => ({
-  mockRestartApp: vi.fn().mockResolvedValue(undefined),
-  mockNotifyError: vi.fn(),
-}));
+const { mockRestartApp, mockDownloadRuntime, mockNotifyError } = vi.hoisted(
+  () => ({
+    mockRestartApp: vi.fn().mockResolvedValue(undefined),
+    mockDownloadRuntime: vi.fn(),
+    mockNotifyError: vi.fn(),
+  }),
+);
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
   initReactI18next: { type: "3rdParty", init: () => {} },
 }));
 
-vi.mock("@/lib/tauri", () => ({ restartApp: mockRestartApp }));
+vi.mock("@/lib/tauri", () => ({
+  restartApp: mockRestartApp,
+  downloadRuntime: mockDownloadRuntime,
+}));
 vi.mock("@/lib/errors", () => ({ notifyError: mockNotifyError }));
 
 function setStatus(
@@ -85,5 +97,77 @@ describe("RuntimeUpdateBanner", () => {
 
     fireEvent.click(screen.getByLabelText("common.close"));
     expect(container.firstChild).toBeNull();
+  });
+
+  test("missing state shows the runtime-required banner with a hint", () => {
+    setStatus("missing", { active_artifact_id: null });
+    render(<RuntimeUpdateBanner />);
+
+    expect(
+      screen.getByText("settings.runtime.banner.runtimeRequired"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("settings.runtime.banner.runtimeRequiredHint"),
+    ).toBeTruthy();
+  });
+
+  test("downloading state shows the downloading-runtime banner", () => {
+    setStatus("downloading", {
+      active_artifact_id: null,
+      downloaded_bytes: 1_000_000,
+      total_bytes: 6_400_000,
+    });
+    render(<RuntimeUpdateBanner />);
+
+    expect(
+      screen.getByText("settings.runtime.banner.downloadingRuntime"),
+    ).toBeTruthy();
+  });
+
+  test("failed state renders the error, a hint, and a Retry that triggers the runtime download", async () => {
+    mockDownloadRuntime.mockResolvedValue({
+      state: "downloading",
+      runtime_path: "/tmp/runtime",
+      downloaded_bytes: 0,
+      total_bytes: null,
+      version: "v1.27.1",
+      active_artifact_id: null,
+      target_triple: "aarch64-apple-darwin",
+      candidate_version: null,
+      restart_required: false,
+      error: null,
+    });
+    setStatus("failed", {
+      active_artifact_id: null,
+      error: {
+        code: "network_unavailable",
+        message: "network unreachable",
+        retryable: true,
+        fallback: "retry",
+      },
+    });
+    render(<RuntimeUpdateBanner />);
+
+    expect(
+      screen.getByText("settings.runtime.banner.downloadFailed"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("settings.runtime.banner.downloadFailedHint"),
+    ).toBeTruthy();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "settings.runtime.banner.retryDownload",
+      }),
+    );
+
+    expect(mockDownloadRuntime).toHaveBeenCalledOnce();
+    // Publishing the returned `downloading` snapshot flips the banner so
+    // GlobalProgressBar can take over the byte/percent readout (mirrors #217).
+    await waitFor(() => {
+      expect(useRuntimeBootstrapStore.getState().status?.state).toBe(
+        "downloading",
+      );
+    });
   });
 });

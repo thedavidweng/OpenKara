@@ -126,3 +126,58 @@ describe("remote-library flow i18n completeness", () => {
     ).toEqual([]);
   });
 });
+
+// The bootstrap banners (model + runtime) drive the first-run separation UX,
+// so their Missing/Downloading/Failed copy must never fall back to a raw
+// English `defaultValue` for zh-CN users. Same guard as above, scoped to the
+// banner sources so a newly referenced key without a locale entry fails CI
+// (issue #226 added the runtime banner's three-state copy).
+const BOOTSTRAP_BANNER_SOURCES = import.meta.glob(
+  [
+    "../components/Bootstrap/ModelBootstrapBanner.tsx",
+    "../components/Bootstrap/RuntimeUpdateBanner.tsx",
+  ],
+  { query: "?raw", import: "default", eager: true },
+) as Record<string, string>;
+
+describe("bootstrap banner i18n completeness", () => {
+  const EXPECTED_FILE_COUNT = 2;
+
+  const T_CALL = /\bt\(\s*["']([^"']+)["']/g;
+
+  function collectKeys(): string[] {
+    const keys = new Set<string>();
+    for (const source of Object.values(BOOTSTRAP_BANNER_SOURCES)) {
+      for (const match of source.matchAll(T_CALL)) {
+        keys.add(match[1]);
+      }
+    }
+    return [...keys].sort();
+  }
+
+  test("resolves every bootstrap banner source file", () => {
+    expect(Object.keys(BOOTSTRAP_BANNER_SOURCES)).toHaveLength(
+      EXPECTED_FILE_COUNT,
+    );
+  });
+
+  test("every referenced key resolves in en.json and zh-CN.json", () => {
+    const keys = collectKeys();
+    expect(keys.length).toBeGreaterThan(0);
+
+    const missing = keys
+      .map((key) => ({
+        key,
+        en: isPresent(en, key),
+        zh: isPresent(zh, key),
+      }))
+      .filter((entry) => !entry.en || !entry.zh);
+
+    expect(
+      missing,
+      `Missing locale keys referenced in the bootstrap banners: ${missing
+        .map((m) => `${m.key} (en=${m.en}, zh=${m.zh})`)
+        .join(", ")}`,
+    ).toEqual([]);
+  });
+});
