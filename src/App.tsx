@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { AppLayout } from "@/components/Layout/AppLayout";
+import { AppShellSkeleton } from "@/components/Layout/AppShellSkeleton";
 import { LibrarySetup } from "@/components/Settings/LibrarySetup";
 import {
   useAppReadyRuntime,
@@ -42,7 +43,7 @@ function App({ initialLibraryReady = null, previewMode = false }: AppProps) {
   }, []);
 
   if (libraryReady === null) {
-    return null;
+    return <AppShellSkeleton />;
   }
 
   if (!libraryReady) {

@@ -85,6 +85,15 @@ export function useAppStartupRuntime(
   }, [libraryReady, loadBootstrapStatus, loadLibrary, loadPlayerState]);
 }
 
+/**
+ * Backstop for the reveal request. The main window starts hidden, and a hidden
+ * (occluded) WebView has its animation frames suspended — so the rAF callback
+ * that asks the backend to show the window would never run, leaving the app
+ * running with no window at all. The timer guarantees the request goes out;
+ * rAF still wins whenever frames are actually being produced.
+ */
+const WINDOW_REVEAL_FALLBACK_MS = 120;
+
 export function useAppReadyRuntime(
   libraryReady: boolean | null,
   settingsHydrated: boolean,
@@ -103,13 +112,22 @@ export function useAppReadyRuntime(
       return;
     }
 
-    const frameId = scheduleFrame(() => {
+    let requested = false;
+    const requestReveal = () => {
+      if (requested) {
+        return;
+      }
+      requested = true;
       void api.windowReady();
       setWindowShown(true);
-    });
+    };
+
+    const frameId = scheduleFrame(requestReveal);
+    const timeoutId = setTimeout(requestReveal, WINDOW_REVEAL_FALLBACK_MS);
 
     return () => {
       cancelAnimationFrame(frameId);
+      clearTimeout(timeoutId);
     };
   }, [
     libraryReady,

@@ -11,7 +11,10 @@
         "resizable": true,
         "decorations": false,
         "shadow": true,
-        "scrollBarStyle": "fluentOverlay"
+        "scrollBarStyle": "fluentOverlay",
+        "visible": false,
+        "center": true,
+        "backgroundColor": "#121212"
       }
     ]
   }
