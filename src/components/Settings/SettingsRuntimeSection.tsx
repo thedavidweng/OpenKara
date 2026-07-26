@@ -79,6 +79,24 @@ export function SettingsRuntimeSection() {
       report?.state === "installed_without_identity") &&
     !restartRequired;
   const downloadingCandidate = runtimeState === "downloading_candidate";
+  const isDownloading = runtimeState === "downloading";
+
+  // The runtime normally installs itself the first time a song is separated.
+  // This CTA is the manual escape hatch for the states that cannot recover on
+  // their own, and it lives here — next to the runtime status and version —
+  // rather than inside the AI Model card.
+  const needsInstall =
+    isMissing || runtimeState === "corrupt" || runtimeState === "failed";
+  const installLabel =
+    runtimeState === "corrupt" || runtimeState === "failed"
+      ? t("settings.runtime.retryButton")
+      : t("settings.runtime.installButton");
+  const installHint =
+    runtimeState === "corrupt"
+      ? t("settings.runtime.corrupt")
+      : runtimeState === "failed"
+        ? t("settings.runtime.downloadFailed")
+        : t("settings.runtime.installRequired");
 
   return (
     <SettingsSectionCard
@@ -98,7 +116,28 @@ export function SettingsRuntimeSection() {
             {runtime.error}
           </p>
         ) : null}
+        {needsInstall ? (
+          <p className="text-[11px] text-[var(--color-text-dim)]">
+            {installHint}
+          </p>
+        ) : null}
+        {needsInstall && runtime?.error ? (
+          <p className="text-[11px] text-[var(--color-danger,#e5484d)] opacity-90">
+            {runtime.error}
+          </p>
+        ) : null}
       </div>
+
+      {needsInstall ? (
+        <button
+          onClick={() => void actions.downloadRuntime()}
+          disabled={meta.isInitializing || isDownloading}
+          data-testid="runtime-install-button"
+          className="self-start rounded-md bg-[var(--color-control-primary)] px-3 py-1.5 text-[12px] text-[var(--color-control-primary-foreground)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-control-primary)_88%,white)] disabled:opacity-50"
+        >
+          {isDownloading ? t("settings.runtime.downloading") : installLabel}
+        </button>
+      ) : null}
 
       {restartRequired ? (
         <button
@@ -125,9 +164,17 @@ export function SettingsRuntimeSection() {
               ? t("settings.runtime.checking")
               : t("settings.runtime.checkButton")}
           </button>
-          {update?.status === "checked" && !updateAvailable ? (
+          {/* Only a genuine up_to_date verdict may claim the runtime is
+              current. Reporting "up to date" for not_installed is what made a
+              failed install look like a healthy one. */}
+          {report?.state === "up_to_date" && !updateAvailable ? (
             <span className="text-[11px] text-[var(--color-text-dim)]">
               {t("settings.runtime.upToDate")}
+            </span>
+          ) : null}
+          {report?.state === "not_installed" ? (
+            <span className="text-[11px] text-[var(--color-text-dim)]">
+              {t("settings.runtime.statusMissing")}
             </span>
           ) : null}
         </div>

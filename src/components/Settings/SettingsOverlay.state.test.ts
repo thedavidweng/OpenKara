@@ -644,6 +644,61 @@ describe("createSettingsOverlayActions - runtime updates", () => {
     expect(runtimeStatus?.state).toBe("candidate_ready_restart_required");
     expect(runtimeStatus?.candidate_version).toBe("v1.28.0");
     expect(runtimeStatus?.restart_required).toBe(true);
+    expect(harness.getSnapshot().state.runtimeUpdate).toBeNull();
+  });
+
+  test("downloadRuntime discards the stale check report after installing", async () => {
+    const harness = createHarness();
+
+    vi.mocked(harness.dependencies.api.checkRuntimeUpdates).mockResolvedValue({
+      generation: 9,
+      release_id: "2026-08-01-001",
+      target_triple: "aarch64-apple-darwin",
+      state: "not_installed",
+      installed_version: null,
+      available_version: "v1.27.1",
+      available_bytes: 42_000_000,
+      restart_required: false,
+    });
+    vi.mocked(
+      harness.dependencies.api.getRuntimeBootstrapStatus,
+    ).mockResolvedValue({
+      state: "missing",
+      version: "v1.27.1",
+      runtime_path: "",
+      downloaded_bytes: null,
+      total_bytes: null,
+      active_artifact_id: null,
+      target_triple: "aarch64-apple-darwin",
+      candidate_version: null,
+      restart_required: false,
+      error: null,
+    });
+
+    await harness.actions.checkRuntimeUpdates();
+    expect(harness.getSnapshot().state.runtimeUpdate?.report?.state).toBe(
+      "not_installed",
+    );
+
+    vi.mocked(harness.dependencies.api.downloadRuntime).mockResolvedValue({
+      state: "ready",
+      version: "v1.27.1",
+      runtime_path: "/tmp/runtime",
+      downloaded_bytes: null,
+      total_bytes: null,
+      active_artifact_id: "rt-1.27.1",
+      target_triple: "aarch64-apple-darwin",
+      candidate_version: null,
+      restart_required: false,
+      error: null,
+    });
+
+    await harness.actions.downloadRuntime();
+
+    // A "not installed" report next to a "ready" status line is a
+    // contradiction the user cannot resolve, so the install clears it.
+    expect(harness.getSnapshot().state.runtimeStatus?.state).toBe("ready");
+    expect(harness.getSnapshot().state.runtimeUpdate).toBeNull();
   });
 
   test("setUpdatePolicy routes through the settings store and mirrors the result", async () => {

@@ -435,8 +435,16 @@ fn collect_zip_members(archive_path: &Path) -> Result<ArchiveMembers> {
 }
 
 /// Verify every extracted file against the catalog's declared digests. All
-/// declared files must exist with matching size and SHA-256; extra files
-/// are rejected so an artifact directory only ever contains declared content.
+/// declared files must exist with matching size and SHA-256.
+///
+/// RATIONALE: undeclared extra members are tolerated. The archive's own
+/// SHA-256 (`archive_digest`) is verified against the catalog before a single
+/// byte is extracted, so every member — declared or not — is exactly what the
+/// publisher signed; rejecting extras added no integrity guarantee and instead
+/// bricked installs whenever the build pipeline shipped a new metadata file
+/// (`build-manifest.json`, which the generator omits from its own file list).
+/// The declared-file checks below stay strict, and the returned records still
+/// cover only declared files.
 pub fn verify_extracted_files(
     dest_dir: &Path,
     declared: &BTreeMap<String, CatalogFileDigest>,
@@ -446,12 +454,6 @@ pub fn verify_extracted_files(
         .iter()
         .map(|path| path.to_string_lossy().replace('\\', "/"))
         .collect();
-
-    for path in &extracted_set {
-        if !declared.contains_key(path) {
-            bail!("archive contains undeclared file {path}");
-        }
-    }
 
     let mut records = Vec::new();
     for (path, digest) in declared {
@@ -612,7 +614,7 @@ mod tests {
     }
 
     #[test]
-    fn verify_extracted_rejects_undeclared_and_missing_files() {
+    fn verify_extracted_tolerates_undeclared_but_rejects_missing_files() {
         let dir = tempfile::tempdir().expect("tempdir");
         fs::write(dir.path().join("lib.dylib"), b"lib").expect("write");
 
@@ -625,14 +627,22 @@ mod tests {
             },
         );
 
-        // Undeclared extra file.
-        let error = verify_extracted_files(
+        // Undeclared extra members ride along with the archive-level digest
+        // (real ORT archives ship build-manifest.json, which the catalog
+        // generator omits). They must not fail an otherwise valid install,
+        // and they must not appear in the installed-file records.
+        fs::write(dir.path().join("build-manifest.json"), b"{}").expect("write");
+        let records = verify_extracted_files(
             dir.path(),
             &declared,
-            &[PathBuf::from("lib.dylib"), PathBuf::from("extra.txt")],
+            &[
+                PathBuf::from("lib.dylib"),
+                PathBuf::from("build-manifest.json"),
+            ],
         )
-        .expect_err("undeclared file must be rejected");
-        assert!(error.to_string().contains("undeclared"));
+        .expect("undeclared extras must be tolerated");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].path, "lib.dylib");
 
         // Declared file missing from extraction.
         declared.insert(

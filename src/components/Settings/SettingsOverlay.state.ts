@@ -226,6 +226,10 @@ export function createSettingsOverlayActions(
           restart_required: status.restart_required,
           error: status.error?.message ?? null,
         },
+        // The install just changed what is on disk, so any earlier check
+        // report is stale — keeping it would let the card claim the runtime is
+        // "not installed" right next to a "ready" status line.
+        runtimeUpdate: null,
       });
       // Refresh model statuses too since model actions may now be enabled.
       await refreshModelStatuses();
@@ -240,10 +244,10 @@ export function createSettingsOverlayActions(
   // `candidate_ready_restart_required`. We mirror that state and let the
   // restart banner / button drive activation.
   const updateRuntimeAction = async () => {
+    // The staged candidate supersedes the check report; downloadRuntimeAction
+    // already clears it so a later manual check stays honest instead of
+    // re-offering the staged update.
     await downloadRuntimeAction();
-    // The staged candidate supersedes the check report; clearing it keeps a
-    // later manual check honest instead of re-offering the staged update.
-    patchState({ runtimeUpdate: null });
   };
 
   const checkRuntimeUpdatesAction = async () => {
