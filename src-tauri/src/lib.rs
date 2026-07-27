@@ -137,6 +137,7 @@ pub fn run() {
             commands::remote_library::reauthorize_remote_library,
             commands::remote_library::mirror_local_library_to_remote,
             commands::remote_library::sync_active_remote_library,
+            commands::remote_library::resolve_remote_conflict,
             commands::remote_library::publish_song_to_remote,
             commands::remote_library::publish_songs_to_remote,
             commands::remote_library::get_all_upload_statuses,

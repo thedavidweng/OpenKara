@@ -1606,23 +1606,11 @@ pub(crate) fn generate_repository_id() -> String {
 // ---------------------------------------------------------------------------
 // Conflict handling
 //
-// These functions implement the three conflict resolution strategies
-// (keep-local, use-remote, cancel) and the disjoint-song auto-rebase. They
-// are part of the PR#4 API surface and will be called from the UI layer in
-// a subsequent PR. They are intentionally kept here so the executor is the
-// single source of truth for conflict resolution logic.
+// The executor is the single source of truth for conflict resolution logic.
+// `remote::sync::conflict` owns everything around it - locating the active
+// repository, pulling the winning remote database to a candidate path - so
+// these stay free of command-layer concerns.
 // ---------------------------------------------------------------------------
-
-/// Metadata describing a conflict, stored in the operation row's
-/// `error_detail` as JSON.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[allow(dead_code)]
-pub(crate) struct ConflictMetadata {
-    pub local_base_generation: i64,
-    pub remote_generation: i64,
-    pub local_operation_id: String,
-    pub affected_song_ids: Vec<String>,
-}
 
 /// Action: keep the local pending changes as a new generation after rebasing
 /// onto the winning remote generation.
@@ -1636,7 +1624,6 @@ pub(crate) struct ConflictMetadata {
 /// checking that the non-song tables (settings) have identical row counts
 /// and content hashes between the two DBs. A full row-by-row merge is NOT
 /// attempted.
-#[allow(dead_code)]
 pub(crate) fn conflict_keep_local_as_new_generation(
     ctx: &PublishContext<'_>,
     operation_id: &str,
@@ -1719,7 +1706,6 @@ pub(crate) fn conflict_keep_local_as_new_generation(
 
 /// Action: discard the local pending operation and activate the verified
 /// remote database.
-#[allow(dead_code)]
 pub(crate) fn conflict_use_remote(
     ctx: &PublishContext<'_>,
     operation_id: &str,
@@ -1785,28 +1771,8 @@ pub(crate) fn conflict_use_remote(
     Ok(())
 }
 
-/// Action: keep both sides and remain `Conflicted`. No state change beyond
-/// confirming the conflict is known.
-#[allow(dead_code)]
-pub(crate) fn conflict_cancel_for_now(
-    ctx: &PublishContext<'_>,
-    operation_id: &str,
-) -> CommandResult<()> {
-    let op = get_operation(ctx.control_db, operation_id)?
-        .ok_or_else(|| internal_error(format!("operation {operation_id} not found")))?;
-    if op.state != OperationState::Conflicted {
-        return Err(internal_error(
-            "conflict cancel-for-now requires a conflicted operation",
-        ));
-    }
-    // No transition — the operation stays conflicted. This function exists so
-    // PR#8's UI has an explicit backend action to call.
-    Ok(())
-}
-
 /// Pull the winning remote manifest + database to a conflict candidate path
 /// (NOT the active working DB). Uses the provider's download_file.
-#[allow(dead_code)]
 pub(crate) fn pull_conflict_candidate(
     provider: &dyn RemoteProvider,
     destination: &Path,

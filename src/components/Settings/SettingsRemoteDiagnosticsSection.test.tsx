@@ -11,10 +11,12 @@ import {
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { SettingsRemoteDiagnosticsSection } from "./SettingsRemoteDiagnosticsSection";
 
-const { mockGetRemoteDiagnostics, mockNotifyError } = vi.hoisted(() => ({
-  mockGetRemoteDiagnostics: vi.fn(),
-  mockNotifyError: vi.fn(),
-}));
+const { mockGetRemoteDiagnostics, mockNotifyError, mockResolveRemoteConflict } =
+  vi.hoisted(() => ({
+    mockGetRemoteDiagnostics: vi.fn(),
+    mockNotifyError: vi.fn(),
+    mockResolveRemoteConflict: vi.fn(),
+  }));
 
 vi.mock("react-i18next", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-i18next")>();
@@ -29,6 +31,7 @@ vi.mock("react-i18next", async (importOriginal) => {
 
 vi.mock("@/lib/tauri", () => ({
   getRemoteDiagnostics: mockGetRemoteDiagnostics,
+  resolveRemoteConflict: mockResolveRemoteConflict,
 }));
 
 vi.mock("@/lib/errors", () => ({
@@ -111,6 +114,66 @@ describe("SettingsRemoteDiagnosticsSection", () => {
       expect(screen.getByText("conflicted")).toBeTruthy();
     });
     expect(screen.getByText("conflict")).toBeTruthy();
+  });
+
+  test("offers both exits from a conflict and re-reads the state after", async () => {
+    // A conflicted repository used to be a dead end: the state rendered in red
+    // and nothing acted on it.
+    mockGetRemoteDiagnostics.mockResolvedValue({
+      has_active_remote: true,
+      local_state: "conflicted",
+      committed_generation: 10,
+      repository_id: null,
+      writer_id: null,
+      local_base_generation: 9,
+      local_db_digest: null,
+      active_operation_id: "op-1",
+      last_success_at_ms: null,
+      last_error_code: "remote_conflict",
+      recent_operations: [],
+    });
+    mockResolveRemoteConflict.mockResolvedValue(undefined);
+
+    render(<SettingsRemoteDiagnosticsSection />);
+    await waitFor(() => {
+      expect(screen.getByText("Keep my changes")).toBeTruthy();
+    });
+
+    screen.getByText("Keep my changes").click();
+    await waitFor(() => {
+      expect(mockResolveRemoteConflict).toHaveBeenCalledWith("keep_local");
+    });
+    // The panel must reflect the outcome rather than the state it acted on.
+    await waitFor(() => {
+      expect(mockGetRemoteDiagnostics).toHaveBeenCalledTimes(2);
+    });
+
+    screen.getByText("Use the remote version").click();
+    await waitFor(() => {
+      expect(mockResolveRemoteConflict).toHaveBeenCalledWith("use_remote");
+    });
+  });
+
+  test("keeps the conflict exits hidden when the repository is clean", async () => {
+    mockGetRemoteDiagnostics.mockResolvedValue({
+      has_active_remote: true,
+      local_state: "clean",
+      committed_generation: 10,
+      repository_id: null,
+      writer_id: null,
+      local_base_generation: 10,
+      local_db_digest: null,
+      active_operation_id: null,
+      last_success_at_ms: null,
+      last_error_code: null,
+      recent_operations: [],
+    });
+
+    render(<SettingsRemoteDiagnosticsSection />);
+    await waitFor(() => {
+      expect(screen.getByText("clean")).toBeTruthy();
+    });
+    expect(screen.queryByText("Keep my changes")).toBeNull();
   });
 
   test("renders recent operations list", async () => {

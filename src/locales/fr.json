@@ -572,7 +572,11 @@
       "repositoryId": "ID du dépôt",
       "lastError": "Dernière erreur",
       "recentOps": "Opérations récentes",
-      "refresh": "Actualiser"
+      "refresh": "Actualiser",
+      "conflictTitle": "Votre bibliothèque a changé côté distant avant la publication de ces modifications.",
+      "conflictBody": "Conserver vos modifications les republie par-dessus la version distante. Cela est refusé quand les deux côtés ont modifié les mêmes morceaux, car choisir automatiquement pourrait faire perdre du travail.",
+      "conflictKeepLocal": "Conserver mes modifications",
+      "conflictUseRemote": "Utiliser la version distante"
     },
     "modelUpdate": {
       "checkButton": "Rechercher des mises à jour",

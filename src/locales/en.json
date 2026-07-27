@@ -571,7 +571,11 @@
       "repositoryId": "Repository ID",
       "lastError": "Last error",
       "recentOps": "Recent operations",
-      "refresh": "Refresh"
+      "refresh": "Refresh",
+      "conflictTitle": "Your library changed on the remote before these edits published.",
+      "conflictBody": "Keeping your changes republishes them on top of the remote version. That is refused when both sides changed the same songs, because picking a winner automatically could lose work.",
+      "conflictKeepLocal": "Keep my changes",
+      "conflictUseRemote": "Use the remote version"
     },
     "modelUpdate": {
       "checkButton": "Check for updates",

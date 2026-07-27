@@ -570,7 +570,11 @@
       "repositoryId": "儲存庫 ID",
       "lastError": "上次錯誤",
       "recentOps": "近期操作",
-      "refresh": "重新整理"
+      "refresh": "重新整理",
+      "conflictTitle": "這些修改發佈之前，遠端資料庫已經變了。",
+      "conflictBody": "保留你的修改會把它們重新發佈到遠端版本之上。兩邊改了同一首歌時會被拒絕——自動選一方可能丟掉工作。",
+      "conflictKeepLocal": "保留我的修改",
+      "conflictUseRemote": "使用遠端版本"
     },
     "modelUpdate": {
       "checkButton": "檢查更新",
