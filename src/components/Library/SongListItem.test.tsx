@@ -418,7 +418,6 @@ describe("SongListItem", () => {
       />,
     );
 
-    // Compact chip only — the global task list owns the full bar for singles.
     expect(markup).toContain("55%");
     expect(markup).toContain("library.cancelSeparation");
     expect(markup).not.toContain('role="progressbar"');
@@ -481,7 +480,6 @@ describe("SongListItem", () => {
     expect(markup).toContain('role="progressbar"');
     expect(markup).toContain('aria-label="progress.separating:Hold The Girl"');
     expect(markup).toContain("h-1 w-full overflow-hidden rounded-full");
-    // Aggregate cancel lives on the global bar during batch.
     expect(markup).not.toContain("library.cancelSeparation");
 
     mockLibraryState.separationStatuses = {};
