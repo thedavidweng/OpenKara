@@ -22,6 +22,14 @@ interface ActiveTask {
 
 interface TaskProgressBarProps extends Omit<ActiveTask, "key"> {
   className?: string;
+  /**
+   * Bar-only mode for embedding under a song row during batch work, where the
+   * song title and percent already live in the row chrome. Full mode is the
+   * global task list (label + optional cancel).
+   */
+  compact?: boolean;
+  /** Accessible name when `compact` hides the visible label. */
+  ariaLabel?: string;
 }
 
 export function TaskProgressBar({
@@ -31,7 +39,39 @@ export function TaskProgressBar({
   indeterminate,
   onCancel,
   className,
+  compact = false,
+  ariaLabel,
 }: TaskProgressBarProps) {
+  // Defence in depth: backend percents are 0–100, but a bad value must not
+  // stretch the fill past the track (track is overflow-hidden either way).
+  const clampedPercent = Math.min(100, Math.max(0, percent));
+
+  if (compact) {
+    return (
+      <div
+        className={className ?? "w-full"}
+        role="progressbar"
+        aria-label={ariaLabel || label || undefined}
+        aria-valuenow={indeterminate ? undefined : clampedPercent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        <div className="h-1 w-full overflow-hidden rounded-full bg-[var(--color-border)]">
+          {indeterminate ? (
+            <div className="relative h-full w-full overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--color-accent)_22%,transparent)]">
+              <div className="model-indeterminate-bar absolute inset-y-0 left-0 rounded-full bg-[var(--color-accent)] will-change-transform" />
+            </div>
+          ) : (
+            <div
+              className="motion-surface h-full rounded-full bg-[var(--color-accent)]"
+              style={{ width: `${clampedPercent}%` }}
+            />
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={className ?? "space-y-1"}>
       <div className="flex items-center justify-between">
@@ -60,7 +100,7 @@ export function TaskProgressBar({
         ) : (
           <div
             className="motion-surface h-full rounded-full bg-[var(--color-accent)]"
-            style={{ width: `${percent}%` }}
+            style={{ width: `${clampedPercent}%` }}
           />
         )}
       </div>
@@ -169,7 +209,8 @@ function useActiveTasks(modelDownloadCompleteFlash: boolean): ActiveTask[] {
     });
   }
 
-  // Batch separation
+  // Batch separation — aggregate progress only. Per-song progress lives on
+  // the active library row so the two surfaces stay complementary, not twin.
   if (batchSeparation != null) {
     const done = batchSeparation.completed + batchSeparation.failed;
     if (done < batchSeparation.total) {
@@ -193,7 +234,9 @@ function useActiveTasks(modelDownloadCompleteFlash: boolean): ActiveTask[] {
     }
   }
 
-  // Single-song separation (only when NOT part of a batch)
+  // Single-song separation is the global task list's job. The song row keeps
+  // only a compact status chip (spinner / % / cancel) so we never paint the
+  // same percent bar twice.
   if (batchSeparation == null) {
     const runningSep = Object.values(separationStatuses).find(
       (s) => s.state === "running",

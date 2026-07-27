@@ -111,13 +111,21 @@ export function SongList() {
 
   const orderedHashes = displaySongs.map((s) => s.hash);
 
-  // TanStack Virtual returns non-memoizable functions by design
+  // TanStack Virtual returns non-memoizable functions by design.
+  // measureElement remeasures when a row expands (batch per-song progress bar)
+  // so absolute-positioned neighbours do not overlap a taller running row.
   const virtualizer = useVirtualizer({
     count: displaySongs.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => SONG_ROW_ESTIMATE_PX,
     gap: SONG_ROW_GAP_PX,
     overscan: 8,
+    measureElement:
+      typeof window !== "undefined" &&
+      // Firefox early ResizeObserver loops; fall back to estimate there.
+      !/firefox/i.test(navigator.userAgent)
+        ? (element) => element.getBoundingClientRect().height
+        : undefined,
   });
 
   const isAtLeast600Px = useAtLeast600Px();
@@ -187,6 +195,8 @@ export function SongList() {
             return (
               <div
                 key={song.hash}
+                data-index={virtualRow.index}
+                ref={virtualizer.measureElement}
                 className="absolute left-0 top-0 w-full"
                 style={{ transform: `translateY(${virtualRow.start}px)` }}
               >
