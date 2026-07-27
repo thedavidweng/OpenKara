@@ -14,7 +14,7 @@ use crate::{
     commands::error::{CommandError, ErrorCode, FallbackAction},
     library,
     library_root::LibraryRoot,
-    remote::errors::{RemoteError, RemoteErrorKind},
+    remote::errors::RemoteErrorKind,
     services::{
         cdg::{load_cdg_packets_for_song, CdgLoadResult},
         playback_source::{
@@ -858,15 +858,7 @@ impl ReconnectError {
     }
 }
 
-impl RemoteErrorKind {
-    /// Convert a `RemoteErrorKind` to a [`ReconnectError`] for the fetch
-    /// event thread's failure classification. Kept here (near the call
-    /// site) so the reconnect module stays free of fetch-event specifics.
-    #[allow(dead_code)]
-    fn to_reconnect_error(self) -> ReconnectError {
-        ReconnectError::from_remote(&RemoteError::from_kind(self))
-    }
-}
+impl RemoteErrorKind {}
 
 /// Captures the current song_id and latest request id before decode, then
 /// sends `AttachStems` to the coordinator. A stale or switched song returns

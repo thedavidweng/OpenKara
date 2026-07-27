@@ -1,5 +1,5 @@
 use crate::{
-    commands::error::{internal_error, CommandError, CommandResult},
+    commands::error::{CommandError, CommandResult},
     config::RegisteredLibrary,
     library::error::LibraryError,
     remote::errors::{
@@ -854,47 +854,6 @@ pub(crate) fn upload_relative_file_to_remote(
     Ok(())
 }
 
-// Kept for RemoteProvider::upload_directory; CAS publish no longer bulk-uploads.
-#[allow(dead_code)]
-pub(crate) fn upload_directory_to_remote(
-    library: &RegisteredLibrary,
-    secret: &WebDavSecret,
-    relative_directory: &str,
-) -> CommandResult<()> {
-    let local_root = library.working_copy_root().ok_or_else(|| {
-        CommandError::from(LibraryError::Internal(
-            "remote repository is missing a cached working copy".to_string(),
-        ))
-    })?;
-    let base = local_root.join(relative_directory);
-    if !base.exists() {
-        return Ok(());
-    }
-
-    for entry in fs::read_dir(&base).map_err(|error| {
-        CommandError::from(LibraryError::Internal(format!(
-            "failed to read {}: {error}",
-            base.display()
-        )))
-    })? {
-        let entry = entry.map_err(internal_error)?;
-        let path = entry.path();
-        let relative = path
-            .strip_prefix(&local_root)
-            .map_err(internal_error)?
-            .to_string_lossy()
-            .replace('\\', "/");
-
-        if path.is_dir() {
-            upload_directory_to_remote(library, secret, &relative)?;
-        } else {
-            upload_relative_file_to_remote(library, secret, &relative)?;
-        }
-    }
-
-    Ok(())
-}
-
 pub(crate) fn delete_relative_path_from_remote(
     secret: &WebDavSecret,
     relative_path: &str,
@@ -1284,10 +1243,6 @@ impl RemoteProvider for WebDAVProvider<'_> {
                 Ok(())
             }
         }
-    }
-
-    fn upload_directory(&self, relative_path: &str) -> CommandResult<()> {
-        upload_directory_to_remote(self.library, &self.secret, relative_path)
     }
 
     fn delete_path(&self, relative_path: &str) -> CommandResult<()> {

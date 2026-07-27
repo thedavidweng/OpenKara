@@ -1,5 +1,5 @@
 use crate::{
-    commands::error::{internal_error, CommandError, CommandResult},
+    commands::error::{CommandError, CommandResult},
     config::RegisteredLibrary,
     library::error::LibraryError,
     remote::{
@@ -561,7 +561,6 @@ fn google_drive_upload_file_bytes(
 
 /// Chunk size for Google Drive resumable uploads. Google recommends 8 MiB for
 /// most files; we use 8 MiB to match the Dropbox chunk size.
-#[allow(dead_code)]
 const GOOGLE_DRIVE_RESUMABLE_CHUNK_SIZE: usize = 8 * 1024 * 1024;
 
 /// Initiate a resumable upload session for a new file. Returns the session URL
@@ -1174,58 +1173,6 @@ pub(crate) fn google_drive_upload_relative_file_to_remote(
     Ok(())
 }
 
-// Kept for RemoteProvider::upload_directory; CAS publish no longer bulk-uploads.
-#[allow(dead_code)]
-pub(crate) fn google_drive_upload_directory_to_remote(
-    app_data_dir: &Path,
-    library: &RegisteredLibrary,
-    secret: &GoogleDriveSecret,
-    relative_directory: &str,
-    root_folder_id: &str,
-) -> CommandResult<()> {
-    let local_root = library.working_copy_root().ok_or_else(|| {
-        CommandError::from(LibraryError::Internal(
-            "remote repository is missing a cached working copy".to_string(),
-        ))
-    })?;
-    let base = local_root.join(relative_directory);
-    if !base.exists() {
-        return Ok(());
-    }
-    for entry in fs::read_dir(&base).map_err(|error| {
-        CommandError::from(LibraryError::Internal(format!(
-            "failed to read {}: {error}",
-            base.display()
-        )))
-    })? {
-        let entry = entry.map_err(internal_error)?;
-        let path = entry.path();
-        let relative = path
-            .strip_prefix(&local_root)
-            .map_err(internal_error)?
-            .to_string_lossy()
-            .replace('\\', "/");
-        if path.is_dir() {
-            google_drive_upload_directory_to_remote(
-                app_data_dir,
-                library,
-                secret,
-                &relative,
-                root_folder_id,
-            )?;
-        } else {
-            google_drive_upload_relative_file_to_remote(
-                app_data_dir,
-                library,
-                secret,
-                &relative,
-                root_folder_id,
-            )?;
-        }
-    }
-    Ok(())
-}
-
 struct GoogleDriveBootstrapStorage<'a> {
     app_data_dir: &'a Path,
     library: &'a RegisteredLibrary,
@@ -1547,22 +1494,6 @@ impl RemoteProvider for GoogleDriveProvider<'_> {
             ))
         })?;
         google_drive_upload_relative_file_to_remote(
-            self.app_data_dir,
-            self.library,
-            &secret,
-            relative_path,
-            root_folder_id,
-        )
-    }
-
-    fn upload_directory(&self, relative_path: &str) -> CommandResult<()> {
-        let secret = self.secret.borrow();
-        let root_folder_id = self.library.remote_root_locator().ok_or_else(|| {
-            CommandError::from(LibraryError::Internal(
-                "remote repository is missing a remote locator".to_owned(),
-            ))
-        })?;
-        google_drive_upload_directory_to_remote(
             self.app_data_dir,
             self.library,
             &secret,

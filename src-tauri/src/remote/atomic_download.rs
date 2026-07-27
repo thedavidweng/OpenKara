@@ -261,7 +261,6 @@ fn part_path(destination: &Path, operation_id: &str) -> PathBuf {
 
 /// Chunk size for resumable downloads. 8 MiB balances memory, round-trip
 /// count, and the granularity of resume progress.
-#[allow(dead_code)]
 const RESUMABLE_DOWNLOAD_CHUNK_SIZE: u64 = 8 * 1024 * 1024;
 
 /// Options for a resumable atomic download. Extends [`AtomicDownloadOptions`]
@@ -510,6 +509,7 @@ fn download_to_part_resumable(
 
 /// Run a resumable download: resume from the verified offset using
 /// `download_range`, persisting progress after each chunk.
+#[allow(dead_code)]
 fn run_resumable_download(
     provider: &dyn RemoteProvider,
     opts: &ResumableDownloadOptions,
@@ -622,6 +622,7 @@ fn run_resumable_download(
 
 /// Validate the temp file's size and digest, fsync, then atomically rename it
 /// over the destination. Shared by the resumable and non-resumable paths.
+#[allow(dead_code)]
 fn validate_and_rename(
     temp_path: &Path,
     destination: &Path,
@@ -1401,9 +1402,6 @@ mod tests {
         }
 
         fn upload_file(&self, _relative_path: &str) -> CommandResult<()> {
-            Ok(())
-        }
-        fn upload_directory(&self, _relative_path: &str) -> CommandResult<()> {
             Ok(())
         }
         fn delete_path(&self, _relative_path: &str) -> CommandResult<()> {
@@ -2206,9 +2204,6 @@ mod tests {
         }
 
         fn upload_file(&self, _relative_path: &str) -> CommandResult<()> {
-            Ok(())
-        }
-        fn upload_directory(&self, _relative_path: &str) -> CommandResult<()> {
             Ok(())
         }
         fn delete_path(&self, _relative_path: &str) -> CommandResult<()> {

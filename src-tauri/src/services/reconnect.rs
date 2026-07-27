@@ -35,11 +35,10 @@
 
 use crate::audio::remote_source::FetchEvent;
 use crate::remote::cache_catalog::CachePinGuard;
-use crate::remote::errors::{RemoteError, RemoteErrorKind};
 #[cfg(test)]
 use crate::remote::net_policy::SeededJitter;
 use crate::remote::net_policy::{full_jitter_delay, production_sleep, RetryPolicy};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
@@ -105,26 +104,6 @@ impl ReconnectError {
             self,
             ReconnectError::Transient | ReconnectError::CredentialExpired
         )
-    }
-
-    /// Map a typed `RemoteError` to a reconnect classification. Non-retryable
-    /// kinds (`PermissionDenied`, `StaleRequest`, `RemoteConflict`, …) map to
-    /// `NotFound`/`Stale`/`Permanent` so the coordinator does not loop on a
-    /// permanent condition.
-    pub(crate) fn from_remote(error: &RemoteError) -> Self {
-        match error.kind {
-            RemoteErrorKind::NetworkUnavailable | RemoteErrorKind::RateLimited => {
-                ReconnectError::Transient
-            }
-            RemoteErrorKind::AuthenticationExpired => ReconnectError::CredentialExpired,
-            RemoteErrorKind::PermissionDenied => ReconnectError::NotFound,
-            RemoteErrorKind::StaleRequest => ReconnectError::Stale,
-            RemoteErrorKind::RemoteConflict
-            | RemoteErrorKind::ProviderCapabilityUnavailable
-            | RemoteErrorKind::RemoteIntegrityFailed
-            | RemoteErrorKind::DiskFull
-            | RemoteErrorKind::OperationCancelled => ReconnectError::Permanent,
-        }
     }
 }
 
@@ -205,15 +184,14 @@ pub(crate) struct ReresolvedSource<S> {
 #[derive(Debug)]
 pub(crate) struct ReconnectSuccess<S> {
     pub source: S,
-    /// `true` when the source came from the cache catalog fast path. Read by
-    /// PR #8 to distinguish a cache-served reconnect from a network fetch.
-    // used by PR#8: reconnect UI
+    /// `true` when the source came from the cache catalog fast path.
+    ///
+    /// Carried for a reconnect UI that was never built. The coordinator
+    /// already emits `Resync` when the seek was inexact, so nothing downstream
+    /// reads either field today.
     #[allow(dead_code)]
     pub from_cache: bool,
-    /// The seek outcome. Read by PR #8 to render a resync indicator; the
-    /// `Resync` event is already emitted by the coordinator when
-    /// `is_resync()` is true.
-    // used by PR#8: reconnect UI
+    /// The seek outcome the source reported after the reconnect.
     #[allow(dead_code)]
     pub seek: SeekOutcome,
     /// RAII runtime: cache pin guard and fetch event receiver. The caller
@@ -448,14 +426,6 @@ where
         event_sink,
         &production_sleep,
     )
-}
-
-/// A generation counter used to observe whether a credential refresh advanced
-/// the credential generation (PR #5 single-flight). Tests increment it to
-/// assert the coordinator triggered a refresh.
-#[allow(dead_code)]
-pub(crate) fn credential_generation_observer() -> Arc<AtomicU64> {
-    Arc::new(AtomicU64::new(0))
 }
 
 #[cfg(test)]
@@ -777,33 +747,5 @@ mod tests {
         let success = result.expect("cache fast path should succeed");
         assert!(success.from_cache);
         assert_eq!(success.seek.actual_ms, 1000);
-    }
-
-    #[test]
-    fn from_remote_classifies_kinds() {
-        assert_eq!(
-            ReconnectError::from_remote(&RemoteError::from_kind(
-                RemoteErrorKind::NetworkUnavailable
-            )),
-            ReconnectError::Transient
-        );
-        assert_eq!(
-            ReconnectError::from_remote(&RemoteError::from_kind(
-                RemoteErrorKind::AuthenticationExpired
-            )),
-            ReconnectError::CredentialExpired
-        );
-        assert_eq!(
-            ReconnectError::from_remote(&RemoteError::from_kind(RemoteErrorKind::PermissionDenied)),
-            ReconnectError::NotFound
-        );
-        assert_eq!(
-            ReconnectError::from_remote(&RemoteError::from_kind(RemoteErrorKind::StaleRequest)),
-            ReconnectError::Stale
-        );
-        assert_eq!(
-            ReconnectError::from_remote(&RemoteError::from_kind(RemoteErrorKind::RemoteConflict)),
-            ReconnectError::Permanent
-        );
     }
 }

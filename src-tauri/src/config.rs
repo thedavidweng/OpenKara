@@ -915,6 +915,63 @@ mod tests {
         assert_eq!(loaded.lyrics_font_step, Some(1));
     }
 
+    /// The `ExecutionProviderPlatform` seam exists so the policy table can be
+    /// exercised for every platform from any host. The table was reachable but
+    /// unexercised, which is why the non-host variants read as dead code.
+    #[test]
+    fn execution_provider_policy_holds_for_every_platform() {
+        use ExecutionProviderPlatform as Platform;
+        use ExecutionProviderPreference as Ep;
+
+        // DirectML is Windows-only.
+        assert!(Ep::DirectMl.is_available_for(Platform::Windows));
+        for platform in [
+            Platform::MacosAppleSilicon,
+            Platform::MacosIntel,
+            Platform::Linux,
+            Platform::Other,
+        ] {
+            assert!(
+                !Ep::DirectMl.is_available_for(platform),
+                "DirectML must not be offered on {platform:?}"
+            );
+        }
+
+        // CPU and XNNPACK are available everywhere.
+        for platform in [
+            Platform::Windows,
+            Platform::MacosAppleSilicon,
+            Platform::MacosIntel,
+            Platform::Linux,
+            Platform::Other,
+        ] {
+            assert!(Ep::Cpu.is_available_for(platform));
+            assert!(Ep::Xnnpack.is_available_for(platform));
+        }
+
+        // Measured defaults (#170): XNNPACK wins only on Apple Silicon.
+        assert_eq!(Ep::default_for(Platform::MacosAppleSilicon), Ep::Xnnpack);
+        assert_eq!(Ep::default_for(Platform::Windows), Ep::DirectMl);
+        for platform in [Platform::MacosIntel, Platform::Linux, Platform::Other] {
+            assert_eq!(
+                Ep::default_for(platform),
+                Ep::Cpu,
+                "{platform:?} must default to the ORT CPU EP"
+            );
+        }
+
+        // Every default must be one the platform actually offers.
+        for platform in [
+            Platform::Windows,
+            Platform::MacosAppleSilicon,
+            Platform::MacosIntel,
+            Platform::Linux,
+            Platform::Other,
+        ] {
+            assert!(Ep::default_for(platform).is_available_for(platform));
+        }
+    }
+
     #[test]
     fn effective_stem_mode_defaults_to_four_stem() {
         let config = AppConfig::default();

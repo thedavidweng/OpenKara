@@ -10,7 +10,7 @@
 //! credentials, or raw provider response bodies. Only sanitized, stable code
 //! strings are persisted to `remote_operations.error_code`.
 
-use crate::commands::error::{CommandError, CommandResult};
+use crate::commands::error::CommandError;
 
 /// Capabilities a remote provider supports. Providers report these so the
 /// operation executor can fail closed when a safe-write path requires a
@@ -336,18 +336,6 @@ pub(crate) fn verify_content_range(header: &str, offset: u64, length: u64) -> Re
 
 /// Result alias for operations that produce a typed `RemoteError`.
 pub(crate) type RemoteResult<T> = std::result::Result<T, RemoteError>;
-
-/// Wrap a `CommandResult` into a `RemoteResult`, mapping the opaque
-/// `CommandError` to a `NetworkUnavailable` kind (the command layer already
-/// sanitized the message). Used when a provider helper returns a
-/// `CommandError` but the caller needs the typed kind.
-#[allow(dead_code)]
-pub(crate) fn remote_result_from_command<T>(
-    result: CommandResult<T>,
-    fallback_kind: RemoteErrorKind,
-) -> RemoteResult<T> {
-    result.map_err(|err| RemoteError::new(fallback_kind, err.message))
-}
 
 #[cfg(test)]
 mod tests {

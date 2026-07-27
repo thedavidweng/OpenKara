@@ -277,12 +277,6 @@ pub(crate) fn staging_dir_for_operation(operation_id: &str) -> String {
     format!(".openkara/staging/{operation_id}")
 }
 
-/// Build the relative tombstones directory path: `.openkara/tombstones`.
-#[allow(dead_code)]
-pub(crate) fn tombstones_dir() -> &'static str {
-    ".openkara/tombstones"
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -352,9 +346,6 @@ mod tests {
             std::fs::write(dest, bytes).map_err(|e| internal_error(e.to_string()))
         }
         fn upload_file(&self, _path: &str) -> CommandResult<()> {
-            Ok(())
-        }
-        fn upload_directory(&self, _path: &str) -> CommandResult<()> {
             Ok(())
         }
         fn delete_path(&self, _path: &str) -> CommandResult<()> {

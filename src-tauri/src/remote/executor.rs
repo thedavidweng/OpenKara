@@ -69,8 +69,8 @@ pub(crate) struct PublishContext<'a> {
 
 /// Outcome of a publish execution, for inspection by callers and tests.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub(crate) struct PublishOutcome {
+    #[allow(dead_code)]
     pub operation_id: String,
     pub target_generation: i64,
     pub committed_manifest_revision: Option<String>,
@@ -1377,17 +1377,6 @@ fn record_failure(
 /// needs wall-clock time to finish. 5 minutes is the minimum safety window.
 const GC_SAFETY_DELAY_MS: i64 = 300_000;
 
-/// Schedule a deferred GC operation row for unreachable staging data and old
-/// database generations. The GC executor (`execute_gc`) picks up the row after
-/// the safety delay and deletes generations older than
-/// `committed_generation - 1` (the previous generation is retained as a
-/// rollback safety net for the delay window).
-#[allow(dead_code)] // retained for non-TX call sites / future callers
-fn schedule_gc(ctx: &PublishContext<'_>, committed_generation: i64) -> CommandResult<()> {
-    let now = current_unix_time_ms();
-    schedule_gc_on_conn(ctx.control_db, ctx.library_id, committed_generation, now)
-}
-
 fn schedule_gc_on_conn(
     connection: &Connection,
     library_id: &str,
@@ -1794,7 +1783,6 @@ pub(crate) fn pull_conflict_candidate(
 // ---------------------------------------------------------------------------
 
 /// Read the set of song hashes from a SQLite database's `songs` table.
-#[allow(dead_code)]
 fn song_hashes_in_db(db_path: &Path) -> CommandResult<std::collections::HashSet<String>> {
     if !db_path.exists() {
         return Ok(std::collections::HashSet::new());
@@ -1813,7 +1801,6 @@ fn song_hashes_in_db(db_path: &Path) -> CommandResult<std::collections::HashSet<
 
 /// Compare the `settings` table content between two databases. Returns true
 /// when the row counts and a hash of all rows match.
-#[allow(dead_code)]
 fn settings_tables_match(local_db: &Path, remote_db: &Path) -> CommandResult<bool> {
     let local_hash = settings_table_hash(local_db)?;
     let remote_hash = settings_table_hash(remote_db)?;
@@ -1821,7 +1808,6 @@ fn settings_tables_match(local_db: &Path, remote_db: &Path) -> CommandResult<boo
 }
 
 /// Compute a deterministic hash of the `settings` table rows (key + value).
-#[allow(dead_code)]
 fn settings_table_hash(db_path: &Path) -> CommandResult<Option<String>> {
     if !db_path.exists() {
         return Ok(None);
@@ -2014,10 +2000,6 @@ mod tests {
                     }
                 }
             }
-            Ok(())
-        }
-
-        fn upload_directory(&self, _path: &str) -> CommandResult<()> {
             Ok(())
         }
 
