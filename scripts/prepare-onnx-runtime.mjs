@@ -102,20 +102,38 @@ function sha256Hex(buffer) {
   return createHash("sha256").update(buffer).digest("hex");
 }
 
+const TOOL_PROBES = {
+  powershell: ["-NoProfile", "-NonInteractive", "-Command", "exit 0"],
+  tar: ["--version"],
+  unzip: ["-v"],
+};
+
 function ensureSystemTool(toolName) {
   try {
-    execFileSync(toolName, ["--version"], { stdio: "ignore" });
+    execFileSync(toolName, TOOL_PROBES[toolName] ?? ["--version"], {
+      stdio: "ignore",
+    });
   } catch {
     throw new Error(`required tool '${toolName}' is not installed`);
   }
 }
 
-// .zip archives need PowerShell Expand-Archive on Windows (GNU tar in Git
-// Bash cannot read ZIP); macOS/Linux bsdtar handles both. .tar.gz uses tar
-// everywhere, with --force-local on Windows so "C:\path" is not host:path.
+// .zip archives use Expand-Archive on Windows and unzip on macOS/Linux.
+// .tar.gz uses tar, with --force-local on Windows so "C:\path" is not
+// interpreted as host:path.
+function isZipArchive(archivePath) {
+  return archivePath.endsWith(".zip") || archivePath.endsWith(".nupkg");
+}
+
 function extractArchive(archivePath, destDir) {
-  const isZip = archivePath.endsWith(".zip") || archivePath.endsWith(".nupkg");
-  if (isZip && process.platform === "win32") {
+  if (isZipArchive(archivePath)) {
+    if (process.platform !== "win32") {
+      execFileSync("unzip", ["-q", archivePath, "-d", destDir], {
+        stdio: "inherit",
+      });
+      return;
+    }
+
     const zipStub = archivePath.endsWith(".zip")
       ? archivePath
       : archivePath + ".zip";
@@ -171,7 +189,13 @@ if (existsSync(MANIFEST_PATH)) {
   }
 }
 
-ensureSystemTool("tar");
+ensureSystemTool(
+  isZipArchive(runtime.filename)
+    ? process.platform === "win32"
+      ? "powershell"
+      : "unzip"
+    : "tar",
+);
 
 const tempRoot = mkdtempSync(join(os.tmpdir(), "openkara-ort-"));
 const archivePath = join(tempRoot, runtime.filename);

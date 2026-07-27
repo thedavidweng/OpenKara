@@ -52,6 +52,12 @@ describe("ONNX Runtime packaging", () => {
       "DirectML.dll",
     );
     expect(windowsRuntime.runtime.companion_files).toContain("DirectML.dll");
+    expect(windowsRuntime.filename).toMatch(/\.zip$/);
+
+    // GNU tar does not extract ZIP files. Keep the fresh staging path
+    // portable even when a CI cache has not already supplied the runtime.
+    expect(prepareScript).toMatch(/execFileSync\(\s*"unzip"/);
+    expect(prepareScript).toMatch(/execFileSync\(\s*"powershell"/);
   });
 
   test("keeps Flatpak ONNX Runtime sources aligned with the catalog snapshot", () => {
