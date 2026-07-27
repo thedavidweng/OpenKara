@@ -71,7 +71,6 @@ use tauri::AppHandle;
 
 /// Handle returned by `record_prepared_operation` so the caller can transition
 /// the durable row to `pending` after the local mutation commits.
-#[allow(dead_code)] // library_id is read on the production projection path
 pub struct PreparedOperation {
     pub operation_id: String,
     pub library_id: String,
@@ -287,18 +286,6 @@ mod sync_backend {
             song_ids,
         )
     }
-
-    /// SQLite transaction: Pending + Dirty for an op that already has song_ids.
-    #[allow(dead_code)]
-    pub fn mark_operation_pending_and_dirty(
-        state: &AppState,
-        prepared: &PreparedOperation,
-    ) -> CommandResult<()> {
-        let conn = state.remote.control_db.lock().map_err(|_| {
-            crate::commands::error::state_lock_error("control DB lock was poisoned")
-        })?;
-        control_db::mark_pending_and_dirty_tx(&conn, &prepared.operation_id, &prepared.library_id)
-    }
 }
 
 #[cfg(test)]
@@ -336,16 +323,6 @@ mod sync_backend {
 
     pub fn set_prepare_result(result: Result<(), CommandError>) {
         PREPARE_RESULT.with(|r| *r.borrow_mut() = result);
-    }
-
-    #[allow(dead_code)]
-    pub fn set_publish_result(result: Result<(), CommandError>) {
-        PUBLISH_RESULT.with(|r| *r.borrow_mut() = result);
-    }
-
-    #[allow(dead_code)]
-    pub fn set_mirror_result(result: Result<(), CommandError>) {
-        MIRROR_RESULT.with(|r| *r.borrow_mut() = result);
     }
 
     pub fn active_remote_library_id(_state: &AppState) -> CommandResult<Option<String>> {

@@ -31,6 +31,23 @@ export function SettingsRemoteDiagnosticsSection() {
     void refresh();
   }, [refresh]);
 
+  const [resolving, setResolving] = useState(false);
+
+  const resolveConflict = useCallback(
+    async (resolution: api.RemoteConflictResolution) => {
+      setResolving(true);
+      try {
+        await api.resolveRemoteConflict(resolution);
+        await refresh();
+      } catch (err) {
+        notifyError(err);
+      } finally {
+        setResolving(false);
+      }
+    },
+    [refresh],
+  );
+
   // Hide the section when no remote library is active.
   if (!diagnostics || !diagnostics.has_active_remote) {
     return null;
@@ -53,6 +70,43 @@ export function SettingsRemoteDiagnosticsSection() {
           "Repository health, generation, and recent operation outcomes.",
       })}
     >
+      {diagnostics.local_state === "conflicted" && (
+        <div className="space-y-2 rounded-lg border border-[var(--color-destructive)]/40 bg-[var(--color-destructive)]/8 p-3">
+          <p className="text-[12px] text-[var(--color-text)]">
+            {t("settings.remoteDiagnostics.conflictTitle", {
+              defaultValue:
+                "Your library changed on the remote before these edits published.",
+            })}
+          </p>
+          <p className="text-[11px] text-[var(--color-text-dim)]">
+            {t("settings.remoteDiagnostics.conflictBody", {
+              defaultValue:
+                "Keeping your changes republishes them on top of the remote version. That is refused when both sides changed the same songs, because picking a winner automatically could lose work.",
+            })}
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => void resolveConflict("keep_local")}
+              disabled={resolving}
+              className="rounded-md border border-[var(--color-border-light)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] disabled:opacity-60"
+            >
+              {t("settings.remoteDiagnostics.conflictKeepLocal", {
+                defaultValue: "Keep my changes",
+              })}
+            </button>
+            <button
+              onClick={() => void resolveConflict("use_remote")}
+              disabled={resolving}
+              className="rounded-md border border-[var(--color-border-light)] px-3 py-1.5 text-[12px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-hover)] disabled:opacity-60"
+            >
+              {t("settings.remoteDiagnostics.conflictUseRemote", {
+                defaultValue: "Use the remote version",
+              })}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-3">
         <div className="space-y-1 text-[12px] text-[var(--color-text-dim)]">
           <div className="flex justify-between">

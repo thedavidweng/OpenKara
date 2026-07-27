@@ -139,7 +139,7 @@ pub(crate) use registry::{
 pub(crate) use sync::{
     active_remote_library, ensure_remote_file_cached, get_all_upload_statuses,
     mirror_local_library_to_remote, publish_song_to_remote, publish_songs_to_remote,
-    sync_active_remote_library,
+    resolve_active_remote_conflict, sync_active_remote_library, ConflictResolution,
 };
 pub use types::{
     RemoteAuthSession, RemoteAuthStart, RemoteAuthState, RemoteAuthStatus, RemoteLibraryCandidate,

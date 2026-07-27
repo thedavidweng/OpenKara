@@ -62,7 +62,6 @@ use tempfile::TempDir;
 /// A scriptable fault-injection provider. Each behavior is configured via the
 /// builder methods so a test can compose multiple fault modes (e.g. "fail the
 /// first download with 503, then succeed").
-#[allow(dead_code)]
 struct FaultInjectionProvider {
     files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     revisions: Arc<Mutex<HashMap<String, String>>>,
@@ -87,6 +86,7 @@ struct FaultInjectionProvider {
     /// Working copy root for reading files during `upload_file`.
     working_copy_root: Option<PathBuf>,
     /// Recorded sleep delays observed by the retry driver (for backoff tests).
+    #[allow(dead_code)]
     recorded_delays: Arc<Mutex<Vec<Duration>>>,
     /// Credential generation counter, incremented by `refresh_credentials`.
     credential_generation: Arc<Mutex<u64>>,
@@ -108,7 +108,6 @@ enum FaultBehavior {
     /// Sleep for the configured duration before succeeding (slow response).
     Slow(Duration),
 }
-
 #[allow(dead_code)]
 impl FaultInjectionProvider {
     fn new() -> Self {
@@ -422,10 +421,6 @@ impl RemoteProvider for FaultInjectionProvider {
                 self.revisions.lock().unwrap().insert(path.to_owned(), rev);
             }
         }
-        Ok(())
-    }
-
-    fn upload_directory(&self, _path: &str) -> CommandResult<()> {
         Ok(())
     }
 

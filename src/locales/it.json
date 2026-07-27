@@ -572,7 +572,11 @@
       "repositoryId": "ID repository",
       "lastError": "Ultimo errore",
       "recentOps": "Operazioni recenti",
-      "refresh": "Aggiorna"
+      "refresh": "Aggiorna",
+      "conflictTitle": "La libreria è cambiata sul remoto prima che queste modifiche fossero pubblicate.",
+      "conflictBody": "Mantenere le tue modifiche le ripubblica sopra la versione remota. Viene rifiutato quando entrambi i lati hanno modificato gli stessi brani, perché scegliere automaticamente potrebbe perdere lavoro.",
+      "conflictKeepLocal": "Mantieni le mie modifiche",
+      "conflictUseRemote": "Usa la versione remota"
     },
     "modelUpdate": {
       "checkButton": "Controlla aggiornamenti",

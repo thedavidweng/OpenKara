@@ -1031,24 +1031,6 @@ fn read_range_body(
     Ok(body)
 }
 
-/// Classify a fetch HTTP status into the shared `RemoteErrorKind` taxonomy.
-/// Shares the classification logic with `net_policy::classify_status` so the
-/// streaming range fetcher and the operation retry driver agree on which
-/// statuses are retryable, permanent, or signal URL/token expiry.
-// used by PR#5: shared network retry policy classification
-#[allow(dead_code)]
-pub(crate) fn classify_fetch_status(status: u16) -> crate::remote::errors::RemoteErrorKind {
-    use crate::remote::errors::RemoteErrorKind;
-    match status {
-        401 => RemoteErrorKind::AuthenticationExpired,
-        403 | 404 => RemoteErrorKind::PermissionDenied,
-        409 | 412 => RemoteErrorKind::RemoteConflict,
-        408 | 425 | 500..=599 => RemoteErrorKind::NetworkUnavailable,
-        429 => RemoteErrorKind::RateLimited,
-        _ => RemoteErrorKind::NetworkUnavailable,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

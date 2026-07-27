@@ -124,12 +124,6 @@ pub(crate) trait RemoteProvider {
         ))
     }
 
-    // Content-addressed publish uploads individual files. Directory bulk
-    // upload remains available for maintenance/tools but has no call sites
-    // in the CAS publication path.
-    #[allow(dead_code)]
-    fn upload_directory(&self, relative_path: &str) -> CommandResult<()>;
-
     fn delete_path(&self, relative_path: &str) -> CommandResult<()>;
 
     /// Conditionally replace the object at `path` with `source`, enforcing a

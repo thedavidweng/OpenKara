@@ -572,7 +572,11 @@
       "repositoryId": "ID do repositório",
       "lastError": "Último erro",
       "recentOps": "Operações recentes",
-      "refresh": "Atualizar"
+      "refresh": "Atualizar",
+      "conflictTitle": "Sua biblioteca mudou no remoto antes que estas edições fossem publicadas.",
+      "conflictBody": "Manter suas alterações as republica sobre a versão remota. Isso é recusado quando os dois lados alteraram as mesmas músicas, porque escolher automaticamente poderia perder trabalho.",
+      "conflictKeepLocal": "Manter minhas alterações",
+      "conflictUseRemote": "Usar a versão remota"
     },
     "modelUpdate": {
       "checkButton": "Verificar atualizações",

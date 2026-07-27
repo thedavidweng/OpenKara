@@ -211,7 +211,6 @@ impl TransferDirection {
     }
 
     // used by PR#5: resumable uploads/downloads
-    #[allow(dead_code)]
     fn from_db(value: &str) -> Result<Self, CommandError> {
         match value {
             "upload" => Ok(TransferDirection::Upload),
@@ -337,7 +336,6 @@ pub struct OperationRow {
 
 /// Row of `remote_transfer_parts`.
 // used by PR#5: resumable uploads/downloads
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct TransferPartRow {
     pub operation_id: String,
@@ -533,27 +531,6 @@ pub fn get_repository_state(
     Ok(row)
 }
 
-/// Load all repository state rows.
-// used by PR#4: recovery coordinator
-#[allow(dead_code)]
-pub fn list_repository_states(connection: &Connection) -> CommandResult<Vec<RepositoryStateRow>> {
-    let mut stmt = connection
-        .prepare(
-            "SELECT library_id, committed_generation, committed_manifest_revision,
-                    local_base_generation, local_db_digest, local_state,
-                    active_operation_id, last_success_at_ms, last_error_code, updated_at_ms,
-                    repository_id, writer_id
-             FROM remote_repository_state",
-        )
-        .map_err(|e| database_error(format!("failed to prepare repository state list: {e}")))?;
-    let rows = stmt
-        .query_map([], map_repository_state_row)
-        .map_err(|e| database_error(format!("failed to list repository states: {e}")))?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(|e| database_error(format!("failed to collect repository states: {e}")))?;
-    Ok(rows)
-}
-
 fn map_repository_state_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RepositoryStateRow> {
     let local_state_str: String = row.get(5)?;
     let local_state = LocalState::from_db(&local_state_str).map_err(|e| {
@@ -747,70 +724,6 @@ pub fn bind_song_ids_mark_pending_and_dirty_tx(
     Ok(())
 }
 
-/// Mark an existing non-terminal operation Pending and repository Dirty in
-/// one SQLite transaction. Payload must already carry song_ids.
-#[allow(dead_code)] // used when song_ids are already bound before pending
-pub fn mark_pending_and_dirty_tx(
-    connection: &Connection,
-    operation_id: &str,
-    library_id: &str,
-) -> CommandResult<()> {
-    let now = crate::remote::types::current_unix_time_ms();
-    let tx = connection
-        .unchecked_transaction()
-        .map_err(|e| database_error(format!("failed to begin control DB transaction: {e}")))?;
-
-    let mut op = get_operation(&tx, operation_id)?
-        .ok_or_else(|| internal_error("prepared operation row was not found"))?;
-    if op.library_id != library_id {
-        return Err(internal_error(format!(
-            "refusing to mark operation {operation_id} pending: library_id {} does not match {}",
-            op.library_id, library_id
-        )));
-    }
-    if op.state.is_terminal() {
-        return Err(internal_error(format!(
-            "refusing to reopen terminal operation {operation_id}"
-        )));
-    }
-    let payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
-    if payload.song_ids.is_empty() {
-        return Err(internal_error(
-            "refusing to mark publish operation pending without song_ids",
-        ));
-    }
-    op.state = OperationState::Pending;
-    op.updated_at_ms = now;
-    upsert_operation(&tx, &op)?;
-
-    let repo_row = match get_repository_state(&tx, library_id)? {
-        Some(mut row) => {
-            row.local_state = LocalState::Dirty;
-            row.active_operation_id = Some(operation_id.to_owned());
-            row.updated_at_ms = now;
-            row
-        }
-        None => RepositoryStateRow {
-            library_id: library_id.to_owned(),
-            committed_generation: 0,
-            committed_manifest_revision: None,
-            local_base_generation: 0,
-            local_db_digest: None,
-            local_state: LocalState::Dirty,
-            active_operation_id: Some(operation_id.to_owned()),
-            last_success_at_ms: None,
-            last_error_code: None,
-            updated_at_ms: now,
-            repository_id: None,
-            writer_id: None,
-        },
-    };
-    upsert_repository_state(&tx, &repo_row)?;
-    tx.commit()
-        .map_err(|e| database_error(format!("failed to commit control DB transaction: {e}")))?;
-    Ok(())
-}
-
 /// Load all operation rows.
 pub fn list_operations(connection: &Connection) -> CommandResult<Vec<OperationRow>> {
     let mut stmt = connection
@@ -934,7 +847,6 @@ fn map_operation_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<OperationRow> 
 
 /// Insert or replace a transfer part row.
 // used by PR#5: resumable uploads/downloads
-#[allow(dead_code)]
 pub fn upsert_transfer_part(connection: &Connection, row: &TransferPartRow) -> CommandResult<()> {
     connection
         .execute(
@@ -970,7 +882,6 @@ pub fn upsert_transfer_part(connection: &Connection, row: &TransferPartRow) -> C
 
 /// Load all transfer parts for an operation.
 // used by PR#5: resumable uploads/downloads
-#[allow(dead_code)]
 pub fn list_transfer_parts(
     connection: &Connection,
     operation_id: &str,
@@ -1012,7 +923,6 @@ pub fn list_all_transfer_parts(connection: &Connection) -> CommandResult<Vec<Tra
 }
 
 // used by PR#5: resumable uploads/downloads
-#[allow(dead_code)]
 fn map_transfer_part_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TransferPartRow> {
     let direction_str: String = row.get(2)?;
     let direction = TransferDirection::from_db(&direction_str).map_err(|e| {

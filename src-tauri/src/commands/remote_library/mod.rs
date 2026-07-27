@@ -180,6 +180,21 @@ pub fn sync_active_remote_library(state: State<'_, AppState>) -> CommandResult<(
     remote::sync_active_remote_library(&state)
 }
 
+/// Take one of the two exits from a Pre-Publish Conflict.
+///
+/// `keep_local` rebases the pending local changes onto the winning remote
+/// generation and republishes them; the executor refuses it when both sides
+/// touched the same songs, because an automatic merge there would silently
+/// pick a winner. `use_remote` discards the pending operation and adopts the
+/// remote database.
+#[tauri::command]
+pub fn resolve_remote_conflict(
+    state: State<'_, AppState>,
+    resolution: remote::ConflictResolution,
+) -> CommandResult<()> {
+    remote::resolve_active_remote_conflict(&state, resolution)
+}
+
 #[tauri::command]
 pub fn publish_song_to_remote(
     state: State<'_, AppState>,

@@ -570,7 +570,11 @@
       "repositoryId": "ID Repositori",
       "lastError": "Kesalahan terakhir",
       "recentOps": "Operasi terbaru",
-      "refresh": "Segarkan"
+      "refresh": "Segarkan",
+      "conflictTitle": "Pustaka Anda berubah di jarak jauh sebelum suntingan ini terbit.",
+      "conflictBody": "Mempertahankan perubahan Anda menerbitkannya ulang di atas versi jarak jauh. Ini ditolak bila kedua sisi mengubah lagu yang sama, karena memilih otomatis bisa menghilangkan pekerjaan.",
+      "conflictKeepLocal": "Pertahankan perubahan saya",
+      "conflictUseRemote": "Gunakan versi jarak jauh"
     },
     "modelUpdate": {
       "checkButton": "Periksa pembaruan",

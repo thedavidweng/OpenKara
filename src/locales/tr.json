@@ -571,7 +571,11 @@
       "repositoryId": "Depo Kimliği",
       "lastError": "Son hata",
       "recentOps": "Son işlemler",
-      "refresh": "Yenile"
+      "refresh": "Yenile",
+      "conflictTitle": "Bu düzenlemeler yayımlanmadan önce kitaplık uzakta değişti.",
+      "conflictBody": "Değişikliklerinizi korumak, onları uzak sürümün üzerine yeniden yayımlar. İki taraf da aynı şarkıları değiştirdiyse reddedilir; otomatik seçim iş kaybettirebilir.",
+      "conflictKeepLocal": "Değişikliklerimi koru",
+      "conflictUseRemote": "Uzak sürümü kullan"
     },
     "modelUpdate": {
       "checkButton": "Güncellemeleri denetle",

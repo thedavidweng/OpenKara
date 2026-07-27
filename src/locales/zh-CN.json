@@ -571,7 +571,11 @@
       "repositoryId": "仓库 ID",
       "lastError": "上次错误",
       "recentOps": "最近操作",
-      "refresh": "刷新"
+      "refresh": "刷新",
+      "conflictTitle": "这些修改发布之前，远程资料库已经变了。",
+      "conflictBody": "保留你的修改会把它们重新发布到远程版本之上。两边改了同一首歌时会被拒绝——自动选一方可能丢掉工作。",
+      "conflictKeepLocal": "保留我的修改",
+      "conflictUseRemote": "使用远程版本"
     },
     "modelUpdate": {
       "checkButton": "检查更新",

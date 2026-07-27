@@ -570,7 +570,11 @@
       "repositoryId": "ID kho lưu trữ",
       "lastError": "Lỗi gần nhất",
       "recentOps": "Thao tác gần đây",
-      "refresh": "Làm mới"
+      "refresh": "Làm mới",
+      "conflictTitle": "Thư viện đã thay đổi ở phía từ xa trước khi các chỉnh sửa này được đăng.",
+      "conflictBody": "Giữ thay đổi của bạn sẽ đăng lại chúng lên trên bản từ xa. Thao tác này bị từ chối khi cả hai bên cùng sửa một bài, vì tự động chọn một bên có thể làm mất công sức.",
+      "conflictKeepLocal": "Giữ thay đổi của tôi",
+      "conflictUseRemote": "Dùng bản từ xa"
     },
     "modelUpdate": {
       "checkButton": "Kiểm tra cập nhật",

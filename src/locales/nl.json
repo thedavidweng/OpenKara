@@ -571,7 +571,11 @@
       "repositoryId": "Opslag-ID",
       "lastError": "Laatste fout",
       "recentOps": "Recente bewerkingen",
-      "refresh": "Vernieuwen"
+      "refresh": "Vernieuwen",
+      "conflictTitle": "Je bibliotheek is extern gewijzigd voordat deze bewerkingen werden gepubliceerd.",
+      "conflictBody": "Je wijzigingen behouden publiceert ze opnieuw bovenop de externe versie. Dat wordt geweigerd als beide kanten dezelfde nummers wijzigden, omdat automatisch kiezen werk kan kosten.",
+      "conflictKeepLocal": "Mijn wijzigingen behouden",
+      "conflictUseRemote": "Externe versie gebruiken"
     },
     "modelUpdate": {
       "checkButton": "Controleren op updates",

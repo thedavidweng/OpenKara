@@ -571,7 +571,11 @@
       "repositoryId": "Repository-ID",
       "lastError": "Letzter Fehler",
       "recentOps": "Letzte Vorgänge",
-      "refresh": "Aktualisieren"
+      "refresh": "Aktualisieren",
+      "conflictTitle": "Die Mediathek wurde entfernt geändert, bevor diese Bearbeitungen veröffentlicht wurden.",
+      "conflictBody": "Deine Änderungen zu behalten veröffentlicht sie erneut über der Remote-Version. Das wird abgelehnt, wenn beide Seiten dieselben Titel geändert haben — eine automatische Auswahl könnte Arbeit verlieren.",
+      "conflictKeepLocal": "Meine Änderungen behalten",
+      "conflictUseRemote": "Remote-Version verwenden"
     },
     "modelUpdate": {
       "checkButton": "Nach Updates suchen",

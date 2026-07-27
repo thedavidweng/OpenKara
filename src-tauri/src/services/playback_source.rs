@@ -1162,10 +1162,6 @@ mod tests {
             Ok(())
         }
 
-        fn upload_directory(&self, _relative_path: &str) -> CommandResult<()> {
-            Ok(())
-        }
-
         fn delete_path(&self, _relative_path: &str) -> CommandResult<()> {
             Ok(())
         }
@@ -1636,10 +1632,6 @@ mod tests {
         }
 
         fn upload_file(&self, _relative_path: &str) -> CommandResult<()> {
-            Ok(())
-        }
-
-        fn upload_directory(&self, _relative_path: &str) -> CommandResult<()> {
             Ok(())
         }
 

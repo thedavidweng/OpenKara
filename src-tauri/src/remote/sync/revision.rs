@@ -319,18 +319,6 @@ pub fn active_remote_library(app_data_dir: &Path) -> CommandResult<Option<Regist
     Ok(Some(active_library.clone()))
 }
 
-#[allow(dead_code)] // used by mutation::sync_backend in non-test builds
-pub fn prepare_active_remote_database_for_mutation(
-    control_db_conn: &Connection,
-    app_data_dir: &Path,
-) -> CommandResult<()> {
-    let Some(library) = active_remote_library(app_data_dir)? else {
-        return Ok(());
-    };
-    let _ = prepare_remote_database_for_mutation(control_db_conn, app_data_dir, &library)?;
-    Ok(())
-}
-
 pub fn ensure_remote_file_cached(app_data_dir: &Path, relative_path: &str) -> CommandResult<()> {
     let Some(library) = active_remote_library(app_data_dir)? else {
         return Ok(());
