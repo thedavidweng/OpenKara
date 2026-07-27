@@ -39,8 +39,6 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
     (s) => s.separationStatuses[song.hash],
   );
   const uploadStatus = useLibraryStore((s) => s.uploadStatuses[song.hash]);
-  // Batch total progress lives in GlobalProgressBar; the row only paints a
-  // per-song bar while a batch is still running.
   const batchActive = useLibraryStore((s) => {
     const batch = s.batchSeparation;
     if (batch == null) return false;
@@ -65,13 +63,9 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
   );
   const sepState = separationStatus?.state ?? "idle";
   const uploadRunning = uploadStatus?.state === "running";
-  // Full under-row bar only during batch: single-song progress is the global
-  // task list's job. Upload progress is also global-only (no twin bar here).
   const showBatchSongProgress = batchActive && sepState === "running";
   const isMediaG = song.media_g_container != null;
   const canSeparateSong = songCanBeSeparated(song);
-  // While the separation model is still being fetched (first run), the
-  // Separate button waits instead of failing with a raw backend error.
   const modelPreparing = useBootstrapStore(
     (s) => s.status?.state === "pending" || s.status?.state === "downloading",
   );
@@ -193,9 +187,6 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
       data-native-overlay-surface="song-row"
       data-song-list-item-variant="unified"
       data-song-hash={song.hash}
-      // Skip content-visibility containment on rows that expand for batch
-      // progress so the virtual list can measure true height without a stale
-      // 64px intrinsic size fighting the layout.
       style={
         showBatchSongProgress
           ? undefined
@@ -257,8 +248,6 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
               <div className="flex items-center gap-1 text-[11px] text-[var(--color-text-dim)]">
                 <Loader2 size={10} className="animate-spin" />
                 <span>{separationStatus?.percent ?? 0}%</span>
-                {/* Single-song cancel is available here and on the global bar.
-                    During batch, cancel belongs to the aggregate task only. */}
                 {!batchActive && (
                   <button
                     onClick={handleCancelSeparation}

@@ -22,13 +22,7 @@ interface ActiveTask {
 
 interface TaskProgressBarProps extends Omit<ActiveTask, "key"> {
   className?: string;
-  /**
-   * Bar-only mode for embedding under a song row during batch work, where the
-   * song title and percent already live in the row chrome. Full mode is the
-   * global task list (label + optional cancel).
-   */
   compact?: boolean;
-  /** Accessible name when `compact` hides the visible label. */
   ariaLabel?: string;
 }
 
@@ -42,8 +36,6 @@ export function TaskProgressBar({
   compact = false,
   ariaLabel,
 }: TaskProgressBarProps) {
-  // Defence in depth: backend percents are 0–100, but a bad value must not
-  // stretch the fill past the track (track is overflow-hidden either way).
   const clampedPercent = Math.min(100, Math.max(0, percent));
 
   if (compact) {
@@ -157,10 +149,6 @@ function useActiveTasks(modelDownloadCompleteFlash: boolean): ActiveTask[] {
     });
   }
 
-  // Runtime download — the ONNX Runtime is fetched before the model on a
-  // fresh install (and again as a candidate on updates). Surfacing it as a
-  // named task stops the first separation from looking frozen at 0% while the
-  // runtime downloads silently in the background (#226).
   if (
     runtimeStatus?.state === "downloading" ||
     runtimeStatus?.state === "downloading_candidate"
@@ -186,7 +174,6 @@ function useActiveTasks(modelDownloadCompleteFlash: boolean): ActiveTask[] {
     });
   }
 
-  // Model download
   if (bootstrapStatus?.state === "downloading") {
     const total = bootstrapStatus.total_bytes;
     const down = bootstrapStatus.downloaded_bytes;
@@ -209,8 +196,6 @@ function useActiveTasks(modelDownloadCompleteFlash: boolean): ActiveTask[] {
     });
   }
 
-  // Batch separation — aggregate progress only. Per-song progress lives on
-  // the active library row so the two surfaces stay complementary, not twin.
   if (batchSeparation != null) {
     const done = batchSeparation.completed + batchSeparation.failed;
     if (done < batchSeparation.total) {
@@ -234,9 +219,6 @@ function useActiveTasks(modelDownloadCompleteFlash: boolean): ActiveTask[] {
     }
   }
 
-  // Single-song separation is the global task list's job. The song row keeps
-  // only a compact status chip (spinner / % / cancel) so we never paint the
-  // same percent bar twice.
   if (batchSeparation == null) {
     const runningSep = Object.values(separationStatuses).find(
       (s) => s.state === "running",
