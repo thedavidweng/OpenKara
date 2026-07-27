@@ -17,8 +17,6 @@ const { mockGetDebugInfo, mockNotifyError } = vi.hoisted(() => ({
   mockNotifyError: vi.fn(),
 }));
 
-// Labels resolve to their keys so assertions do not depend on locale copy; the
-// values under test come from the debug-info snapshot, not translation.
 vi.mock("react-i18next", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-i18next")>();
   return {
@@ -94,8 +92,6 @@ describe("SettingsAboutSection", () => {
       expect(mockGetDebugInfo).toHaveBeenCalled();
     });
 
-    // fireEvent (not userEvent) so the clipboard mock installed above stays in
-    // place — userEvent.setup() would swap in its own clipboard stub.
     await act(async () => {
       fireEvent.click(
         screen.getByRole("button", { name: "settings.about.copyDebugInfo" }),

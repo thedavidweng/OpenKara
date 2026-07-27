@@ -92,8 +92,6 @@ describe("useAudiencePlainTextPaging layoutVersion invalidation", () => {
 
   beforeEach(() => {
     lineHeights = [];
-    // Mock ResizeObserver; observe() records the target so the test can
-    // confirm the measurement container is observed.
     class MockResizeObserver {
       observe(_target: Element) {}
       disconnect() {}
@@ -136,9 +134,6 @@ describe("useAudiencePlainTextPaging layoutVersion invalidation", () => {
       },
     });
 
-    // jsdom does not compute layout; clientHeight is always 0. The hook
-    // reads containerRef.current.clientHeight for the available page
-    // height, so mock it for the container element.
     Object.defineProperty(HTMLElement.prototype, "clientHeight", {
       configurable: true,
       get(this: HTMLElement) {
@@ -166,9 +161,6 @@ describe("useAudiencePlainTextPaging layoutVersion invalidation", () => {
   });
 
   test("enabling romanized text invalidates measurement and produces updated page boundaries", async () => {
-    // Four lines that fit on one page (each 20px, viewport 100px) without
-    // romanization. With romanized text each line grows to 40px and the
-    // final line overflows to a second page.
     const lines = [
       line(0, "你好"),
       line(0, "世界"),
@@ -202,9 +194,6 @@ describe("useAudiencePlainTextPaging layoutVersion invalidation", () => {
       root.render(<Harness />);
     });
 
-    // 40px * 2 = 80px fits; the third line (120px) overflows → page break
-    // at index 2. So pages are [0, 2] (lines 0-1 on page 0, lines 2-3 on
-    // page 1).
     expect(lastResult!.pageStartIndices).toEqual([0, 2]);
   });
 
@@ -232,12 +221,7 @@ describe("useAudiencePlainTextPaging layoutVersion invalidation", () => {
     expect(lastResult!.pageStartIndices).toEqual([0, 1, 2, 3, 4, 5]);
 
     // Advance to the last page via the remote page event.
-    await act(async () => {
-      // Simulate five "next" page steps by re-rendering with a pageState
-      // that has advanced. The hook exposes pageState; we drive it via the
-      // LOCAL_AUDIENCE_PLAIN_TEXT_PAGE_EVENT listener instead. For this
-      // unit test we instead shrink the page count and verify clamping.
-    });
+    await act(async () => {});
 
     // Now shrink line heights so all lines fit on one page.
     lineHeights = [10, 10, 10, 10, 10, 10];
@@ -290,9 +274,6 @@ describe("useAudiencePlainTextPaging layoutVersion invalidation", () => {
       root.render(<Harness />);
     });
 
-    // Page 0 shows lines 0-1; page 1 shows lines 2-3 (including the final
-    // romanized line). The default page index is 0, so we verify the page
-    // boundaries include the final line on a valid page.
     const lastPageStart =
       lastResult!.pageStartIndices[lastResult!.pageStartIndices.length - 1];
     const lastPageEnd = lines.length;

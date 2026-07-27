@@ -91,9 +91,6 @@ describe("LyricsLineRuntime", () => {
   });
 
   test("preserves spring progress across unregister/register churn", () => {
-    // React 19 re-runs inline ref callbacks on every parent re-render
-    // (detach null → attach node). Unregister must not reset springs to 1,
-    // or every active-line change replays the song-start "gather" animation.
     const runtime = new LyricsLineRuntime();
     const wrapper = document.createElement("div");
     runtime.registerWrapper(0, wrapper);

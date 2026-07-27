@@ -3,10 +3,6 @@ import type { RomanizeResult, Romanizer } from "lyric-romanizer";
 import { OPTIONS_BY_LANGUAGE, romanizeLinesWith } from "./romanize-options";
 import { SONG_LANGUAGES } from "@/components/Library/song-list-item-menu";
 
-// NOTE: `src/test-setup.ts` mocks `lyric-romanizer` but not
-// `lyric-romanizer/detector`, so the real `isLatinScript` runs here. The
-// romanizer engine is a hand-built fake so the pinning/whole-array logic can
-// be exercised without loading any real engine.
 function fakeRomanizer(
   impl: (
     lines: readonly string[],

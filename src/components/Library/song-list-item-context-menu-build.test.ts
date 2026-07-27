@@ -669,8 +669,6 @@ describe("buildSongListContextMenuForSong – action callbacks", () => {
     const args = mockBuildSongListContextMenuItems.mock.calls[0][0];
     args.separateAllSelected();
 
-    // batchSeparate returns a promise, .catch(notifyError) is attached
-    // Wait for the microtask to flush
     await vi.waitFor(() => {
       expect(mockBatchSeparate).toHaveBeenCalledWith(
         expect.arrayContaining(["song-abc", "song-def"]),

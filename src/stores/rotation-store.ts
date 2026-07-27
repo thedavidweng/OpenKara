@@ -191,12 +191,6 @@ export const useRotationStore = create<RotationState>((set, get) => ({
     for (const group of groups.values()) shuffle(group);
     shuffle(unassigned);
 
-    // Round-robin placement, starting with the largest group.
-    // Sort by descending group size so bigger groups lead every round (this
-    // is what avoids back-to-back same-singer runs when sizes differ), but
-    // shuffle within each equal-size tier so repeated presses produce
-    // different singer orders. Without the tier shuffle, single-song-per-
-    // singer queues collapse to one deterministic order every press (#145).
     const sorted = [...groups.entries()].sort(
       (a, b) => b[1].length - a[1].length,
     );

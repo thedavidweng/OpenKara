@@ -55,14 +55,8 @@ export function handleAppKeyDown(
     return true;
   }
 
-  // Lyrics are intentionally not keyboard-driven (no font/page shortcuts,
-  // no ←/→ seek that jumps the lyric playhead). ↑/↓ always nudge master volume.
-
   const { snapshot, resume, pause, setVolume } = player;
 
-  // Don't intercept arrow keys when focus is inside a dialog or panel that
-  // has its own keyboard navigation (e.g. settings, modals).  This lets the
-  // browser's native focus traversal work in those contexts.
   const target = e.target as HTMLElement | null;
   if (
     typeof target?.closest === "function" &&
@@ -76,12 +70,6 @@ export function handleAppKeyDown(
   switch (e.code) {
     case "Space": {
       e.preventDefault();
-      // RATIONALE: While a track is loading the backend has no
-      // `current_track` yet, so play/pause/resume would surface a
-      // "no track is loaded" error toast. The snapshot still reports
-      // the loading song_id, so the song_id guard alone is not enough;
-      // bail out on the loading state, matching PlayControls' isStarting
-      // guard. Volume arrows are unaffected (set_volume needs no track).
       if (snapshot?.state === "loading") {
         return true;
       }

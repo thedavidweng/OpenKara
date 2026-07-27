@@ -13,9 +13,6 @@ export function FullscreenPlayerView() {
   useFullscreenPlaybackRuntime();
   useLyricsAutoFetch();
   useCdgFrameReceiver();
-  // Mount the romanization receiver before the audience-active announcement
-  // so its state listener is registered before the main window emits the
-  // initial authoritative snapshot in response to the sync request.
   useLocalAudienceRomanizeReceiver();
 
   useEffect(() => {
@@ -31,10 +28,6 @@ export function FullscreenPlayerView() {
     };
   }, []);
 
-  // RATIONALE: the stage spans the full window height. Reserving a permanent
-  // band for the auto-hiding controls left a dead black strip along the
-  // bottom of the audience screen even while the controls were hidden; the
-  // controls float above the lyrics with their own scrim instead.
   return (
     <div className="relative flex h-screen w-screen flex-col bg-black">
       <div className="flex flex-1 overflow-hidden">

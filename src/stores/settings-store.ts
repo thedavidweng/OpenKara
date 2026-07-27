@@ -108,8 +108,6 @@ function toAppSettingsSnapshot(settings: AppSettings): AppSettingsSnapshot {
     lyricsFontStep: settings.lyrics_font_step,
     executionProvider: settings.execution_provider,
     availableExecutionProviders: settings.available_execution_providers,
-    // Defensive defaults: incomplete IPC payloads (e.g. older e2e mocks) must
-    // not leave eqGainsDb undefined — SettingsEqSection maps over the array.
     eqEnabled: settings.eq_enabled ?? false,
     eqGainsDb: settings.eq_gains_db ?? [0, 0, 0, 0, 0],
     crossfadeEnabled: settings.crossfade_enabled ?? false,
@@ -216,9 +214,6 @@ function createOptimisticField<T>(initialValue: T): OptimisticField<T> {
 
   return {
     begin: (currentValue, nextValue) => {
-      // Zustand's setState and cross-webview sync can update this field while
-      // no local request is pending. At that point the displayed value is the
-      // best authoritative baseline for the next local mutation.
       if (pending.size === 0) {
         confirmedGeneration = latestGeneration;
         confirmedValue = currentValue;
@@ -235,8 +230,6 @@ function createOptimisticField<T>(initialValue: T): OptimisticField<T> {
         confirmedGeneration = generation;
         confirmedValue = value;
 
-        // A newer accepted command supersedes every older in-flight command
-        // for this field. Their late results must not reintroduce stale state.
         for (const pendingGeneration of pending.keys()) {
           if (pendingGeneration <= generation) {
             pending.delete(pendingGeneration);
@@ -250,16 +243,11 @@ function createOptimisticField<T>(initialValue: T): OptimisticField<T> {
       pending.delete(generation);
       return {
         value: visibleValue(),
-        // Do not surface an error for an older request that has already been
-        // superseded by a newer user action.
         shouldNotify: generation === latestGeneration,
       };
     },
     reconcileSnapshot: (value) => {
       confirmedValue = value;
-      // An unrelated settings command also returns a full snapshot. It may
-      // arrive while this field's own command is still in flight, so retain
-      // that newer local intent until it is accepted or rejected.
       if (pending.size === 0) {
         confirmedGeneration = latestGeneration;
       }
@@ -444,12 +432,9 @@ export function createSettingsStore(
           get().librarySortMode,
           mode,
         );
-        // Keep the selector responsive while persisting the preference.
         syncPatch({ librarySortMode: mode });
         try {
           const settings = await api.setLibrarySortMode(mode);
-          // A full settings snapshot can be stale for another locally-pending
-          // field, so this command confirms only the field it owns.
           syncPatch({
             librarySortMode: librarySortModeField.confirm(
               generation,
@@ -486,9 +471,6 @@ export function createSettingsStore(
             syncAppSettings(settings);
           }
         } catch (error) {
-          // Only roll back the theme preference that failed. Restoring the full
-          // pre-attempt snapshot would wipe concurrent settings edits that
-          // landed while the IPC call was in flight.
           if (get().themePreferenceMutationGeneration === generation) {
             syncPatch({
               themePreference: previousSnapshot.themePreference,
@@ -519,9 +501,6 @@ export function createSettingsStore(
             syncAppSettings(settings);
           }
         } catch (error) {
-          // Only roll back the update policy that failed. Restoring the full
-          // pre-attempt snapshot would wipe concurrent settings edits that
-          // landed while the IPC call was in flight.
           if (get().updatePolicyMutationGeneration === generation) {
             syncPatch({
               updatePolicy: previousSnapshot.updatePolicy,

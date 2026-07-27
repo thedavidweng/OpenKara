@@ -39,6 +39,11 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
     (s) => s.separationStatuses[song.hash],
   );
   const uploadStatus = useLibraryStore((s) => s.uploadStatuses[song.hash]);
+  const batchActive = useLibraryStore((s) => {
+    const batch = s.batchSeparation;
+    if (batch == null) return false;
+    return batch.completed + batch.failed < batch.total;
+  });
   const createPlaylist = usePlaylistStore((s) => s.createPlaylist);
   const addSongsToPlaylist = usePlaylistStore((s) => s.addSongsToPlaylist);
   const playSong = usePlayerStore((s) => s.playSong);
@@ -57,10 +62,10 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
     (s) => s.snapshot?.song_id === song.hash && s.snapshot?.state === "loading",
   );
   const sepState = separationStatus?.state ?? "idle";
+  const uploadRunning = uploadStatus?.state === "running";
+  const showBatchSongProgress = batchActive && sepState === "running";
   const isMediaG = song.media_g_container != null;
   const canSeparateSong = songCanBeSeparated(song);
-  // While the separation model is still being fetched (first run), the
-  // Separate button waits instead of failing with a raw backend error.
   const modelPreparing = useBootstrapStore(
     (s) => s.status?.state === "pending" || s.status?.state === "downloading",
   );
@@ -183,10 +188,12 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
       data-song-list-item-variant="unified"
       data-song-hash={song.hash}
       style={
-        {
-          contentVisibility: "auto",
-          containIntrinsicSize: "64px",
-        } satisfies CSSProperties
+        showBatchSongProgress
+          ? undefined
+          : ({
+              contentVisibility: "auto",
+              containIntrinsicSize: "64px",
+            } satisfies CSSProperties)
       }
     >
       <CoverArtThumbnail
@@ -241,15 +248,23 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
               <div className="flex items-center gap-1 text-[11px] text-[var(--color-text-dim)]">
                 <Loader2 size={10} className="animate-spin" />
                 <span>{separationStatus?.percent ?? 0}%</span>
-                <button
-                  onClick={handleCancelSeparation}
-                  title={t("library.cancelSeparation")}
-                  aria-label={t("library.cancelSeparation")}
-                  className="motion-icon-button rounded p-0.5 text-[var(--color-text-dim)] hover:bg-[var(--sidebar-row-overlay-bg)] hover:text-[var(--color-text)]"
-                  data-native-overlay-surface="song-action"
-                >
-                  <X size={12} />
-                </button>
+                {!batchActive && (
+                  <button
+                    onClick={handleCancelSeparation}
+                    title={t("library.cancelSeparation")}
+                    aria-label={t("library.cancelSeparation")}
+                    className="motion-icon-button rounded p-0.5 text-[var(--color-text-dim)] hover:bg-[var(--sidebar-row-overlay-bg)] hover:text-[var(--color-text)]"
+                    data-native-overlay-surface="song-action"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+            )}
+            {uploadRunning && sepState !== "running" && (
+              <div className="flex items-center gap-1 text-[11px] text-[var(--color-text-dim)]">
+                <Loader2 size={10} className="animate-spin" />
+                <span>{uploadStatus?.percent ?? 0}%</span>
               </div>
             )}
             {sepState === "completed" && (
@@ -287,26 +302,17 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
           </div>
         </div>
 
-        {(separationStatus?.state === "running" ||
-          uploadStatus?.state === "running") && (
-          <div className="mt-1 space-y-1">
-            {separationStatus?.state === "running" && (
-              <TaskProgressBar
-                label={t("progress.separating", {
-                  title: songDisplayTitle(song),
-                  defaultValue: `Separating: ${songDisplayTitle(song)}`,
-                })}
-                percent={separationStatus.percent}
-              />
-            )}
-            {uploadStatus?.state === "running" && (
-              <TaskProgressBar
-                label={t("progress.uploadingToRemote", {
-                  title: songDisplayTitle(song),
-                })}
-                percent={uploadStatus.percent}
-              />
-            )}
+        {showBatchSongProgress && (
+          <div className="mt-1.5 pl-5">
+            <TaskProgressBar
+              compact
+              label=""
+              percent={separationStatus?.percent ?? 0}
+              ariaLabel={t("progress.separating", {
+                title: songDisplayTitle(song),
+                defaultValue: `Separating: ${songDisplayTitle(song)}`,
+              })}
+            />
           </div>
         )}
 

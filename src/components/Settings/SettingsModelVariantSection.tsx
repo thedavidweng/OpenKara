@@ -43,9 +43,6 @@ export function SettingsModelVariantSection() {
   const { t } = useTranslation();
   const { state, meta, actions } = useSettingsOverlay();
 
-  // Every lifecycle state that keeps an active runtime loaded counts as ready
-  // for model gating. Only "missing"/"downloading" (first install) and the
-  // "corrupt"/"failed" fault states block model actions.
   const runtimeState = state.runtimeStatus?.state;
   const runtimeReady =
     runtimeState === "ready" ||
@@ -84,11 +81,6 @@ export function SettingsModelVariantSection() {
     return t("settings.modelVariant.notDownloaded");
   };
 
-  // Model *downloads* need a loaded runtime; choosing which variant to use
-  // does not. The runtime is provisioned automatically before the first
-  // separation, and its manual install/repair CTA lives in the ONNX Runtime
-  // card — so this card no longer hides itself (and the model-update button
-  // with it) whenever the runtime is not ready yet.
   const controlsDisabled =
     meta.isInitializing || state.downloadingModel !== null || !runtimeReady;
 

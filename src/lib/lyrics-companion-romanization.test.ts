@@ -59,11 +59,6 @@ describe("splitCompanionRomanization", () => {
   });
 
   test("keeps a transcription stamped with a different beat as a lyric line", () => {
-    // Sloppy sources sometimes stamp a transcription with a neighbouring
-    // beat's time. That is indistinguishable — by timestamp, count, or
-    // alternation — from a genuine Latin-script lyric at that beat, so the
-    // line is KEPT. A visible duplicate is the acceptable outcome; deleting a
-    // real lyric is not.
     const split = splitCompanionRomanization([
       line(850, "どうでもいいような 夜だけど"),
       line(850, "doudemoiiyouna yorudakedo"),
@@ -85,8 +80,6 @@ describe("splitCompanionRomanization", () => {
       "触れた先を ためらうように",
       "furetasakiwo tamerauyouni",
     ]);
-    // Incomplete, so enabling romanization recomputes a full set instead of
-    // trusting this partial extraction.
     expect(split.complete).toBe(false);
   });
 
@@ -128,8 +121,6 @@ describe("splitCompanionRomanization", () => {
   });
 
   test("never swallows genuine English lines in a Japanese song", () => {
-    // Mixed-language lyrics are the norm in J-pop; without the pattern
-    // threshold these English lines would be reclassified as pronunciation.
     const lines = [
       line(0, "どうでもいいような 夜だけど"),
       line(4000, "I don't wanna say goodbye"),

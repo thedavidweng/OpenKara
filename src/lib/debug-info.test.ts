@@ -2,8 +2,6 @@ import { describe, expect, test, vi } from "vitest";
 import type { DebugInfo } from "@/types/ipc";
 import { copyDebugInfo, formatDebugInfo } from "./debug-info";
 
-// Keep the module's default `getDebugInfo` import from pulling in the real
-// Tauri bindings; every test here supplies its own dependencies.
 vi.mock("@/lib/tauri", () => ({ getDebugInfo: vi.fn() }));
 
 const sample: DebugInfo = {

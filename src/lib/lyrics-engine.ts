@@ -9,7 +9,6 @@ import { useLyricsStore } from "@/stores/lyrics-store";
 import { usePlayerStore } from "@/stores/player-store";
 import type { Spring } from "@/lib/spring";
 
-// Idle time after the last user scroll before auto-follow resumes (Spotify-style).
 const USER_SCROLL_PAUSE_MS = 4000;
 
 // Playback jumps larger than this (and larger than natural rAF advance) are
@@ -94,12 +93,6 @@ export function createUserScrollGuard(
     onIdleRelock?: () => void;
   } = {},
 ): UserScrollGuard {
-  // RATIONALE: Must bind to the global object. Extracting `setTimeout` into a
-  // plain `{ setTimeout, clearTimeout }` bag and calling `timers.setTimeout(...)`
-  // makes `this` the bag, which throws "Illegal invocation" in browsers. The
-  // idle re-lock then never schedules, so Follow stays stuck unlocked forever
-  // after the first user wheel (Node/fake timers hide this — they do not check
-  // `this`).
   const timers = options.timers ?? {
     setTimeout: globalThis.setTimeout.bind(globalThis),
     clearTimeout: globalThis.clearTimeout.bind(globalThis),
@@ -126,10 +119,6 @@ export function createUserScrollGuard(
     if (timer !== null) timers.clearTimeout(timer);
     timer = timers.setTimeout(() => {
       timer = null;
-      // Was unlocked: re-lock UI and force a resume snap to the playing line.
-      // Without the resume generation, the engine sees activeIndex unchanged
-      // and leaves scrollTop at the user's browse position while the Follow
-      // button already claims follow has resumed.
       setUnlocked(false);
       onIdleRelock();
     }, pauseMs);
@@ -151,11 +140,6 @@ export function createUserScrollGuard(
     if (Math.abs(container.scrollTop - lastProgrammaticScrollTop) < 1) {
       return;
     }
-    // RATIONALE: WKWebView can emit scroll events for scroll anchoring/layout
-    // corrections after the active lyric changes. A bare scroll event does
-    // not prove user intent and used to re-unlock follow immediately after a
-    // seek. Wheel/touchmove are explicit; scroll is accepted only while the
-    // user is holding a pointer (native scrollbar drag).
     if (pointerDown) {
       unlockFromUser();
     }
@@ -225,13 +209,6 @@ export function readLyricsAdjustedPlaybackMs(
 ): number {
   const playerState = usePlayerStore.getState();
   const { offsetMs } = useLyricsStore.getState();
-  // RATIONALE: Lyrics always follow the local playback clock — never the
-  // AirPlay displayed position. The AirPlay clock is a remote clock with
-  // network/decode latency that doesn't update on local seeks. Using it for
-  // lyrics caused the fullscreen window (which receives AirPlay state via
-  // BroadcastChannel) to freeze at the entry position and ignore seeks.
-  // Both windows share the same backend playback-position events, so the
-  // local clock is the single source of truth for lyrics in every window.
   const positionMs = selectCurrentPositionMs(
     {
       snapshot: playerState.snapshot,
@@ -247,8 +224,6 @@ export function readLyricsPlaybackClockMs(
   nowMs = () => performance.now(),
 ): number {
   const playerState = usePlayerStore.getState();
-  // RATIONALE: Lyrics always follow the local playback clock — never the
-  // AirPlay displayed position. See readLyricsAdjustedPlaybackMs for details.
   return selectCurrentPositionMs(
     {
       snapshot: playerState.snapshot,
@@ -332,13 +307,6 @@ export interface LyricsEngineScrollState {
   lastResumeGenerationRef: { current: number };
 }
 
-/**
- * Auto-scroll via native scrollTop (AMLL / umbra / pre-#56 OpenKara pattern).
- *
- * RATIONALE: Driving scroll with translateY on an overflow-y-auto container
- * fights click scroll-into-view and overflow anchoring. Mature lyric players
- * mutate scrollTop (or scrollIntoView) and call resetScroll on seek instead.
- */
 export function tickLyricsEngineScroll(input: {
   container: HTMLElement;
   lines: { time_ms: number }[];
@@ -394,17 +362,10 @@ export function tickLyricsEngineScroll(input: {
 
   const shouldResetScroll = isSeek || seekJump || explicitResume;
 
-  // RATIONALE: In audience mode, a line-click seek should snap to the clicked
-  // line and then unlock auto-follow with an idle re-lock timer — not clear
-  // the guard immediately. This lets the operator browse after clicking a
-  // line; after a few seconds of inactivity the view snaps back to the active
-  // (playing) line, appropriate for an audience-facing second monitor.
   const audienceSeekUnlock = isSeek && audienceMode && userScrollGuard !== null;
 
   if (shouldResetScroll) {
     if (!audienceSeekUnlock) {
-      // AMLL resetScroll on line-click seek: drop the user-scroll pause and
-      // force the next target write so auto-scroll resumes immediately.
       userScrollGuard?.clear();
     }
     prevActiveIndexRef.current = -1;
@@ -414,8 +375,6 @@ export function tickLyricsEngineScroll(input: {
   // In audience seek mode, the guard may still be active from a prior browse —
   // but we must write scrollTop this frame to snap to the clicked line.
   if (!audienceSeekUnlock && userScrollGuard?.isActive()) {
-    // User is browsing freely (Spotify unlock). Track their viewport so the
-    // next re-lock animates from where they left off — never write scrollTop.
     bindSpringToViewport(scrollSpring, container);
     targetScrollTopRef.current = container.scrollTop;
     return;
@@ -445,9 +404,6 @@ export function tickLyricsEngineScroll(input: {
   };
 
   if (reducedMotion || shouldResetScroll) {
-    // Seek / explicit resume snaps (AMLL isSeek path); reduced-motion never springs.
-    // Still only adopt a fresh layout measure on line change / reset — see
-    // mid-line reflow rationale below.
     const snapTarget =
       shouldResetScroll || activeIndex !== prevActiveIndexRef.current
         ? target
@@ -465,13 +421,6 @@ export function tickLyricsEngineScroll(input: {
     return;
   }
 
-  // RATIONALE: Anchor scroll once per active line. Mid-line DOM reflow
-  // (per-character emphasis swapping to inline-block, font-weight flips) makes
-  // getScrollTopForLineIndex jitter by tens of pixels while the line index is
-  // unchanged. Retargeting on every pixel delta kept the spring chasing a
-  // moving target — lyrics looked "wrong" until pause froze the layout and
-  // the next measure snapped back. Font/romanization changes remount the
-  // engine via layoutVersion, so they still get a fresh anchor.
   if (activeIndex !== prevActiveIndexRef.current) {
     bindSpringToViewport(scrollSpring, container);
     prevActiveIndexRef.current = activeIndex;
@@ -483,8 +432,6 @@ export function tickLyricsEngineScroll(input: {
     scrollSpring.update(dt);
   }
 
-  // Re-assert scrollTop only while following. withProgrammatic prevents our
-  // own writes from unlocking follow via the scroll listener.
   writeScrollTop(scrollSpring.getPosition());
 
   if (audienceSeekUnlock && userScrollGuard) {
@@ -536,11 +483,6 @@ export function tickLyricsEngineFrame(input: LyricsEngineFrameInput): void {
   if (playerState.snapshot?.song_id) {
     syncLyricsActiveLine(prevActiveLineRef, adjustedMs);
 
-    // Re-read the store after syncLyricsActiveLine: setActiveLineIndex resets
-    // activeWordIndex to -1 on a line change, and the stale `lyricsState`
-    // captured above would still point at the previous line's words, causing
-    // findActiveWordIndex to compute against the old line and overwrite the
-    // just-reset -1 with a stale value for one rAF frame.
     const syncedLyricsState = useLyricsStore.getState();
     const activeLine =
       syncedLyricsState.lines[syncedLyricsState.activeLineIndex];

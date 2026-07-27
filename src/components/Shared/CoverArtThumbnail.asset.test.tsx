@@ -65,8 +65,6 @@ describe("CoverArtThumbnail asset protocol", () => {
   });
 
   test("falls back to the IPC read when the derivative file will not load", async () => {
-    // The IPC command is also what triggers the Rust-side lazy regeneration,
-    // so a derivative deleted from disk self-heals through this path.
     mockGetCoverArtThumbnail.mockResolvedValue([0xff, 0xd8, 0x00]);
 
     render(

@@ -24,9 +24,6 @@ export function FullscreenControls() {
   const [idle, setIdle] = useState(true);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
-  // The one exception to the idle timer: a pointer resting on the control bar
-  // itself keeps it up, so the user can read and aim at a button without the
-  // target fading out from under them.
   const hoveringControlsRef = useRef(false);
 
   useEffect(() => {
@@ -56,9 +53,6 @@ export function FullscreenControls() {
     // Pointer events so pen and touch wake the controls too.
     window.addEventListener("pointermove", wake);
     window.addEventListener("pointerdown", wake);
-    // Native (not synthetic) enter/leave: the bar must stay up while the
-    // pointer rests on it, and React's synthetic enter/leave would not fire
-    // once the bar is pointer-events-none mid-fade.
     const controls = containerRef.current;
     controls?.addEventListener("pointerenter", handleControlsEnter);
     controls?.addEventListener("pointerleave", handleControlsLeave);
@@ -72,10 +66,6 @@ export function FullscreenControls() {
     };
   }, []);
 
-  // The fullscreen control projects the authoritative romanization state
-  // received from the main window. It never mutates the local store on
-  // click; it sends an explicit desired boolean to the main window and
-  // waits for the authoritative state event to update the projection.
   const showRomanized = useLyricsStore((s) => s.showRomanized);
   const isRomanizing = useLyricsStore((s) => s.isRomanizing);
   const lyricSongId = useLyricsStore((s) => s.songId);
@@ -88,9 +78,7 @@ export function FullscreenControls() {
       songId: lyricSongId,
       showRomanized: !showRomanized,
     };
-    void emitLocalAudienceRomanizeSetRequest(request).catch(() => {
-      // Auxiliary control delivery failure must not interrupt playback.
-    });
+    void emitLocalAudienceRomanizeSetRequest(request).catch(() => {});
   };
 
   useEffect(() => {

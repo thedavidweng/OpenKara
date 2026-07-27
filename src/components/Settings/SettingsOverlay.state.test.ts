@@ -695,8 +695,6 @@ describe("createSettingsOverlayActions - runtime updates", () => {
 
     await harness.actions.downloadRuntime();
 
-    // A "not installed" report next to a "ready" status line is a
-    // contradiction the user cannot resolve, so the install clears it.
     expect(harness.getSnapshot().state.runtimeStatus?.state).toBe("ready");
     expect(harness.getSnapshot().state.runtimeUpdate).toBeNull();
   });

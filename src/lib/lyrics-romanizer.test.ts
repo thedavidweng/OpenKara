@@ -74,8 +74,6 @@ describe("romanizeLyricsLines", () => {
 
     const { result } = await romanizeLyricsLines(["Hello", "你好", "World"]);
 
-    // The library detects the dominant script once for the whole array and
-    // returns pure-Latin lines unchanged; we do not pre-split or pin.
     expect(result).toEqual(["Hello", "ni hao", "World"]);
     expect(mockRomanizeLines).toHaveBeenCalledTimes(1);
     expect(mockRomanizeLines).toHaveBeenCalledWith(["Hello", "你好", "World"]);

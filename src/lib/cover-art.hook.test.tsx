@@ -56,10 +56,6 @@ describe("useCoverArtUrl hook lifecycle", () => {
   });
 
   test("survives byte replacement across re-renders without prematurely revoking the new URL", () => {
-    // Regression: when bytes change under the same songHash+size, the old
-    // useEffect cleanup must not revoke the new URL. Before the fix, the
-    // cleanup decremented the new entry's refs to zero and revoked it,
-    // causing the ambience backdrop to silently disappear.
     const jpeg: CoverArtBytes = [0xff, 0xd8, 0x00];
     const png: CoverArtBytes = [0x89, 0x50, 0x4e, 0x47];
 
@@ -72,8 +68,6 @@ describe("useCoverArtUrl hook lifecycle", () => {
     const urlAfterJpeg = result.current;
     expect(urlAfterJpeg).toBeTruthy();
 
-    // Replace bytes — simulates the async fetch delivering the real cover
-    // after the hook initially rendered with a stale or placeholder set.
     rerender({ bytes: png });
     const urlAfterPng = result.current;
     expect(urlAfterPng).not.toBe(urlAfterJpeg);
@@ -88,10 +82,6 @@ describe("useCoverArtUrl hook lifecycle", () => {
   });
 
   test("does not inflate ref count when bytes reference changes but content stays the same", () => {
-    // Store re-emits can produce a new array reference with identical bytes.
-    // The hook should not call retainCoverArtUrl again (which would increment
-    // refs without a matching release), so the URL is cleaned up correctly on
-    // unmount.
     const jpeg: CoverArtBytes = [0xff, 0xd8, 0x00];
     const jpegCopy: CoverArtBytes = [...jpeg];
 

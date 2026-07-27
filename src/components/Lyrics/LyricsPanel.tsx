@@ -61,7 +61,6 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
   );
   const lyricsFontStep = useSettingsStore((s) => s.lyricsFontStep);
   const [editOpen, setEditOpen] = useState(false);
-  // Spotify-style: true while the user has scrolled away from auto-follow.
   const [userScrollUnlocked, setUserScrollUnlocked] = useState(false);
   const utilityControlsPinned = offsetMs !== 0 || lyricsFontStep !== 0;
   const isAudience = presentation === "audience";
@@ -101,9 +100,6 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
     lyricsFontStep,
     presentation,
     songId,
-    // Must be true only when the scroll viewport is actually mounted. Loading /
-    // empty early-returns omit the container; without this the follow guard
-    // never attaches and every rAF fights the user's scrollTop.
     viewportActive: Boolean(songId) && !isLoading && lines.length > 0,
     layoutVersion: lyricsLayoutVersion,
     lineRuntime: lyricsLineRuntime,
@@ -139,9 +135,6 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
     songId,
   ]);
 
-  // Cache one stable ref callback per line index. Inline refs change identity
-  // every render; React 19 then detaches/attaches, and without spring-preserving
-  // unregister that replays the song-start gather animation on every line change.
   const lineRefCallbacksRef = useRef(
     new Map<number, (node: HTMLDivElement | null) => (() => void) | void>(),
   );
@@ -335,8 +328,6 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
           isAudience ? "" : spaciousStageLayout ? "px-16 py-10" : "px-12 py-8"
         }`}
         style={{
-          // RATIONALE: Native scrollTop auto-follow; overflow anchoring must not
-          // silently mutate scrollTop when line heights change on activate.
           overflowAnchor: "none",
           ...(isAudience
             ? {
@@ -466,9 +457,6 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
               data-preview-lyrics-interactive="true"
               onClick={(e) => {
                 requestLyricsAutoScrollResume();
-                // RATIONALE: Follow is a one-shot action. Without blur, the
-                // button retains focus and :focus-within pins the bottom
-                // offset/font controls open until the user clicks elsewhere.
                 e.currentTarget.blur();
               }}
               aria-label={t("lyrics.followPlaying")}

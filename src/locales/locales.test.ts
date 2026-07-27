@@ -9,10 +9,6 @@ import {
 import en from "./en.json";
 import zh from "./zh-CN.json";
 
-// Auto-load every locale JSON the same way src/lib/i18n.ts does, so this suite
-// covers whatever files exist on disk without a hardcoded list. The keys of the
-// returned record are the file paths, which double as the source of truth for
-// WHICH locales ship.
 const localeModules = import.meta.glob("./*.json", {
   eager: true,
   import: "default",
@@ -72,9 +68,6 @@ describe("locale registry", () => {
     );
   });
 
-  // The name map and the files on disk must stay in lock-step: a file with no
-  // native name would render its raw code in the picker, and a name with no
-  // file would offer a language that cannot load. Either is a silent drift.
   test("every locale file has a native name and vice versa", () => {
     const fileCodes = Object.keys(LOCALES).sort();
     const nameCodes = Object.keys(NATIVE_LANGUAGE_NAMES).sort();
@@ -130,9 +123,6 @@ describe("locale values", () => {
     },
   );
 
-  // Every {{placeholder}} that appears in an en.json value must appear in the
-  // matching value of each locale — a dropped placeholder means a runtime value
-  // (song title, count, …) silently vanishes from the UI.
   test.each(otherCodes)(
     "%s preserves every {{placeholder}} set relative to en.json",
     (code) => {
@@ -184,9 +174,6 @@ describe("locale copy", () => {
   });
 
   test("defines every Settings → About key in all locales", () => {
-    // The About section is the cross-platform version + debug-export surface;
-    // a key missing from any locale would ship English (or a raw key) to that
-    // language's users, exactly the gap the completeness guards below catch.
     const aboutKeys = [
       "settings.about.label",
       "settings.about.description",
@@ -212,11 +199,6 @@ describe("locale copy", () => {
   });
 });
 
-// Load the remote-library flow source files as raw strings at build time via
-// Vite's import.meta.glob. This intentionally avoids Node's fs/path modules,
-// which are not part of the app's DOM/bundler tsconfig (`tsconfig.json`) and
-// would fail the CI `tsc --noEmit` gate. Each pattern is an exact file so the
-// keys of the returned record double as a presence check for the flow.
 const REMOTE_FLOW_SOURCES = import.meta.glob(
   [
     "../components/Settings/SettingsLibrarySection.tsx",
@@ -233,18 +215,9 @@ const REMOTE_FLOW_SOURCES = import.meta.glob(
   { query: "?raw", import: "default", eager: true },
 ) as Record<string, string>;
 
-// The parity test above only compares key sets, so a key missing from EVERY
-// locale passes silently while an inline `defaultValue` masks the gap in dev.
-// This guard scans the remote-library flow for static `t("literal")` calls and
-// fails when a referenced key (with or without a `defaultValue`) is absent from
-// any locale — the exact footgun that shipped English strings to zh-CN users
-// (issue #209).
 describe("remote-library flow i18n completeness", () => {
   const EXPECTED_FILE_COUNT = 10;
 
-  // Matches `t("literal"` / `t('literal'` (allowing whitespace/newlines after
-  // the paren). Dynamically built keys — `t(variable)` — are intentionally
-  // skipped because their key is not statically knowable.
   const T_CALL = /\bt\(\s*["']([^"']+)["']/g;
 
   function collectKeys(): string[] {
@@ -280,11 +253,6 @@ describe("remote-library flow i18n completeness", () => {
   });
 });
 
-// The bootstrap banners (model + runtime) drive the first-run separation UX,
-// so their Missing/Downloading/Failed copy must never fall back to a raw
-// English `defaultValue`. Same guard as above, scoped to the banner sources so
-// a newly referenced key without a locale entry fails CI (issue #226 added the
-// runtime banner's three-state copy).
 const BOOTSTRAP_BANNER_SOURCES = import.meta.glob(
   [
     "../components/Bootstrap/ModelBootstrapBanner.tsx",

@@ -71,8 +71,6 @@ export function createModelSettingsActions(
           },
         });
       } catch (error) {
-        // An update-check failure never affects installed-model readiness;
-        // it is reported on its own line in the model section.
         patchState({
           modelUpdate: {
             status: "failed",

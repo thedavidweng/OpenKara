@@ -34,9 +34,6 @@ export function applyResolvedTheme(
   root: HTMLElement = document.documentElement,
 ): void {
   root.dataset.theme = theme;
-  // Preserve the audience dark color-scheme when the presentation marker is
-  // set — the stylesheet rule at globals.css forces audience tokens to dark,
-  // and an inline colorScheme would override that.
   const isAudience = root.dataset.presentationMode === "audience";
   root.style.colorScheme = isAudience ? "dark" : theme;
 }
@@ -119,8 +116,6 @@ export function useThemeRuntime(previewMode = false): {
   const themePreference = useSettingsStore((s) => s.themePreference);
   const hydrated = useSettingsStore((s) => s.hydrated);
 
-  // Read the OS preference synchronously so the first paint matches the
-  // system appearance when preference is "system" (avoids a dark→light flash).
   const [systemPrefersDark, setSystemPrefersDark] = useState(() => {
     const media = getSystemPrefersDarkMedia();
     return media ? media.matches : true;
@@ -132,8 +127,6 @@ export function useThemeRuntime(previewMode = false): {
     systemPrefersDark,
   );
 
-  // Track the media value in state only because it is an external changing
-  // source; do not duplicate resolved theme in state.
   useEffect(() => {
     if (themePreference !== "system") {
       return;
@@ -178,8 +171,6 @@ export function useThemeRuntime(previewMode = false): {
     };
 
     const timeoutId = setTimeout(() => {
-      // The local bridge may not settle in some embedded environments; keep
-      // the CSS theme and mark startup ready so the window is not stranded.
       console.warn(
         "[theme] native setTheme did not settle within timeout; CSS theme remains applied",
       );
@@ -209,8 +200,6 @@ export function useThemeRuntime(previewMode = false): {
       cancelled = true;
       clearTimeout(timeoutId);
     };
-    // themePreference and resolvedTheme are intentionally tracked together so
-    // a distinct preference/resolved-theme pair calls setTheme once.
   }, [hydrated, themePreference, resolvedTheme]);
 
   return { resolvedTheme, startupThemeReady };

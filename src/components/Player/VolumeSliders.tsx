@@ -92,28 +92,18 @@ export function VolumeSliders({
   const isTwoStem = stemMode === "two_stem";
   const isFourStem = stemMode === "four_stem";
 
-  // Track previous non-zero values for mute/unmute toggle. Accompaniment
-  // remembers all three sub-stems so unmuting restores the exact mix
-  // instead of collapsing the three stems to one shared level.
   const prevVocalsRef = useRef(1);
   const prevAccompRef = useRef({ drums: 1, bass: 1, other: 1 });
   const prevDrumsRef = useRef(1);
   const prevBassRef = useRef(1);
   const prevOtherRef = useRef(1);
 
-  // Frozen per-gesture base for the accompaniment master slider. Captured at
-  // drag start so every slider event maps sub-stems as a pure function of the
-  // master value; recomputing from live (async, per-stem) store values lets
-  // the three stems drift apart during a fast drag.
   const accompGestureBaseRef = useRef<{
     drums: number;
     bass: number;
     other: number;
     master: number;
   } | null>(null);
-  // While a master drag is active the accompaniment slider renders the
-  // gesture value. Deriving it from max(sub-stems) mid-drag pins the thumb
-  // at 1 as soon as the loudest stem clamps.
   const [accompDragValue, setAccompDragValue] = useState<number | null>(null);
 
   // Floating popup: portal to body so stage overflow / settings z-index cannot clip it.
@@ -201,9 +191,6 @@ export function VolumeSliders({
     stemVolumes.other,
   );
 
-  // The three sub-stems are committed through ONE trailing limiter so a
-  // throttled flush always carries a consistent triple; three independent
-  // limiters can flush values sampled at different moments of the drag.
   const dispatchAccompGroup = useCallback(
     (drums: number, bass: number, other: number) => {
       let limiter = accompGroupLimiterRef.current;
@@ -237,16 +224,8 @@ export function VolumeSliders({
   const handleAccompDragEnd = useCallback(() => {
     accompGroupLimiterRef.current?.flush();
     accompGestureBaseRef.current = null;
-    // Keep rendering the released value: setStemVolume is an async round-trip,
-    // so falling straight back to max(store stems) makes the thumb hop
-    // backwards for one commit. The effect below hands the display back to the
-    // store as soon as it reflects the release.
   }, []);
 
-  // A gesture whose slider disappears (the song ends, the mixer popup closes)
-  // never sees pointerup, so the frozen base has to be released explicitly —
-  // otherwise the next drag would scale the current mix by the stale one, and
-  // the thumb would stay pinned at the abandoned gesture value.
   useEffect(() => {
     if (stemsAvailable) {
       return;
@@ -256,8 +235,6 @@ export function VolumeSliders({
     setAccompDragValue(null);
   }, [stemsAvailable]);
 
-  // Same for a track change mid-drag: a pending triple belongs to the previous
-  // song's mix, so drop it rather than applying it to the new one.
   useEffect(() => {
     accompGroupLimiterRef.current?.cancel();
     accompGestureBaseRef.current = null;
@@ -285,8 +262,6 @@ export function VolumeSliders({
         dispatchAccompGroup(newValue, newValue, newValue);
         return;
       }
-      // Keyboard adjustments arrive without a pointer gesture; scale from
-      // the current committed mix as a one-shot base.
       const base = gestureBase ?? {
         drums: stemVolumes.drums,
         bass: stemVolumes.bass,

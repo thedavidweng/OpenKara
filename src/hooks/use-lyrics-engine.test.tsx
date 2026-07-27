@@ -18,7 +18,6 @@ const {
   mockSelectCurrentPositionMs,
   mockLineRuntime,
 } = vi.hoisted(() => {
-  // Call through nowMs so the rAF host sample `() => now` is covered.
   const mockSelectCurrentPositionMs = vi.fn(
     (state: { positionMs: number }, nowMs?: () => number) => {
       if (typeof nowMs === "function") {
@@ -97,8 +96,6 @@ function Harness(props: {
   mountContainer?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  // Flip viewportActive only after the container is in the DOM so the guard
-  // layout effect re-runs with a non-null containerRef (matches LyricsPanel).
   const [domReady, setDomReady] = useState(false);
   useLayoutEffect(() => {
     if (props.mountContainer === false) {
@@ -137,9 +134,6 @@ function defineNumber(el: Element, prop: string, value: number) {
   Object.defineProperty(el, prop, { value, configurable: true });
 }
 
-// Harness with real line elements so the scroll engine can measure geometry
-// (offsetTop / clientHeight) for the re-anchor tests (#201 / #202). jsdom does
-// not lay out, so the test defines geometry on the mounted nodes directly.
 function ScrollHarness(props: { lyricsFontStep: number; songId?: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [domReady, setDomReady] = useState(false);
@@ -359,8 +353,6 @@ describe("useLyricsEngine", () => {
   });
 
   test("resets scrollTop directly when the user-scroll guard is unavailable", () => {
-    // Engine effect has a container but guardRef is null (layout skipped /
-    // failed to attach). Must still zero scrollTop without withProgrammatic.
     vi.spyOn(lyricsEngine, "createUserScrollGuard").mockReturnValue(
       null as unknown as ReturnType<typeof lyricsEngine.createUserScrollGuard>,
     );
@@ -374,7 +366,6 @@ describe("useLyricsEngine", () => {
     ) as HTMLDivElement;
     expect(viewport).toBeTruthy();
     viewport.scrollTop = 120;
-    // Re-trigger the engine effect (songId change) so the null-guard write runs.
     act(() => {
       root.render(<Harness songId="song-2" />);
     });
@@ -428,13 +419,9 @@ describe("useLyricsEngine", () => {
       root.render(<ScrollHarness lyricsFontStep={2} />);
     });
 
-    // The engine effect re-ran, but a layout/font change (same song) must NOT
-    // reset the viewport to the top.
     expect(viewport.scrollTop).toBe(170);
     expect(viewport.scrollTop).not.toBe(0);
 
-    // The next frame snaps directly to the recomputed centered target for the
-    // current active line (260 + 20 - 50 = 230) — no animate-from-zero.
     act(() => {
       rafCb?.(1100);
     });
@@ -475,21 +462,17 @@ describe("useLyricsEngine", () => {
     defineNumber(line1, "offsetTop", 200);
     defineNumber(line1, "clientHeight", 40);
 
-    // Held line 1 sits at the target for the current (100px) viewport height.
     act(() => {
       rafCb?.(1000);
     });
     expect(viewport.scrollTop).toBe(170);
 
-    // Window grows taller (100 → 200). Without a resize observer the engine
-    // would pin scrollTop at the stale 170 until the next line change.
     defineNumber(viewport, "clientHeight", 200);
     act(() => {
       resizeCb?.([], {} as ResizeObserver);
       vi.advanceTimersByTime(200);
     });
 
-    // Re-centered for the SAME active line at the new size: 200 + 20 - 100 = 120.
     expect(viewport.scrollTop).toBe(120);
 
     vi.useRealTimers();
@@ -531,7 +514,6 @@ describe("useLyricsEngine", () => {
     });
     viewport.scrollTop = 400;
 
-    // A resize while browsing must not yank the user back to the active line.
     defineNumber(viewport, "clientHeight", 200);
     act(() => {
       resizeCb?.([], {} as ResizeObserver);

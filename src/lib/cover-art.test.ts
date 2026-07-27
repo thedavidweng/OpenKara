@@ -147,10 +147,6 @@ describe("cover-art", () => {
   });
 
   test("releaseCoverArtUrl with url guard skips stale cleanups after byte replacement", () => {
-    // Simulates the useCoverArtUrl hook lifecycle: retain URL_A, then replace
-    // with URL_B (same key, different bytes), then the OLD useEffect cleanup
-    // fires. Without the url guard, the cleanup would decrement the new
-    // entry's refs and prematurely revoke URL_B.
     const jpeg = [0xff, 0xd8, 0x00];
     const png = [0x89, 0x50, 0x4e, 0x47];
 

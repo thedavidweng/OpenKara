@@ -23,16 +23,8 @@ export function PeakMeter({
 } = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const lastWriteIndexRef = useRef(0);
-  // Timestamp of the last writeIndex advance. When the index stops moving
-  // (playback paused/stopped) the backend keeps returning the same non-empty
-  // snapshot, so we use elapsed time to fall back to the flat-line state.
   const lastAdvanceRef = useRef<number | null>(null);
-  // Whether the flat-line state has already been drawn. Prevents redundant
-  // 30 Hz redraws when playback is idle — the canvas content is static so
-  // there is nothing to repaint until new peaks arrive.
   const flatLineDrawnRef = useRef(false);
-  // Last non-empty snapshot, captured so we can animate a smooth decay to
-  // the flat line instead of an abrupt jump when playback pauses/stops.
   const lastPeaksRef = useRef<AudioPeakSnapshot | null>(null);
   // When decay started (performance.now ms). null while not decaying.
   const decayStartRef = useRef<number | null>(null);
@@ -40,13 +32,7 @@ export function PeakMeter({
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setInterval> | null = null;
-    // Monotonic generation so a slow getAudioPeaks response cannot overwrite
-    // a newer poll (or apply after unmount/interval rebuild).
     let requestGeneration = 0;
-    // Single-flight coordination: at most one getAudioPeaks() call in flight
-    // per effect lifetime. Ticks that arrive while in flight coalesce into a
-    // single follow-up poll (rerunRequested) instead of stacking concurrent
-    // IPC calls whose responses would all be invalidated by newer ticks.
     let inFlight = false;
     let rerunRequested = false;
 
@@ -105,11 +91,6 @@ export function PeakMeter({
 
     const poll = async () => {
       if (cancelled) return;
-      // Single-flight guard: if a previous poll is still in flight, coalesce
-      // the tick into a single follow-up poll instead of issuing another IPC
-      // call. Without this, a slow backend causes every timer tick to start a
-      // concurrent request, and each response is invalidated by the next tick,
-      // so the meter can stop rendering entirely while spinning on IPC.
       if (inFlight) {
         rerunRequested = true;
         return;
@@ -118,11 +99,8 @@ export function PeakMeter({
       const generation = ++requestGeneration;
       try {
         const snapshot = await getAudioPeaks();
-        // Drop stale responses: a later poll already started, or we unmounted.
         if (cancelled || generation !== requestGeneration) return;
         const now = performance.now();
-        // Monotonic comparison: an older write index (e.g. from a reordered
-        // or wrapped response) must never replace a newer canvas state.
         const advanced = snapshot.writeIndex > lastWriteIndexRef.current;
         if (advanced) {
           lastWriteIndexRef.current = snapshot.writeIndex;
@@ -138,18 +116,6 @@ export function PeakMeter({
             draw(snapshot);
           }
         } else {
-          // writeIndex unchanged with non-empty peaks: playback has likely
-          // stopped or paused. After a grace period, animate a smooth decay
-          // from the last waveform to the flat line so the transition is not
-          // an abrupt jump. The decay runs over 400 ms at the 30 Hz poll
-          // cadence, scaling the last peak values toward zero.
-          //
-          // If the component mounted with non-empty peaks whose writeIndex
-          // never advanced from the initial value (e.g. writeIndex=0 with
-          // data, or a writeIndex equal to the initial lastWriteIndexRef),
-          // lastAdvanceRef stays null and the staleness check below would
-          // never fire. Start the grace period on the first static non-empty
-          // poll so the canvas eventually flat-lines.
           if (lastAdvanceRef.current === null) {
             lastAdvanceRef.current = now;
           }
@@ -169,8 +135,6 @@ export function PeakMeter({
                 draw({ ...snapshot, peaks: [] });
               }
             } else {
-              // Animate: scale the last peaks toward zero with an
-              // ease-out curve so the bars settle smoothly.
               const progress = decayElapsed / decayMs;
               const factor = 1 - Math.pow(progress, 2);
               const base = lastPeaksRef.current ?? snapshot;
@@ -185,8 +149,6 @@ export function PeakMeter({
         // Backend may be unavailable during startup — silently skip.
       } finally {
         inFlight = false;
-        // If a tick arrived while this poll was in flight, run exactly one
-        // follow-up poll so we don't lose a cadence cycle to coalescing.
         if (!cancelled && rerunRequested) {
           rerunRequested = false;
           void poll();

@@ -15,8 +15,6 @@ export async function loadStartupSettings({
 }: StartupSettingsDependencies) {
   const settings = await getSettings();
 
-  // Runtime owns persisted settings hydration so every window reads the same
-  // authoritative snapshot instead of racing its own startup fetches.
   hydrateAppSettings(settings);
 
   const language = settings.language ?? detectFallbackLanguage();

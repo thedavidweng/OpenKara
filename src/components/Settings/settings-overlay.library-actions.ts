@@ -333,9 +333,6 @@ export function createLibrarySettingsActions(
 
     setEqEnabled: async (enabled) => {
       patchState({ eqEnabled: enabled });
-      // The settings store owns the committed value and all in-flight EQ
-      // mutations. Duplicating optimistic rollback here would let rapid slider
-      // or toggle requests settle on an already-rejected value.
       await dependencies.settingsStore.setEqEnabled(enabled);
       patchState({
         eqEnabled:
@@ -398,14 +395,8 @@ export function createLibrarySettingsActions(
     },
 
     setThemePreference: async (preference) => {
-      // The store action is optimistic with generation-based rollback; the
-      // overlay state mirrors the store so the radio reflects the pending
-      // choice immediately. The store action handles IPC and rollback.
       patchState({ themePreference: preference });
       await dependencies.settingsStore.setThemePreference(preference);
-      // The store action synchronizes the authoritative snapshot on success;
-      // mirror the final store value so the overlay stays in sync after
-      // rollback too.
       patchState({
         themePreference:
           dependencies.settingsStore.getAppSettingsSnapshot().themePreference,

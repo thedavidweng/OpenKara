@@ -70,8 +70,6 @@ describe("LyricsFontSizeControl", () => {
   test("uses dimmer text for the step label at default", () => {
     const markup = renderToStaticMarkup(<LyricsFontSizeControl />);
 
-    // The control-primary highlight must be absent at the default step so the
-    // label rests in the dim text color rather than the active highlight color.
     expect(markup).not.toContain("text-[var(--color-control-primary)]");
   });
 

@@ -3,7 +3,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render } from "@testing-library/react";
-import { GlobalProgressBar } from "./GlobalProgressBar";
+import { GlobalProgressBar, TaskProgressBar } from "./GlobalProgressBar";
 import * as api from "@/lib/tauri";
 import type {
   RuntimeBootstrapStatusSnapshot,
@@ -187,12 +187,37 @@ describe("GlobalProgressBar", () => {
 
     const markup = renderToStaticMarkup(<GlobalProgressBar />);
 
-    // A labeled task — not a bare "0%" — is what tells the user the runtime is
-    // downloading rather than the app being frozen (#226).
     expect(markup).toContain("bootstrap.downloadingRuntime");
-    // 3.2 MB / 6.4 MB → a determinate bar at 50% width.
     expect(markup).toContain("width:50%");
 
     mockRuntimeState.status = null;
+  });
+
+  test("TaskProgressBar compact mode clamps percent and supports indeterminate fill", () => {
+    const clamped = renderToStaticMarkup(
+      <TaskProgressBar compact label="" ariaLabel="batch-song" percent={140} />,
+    );
+    expect(clamped).toContain('role="progressbar"');
+    expect(clamped).toContain('aria-label="batch-song"');
+    expect(clamped).toContain("width:100%");
+    expect(clamped).toContain("h-1 w-full");
+
+    const below = renderToStaticMarkup(
+      <TaskProgressBar compact label="x" percent={-10} />,
+    );
+    expect(below).toContain("width:0%");
+    expect(below).toContain('aria-label="x"');
+
+    const indeterminate = renderToStaticMarkup(
+      <TaskProgressBar
+        compact
+        label=""
+        percent={0}
+        indeterminate
+        ariaLabel="unknown-total"
+      />,
+    );
+    expect(indeterminate).toContain("model-indeterminate-bar");
+    expect(indeterminate).toContain('aria-label="unknown-total"');
   });
 });

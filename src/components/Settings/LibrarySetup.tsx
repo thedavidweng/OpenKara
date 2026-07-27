@@ -96,9 +96,6 @@ interface LibrarySetupProps {
 
 function StepIndicator({ current }: { current: Step }) {
   const steps: Step[] = ["language", "library", "stemMode"];
-  // The remote-provider screen is a branch of the library step, not a stage of
-  // its own. Giving it a dot promised a step most users never reach and left
-  // the indicator permanently one short.
   const currentIndex = steps.indexOf(
     current === "remoteProvider" ? "library" : current,
   );
@@ -119,9 +116,6 @@ function StepIndicator({ current }: { current: Step }) {
   );
 }
 
-// A short 2-glyph badge for the language button. Chinese variants get a
-// distinct hanzi; everything else falls back to the uppercased primary subtag
-// (e.g. "pt-BR" -> "PT", "ja" -> "JA").
 function languageBadge(code: string): string {
   const overrides: Record<string, string> = {
     en: "EN",

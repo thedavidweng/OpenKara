@@ -298,7 +298,6 @@ describe("FullscreenControls Romanize button", () => {
       getRomanizeButton().click();
     });
 
-    // The mock lyrics store is the projection; click must not flip it.
     expect(mockLyricsStore.showRomanized).toBe(false);
   });
 });
@@ -378,8 +377,6 @@ describe("FullscreenControls auto-hide", () => {
       vi.advanceTimersByTime(6000);
     });
 
-    // A stationary pointer over the bar must not fade the button out from
-    // under the user.
     expect(footer.getAttribute("data-idle")).toBe("false");
 
     act(() => {

@@ -22,9 +22,6 @@ export function RemoteReconnectIndicator() {
   const resetReconnect = useRemotePlaybackStore((s) => s.reset);
   const currentSongId = usePlayerStore((s) => s.snapshot?.song_id) ?? null;
 
-  // Reset the reconnect state when the user switches to a different song or
-  // playback stops (song_id becomes null). The backend coordinator already
-  // aborts silently for stale requests; this ensures the UI also clears.
   useEffect(() => {
     if (
       reconnectSongId !== null &&

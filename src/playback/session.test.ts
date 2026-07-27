@@ -319,9 +319,6 @@ describe("createPlaybackSession", () => {
 
   describe("onTrackTransitioned", () => {
     test("reconciles queue when clock holds from-song", () => {
-      // #88: The backend emits track-transitioned BEFORE the next
-      // playback-position event, so the clock may still hold the
-      // from-song. The handler must still reconcile.
       const deps = mockDeps();
       const session = createPlaybackSession(deps);
       session.applySnapshot(snapshot({ song_id: "old-song" }));
@@ -520,9 +517,6 @@ describe("createPlaybackSession", () => {
 
       const pending = session.seek(15_000);
 
-      // Real streaming seek: the command first emits a buffering target. The
-      // audio thread can then recover and emit playing before the invoke
-      // response is delivered to JavaScript.
       now = 1100;
       session.applyPosition({
         ms: 15_000,

@@ -4,7 +4,6 @@ import type { UpdatePolicy } from "@/types/ipc";
 import { SettingsSectionCard } from "./SettingsSectionCard";
 import { useSettingsOverlay } from "./SettingsOverlay.context";
 
-// Literal i18n keys keep the strictly-typed `t` happy (no dynamic concatenation).
 const UPDATE_POLICY_OPTIONS = [
   {
     value: "manual",
@@ -71,9 +70,6 @@ export function SettingsRuntimeSection() {
       : null;
 
   const report = update?.status === "checked" ? update.report : null;
-  // A staged candidate supersedes the update CTA: showing both a Restart
-  // button and an enabled Update button would offer a redundant re-download
-  // of the runtime that is already staged.
   const updateAvailable =
     (report?.state === "update_available" ||
       report?.state === "installed_without_identity") &&
@@ -81,10 +77,6 @@ export function SettingsRuntimeSection() {
   const downloadingCandidate = runtimeState === "downloading_candidate";
   const isDownloading = runtimeState === "downloading";
 
-  // The runtime normally installs itself the first time a song is separated.
-  // This CTA is the manual escape hatch for the states that cannot recover on
-  // their own, and it lives here — next to the runtime status and version —
-  // rather than inside the AI Model card.
   const needsInstall =
     isMissing || runtimeState === "corrupt" || runtimeState === "failed";
   const installLabel =

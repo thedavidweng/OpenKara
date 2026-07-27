@@ -22,6 +22,14 @@ const {
     selectSong: vi.fn(),
     separationStatuses: {},
     uploadStatuses: {},
+    batchSeparation: null as null | {
+      total: number;
+      completed: number;
+      skipped: number;
+      failed: number;
+      current_song_id: string | null;
+      current_percent: number;
+    },
     songs: [],
     loadLibrary: vi.fn(),
     lastClickedSongId: null,
@@ -139,6 +147,9 @@ describe("SongListItem", () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    mockLibraryState.batchSeparation = null;
+    mockLibraryState.separationStatuses = {};
+    mockLibraryState.uploadStatuses = {};
   });
 
   test("shows a cancel affordance while separating and calls the API on click", () => {
@@ -364,11 +375,12 @@ describe("SongListItem", () => {
     mockLibraryState.separationStatuses = {};
   });
 
-  test("renders shared progress bars for running separation and upload tasks", () => {
+  test("single-song separation uses a compact status chip without a full progress bar", () => {
     mockLibraryState.selectedSongIds = new Set();
+    mockLibraryState.batchSeparation = null;
     mockLibraryState.separationStatuses = {
-      "song-native-progress": {
-        song_id: "song-native-progress",
+      "song-single-progress": {
+        song_id: "song-single-progress",
         state: "running",
         percent: 55,
         cache_hit: false,
@@ -381,21 +393,11 @@ describe("SongListItem", () => {
         error: null,
       },
     };
-    mockLibraryState.uploadStatuses = {
-      "song-native-progress": {
-        song_id: "song-native-progress",
-        state: "running",
-        percent: 88,
-        remote_library_id: null,
-        detail: null,
-        error: null,
-      },
-    };
 
     const markup = renderToStaticMarkup(
       <SongListItem
         song={{
-          hash: "song-native-progress",
+          hash: "song-single-progress",
           file_path: "Rina Sawayama/Hold The Girl.mp3",
           audio_source_kind: "original",
           cdg_path: null,
@@ -412,15 +414,121 @@ describe("SongListItem", () => {
           imported_at: 0,
           original_ext: "mp3",
         }}
-        orderedHashes={["song-native-progress"]}
+        orderedHashes={["song-single-progress"]}
       />,
     );
 
-    expect(markup).toContain("progress.separating:Hold The Girl");
-    expect(markup).toContain("progress.uploadingToRemote:Hold The Girl");
-    expect(markup).toContain("h-1.5 w-full overflow-hidden rounded-full");
+    expect(markup).toContain("55%");
+    expect(markup).toContain("library.cancelSeparation");
+    expect(markup).not.toContain('role="progressbar"');
+    expect(markup).not.toContain("h-1 w-full overflow-hidden rounded-full");
 
     mockLibraryState.separationStatuses = {};
+  });
+
+  test("batch separation shows a compact per-song bar under the active row", () => {
+    mockLibraryState.selectedSongIds = new Set();
+    mockLibraryState.batchSeparation = {
+      total: 3,
+      completed: 1,
+      skipped: 0,
+      failed: 0,
+      current_song_id: "song-batch-progress",
+      current_percent: 40,
+    };
+    mockLibraryState.separationStatuses = {
+      "song-batch-progress": {
+        song_id: "song-batch-progress",
+        state: "running",
+        percent: 40,
+        cache_hit: false,
+        vocals_path: null,
+        accomp_path: null,
+        drums_path: null,
+        bass_path: null,
+        other_path: null,
+        model_variant: null,
+        error: null,
+      },
+    };
+
+    const markup = renderToStaticMarkup(
+      <SongListItem
+        song={{
+          hash: "song-batch-progress",
+          file_path: "Rina Sawayama/Hold The Girl.mp3",
+          audio_source_kind: "original",
+          cdg_path: null,
+          media_g_container: null,
+          instrumental: false,
+          language: null,
+          title: "Hold The Girl",
+          artist: "Rina Sawayama",
+          album: null,
+          duration_ms: 240000,
+          cover_art: null,
+          has_cover_art: false,
+          artwork_thumb_path: null,
+          imported_at: 0,
+          original_ext: "mp3",
+        }}
+        orderedHashes={["song-batch-progress"]}
+      />,
+    );
+
+    expect(markup).toContain("40%");
+    expect(markup).toContain('role="progressbar"');
+    expect(markup).toContain('aria-label="progress.separating:Hold The Girl"');
+    expect(markup).toContain("h-1 w-full overflow-hidden rounded-full");
+    expect(markup).not.toContain("library.cancelSeparation");
+
+    mockLibraryState.separationStatuses = {};
+    mockLibraryState.batchSeparation = null;
+  });
+
+  test("upload progress is a compact chip on the row (full bar is global-only)", () => {
+    mockLibraryState.selectedSongIds = new Set();
+    mockLibraryState.batchSeparation = null;
+    mockLibraryState.separationStatuses = {};
+    mockLibraryState.uploadStatuses = {
+      "song-upload-progress": {
+        song_id: "song-upload-progress",
+        state: "running",
+        percent: 88,
+        remote_library_id: null,
+        detail: null,
+        error: null,
+      },
+    };
+
+    const markup = renderToStaticMarkup(
+      <SongListItem
+        song={{
+          hash: "song-upload-progress",
+          file_path: "Rina Sawayama/Hold The Girl.mp3",
+          audio_source_kind: "original",
+          cdg_path: null,
+          media_g_container: null,
+          instrumental: false,
+          language: null,
+          title: "Hold The Girl",
+          artist: "Rina Sawayama",
+          album: null,
+          duration_ms: 240000,
+          cover_art: null,
+          has_cover_art: false,
+          artwork_thumb_path: null,
+          imported_at: 0,
+          original_ext: "mp3",
+        }}
+        orderedHashes={["song-upload-progress"]}
+      />,
+    );
+
+    expect(markup).toContain("88%");
+    expect(markup).not.toContain("progress.uploadingToRemote:Hold The Girl");
+    expect(markup).not.toContain('role="progressbar"');
+
     mockLibraryState.uploadStatuses = {};
   });
 

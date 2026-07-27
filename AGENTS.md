@@ -20,8 +20,9 @@ Formatting is automated via PostToolUse hook (`pnpm format:write` + `cargo fmt`)
 
 ## Engineering Rules
 
-- Preserve comments that explain **why** a piece of code exists, not just what it does.
-- When touching product tradeoffs, portability rules, or storage/performance constraints, add or update a short rationale comment near the code.
+- Prefer self-explanatory code. Names, types, and structure carry meaning — not essay comments.
+- Do not put product tradeoffs, constraints, or design rationale in code comments. Put them in the git commit message, or in an ADR / human doc under `docs/` when the decision needs a durable record.
+- Keep comments rare: only when the code cannot be made clear (e.g. a required non-obvious algorithm step, or a third-party bug workaround). Delete noise comments when you touch the file.
 - Keep code, contracts, and docs aligned. If behavior changes, update the relevant `docs/references/contracts/*.md` in the same change.
 - Treat repo-tracked docs and configs as first-class code.
 
@@ -43,14 +44,14 @@ does.
 
 Write technical documentation in ASD-STE100 Simplified English. Apply the standard by intent, not by dictionary lookup. Use short sentences. Use active voice. Use one topic per sentence. Use one word for one meaning. Avoid synonyms, passive voice, `-ing` verbs, noun clusters, and vague quantifiers.
 
-Scope: all repo-tracked English prose except `README.md`, `README_CN.md`, `website/`, `CHANGELOG.md`, `docs/references/generated/`, and `.github/` templates. Do not edit code comments. The codebase is self-explanatory. Report code comments instead.
+Scope: all repo-tracked English prose except `README.md`, `README_CN.md`, `website/`, `CHANGELOG.md`, `docs/references/generated/`, and `.github/` templates. Do not use code comments as documentation. Make code self-explanatory; write rationale in commits or ADRs.
 
 ## Never Do
 
 - Never use `as any`, `@ts-ignore`, or `@ts-expect-error` to silence type errors. Fix the types instead.
 - Never change public IPC commands, payloads, or events without updating the corresponding contract docs.
 - Never leave completed plans in the repo; delete them. The outcome will appear in `CHANGELOG.md` via the commit message when `pnpm changelog` runs.
-- Never remove rationale comments just because the surrounding code was refactored.
+- Never add long rationale or product-decision comments in source. Prefer a clear commit message.
 - Never remove Linux CI package `libasound2-dev` unless the audio stack itself changes.
 - Never repurpose `src-tauri/models/` as the production runtime model location.
 - Never write docs as agent instructions. Docs are for humans; make code self-explanatory instead.

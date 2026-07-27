@@ -38,24 +38,15 @@ export function useLocalAudienceRomanizeReceiver(): void {
     (s) => s.applyRemoteRomanizeState,
   );
 
-  // Highest revision observed by this receiver instance. Both applied and
-  // retained payloads bump this so a delayed older revision is ignored.
   const lastRevisionRef = useRef<number>(0);
-  // Retained payload waiting for the local lyrics to match its identity.
   const pendingRef = useRef<LocalAudienceRomanizeState | null>(null);
 
-  // Try to apply a payload against the current local lyrics. Returns
-  // "applied" if it matched, "retained" if it is pending a lyric identity
-  // match (including the case where local lyrics have not loaded yet), or
-  // "dropped" if it targets another song and cannot match.
   const tryApply = (
     payload: LocalAudienceRomanizeState,
   ): "applied" | "retained" | "dropped" => {
     const currentSongId = useLyricsStore.getState().songId;
     const currentLines = useLyricsStore.getState().lines;
 
-    // Local lyrics not loaded yet: retain until they arrive so an early
-    // authoritative snapshot is not lost before we can validate identity.
     if (currentSongId === null) {
       return "retained";
     }
@@ -73,7 +64,6 @@ export function useLocalAudienceRomanizeReceiver(): void {
     return "retained";
   };
 
-  // Re-evaluate the retained pending payload when the local lyrics change.
   useEffect(() => {
     const pending = pendingRef.current;
     if (pending === null) return;
@@ -107,8 +97,6 @@ export function useLocalAudienceRomanizeReceiver(): void {
           if (result === "applied" || result === "dropped") {
             pendingRef.current = null;
           } else {
-            // "retained": store as pending, replacing any older pending
-            // payload (the newer revision wins).
             pendingRef.current = payload;
           }
         },
@@ -121,9 +109,6 @@ export function useLocalAudienceRomanizeReceiver(): void {
         return;
       }
 
-      // Listener is registered; safe to request the current snapshot. The
-      // main window answers with the latest revision regardless of its
-      // audience-active announcement state.
       void emitLocalAudienceRomanizeSyncRequest().catch(() => {
         // Sync request delivery failure is non-fatal; the next authoritative
         // state change will still be emitted.
@@ -136,9 +121,6 @@ export function useLocalAudienceRomanizeReceiver(): void {
       cancelled = true;
       unlisten?.();
     };
-    // The effect intentionally re-runs only on mount. applyRemoteRomanizeState
-    // is a stable Zustand action; songId/lines changes are handled by the
-    // re-evaluation effect above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }

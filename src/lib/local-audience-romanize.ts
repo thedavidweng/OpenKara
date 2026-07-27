@@ -1,12 +1,6 @@
 import { emit, emitTo } from "@tauri-apps/api/event";
 import type { LyricLine } from "@/types/ipc";
 
-// Local audience romanization is a cross-WebView state projection. The main
-// window owns the authoritative romanization state and computation; the
-// fullscreen audience window renders a read-only projection. These events are
-// private to the frontend and never cross the Tauri IPC command boundary, so
-// they do not appear in docs/references/contracts/* (no public IPC change).
-
 export const LOCAL_AUDIENCE_ROMANIZE_STATE_EVENT =
   "openkara://local-audience-romanize-state";
 

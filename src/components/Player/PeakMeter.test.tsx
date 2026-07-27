@@ -17,7 +17,6 @@ function getCanvas(container: HTMLElement): HTMLCanvasElement {
   return canvas as HTMLCanvasElement;
 }
 
-// Mock canvas 2D context so the drawing path is exercised in jsdom.
 function mockCanvasContext() {
   const ctx = {
     setTransform: vi.fn(),
@@ -140,7 +139,6 @@ describe("PeakMeter", () => {
       writeIndex: 5,
       peaks: [[0.5, 0.5]],
     });
-    // Past the 500ms staleness grace — meter must clear to the flat baseline.
     await vi.advanceTimersByTimeAsync(600);
     expect(canvasMock.ctx.clearRect).toHaveBeenCalled();
     // Flat baseline path draws a single mid-line fill, not live peak bars.
@@ -214,9 +212,6 @@ describe("PeakMeter", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(resolvers.length).toBe(1);
 
-    // Advance several timer ticks while the first call is still unresolved.
-    // The single-flight guard must coalesce these into rerunRequested, not
-    // start additional concurrent IPC calls.
     await vi.advanceTimersByTimeAsync(34);
     await vi.advanceTimersByTimeAsync(34);
     await vi.advanceTimersByTimeAsync(34);
@@ -227,16 +222,12 @@ describe("PeakMeter", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(resolvers.length).toBe(2);
 
-    // Further ticks while the follow-up is in flight again coalesce.
     await vi.advanceTimersByTimeAsync(34);
     await vi.advanceTimersByTimeAsync(34);
     expect(resolvers.length).toBe(2);
   });
 
   it("draws once for a delayed response rather than perpetually discarding it", async () => {
-    // When IPC takes longer than a tick, the single follow-up poll must still
-    // draw its result once — it is not invalidated by a newer tick because no
-    // newer tick starts a concurrent request.
     type Resolver = (value: {
       writeIndex: number;
       peaks: Array<[number, number]>;
@@ -253,7 +244,6 @@ describe("PeakMeter", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(resolvers.length).toBe(1);
 
-    // Ticks arrive while the call is pending — coalesced, no new calls.
     await vi.advanceTimersByTimeAsync(34);
     await vi.advanceTimersByTimeAsync(34);
     expect(resolvers.length).toBe(1);
@@ -296,9 +286,6 @@ describe("PeakMeter", () => {
   });
 
   it("an older write index cannot replace a newer canvas state", async () => {
-    // The freshness predicate is monotonic (>): a response whose writeIndex is
-    // less than the last drawn index must not redraw, even if it is the active
-    // generation (e.g. a reordered or wrapped backend response).
     mockGetAudioPeaks.mockResolvedValue({
       writeIndex: 10,
       peaks: [[0.5, 0.5]],
@@ -307,7 +294,6 @@ describe("PeakMeter", () => {
     await vi.advanceTimersByTimeAsync(100);
     const drawnAt10 = canvasMock.ctx.fillRect.mock.calls.length;
 
-    // A subsequent poll returns an older writeIndex — must not redraw.
     mockGetAudioPeaks.mockResolvedValue({
       writeIndex: 3,
       peaks: [[0.1, 0.1]],
@@ -317,8 +303,6 @@ describe("PeakMeter", () => {
   });
 
   it("falls back to flat-line when peaks go stale after playback stops", async () => {
-    // Simulate playback that was active (writeIndex > 0, non-empty peaks) but
-    // has now stopped — the backend keeps returning the same snapshot.
     mockGetAudioPeaks.mockResolvedValue({
       writeIndex: 5,
       peaks: [[0.3, 0.4]],
@@ -328,7 +312,6 @@ describe("PeakMeter", () => {
     await vi.advanceTimersByTimeAsync(100);
     const initialCount = canvasMock.ctx.clearRect.mock.calls.length;
     // Advance past the 500 ms grace period plus the 400 ms decay animation
-    // so the flat-line fallback has completed.
     await vi.advanceTimersByTimeAsync(1000);
     // The flat-line fallback should have drawn (clearRect + fillRect for
     // the baseline), not on every subsequent tick.
@@ -342,10 +325,6 @@ describe("PeakMeter", () => {
   });
 
   it("flat-lines when mounted with non-empty peaks whose writeIndex never advances", async () => {
-    // The backend returns non-empty peaks with a writeIndex that never
-    // advances from the initial value (writeIndex=0 with data). Without
-    // initializing the staleness grace period on the first static poll,
-    // lastAdvanceRef stays null forever and the flat-line never triggers.
     mockGetAudioPeaks.mockResolvedValue({
       writeIndex: 0,
       peaks: [[0.3, 0.4]],
@@ -368,8 +347,6 @@ describe("PeakMeter", () => {
   });
 
   it("animates a smooth decay to flat-line instead of an abrupt jump", async () => {
-    // When playback stops, the meter should animate the last peaks toward
-    // zero over the decay period rather than jumping straight to flat-line.
     mockGetAudioPeaks.mockResolvedValue({
       writeIndex: 5,
       peaks: [[0.8, 0.8]],

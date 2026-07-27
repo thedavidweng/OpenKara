@@ -68,15 +68,6 @@ describe("pointInConvexPolygon", () => {
 });
 
 describe("isInSafetyZone", () => {
-  // The safety zone is the trapezoid formed between the right edge of
-  // parentRect and the left edge of submenuRect.
-  //
-  // parentRect: right=200, top=50, bottom=150
-  // submenuRect: left=210, top=30, bottom=170
-  //
-  // Trapezoid vertices:
-  //   (200, 50)  (200, 150)  (210, 170)  (210, 30)
-
   const parentRect: DOMRect = {
     x: 100,
     y: 50,

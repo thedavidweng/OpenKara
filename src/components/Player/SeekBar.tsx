@@ -27,9 +27,6 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
   const playingSinceMs = usePlayerStore((s) => s.playingSinceMs);
   const seek = usePlayerStore((s) => s.seek);
 
-  // Use a rAF loop to smoothly extrapolate the current position between
-  // IPC position events. This prevents the progress bar from jumping
-  // per-event and provides buttery-smooth animation.
   const [displayPositionMs, setDisplayPositionMs] = useState(positionMs);
 
   useEffect(() => {
@@ -56,11 +53,6 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragPercent, setDragPercent] = useState(0);
 
-  // #90: Waveform peaks keyed by (song, effective buckets). Bucket count is
-  // derived from rail CSS width and device pixel ratio
-  // (clamp(round(cssWidth * dpr / 3), 24, 1000)). Module LRU (96) serves
-  // hits synchronously; async fetches use a generation so late responses
-  // for a previous song/bucket never paint.
   const songId = snapshot?.song_id ?? null;
   const waveformRef = useRef<WaveformData | null>(null);
   const [waveformVersion, setWaveformVersion] = useState(0);
@@ -69,17 +61,6 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
   const requestGenerationRef = useRef(0);
   const effectiveBuckets = bucketsForRailWidth(railWidth, dpr);
 
-  // Observe rail CSS width via ResizeObserver. DPR is tracked separately
-  // (window resize + resolution media-query change) because a display
-  // migration can change DPR without altering CSS geometry.
-  //
-  // The initial measurement is synchronous so the first fetch uses the
-  // real rail width instead of the placeholder 200-bucket fallback.
-  // Subsequent resize events are debounced so a continuous window/rail
-  // drag does not fire a distinct bucket count on every layout tick —
-  // each distinct bucket count is a cache miss that triggers a full
-  // backend audio decode, so debouncing prevents many concurrent
-  // full-file decodes during a resize.
   useEffect(() => {
     const rail = barRef.current;
     if (!rail) return;
@@ -87,8 +68,6 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
     const measure = () => {
       const w = rail.getBoundingClientRect().width;
       setRailWidth(w);
-      // Always bump redraw so DPR / geometry changes repaint even when the
-      // bucket count is unchanged.
       setWaveformVersion((v) => v + 1);
     };
     measure();
@@ -118,9 +97,6 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // Track DPR via a resolution media-query tuned to the current DPR. When
-  // DPR changes the query is re-registered against the new value so a
-  // subsequent migration (e.g. 2x -> 1x) is still observed.
   useEffect(() => {
     const mql = window.matchMedia(`(resolution: ${dpr}dppx)`);
     const onChange = () => {
@@ -132,8 +108,6 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
   }, [dpr]);
 
   useEffect(() => {
-    // Drop previous peaks immediately so a resize-driven redraw during the
-    // fetch window never paints the wrong song/bucket shape.
     waveformRef.current = null;
     setWaveformVersion((v) => v + 1);
 
@@ -141,12 +115,6 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
       return;
     }
 
-    // Skip the fetch until the rail has been measured. On the first render
-    // railWidth is 0, so effectiveBuckets falls back to the placeholder 200.
-    // Fetching at that count would decode the whole audio file for a
-    // (song_hash, 200) cache key that is immediately superseded once the
-    // ResizeObserver reports the real width — a redundant full decode on
-    // the first play of every song.
     if (railWidth === 0) {
       return;
     }
@@ -186,11 +154,6 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
 
     const waveform = waveformRef.current;
     const peaks = waveform?.peaks ?? [];
-    // Use the tracked `dpr` state (not `window.devicePixelRatio` directly) so
-    // a DPR change that leaves `effectiveBuckets` unchanged still re-runs this
-    // effect via the `dpr` dependency and repaints at the new physical pixel
-    // dimensions. Reading the global directly would silently keep the stale
-    // backing store because the effect would not re-trigger.
     const rect = rail.getBoundingClientRect();
     const cssWidth = rect.width;
     const cssHeight = rect.height;
@@ -213,7 +176,6 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
     }
 
     // The bar width is derived from the bucket count and the rail width
-    // so the waveform always spans the full rail regardless of bucket count.
     const barWidth = cssWidth / peaks.length;
     const midY = cssHeight / 2;
     const maxBarHeight = cssHeight / 2;

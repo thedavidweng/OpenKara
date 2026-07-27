@@ -27,11 +27,6 @@ const PLAYBACK_BAR_LAYOUT_TOKENS: Record<
 > = {
   relaxed: {
     leftMaxWidth: 180,
-    // Issue #116 specified rem-based classes (w-[5.5rem], w-[6.5rem]) assuming
-    // a 16 px root font, but the app uses a 13 px root font (globals.css) so
-    // those rem values render at 71.5/84.5 px — not the required 88/104 px.
-    // Explicit pixel classes are the only way to hit the exact rail widths in
-    // the issue's layout contract under the 13 px root font.
     inlineStemVolumeWidthClass: "w-[88px]",
     masterVolumeWidth: 104,
     masterVolumeWidthClass: "w-[104px]",
@@ -56,9 +51,6 @@ const PLAYBACK_BAR_LAYOUT_TOKENS: Record<
   },
   tight: {
     leftMaxWidth: 148,
-    // Unused inline (stems hide behind the mixer trigger); popup rows keep w-16.
-    // w-16 = 4rem = 52 px under the 13 px root font, so the Master rail uses
-    // an explicit pixel class to hit the required 64 px.
     inlineStemVolumeWidthClass: "w-[64px]",
     masterVolumeWidth: 64,
     masterVolumeWidthClass: "w-[64px]",

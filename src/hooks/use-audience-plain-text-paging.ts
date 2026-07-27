@@ -132,9 +132,6 @@ export function useAudiencePlainTextPaging({
       measurePages();
     });
     observer.observe(containerRef.current);
-    // Observe the measurement container too: romanized text changes the
-    // height of each measured row without resizing the visible viewport, so
-    // a viewport-only ResizeObserver would miss the layout invalidation.
     if (measurementRef.current) {
       observer.observe(measurementRef.current);
     }

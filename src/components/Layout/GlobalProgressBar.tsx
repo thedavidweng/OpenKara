@@ -15,13 +15,14 @@ interface ActiveTask {
   label: string;
   detail?: string;
   percent: number;
-  /** When true, show a sliding segment instead of a fixed width (unknown total size). */
   indeterminate?: boolean;
   onCancel?: () => void;
 }
 
 interface TaskProgressBarProps extends Omit<ActiveTask, "key"> {
   className?: string;
+  compact?: boolean;
+  ariaLabel?: string;
 }
 
 export function TaskProgressBar({
@@ -31,7 +32,37 @@ export function TaskProgressBar({
   indeterminate,
   onCancel,
   className,
+  compact = false,
+  ariaLabel,
 }: TaskProgressBarProps) {
+  const clampedPercent = Math.min(100, Math.max(0, percent));
+
+  if (compact) {
+    return (
+      <div
+        className={className ?? "w-full"}
+        role="progressbar"
+        aria-label={ariaLabel || label || undefined}
+        aria-valuenow={indeterminate ? undefined : clampedPercent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        <div className="h-1 w-full overflow-hidden rounded-full bg-[var(--color-border)]">
+          {indeterminate ? (
+            <div className="relative h-full w-full overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--color-accent)_22%,transparent)]">
+              <div className="model-indeterminate-bar absolute inset-y-0 left-0 rounded-full bg-[var(--color-accent)] will-change-transform" />
+            </div>
+          ) : (
+            <div
+              className="motion-surface h-full rounded-full bg-[var(--color-accent)]"
+              style={{ width: `${clampedPercent}%` }}
+            />
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={className ?? "space-y-1"}>
       <div className="flex items-center justify-between">
@@ -60,7 +91,7 @@ export function TaskProgressBar({
         ) : (
           <div
             className="motion-surface h-full rounded-full bg-[var(--color-accent)]"
-            style={{ width: `${percent}%` }}
+            style={{ width: `${clampedPercent}%` }}
           />
         )}
       </div>
@@ -117,10 +148,6 @@ function useActiveTasks(modelDownloadCompleteFlash: boolean): ActiveTask[] {
     });
   }
 
-  // Runtime download — the ONNX Runtime is fetched before the model on a
-  // fresh install (and again as a candidate on updates). Surfacing it as a
-  // named task stops the first separation from looking frozen at 0% while the
-  // runtime downloads silently in the background (#226).
   if (
     runtimeStatus?.state === "downloading" ||
     runtimeStatus?.state === "downloading_candidate"
@@ -146,7 +173,6 @@ function useActiveTasks(modelDownloadCompleteFlash: boolean): ActiveTask[] {
     });
   }
 
-  // Model download
   if (bootstrapStatus?.state === "downloading") {
     const total = bootstrapStatus.total_bytes;
     const down = bootstrapStatus.downloaded_bytes;
@@ -169,7 +195,6 @@ function useActiveTasks(modelDownloadCompleteFlash: boolean): ActiveTask[] {
     });
   }
 
-  // Batch separation
   if (batchSeparation != null) {
     const done = batchSeparation.completed + batchSeparation.failed;
     if (done < batchSeparation.total) {
@@ -193,7 +218,6 @@ function useActiveTasks(modelDownloadCompleteFlash: boolean): ActiveTask[] {
     }
   }
 
-  // Single-song separation (only when NOT part of a batch)
   if (batchSeparation == null) {
     const runningSep = Object.values(separationStatuses).find(
       (s) => s.state === "running",

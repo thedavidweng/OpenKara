@@ -151,8 +151,6 @@ describe("lyrics-store fetchLyrics", () => {
     ]);
     expect(state.showRomanized).toBe(false);
 
-    // Enabling the toggle shows the source transcription without paying for a
-    // romanizer run, because the cache identity matches the fetched lines.
     useLyricsStore.getState().setRomanizedVisibility(true);
     expect(useLyricsStore.getState().showRomanized).toBe(true);
     expect(mockRomanizeLyricsLines).not.toHaveBeenCalled();
@@ -272,8 +270,6 @@ describe("lyrics-store fetchLyrics", () => {
     expect(state.source).toBe("lrc_lib");
   });
 
-  // Issue #203: user-authored/user-provided sources must never trigger the
-  // silent auto-upgrade, which could overwrite them with a wrong online match.
   test.each([
     "manual",
     "manual_ttml",
@@ -443,7 +439,6 @@ describe("lyrics-store fetchLyrics", () => {
 
     await useLyricsStore.getState().fetchLyrics("song-1");
 
-    // The online result should NOT be applied because songId no longer matches
     expect(useLyricsStore.getState().lines).toEqual(unsynced.lines);
   });
 });
@@ -886,9 +881,6 @@ describe("lyrics-store setRomanizedVisibility", () => {
   });
 
   test("re-enabling after lines changed recomputes instead of reusing stale cache", async () => {
-    // Simulate: romanize on (cache computed for v1), romanize off,
-    // edit/upgrade lyrics (lines become v2 without clearing cache),
-    // romanize on → must recompute, not reuse v1's romanizedLines.
     mockRomanizeLyricsLines
       .mockResolvedValueOnce({ result: ["ni hao"], requestId: 40 })
       .mockResolvedValueOnce({ result: ["ni hao v2"], requestId: 41 });
@@ -925,10 +917,8 @@ describe("lyrics-store setRomanizedVisibility", () => {
     useLyricsStore.getState().setRomanizedVisibility(false);
     expect(useLyricsStore.getState().romanizedLines).toEqual(["ni hao"]);
 
-    // Edit/upgrade lyrics: lines change to v2 without clearing romanizedLines.
     useLyricsStore.setState({ lines: linesV2 });
 
-    // Romanize on → must recompute because identity no longer matches.
     useLyricsStore.getState().setRomanizedVisibility(true);
     await vi.waitFor(() =>
       expect(mockRomanizeLyricsLines).toHaveBeenCalledTimes(2),

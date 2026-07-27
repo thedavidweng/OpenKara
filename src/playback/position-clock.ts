@@ -4,14 +4,6 @@ import type {
   PlaybackStateSnapshot,
 } from "@/types/ipc";
 
-/**
- * Authoritative local playback clock.
- *
- * RATIONALE: IPC position events are asynchronous and can be delayed, dropped,
- * or reordered under focus changes / event-loop pressure. UI extrapolates from
- * the last authoritative position using a local monotonic clock so lyrics and
- * seek UI stay smooth without polling the backend.
- */
 export interface PositionClockState {
   snapshot: PlaybackStateSnapshot | null;
   positionMs: number;
@@ -25,15 +17,6 @@ export function shouldAnchorPlayingSinceMs(
   return snapshot.is_playing && snapshot.state !== "buffering";
 }
 
-/**
- * RATIONALE: (positionMs, playingSinceMs) must be a consistent pair —
- * positionMs as measured at monotonic time playingSinceMs. Every reducer that
- * replaces positionMs with a fresh backend position must re-anchor to nowMs.
- * Keeping a stale anchor while adopting a fresh position makes
- * selectCurrentPositionMs double-count elapsed time: the displayed clock runs
- * at ~2× real speed and races past the last lyric line, which froze lyric
- * auto-scroll mid-song and shortly after every click-to-seek.
- */
 export function resolvePlayingSinceMs(
   nextSnapshot: PlaybackStateSnapshot,
   nowMs: number,
@@ -54,11 +37,6 @@ export function shouldReplaceSnapshotFromPositionEvent(
   current: PlaybackStateSnapshot | null,
   next: PlaybackStateSnapshot,
 ): boolean {
-  // RATIONALE: transport_generation is part of the snapshot identity. Seek /
-  // resume / pause bump it on the backend. If we only patch positionMs and
-  // keep an older generation on the stored snapshot, delayed pre-seek
-  // position events fail the stale check (their gen is not *less* than the
-  // still-stale stored gen) and yank the clock back before the seek.
   return (
     current?.song_id !== next.song_id ||
     current.transport_generation !== next.transport_generation ||
@@ -80,8 +58,6 @@ export function selectCurrentPositionMs(
   nowMs: () => number = () => performance.now(),
 ): number {
   const { snapshot, positionMs, playingSinceMs } = state;
-  // Do not extrapolate during buffer underrun — backend position is frozen even
-  // though is_playing still reflects transport intent.
   if (
     snapshot?.is_playing &&
     snapshot.state !== "buffering" &&
@@ -92,10 +68,6 @@ export function selectCurrentPositionMs(
   return positionMs;
 }
 
-// RATIONALE: Once AirPlay is active, the audience surface must follow the TV's
-// displayed clock rather than the local playback clock. That keeps the
-// standard UI synchronized with the remote audience surface without changing
-// which window is allowed to render audience styling.
 export function selectSyncDisplayPositionMs(
   state: Pick<PositionClockState, "positionMs"> & {
     airPlayOutput: AirPlayOutputStateEvent;

@@ -46,13 +46,6 @@ export async function romanizeLinesWith(
   lines: readonly string[],
   language?: SongLanguage | null,
 ): Promise<string[]> {
-  // Unknown language: do NOT pin a script. Pass the whole array in one call so
-  // the library detects the dominant script once across every line — any kana
-  // anywhere is definitive proof of Japanese, whereas a per-line loop would
-  // misdetect a kanji-only line as Chinese. This is the documented
-  // "Mixed-script arrays" contract (see the library README) and ADR-0002.
-  // Pure-Latin lines are returned unchanged by the library, so no per-line
-  // pre-filter is needed on this path.
   if (language === null || language === undefined) {
     try {
       const r = await romanizer.romanizeLines(lines);
@@ -62,11 +55,6 @@ export async function romanizeLinesWith(
     }
   }
 
-  // Pinned language: romanize one line at a time. A single failed line falls
-  // back to itself instead of failing the whole array, and the caller's
-  // per-request stale-response handling is preserved. The pinned script routes
-  // kanji-only lines to the right engine; the Latin pre-filter skips an
-  // English chorus line so it is never fed to the pinned engine.
   const options = OPTIONS_BY_LANGUAGE[language];
   return Promise.all(
     lines.map(async (line) => {

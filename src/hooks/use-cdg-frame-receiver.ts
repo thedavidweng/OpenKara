@@ -9,16 +9,6 @@ import {
   type CdgSyncStatusPayload,
 } from "@/lib/cdg-sync-channel";
 
-/**
- * macOS throttles rendering callbacks in unfocused windows, so the audience
- * display must paint from pushed messages rather than running its own polling
- * loop. This coalescer keeps only the latest frame for the next macrotask.
- *
- * RATIONALE: The audience window is intentionally a passive BroadcastChannel
- * sink. If it starts polling or running its own frame clock again, macOS can
- * throttle that hidden/non-focused webview to roughly 1Hz and regress CDG back
- * to slideshow playback.
- */
 export function createCoalescingPainter<T>(paint: (frame: T) => void): {
   enqueue: (frame: T) => void;
   cancel: () => void;

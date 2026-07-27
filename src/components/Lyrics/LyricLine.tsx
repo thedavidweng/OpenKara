@@ -40,13 +40,6 @@ const AUDIENCE_TEXT_SIZE_CLASSES = {
   [2]: "text-6xl font-bold tracking-tight md:text-8xl xl:text-8xl",
 } as const;
 
-// RATIONALE: Secondary lines (romanized pronunciation, background vocals) sit
-// visually below the primary lyric. The audience renderer scales them to 0.55×
-// the primary fontSizePx; standard mode mirrors that ratio by stepping the
-// Tailwind size down so the secondary track grows and shrinks with the same
-// lyricsFontStep control instead of staying pinned at text-sm/md:text-base.
-// The smallest step clamps at text-xs to stay readable when the primary is
-// already at its minimum.
 const STANDARD_SECONDARY_TEXT_SIZE_CLASSES = {
   [-2]: "text-xs",
   [-1]: "text-xs md:text-sm",
@@ -144,8 +137,6 @@ export const LyricLine = memo(function LyricLine({
 
   const handleClick = () => {
     if (!isSeekable) return;
-    // The player store publishes the lyrics seek edge after the asynchronous
-    // Tauri command installs its authoritative target snapshot.
     void seek(line.time_ms);
   };
 
@@ -262,11 +253,6 @@ export const LyricLine = memo(function LyricLine({
             ) {
               const wordDuration = word.end_ms - word.time_ms;
               const last = isLastWord(idx, line.words!.length);
-              // RATIONALE: Animate the whole word. Splitting into per-character
-              // inline-block spans reflows the line on every active-word change
-              // (metrics/wrapping shift), which used to yank the scroll target
-              // mid-line. Transform/text-shadow on one inline-block word keeps
-              // the same box model as the non-emphasis path.
               return (
                 <span
                   key={idx}

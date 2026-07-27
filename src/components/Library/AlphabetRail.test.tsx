@@ -384,8 +384,6 @@ describe("AlphabetRail", () => {
     fireEvent.pointerUp(container, { pointerId: 1 });
     fireEvent.click(buttonA);
 
-    // The user may scroll elsewhere after the first jump. The next tap is a
-    // new gesture and must not be rejected by the prior gesture's dedup guard.
     fireEvent.pointerDown(container, { button: 0, pointerId: 2, clientY: 0 });
     fireEvent.pointerUp(container, { pointerId: 2 });
     fireEvent.click(buttonA);
@@ -414,7 +412,6 @@ describe("AlphabetRail", () => {
     const container = setupPointerContainer();
     fireEvent.pointerDown(container, { button: 0, pointerId: 1, clientY: 0 });
     expect(onNavigate).toHaveBeenCalledTimes(1);
-    // The synthetic click that follows a pointer drag must not double-navigate.
     const buttonA = screen.getAllByRole("button")[0];
     fireEvent.click(buttonA);
     expect(onNavigate).toHaveBeenCalledTimes(1);
@@ -471,8 +468,6 @@ describe("AlphabetRail", () => {
     render(<AlphabetRail indexByBucket={index} onNavigate={onNavigate} />);
     const container = screen.getByRole("navigation");
     fireEvent.keyDown(container, { key: "ArrowDown" });
-    // With null roving, currentPos falls back to 0 (bucket A). ArrowDown → B.
-    // But B has no mapping so navigation may no-op; the :0 branch is still executed.
     const buttons = screen.getAllByRole("button");
     expect(buttons[1].getAttribute("tabindex")).toBe("0");
   });

@@ -23,10 +23,6 @@ export async function openFullscreenPlayer(monitorIndex?: number) {
     return;
   }
 
-  // Monitor geometry is reported in PHYSICAL pixels while window-creation
-  // options are interpreted as LOGICAL pixels, so divide by the monitor's
-  // scale factor — otherwise the window overshoots the monitor on HiDPI and
-  // mixed-DPI setups and the overflow renders as a black band.
   const scaleFactor = target.scaleFactor > 0 ? target.scaleFactor : 1;
 
   new WebviewWindow("fullscreen-player", {
@@ -36,9 +32,6 @@ export async function openFullscreenPlayer(monitorIndex?: number) {
     y: target.position.y / scaleFactor,
     width: target.size.width / scaleFactor,
     height: target.size.height / scaleFactor,
-    // Borderless + real fullscreen so the webview viewport coincides exactly
-    // with the monitor regardless of scale factor; the black background
-    // covers the interval before the document paints.
     decorations: false,
     fullscreen: true,
     backgroundColor: "#000000",

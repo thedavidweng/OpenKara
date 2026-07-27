@@ -1,6 +1,3 @@
-// Empty remote results (peaks.length === 0) are intentionally NOT stored so
-// a song that later becomes local can still be fetched.
-
 export interface WaveformCacheEntry {
   peaks: number[];
   buckets: number;
@@ -15,8 +12,6 @@ export function waveformCacheKey(songHash: string, buckets: number): string {
   return `${songHash}:${buckets}`;
 }
 
-// Sampling density tracks physical pixels so a DPR-only display migration
-// refetches instead of stretching the old waveform.
 export function bucketsForRailWidth(cssWidth: number, dpr: number): number {
   if (
     !Number.isFinite(cssWidth) ||

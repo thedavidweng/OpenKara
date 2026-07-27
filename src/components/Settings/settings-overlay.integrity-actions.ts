@@ -141,7 +141,6 @@ export function createIntegritySettingsActions(
 
         closeDialog();
       } catch (error: unknown) {
-        // On failure, reload the library and keep the last report visible.
         await dependencies.libraryStore.loadLibrary();
         dependencies.notifyError(error);
         closeDialog();

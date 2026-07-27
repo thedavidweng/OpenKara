@@ -28,13 +28,6 @@ export interface AudienceProjectorInput {
   viewport?: AirPlayAudienceStatePayload["viewport"];
 }
 
-/**
- * Pure audience presentation projector.
- *
- * RATIONALE: Mode selection (idle / cdg / lyrics) and payload assembly must
- * stay identical for AirPlay and local fullscreen so the two surfaces do not
- * drift into different products. Transport and store wiring stay in adapters.
- */
 export function projectAudienceState(
   input: AudienceProjectorInput,
 ): AirPlayAudienceStatePayload {

@@ -198,8 +198,6 @@ describe("SettingsEqSection", () => {
       vi.advanceTimersByTime(75);
     });
 
-    // Only the preset commit fires; the in-flight band drag must not clobber
-    // it 75 ms later.
     expect(setEqGains).toHaveBeenCalledTimes(1);
     expect(setEqGains).toHaveBeenCalledWith([0, 0, 0, 0, 0]);
     vi.useRealTimers();
@@ -396,10 +394,6 @@ describe("SettingsEqSection", () => {
     );
 
     const sliders = container.querySelectorAll('input[type="range"]');
-    // jsdom clamps range input values to [min, max], so temporarily remove
-    // the max attribute to push a value above the ceiling. handleBandChange
-    // clamps it back to 12, matching the current draft — the early-return
-    // branch should bail out without scheduling a commit.
     const slider = sliders[0] as HTMLInputElement;
     slider.removeAttribute("max");
     fireEvent.change(slider, { target: { value: "15" } });

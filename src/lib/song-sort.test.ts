@@ -127,9 +127,6 @@ describe("sortSongs / compareSongs", () => {
   });
 
   test("non-alphabetic titles sort after lettered titles (matches # rail position)", () => {
-    // The alphabet rail places "#" at the bottom (after Z). The sort must
-    // place digit/symbol-leading titles after A–Z titles so clicking the
-    // bottom "#" marker scrolls to the bottom of the list, not the top.
     const songs = [
       makeSong({ hash: "num", title: "99 Luftballons" }),
       makeSong({ hash: "z", title: "Zebra" }),
@@ -162,9 +159,6 @@ describe("sortSongs / compareSongs", () => {
       makeSong({ hash: "c", title: "Apple" }),
     ];
     const sorted = sortSongs(songs, "title_asc");
-    // The shared collator groups Han text before Latin text, but the rail
-    // groups Han by pinyin initial. The alphabetical primary key must follow
-    // the rail, otherwise A would appear after B and rail jumps regress.
     expect(sorted.map((song) => song.hash)).toEqual(["c", "b", "a"]);
   });
 

@@ -18,12 +18,6 @@ export function RuntimeUpdateBanner() {
     if (retrying) return;
     setRetrying(true);
     try {
-      // `download_runtime` returns a `downloading` snapshot and spawns the
-      // fetch; publishing it flips the banner into the downloading state so
-      // GlobalProgressBar can take over the byte/percent readout. A later
-      // failure re-emits `runtime-bootstrap-error`, returning to this banner —
-      // the recovery loop stays entirely in the banner (mirrors the #217 model
-      // banner).
       const snapshot = await downloadRuntime();
       updateStatus(snapshot);
     } catch (error) {

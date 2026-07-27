@@ -23,20 +23,8 @@ interface AppLayoutProps {
   previewMode?: boolean;
 }
 
-// Keep the landing preview on the same macOS fallback profile as the packaged
-// app. This lets the shared toolbar retain its native traffic-light spacing as
-// the desktop shell evolves, while the browser preview supplies only a visual
-// stand-in for the OS-owned controls.
 const PREVIEW_WINDOW_SHELL_STATE: WindowShellState = MAC_WINDOW_SHELL_STATE;
 
-// Preview-mode interaction whitelist. The landing-page mock blocks all
-// interactions except: (1) playlist switches in the sidebar (including the
-// back button that exits a playlist), (2) lyrics scrolling + the Follow
-// button inside the lyrics panel, (3) the toolbar sidebar toggle (keyboard
-// already works via window shortcuts), (4) the play/pause toggle so the
-// mock stays consistent with the spacebar shortcut, and (5) song list
-// scrolling so visitors can browse the mock library. Import and other
-// mutating actions stay blocked.
 function isPreviewAllowedTarget(target: EventTarget | null): boolean {
   return (
     target instanceof Element &&
@@ -78,12 +66,7 @@ export function AppLayout({
 
   const loadRotation = useRotationStore((s) => s.loadRotation);
 
-  // The landing page borrows this shell as a composed product scene, not a
-  // second app. Keep its state deterministic while preserving playlist changes
-  // as the one meaningful way to inspect the mock library.
   const blockPreviewInteraction = useCallback((event: SyntheticEvent) => {
-    // Always block browser zoom shortcuts (Cmd/Ctrl +/-/0) inside the preview
-    // so the mock player doesn't visually scale when visitors use them.
     const nativeEvent = event.nativeEvent;
     if (nativeEvent instanceof KeyboardEvent) {
       if (

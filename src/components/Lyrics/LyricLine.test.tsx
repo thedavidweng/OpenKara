@@ -662,8 +662,6 @@ describe("LyricLine", () => {
       />,
     );
 
-    // Smallest step clamps the secondary track at text-xs (the primary lyric
-    // at step -2 is still text-lg, so the secondary must be smaller).
     expect(smallStep).toContain("text-xs");
     expect(smallStep).not.toContain("md:text-base");
     // Largest step grows the secondary track past the old fixed text-sm/md:text-base.

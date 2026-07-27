@@ -11,9 +11,6 @@ import {
   emitLocalAudienceRomanizeState,
 } from "@/lib/local-audience-romanize";
 
-// Module-local monotonic revision counter. Each emitted snapshot carries a
-// strictly increasing revision so the fullscreen receiver can discard stale
-// payloads that arrive after a newer state was already applied.
 let revisionCounter = 0;
 
 function nextRevision(): number {
@@ -47,26 +44,15 @@ export function useLocalAudienceRomanizeRuntime(enabled: boolean): void {
     (s) => s.localAudienceOutputActive,
   );
 
-  // Latest snapshot kept in a ref so the sync-request handler can answer
-  // without re-reading the store and without depending on the latest render.
   const latestSnapshotRef = useRef<LocalAudienceRomanizeState | null>(null);
-  // Track whether the runtime listeners have been registered so the
-  // sync-request handler is only attached once.
   const listenersReadyRef = useRef(false);
 
-  // Re-emit the authoritative snapshot whenever the source state changes.
-  // The effect depends on the projected values so a no-op render does not
-  // produce a duplicate event; the revision counter guarantees the receiver
-  // can still distinguish genuine state changes from re-emissions.
   useEffect(() => {
     if (!enabled) {
       latestSnapshotRef.current = null;
       return;
     }
 
-    // Always build the snapshot so the sync-request handler can answer with
-    // the latest state even when the audience window is not yet announced
-    // as active (the announcement may lag behind the listener registration).
     const snapshot: LocalAudienceRomanizeState = {
       revision: nextRevision(),
       songId,
@@ -81,8 +67,6 @@ export function useLocalAudienceRomanizeRuntime(enabled: boolean): void {
       return;
     }
 
-    // Emit failures are auxiliary-output failures; they must not interrupt
-    // local lyrics or playback.
     void emitLocalAudienceRomanizeState(snapshot).catch(() => {
       // The fullscreen window may have closed mid-emit; the next change
       // will retry.
@@ -97,8 +81,6 @@ export function useLocalAudienceRomanizeRuntime(enabled: boolean): void {
     localAudienceOutputActive,
   ]);
 
-  // Register listeners for sync requests and explicit set requests. These
-  // are independent of the projected state so they attach once per mount.
   useEffect(() => {
     if (!enabled) {
       listenersReadyRef.current = false;
@@ -115,10 +97,6 @@ export function useLocalAudienceRomanizeRuntime(enabled: boolean): void {
           if (cancelled) return;
           const snapshot = latestSnapshotRef.current;
           if (!snapshot) return;
-          // Answer with the latest snapshot regardless of
-          // localAudienceOutputActive so a race between the announcement
-          // and the fullscreen listener registration cannot drop the
-          // initial state.
           void emitLocalAudienceRomanizeState(snapshot).catch(() => {
             // Auxiliary sync delivery failure is non-fatal.
           });
@@ -130,9 +108,6 @@ export function useLocalAudienceRomanizeRuntime(enabled: boolean): void {
         (event) => {
           if (cancelled) return;
           const request = event.payload;
-          // Validate the request against the current authoritative song
-          // before applying. A stale request targeting a previous song
-          // must never toggle the current song's romanization.
           if (request.songId !== useLyricsStore.getState().songId) {
             return;
           }

@@ -18,17 +18,6 @@ import { ensureArrayBuffer, parseCdgFrameResponse } from "@/lib/cdg-protocol";
 import type { CdgAvailability, CdgErrorCode } from "@/lib/tauri/cdg";
 import * as api from "@/lib/tauri";
 
-/**
- * Target cadence for CDG frame fetches. We no longer rely on JS timers here,
- * because macOS can throttle them in occluded windows; instead we map backend
- * playback-position events into 33ms buckets and fetch once per bucket.
- *
- * RATIONALE: This is part of the second-window CDG fix, not redundant code.
- * When the audience window covers most of the main window, macOS can throttle
- * the main window's JS timers toward slideshow cadence. The main window must
- * therefore advance CDG from Rust playback-position events, then publish those
- * frames to the second window over BroadcastChannel.
- */
 const MIN_INTERVAL_MS = 33;
 
 let lastFrame: CdgSyncFramePayload | null = null;
@@ -159,11 +148,6 @@ export function createCdgFrameCoordinator(deps: {
     pending = null;
     inFlight = true;
 
-    // Called when all follow-up work for this request is done. Clears the
-    // in-flight flag and pumps the next coalesced request. Using a helper
-    // (instead of .finally()) keeps inFlight true while a getCdgStatus
-    // follow-up is outstanding, preserving the "at most one getCdgFrame in
-    // flight" serialization invariant.
     const complete = () => {
       inFlight = false;
       if (pending && pending.serial !== serial) {
@@ -180,12 +164,6 @@ export function createCdgFrameCoordinator(deps: {
         req.lastFrameVersion,
       )
       .then((result) => {
-        // #113: Check both the serial (for invalidate-driven drops) and
-        // isCurrent (for song/generation changes). The serial is only
-        // incremented by invalidate(), NOT by request(), so a newer request
-        // for the same song does NOT cause the in-flight response to be
-        // dropped. Under slow IPC this prevents every frame from being
-        // dropped when requests arrive faster than responses.
         if (req.serial !== serial || !deps.isCurrent(req)) {
           complete();
           return;
@@ -207,8 +185,6 @@ export function createCdgFrameCoordinator(deps: {
           });
           complete();
         } else if (envelope) {
-          // CDG is active but the caller already has the current frame
-          // (header-only response, no RGBA payload).
           deps.onProbeResolved({
             songId: req.songId,
             transportGeneration: req.transportGeneration,
@@ -217,15 +193,6 @@ export function createCdgFrameCoordinator(deps: {
           });
           complete();
         } else {
-          // 0-byte response: the backend has no active CDG decoder for this
-          // song/generation. This covers three cases — a genuine audio-only
-          // song, a stale song/generation, and a backend CDG error state
-          // (empty/invalid/unreadable/broken ZIP). The frame probe alone
-          // cannot distinguish them, so consult getCdgStatus and forward the
-          // backend availability/errorCode to the UI. RATIONALE: the previous
-          // code treated every 0-byte response as hasCdg=false, which silently
-          // hid backend CDG errors as audio-only and never reported the
-          // documented errorCode to the UI.
           deps
             .getCdgStatus(req.songId, req.transportGeneration)
             .then((status) => {
@@ -244,8 +211,6 @@ export function createCdgFrameCoordinator(deps: {
               complete();
             })
             .catch(() => {
-              // Status query failed — fall back to audio-only treatment so a
-              // status IPC failure does not block the hot loop.
               if (req.serial !== serial || !deps.isCurrent(req)) {
                 complete();
                 return;
@@ -275,11 +240,6 @@ export function createCdgFrameCoordinator(deps: {
 
   return {
     request: (partial) => {
-      // #113: Do NOT increment serial on request — only on invalidate.
-      // This ensures in-flight responses are not dropped when a newer
-      // request for the same song is enqueued. The pending request
-      // inherits the current serial, so it will be dropped if an
-      // invalidate() occurs before it is pumped.
       pending = { ...partial, serial };
       pump();
     },
@@ -343,28 +303,9 @@ export function useCdgSync(enabled = true): void {
       onProbeResolved: ({ songId: sid, hasCdg, availability, errorCode }) => {
         if (!hasCdg) {
           if (availability === "loading") {
-            // The backend is still decoding the CDG stream (e.g., Media+G
-            // ZIP or a remote track). Keep hasCdg optimistic (set by the
-            // song-detection effect) so the hot loop continues to re-probe
-            // on subsequent position ticks; once decoding finishes the
-            // backend will return frames and availability transitions to
-            // "ready". RATIONALE: previously a 0-byte probe response while
-            // the track was still loading permanently marked hasCdg=false,
-            // and the hot loop's !hasCdg guard then prevented any further
-            // probes — so graphics never appeared for the rest of the song.
             setStatus("loading", null);
             return;
           }
-          // No active CDG decoder, or a backend CDG error state. Forward the
-          // backend availability/errorCode to the store so the UI can
-          // surface error states (empty/invalid/unreadable/broken ZIP CDG)
-          // instead of silently hiding them as audio-only. RATIONALE: the
-          // previous code treated every 0-byte probe response as
-          // hasCdg=false, so a song with a broken ZIP CDG was
-          // indistinguishable from an audio-only track and the documented
-          // errorCode was never reported to the UI. Only availability
-          // "none" represents a genuine audio-only song; "error" carries an
-          // errorCode the UI should display.
           setStatus(availability ?? "none", errorCode ?? null);
           setSong(sid, false);
           clearFrame();
@@ -372,9 +313,6 @@ export function useCdgSync(enabled = true): void {
           emitCdgStatus(sid, false);
           return;
         }
-        // CDG is active; soft-confirm status without clearing an
-        // already-drawn frame. Clear any stale error code left over from a
-        // previous failed load so the UI does not keep showing it.
         setStatus("ready", null);
         emitCdgStatus(sid, true);
       },
@@ -412,9 +350,6 @@ export function useCdgSync(enabled = true): void {
     });
   }, [enabled]);
 
-  // Song detection: probe whether the new track has CDG graphics.
-  // Shares the single coordinator with the hot path so probe + tick cannot
-  // issue concurrent getCdgFrame calls.
   useEffect(() => {
     if (!enabled) return;
 
@@ -427,20 +362,12 @@ export function useCdgSync(enabled = true): void {
       return;
     }
 
-    // RATIONALE: Do NOT skip the probe based on a frontend songHasCdgMedia()
-    // check. The backend loads implicit sidecar CDG files via
-    // audio_path.with_extension("cdg") when song.cdg_path is absent, so a
-    // song with a colocated .cdg sidecar but no explicit cdg_path would be
-    // wrongly cleared and reported hasCdg=false. Instead, always probe and
-    // let the backend's 0-byte response determine CDG availability.
     const probePositionMs = selectSyncDisplayPositionMs(
       usePlayerStore.getState(),
     );
     const currentCdgSongId = useCdgStore.getState().songId;
 
     if (currentCdgSongId !== songId) {
-      // Clear immediately on song change so the audience window cannot keep
-      // showing the previous song while the new track's first frame arrives.
       setSong(songId, true);
       clearFrame();
       emitCdgClear();
@@ -455,11 +382,6 @@ export function useCdgSync(enabled = true): void {
     });
   }, [clear, enabled, setSong, songId, transportGeneration]);
 
-  // RATIONALE: Do not replace this with setInterval/requestAnimationFrame.
-  // The real regression was macOS throttling front-end scheduling in windows
-  // that are heavily occluded by the audience display. Keeping the fetch loop
-  // tied to Rust playback-position events is what preserves smooth CDG in both
-  // windows.
   useEffect(() => {
     if (!enabled) return;
 
@@ -477,10 +399,6 @@ export function useCdgSync(enabled = true): void {
         if (!requestSongId) return;
         const requestGeneration = snapshot?.transport_generation ?? 0;
 
-        // PERF: The hot frame path stays out of React state. The IPC returns a
-        // raw ArrayBuffer (no base64), and drawFrame() paints it to a pre-
-        // allocated ImageData — no string decoding, no per-frame allocation.
-        // Concurrency: shared coordinator serializes with the probe path.
         coordinatorRef.current?.request({
           songId: requestSongId,
           transportGeneration: requestGeneration,
