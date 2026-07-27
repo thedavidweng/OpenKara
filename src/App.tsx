@@ -24,9 +24,6 @@ function App({ initialLibraryReady = null, previewMode = false }: AppProps) {
   const [windowShown, setWindowShown] = useState(false);
   const settingsHydrated = useSettingsStore((s) => s.hydrated);
 
-  // Hook declaration order: startup → main runtime → theme runtime → ready
-  // runtime, so the layout effect applies CSS before the ready effect can
-  // schedule showing the hidden window.
   useAppStartupRuntime(libraryReady, setLibraryReady);
   useAppRuntime(libraryReady === true);
   const { startupThemeReady } = useThemeRuntime(previewMode);

@@ -14,14 +14,8 @@ import {
 import { useLibraryStore } from "@/stores/library-store";
 import type { LyricLine, LyricsSource } from "@/types/ipc";
 
-// Generation counter to prevent stale fetch results from overwriting current lyrics.
 let fetchGeneration = 0;
 
-// Sources that hold user-authored or user-provided lyrics. The silent
-// auto-upgrade must never replace these with an online match (issue #203): a
-// wrong match for a mistagged song would destroy hand-entered or bundled
-// lyrics with no prompt and no undo. Only embedded (and absent) origins are
-// silently upgraded; the explicit "fetch lyrics online" action still works.
 const AUTO_UPGRADE_PROTECTED_SOURCES: ReadonlySet<LyricsSource> =
   new Set<LyricsSource>([
     "manual",
@@ -82,10 +76,6 @@ interface LyricsState {
   isLoading: boolean;
 
   romanizedLines: string[];
-  // Identity of the source lyrics that romanizedLines was computed from.
-  // When lines change (manual edit, online auto-upgrade) without clearing
-  // romanizedLines, this identity no longer matches and the cache is
-  // treated as stale on the next enable.
   romanizedLinesIdentity: string | null;
   isRomanizing: boolean;
   showRomanized: boolean;
@@ -146,11 +136,6 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
         isLoading: false,
       });
 
-      // Auto-upgrade: if lyrics are unsynced (all time_ms === 0), not from
-      // LrcLib, and not user-authored/user-provided, try fetching synced
-      // lyrics from the network silently. User-authored sources are excluded
-      // so the upgrade cannot silently overwrite manual/sidecar lyrics
-      // (issue #203).
       if (
         normalized.lines.length > 0 &&
         payload.source !== "lrc_lib" &&
@@ -196,26 +181,17 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
   },
 
   adjustOffset: async (songId, deltaMs) => {
-    // Optimistic update before the await so rapid consecutive calls don't
-    // read a stale offsetMs and lose deltas.
     const newOffset = get().offsetMs + deltaMs;
     set({ offsetMs: newOffset });
     try {
       await api.setLyricsOffset(songId, newOffset);
     } catch (e) {
-      // Re-fetch the authoritative offset from the backend instead of
-      // arithmetic rollback. When concurrent adjustOffset calls overlap,
-      // get().offsetMs may already include a later optimistic update from
-      // another call, so offsetMs - deltaMs can diverge from ground truth.
       try {
         const payload = await api.fetchLyrics(songId);
         if (get().songId === songId) {
           set({ offsetMs: payload.offset_ms });
         }
       } catch {
-        // Last-resort arithmetic rollback. Guard against song navigation:
-        // if the user switched songs while both the primary call and
-        // re-fetch were in-flight, don't corrupt the new song's offset.
         if (get().songId === songId) {
           set({ offsetMs: get().offsetMs - deltaMs });
         }
@@ -227,8 +203,6 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
   resetOffset: async (songId) => {
     const currentOffset = get().offsetMs;
     if (currentOffset === 0) return;
-    // Route through adjustOffset so the reset shares its optimistic update
-    // and backend-failure recovery instead of duplicating them here.
     await get().adjustOffset(songId, -currentOffset);
   },
 
@@ -270,15 +244,6 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
     get().setRomanizedVisibility(!showRomanized);
   },
 
-  // Idempotent visibility action shared by the main-window Romanize button
-  // and remote set requests from the fullscreen audience control. The
-  // caller passes the explicit desired boolean; this action never toggles
-  // implicitly. Cached romanizedLines are preserved across disable/enable
-  // cycles so re-enabling does not re-run the Worker when results already
-  // exist for the current source lyrics. The cache is validated against
-  // the current lyrics identity so that editing or upgrading lyrics after
-  // disabling romanization forces a recompute on the next enable instead
-  // of showing stale romanization for the previous lyric content.
   setRomanizedVisibility: (show) => {
     const { showRomanized, lines, romanizedLines, romanizedLinesIdentity } =
       get();
@@ -299,10 +264,6 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
     }
   },
 
-  // Read-only projection used only by the fullscreen WebView. The receiver
-  // validates songId, lyricsIdentity, and revision before calling this; the
-  // store action copies the projected state without invoking the Worker or
-  // mutating source lyrics, offset, or active-lyric indices.
   applyRemoteRomanizeState: (state) => {
     set({
       showRomanized: state.showRomanized,
@@ -322,9 +283,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
     try {
       const language = getSongLanguage(currentSongId);
       const { result, requestId } = await romanizeLyricsLines(texts, language);
-      // Discard stale responses if the song changed during romanization.
       if (get().songId !== currentSongId || requestId === -1) {
-        // requestId === -1 means Latin-only (no worker involved), always apply.
         if (requestId !== -1) return;
       }
       set({

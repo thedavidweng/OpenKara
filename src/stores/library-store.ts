@@ -25,8 +25,6 @@ function debounce<T extends (...args: never[]) => void>(
       fn(...args);
     }, ms);
   }) as T & { cancel: () => void };
-  // Clear must cancel a pending timer: otherwise a late debounced search can
-  // overwrite loadLibrary() results when the user clears within the window.
   wrapped.cancel = () => {
     if (timer) {
       clearTimeout(timer);
@@ -102,7 +100,6 @@ function publishLibraryInvalidation() {
   librarySyncChannel.publish({ revision: librarySyncRevision });
 }
 
-// Generation counter to prevent stale search results from overwriting current results.
 let searchGeneration = 0;
 
 const debouncedSearch = debounce(async (query: string) => {
@@ -137,9 +134,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         if (activeLibrary?.kind === "remote") {
           await api.refreshRemoteRepository();
         }
-      } catch {
-        // Keep stale cache visible if the repository refresh attempt fails.
-      }
+      } catch {}
 
       const songs = await api.getLibrary();
       set({ songs });
@@ -261,8 +256,6 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   clearSelection: () =>
     set({ selectedSongIds: new Set(), lastClickedSongId: null }),
 
-  // Clears only the range-selection anchor so a sort-mode change can reset
-  // shift-click range origin without dropping the user's selected songs.
   clearRangeSelectionAnchor: () => set({ lastClickedSongId: null }),
 
   setFilter: (filter) => set({ filter }),

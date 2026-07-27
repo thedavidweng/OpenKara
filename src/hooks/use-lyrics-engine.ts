@@ -75,16 +75,8 @@ export function useLyricsEngine(input: {
   const prevActiveLineRef = useRef(-1);
   const prevActiveWordIndexRef = useRef(-1);
   const lastSeekRevisionRef = useRef(usePlayerStore.getState().seekRevision);
-  // Distinguishes a song change (reset to top + replay gather is correct) from
-  // a live layout/font/romanize change (must re-anchor in place, never reset to
-  // 0). Undefined sentinel forces the first real run to be treated as a song
-  // change. See the engine effect below (#201).
   const engineSongIdRef = useRef<string | null | undefined>(undefined);
 
-  // RATIONALE: LyricsPanel early-returns a loading/empty state before the scroll
-  // viewport mounts. An effect keyed only on songId would run while
-  // containerRef.current is null, skip guard setup, then never retry — leaving
-  // auto-follow writing scrollTop every frame with no way for the user to unlock.
   useLayoutEffect(() => {
     if (isPlainText || !viewportActive) {
       return;
@@ -103,8 +95,6 @@ export function useLyricsEngine(input: {
     onUserScrollActiveChangeRef.current?.(false);
 
     return () => {
-      // Null-safe: createUserScrollGuard always returns a guard in production,
-      // but tests may mock it to null to exercise the no-guard engine path.
       guard?.destroy();
       guardRef.current = null;
       onUserScrollActiveChangeRef.current?.(false);
@@ -128,8 +118,6 @@ export function useLyricsEngine(input: {
     }
 
     const syncNow = () => {
-      // Focus resync must not sample/consume the isSeek latch — only the rAF
-      // tick should take the frame (AMLL host still owns discontinuous seeks).
       const positionMs = readLyricsPlaybackClockMs();
       setLyricsCurrentTime(positionMs);
       const adjustedMs = positionMs - useLyricsStore.getState().offsetMs;
@@ -141,13 +129,6 @@ export function useLyricsEngine(input: {
       typeof window.matchMedia === "function" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    // RATIONALE (#201): This effect re-runs on lyricsFontStep / layoutVersion /
-    // presentation changes as well as songId. Resetting scrollTop to 0 and
-    // replaying the entrance gather is only correct for a *song change*. A live
-    // font-size / Romanize / layout change must keep the active line put and
-    // re-anchor in place. So gate the reset-to-top on a genuine song change and
-    // otherwise force the next frame to snap to the recomputed centered target
-    // for the current active line (shouldResetScroll-style, no animate-from-0).
     const isSongChange = engineSongIdRef.current !== songId;
     engineSongIdRef.current = songId;
 
@@ -175,11 +156,6 @@ export function useLyricsEngine(input: {
         }
       }
     } else {
-      // Same song, layout/font/romanize changed: leave the spring and scrollTop
-      // where they are and request an explicit resume so the next frame snaps
-      // (jumpTo, not spring-from-0) to the freshly measured centered target for
-      // the current active line. lastResumeGenerationRef is intentionally left
-      // stale so the next tick observes the bump as an explicit resume.
       requestLyricsAutoScrollResume();
     }
 
@@ -190,10 +166,6 @@ export function useLyricsEngine(input: {
       const dt = Math.min((now - lastTime) / 1000, 0.05);
       lastTime = now;
 
-      // Host clock → AMLL setCurrentTime → engine sample. The player store
-      // publishes seekRevision only after Tauri's authoritative target
-      // snapshot is applied, so resetScroll cannot be consumed against the
-      // pre-seek playhead while the async command is still in flight.
       const playerState = usePlayerStore.getState();
       const isSeek = playerState.seekRevision !== lastSeekRevisionRef.current;
       if (isSeek) {
@@ -240,16 +212,6 @@ export function useLyricsEngine(input: {
     lineRuntime,
   ]);
 
-  // RATIONALE (#202): The rAF loop only recomputes the scroll target when the
-  // active line index changes; between line changes it re-asserts the settled
-  // spring pixel position every frame. So resizing the window / maximizing /
-  // toggling the sidebar while a line is held (slow ballads, long instrumental
-  // holds) reflows the content but leaves the spring parked at a stale pixel
-  // target — the active line drifts off-center and stays there until the next
-  // line change. Mirror the audience paging hook and observe the scroll
-  // container; on a real viewport resize, re-center the current active line and
-  // snap the container to it. Skip while the user is browsing (guard active) so
-  // a resize never yanks them, and debounce to coalesce continuous resizes.
   useLayoutEffect(() => {
     if (isPlainText || !viewportActive) {
       return;
@@ -259,12 +221,6 @@ export function useLyricsEngine(input: {
       return;
     }
 
-    // Observe only the viewport box (not the content wrapper): mid-line
-    // per-character emphasis / weight swaps reflow content height while the line
-    // index is unchanged, and re-anchoring on that would reintroduce the exact
-    // jitter tickLyricsEngineScroll deliberately avoids. Content-driven layout
-    // changes (Romanize, font step) are already re-anchored by the engine
-    // effect above via layoutVersion / lyricsFontStep.
     let lastWidth = container.clientWidth;
     let lastHeight = container.clientHeight;
     let debounceId: ReturnType<typeof setTimeout> | null = null;
@@ -275,7 +231,6 @@ export function useLyricsEngine(input: {
       if (!currentContainer) {
         return;
       }
-      // Never yank a user who has scrolled away to browse the lyrics.
       if (guardRef.current?.isActive()) {
         return;
       }
@@ -310,8 +265,6 @@ export function useLyricsEngine(input: {
       }
       const width = currentContainer.clientWidth;
       const height = currentContainer.clientHeight;
-      // ResizeObserver fires an initial callback on observe() and can fire for
-      // sub-pixel/no-op churn; only re-anchor when the viewport box changed.
       if (width === lastWidth && height === lastHeight) {
         return;
       }

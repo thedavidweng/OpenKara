@@ -44,12 +44,6 @@ export function useAppStartupRuntime(
       changeLanguage: i18next.changeLanguage,
       detectFallbackLanguage: detectSystemLanguage,
     }).catch((error) => {
-      // Missing/corrupt/unreadable config must not strand the hidden window.
-      // Apply all defaults with hydrated: true so the theme runtime and ready
-      // gate can proceed, then report the original settings error once.
-      // Guard against wiping already-loaded preferences: loadStartupSettings
-      // hydrates saved settings before attempting the language switch, so a
-      // language failure reaching this catch must not overwrite them.
       if (!useSettingsStore.getState().hydrated) {
         patchAppSettings({ ...DEFAULT_APP_SETTINGS, hydrated: true });
       }
@@ -144,9 +138,6 @@ export function useAppReadyRuntime(
  * webview/sidebar runtime path.
  */
 export function useAppRuntime(enabled: boolean) {
-  // Keep side effects behind the library-ready gate so first-run setup does
-  // not accidentally enable file-drop imports or playback listeners before a
-  // library exists.
   useEventListeners(enabled);
   useLyricsAutoFetch(enabled);
   useCdgSync(enabled);

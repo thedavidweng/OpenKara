@@ -15,7 +15,6 @@ interface ActiveTask {
   label: string;
   detail?: string;
   percent: number;
-  /** When true, show a sliding segment instead of a fixed width (unknown total size). */
   indeterminate?: boolean;
   onCancel?: () => void;
 }

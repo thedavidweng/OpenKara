@@ -402,9 +402,6 @@ describe("settings-store actions", () => {
   });
 
   test("setLibrarySortMode rollback does not clobber other settings changed in flight", async () => {
-    // Simulate a concurrent lyricsFontStep change that succeeds while the
-    // sort-mode save is in flight. The rollback must only restore
-    // librarySortMode, not revert lyricsFontStep.
     let rejectSort: (error: Error) => void = () => {};
     mockSetLibrarySortMode.mockReturnValue(
       new Promise<AppSettings>((_resolve, reject) => {
@@ -415,8 +412,6 @@ describe("settings-store actions", () => {
     const sortPromise = store.getState().setLibrarySortMode("title_asc");
     await Promise.resolve();
 
-    // While the sort save is pending, change lyricsFontStep directly in the
-    // store (simulating a successful concurrent setter).
     store.setState({ lyricsFontStep: 5 });
 
     rejectSort(new Error("sort fail"));
@@ -443,12 +438,9 @@ describe("settings-store actions", () => {
     const secondPromise = store.getState().setLibrarySortMode("artist_asc");
     await Promise.resolve();
 
-    // Resolve the slower first call after the second has already started.
     resolveFirst(makeAppSettings({ library_sort_mode: "title_asc" }));
     await firstPromise;
 
-    // The second call is still in flight; the stale first response must not
-    // overwrite the optimistic artist_asc state.
     expect(store.getState().librarySortMode).toBe("artist_asc");
 
     resolveSecond(makeAppSettings({ library_sort_mode: "artist_asc" }));
@@ -474,8 +466,6 @@ describe("settings-store actions", () => {
     const secondPromise = store.getState().setLibrarySortMode("artist_asc");
     await Promise.resolve();
 
-    // The first call fails after the second has started. The stale rollback
-    // must not overwrite the optimistic artist_asc state.
     rejectFirst(new Error("first failed"));
     await firstPromise.catch(() => {});
     expect(store.getState().librarySortMode).toBe("artist_asc");
@@ -1016,8 +1006,6 @@ describe("settings-store actions", () => {
     await firstPromise;
     await secondPromise;
 
-    // The second mutation wins; the first's syncPatch is skipped because the
-    // generation no longer matches.
     expect(store.getState().themePreference).toBe("system");
   });
 

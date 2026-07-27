@@ -1,17 +1,3 @@
-/**
- * AMLL-shaped host→lyrics time feed.
- *
- * RATIONALE: Mature lyric players (AMLL) keep a hard boundary — the host owns
- * the playback clock and calls setCurrentTime(ms, { isSeek }) each frame; the
- * lyric engine only consumes that sample for line/word sync, karaoke fill, and
- * scroll. OpenKara mirrors that contract so word-level timing has one stable
- * clock source and seeks are explicit instead of only inferred from jumps.
- *
- * Set `isSeek: true` only on the frame carrying the authoritative post-seek
- * position. UI handlers must not arm this latch before an asynchronous Tauri
- * seek, because the next rAF would consume it against the old playhead.
- */
-
 export interface LyricsTimeFrame {
   /** Host playback position in ms (before lyrics offset). */
   positionMs: number;

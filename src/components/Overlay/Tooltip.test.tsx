@@ -115,8 +115,6 @@ describe("Tooltip", () => {
   });
 
   test("shows after hover delay and hides after pointer leave", async () => {
-    // Use a delay well above user.hover() latency so the "not yet shown"
-    // assertion is reliable under parallel test load.
     renderTooltip(
       <Tooltip label="Import files" delayDuration={300}>
         <button type="button">Import</button>

@@ -3,6 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { SongListItem } from "./SongListItem";
 import { EmptyLibrary } from "./EmptyLibrary";
 import { AlphabetRail } from "./AlphabetRail";
+import { resolveSongListMeasureElement } from "./song-list-virtual";
 import { useLibraryStore } from "@/stores/library-store";
 import { usePlaylistStore } from "@/stores/playlist-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -53,8 +54,6 @@ export function SongList() {
   const loadPlaylistSongsFromLibrary = useCallback(
     async (playlistId: string, librarySongs: Song[]): Promise<Song[]> => {
       const playlistSongEntries = await getPlaylistSongs(playlistId);
-      // Preserve the backend-provided sort_order exactly. Build a Map so the
-      // ordered entries map to library songs without inheriting library order.
       const libraryByHash = new Map(librarySongs.map((s) => [s.hash, s]));
       return playlistSongEntries
         .map((entry) => libraryByHash.get(entry.song_hash))
@@ -63,9 +62,6 @@ export function SongList() {
     [getPlaylistSongs],
   );
 
-  // Cancel stale async playlist loads when the active playlist changes
-  // rapidly. Without this guard, a slow response from playlist A can overwrite
-  // the song list after the user has already switched to playlist B.
   useEffect(() => {
     if (activePlaylistId) {
       let cancelled = false;
@@ -92,10 +88,6 @@ export function SongList() {
     [filter, songs, separationStatuses],
   );
 
-  // Derive the final display order in one memoized step:
-  //   1. Playlists use backend sort_order directly (no library sort).
-  //   2. Otherwise start from library/search songs, apply the separated
-  //      filter when selected, then sort by the current library sort mode.
   const displaySongs = useMemo(() => {
     if (activePlaylistId) return playlistSongs;
     const base = filter === "separated" ? (separatedSongs ?? songs) : songs;
@@ -117,10 +109,10 @@ export function SongList() {
     estimateSize: () => SONG_ROW_ESTIMATE_PX,
     gap: SONG_ROW_GAP_PX,
     overscan: 8,
-    measureElement:
-      typeof window !== "undefined" && !/firefox/i.test(navigator.userAgent)
-        ? (element) => element.getBoundingClientRect().height
-        : undefined,
+    measureElement: resolveSongListMeasureElement(
+      typeof window !== "undefined",
+      typeof navigator !== "undefined" ? navigator.userAgent : "",
+    ),
   });
 
   const isAtLeast600Px = useAtLeast600Px();
@@ -141,13 +133,6 @@ export function SongList() {
     railSortMode !== null &&
     isAtLeast600Px;
 
-  // When the sort mode changes (and no playlist is active), clear only the
-  // range-selection anchor and scroll the virtual list back to the first row.
-  // Metadata/import changes rederive order through memoization without another
-  // fetch, so this effect is keyed only on the sort mode. The virtualizer and
-  // anchor clearer are stable across renders (zustand action identity + TanStack
-  // virtualizer identity tied to the scroll element), so they are intentionally
-  // omitted from the dependency array.
   const previousSortModeRef = useRef(librarySortMode);
   useEffect(() => {
     if (previousSortModeRef.current === librarySortMode) return;

@@ -16,17 +16,11 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const activePointerIdRef = useRef<number | null>(null);
   const lastNavigatedBucketRef = useRef<AlphabetBucket | null>(null);
-  // Suppresses the synthetic click that fires after pointer-based navigation,
-  // preventing a double navigateToBucket call (pointerdown + click).
   const pointerNavOccurredRef = useRef(false);
-  // Tracks whether the pointer moved between down and up. A simple tap/click
-  // (no movement) should keep `activeBucket` so the current-section marker
-  // persists; an actual scrub/drag clears the transient indicator on release.
   const pointerMovedRef = useRef(false);
   const [rovingBucket, setRovingBucket] = useState<AlphabetBucket | null>(null);
   const [activeBucket, setActiveBucket] = useState<AlphabetBucket | null>(null);
 
-  // Reset transient state when the index map changes (mode/list change).
   useEffect(() => {
     const firstMapped =
       ALPHABET_BUCKETS.find((b) => indexByBucket.has(b)) ?? null;
@@ -66,8 +60,6 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
       event.currentTarget.setPointerCapture(event.pointerId);
       const bucket = bucketFromClientY(event.clientY);
       setRovingBucket(bucket);
-      // A pointer gesture owns at most one synthetic click. Reset first so a
-      // cancelled prior gesture cannot suppress this gesture's activation.
       pointerNavOccurredRef.current = false;
       pointerNavOccurredRef.current = navigateToBucket(bucket);
     },
@@ -93,20 +85,10 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
       activePointerIdRef.current = null;
       const pointerMoved = pointerMovedRef.current;
       pointerMovedRef.current = false;
-      // Only clear the transient scrub state on release. A simple tap/click
-      // (no movement) keeps `activeBucket` so the current-section marker
-      // persists, matching keyboard Enter/Space behavior. An actual
-      // scrub/drag clears the indicator as before.
       if (pointerMoved) {
         setActiveBucket(null);
       }
-      // The dedup guard applies only while this pointer gesture is active.
-      // It must be reset for a later tap of the same letter to navigate again.
-      // `pointerNavOccurredRef` independently consumes the synthetic click
-      // that follows a successful pointerup.
       lastNavigatedBucketRef.current = null;
-      // A cancelled/lost capture does not produce the synthetic click that a
-      // normal pointerup does, so do not let it suppress a later activation.
       if (event.type !== "pointerup") {
         pointerNavOccurredRef.current = false;
       }
@@ -151,19 +133,11 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
         case " ":
           if (rovingBucket) {
             event.preventDefault();
-            // Reset the dedup guard so pressing Enter/Space on the same
-            // bucket twice navigates again (the guard exists to prevent
-            // pointer-drag double-fires, not to block intentional repeat
-            // keyboard activation).
             lastNavigatedBucketRef.current = null;
             navigateToBucket(rovingBucket);
           }
           return;
         default:
-          // Typeahead: ASCII letter focuses and activates that bucket.
-          // Reset the dedup guard so pressing the same letter twice navigates
-          // again (the guard exists to prevent pointer-drag double-fires, not
-          // to block intentional repeat keyboard activation).
           if (event.key.length === 1 && /[a-zA-Z]/.test(event.key)) {
             const upper = event.key.toUpperCase();
             if (ALPHABET_BUCKETS.includes(upper as AlphabetBucket)) {
@@ -235,9 +209,6 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
                 return;
               }
               setRovingBucket(bucket);
-              // A non-pointer click is an explicit activation (for example,
-              // assistive technology or a programmatic button click), not a
-              // pointer scrub update. It should always be able to re-jump.
               lastNavigatedBucketRef.current = null;
               navigateToBucket(bucket);
             }}

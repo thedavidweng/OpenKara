@@ -174,10 +174,6 @@ describe("handleAppKeyDown", () => {
     expect(resume).toHaveBeenCalledOnce();
   });
 
-  // #125: While a track is loading, the backend has no current_track yet, so
-  // dispatching resume/pause would surface a "no track is loaded" error toast.
-  // The snapshot still reports the loading song_id, so the song_id guard alone
-  // is not enough — Space must bail on the loading state.
   test("does not dispatch transport with Space while a track is loading", () => {
     const pause = vi.fn();
     const resume = vi.fn();

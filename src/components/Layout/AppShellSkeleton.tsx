@@ -1,12 +1,3 @@
-/**
- * Structural stand-in for the app shell, shown while the first-run library
- * check is still in flight.
- *
- * RATIONALE: rendering nothing meant the launch sequence went straight from an
- * empty surface to a fully populated layout. A dark outline of the sidebar,
- * toolbar, and playback bar lets the window reveal progressively — frame
- * first, content second — instead of appearing as a blank panel.
- */
 export function AppShellSkeleton() {
   return (
     <div

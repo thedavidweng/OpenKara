@@ -266,7 +266,6 @@ describe("createCdgFrameCoordinator", () => {
       lastFrameVersion: 0,
     });
 
-    // Backend returns 0 bytes (no decoder for the error-state slot).
     pending.resolve(new ArrayBuffer(0));
     for (let i = 0; i < 6; i++) {
       await Promise.resolve();
@@ -363,8 +362,6 @@ describe("createCdgFrameCoordinator", () => {
       await Promise.resolve();
     }
 
-    // Status IPC failed — fall back to the legacy audio-only payload without
-    // availability/errorCode so the hot loop is not blocked.
     expect(onProbeResolved).toHaveBeenCalledWith({
       songId: "song-1",
       transportGeneration: 1,
@@ -406,7 +403,6 @@ describe("createCdgFrameCoordinator", () => {
       lastFrameVersion: 0,
     });
 
-    // Backend returns 0 bytes because the CDG stream is still decoding.
     pending.resolve(new ArrayBuffer(0));
     for (let i = 0; i < 6; i++) {
       await Promise.resolve();

@@ -38,9 +38,6 @@ describe("detectSystemLanguage", () => {
   });
 
   it("routes traditional Chinese to zh-TW once it ships, else to zh-CN", () => {
-    // zh-TW is added by a translator later; until then the correct fallback for
-    // a Traditional-script/region navigator is the other Chinese bundle, not
-    // English. This assertion holds before AND after zh-TW.json lands.
     const expected = supported.has("zh-TW") ? "zh-TW" : "zh-CN";
     for (const tag of ["zh-TW", "zh-HK", "zh-MO", "zh-Hant", "zh-Hant-HK"]) {
       setNavigatorLanguage(tag);

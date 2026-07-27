@@ -359,8 +359,6 @@ describe("useLocalAudienceRomanizeReceiver", () => {
 
     expect(useLyricsStore.getState().showRomanized).toBe(false);
 
-    // Even after a local lyric change to song-2, the dropped payload must
-    // not retroactively apply (it was dropped, not retained).
     await act(async () => {
       useLyricsStore.setState({
         songId: "song-2",

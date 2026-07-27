@@ -11,9 +11,6 @@ const EQ_BAND_KEYS = [
   "settings.eq.band14000",
 ] as const;
 
-// Friendly names shown as the primary band label; the raw center frequency
-// (EQ_BAND_KEYS) stays visible as a secondary caption. Index-aligned with the
-// backend EQ_BAND_FREQUENCIES_HZ = [60, 230, 910, 3600, 14000].
 const EQ_BAND_NAME_KEYS = [
   "settings.eq.bandNameBass",
   "settings.eq.bandNameLowMid",
@@ -22,17 +19,10 @@ const EQ_BAND_NAME_KEYS = [
   "settings.eq.bandNameTreble",
 ] as const;
 
-/// Trailing debounce window for slider → IPC commits. Local draft updates
-/// immediately so the slider feels responsive; the complete five-value array
-/// is sent once after this quiet period (or immediately on pointer/key
-/// release).
 const EQ_DEBOUNCE_MS = 75;
 
 type EqGains = [number, number, number, number, number];
 
-// Named starting points, ordered [60, 230, 910, 3600, 14000] Hz. Every value
-// must stay within ±12 dB (validate_gains_db rejects the commit otherwise).
-// A preset is nothing more than a gain array pushed through setEqGains.
 const EQ_PRESETS = [
   { key: "settings.eq.presetFlat", gains: [0, 0, 0, 0, 0] },
   { key: "settings.eq.presetVocalBoost", gains: [-1, -1, 2, 4, 1] },
@@ -68,22 +58,14 @@ export function SettingsEqSection() {
   const { t } = useTranslation();
   const { state, meta, actions } = useSettingsOverlay();
 
-  // Local draft gives immediate slider feedback without firing an IPC call
-  // on every onChange tick. It syncs from the authoritative store state
-  // whenever the store changes externally (reset, hydration, rollback).
   const [draft, setDraft] = useState<EqGains>(state.eqGainsDb);
   useEffect(() => {
     setDraft(state.eqGainsDb);
   }, [state.eqGainsDb]);
 
-  // Pending debounce timer and the gains array it will commit. Stored in
-  // refs so the timer survives re-renders without resetting.
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<EqGains | null>(null);
 
-  // Flush the pending debounced commit immediately, clearing the timer.
-  // Called on pointer/key release so the value is persisted as soon as the
-  // user lets go of the slider.
   const flushRef = useRef<() => void>(() => {});
   flushRef.current = () => {
     if (timerRef.current !== null) {
@@ -97,9 +79,6 @@ export function SettingsEqSection() {
     }
   };
 
-  // Cancel any pending debounced commit without flushing. Called on unmount
-  // so a drag in progress does not fire an IPC call after the section is
-  // gone.
   useEffect(() => {
     return () => {
       if (timerRef.current !== null) {
@@ -110,9 +89,6 @@ export function SettingsEqSection() {
     };
   }, []);
 
-  /// Update one band of the local draft and schedule a trailing 75 ms commit
-  /// carrying the complete five-value array. A previous pending commit is
-  /// cancelled and replaced with the latest array.
   const handleBandChange = (band: number, gainDb: number) => {
     const clamped = Math.max(-12, Math.min(12, gainDb));
     setDraft((prev) => {
@@ -139,12 +115,8 @@ export function SettingsEqSection() {
 
   // Highlight the preset the current draft matches; null renders as
   // "Custom". Matching against the draft (not the committed store state)
-  // keeps the chips honest the moment a band slider moves.
   const activePresetKey = matchEqPreset(draft);
 
-  /// Apply a named preset through the existing commit path. The pending
-  /// debounced band commit is cancelled first so an in-flight slider drag
-  /// cannot fire 75 ms later and clobber the preset.
   const applyPreset = (
     gains: readonly [number, number, number, number, number],
   ) => {
@@ -260,9 +232,6 @@ export function SettingsEqSection() {
 
           <button
             type="button"
-            // Cancel any pending debounced commit before resetting so a
-            // slider drag still in the 75 ms debounce window cannot fire
-            // afterwards and restore the pre-reset gains.
             onClick={() => {
               if (timerRef.current !== null) {
                 clearTimeout(timerRef.current);

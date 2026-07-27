@@ -232,8 +232,6 @@ describe("VolumeSliders stem popup portal", () => {
       other: 0.55 * (1 / 0.8),
     });
 
-    // Dragging back to the starting value restores the exact original mix —
-    // reversible through the clamp and immune to the stale snapshot.
     expect(triples[triples.length - 1]).toEqual({
       drums: 0.8,
       bass: 0.35,
@@ -267,8 +265,6 @@ describe("VolumeSliders stem popup portal", () => {
       setSliderValue("30");
     });
 
-    // The song ends mid-drag, so the stems go away and the pointerup that
-    // would have ended the gesture never reaches this component.
     mockPlayerState.snapshot.has_stems = false;
     act(() => {
       root.render(<VolumeSliders density="relaxed" />);
@@ -289,8 +285,6 @@ describe("VolumeSliders stem popup portal", () => {
     const nextSlider = container.querySelector(
       'input[aria-label="Accompaniment"]',
     ) as HTMLInputElement;
-    // The thumb follows the new song's mix instead of staying pinned at the
-    // abandoned gesture value.
     expect(nextSlider.value).toBe("100");
 
     mockPlayerState.setStemVolume.mockClear();

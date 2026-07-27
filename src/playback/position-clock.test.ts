@@ -96,11 +96,6 @@ describe("reducePositionEvent", () => {
   });
 
   test("keeps absolute position events paired with their arrival-time anchor", () => {
-    // REGRESSION: keeping the play-start anchor while adopting each event's
-    // fresh absolute position made selectCurrentPositionMs run at ~2× real
-    // time. After ~30s the displayed clock was ~60s, racing past the last
-    // lyric line (looked like "scroll freeze"); pause/seek re-anchored and
-    // briefly looked correct. Continuous 33ms events are required to catch this.
     let clock: PositionClockState = {
       snapshot: snapshot({ position_ms: 0 }),
       positionMs: 0,
@@ -152,15 +147,10 @@ describe("reducePositionEvent", () => {
     expect(clock.playingSinceMs).toBe(now);
     const displayed = selectCurrentPositionMs(clock, () => now);
     expect(Math.abs(displayed - 300 * 33)).toBeLessThan(50);
-    // 20ms of pure client extrapolation after the last event — no 2× drift.
     expect(selectCurrentPositionMs(clock, () => now + 20)).toBe(300 * 33 + 20);
   });
 
   test("promotes transport_generation on position events so delayed pre-seek events are dropped", () => {
-    // REGRESSION: seek bumps generation on the backend. If the position-event
-    // reducer only patched positionMs and left snapshot.transport_generation
-    // at the pre-seek value, a late generation-1 event looked non-stale and
-    // yanked the clock (and lyrics) back before the seek.
     let clock: PositionClockState = {
       snapshot: snapshot({
         transport_generation: 1,

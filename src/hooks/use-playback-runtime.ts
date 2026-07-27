@@ -169,10 +169,6 @@ function useSeparationEvents(enabled: boolean) {
           if (cancelled) return;
           updateSeparationStatus(e.payload.status);
 
-          // An instant completion whose stems were already cached: surface a
-          // lightweight cue instead of leaving it indistinguishable from a
-          // fresh run. A cache hit is also the one completion never worth a
-          // native notification — it returns before the user could switch away.
           if (e.payload.status.cache_hit) {
             notifySuccess(i18next.t("library.usingCachedSeparation"));
           } else if (!batchInProgress()) {
@@ -346,8 +342,6 @@ function usePreloadCandidateEffect(enabled: boolean) {
   const currentSongId = usePlayerStore((s) => s.snapshot?.song_id) ?? null;
   const queue = useQueueStore((s) => s.queue);
 
-  // Resolve the next candidate outside the effect so the dependency can be
-  // the candidate ID itself rather than the entire queue array.
   const nextCandidate = (() => {
     if (queue.length === 0) return null;
     if (queue[0] === currentSongId) {
@@ -369,8 +363,6 @@ function useBatchSeparationEvents(enabled: boolean) {
     createBatchSeparationClearScheduler(clearBatchSeparation),
   );
 
-  // Recreate scheduler if the clear function changes — drain the old one first
-  // so any pending timer invokes the stale closure.
   useEffect(() => {
     clearSchedulerRef.current.clearAll();
     clearSchedulerRef.current =
@@ -420,8 +412,6 @@ function useUploadEvents(enabled: boolean) {
     createStatusClearScheduler<string>(clearUploadStatus),
   );
 
-  // Recreate scheduler if the clear function changes — drain the old one first
-  // so any pending timer invokes the stale closure.
   useEffect(() => {
     clearSchedulerRef.current.clearAll();
     clearSchedulerRef.current =

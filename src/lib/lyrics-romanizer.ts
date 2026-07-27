@@ -3,9 +3,6 @@ import type { Romanizer } from "lyric-romanizer";
 import type { SongLanguage } from "@/components/Library/song-list-item-menu";
 import { romanizeLinesWith } from "./romanize-options";
 
-/// Item 7: Request ID counter for matching worker responses to requests.
-/// Stale responses (with a lower requestId) are discarded when the song or
-/// lyric revision changes.
 let nextRequestId = 0;
 
 let romanizerPromise: Promise<Romanizer> | null = null;
@@ -44,9 +41,6 @@ function getWorker(): Worker | null {
   return worker;
 }
 
-/// Item 7: Romanize lyrics lines with request-id matching.
-/// Uses a Web Worker when available, falls back to main-thread processing.
-/// Returns the result and a requestId so callers can discard stale responses.
 export async function romanizeLyricsLines(
   lines: readonly string[],
   language?: SongLanguage | null,
@@ -58,7 +52,6 @@ export async function romanizeLyricsLines(
   const requestId = ++nextRequestId;
   const w = getWorker();
 
-  // Fallback for environments without Worker support (e.g., tests).
   if (!w) {
     const result = await romanizeLinesDirect(lines, language);
     return { result, requestId };

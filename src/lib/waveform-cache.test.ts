@@ -37,8 +37,6 @@ describe("bucketsForRailWidth", () => {
   });
 
   test("quantizes so small DPR-only deltas are no-ops", () => {
-    // 299 CSS px @ 1x → round(99.67) = 100; @ 1.005 → round(100.17) = 100,
-    // so a sub-bucket DPR drift does not trigger a refetch.
     expect(bucketsForRailWidth(299, 1)).toBe(100);
     expect(bucketsForRailWidth(299, 1.005)).toBe(100);
     // A larger DPR step crosses a bucket boundary and would refetch.

@@ -56,10 +56,6 @@ const LANGUAGE_PRIORITY = [
   "nl",
 ];
 
-// Auto-load every locale JSON at build time. `import.meta.glob` is resolved by
-// Vite (app build) AND by vitest (which transforms modules through Vite), so
-// the same glob populates i18next resources in both environments — there is no
-// manual import list to keep in sync when a translator adds a file.
 const localeModules = import.meta.glob<Record<string, unknown>>(
   "../locales/*.json",
   { eager: true, import: "default" },
@@ -104,11 +100,6 @@ export function detectSystemLanguage(): string {
   const parts = nav.toLowerCase().split("-");
   const base = parts[0];
 
-  // 2. Chinese needs script/region disambiguation: several Chinese locales
-  //    share the "zh" base. Traditional-script regions (Taiwan, Hong Kong,
-  //    Macau) and an explicit Hant script resolve to zh-TW; everything else
-  //    (Mainland, Singapore, Hans) resolves to zh-CN. Whichever bundle exists
-  //    wins so the fallback is still correct before zh-TW ships.
   if (base === "zh") {
     const traditional =
       parts.includes("hant") ||

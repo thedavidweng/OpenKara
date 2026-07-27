@@ -61,9 +61,6 @@ describe("createUserScrollGuard", () => {
   });
 
   test("default global timers are bound (no browser Illegal invocation)", () => {
-    // REGRESSION: `{ setTimeout, clearTimeout }` called as timers.setTimeout
-    // throws "Illegal invocation" in Chromium because `this` is the bag.
-    // Fake timers hide that. Exercise the default timer path with real timers.
     vi.useRealTimers();
     const container = makeContainer();
     const onIdleRelock = vi.fn();
@@ -106,9 +103,6 @@ describe("createUserScrollGuard", () => {
   });
 
   test("idle relock requests auto-scroll resume so viewport re-anchors", () => {
-    // REGRESSION: clearing unlocked alone hid the Follow button while the
-    // spring stayed parked at the user's browse offset until the next line
-    // change (long lines / instrumental gaps). Idle must bump resume gen.
     const container = makeContainer();
     const before = peekLyricsAutoScrollResumeGeneration();
     const guard = createUserScrollGuard(container, PAUSE_MS);
@@ -133,13 +127,10 @@ describe("createUserScrollGuard", () => {
     });
     expect(guard.isActive()).toBe(false);
 
-    // WKWebView can emit a bare scroll event after active-line layout changes.
-    // It carries no user intent and must not disable follow.
     container.scrollTop = 200;
     container.dispatchEvent(new Event("scroll"));
     expect(guard.isActive()).toBe(false);
 
-    // Native scrollbar drag: scroll while the pointer is held is user intent.
     container.dispatchEvent(new Event("pointerdown"));
     container.scrollTop = 260;
     container.dispatchEvent(new Event("scroll"));
@@ -326,10 +317,6 @@ describe("tickLyricsEngineScroll", () => {
   }
 
   test("does not retarget mid-line when layout measurements jitter", () => {
-    // REGRESSION: per-character emphasis / font-weight swaps reflow the active
-    // line while it stays current. Recomputing scrollTop every time the pixel
-    // target drifted made the spring chase a moving target; pausing froze the
-    // DOM and "snapped" back to the right place. Anchor once per active line.
     const container = document.createElement("div");
     Object.defineProperty(container, "clientHeight", { value: 100 });
     Object.defineProperty(container, "scrollHeight", {
@@ -689,15 +676,10 @@ describe("tickLyricsEngineScroll", () => {
       dt: 0.016,
     });
 
-    // Unlocked: leave the user's scroll position alone even if the playing
-    // line would target a different offset.
     expect(container.scrollTop).toBe(180);
   });
 
   test("idle relock resume snaps scrollTop back while the active line is unchanged", () => {
-    // Long active line (same index across the idle window): after the user
-    // browses away and the pause expires, resume must re-anchor even though
-    // activeIndex === prevActiveIndexRef.
     const { container, scrollSpring, scrollState } = makeScrollFixture();
     const lines = [{ time_ms: 0 }, { time_ms: 30_000 }];
 
@@ -882,9 +864,6 @@ describe("syncLyricsActiveLine", () => {
 
 describe("readLyricsAdjustedPlaybackMs", () => {
   test("returns local positionMs - offsetMs (ignores AirPlay clock)", () => {
-    // RATIONALE: Lyrics always use the local playback clock, never the AirPlay
-    // displayed position. This test verifies that even when AirPlay is active
-    // with a displayed position, the local clock is used.
     vi.mocked(usePlayerStore.getState).mockReturnValue({
       snapshot: null,
       positionMs: 5000,

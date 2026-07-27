@@ -139,9 +139,6 @@ export function createQueueStore(
         const { playHistory, queue } = get();
         const deduped = playHistory.filter((id) => id !== songId);
         const next = [...deduped, songId];
-        // Cap the history stack to prevent unbounded growth.
-        // 500 entries covers ~25 hours of continuous playback; far beyond
-        // any real session yet small enough to be a non-issue for memory.
         const capped =
           next.length > MAX_PLAY_HISTORY
             ? next.slice(next.length - MAX_PLAY_HISTORY)

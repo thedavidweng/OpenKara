@@ -29,9 +29,6 @@ export function LyricsEmptyState({
       </p>
       {songId && !isAudience && (
         <>
-          {/* RATIONALE: The audience surface is passive output, not an editing
-              surface. Reintroducing the add-lyrics CTA here would recreate the
-              oversized background-info window we are intentionally removing. */}
           <button
             type="button"
             onClick={() => setEditOpen(true)}

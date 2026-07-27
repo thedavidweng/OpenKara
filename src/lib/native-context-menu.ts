@@ -42,9 +42,6 @@ async function buildMenuItems(
         action: () => item.onClick?.(),
       });
       if (item.indicator === "checked") {
-        // Tauri 2 MenuItem doesn't have a built-in checked state via the JS
-        // API — we prepend the checkmark character to match native appearance.
-        // The visual indicator is already handled by the menu item text prefix.
       }
       result.push(mi);
     }

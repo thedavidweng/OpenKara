@@ -49,8 +49,6 @@ export function AudioLevelSlider({
     };
   }, [isDragging, onDragEnd]);
 
-  // Keep the native range input so we preserve platform drag semantics and only
-  // layer immediate tooltip/highlight behavior on top.
   return (
     <Tooltip label={formatAudioLevelTooltip(label, value)}>
       <input

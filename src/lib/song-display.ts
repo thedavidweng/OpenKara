@@ -9,8 +9,5 @@ export function songDisplayTitle(song: Song | undefined): string {
   if (!song) {
     return "";
   }
-  // Both separators: library paths come from the OS, and splitting on "/" alone
-  // left every Windows path rendered in full. A backslash inside a POSIX file
-  // name is the pathological case this trades away.
   return song.title ?? song.file_path?.split(/[\\/]/).pop() ?? song.hash;
 }

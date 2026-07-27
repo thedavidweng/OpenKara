@@ -182,12 +182,6 @@ export function createSettingsOverlayActions(
     try {
       const current = controls.getSnapshot();
 
-      // Guard against concurrent calls for the same variant. Without this,
-      // a second call that arrives while the first is still downloading
-      // would see `status.downloaded` as false and start a duplicate
-      // download. The backend also guards against this, but the frontend
-      // guard prevents the redundant IPC call and keeps `downloadingModel`
-      // state consistent.
       if (current.state.downloadingModel === variant) {
         return;
       }
@@ -226,9 +220,6 @@ export function createSettingsOverlayActions(
           restart_required: status.restart_required,
           error: status.error?.message ?? null,
         },
-        // The install just changed what is on disk, so any earlier check
-        // report is stale — keeping it would let the card claim the runtime is
-        // "not installed" right next to a "ready" status line.
         runtimeUpdate: null,
       });
       // Refresh model statuses too since model actions may now be enabled.
@@ -238,15 +229,7 @@ export function createSettingsOverlayActions(
     }
   };
 
-  // Update path: `download_runtime` stages a candidate when a runtime is
-  // already loaded. The running process keeps its active runtime until the
-  // next launch, so the ready event reports
-  // `candidate_ready_restart_required`. We mirror that state and let the
-  // restart banner / button drive activation.
   const updateRuntimeAction = async () => {
-    // The staged candidate supersedes the check report; downloadRuntimeAction
-    // already clears it so a later manual check stays honest instead of
-    // re-offering the staged update.
     await downloadRuntimeAction();
   };
 
@@ -267,12 +250,8 @@ export function createSettingsOverlayActions(
           report,
         },
       });
-      // The backend flips Ready → UpdateAvailable when an update exists; mirror
-      // the refreshed lifecycle state so the section copy updates.
       await refreshRuntimeStatus();
     } catch (error) {
-      // An update-check failure never affects the installed runtime's
-      // readiness; it is reported on its own line in the runtime section.
       patchState({
         runtimeUpdate: {
           status: "failed",
@@ -286,9 +265,6 @@ export function createSettingsOverlayActions(
   const setUpdatePolicyAction = async (
     policy: SettingsOverlayState["updatePolicy"],
   ) => {
-    // The store action is optimistic with generation-based rollback; the
-    // overlay state mirrors the store so the radio reflects the pending choice
-    // immediately. The store action handles IPC and rollback.
     patchState({ updatePolicy: policy });
     await dependencies.settingsStore.setUpdatePolicy(policy);
     patchState({

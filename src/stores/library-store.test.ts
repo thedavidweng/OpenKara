@@ -986,7 +986,6 @@ describe("library-store setSearchQuery debounce race", () => {
     mockGetAllSeparationStatuses.mockResolvedValue([]);
     mockGetAllUploadStatuses.mockResolvedValue([]);
 
-    // Schedule a debounced search, then clear before the 300ms window elapses.
     useLibraryStore.getState().setSearchQuery("See You");
     useLibraryStore.getState().setSearchQuery("");
 

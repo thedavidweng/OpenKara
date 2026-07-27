@@ -143,7 +143,6 @@ describe("SettingsRemoteDiagnosticsSection", () => {
     await waitFor(() => {
       expect(mockResolveRemoteConflict).toHaveBeenCalledWith("keep_local");
     });
-    // The panel must reflect the outcome rather than the state it acted on.
     await waitFor(() => {
       expect(mockGetRemoteDiagnostics).toHaveBeenCalledTimes(2);
     });

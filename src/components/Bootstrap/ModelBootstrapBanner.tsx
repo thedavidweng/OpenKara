@@ -18,11 +18,6 @@ export function ModelBootstrapBanner() {
     if (retrying) return;
     setRetrying(true);
     try {
-      // `download_model` returns a `downloading` snapshot and spawns the
-      // fetch; publishing it flips the banner into the downloading state so
-      // GlobalProgressBar can take over the byte/percent readout. A later
-      // failure re-emits `model-bootstrap-error`, returning to this banner —
-      // the recovery loop stays entirely in the banner.
       const snapshot = await downloadModel(modelVariant);
       updateStatus(snapshot);
     } catch (error) {

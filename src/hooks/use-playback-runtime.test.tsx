@@ -50,10 +50,6 @@ vi.mock("@/lib/notifications", () => ({
   notifyWhenUnfocused: mockNotifyWhenUnfocused,
 }));
 
-// Track every rendered root so afterEach can unmount them all. Without this,
-// earlier tests' roots stay mounted and their hooks react to store mutations
-// from later tests (e.g. a still-mounted enabled=true instance calls
-// setPreloadCandidate when a later test sets the queue).
 const unmountFns: Array<() => void> = [];
 
 afterEach(() => {
@@ -148,9 +144,6 @@ describe("playback-position listener cleanup when unmount races listen()", () =>
 describe("usePreloadCandidateEffect", () => {
   beforeEach(() => {
     mockListen.mockReset();
-    // Default: listen resolves to a no-op unlisten so useEventSubscriptions
-    // cleanup never calls a non-function. Tests needing specific behaviour
-    // override this with their own mockImplementation.
     mockListen.mockImplementation(async () => () => {});
     mockSetPreloadCandidate.mockReset();
     mockSetPreloadCandidate.mockResolvedValue(undefined);
@@ -222,7 +215,6 @@ describe("usePreloadCandidateEffect", () => {
 
   test("does not call setPreloadCandidate when disabled", async () => {
     useQueueStore.setState({ queue: ["song-a"] });
-    // Ensure listen returns cleanup functions so other hooks don't throw
     mockListen.mockImplementation(async () => () => {});
     const { useEventListeners } = await import("./use-playback-runtime");
     const unmount = await renderHook(() => useEventListeners(false));
@@ -237,9 +229,6 @@ describe("usePreloadCandidateEffect", () => {
 describe("useTrackTransitionedQueueReconcile", () => {
   beforeEach(() => {
     mockListen.mockReset();
-    // Default: listen resolves to a no-op unlisten so useEventSubscriptions
-    // cleanup never calls a non-function. Tests needing specific behaviour
-    // override this with their own mockImplementation.
     mockListen.mockImplementation(async () => () => {});
     mockSetPreloadCandidate.mockReset();
     mockSetPreloadCandidate.mockResolvedValue(undefined);
@@ -319,9 +308,6 @@ describe("useTrackTransitionedQueueReconcile", () => {
 describe("usePlaybackPositionSubscription", () => {
   beforeEach(() => {
     mockListen.mockReset();
-    // Default: listen resolves to a no-op unlisten so useEventSubscriptions
-    // cleanup never calls a non-function. Tests needing specific behaviour
-    // override this with their own mockImplementation.
     mockListen.mockImplementation(async () => () => {});
     mockSetPreloadCandidate.mockReset();
     mockSetPreloadCandidate.mockResolvedValue(undefined);
@@ -412,9 +398,6 @@ describe("usePlaybackPositionSubscription", () => {
   test("cleans up the listener when cancelled before listen resolves", async () => {
     const unlisten = vi.fn();
     let resolveListen: ((un: () => void) => void) | null = null;
-    // Only the "playback-position" event should hang; all other listen
-    // calls should resolve immediately with a cleanup function so that
-    // useEventSubscriptions doesn't throw during unmount.
     mockListen.mockImplementation(async (eventName: string) => {
       if (eventName === "playback-position") {
         return new Promise((resolve) => {
@@ -441,9 +424,6 @@ describe("usePlaybackPositionSubscription", () => {
 describe("useSeparationEvents", () => {
   beforeEach(() => {
     mockListen.mockReset();
-    // Default: listen resolves to a no-op unlisten so useEventSubscriptions
-    // cleanup never calls a non-function. Tests needing specific behaviour
-    // override this with their own mockImplementation.
     mockListen.mockImplementation(async () => () => {});
     mockSetPreloadCandidate.mockReset();
     mockSetPreloadCandidate.mockResolvedValue(undefined);
@@ -652,8 +632,6 @@ describe("useSeparationEvents", () => {
     });
 
     expect(mockNotifySuccess).toHaveBeenCalledOnce();
-    // A cache hit returns before the user could switch away, so it must not
-    // reach the native notification path.
     expect(mockNotifyWhenUnfocused).not.toHaveBeenCalled();
   });
 

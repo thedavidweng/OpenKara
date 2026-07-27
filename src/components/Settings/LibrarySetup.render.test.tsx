@@ -114,8 +114,6 @@ describe("LibrarySetup destructive error surfaces", () => {
       remote?.click();
     });
 
-    // Three real stages, and picking a provider must not advance past the
-    // library dot - the provider screen is a branch of that step, not a step.
     const dots = Array.from(
       container.querySelectorAll("div.rounded-full.h-1\\.5, div.h-1\\.5"),
     ).filter((dot) => dot.className.includes("rounded-full"));
@@ -223,7 +221,6 @@ describe("LibrarySetup destructive error surfaces", () => {
     // Stem mode is the last step: the model choice is not a first-run question.
     expect(container.innerHTML).not.toContain("settings.modelVariant.htdemucs");
 
-    // Back returns to the library step rather than the deleted model step.
     await clickButtonContaining("setup.back");
     expect(container.innerHTML).toContain("Create new local library");
     await clickButtonContaining("Create new local library");

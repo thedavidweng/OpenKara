@@ -1,27 +1,3 @@
-/**
- * Binary CDG frame protocol parser.
- *
- * The backend returns a 32-byte little-endian header followed by an optional
- * RGBA payload (288×192×4 = 221,184 bytes). The header carries:
- *
- *   bytes 0..4   magic ("OKCG")
- *   bytes 4..6   protocol version (u16 LE)
- *   bytes 6..8   flags (u16 LE; bit 0 = RGBA payload present)
- *   bytes 8..16  transport generation (u64 LE)
- *   bytes 16..24 frame version (u64 LE)
- *   bytes 24..32 packet index (u64 LE)
- *
- * A response of 0 bytes means no active CDG, stale song/generation, or error.
- * A response of exactly 32 bytes (no RGBA flag) means the caller already has
- * the current frame.
- *
- * RATIONALE: The previous protocol returned a raw RGBA ArrayBuffer with no
- * metadata. The frontend had no way to distinguish "no CDG active" from
- * "frame unchanged" from "stale song". The binary envelope solves this by
- * carrying transport generation and frame version in a fixed-size header,
- * enabling the frontend to skip redundant redraws and discard stale frames.
- */
-
 /** Magic bytes identifying the CDG binary protocol. */
 const PROTOCOL_MAGIC = [0x4f, 0x4b, 0x43, 0x47]; // "OKCG"
 /** Header size in bytes. */

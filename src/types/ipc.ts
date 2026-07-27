@@ -1,31 +1,3 @@
-// ─── IPC contract types ───────────────────────────────────────────────
-//
-// This file IS the IPC contract. All types mirror Rust struct serialization
-// exactly — struct fields are snake_case (no rename_all on structs), enum
-// variants are snake_case (via #[serde(rename_all = "snake_case")]).
-//
-// C03 from architecture review considered splitting this into a private
-// wire-format adapter (ipc.ts) and a public frontend-facing contract (contract.ts)
-// with idiomatic camelCase types and a mapping layer between them. That was
-// rejected because:
-//
-// 1. 94 import sites would need to change from wire types to contract types.
-// 2. A mapping layer adds runtime overhead on every event payload (position
-//    events fire at 30 Hz).
-// 3. The mapper itself becomes a drift surface — every Rust struct change
-//    requires updating the mapper in addition to the types.
-// 4. The current "direct mirror" approach has zero drift: the types ARE the
-//    wire format, so a Rust struct change that breaks serialization is a
-//    TypeScript compile error, not a runtime mapping bug.
-//
-// The trade-off is non-idiomatic snake_case field names in frontend code.
-// This is accepted: the consistency guarantee outweighs the naming style
-// preference. The snake_case convention is enforced by the Rust serde
-// configuration and documented in docs/references/contracts/*.md.
-//
-// When updating a Rust struct that appears here, update this file in the
-// same change and run `pnpm tsc --noEmit` to verify the contract.
-
 export type ErrorCode =
   | "database_unavailable"
   | "media_read_failed"
@@ -676,10 +648,6 @@ export interface IntegrityCleanupResult {
   skipped_song_hashes: string[];
 }
 
-// ---------------------------------------------------------------------------
-// Remote streaming cache + diagnostics (PR #8, issue #151)
-// ---------------------------------------------------------------------------
-
 export interface CacheUsage {
   used_bytes: number;
   limit_bytes: number;
@@ -713,10 +681,6 @@ export interface RemoteDiagnostics {
   last_error_code: string | null;
   recent_operations: RemoteOperationDiagnostic[];
 }
-
-// ---------------------------------------------------------------------------
-// Remote playback reconnect events (PR #7/#8, issue #151)
-// ---------------------------------------------------------------------------
 
 export interface RemotePlaybackReconnectEvent {
   song_id: string;

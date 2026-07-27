@@ -3,9 +3,6 @@ import { useTranslation } from "react-i18next";
 import { SettingsSectionCard } from "./SettingsSectionCard";
 import { useSettingsOverlay } from "./SettingsOverlay.context";
 
-/// Trailing debounce window for slider → IPC commits. Local draft updates
-/// immediately so the slider feels responsive; the value is sent once after
-/// this quiet period (or immediately on pointer/key release).
 const CROSSFADE_DEBOUNCE_MS = 75;
 
 const CROSSFADE_MIN_MS = 500;
@@ -15,22 +12,14 @@ export function SettingsCrossfadeSection() {
   const { t } = useTranslation();
   const { state, meta, actions } = useSettingsOverlay();
 
-  // Local draft gives immediate slider feedback without firing an IPC call
-  // on every onChange tick. It syncs from the authoritative store state
-  // whenever the store changes externally (hydration, rollback).
   const [draft, setDraft] = useState(state.crossfadeDurationMs);
   useEffect(() => {
     setDraft(state.crossfadeDurationMs);
   }, [state.crossfadeDurationMs]);
 
-  // Pending debounce timer and the value it will commit. Stored in refs so
-  // the timer survives re-renders without resetting.
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<number | null>(null);
 
-  // Flush the pending debounced commit immediately, clearing the timer.
-  // Called on pointer/key release so the value is persisted as soon as the
-  // user lets go of the slider.
   const flushRef = useRef<() => void>(() => {});
   flushRef.current = () => {
     if (timerRef.current !== null) {
@@ -44,9 +33,6 @@ export function SettingsCrossfadeSection() {
     }
   };
 
-  // Cancel any pending debounced commit without flushing. Called on unmount
-  // so a drag in progress does not fire an IPC call after the section is
-  // gone.
   useEffect(() => {
     return () => {
       if (timerRef.current !== null) {

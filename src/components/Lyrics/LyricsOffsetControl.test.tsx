@@ -71,9 +71,6 @@ describe("LyricsOffsetControl", () => {
   test("uses dimmer text when offset is zero", () => {
     const markup = renderToStaticMarkup(<LyricsOffsetControl />);
 
-    // The control-primary highlight must be absent at zero offset so the
-    // display rests in the dim text color rather than the active highlight
-    // color.
     expect(markup).not.toContain("text-[var(--color-control-primary)]");
   });
 

@@ -43,20 +43,13 @@ export function AirPlayRouteButton({
       }
 
       void syncAirPlayRoutePicker(buildHostBounds(hostRef.current)).catch(
-        () => {
-          // The native control is auxiliary to local playback. If mount/update
-          // fails transiently, keep the toolbar responsive instead of surfacing
-          // a blocking error.
-        },
+        () => {},
       );
     };
 
     syncBounds();
     window.addEventListener("resize", syncBounds);
 
-    // RATIONALE: The native AVRoutePickerView is mounted outside the DOM. When
-    // the floating shell reflows without a window resize, we must re-publish the
-    // host bounds or the visible click target drifts away from the toolbar slot.
     const resizeObserver =
       typeof ResizeObserver === "undefined"
         ? null

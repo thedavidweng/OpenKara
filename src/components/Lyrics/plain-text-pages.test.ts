@@ -12,18 +12,11 @@ describe("buildPlainTextPageStartIndices", () => {
   });
 
   test("breaks into pages when lines exceed available height", () => {
-    // Each line 30px, gap 10px, available 80px
-    // Page 1: line0(30) + gap(10) + line1(30) = 70, fits
-    // line2 would make 70 + 10 + 30 = 110 > 80, so page break
-    // Page 2: line2(30) + gap(10) + line3(30) = 70, fits
     const pages = buildPlainTextPageStartIndices([30, 30, 30, 30], 80, 10);
     expect(pages).toEqual([0, 2]);
   });
 
   test("handles zero gap", () => {
-    // 3 lines of 40px, no gap, available 100
-    // line0(40) + line1(40) = 80, fits
-    // line2 would make 120 > 100, page break
     expect(buildPlainTextPageStartIndices([40, 40, 40], 100, 0)).toEqual([
       0, 2,
     ]);
@@ -35,11 +28,6 @@ describe("buildPlainTextPageStartIndices", () => {
   });
 
   test("handles varying line heights", () => {
-    // available = 100, gap = 5
-    // line0(50) = 50, fits
-    // line1(60): 50 + 5 + 60 = 115 > 100, page break at index 1
-    // line1(60) = 60, fits
-    // line2(30): 60 + 5 + 30 = 95, fits
     expect(buildPlainTextPageStartIndices([50, 60, 30], 100, 5)).toEqual([
       0, 1,
     ]);

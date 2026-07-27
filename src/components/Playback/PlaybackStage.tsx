@@ -24,15 +24,10 @@ export function PlaybackStage({
   const currentSongHasCdg = songHasCdgMedia(currentSong);
   const coverArtBackdrop = useSettingsStore((s) => s.coverArtBackdrop);
 
-  // Fetch cover art on-demand for backdrop when not included in list results.
-  // The ambience backdrop requests the 256×256 preview derivative (cheaper
-  // IPC payload + faster decode than the full original) per the size mapping.
   const [fetchedCoverArt, setFetchedCoverArt] = useState<CoverArtBytes | null>(
     null,
   );
   useEffect(() => {
-    // Clear stale bytes from a previous song on every dep change so the
-    // ambience backdrop never briefly paints the predecessor's cover.
     setFetchedCoverArt(null);
     if (currentSong?.cover_art != null || !currentSong?.has_cover_art) {
       return;
@@ -69,15 +64,6 @@ export function PlaybackStage({
       {showCdg ? (
         <CdgCanvas />
       ) : (
-        // RATIONALE (#200): The ambience backdrop resolves mid-song (async
-        // getCoverArtPreview flips nativeBackdropUrl → stageAmbience false→true).
-        // Rendering LyricsPanel inside the ambience-conditional subtree changed
-        // the element type at its slot, remounting it — which cleared the line
-        // springs (gather replay) and forced scrollTop=0 a second into playback.
-        // Keep LyricsPanel in one stable, keyed slot and toggle the backdrop as
-        // an absolutely-positioned sibling behind it so ambience never remounts
-        // the scroll viewport. CdgCanvas↔LyricsPanel is a genuine media switch
-        // (hasCdg / song metadata), not driven by async cover load.
         <>
           {stageAmbience ? (
             <div className="absolute inset-0" data-native-stage-backdrop="true">

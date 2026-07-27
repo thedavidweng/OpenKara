@@ -101,9 +101,6 @@ export async function promptImportFiles({
       getShortcutPlatform() === "mac"
         ? await pickImportPaths(defaultPath)
         : await (async () => {
-            // RATIONALE: The stock Tauri dialog API cannot pick files and folders
-            // from one panel on non-macOS platforms, so the portable fallback stays
-            // on direct file picking instead of reintroducing a broken pre-prompt.
             const selected = await openDialog({
               multiple: true,
               defaultPath,
@@ -168,9 +165,6 @@ export async function handleAppMenuAction(
       await importFromDialog();
       return;
     case "copy-debug-info": {
-      // Shares the exact data path and plain-text format used by the
-      // Settings → About "Copy debug info" button (see src/lib/debug-info.ts),
-      // so the macOS Help menu produces byte-identical output.
       try {
         await copyDebugInfo();
       } catch (error) {

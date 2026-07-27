@@ -1,6 +1,3 @@
-// Moves romanization off the main thread and uses request-id matching so
-// stale responses are ignored when the song changes.
-
 import { isLatinScript } from "lyric-romanizer/detector";
 import type { Romanizer } from "lyric-romanizer";
 import type { SongLanguage } from "@/components/Library/song-list-item-menu";

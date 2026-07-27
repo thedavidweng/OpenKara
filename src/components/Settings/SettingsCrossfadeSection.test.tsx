@@ -337,8 +337,6 @@ describe("SettingsCrossfadeSection", () => {
     act(() => {
       fireEvent.change(slider, { target: { value: "4000" } });
     });
-    // Second change before the timer fires — should clear the first timer
-    // and start a new one.
     act(() => {
       fireEvent.change(slider, { target: { value: "5000" } });
     });

@@ -78,9 +78,6 @@ export function getSongProperties(songId: string): Promise<SongProperties> {
   return invoke<SongProperties>("get_song_properties", { songId });
 }
 
-// `size` defaults to "original" and is omitted from the IPC payload when
-// unset, so older backends that do not accept the parameter remain
-// compatible. Explicit sizes are forwarded as-is.
 export function getCoverArt(
   hash: string,
   size?: CoverArtSize,

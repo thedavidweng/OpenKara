@@ -51,9 +51,6 @@ function createMockMedia(matches: boolean): MediaQueryList {
   } as unknown as MediaQueryList;
 }
 
-// Legacy media object that only exposes the deprecated addListener/
-// removeListener API (no addEventListener), exercising the fallback branch
-// in subscribeMediaChange.
 function createLegacyMockMedia(matches: boolean): MediaQueryList {
   return {
     matches,
@@ -266,8 +263,6 @@ describe("useThemeRuntime", () => {
       return useThemeRuntime();
     });
 
-    // Flush the microtask queue so the rejected promise's .catch handler runs
-    // before we check the result.
     await act(async () => {
       await vi.runAllTimersAsync();
     });
@@ -364,7 +359,6 @@ describe("useThemeRuntime", () => {
     mockMatchMedia.mockReturnValue(media);
     setStoreState("system", true);
 
-    // Should not throw when the effect cleans up with no listener API.
     const { unmount } = renderHook(() => {
       return useThemeRuntime();
     });

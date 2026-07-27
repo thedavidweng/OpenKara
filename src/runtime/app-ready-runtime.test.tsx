@@ -58,9 +58,6 @@ describe("useAppReadyRuntime", () => {
   });
 
   test("reveals the window even when animation frames never run", () => {
-    // REGRESSION: the main window starts hidden, and macOS suspends animation
-    // frames for a hidden WebView — so a reveal scheduled only through
-    // requestAnimationFrame left the app running with no window at all.
     const setWindowShown = vi.fn();
     const neverFiringScheduleFrame = vi.fn(() => 1);
 

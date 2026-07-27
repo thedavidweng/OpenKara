@@ -33,12 +33,6 @@ import type {
   SongProperties,
 } from "./ipc";
 
-// ─── Canonical Command Registry ────────────────────────────────────────
-// This registry is the source of truth for IPC command names and their
-// parameter shapes. It must be kept in sync with:
-//   - src/lib/tauri/*.ts (frontend wrappers that call invoke())
-//   - src-tauri/src/commands/*.rs (Rust #[tauri::command] handlers)
-
 interface CommandContract {
   /** The Tauri IPC command name (snake_case, matches Rust fn name) */
   command: string;
@@ -354,14 +348,6 @@ const ALL_COMMANDS = [
   ...SETTINGS_COMMANDS,
 ];
 
-// ─── Command Name Registry Tests ───────────────────────────────────────
-// These verify that the canonical command registry is internally consistent:
-// all commands have unique names, expected parameter shapes match, and the
-// registry covers the documented contract phases. The registry constants
-// above must be kept in sync with src/lib/tauri/*.ts and
-// src-tauri/src/commands/*.rs manually. NOTE: these tests compare in-file
-// arrays against each other — they do NOT read the actual source files.
-
 describe("IPC command registry", () => {
   test("all registered commands have unique names", () => {
     const names = ALL_COMMANDS.map((c) => c.command);
@@ -463,12 +449,6 @@ describe("IPC command registry", () => {
   });
 });
 
-// ─── Parameter Contract Tests ──────────────────────────────────────────
-// These verify that the Rust parameter names (snake_case) correctly map
-// to the frontend camelCase parameter names via Tauri's automatic
-// deserialization. Tauri deserializes camelCase JSON keys to snake_case
-// Rust fields automatically.
-
 describe("IPC parameter contracts", () => {
   test("play expects song_id parameter (camelCase: songId)", () => {
     const contract = PLAYBACK_COMMANDS.find((c) => c.command === "play")!;
@@ -544,11 +524,6 @@ describe("IPC parameter contracts", () => {
     expect(contract.rustParams).toEqual(["song_id", "stem_mode"]);
   });
 });
-
-// ─── Response Type Shape Tests ─────────────────────────────────────────
-// These tests validate that TypeScript response types contain all the
-// fields that the Rust structs serialize. They work by constructing
-// minimal valid objects and checking field presence at runtime.
 
 describe("PlaybackStateSnapshot shape matches Rust PlaybackStateSnapshot", () => {
   function assertSnapshotShape(snapshot: PlaybackStateSnapshot): void {
@@ -1174,9 +1149,6 @@ describe("AppSettings shape matches Rust AppSettings", () => {
   });
 });
 
-// ─── Event Payload Shape Tests ─────────────────────────────────────────
-// These validate that event payload types match the Rust event structs.
-
 describe("Event payload shapes", () => {
   test("PlaybackPositionEvent has ms and snapshot fields", () => {
     // Import the type at the module level is sufficient; here we validate
@@ -1265,11 +1237,6 @@ describe("Event payload shapes", () => {
     expect(event).toHaveProperty("error");
   });
 });
-
-// ─── Serialization Compatibility Tests ─────────────────────────────────
-// These verify that TypeScript field naming conventions match the Rust
-// serialization format. Rust structs use snake_case (no rename_all) and
-// enums use snake_case (via rename_all = "snake_case").
 
 describe("Serialization compatibility", () => {
   test("PlaybackStateSnapshot uses snake_case field names (no rename_all on Rust struct)", () => {

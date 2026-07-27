@@ -177,18 +177,6 @@ export function createPlaybackSession(
     },
 
     onTrackTransitioned: async (fromSongId, toSongId) => {
-      // #88: The backend already swapped to `toSongId` via a gapless
-      // transition. Reconcile the queue: remove `fromSongId` if it is
-      // still the queue head (it was the song that just finished), push
-      // it to history, and remove `toSongId` from the queue if present
-      // (it was the prepared candidate and is now playing).
-      //
-      // The backend emits `track-transitioned` BEFORE the next
-      // `playback-position` event, so the clock may still hold
-      // `fromSongId` (the old song). Accept both `fromSongId` and
-      // `toSongId` as valid current states; only skip if the clock holds
-      // a completely different song (stale transition after the user
-      // manually started another track).
       const snapshot = clock.snapshot;
       if (snapshot?.song_id !== fromSongId && snapshot?.song_id !== toSongId) {
         return;
@@ -199,10 +187,6 @@ export function createPlaybackSession(
       // have already been dequeued by the preload scheduler's caller).
       deps.queue.removeSongIds([fromSongId, toSongId]);
 
-      // #88: The gapless swap creates a plain track (stems are not
-      // preloaded), so vocal-removal / karaoke stem mode is lost. Mirror
-      // `playSongWithOptionalStems`: fetch the current state, check whether
-      // stems should be loaded for the new song, and call `loadStems()`.
       const currentSnapshot = await deps.transport.getPlaybackState();
       tryApplyAuthoritative(currentSnapshot);
 
@@ -247,7 +231,6 @@ export function createPlaybackSession(
       }
 
       // applySnapshot also updates playingSinceMs from the seek response,
-      // keeping position extrapolation consistent after restart-from-beginning.
       const newSnapshot = await deps.transport.seek(0);
       tryApplyAuthoritative(newSnapshot);
     },
@@ -275,13 +258,6 @@ export function createPlaybackSession(
       const clamped = Math.max(0, ms);
       const snapshot = await deps.transport.seek(clamped);
 
-      // The Rust seek command emits playback-position before returning its
-      // snapshot. The audio thread can leave seek buffering quickly, so a
-      // newer same-generation `playing` event may already be installed by the
-      // time the older command response reaches JavaScript. Treat the current
-      // clock as authoritative once it has adopted this seek generation;
-      // replaying the response would regress state back to `buffering`, clear
-      // playingSinceMs, and freeze lyrics until another command re-anchors it.
       const current = clock.snapshot;
       if (
         current?.song_id === snapshot.song_id &&
@@ -340,7 +316,6 @@ function isStaleTransportSnapshotForClock(
   );
 }
 
-// Re-export pure helpers used by tests / adapters without pulling reducers.
 export {
   shouldEnqueueInsteadOfReplacingCurrentSong,
   shouldLoadSeparatedStems,

@@ -73,9 +73,6 @@ export function ConfirmationDialog({
     </div>
   );
 
-  // In non-browser environments (SSR, Node test runner) the portal target is
-  // unavailable. Render inline so the content is still reachable by the server
-  // renderer and static-markup tests.
   if (typeof document === "undefined" || !document.body) {
     return dialogContent;
   }

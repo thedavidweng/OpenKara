@@ -47,11 +47,6 @@ export class LyricsLineRuntime {
   }
 
   unregisterWrapper(lineIndex: number): void {
-    // RATIONALE: React 19 re-runs inline ref callbacks on every parent
-    // re-render (cleanup/detach then attach). Deleting the spring entry here
-    // would reset scale/opacity to 1 and replay the song-start "gather"
-    // animation on every active-line change. Keep springs; only drop the DOM
-    // pointer. clear() still wipes everything on song change.
     const existing = this.wrappers.get(lineIndex);
     if (existing) {
       existing.wrapperEl = null;

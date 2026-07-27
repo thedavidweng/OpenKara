@@ -105,8 +105,6 @@ describe("FullscreenPlayerView", () => {
       root.render(<FullscreenPlayerView />);
     });
 
-    // The receiver hook runs synchronously during render, before the
-    // announce effect's async call resolves.
     expect(callOrder.indexOf("receiver-mounted")).toBeLessThan(
       callOrder.indexOf("announce-active"),
     );

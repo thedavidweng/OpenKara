@@ -1030,8 +1030,6 @@ describe("createLibrarySettingsActions", () => {
       harness.dependencies.settingsStore.setThemePreference.mockResolvedValue(
         undefined,
       );
-      // Simulate a rollback: the user picked "light" but the store rolled
-      // back to "dark".
       const baseSnapshot =
         harness.dependencies.settingsStore.getAppSettingsSnapshot();
       harness.dependencies.settingsStore.getAppSettingsSnapshot.mockReturnValue(

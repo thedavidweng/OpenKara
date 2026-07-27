@@ -315,10 +315,6 @@ describe("rotation-store", () => {
     });
 
     test("repeated shuffles produce varied orderings with one song per singer (#145)", () => {
-      // Every singer has exactly one song, so all groups are size 1 (same
-      // tier). The old code sorted by descending size with a stable sort,
-      // preserving Map insertion order and yielding one deterministic order
-      // on every press. The fix shuffles within equal-size tiers.
       mockQueueState.queue = ["a1", "b1", "c1", "d1"];
       useRotationStore.setState({
         queueSingers: new Map([
@@ -342,8 +338,6 @@ describe("rotation-store", () => {
     });
 
     test("repeated shuffles still avoid back-to-back with unequal group sizes", () => {
-      // A(3), B(2): distinct sizes, so the tier shuffle must keep A before B
-      // to preserve the no-back-to-back guarantee.
       mockQueueState.queue = ["a1", "a2", "a3", "b1", "b2"];
       useRotationStore.setState({
         queueSingers: new Map([

@@ -118,7 +118,6 @@ describe("SeekBar", () => {
     mockSelectCurrentPositionMs.mockImplementation(
       (state: { positionMs: number }) => state.positionMs,
     );
-    // Do not invoke the callback synchronously — SeekBar chains rAF forever.
     vi.stubGlobal(
       "requestAnimationFrame",
       vi.fn(() => 1),
@@ -163,9 +162,6 @@ describe("SeekBar", () => {
     );
     canvasMock = mockCanvasContext();
 
-    // Default rail geometry so the initial synchronous measurement in the
-    // ResizeObserver effect reports a non-zero width. Individual tests can
-    // override via stubRailGeometry for specific widths.
     vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
       left: 0,
       width: 200,
@@ -327,7 +323,6 @@ describe("SeekBar", () => {
     canvasMock.ctx.fillRect.mockClear();
     canvasMock.ctx.clearRect.mockClear();
 
-    // Switch to song-2 with a hanging waveform fetch — old peaks must not paint.
     mockPlayerState.snapshot = {
       duration_ms: 80_000,
       is_playing: true,
@@ -398,7 +393,6 @@ describe("SeekBar", () => {
       await Promise.resolve();
     });
 
-    // Only song-2's two bars should be present, never five bars from song-1.
     const fillCount = canvasMock.ctx.fillRect.mock.calls.length;
     expect(fillCount).toBeLessThan(5);
   });
@@ -613,8 +607,6 @@ describe("SeekBar", () => {
       root.render(<SeekBar />);
     });
     const rail = host.querySelector("[role='slider']") as HTMLElement;
-    // 900 CSS px @ 2x → round(900*2/3) = 600 (distinct from the 0-width
-    // fallback of 200 so the cache cannot mask the migration).
     stubRailGeometry(rail, 900, 12);
     await act(async () => {
       resizeCallback?.([], {} as ResizeObserver);
@@ -667,8 +659,6 @@ describe("SeekBar", () => {
     expect(mockGetWaveform).toHaveBeenCalledWith("song-1", 199);
     const callsBefore = mockGetWaveform.mock.calls.length;
 
-    // A sub-bucket DPR drift (2 -> 2.001) keeps the same bucket count:
-    // round(299*2.001/3) = round(199.43) = 199.
     Object.defineProperty(window, "devicePixelRatio", {
       configurable: true,
       value: 2.001,
@@ -712,9 +702,6 @@ describe("SeekBar", () => {
     expect(canvas.width).toBe(598);
     expect(canvas.height).toBe(24);
 
-    // Sub-bucket DPR drift (2 -> 2.001) keeps bucket count at 199, so no
-    // refetch — but the canvas effect must still re-run and resize the
-    // backing store to the new physical pixel dimensions.
     Object.defineProperty(window, "devicePixelRatio", {
       configurable: true,
       value: 2.001,

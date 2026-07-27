@@ -606,10 +606,6 @@ describe("selectSyncDisplayPositionMs", () => {
   });
 
   test("does not regress clock when a stale sync arrives after a seek", () => {
-    // RATIONALE: Both windows receive the same playback-position events. A
-    // delayed BroadcastChannel sync from before a seek must not overwrite the
-    // newer clock state — otherwise the lyrics engine would see the pre-seek
-    // position and never scroll to the new line.
     const channelsByName = new Map<string, Set<FakeChannel>>();
     const channelFactory = (name: string) => {
       const peers = channelsByName.get(name) ?? new Set<FakeChannel>();
@@ -1065,9 +1061,6 @@ describe("seek", () => {
       transport_generation: 2,
       position_ms: 15_000,
     });
-    // Match the Rust service: it emits playback-position before the invoke
-    // response resolves. The target can already be visible while the seek edge
-    // must remain pending until the command confirms the authoritative seek.
     player.store
       .getState()
       .applyPlaybackPositionEvent(playbackPositionEvent(targetSnapshot));

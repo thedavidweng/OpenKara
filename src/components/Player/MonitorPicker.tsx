@@ -164,9 +164,7 @@ export function MonitorPicker({ onClose, anchorRef }: MonitorPickerProps) {
         bottomInsetPx: 0,
       },
       presentationSpec: buildAudiencePresentationSpec(0),
-    }).catch(() => {
-      // Prefer keeping local output working even if AirPlay sync is stale.
-    });
+    }).catch(() => {});
 
     openFullscreenPlayer(index);
     onClose();

@@ -108,14 +108,6 @@ function applyPlayerSyncSnapshot(
 ) {
   const currentSnapshot = get().snapshot;
 
-  // RATIONALE: Both webview windows receive the same playback-position events
-  // from the backend. The BroadcastChannel sync is only for propagating
-  // command-driven changes (seek, pause, resume) to the peer window. A delayed
-  // sync from before a seek would regress the clock to an older
-  // transport_generation, re-installing a stale position and freezing lyrics
-  // — the fullscreen window would see the pre-seek position and never scroll
-  // to the new line. Skip the clock replacement when the incoming generation
-  // is older than what we already have.
   const isClockStale =
     currentSnapshot !== null &&
     payload.snapshot !== null &&
@@ -123,8 +115,6 @@ function applyPlayerSyncSnapshot(
       currentSnapshot.transport_generation;
 
   if (!isClockStale) {
-    // RATIONALE: playingSinceMs is tied to this webview's performance.now() clock.
-    // Applying a peer window's timestamp would break selectCurrentPositionMs extrapolation.
     const playingSinceMs =
       payload.playingSinceMs === null
         ? null
@@ -137,7 +127,6 @@ function applyPlayerSyncSnapshot(
       positionMs: payload.positionMs,
       playingSinceMs,
     };
-    // Keep session clock aligned with peer sync without re-publishing.
     session.replaceClock(clock);
 
     set({
@@ -147,7 +136,6 @@ function applyPlayerSyncSnapshot(
     });
   }
 
-  // Delayed BroadcastChannel messages must never replay an older seek edge.
   set({
     seekRevision: Math.max(get().seekRevision, payload.seekRevision ?? 0),
     airPlayOutput: payload.airPlayOutput,
@@ -279,11 +267,6 @@ export function createPlayerStore(
             snapshot?.song_id === beforeSeek.song_id &&
             snapshot.transport_generation > beforeSeek.transport_generation
           ) {
-            // RATIONALE: Tauri seek is asynchronous. Publishing a seek edge
-            // from the click/mouseup handler lets the lyrics rAF consume
-            // resetScroll against the old playhead. Publish only after the
-            // authoritative seek snapshot is installed, so the same lyrics
-            // frame sees both the target time and isSeek=true.
             syncPatch({
               seekRevision: Math.max(
                 get().seekRevision + 1,

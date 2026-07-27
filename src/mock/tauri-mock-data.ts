@@ -1,13 +1,3 @@
-// Mock data payload for the shared Tauri IPC mock.  Both the website preview
-// and the Playwright E2E fixture import this object and pass it to
-// `createTauriMock()`.  Song and lyrics data is sourced from
-// `preview-songs.ts` so the mock catalog stays in sync with the generator
-// script.
-//
-// The E2E fixture serializes this object via `JSON.stringify()` and injects
-// it alongside the `createTauriMock` function source.  All fields must be
-// JSON-serializable (no Uint8Array, no functions, no undefined).
-
 import {
   PREVIEW_LYRICS,
   PREVIEW_SONGS,
@@ -70,7 +60,6 @@ const PRIMARY_PREVIEW_DURATION_MS =
  * `[]`) before serialization.
  */
 export const MOCK_DATA: MockData = {
-  // Songs — serialize Uint8Array cover_art to number[] for the IPC contract.
   songs: PREVIEW_SONGS.map(({ mbid: _mbid, cover_art, ...rest }) => ({
     ...rest,
     cover_art: Array.from(cover_art),
@@ -132,12 +121,6 @@ export const MOCK_DATA: MockData = {
     update_policy: "notify",
   },
 
-  // Website preview starts at a real lyric timestamp with playback active so
-  // the seekbar, karaoke fill, and lyrics panel look mid-session with live
-  // animations (word sweep, auto-scroll, line transitions). Playback loops
-  // back to the start position on song end so the preview stays animated.
-  // E2E overrides this back to idle via {@link E2E_MOCK_DATA} so playback
-  // specs start from a clean slate.
   playbackSnapshot: {
     transport_generation: 0,
     song_id: PRIMARY_PREVIEW_SONG_HASH,
@@ -170,9 +153,6 @@ export const MOCK_DATA: MockData = {
     active: false,
   },
 
-  // Loop playback so the website preview stays animated continuously.
-  // Loop back to the song start (0ms) so the full lyric timeline replays.
-  // E2E does not set these — tests that need playback call `play` at runtime.
   loopPlayback: true,
   loopStartPositionMs: 0,
 };

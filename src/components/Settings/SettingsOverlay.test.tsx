@@ -347,7 +347,6 @@ describe("SettingsExecutionProviderSection rendering", () => {
 
     expect(markup).toContain("settings.executionProvider.cpu");
     expect(markup).toContain("settings.executionProvider.xnnpack");
-    // Never render foreign/unsupported providers.
     expect(markup).not.toContain("settings.executionProvider.directml");
     expect(markup).not.toContain("settings.executionProvider.coreml");
     expect(markup).not.toContain("settings.executionProvider.metal");

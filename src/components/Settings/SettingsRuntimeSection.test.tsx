@@ -215,8 +215,6 @@ describe("SettingsRuntimeSection", () => {
       runtimeUpdate: update,
     });
 
-    // The old fall-through printed "The runtime is up to date." for every
-    // non-update verdict, so a failed install looked healthy.
     expect(html).not.toContain("settings.runtime.upToDate");
     expect(html).toContain("settings.runtime.statusMissing");
     expect(html).toContain("settings.runtime.installButton");

@@ -28,9 +28,6 @@ export function getRemoteProviderLabel(
         });
 }
 
-// Primary action label for the add/open remote-repository flow. The label
-// names the destination so the button says where it is connecting to, rather
-// than the provider-agnostic "Open Remote Repository".
 export function getRemoteProviderConnectLabel(
   t: TFunction,
   provider: RemoteLibraryProvider,

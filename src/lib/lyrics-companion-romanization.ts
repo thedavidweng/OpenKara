@@ -56,7 +56,6 @@ function isTranscriptionCandidate(line: LyricLine): boolean {
   const text = line.text.trim();
   if (text.length === 0) return false;
   // Word-timed lines carry their own karaoke timing; a transcription shadow
-  // never does, and collapsing one would drop word highlighting.
   if ((line.words?.length ?? 0) > 0) return false;
   return isLatinScript([text]);
 }
@@ -100,8 +99,6 @@ export function splitCompanionRomanization(
   const primaryCount = lines.filter(needsRomanization).length;
   const pairCount = countTimestampPairs(lines);
 
-  // Bail out unless the file is clearly interleaved, so a couple of Latin
-  // lines in an otherwise native lyric can never trigger extraction.
   if (
     pairCount < MIN_PAIRED_LINES ||
     primaryCount === 0 ||

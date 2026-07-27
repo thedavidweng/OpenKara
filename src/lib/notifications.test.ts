@@ -34,8 +34,6 @@ describe("notifyWhenUnfocused", () => {
     await notifyWhenUnfocused("Separation complete", "Bohemian Rhapsody");
 
     expect(sendNotification).not.toHaveBeenCalled();
-    // The permission prompt must not be raised just because a run finished
-    // while the user was looking at it.
     expect(isPermissionGranted).not.toHaveBeenCalled();
     expect(requestPermission).not.toHaveBeenCalled();
   });

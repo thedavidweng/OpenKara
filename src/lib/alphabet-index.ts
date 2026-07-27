@@ -133,11 +133,6 @@ export function resolveBucket(
 
   const requestedPos = ALPHABET_BUCKETS.indexOf(requested);
 
-  // Search outward symmetrically: at each distance d, check the following
-  // bucket first (so ties prefer the next section), then the preceding bucket.
-  // This avoids the old forward-first scan that would jump to `#` when a late
-  // letter like X was pressed with no X songs — the nearest bucket (e.g. W)
-  // is now preferred over the far-away `#` bucket.
   for (let d = 1; d < ALPHABET_BUCKETS.length; d++) {
     const followingPos = requestedPos + d;
     if (followingPos < ALPHABET_BUCKETS.length) {

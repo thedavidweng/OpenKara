@@ -177,7 +177,6 @@ describe("PlaybackStage", () => {
       root.render(<PlaybackStage />);
     });
 
-    // The effect clears stale bytes then fetches the preview derivative.
     expect(mockGetCoverArtPreview).toHaveBeenCalledWith("song-fetch");
 
     await act(async () => {
@@ -224,15 +223,12 @@ describe("PlaybackStage", () => {
       root.render(<PlaybackStage />);
     });
 
-    // Before the backdrop resolves the stage is the plain (non-ambience) lyric
-    // stage, and the scroll viewport is mounted.
     const stage = container.querySelector("[data-stage-visual-variant]");
     expect(stage?.getAttribute("data-stage-visual-variant")).toBe("default");
     const viewportBefore = container.querySelector(
       "[data-testid='lyrics-scroll-viewport']",
     ) as HTMLDivElement;
     expect(viewportBefore).toBeTruthy();
-    // Simulate mid-song follow position: the user is a few lines in.
     viewportBefore.scrollTop = 240;
 
     // The async cover-art preview lands mid-playback → ambience flips on.
@@ -252,8 +248,6 @@ describe("PlaybackStage", () => {
     const viewportAfter = container.querySelector(
       "[data-testid='lyrics-scroll-viewport']",
     ) as HTMLDivElement;
-    // Same DOM node instance: the panel was not remounted, so the line-runtime
-    // springs are intact (no gather replay) and scrollTop is preserved.
     expect(viewportAfter).toBe(viewportBefore);
     expect(viewportAfter.scrollTop).toBe(240);
 
