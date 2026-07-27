@@ -95,7 +95,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Restore model cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: src-tauri/models/${{ steps.spectral.outputs.file }}
           key: spectral-candidate-models-${{ steps.spectral.outputs.sha256 }}
@@ -122,7 +122,7 @@ jobs:
           verified "src-tauri/models/$SPECTRAL_FILE" "$SPECTRAL_SHA256" || { echo "spectral model digest mismatch"; exit 1; }
 
       - name: Restore ONNX Runtime cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: src-tauri/generated/onnxruntime
           key: onnxruntime-${{ matrix.ort_target }}-${{ hashFiles('scripts/prepare-onnx-runtime.mjs', 'src-tauri/catalog/release-manifest.json') }}
