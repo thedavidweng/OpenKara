@@ -217,15 +217,10 @@ test.describe("Lyrics auto-follow", () => {
 
     const followButton = page.locator("[data-testid='lyrics-follow-playing']");
 
-    // Deterministic user scroll: write scrollTop far below the playing line and
-    // dispatch a real WheelEvent in the same synchronous frame. This exercises
-    // the follow guard's wheel path directly — no page.mouse.wheel (WebKit
-    // silently drops synthetic wheel deltas) and no smooth-scroll inertia
-    // stream that would keep re-arming USER_SCROLL_PAUSE_MS mid-test. A
-    // synthetic (untrusted) WheelEvent performs no native scroll, so scrollTop
-    // stays exactly where we wrote it.
+    // Match native event order: wheel unlocks follow before the viewport's
+    // scroll position changes. A synthetic event performs no native scroll, so
+    // write the deterministic browse position after dispatching it.
     await page.locator(VIEWPORT).evaluate((el) => {
-      el.scrollTop = 900;
       el.dispatchEvent(
         new WheelEvent("wheel", {
           deltaY: 240,
@@ -233,6 +228,7 @@ test.describe("Lyrics auto-follow", () => {
           cancelable: true,
         }),
       );
+      el.scrollTop = 900;
     });
 
     // State assertion (built-in retry): unlocking pins the Follow button.
@@ -240,12 +236,13 @@ test.describe("Lyrics auto-follow", () => {
     const unlockedTop = await readScrollTop(page);
     expect(unlockedTop).toBeGreaterThan(400);
 
-    // While unlocked the engine tracks the user's viewport and never writes
-    // scrollTop. Confirm auto-scroll stays released: sampled well inside the 4s
-    // idle window, the view holds its browse position and follow is still
-    // unlocked (no fixed sleep that races the re-lock).
+    // This bounded retry allows WebKit to settle one pending animation frame
+    // while remaining well inside the user's four-second browse window.
     await expect
-      .poll(async () => Math.abs((await readScrollTop(page)) - unlockedTop) < 2)
+      .poll(
+        async () => Math.abs((await readScrollTop(page)) - unlockedTop) < 2,
+        { timeout: 1000, intervals: [50, 100, 200] },
+      )
       .toBe(true);
     await expect(followButton).toHaveAttribute("data-visible", "true");
     const stillTop = await readScrollTop(page);
@@ -268,10 +265,8 @@ test.describe("Lyrics auto-follow", () => {
     // across the 4s idle window (would mask a missing resume snap).
     await page.waitForTimeout(1500);
 
-    // One synthetic wheel + scrollTop write — no browser wheel inertia stream
-    // that would keep re-arming USER_SCROLL_PAUSE_MS in CI.
+    // Mirror the wheel-before-scroll order from the user interaction above.
     await page.locator(VIEWPORT).evaluate((el) => {
-      el.scrollTop = 900;
       el.dispatchEvent(
         new WheelEvent("wheel", {
           deltaY: 240,
@@ -279,6 +274,7 @@ test.describe("Lyrics auto-follow", () => {
           cancelable: true,
         }),
       );
+      el.scrollTop = 900;
     });
 
     const followButton = page.locator("[data-testid='lyrics-follow-playing']");
