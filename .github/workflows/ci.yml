@@ -221,7 +221,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Restore separation model cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: src-tauri/models/${{ steps.model.outputs.file }}
           key: separation-model-${{ steps.model.outputs.file_sha256 }}
@@ -682,7 +682,7 @@ jobs:
           path: src-tauri/models
 
       - name: Restore ONNX Runtime cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: src-tauri/generated/onnxruntime
           key: onnxruntime-${{ matrix.ort_target }}-${{ hashFiles('scripts/prepare-onnx-runtime.mjs', 'src-tauri/catalog/release-manifest.json') }}
@@ -752,7 +752,7 @@ jobs:
           key: windows-latest-debug
 
       - name: Restore ONNX Runtime cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: src-tauri/generated/onnxruntime
           key: onnxruntime-x86_64-pc-windows-msvc-${{ hashFiles('scripts/prepare-onnx-runtime.mjs', 'src-tauri/catalog/release-manifest.json') }}
@@ -837,7 +837,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Restore ONNX Runtime cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: src-tauri/generated/onnxruntime
           key: onnxruntime-x86_64-unknown-linux-gnu-${{ hashFiles('scripts/prepare-onnx-runtime.mjs', 'src-tauri/catalog/release-manifest.json') }}
@@ -976,7 +976,7 @@ jobs:
       # No `pnpm audit` here: js-quality already gates the same lockfile, and a
       # second run only adds a registry round trip to the slowest job in CI.
       - name: Restore ONNX Runtime cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: src-tauri/generated/onnxruntime
           key: onnxruntime-${{ matrix.ort_target }}-${{ hashFiles('scripts/prepare-onnx-runtime.mjs', 'src-tauri/catalog/release-manifest.json') }}
