@@ -20,6 +20,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write # push regenerated lockfile and Flatpak sources to the PR branch
+      actions: write # approve the CI run triggered by the sync push
 
     steps:
       - name: Checkout PR branch
@@ -53,13 +54,46 @@ jobs:
       # idempotence/staleness verification lives in the read-only PR test
       # (tests/flatpak-packaging.test.ts) instead.
       - name: Commit changes if any
+        id: commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add packaging/flatpak/generated/node-sources.0.json pnpm-lock.yaml packaging/flatpak/generated/cargo-sources.json
           if git diff --cached --quiet; then
             echo "No changes to commit"
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
           else
             git commit -m "chore: sync lockfile and Flatpak sources for dependabot update"
             git push
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
           fi
+
+      # RATIONALE: A push via GITHUB_TOKEN triggers a pull_request
+      # synchronize event, but GitHub marks the resulting CI workflow run
+      # as action_required (GITHUB_TOKEN-triggered events do not auto-run
+      # workflows). Without this approval step the CI run sits pending
+      # forever and the PR can never merge.
+      - name: Approve triggered CI run
+        if: steps.commit.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          # The synchronize event takes a few seconds to register the CI run.
+          for attempt in $(seq 1 10); do
+            run_id=$(gh run list \
+              --workflow=ci.yml \
+              --branch="$BRANCH" \
+              --status=action_required \
+              --json databaseId \
+              --jq '.[0].databaseId // empty')
+            if [ -n "$run_id" ]; then
+              echo "Approving CI run $run_id"
+              gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/approve"
+              exit 0
+            fi
+            echo "No action_required CI run yet (attempt $attempt/10), retrying in 5s..."
+            sleep 5
+          done
+          echo "::warning::No action_required CI run found after 50s — CI may need manual approval."
