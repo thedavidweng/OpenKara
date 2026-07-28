@@ -1,5 +1,7 @@
+// @vitest-environment jsdom
+
 import { afterEach, describe, expect, it } from "vitest";
-import { SUPPORTED_LANGUAGES, detectSystemLanguage } from "./i18n";
+import i18next, { SUPPORTED_LANGUAGES, detectSystemLanguage } from "./i18n";
 
 const supported = new Set(SUPPORTED_LANGUAGES.map((l) => l.code));
 
@@ -11,7 +13,10 @@ function setNavigatorLanguage(value: string): void {
 }
 
 describe("detectSystemLanguage", () => {
-  afterEach(() => setNavigatorLanguage("en-US"));
+  afterEach(async () => {
+    setNavigatorLanguage("en-US");
+    await i18next.changeLanguage("en");
+  });
 
   it("returns an exact BCP-47 tag match when the locale ships", () => {
     setNavigatorLanguage("zh-CN");
@@ -56,5 +61,16 @@ describe("detectSystemLanguage", () => {
   it("falls back to en for an unknown language", () => {
     setNavigatorLanguage("xx-YY");
     expect(detectSystemLanguage()).toBe("en");
+  });
+
+  it("uses canonical BCP-47 tags for every shipped locale", () => {
+    for (const { code } of SUPPORTED_LANGUAGES) {
+      expect(Intl.getCanonicalLocales(code)).toEqual([code]);
+    }
+  });
+
+  it("updates the document language when the app language changes", async () => {
+    await i18next.changeLanguage("zh-CN");
+    expect(document.documentElement.lang).toBe("zh-CN");
   });
 });

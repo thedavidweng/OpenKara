@@ -1,6 +1,7 @@
 # OpenKara Agent Notes
 
-Coding agent instructions. Self-contained — do not assume cross-referencing.
+Coding agent instructions. This file contains the global rules. Load linked
+guidance only when the current change needs it.
 
 ## Project
 
@@ -32,6 +33,15 @@ Formatting is automated via PostToolUse hook (`pnpm format:write` + `cargo fmt`)
 behavior, types, and contracts. `docs/` exists for humans who need historical
 context or design rationale — do not read `docs/` to understand what the code
 does.
+
+## Product Standards (load on demand)
+
+Before you change a product surface, read
+[`docs/references/product-standards.md`](docs/references/product-standards.md).
+It routes the change to the applicable standard profile. Read only the matched
+profiles. These profiles are repository constraints. Put their required
+automated or manual evidence in the PR. Add an ADR before you introduce a new
+product surface or change a standards target.
 
 ## Documentation Rules
 

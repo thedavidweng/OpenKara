@@ -48,6 +48,7 @@ jobs:
       categories: ${{ steps.classify.outputs.categories }}
       run_triage: ${{ steps.classify.outputs.run_triage }}
       run_conventional-commits: ${{ steps.classify.outputs.run_conventional-commits }}
+      run_standards-reference: ${{ steps.classify.outputs.run_standards-reference }}
       run_ci-gate: ${{ steps.classify.outputs.run_ci-gate }}
       run_js-quality: ${{ steps.classify.outputs.run_js-quality }}
       run_app-frontend: ${{ steps.classify.outputs.run_app-frontend }}
@@ -268,6 +269,32 @@ jobs:
         uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Standards reference ─────────────────────────────────────────────
+  # Validates the mandatory AGENTS.md → index → profile route without
+  # running a full application build for a documentation-only change.
+  standards-reference:
+    name: Standards reference
+    needs: triage
+    if: |
+      !cancelled() &&
+      needs.triage.outputs.run_standards-reference == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Verify standards route
+        run: node --run check:standards
 
   # ── JS quality ───────────────────────────────────────────────────────
   # Format, lint, i18n, knip, schema drift, and dependency audit.
@@ -1162,6 +1189,7 @@ jobs:
     needs:
       - triage
       - conventional-commits
+      - standards-reference
       - js-quality
       - app-frontend
       - website
@@ -1183,6 +1211,7 @@ jobs:
           EXPECTED_JOBS: ${{ needs.triage.outputs.expected-jobs }}
           TRIAGE: ${{ needs.triage.result }}
           CONVENTIONAL_COMMITS: ${{ needs.conventional-commits.result }}
+          STANDARDS_REFERENCE: ${{ needs.standards-reference.result }}
           JS_QUALITY: ${{ needs.js-quality.result }}
           APP_FRONTEND: ${{ needs.app-frontend.result }}
           WEBSITE: ${{ needs.website.result }}
@@ -1204,6 +1233,7 @@ jobs:
           declare -A JOBS=(
             [triage]="$TRIAGE"
             [conventional-commits]="$CONVENTIONAL_COMMITS"
+            [standards-reference]="$STANDARDS_REFERENCE"
             [js-quality]="$JS_QUALITY"
             [app-frontend]="$APP_FRONTEND"
             [website]="$WEBSITE"

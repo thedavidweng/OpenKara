@@ -43,6 +43,9 @@ pre-push:
     lint:
       use_stdin: true
       run: sh scripts/git-hooks/skip-delete-only-push.sh 'node --run lint'
+    standards-route:
+      use_stdin: true
+      run: sh scripts/git-hooks/skip-delete-only-push.sh 'node --run check:standards'
     patch-coverage:
       use_stdin: true
       run: sh scripts/git-hooks/skip-delete-only-push.sh 'pnpm test:coverage && pnpm check:patch-coverage'

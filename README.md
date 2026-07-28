@@ -324,6 +324,7 @@ pnpm tauri dev               # start dev server with hot reload
 cd src-tauri && cargo test -q   # backend tests (175+; see AGENTS.md for CI notes)
 pnpm lint                    # oxlint
 pnpm format                  # oxfmt check
+node --run check:standards   # standards route
 ```
 
 ### Building
@@ -342,6 +343,7 @@ pnpm tauri build             # production build with platform-specific bundle
 - [Changelog](./CHANGELOG.md) — Shipped changes and version notes
 - [IPC Contracts](./docs/references/contracts/) — Stable backend-facing interfaces
 - [Product Specs](./docs/references/product/) — User-facing behavior specs
+- [Product Standards](./docs/references/product-standards.md) — Change-specific quality constraints
 
 ## Contributing
 

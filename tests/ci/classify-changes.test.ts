@@ -396,6 +396,7 @@ describe("synthetic fixtures", () => {
     expect(result.expectedJobs).toEqual([
       "triage",
       "conventional-commits",
+      "standards-reference",
       "ci-gate",
     ]);
   });
@@ -407,6 +408,7 @@ describe("synthetic fixtures", () => {
     expect(result.expectedJobs).toEqual([
       "triage",
       "conventional-commits",
+      "standards-reference",
       "ci-gate",
     ]);
   });
@@ -504,6 +506,7 @@ describe("structural invariants", () => {
     const requiredJobs = [
       "triage",
       "conventional-commits",
+      "standards-reference",
       "ci-gate",
       "js-quality",
       "app-frontend",

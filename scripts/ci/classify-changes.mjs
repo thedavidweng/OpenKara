@@ -120,6 +120,7 @@ const CATEGORY_PATTERNS = {
     ".github/workflows/ci.yml",
     ".github/labeler.yml",
     "scripts/ci/**",
+    "scripts/check-standards.mjs",
     "tests/ci/**",
     "tests/workflow-security.test.ts",
     "scripts/check-patch-coverage.mjs",
@@ -208,6 +209,8 @@ function classifyFile(file) {
 const JOB_RULES = {
   triage: () => true,
   "conventional-commits": (_cats, event) => event === "pull_request",
+  "standards-reference": (cats) =>
+    cats.has("docs") || cats.has("ci_workflow") || cats.has("unknown"),
   "ci-gate": () => true,
 
   "js-quality": (cats) =>

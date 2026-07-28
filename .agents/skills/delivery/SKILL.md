@@ -11,7 +11,9 @@ description: Format delivery reports and PR descriptions. Use when preparing a c
 2. Verification: Report exact commands run and their results.
 3. Gaps: If you ran only a subset, say exactly what you did **not** run.
 4. Contracts: If behavior changed, confirm `docs/references/contracts/*.md` was updated.
-5. Never skip local verification and leave first discovery of breakage to CI.
+5. Standards: For a product-surface change, name the profile from
+   `docs/references/product-standards.md` and its evidence or exception.
+6. Never skip local verification and leave first discovery of breakage to CI.
 
 ## Delivery report template
 
