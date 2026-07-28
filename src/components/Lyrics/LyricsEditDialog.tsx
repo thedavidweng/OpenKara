@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useModalDialog } from "@/hooks/use-modal-dialog";
 import { useLyricsStore } from "@/stores/lyrics-store";
+import { DialogBackdrop } from "@/components/Overlay/DialogBackdrop";
 
 interface LyricsEditDialogProps {
   open: boolean;
@@ -80,13 +81,14 @@ function LyricsEditDialogContent({
   };
 
   return (
-    <div
-      role="presentation"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-      onClick={(e) => {
-        if (!saving && e.target === e.currentTarget) onClose();
-      }}
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <DialogBackdrop
+        ariaLabel={t("common.close")}
+        onDismiss={() => {
+          if (!saving) onClose();
+        }}
+        className="absolute inset-0 bg-black/60"
+      />
       <div
         ref={dialogRef}
         role="dialog"
@@ -94,7 +96,7 @@ function LyricsEditDialogContent({
         aria-labelledby={headingId}
         aria-busy={saving}
         tabIndex={-1}
-        className="flex w-full max-w-lg flex-col gap-4 overflow-hidden rounded-xl border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-6 shadow-2xl"
+        className="relative flex w-full max-w-lg flex-col gap-4 overflow-hidden rounded-xl border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-6 shadow-2xl"
       >
         <h2
           id={headingId}

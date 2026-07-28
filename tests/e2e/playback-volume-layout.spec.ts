@@ -91,7 +91,7 @@ test.describe("Playback volume rail layout geometry", () => {
     await expect(page.getByText("Earfquake")).toBeVisible();
 
     // Start playback so the right-zone volume controls render.
-    await page.getByText("Earfquake").dblclick();
+    await page.getByRole("button", { name: "Earfquake" }).dblclick();
     await expect(page.getByRole("button", { name: /pause/i })).toBeVisible({
       timeout: 5000,
     });

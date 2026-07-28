@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { useModalDialog } from "@/hooks/use-modal-dialog";
+import { DialogBackdrop } from "@/components/Overlay/DialogBackdrop";
 import * as api from "@/lib/tauri";
 import { formatDuration, formatBytes } from "@/lib/format";
 import {
@@ -60,7 +61,6 @@ export function SongPropertiesDialog({
   const [properties, setProperties] = useState<SongProperties | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const backdropRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const separationStatuses = useLibraryStore((s) => s.separationStatuses);
@@ -105,20 +105,17 @@ export function SongPropertiesDialog({
     onDismiss: onClose,
   });
 
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === backdropRef.current) onClose();
-  };
-
   if (typeof document === "undefined" || !document.body) {
     return null;
   }
 
   return createPortal(
-    <div
-      ref={backdropRef}
-      onClick={handleBackdropClick}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <DialogBackdrop
+        ariaLabel={t("common.close")}
+        onDismiss={onClose}
+        className="absolute inset-0 bg-black/50"
+      />
       <div
         ref={dialogRef}
         role="dialog"
@@ -126,7 +123,7 @@ export function SongPropertiesDialog({
         aria-labelledby={headingId}
         aria-busy={loading}
         tabIndex={-1}
-        className="w-full max-w-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-sidebar)] shadow-2xl"
+        className="relative w-full max-w-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-sidebar)] shadow-2xl"
       >
         <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-3">
           <h3

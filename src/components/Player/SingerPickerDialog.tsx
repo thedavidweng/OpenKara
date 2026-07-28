@@ -2,6 +2,7 @@ import { createPortal } from "react-dom";
 import { useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useModalDialog } from "@/hooks/use-modal-dialog";
+import { DialogBackdrop } from "@/components/Overlay/DialogBackdrop";
 
 interface SingerPickerDialogProps {
   singerNames: string[];
@@ -24,7 +25,11 @@ export function SingerPickerDialog({
 
   const dialogContent = (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60" onClick={onCancel} />
+      <DialogBackdrop
+        ariaLabel={t("common.close")}
+        onDismiss={onCancel}
+        className="absolute inset-0 bg-black/60"
+      />
 
       <div
         ref={dialogRef}

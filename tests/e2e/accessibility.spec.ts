@@ -62,4 +62,23 @@ test.describe("Accessibility", () => {
       await expectNoAutomatableViolations(page);
     });
   }
+
+  test("settings opens, traps focus, and closes through the keyboard", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const settingsButton = page.getByRole("button", { name: "Settings" });
+    await settingsButton.focus();
+
+    await page.keyboard.press("Enter");
+    const settingsDialog = page.getByRole("dialog", { name: "Settings" });
+    const closeButton = settingsDialog.getByRole("button", { name: "Close" });
+
+    await expect(settingsDialog).toBeVisible();
+    await expect(closeButton).toBeFocused();
+
+    await page.keyboard.press("Escape");
+    await expect(settingsDialog).toBeHidden();
+    await expect(settingsButton).toBeFocused();
+  });
 });

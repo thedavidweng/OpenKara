@@ -5,6 +5,7 @@ import { useLibraryStore } from "@/stores/library-store";
 import * as api from "@/lib/tauri";
 import { formatBytes, formatDuration } from "@/lib/format";
 import { useModalDialog } from "@/hooks/use-modal-dialog";
+import { DialogBackdrop } from "@/components/Overlay/DialogBackdrop";
 import type { ImportCandidateDetails } from "@/types/ipc";
 
 function getDisplayName(path: string): string {
@@ -67,9 +68,10 @@ export function ImportCdgChoiceDialog() {
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
-      <div
+      <DialogBackdrop
+        ariaLabel={t("common.close")}
+        onDismiss={() => resolveChoice(null)}
         className="absolute inset-0 bg-black/60"
-        onClick={() => resolveChoice(null)}
       />
       <div
         ref={dialogRef}

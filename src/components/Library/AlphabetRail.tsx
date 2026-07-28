@@ -188,6 +188,7 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
   );
 
   return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <div
       ref={containerRef}
       role="navigation"

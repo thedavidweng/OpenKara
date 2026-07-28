@@ -13,7 +13,7 @@ test.describe("Lyrics display", () => {
     await expect(page.getByText("Earfquake")).toBeVisible();
 
     // Start playback to trigger lyrics fetch
-    await page.getByText("Earfquake").dblclick();
+    await page.getByRole("button", { name: "Earfquake" }).dblclick();
     await expect(page.getByRole("button", { name: /pause/i })).toBeVisible({
       timeout: 5000,
     });

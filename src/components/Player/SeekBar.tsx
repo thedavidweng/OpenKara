@@ -20,6 +20,13 @@ interface SeekBarProps {
   density?: PlaybackBarDensity;
 }
 
+const KEYBOARD_SEEK_STEP_MS = 5_000;
+const KEYBOARD_SEEK_PAGE_STEP_MS = 30_000;
+
+function clampPosition(positionMs: number, durationMs: number): number {
+  return Math.max(0, Math.min(durationMs, positionMs));
+}
+
 export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
   const { t } = useTranslation();
   const snapshot = usePlayerStore((s) => s.snapshot);
@@ -239,6 +246,44 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
     ? (dragPercent / 100) * durationMs
     : displayPositionMs;
 
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (durationMs <= 0) {
+        return;
+      }
+
+      let nextPositionMs: number | null = null;
+      switch (event.key) {
+        case "ArrowLeft":
+        case "ArrowDown":
+          nextPositionMs = displayPositionMs - KEYBOARD_SEEK_STEP_MS;
+          break;
+        case "ArrowRight":
+        case "ArrowUp":
+          nextPositionMs = displayPositionMs + KEYBOARD_SEEK_STEP_MS;
+          break;
+        case "PageDown":
+          nextPositionMs = displayPositionMs - KEYBOARD_SEEK_PAGE_STEP_MS;
+          break;
+        case "PageUp":
+          nextPositionMs = displayPositionMs + KEYBOARD_SEEK_PAGE_STEP_MS;
+          break;
+        case "Home":
+          nextPositionMs = 0;
+          break;
+        case "End":
+          nextPositionMs = durationMs;
+          break;
+        default:
+          return;
+      }
+
+      event.preventDefault();
+      void seek(clampPosition(nextPositionMs, durationMs));
+    },
+    [displayPositionMs, durationMs, seek],
+  );
+
   return (
     <div
       className={`flex ${PLAYBACK_BAR_SEEK_MIN_WIDTH_CLASS} flex-1 items-center tabular-nums text-[11px] text-[var(--color-text-dim)] ${
@@ -252,14 +297,17 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
       </span>
       <div
         ref={barRef}
-        className={`group relative h-1.5 ${PLAYBACK_BAR_SEEK_RAIL_MIN_WIDTH_CLASS} flex-1 rounded-full bg-[var(--color-border)]`}
+        className={`group relative h-1.5 ${PLAYBACK_BAR_SEEK_RAIL_MIN_WIDTH_CLASS} flex-1 rounded-full bg-[var(--color-border)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]`}
         onMouseDown={handleMouseDown}
         role="slider"
+        tabIndex={durationMs > 0 ? 0 : -1}
         aria-label={t("player.seek")}
         aria-valuemin={0}
         aria-valuemax={durationMs}
         aria-valuenow={Math.round(displayMs)}
         aria-valuetext={formatDuration(displayMs)}
+        aria-disabled={durationMs <= 0 || undefined}
+        onKeyDown={handleKeyDown}
       >
         {/* #90: Waveform canvas — rendered behind the progress fill. */}
         <canvas

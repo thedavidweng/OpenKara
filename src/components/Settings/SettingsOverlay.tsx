@@ -1,4 +1,5 @@
 import { X } from "lucide-react";
+import { useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsAboutSection } from "./SettingsAboutSection";
 import { SettingsCrossfadeSection } from "./SettingsCrossfadeSection";
@@ -15,22 +16,41 @@ import { SettingsRemoteCacheSection } from "./SettingsRemoteCacheSection";
 import { SettingsRemoteDiagnosticsSection } from "./SettingsRemoteDiagnosticsSection";
 import { SettingsStemModeSection } from "./SettingsStemModeSection";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useModalDialog } from "@/hooks/use-modal-dialog";
 
 export function SettingsOverlay() {
   const { t } = useTranslation();
   const closeSettings = useSettingsStore((s) => s.close);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const titleId = "settings-overlay-title";
+
+  useModalDialog({
+    dialogRef,
+    initialFocusRef: closeButtonRef,
+    onDismiss: closeSettings,
+  });
 
   return (
     <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      tabIndex={-1}
       data-testid="settings-overlay"
       className="pointer-events-auto absolute inset-0 z-30 flex flex-1 flex-col overflow-y-auto overscroll-y-contain bg-[var(--color-surface-muted)] p-10"
     >
       <div className="mx-auto w-full max-w-xl space-y-6">
         <div className="flex items-start justify-between gap-4">
-          <h2 className="text-lg font-semibold text-[var(--color-text)]">
+          <h2
+            id={titleId}
+            className="text-lg font-semibold text-[var(--color-text)]"
+          >
             {t("settings.title")}
           </h2>
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={closeSettings}
             aria-label={t("common.close")}

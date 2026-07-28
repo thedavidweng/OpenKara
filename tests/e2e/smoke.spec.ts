@@ -30,7 +30,7 @@ test.describe("Smoke: happy path", () => {
     await expect(page.getByText("Earfquake")).toBeVisible();
 
     // Double-click a song to play it (or single click then play button)
-    await page.getByText("Earfquake").dblclick();
+    await page.getByRole("button", { name: "Earfquake" }).dblclick();
 
     // The play button should now show a pause icon (song is playing)
     // Look for the play/pause toggle button by its aria-label
@@ -43,7 +43,7 @@ test.describe("Smoke: happy path", () => {
     await expect(page.getByText("Earfquake")).toBeVisible();
 
     // Play a song
-    await page.getByText("Earfquake").dblclick();
+    await page.getByRole("button", { name: "Earfquake" }).dblclick();
     await expect(page.getByRole("button", { name: /pause/i })).toBeVisible({
       timeout: 5000,
     });
@@ -81,7 +81,7 @@ test.describe("Smoke: happy path", () => {
     await expect(lyricsPrompt).toBeVisible();
 
     // Play a song
-    await page.getByText("Earfquake").dblclick();
+    await page.getByRole("button", { name: "Earfquake" }).dblclick();
 
     // After playing, lyrics should load (mock returns lyrics).  Use exact
     // matching because the Earfquake lyrics repeat "for real" phrases.

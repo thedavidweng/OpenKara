@@ -223,6 +223,7 @@ export function SettingsRuntimeSection() {
           {UPDATE_POLICY_OPTIONS.map((option) => (
             <label
               key={option.value}
+              aria-label={t(option.labelKey)}
               className="flex items-start gap-2 text-[13px] text-[var(--color-text)]"
             >
               <input

@@ -144,7 +144,7 @@ test.describe("Playback controls geometry and pressed state", () => {
     await expect(page.getByText("Earfquake")).toBeVisible();
 
     // Start playback so the right-zone action buttons render.
-    await page.getByText("Earfquake").dblclick();
+    await page.getByRole("button", { name: "Earfquake" }).dblclick();
     await expect(page.getByRole("button", { name: /pause/i })).toBeVisible({
       timeout: 5000,
     });

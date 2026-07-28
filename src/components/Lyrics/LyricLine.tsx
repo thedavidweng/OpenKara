@@ -195,25 +195,23 @@ export const LyricLine = memo(function LyricLine({
     [lineIndex],
   );
 
-  return (
-    <div
-      onClick={isSeekable ? handleClick : undefined}
-      className={`flex flex-col items-center gap-1.5 text-center ${
-        isSeekable ? "cursor-pointer group/line" : ""
-      }`}
-      style={{
-        fontFamily:
-          '-apple-system, BlinkMacSystemFont, "Helvetica Neue", "Noto Sans SC", "Noto Sans JP", "Noto Sans KR", system-ui, sans-serif',
-        ...(presentation === "audience"
-          ? {
-              transform:
-                state === "active"
-                  ? `scale(${audiencePresentationSpec.activeScale})`
-                  : undefined,
-            }
-          : undefined),
-      }}
-    >
+  const lineClassName = `flex flex-col items-center gap-1.5 text-center ${
+    isSeekable ? "cursor-pointer group/line" : ""
+  }`;
+  const lineStyle = {
+    fontFamily:
+      '-apple-system, BlinkMacSystemFont, "Helvetica Neue", "Noto Sans SC", "Noto Sans JP", "Noto Sans KR", system-ui, sans-serif',
+    ...(presentation === "audience"
+      ? {
+          transform:
+            state === "active"
+              ? `scale(${audiencePresentationSpec.activeScale})`
+              : undefined,
+        }
+      : undefined),
+  };
+  const lineContent = (
+    <>
       {hasWords ? (
         <span
           className={(presentation === "audience"
@@ -432,6 +430,25 @@ export const LyricLine = memo(function LyricLine({
           {romanizedText}
         </span>
       ) : null}
+    </>
+  );
+
+  if (isSeekable) {
+    return (
+      <button
+        type="button"
+        onClick={handleClick}
+        className={`${lineClassName} appearance-none border-0 bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]`}
+        style={lineStyle}
+      >
+        {lineContent}
+      </button>
+    );
+  }
+
+  return (
+    <div className={lineClassName} style={lineStyle}>
+      {lineContent}
     </div>
   );
 }, areLyricLinePropsEqual);

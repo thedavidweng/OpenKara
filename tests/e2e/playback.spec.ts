@@ -17,7 +17,7 @@ test.describe("Playback controls", () => {
     page,
     tauriMock,
   }) => {
-    await page.getByText("Earfquake").dblclick();
+    await page.getByRole("button", { name: "Earfquake" }).dblclick();
 
     // The play button should become a pause button
     await expect(page.getByRole("button", { name: /pause/i })).toBeVisible({
@@ -36,7 +36,7 @@ test.describe("Playback controls", () => {
 
   test("pause button stops playback", async ({ page, tauriMock }) => {
     // Start playback
-    await page.getByText("Earfquake").dblclick();
+    await page.getByRole("button", { name: "Earfquake" }).dblclick();
     await expect(page.getByRole("button", { name: /pause/i })).toBeVisible({
       timeout: 5000,
     });
@@ -59,7 +59,7 @@ test.describe("Playback controls", () => {
   test("skip forward and back buttons exist and are clickable", async ({
     page,
   }) => {
-    await page.getByText("Earfquake").dblclick();
+    await page.getByRole("button", { name: "Earfquake" }).dblclick();
     await expect(page.getByRole("button", { name: /pause/i })).toBeVisible({
       timeout: 5000,
     });
@@ -79,7 +79,7 @@ test.describe("Playback controls", () => {
     page,
     tauriMock,
   }) => {
-    await page.getByText("Earfquake").dblclick();
+    await page.getByRole("button", { name: "Earfquake" }).dblclick();
     await expect(page.getByRole("button", { name: /pause/i })).toBeVisible({
       timeout: 5000,
     });
@@ -107,10 +107,35 @@ test.describe("Playback controls", () => {
   test("now-playing info shows song title during playback", async ({
     page,
   }) => {
-    await page.getByText("Earfquake").dblclick();
+    await page.getByRole("button", { name: "Earfquake" }).dblclick();
 
     // The playback bar area should show the currently playing song title
     // There may be multiple instances (sidebar + now-playing), so use .first()
     await expect(page.getByText("Earfquake").first()).toBeVisible();
+  });
+
+  test("keyboard-only activation selects, plays, and seeks", async ({
+    page,
+    tauriMock,
+  }) => {
+    const song = page.getByRole("button", { name: "Earfquake" });
+    await song.focus();
+    await page.keyboard.press("Space");
+    await expect(song).toHaveAttribute("aria-pressed", "true");
+
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("button", { name: /pause/i })).toBeVisible({
+      timeout: 5000,
+    });
+
+    const seekBar = page.getByRole("slider", { name: /seek/i });
+    await seekBar.focus();
+    await page.keyboard.press("ArrowRight");
+
+    await expect
+      .poll(async () =>
+        (await tauriMock.getInvokeCalls()).some((call) => call.cmd === "seek"),
+      )
+      .toBe(true);
   });
 });
