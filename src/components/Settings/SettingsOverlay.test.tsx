@@ -281,6 +281,37 @@ describe("SettingsOverlay sections", () => {
     expect(markup).not.toContain("settings.dangerZone.deleteModelHQ");
   });
 
+  test("danger zone shows delete without file size when downloaded but size is null", () => {
+    const value = createSettingsOverlayTestContextValue({
+      state: {
+        modelVariant: "htdemucs",
+        modelStatuses: {
+          htdemucs: {
+            downloaded: true,
+            legacy_install_present: false,
+            file_size_bytes: null,
+            installed_version: null,
+            pinned_version: "model-v2.1.0",
+          },
+          htdemucs_ft: {
+            downloaded: false,
+            legacy_install_present: false,
+            file_size_bytes: null,
+            installed_version: null,
+            pinned_version: "model-v2.1.0",
+          },
+        },
+      },
+    });
+
+    const markup = renderWithSettingsContext(
+      <SettingsDangerZoneSection />,
+      value,
+    );
+
+    expect(markup).toContain("settings.dangerZone.deleteModelStandard");
+  });
+
   test("dialog host renders the active dialog", () => {
     const value = createSettingsOverlayTestContextValue({
       meta: {

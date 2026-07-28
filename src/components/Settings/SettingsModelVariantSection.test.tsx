@@ -62,6 +62,61 @@ describe("SettingsModelVariantSection", () => {
     expect(html).toContain("model-v2.1.0");
   });
 
+  test("shows file size next to the download state when present", () => {
+    const html = render({
+      runtimeStatus: readyRuntime,
+      modelStatuses: { htdemucs: downloadedStatus },
+    });
+
+    expect(html).toContain("338.6 MB");
+  });
+
+  test("omits file size from the download state when null", () => {
+    const html = render({
+      runtimeStatus: readyRuntime,
+      modelStatuses: {
+        htdemucs: { ...downloadedStatus, file_size_bytes: null },
+      },
+    });
+
+    expect(html).toContain("settings.modelVariant.downloaded");
+  });
+
+  test("shows legacy install label with file size when legacy model is on disk", () => {
+    const html = render({
+      runtimeStatus: readyRuntime,
+      modelStatuses: {
+        htdemucs: {
+          downloaded: false,
+          legacy_install_present: true,
+          file_size_bytes: 200_000_000,
+          installed_version: null,
+          pinned_version: "model-v2.1.0",
+        },
+      },
+    });
+
+    expect(html).toContain("settings.modelVariant.legacyOnDisk");
+    expect(html).toContain("190.7 MB");
+  });
+
+  test("shows legacy install label without file size when size is null", () => {
+    const html = render({
+      runtimeStatus: readyRuntime,
+      modelStatuses: {
+        htdemucs: {
+          downloaded: false,
+          legacy_install_present: true,
+          file_size_bytes: null,
+          installed_version: null,
+          pinned_version: "model-v2.1.0",
+        },
+      },
+    });
+
+    expect(html).toContain("settings.modelVariant.legacyOnDisk");
+  });
+
   test("explains why model downloads are unavailable without owning the runtime install", () => {
     const html = render({
       runtimeStatus: {
