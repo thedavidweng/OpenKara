@@ -21,6 +21,12 @@ async function expectNoAutomatableViolations(page: Page) {
 }
 
 test.describe("Accessibility", () => {
+  // A contrast result must describe a settled theme, not the short overlap
+  // between individual components' color transitions during a theme switch.
+  // Disable those visual-only transitions in this test and reject retries so
+  // accessibility regressions cannot be hidden by a later attempt.
+  test.describe.configure({ retries: 0 });
+
   for (const theme of ["dark", "light"] as const) {
     test(`${theme} app shell has no automated WCAG 2.2 A/AA violations`, async ({
       page,
@@ -28,10 +34,30 @@ test.describe("Accessibility", () => {
       await page.goto("/");
       await expect(page.getByText("Earfquake")).toBeVisible();
 
+      await page.addStyleTag({
+        content: `
+          *, *::before, *::after {
+            animation: none !important;
+            transition: none !important;
+          }
+        `,
+      });
+
       await page.evaluate((selectedTheme) => {
         document.documentElement.dataset.theme = selectedTheme;
         document.documentElement.style.colorScheme = selectedTheme;
       }, theme);
+
+      await page.waitForFunction(
+        (selectedTheme) =>
+          document.documentElement.dataset.theme === selectedTheme &&
+          getComputedStyle(
+            document.querySelector("[data-window-chrome-platform]")!,
+          )
+            .getPropertyValue("--color-text-dimmer")
+            .trim() !== "",
+        theme,
+      );
 
       await expectNoAutomatableViolations(page);
     });
