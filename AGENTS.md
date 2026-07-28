@@ -27,6 +27,10 @@ Formatting is automated via PostToolUse hook (`pnpm format:write` + `cargo fmt`)
 - Keep code, contracts, and docs aligned. If behavior changes, update the relevant `docs/references/contracts/*.md` in the same change.
 - Treat repo-tracked docs and configs as first-class code.
 
+## Deliverables
+
+- Write deliverables as self-contained final-state artifacts. Incorporate feedback directly without mentioning drafts, versions, review rounds, prior wording, superseded decisions, or the editing process unless the user explicitly requests a changelog, history, or decision record.
+
 ## Source of Truth
 
 **Read code, not docs.** The codebase is the authoritative reference for
