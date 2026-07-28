@@ -143,10 +143,10 @@ describe("AirPlayRouteButton", () => {
 
     expect(mockSyncAirPlayRoutePicker).toHaveBeenCalledWith(
       expect.objectContaining({
-        left: expect.any(Number),
-        top: expect.any(Number),
-        width: expect.any(Number),
-        height: expect.any(Number),
+        left_px: expect.any(Number),
+        top_px: expect.any(Number),
+        width_px: expect.any(Number),
+        height_px: expect.any(Number),
       }),
     );
 
@@ -237,10 +237,10 @@ describe("AirPlayRouteButton", () => {
     });
 
     expect(mockSyncAirPlayRoutePicker).toHaveBeenLastCalledWith({
-      left: 184,
-      top: 28,
-      width: 44,
-      height: 44,
+      left_px: 184,
+      top_px: 28,
+      width_px: 44,
+      height_px: 44,
     });
 
     await act(async () => {

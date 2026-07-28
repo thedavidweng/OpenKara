@@ -358,7 +358,7 @@ describe("playback", () => {
 
   test("syncAirPlayRoutePicker invokes sync_airplay_route_picker", async () => {
     mockInvoke.mockResolvedValueOnce(undefined);
-    const bounds = { left: 10, top: 20, width: 100, height: 50 };
+    const bounds = { left_px: 10, top_px: 20, width_px: 100, height_px: 50 };
     const returned = await playback.syncAirPlayRoutePicker(bounds);
     expect(mockInvoke).toHaveBeenCalledWith("sync_airplay_route_picker", {
       bounds,
@@ -389,7 +389,7 @@ describe("playback", () => {
         noLyrics: "",
         addLyrics: "",
       },
-      viewport: { widthPx: 1280, heightPx: 720, bottomInsetPx: 0 },
+      viewport: { width_px: 1280, height_px: 720, bottom_inset_px: 0 },
       presentationSpec: {
         contentWidthRatio: 0.92,
         contentMaxWidthPx: 1600,

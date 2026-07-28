@@ -181,7 +181,7 @@ pub fn separate_song_into_cache(
         })
     );
 
-    let sample_rate = normalized_audio.sample_rate;
+    let sample_rate = normalized_audio.sample_rate_hz;
     let vocals_path = stem_directory.join("vocals.ogg");
     let accomp_path = stem_directory.join("accompaniment.ogg");
     let drums_path = stem_directory.join("drums.ogg");

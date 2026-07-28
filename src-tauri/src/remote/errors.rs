@@ -42,7 +42,7 @@ pub(crate) struct RemoteProviderCapabilities {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RemoteObjectMetadata {
     /// Byte length of the object, when known.
-    pub size: Option<u64>,
+    pub size_bytes: Option<u64>,
     /// Provider-specific revision token (ETag, Dropbox rev, Google Drive
     /// headRevisionId). Used as the `expected_revision` for
     /// `conditional_replace`.

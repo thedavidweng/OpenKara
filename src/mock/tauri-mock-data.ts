@@ -95,10 +95,10 @@ export const MOCK_DATA: MockData = {
   windowShellState: {
     chrome_variant: "desktop",
     tier: "desktop",
-    toolbar_height: 48,
+    toolbar_height_px: 48,
     traffic_light_inset_leading: 0,
-    sidebar_header_height: 0,
-    sidebar_width: MOCK_SIDEBAR_WIDTH,
+    sidebar_header_height_px: 0,
+    sidebar_width_px: MOCK_SIDEBAR_WIDTH,
   },
 
   settings: {

@@ -161,10 +161,10 @@ pub fn get_song_properties(
 
     Ok(SongProperties {
         format,
-        sample_rate: Some(decoded.sample_rate),
+        sample_rate_hz: Some(decoded.sample_rate_hz),
         channels: Some(decoded.channels as u16),
-        bit_rate,
-        file_size,
+        bit_rate_bps: bit_rate,
+        file_size_bytes: file_size,
         duration_ms: song.duration_ms,
         hash: song.hash,
     })

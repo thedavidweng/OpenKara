@@ -15,14 +15,14 @@ fn resamples_audio_with_a_non_demucs_sample_rate() {
     let mut decoded = decode::decode_file(&fixture_path("audio", "fixture.wav"))
         .expect("wav fixture should decode");
     let input_frame_count = decoded.samples.len() / decoded.channels;
-    decoded.sample_rate = 48_000;
+    decoded.sample_rate_hz = 48_000;
     decoded.duration_ms =
-        ((input_frame_count as f64 / decoded.sample_rate as f64) * 1000.0).round() as u64;
+        ((input_frame_count as f64 / decoded.sample_rate_hz as f64) * 1000.0).round() as u64;
 
     let normalized = preprocess::normalize_audio_for_model(decoded)
         .expect("48k audio should be resampled for demucs");
 
-    assert_eq!(normalized.sample_rate, preprocess::DEMUCS_SAMPLE_RATE);
+    assert_eq!(normalized.sample_rate_hz, preprocess::DEMUCS_SAMPLE_RATE);
     assert_eq!(normalized.channels, preprocess::DEMUCS_CHANNELS);
 
     let expected_frames = ((input_frame_count as f64 * preprocess::DEMUCS_SAMPLE_RATE as f64)

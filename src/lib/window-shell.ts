@@ -47,10 +47,10 @@ function snapshotToWindowShellState(
   return {
     chromeVariant: snapshot.chrome_variant,
     tier: snapshot.tier,
-    toolbarHeight: snapshot.toolbar_height,
+    toolbarHeight: snapshot.toolbar_height_px,
     trafficLightInsetLeading: snapshot.traffic_light_inset_leading,
-    sidebarHeaderHeight: snapshot.sidebar_header_height,
-    sidebarWidth: snapshot.sidebar_width,
+    sidebarHeaderHeight: snapshot.sidebar_header_height_px,
+    sidebarWidth: snapshot.sidebar_width_px,
   };
 }
 

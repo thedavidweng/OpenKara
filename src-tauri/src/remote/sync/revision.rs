@@ -258,7 +258,7 @@ fn pull_remote_database_atomically(
             let size = provider.get_file_size(&m.database_path)?;
             (
                 m.database_path.as_str(),
-                size.or(Some(m.database_size)),
+                size.or(Some(m.database_size_bytes)),
                 Some(m.database_sha256.as_str()),
                 m.generation,
             )

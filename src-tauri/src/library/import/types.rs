@@ -5,10 +5,10 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize)]
 pub struct SongProperties {
     pub format: String,
-    pub sample_rate: Option<u32>,
+    pub sample_rate_hz: Option<u32>,
     pub channels: Option<u16>,
-    pub bit_rate: Option<u32>,
-    pub file_size: u64,
+    pub bit_rate_bps: Option<u32>,
+    pub file_size_bytes: u64,
     pub duration_ms: i64,
     pub hash: String,
 }
@@ -41,8 +41,8 @@ pub struct ExtractEmbeddedCoverArtResult {
 pub struct ImportCandidateDetails {
     pub path: String,
     pub format: String,
-    pub bit_rate: Option<u32>,
-    pub file_size: u64,
+    pub bit_rate_bps: Option<u32>,
+    pub file_size_bytes: u64,
     pub duration_ms: Option<i64>,
 }
 

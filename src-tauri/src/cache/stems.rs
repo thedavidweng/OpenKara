@@ -438,7 +438,7 @@ pub fn downgrade_to_two_stem(
     }
 
     let mixed_audio = crate::audio::decode::DecodedAudio {
-        sample_rate: drums_audio.sample_rate,
+        sample_rate_hz: drums_audio.sample_rate_hz,
         channels: drums_audio.channels,
         duration_ms: drums_audio.duration_ms,
         samples: mixed_samples,
@@ -633,11 +633,11 @@ fn validate_stem_compatibility(
     other: &crate::audio::decode::DecodedAudio,
 ) -> Result<()> {
     anyhow::ensure!(
-        drums.sample_rate == bass.sample_rate && drums.sample_rate == other.sample_rate,
+        drums.sample_rate_hz == bass.sample_rate_hz && drums.sample_rate_hz == other.sample_rate_hz,
         "stem sample rates do not match: drums={}, bass={}, other={}",
-        drums.sample_rate,
-        bass.sample_rate,
-        other.sample_rate
+        drums.sample_rate_hz,
+        bass.sample_rate_hz,
+        other.sample_rate_hz
     );
     anyhow::ensure!(
         drums.channels == bass.channels && drums.channels == other.channels,
@@ -659,19 +659,19 @@ mod tests {
     #[test]
     fn downgrade_mix_uses_max_stem_length() {
         let drums = DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 100,
             samples: vec![1.0; 100],
         };
         let bass = DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 150,
             samples: vec![2.0; 150],
         };
         let other = DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 120,
             samples: vec![3.0; 120],
@@ -709,19 +709,19 @@ mod tests {
     #[test]
     fn downgrade_rejects_mismatched_sample_rates() {
         let drums = DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 100,
             samples: vec![1.0; 100],
         };
         let bass = DecodedAudio {
-            sample_rate: 48_000, // Different rate
+            sample_rate_hz: 48_000, // Different rate
             channels: 2,
             duration_ms: 100,
             samples: vec![2.0; 100],
         };
         let other = DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 100,
             samples: vec![3.0; 100],
@@ -739,19 +739,19 @@ mod tests {
     #[test]
     fn downgrade_rejects_mismatched_channels() {
         let drums = DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 100,
             samples: vec![1.0; 100],
         };
         let bass = DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 1, // Different channels
             duration_ms: 100,
             samples: vec![2.0; 100],
         };
         let other = DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 100,
             samples: vec![3.0; 100],

@@ -39,10 +39,10 @@ pub enum WindowShellTier {
 pub struct WindowShellState {
     pub chrome_variant: WindowChromeVariant,
     pub tier: WindowShellTier,
-    pub toolbar_height: u16,
+    pub toolbar_height_px: u16,
     pub traffic_light_inset_leading: u16,
-    pub sidebar_header_height: u16,
-    pub sidebar_width: u16,
+    pub sidebar_header_height_px: u16,
+    pub sidebar_width_px: u16,
 }
 
 impl WindowShellState {
@@ -50,10 +50,10 @@ impl WindowShellState {
         Self {
             chrome_variant: WindowChromeVariant::Desktop,
             tier: WindowShellTier::Desktop,
-            toolbar_height: DESKTOP_TOOLBAR_HEIGHT,
+            toolbar_height_px: DESKTOP_TOOLBAR_HEIGHT,
             traffic_light_inset_leading: DESKTOP_TRAFFIC_LIGHT_INSET_LEADING,
-            sidebar_header_height: DESKTOP_SIDEBAR_HEADER_HEIGHT,
-            sidebar_width: DEFAULT_SIDEBAR_WIDTH,
+            sidebar_header_height_px: DESKTOP_SIDEBAR_HEADER_HEIGHT,
+            sidebar_width_px: DEFAULT_SIDEBAR_WIDTH,
         }
     }
 
@@ -65,10 +65,10 @@ impl WindowShellState {
         Self {
             chrome_variant: WindowChromeVariant::Mac,
             tier: WindowShellTier::Mac,
-            toolbar_height: MAC_TOOLBAR_HEIGHT,
+            toolbar_height_px: MAC_TOOLBAR_HEIGHT,
             traffic_light_inset_leading: MAC_TRAFFIC_LIGHT_INSET_LEADING,
-            sidebar_header_height: MAC_SIDEBAR_HEADER_HEIGHT,
-            sidebar_width: MAC_SIDEBAR_WIDTH,
+            sidebar_header_height_px: MAC_SIDEBAR_HEADER_HEIGHT,
+            sidebar_width_px: MAC_SIDEBAR_WIDTH,
         }
     }
 
@@ -79,9 +79,9 @@ impl WindowShellState {
         traffic_light_inset_leading: u16,
         sidebar_header_height: u16,
     ) -> Self {
-        self.toolbar_height = toolbar_height;
+        self.toolbar_height_px = toolbar_height;
         self.traffic_light_inset_leading = traffic_light_inset_leading;
-        self.sidebar_header_height = sidebar_header_height;
+        self.sidebar_header_height_px = sidebar_header_height;
         self
     }
 }
@@ -201,9 +201,9 @@ mod native {
         let mut resolved_profile = NativeWindowShellProfile {
             macos_major_version: 0,
             tier_tag,
-            toolbar_height: state.toolbar_height as isize,
+            toolbar_height: state.toolbar_height_px as isize,
             traffic_light_inset_leading: state.traffic_light_inset_leading as isize,
-            sidebar_header_height: state.sidebar_header_height as isize,
+            sidebar_header_height: state.sidebar_header_height_px as isize,
         };
 
         // SAFETY: Tauri exposes the live NSView pointer for the current webview window.
@@ -211,9 +211,9 @@ mod native {
             ok_window_shell_configure_main_window(
                 ns_view,
                 tier_tag,
-                f64::from(state.toolbar_height),
+                f64::from(state.toolbar_height_px),
                 f64::from(state.traffic_light_inset_leading),
-                f64::from(state.sidebar_header_height),
+                f64::from(state.sidebar_header_height_px),
                 &mut resolved_profile,
             )
         };
@@ -277,7 +277,7 @@ mod tests {
 
         assert_eq!(state.chrome_variant, WindowChromeVariant::Desktop);
         assert_eq!(state.tier, WindowShellTier::Desktop);
-        assert_eq!(state.toolbar_height, 48);
+        assert_eq!(state.toolbar_height_px, 48);
         assert_eq!(state.traffic_light_inset_leading, 0);
     }
 
@@ -288,9 +288,9 @@ mod tests {
 
         assert_eq!(state.chrome_variant, WindowChromeVariant::Mac);
         assert_eq!(state.tier, WindowShellTier::Mac);
-        assert_eq!(state.toolbar_height, 48);
+        assert_eq!(state.toolbar_height_px, 48);
         assert_eq!(state.traffic_light_inset_leading, 78);
-        assert_eq!(state.sidebar_header_height, 28);
-        assert_eq!(state.sidebar_width, 260);
+        assert_eq!(state.sidebar_header_height_px, 28);
+        assert_eq!(state.sidebar_width_px, 260);
     }
 }

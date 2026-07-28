@@ -315,7 +315,7 @@ pub struct ModelStatusSnapshot {
     pub downloaded: bool,
     /// True when `models/<variant>.onnx` exists but its SHA-256 does not match the pinned release.
     pub legacy_install_present: bool,
-    pub file_size: Option<u64>,
+    pub file_size_bytes: Option<u64>,
     /// Upstream release tag of the verified installed model (from its
     /// identity record, or the embedded pin when the file matches it).
     pub installed_version: Option<String>,
@@ -359,7 +359,7 @@ pub fn get_model_status(
         variant,
         downloaded,
         legacy_install_present,
-        file_size,
+        file_size_bytes: file_size,
         installed_version,
         pinned_version: descriptor.upstream_tag.clone(),
     })

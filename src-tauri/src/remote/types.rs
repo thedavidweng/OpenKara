@@ -189,8 +189,12 @@ pub(crate) struct GoogleDriveFileMetadata {
     #[serde(default, rename = "modifiedTime")]
     pub(crate) modified_time: Option<String>,
     /// Google Drive returns this as a string in the JSON response.
-    #[serde(default, deserialize_with = "deserialize_optional_string_as_u64")]
-    pub(crate) size: Option<u64>,
+    #[serde(
+        default,
+        rename = "size",
+        deserialize_with = "deserialize_optional_string_as_u64"
+    )]
+    pub(crate) size_bytes: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -205,8 +209,8 @@ pub(crate) struct DropboxMetadata {
     pub(crate) rev: Option<String>,
     #[serde(default)]
     pub(crate) server_modified: Option<String>,
-    #[serde(default)]
-    pub(crate) size: Option<u64>,
+    #[serde(default, rename = "size")]
+    pub(crate) size_bytes: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]

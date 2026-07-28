@@ -15,7 +15,7 @@ neural-core view helper) and is validated against the pinned golden vectors in
 
 | Name             | Value         | Meaning                                                     |
 | ---------------- | ------------- | ----------------------------------------------------------- |
-| `sample_rate`    | 44100         | Hz                                                          |
+| `sample_rate_hz` | 44100         | Hz                                                          |
 | `channels`       | 2             | stereo                                                      |
 | `n_fft`          | 4096          | FFT size                                                    |
 | `hop`            | 1024          | hop length (`n_fft / 4`)                                    |

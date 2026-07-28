@@ -15,7 +15,7 @@ use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DecodedAudio {
-    pub sample_rate: u32,
+    pub sample_rate_hz: u32,
     pub channels: usize,
     pub duration_ms: u64,
     pub samples: Vec<f32>,
@@ -220,7 +220,7 @@ where
     let duration_ms = ((frame_count as f64 / sample_rate as f64) * 1000.0).round() as u64;
 
     Ok(DecodedAudio {
-        sample_rate,
+        sample_rate_hz: sample_rate,
         channels,
         duration_ms,
         samples,
@@ -250,7 +250,7 @@ mod tests {
         );
         let audio = result.unwrap();
         assert!(!audio.samples.is_empty());
-        assert!(audio.sample_rate > 0);
+        assert!(audio.sample_rate_hz > 0);
         assert!(audio.channels > 0);
         assert!(audio.duration_ms > 0);
     }

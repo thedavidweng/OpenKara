@@ -34,7 +34,7 @@ const readyRuntime: RuntimeStatusView = {
 const downloadedStatus: ModelStatusView = {
   downloaded: true,
   legacy_install_present: false,
-  file_size: 355_000_000,
+  file_size_bytes: 355_000_000,
   installed_version: "model-v2.1.0",
   pinned_version: "model-v2.1.0",
 };

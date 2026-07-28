@@ -28,10 +28,10 @@
 ```json
 {
   "bounds": {
-    "left": 12,
-    "top": 34,
-    "width": 140,
-    "height": 28
+    "left_px": 12,
+    "top_px": 34,
+    "width_px": 140,
+    "height_px": 28
   }
 }
 ```
@@ -70,9 +70,9 @@ null
       "addLyrics": "Add Lyrics"
     },
     "viewport": {
-      "widthPx": 1280,
-      "heightPx": 720,
-      "bottomInsetPx": 0
+      "width_px": 1280,
+      "height_px": 720,
+      "bottom_inset_px": 0
     },
     "presentationSpec": {
       "contentWidthRatio": 0.92,

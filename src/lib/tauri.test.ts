@@ -96,18 +96,18 @@ describe("tauri API wrappers", () => {
     const { syncAirPlayRoutePicker } = await import("./tauri");
 
     await syncAirPlayRoutePicker({
-      left: 12,
-      top: 34,
-      width: 140,
-      height: 28,
+      left_px: 12,
+      top_px: 34,
+      width_px: 140,
+      height_px: 28,
     });
 
     expect(mockInvoke).toHaveBeenCalledWith("sync_airplay_route_picker", {
       bounds: {
-        left: 12,
-        top: 34,
-        width: 140,
-        height: 28,
+        left_px: 12,
+        top_px: 34,
+        width_px: 140,
+        height_px: 28,
       },
     });
   });
@@ -187,9 +187,9 @@ describe("tauri API wrappers", () => {
         addLyrics: "Add Lyrics",
       },
       viewport: {
-        widthPx: 1280,
-        heightPx: 720,
-        bottomInsetPx: 0,
+        width_px: 1280,
+        height_px: 720,
+        bottom_inset_px: 0,
       },
       presentationSpec: {
         contentWidthRatio: 0.92,
@@ -249,9 +249,9 @@ describe("tauri API wrappers", () => {
           addLyrics: "Add Lyrics",
         },
         viewport: {
-          widthPx: 1280,
-          heightPx: 720,
-          bottomInsetPx: 0,
+          width_px: 1280,
+          height_px: 720,
+          bottom_inset_px: 0,
         },
         presentationSpec: {
           contentWidthRatio: 0.92,

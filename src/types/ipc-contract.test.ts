@@ -988,18 +988,18 @@ describe("SongProperties shape matches Rust SongProperties", () => {
   test("has all fields from Rust serialization", () => {
     const props: SongProperties = {
       format: "MP3",
-      sample_rate: 44100,
+      sample_rate_hz: 44100,
       channels: 2,
-      bit_rate: 320,
-      file_size: 5_000_000,
+      bit_rate_bps: 320,
+      file_size_bytes: 5_000_000,
       duration_ms: 180000,
       hash: "abc123",
     };
     expect(props).toHaveProperty("format");
-    expect(props).toHaveProperty("sample_rate");
+    expect(props).toHaveProperty("sample_rate_hz");
     expect(props).toHaveProperty("channels");
-    expect(props).toHaveProperty("bit_rate");
-    expect(props).toHaveProperty("file_size");
+    expect(props).toHaveProperty("bit_rate_bps");
+    expect(props).toHaveProperty("file_size_bytes");
     expect(props).toHaveProperty("duration_ms");
     expect(props).toHaveProperty("hash");
   });

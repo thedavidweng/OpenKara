@@ -122,13 +122,13 @@ export function ImportCdgChoiceDialog() {
                       <span className="rounded-full border border-[var(--color-border-light)] px-2 py-0.5">
                         {details.format}
                       </span>
-                      {details.bit_rate != null && (
+                      {details.bit_rate_bps != null && (
                         <span className="rounded-full border border-[var(--color-border-light)] px-2 py-0.5">
-                          {details.bit_rate} kbps
+                          {details.bit_rate_bps} kbps
                         </span>
                       )}
                       <span className="rounded-full border border-[var(--color-border-light)] px-2 py-0.5">
-                        {formatBytes(details.file_size)}
+                        {formatBytes(details.file_size_bytes)}
                       </span>
                       {details.duration_ms != null && (
                         <span className="rounded-full border border-[var(--color-border-light)] px-2 py-0.5">

@@ -508,7 +508,7 @@ fn streaming_ogg_writer_produces_valid_ogg() {
     // Decode the file back to verify it's valid.
     let decoded = openkara_lib::audio::decode::decode_file(&output_path)
         .expect("streaming OGG should decode");
-    assert_eq!(decoded.sample_rate, sample_rate);
+    assert_eq!(decoded.sample_rate_hz, sample_rate);
     assert_eq!(decoded.channels, channels);
 
     cleanup_dir(&output_dir);

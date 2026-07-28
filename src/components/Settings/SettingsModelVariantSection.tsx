@@ -64,13 +64,15 @@ export function SettingsModelVariantSection() {
 
     if (status?.legacy_install_present && !status.downloaded) {
       return `${t("settings.modelVariant.legacyOnDisk")}${
-        status.file_size ? ` (${formatBytes(status.file_size)})` : ""
+        status.file_size_bytes
+          ? ` (${formatBytes(status.file_size_bytes)})`
+          : ""
       }`;
     }
 
     if (status?.downloaded) {
-      const size = status.file_size
-        ? ` (${formatBytes(status.file_size)})`
+      const size = status.file_size_bytes
+        ? ` (${formatBytes(status.file_size_bytes)})`
         : "";
       const version = status.installed_version
         ? ` · ${status.installed_version}`

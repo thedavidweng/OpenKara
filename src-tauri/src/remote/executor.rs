@@ -290,7 +290,7 @@ fn run_publish_protocol(
             candidate.relative_path,
             candidate.path,
             candidate.digest,
-            candidate.size,
+            candidate.size_bytes,
             candidate.asset_fingerprint,
             op.clone(),
         )
@@ -452,7 +452,7 @@ fn run_publish_protocol(
             "candidate database was not found after upload",
         )
     })?;
-    if let Some(remote_size) = candidate_meta.size {
+    if let Some(remote_size) = candidate_meta.size_bytes {
         if remote_size != candidate_size {
             return Err(RemoteError::new(
                 RemoteErrorKind::RemoteIntegrityFailed,
@@ -484,7 +484,7 @@ fn run_publish_protocol(
         repository_id: ctx.repository_id.to_owned(),
         generation: target_generation,
         database_path: db_remote_path.clone(),
-        database_size: candidate_size,
+        database_size_bytes: candidate_size,
         database_sha256: candidate_digest.clone(),
         committed_at_ms: now,
         writer_id: ctx.writer_id.to_owned(),
@@ -523,7 +523,7 @@ fn run_publish_protocol(
     })?;
     if verified_manifest.generation != target_generation
         || verified_manifest.database_path != db_remote_path
-        || verified_manifest.database_size != candidate_size
+        || verified_manifest.database_size_bytes != candidate_size
         || verified_manifest.database_sha256 != candidate_digest
         || verified_manifest.operation_id != op.operation_id
     {
@@ -546,7 +546,7 @@ struct PersistedCandidate {
     relative_path: String,
     path: PathBuf,
     digest: String,
-    size: u64,
+    size_bytes: u64,
     asset_fingerprint: String,
 }
 
@@ -683,7 +683,7 @@ fn load_persisted_candidate(
         relative_path,
         path: candidate_path,
         digest: expected_digest,
-        size: expected_size,
+        size_bytes: expected_size,
         asset_fingerprint: expected_asset_fingerprint,
     }))
 }
@@ -883,7 +883,7 @@ fn verify_referenced_assets(
             // freeze. On retry, the same path may contain bytes from a newer
             // local mutation; the persisted remote fingerprint is authoritative.
             if compare_local_size {
-                if let Some(remote_size) = remote_meta.size {
+                if let Some(remote_size) = remote_meta.size_bytes {
                     let local_path = working_copy_root.join(path);
                     if let Ok(local_meta) = std::fs::metadata(&local_path) {
                         let local_size = local_meta.len();
@@ -900,7 +900,7 @@ fn verify_referenced_assets(
             }
             remote_identities.insert(
                 path.to_owned(),
-                (remote_meta.size, remote_meta.revision.clone()),
+                (remote_meta.size_bytes, remote_meta.revision.clone()),
             );
         }
     }
@@ -1097,7 +1097,7 @@ fn is_accepted_commit_for_operation(
         return false;
     }
     if let Some(size) = payload.candidate_size {
-        if manifest.database_size != size {
+        if manifest.database_size_bytes != size {
             return false;
         }
     }
@@ -1946,7 +1946,7 @@ mod tests {
             let revisions = self.revisions.lock().unwrap();
             if files.contains_key(path) {
                 Ok(Some(RemoteObjectMetadata {
-                    size: Some(files.get(path).unwrap().len() as u64),
+                    size_bytes: Some(files.get(path).unwrap().len() as u64),
                     revision: revisions.get(path).cloned(),
                 }))
             } else {
@@ -2064,7 +2064,7 @@ mod tests {
             revisions.insert(path.to_owned(), new_rev.clone());
 
             Ok(RemoteObjectMetadata {
-                size: Some(size),
+                size_bytes: Some(size),
                 revision: Some(new_rev),
             })
         }
@@ -2309,7 +2309,7 @@ mod tests {
             repository_id: "repo-1".to_owned(),
             generation: 2,
             database_path: ".openkara/databases/2.sqlite".to_owned(),
-            database_size: 100,
+            database_size_bytes: 100,
             database_sha256: "abc".to_owned(),
             committed_at_ms: 1000,
             writer_id: "other-device".to_owned(),
@@ -2883,7 +2883,7 @@ mod tests {
             repository_id: "repo-1".to_owned(),
             generation: 1,
             database_path: ".openkara/databases/1.sqlite".to_owned(),
-            database_size: 100,
+            database_size_bytes: 100,
             database_sha256: "abc".to_owned(),
             committed_at_ms: 1000,
             writer_id: "other".to_owned(),
@@ -3044,7 +3044,7 @@ mod tests {
             repository_id: "repo-1".to_owned(),
             generation: 5,
             database_path: database_path_for_generation(5),
-            database_size: 100,
+            database_size_bytes: 100,
             database_sha256: "abc".to_owned(),
             committed_at_ms: 5000,
             writer_id: "w-1".to_owned(),
@@ -3140,7 +3140,7 @@ mod tests {
             repository_id: "repo-1".to_owned(),
             generation: 3,
             database_path: database_path_for_generation(3),
-            database_size: 100,
+            database_size_bytes: 100,
             database_sha256: "abc".to_owned(),
             committed_at_ms: 3000,
             writer_id: "w-1".to_owned(),
@@ -3218,7 +3218,7 @@ mod tests {
             repository_id: "repo-1".to_owned(),
             generation: 2,
             database_path: database_path_for_generation(2),
-            database_size: 100,
+            database_size_bytes: 100,
             database_sha256: "abc".to_owned(),
             committed_at_ms: 2000,
             writer_id: "w-1".to_owned(),

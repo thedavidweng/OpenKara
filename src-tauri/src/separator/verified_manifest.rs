@@ -12,7 +12,7 @@ use std::{
 pub struct VerifiedManifest {
     pub filename: String,
     pub sha256: String,
-    pub file_size: u64,
+    pub file_size_bytes: u64,
     pub modified_unix_nanos: u128,
 }
 
@@ -42,7 +42,7 @@ pub fn build_manifest(path: &Path, expected_sha256: &str) -> Result<VerifiedMani
     Ok(VerifiedManifest {
         filename,
         sha256: expected_sha256.to_owned(),
-        file_size: metadata.len(),
+        file_size_bytes: metadata.len(),
         modified_unix_nanos,
     })
 }

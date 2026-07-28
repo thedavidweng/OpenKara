@@ -17,7 +17,7 @@ fn decodes_wav_fixture_to_expected_sample_shape() {
     let decoded =
         decode::decode_file(&fixture_path("audio", "fixture.wav")).expect("wav should decode");
 
-    assert_eq!(decoded.sample_rate, 44_100);
+    assert_eq!(decoded.sample_rate_hz, 44_100);
     assert_eq!(decoded.channels, 2);
     assert_eq!(decoded.samples.len(), 44_100 * 2);
     assert!(decoded.duration_ms >= 999);
@@ -37,7 +37,7 @@ fn decodes_phase_fixtures_across_supported_formats() {
 
         assert_eq!(decoded.channels, 2, "{} channel count", path.display());
         assert_eq!(
-            decoded.sample_rate,
+            decoded.sample_rate_hz,
             44_100,
             "{} sample rate",
             path.display()
@@ -62,7 +62,7 @@ fn decodes_mp4_audio_even_when_extension_is_aac() {
         decode::decode_file(&aac_path).expect("mp4 audio with .aac extension should decode");
 
     assert_eq!(decoded.channels, 2);
-    assert_eq!(decoded.sample_rate, 44_100);
+    assert_eq!(decoded.sample_rate_hz, 44_100);
     assert!(!decoded.samples.is_empty());
     assert!(decoded.duration_ms > 0);
 }
@@ -90,7 +90,7 @@ fn decodes_generated_alac_m4a() {
         decode::decode_file(&alac_path).expect("generated ALAC m4a should decode successfully");
 
     assert_eq!(decoded.channels, 2);
-    assert_eq!(decoded.sample_rate, 44_100);
+    assert_eq!(decoded.sample_rate_hz, 44_100);
     assert!(!decoded.samples.is_empty());
     assert!(decoded.duration_ms > 0);
 }

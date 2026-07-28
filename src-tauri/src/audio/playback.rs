@@ -138,10 +138,10 @@ fn validate_stem_pair(
     name_b: &str,
     b: &DecodedAudio,
 ) -> Result<(), PlaybackError> {
-    if a.sample_rate != b.sample_rate {
+    if a.sample_rate_hz != b.sample_rate_hz {
         return Err(PlaybackError::InvalidPlaybackState(format!(
             "stem timeline mismatch: {name_a} sample_rate {} != {name_b} sample_rate {}",
-            a.sample_rate, b.sample_rate
+            a.sample_rate_hz, b.sample_rate_hz
         )));
     }
     if a.channels != b.channels {
@@ -417,7 +417,7 @@ impl PlaybackController {
         self.current_track = Some(LoadedTrack {
             song_id,
             original_audio: DecodedAudio {
-                sample_rate,
+                sample_rate_hz: sample_rate,
                 channels,
                 duration_ms,
                 samples: Vec::new(), // samples live in the ring buffer
@@ -530,7 +530,7 @@ impl PlaybackController {
         };
         // Reset render frame to match the new seek position — this is the
         // sole authority for position_ms.
-        let sample_rate = track.original_audio.sample_rate as f64;
+        let sample_rate = track.original_audio.sample_rate_hz as f64;
         let target_frame = (clamped_ms as f64 * sample_rate / 1000.0) as u64;
         track.render_frame = target_frame;
 
@@ -735,7 +735,7 @@ impl PlaybackController {
         // Preserve the timeline: set render_frame to the position captured
         // before the swap. This is the sole authority for position_ms, so
         // the next snapshot reports the preserved position.
-        let sample_rate = track.original_audio.sample_rate as f64;
+        let sample_rate = track.original_audio.sample_rate_hz as f64;
         let target_frame = if sample_rate > 0.0 {
             (position_ms as f64 * sample_rate / 1000.0) as u64
         } else {
@@ -971,17 +971,17 @@ impl PlaybackController {
         // format when the render callback resamples (e.g. 48 kHz source on a
         // 44.1 kHz device).
         if prepared.output_format.generation != current_output_format.generation
-            || prepared.output_format.sample_rate != current_output_format.sample_rate
+            || prepared.output_format.sample_rate_hz != current_output_format.sample_rate_hz
             || prepared.output_format.channels != current_output_format.channels
         {
             return Err(PlaybackError::Internal(format!(
                 "prepared track output format does not match current output format \
                  (prepared gen={}, rate={}, ch={} vs current gen={}, rate={}, ch={})",
                 prepared.output_format.generation,
-                prepared.output_format.sample_rate,
+                prepared.output_format.sample_rate_hz,
                 prepared.output_format.channels,
                 current_output_format.generation,
-                current_output_format.sample_rate,
+                current_output_format.sample_rate_hz,
                 current_output_format.channels,
             )));
         }
@@ -1332,7 +1332,7 @@ impl LoadedTrack {
 
     /// Position derived solely from `render_frame` — the authoritative clock.
     fn position_ms(&self) -> u64 {
-        let sample_rate = self.original_audio.sample_rate as u64;
+        let sample_rate = self.original_audio.sample_rate_hz as u64;
         if sample_rate == 0 {
             return 0;
         }
@@ -1474,7 +1474,7 @@ mod tests {
         assert!(!snapshot.is_playing);
 
         let decoded = super::DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 1_000,
             samples: vec![0.0; 44_100 * 2],
@@ -1500,7 +1500,7 @@ mod tests {
     fn invalidate_songs_clears_matching_current_and_loading() {
         let mut controller = super::PlaybackController::default();
         let decoded = crate::audio::decode::DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 1_000,
             samples: vec![0.0; 100],
@@ -1522,7 +1522,7 @@ mod tests {
     fn invalidate_songs_ignores_unrelated_ids() {
         let mut controller = super::PlaybackController::default();
         let decoded = crate::audio::decode::DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 1_000,
             samples: vec![0.0; 100],
@@ -1538,7 +1538,7 @@ mod tests {
 
         let mut controller = super::PlaybackController::default();
         let decoded = DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 5_000,
             samples: vec![0.0; 44_100 * 2 * 5],
@@ -1562,7 +1562,7 @@ mod tests {
 
         let mut controller = super::PlaybackController::default();
         let decoded = DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 5_000,
             samples: vec![0.0; 44_100 * 2 * 5],
@@ -1585,7 +1585,7 @@ mod tests {
 
         let mut controller = super::PlaybackController::default();
         let decoded = DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 5_000,
             samples: vec![0.0; 44_100 * 2 * 5],
@@ -1614,7 +1614,7 @@ mod tests {
 
         let mut controller = super::PlaybackController::default();
         let decoded = DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 5_000,
             samples: vec![0.0; 44_100 * 2 * 5],
@@ -1647,7 +1647,7 @@ mod tests {
 
         let mut controller = super::PlaybackController::default();
         let decoded = DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 5_000,
             samples: vec![0.0; 44_100 * 2 * 5],
@@ -1667,7 +1667,7 @@ mod tests {
 
         let mut controller = super::PlaybackController::default();
         let decoded = DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 5_000,
             samples: vec![0.0; 44_100 * 2 * 5],
@@ -1692,7 +1692,7 @@ mod tests {
         assert_eq!(snap.buffered_ms, 0);
 
         let decoded = DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 5_000,
             samples: vec![0.0; 44_100 * 2 * 5],
@@ -1715,12 +1715,12 @@ mod tests {
             song_id: song_id.to_owned(),
             output_format,
             audio: super::DecodedAudio {
-                sample_rate: output_format.sample_rate,
+                sample_rate_hz: output_format.sample_rate_hz,
                 channels: output_format.channels as usize,
                 duration_ms: 5_000,
                 samples: vec![
                     0.0;
-                    (output_format.sample_rate as usize)
+                    (output_format.sample_rate_hz as usize)
                         * (output_format.channels as usize)
                         * 5
                 ],
@@ -1776,7 +1776,7 @@ mod tests {
         // source format instead of the output format.
         let mut controller = super::PlaybackController::default();
         let decoded = super::DecodedAudio {
-            sample_rate: 48_000,
+            sample_rate_hz: 48_000,
             channels: 2,
             duration_ms: 5_000,
             samples: vec![0.0; 48_000 * 2 * 5],
@@ -1816,7 +1816,7 @@ mod tests {
         let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
 
         let decoded = super::DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 5_000,
             samples: vec![0.0; 44_100 * 2 * 5],
@@ -1846,7 +1846,7 @@ mod tests {
         let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
 
         let decoded = super::DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 5_000,
             samples: vec![0.0; 44_100 * 2 * 5],
@@ -1876,7 +1876,7 @@ mod tests {
         let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
 
         let decoded = super::DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 5_000,
             samples: vec![0.0; 44_100 * 2 * 5],
@@ -1901,7 +1901,7 @@ mod tests {
     fn perform_gapless_swap_returns_false_without_prepared_track() {
         let mut controller = super::PlaybackController::default();
         let decoded = super::DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 5_000,
             samples: vec![0.0; 44_100 * 2 * 5],
@@ -1921,7 +1921,7 @@ mod tests {
 
         // track is not the prepared one.
         let decoded = super::DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 5_000,
             samples: vec![0.0; 44_100 * 2 * 5],
@@ -1953,7 +1953,7 @@ mod tests {
     fn current_track_is_playing_true_when_playing_no_fade() {
         let mut controller = super::PlaybackController::default();
         let decoded = super::DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 5_000,
             samples: vec![0.0; 44_100 * 2 * 5],
@@ -1972,7 +1972,7 @@ mod tests {
     fn current_track_is_playing_false_during_fade_out() {
         let mut controller = super::PlaybackController::default();
         let decoded = super::DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 5_000,
             samples: vec![0.0; 44_100 * 2 * 5],
@@ -2008,7 +2008,7 @@ mod tests {
         // gapless swap is permanently suppressed.
         let mut controller = super::PlaybackController::default();
         let decoded = super::DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 5_000,
             samples: vec![0.0; 44_100 * 2 * 5],
@@ -2087,7 +2087,7 @@ mod tests {
 
     fn make_decoded() -> super::DecodedAudio {
         super::DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 5_000,
             samples: vec![0.0; 44_100 * 2 * 5],
@@ -2106,7 +2106,7 @@ mod tests {
 
     fn dummy_two_stem() -> super::LoadedStems {
         let audio = super::DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 1_000,
             samples: vec![0.0; 44_100 * 2],
@@ -2266,7 +2266,7 @@ mod tests {
     fn attach_stems_same_song_cancels_crossfade_and_installs() {
         let mut controller = super::PlaybackController::default();
         let decoded = super::DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 5_000,
             samples: vec![0.0; 44_100 * 2 * 5],
@@ -2292,7 +2292,7 @@ mod tests {
     fn attach_stems_wrong_song_preserves_active_crossfade_and_prepared() {
         let mut controller = super::PlaybackController::default();
         let decoded = super::DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 5_000,
             samples: vec![0.0; 44_100 * 2 * 5],

@@ -263,7 +263,10 @@ fn publish_content_addressed_asset(
             "remote asset {remote_relative_path} was not found after upload"
         )))
     })?;
-    if remote_metadata.size.is_some_and(|size| size != local_size) {
+    if remote_metadata
+        .size_bytes
+        .is_some_and(|size| size != local_size)
+    {
         return Err(CommandError::from(LibraryError::Internal(format!(
             "remote asset size mismatch for {remote_relative_path}"
         ))));

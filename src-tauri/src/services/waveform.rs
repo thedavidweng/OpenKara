@@ -189,7 +189,7 @@ mod tests {
         // Verify the compute path handles empty audio by returning zeros
         // rather than erroring — the waveform module's contract.
         let audio = DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 0,
             samples: vec![],

@@ -47,19 +47,19 @@ fn audio_forwarder_prefers_latest_epoch_and_drops_stale_chunks() {
         vec![
             AirPlayAudioChunk {
                 epoch: 1,
-                sample_rate: 44_100,
+                sample_rate_hz: 44_100,
                 channels: 2,
                 samples: vec![0.1, 0.2],
             },
             AirPlayAudioChunk {
                 epoch: 2,
-                sample_rate: 44_100,
+                sample_rate_hz: 44_100,
                 channels: 2,
                 samples: vec![0.3, 0.4],
             },
             AirPlayAudioChunk {
                 epoch: 2,
-                sample_rate: 44_100,
+                sample_rate_hz: 44_100,
                 channels: 2,
                 samples: vec![0.5, 0.6],
             },

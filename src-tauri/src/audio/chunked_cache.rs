@@ -35,7 +35,7 @@ impl From<io::Error> for CacheError {
 struct CacheInner {
     file: File,
     downloaded: RangeSet,
-    file_size: u64,
+    file_size_bytes: u64,
     last_access: Instant,
 }
 
@@ -52,7 +52,11 @@ fn acquire_lock(mutex: &Mutex<CacheInner>) -> std::sync::MutexGuard<'_, CacheInn
 }
 
 impl ChunkedCache {
-    pub fn open(cache_dir: &Path, cache_key: &str, file_size: u64) -> Result<Self, CacheError> {
+    pub fn open(
+        cache_dir: &Path,
+        cache_key: &str,
+        file_size_bytes: u64,
+    ) -> Result<Self, CacheError> {
         let data_path = cache_dir.join(format!("{cache_key}.cache"));
         let index_path = cache_dir.join(format!("{cache_key}.index"));
 
@@ -68,8 +72,8 @@ impl ChunkedCache {
         // file length. Without this, a file with ranges [0,50) and [100,50)
         // would be 150 bytes, not `file_size`, and the persistent catalog's
         // startup reconciliation would discard it as a size mismatch.
-        if file.metadata()?.len() < file_size {
-            file.set_len(file_size)?;
+        if file.metadata()?.len() < file_size_bytes {
+            file.set_len(file_size_bytes)?;
         }
 
         let downloaded = if index_path.exists() {
@@ -84,7 +88,7 @@ impl ChunkedCache {
             inner: Mutex::new(CacheInner {
                 file,
                 downloaded,
-                file_size,
+                file_size_bytes,
                 last_access: Instant::now(),
             }),
             data_available: Condvar::new(),
@@ -98,7 +102,7 @@ impl ChunkedCache {
     pub fn open_with_ranges(
         cache_dir: &Path,
         cache_key: &str,
-        file_size: u64,
+        file_size_bytes: u64,
         ranges: RangeSet,
     ) -> Result<Self, CacheError> {
         let data_path = cache_dir.join(format!("{cache_key}.cache"));
@@ -112,8 +116,8 @@ impl ChunkedCache {
 
         // Pre-allocate to `file_size` so partial entries report the correct
         // length during startup reconciliation.
-        if file.metadata()?.len() < file_size {
-            file.set_len(file_size)?;
+        if file.metadata()?.len() < file_size_bytes {
+            file.set_len(file_size_bytes)?;
         }
 
         Ok(Self {
@@ -121,7 +125,7 @@ impl ChunkedCache {
             inner: Mutex::new(CacheInner {
                 file,
                 downloaded: ranges,
-                file_size,
+                file_size_bytes,
                 last_access: Instant::now(),
             }),
             data_available: Condvar::new(),
@@ -145,12 +149,12 @@ impl ChunkedCache {
 
     pub fn file_size(&self) -> u64 {
         let inner = acquire_lock(&self.inner);
-        inner.file_size
+        inner.file_size_bytes
     }
 
     pub fn is_complete(&self) -> bool {
         let inner = acquire_lock(&self.inner);
-        inner.downloaded.covers_full(inner.file_size)
+        inner.downloaded.covers_full(inner.file_size_bytes)
     }
 
     pub fn last_access(&self) -> Instant {
@@ -231,7 +235,7 @@ impl ChunkedCache {
 
     pub fn save_index(&self) -> Result<(), CacheError> {
         let inner = acquire_lock(&self.inner);
-        if inner.downloaded.covers_full(inner.file_size) {
+        if inner.downloaded.covers_full(inner.file_size_bytes) {
             // Complete file — no need to track partial state.
             let index_path = self.index_path();
             if index_path.exists() {
@@ -275,15 +279,15 @@ impl CacheManager {
     pub fn get_or_create(
         &mut self,
         key: &str,
-        file_size: u64,
+        file_size_bytes: u64,
     ) -> Result<Arc<ChunkedCache>, CacheError> {
         if let Some(cache) = self.caches.get(key) {
             return Ok(Arc::clone(cache));
         }
 
-        self.evict_if_needed(file_size)?;
+        self.evict_if_needed(file_size_bytes)?;
 
-        let cache = Arc::new(ChunkedCache::open(&self.cache_dir, key, file_size)?);
+        let cache = Arc::new(ChunkedCache::open(&self.cache_dir, key, file_size_bytes)?);
         self.caches.insert(key.to_string(), Arc::clone(&cache));
         Ok(cache)
     }

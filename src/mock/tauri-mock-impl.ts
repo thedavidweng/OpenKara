@@ -29,10 +29,10 @@ export interface MockData {
   windowShellState: {
     chrome_variant: string;
     tier: string;
-    toolbar_height: number;
+    toolbar_height_px: number;
     traffic_light_inset_leading: number;
-    sidebar_header_height: number;
-    sidebar_width: number;
+    sidebar_header_height_px: number;
+    sidebar_width_px: number;
   };
   /** Initial settings snapshot (mutable via set_* commands). */
   settings: Record<string, unknown>;
