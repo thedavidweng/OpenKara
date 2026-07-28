@@ -187,6 +187,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
       data-native-overlay-surface="song-row"
       data-song-list-item-variant="unified"
       data-song-hash={song.hash}
+      data-selected={isSelected ? "true" : "false"}
       style={
         showBatchSongProgress
           ? undefined

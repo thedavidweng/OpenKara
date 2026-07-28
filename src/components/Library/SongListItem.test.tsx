@@ -329,6 +329,7 @@ describe("SongListItem", () => {
 
     expect(markup).toContain("bg-[var(--sidebar-row-selected-bg)]");
     expect(markup).toContain("border-[var(--sidebar-row-selected-border)]");
+    expect(markup).toContain('data-selected="true"');
     expect(markup).toContain('data-native-overlay-surface="song-action"');
     expect(markup).toContain("bg-[var(--sidebar-control-bg)]");
     expect(markup).toContain("border-[var(--sidebar-control-border)]");

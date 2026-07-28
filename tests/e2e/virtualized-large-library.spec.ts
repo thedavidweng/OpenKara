@@ -389,25 +389,13 @@ test.describe("Virtualized large library (5,000 songs)", () => {
     const mSong = renderedRows.first();
     await mSong.click({ modifiers: ["Shift"] });
 
-    // Verify only a small number of songs are selected (not spanning A→M).
-    // With the anchor cleared, Shift-click selects just the clicked song.
-    // Selection is reflected by the sidebar-row-selected-bg CSS variable on
-    // the row container — check the computed background to identify selected
-    // rows without a dedicated data attribute.
-    const selectedCount = await page.evaluate(() => {
-      const rows = document.querySelectorAll("[data-song-hash]");
-      let count = 0;
-      for (const row of rows) {
-        const bg = window.getComputedStyle(row).backgroundColor;
-        // Selected rows use a themed background; unselected rows are
-        // transparent. Count rows with a non-transparent background.
-        if (bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") {
-          count++;
-        }
-      }
-      return count;
-    });
-    expect(selectedCount).toBeLessThanOrEqual(1);
+    // Wait for React to commit the selection state rather than inferring it
+    // from an in-flight CSS color transition. With the anchor cleared,
+    // Shift-click falls back to selecting only the clicked song.
+    await expect(mSong).toHaveAttribute("data-selected", "true");
+    await expect(
+      songList.locator("[data-song-hash][data-selected='true']"),
+    ).toHaveCount(1);
   });
 
   test("rail is hidden in recently_imported mode", async ({ page }) => {
