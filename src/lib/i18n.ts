@@ -122,7 +122,14 @@ export function detectSystemLanguage(): string {
   return shared?.code ?? "en";
 }
 
-i18next.use(initReactI18next).init({
+function setDocumentLanguage(language: string): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.lang = language;
+}
+
+i18next.on("languageChanged", setDocumentLanguage);
+
+void i18next.use(initReactI18next).init({
   resources: Object.fromEntries(
     Object.entries(translations).map(([code, translation]) => [
       code,

@@ -2,7 +2,14 @@ import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { expect, test } from "./fixtures/base-test";
 
-const WCAG_AA_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
+const WCAG_AA_TAGS = [
+  "wcag2a",
+  "wcag2aa",
+  "wcag21a",
+  "wcag21aa",
+  "wcag22a",
+  "wcag22aa",
+];
 
 async function expectNoAutomatableViolations(page: Page) {
   const results = await new AxeBuilder({ page })
