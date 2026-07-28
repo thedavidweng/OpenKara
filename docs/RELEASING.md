@@ -1,50 +1,68 @@
 # Releasing
 
-OpenKara releases are driven by a `v*` git tag. The
-[`Release` workflow](../.github/workflows/release.yml) builds every platform
-bundle, opens a **draft** GitHub Release, attaches `SHA256SUMS`, and renders the
-WinGet and Flatpak manifests.
+OpenKara releases are managed by [release-please]. The
+[`Release Please` workflow](../.github/workflows/release-please.yml) runs on
+every push to `main` and maintains a running release PR that bumps
+`package.json`, updates `CHANGELOG.md`, and bumps
+`.release-please-manifest.json`.
 
-The published bundle takes its version from `package.json` (see
-[`scripts/sync-version.mjs`](../scripts/sync-version.mjs)), while the tag drives
-asset naming and the distribution manifests. **These two must agree.** If they
-drift, the build produces assets named `OpenKara_<package.json version>_*` while
-the WinGet/Flatpak manifests look for `OpenKara_<tag version>_*`, so the release
-ships misnamed assets and the manifest jobs fail. The `prepare-release` job
-fails fast with this exact guidance when they disagree.
+When the release PR is merged, release-please tags `vX.Y.Z` and opens a
+**draft** GitHub Release with changelog notes. The
+[`Release` workflow](../.github/workflows/release.yml) then builds every
+platform bundle, runs the release-only separation and installed-app smoke
+tests, attaches `SHA256SUMS`, and uploads assets to the draft release.
+
+The release stays a draft until a human verifies the asset names and clicks
+**Publish** in the GitHub UI. This last manual step is intentional: the
+in-app updater polls `/releases/latest`, so a published release immediately
+starts auto-updating existing installs.
+
+[release-please]: https://github.com/googleapis/release-please
 
 ## Cut a release
 
-1. **Bump `package.json`** to the new version (e.g. `1.0.0`).
-2. **Sync the native manifests:** run `pnpm version:sync`. This propagates the
-   version into `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and
-   `src-tauri/tauri.conf.json`.
-3. **Commit** the version bump (`git commit -am "chore(release): 1.0.0"`) and
-   merge it to `main`.
-4. **Tag that commit** with a leading `v` and push the tag:
-   ```bash
-   git tag v1.0.0
-   git push origin v1.0.0
-   ```
-   The tag version (minus the `v`) must match `package.json`.
-5. **Watch the draft release.** The workflow runs the separation smoke on every
-   target, builds the bundles, and opens a draft GitHub Release.
-6. **Verify the asset names** on the draft release match the tag, e.g.
-   `OpenKara_1.0.0_x64-setup.exe`. Confirm `SHA256SUMS` is attached.
-7. **Publish** the draft release from the GitHub UI. Publishing (or the
+1. **Merge the release PR.** release-please opens and updates the PR
+   automatically as conventional commits land on `main`. Merge it when you
+   are ready to ship. release-please bumps `package.json` and
+   `CHANGELOG.md`, tags `vX.Y.Z`, and creates a draft GitHub Release with
+   changelog notes.
+2. **Watch the Release workflow.** It runs the separation smoke on every
+   target, builds the bundles, and uploads assets to the draft release.
+3. **Verify the asset names** on the draft release match the tag, e.g.
+   `OpenKara_0.9.2_x64-setup.exe`. Confirm `SHA256SUMS` is attached.
+4. **Publish** the draft release from the GitHub UI. Publishing (or the
    workflow, when configured) drives the Homebrew tap, WinGet, and Flathub
    submissions.
 
+## Native manifest sync
+
+release-please bumps `package.json` and `CHANGELOG.md` in its release PR.
+The native manifests (`src-tauri/Cargo.toml`, `Cargo.lock`,
+`tauri.conf.json`) are propagated by
+[`scripts/sync-version.mjs`](../scripts/sync-version.mjs), which the
+`Release Please` workflow runs in a follow-up job (`sync-native-versions`)
+right after the release is created. `Cargo.lock` cannot use release-please
+`extra-files` because a literal version-string replacement would corrupt
+unrelated packages that happen to share the same version (e.g.
+`memoffset 0.9.1`).
+
+The `Release` workflow's build step also runs `pnpm version:sync` (via
+`pnpm tauri` → `pnpm version:sync && tauri`) before building, so the
+artifacts always carry the correct version even if the tag commit predates
+the sync-native-versions push.
+
 ## If the version gate fails
 
-The `prepare-release` job errors when the tag and `package.json` disagree. To
-recover: bump `package.json` to the tag version, run `pnpm version:sync`,
-commit, then delete and re-create the tag on the corrected commit:
+The `prepare-release` job errors when the tag and `package.json` disagree.
+This should not happen with release-please (it bumps `package.json` and
+tags in the same merge), but if a manual `workflow_dispatch` is used with a
+mismatched version:
 
 ```bash
+# Bump package.json to the tag version, sync, commit, merge to main.
+# Then delete and re-create the tag on the corrected commit:
 git tag -d v1.0.0
 git push origin :refs/tags/v1.0.0
-# ...bump, sync, commit, merge to main...
 git tag v1.0.0
 git push origin v1.0.0
 ```

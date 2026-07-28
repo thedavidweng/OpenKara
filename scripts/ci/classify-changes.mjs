@@ -128,6 +128,7 @@ const CATEGORY_PATTERNS = {
 
   release_workflow: [
     ".github/workflows/release.yml",
+    ".github/workflows/release-please.yml",
     "tests/release-workflow.test.ts",
     "scripts/setup.sh",
     "scripts/run-local-smoke.sh",
@@ -170,7 +171,8 @@ const CATEGORY_PATTERNS = {
   release_metadata: [
     "scripts/release-metadata.mjs",
     "scripts/sync-version.mjs",
-    "cliff.toml",
+    "release-please-config.json",
+    ".release-please-manifest.json",
     "tests/release-metadata.test.ts",
   ],
 };
