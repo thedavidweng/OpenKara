@@ -386,13 +386,18 @@ test.describe("Virtualized large library (5,000 songs)", () => {
     // Shift-click a song in the M region. Since the rail navigation cleared
     // the range anchor, the shift-click should select only from the clicked
     // song, not span from the original A-song anchor to M.
-    const mSong = renderedRows.first();
+    const mSong = renderedRows.filter({ hasText: /^M Song/ }).first();
+    await mSong.scrollIntoViewIfNeeded();
+    const mSongHash = await mSong.getAttribute("data-song-hash");
+    expect(mSongHash).not.toBeNull();
     await mSong.click({ modifiers: ["Shift"] });
 
-    // Wait for React to commit the selection state rather than inferring it
-    // from an in-flight CSS color transition. With the anchor cleared,
-    // Shift-click falls back to selecting only the clicked song.
-    await expect(mSong).toHaveAttribute("data-selected", "true");
+    // A virtualizer may recycle the first rendered node after scrolling, so
+    // assert the stable song identity rather than a positional locator. With
+    // the anchor cleared, Shift-click falls back to selecting only this song.
+    await expect(
+      songList.locator(`[data-song-hash="${mSongHash}"]`),
+    ).toHaveAttribute("data-selected", "true");
     await expect(
       songList.locator("[data-song-hash][data-selected='true']"),
     ).toHaveCount(1);
