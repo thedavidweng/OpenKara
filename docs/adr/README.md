@@ -51,3 +51,4 @@ Write new ADRs in ASD-STE100 Simplified English. See `AGENTS.md` for the rules. 
 - [0011 — Remote library mirror is database-first, files-lazy](./0011-remote-library-mirror-database-first.md)
 - [0012 — CDG seek resets both timelines, transport_generation preserves renderer](./0012-cdg-seek-resets-both-timelines.md)
 - [0013 — Use standards as product quality baselines](./0013-use-standards-as-product-quality-baselines.md)
+- [0014 — Route product standards by changed surface](./0014-route-product-standards-by-changed-surface.md)

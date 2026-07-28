@@ -19,6 +19,7 @@
     "render:winget": "node scripts/render-winget-manifests.mjs",
     "generate:db-schema": "node scripts/generate-db-schema.mjs",
     "check:i18n": "node scripts/check-i18n.mjs",
+    "check:standards": "node scripts/check-standards.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "check:patch-coverage": "node scripts/check-patch-coverage.mjs",

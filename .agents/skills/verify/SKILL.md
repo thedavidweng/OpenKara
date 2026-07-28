@@ -37,3 +37,9 @@ Report:
 ## Contract check
 
 If you changed public IPC commands, payloads, or events, verify the corresponding `docs/references/contracts/*.md` was updated in the same change.
+
+## Standards check
+
+For a product-surface change, read `docs/references/product-standards.md` and
+then the matched profile. Run its automated evidence and state any required
+manual evidence in the delivery report.

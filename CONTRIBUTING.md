@@ -43,7 +43,10 @@ cargo nextest run                                # Rust tests
 3. Run the checks above for the areas you touched.
 4. Update `docs/references/contracts/*.md` in the same change when you change a
    public IPC command, payload, or event.
-5. Open a pull request against `main`. The title must follow Conventional
+5. Read the applicable profile in
+   [`docs/references/product-standards.md`](docs/references/product-standards.md).
+   Put its automated or manual evidence, or a documented exception, in the PR.
+6. Open a pull request against `main`. The title must follow Conventional
    Commits, because CI checks it.
 
 ## Commit Messages
