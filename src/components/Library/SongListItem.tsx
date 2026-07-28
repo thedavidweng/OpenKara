@@ -274,7 +274,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
                 onClick={handleSeparate}
                 disabled={modelPreparing}
                 title={modelPreparing ? t("library.modelPreparing") : undefined}
-                className={`pointer-events-auto min-h-6 rounded border px-1.5 py-0.5 text-[10px] disabled:cursor-default disabled:opacity-50 ${
+                className={`pointer-events-auto min-h-[24px] rounded border px-1.5 py-0.5 text-[10px] disabled:cursor-default disabled:opacity-50 ${
                   isSelected
                     ? "border-[var(--sidebar-control-border)] bg-[var(--sidebar-control-bg)] text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
                     : "border-[var(--sidebar-control-border)] bg-[var(--sidebar-control-bg)] text-[var(--color-text-dim)] hover:bg-[var(--sidebar-row-overlay-bg)]"
@@ -294,7 +294,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
                     onClick={handleCancelSeparation}
                     title={t("library.cancelSeparation")}
                     aria-label={t("library.cancelSeparation")}
-                    className="pointer-events-auto inline-flex min-h-6 min-w-6 items-center justify-center motion-icon-button rounded p-0.5 text-[var(--color-text-dim)] hover:bg-[var(--sidebar-row-overlay-bg)] hover:text-[var(--color-text)]"
+                    className="pointer-events-auto inline-flex min-h-[24px] min-w-[24px] items-center justify-center motion-icon-button rounded p-0.5 text-[var(--color-text-dim)] hover:bg-[var(--sidebar-row-overlay-bg)] hover:text-[var(--color-text)]"
                     data-native-overlay-surface="song-action"
                   >
                     <X size={12} />
@@ -326,7 +326,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
               <button
                 type="button"
                 onClick={handleSeparate}
-                className="pointer-events-auto min-h-6 text-[10px] text-[var(--color-destructive)]"
+                className="pointer-events-auto min-h-[24px] text-[10px] text-[var(--color-destructive)]"
               >
                 {t("common.retry")}
               </button>
