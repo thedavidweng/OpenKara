@@ -90,7 +90,7 @@ fn separate_to_dir_with_preference(
     let hop_size = chunk_size / 2;
 
     fs::create_dir_all(output_dir).expect("output dir should be created");
-    let sample_rate = normalized.sample_rate;
+    let sample_rate = normalized.sample_rate_hz;
 
     let writer = |name: &str| {
         StreamingOggWriter::new(&output_dir.join(name), sample_rate, channels, None, None)
@@ -224,7 +224,7 @@ fn spectral_cancellation_publishes_nothing_and_restarts_from_zero() {
         .map(|i| 0.1 * ((i as f32) * 0.001).sin())
         .collect();
     let audio = DecodedAudio {
-        sample_rate: 44_100,
+        sample_rate_hz: 44_100,
         channels,
         duration_ms: ((frames as f64 / 44_100.0) * 1000.0).round() as u64,
         samples,

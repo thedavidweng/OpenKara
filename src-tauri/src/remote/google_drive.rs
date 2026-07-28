@@ -1280,7 +1280,7 @@ impl super::bootstrap::RemoteBootstrapStorage for GoogleDriveBootstrapStorage<'_
                     .or(manifest_entry.modified_time),
                 database_path: manifest.database_path,
                 generation: manifest.generation,
-                database_size: Some(manifest.database_size),
+                database_size_bytes: Some(manifest.database_size_bytes),
                 database_sha256: Some(manifest.database_sha256),
             }));
         }
@@ -1296,7 +1296,7 @@ impl super::bootstrap::RemoteBootstrapStorage for GoogleDriveBootstrapStorage<'_
             revision: entry.head_revision_id.or(entry.modified_time),
             database_path: "openkara.db".to_owned(),
             generation: 0,
-            database_size: entry.size,
+            database_size_bytes: entry.size_bytes,
             database_sha256: None,
         }))
     }
@@ -1444,7 +1444,7 @@ impl RemoteProvider for GoogleDriveProvider<'_> {
             relative_path,
         )?
         .map(|metadata| RemoteObjectMetadata {
-            size: metadata.size,
+            size_bytes: metadata.size_bytes,
             revision: metadata.head_revision_id.or(metadata.modified_time),
         }))
     }
@@ -1579,7 +1579,7 @@ impl RemoteProvider for GoogleDriveProvider<'_> {
             root_folder_id,
             relative_path,
         )?;
-        Ok(entry.and_then(|e| e.size))
+        Ok(entry.and_then(|e| e.size_bytes))
     }
 
     fn refresh_existing(&self) -> CommandResult<Option<String>> {

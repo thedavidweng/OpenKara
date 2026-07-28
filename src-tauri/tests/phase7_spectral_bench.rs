@@ -77,7 +77,7 @@ fn synthetic_audio(frames: usize) -> DecodedAudio {
             + 0.05 * (2.0 * std::f32::consts::PI * 3_520.0 * t).sin();
     }
     DecodedAudio {
-        sample_rate: 44_100,
+        sample_rate_hz: 44_100,
         channels,
         duration_ms: ((frames as f64 / 44_100.0) * 1000.0).round() as u64,
         samples,
@@ -104,8 +104,14 @@ fn run_mode(
 
     fs::create_dir_all(out_dir).expect("bench output dir");
     let writer = |name: &str| {
-        StreamingOggWriter::new(&out_dir.join(name), audio.sample_rate, channels, None, None)
-            .expect("bench writer")
+        StreamingOggWriter::new(
+            &out_dir.join(name),
+            audio.sample_rate_hz,
+            channels,
+            None,
+            None,
+        )
+        .expect("bench writer")
     };
     let mut writers = match stem_mode {
         StemMode::TwoStem => StemWriters {

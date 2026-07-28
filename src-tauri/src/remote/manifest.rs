@@ -68,7 +68,7 @@ pub(crate) struct RepositoryManifest {
     /// Relative path of the committed database for this generation.
     pub database_path: String,
     /// Byte length of the committed database.
-    pub database_size: u64,
+    pub database_size_bytes: u64,
     /// Hex SHA-256 of the committed database bytes.
     pub database_sha256: String,
     /// Wall-clock milliseconds when this generation was committed.
@@ -124,7 +124,7 @@ pub(crate) fn read_manifest(
     // first when available to distinguish "absent" from "error".
     if let Some(metadata) = provider.stat(MANIFEST_PATH)? {
         // The manifest exists — download and parse it.
-        if metadata.size == Some(0) {
+        if metadata.size_bytes == Some(0) {
             // An empty manifest blob is treated as absent (defensive).
             let _ = std::fs::remove_file(&temp_path);
             return Ok(None);
@@ -325,7 +325,7 @@ mod tests {
             let revisions = self.revisions.lock().unwrap();
             if sizes.contains_key(path) {
                 Ok(Some(crate::remote::errors::RemoteObjectMetadata {
-                    size: sizes.get(path).copied(),
+                    size_bytes: sizes.get(path).copied(),
                     revision: revisions.get(path).cloned(),
                 }))
             } else {
@@ -368,7 +368,7 @@ mod tests {
             repository_id: "repo-uuid-1".to_owned(),
             generation,
             database_path: database_path_for_generation(generation),
-            database_size: 1024,
+            database_size_bytes: 1024,
             database_sha256: "abc123".to_owned(),
             committed_at_ms: 1000,
             writer_id: "writer-1".to_owned(),

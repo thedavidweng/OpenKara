@@ -148,7 +148,7 @@ per variant. They are separate from the startup bootstrap flow.
   "variant": "htdemucs",
   "downloaded": true,
   "legacy_install_present": false,
-  "file_size": 52428800,
+  "file_size_bytes": 52428800,
   "installed_version": "model-v2.1.0",
   "pinned_version": "model-v2.1.0"
 }
@@ -161,7 +161,7 @@ per variant. They are separate from the startup bootstrap flow.
 | `variant`                | `String`         | The variant queried                                                                               |
 | `downloaded`             | `bool`           | True when the managed file matches the pinned release digest or a valid installed identity record |
 | `legacy_install_present` | `bool`           | True when the managed file exists but matches neither the pin nor its identity record             |
-| `file_size`              | `Option<u64>`    | Size of the managed file in bytes, if it exists                                                   |
+| `file_size_bytes`        | `Option<u64>`    | Size of the managed file in bytes, if it exists                                                   |
 | `installed_version`      | `Option<String>` | Upstream release tag of the verified install (identity record, or pin when digests match)         |
 | `pinned_version`         | `String`         | Upstream release tag pinned by the embedded catalog snapshot                                      |
 

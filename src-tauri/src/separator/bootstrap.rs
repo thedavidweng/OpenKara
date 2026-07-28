@@ -27,7 +27,7 @@ pub struct ModelDescriptor {
     /// Installed `.onnx` filename under `models/`.
     pub filename: String,
     pub file_sha256: String,
-    pub file_size: u64,
+    pub file_size_bytes: u64,
     pub download_filename: String,
     pub download_url: String,
     pub download_sha256: String,
@@ -48,7 +48,7 @@ pub fn descriptor_from_catalog(
         variant,
         filename: model_file.to_owned(),
         file_sha256: model_digest.sha256.clone(),
-        file_size: model_digest.size,
+        file_size_bytes: model_digest.size,
         download_filename: model.filename.clone(),
         download_url: model.download_url.clone(),
         download_sha256: model.archive_digest.clone(),
@@ -294,11 +294,11 @@ pub fn download_and_install_model(
                         descriptor.filename
                     )
                 })?;
-                if metadata.len() != descriptor.file_size {
+                if metadata.len() != descriptor.file_size_bytes {
                     bail!(
                         "extracted model has size {}, expected {}",
                         metadata.len(),
-                        descriptor.file_size
+                        descriptor.file_size_bytes
                     );
                 }
                 let actual = crate::separator::artifacts::sha256_file(&extracted_model)?;

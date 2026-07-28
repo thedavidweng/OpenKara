@@ -701,8 +701,8 @@ fn render_crossfade_overlap(
             return None;
         }
 
-        let outgoing_src_rate = track.original_audio.sample_rate;
-        let incoming_src_rate = prepared.audio.sample_rate;
+        let outgoing_src_rate = track.original_audio.sample_rate_hz;
+        let incoming_src_rate = prepared.audio.sample_rate_hz;
 
         // Convert all source-frame counts to device (output) frames so the
         // overlap duration is computed in a single frame domain. This was a
@@ -961,7 +961,7 @@ fn mix_stem_resampled(
     // Most desktop devices run the same 44.1 kHz rate as the source media.
     // Skipping interpolation in that common case removes hot-path math without
     // changing channel mapping or render-frame progression semantics.
-    if audio.sample_rate == device_sample_rate {
+    if audio.sample_rate_hz == device_sample_rate {
         return mix_stem_same_rate(output, audio, start_frame, gain, device_channels);
     }
 
@@ -1034,7 +1034,7 @@ fn mix_stem_linearly_resampled(
         return (0, 0);
     }
 
-    let src_rate = audio.sample_rate as f64;
+    let src_rate = audio.sample_rate_hz as f64;
     let dst_rate = device_sample_rate as f64;
     let src_channels = audio.channels;
     let total_src_frames = audio.samples.len() / src_channels;
@@ -1118,7 +1118,7 @@ fn mix_stem_rubato(
     // at end-of-track. This avoids the per-callback zero-padding that corrupted
     // the sinc delay line when using FixedAsync::Input with a large chunk_size.
     let input_needed = resampler_cache
-        .get_or_create_mut(audio.sample_rate, device_sample_rate, 0, output_frames)
+        .get_or_create_mut(audio.sample_rate_hz, device_sample_rate, 0, output_frames)
         .resampler
         .input_frames_next();
     let real_available = total_src_frames - src_start_frame;
@@ -1134,7 +1134,7 @@ fn mix_stem_rubato(
     // audio thread.
     for src_ch in 0..src_channels {
         let entry = resampler_cache.get_or_create_mut(
-            audio.sample_rate,
+            audio.sample_rate_hz,
             device_sample_rate,
             src_ch,
             output_frames,
@@ -1376,7 +1376,7 @@ fn render_streaming_mix_bus(
     }
 
     // All consumers share the same validated timeline (sample_rate + channels).
-    let src_rate = consumers[0].sample_rate;
+    let src_rate = consumers[0].sample_rate_hz;
     let src_channels = consumers[0].channels.max(1);
 
     // Ask the mix-bus resampler for the exact input-frame count it needs for
@@ -1479,7 +1479,7 @@ fn render_decoded_mix_bus(
         return (0, 0);
     }
 
-    let src_rate = stems[0].sample_rate;
+    let src_rate = stems[0].sample_rate_hz;
     let src_channels = stems[0].channels.max(1);
 
     let input_needed = if src_rate == device_sample_rate {
@@ -1967,7 +1967,7 @@ mod tests {
         let channels = 2;
         let frames = 128;
         let decoded = |sample| DecodedAudio {
-            sample_rate,
+            sample_rate_hz: sample_rate,
             channels,
             duration_ms: (frames * 1_000 / sample_rate as usize) as u64,
             samples: vec![sample; frames * channels],
@@ -2468,7 +2468,7 @@ mod tests {
         // filled from track B.
         let track_a_samples = vec![0.1_f32; 100 * channels];
         let track_a = DecodedAudio {
-            sample_rate,
+            sample_rate_hz: sample_rate,
             channels,
             duration_ms: (100 * 1000 / sample_rate as usize) as u64,
             samples: track_a_samples,
@@ -2489,7 +2489,7 @@ mod tests {
             song_id: "song-b".to_owned(),
             output_format: fmt,
             audio: DecodedAudio {
-                sample_rate,
+                sample_rate_hz: sample_rate,
                 channels,
                 duration_ms: (512 * 1000 / sample_rate as usize) as u64,
                 samples: track_b_samples,
@@ -2571,7 +2571,7 @@ mod tests {
         // Track A: 100 frames of 0.1, then EOF.
         let track_a_samples = vec![0.1_f32; 100 * channels];
         let track_a = DecodedAudio {
-            sample_rate,
+            sample_rate_hz: sample_rate,
             channels,
             duration_ms: (100 * 1000 / sample_rate as usize) as u64,
             samples: track_a_samples,
@@ -2592,7 +2592,7 @@ mod tests {
             song_id: "song-b".to_owned(),
             output_format: fmt,
             audio: DecodedAudio {
-                sample_rate,
+                sample_rate_hz: sample_rate,
                 channels,
                 duration_ms: (512 * 1000 / sample_rate as usize) as u64,
                 samples: track_b_samples,
@@ -2678,7 +2678,7 @@ mod tests {
         // Track A: 100 frames of 0.1, then EOF.
         let track_a_samples = vec![0.1_f32; 100 * channels];
         let track_a = DecodedAudio {
-            sample_rate,
+            sample_rate_hz: sample_rate,
             channels,
             duration_ms: (100 * 1000 / sample_rate as usize) as u64,
             samples: track_a_samples,
@@ -2699,7 +2699,7 @@ mod tests {
             song_id: "song-b".to_owned(),
             output_format: fmt,
             audio: DecodedAudio {
-                sample_rate,
+                sample_rate_hz: sample_rate,
                 channels,
                 duration_ms: (512 * 1000 / sample_rate as usize) as u64,
                 samples: track_b_samples,
@@ -2849,7 +2849,7 @@ mod tests {
         // so 462 frames should be silence after EOF.
         let track_a_samples = vec![0.3_f32; 50 * channels];
         let track_a = DecodedAudio {
-            sample_rate,
+            sample_rate_hz: sample_rate,
             channels,
             duration_ms: (50 * 1000 / sample_rate as usize) as u64,
             samples: track_a_samples,
@@ -2871,7 +2871,7 @@ mod tests {
             song_id: "song-b".to_owned(),
             output_format: fmt,
             audio: DecodedAudio {
-                sample_rate,
+                sample_rate_hz: sample_rate,
                 channels,
                 duration_ms: (512 * 1000 / sample_rate as usize) as u64,
                 samples: track_b_samples,
@@ -2944,7 +2944,7 @@ mod tests {
         controller.start_track(
             "song-a".to_owned(),
             DecodedAudio {
-                sample_rate: device_sample_rate,
+                sample_rate_hz: device_sample_rate,
                 channels: device_channels,
                 duration_ms: 10_000,
                 samples: track_a_samples,
@@ -2959,7 +2959,7 @@ mod tests {
         // Prepare track B: 10 seconds of 0.9 amplitude.
         let track_b_samples = vec![0.9_f32; 10 * device_sample_rate as usize * device_channels];
         let fmt = OutputFormatSnapshot {
-            sample_rate: device_sample_rate,
+            sample_rate_hz: device_sample_rate,
             channels: device_channels as u16,
             generation: 0,
         };
@@ -2969,7 +2969,7 @@ mod tests {
             song_id: "song-b".to_owned(),
             output_format: fmt,
             audio: DecodedAudio {
-                sample_rate: device_sample_rate,
+                sample_rate_hz: device_sample_rate,
                 channels: device_channels,
                 duration_ms: 10_000,
                 samples: track_b_samples,
@@ -3358,7 +3358,7 @@ mod tests {
         controller.start_track(
             "song-a".to_owned(),
             DecodedAudio {
-                sample_rate: device_sample_rate,
+                sample_rate_hz: device_sample_rate,
                 channels: device_channels,
                 duration_ms: outgoing_total_frames * 1000 / device_sample_rate as u64,
                 samples: outgoing_samples,
@@ -3373,7 +3373,7 @@ mod tests {
         controller.current_track.as_mut().unwrap().render_frame = render_frame;
 
         let fmt = OutputFormatSnapshot {
-            sample_rate: device_sample_rate,
+            sample_rate_hz: device_sample_rate,
             channels: device_channels as u16,
             generation: 0,
         };
@@ -3383,7 +3383,7 @@ mod tests {
             song_id: "song-b".to_owned(),
             output_format: fmt,
             audio: DecodedAudio {
-                sample_rate: device_sample_rate,
+                sample_rate_hz: device_sample_rate,
                 channels: device_channels,
                 duration_ms: incoming_total_frames * 1000 / device_sample_rate as u64,
                 samples: vec![0.0; incoming_total_frames as usize * device_channels],
@@ -3416,7 +3416,7 @@ mod tests {
         controller.start_track(
             "song-a".to_owned(),
             DecodedAudio {
-                sample_rate: outgoing_sample_rate,
+                sample_rate_hz: outgoing_sample_rate,
                 channels: device_channels,
                 duration_ms: outgoing_total_frames * 1000 / outgoing_sample_rate as u64,
                 samples: vec![0.5; outgoing_total_frames as usize * device_channels],
@@ -3427,7 +3427,7 @@ mod tests {
         controller.current_track.as_mut().unwrap().render_frame = outgoing_render_frame;
 
         let fmt = OutputFormatSnapshot {
-            sample_rate: incoming_sample_rate,
+            sample_rate_hz: incoming_sample_rate,
             channels: device_channels as u16,
             generation: 0,
         };
@@ -3437,7 +3437,7 @@ mod tests {
             song_id: "song-b".to_owned(),
             output_format: fmt,
             audio: DecodedAudio {
-                sample_rate: incoming_sample_rate,
+                sample_rate_hz: incoming_sample_rate,
                 channels: device_channels,
                 duration_ms: incoming_total_frames * 1000 / incoming_sample_rate as u64,
                 samples: vec![0.3; incoming_total_frames as usize * device_channels],
@@ -4330,7 +4330,7 @@ mod tests {
         let channels = 2;
         let frames = 1024;
         let decoded = |sample| DecodedAudio {
-            sample_rate,
+            sample_rate_hz: sample_rate,
             channels,
             duration_ms: (frames * 1000 / sample_rate as usize) as u64,
             samples: vec![sample; frames * channels],
@@ -4395,7 +4395,7 @@ mod tests {
         let channels = 2;
         let frames = src_rate as usize * 5; // 5 seconds of source audio
         let decoded = |sample| DecodedAudio {
-            sample_rate: src_rate,
+            sample_rate_hz: src_rate,
             channels,
             duration_ms: 5000,
             samples: vec![sample; frames * channels],
@@ -4468,7 +4468,7 @@ mod tests {
         let channels = 2;
         let frames = 128;
         let decoded = |sr, sample| DecodedAudio {
-            sample_rate: sr,
+            sample_rate_hz: sr,
             channels,
             duration_ms: (frames * 1000 / sr as usize) as u64,
             samples: vec![sample; frames * channels],
@@ -4497,7 +4497,7 @@ mod tests {
         let sample_rate = 44_100;
         let channels = 2;
         let decoded = |frames, sample| DecodedAudio {
-            sample_rate,
+            sample_rate_hz: sample_rate,
             channels,
             duration_ms: (frames * 1000 / sample_rate as usize) as u64,
             samples: vec![sample; frames * channels],
@@ -4527,7 +4527,7 @@ mod tests {
         let channels = 2;
         let frames = 128;
         let decoded = |sample| DecodedAudio {
-            sample_rate,
+            sample_rate_hz: sample_rate,
             channels,
             duration_ms: (frames * 1000 / sample_rate as usize) as u64,
             samples: vec![sample; frames * channels],

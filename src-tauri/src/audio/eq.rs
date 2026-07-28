@@ -65,7 +65,7 @@ type ChannelBands = [Option<DirectForm1<f32>>; 5];
 
 pub struct EqProcessor {
     filters: Vec<ChannelBands>,
-    sample_rate: f32,
+    sample_rate_hz: f32,
     channels: usize,
     enabled: bool,
     target_gains_db: [f32; 5],
@@ -116,7 +116,7 @@ impl EqProcessor {
 
         EqProcessor {
             filters,
-            sample_rate: sr,
+            sample_rate_hz: sr,
             channels,
             enabled: false,
             target_gains_db: [0.0; 5],
@@ -169,7 +169,7 @@ impl EqProcessor {
     /// overall volume by -12 dB). Smoothed over the same 50 ms interval as
     /// the gains.
     fn update_preamp_target(&mut self) {
-        let nyquist_limit = self.sample_rate * NYQUIST_RATIO_LIMIT;
+        let nyquist_limit = self.sample_rate_hz * NYQUIST_RATIO_LIMIT;
         let max_positive = self
             .target_gains_db
             .iter()
@@ -196,7 +196,7 @@ impl EqProcessor {
             self.gain_steps_db[band] = Self::linear_step(
                 self.current_gains_db[band],
                 self.target_gains_db[band],
-                self.sample_rate,
+                self.sample_rate_hz,
                 EQ_SMOOTH_MS,
             );
         }
@@ -206,7 +206,7 @@ impl EqProcessor {
         self.preamp_step = Self::linear_step(
             self.current_preamp,
             self.target_preamp,
-            self.sample_rate,
+            self.sample_rate_hz,
             EQ_SMOOTH_MS,
         );
     }
@@ -215,7 +215,7 @@ impl EqProcessor {
         self.wet_step = Self::linear_step(
             self.wet_mix,
             self.target_wet_mix,
-            self.sample_rate,
+            self.sample_rate_hz,
             BYPASS_SMOOTH_MS,
         );
     }
@@ -242,7 +242,7 @@ impl EqProcessor {
             return;
         }
 
-        let sample_rate = self.sample_rate;
+        let sample_rate = self.sample_rate_hz;
 
         // When fully bypassed (wet mix is 0 and not transitioning), the filter
         // output is inaudible. Skip coefficient updates and filter runs while

@@ -60,7 +60,7 @@ pub(crate) struct CommittedDatabaseProbe {
     /// Manifest generation when a manifest was found; 0 for legacy root DB.
     pub generation: i64,
     /// Expected byte length from the manifest (or None for legacy).
-    pub database_size: Option<u64>,
+    pub database_size_bytes: Option<u64>,
     /// Expected hex SHA-256 from the manifest (or None for legacy).
     pub database_sha256: Option<String>,
 }
@@ -189,7 +189,7 @@ fn activate_committed_database(
     let actual_size = fs::metadata(&temp_path)
         .map(|m| m.len())
         .map_err(|e| internal_error(format!("failed to stat bootstrap candidate: {e}")))?;
-    if let Some(expected_size) = probe.database_size {
+    if let Some(expected_size) = probe.database_size_bytes {
         if actual_size != expected_size {
             let _ = fs::remove_file(&temp_path);
             return Err(internal_error(format!(

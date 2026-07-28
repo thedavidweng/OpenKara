@@ -376,7 +376,7 @@ pub(crate) fn webdav_conditional_put(
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<u64>().ok());
     Ok(RemoteObjectMetadata {
-        size,
+        size_bytes: size,
         revision: etag,
     })
 }
@@ -512,7 +512,10 @@ pub(crate) fn webdav_stat(
         .get(ETAG)
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned);
-    Ok(Some(RemoteObjectMetadata { size, revision }))
+    Ok(Some(RemoteObjectMetadata {
+        size_bytes: size,
+        revision,
+    }))
 }
 
 pub(crate) fn parse_webdav_payload(
@@ -724,7 +727,7 @@ impl super::bootstrap::RemoteBootstrapStorage for WebDavBootstrapStorage<'_> {
                 revision: etag,
                 database_path: manifest.database_path,
                 generation: manifest.generation,
-                database_size: Some(manifest.database_size),
+                database_size_bytes: Some(manifest.database_size_bytes),
                 database_sha256: Some(manifest.database_sha256),
             }));
         }
@@ -749,7 +752,7 @@ impl super::bootstrap::RemoteBootstrapStorage for WebDavBootstrapStorage<'_> {
             revision: etag,
             database_path: "openkara.db".to_owned(),
             generation: 0,
-            database_size: None,
+            database_size_bytes: None,
             database_sha256: None,
         }))
     }

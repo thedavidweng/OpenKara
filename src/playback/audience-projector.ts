@@ -6,9 +6,9 @@ import type {
 
 /** Fixed AirPlay viewport contract shared by the projector and TV renderer. */
 export const AIRPLAY_AUDIENCE_VIEWPORT = {
-  widthPx: 1280,
-  heightPx: 720,
-  bottomInsetPx: 0,
+  width_px: 1280,
+  height_px: 720,
+  bottom_inset_px: 0,
 } as const;
 
 /**

@@ -26,10 +26,10 @@ type WindowShellTier = "desktop" | "mac";
 interface WindowShellStateSnapshot {
   chrome_variant: WindowShellChromeVariant;
   tier: WindowShellTier;
-  toolbar_height: number;
+  toolbar_height_px: number;
   traffic_light_inset_leading: number;
-  sidebar_header_height: number;
-  sidebar_width: number;
+  sidebar_header_height_px: number;
+  sidebar_width_px: number;
 }
 ```
 
@@ -41,13 +41,13 @@ interface WindowShellStateSnapshot {
 - `tier`
   - `desktop`: no mac-specific shell treatment
   - `mac`: macOS AppKit window chrome + traffic-light metrics with the **same** single-webview React tree as other tiers
-- `toolbar_height`
+- `toolbar_height_px`
   - Native toolbar/titlebar height mirrored into CSS tokens
 - `traffic_light_inset_leading`
   - Leading inset reserved for standard window controls
-- `sidebar_header_height`
+- `sidebar_header_height_px`
   - Reserved strip height so toolbar and sidebar content can clear the system traffic lights
-- `sidebar_width`
+- `sidebar_width_px`
   - Shared shell width token for sidebar rail/layout alignment across all platforms
 
 ## Shared UI Boundary

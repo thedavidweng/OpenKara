@@ -232,7 +232,7 @@ impl RemoteProvider for FaultInjectionProvider {
         let revisions = self.revisions.lock().unwrap();
         if files.contains_key(path) {
             Ok(Some(RemoteObjectMetadata {
-                size: Some(files.get(path).unwrap().len() as u64),
+                size_bytes: Some(files.get(path).unwrap().len() as u64),
                 revision: revisions.get(path).cloned(),
             }))
         } else {
@@ -495,7 +495,7 @@ impl RemoteProvider for FaultInjectionProvider {
         self.files.lock().unwrap().insert(path.to_owned(), bytes);
         revisions.insert(path.to_owned(), new_rev.clone());
         Ok(RemoteObjectMetadata {
-            size: Some(size),
+            size_bytes: Some(size),
             revision: Some(new_rev),
         })
     }
@@ -885,7 +885,7 @@ fn t6_cas_conflict_on_publish_conflict_surfaced() {
         repository_id: "repo-uuid-1".to_owned(),
         generation: 2,
         database_path: ".openkara/databases/2.sqlite".to_owned(),
-        database_size: 100,
+        database_size_bytes: 100,
         database_sha256: "abc".to_owned(),
         committed_at_ms: 1000,
         writer_id: "other-device".to_owned(),
@@ -1453,7 +1453,7 @@ fn t15_crash_after_cas_before_local_completion_recovers_own_commit() {
         repository_id: "repo-uuid-1".to_owned(),
         generation: 1,
         database_path: ".openkara/databases/1.sqlite".to_owned(),
-        database_size: db_size,
+        database_size_bytes: db_size,
         database_sha256: digest.clone(),
         committed_at_ms: 5000,
         writer_id: "writer-uuid-1".to_owned(),

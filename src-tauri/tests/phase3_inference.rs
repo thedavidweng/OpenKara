@@ -69,7 +69,7 @@ fn separate_four_stem_to_dir(
 
     fs::create_dir_all(output_dir).expect("output dir should be created");
 
-    let sample_rate = normalized.sample_rate;
+    let sample_rate = normalized.sample_rate_hz;
     let vocals_path = output_dir.join("vocals.ogg");
     let drums_path = output_dir.join("drums.ogg");
     let bass_path = output_dir.join("bass.ogg");
@@ -142,7 +142,7 @@ fn run_streaming_with_cancel(
 
     fs::create_dir_all(output_dir).expect("output dir should be created");
 
-    let sample_rate = normalized.sample_rate;
+    let sample_rate = normalized.sample_rate_hz;
     let mut writers = StemWriters {
         mode: StemMode::FourStem,
         vocals: StreamingOggWriter::new(
@@ -280,7 +280,7 @@ fn streaming_separation_cancelled_after_first_chunk_writes_no_stems() {
 fn separates_fixture_audio_into_four_stem_ogg_files() {
     let decoded = decode::decode_file(&fixture_path("audio", "fixture.wav"))
         .expect("wav fixture should decode");
-    let expected_sample_rate = decoded.sample_rate;
+    let expected_sample_rate = decoded.sample_rate_hz;
     let expected_channels = decoded.channels;
 
     let output_dir = unique_output_dir();
@@ -299,7 +299,7 @@ fn separates_fixture_audio_into_four_stem_ogg_files() {
         let stem_path = output_dir.join(format!("{stem_name}.ogg"));
         let stem_audio = decode::decode_file(&stem_path).expect("stem should decode");
         assert_eq!(
-            stem_audio.sample_rate, expected_sample_rate,
+            stem_audio.sample_rate_hz, expected_sample_rate,
             "{stem_name} sample rate should match"
         );
         assert_eq!(

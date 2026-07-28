@@ -28,10 +28,10 @@ describe("useWindowShellState", () => {
     mockGetWindowShellState.mockResolvedValue({
       chrome_variant: "mac",
       tier: "mac",
-      toolbar_height: 48,
+      toolbar_height_px: 48,
       traffic_light_inset_leading: 92,
-      sidebar_header_height: 28,
-      sidebar_width: 436,
+      sidebar_header_height_px: 28,
+      sidebar_width_px: 436,
     });
 
     const container = document.createElement("div");

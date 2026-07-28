@@ -19,9 +19,9 @@ fn audience_payload_deserializes_viewport() {
             "addLyrics": "Add Lyrics"
         },
         "viewport": {
-            "widthPx": 1280,
-            "heightPx": 720,
-            "bottomInsetPx": 0
+            "width_px": 1280,
+            "height_px": 720,
+            "bottom_inset_px": 0
         },
         "presentationSpec": {
             "contentWidthRatio": 0.92,

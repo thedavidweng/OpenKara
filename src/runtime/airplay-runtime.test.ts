@@ -34,9 +34,9 @@ describe("buildAirPlayAudienceState", () => {
         addLyrics: "Add Lyrics",
       },
       viewport: {
-        widthPx: 1280,
-        heightPx: 720,
-        bottomInsetPx: 0,
+        width_px: 1280,
+        height_px: 720,
+        bottom_inset_px: 0,
       },
       presentationSpec: {
         contentWidthRatio: 0.92,
@@ -139,9 +139,9 @@ describe("buildAirPlayAudienceState", () => {
         addLyrics: "Add Lyrics",
       },
       viewport: {
-        widthPx: 1280,
-        heightPx: 720,
-        bottomInsetPx: 0,
+        width_px: 1280,
+        height_px: 720,
+        bottom_inset_px: 0,
       },
       presentationSpec: {
         fontSizePx: 96,
@@ -208,9 +208,9 @@ describe("buildAirPlayAudienceState", () => {
         addLyrics: "Add Lyrics",
       },
       viewport: {
-        widthPx: 1280,
-        heightPx: 720,
-        bottomInsetPx: 0,
+        width_px: 1280,
+        height_px: 720,
+        bottom_inset_px: 0,
       },
       presentationSpec: {
         fontSizePx: 96,
@@ -267,9 +267,9 @@ describe("buildAirPlayAudienceState", () => {
         addLyrics: "添加歌词",
       },
       viewport: {
-        widthPx: 1280,
-        heightPx: 720,
-        bottomInsetPx: 0,
+        width_px: 1280,
+        height_px: 720,
+        bottom_inset_px: 0,
       },
       presentationSpec: {
         statusFontSizePx: 18,
@@ -334,9 +334,9 @@ describe("buildAirPlayAudienceState", () => {
         addLyrics: "Add Lyrics",
       },
       viewport: {
-        widthPx: 1280,
-        heightPx: 720,
-        bottomInsetPx: 0,
+        width_px: 1280,
+        height_px: 720,
+        bottom_inset_px: 0,
       },
       presentationSpec: {
         fontSizePx: 72,
@@ -423,9 +423,9 @@ describe("buildAirPlayAudienceState", () => {
         addLyrics: "Add Lyrics",
       },
       viewport: {
-        widthPx: 1280,
-        heightPx: 720,
-        bottomInsetPx: 0,
+        width_px: 1280,
+        height_px: 720,
+        bottom_inset_px: 0,
       },
       presentationSpec: {
         fontSizePx: 72,

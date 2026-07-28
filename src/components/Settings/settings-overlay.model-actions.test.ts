@@ -37,12 +37,12 @@ function createContext(overrides?: {
             htdemucs: {
               downloaded: true,
               legacy_install_present: false,
-              file_size: 100,
+              file_size_bytes: 100,
             },
             htdemucs_ft: {
               downloaded: true,
               legacy_install_present: false,
-              file_size: 200,
+              file_size_bytes: 200,
             },
           },
         },

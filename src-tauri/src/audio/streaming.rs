@@ -29,7 +29,7 @@ use super::decode::DecodeError;
 #[derive(Debug, Clone)]
 pub struct ProxyConfig {
     pub enabled: bool,
-    pub target_sample_rate: u32,
+    pub target_sample_rate_hz: u32,
     pub target_channels: usize,
 }
 
@@ -37,7 +37,7 @@ impl ProxyConfig {
     pub fn none() -> Self {
         Self {
             enabled: false,
-            target_sample_rate: 0,
+            target_sample_rate_hz: 0,
             target_channels: 0,
         }
     }
@@ -46,7 +46,7 @@ impl ProxyConfig {
     pub fn low_bitrate() -> Self {
         Self {
             enabled: true,
-            target_sample_rate: 22_050,
+            target_sample_rate_hz: 22_050,
             target_channels: 1,
         }
     }
@@ -146,7 +146,7 @@ pub fn ring_capacity(sample_rate: u32, channels: usize) -> usize {
 pub struct AudioConsumer {
     cons: ringbuf::HeapCons<f32>,
     pending_samples: VecDeque<f32>,
-    pub sample_rate: u32,
+    pub sample_rate_hz: u32,
     pub channels: usize,
     is_eof: Arc<AtomicBool>,
     /// Set by the producer after a seek to signal the consumer should drain
@@ -164,7 +164,7 @@ pub struct AudioConsumer {
 impl std::fmt::Debug for AudioConsumer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AudioConsumer")
-            .field("sample_rate", &self.sample_rate)
+            .field("sample_rate", &self.sample_rate_hz)
             .field("channels", &self.channels)
             .field("available_samples", &self.cons.occupied_len())
             .field("is_eof", &self.is_eof.load(Ordering::Relaxed))
@@ -178,11 +178,11 @@ impl AudioConsumer {
     }
 
     pub fn available_ms(&self) -> u64 {
-        if self.sample_rate == 0 || self.channels == 0 {
+        if self.sample_rate_hz == 0 || self.channels == 0 {
             return 0;
         }
         let frames = self.available_samples() / self.channels;
-        (frames as u64 * 1000) / self.sample_rate as u64
+        (frames as u64 * 1000) / self.sample_rate_hz as u64
     }
 
     /// Number of source frames (not interleaved samples) available to read.
@@ -522,7 +522,7 @@ pub fn create_stream_pair(sample_rate: u32, channels: usize) -> (AudioProducer, 
         AudioConsumer {
             cons,
             pending_samples: VecDeque::new(),
-            sample_rate,
+            sample_rate_hz: sample_rate,
             channels,
             is_eof,
             needs_flush,
@@ -550,7 +550,7 @@ pub fn frames_to_ms(frames: u64, sample_rate: u32) -> u64 {
 }
 
 pub struct StreamMetadata {
-    pub sample_rate: u32,
+    pub sample_rate_hz: u32,
     pub channels: usize,
     /// Duration is optional so playback can start immediately.
     /// When `None`, the container did not expose frame count metadata and
@@ -634,7 +634,7 @@ pub fn probe_stream_metadata(path: &Path) -> Result<StreamMetadata, DecodeError>
     };
 
     Ok(StreamMetadata {
-        sample_rate,
+        sample_rate_hz: sample_rate,
         channels,
         duration_ms,
     })
@@ -675,15 +675,15 @@ pub fn spawn_decode_producer_with_proxy(
 
     // If proxy is enabled, the ring buffer and consumer use the proxy parameters.
     let (ring_rate, ring_channels) = if proxy.enabled {
-        (proxy.target_sample_rate, proxy.target_channels)
+        (proxy.target_sample_rate_hz, proxy.target_channels)
     } else {
-        (metadata.sample_rate, metadata.channels)
+        (metadata.sample_rate_hz, metadata.channels)
     };
 
     let (mut prod, cons) = create_stream_pair(ring_rate, ring_channels);
 
     let path_buf = path.to_path_buf();
-    let sample_rate = metadata.sample_rate;
+    let sample_rate = metadata.sample_rate_hz;
     let channels = metadata.channels;
 
     let handle = std::thread::spawn(move || {
@@ -703,9 +703,9 @@ pub fn spawn_decode_producer_from_source(
     proxy: ProxyConfig,
 ) -> Result<(AudioConsumer, JoinHandle<Result<(), DecodeError>>), DecodeError> {
     let (ring_rate, ring_channels) = if proxy.enabled {
-        (proxy.target_sample_rate, proxy.target_channels)
+        (proxy.target_sample_rate_hz, proxy.target_channels)
     } else {
-        (metadata.sample_rate, metadata.channels)
+        (metadata.sample_rate_hz, metadata.channels)
     };
 
     let (mut prod, cons) = create_stream_pair(ring_rate, ring_channels);
@@ -715,7 +715,7 @@ pub fn spawn_decode_producer_from_source(
         hint.with_extension(ext);
     }
     let label = "remote-source".to_owned();
-    let sr = metadata.sample_rate;
+    let sr = metadata.sample_rate_hz;
     let ch = metadata.channels;
 
     let handle = std::thread::spawn(move || {
@@ -771,10 +771,10 @@ pub fn spawn_multi_stem_decode_producers_with_proxy(
     if metadata_vec.len() > 1 {
         let first = &metadata_vec[0];
         for (i, meta) in metadata_vec.iter().enumerate().skip(1) {
-            if meta.sample_rate != first.sample_rate {
+            if meta.sample_rate_hz != first.sample_rate_hz {
                 return Err(DecodeError::ProbeFailed(format!(
                     "stem timeline mismatch: stem 0 sample_rate {} != stem {i} sample_rate {}",
-                    first.sample_rate, meta.sample_rate
+                    first.sample_rate_hz, meta.sample_rate_hz
                 )));
             }
             if meta.channels != first.channels {
@@ -798,15 +798,15 @@ pub fn spawn_multi_stem_decode_producers_with_proxy(
     let mut handles = Vec::with_capacity(paths.len());
     for (path, meta) in paths.iter().zip(metadata_vec.iter()) {
         let (ring_rate, ring_channels) = if proxy.enabled {
-            (proxy.target_sample_rate, proxy.target_channels)
+            (proxy.target_sample_rate_hz, proxy.target_channels)
         } else {
-            (meta.sample_rate, meta.channels)
+            (meta.sample_rate_hz, meta.channels)
         };
 
         let (mut prod, cons) = create_stream_pair(ring_rate, ring_channels);
 
         let path_buf = path.clone();
-        let sr = meta.sample_rate;
+        let sr = meta.sample_rate_hz;
         let ch = meta.channels;
         let proxy_clone = proxy.clone();
         let handle = std::thread::spawn(move || {
@@ -980,7 +980,7 @@ fn decode_mss_into_producer(
                 samples,
                 expected_sample_rate,
                 expected_channels,
-                proxy.target_sample_rate,
+                proxy.target_sample_rate_hz,
                 proxy.target_channels,
             );
             &resampled
@@ -1092,7 +1092,7 @@ mod tests {
             spawn_decode_producer(&path).expect("spawn_decode_producer should succeed");
 
         // Metadata should match the fixture
-        assert_eq!(metadata.sample_rate, 44_100);
+        assert_eq!(metadata.sample_rate_hz, 44_100);
         assert_eq!(metadata.channels, 2);
         let duration = metadata
             .duration_ms
@@ -1169,9 +1169,9 @@ mod tests {
         let metadata = probe_stream_metadata(&path).expect("probe should succeed for m4a");
         eprintln!(
             "m4a metadata: rate={}, ch={}, dur={:?}ms",
-            metadata.sample_rate, metadata.channels, metadata.duration_ms
+            metadata.sample_rate_hz, metadata.channels, metadata.duration_ms
         );
-        assert!(metadata.sample_rate > 0);
+        assert!(metadata.sample_rate_hz > 0);
         assert!(metadata.channels > 0);
         let duration = metadata
             .duration_ms
@@ -1191,7 +1191,10 @@ mod tests {
 
         let metadata =
             probe_stream_metadata(&path).expect("probe_stream_metadata should succeed for m4a");
-        assert!(metadata.sample_rate > 0, "sample_rate should be positive");
+        assert!(
+            metadata.sample_rate_hz > 0,
+            "sample_rate should be positive"
+        );
         assert!(metadata.channels > 0, "channels should be positive");
         let duration = metadata.duration_ms.expect("m4a should have duration");
         assert!(
@@ -1239,7 +1242,7 @@ mod tests {
         let mut controller = crate::audio::playback::PlaybackController::default();
         controller.start_track_streaming(
             "test-m4a".to_owned(),
-            metadata.sample_rate,
+            metadata.sample_rate_hz,
             metadata.channels,
             metadata.duration_ms.unwrap_or(0),
             StreamingTrack::Single { consumer },
@@ -1252,7 +1255,7 @@ mod tests {
             .expect("decode thread should not panic")
             .expect("decode should succeed");
 
-        let device_rate = metadata.sample_rate;
+        let device_rate = metadata.sample_rate_hz;
         let device_channels = 2;
         let buffer_frames = 512;
         let mut output = vec![0.0f32; buffer_frames * device_channels];
@@ -1302,7 +1305,7 @@ mod tests {
         let mut controller = crate::audio::playback::PlaybackController::default();
         controller.start_track_streaming(
             "test-m4a-loop".to_owned(),
-            metadata.sample_rate,
+            metadata.sample_rate_hz,
             metadata.channels,
             metadata.duration_ms.unwrap_or(0),
             StreamingTrack::Single { consumer },
@@ -1312,7 +1315,7 @@ mod tests {
         // Wait for full decode
         handle.join().expect("thread join").expect("decode ok");
 
-        let device_rate = metadata.sample_rate;
+        let device_rate = metadata.sample_rate_hz;
         let device_channels = 2;
         let buffer_frames = 512;
         let mut total_rendered = 0u64;
@@ -1387,7 +1390,7 @@ mod tests {
 
         assert_eq!(result.metadata.len(), 2);
         for meta in &result.metadata {
-            assert_eq!(meta.sample_rate, 44_100);
+            assert_eq!(meta.sample_rate_hz, 44_100);
             assert_eq!(meta.channels, 2);
         }
 
@@ -1430,7 +1433,7 @@ mod tests {
         assert_eq!(seek_target.load(Ordering::Relaxed), SeekTarget::NONE);
 
         seek_target.store(
-            ms_to_frames(500, metadata.sample_rate) as i64,
+            ms_to_frames(500, metadata.sample_rate_hz) as i64,
             Ordering::Relaxed,
         );
         assert_ne!(seek_target.load(Ordering::Relaxed), SeekTarget::NONE);
@@ -1474,7 +1477,7 @@ mod tests {
     fn proxy_config_low_bitrate_values() {
         let proxy = ProxyConfig::low_bitrate();
         assert!(proxy.enabled);
-        assert_eq!(proxy.target_sample_rate, 22_050);
+        assert_eq!(proxy.target_sample_rate_hz, 22_050);
         assert_eq!(proxy.target_channels, 1);
     }
 
@@ -1498,7 +1501,7 @@ mod tests {
         let (consumer, metadata, handle) =
             spawn_decode_producer_with_proxy(&path, proxy).expect("spawn should succeed");
 
-        assert_eq!(metadata.sample_rate, 44_100);
+        assert_eq!(metadata.sample_rate_hz, 44_100);
         assert_eq!(metadata.channels, 2);
 
         handle
@@ -1506,7 +1509,7 @@ mod tests {
             .expect("thread should not panic")
             .expect("decode should succeed");
 
-        assert_eq!(consumer.sample_rate, 22_050);
+        assert_eq!(consumer.sample_rate_hz, 22_050);
         assert_eq!(consumer.channels, 1);
 
         // fixture.wav is 1s: 44100 stereo → 22050 mono = 22050 samples.
@@ -1526,7 +1529,7 @@ mod tests {
             .join("fixture.wav");
         let file = File::open(path).expect("fixture should open");
         let metadata = StreamMetadata {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: Some(1_000),
         };
@@ -1613,7 +1616,7 @@ mod tests {
     #[test]
     fn stream_metadata_duration_is_optional() {
         let metadata = StreamMetadata {
-            sample_rate: 44100,
+            sample_rate_hz: 44100,
             channels: 2,
             duration_ms: None,
         };

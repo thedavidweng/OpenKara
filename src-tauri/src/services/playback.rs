@@ -339,7 +339,7 @@ fn play_track_background<R: Runtime>(
         let (cdg, cdg_error) = load_cdg_packets_as_arc(library_root, song);
 
         let ready = ReadyTrack::Streaming {
-            sample_rate: streaming_source.metadata.sample_rate,
+            sample_rate: streaming_source.metadata.sample_rate_hz,
             channels: streaming_source.metadata.channels,
             // duration_ms may be None if the container doesn't expose
             // frame count metadata. Use 0 as fallback; it will be resolved async.

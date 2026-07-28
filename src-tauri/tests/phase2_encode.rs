@@ -23,7 +23,7 @@ fn write_ogg_file_round_trips_audio_metadata() {
     let redecoded =
         decode::decode_file(&output_path).expect("encoded ogg should decode successfully");
 
-    assert_eq!(redecoded.sample_rate, decoded.sample_rate);
+    assert_eq!(redecoded.sample_rate_hz, decoded.sample_rate_hz);
     assert_eq!(redecoded.channels, decoded.channels);
     assert!(!redecoded.samples.is_empty());
 }

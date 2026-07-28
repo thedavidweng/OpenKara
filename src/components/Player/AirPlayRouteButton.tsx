@@ -9,10 +9,10 @@ import type { AirPlayRoutePickerBounds } from "@/types/ipc";
 function buildHostBounds(element: HTMLDivElement): AirPlayRoutePickerBounds {
   const rect = element.getBoundingClientRect();
   return {
-    left: rect.left,
-    top: rect.top,
-    width: rect.width,
-    height: rect.height,
+    left_px: rect.left,
+    top_px: rect.top,
+    width_px: rect.width,
+    height_px: rect.height,
   };
 }
 

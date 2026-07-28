@@ -22,7 +22,8 @@ pub struct LrcLibLyrics {
     pub track_name: String,
     pub artist_name: String,
     pub album_name: Option<String>,
-    pub duration: f64,
+    #[serde(rename = "duration")]
+    pub duration_seconds: f64,
     pub instrumental: bool,
     pub plain_lyrics: Option<String>,
     pub synced_lyrics: Option<String>,

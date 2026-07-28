@@ -337,7 +337,7 @@ describe("createSettingsOverlayActions - initialize", () => {
         variant: "htdemucs",
         downloaded: true,
         legacy_install_present: false,
-        file_size: 100,
+        file_size_bytes: 100,
         installed_version: null,
         pinned_version: "model-v2.1.0",
       })
@@ -345,7 +345,7 @@ describe("createSettingsOverlayActions - initialize", () => {
         variant: "htdemucs_ft",
         downloaded: false,
         legacy_install_present: false,
-        file_size: null,
+        file_size_bytes: null,
         installed_version: null,
         pinned_version: "model-v2.1.0",
       });
@@ -421,7 +421,7 @@ describe("createSettingsOverlayActions - initialize", () => {
         variant: "htdemucs",
         downloaded: true,
         legacy_install_present: false,
-        file_size: 100,
+        file_size_bytes: 100,
         installed_version: null,
         pinned_version: "model-v2.1.0",
       })
@@ -429,7 +429,7 @@ describe("createSettingsOverlayActions - initialize", () => {
         variant: "htdemucs_ft",
         downloaded: true,
         legacy_install_present: false,
-        file_size: 200,
+        file_size_bytes: 200,
         installed_version: null,
         pinned_version: "model-v2.1.0",
       });
@@ -473,7 +473,7 @@ describe("createSettingsOverlayActions - initialize", () => {
         variant: "htdemucs",
         downloaded: false,
         legacy_install_present: false,
-        file_size: null,
+        file_size_bytes: null,
         installed_version: null,
         pinned_version: "model-v2.1.0",
       })
@@ -481,7 +481,7 @@ describe("createSettingsOverlayActions - initialize", () => {
         variant: "htdemucs_ft",
         downloaded: false,
         legacy_install_present: false,
-        file_size: null,
+        file_size_bytes: null,
         installed_version: null,
         pinned_version: "model-v2.1.0",
       });
@@ -525,7 +525,7 @@ describe("createSettingsOverlayActions - initialize", () => {
         variant: "htdemucs",
         downloaded: false,
         legacy_install_present: false,
-        file_size: null,
+        file_size_bytes: null,
         installed_version: null,
         pinned_version: "model-v2.1.0",
       })
@@ -533,7 +533,7 @@ describe("createSettingsOverlayActions - initialize", () => {
         variant: "htdemucs_ft",
         downloaded: false,
         legacy_install_present: false,
-        file_size: null,
+        file_size_bytes: null,
         installed_version: null,
         pinned_version: "model-v2.1.0",
       });

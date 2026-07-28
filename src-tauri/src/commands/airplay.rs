@@ -47,16 +47,14 @@ pub enum AirPlayOutputPhase {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct AirPlayRoutePickerBounds {
-    pub left: f64,
-    pub top: f64,
-    pub width: f64,
-    pub height: f64,
+    pub left_px: f64,
+    pub top_px: f64,
+    pub width_px: f64,
+    pub height_px: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct AirPlayViewport {
     pub width_px: u32,
     pub height_px: u32,
@@ -727,10 +725,10 @@ mod native {
                     .with_webview(move |platform_webview| unsafe {
                         ok_airplay_sync_route_picker(
                             platform_webview.inner(),
-                            bounds.left,
-                            bounds.top,
-                            bounds.width,
-                            bounds.height,
+                            bounds.left_px,
+                            bounds.top_px,
+                            bounds.width_px,
+                            bounds.height_px,
                             true,
                             stream_root.as_ptr(),
                             playlist_url.as_ptr(),

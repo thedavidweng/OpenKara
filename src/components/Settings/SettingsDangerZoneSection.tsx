@@ -61,7 +61,9 @@ function DeleteModelAction({ variant }: { variant: ModelVariant }) {
           : t("settings.dangerZone.deleteModelHQ")
       }
       description={`${t("settings.dangerZone.deleteModelDescription")}${
-        status.file_size ? ` (${formatBytes(status.file_size)})` : ""
+        status.file_size_bytes
+          ? ` (${formatBytes(status.file_size_bytes)})`
+          : ""
       }`}
       actionLabel={t("settings.dangerZone.deleteModelButton")}
       onClick={() => void actions.deleteModel(variant)}

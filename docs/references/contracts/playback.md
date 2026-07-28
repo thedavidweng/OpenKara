@@ -438,7 +438,7 @@ EQ 平滑（gain、preamp、bypass dry/wet）仅在已渲染样本上推进，tr
 2. **源域混合**：所有 stem 在源域（原始采样率）按各自 gain 混合为一个 buffer，然后通过一个共享的 rubato sinc resampler（每通道一个 mono resampler）一次性重采样到设备采样率。这取代了之前每 stem 独立重采样再聚合的方式。
 3. **静音是幅度操作，不是时钟操作**：gain=0 的 stem 仍被 pop 相同数量的源帧，只是贡献零到 mix。恢复一个静音 stem 不会产生与其他 stem 的帧偏移。
 4. **transport 只按已接受的源帧推进**：`render_frame` 每次回调推进的量等于所有 stem 共同消费的源帧数（budget），而非每 stem 的 max/min。
-5. **stem 元数据校验**：`attach_stems`（解码 stem）和 `spawn_multi_stem_decode_producers`（流式 stem）在安装前校验所有 stem 的 sample_rate、channels、frame_count（解码）/duration_ms（流式 probe）一致。不一致时返回 `InvalidPlaybackState` / `ProbeFailed` 错误，避免 mix bus 在播放中途因某个 stem 提前耗尽而卡住。
+5. **stem 元数据校验**：`attach_stems`（解码 stem）和 `spawn_multi_stem_decode_producers`（流式 stem）在安装前校验所有 stem 的 sample_rate_hz、channels、frame_count（解码）/duration_ms（流式 probe）一致。不一致时返回 `InvalidPlaybackState` / `ProbeFailed` 错误，避免 mix bus 在播放中途因某个 stem 提前耗尽而卡住。
 
 ## CDG IPC
 

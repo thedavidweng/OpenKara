@@ -441,7 +441,7 @@ fn probe_remote_source(
     };
 
     Ok(StreamMetadata {
-        sample_rate,
+        sample_rate_hz: sample_rate,
         channels,
         duration_ms,
     })
@@ -600,7 +600,7 @@ struct VerifiedStem {
 
 /// Decoded audio metadata used for cross-stem alignment validation.
 struct StemSetMetadata {
-    sample_rate: u32,
+    sample_rate_hz: u32,
     channels: usize,
     /// Actual PCM frame count (samples.len() / channels) from a full decode.
     /// This is more reliable than container-reported `num_frames`, which can
@@ -635,7 +635,7 @@ fn decode_stem_metadata(path: &Path) -> Result<StemSetMetadata> {
         .with_context(|| format!("failed to decode stem at {}", path.display()))?;
     let frame_count = audio.samples.len() / audio.channels.max(1);
     Ok(StemSetMetadata {
-        sample_rate: audio.sample_rate,
+        sample_rate_hz: audio.sample_rate_hz,
         channels: audio.channels,
         frame_count,
     })
@@ -902,13 +902,13 @@ fn ensure_remote_stem_set_cached_inner(
         let metadata = decode_stem_metadata(path_to_check)
             .with_context(|| format!("failed to decode stem {} for alignment check", stem.label))?;
 
-        if metadata.sample_rate != reference.sample_rate {
+        if metadata.sample_rate_hz != reference.sample_rate_hz {
             clean_up_temps(&verified);
             anyhow::bail!(
                 "stem {} sample rate {} does not match set reference {}",
                 stem.label,
-                metadata.sample_rate,
-                reference.sample_rate
+                metadata.sample_rate_hz,
+                reference.sample_rate_hz
             );
         }
         if metadata.channels != reference.channels {

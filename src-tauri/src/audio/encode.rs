@@ -32,7 +32,8 @@ pub fn write_ogg_file_with_quality(path: &Path, audio: &DecodedAudio, quality: f
     }
 
     let channels = audio.channels;
-    let sample_rate = NonZeroU32::new(audio.sample_rate).context("sample rate must be non-zero")?;
+    let sample_rate =
+        NonZeroU32::new(audio.sample_rate_hz).context("sample rate must be non-zero")?;
     let channel_count =
         NonZeroU8::try_from(u8::try_from(channels).context("channel count exceeds u8 range")?)
             .context("channel count must be non-zero")?;

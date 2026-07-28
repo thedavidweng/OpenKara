@@ -191,10 +191,10 @@ export function SongPropertiesDialog({
                 label={t("songProperties.duration")}
                 value={formatDuration(properties.duration_ms)}
               />
-              {properties.sample_rate != null && (
+              {properties.sample_rate_hz != null && (
                 <PropertyRow
                   label={t("songProperties.sampleRate")}
-                  value={formatSampleRate(properties.sample_rate)}
+                  value={formatSampleRate(properties.sample_rate_hz)}
                 />
               )}
               {properties.channels != null && (
@@ -211,15 +211,15 @@ export function SongPropertiesDialog({
                   }
                 />
               )}
-              {properties.bit_rate != null && (
+              {properties.bit_rate_bps != null && (
                 <PropertyRow
                   label={t("songProperties.bitRate")}
-                  value={formatBitRate(properties.bit_rate)}
+                  value={formatBitRate(properties.bit_rate_bps)}
                 />
               )}
               <PropertyRow
                 label={t("songProperties.fileSize")}
-                value={formatBytes(properties.file_size)}
+                value={formatBytes(properties.file_size_bytes)}
               />
               <PropertyRow
                 label={t("songProperties.sha256")}

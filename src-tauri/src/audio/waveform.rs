@@ -45,7 +45,7 @@ pub fn compute_waveform_peaks(
     if audio.channels == 0 {
         return Err(WaveformError::ZeroChannels);
     }
-    if audio.sample_rate == 0 {
+    if audio.sample_rate_hz == 0 {
         return Err(WaveformError::ZeroSampleRate);
     }
     if !(24..=1000).contains(&buckets) {
@@ -110,7 +110,7 @@ mod tests {
 
     fn audio(samples: Vec<f32>, channels: usize, sample_rate: u32) -> DecodedAudio {
         DecodedAudio {
-            sample_rate,
+            sample_rate_hz: sample_rate,
             channels,
             duration_ms: ((samples.len() / channels.max(1)) as f64 * 1000.0 / sample_rate as f64)
                 as u64,

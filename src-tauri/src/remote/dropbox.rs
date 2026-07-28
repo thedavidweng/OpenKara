@@ -1155,7 +1155,7 @@ impl super::bootstrap::RemoteBootstrapStorage for DropboxBootstrapStorage<'_> {
                 revision: dropbox_metadata_revision(&metadata),
                 database_path: manifest.database_path,
                 generation: manifest.generation,
-                database_size: Some(manifest.database_size),
+                database_size_bytes: Some(manifest.database_size_bytes),
                 database_sha256: Some(manifest.database_sha256),
             }));
         }
@@ -1168,7 +1168,7 @@ impl super::bootstrap::RemoteBootstrapStorage for DropboxBootstrapStorage<'_> {
                     revision: dropbox_metadata_revision(&metadata),
                     database_path: "openkara.db".to_owned(),
                     generation: 0,
-                    database_size: metadata.size,
+                    database_size_bytes: metadata.size_bytes,
                     database_sha256: None,
                 },
             ),
@@ -1298,7 +1298,7 @@ impl RemoteProvider for DropboxProvider<'_> {
         Ok(
             dropbox_get_metadata(self.app_data_dir, &mut secret, &remote_path)?.map(|m| {
                 RemoteObjectMetadata {
-                    size: m.size,
+                    size_bytes: m.size_bytes,
                     revision: dropbox_metadata_revision(&m),
                 }
             }),
@@ -1330,7 +1330,7 @@ impl RemoteProvider for DropboxProvider<'_> {
             expected_revision,
         )?;
         Ok(RemoteObjectMetadata {
-            size: metadata.size,
+            size_bytes: metadata.size_bytes,
             revision: dropbox_metadata_revision(&metadata),
         })
     }
@@ -1644,7 +1644,7 @@ impl RemoteProvider for DropboxProvider<'_> {
         let remote_path = dropbox_join_path(root_path, relative_path);
         Ok(
             dropbox_get_metadata(self.app_data_dir, &mut secret, &remote_path)?
-                .and_then(|m| m.size),
+                .and_then(|m| m.size_bytes),
         )
     }
 

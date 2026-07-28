@@ -142,10 +142,10 @@ export interface Song {
 
 export interface SongProperties {
   format: string;
-  sample_rate: number | null;
+  sample_rate_hz: number | null;
   channels: number | null;
-  bit_rate: number | null;
-  file_size: number;
+  bit_rate_bps: number | null;
+  file_size_bytes: number;
   duration_ms: number;
   hash: string;
 }
@@ -173,8 +173,8 @@ export interface ImportSongsOptions {
 export interface ImportCandidateDetails {
   path: string;
   format: string;
-  bit_rate: number | null;
-  file_size: number;
+  bit_rate_bps: number | null;
+  file_size_bytes: number;
   duration_ms: number | null;
 }
 
@@ -269,7 +269,7 @@ export interface ModelStatusSnapshot {
   downloaded: boolean;
   /** Managed file exists but SHA-256 does not match the pinned release. */
   legacy_install_present: boolean;
-  file_size: number | null;
+  file_size_bytes: number | null;
   /** Upstream release tag of the verified installed model, when known. */
   installed_version: string | null;
   /** Upstream release tag pinned by the app's embedded catalog snapshot. */
@@ -302,10 +302,10 @@ export type WindowShellTier = "desktop" | "mac";
 export interface WindowShellStateSnapshot {
   chrome_variant: WindowShellChromeVariant;
   tier: WindowShellTier;
-  toolbar_height: number;
+  toolbar_height_px: number;
   traffic_light_inset_leading: number;
-  sidebar_header_height: number;
-  sidebar_width: number;
+  sidebar_header_height_px: number;
+  sidebar_width_px: number;
 }
 
 export type StemName = "vocals" | "drums" | "bass" | "other";
@@ -378,10 +378,10 @@ export interface PlaybackErrorEvent {
 }
 
 export interface AirPlayRoutePickerBounds {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
+  left_px: number;
+  top_px: number;
+  width_px: number;
+  height_px: number;
 }
 
 export type AirPlayAudienceMode = "idle" | "lyrics" | "cdg";
@@ -393,9 +393,9 @@ export type AirPlayOutputPhase =
   | "failed";
 
 export interface AirPlayViewport {
-  widthPx: number;
-  heightPx: number;
-  bottomInsetPx: number;
+  width_px: number;
+  height_px: number;
+  bottom_inset_px: number;
 }
 
 export interface AirPlayColor {

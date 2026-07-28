@@ -15,7 +15,7 @@ use std::sync::{Arc, RwLock};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OutputFormatSnapshot {
     pub generation: u64,
-    pub sample_rate: u32,
+    pub sample_rate_hz: u32,
     pub channels: u16,
 }
 
@@ -23,7 +23,7 @@ impl OutputFormatSnapshot {
     pub fn new(generation: u64, sample_rate: u32, channels: u16) -> Self {
         Self {
             generation,
-            sample_rate,
+            sample_rate_hz: sample_rate,
             channels,
         }
     }
@@ -66,7 +66,7 @@ mod tests {
             .and_then(|guard| *guard)
             .expect("should be published");
         assert_eq!(s.generation, 1);
-        assert_eq!(s.sample_rate, 48_000);
+        assert_eq!(s.sample_rate_hz, 48_000);
         assert_eq!(s.channels, 2);
     }
 
@@ -85,6 +85,6 @@ mod tests {
             .and_then(|guard| *guard)
             .expect("should exist");
         assert_eq!(s.generation, 2);
-        assert_eq!(s.sample_rate, 48_000);
+        assert_eq!(s.sample_rate_hz, 48_000);
     }
 }

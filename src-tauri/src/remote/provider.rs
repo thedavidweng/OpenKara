@@ -61,7 +61,10 @@ pub(crate) trait RemoteProvider {
             // `stat` override return None only on a true 404.
             Ok(None)
         } else {
-            Ok(Some(RemoteObjectMetadata { size, revision }))
+            Ok(Some(RemoteObjectMetadata {
+                size_bytes: size,
+                revision,
+            }))
         }
     }
 

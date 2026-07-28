@@ -16,7 +16,7 @@ use tiny_http::{Header, Method, Response, Server, StatusCode};
 #[derive(Debug, Clone, PartialEq)]
 pub struct AirPlayAudioChunk {
     pub epoch: u64,
-    pub sample_rate: u32,
+    pub sample_rate_hz: u32,
     pub channels: u16,
     pub samples: Vec<f32>,
 }
@@ -68,7 +68,7 @@ impl AirPlayAudioTap {
 
         buffer.push(AirPlayAudioChunk {
             epoch: self.current_epoch(),
-            sample_rate,
+            sample_rate_hz: sample_rate,
             channels,
             samples,
         });
@@ -380,7 +380,7 @@ mod tests {
         let drained = tap.drain_pending();
         assert_eq!(drained.len(), 1);
         assert_eq!(drained[0].samples, vec![0.25, 0.5]);
-        assert_eq!(drained[0].sample_rate, 44_100);
+        assert_eq!(drained[0].sample_rate_hz, 44_100);
         assert_eq!(drained[0].channels, 2);
     }
 
@@ -473,7 +473,7 @@ pub fn spawn_audio_forwarder(tap: std::sync::Arc<AirPlayAudioTap>) {
                         ok_airplay_push_audio_samples(
                             chunk.samples.as_ptr(),
                             chunk.samples.len(),
-                            chunk.sample_rate,
+                            chunk.sample_rate_hz,
                             chunk.channels,
                             chunk.epoch,
                         );

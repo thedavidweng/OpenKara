@@ -32,7 +32,7 @@ export type DangerDialog =
 export interface ModelStatusView {
   downloaded: boolean;
   legacy_install_present: boolean;
-  file_size: number | null;
+  file_size_bytes: number | null;
   installed_version: string | null;
   pinned_version: string;
 }

@@ -12,7 +12,7 @@ const TEST_CHANNELS: usize = 2;
 
 fn decoded_audio(samples: Vec<f32>) -> DecodedAudio {
     DecodedAudio {
-        sample_rate: 44_100,
+        sample_rate_hz: 44_100,
         channels: 2,
         duration_ms: 10_000, // 10 seconds — long enough that the track won't auto-stop during the test
         samples,

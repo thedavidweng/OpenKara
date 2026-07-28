@@ -179,7 +179,7 @@ describe("SettingsOverlay controller", () => {
         variant: "htdemucs",
         downloaded: true,
         legacy_install_present: false,
-        file_size: 123,
+        file_size_bytes: 123,
         installed_version: null,
         pinned_version: "model-v2.1.0",
       })
@@ -187,7 +187,7 @@ describe("SettingsOverlay controller", () => {
         variant: "htdemucs_ft",
         downloaded: false,
         legacy_install_present: false,
-        file_size: null,
+        file_size_bytes: null,
         installed_version: null,
         pinned_version: "model-v2.1.0",
       });
@@ -259,14 +259,14 @@ describe("SettingsOverlay controller", () => {
           htdemucs: {
             downloaded: true,
             legacy_install_present: false,
-            file_size: 123,
+            file_size_bytes: 123,
             installed_version: null,
             pinned_version: "model-v2.1.0",
           },
           htdemucs_ft: {
             downloaded: false,
             legacy_install_present: false,
-            file_size: null,
+            file_size_bytes: null,
             installed_version: null,
             pinned_version: "model-v2.1.0",
           },
@@ -348,7 +348,7 @@ describe("SettingsOverlay controller", () => {
         variant: "htdemucs",
         downloaded: true,
         legacy_install_present: false,
-        file_size: 1,
+        file_size_bytes: 1,
         installed_version: null,
         pinned_version: "model-v2.1.0",
       })
@@ -356,7 +356,7 @@ describe("SettingsOverlay controller", () => {
         variant: "htdemucs_ft",
         downloaded: false,
         legacy_install_present: false,
-        file_size: null,
+        file_size_bytes: null,
         installed_version: null,
         pinned_version: "model-v2.1.0",
       });
@@ -438,7 +438,7 @@ describe("SettingsOverlay controller", () => {
         variant: "htdemucs",
         downloaded: true,
         legacy_install_present: false,
-        file_size: 1,
+        file_size_bytes: 1,
         installed_version: null,
         pinned_version: "model-v2.1.0",
       })
@@ -446,7 +446,7 @@ describe("SettingsOverlay controller", () => {
         variant: "htdemucs_ft",
         downloaded: false,
         legacy_install_present: false,
-        file_size: null,
+        file_size_bytes: null,
         installed_version: null,
         pinned_version: "model-v2.1.0",
       });
@@ -567,14 +567,14 @@ describe("SettingsOverlay controller", () => {
           htdemucs: {
             downloaded: false,
             legacy_install_present: false,
-            file_size: null,
+            file_size_bytes: null,
             installed_version: null,
             pinned_version: "model-v2.1.0",
           },
           htdemucs_ft: {
             downloaded: true,
             legacy_install_present: false,
-            file_size: 10,
+            file_size_bytes: 10,
             installed_version: null,
             pinned_version: "model-v2.1.0",
           },
@@ -595,7 +595,7 @@ describe("SettingsOverlay controller", () => {
         variant: "htdemucs",
         downloaded: true,
         legacy_install_present: false,
-        file_size: 2048,
+        file_size_bytes: 2048,
         installed_version: null,
         pinned_version: "model-v2.1.0",
       })
@@ -603,7 +603,7 @@ describe("SettingsOverlay controller", () => {
         variant: "htdemucs_ft",
         downloaded: true,
         legacy_install_present: false,
-        file_size: 4096,
+        file_size_bytes: 4096,
         installed_version: null,
         pinned_version: "model-v2.1.0",
       });
@@ -658,14 +658,14 @@ describe("SettingsOverlay controller", () => {
           htdemucs: {
             downloaded: true,
             legacy_install_present: false,
-            file_size: 100,
+            file_size_bytes: 100,
             installed_version: null,
             pinned_version: "model-v2.1.0",
           },
           htdemucs_ft: {
             downloaded: false,
             legacy_install_present: false,
-            file_size: null,
+            file_size_bytes: null,
             installed_version: null,
             pinned_version: "model-v2.1.0",
           },
@@ -682,7 +682,7 @@ describe("SettingsOverlay controller", () => {
         variant: "htdemucs",
         downloaded: false,
         legacy_install_present: false,
-        file_size: null,
+        file_size_bytes: null,
         installed_version: null,
         pinned_version: "model-v2.1.0",
       })
@@ -690,7 +690,7 @@ describe("SettingsOverlay controller", () => {
         variant: "htdemucs_ft",
         downloaded: false,
         legacy_install_present: false,
-        file_size: null,
+        file_size_bytes: null,
         installed_version: null,
         pinned_version: "model-v2.1.0",
       });
@@ -713,14 +713,14 @@ describe("SettingsOverlay controller", () => {
           htdemucs: {
             downloaded: false,
             legacy_install_present: true,
-            file_size: 999,
+            file_size_bytes: 999,
             installed_version: null,
             pinned_version: "model-v2.1.0",
           },
           htdemucs_ft: {
             downloaded: false,
             legacy_install_present: false,
-            file_size: null,
+            file_size_bytes: null,
             installed_version: null,
             pinned_version: "model-v2.1.0",
           },
@@ -737,7 +737,7 @@ describe("SettingsOverlay controller", () => {
         variant: "htdemucs",
         downloaded: false,
         legacy_install_present: false,
-        file_size: null,
+        file_size_bytes: null,
         installed_version: null,
         pinned_version: "model-v2.1.0",
       })
@@ -745,7 +745,7 @@ describe("SettingsOverlay controller", () => {
         variant: "htdemucs_ft",
         downloaded: false,
         legacy_install_present: false,
-        file_size: null,
+        file_size_bytes: null,
         installed_version: null,
         pinned_version: "model-v2.1.0",
       });

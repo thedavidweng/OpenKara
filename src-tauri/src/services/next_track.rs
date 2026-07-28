@@ -39,23 +39,23 @@ fn normalize_to_output_format(
         audio.channels = target_channels;
     }
 
-    if audio.sample_rate != target_sample_rate {
+    if audio.sample_rate_hz != target_sample_rate {
         audio.samples = linear_resample(
             &audio.samples,
-            audio.sample_rate,
+            audio.sample_rate_hz,
             target_sample_rate,
             audio.channels,
         );
-        audio.sample_rate = target_sample_rate;
+        audio.sample_rate_hz = target_sample_rate;
     }
 
     // Recompute duration_ms from the normalized samples. Guard against
     // division by zero — a valid decoded audio should always have a non-zero
     // sample rate, but the DecodedAudio struct does not enforce this
     // invariant at construction time.
-    if audio.sample_rate > 0 {
+    if audio.sample_rate_hz > 0 {
         if let Some(frames) = audio.samples.len().checked_div(audio.channels) {
-            audio.duration_ms = (frames as u64 * 1000) / audio.sample_rate as u64;
+            audio.duration_ms = (frames as u64 * 1000) / audio.sample_rate_hz as u64;
         }
     }
 
@@ -165,7 +165,7 @@ fn prepare_next_track(
 
     let normalized = normalize_to_output_format(
         load.decoded_audio,
-        output_format.sample_rate,
+        output_format.sample_rate_hz,
         output_format.channels as usize,
     );
 
@@ -292,7 +292,7 @@ mod tests {
             0
         };
         crate::audio::decode::DecodedAudio {
-            sample_rate,
+            sample_rate_hz: sample_rate,
             channels,
             duration_ms,
             samples,
@@ -303,7 +303,7 @@ mod tests {
     fn normalize_same_format_returns_unchanged() {
         let audio = make_audio(44_100, 2, 1000);
         let normalized = normalize_to_output_format(audio.clone(), 44_100, 2);
-        assert_eq!(normalized.sample_rate, 44_100);
+        assert_eq!(normalized.sample_rate_hz, 44_100);
         assert_eq!(normalized.channels, 2);
         assert_eq!(normalized.samples.len(), audio.samples.len());
     }
@@ -331,7 +331,7 @@ mod tests {
     fn normalize_resamples_44100_to_48000() {
         let audio = make_audio(44_100, 2, 4410); // 0.1s at 44.1kHz
         let normalized = normalize_to_output_format(audio, 48_000, 2);
-        assert_eq!(normalized.sample_rate, 48_000);
+        assert_eq!(normalized.sample_rate_hz, 48_000);
         assert_eq!(normalized.channels, 2);
         // 0.1s at 48kHz = 4800 frames
         let expected_frames = 4800;
@@ -445,6 +445,6 @@ mod tests {
     fn normalize_to_output_format_with_zero_sample_rate_does_not_panic() {
         let audio = make_audio(0, 2, 100);
         let normalized = normalize_to_output_format(audio, 44_100, 2);
-        assert_eq!(normalized.sample_rate, 44_100);
+        assert_eq!(normalized.sample_rate_hz, 44_100);
     }
 }

@@ -940,17 +940,17 @@ fn handle_prepare_next<R: Runtime>(runtime: &CoordinatorRuntime<R>, prepared: Pr
     let pre_lock_format = runtime.output_format.read().ok().and_then(|guard| *guard);
     if let Some(current) = pre_lock_format {
         if current.generation != prepared.output_format.generation
-            || current.sample_rate != prepared.output_format.sample_rate
+            || current.sample_rate_hz != prepared.output_format.sample_rate_hz
             || current.channels != prepared.output_format.channels
         {
             eprintln!(
                 "coordinator: dropping stale PrepareNext for {} — output format changed (prepared gen={}, rate={}, ch={} vs current gen={}, rate={}, ch={})",
                 prepared.song_id,
                 prepared.output_format.generation,
-                prepared.output_format.sample_rate,
+                prepared.output_format.sample_rate_hz,
                 prepared.output_format.channels,
                 current.generation,
-                current.sample_rate,
+                current.sample_rate_hz,
                 current.channels,
             );
             return;
@@ -1108,7 +1108,7 @@ mod tests {
 
     fn dummy_audio() -> DecodedAudio {
         DecodedAudio {
-            sample_rate: 44_100,
+            sample_rate_hz: 44_100,
             channels: 2,
             duration_ms: 5_000,
             samples: vec![0.0; 44_100 * 2 * 5],

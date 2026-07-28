@@ -139,14 +139,14 @@ export function createSettingsOverlayActions(
           htdemucs: {
             downloaded: standard.downloaded,
             legacy_install_present: standard.legacy_install_present,
-            file_size: standard.file_size,
+            file_size_bytes: standard.file_size_bytes,
             installed_version: standard.installed_version,
             pinned_version: standard.pinned_version,
           },
           htdemucs_ft: {
             downloaded: hq.downloaded,
             legacy_install_present: hq.legacy_install_present,
-            file_size: hq.file_size,
+            file_size_bytes: hq.file_size_bytes,
             installed_version: hq.installed_version,
             pinned_version: hq.pinned_version,
           },

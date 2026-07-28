@@ -159,9 +159,9 @@ export function MonitorPicker({ onClose, anchorRef }: MonitorPickerProps) {
         addLyrics: t("lyrics.addLyrics"),
       },
       viewport: {
-        widthPx: 1280,
-        heightPx: 720,
-        bottomInsetPx: 0,
+        width_px: 1280,
+        height_px: 720,
+        bottom_inset_px: 0,
       },
       presentationSpec: buildAudiencePresentationSpec(0),
     }).catch(() => {});

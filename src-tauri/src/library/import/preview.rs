@@ -21,8 +21,8 @@ pub fn inspect_import_candidate(path: &str) -> Result<ImportCandidateDetails> {
     Ok(ImportCandidateDetails {
         path: path.to_owned(),
         format: display_audio_format(ext).to_owned(),
-        bit_rate,
-        file_size,
+        bit_rate_bps: bit_rate,
+        file_size_bytes: file_size,
         duration_ms: Some(metadata.duration_ms),
     })
 }

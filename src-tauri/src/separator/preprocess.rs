@@ -25,7 +25,7 @@ pub fn normalize_audio_for_model(decoded_audio: DecodedAudio) -> Result<DecodedA
         );
     }
 
-    if decoded_audio.sample_rate == DEMUCS_SAMPLE_RATE {
+    if decoded_audio.sample_rate_hz == DEMUCS_SAMPLE_RATE {
         return Ok(decoded_audio);
     }
 
@@ -34,7 +34,7 @@ pub fn normalize_audio_for_model(decoded_audio: DecodedAudio) -> Result<DecodedA
         InterleavedSlice::new(&decoded_audio.samples, decoded_audio.channels, frame_count)
             .context("failed to wrap interleaved audio for resampling")?;
     let mut resampler = Fft::<f32>::new_custom(
-        decoded_audio.sample_rate as usize,
+        decoded_audio.sample_rate_hz as usize,
         DEMUCS_SAMPLE_RATE as usize,
         1024,
         2,
@@ -45,7 +45,7 @@ pub fn normalize_audio_for_model(decoded_audio: DecodedAudio) -> Result<DecodedA
     .with_context(|| {
         format!(
             "failed to create resampler from {} Hz to {} Hz",
-            decoded_audio.sample_rate, DEMUCS_SAMPLE_RATE
+            decoded_audio.sample_rate_hz, DEMUCS_SAMPLE_RATE
         )
     })?;
     let output_frame_capacity = resampler.process_all_needed_output_len(frame_count);
@@ -62,7 +62,7 @@ pub fn normalize_audio_for_model(decoded_audio: DecodedAudio) -> Result<DecodedA
     output_samples.truncate(output_frames * decoded_audio.channels);
 
     Ok(DecodedAudio {
-        sample_rate: DEMUCS_SAMPLE_RATE,
+        sample_rate_hz: DEMUCS_SAMPLE_RATE,
         channels: decoded_audio.channels,
         duration_ms: ((output_frames as f64 / DEMUCS_SAMPLE_RATE as f64) * 1000.0).round() as u64,
         samples: output_samples,
