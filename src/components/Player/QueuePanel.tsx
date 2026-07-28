@@ -204,7 +204,7 @@ function SortableQueueItem({
                 type="button"
                 onClick={onMoveUp}
                 disabled={index === 0}
-                className="motion-icon-button rounded text-[var(--color-text-dimmer)] hover:text-[var(--color-control-primary)] disabled:opacity-20"
+                className="motion-icon-button flex min-h-[24px] min-w-[24px] items-center justify-center rounded text-[var(--color-text-dimmer)] hover:text-[var(--color-control-primary)] disabled:opacity-20"
                 aria-label={moveUpLabel}
               >
                 <ChevronUp size={10} />
@@ -215,7 +215,7 @@ function SortableQueueItem({
                 type="button"
                 onClick={onMoveDown}
                 disabled={index === queueLength - 1}
-                className="motion-icon-button rounded text-[var(--color-text-dimmer)] hover:text-[var(--color-control-primary)] disabled:opacity-20"
+                className="motion-icon-button flex min-h-[24px] min-w-[24px] items-center justify-center rounded text-[var(--color-text-dimmer)] hover:text-[var(--color-control-primary)] disabled:opacity-20"
                 aria-label={moveDownLabel}
               >
                 <ChevronDown size={10} />
@@ -252,12 +252,14 @@ function DragOverlayQueueItem({
       isOverlay
       className="w-[272px]"
       handle={
-        <div
+        <button
+          type="button"
+          tabIndex={-1}
           className="-m-1 shrink-0 rounded-md bg-[var(--color-ghost-hover)] p-1 text-[var(--color-control-primary)] shadow-[0_8px_18px_rgba(0,0,0,0.2)]"
           aria-label={dragLabel}
         >
           <GripVertical size={12} />
-        </div>
+        </button>
       }
     />
   );

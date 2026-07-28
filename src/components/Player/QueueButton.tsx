@@ -26,7 +26,10 @@ export function QueueButton() {
       >
         <ListMusic size={18} />
         {queue.length > 0 && (
-          <span className="absolute -right-1.5 -top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[var(--color-accent)] text-[8px] font-bold text-[var(--color-on-accent)]">
+          <span
+            aria-hidden="true"
+            className="absolute -right-1.5 -top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[var(--color-accent)] text-[8px] font-bold text-[var(--color-on-accent)]"
+          >
             {queue.length > 9 ? "9+" : queue.length}
           </span>
         )}

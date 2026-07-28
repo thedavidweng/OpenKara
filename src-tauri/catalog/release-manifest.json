@@ -13,7 +13,13 @@
           "replacement_artifact_id": "htdemucs.spectral.fp32.onnx",
           "sunset_generation": 11
         },
+        "capability_limit": {
+          "channels": 2,
+          "max_segment_seconds": 7.8,
+          "sample_rate_hz": 44100
+        },
         "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/model-v2.1.0/htdemucs.onnx",
+        "evaluation_fixture": null,
         "extracted_file_digests": {
           "htdemucs.onnx": {
             "sha256": "3d85dad9b53c8a6a16d8d8d0518122c2ca750542f39104dc6ace77372c6dc8a9",
@@ -22,6 +28,7 @@
         },
         "filename": "htdemucs.onnx",
         "kind": "model",
+        "known_user_effect": "Requires stereo input; mono and surround audio are rejected. Audio not at 44.1 kHz is resampled before separation. Waveform-interface delivery; no longer loadable by current builds, install the spectral-core replacement.",
         "model": {
           "cache_key": "htdemucs-balanced-fp32-model-v2.1.0",
           "compatible_runtime_ids": [
@@ -92,7 +99,13 @@
           "replacement_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
           "sunset_generation": 11
         },
+        "capability_limit": {
+          "channels": 2,
+          "max_segment_seconds": 7.8,
+          "sample_rate_hz": 44100
+        },
         "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/model-ft-v2.1.0/htdemucs_ft.onnx",
+        "evaluation_fixture": null,
         "extracted_file_digests": {
           "htdemucs_ft.onnx": {
             "sha256": "bf7189043607085299c55379b208067efac12b2c44dddef5f5cc5e789e6cd03b",
@@ -101,6 +114,7 @@
         },
         "filename": "htdemucs_ft.onnx",
         "kind": "model",
+        "known_user_effect": "Requires stereo input; mono and surround audio are rejected. Audio not at 44.1 kHz is resampled before separation. Waveform-interface delivery; no longer loadable by current builds, install the spectral-core replacement.",
         "model": {
           "cache_key": "htdemucs-ft-quality-fp32-model-ft-v2.1.0",
           "compatible_runtime_ids": [
@@ -171,7 +185,13 @@
           "replacement_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
           "sunset_generation": 11
         },
+        "capability_limit": {
+          "channels": 2,
+          "max_segment_seconds": 7.8,
+          "sample_rate_hz": 44100
+        },
         "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/model-derived-v1.0.0/htdemucs_ft.dedup.fp32.onnx",
+        "evaluation_fixture": null,
         "extracted_file_digests": {
           "htdemucs_ft.dedup.fp32.onnx": {
             "sha256": "05b5e94d941667577277e1b4d97029d38d45037439e3daaac76de63d64de6ffd",
@@ -180,6 +200,7 @@
         },
         "filename": "htdemucs_ft.dedup.fp32.onnx",
         "kind": "model",
+        "known_user_effect": "Requires stereo input; mono and surround audio are rejected. Audio not at 44.1 kHz is resampled before separation. Waveform-interface delivery; no longer loadable by current builds, install the spectral-core replacement.",
         "model": {
           "cache_key": "htdemucs-ft-quality-fp32-model-derived-v1.0.0",
           "compatible_runtime_ids": [
@@ -250,7 +271,13 @@
           "replacement_artifact_id": "htdemucs.spectral.fp32.onnx",
           "sunset_generation": 11
         },
+        "capability_limit": {
+          "channels": 2,
+          "max_segment_seconds": 7.8,
+          "sample_rate_hz": 44100
+        },
         "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/model-derived-v1.2.0/htdemucs.dual.fp32.onnx.tar.gz",
+        "evaluation_fixture": null,
         "extracted_file_digests": {
           "htdemucs.dual.fp32.onnx": {
             "sha256": "d4dce4aaf9171b0dc2e717ce1ccf3a75eb44aa7c15fb48646d233cac8149b968",
@@ -259,6 +286,7 @@
         },
         "filename": "htdemucs.dual.fp32.onnx.tar.gz",
         "kind": "model",
+        "known_user_effect": "Requires stereo input; mono and surround audio are rejected. Audio not at 44.1 kHz is resampled before separation. Waveform-interface delivery; no longer loadable by current builds, install the spectral-core replacement.",
         "model": {
           "cache_key": "htdemucs-balanced-fp32-dual-model-derived-v1.1.0",
           "compatible_runtime_ids": [
@@ -329,7 +357,13 @@
           "replacement_artifact_id": "htdemucs_ft.spectral.fp32.onnx",
           "sunset_generation": 11
         },
+        "capability_limit": {
+          "channels": 2,
+          "max_segment_seconds": 7.8,
+          "sample_rate_hz": 44100
+        },
         "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/model-derived-v1.2.0/htdemucs_ft.dual.fp32.onnx.tar.gz",
+        "evaluation_fixture": null,
         "extracted_file_digests": {
           "htdemucs_ft.dual.fp32.onnx": {
             "sha256": "6274ea282a3e64cc5ac5375dc3f8171b88b6d85ce4ce5f679850168b220ab52d",
@@ -338,6 +372,7 @@
         },
         "filename": "htdemucs_ft.dual.fp32.onnx.tar.gz",
         "kind": "model",
+        "known_user_effect": "Requires stereo input; mono and surround audio are rejected. Audio not at 44.1 kHz is resampled before separation. Waveform-interface delivery; no longer loadable by current builds, install the spectral-core replacement.",
         "model": {
           "cache_key": "htdemucs-ft-quality-fp32-dual-model-derived-v1.1.0",
           "compatible_runtime_ids": [
@@ -407,7 +442,13 @@
           "replacement_artifact_id": null,
           "sunset_generation": null
         },
+        "capability_limit": {
+          "channels": 2,
+          "max_segment_seconds": 7.8,
+          "sample_rate_hz": 44100
+        },
         "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/model-spectral-v1.0.0/htdemucs.spectral.onnx",
+        "evaluation_fixture": "openkara.spectral-contract/v1",
         "extracted_file_digests": {
           "htdemucs.spectral.onnx": {
             "sha256": "c3395410b1319976683bc874d97461655a9ea6089bbb0f3bd163d3829db13d02",
@@ -416,6 +457,7 @@
         },
         "filename": "htdemucs.spectral.onnx",
         "kind": "model",
+        "known_user_effect": "Requires stereo input; mono and surround audio are rejected. Audio not at 44.1 kHz is resampled before separation. The spectral transform discards the Nyquist bin (22050 Hz), so content at and above 22 kHz is not represented in the separated stems.",
         "model": {
           "cache_key": "htdemucs-spectral-fp32-model-spectral-v1.0.0",
           "compatible_runtime_ids": [
@@ -490,7 +532,13 @@
           "replacement_artifact_id": null,
           "sunset_generation": null
         },
+        "capability_limit": {
+          "channels": 2,
+          "max_segment_seconds": 7.8,
+          "sample_rate_hz": 44100
+        },
         "download_url": "https://github.com/thedavidweng/openkara-models/releases/download/model-ft-spectral-v1.0.0/htdemucs_ft.spectral.onnx",
+        "evaluation_fixture": "openkara.spectral-contract/v1",
         "extracted_file_digests": {
           "htdemucs_ft.spectral.onnx": {
             "sha256": "af604e3cceb04f1537547bb2edde16fed7cb065d2c8659a0b348bdd9ac16c3a4",
@@ -499,6 +547,7 @@
         },
         "filename": "htdemucs_ft.spectral.onnx",
         "kind": "model",
+        "known_user_effect": "Requires stereo input; mono and surround audio are rejected. Audio not at 44.1 kHz is resampled before separation. The spectral transform discards the Nyquist bin (22050 Hz), so content at and above 22 kHz is not represented in the separated stems.",
         "model": {
           "cache_key": "htdemucs-ft-spectral-fp32-model-ft-spectral-v1.0.0",
           "compatible_runtime_ids": [

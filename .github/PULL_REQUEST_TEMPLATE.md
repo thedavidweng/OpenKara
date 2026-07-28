@@ -6,6 +6,10 @@ Brief description of the changes.
 
 -
 
+## Acceptance criteria
+
+Link to the issue's acceptance criteria, or list them here if this PR has no linked issue.
+
 ## Test plan
 
 Report the commands you ran, and say which you skipped and why.

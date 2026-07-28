@@ -30,6 +30,20 @@
 21. `playlists` 表和 `playlist_songs` 表通过 `ON DELETE CASCADE` 与 `songs` 表联动；删除歌曲时自动清理关联
 22. `set_library_sort_mode(mode: LibrarySortMode) -> AppSettings` — 持久化资料库排序模式并返回更新后的全局设置
 23. `get_cover_art(hash: String, size?: CoverArtSize) -> Option<Vec<u8>>` — 读取封面图原始字节或派生缩略图/预览图
+24. `get_import_candidate_details(paths: Vec<String>) -> Vec<ImportCandidateDetails>` — 预览导入候选文件的格式、比特率、文件大小和时长
+25. `delete_songs(song_ids: Vec<String>) -> DeleteSongsResult` — 批量删除歌曲及其关联数据
+26. `update_song_metadata(hash: String, title: Option<String>, artist: Option<String>) -> Song` — 更新单首歌曲的标题和歌手元数据
+27. `set_songs_language(song_ids: Vec<String>, language: Option<String>) -> Vec<Song>` — 批量设置歌曲语言标签
+28. `get_song_properties(song_id: String) -> SongProperties` — 读取单首歌曲的技术属性（格式、采样率、声道、比特率、文件大小、时长）
+29. `create_library(path: String) -> LibraryRegistrySnapshot` — 在指定路径创建新本地资料库并设为活动
+30. `open_library(path: String) -> LibraryRegistrySnapshot` — 打开指定路径的已有本地资料库并设为活动
+31. `switch_library(library_id: String) -> LibraryRegistrySnapshot` — 切换活动资料库
+32. `get_library_path() -> Option<String>` — 返回活动资料库的 canonicalized 根路径
+33. `get_library_registry() -> LibraryRegistrySnapshot` — 返回所有已注册资料库及当前活动资料库 ID
+34. `get_active_library() -> Option<RegisteredLibrary>` — 返回当前活动资料库的注册条目
+35. `remove_library(library_id: String) -> LibraryRegistrySnapshot` — 移除资料库注册（本地不删文件，远程只移除凭据）
+36. `rename_library(library_id: String, display_name: String) -> LibraryRegistrySnapshot` — 重命名资料库显示名
+37. `delete_library(library_id: String) -> LibraryRegistrySnapshot` — 永久删除资料库（本地删除文件，远程删除 provider 内容）
 
 ## Inputs / outputs / required dependencies
 
@@ -281,6 +295,233 @@
    - 验证成功后才写入新凭据、保存新的 remote root locator，并刷新本地 working copy。
    - 若位置变化且 `allow_relocation=false`，返回错误，等待 UI 进行用户确认。
 
+### Command: `begin_remote_auth`
+
+**Input**
+
+```json
+{
+  "provider": "google_drive",
+  "payload": null
+}
+```
+
+`provider` is one of `google_drive`, `dropbox`, `webdav`. `payload` is an optional provider-specific JSON object (e.g. WebDAV server URL and credentials).
+
+**Output:** `RemoteAuthStart`
+
+```json
+{
+  "session_id": "session-uuid",
+  "provider": "google_drive",
+  "authorization_url": "https://...",
+  "expires_at_ms": 1760000000000
+}
+```
+
+**Semantics**
+
+1. Starts an OAuth or WebDAV authentication session for the given provider
+2. For OAuth providers, returns an `authorization_url` the frontend opens in the system browser
+3. For WebDAV, the `payload` carries the server URL and credentials; no browser redirect is needed
+4. The session ID is used by `poll_remote_auth` and `cancel_remote_auth`
+
+### Command: `poll_remote_auth`
+
+**Input**
+
+```json
+{
+  "session_id": "session-uuid"
+}
+```
+
+**Output:** `RemoteAuthStatus`
+
+```json
+{
+  "session_id": "session-uuid",
+  "provider": "google_drive",
+  "state": "ready",
+  "remote_root_locator": "google_drive://account-id/path",
+  "display_name": "My Drive",
+  "error": null
+}
+```
+
+**Semantics**
+
+1. `state` is one of `pending`, `ready`, `failed`
+2. The frontend polls this command until `state` is `ready` or `failed`
+3. When `state = ready`, `remote_root_locator` and `display_name` are set
+4. When `state = failed`, `error` contains a `CommandError`
+
+### Command: `cancel_remote_auth`
+
+**Input**
+
+```json
+{
+  "session_id": "session-uuid"
+}
+```
+
+**Output:** `()`
+
+**Semantics**
+
+1. Cancels an in-progress authentication session
+2. After cancellation, `poll_remote_auth` for the same session ID returns `failed`
+
+### Command: `open_external_url`
+
+**Input**
+
+```json
+{
+  "url": "https://..."
+}
+```
+
+**Output:** `()`
+
+**Semantics**
+
+1. Opens the given URL in the system default browser
+2. Used for OAuth authorization URLs and help links
+
+### Command: `list_remote_library_roots`
+
+**Input**
+
+```json
+{
+  "session_id": "session-uuid"
+}
+```
+
+**Output:** `Vec<RemoteLibraryCandidate>`
+
+**Semantics**
+
+1. Lists existing OpenKara library directories found in the authenticated provider account
+2. Each candidate includes the provider, remote root locator, display name, and account ID
+3. The frontend shows these as options when the user chooses which remote library to register
+
+### Command: `create_remote_library`
+
+**Input**
+
+```json
+{
+  "session_id": "session-uuid",
+  "display_name": "My New Library"
+}
+```
+
+**Output:** `RemoteLibraryCandidate`
+
+**Semantics**
+
+1. Creates a new OpenKara library directory in the authenticated provider account
+2. Does not register the library in app config; the frontend calls `register_remote_library` after the user confirms
+3. Returns the candidate with the new remote root locator
+
+### Command: `register_remote_library`
+
+**Input**
+
+```json
+{
+  "session_id": "session-uuid",
+  "remote_root_locator": "google_drive://account-id/path",
+  "display_name": "My Remote Library"
+}
+```
+
+**Output:** `LibraryRegistrySnapshot`
+
+**Semantics**
+
+1. Registers the remote library in app config using the authenticated session
+2. Downloads the remote `openkara.db` and media files to the local working copy
+3. Sets the new library as the active library
+4. If the remote location does not contain a valid OpenKara library, the command returns `CommandError`
+
+### Command: `get_all_upload_statuses`
+
+**Input**: none
+
+**Output:** `Vec<UploadStatusSnapshot>`
+
+```json
+[
+  {
+    "song_id": "sha256 song hash",
+    "state": "running",
+    "percent": 42,
+    "remote_library_id": "library-uuid",
+    "detail": null,
+    "error": null
+  }
+]
+```
+
+**Semantics**
+
+1. Returns the current upload status for all songs that have an active or recent upload
+2. `state` is one of `idle`, `running`, `completed`, `failed`
+3. The frontend uses this to show upload progress indicators in the library
+
+### Shared type: `RemoteAuthStart`
+
+| Field               | Type                    | Notes                                           |
+| ------------------- | ----------------------- | ----------------------------------------------- |
+| `session_id`        | `String`                | Session ID for polling and cancellation         |
+| `provider`          | `RemoteLibraryProvider` | The provider being authenticated                |
+| `authorization_url` | `Option<String>`        | OAuth URL to open in browser; `null` for WebDAV |
+| `expires_at_ms`     | `Option<i64>`           | Session expiry wall-clock ms                    |
+
+### Shared type: `RemoteAuthStatus`
+
+| Field                 | Type                    | Notes                           |
+| --------------------- | ----------------------- | ------------------------------- |
+| `session_id`          | `String`                | Session ID                      |
+| `provider`            | `RemoteLibraryProvider` | The provider                    |
+| `state`               | `RemoteAuthState`       | `pending`, `ready`, or `failed` |
+| `remote_root_locator` | `Option<String>`        | Set when `state = ready`        |
+| `display_name`        | `Option<String>`        | Set when `state = ready`        |
+| `error`               | `Option<CommandError>`  | Set when `state = failed`       |
+
+### Shared type: `RemoteLibraryCandidate`
+
+| Field                 | Type                    | Notes                               |
+| --------------------- | ----------------------- | ----------------------------------- |
+| `provider`            | `RemoteLibraryProvider` | The provider                        |
+| `remote_root_locator` | `String`                | Provider-specific root locator      |
+| `remote_path_display` | `String`                | Human-readable path in the provider |
+| `display_name`        | `String`                | Library display name                |
+| `account_id`          | `String`                | Provider account ID                 |
+
+### Shared type: `UploadStatusSnapshot`
+
+| Field               | Type                   | Notes                                       |
+| ------------------- | ---------------------- | ------------------------------------------- |
+| `song_id`           | `String`               | The song hash                               |
+| `state`             | `UploadState`          | `idle`, `running`, `completed`, or `failed` |
+| `percent`           | `u8`                   | Upload progress (0–100)                     |
+| `remote_library_id` | `Option<String>`       | Target remote library ID                    |
+| `detail`            | `Option<String>`       | Diagnostic detail string                    |
+| `error`             | `Option<CommandError>` | Set when `state = failed`                   |
+
+### Shared enum: `RemoteLibraryProvider`
+
+| Serialized value | Meaning      |
+| ---------------- | ------------ |
+| `google_drive`   | Google Drive |
+| `dropbox`        | Dropbox      |
+| `web_dav`        | WebDAV       |
+
 ### Command: `set_songs_instrumental`
 
 **Input**
@@ -301,6 +542,298 @@
 3. `instrumental = true` 表示该歌曲被视为官方伴奏，不参与 AI 分离
 4. `Media+G` 歌曲当前不会由前端发起该命令，但后端字段本身不额外限制素材类型
 5. 若任一 `song_id` 不存在，命令返回顶层 `CommandError`
+
+### Command: `get_import_candidate_details`
+
+**Input**
+
+```json
+{
+  "paths": ["/absolute/or/relative/audio/path.mp3"]
+}
+```
+
+**Output:** `Vec<ImportCandidateDetails>`
+
+```json
+[
+  {
+    "path": "/music/track.mp3",
+    "format": "mp3",
+    "bit_rate": 320000,
+    "file_size": 5242880,
+    "duration_ms": 180000
+  }
+]
+```
+
+**Semantics**
+
+1. Reads each path and probes its audio format, bit rate, file size, and duration
+2. Does not write to the database or copy media
+3. The frontend uses this to show file details in the import confirmation dialog
+4. If a file cannot be read or probed, the command returns `CommandError` with `code = media_read_failed`
+
+### Command: `delete_songs`
+
+**Input**
+
+```json
+{
+  "song_ids": ["sha256 song hash"]
+}
+```
+
+**Output:** `DeleteSongsResult`
+
+```json
+{
+  "deleted_song_ids": ["sha256 song hash"],
+  "failed": [
+    {
+      "song_id": "sha256 song hash",
+      "error": {
+        "code": "media_read_failed",
+        "message": "failed to delete song files",
+        "retryable": false,
+        "fallback": "keep_current_state"
+      }
+    }
+  ]
+}
+```
+
+**Semantics**
+
+1. Deletes each song's database rows (lyrics, history, stems, playlist FKs) and managed media files
+2. A single song failure does not abort the batch; failures fall into `failed`
+3. If the currently playing song is among the deleted songs, the backend clears the playback track and CDG state
+4. Returns the list of successfully deleted song IDs and per-song failures
+
+### Command: `update_song_metadata`
+
+**Input**
+
+```json
+{
+  "hash": "sha256 song hash",
+  "title": "optional new title",
+  "artist": "optional new artist"
+}
+```
+
+**Output:** `Song` — the updated song with absolute thumbnail path.
+
+**Semantics**
+
+1. Updates `songs.title` and `songs.artist` for the given hash
+2. `null` for `title` or `artist` clears the field; the field name is retained for IPC stability
+3. The command publishes the updated song to the active remote library if one is connected
+4. If the song does not exist, the command returns `CommandError`
+
+### Command: `set_songs_language`
+
+**Input**
+
+```json
+{
+  "song_ids": ["sha256 song hash"],
+  "language": "en"
+}
+```
+
+Pass `null` for `language` to clear the language tag.
+
+**Output:** `Vec<Song>`
+
+**Semantics**
+
+1. Batch-updates `songs.language` for each requested song
+2. Returns the updated songs with absolute thumbnail paths
+3. The command mirrors the change to the active remote library if one is connected
+4. If any `song_id` does not exist, the command returns `CommandError`
+
+### Command: `get_song_properties`
+
+**Input**
+
+```json
+{
+  "song_id": "sha256 song hash"
+}
+```
+
+**Output:** `SongProperties`
+
+```json
+{
+  "format": "mp3",
+  "sample_rate": 44100,
+  "channels": 2,
+  "bit_rate": 320000,
+  "file_size": 5242880,
+  "duration_ms": 180000,
+  "hash": "sha256 song hash"
+}
+```
+
+**Semantics**
+
+1. Probes the song file on disk for technical properties (format, sample rate, channels, bit rate, file size, duration)
+2. For remote songs, the command ensures the file is cached before probing
+3. If the song does not exist, the command returns `CommandError`
+
+### Command: `create_library`
+
+**Input**
+
+```json
+{
+  "path": "/path/to/new/library"
+}
+```
+
+**Output:** `LibraryRegistrySnapshot`
+
+**Semantics**
+
+1. Creates a new library directory structure at the given path
+2. Initializes the library SQLite database
+3. Registers the library in app config and sets it as the active library
+4. If the path already contains a library, the command returns `CommandError`
+
+### Command: `open_library`
+
+**Input**
+
+```json
+{
+  "path": "/path/to/existing/library"
+}
+```
+
+**Output:** `LibraryRegistrySnapshot`
+
+**Semantics**
+
+1. Opens an existing library directory at the given path
+2. Initializes the library SQLite database if needed
+3. Registers the library in app config and sets it as the active library
+4. If the path does not contain a valid library, the command returns `CommandError`
+
+### Command: `switch_library`
+
+**Input**
+
+```json
+{
+  "library_id": "library-uuid"
+}
+```
+
+**Output:** `LibraryRegistrySnapshot`
+
+**Semantics**
+
+1. Switches the active library to the one identified by `library_id`
+2. Clears all library-scoped runtime state (playback, CDG, remote upload statuses) before activating the new library
+3. If the library ID is not found, the command returns `CommandError`
+
+### Command: `get_library_path`
+
+**Input**: none
+
+**Output:** `Option<String>` — the canonicalized absolute path of the active library root, or `null` when no library is active.
+
+### Command: `get_library_registry`
+
+**Input**: none
+
+**Output:** `LibraryRegistrySnapshot`
+
+```json
+{
+  "active_library_id": "library-uuid",
+  "libraries": [
+    {
+      "kind": "local",
+      "id": "library-uuid",
+      "display_name": "My Library",
+      "root_path": "/path/to/library"
+    }
+  ]
+}
+```
+
+**Semantics**
+
+1. Reads the app config and returns all registered libraries plus the active library ID
+2. Does not open any database or touch disk
+
+### Command: `get_active_library`
+
+**Input**: none
+
+**Output:** `Option<RegisteredLibrary>` — the active library entry, or `null` when no library is active.
+
+### Command: `remove_library`
+
+**Input**
+
+```json
+{
+  "library_id": "library-uuid"
+}
+```
+
+**Output:** `LibraryRegistrySnapshot`
+
+**Semantics**
+
+1. Removes the library from app config and removes its stored credentials
+2. For local libraries, does not delete files on disk
+3. For remote libraries, removes only local credentials and registration; provider-hosted content is not deleted
+4. If the removed library was active, the backend activates the first remaining library or clears all library-scoped state when no library remains
+5. If the library ID is not found, the command returns `CommandError`
+
+### Command: `rename_library`
+
+**Input**
+
+```json
+{
+  "library_id": "library-uuid",
+  "display_name": "New Name"
+}
+```
+
+**Output:** `LibraryRegistrySnapshot`
+
+**Semantics**
+
+1. Updates the display name of the registered library in app config
+2. Does not rename the library directory on disk
+3. If the library ID is not found, the command returns `CommandError`
+
+### Command: `delete_library`
+
+**Input**
+
+```json
+{
+  "library_id": "library-uuid"
+}
+```
+
+**Output:** `LibraryRegistrySnapshot`
+
+**Semantics**
+
+1. Permanently deletes the library data, then calls `remove_library`
+2. For local libraries, deletes the entire library directory from disk
+3. For remote libraries, deletes the provider-hosted content and the local working copy
+4. The UI must present this as a permanent destructive action
+5. If the library ID is not found, the command returns `CommandError`
 
 ### Shared type: `Song`
 
@@ -350,6 +883,58 @@
 | --------- | -------------- | -------------------- |
 | `song_id` | `String`       | 请求中的歌曲 hash    |
 | `error`   | `CommandError` | 单首失败的结构化错误 |
+
+### Shared type: `ImportCandidateDetails`
+
+| Field         | Type          | Notes                             |
+| ------------- | ------------- | --------------------------------- |
+| `path`        | `String`      | The probed file path              |
+| `format`      | `String`      | Audio format (e.g. `mp3`, `flac`) |
+| `bit_rate`    | `Option<u32>` | Bit rate in bits per second       |
+| `file_size`   | `u64`         | File size in bytes                |
+| `duration_ms` | `Option<i64>` | Duration in milliseconds          |
+
+### Shared type: `DeleteSongsResult`
+
+| Field              | Type                      | Notes                                       |
+| ------------------ | ------------------------- | ------------------------------------------- |
+| `deleted_song_ids` | `Vec<String>`             | Successfully deleted song hashes            |
+| `failed`           | `Vec<DeleteSongsFailure>` | Per-song failures, allowing partial success |
+
+### Shared type: `DeleteSongsFailure`
+
+| Field     | Type           | Notes              |
+| --------- | -------------- | ------------------ |
+| `song_id` | `String`       | The song hash      |
+| `error`   | `CommandError` | The failure reason |
+
+### Shared type: `SongProperties`
+
+| Field         | Type          | Notes                             |
+| ------------- | ------------- | --------------------------------- |
+| `format`      | `String`      | Audio format (e.g. `mp3`, `flac`) |
+| `sample_rate` | `Option<u32>` | Sample rate in Hz                 |
+| `channels`    | `Option<u16>` | Number of audio channels          |
+| `bit_rate`    | `Option<u32>` | Bit rate in bits per second       |
+| `file_size`   | `u64`         | File size in bytes                |
+| `duration_ms` | `i64`         | Duration in milliseconds          |
+| `hash`        | `String`      | The song hash                     |
+
+### Shared type: `LibraryRegistrySnapshot`
+
+| Field               | Type                     | Notes                        |
+| ------------------- | ------------------------ | ---------------------------- |
+| `active_library_id` | `Option<String>`         | Active library ID, or `null` |
+| `libraries`         | `Vec<RegisteredLibrary>` | All registered libraries     |
+
+### Shared type: `RegisteredLibrary`
+
+Tagged union with `kind` discriminator.
+
+| Variant  | Fields                                                                                                                                                    | Notes                            |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `local`  | `id`, `display_name`, `root_path`                                                                                                                         | A local on-disk library          |
+| `remote` | `id`, `display_name`, `provider`, `account_id`, `remote_root_locator`, `remote_path_display`, `connection_config?`, `cached_db_path?`, `remote_revision?` | A provider-hosted remote library |
 
 ### Command: `set_library_sort_mode`
 

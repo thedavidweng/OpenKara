@@ -239,18 +239,20 @@ export function SongPropertiesDialog({
                     {t("songProperties.instrumental")}
                   </span>
                   <label className="flex items-center gap-2 text-[12px] text-[var(--color-text)]">
-                    <input
-                      type="checkbox"
-                      checked={currentSong.instrumental}
-                      onChange={(event) =>
-                        void setSongsInstrumental(
-                          [currentSong.hash],
-                          event.target.checked,
-                        )
-                      }
-                      aria-label={t("songProperties.instrumental")}
-                      className="h-4 w-4 rounded border-[var(--color-border-light)] bg-[var(--color-surface)] accent-[var(--color-accent)]"
-                    />
+                    <span className="flex min-h-[24px] min-w-[24px] items-center justify-center">
+                      <input
+                        type="checkbox"
+                        checked={currentSong.instrumental}
+                        onChange={(event) =>
+                          void setSongsInstrumental(
+                            [currentSong.hash],
+                            event.target.checked,
+                          )
+                        }
+                        aria-label={t("songProperties.instrumental")}
+                        className="h-4 w-4 rounded border-[var(--color-border-light)] bg-[var(--color-surface)] accent-[var(--color-accent)]"
+                      />
+                    </span>
                   </label>
                 </div>
               )}

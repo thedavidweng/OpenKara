@@ -100,7 +100,11 @@ export function UpdateBanner() {
   if (phase === "downloading") {
     return (
       <div className={containerClass}>
-        <div className="flex items-center gap-2 text-[12px] text-[var(--color-text)]">
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-center gap-2 text-[12px] text-[var(--color-text)]"
+        >
           <Loader2 size={12} className="animate-spin" />
           {t("updater.downloading", { percent })}
         </div>
