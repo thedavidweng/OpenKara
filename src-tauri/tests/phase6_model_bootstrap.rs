@@ -90,14 +90,15 @@ fn managed_model_resolution_never_uses_the_development_fallback() {
     let dev_bytes = b"development-model";
     write_file(&dev_path, dev_bytes);
 
-    let resolution = bootstrap::resolve_existing_managed_model_path(
-        &managed_path,
-        &sha256_hex(dev_bytes),
-    )
-    .expect("managed-only resolution should succeed");
+    let resolution =
+        bootstrap::resolve_existing_managed_model_path(&managed_path, &sha256_hex(dev_bytes))
+            .expect("managed-only resolution should succeed");
 
     assert!(resolution.is_none());
-    assert!(dev_path.exists(), "test setup must retain a valid dev model");
+    assert!(
+        dev_path.exists(),
+        "test setup must retain a valid dev model"
+    );
 
     remove_dir_if_exists(&temp_dir);
 }

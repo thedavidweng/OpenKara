@@ -107,12 +107,7 @@ pub fn ensure_active_model_ready_or_install_blocking(
     status: &Arc<Mutex<ModelBootstrapStatusSnapshot>>,
     emit: &mut impl FnMut(&'static str, ModelBootstrapStatusSnapshot),
 ) -> CommandResult<std::path::PathBuf> {
-    ensure_active_model_ready_or_install_blocking_with_resolution(
-        app_data_dir,
-        status,
-        emit,
-        true,
-    )
+    ensure_active_model_ready_or_install_blocking_with_resolution(app_data_dir, status, emit, true)
 }
 
 /// Same production download/install path as separation, restricted to the
@@ -123,12 +118,7 @@ pub fn ensure_active_managed_model_ready_or_install_blocking(
     status: &Arc<Mutex<ModelBootstrapStatusSnapshot>>,
     emit: &mut impl FnMut(&'static str, ModelBootstrapStatusSnapshot),
 ) -> CommandResult<std::path::PathBuf> {
-    ensure_active_model_ready_or_install_blocking_with_resolution(
-        app_data_dir,
-        status,
-        emit,
-        false,
-    )
+    ensure_active_model_ready_or_install_blocking_with_resolution(app_data_dir, status, emit, false)
 }
 
 fn ensure_active_model_ready_or_install_blocking_with_resolution(
@@ -159,8 +149,8 @@ fn ensure_active_model_ready_or_install_blocking_with_resolution(
         )
     };
 
-    let resolution =
-        resolution.map_err(|error| internal_error(format!("failed to inspect model status: {error}")))?;
+    let resolution = resolution
+        .map_err(|error| internal_error(format!("failed to inspect model status: {error}")))?;
 
     match resolution {
         separator::bootstrap::ModelInstallationResolution::Ready(resolved) => {

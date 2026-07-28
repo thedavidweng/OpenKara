@@ -152,8 +152,7 @@ fn run(config: AutomationSmokeConfig) -> Result<()> {
     )));
     let mut runtime_events: Vec<BootstrapEvent<runtime_bootstrap::RuntimeBootstrapStatusSnapshot>> =
         Vec::new();
-    let mut model_events: Vec<BootstrapEvent<bootstrap::ModelBootstrapStatusSnapshot>> =
-        Vec::new();
+    let mut model_events: Vec<BootstrapEvent<bootstrap::ModelBootstrapStatusSnapshot>> = Vec::new();
 
     let model_path = separation::ensure_runtime_and_managed_model_blocking(
         &config.app_data_dir,
@@ -211,9 +210,15 @@ fn run(config: AutomationSmokeConfig) -> Result<()> {
     let report_path = config.output_dir.join(REPORT_FILENAME);
     fs::write(
         &report_path,
-        serde_json::to_string_pretty(&report).context("failed to serialize installed app report")?,
+        serde_json::to_string_pretty(&report)
+            .context("failed to serialize installed app report")?,
     )
-    .with_context(|| format!("failed to write installed app report {}", report_path.display()))?;
+    .with_context(|| {
+        format!(
+            "failed to write installed app report {}",
+            report_path.display()
+        )
+    })?;
 
     Ok(())
 }

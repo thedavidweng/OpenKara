@@ -234,10 +234,14 @@ pub fn resolve_existing_managed_model_path(
     managed_path: &Path,
     expected_sha256: &str,
 ) -> Result<Option<ResolvedModelPath>> {
-    Ok(match resolve_managed_model_installation(managed_path, expected_sha256)? {
-        ModelInstallationResolution::Ready(path) => Some(path),
-        ModelInstallationResolution::LegacyManaged(_) | ModelInstallationResolution::Absent => None,
-    })
+    Ok(
+        match resolve_managed_model_installation(managed_path, expected_sha256)? {
+            ModelInstallationResolution::Ready(path) => Some(path),
+            ModelInstallationResolution::LegacyManaged(_) | ModelInstallationResolution::Absent => {
+                None
+            }
+        },
+    )
 }
 
 /// Download and install a model through the shared artifact plumbing:
