@@ -71,7 +71,7 @@ test.describe("Accessibility", () => {
     await settingsButton.focus();
 
     await page.keyboard.press("Enter");
-    const settingsDialog = page.getByRole("dialog", { name: "Settings" });
+    const settingsDialog = page.getByRole("dialog", { name: "Preferences" });
     const closeButton = settingsDialog.getByRole("button", { name: "Close" });
 
     await expect(settingsDialog).toBeVisible();
