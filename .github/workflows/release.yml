@@ -31,7 +31,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      contents: read
+      # contents: write is required to read draft releases (release-please
+      # creates the release as a draft; the GitHub API hides drafts from
+      # tokens with only contents: read).
+      contents: write
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
@@ -74,13 +77,32 @@ jobs:
           fi
           echo "package.json version ${package_version} matches release ${RELEASE_TAG}."
 
-      - name: Generate release notes with git-cliff
+      - name: Build release notes
         id: notes
         env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
           INPUT_NOTES: ${{ github.event.inputs.notes }}
         run: |
-          npx git-cliff --tag "${RELEASE_TAG}" --strip header -o RELEASE_NOTES.md
+          set -euo pipefail
+
+          # release-please creates the draft release with changelog notes.
+          # Draft releases are hidden from the tag endpoint, so fall back to
+          # the releases list (same pattern as scripts/release-metadata.mjs).
+          if gh release view "${RELEASE_TAG}" --json body -q .body > RELEASE_NOTES.md 2>/dev/null; then
+            echo "Found release for ${RELEASE_TAG} via tag endpoint"
+          else
+            release_body="$(gh api "repos/${GH_REPO}/releases" --paginate \
+              --jq "[.[] | select(.tag_name == \"${RELEASE_TAG}\")] | .[0].body // empty" 2>/dev/null || true)"
+            if [ -n "${release_body}" ]; then
+              echo "${release_body}" > RELEASE_NOTES.md
+              echo "Found draft release for ${RELEASE_TAG} via releases list"
+            else
+              echo "::warning::No release found for ${RELEASE_TAG}. Using minimal release notes."
+              echo "## Release ${RELEASE_TAG}" > RELEASE_NOTES.md
+            fi
+          fi
 
           # Append installation section. Mirrors README "Install from Release"
           # so users can install straight from the GitHub Release page.
@@ -119,14 +141,14 @@ jobs:
           INSTALL_EOF
 
           {
-            echo 'body<<GIT_CLIFF_EOF'
+            echo 'body<<RELEASE_NOTES_EOF'
             cat RELEASE_NOTES.md
-            echo ""
             if [ -n "${INPUT_NOTES}" ]; then
+              echo ""
               echo "---"
               echo "${INPUT_NOTES}"
             fi
-            echo 'GIT_CLIFF_EOF'
+            echo 'RELEASE_NOTES_EOF'
           } >> "$GITHUB_OUTPUT"
 
       - name: Upload release notes
@@ -620,44 +642,6 @@ jobs:
           sha256sum "${files[@]}" > SHA256SUMS
           cat SHA256SUMS
           gh release upload "${RELEASE_TAG}" SHA256SUMS --clobber
-
-  update-changelog:
-    name: Update CHANGELOG
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    needs: [prepare-release, publish]
-    permissions:
-      contents: write # push CHANGELOG commit to main
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: main
-          persist-credentials: false
-
-      - name: Generate CHANGELOG
-        env:
-          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
-        run: npx git-cliff --tag "${RELEASE_TAG}" -o CHANGELOG.md
-
-      - name: Format CHANGELOG
-        run: npx oxfmt CHANGELOG.md
-
-      - name: Commit and push CHANGELOG
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add CHANGELOG.md
-          if git diff --cached --quiet; then
-            echo "CHANGELOG unchanged"
-            exit 0
-          fi
-          git commit -m "docs: update CHANGELOG for ${RELEASE_TAG}"
-          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push
 
   prepare-distribution-manifests:
     name: Prepare distribution manifests

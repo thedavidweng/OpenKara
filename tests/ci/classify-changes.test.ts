@@ -163,8 +163,13 @@ describe("classifyFile", () => {
     ]);
   });
 
-  test("cliff.toml is release_metadata", () => {
-    expect(classifyFile("cliff.toml")).toEqual(["release_metadata"]);
+  test("release-please config files are release_metadata", () => {
+    expect(classifyFile("release-please-config.json")).toEqual([
+      "release_metadata",
+    ]);
+    expect(classifyFile(".release-please-manifest.json")).toEqual([
+      "release_metadata",
+    ]);
   });
 
   test("unmapped file has no categories", () => {

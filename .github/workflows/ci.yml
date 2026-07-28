@@ -541,8 +541,8 @@ jobs:
 
   # ── Release validation ───────────────────────────────────────────────
   # Focused validation for release-workflow and release-metadata changes.
-  # Runs the release-workflow and release-metadata contract tests and
-  # verifies cliff.toml parses. Does not run app/frontend/Rust CI.
+  # Runs the release-workflow and release-metadata contract tests. Does not
+  # run app/frontend/Rust CI.
   release-validation:
     name: Release validation
     needs: triage
@@ -578,16 +578,6 @@ jobs:
           pnpm vitest run \
             tests/release-workflow.test.ts \
             tests/release-metadata.test.ts
-
-      - name: Verify cliff.toml parses
-        run: |
-          if ! command -v git-cliff &>/dev/null; then
-            echo "git-cliff not installed, skipping parse check"
-            exit 0
-          fi
-          # Verify the config is parseable by generating an empty changelog.
-          # A parse failure must exit non-zero so release-validation fails.
-          git cliff --unreleased --tag 0.0.0-test --output /dev/null
 
   dependency-checks:
     name: Dependency surface checks
