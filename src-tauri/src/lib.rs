@@ -1,6 +1,8 @@
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
 pub mod airplay_stream;
+#[cfg(feature = "automation-smoke")]
+pub mod automation_smoke;
 mod app_menu;
 mod app_runtime;
 pub mod audio;

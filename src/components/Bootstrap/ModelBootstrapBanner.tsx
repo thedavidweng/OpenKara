@@ -30,7 +30,12 @@ export function ModelBootstrapBanner() {
   if (!status || status.state === "ready") return null;
 
   return (
-    <div className="animate-expand shrink-0 border-b border-[var(--color-border)] bg-[var(--color-sidebar)] px-4 py-3">
+    <div
+      className="animate-expand shrink-0 border-b border-[var(--color-border)] bg-[var(--color-sidebar)] px-4 py-3"
+      role={status.state === "failed" ? "alert" : "status"}
+      aria-live={status.state === "failed" ? "assertive" : "polite"}
+      aria-atomic="true"
+    >
       {status.state === "pending" && (
         <div className="flex items-center justify-between">
           <span className="text-[12px] text-[var(--color-text)]">

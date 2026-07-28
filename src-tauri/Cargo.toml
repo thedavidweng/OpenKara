@@ -14,6 +14,11 @@ name = "openkara_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 doctest = false
 
+[features]
+# Enables a release-CI-only command line on the packaged desktop executable.
+# Normal user builds do not contain this test entry point.
+automation-smoke = []
+
 [[bin]]
 name = "openkara"
 path = "src/main.rs"

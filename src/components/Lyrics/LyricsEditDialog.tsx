@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useModalDialog } from "@/hooks/use-modal-dialog";
 import { useLyricsStore } from "@/stores/lyrics-store";
 
 interface LyricsEditDialogProps {
@@ -36,6 +37,8 @@ function LyricsEditDialogContent({
   const [text, setText] = useState(existingLyrics ?? "");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const headingId = `lyrics-edit-heading-${songId}`;
   const textareaId = `lyrics-edit-text-${songId}`;
   const errorId = `lyrics-edit-error-${songId}`;
@@ -50,6 +53,13 @@ function LyricsEditDialogContent({
       ?.trim() ?? "";
   const isLys = /^\[\d\]/.test(firstLyricsLine);
   const isLrc = /\[\d{2}:\d{2}/.test(text);
+
+  useModalDialog({
+    dialogRef,
+    initialFocusRef: textareaRef,
+    onDismiss: onClose,
+    canDismiss: !saving,
+  });
 
   const handleSave = async () => {
     if (saving) return;
@@ -78,10 +88,12 @@ function LyricsEditDialogContent({
       }}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={headingId}
         aria-busy={saving}
+        tabIndex={-1}
         className="flex w-full max-w-lg flex-col gap-4 overflow-hidden rounded-xl border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-6 shadow-2xl"
       >
         <h2
@@ -95,6 +107,7 @@ function LyricsEditDialogContent({
           {t("lyrics.editLyrics")}
         </label>
         <textarea
+          ref={textareaRef}
           id={textareaId}
           value={text}
           onChange={(e) => setText(e.target.value)}

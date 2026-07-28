@@ -46,6 +46,7 @@ fn local_audio_smoke_scans_audio_files_and_writes_reports() {
         input_dir: input_dir.clone(),
         output_dir: output_dir.clone(),
         separation_mode: SeparationSmokeMode::Disabled,
+        model_path: None,
         seek_iterations: 8,
     })
     .expect("local audio smoke should succeed without separation");
@@ -90,6 +91,7 @@ fn local_audio_smoke_fails_when_no_supported_audio_files_exist() {
         input_dir: input_dir.clone(),
         output_dir: output_dir.clone(),
         separation_mode: SeparationSmokeMode::Disabled,
+        model_path: None,
         seek_iterations: 8,
     })
     .expect_err("smoke run should fail without supported audio files");

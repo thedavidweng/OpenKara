@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
+import { useModalDialog } from "@/hooks/use-modal-dialog";
 import { useLibraryStore } from "@/stores/library-store";
 import type { Song } from "@/types/ipc";
 
@@ -17,18 +18,19 @@ export function SongEditDialog({ song, onClose }: SongEditDialogProps) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const updateSongMetadata = useLibraryStore((s) => s.updateSongMetadata);
   const backdropRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const titleInputId = `song-title-${song.hash}`;
   const artistInputId = `song-artist-${song.hash}`;
   const headingId = `song-edit-heading-${song.hash}`;
   const errorId = `song-edit-error-${song.hash}`;
 
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !saving) onClose();
-    };
-    window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
-  }, [onClose, saving]);
+  useModalDialog({
+    dialogRef,
+    initialFocusRef: titleInputRef,
+    onDismiss: onClose,
+    canDismiss: !saving,
+  });
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (!saving && e.target === backdropRef.current) onClose();
@@ -71,10 +73,12 @@ export function SongEditDialog({ song, onClose }: SongEditDialogProps) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={headingId}
         aria-busy={saving}
+        tabIndex={-1}
         className="w-full max-w-sm overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-sidebar)] shadow-2xl"
       >
         <div className="border-b border-[var(--color-border)] px-5 py-3">
@@ -94,13 +98,13 @@ export function SongEditDialog({ song, onClose }: SongEditDialogProps) {
               {t("songEdit.titleLabel")}
             </label>
             <input
+              ref={titleInputRef}
               id={titleInputId}
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={t("songEdit.titlePlaceholder")}
-              autoFocus
               className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-[var(--color-text)] placeholder:text-[var(--color-text-dimmer)] transition-colors focus:border-[var(--color-accent)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
             />
           </div>

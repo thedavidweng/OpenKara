@@ -136,6 +136,32 @@ pub fn resolve_model_installation(
     dev_path: &Path,
     expected_sha256: &str,
 ) -> Result<ModelInstallationResolution> {
+    let managed_resolution = resolve_managed_model_installation(managed_path, expected_sha256)?;
+
+    if matches!(&managed_resolution, ModelInstallationResolution::Ready(_)) {
+        return Ok(managed_resolution);
+    }
+
+    if dev_path.exists()
+        && verify_model_install(dev_path, expected_sha256)
+            .with_context(|| format!("failed to verify development model {}", dev_path.display()))?
+    {
+        return Ok(ModelInstallationResolution::Ready(ResolvedModelPath {
+            path: dev_path.to_path_buf(),
+            source: ModelSource::DevelopmentFallback,
+        }));
+    }
+
+    Ok(managed_resolution)
+}
+
+/// Resolve only the app-managed model installation. Release and installer
+/// smoke tests use this boundary to prove a packaged app never succeeds by
+/// borrowing the repository's development model cache.
+pub fn resolve_managed_model_installation(
+    managed_path: &Path,
+    expected_sha256: &str,
+) -> Result<ModelInstallationResolution> {
     let managed_invalid = if managed_path.exists() {
         let ok = verify_model_install(managed_path, expected_sha256).with_context(|| {
             format!("failed to verify managed model {}", managed_path.display())
@@ -170,16 +196,6 @@ pub fn resolve_model_installation(
         false
     };
 
-    if dev_path.exists()
-        && verify_model_install(dev_path, expected_sha256)
-            .with_context(|| format!("failed to verify development model {}", dev_path.display()))?
-    {
-        return Ok(ModelInstallationResolution::Ready(ResolvedModelPath {
-            path: dev_path.to_path_buf(),
-            source: ModelSource::DevelopmentFallback,
-        }));
-    }
-
     if managed_invalid {
         return Ok(ModelInstallationResolution::LegacyManaged(
             managed_path.to_path_buf(),
@@ -212,6 +228,16 @@ pub fn resolve_existing_model_path(
             }
         },
     )
+}
+
+pub fn resolve_existing_managed_model_path(
+    managed_path: &Path,
+    expected_sha256: &str,
+) -> Result<Option<ResolvedModelPath>> {
+    Ok(match resolve_managed_model_installation(managed_path, expected_sha256)? {
+        ModelInstallationResolution::Ready(path) => Some(path),
+        ModelInstallationResolution::LegacyManaged(_) | ModelInstallationResolution::Absent => None,
+    })
 }
 
 /// Download and install a model through the shared artifact plumbing:

@@ -764,6 +764,13 @@ jobs:
         working-directory: src-tauri
         run: cargo test -q --no-run
 
+      # The installed-app CLI is feature-gated out of normal user builds, so
+      # compile it explicitly here. This is a cached compile-only check on the
+      # existing Windows Rust job, rather than a separate slow runner.
+      - name: Compile installed-app automation smoke entry point
+        working-directory: src-tauri
+        run: cargo check -q --features automation-smoke --bin openkara
+
       - name: Verify execution-provider platform contract
         working-directory: src-tauri
         shell: pwsh

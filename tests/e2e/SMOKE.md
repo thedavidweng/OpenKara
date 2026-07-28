@@ -19,15 +19,18 @@ backend required). Coverage includes:
 - Queue panel toggle and empty state
 - Rotation / singer management
 - Playlist creation
+- Keyboard modal behavior (initial focus, Tab/Shift+Tab containment, Escape,
+  and focus restoration)
+- Automated WCAG 2.2 A/AA checks in both light and dark themes via axe
 
-## Automated (Release-only separation smoke)
+## Automated (Release-only native and installed-app smoke)
 
 The GitHub Actions **Release** workflow includes a `Release separation smoke`
 job before any publish matrix job starts. It runs only when a maintainer
 manually triggers the Release workflow for a version, not on regular push or
 pull request CI.
 
-That release-only job:
+The non-Windows native smoke job:
 
 - downloads ONNX Runtime via `./scripts/setup.sh`
 - downloads and verifies the pinned `htdemucs.onnx` model via the same script
@@ -40,10 +43,27 @@ That release-only job:
 This is the automated coverage for the full backend path: runtime bootstrap,
 model availability, local import, playback probing, and real stem separation.
 
-## Manual Smoke Tests (Full Tauri Desktop)
+The same workflow also runs **Release Windows installed-app smoke** before the
+publish matrix. It builds an NSIS candidate containing a release-CI-only test
+entry point, installs the preceding stable Windows release, upgrades that
+installation to the candidate, and executes the installed `.exe` twice against
+fresh app data:
 
-These steps require the full Tauri app (`pnpm tauri dev`) and exercise
-the native desktop integration that Playwright cannot cover.
+1. The first process downloads and verifies the Runtime and model through the
+   production app-data bootstrap path.
+2. The second process follows the cold-start activation path, imports the WAV
+   fixture, probes playback, separates it, and checks both stem artifacts.
+
+The machine-readable reports assert that the second process did not download
+the Runtime or model again. This is the release acceptance for the Windows
+install, upgrade, download, restart, and separation lifecycle; it is not part
+of ordinary PR CI.
+
+## Exploratory Desktop Checks
+
+These steps are useful for exploratory work with physical devices and external
+accounts. They are not a release acceptance gate: deterministic product paths
+are covered by the CI and release smoke suites above.
 
 ### Prerequisites
 

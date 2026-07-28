@@ -79,6 +79,17 @@ describe("ModelBootstrapBanner", () => {
     expect(
       screen.getByRole("button", { name: "bootstrap.retryDownload" }),
     ).toBeTruthy();
+    expect(screen.getByRole("alert").getAttribute("aria-live")).toBe(
+      "assertive",
+    );
+  });
+
+  test("download progress is announced through a polite live status", () => {
+    setStatus("downloading");
+    render(<ModelBootstrapBanner />);
+
+    expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
+    expect(screen.getByRole("status").getAttribute("aria-atomic")).toBe("true");
   });
 
   test("Retry invokes the model-download command for the active variant", () => {

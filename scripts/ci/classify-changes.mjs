@@ -95,6 +95,9 @@ const CATEGORY_PATTERNS = {
   rust: [
     "src-tauri/src/**",
     "src-tauri/tests/**",
+    // Source-tree smoke binaries compile against the production crate and
+    // need the same native validation as any other Rust entry point.
+    "src-tauri/examples/**",
     "src-tauri/deny.toml",
     "rust-toolchain.toml",
     "patches/**",
@@ -127,6 +130,7 @@ const CATEGORY_PATTERNS = {
     "tests/release-workflow.test.ts",
     "scripts/setup.sh",
     "scripts/run-local-smoke.sh",
+    "scripts/validate-installed-app-smoke.mjs",
   ],
 
   packaging_workflow: [".github/workflows/packaging.yml"],

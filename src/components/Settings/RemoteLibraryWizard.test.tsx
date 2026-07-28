@@ -105,6 +105,11 @@ describe("RemoteLibraryWizard", () => {
     expect(markup).toContain("settings.library.displayName");
     expect(markup).not.toContain("Open Remote Library");
     expect(markup).not.toContain("Display name");
+    expect(markup).toContain('role="dialog"');
+    expect(markup).toContain('aria-modal="true"');
+    expect(markup).toContain('aria-labelledby="remote-library-wizard-title"');
+    expect(markup).toContain('for="remote-library-display-name"');
+    expect(markup).toContain('id="remote-library-display-name"');
   });
 
   test("labels the primary action per provider instead of a generic open label", () => {

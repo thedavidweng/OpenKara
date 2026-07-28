@@ -122,6 +122,7 @@ describe("RuntimeUpdateBanner", () => {
     expect(
       screen.getByText("settings.runtime.banner.downloadingRuntime"),
     ).toBeTruthy();
+    expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
   });
 
   test("failed state renders the error, a hint, and a Retry that triggers the runtime download", async () => {
@@ -154,6 +155,9 @@ describe("RuntimeUpdateBanner", () => {
     expect(
       screen.getByText("settings.runtime.banner.downloadFailedHint"),
     ).toBeTruthy();
+    expect(screen.getByRole("alert").getAttribute("aria-live")).toBe(
+      "assertive",
+    );
 
     fireEvent.click(
       screen.getByRole("button", {

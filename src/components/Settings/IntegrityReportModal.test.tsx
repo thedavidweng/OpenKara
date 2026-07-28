@@ -94,6 +94,9 @@ describe("IntegrityReportModal", () => {
     expect(markup).toContain("count=5");
     expect(markup).toContain("settings.integrity.skippedRemote");
     expect(markup).toContain("count=2");
+    expect(markup).toContain('role="dialog"');
+    expect(markup).toContain('aria-modal="true"');
+    expect(markup).toContain('aria-labelledby="integrity-report-modal-title"');
   });
 
   test("renders all five section headers with counts", () => {
@@ -132,6 +135,9 @@ describe("IntegrityReportModal", () => {
 
     const checkboxCount = (markup.match(/type="checkbox"/g) ?? []).length;
     expect(checkboxCount).toBe(2);
+    expect(markup).toContain(
+      'aria-label="settings.integrity.assetTypePrimaryMedia',
+    );
   });
 
   test("renders asset type labels for known asset types", () => {

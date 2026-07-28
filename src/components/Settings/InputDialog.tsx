@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
+import { useModalDialog } from "@/hooks/use-modal-dialog";
 
 interface InputDialogProps {
   title: string;
@@ -21,24 +22,14 @@ export function InputDialog({
 }: InputDialogProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState(initialValue);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-    inputRef.current?.select();
-  }, []);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onCancel();
-      } else if (e.key === "Enter" && value.trim()) {
-        onConfirm(value.trim());
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onCancel, onConfirm, value]);
+  useModalDialog({
+    dialogRef,
+    initialFocusRef: inputRef,
+    onDismiss: onCancel,
+    selectInitialText: true,
+  });
 
   const label = confirmLabel || t("common.save");
 
@@ -47,9 +38,11 @@ export function InputDialog({
       <div className="absolute inset-0 bg-black/60" onClick={onCancel} />
 
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="input-dialog-title"
+        tabIndex={-1}
         className="relative w-full max-w-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-sidebar)] p-6 shadow-xl"
       >
         <h3
@@ -64,6 +57,12 @@ export function InputDialog({
           type="text"
           value={value}
           onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && value.trim()) {
+              event.preventDefault();
+              onConfirm(value.trim());
+            }
+          }}
           placeholder={placeholder}
           aria-label={title}
           className="mt-3 w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-surface)] px-3 py-2 text-[13px] text-[var(--color-text)] placeholder-[var(--color-text-dimmer)] outline-none transition-colors focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)]/30"

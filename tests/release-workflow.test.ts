@@ -10,7 +10,7 @@ function readProjectFile(path: string) {
 }
 
 describe("release workflow", () => {
-  test("gates release publishing on the real separation smoke without adding it to per-commit CI", () => {
+  test("gates release publishing on release-only native and installed-app smoke", () => {
     const releaseWorkflow = readProjectFile(".github/workflows/release.yml");
     const ciWorkflow = readProjectFile(".github/workflows/ci.yml");
 
@@ -24,11 +24,26 @@ describe("release workflow", () => {
     expect(releaseWorkflow).toContain("separation_passed");
     expect(releaseWorkflow).toContain("separation_failed");
     expect(releaseWorkflow).toContain("separation_skipped");
-    expect(releaseWorkflow).toMatch(
-      /publish:\n(?: {2}.+\n)* {4}needs:.*release-separation-smoke/,
+    expect(releaseWorkflow).toContain("release-windows-installed-smoke:");
+    expect(releaseWorkflow).toContain("Release Windows installed-app smoke");
+    expect(releaseWorkflow).toContain("--automation-smoke prepare");
+    expect(releaseWorkflow).toContain("--automation-smoke restart");
+    expect(releaseWorkflow).toContain("validate-installed-app-smoke.mjs");
+    expect(releaseWorkflow).toContain(
+      "Install preceding stable release then release candidate",
+    );
+    const publishSection = releaseWorkflow.match(
+      /  publish:[\s\S]*?\n  generate-checksums:/,
+    )?.[0];
+    expect(publishSection).toBeDefined();
+    expect(publishSection).toContain("release-separation-smoke");
+    expect(publishSection).toContain("release-windows-installed-smoke");
+    expect(releaseWorkflow).not.toMatch(
+      /name: Windows\n\s+os: windows-latest\n\s+ort_target: x86_64-pc-windows-msvc/,
     );
 
     expect(ciWorkflow).not.toContain("Release separation smoke");
+    expect(ciWorkflow).not.toContain("Release Windows installed-app smoke");
     expect(ciWorkflow).not.toContain("./scripts/run-local-smoke.sh");
   });
 

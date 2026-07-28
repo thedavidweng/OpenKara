@@ -83,6 +83,26 @@ fn resolve_existing_model_path_falls_back_to_verified_dev_model() {
 }
 
 #[test]
+fn managed_model_resolution_never_uses_the_development_fallback() {
+    let temp_dir = unique_temp_dir();
+    let managed_path = temp_dir.join("managed").join("htdemucs.onnx");
+    let dev_path = temp_dir.join("dev").join("htdemucs.onnx");
+    let dev_bytes = b"development-model";
+    write_file(&dev_path, dev_bytes);
+
+    let resolution = bootstrap::resolve_existing_managed_model_path(
+        &managed_path,
+        &sha256_hex(dev_bytes),
+    )
+    .expect("managed-only resolution should succeed");
+
+    assert!(resolution.is_none());
+    assert!(dev_path.exists(), "test setup must retain a valid dev model");
+
+    remove_dir_if_exists(&temp_dir);
+}
+
+#[test]
 fn install_verified_model_bytes_writes_model_to_nested_runtime_directory() {
     let temp_dir = unique_temp_dir();
     let destination = temp_dir
