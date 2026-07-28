@@ -610,4 +610,114 @@ describe("ContextMenu SubMenu keyboard navigation", () => {
     expect(subOnClick).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalled();
   });
+
+  test("click on a submenu checkbox item activates it and closes the menu", () => {
+    const onClose = vi.fn();
+    const subOnClick = vi.fn();
+    const items: ContextMenuItem[] = [
+      {
+        label: "Sort by",
+        children: [
+          { label: "Title", onClick: subOnClick, indicator: "checked" },
+        ],
+      },
+    ];
+    ({ container, root } = renderMenu(items, { onClose }));
+
+    const menu = document.querySelector('[role="menu"]') as HTMLElement;
+    act(() => {
+      menu.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+      );
+    });
+
+    const submenus = document.querySelectorAll('[role="menu"]');
+    const submenu = submenus[1] as HTMLElement;
+    const subCheckbox = submenu.querySelector(
+      '[role="menuitemcheckbox"]',
+    ) as HTMLButtonElement;
+
+    act(() => {
+      subCheckbox.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(subOnClick).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  test("ArrowRight on a leaf item does nothing", () => {
+    const items: ContextMenuItem[] = [
+      { label: "Play", onClick: () => {} },
+      { label: "Delete", onClick: () => {} },
+    ];
+    ({ container, root } = renderMenu(items));
+
+    const menu = document.querySelector('[role="menu"]') as HTMLElement;
+    const buttons = menu.querySelectorAll("button");
+
+    act(() => {
+      menu.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+      );
+    });
+
+    expect(document.querySelectorAll('[role="menu"]')).toHaveLength(1);
+    expect(document.activeElement).toBe(buttons[0]);
+  });
+
+  test("renders an empty menu with no items when items is empty", () => {
+    ({ container, root } = renderMenu([]));
+
+    const menu = document.querySelector('[role="menu"]');
+    expect(menu).not.toBeNull();
+    expect(menu?.querySelectorAll("button")).toHaveLength(0);
+  });
+
+  test("keyboard navigation does nothing when items is empty", () => {
+    ({ container, root } = renderMenu([]));
+
+    const menu = document.querySelector('[role="menu"]') as HTMLElement;
+    act(() => {
+      menu.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+      );
+    });
+    expect(document.querySelectorAll('[role="menuitem"]')).toHaveLength(0);
+  });
+
+  test("mouse enter on a submenu item sets focus index", () => {
+    const items: ContextMenuItem[] = [
+      {
+        label: "Sort by",
+        children: [
+          { label: "Title", onClick: () => {} },
+          { label: "Artist", onClick: () => {} },
+        ],
+      },
+    ];
+    ({ container, root } = renderMenu(items));
+
+    const menu = document.querySelector('[role="menu"]') as HTMLElement;
+    act(() => {
+      menu.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+      );
+    });
+
+    const submenus = document.querySelectorAll('[role="menu"]');
+    const submenu = submenus[1] as HTMLElement;
+    const subButtons = submenu.querySelectorAll("button");
+    const secondSubButton = subButtons[1] as HTMLButtonElement;
+
+    act(() => {
+      secondSubButton.dispatchEvent(
+        new MouseEvent("mouseover", {
+          bubbles: true,
+          relatedTarget: document.body,
+        }),
+      );
+    });
+
+    expect(secondSubButton.tabIndex).toBe(0);
+  });
 });

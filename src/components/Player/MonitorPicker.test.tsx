@@ -451,4 +451,34 @@ describe("MonitorPicker", () => {
     anchor.remove();
     container.remove();
   });
+
+  test("document-level Escape closes the picker and returns focus to the anchor", async () => {
+    mockGetMonitors.mockResolvedValue([buildMonitor("Display A", 0)]);
+    const onClose = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const anchor = document.createElement("button");
+    document.body.appendChild(anchor);
+
+    await act(async () => {
+      root.render(
+        <MonitorPicker onClose={onClose} anchorRef={{ current: anchor }} />,
+      );
+    });
+    await flushEffects();
+
+    await act(async () => {
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+
+    expect(onClose).toHaveBeenCalled();
+    expect(document.activeElement).toBe(anchor);
+
+    await act(async () => root.unmount());
+    anchor.remove();
+    container.remove();
+  });
 });
