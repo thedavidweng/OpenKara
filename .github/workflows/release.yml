@@ -31,10 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      # contents: write is required to read draft releases (release-please
-      # creates the release as a draft; the GitHub API hides drafts from
-      # tokens with only contents: read).
-      contents: write
+      contents: write # read draft releases (release-please creates the release as a draft; the GitHub API hides drafts from tokens with only contents: read)
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
