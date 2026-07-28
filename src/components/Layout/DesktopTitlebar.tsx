@@ -279,6 +279,7 @@ export function DesktopTitlebar({
         </div>
 
         <div
+          role="presentation"
           className="min-w-0 flex-1 self-stretch"
           data-tauri-drag-region
           onMouseDown={(event) => {

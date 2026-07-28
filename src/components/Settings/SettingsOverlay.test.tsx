@@ -308,9 +308,12 @@ describe("SettingsOverlay sections", () => {
     expect(markup).toContain("settings.integrity.confirmCleanupButton");
   });
 
-  test("settings overlay renders a close control for mouse users", () => {
+  test("settings overlay exposes a keyboard-operable modal dialog", () => {
     const markup = renderToStaticMarkup(<SettingsOverlay />);
 
+    expect(markup).toContain('role="dialog"');
+    expect(markup).toContain('aria-modal="true"');
+    expect(markup).toContain('aria-labelledby="settings-overlay-title"');
     expect(markup).toContain('aria-label="common.close"');
   });
 

@@ -19,15 +19,25 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
   const pointerNavOccurredRef = useRef(false);
   const pointerMovedRef = useRef(false);
   const [rovingBucket, setRovingBucket] = useState<AlphabetBucket | null>(null);
+  // Keep the keyboard cursor synchronously available between consecutive
+  // key events. React state is intentionally asynchronous, so an immediate
+  // End → Enter sequence must not activate the bucket from the previous
+  // render.
+  const rovingBucketRef = useRef<AlphabetBucket | null>(null);
   const [activeBucket, setActiveBucket] = useState<AlphabetBucket | null>(null);
+
+  const setRovingBucketState = useCallback((bucket: AlphabetBucket | null) => {
+    rovingBucketRef.current = bucket;
+    setRovingBucket(bucket);
+  }, []);
 
   useEffect(() => {
     const firstMapped =
       ALPHABET_BUCKETS.find((b) => indexByBucket.has(b)) ?? null;
-    setRovingBucket(firstMapped);
+    setRovingBucketState(firstMapped);
     setActiveBucket(null);
     lastNavigatedBucketRef.current = null;
-  }, [indexByBucket]);
+  }, [indexByBucket, setRovingBucketState]);
 
   const navigateToBucket = useCallback(
     (bucket: AlphabetBucket): boolean => {
@@ -59,11 +69,11 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
       pointerMovedRef.current = false;
       event.currentTarget.setPointerCapture(event.pointerId);
       const bucket = bucketFromClientY(event.clientY);
-      setRovingBucket(bucket);
+      setRovingBucketState(bucket);
       pointerNavOccurredRef.current = false;
       pointerNavOccurredRef.current = navigateToBucket(bucket);
     },
-    [bucketFromClientY, navigateToBucket],
+    [bucketFromClientY, navigateToBucket, setRovingBucketState],
   );
 
   const handlePointerMove = useCallback(
@@ -72,11 +82,11 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
       pointerMovedRef.current = true;
       const bucket = bucketFromClientY(event.clientY);
       if (bucket !== lastNavigatedBucketRef.current) {
-        setRovingBucket(bucket);
+        setRovingBucketState(bucket);
         navigateToBucket(bucket);
       }
     },
-    [bucketFromClientY, navigateToBucket],
+    [bucketFromClientY, navigateToBucket, setRovingBucketState],
   );
 
   const releasePointer = useCallback(
@@ -109,8 +119,9 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
-      const currentPos = rovingBucket
-        ? ALPHABET_BUCKETS.indexOf(rovingBucket)
+      const currentRovingBucket = rovingBucketRef.current;
+      const currentPos = currentRovingBucket
+        ? ALPHABET_BUCKETS.indexOf(currentRovingBucket)
         : 0;
       let nextPos: number | null = null;
 
@@ -131,10 +142,10 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
           break;
         case "Enter":
         case " ":
-          if (rovingBucket) {
+          if (currentRovingBucket) {
             event.preventDefault();
             lastNavigatedBucketRef.current = null;
-            navigateToBucket(rovingBucket);
+            navigateToBucket(currentRovingBucket);
           }
           return;
         default:
@@ -142,7 +153,7 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
             const upper = event.key.toUpperCase();
             if (ALPHABET_BUCKETS.includes(upper as AlphabetBucket)) {
               const target = upper as AlphabetBucket;
-              setRovingBucket(target);
+              setRovingBucketState(target);
               lastNavigatedBucketRef.current = null;
               const button = containerRef.current?.querySelector(
                 `[data-bucket="${target}"]`,
@@ -157,14 +168,14 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
       if (nextPos !== null) {
         event.preventDefault();
         const nextBucket = ALPHABET_BUCKETS[nextPos];
-        setRovingBucket(nextBucket);
+        setRovingBucketState(nextBucket);
         const button = containerRef.current?.querySelector(
           `[data-bucket="${nextBucket}"]`,
         ) as HTMLButtonElement | null;
         button?.focus();
       }
     },
-    [rovingBucket, navigateToBucket],
+    [navigateToBucket, setRovingBucketState],
   );
 
   const labelForBucket = useMemo(
@@ -177,6 +188,7 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
   );
 
   return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <div
       ref={containerRef}
       role="navigation"
@@ -201,14 +213,14 @@ export function AlphabetRail({ indexByBucket, onNavigate }: AlphabetRailProps) {
             tabIndex={isRoving ? 0 : -1}
             aria-current={isActive ? "true" : undefined}
             aria-label={labelForBucket(bucket)}
-            onFocus={() => setRovingBucket(bucket)}
+            onFocus={() => setRovingBucketState(bucket)}
             onClick={(e) => {
               e.stopPropagation();
               if (pointerNavOccurredRef.current) {
                 pointerNavOccurredRef.current = false;
                 return;
               }
-              setRovingBucket(bucket);
+              setRovingBucketState(bucket);
               lastNavigatedBucketRef.current = null;
               navigateToBucket(bucket);
             }}

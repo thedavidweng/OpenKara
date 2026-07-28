@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { useEscapeKey } from "@/hooks/use-escape-key";
+import { useModalDialog } from "@/hooks/use-modal-dialog";
+import { DialogBackdrop } from "@/components/Overlay/DialogBackdrop";
 import * as api from "@/lib/tauri";
 import { formatDuration, formatBytes } from "@/lib/format";
 import {
@@ -60,7 +61,8 @@ export function SongPropertiesDialog({
   const [properties, setProperties] = useState<SongProperties | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const backdropRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const separationStatuses = useLibraryStore((s) => s.separationStatuses);
   const currentSong = useLibraryStore(
     (s) => s.songs.find((candidate) => candidate.hash === song.hash) ?? song,
@@ -82,6 +84,7 @@ export function SongPropertiesDialog({
     currentSong.title ??
     currentSong.file_path?.split("/").pop() ??
     currentSong.hash;
+  const headingId = `song-properties-heading-${song.hash}`;
 
   useEffect(() => {
     api
@@ -96,28 +99,42 @@ export function SongPropertiesDialog({
       });
   }, [song.hash, t]);
 
-  useEscapeKey(onClose, [onClose]);
-
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === backdropRef.current) onClose();
-  };
+  useModalDialog({
+    dialogRef,
+    initialFocusRef: closeButtonRef,
+    onDismiss: onClose,
+  });
 
   if (typeof document === "undefined" || !document.body) {
     return null;
   }
 
   return createPortal(
-    <div
-      ref={backdropRef}
-      onClick={handleBackdropClick}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-    >
-      <div className="w-full max-w-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-sidebar)] shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <DialogBackdrop
+        ariaLabel={t("common.close")}
+        onDismiss={onClose}
+        className="absolute inset-0 bg-black/50"
+      />
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={headingId}
+        aria-busy={loading}
+        tabIndex={-1}
+        className="relative w-full max-w-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-sidebar)] shadow-2xl"
+      >
         <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-3">
-          <h3 className="text-[14px] font-semibold text-[var(--color-text)]">
+          <h3
+            id={headingId}
+            className="text-[14px] font-semibold text-[var(--color-text)]"
+          >
             {t("songProperties.title")}
           </h3>
           <button
+            ref={closeButtonRef}
+            type="button"
             onClick={onClose}
             className="rounded p-0.5 text-[var(--color-text-dim)] transition-colors hover:text-[var(--color-text)]"
             aria-label={t("common.close")}
@@ -156,7 +173,10 @@ export function SongPropertiesDialog({
           )}
 
           {error && (
-            <p className="py-4 text-center text-[12px] text-[var(--color-destructive)]">
+            <p
+              role="alert"
+              className="py-4 text-center text-[12px] text-[var(--color-destructive)]"
+            >
               {error}
             </p>
           )}
@@ -349,6 +369,7 @@ export function SongPropertiesDialog({
 
         <div className="flex justify-end border-t border-[var(--color-border)] px-5 py-3">
           <button
+            type="button"
             onClick={onClose}
             className="rounded-md px-3 py-1.5 text-[12px] text-[var(--color-text-dim)] transition-colors hover:text-[var(--color-text)]"
           >

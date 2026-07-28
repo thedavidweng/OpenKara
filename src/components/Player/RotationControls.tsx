@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Shuffle, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useRotationStore } from "@/stores/rotation-store";
@@ -12,6 +12,13 @@ interface AddSingerInputProps {
 function AddSingerInput({ onAdd }: AddSingerInputProps) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      inputRef.current?.focus();
+    }
+  }, [open]);
 
   const handleSubmit = () => {
     if (value.trim()) {
@@ -35,7 +42,7 @@ function AddSingerInput({ onAdd }: AddSingerInputProps) {
 
   return (
     <input
-      autoFocus
+      ref={inputRef}
       value={value}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={(e) => {

@@ -336,7 +336,7 @@ test.describe("scrollbar platform contract", () => {
     await tauriMock.setMockLyrics(lyrics);
 
     // Play the first song to trigger lyrics fetch.
-    await page.getByText("Earfquake").dblclick();
+    await page.getByRole("button", { name: "Earfquake" }).dblclick();
     const viewport = page.getByTestId("lyrics-scroll-viewport");
     await expect(viewport).toBeVisible({ timeout: 5000 });
     // Wait for at least one lyric line to render.

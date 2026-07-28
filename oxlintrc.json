@@ -1,9 +1,10 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript"],
+  "plugins": ["react", "typescript", "jsx-a11y"],
   "rules": {
     "react/react-in-jsx-scope": "off",
-    "react/only-export-components": "warn"
+    "react/only-export-components": "warn",
+    "jsx-a11y/prefer-tag-over-role": "off"
   },
   "ignorePatterns": [
     ".claude",

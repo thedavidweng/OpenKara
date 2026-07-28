@@ -305,6 +305,33 @@ where
     bootstrap::ensure_active_model_ready_or_install_blocking(app_data_dir, model_status, emit_model)
 }
 
+/// Packaged-app release validation uses the same blocking bootstrap sequence
+/// as separation while requiring that the model came from app data. This
+/// keeps a repository checkout or CI cache from masking a broken first-run
+/// download path in an installed bundle.
+pub fn ensure_runtime_and_managed_model_blocking<ER, EM>(
+    app_data_dir: &Path,
+    runtime_status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
+    model_status: &Arc<Mutex<ModelBootstrapStatusSnapshot>>,
+    emit_runtime: &mut ER,
+    emit_model: &mut EM,
+) -> CommandResult<PathBuf>
+where
+    ER: FnMut(&'static str, RuntimeBootstrapStatusSnapshot),
+    EM: FnMut(&'static str, ModelBootstrapStatusSnapshot),
+{
+    runtime_bootstrap::ensure_runtime_ready_or_install_blocking(
+        app_data_dir,
+        runtime_status,
+        emit_runtime,
+    )?;
+    bootstrap::ensure_active_managed_model_ready_or_install_blocking(
+        app_data_dir,
+        model_status,
+        emit_model,
+    )
+}
+
 /// Seam: `emit_terminal_status` accepts a custom `publish` callback so tests
 /// can assert completion without remote I/O.
 pub fn publish_on_complete_default<R: Runtime>(app_handle: &AppHandle<R>, song_id: &str) {

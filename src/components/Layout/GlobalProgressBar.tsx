@@ -35,6 +35,7 @@ export function TaskProgressBar({
   compact = false,
   ariaLabel,
 }: TaskProgressBarProps) {
+  const { t } = useTranslation();
   const clampedPercent = Math.min(100, Math.max(0, percent));
 
   if (compact) {
@@ -76,14 +77,23 @@ export function TaskProgressBar({
         </span>
         {onCancel && (
           <button
+            type="button"
             onClick={onCancel}
+            aria-label={t("common.cancel")}
             className="motion-icon-button shrink-0 rounded p-0.5 text-[var(--color-text-dim)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50"
           >
             <X size={12} />
           </button>
         )}
       </div>
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-border)]">
+      <div
+        className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-border)]"
+        role="progressbar"
+        aria-label={ariaLabel || label || undefined}
+        aria-valuenow={indeterminate ? undefined : clampedPercent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
         {indeterminate ? (
           <div className="relative h-full w-full overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--color-accent)_22%,transparent)]">
             <div className="model-indeterminate-bar absolute inset-y-0 left-0 rounded-full bg-[var(--color-accent)] will-change-transform" />

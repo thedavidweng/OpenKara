@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Disc3, FileAudio2 } from "lucide-react";
 import { useLibraryStore } from "@/stores/library-store";
 import * as api from "@/lib/tauri";
 import { formatBytes, formatDuration } from "@/lib/format";
+import { useModalDialog } from "@/hooks/use-modal-dialog";
+import { DialogBackdrop } from "@/components/Overlay/DialogBackdrop";
 import type { ImportCandidateDetails } from "@/types/ipc";
 
 function getDisplayName(path: string): string {
@@ -18,26 +20,19 @@ export function ImportCdgChoiceDialog() {
   const [detailsByPath, setDetailsByPath] = useState<
     Record<string, ImportCandidateDetails>
   >({});
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   const cdgName = useMemo(
     () => (pendingChoice ? getDisplayName(pendingChoice.cdgPath) : ""),
     [pendingChoice],
   );
 
-  useEffect(() => {
-    if (!pendingChoice) {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        resolveChoice(null);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [pendingChoice, resolveChoice]);
+  useModalDialog({
+    dialogRef,
+    onDismiss: () => resolveChoice(null),
+    canDismiss: pendingChoice !== null,
+    enabled: pendingChoice !== null,
+  });
 
   useEffect(() => {
     if (!pendingChoice) {
@@ -73,14 +68,17 @@ export function ImportCdgChoiceDialog() {
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
-      <div
+      <DialogBackdrop
+        ariaLabel={t("common.close")}
+        onDismiss={() => resolveChoice(null)}
         className="absolute inset-0 bg-black/60"
-        onClick={() => resolveChoice(null)}
       />
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="import-cdg-choice-title"
+        tabIndex={-1}
         className="app-panel-surface relative w-full max-w-lg rounded-xl border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-sidebar)_96%,transparent)] p-6 shadow-[0_24px_60px_rgba(0,0,0,0.36)]"
       >
         <div className="flex items-center gap-3">

@@ -4,6 +4,8 @@ pub mod airplay_stream;
 mod app_menu;
 mod app_runtime;
 pub mod audio;
+#[cfg(feature = "automation-smoke")]
+pub mod automation_smoke;
 pub mod cache;
 pub mod cdg;
 pub mod commands;

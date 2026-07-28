@@ -88,8 +88,20 @@ describe("classifyFile", () => {
     expect(classifyFile("src-tauri/src/audio/mixer.rs")).toEqual(["rust"]);
   });
 
+  test("Rust example is rust", () => {
+    expect(classifyFile("src-tauri/examples/local-audio-smoke.rs")).toEqual([
+      "rust",
+    ]);
+  });
+
   test("release.yml is release_workflow (not other_workflow)", () => {
     expect(classifyFile(".github/workflows/release.yml")).toEqual([
+      "release_workflow",
+    ]);
+  });
+
+  test("installed-app smoke validator is release_workflow", () => {
+    expect(classifyFile("scripts/validate-installed-app-smoke.mjs")).toEqual([
       "release_workflow",
     ]);
   });

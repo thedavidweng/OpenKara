@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { useEscapeKey } from "@/hooks/use-escape-key";
+import { useModalDialog } from "@/hooks/use-modal-dialog";
+import { DialogBackdrop } from "@/components/Overlay/DialogBackdrop";
 
 interface ConfirmationDialogProps {
   title: string;
@@ -21,22 +22,28 @@ export function ConfirmationDialog({
   onCancel,
 }: ConfirmationDialogProps) {
   const { t } = useTranslation();
+  const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    cancelRef.current?.focus();
-  }, []);
-
-  useEscapeKey(onCancel, [onCancel]);
+  useModalDialog({
+    dialogRef,
+    initialFocusRef: cancelRef,
+    onDismiss: onCancel,
+  });
 
   const dialogContent = (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60" onClick={onCancel} />
+      <DialogBackdrop
+        ariaLabel={t("common.close")}
+        onDismiss={onCancel}
+        className="absolute inset-0 bg-black/60"
+      />
 
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirmation-dialog-title"
+        tabIndex={-1}
         className="relative w-full max-w-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-sidebar)] p-6 shadow-xl"
       >
         <h3

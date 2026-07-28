@@ -130,8 +130,11 @@ describe("LyricLine", () => {
       );
     });
 
-    const clickable = host.querySelector(".cursor-pointer") as HTMLElement;
+    const clickable = host.querySelector(
+      ".cursor-pointer",
+    ) as HTMLButtonElement;
     expect(clickable).toBeTruthy();
+    expect(clickable.tagName).toBe("BUTTON");
     act(() => {
       clickable.click();
     });

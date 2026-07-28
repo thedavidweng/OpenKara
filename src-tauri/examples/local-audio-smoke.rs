@@ -39,6 +39,7 @@ fn main() -> Result<()> {
         input_dir,
         output_dir,
         separation_mode,
+        model_path: None,
         seek_iterations: 32,
     })?;
 

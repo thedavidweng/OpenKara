@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Cloud, X } from "lucide-react";
 import { getErrorMessage } from "@/lib/errors";
+import { useModalDialog } from "@/hooks/use-modal-dialog";
 import * as api from "@/lib/tauri";
 import type { RegisteredLibrary, RemoteLibraryProvider } from "@/types/ipc";
 import { useSettingsOverlay } from "./SettingsOverlay.context";
@@ -57,6 +58,14 @@ export function RemoteLibraryWizard({
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [rootPath, setRootPath] = useState(initialRootPath);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const titleId = "remote-library-wizard-title";
+  const displayNameInputId = "remote-library-display-name";
+  const serverUrlInputId = "remote-library-webdav-server-url";
+  const rootPathInputId = "remote-library-webdav-root-path";
+  const usernameInputId = "remote-library-webdav-username";
+  const passwordInputId = "remote-library-webdav-password";
 
   const activeLibrary = state.libraries.find(
     (library) => library.id === state.activeLibraryId,
@@ -99,6 +108,12 @@ export function RemoteLibraryWizard({
     }
     onClose();
   };
+
+  useModalDialog({
+    dialogRef,
+    initialFocusRef: closeButtonRef,
+    onDismiss: requestClose,
+  });
 
   const connect = async () => {
     cancelledRef.current = false;
@@ -247,10 +262,21 @@ export function RemoteLibraryWizard({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-xl rounded-xl border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-5 shadow-2xl">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-busy={loading}
+        tabIndex={-1}
+        className="w-full max-w-xl rounded-xl border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-5 shadow-2xl"
+      >
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-lg font-semibold text-[var(--color-text)]">
+            <h2
+              id={titleId}
+              className="text-lg font-semibold text-[var(--color-text)]"
+            >
               {t(titleKey, {
                 defaultValue: isReauthorizeFlow
                   ? "Reauthorize remote repository"
@@ -266,6 +292,8 @@ export function RemoteLibraryWizard({
             </p>
           </div>
           <button
+            ref={closeButtonRef}
+            type="button"
             onClick={requestClose}
             aria-label={t("common.close")}
             className="rounded-md p-1 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]"
@@ -277,8 +305,10 @@ export function RemoteLibraryWizard({
         {!isRecoveryFlow && (
           <div className="grid gap-3 md:grid-cols-2">
             <button
+              type="button"
               onClick={() => setMode("open_remote")}
               disabled={loading}
+              aria-pressed={mode === "open_remote"}
               className={`rounded-lg border px-4 py-3 text-left ${
                 mode === "open_remote"
                   ? "border-[var(--color-control-selected-border)] bg-[var(--color-control-selected-bg)]"
@@ -298,8 +328,10 @@ export function RemoteLibraryWizard({
               </p>
             </button>
             <button
+              type="button"
               onClick={() => setMode("mirror_active_local")}
               disabled={loading || !canMirrorActiveLocal}
+              aria-pressed={mode === "mirror_active_local"}
               className={`rounded-lg border px-4 py-3 text-left ${
                 mode === "mirror_active_local"
                   ? "border-[var(--color-control-selected-border)] bg-[var(--color-control-selected-bg)]"
@@ -337,8 +369,10 @@ export function RemoteLibraryWizard({
           ).map(([candidate, Icon]) => (
             <button
               key={candidate}
+              type="button"
               onClick={() => resetProviderState(candidate)}
               disabled={loading}
+              aria-pressed={provider === candidate}
               className={`rounded-lg border px-4 py-3 text-left ${
                 provider === candidate
                   ? "border-[var(--color-control-selected-border)] bg-[var(--color-control-selected-bg)]"
@@ -358,12 +392,16 @@ export function RemoteLibraryWizard({
 
         <div className="mt-4 space-y-3 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-surface)] p-4">
           <div>
-            <label className="mb-1 block text-xs font-medium text-[var(--color-text)]">
+            <label
+              htmlFor={displayNameInputId}
+              className="mb-1 block text-xs font-medium text-[var(--color-text)]"
+            >
               {t("settings.library.displayName", {
                 defaultValue: "Display name",
               })}
             </label>
             <input
+              id={displayNameInputId}
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
               className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-sidebar)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
@@ -391,12 +429,17 @@ export function RemoteLibraryWizard({
           {provider === "webdav" && (
             <>
               <div>
-                <label className="mb-1 block text-xs font-medium text-[var(--color-text)]">
+                <label
+                  htmlFor={serverUrlInputId}
+                  className="mb-1 block text-xs font-medium text-[var(--color-text)]"
+                >
                   {t("settings.library.webdavServerUrl", {
                     defaultValue: "Server URL",
                   })}
                 </label>
                 <input
+                  id={serverUrlInputId}
+                  type="url"
                   value={serverUrl}
                   onChange={(event) => setServerUrl(event.target.value)}
                   placeholder="https://dav.example.com/remote.php/dav/files/you/"
@@ -405,12 +448,16 @@ export function RemoteLibraryWizard({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-[var(--color-text)]">
+                <label
+                  htmlFor={rootPathInputId}
+                  className="mb-1 block text-xs font-medium text-[var(--color-text)]"
+                >
                   {t("settings.library.webdavLibraryPath", {
                     defaultValue: "Library path",
                   })}
                 </label>
                 <input
+                  id={rootPathInputId}
                   value={rootPath}
                   onChange={(event) => setRootPath(event.target.value)}
                   placeholder="/OpenKara"
@@ -420,28 +467,38 @@ export function RemoteLibraryWizard({
               </div>
               <div className="grid gap-3 md:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-[var(--color-text)]">
+                  <label
+                    htmlFor={usernameInputId}
+                    className="mb-1 block text-xs font-medium text-[var(--color-text)]"
+                  >
                     {t("settings.library.webdavUsername", {
                       defaultValue: "Username",
                     })}
                   </label>
                   <input
+                    id={usernameInputId}
                     value={username}
                     onChange={(event) => setUsername(event.target.value)}
                     className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-sidebar)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
                     spellCheck={false}
+                    autoComplete="username"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-[var(--color-text)]">
+                  <label
+                    htmlFor={passwordInputId}
+                    className="mb-1 block text-xs font-medium text-[var(--color-text)]"
+                  >
                     {t("settings.library.webdavPassword", {
                       defaultValue: "Password",
                     })}
                   </label>
                   <input
+                    id={passwordInputId}
                     type="password"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
+                    autoComplete="current-password"
                     className="w-full rounded-md border border-[var(--color-border-light)] bg-[var(--color-sidebar)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
                   />
                 </div>
@@ -450,6 +507,7 @@ export function RemoteLibraryWizard({
           )}
 
           <button
+            type="button"
             onClick={() => void connect()}
             disabled={loading || meta.isInitializing}
             className="w-full rounded-lg bg-[var(--color-control-primary)] px-4 py-2.5 text-sm font-medium text-[var(--color-control-primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-60"
@@ -483,10 +541,19 @@ export function RemoteLibraryWizard({
           )}
 
           {error && (
-            <p className="text-sm text-[var(--color-destructive)]">{error}</p>
+            <p role="alert" className="text-sm text-[var(--color-destructive)]">
+              {error}
+            </p>
           )}
           {message && (
-            <p className="text-sm text-[var(--color-text-dim)]">{message}</p>
+            <p
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              className="text-sm text-[var(--color-text-dim)]"
+            >
+              {message}
+            </p>
           )}
         </div>
 

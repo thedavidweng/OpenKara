@@ -747,4 +747,44 @@ describe("SeekBar", () => {
 
     expect(mediaQueryDpr).toBe(3);
   });
+
+  test("supports standard keyboard slider navigation", async () => {
+    await act(async () => {
+      root.render(<SeekBar />);
+    });
+
+    const rail = host.querySelector("[role='slider']") as HTMLElement;
+    expect(rail.getAttribute("tabindex")).toBe("0");
+
+    await act(async () => {
+      rail.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "ArrowRight" }),
+      );
+      rail.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "PageUp" }),
+      );
+      rail.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "Home" }),
+      );
+      rail.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "End" }),
+      );
+    });
+
+    expect(mockSeek).toHaveBeenNthCalledWith(1, 15_000);
+    expect(mockSeek).toHaveBeenNthCalledWith(2, 40_000);
+    expect(mockSeek).toHaveBeenNthCalledWith(3, 0);
+    expect(mockSeek).toHaveBeenNthCalledWith(4, 100_000);
+  });
+
+  test("removes an empty seek rail from the tab order", async () => {
+    mockPlayerState.snapshot = null;
+    await act(async () => {
+      root.render(<SeekBar />);
+    });
+
+    const rail = host.querySelector("[role='slider']") as HTMLElement;
+    expect(rail.getAttribute("tabindex")).toBe("-1");
+    expect(rail.getAttribute("aria-disabled")).toBe("true");
+  });
 });

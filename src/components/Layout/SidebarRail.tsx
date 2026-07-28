@@ -1,6 +1,12 @@
 import { useCallback, useRef } from "react";
-import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+} from "react";
 import { MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH } from "@/stores/layout-store";
+
+const SIDEBAR_KEYBOARD_RESIZE_STEP_PX = 16;
 
 interface SidebarRailProps {
   visible: boolean;
@@ -60,6 +66,36 @@ export function SidebarRail({
     [onResize, visible, width],
   );
 
+  const handleKeyboardResize = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (!visible) {
+        return;
+      }
+
+      let nextWidth: number | null = null;
+      switch (event.key) {
+        case "ArrowLeft":
+          nextWidth = width - SIDEBAR_KEYBOARD_RESIZE_STEP_PX;
+          break;
+        case "ArrowRight":
+          nextWidth = width + SIDEBAR_KEYBOARD_RESIZE_STEP_PX;
+          break;
+        case "Home":
+          nextWidth = MIN_SIDEBAR_WIDTH;
+          break;
+        case "End":
+          nextWidth = MAX_SIDEBAR_WIDTH;
+          break;
+        default:
+          return;
+      }
+
+      event.preventDefault();
+      onResize(clampWidth(nextWidth));
+    },
+    [onResize, visible, width],
+  );
+
   return (
     <div
       className={`shrink-0 overflow-hidden transition-[width] ${
@@ -85,8 +121,14 @@ export function SidebarRail({
             role="separator"
             aria-orientation="vertical"
             aria-label="Resize sidebar"
+            aria-valuemin={MIN_SIDEBAR_WIDTH}
+            aria-valuemax={MAX_SIDEBAR_WIDTH}
+            aria-valuenow={width}
+            aria-valuetext={`${width} px`}
+            tabIndex={0}
             onPointerDown={handleDragStart}
-            className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize bg-transparent hover:bg-[var(--color-ghost-hover)]"
+            onKeyDown={handleKeyboardResize}
+            className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize bg-transparent hover:bg-[var(--color-ghost-hover)] focus-visible:bg-[var(--color-ghost-hover)] focus-visible:outline-2 focus-visible:outline-[var(--color-focus-ring)]"
           />
         ) : null}
       </div>

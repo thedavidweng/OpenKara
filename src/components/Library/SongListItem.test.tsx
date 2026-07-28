@@ -13,6 +13,8 @@ const {
   mockLyricsState,
   mockSettingsState,
   mockBootstrapState,
+  mockNativeContextMenu,
+  mockBuildContextMenu,
 } = vi.hoisted(() => ({
   mockBootstrapState: {
     status: null as { state: string } | null,
@@ -48,6 +50,8 @@ const {
   mockSettingsState: {
     close: vi.fn(),
   },
+  mockNativeContextMenu: vi.fn(() => Promise.resolve()),
+  mockBuildContextMenu: vi.fn(() => []),
 }));
 
 vi.mock("react-i18next", () => ({
@@ -119,6 +123,15 @@ vi.mock("@/lib/tauri", () => ({
 vi.mock("@/lib/errors", () => ({
   notifyError: vi.fn(),
   notifySuccess: vi.fn(),
+}));
+
+vi.mock("@/lib/native-context-menu", () => ({
+  showNativeContextMenu: mockNativeContextMenu,
+}));
+
+vi.mock("./song-list-item-context-menu-build", () => ({
+  buildSongListContextMenuForSong: mockBuildContextMenu,
+  getSongListContextSongIds: (song: { hash: string }) => [song.hash],
 }));
 
 vi.mock("./ContextMenu", () => ({
@@ -199,6 +212,78 @@ describe("SongListItem", () => {
     expect(api.cancelSeparation).toHaveBeenCalledWith("song-cancel");
 
     mockLibraryState.separationStatuses = {};
+  });
+
+  test("exposes selection and playback through one semantic keyboard control", () => {
+    const song = {
+      hash: "keyboard-song",
+      file_path: "Artist/Keyboard Song.mp3",
+      audio_source_kind: "original" as const,
+      cdg_path: null,
+      media_g_container: null,
+      instrumental: false,
+      language: null,
+      title: "Keyboard Song",
+      artist: "Artist",
+      album: null,
+      duration_ms: 180_000,
+      cover_art: null,
+      has_cover_art: false,
+      artwork_thumb_path: null,
+      imported_at: 0,
+      original_ext: "mp3",
+    };
+    const { getByRole } = render(
+      <SongListItem song={song} orderedHashes={[song.hash]} />,
+    );
+
+    const selection = getByRole("button", { name: song.title });
+    fireEvent.click(selection);
+    fireEvent.keyDown(selection, { key: "Enter" });
+
+    expect(mockLibraryState.selectSong).toHaveBeenCalledWith(
+      song.hash,
+      { shiftKey: false, metaKey: false, ctrlKey: false },
+      [song.hash],
+    );
+    expect(mockPlayerState.playSong).toHaveBeenCalledWith(song.hash);
+    expect(selection.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  test("opens the song actions from the keyboard context-menu shortcut", () => {
+    const song = {
+      hash: "context-song",
+      file_path: "Artist/Context Song.mp3",
+      audio_source_kind: "original" as const,
+      cdg_path: null,
+      media_g_container: null,
+      instrumental: false,
+      language: null,
+      title: "Context Song",
+      artist: "Artist",
+      album: null,
+      duration_ms: 180_000,
+      cover_art: null,
+      has_cover_art: false,
+      artwork_thumb_path: null,
+      imported_at: 0,
+      original_ext: "mp3",
+    };
+    const { getByRole } = render(
+      <SongListItem song={song} orderedHashes={[song.hash]} />,
+    );
+
+    fireEvent.keyDown(getByRole("button", { name: song.title }), {
+      key: "F10",
+      shiftKey: true,
+    });
+
+    expect(mockNativeContextMenu).toHaveBeenCalledOnce();
+    expect(mockLibraryState.selectSong).toHaveBeenCalledWith(
+      song.hash,
+      { shiftKey: false, metaKey: false, ctrlKey: false },
+      [song.hash],
+    );
   });
 
   test("renders media-g badges and duration in the trailing metadata slot", () => {
@@ -329,6 +414,7 @@ describe("SongListItem", () => {
 
     expect(markup).toContain("bg-[var(--sidebar-row-selected-bg)]");
     expect(markup).toContain("border-[var(--sidebar-row-selected-border)]");
+    expect(markup).toContain('data-selected="true"');
     expect(markup).toContain('data-native-overlay-surface="song-action"');
     expect(markup).toContain("bg-[var(--sidebar-control-bg)]");
     expect(markup).toContain("border-[var(--sidebar-control-border)]");

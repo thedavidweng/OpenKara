@@ -220,4 +220,19 @@ describe("GlobalProgressBar", () => {
     expect(indeterminate).toContain("model-indeterminate-bar");
     expect(indeterminate).toContain('aria-label="unknown-total"');
   });
+
+  test("TaskProgressBar exposes non-compact progress and a named cancel control", () => {
+    const markup = renderToStaticMarkup(
+      <TaskProgressBar
+        label="Separating song"
+        percent={42}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(markup).toContain('role="progressbar"');
+    expect(markup).toContain('aria-label="Separating song"');
+    expect(markup).toContain('aria-valuenow="42"');
+    expect(markup).toContain('aria-label="common.cancel"');
+  });
 });

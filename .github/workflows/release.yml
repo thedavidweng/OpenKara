@@ -137,9 +137,9 @@ jobs:
           retention-days: 5
 
   release-separation-smoke:
-    # Native full-window inference on every supported target with the exact
-    # catalog runtime/model pair the release ships. A runtime that cannot
-    # load or infer natively blocks the release.
+    # Native source-tree inference on the non-Windows targets with the exact
+    # catalog runtime/model pair the release ships. Windows uses the stronger
+    # installed-app lifecycle smoke below.
     name: Release separation smoke (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
@@ -160,9 +160,6 @@ jobs:
           - name: macOS (Intel)
             os: macos-15-intel
             ort_target: x86_64-apple-darwin
-          - name: Windows
-            os: windows-latest
-            ort_target: x86_64-pc-windows-msvc
 
     steps:
       - name: Checkout
@@ -224,11 +221,6 @@ jobs:
           OPENKARA_SMOKE_EP: cpu
         run: |
           set -euo pipefail
-
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            # Dependent DLLs (DirectML.dll) resolve via PATH on Windows.
-            export PATH="$(pwd)/src-tauri/generated/onnxruntime:$PATH"
-          fi
 
           input_dir="${RUNNER_TEMP}/openkara-smoke-input"
           output_dir="${RUNNER_TEMP}/openkara-smoke-output"
@@ -307,11 +299,155 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  release-windows-installed-smoke:
+    # This is deliberately release-only: it builds an NSIS candidate, installs
+    # the preceding stable release and then the candidate, and runs the
+    # installed executable through first-install + cold-restart separation.
+    # The normal CI suite covers the fast contracts; this job is the expensive
+    # end-user lifecycle proof and replaces the old duplicate Windows source
+    # tree smoke matrix leg.
+    name: Release Windows installed-app smoke
+    runs-on: windows-latest
+    timeout-minutes: 90
+    needs: prepare-release
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 11.13.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+
+      - name: Restore Rust cache
+        uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: ${{ github.workflow }}-windows-installed-smoke
+          workspaces: ./src-tauri -> target
+          cache-bin: false
+          key: windows-installed-smoke
+          lookup-only: true # release workflow: restore only, never save
+
+      - name: Restore ONNX Runtime cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/generated/onnxruntime
+          key: onnxruntime-x86_64-pc-windows-msvc-${{ hashFiles('scripts/prepare-onnx-runtime.mjs', 'src-tauri/catalog/release-manifest.json') }}
+          lookup-only: true # release workflow: restore only, never save
+
+      - name: Prepare bundled ONNX Runtime
+        shell: bash
+        run: node scripts/prepare-onnx-runtime.mjs --target x86_64-pc-windows-msvc
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build NSIS release candidate with automation smoke entry point
+        env:
+          CI: true
+        run: pnpm tauri build --ci --bundles nsis --features automation-smoke --no-sign
+
+      - name: Install preceding stable release then release candidate
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $release = gh api "repos/$env:GH_REPO/releases" --paginate --jq '[.[] | select(.draft == false and .prerelease == false)] | sort_by(.published_at) | last | .tag_name'
+          if ([string]::IsNullOrWhiteSpace($release) -or $release -eq "null") {
+            throw "No preceding stable release is available for the Windows upgrade smoke."
+          }
+
+          $previousDir = Join-Path $env:RUNNER_TEMP "openkara-previous-release"
+          New-Item -ItemType Directory -Force -Path $previousDir | Out-Null
+          gh release download $release --repo $env:GH_REPO --pattern "*setup.exe" --dir $previousDir
+          $previousInstaller = Get-ChildItem -Path $previousDir -Filter "*setup.exe" -File | Select-Object -First 1
+          if ($null -eq $previousInstaller) {
+            throw "Release $release did not include a Windows NSIS installer."
+          }
+
+          $candidateInstaller = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*setup.exe" -File | Select-Object -First 1
+          if ($null -eq $candidateInstaller) {
+            throw "The candidate NSIS installer was not produced."
+          }
+
+          $installDir = Join-Path $env:RUNNER_TEMP "OpenKara-installed-smoke"
+          & $previousInstaller.FullName /S "/D=$installDir"
+          if ($LASTEXITCODE -ne 0) { throw "Previous installer failed with exit code $LASTEXITCODE" }
+          & $candidateInstaller.FullName /S "/D=$installDir"
+          if ($LASTEXITCODE -ne 0) { throw "Candidate installer failed with exit code $LASTEXITCODE" }
+
+          $installedApp = Get-ChildItem -Path $installDir -Recurse -File |
+            Where-Object { $_.Name -ieq "OpenKara.exe" -or $_.Name -ieq "openkara.exe" } |
+            Select-Object -First 1
+          if ($null -eq $installedApp) {
+            throw "OpenKara.exe was not found after the candidate upgrade install."
+          }
+          "OPENKARA_INSTALLED_APP=$($installedApp.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "OPENKARA_INSTALLED_APP_DIR=$installDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Run clean app-data first-install and cold-restart smoke
+        shell: pwsh
+        env:
+          OPENKARA_SMOKE_EP: cpu
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = Join-Path $env:RUNNER_TEMP "openkara-installed-app-smoke"
+          $appData = Join-Path $root "app-data"
+          $inputDir = Join-Path $root "input"
+          $prepareOutput = Join-Path $root "prepare"
+          $restartOutput = Join-Path $root "restart"
+          New-Item -ItemType Directory -Force -Path $inputDir, $prepareOutput, $restartOutput | Out-Null
+          Copy-Item "src-tauri/tests/fixtures/audio/fixture.wav" (Join-Path $inputDir "fixture.wav")
+
+          & $env:OPENKARA_INSTALLED_APP --automation-smoke prepare --app-data-dir $appData --input-dir $inputDir --output-dir $prepareOutput
+          if ($LASTEXITCODE -ne 0) { throw "First-install app-data smoke failed with exit code $LASTEXITCODE" }
+          & $env:OPENKARA_INSTALLED_APP --automation-smoke restart --app-data-dir $appData --input-dir $inputDir --output-dir $restartOutput
+          if ($LASTEXITCODE -ne 0) { throw "Cold-restart separation smoke failed with exit code $LASTEXITCODE" }
+
+          node scripts/validate-installed-app-smoke.mjs `
+            (Join-Path $prepareOutput "installed-app-smoke-report.json") `
+            (Join-Path $restartOutput "installed-app-smoke-report.json")
+
+      - name: Upload installed-app smoke reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-windows-installed-app-smoke
+          path: |
+            ${{ runner.temp }}/openkara-installed-app-smoke/**/installed-app-smoke-report.json
+            ${{ runner.temp }}/openkara-installed-app-smoke/restart/local-audio-smoke-report.*
+            ${{ runner.temp }}/OpenKara-installed-smoke/**/OpenKara.exe
+          if-no-files-found: warn
+          retention-days: 14
+
   publish:
     name: Release (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
-    needs: [prepare-release, release-separation-smoke]
+    needs:
+      [
+        prepare-release,
+        release-separation-smoke,
+        release-windows-installed-smoke,
+      ]
     permissions:
       contents: write # Needed by tauri-action to create the draft GitHub Release and upload assets.
     strategy:

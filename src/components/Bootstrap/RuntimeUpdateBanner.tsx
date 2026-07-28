@@ -29,7 +29,12 @@ export function RuntimeUpdateBanner() {
 
   if (state === "candidate_ready_restart_required") {
     return (
-      <div className="animate-expand shrink-0 border-b border-[var(--color-border)] bg-[var(--color-sidebar)] px-4 py-3">
+      <div
+        className="animate-expand shrink-0 border-b border-[var(--color-border)] bg-[var(--color-sidebar)] px-4 py-3"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <span className="text-[12px] text-[var(--color-text)]">
             {t("settings.runtime.banner.updateReady")}
@@ -50,7 +55,12 @@ export function RuntimeUpdateBanner() {
 
   if (state === "activation_failed_previous_restored" && !activationDismissed) {
     return (
-      <div className="animate-expand shrink-0 border-b border-[var(--color-border)] bg-[var(--color-sidebar)] px-4 py-3">
+      <div
+        className="animate-expand shrink-0 border-b border-[var(--color-border)] bg-[var(--color-sidebar)] px-4 py-3"
+        role="alert"
+        aria-live="assertive"
+        aria-atomic="true"
+      >
         <div className="flex items-center justify-between gap-2">
           <span className="text-[12px] text-[var(--color-destructive)]">
             {t("settings.runtime.banner.activationFailed")}
@@ -70,7 +80,12 @@ export function RuntimeUpdateBanner() {
 
   if (state === "missing") {
     return (
-      <div className="animate-expand shrink-0 border-b border-[var(--color-border)] bg-[var(--color-sidebar)] px-4 py-3">
+      <div
+        className="animate-expand shrink-0 border-b border-[var(--color-border)] bg-[var(--color-sidebar)] px-4 py-3"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
         <div className="flex flex-col gap-0.5">
           <span className="text-[12px] text-[var(--color-text)]">
             {t("settings.runtime.banner.runtimeRequired")}
@@ -85,7 +100,12 @@ export function RuntimeUpdateBanner() {
 
   if (state === "downloading") {
     return (
-      <div className="animate-expand shrink-0 border-b border-[var(--color-border)] bg-[var(--color-sidebar)] px-4 py-3">
+      <div
+        className="animate-expand shrink-0 border-b border-[var(--color-border)] bg-[var(--color-sidebar)] px-4 py-3"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
         <div className="flex items-center gap-2 text-[12px] text-[var(--color-text)]">
           <Loader2 size={12} className="animate-spin" />
           {t("settings.runtime.banner.downloadingRuntime")}
@@ -96,7 +116,12 @@ export function RuntimeUpdateBanner() {
 
   if (state === "failed") {
     return (
-      <div className="animate-expand shrink-0 border-b border-[var(--color-border)] bg-[var(--color-sidebar)] px-4 py-3">
+      <div
+        className="animate-expand shrink-0 border-b border-[var(--color-border)] bg-[var(--color-sidebar)] px-4 py-3"
+        role="alert"
+        aria-live="assertive"
+        aria-atomic="true"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-[12px]">
             <p className="text-[var(--color-destructive)]">

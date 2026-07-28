@@ -45,7 +45,9 @@ test.describe("Queue panel", () => {
     tauriMock,
   }) => {
     // Right-click on a song in the library to get the context menu
-    await page.getByText("See You Again").click({ button: "right" });
+    await page
+      .getByRole("button", { name: "See You Again" })
+      .click({ button: "right" });
 
     await expect
       .poll(async () => tauriMock.getLastNativeMenu())

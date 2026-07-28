@@ -1,5 +1,9 @@
+// @vitest-environment jsdom
+
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, test } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, test, vi } from "vitest";
+import { MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH } from "@/stores/layout-store";
 import { SidebarRail } from "./SidebarRail";
 
 describe("SidebarRail", () => {
@@ -48,5 +52,28 @@ describe("SidebarRail", () => {
     );
 
     expect(markup).not.toContain('role="separator"');
+  });
+
+  test("resizes with standard separator keyboard controls", () => {
+    const onResize = vi.fn();
+    render(
+      <SidebarRail visible width={300} onResize={onResize}>
+        <div>Sidebar</div>
+      </SidebarRail>,
+    );
+
+    const separator = screen.getByRole("separator", {
+      name: "Resize sidebar",
+    });
+    fireEvent.keyDown(separator, { key: "ArrowRight" });
+    fireEvent.keyDown(separator, { key: "ArrowLeft" });
+    fireEvent.keyDown(separator, { key: "Home" });
+    fireEvent.keyDown(separator, { key: "End" });
+
+    expect(onResize).toHaveBeenNthCalledWith(1, 316);
+    expect(onResize).toHaveBeenNthCalledWith(2, 284);
+    expect(onResize).toHaveBeenNthCalledWith(3, MIN_SIDEBAR_WIDTH);
+    expect(onResize).toHaveBeenNthCalledWith(4, MAX_SIDEBAR_WIDTH);
+    expect(separator.getAttribute("aria-valuenow")).toBe("300");
   });
 });

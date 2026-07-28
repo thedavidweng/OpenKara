@@ -21,6 +21,7 @@ const manifestPath = join(
 function resolve(variant: string) {
   const output = execFileSync("node", [resolverPath, "--variant", variant], {
     encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
   });
   return JSON.parse(output);
 }

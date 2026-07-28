@@ -67,17 +67,17 @@
     --color-active: #3a3a3c;
     --color-text: #d1d1d6;
     --color-text-dim: #8e8e93;
-    --color-text-dimmer: #48484a;
+    --color-text-dimmer: #a1a9b3;
     --color-control-primary: #ebebf5;
     --color-control-primary-foreground: #121212;
-    /* Shared deep system blue — same hue in light and dark. */
-    --color-accent: #007aff;
-    --color-accent-hover: #0a84ff;
+    /* Bright enough for small-link text on the dark shell. */
+    --color-accent: #3397ff;
+    --color-accent-hover: #4aa3ff;
     --color-destructive: #ff3b30;
     --color-destructive-foreground: #f5f5f7;
     --color-ghost-hover: rgba(255, 255, 255, 0.04);
     /* Semantic tokens consumed by audited components. */
-    --color-on-accent: #ffffff;
+    --color-on-accent: #151618;
     --color-on-media: #ffffff;
     --color-scrim: rgba(0, 0, 0, 0.5);
     /*
@@ -129,7 +129,7 @@
   :root[data-theme="light"] {
     /*
      * Luminance invert of dark for surfaces/type/primary fills. Accent blue
-     * stays the same recognition hue as dark — not a second colorful skin.
+     * is darkened enough for small-link text on the light shell.
      */
     --color-surface: #ffffff;
     --color-surface-muted: #f8f8fa;
@@ -141,12 +141,11 @@
     --color-active: #e2e5eb;
     --color-text: #1d1d1f;
     --color-text-dim: #5f636b;
-    --color-text-dimmer: #7d818a;
+    --color-text-dimmer: #5f636b;
     --color-control-primary: #1d1d1f;
     --color-control-primary-foreground: #ffffff;
-    /* Same deep blue as dark — not a brighter light-mode variant. */
-    --color-accent: #007aff;
-    --color-accent-hover: #0066d6;
+    --color-accent: #0066cc;
+    --color-accent-hover: #005bb8;
     --color-destructive: #d70015;
     --color-destructive-foreground: #ffffff;
     --color-ghost-hover: rgba(0, 0, 0, 0.055);
@@ -220,7 +219,7 @@
     --color-toolbar: #000000;
     --color-text: #ffffff;
     --color-text-dim: rgba(255, 255, 255, 0.6);
-    --color-text-dimmer: rgba(255, 255, 255, 0.4);
+    --color-text-dimmer: rgba(255, 255, 255, 0.5);
     --color-border: rgba(255, 255, 255, 0.1);
     --color-border-light: rgba(255, 255, 255, 0.15);
     --color-on-media: #ffffff;
@@ -262,12 +261,12 @@
     --color-active: #2b3037;
     --color-text: #d9dde3;
     --color-text-dim: #9ea6b0;
-    --color-text-dimmer: #6f7780;
+    --color-text-dimmer: #a1a9b3;
     --color-control-primary: #eef2f7;
     --color-control-primary-foreground: #17191d;
-    --color-accent: #007aff;
-    --color-accent-hover: #0a84ff;
-    --color-on-accent: #ffffff;
+    --color-accent: #3397ff;
+    --color-accent-hover: #4aa3ff;
+    --color-on-accent: #151618;
     --color-ghost-hover: rgba(255, 255, 255, 0.06);
     --panel-blur: 12px;
     color-scheme: dark;
@@ -288,11 +287,11 @@
     --color-active: #e2e5eb;
     --color-text: #1d1d1f;
     --color-text-dim: #5f636b;
-    --color-text-dimmer: #7d818a;
+    --color-text-dimmer: #5f636b;
     --color-control-primary: #1d1d1f;
     --color-control-primary-foreground: #ffffff;
-    --color-accent: #007aff;
-    --color-accent-hover: #0066d6;
+    --color-accent: #0066cc;
+    --color-accent-hover: #005bb8;
     --color-on-accent: #ffffff;
     --color-ghost-hover: rgba(0, 0, 0, 0.055);
     --panel-blur: 12px;
@@ -382,12 +381,12 @@
     --color-active: #36363d;
     --color-text: #e6e6eb;
     --color-text-dim: #a0a0a7;
-    --color-text-dimmer: #66666d;
+    --color-text-dimmer: #a1a9b3;
     --color-control-primary: #f5f5f7;
     --color-control-primary-foreground: #18181b;
-    --color-accent: #007aff;
-    --color-accent-hover: #0a84ff;
-    --color-on-accent: #ffffff;
+    --color-accent: #3397ff;
+    --color-accent-hover: #4aa3ff;
+    --color-on-accent: #151618;
     --color-ghost-hover: rgba(255, 255, 255, 0.06);
     --panel-blur: 8px;
     --sidebar-item-radius: 10px;
@@ -404,11 +403,11 @@
     --color-active: #e2e5eb;
     --color-text: #1d1d1f;
     --color-text-dim: #5f636b;
-    --color-text-dimmer: #7d818a;
+    --color-text-dimmer: #5f636b;
     --color-control-primary: #1d1d1f;
     --color-control-primary-foreground: #ffffff;
-    --color-accent: #007aff;
-    --color-accent-hover: #0066d6;
+    --color-accent: #0066cc;
+    --color-accent-hover: #005bb8;
     --color-on-accent: #ffffff;
     --color-ghost-hover: rgba(0, 0, 0, 0.055);
     --panel-blur: 8px;

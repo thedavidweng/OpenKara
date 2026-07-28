@@ -144,6 +144,22 @@ describe("AlphabetRail", () => {
     expect(onNavigate).toHaveBeenCalledWith(0, "A");
   });
 
+  test("activates the bucket moved to by an immediately preceding key", () => {
+    const onNavigate = vi.fn();
+    const index = makeIndex([
+      ["A", 0],
+      ["#", 26],
+    ]);
+    render(<AlphabetRail indexByBucket={index} onNavigate={onNavigate} />);
+    const container = screen.getByRole("navigation");
+
+    // Keyboard users can press these without a React render between events.
+    fireEvent.keyDown(container, { key: "End" });
+    fireEvent.keyDown(container, { key: "Enter" });
+
+    expect(onNavigate).toHaveBeenLastCalledWith(26, "#");
+  });
+
   test("typeahead focuses and activates the typed letter", () => {
     const onNavigate = vi.fn();
     const index = makeIndex([["M", 13]]);

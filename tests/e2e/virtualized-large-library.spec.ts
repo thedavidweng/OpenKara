@@ -386,28 +386,21 @@ test.describe("Virtualized large library (5,000 songs)", () => {
     // Shift-click a song in the M region. Since the rail navigation cleared
     // the range anchor, the shift-click should select only from the clicked
     // song, not span from the original A-song anchor to M.
-    const mSong = renderedRows.first();
+    const mSong = renderedRows.filter({ hasText: /^M Song/ }).first();
+    await mSong.scrollIntoViewIfNeeded();
+    const mSongHash = await mSong.getAttribute("data-song-hash");
+    expect(mSongHash).not.toBeNull();
     await mSong.click({ modifiers: ["Shift"] });
 
-    // Verify only a small number of songs are selected (not spanning A→M).
-    // With the anchor cleared, Shift-click selects just the clicked song.
-    // Selection is reflected by the sidebar-row-selected-bg CSS variable on
-    // the row container — check the computed background to identify selected
-    // rows without a dedicated data attribute.
-    const selectedCount = await page.evaluate(() => {
-      const rows = document.querySelectorAll("[data-song-hash]");
-      let count = 0;
-      for (const row of rows) {
-        const bg = window.getComputedStyle(row).backgroundColor;
-        // Selected rows use a themed background; unselected rows are
-        // transparent. Count rows with a non-transparent background.
-        if (bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") {
-          count++;
-        }
-      }
-      return count;
-    });
-    expect(selectedCount).toBeLessThanOrEqual(1);
+    // A virtualizer may recycle the first rendered node after scrolling, so
+    // assert the stable song identity rather than a positional locator. With
+    // the anchor cleared, Shift-click falls back to selecting only this song.
+    await expect(
+      songList.locator(`[data-song-hash="${mSongHash}"]`),
+    ).toHaveAttribute("data-selected", "true");
+    await expect(
+      songList.locator("[data-song-hash][data-selected='true']"),
+    ).toHaveCount(1);
   });
 
   test("rail is hidden in recently_imported mode", async ({ page }) => {

@@ -1,6 +1,8 @@
+import { useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { ShieldCheck, X } from "lucide-react";
+import { useModalDialog } from "@/hooks/use-modal-dialog";
 import { useSettingsOverlay } from "./SettingsOverlay.context";
 import type { IntegrityReport, ManagedAssetIssue } from "@/types/ipc";
 
@@ -41,6 +43,7 @@ function IssueRow({
           type="checkbox"
           checked={selected}
           onChange={onToggle}
+          aria-label={`${assetTypeLabel(t, issue.asset_type)} ${issue.song_hash}`}
           className="shrink-0"
         />
       ) : null}
@@ -109,6 +112,15 @@ function ReportSection({
 export function IntegrityReportModal({ report }: { report: IntegrityReport }) {
   const { t } = useTranslation();
   const { state, meta, actions } = useSettingsOverlay();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const titleId = "integrity-report-modal-title";
+
+  useModalDialog({
+    dialogRef,
+    initialFocusRef: closeButtonRef,
+    onDismiss: actions.closeIntegrityReport,
+  });
 
   const hasSelection = state.integritySelection.size > 0;
   const totalIssues =
@@ -120,17 +132,27 @@ export function IntegrityReportModal({ report }: { report: IntegrityReport }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-lg border border-[var(--color-border-light)] bg-[var(--color-surface)] shadow-xl">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-busy={meta.integrityCleanupInProgress}
+        tabIndex={-1}
+        className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-lg border border-[var(--color-border-light)] bg-[var(--color-surface)] shadow-xl"
+      >
         <div className="flex items-center justify-between border-b border-[var(--color-border-light)] px-4 py-3">
           <div className="flex items-center gap-2">
             <ShieldCheck size={16} className="text-[var(--color-accent)]" />
-            <h3 className="text-[14px] font-medium text-white">
+            <h3 id={titleId} className="text-[14px] font-medium text-white">
               {t("settings.integrity.reportTitle")}
             </h3>
           </div>
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={actions.closeIntegrityReport}
+            aria-label={t("common.close")}
             className="rounded-md p-1 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-hover)] hover:text-white"
           >
             <X size={16} />

@@ -107,6 +107,26 @@ pub fn ensure_active_model_ready_or_install_blocking(
     status: &Arc<Mutex<ModelBootstrapStatusSnapshot>>,
     emit: &mut impl FnMut(&'static str, ModelBootstrapStatusSnapshot),
 ) -> CommandResult<std::path::PathBuf> {
+    ensure_active_model_ready_or_install_blocking_with_resolution(app_data_dir, status, emit, true)
+}
+
+/// Same production download/install path as separation, restricted to the
+/// app-data model. The packaged-app release smoke uses this to reject a false
+/// pass from `src-tauri/models` on a build machine.
+pub fn ensure_active_managed_model_ready_or_install_blocking(
+    app_data_dir: &Path,
+    status: &Arc<Mutex<ModelBootstrapStatusSnapshot>>,
+    emit: &mut impl FnMut(&'static str, ModelBootstrapStatusSnapshot),
+) -> CommandResult<std::path::PathBuf> {
+    ensure_active_model_ready_or_install_blocking_with_resolution(app_data_dir, status, emit, false)
+}
+
+fn ensure_active_model_ready_or_install_blocking_with_resolution(
+    app_data_dir: &Path,
+    status: &Arc<Mutex<ModelBootstrapStatusSnapshot>>,
+    emit: &mut impl FnMut(&'static str, ModelBootstrapStatusSnapshot),
+    allow_development_fallback: bool,
+) -> CommandResult<std::path::PathBuf> {
     let active_variant = config::load_config(app_data_dir)
         .ok()
         .flatten()
@@ -116,13 +136,23 @@ pub fn ensure_active_model_ready_or_install_blocking(
     let managed_path = separator::bootstrap::managed_model_path_for(app_data_dir, descriptor);
     let dev_path = separator::model::default_model_path_for_filename(&descriptor.filename);
 
-    match separator::bootstrap::resolve_model_installation(
-        &managed_path,
-        &dev_path,
-        &descriptor.file_sha256,
-    )
-    .map_err(|error| internal_error(format!("failed to inspect model status: {error}")))?
-    {
+    let resolution = if allow_development_fallback {
+        separator::bootstrap::resolve_model_installation(
+            &managed_path,
+            &dev_path,
+            &descriptor.file_sha256,
+        )
+    } else {
+        separator::bootstrap::resolve_managed_model_installation(
+            &managed_path,
+            &descriptor.file_sha256,
+        )
+    };
+
+    let resolution = resolution
+        .map_err(|error| internal_error(format!("failed to inspect model status: {error}")))?;
+
+    match resolution {
         separator::bootstrap::ModelInstallationResolution::Ready(resolved) => {
             let snapshot = ready_status(resolved.path.display().to_string());
             if let Ok(mut current) = status.lock() {

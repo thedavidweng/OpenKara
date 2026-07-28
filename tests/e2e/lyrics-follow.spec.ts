@@ -59,7 +59,7 @@ test.describe("Lyrics auto-follow", () => {
     await page.addInitScript(DENSE_LYRICS_SCRIPT);
     await page.goto("/");
     await expect(page.getByText("Earfquake")).toBeVisible();
-    await page.getByText("Earfquake").dblclick();
+    await page.getByRole("button", { name: "Earfquake" }).dblclick();
     await expect(page.getByText("Lyric line 0")).toBeVisible({
       timeout: 10000,
     });

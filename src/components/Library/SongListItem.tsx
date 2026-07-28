@@ -76,7 +76,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
         ? "ZIP+G"
         : null;
 
-  const handleDoubleClick = () => {
+  const handlePlay = () => {
     const current = usePlayerStore.getState().snapshot;
     if (current?.song_id && current.song_id !== song.hash) {
       useQueueStore.getState().addToQueue(song.hash);
@@ -84,6 +84,18 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
       playSong(song.hash);
     }
     closeSettings();
+  };
+
+  const selectSongFromEvent = (event: React.MouseEvent<HTMLButtonElement>) => {
+    selectSong(
+      song.hash,
+      {
+        shiftKey: event.shiftKey,
+        metaKey: event.metaKey,
+        ctrlKey: event.ctrlKey,
+      },
+      orderedHashes,
+    );
   };
 
   const handleSeparate = (e: React.MouseEvent) => {
@@ -146,8 +158,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
     }
   };
 
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
+  const openContextMenu = (clientX: number, clientY: number) => {
     if (!isSelected) {
       selectSong(
         song.hash,
@@ -165,20 +176,35 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
         setPlaylistDialogOpen,
       },
     );
-    void showNativeContextMenu(items, e.clientX, e.clientY);
+    void showNativeContextMenu(items, clientX, clientY);
+  };
+
+  const handleContextMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    openContextMenu(event.clientX, event.clientY);
+  };
+
+  const handleSelectionKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+  ) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handlePlay();
+      return;
+    }
+
+    if (
+      event.key === "ContextMenu" ||
+      (event.shiftKey && event.key === "F10")
+    ) {
+      event.preventDefault();
+      const rect = event.currentTarget.getBoundingClientRect();
+      openContextMenu(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    }
   };
 
   return (
     <div
-      onClick={(e) =>
-        selectSong(
-          song.hash,
-          { shiftKey: e.shiftKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey },
-          orderedHashes,
-        )
-      }
-      onDoubleClick={handleDoubleClick}
-      onContextMenu={handleContextMenu}
       className={`group relative flex select-none items-center gap-2.5 rounded-[14px] border px-3 py-2.5 transition-colors duration-150 ${
         isSelected
           ? "border-[var(--sidebar-row-selected-border)] bg-[var(--sidebar-row-selected-bg)] text-[var(--color-text)]"
@@ -187,6 +213,7 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
       data-native-overlay-surface="song-row"
       data-song-list-item-variant="unified"
       data-song-hash={song.hash}
+      data-selected={isSelected ? "true" : "false"}
       style={
         showBatchSongProgress
           ? undefined
@@ -196,15 +223,27 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
             } satisfies CSSProperties)
       }
     >
+      <button
+        type="button"
+        onClick={selectSongFromEvent}
+        onDoubleClick={handlePlay}
+        onContextMenu={handleContextMenu}
+        onKeyDown={handleSelectionKeyDown}
+        aria-label={songDisplayTitle(song)}
+        aria-pressed={isSelected}
+        className="absolute inset-0 z-0 cursor-pointer rounded-[14px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
+        data-song-action="select"
+      />
+
       <CoverArtThumbnail
         songHash={song.hash}
         coverArt={song.cover_art}
         thumbnailPath={song.artwork_thumb_path}
         alt={`${songDisplayTitle(song)} cover art`}
-        className="h-11 w-11 shrink-0"
+        className="pointer-events-none h-11 w-11 shrink-0"
       />
 
-      <div className="flex min-w-0 flex-1 flex-col justify-center">
+      <div className="relative z-10 pointer-events-none flex min-w-0 flex-1 flex-col justify-center">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2 overflow-hidden">
             {isCurrentPlaying ? (
@@ -231,10 +270,11 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
             )}
             {sepState === "idle" && canSeparateSong && (
               <button
+                type="button"
                 onClick={handleSeparate}
                 disabled={modelPreparing}
                 title={modelPreparing ? t("library.modelPreparing") : undefined}
-                className={`rounded border px-1.5 py-0.5 text-[10px] disabled:cursor-default disabled:opacity-50 ${
+                className={`pointer-events-auto min-h-[24px] rounded border px-1.5 py-0.5 text-[10px] disabled:cursor-default disabled:opacity-50 ${
                   isSelected
                     ? "border-[var(--sidebar-control-border)] bg-[var(--sidebar-control-bg)] text-[var(--color-text)] hover:bg-[var(--sidebar-row-overlay-bg)]"
                     : "border-[var(--sidebar-control-border)] bg-[var(--sidebar-control-bg)] text-[var(--color-text-dim)] hover:bg-[var(--sidebar-row-overlay-bg)]"
@@ -250,10 +290,11 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
                 <span>{separationStatus?.percent ?? 0}%</span>
                 {!batchActive && (
                   <button
+                    type="button"
                     onClick={handleCancelSeparation}
                     title={t("library.cancelSeparation")}
                     aria-label={t("library.cancelSeparation")}
-                    className="motion-icon-button rounded p-0.5 text-[var(--color-text-dim)] hover:bg-[var(--sidebar-row-overlay-bg)] hover:text-[var(--color-text)]"
+                    className="pointer-events-auto inline-flex min-h-[24px] min-w-[24px] items-center justify-center motion-icon-button rounded p-0.5 text-[var(--color-text-dim)] hover:bg-[var(--sidebar-row-overlay-bg)] hover:text-[var(--color-text)]"
                     data-native-overlay-surface="song-action"
                   >
                     <X size={12} />
@@ -283,8 +324,9 @@ export function SongListItem({ song, orderedHashes }: SongListItemProps) {
             )}
             {sepState === "failed" && canSeparateSong && (
               <button
+                type="button"
                 onClick={handleSeparate}
-                className="text-[10px] text-[var(--color-destructive)]"
+                className="pointer-events-auto min-h-[24px] text-[10px] text-[var(--color-destructive)]"
               >
                 {t("common.retry")}
               </button>

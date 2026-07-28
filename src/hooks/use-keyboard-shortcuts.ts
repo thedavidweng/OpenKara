@@ -61,7 +61,7 @@ export function handleAppKeyDown(
   if (
     typeof target?.closest === "function" &&
     target.closest(
-      '[role="dialog"], [data-dialog], [role="listbox"], [role="menu"]',
+      '[role="dialog"], [data-dialog], [role="listbox"], [role="menu"], [role="slider"], button, a[href], summary, [role="button"], [role="switch"], [role="checkbox"], [role="radio"], [role="tab"]',
     )
   ) {
     return false;

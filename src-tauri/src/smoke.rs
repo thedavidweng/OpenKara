@@ -29,6 +29,9 @@ pub struct LocalAudioSmokeConfig {
     pub input_dir: PathBuf,
     pub output_dir: PathBuf,
     pub separation_mode: SeparationSmokeMode,
+    /// When present, separation must use this verified managed model rather
+    /// than the development-cache fallback used by source-tree smoke tests.
+    pub model_path: Option<PathBuf>,
     pub seek_iterations: usize,
 }
 
@@ -332,6 +335,40 @@ fn resolve_model_status(config: &LocalAudioSmokeConfig) -> Result<SmokeModelStat
             message: Some("separation was disabled for this smoke run".to_string()),
         }),
         SeparationSmokeMode::Auto => {
+            if let Some(model_path) = config.model_path.as_deref() {
+                let descriptor = bootstrap::descriptor_for(crate::config::ModelVariant::Htdemucs);
+                return match bootstrap::resolve_managed_model_installation(
+                    model_path,
+                    &descriptor.file_sha256,
+                )? {
+                    bootstrap::ModelInstallationResolution::Ready(resolved) => {
+                        Ok(SmokeModelStatus {
+                            status: SmokeStepStatus::Passed,
+                            path: Some(resolved.path.display().to_string()),
+                            message: Some(format!(
+                                "using verified managed model from {}",
+                                resolved.path.display()
+                            )),
+                        })
+                    }
+                    bootstrap::ModelInstallationResolution::LegacyManaged(path) => {
+                        Ok(SmokeModelStatus {
+                            status: SmokeStepStatus::Failed,
+                            path: Some(path.display().to_string()),
+                            message: Some(
+                                "managed model does not match a verified release identity"
+                                    .to_string(),
+                            ),
+                        })
+                    }
+                    bootstrap::ModelInstallationResolution::Absent => Ok(SmokeModelStatus {
+                        status: SmokeStepStatus::Failed,
+                        path: Some(model_path.display().to_string()),
+                        message: Some("managed model was not installed".to_string()),
+                    }),
+                };
+            }
+
             let dev_model_path = model::default_model_path();
             let placeholder_managed_path =
                 config.output_dir.join(".smoke-managed-model-placeholder");
