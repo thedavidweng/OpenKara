@@ -221,6 +221,132 @@ Per-variant `state` is one of `not_installed`, `up_to_date`,
 装模型的 generation 时，本命令同样报错（拒绝把旧工件当作"更新"呈现）；
 `download_model` 侧也会拒绝隐式降级——降级需要用户显式删除模型后重新下载。
 
+## Runtime Bootstrap commands (Settings)
+
+These commands let the Settings UI inspect and manage the ONNX Runtime
+installation. They are separate from the model bootstrap flow.
+
+### Command: `get_runtime_bootstrap_status`
+
+**Input**: none
+
+**Output:** `RuntimeBootstrapStatusSnapshot`
+
+```json
+{
+  "state": "ready",
+  "runtime_path": "/path/to/onnxruntime/lib",
+  "downloaded_bytes": null,
+  "total_bytes": null,
+  "version": "v1.27.1",
+  "active_artifact_id": "onnxruntime-1.27.1-openkara-aarch64-apple-darwin",
+  "target_triple": "aarch64-apple-darwin",
+  "candidate_version": null,
+  "restart_required": false,
+  "error": null
+}
+```
+
+### Shared type: `RuntimeBootstrapStatusSnapshot`
+
+| Field                | Type                                                                                                                                                                                             | Notes                                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `state`              | `"missing" \| "downloading" \| "ready" \| "update_available" \| "downloading_candidate" \| "candidate_ready_restart_required" \| "activation_failed_previous_restored" \| "corrupt" \| "failed"` | Runtime lifecycle state                                                                                           |
+| `runtime_path`       | `String`                                                                                                                                                                                         | Active runtime library path, or target install path                                                               |
+| `downloaded_bytes`   | `Option<u64>`                                                                                                                                                                                    | Present during `downloading` / `downloading_candidate`                                                            |
+| `total_bytes`        | `Option<u64>`                                                                                                                                                                                    | Present when the download endpoint returns `Content-Length`                                                       |
+| `version`            | `String`                                                                                                                                                                                         | Active runtime upstream version; `legacy` for pre-slot installs; pinned catalog version when nothing is installed |
+| `active_artifact_id` | `Option<String>`                                                                                                                                                                                 | Active runtime artifact ID, when a slot install is active                                                         |
+| `target_triple`      | `String`                                                                                                                                                                                         | Runtime target triple for this build                                                                              |
+| `candidate_version`  | `Option<String>`                                                                                                                                                                                 | Upstream version of the staged candidate, when one exists                                                         |
+| `restart_required`   | `bool`                                                                                                                                                                                           | `true` when a candidate is staged and activation requires restart                                                 |
+| `error`              | `Option<CommandError>`                                                                                                                                                                           | Present when `state = failed`                                                                                     |
+
+### Command: `download_runtime`
+
+**Input**: none
+
+**Output:** `RuntimeBootstrapStatusSnapshot`
+
+Downloads the ONNX Runtime for the current target triple. First install
+downloads and loads immediately. When a runtime is already active (or a
+legacy install is loaded), the download is staged as a next-launch
+candidate instead — a loaded runtime is never replaced in place.
+
+The download is single-flight: a concurrent call while a download is in
+progress returns the current downloading status instead of spawning a
+duplicate task.
+
+### Command: `check_runtime_updates`
+
+**Input**: none
+
+**Output:** `RuntimeUpdateReport`
+
+```json
+{
+  "generation": 3,
+  "release_id": "2026-07-23-003",
+  "target_triple": "aarch64-apple-darwin",
+  "state": "up_to_date",
+  "installed_version": "v1.27.1",
+  "available_version": "v1.27.1",
+  "available_bytes": 10485760,
+  "restart_required": false
+}
+```
+
+Fetches and verifies the current stable catalog from the network, compares
+the installed runtime against the catalog artifact, and caches the
+verified catalog so a subsequent `download_runtime` installs the newer
+artifact. `state` is one of `not_installed`, `up_to_date`,
+`update_available`, `installed_without_identity`. A failed check returns
+`CommandError` and never affects the readiness of the installed runtime.
+
+### Shared type: `RuntimeUpdateReport`
+
+| Field               | Type               | Notes                                                                              |
+| ------------------- | ------------------ | ---------------------------------------------------------------------------------- |
+| `generation`        | `u64`              | Catalog generation                                                                 |
+| `release_id`        | `String`           | Catalog release ID                                                                 |
+| `target_triple`     | `String`           | Runtime target triple                                                              |
+| `state`             | `ModelUpdateState` | `not_installed`, `up_to_date`, `update_available`, or `installed_without_identity` |
+| `installed_version` | `Option<String>`   | Installed runtime upstream version                                                 |
+| `available_version` | `String`           | Available runtime upstream version                                                 |
+| `available_bytes`   | `u64`              | Download size in bytes                                                             |
+| `restart_required`  | `bool`             | `true` when a runtime is already installed                                         |
+
+### Command: `delete_runtime`
+
+**Input**: none
+
+**Output:** `()`
+
+Removes the active runtime installation, its slot record, and the
+candidate. The user invokes this from Settings to clear a corrupt or
+incorrect install before re-downloading. A loaded runtime stays mapped
+into the process until restart; `delete_runtime` only removes disk state
+and slot metadata.
+
+### Events
+
+#### `runtime-bootstrap-progress`
+
+Payload is a full `RuntimeBootstrapStatusSnapshot` with `state =
+"downloading"` or `"downloading_candidate"`. `downloaded_bytes` increases
+monotonically during the download.
+
+#### `runtime-bootstrap-ready`
+
+Payload is a full `RuntimeBootstrapStatusSnapshot` with `state = "ready"`
+or `"candidate_ready_restart_required"`. `downloaded_bytes` and `error`
+are `null`.
+
+#### `runtime-bootstrap-error`
+
+Payload is a full `RuntimeBootstrapStatusSnapshot` with `state = "failed"`
+and `error.code = "model_unavailable"`.
+
 ## Runtime path resolution semantics
 
 1. 优先使用活动模型 variant 对应的 `<app_data_dir>/models/<descriptor.filename>`

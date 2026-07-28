@@ -18,7 +18,8 @@
 10. `set_preload_candidate(song_id: Option<String>) -> ()` — #88 无缝播放预加载命令（见下）
 11. `playback-position` 事件 payload 为 `{ ms: u64, transport_generation: u64, snapshot: PlaybackStateSnapshot }`
 12. `track-transitioned` 事件 payload 为 `{ transitionSerial: u64, preloadGeneration: u64, fromSongId: String, toSongId: String, state: PlaybackStateSnapshot }` — #88/#89 无缝换轨通知（见下）
-13. `get_waveform(hash: String, buckets: Option<usize>) -> Vec<f32>` — #90 波形 seekbar 命令（见下）
+13. `playback-ended` 事件 payload 为 `{ songId: String }` — 播放结束通知（见下）
+14. `get_waveform(hash: String, buckets: Option<usize>) -> Vec<f32>` — #90 波形 seekbar 命令（见下）
 
 ### Peak envelope 可视化（#87）
 
@@ -326,6 +327,23 @@ playing ↔ playing（pause/resume，通过 isPlaying 区分）
 5. `transition_serial` 单调递增，可用于去重或调试
 6. 如果前端 clock 持有的 `song_id` 既不是 `from_song_id` 也不是 `to_song_id`（用户手动切换了歌曲），则忽略该事件
 7. 无缝换轨时 `transport_generation` 递增，使前端 generation 过滤器丢弃旧歌的延迟 `playback-position` 事件（#103）
+
+### Event: `playback-ended`
+
+**Payload**
+
+```json
+{
+  "songId": "sha256 hash string"
+}
+```
+
+**Semantics**
+
+1. Emitted when the current track reaches EOF and no prepared track is available for gapless transition
+2. The frontend uses this event to advance the queue and load the next song
+3. The `songId` field lets the frontend guard against stale events from a previous transport
+4. This event is not emitted when a gapless transition occurs; `track-transitioned` covers that path
 
 ### Event: `remote-playback-reconnect` (#151)
 

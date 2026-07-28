@@ -33,7 +33,7 @@ function AddSingerInput({ onAdd }: AddSingerInputProps) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1 rounded border border-dashed border-[var(--color-border)] px-2 py-0.5 text-[11px] text-[var(--color-text-dim)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+        className="flex min-h-[24px] items-center gap-1 rounded border border-dashed border-[var(--color-border)] px-2 py-0.5 text-[11px] text-[var(--color-text-dim)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
       >
         + Add Singer
       </button>

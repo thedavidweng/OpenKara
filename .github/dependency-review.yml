@@ -1,0 +1,11 @@
+# Dependency review configuration for OpenKara
+# Supports NIST SSDF 1.1 dependency policy controls
+fail_on_severity: high
+allow_licenses:
+  - Apache-2.0
+  - MIT
+  - BSD-2-Clause
+  - BSD-3-Clause
+  - ISC
+  - MPL-2.0
+  - Unicode-DFS-2016

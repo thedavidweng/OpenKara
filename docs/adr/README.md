@@ -52,3 +52,5 @@ Write new ADRs in ASD-STE100 Simplified English. See `AGENTS.md` for the rules. 
 - [0012 — CDG seek resets both timelines, transport_generation preserves renderer](./0012-cdg-seek-resets-both-timelines.md)
 - [0013 — Use standards as product quality baselines](./0013-use-standards-as-product-quality-baselines.md)
 - [0014 — Route product standards by changed surface](./0014-route-product-standards-by-changed-surface.md)
+- [0015 — Lyrics acquisition uses a multi-source fallback chain](./0015-lyrics-acquisition-multi-source-fallback-chain.md)
+- [0016 — Source separation runs locally with ONNX Runtime](./0016-source-separation-runs-locally-with-onnx-runtime.md)

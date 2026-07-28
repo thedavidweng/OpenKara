@@ -7,12 +7,13 @@
 1. `fetch_lyrics(song_id: String) -> LyricsPayload`
 2. `set_lyrics_offset(song_id: String, ms: i64) -> ()`
 3. `set_lyrics_font_step(step: i8) -> AppSettings`
-4. 抓取优先顺序固定为 `LRCLIB -> LrcApi -> embedded -> sidecar`
-5. sidecar 优先级固定为 `.ttml -> .lys -> .lrc`；每个候选格式必须先能解析出至少一行歌词，格式错误时继续尝试下一种
-6. SQLite `lyrics` 表按 `song_hash` 缓存原始歌词文本和 `offset_ms`
-7. 对同一首歌重复调用 `fetch_lyrics` 时，优先命中 SQLite cache，不重复发起 HTTP 请求
-8. 歌词字号是全局显示偏好，不写入 `lyrics` 表；它走 `AppSettings.lyrics_font_step`
-9. 歌词命令失败值统一为 `CommandError`，详见 [errors.md](./errors.md)
+4. `save_manual_lyrics(song_id: String, text: String) -> LyricsPayload`
+5. 抓取优先顺序固定为 `LRCLIB -> LrcApi -> embedded -> sidecar`
+6. sidecar 优先级固定为 `.ttml -> .lys -> .lrc`；每个候选格式必须先能解析出至少一行歌词，格式错误时继续尝试下一种
+7. SQLite `lyrics` 表按 `song_hash` 缓存原始歌词文本和 `offset_ms`
+8. 对同一首歌重复调用 `fetch_lyrics` 时，优先命中 SQLite cache，不重复发起 HTTP 请求
+9. 歌词字号是全局显示偏好，不写入 `lyrics` 表；它走 `AppSettings.lyrics_font_step`
+10. 歌词命令失败值统一为 `CommandError`，详见 [errors.md](./errors.md)
 
 ## Inputs / outputs / required dependencies
 
@@ -149,6 +150,28 @@
 2. 只有在该歌曲已经存在缓存歌词时，命令才会成功
 3. 如果歌曲存在但还没有缓存歌词，命令返回 `CommandError`
 4. 该命令只更新 SQLite 中的 `offset_ms`，不会重抓歌词
+
+### Command: `save_manual_lyrics`
+
+**Input**
+
+```json
+{
+  "song_id": "sha256 hash string",
+  "text": "[00:35.66]Look at the stars"
+}
+```
+
+**Output:** `LyricsPayload` — the parsed lyrics with the detected source.
+
+**Semantics**
+
+1. The command parses the `text` as LRC, TTML, or plain text
+2. The backend detects the source type from the content: `manual_ttml` for XML-starting text, `manual_lys` for LRC-starting text, `manual` for plain text
+3. The command writes the raw text, detected source, and parsed offset to the SQLite `lyrics` cache
+4. The command publishes the updated lyrics to the active remote library if one is connected
+5. If the text cannot be parsed as timed lyrics, the backend falls back to plain-text lines
+6. If the song does not exist, the command returns `CommandError`
 
 ### Command: `set_lyrics_font_step`
 

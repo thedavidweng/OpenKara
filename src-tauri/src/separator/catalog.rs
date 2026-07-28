@@ -121,6 +121,19 @@ pub struct CatalogModel {
     pub deprecation: CatalogDeprecation,
     pub upstream: CatalogUpstream,
     pub model: CatalogModelMetadata,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evaluation_fixture: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capability_limit: Option<CapabilityLimit>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub known_user_effect: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CapabilityLimit {
+    pub max_segment_seconds: f64,
+    pub sample_rate_hz: u32,
+    pub channels: usize,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

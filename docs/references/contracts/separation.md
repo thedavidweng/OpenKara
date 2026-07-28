@@ -8,13 +8,22 @@
 2. `upgrade_to_four_stem(song_id: String) -> SeparationStatusSnapshot`
 3. `re_separate(song_id: String, stem_mode: StemMode) -> SeparationStatusSnapshot`
 4. `get_separation_status(song_id: String) -> SeparationStatusSnapshot`
-5. `separation-progress` 事件 payload 为 `{ song_id: String, percent: u8 }`
-6. `separation-complete` 事件 payload 为 `{ song_id: String, status: SeparationStatusSnapshot }`
-7. `separation-error` 事件 payload 为 `{ song_id: String, error: CommandError }`
-8. stem cache 目录固定为 `<app_cache_dir>/stems/{song_hash}/`
-9. `separate(song_id)` 只有在模型 bootstrap 为 `ready` 时才会真正启动后台 worker
-10. 分离前会把输入音频归一化为 Demucs 需要的 `44.1 kHz / stereo`
-11. 超过单个 Demucs window 的长音频会按固定窗口分段推理并拼回完整 stems
+5. `get_all_separation_statuses() -> Vec<SeparationStatusSnapshot>`
+6. `cancel_separation(song_id: String) -> ()`
+7. `downgrade_single_to_two_stem(song_id: String) -> SeparationStatusSnapshot`
+8. `batch_separate(song_ids: Vec<String>) -> ()`
+9. `cancel_batch_separation() -> ()`
+10. `separation-progress` 事件 payload 为 `{ song_id: String, percent: u8 }`
+11. `separation-complete` 事件 payload 为 `{ song_id: String, status: SeparationStatusSnapshot }`
+12. `separation-error` 事件 payload 为 `{ song_id: String, error: CommandError }`
+13. `separation-cancelled` 事件 payload 为 `{ song_id: String }`
+14. `batch-separation-progress` 事件 payload 为 `BatchSeparationProgress`
+15. `batch-separation-complete` 事件 payload 为 `BatchSeparationProgress`
+16. `batch-separation-cancelled` 事件 payload 为 `BatchSeparationProgress`
+17. stem cache 目录固定为 `<app_cache_dir>/stems/{song_hash}/`
+18. `separate(song_id)` 只有在模型 bootstrap 为 `ready` 时才会真正启动后台 worker
+19. 分离前会把输入音频归一化为 Demucs 需要的 `44.1 kHz / stereo`
+20. 超过单个 Demucs window 的长音频会按固定窗口分段推理并拼回完整 stems
 
 ## Inputs / outputs / required dependencies
 
@@ -143,6 +152,164 @@
   }
 }
 ```
+
+### Command: `get_all_separation_statuses`
+
+**Input**: none
+
+**Output:** `Vec<SeparationStatusSnapshot>`
+
+**Semantics**
+
+1. The frontend calls this command once at startup to hydrate the separation status store
+2. The command reads all cached stem entries from the SQLite `stems` table
+3. Only entries whose stem files still exist on disk are returned as `completed`
+4. The command also populates the in-memory separation status map so subsequent `get_separation_status` calls return the correct state
+5. Songs without any cached stems are not included in the returned vector
+
+### Command: `cancel_separation`
+
+**Input**
+
+```json
+{
+  "songId": "sha256 hash string"
+}
+```
+
+**Output:** `()`
+
+**Semantics**
+
+1. Sets the cancellation flag for the given song if a separation job is currently running
+2. A cancelled run never surfaces a `separation-error` event or an error toast
+3. If the song is not currently separating, the command is a benign no-op success
+4. The backend emits `separation-cancelled` after the worker observes the flag and stops
+
+### Command: `downgrade_single_to_two_stem`
+
+**Input**
+
+```json
+{
+  "songId": "sha256 hash string"
+}
+```
+
+**Output:** `SeparationStatusSnapshot`
+
+**Semantics**
+
+1. Removes the individual drum/bass/other stem files for the given song and updates the database entry to two-stem
+2. The command emits a `separation-complete` event with the updated `completed` status
+3. `cacheHit` is `false` because a downgrade is an explicit user action, not a cache-served separation
+4. The command publishes the updated song to the active remote library if one is connected
+5. If the song does not have individual stems, the command returns the current `completed` status
+
+### Command: `batch_separate`
+
+**Input**
+
+```json
+{
+  "songIds": ["sha256 hash string"]
+}
+```
+
+Pass an empty `songIds` vector to separate all separable songs in the library.
+
+**Output:** `()`
+
+**Semantics**
+
+1. If a batch separation is already running, the command returns `CommandError`
+2. The command plans the batch: songs with valid cached stems for the active stem mode are skipped and counted in `skipped`
+3. Songs marked `instrumental = true` or Media+G are excluded from the plan
+4. Jobs run sequentially because ONNX Runtime is memory-heavy
+5. The command returns immediately; the batch loop runs in the background
+6. The backend emits `batch-separation-progress` events during the batch and a terminal `batch-separation-complete` event
+7. Each song in the batch also emits the standard `separation-progress`, `separation-complete`, and `separation-error` events
+8. Runtime and model bootstrap happen once before the batch loop starts; if bootstrap fails, the batch emits a terminal `batch-separation-complete` event with all candidates as `failed`
+
+### Command: `cancel_batch_separation`
+
+**Input**: none
+
+**Output:** `()`
+
+**Semantics**
+
+1. If no batch separation is running, the command returns `CommandError`
+2. The command sets the batch cancel flag and flags the in-flight song so the batch stops mid-song
+3. The backend emits `batch-separation-cancelled` after the current song stops
+4. Songs that were not yet processed remain unseparated
+
+### Event: `separation-cancelled`
+
+```json
+{
+  "songId": "sha256 hash string"
+}
+```
+
+**Semantics**
+
+1. Emitted when a cancellation flag was set and the worker observed it before completing
+2. A cancelled run never emits `separation-error`; the frontend resets the song status to `idle`
+3. A run that completed successfully before the cancellation flag was observed does not emit this event
+
+### Event: `batch-separation-progress`
+
+```json
+{
+  "total": 15,
+  "completed": 3,
+  "skipped": 5,
+  "failed": 0,
+  "currentSongId": "sha256 hash string",
+  "currentPercent": 42
+}
+```
+
+**Semantics**
+
+1. `total` is the number of candidate songs to separate (excludes skipped songs)
+2. `skipped` is the number of songs that already had valid cached stems for the active stem mode
+3. `currentSongId` is `null` between songs or when the batch has not started processing
+4. `currentPercent` is the per-song progress of the current song (0–100)
+5. The backend emits this event at the start of the batch, before each song, and on each per-song progress update
+
+### Event: `batch-separation-complete`
+
+Payload is the same `BatchSeparationProgress` shape as `batch-separation-progress`.
+
+**Semantics**
+
+1. Emitted when the batch loop finishes all candidate songs
+2. `completed` + `failed` + `skipped` = `total` + `skipped`
+3. `currentSongId` is `null` and `currentPercent` is `0`
+4. If the prerequisite bootstrap failed, the backend emits this event with all candidates as `failed`
+
+### Event: `batch-separation-cancelled`
+
+Payload is the same `BatchSeparationProgress` shape as `batch-separation-progress`.
+
+**Semantics**
+
+1. Emitted when the user called `cancel_batch_separation` and the batch loop observed the cancel flag
+2. `completed` and `failed` reflect the state at the time of cancellation
+3. Songs that were not yet processed remain unseparated
+
+### Shared type: `BatchSeparationProgress`
+
+| Field             | Type             | Notes                                             |
+| ----------------- | ---------------- | ------------------------------------------------- |
+| `total`           | `usize`          | Candidate songs to separate (excludes skipped)    |
+| `completed`       | `usize`          | Songs that finished successfully                  |
+| `skipped`         | `usize`          | Songs that already had valid cached stems         |
+| `failed`          | `usize`          | Songs that failed separation                      |
+| `current_song_id` | `Option<String>` | The song being processed, or `null` between songs |
+| `current_percent` | `u8`             | Per-song progress of the current song (0–100)     |
 
 ### Shared error type: `CommandError`
 

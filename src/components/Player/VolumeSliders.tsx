@@ -543,7 +543,7 @@ export function VolumeSliders({
               aria-pressed={isExpanded}
               data-playback-action="stem-mixer"
               data-active={isExpanded ? "true" : undefined}
-              className="motion-icon-button flex h-4 w-4 items-center justify-center rounded-full text-[var(--color-text-dimmer)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-control-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
+              className="motion-icon-button flex h-6 w-6 items-center justify-center rounded-full text-[var(--color-text-dimmer)] hover:bg-[var(--color-ghost-hover)] hover:text-[var(--color-control-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
             >
               <ChevronDown
                 size={12}

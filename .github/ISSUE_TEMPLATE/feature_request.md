@@ -14,6 +14,16 @@ A clear description of the feature you'd like.
 
 Why do you need this? What problem does it solve?
 
+## User outcome
+
+What user outcome does this change enable?
+
+## Acceptance criteria
+
+How will we know this change is successful? List each criterion.
+
+-
+
 ## Proposed solution
 
 If you have a specific implementation in mind, describe it here. Include command syntax if applicable.

@@ -80,7 +80,64 @@ stays explicitly dark regardless of the primary preference.
 - `set_eq_gains(gains_db: [f32; 5]) -> AppSettings`
 - `set_crossfade_enabled(enabled: bool) -> AppSettings`
 - `set_crossfade_duration_ms(duration_ms: u32) -> AppSettings`
+- `set_update_policy(policy: UpdatePolicy) -> AppSettings`
 - `restart_app() -> ()`
+
+## Update policy
+
+`UpdatePolicy` enum values (serialized as lowercase snake_case strings):
+
+| Value             | Meaning                                                               |
+| ----------------- | --------------------------------------------------------------------- |
+| `"manual"`        | Only check for updates when the user triggers it manually             |
+| `"notify"`        | Check on startup and surface available updates (default)              |
+| `"auto_download"` | Download updates in the background; activation still requires restart |
+
+### Command
+
+- `set_update_policy(policy: UpdatePolicy) -> AppSettings` — Persist the
+  update policy. Return the updated settings snapshot. Activation of a
+  staged runtime always requires a restart regardless of policy; the policy
+  only governs checking and downloading.
+
+## Debug info
+
+`get_debug_info() -> DebugInfo`
+
+Returns a diagnostic snapshot for bug reports. Both the Settings → About
+panel and the macOS Help menu call this command. The frontend owns the
+plain-text formatting.
+
+| Field                     | Type             | Notes                                                   |
+| ------------------------- | ---------------- | ------------------------------------------------------- |
+| `app_version`             | `string`         | Application version from the bundle                     |
+| `build_sha`               | `string`         | Git short SHA, or `"unknown"`                           |
+| `os`                      | `string`         | Operating system family (`macos` / `windows` / `linux`) |
+| `arch`                    | `string`         | CPU architecture (`aarch64` / `x86_64`)                 |
+| `catalog_generation`      | `u64`            | Embedded catalog generation                             |
+| `catalog_release_id`      | `string`         | Embedded catalog release ID                             |
+| `model_variant`           | `string`         | Active separation model variant                         |
+| `model_state`             | `string`         | Bootstrap state of the active model                     |
+| `model_installed`         | `bool`           | Whether the active model is installed and verified      |
+| `model_installed_version` | `Option<string>` | Installed model upstream tag, when known                |
+| `model_pinned_version`    | `string`         | Upstream tag pinned by the embedded catalog             |
+| `model_path`              | `string`         | Expected model file path on disk                        |
+| `runtime_state`           | `string`         | Bootstrap state of the ONNX Runtime                     |
+| `runtime_version`         | `string`         | Active runtime upstream version                         |
+| `runtime_artifact_id`     | `Option<string>` | Active runtime artifact ID                              |
+| `runtime_target_triple`   | `string`         | Runtime target triple for this build                    |
+| `execution_provider`      | `string`         | Current execution-provider preference                   |
+| `log_file`                | `string`         | Path pattern of the rolling log file                    |
+
+## Self-update probe
+
+`self_update_supported() -> bool`
+
+Returns whether the running install can self-update through
+`tauri-plugin-updater`. Only bundles that emit signed updater artifacts are
+updatable: the AppImage on Linux, the `.app`/DMG on macOS, and the NSIS
+installer on Windows. A Linux `.deb`, Flatpak, or an unbundled dev binary
+returns `false`. The frontend gates its launch update check on this probe.
 
 ## Remote streaming cache
 

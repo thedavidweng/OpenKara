@@ -188,7 +188,7 @@ describe("VolumeSliders", () => {
     mockPlayerState.snapshot.stem_mode = "four_stem";
     const markup = renderToStaticMarkup(<VolumeSliders />);
 
-    expect(markup).toContain("h-4 w-4");
+    expect(markup).toContain("h-6 w-6");
     expect(markup).toContain("rounded-full");
     expect(markup).toContain('data-playback-action="stem-mixer"');
   });

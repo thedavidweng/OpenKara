@@ -42,6 +42,8 @@ export function RemoteReconnectIndicator() {
   if (reconnectState === "reconnecting") {
     return (
       <span
+        role="status"
+        aria-live="polite"
         data-testid="remote-reconnect-indicator"
         data-reconnect-state="reconnecting"
         className="flex items-center gap-1.5 rounded-md bg-[var(--color-accent)]/10 px-2 py-0.5 text-[11px] text-[var(--color-accent)]"
@@ -60,6 +62,8 @@ export function RemoteReconnectIndicator() {
   if (reconnectState === "resync") {
     return (
       <span
+        role="status"
+        aria-live="polite"
         data-testid="remote-reconnect-indicator"
         data-reconnect-state="resync"
         className="flex items-center gap-1.5 rounded-md bg-[var(--color-ghost-hover)] px-2 py-0.5 text-[11px] text-[var(--color-text-dim)]"
@@ -75,6 +79,8 @@ export function RemoteReconnectIndicator() {
   // failed
   return (
     <span
+      role="alert"
+      aria-live="assertive"
       data-testid="remote-reconnect-indicator"
       data-reconnect-state="failed"
       className="flex items-center gap-1.5 rounded-md bg-[var(--color-destructive)]/10 px-2 py-0.5 text-[11px] text-[var(--color-destructive)]"
