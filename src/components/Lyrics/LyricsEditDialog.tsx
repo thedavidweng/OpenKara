@@ -81,13 +81,13 @@ function LyricsEditDialogContent({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 pt-12">
       <DialogBackdrop
         ariaLabel={t("common.close")}
         onDismiss={() => {
           if (!saving) onClose();
         }}
-        className="absolute inset-0 bg-black/60"
+        className="absolute inset-0 bg-black/30"
       />
       <div
         ref={dialogRef}
@@ -96,7 +96,7 @@ function LyricsEditDialogContent({
         aria-labelledby={headingId}
         aria-busy={saving}
         tabIndex={-1}
-        className="relative flex w-full max-w-lg flex-col gap-4 overflow-hidden rounded-xl border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-6 shadow-2xl"
+        className="relative flex w-full max-w-5xl max-h-[90vh] flex-col gap-4 overflow-hidden rounded-xl border border-[var(--color-border-light)] bg-[var(--color-sidebar)] p-6 shadow-2xl"
       >
         <h2
           id={headingId}
@@ -114,7 +114,7 @@ function LyricsEditDialogContent({
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder={t("lyrics.pastePlaceholder")}
-          className="h-64 w-full resize-y rounded-md border border-[var(--color-border-light)] bg-[var(--color-hover)] px-3 py-2 text-[13px] text-[var(--color-text)] placeholder:text-[var(--color-text-dim)] transition-colors focus:border-[color-mix(in_srgb,var(--color-accent)_24%,var(--color-border-light))] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
+          className="h-[min(70vh,560px)] max-h-[calc(90vh-10rem)] min-h-32 w-full resize-y rounded-md border border-[var(--color-border-light)] bg-[var(--color-hover)] px-3 py-2 text-[13px] text-[var(--color-text)] placeholder:text-[var(--color-text-dim)] transition-colors focus:border-[color-mix(in_srgb,var(--color-accent)_24%,var(--color-border-light))] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
           spellCheck={false}
         />
 

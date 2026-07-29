@@ -33,12 +33,23 @@ const {
     isRomanizing: false,
     songId: null as string | null,
     lines: [] as { time_ms: number; text: string }[],
+    lyricsAlignment: "left" as "center" | "left",
+    setRomanizedVisibility: (show: boolean) => {
+      mockLyricsStore.showRomanized = show;
+    },
+    toggleLyricsAlignment: () => {
+      mockLyricsStore.lyricsAlignment =
+        mockLyricsStore.lyricsAlignment === "left" ? "center" : "left";
+    },
     subscribe: vi.fn(),
     getState: () => ({
       showRomanized: mockLyricsStore.showRomanized,
       isRomanizing: mockLyricsStore.isRomanizing,
       songId: mockLyricsStore.songId,
       lines: mockLyricsStore.lines,
+      lyricsAlignment: mockLyricsStore.lyricsAlignment,
+      setRomanizedVisibility: mockLyricsStore.setRomanizedVisibility,
+      toggleLyricsAlignment: mockLyricsStore.toggleLyricsAlignment,
     }),
   },
   mockT: vi.fn((key: string) => key),
@@ -288,7 +299,7 @@ describe("FullscreenControls Romanize button", () => {
     });
   });
 
-  test("clicking does not optimistically mutate the fullscreen projection", async () => {
+  test("clicking immediately updates the fullscreen projection", async () => {
     mockLyricsStore.showRomanized = false;
     await act(async () => {
       root.render(<FullscreenControls />);
@@ -298,7 +309,7 @@ describe("FullscreenControls Romanize button", () => {
       getRomanizeButton().click();
     });
 
-    expect(mockLyricsStore.showRomanized).toBe(false);
+    expect(mockLyricsStore.showRomanized).toBe(true);
   });
 });
 

@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  AlignLeft,
   ChevronDown,
   ChevronUp,
   Edit2,
@@ -62,6 +63,8 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
   const lyricsFontStep = useSettingsStore((s) => s.lyricsFontStep);
   const [editOpen, setEditOpen] = useState(false);
   const [userScrollUnlocked, setUserScrollUnlocked] = useState(false);
+  const lyricsAlignment = useLyricsStore((s) => s.lyricsAlignment);
+  const toggleLyricsAlignment = useLyricsStore((s) => s.toggleLyricsAlignment);
   const utilityControlsPinned = offsetMs !== 0 || lyricsFontStep !== 0;
   const isAudience = presentation === "audience";
   const spaciousStageLayout = !isAudience;
@@ -258,6 +261,30 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
                 <Edit2 size={14} />
               </button>
             </Tooltip>
+            <Tooltip
+              label={
+                lyricsAlignment === "left"
+                  ? "Switch to centered lyrics"
+                  : "Switch to left-aligned lyrics"
+              }
+            >
+              <button
+                type="button"
+                onClick={toggleLyricsAlignment}
+                aria-label={
+                  lyricsAlignment === "left"
+                    ? "Switch to centered lyrics"
+                    : "Switch to left-aligned lyrics"
+                }
+                className={`motion-icon-button rounded-full border p-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
+                  lyricsAlignment === "left"
+                    ? "border-[color-mix(in_srgb,var(--color-accent)_40%,var(--color-border-light))] bg-[color-mix(in_srgb,var(--color-accent)_18%,var(--color-sidebar))] text-[var(--color-control-primary)]"
+                    : "border-[var(--color-border-light)] bg-[var(--color-sidebar)] text-[var(--color-text-dim)] hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[var(--color-hover)] hover:text-[var(--color-control-primary)]"
+                }`}
+              >
+                <AlignLeft size={14} />
+              </button>
+            </Tooltip>
           </div>
           <LyricsEditDialog
             open={editOpen}
@@ -347,7 +374,10 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
           style={
             isAudience
               ? {
-                  maxWidth: `min(${audiencePresentationSpec.contentWidthRatio * 100}vw, ${audiencePresentationSpec.contentMaxWidthPx}px)`,
+                  maxWidth:
+                    lyricsAlignment === "left"
+                      ? "100%"
+                      : `min(${audiencePresentationSpec.contentWidthRatio * 100}vw, ${audiencePresentationSpec.contentMaxWidthPx}px)`,
                   gap: audiencePresentationSpec.lineGapPx,
                 }
               : undefined
@@ -392,6 +422,7 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
                   activeWordIndex={
                     absoluteIndex === activeLineIndex ? activeWordIndex : -1
                   }
+                  alignment={lyricsAlignment}
                 />
               </div>
             );
@@ -419,7 +450,10 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
               ref={measurementRef}
               className="mx-auto flex w-full flex-col items-center"
               style={{
-                maxWidth: `min(${audiencePresentationSpec.contentWidthRatio * 100}vw, ${audiencePresentationSpec.contentMaxWidthPx}px)`,
+                maxWidth:
+                  lyricsAlignment === "left"
+                    ? "100%"
+                    : `min(${audiencePresentationSpec.contentWidthRatio * 100}vw, ${audiencePresentationSpec.contentMaxWidthPx}px)`,
                 gap: audiencePresentationSpec.lineGapPx,
               }}
             >
@@ -438,6 +472,7 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
                     romanizedText={
                       showRomanized ? romanizedLines[idx] : undefined
                     }
+                    alignment={lyricsAlignment}
                   />
                 </div>
               ))}

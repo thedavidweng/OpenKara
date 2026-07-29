@@ -59,6 +59,7 @@ const DEFAULT_STATE = {
   romanizedLinesIdentity: null,
   isRomanizing: false,
   showRomanized: false,
+  lyricsAlignment: "left" as const,
 };
 
 function resetStore() {
