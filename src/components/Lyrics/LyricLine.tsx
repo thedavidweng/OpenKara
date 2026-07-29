@@ -494,18 +494,16 @@ export const LyricLine = memo(function LyricLine({
     </span>
   ) : null;
 
-  const lineContent = isLeftAligned ? (
+  const lineContent = (
     <>
-      <span className="flex min-w-0 flex-col break-words">
+      <span
+        className={`flex flex-col ${
+          isLeftAligned ? "min-w-0 break-words" : "items-center"
+        }`}
+      >
         {mainText}
         {bgWords}
       </span>
-      {romanText}
-    </>
-  ) : (
-    <>
-      {mainText}
-      {bgWords}
       {romanText}
     </>
   );
