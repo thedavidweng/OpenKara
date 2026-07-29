@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-/// A byte range [start, start + length).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ByteRange {
     pub start: u64,
@@ -46,7 +45,6 @@ impl RangeSet {
         &self.ranges
     }
 
-    /// Add a byte range. Automatically merges overlapping or adjacent ranges.
     pub fn add_range(&mut self, start: u64, length: u64) {
         if length == 0 {
             return;
@@ -70,7 +68,6 @@ impl RangeSet {
                 }
                 remove_count += 1;
             } else if existing.start > new_range.end() {
-                // Past the new range — no more merging possible.
                 if remove_from.is_none() {
                     insert_at = i;
                 }
@@ -104,8 +101,6 @@ impl RangeSet {
         false
     }
 
-    /// How many contiguous bytes starting from `start` (up to `max_length`)
-    /// are already covered by this range set.
     pub fn contained_length_from(&self, start: u64, max_length: u64) -> u64 {
         if max_length == 0 {
             return 0;
@@ -139,9 +134,6 @@ impl RangeSet {
         self.ranges.iter().map(|r| r.length).sum()
     }
 
-    /// Subtract a byte range [start, start+length) from this set.
-    /// Existing ranges that overlap with the subtracted range are trimmed
-    /// or split as needed.
     pub fn subtract_range(&mut self, start: u64, length: u64) {
         if length == 0 {
             return;
@@ -237,7 +229,7 @@ mod tests {
     fn merge_overlapping_ranges() {
         let mut rs = RangeSet::new();
         rs.add_range(0, 100);
-        rs.add_range(50, 100); // overlaps [50, 150)
+        rs.add_range(50, 100);
         assert_eq!(rs.len(), 1);
         assert_eq!(rs.ranges()[0].start, 0);
         assert_eq!(rs.ranges()[0].length, 150);
@@ -249,7 +241,7 @@ mod tests {
     fn merge_adjacent_ranges() {
         let mut rs = RangeSet::new();
         rs.add_range(0, 50);
-        rs.add_range(50, 50); // adjacent
+        rs.add_range(50, 50);
         assert_eq!(rs.len(), 1);
         assert_eq!(rs.ranges()[0].start, 0);
         assert_eq!(rs.ranges()[0].length, 100);
@@ -260,7 +252,7 @@ mod tests {
     fn merge_range_enclosed_by_existing() {
         let mut rs = RangeSet::new();
         rs.add_range(0, 200);
-        rs.add_range(50, 50); // fully inside
+        rs.add_range(50, 50);
         assert_eq!(rs.len(), 1);
         assert_eq!(rs.ranges()[0].length, 200);
     }
@@ -269,7 +261,7 @@ mod tests {
     fn merge_range_enclosing_existing() {
         let mut rs = RangeSet::new();
         rs.add_range(50, 50);
-        rs.add_range(0, 200); // encloses the first
+        rs.add_range(0, 200);
         assert_eq!(rs.len(), 1);
         assert_eq!(rs.ranges()[0].start, 0);
         assert_eq!(rs.ranges()[0].length, 200);
@@ -280,7 +272,7 @@ mod tests {
         let mut rs = RangeSet::new();
         rs.add_range(0, 50);
         rs.add_range(100, 50);
-        rs.add_range(40, 70); // bridges the gap
+        rs.add_range(40, 70);
         assert_eq!(rs.len(), 1);
         assert_eq!(rs.ranges()[0].start, 0);
         assert_eq!(rs.ranges()[0].length, 150);
@@ -298,13 +290,9 @@ mod tests {
         let mut rs = RangeSet::new();
         rs.add_range(0, 30);
         rs.add_range(50, 30);
-        // Starting from 0, max 100: only [0,30) is contiguous.
         assert_eq!(rs.contained_length_from(0, 100), 30);
-        // Starting from 20, max 100: only [20,30) is contiguous.
         assert_eq!(rs.contained_length_from(20, 100), 10);
-        // Starting from 60, max 10: 10 bytes from [50,80)
         assert_eq!(rs.contained_length_from(60, 10), 10);
-        // Window entirely in the gap: 0
         assert_eq!(rs.contained_length_from(35, 10), 0);
     }
 
@@ -317,14 +305,14 @@ mod tests {
         rs.add_range(0, 100);
         assert!(rs.covers_full(100));
         assert!(!rs.covers_full(101));
-        assert!(rs.covers_full(50)); // covers more than needed
+        assert!(rs.covers_full(50));
     }
 
     #[test]
     fn add_range_extends_end() {
         let mut rs = RangeSet::new();
         rs.add_range(0, 50);
-        rs.add_range(30, 50); // extends beyond [0, 50) → [0, 80)
+        rs.add_range(30, 50);
         assert_eq!(rs.len(), 1);
         assert_eq!(rs.ranges()[0].end(), 80);
     }
@@ -332,8 +320,8 @@ mod tests {
     #[test]
     fn add_range_extends_start() {
         let mut rs = RangeSet::new();
-        rs.add_range(50, 50); // [50, 100)
-        rs.add_range(0, 60); // [0, 60) overlaps → [0, 100)
+        rs.add_range(50, 50);
+        rs.add_range(0, 60);
         assert_eq!(rs.len(), 1);
         assert_eq!(rs.ranges()[0].start, 0);
         assert_eq!(rs.ranges()[0].end(), 100);
@@ -353,8 +341,8 @@ mod tests {
     #[test]
     fn subtract_range_from_middle_splits() {
         let mut rs = RangeSet::new();
-        rs.add_range(0, 200); // [0, 200)
-        rs.subtract_range(50, 100); // remove [50, 150)
+        rs.add_range(0, 200);
+        rs.subtract_range(50, 100);
         assert_eq!(rs.len(), 2);
         assert_eq!(rs.ranges()[0], ByteRange::new(0, 50));
         assert_eq!(rs.ranges()[1], ByteRange::new(150, 50));
@@ -364,8 +352,8 @@ mod tests {
     #[test]
     fn subtract_range_from_start() {
         let mut rs = RangeSet::new();
-        rs.add_range(100, 100); // [100, 200)
-        rs.subtract_range(100, 50); // remove [100, 150)
+        rs.add_range(100, 100);
+        rs.subtract_range(100, 50);
         assert_eq!(rs.len(), 1);
         assert_eq!(rs.ranges()[0], ByteRange::new(150, 50));
     }
@@ -373,8 +361,8 @@ mod tests {
     #[test]
     fn subtract_range_from_end() {
         let mut rs = RangeSet::new();
-        rs.add_range(0, 100); // [0, 100)
-        rs.subtract_range(50, 100); // remove [50, 150) — only [50, 100) overlaps
+        rs.add_range(0, 100);
+        rs.subtract_range(50, 100);
         assert_eq!(rs.len(), 1);
         assert_eq!(rs.ranges()[0], ByteRange::new(0, 50));
     }
@@ -382,8 +370,8 @@ mod tests {
     #[test]
     fn subtract_range_fully_enclosed() {
         let mut rs = RangeSet::new();
-        rs.add_range(0, 200); // [0, 200)
-        rs.subtract_range(50, 50); // remove [50, 100)
+        rs.add_range(0, 200);
+        rs.subtract_range(50, 50);
         assert_eq!(rs.len(), 2);
         assert_eq!(rs.ranges()[0], ByteRange::new(0, 50));
         assert_eq!(rs.ranges()[1], ByteRange::new(100, 100));
@@ -394,7 +382,7 @@ mod tests {
         let mut rs = RangeSet::new();
         rs.add_range(0, 50);
         rs.add_range(100, 50);
-        rs.subtract_range(60, 30); // [60, 90) — in the gap
+        rs.subtract_range(60, 30);
         assert_eq!(rs.len(), 2);
         assert_eq!(rs.total_bytes(), 100);
     }
@@ -411,10 +399,10 @@ mod tests {
     #[test]
     fn subtract_range_set() {
         let mut rs = RangeSet::new();
-        rs.add_range(0, 300); // [0, 300)
+        rs.add_range(0, 300);
         let mut other = RangeSet::new();
-        other.add_range(50, 50); // [50, 100)
-        other.add_range(200, 50); // [200, 250)
+        other.add_range(50, 50);
+        other.add_range(200, 50);
         rs.subtract_range_set(&other);
         assert_eq!(rs.len(), 3);
         assert_eq!(rs.ranges()[0], ByteRange::new(0, 50));

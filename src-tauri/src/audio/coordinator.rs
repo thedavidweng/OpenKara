@@ -1,13 +1,3 @@
-//! PlaybackCoordinator — a dedicated control thread that serializes all
-//! control-plane mutations of `PlaybackController`.
-//!
-//! The CPAL audio callback remains the only realtime renderer and continues
-//! to mutate render-owned state (`render_frame`, buffering, fades). Background
-//! decode/fetch threads produce immutable `ReadyTrack` payloads and send
-//! `PlaybackCommand`s; they never install tracks directly.
-//!
-//! See `docs/references/contracts/playback.md` for the public IPC contract.
-
 use crate::{
     airplay_stream,
     audio::{
@@ -41,20 +31,13 @@ use std::sync::{
 use std::thread::JoinHandle;
 use tauri::{Emitter, Runtime};
 
-/// An immutable, ready-to-install track payload produced by a background
-/// decode/fetch thread.
 pub enum ReadyTrack {
-    /// Fully decoded audio (local file, Media+G ZIP, or remote full-file fallback).
     Decoded {
         audio: DecodedAudio,
         stems: Option<LoadedStems>,
         cdg: Option<Arc<[CdgPacket]>>,
-        /// CDG load error (when cdg is None but a CDG file existed and failed
-        /// to load). The coordinator uses this to mark the CDG slot with the
-        /// appropriate error code instead of clearing it silently.
         cdg_error: Option<CdgErrorCode>,
     },
-    /// Streaming track (low-latency byte-range playback).
     Streaming {
         sample_rate: u32,
         channels: usize,
@@ -66,9 +49,6 @@ pub enum ReadyTrack {
     },
 }
 
-/// Commands sent to the coordinator thread. Synchronous commands (Resume,
-/// Pause, Seek, SetVolume, SetStemVolume, AttachStems) carry a oneshot reply
-/// channel. Fire-and-forget commands (InstallReady, FailLoad) do not.
 pub enum PlaybackCommand {
     BeginLoad {
         request_id: u64,
@@ -126,23 +106,12 @@ pub enum PlaybackCommand {
         duration_ms: u32,
         reply: CrossfadeStateReply,
     },
-    /// Install a prepared next track for gapless transition. The preload
-    /// scheduler decodes and normalizes the candidate off-thread, then sends
-    /// this fire-and-forget command. The coordinator validates the output
-    /// format generation and the preload request generation before installing.
     PrepareNext {
         prepared: Box<PreparedTrack>,
     },
-    /// Cancel any pending prepared track. Sent when the user manually
-    /// skips, seeks, plays a different song, or the queue head changes.
-    /// `expected_generation` is the new preload request generation; the
-    /// coordinator stamps it onto `PlaybackController` so that any
-    /// `PrepareNext` from an older preload thread is rejected as stale.
     CancelPreparedNext {
         expected_generation: crate::audio::playback::PreloadRequestGeneration,
     },
-    /// After integrity cleanup deletes songs, reconcile authoritative playback.
-    /// Clears current/loading tracks that match any deleted id and drops CDG.
     InvalidateDeletedSongs {
         song_ids: Vec<String>,
         reply: SnapshotReply,
@@ -167,8 +136,6 @@ type SnapshotReply = tokio::sync::oneshot::Sender<Result<PlaybackStateSnapshot, 
 type CrossfadeStateReply =
     tokio::sync::oneshot::Sender<Result<crate::audio::playback::CrossfadeState, PlaybackError>>;
 
-/// Runtime dependencies the coordinator worker needs. Generic over `R:
-/// tauri::Runtime` so mock-runtime tests compile.
 pub struct CoordinatorRuntime<R: Runtime> {
     pub app_handle: tauri::AppHandle<R>,
     pub playback: Arc<Mutex<PlaybackController>>,
@@ -179,15 +146,9 @@ pub struct CoordinatorRuntime<R: Runtime> {
     pub airplay: AirPlayState,
     pub shutdown: Arc<AtomicBool>,
     pub peak_ring: Arc<crate::audio::peaks::PeakRing>,
-    /// Output-format descriptor published by the CPAL output worker.
-    /// The coordinator reads this (without the playback lock) to validate
-    /// prepared-track generations before installing.
     pub output_format: OutputFormatState,
 }
 
-/// Spawn the coordinator worker thread. Returns the `JoinHandle` so the caller
-/// can join it in tests. The receiver is moved into the worker; only the sender
-/// is stored in managed state.
 pub fn spawn_coordinator<R: Runtime + 'static>(
     runtime: CoordinatorRuntime<R>,
     receiver: mpsc::Receiver<PlaybackCommand>,
@@ -300,10 +261,6 @@ fn handle_invalidate_deleted_songs<R: Runtime>(
             .as_deref()
             .is_some_and(|id| song_ids.iter().any(|deleted| deleted == id));
 
-        // `latest_request_id` gates every in-flight load. Bump it only when
-        // the deleted song is itself loading; bumping for a deleted current
-        // track would otherwise discard an unrelated healthy load and leave
-        // the player stuck in loading state.
         if loading_song_id
             .as_deref()
             .is_some_and(|id| song_ids.iter().any(|deleted| deleted == id))
@@ -314,17 +271,10 @@ fn handle_invalidate_deleted_songs<R: Runtime>(
     };
 
     if cleared_current {
-        // CDG only serves the installed track; drop it so a deleted song's
-        // CDG state cannot outlive its database row.
         if let Ok(mut cdg_state) = runtime.cdg_state.lock() {
             *cdg_state = None;
         }
-        // Bump the AirPlay epoch/generation so stale AirPlay audio/control
-        // work for the deleted song cannot continue.
         bump_airplay_epoch_and_generation(&runtime.airplay);
-        // Always emit after destructive cleanup so every WebView converges even
-        // when the resulting snapshot is idle (emit_position normally skips
-        // song_id=None).
         let _ = runtime
             .app_handle
             .emit(PLAYBACK_POSITION_EVENT, playback_position_event(&snapshot));
@@ -405,12 +355,6 @@ fn report_install_output_failure<R: Runtime>(
     request_id: u64,
     error: PlaybackError,
 ) {
-    // Defensive latest-request guard at the function boundary. The only
-    // caller (`handle_install_ready`) already checks `is_latest_request`
-    // before reaching this point, and the coordinator is single-threaded so
-    // the id cannot change in between. The guard is kept as a safety net so
-    // that a stale request can never clear a newer track if this helper is
-    // ever called from an additional path in the future.
     if !is_latest_request(runtime, request_id) {
         return;
     }
@@ -453,8 +397,6 @@ fn handle_begin_load<R: Runtime>(
         playback.start_track_loading(song_id)
     };
 
-    // Clear the old CDG slot immediately so the previous frame cannot
-    // survive while decode/import work continues, then mark loading.
     {
         let Ok(mut cdg_state) = runtime.cdg_state.lock() else {
             eprintln!("coordinator: CDG state lock poisoned in BeginLoad");
@@ -480,19 +422,15 @@ fn handle_install_ready<R: Runtime>(
     song_id: &str,
     ready: ReadyTrack,
 ) {
-    // First guard: check before locking.
     if !is_latest_request(runtime, request_id) {
         return;
     }
 
-    // Install the track and extract CDG in one match — `ready` is consumed
-    // and `cdg` is moved out alongside the install.
     let (snapshot, cdg, cdg_error) = {
         let Ok(mut playback) = runtime.playback.lock() else {
             eprintln!("coordinator: playback lock poisoned in InstallReady");
             return;
         };
-        // Second guard: re-check after acquiring the lock.
         if !is_latest_request(runtime, request_id) {
             return;
         }
@@ -539,7 +477,6 @@ fn handle_install_ready<R: Runtime>(
         }
     };
 
-    // Replace CDG state only if this song still owns the player.
     if snapshot.song_id.as_deref() == Some(song_id) {
         if let Ok(mut cdg_state) = runtime.cdg_state.lock() {
             if let Some(packets) = cdg {
@@ -550,7 +487,6 @@ fn handle_install_ready<R: Runtime>(
                     packets,
                 );
             } else if let Some(error_code) = cdg_error {
-                // CDG file existed but failed to load — report the error.
                 mark_cdg_error(
                     &mut cdg_state,
                     song_id,
@@ -558,7 +494,6 @@ fn handle_install_ready<R: Runtime>(
                     error_code,
                 );
             } else {
-                // No CDG file for this song — clear the loading status.
                 clear_cdg_for_transport_change(&mut cdg_state);
             }
         } else {
@@ -566,11 +501,6 @@ fn handle_install_ready<R: Runtime>(
         }
     }
 
-    // Ensure output thread is running. On failure, clear the just-installed
-    // track and emit playback-error for the latest request. The track was
-    // already installed by start_track above, so we use the install-failure
-    // path (clear_track_if_matching) rather than the loading-failure path
-    // (cancel_loading_if_matching).
     if let Err(e) = ensure_output(runtime) {
         report_install_output_failure(runtime, song_id, request_id, e);
         return;
@@ -600,7 +530,6 @@ fn handle_fail_load<R: Runtime>(
         playback.snapshot()
     };
 
-    // Clear CDG state — the track failed to load.
     {
         let Ok(mut cdg_state) = runtime.cdg_state.lock() else {
             eprintln!("coordinator: CDG state lock poisoned in FailLoad");
@@ -630,7 +559,6 @@ fn handle_replace_streaming_source<R: Runtime>(
     position_ms: u64,
     new_source: super::streaming::StreamingTrack,
 ) {
-    // Stale guard: only the latest request may mutate the active track.
     if !is_latest_request(runtime, request_id) {
         return;
     }
@@ -639,13 +567,12 @@ fn handle_replace_streaming_source<R: Runtime>(
             eprintln!("coordinator: playback lock poisoned in ReplaceStreamingSource");
             return;
         };
-        // Second guard after acquiring the lock.
         if !is_latest_request(runtime, request_id) {
             return;
         }
         match playback.replace_streaming_source(song_id, new_source, position_ms) {
             Some(snapshot) => snapshot,
-            None => return, // user skipped — stale reconnect, no-op.
+            None => return,
         }
     };
     let _ = emit_position(&runtime.app_handle, &snapshot);
@@ -670,7 +597,6 @@ fn handle_resume<R: Runtime>(runtime: &CoordinatorRuntime<R>, reply: SnapshotRep
 
     bump_airplay_epoch_and_generation(&runtime.airplay);
 
-    // Update CDG transport generation without resetting renderer pixels or cursor.
     {
         let Ok(mut cdg_state) = runtime.cdg_state.lock() else {
             eprintln!("coordinator: CDG state lock poisoned in Resume");
@@ -712,7 +638,6 @@ fn handle_pause<R: Runtime>(runtime: &CoordinatorRuntime<R>, reply: SnapshotRepl
 
     bump_airplay_epoch_and_generation(&runtime.airplay);
 
-    // Update CDG transport generation without resetting renderer pixels or cursor.
     {
         let Ok(mut cdg_state) = runtime.cdg_state.lock() else {
             eprintln!("coordinator: CDG state lock poisoned in Pause");
@@ -749,9 +674,6 @@ fn handle_seek<R: Runtime>(runtime: &CoordinatorRuntime<R>, target_ms: u64, repl
 
     bump_airplay_epoch_and_generation(&runtime.airplay);
 
-    // Mark both CDG timelines for repositioning on their next authorized
-    // advance. Seek in either direction updates generation, clears cached
-    // IPC version visibility, and marks both timelines for repositioning.
     {
         let Ok(mut cdg_state) = runtime.cdg_state.lock() else {
             eprintln!("coordinator: CDG state lock poisoned in Seek");
@@ -828,7 +750,6 @@ fn handle_attach_stems<R: Runtime>(
     reply: SnapshotReply,
 ) {
     if !is_latest_request(runtime, request_id) {
-        // Stale request — return current snapshot without attaching.
         let snapshot = {
             let Ok(mut playback) = runtime.playback.lock() else {
                 let _ = reply.send(Err(PlaybackError::Internal(
@@ -849,7 +770,6 @@ fn handle_attach_stems<R: Runtime>(
             )));
             return;
         };
-        // Check that the song still matches.
         if playback.current_song_id() != Some(song_id) {
             let _ = reply.send(Ok(playback.snapshot()));
             return;
@@ -933,10 +853,6 @@ fn handle_set_crossfade_duration<R: Runtime>(
 }
 
 fn handle_prepare_next<R: Runtime>(runtime: &CoordinatorRuntime<R>, prepared: PreparedTrack) {
-    // Validate the output format generation before locking playback. If the
-    // device restarted (or the format changed) since the preload scheduler
-    // captured its descriptor, the prepared audio is stale and must be
-    // discarded. The preload scheduler will re-prepare with the new format.
     let pre_lock_format = runtime.output_format.read().ok().and_then(|guard| *guard);
     if let Some(current) = pre_lock_format {
         if current.generation != prepared.output_format.generation
@@ -1001,8 +917,6 @@ mod tests {
     use std::sync::RwLock;
     use tauri::test::{mock_app, MockRuntime};
 
-    /// Test harness: creates a CoordinatorRuntime with a mock app handle,
-    /// spawns the coordinator, and provides helpers to send commands.
     struct Harness {
         runtime: Arc<CoordinatorRuntime<MockRuntime>>,
         tx: mpsc::Sender<PlaybackCommand>,
@@ -1078,14 +992,6 @@ mod tests {
                 .snapshot()
         }
 
-        /// Force `ensure_output_thread` to fail deterministically by poisoning
-        /// the `output_start_lock`. The coordinator's `ensure_output` helper
-        /// will receive a `PoisonError` and return
-        /// `PlaybackError::AudioOutputUnavailable`.
-        ///
-        /// Also flips `output_started` to `false` so `ensure_output` actually
-        /// enters the lock-acquisition path (the harness defaults to `true`
-        /// to skip CPAL initialization on headless CI).
         fn poison_output_lock(&self) {
             self.runtime.output_started.store(false, Ordering::SeqCst);
             let lock = Arc::clone(&self.runtime.output_start_lock);
@@ -1122,14 +1028,11 @@ mod tests {
         }
     }
 
-    /// Create a minimal `StreamingTrack::Single` for tests.
     fn dummy_streaming_track() -> StreamingTrack {
         let (_producer, consumer) = crate::audio::streaming::create_stream_pair(44_100, 2);
         StreamingTrack::Single { consumer }
     }
 
-    /// Helper: install a decoded track via InstallReady so the controller
-    /// has a playing track for subsequent commands.
     fn install_track(harness: &Harness, request_id: u64, song_id: &str) {
         harness.send(PlaybackCommand::InstallReady {
             request_id,
@@ -1606,7 +1509,7 @@ mod tests {
         let harness = Harness::with_request_id(2);
 
         let result = harness.send_and_recv(|reply| PlaybackCommand::BeginLoad {
-            request_id: 1, // stale
+            request_id: 1,
             song_id: "song-a".to_owned(),
             reply,
         });
@@ -1646,16 +1549,13 @@ mod tests {
     #[test]
     fn install_ready_output_failure_does_not_clear_newer_track() {
         let harness = Harness::with_request_id(2);
-        // Install a track for request 2 (latest) with working output.
         install_track(&harness, 2, "song-b");
         assert_eq!(harness.snapshot().song_id.as_deref(), Some("song-b"));
 
-        //
-        // by `handle_install_ready`'s first guard and never reaches the
         report_install_output_failure(
             &harness.runtime,
             "song-a",
-            1, // stale
+            1,
             PlaybackError::AudioOutputUnavailable("test".to_owned()),
         );
 
@@ -1758,7 +1658,6 @@ mod tests {
         harness.shutdown();
     }
 
-    /// Helper: send InvalidateDeletedSongs and wait for the reply.
     fn invalidate_deleted(harness: &Harness, song_ids: &[&str]) {
         let ids: Vec<String> = song_ids.iter().map(|s| s.to_string()).collect();
         let _ = harness.send_and_recv(|reply| PlaybackCommand::InvalidateDeletedSongs {
@@ -1980,7 +1879,6 @@ mod tests {
             .airplay_stream_generation
             .load(Ordering::SeqCst);
 
-        // layer never sends InvalidateDeletedSongs, but the coordinator must
         invalidate_deleted(&harness, &[]);
 
         assert_eq!(harness.snapshot().song_id.as_deref(), Some("song-a"));

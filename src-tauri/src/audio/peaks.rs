@@ -160,7 +160,6 @@ impl Default for PeakRing {
     }
 }
 
-/// Sanitize a peak sample: non-finite → 0, clamp to `0.0..=1.0`.
 fn sanitize_peak(value: f32) -> f32 {
     if !value.is_finite() {
         return 0.0;
@@ -168,12 +167,6 @@ fn sanitize_peak(value: f32) -> f32 {
     value.clamp(0.0, 1.0)
 }
 
-/// Accumulates per-frame maxima over a 512-frame window, then pushes one pair
-/// to the shared `PeakRing`.
-///
-/// Owned by the output callback beside `EqProcessor`. A device restart starts
-/// a fresh partial window while retaining the process-wide ring and write
-/// counter.
 pub struct PeakAccumulator {
     frames_in_window: u64,
     max_left: f32,
@@ -189,8 +182,6 @@ impl PeakAccumulator {
         }
     }
 
-    /// Feed one rendered interleaved frame. Mono sources duplicate to both
-    /// channels; stereo-or-greater uses channels 0 and 1 only.
     pub fn feed_frame(&mut self, samples: &[f32], channels: usize, ring: &PeakRing) {
         if channels == 0 || samples.len() < channels {
             return;
@@ -216,8 +207,6 @@ impl PeakAccumulator {
         }
     }
 
-    /// Feed all rendered frames from an interleaved buffer. Only the first
-    /// `rendered_samples` samples participate; trailing zero padding is ignored.
     pub fn process(
         &mut self,
         output: &[f32],
@@ -239,8 +228,6 @@ impl PeakAccumulator {
         }
     }
 
-    /// Reset the partial window (e.g. on device restart). The process-wide
-    /// ring and write counter are retained.
     pub fn reset_window(&mut self) {
         self.frames_in_window = 0;
         self.max_left = 0.0;
@@ -297,10 +284,8 @@ mod tests {
         ring.push(-0.5, 2.0);
         let (_, peaks) = ring.snapshot();
         assert_eq!(peaks.len(), 2);
-        // NaN → 0, Inf → 0 (non-finite sanitization)
         assert!((peaks[0][0] - 0.0).abs() < 1e-6);
         assert!((peaks[0][1] - 0.0).abs() < 1e-6);
-        // Negative → 0, >1 → 1.0
         assert!((peaks[1][0] - 0.0).abs() < 1e-6);
         assert!((peaks[1][1] - 1.0).abs() < 1e-6);
     }
@@ -457,7 +442,6 @@ mod tests {
         let rendered = 512 * channels;
         let total = rendered + 100 * channels; // extra padding
         let mut buf = vec![0.6f32; total];
-        // Set padding to high values that should be ignored.
         for sample in buf.iter_mut().take(total).skip(rendered) {
             *sample = 1.0;
         }
@@ -489,7 +473,6 @@ mod tests {
         let (idx_before, _) = ring.snapshot();
         assert_eq!(idx_before, 1);
 
-        // Device restart: reset accumulator window, but ring counter persists.
         let _acc = PeakAccumulator::new();
         let (idx_after, _) = ring.snapshot();
         assert_eq!(idx_after, 1, "ring counter retained after restart");
@@ -499,43 +482,29 @@ mod tests {
     fn test_retry_cursor_not_ahead_of_copied_data() {
         let ring = PeakRing::new();
 
-        // Push 2 pairs with distinct values.
-        ring.push(0.10, 0.10); // index 0 → write_index 1
-        ring.push(0.20, 0.20); // index 1 → write_index 2
-                               // write_index = 2
+        ring.push(0.10, 0.10);
+        ring.push(0.20, 0.20);
 
         let (cursor, peaks) = ring.snapshot_impl(
-            // Intercept 1: push after the first copy, before the second load.
-            // This forces the retry path (second_index = 3 != first_index = 2).
             |ring| {
-                ring.push(0.30, 0.30); // index 2 → write_index 3
+                ring.push(0.30, 0.30);
             },
-            // Intercept 2: push after the retry copy, before the return.
-            // This simulates the "third_index" advancement that the buggy
-            // code would have returned.
             |ring, second_index, last| {
-                // second_index should be 3 (after intercept 1 pushed 0.30).
                 assert_eq!(
                     second_index, 3,
                     "second_index should be 3 (after intercept 1 push)",
                 );
 
-                // The last entry in the retry copy should be 0.30 (the
-                // value at index 2, which is the (second_index-1)th entry).
                 assert!(
                     (last[0] - 0.30).abs() < 1e-6,
                     "last retry entry should be 0.30, got {}",
                     last[0],
                 );
 
-                // Push one more pair — the buggy code would have loaded
-                // write_index after this and returned 4 as the cursor.
-                ring.push(0.40, 0.40); // index 3 → write_index 4
+                ring.push(0.40, 0.40);
             },
         );
 
-        // The cursor must be second_index (3), NOT the post-intercept-2
-        // write_index (4).
         assert_eq!(
             cursor, 3,
             "cursor must equal second_index (3), not the post-intercept write_index (4)",
@@ -558,13 +527,11 @@ mod tests {
 
     #[test]
     fn test_non_retry_path_returns_first_index() {
-        // When the writer does not advance between the first copy and the
-        // second load, the snapshot returns first_index (no retry).
         let ring = PeakRing::new();
         ring.push(0.50, 0.50);
 
         let (cursor, peaks) = ring.snapshot_impl(
-            |_| {}, // no push → no retry
+            |_| {},
             |_, _, _| {
                 panic!("after_retry_copy should not be called on non-retry path");
             },
@@ -577,43 +544,31 @@ mod tests {
 
     #[test]
     fn test_retry_with_multiple_advancements_cursor_matches_copied_data() {
-        // Larger test: push enough pairs to fill part of the ring, then
-        // force the retry path and a post-retry advancement. Verify the
-        // cursor and the last entry are consistent.
         let ring = PeakRing::new();
 
-        // Push 5 pairs with distinct values.
         for i in 0..5u32 {
             let v = i as f32 * 0.1;
             ring.push(v, v);
         }
-        // write_index = 5
 
         let (cursor, peaks) = ring.snapshot_impl(
             |ring| {
-                // Push to force retry: write_index becomes 6.
                 ring.push(0.50, 0.50);
             },
             |ring, second_index, last| {
-                // second_index should be 6.
                 assert_eq!(second_index, 6);
 
-                // Last entry should be 0.50 (the value at index 5).
                 assert!((last[0] - 0.50).abs() < 1e-6);
 
-                // Push again: write_index becomes 7.
                 ring.push(0.60, 0.60);
             },
         );
 
-        // Cursor must be 6, not 7.
         assert_eq!(cursor, 6);
 
-        // Last peak must be 0.50, not 0.60.
         let last = peaks.last().unwrap();
         assert!((last[0] - 0.50).abs() < 1e-6);
 
-        // All 6 entries should be present (indices 0..5).
         assert_eq!(peaks.len(), 6);
         for (i, pair) in peaks.iter().enumerate() {
             let expected = i as f32 * 0.1;

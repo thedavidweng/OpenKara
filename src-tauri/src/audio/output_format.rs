@@ -1,17 +1,8 @@
-//! Output-format descriptor published by the CPAL output worker.
-//!
-//! The output worker publishes an `OutputFormatSnapshot` once a stream is
-//! successfully constructed. The preload scheduler captures the descriptor,
-//! decodes and normalizes the next track to the captured format, then sends
-//! the captured descriptor with the ready payload. The coordinator rejects a
-//! prepared payload when the current output descriptor differs by generation,
-//! rate or channels.
-
 use std::sync::{Arc, RwLock};
 
 /// Copyable output descriptor published by the output worker.
 /// `generation` increments whenever a new CPAL stream is successfully
-/// constructed so stale preparations can be rejected after device restart.
+/// constructed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OutputFormatSnapshot {
     pub generation: u64,
@@ -29,10 +20,6 @@ impl OutputFormatSnapshot {
     }
 }
 
-/// Shared, copyable output-format state. The output worker writes (under the
-/// RwLock write guard) before reporting itself ready; the preload scheduler
-/// and coordinator read it (under the read guard) without holding the playback
-/// mutex.
 pub type OutputFormatState = Arc<RwLock<Option<OutputFormatSnapshot>>>;
 
 #[cfg(test)]

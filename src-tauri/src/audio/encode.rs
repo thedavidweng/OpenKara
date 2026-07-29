@@ -12,19 +12,10 @@ const DEFAULT_VORBIS_QUALITY: f32 = 0.9;
 /// 1024 is the value recommended by the libvorbis documentation.
 const ENCODE_CHUNK_FRAMES: usize = 1024;
 
-/// Write audio data as an OGG/Vorbis file.
-///
-/// OpenKara stores generated stems as OGG on purpose: the library keeps the
-/// original source media separately, so the cache format is optimized for
-/// space efficiency instead of lossless archival quality.
 pub fn write_ogg_file(path: &Path, audio: &DecodedAudio) -> Result<()> {
     write_ogg_file_with_quality(path, audio, DEFAULT_VORBIS_QUALITY)
 }
 
-/// Write audio data as an OGG/Vorbis file with configurable quality.
-///
-/// Quality ranges from -0.1 (lowest, ~45 kbps) to 1.0 (highest, ~500 kbps).
-/// Recommended values: 0.4 (~128 kbps), 0.5 (~160 kbps), 0.6 (~192 kbps).
 pub fn write_ogg_file_with_quality(path: &Path, audio: &DecodedAudio, quality: f32) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
@@ -83,14 +74,6 @@ pub fn write_ogg_file_with_quality(path: &Path, audio: &DecodedAudio, quality: f
     Ok(())
 }
 
-/// Streaming OGG/Vorbis writer that accepts PCM frames incrementally and
-/// promotes the output atomically on success.
-///
-/// The encoder writes to a temporary file. On `finish`, the encoder is closed,
-/// metadata is copied from the source song, and the temp file is atomically
-/// renamed to the final path. If the writer is dropped without finishing, the
-/// temp file is deleted so a crash or cancellation never leaves a partial
-/// cache entry visible to the playback path.
 pub struct StreamingOggWriter {
     encoder: Option<vorbis_rs::VorbisEncoder<std::io::BufWriter<std::fs::File>>>,
     temp_path: PathBuf,
@@ -98,17 +81,12 @@ pub struct StreamingOggWriter {
     source_path: Option<PathBuf>,
     stem_title: Option<String>,
     channels: usize,
-    /// Planar staging buffer reused across `accept_frames` calls to avoid
-    /// per-call allocation.
     planar_staging: Vec<Vec<f32>>,
     frames_written: usize,
     finished: bool,
 }
 
 impl StreamingOggWriter {
-    /// Create a new streaming writer. The parent directory of `final_path`
-    /// is created if it does not exist. The temp file is created in the same
-    /// directory so the final rename is atomic on all supported filesystems.
     pub fn new(
         final_path: &Path,
         sample_rate: u32,
@@ -158,8 +136,6 @@ impl StreamingOggWriter {
         })
     }
 
-    /// Accept interleaved PCM frames and encode them incrementally.
-    /// `samples` must contain `frames * channels` interleaved samples.
     pub fn accept_frames(&mut self, samples: &[f32]) -> Result<()> {
         let encoder = self
             .encoder
@@ -199,9 +175,6 @@ impl StreamingOggWriter {
         self.frames_written
     }
 
-    /// Close the encoder, write metadata, and atomically promote the temp
-    /// file to the final path. After this call the writer is consumed and
-    /// no further frames can be accepted.
     pub fn finish(mut self) -> Result<()> {
         if self.finished {
             return Ok(());
@@ -215,9 +188,6 @@ impl StreamingOggWriter {
             .finish()
             .context("failed to finish Vorbis encoding")?;
 
-        // Preserve source metadata (artist, album, cover art, etc.) and set
-        // the stem-specific title. This mirrors the non-streaming path so
-        // cache metadata and file format stay identical.
         if let (Some(source), Some(title)) =
             (self.source_path.as_deref(), self.stem_title.as_deref())
         {
@@ -237,7 +207,6 @@ impl StreamingOggWriter {
         Ok(())
     }
 
-    /// The final destination path.
     pub fn final_path(&self) -> &Path {
         &self.final_path
     }
@@ -246,9 +215,6 @@ impl StreamingOggWriter {
 impl Drop for StreamingOggWriter {
     fn drop(&mut self) {
         if !self.finished {
-            // Best-effort cleanup: remove the temp file so a crash or
-            // cancellation does not leave a partial OGG visible to the
-            // playback path.
             let _ = std::fs::remove_file(&self.temp_path);
         }
     }

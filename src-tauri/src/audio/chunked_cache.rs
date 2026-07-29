@@ -31,7 +31,6 @@ impl From<io::Error> for CacheError {
     }
 }
 
-/// Inner state of the chunked cache, protected by a mutex.
 struct CacheInner {
     file: File,
     downloaded: RangeSet,
@@ -39,8 +38,6 @@ struct CacheInner {
     last_access: Instant,
 }
 
-/// Supports concurrent read (from the decode/symphonia thread) and write
-/// (from the fetch thread) via a mutex + condvar pattern.
 pub struct ChunkedCache {
     path: PathBuf,
     inner: Mutex<CacheInner>,
@@ -67,11 +64,6 @@ impl ChunkedCache {
             .truncate(false)
             .open(&data_path)?;
 
-        // Pre-allocate the file to the expected size so that partial downloads
-        // (where only some ranges have been written) still report the correct
-        // file length. Without this, a file with ranges [0,50) and [100,50)
-        // would be 150 bytes, not `file_size`, and the persistent catalog's
-        // startup reconciliation would discard it as a size mismatch.
         if file.metadata()?.len() < file_size_bytes {
             file.set_len(file_size_bytes)?;
         }
@@ -96,9 +88,7 @@ impl ChunkedCache {
     }
 
     /// Open a cache file and initialize the downloaded range set from the
-    /// persistent catalog instead of the `.index` sidecar. Used by the
-    /// persistent cache catalog (PR#6) so ranges survive restart even when
-    /// the `.index` sidecar was deleted on completion.
+    /// persistent catalog instead of the `.index` sidecar.
     pub fn open_with_ranges(
         cache_dir: &Path,
         cache_key: &str,
@@ -114,8 +104,6 @@ impl ChunkedCache {
             .truncate(false)
             .open(&data_path)?;
 
-        // Pre-allocate to `file_size` so partial entries report the correct
-        // length during startup reconciliation.
         if file.metadata()?.len() < file_size_bytes {
             file.set_len(file_size_bytes)?;
         }
@@ -172,8 +160,6 @@ impl ChunkedCache {
         &self.path
     }
 
-    /// Extends the file if the write goes past the current end (required for
-    /// non-contiguous downloads on macOS, which does not support sparse file holes).
     pub fn write_at(&self, offset: u64, data: &[u8]) -> Result<(), CacheError> {
         let mut inner = acquire_lock(&self.inner);
         let write_end = offset + data.len() as u64;
@@ -189,16 +175,10 @@ impl ChunkedCache {
         Ok(())
     }
 
-    /// Blocks (via condvar wait) if the range is not yet cached. Returns the
-    /// number of bytes actually read.
-    ///
-    /// Uses `wait_timeout` instead of infinite `wait` so that a dead fetch
-    /// thread does not hang the decode thread forever.
     pub fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize, CacheError> {
         self.read_at_with_timeout(offset, buf, READ_TIMEOUT)
     }
 
-    /// Exposed for testing timeout behavior without waiting 30 seconds.
     fn read_at_with_timeout(
         &self,
         offset: u64,
@@ -236,7 +216,6 @@ impl ChunkedCache {
     pub fn save_index(&self) -> Result<(), CacheError> {
         let inner = acquire_lock(&self.inner);
         if inner.downloaded.covers_full(inner.file_size_bytes) {
-            // Complete file — no need to track partial state.
             let index_path = self.index_path();
             if index_path.exists() {
                 fs::remove_file(&index_path)?;
@@ -275,7 +254,6 @@ impl CacheManager {
 
     pub const DEFAULT_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
-    /// Evicts LRU caches if needed.
     pub fn get_or_create(
         &mut self,
         key: &str,
@@ -513,7 +491,6 @@ mod tests {
     #[test]
     fn cache_manager_evicts_lru() {
         let dir = temp_dir("mgr_evict");
-        // Enough for one small cache but not two.
         let mut mgr = CacheManager::new(dir.clone(), 200);
 
         let cache1 = mgr.get_or_create("small1", 100).unwrap();
@@ -524,7 +501,6 @@ mod tests {
 
         assert_eq!(mgr.len(), 2);
 
-        // Make cache2 more recent than cache1.
         let mut buf = [0u8; 10];
         cache2.read_at(0, &mut buf).unwrap();
 
@@ -546,8 +522,6 @@ mod tests {
         let c2 = mgr.get_or_create("b", 2000).unwrap();
         c2.write_at(0, &[0u8; 200]).unwrap();
 
-        // Files are pre-allocated to their declared size so partial downloads
-        // report the correct length for the persistent catalog reconciliation.
         assert_eq!(mgr.total_bytes(), 3000);
 
         cleanup(&dir);
@@ -592,15 +566,11 @@ mod tests {
         let dir = temp_dir("data_bytes");
         let cache = ChunkedCache::open(&dir, "db1", 500).unwrap();
 
-        // File is pre-allocated to the declared size so partial downloads
-        // report the correct length for the persistent catalog reconciliation.
         assert_eq!(cache.data_bytes(), 500);
 
         cache.write_at(0, &[0u8; 100]).unwrap();
         assert_eq!(cache.data_bytes(), 500);
 
-        // Non-contiguous write does not extend the file past the pre-allocated
-        // size.
         cache.write_at(300, &[0u8; 50]).unwrap();
         assert_eq!(cache.data_bytes(), 500);
 

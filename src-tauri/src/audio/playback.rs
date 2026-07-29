@@ -15,39 +15,11 @@ pub const PLAYBACK_POSITION_EVENT: &str = "playback-position";
 pub const PLAYBACK_ENDED_EVENT: &str = "playback-ended";
 pub const PLAYBACK_ERROR_EVENT: &str = "playback-error";
 pub const TRACK_TRANSITIONED_EVENT: &str = "track-transitioned";
-/// Emitted by the playback reconnect coordinator (PR #7, issue #151) before
-/// each re-resolve attempt so the frontend (PR #8) can show a "reconnecting…"
-/// state. Payload: [`RemotePlaybackReconnectEvent`].
 pub const REMOTE_PLAYBACK_RECONNECT_EVENT: &str = "remote-playback-reconnect";
-/// Emitted when a reconnected source could not seek to the exact preserved
-/// position and snapped to a preceding resumable boundary. Payload:
-/// [`RemotePlaybackResyncEvent`].
 pub const REMOTE_PLAYBACK_RESYNC_EVENT: &str = "remote-playback-resync";
-/// Emitted after the reconnect attempt budget is exhausted or a permanent
-/// error occurs. Payload: [`RemotePlaybackFailedEvent`].
 pub const REMOTE_PLAYBACK_FAILED_EVENT: &str = "remote-playback-failed";
 pub const PLAYBACK_POSITION_POLL_INTERVAL_MS: u64 = 33;
 
-/// Opaque handle for the preload-request generation space.
-///
-/// `preload_request_generation` and `output_format.generation` are both
-/// monotonic `u64` counters stored on `PreparedTrack` and compared in
-/// `install_prepared_track`. Without a type wrapper, accidentally comparing
-/// `prepared.preload_request_generation` against
-/// `current_output_format.generation` (or vice versa) would compile silently
-/// and produce a stale-track bug that only manifests under specific timing.
-///
-/// This newtype makes that cross-space comparison a compile error. The
-/// `output_format.generation` field stays `u64` because it lives inside
-/// the typed `OutputFormatSnapshot` struct, which already provides
-/// namespace isolation.
-///
-/// This is the minimal scope — the two most confusable counters at the
-/// comparison site. The coordinator's `request_id` (load-from-AtomicU64-and-compare)
-/// and CDG's
-/// `transport_generation` (crosses the IPC boundary to the frontend)
-/// would require touching 100+ sites and the wire format for lower
-/// marginal safety; they are documented as deferred.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PreloadRequestGeneration(pub u64);
 
@@ -108,13 +80,6 @@ pub enum LoadedStems {
     FourStem(StemSet),
 }
 
-/// Validate that all stems in a `LoadedStems` share the same sample rate,
-/// channel count, and frame count. The source-domain mix bus (issue #143)
-/// pops the same `[frame, frame + budget)` range from every stem, so any
-/// mismatch would cause one stem to exhaust early and stall the transport.
-///
-/// Returns `Ok(())` if all stems are consistent, or an `InvalidPlaybackState`
-/// error describing the first mismatch.
 fn validate_loaded_stems(stems: &LoadedStems) -> Result<(), PlaybackError> {
     match stems {
         LoadedStems::TwoStem {
@@ -163,16 +128,11 @@ fn validate_stem_pair(
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PlaybackStateSnapshot {
     pub song_id: Option<String>,
-    /// Incremented when a new song load starts so webviews can discard
-    /// delayed events from the previous transport.
     pub transport_generation: u64,
-    /// `playing` means a decoded track owns the transport, not that time is advancing.
     pub state: String,
     pub is_playing: bool,
     pub position_ms: u64,
     pub duration_ms: Option<u64>,
-    /// In whole-track mode equals `duration_ms`; in streaming mode driven
-    /// by ring-buffer water level. Used by the UI for the grey buffer bar.
     pub buffered_ms: u64,
     pub volume: f32,
     pub stem_volumes: StemVolumes,
@@ -204,62 +164,33 @@ pub(crate) struct LoadedTrack {
     pub(crate) original_audio: DecodedAudio,
     pub(crate) stems: Option<LoadedStems>,
     is_playing: bool,
-    /// The sole authority for `position_ms`. Updated exclusively by the render
-    /// callback; reset by seek / start_track.
     pub(crate) render_frame: u64,
-    /// When `Some`, the render callback reads from these instead of
-    /// `original_audio.samples`.
     pub(crate) streaming: Option<super::streaming::StreamingTrack>,
 }
 
-/// A fully decoded, normalized next track ready for gapless transition.
-/// The audio callback is the only code allowed to consume this.
 #[derive(Debug)]
 pub struct PreparedTrack {
-    /// Monotonic generation of the `set_preload_candidate` call that
-    /// initiated this preload. The coordinator increments its expected
-    /// generation on every `CancelPreparedNext` and rejects `PrepareNext`
-    /// commands whose generation is stale — this closes the race where an
-    /// old preload thread passes its shutdown check before the flag is set
-    /// but sends `PrepareNext` after the cancel has been processed.
     pub preload_request_generation: PreloadRequestGeneration,
-    /// Output-format generation captured at prepare time. Used for the
-    /// `CompletedTransition` event and for stale-format rejection.
     pub preload_generation: u64,
     pub song_id: String,
     pub output_format: OutputFormatSnapshot,
     pub audio: DecodedAudio,
 }
 
-/// Completed gapless transition metadata, drained by the position emitter
-/// to emit `track-transitioned` before the next position event.
 #[derive(Debug, Clone)]
 pub struct CompletedTransition {
     pub transition_serial: u64,
     pub preload_generation: u64,
     pub from_song_id: String,
     pub to_song_id: String,
-    /// Authoritative post-transition snapshot captured at the moment
-    /// the track switched, not when the position emitter drains the
-    /// transition. If the listener manually picks a different song in the
-    /// brief gap between the swap and the notification, this snapshot still
-    /// describes the song that actually played, so the frontend's
-    /// `transport_generation` guard rejects the stale event and the queue
-    /// is not reconciled against a song the listener never heard.
     pub snapshot: PlaybackStateSnapshot,
 }
 
-/// Active crossfade state owned by the realtime callback.
-/// The callback creates this when the overlap begins, advances it each
-/// frame, and promotes the incoming track when the overlap completes.
 #[derive(Debug)]
 pub struct ActiveCrossfade {
     pub prepared: PreparedTrack,
     pub total_frames: u64,
     pub rendered_frames: u64,
-    /// Incoming track position in *source* frames. Advanced by
-    /// `mix_stem_resampled`'s source-frame consumption so rate conversion
-    /// cannot be fed a device-frame index.
     pub incoming_source_frame: u64,
 }
 
@@ -298,47 +229,15 @@ pub struct PlaybackController {
     transport_generation: u64,
     volume: f32,
     stem_volumes: StemVolumes,
-    /// When `true` and a track is loaded, `snapshot()` reports
-    /// `state: "buffering"`. Set by the streaming layer on underrun; cleared
-    /// when the buffer refills.
     pub(crate) is_buffering: bool,
     pub(crate) fade: FadeState,
-    /// EQ config snapshot published by the controller and polled by the
-    /// realtime output callback via `eq_config()`. The revision is bumped on
-    /// every successful setter so the callback can detect changes without
-    /// comparing the full struct each tick.
     pub(crate) eq_config: crate::audio::eq::EqConfig,
-    /// A fully decoded, normalized next track prepared by the preload
-    /// scheduler. The realtime callback is the only consumer — it swaps this
-    /// into `current_track` when the current track reaches EOF. Stays `None`
-    /// when no candidate is queued, the format changed, or the candidate was
-    /// cancelled.
     pub(crate) prepared_track: Option<PreparedTrack>,
-    /// Monotonic serial stamped onto each completed transition. Drained
-    /// by the position emitter to emit `track-transitioned` before the next
-    /// position event so the frontend can reconcile its queue head.
     pub(crate) transition_serial: u64,
-    /// Completed transition metadata produced by the realtime callback
-    /// after a gapless swap. The position emitter drains this (under the
-    /// playback lock) and emits `TRACK_TRANSITIONED_EVENT` before the next
-    /// `PLAYBACK_POSITION_EVENT`.
     pub(crate) pending_transition_out: Option<CompletedTransition>,
-    /// Monotonic generation of the latest `set_preload_candidate`
-    /// request. Incremented on every `cancel_prepared_track` call so that
-    /// stale `PrepareNext` commands from an older preload thread (which
-    /// passed its shutdown check before the flag was set but sends after the
-    /// cancel) are rejected by `install_prepared_track`.
     pub(crate) expected_preload_request_generation: PreloadRequestGeneration,
-    /// The output callback reads this while holding the playback lock to
-    /// decide whether to start an overlap.
     pub(crate) crossfade_config: CrossfadeConfig,
-    /// Owned by the realtime callback — created when the overlap begins,
-    /// advanced each frame, and consumed when the overlap completes
-    /// (promoting the incoming track).
     pub(crate) active_crossfade: Option<ActiveCrossfade>,
-    /// Set by `abort_active_crossfade` so the realtime callback knows to
-    /// clear the incoming resampler cache even though `prepared_track` was
-    /// restored (which would otherwise skip the normal cleanup guard).
     pub(crate) crossfade_abort_pending: bool,
 }
 
@@ -380,11 +279,6 @@ impl PlaybackController {
         _now_ms: u64,
     ) -> PlaybackStateSnapshot {
         self.loading_song_id = None;
-        // An explicit track install cancels any pending gapless
-        // successor — the new track is not the prepared one.
-        // Also cancel any active crossfade — a manual load during an
-        // active overlap must not leave a stale crossfade mixing the new
-        // track with the old prepared payload.
         self.cancel_crossfade_and_prepared();
         self.current_track = Some(LoadedTrack {
             song_id,
@@ -397,9 +291,6 @@ impl PlaybackController {
         self.snapshot()
     }
 
-    /// Start a track in streaming mode. The audio samples live in ring buffers
-    /// (held in `streaming`) rather than in `original_audio.samples`.
-    /// `metadata` provides sample_rate/channels/duration_ms for position calculation.
     pub fn start_track_streaming(
         &mut self,
         song_id: String,
@@ -410,9 +301,6 @@ impl PlaybackController {
         _now_ms: u64,
     ) -> PlaybackStateSnapshot {
         self.loading_song_id = None;
-        // An explicit track install cancels any pending gapless
-        // successor — the new track is not the prepared one.
-        // Also cancel any active crossfade — see `start_track`.
         self.cancel_crossfade_and_prepared();
         self.current_track = Some(LoadedTrack {
             song_id,
@@ -420,7 +308,7 @@ impl PlaybackController {
                 sample_rate_hz: sample_rate,
                 channels,
                 duration_ms,
-                samples: Vec::new(), // samples live in the ring buffer
+                samples: Vec::new(),
             },
             stems: None,
             is_playing: true,
@@ -430,30 +318,16 @@ impl PlaybackController {
         self.snapshot()
     }
 
-    /// Mark a track as loading — the audio data will arrive later from a
-    /// background download/decode task.  The snapshot reports `state: "loading"`
-    /// so the UI can show a spinner without freezing the window.
     pub fn start_track_loading(&mut self, song_id: &str) -> PlaybackStateSnapshot {
         self.bump_transport_generation();
         self.current_track = None;
         self.loading_song_id = Some(song_id.to_owned());
-        // A new load request cancels any active crossfade and prepared
-        // track — the incoming track is not the prepared one, and a stale
-        // crossfade must not mix against the about-to-be-replaced current
-        // track.
         self.cancel_crossfade_and_prepared();
         self.snapshot()
     }
 
     pub fn play(&mut self, _now_ms: u64) -> Result<PlaybackStateSnapshot, PlaybackError> {
         if self.current_track.is_none() {
-            // RATIONALE: During the loading window (`start_track_loading`
-            // set `loading_song_id` but the decoded audio hasn't arrived
-            // yet), transport commands are semantically no-ops — the
-            // track isn't installed. Return the loading snapshot so the
-            // frontend can reconcile without surfacing a user-visible
-            // error toast. When truly idle (no load in progress), keep
-            // the error to surface real caller bugs.
             if self.loading_song_id.is_some() {
                 return Ok(self.snapshot());
             }
@@ -476,7 +350,6 @@ impl PlaybackController {
 
     pub fn pause(&mut self, _now_ms: u64) -> Result<PlaybackStateSnapshot, PlaybackError> {
         if self.current_track.is_none() {
-            // See `play` for the loading-window no-op rationale.
             if self.loading_song_id.is_some() {
                 return Ok(self.snapshot());
             }
@@ -485,8 +358,6 @@ impl PlaybackController {
             ));
         }
         self.bump_transport_generation();
-        // Start a fade-out. The render callback will set is_playing = false
-        // once the fade envelope completes.
         self.fade = FadeState::FadingOut {
             start: Instant::now(),
         };
@@ -500,7 +371,6 @@ impl PlaybackController {
         _now_ms: u64,
     ) -> Result<PlaybackStateSnapshot, PlaybackError> {
         if self.current_track.is_none() {
-            // See `play` for the loading-window no-op rationale.
             if self.loading_song_id.is_some() {
                 return Ok(self.snapshot());
             }
@@ -508,13 +378,7 @@ impl PlaybackController {
                 "no track is loaded".to_owned(),
             ));
         }
-        // Cancel any active fade and start a short seek fade to mask
-        // the amplitude discontinuity at the new position.
         self.bump_transport_generation();
-        // Seek during an active crossfade aborts the overlap, restoring
-        // the incoming payload to prepared_track at frame zero. The outgoing
-        // track is then seeked normally, and a fresh crossfade may start
-        // later if the remaining time permits.
         self.abort_active_crossfade();
         self.fade = FadeState::FadingAfterSeek {
             start: Instant::now(),
@@ -528,21 +392,16 @@ impl PlaybackController {
         } else {
             target_ms.min(track.duration_ms())
         };
-        // Reset render frame to match the new seek position — this is the
-        // sole authority for position_ms.
         let sample_rate = track.original_audio.sample_rate_hz as f64;
         let target_frame = (clamped_ms as f64 * sample_rate / 1000.0) as u64;
         track.render_frame = target_frame;
 
-        // Propagate seek to streaming consumers so their decode threads
-        // seek the symphonia decoder to the new position.
         if let Some(ref mut streaming) = track.streaming {
             for consumer in streaming.consumers_mut() {
                 consumer
                     .seek_target()
                     .store(target_frame as i64, std::sync::atomic::Ordering::Relaxed);
             }
-            // Set buffering while the decode threads seek and refill.
             self.is_buffering = true;
         }
 
@@ -577,8 +436,6 @@ impl PlaybackController {
         self.snapshot()
     }
 
-    /// The caller is expected to have validated the gains via
-    /// `eq::validate_gains_db` before dispatching the command.
     pub fn set_eq_gains(&mut self, gains_db: [f32; 5]) -> PlaybackStateSnapshot {
         if self.eq_config.gains_db != gains_db {
             self.eq_config.gains_db = gains_db;
@@ -602,8 +459,6 @@ impl PlaybackController {
         Ok(self.crossfade_state())
     }
 
-    /// The caller validates the range (500..=10_000). Bumps the config
-    /// revision only when the value actually changes.
     pub fn set_crossfade_duration(
         &mut self,
         duration_ms: u32,
@@ -622,10 +477,6 @@ impl PlaybackController {
         }
     }
 
-    /// Abort an active crossfade, restoring the incoming payload to
-    /// `prepared_track` at frame zero. Called when a seek occurs during
-    /// an active overlap. The outgoing track is seeked separately by the
-    /// caller.
     pub(crate) fn abort_active_crossfade(&mut self) {
         if let Some(active) = self.active_crossfade.take() {
             self.prepared_track = Some(active.prepared);
@@ -638,24 +489,13 @@ impl PlaybackController {
         }
     }
 
-    /// Cancel both active crossfade and prepared track. Called by
-    /// manual play, stem attachment, and output-device recreation.
     pub(crate) fn cancel_crossfade_and_prepared(&mut self) {
         self.active_crossfade = None;
         self.prepared_track = None;
-        // Also clear any pending outgoing transition. A manual load,
-        // clear, stem attach, or load failure supersedes the track context
-        // that produced the transition. Without this, the position emitter
-        // could drain a stale transition (A→B) after the user has already
-        // switched to an unrelated song C, causing the frontend to
-        // reconcile the queue with the wrong song IDs.
         self.pending_transition_out = None;
     }
 
     pub fn attach_stems(&mut self, song_id: &str, stems: LoadedStems) -> Result<(), PlaybackError> {
-        // Validate ownership first. Cancelling before the song-id guard would
-        // permanently destroy an in-progress crossfade / prepared next-track
-        // when a stale or misrouted attach arrives for a different song.
         let track = self
             .current_track
             .as_ref()
@@ -666,16 +506,8 @@ impl PlaybackController {
                 song_id, track.song_id
             )));
         }
-        // Validate stem timeline consistency before installing. The mix bus
-        // (issue #143) pops the same source-frame range from every stem, so
-        // mismatched sample_rate, channels, or frame count would cause one
-        // stem to run out of data early and stall the transport. Reject early
-        // rather than producing silent drift or glitches mid-playback.
         validate_loaded_stems(&stems)?;
 
-        // Successful attach on the current track cancels both active
-        // crossfade and prepared track — stems change the render path and
-        // make an outgoing plain-track overlap invalid.
         self.cancel_crossfade_and_prepared();
         self.current_track
             .as_mut()
@@ -684,8 +516,6 @@ impl PlaybackController {
         Ok(())
     }
 
-    /// Replace the streaming track's single consumer with multi-stem consumers.
-    /// Used when stems are loaded in streaming mode after the main track started.
     pub fn attach_streaming_stems(
         &mut self,
         song_id: &str,
@@ -705,20 +535,6 @@ impl PlaybackController {
         Ok(())
     }
 
-    /// Atomically replace the active streaming source while preserving the
-    /// playback timeline (PR #7, issue #151 defect #12).
-    ///
-    /// Called by the coordinator's `ReplaceStreamingSource` handler after a
-    /// reconnect re-resolves a fresh source. The swap happens in one critical
-    /// section (under the playback mutex): the old source is dropped only
-    /// after the new one is installed, so there is no window where no source
-    /// is active.
-    ///
-    /// `position_ms` is the position the old source was at when the failure
-    /// occurred. The new source's consumers are seeked to that position
-    /// (via their `seek_target`) so playback continues without an audible
-    /// jump. Returns the snapshot after the swap, or `None` when the current
-    /// track does not match `song_id` (the user skipped — stale reconnect).
     pub fn replace_streaming_source(
         &mut self,
         song_id: &str,
@@ -727,14 +543,8 @@ impl PlaybackController {
     ) -> Option<PlaybackStateSnapshot> {
         let track = self.current_track.as_mut()?;
         if track.song_id != song_id {
-            // Stale reconnect — the user skipped to a different song. Drop
-            // the new source (it drops here on return) and return None so
-            // the coordinator no-ops.
             return None;
         }
-        // Preserve the timeline: set render_frame to the position captured
-        // before the swap. This is the sole authority for position_ms, so
-        // the next snapshot reports the preserved position.
         let sample_rate = track.original_audio.sample_rate_hz as f64;
         let target_frame = if sample_rate > 0.0 {
             (position_ms as f64 * sample_rate / 1000.0) as u64
@@ -743,19 +553,12 @@ impl PlaybackController {
         };
         track.render_frame = target_frame;
         let mut new_streaming = new_streaming;
-        // Seek the new source's consumers to the preserved position so the
-        // decode threads refill from the right offset.
         for consumer in new_streaming.consumers_mut() {
             consumer
                 .seek_target()
                 .store(target_frame as i64, std::sync::atomic::Ordering::Relaxed);
         }
-        // Atomic swap: the old source is dropped when the field is
-        // overwritten, after the new one is installed.
         track.streaming = Some(new_streaming);
-        // Mark buffering while the new source's decode threads seek and
-        // refill, so the snapshot reports "buffering" rather than
-        // implying continuous audio.
         self.is_buffering = true;
         Some(self.snapshot())
     }
@@ -782,8 +585,6 @@ impl PlaybackController {
             let duration_ms = track.duration_ms();
             let raw_position = track.position_ms();
 
-            // Clamp to duration and stop playback if past the end.
-            // duration_ms == 0 means unknown — do not clamp until EOF backfill.
             let position_ms = if duration_ms > 0 && raw_position >= duration_ms {
                 track.is_playing = false;
                 duration_ms
@@ -796,7 +597,6 @@ impl PlaybackController {
                 LoadedStems::FourStem(_) => "four_stem".to_owned(),
             });
 
-            // Streaming stems also count as "has stems".
             let has_stems = track.stems.is_some()
                 || matches!(
                     track.streaming,
@@ -804,7 +604,6 @@ impl PlaybackController {
                         | Some(super::streaming::StreamingTrack::FourStem { .. })
                 );
 
-            // Derive stem_mode from streaming track if not already set by pre-decoded stems.
             let stem_mode = stem_mode.or_else(|| match track.streaming {
                 Some(super::streaming::StreamingTrack::TwoStem { .. }) => {
                     Some("two_stem".to_owned())
@@ -815,11 +614,6 @@ impl PlaybackController {
                 _ => None,
             });
 
-            // RATIONALE: is_playing reflects transport intent for the UI. During a
-            // fade-out the audio thread still renders the envelope, but the user has
-            // already paused — report is_playing=false immediately. During buffer
-            // underrun the state becomes "buffering" but the user has not paused.
-            // output.rs gates silence on is_buffering separately from is_playing.
             let transport_playing =
                 track.is_playing && !matches!(self.fade, FadeState::FadingOut { .. });
             let (state, is_playing) = if self.is_buffering {
@@ -828,9 +622,6 @@ impl PlaybackController {
                 ("playing", transport_playing)
             };
 
-            // Derive buffered_ms: in streaming mode, compute from ring-buffer
-            // water level (min across all consumers); in whole-track mode, the
-            // entire track is buffered.
             let buffered_ms = if let Some(ref streaming) = track.streaming {
                 let min_available_ms = match streaming {
                     super::streaming::StreamingTrack::Single { consumer } => {
@@ -905,17 +696,10 @@ impl PlaybackController {
             .map(|track| track.song_id.as_str())
     }
 
-    /// Borrow the current track for read-only inspection (PR #7 reconnect).
-    /// Exposed so the playback service can read the current position and
-    /// song id without taking a mutable borrow.
     pub(crate) fn current_track_ref(&self) -> Option<&LoadedTrack> {
         self.current_track.as_ref()
     }
 
-    /// Return the song identifier whose decode/load operation is still pending.
-    ///
-    /// The coordinator uses this to invalidate only an in-flight request for a
-    /// song that has just been deleted, without canceling unrelated work.
     pub fn loading_song_id(&self) -> Option<&str> {
         self.loading_song_id.as_deref()
     }
@@ -924,35 +708,14 @@ impl PlaybackController {
         self.current_track = None;
         self.loading_song_id = None;
         self.fade = FadeState::None;
-        // Clearing the current track also invalidates any prepared
-        // gapless successor — it was prepared relative to the track that is
-        // now being replaced by an explicit user action.
-        // Also cancel any active crossfade.
         self.cancel_crossfade_and_prepared();
     }
 
-    /// Install a prepared next track for gapless transition. Called by
-    /// the coordinator after the preload scheduler decodes and normalizes the
-    /// candidate. Returns `Err` if the output format no longer matches the
-    /// snapshot captured at prepare time (device restart or format change).
-    ///
-    /// `current_output_format` is the output-format snapshot re-captured by
-    /// the coordinator after acquiring the playback lock. The prepared
-    /// track's audio was normalized to the output format at prepare time;
-    /// we validate against the output format (NOT the current track's source
-    /// format, which may differ from the output format when the render
-    /// callback resamples).
     pub fn install_prepared_track(
         &mut self,
         prepared: PreparedTrack,
         current_output_format: OutputFormatSnapshot,
     ) -> Result<(), PlaybackError> {
-        // Reject stale preload requests. `cancel_prepared_track` bumps
-        // `expected_preload_request_generation` on every cancel; if the
-        // prepared track's generation doesn't match, it came from an older
-        // preload thread that raced with a newer cancel (the thread passed
-        // its shutdown check before the flag was set but sent PrepareNext
-        // after the coordinator processed the cancel).
         if prepared.preload_request_generation != self.expected_preload_request_generation {
             return Err(PlaybackError::Internal(format!(
                 "prepared track from stale preload request (prepared gen={}, expected gen={})",
@@ -961,15 +724,6 @@ impl PlaybackController {
             )));
         }
 
-        // The coordinator already validates the output format against the
-        // current descriptor before calling this; this controller-level guard
-        // is a defensive check against a stale prepared payload that slipped
-        // through (e.g. format changed between the coordinator check and the
-        // lock acquisition). We compare the prepared track's captured output
-        // format against the re-captured current output format — NOT the
-        // current track's source format, which may differ from the output
-        // format when the render callback resamples (e.g. 48 kHz source on a
-        // 44.1 kHz device).
         if prepared.output_format.generation != current_output_format.generation
             || prepared.output_format.sample_rate_hz != current_output_format.sample_rate_hz
             || prepared.output_format.channels != current_output_format.channels
@@ -989,36 +743,15 @@ impl PlaybackController {
         Ok(())
     }
 
-    /// Cancel a pending prepared track. Called when the user manually
-    /// skips, seeks, plays a different song, or the queue head changes.
-    /// Returns `true` if a prepared track was present and cancelled.
-    ///
-    /// `expected_generation` is the new preload request generation (bumped
-    /// by `set_preload_candidate` before sending the cancel command). We
-    /// stamp it onto `expected_preload_request_generation` so that any
-    /// `PrepareNext` from an older preload thread (which passed its shutdown
-    /// check before the flag was set but sends after this cancel) is
-    /// rejected by `install_prepared_track` as stale.
     pub fn cancel_prepared_track(&mut self, expected_generation: PreloadRequestGeneration) -> bool {
         self.expected_preload_request_generation = expected_generation;
         self.prepared_track.take().is_some()
     }
 
-    /// Drain a completed transition produced by the realtime callback.
-    /// The position emitter calls this under the playback lock to emit
-    /// `track-transitioned` before the next position event.
     pub fn drain_pending_transition(&mut self) -> Option<CompletedTransition> {
         self.pending_transition_out.take()
     }
 
-    /// Bump the transition serial and stamp it onto a new
-    /// `CompletedTransition`. Called by the realtime callback after a
-    /// gapless swap.
-    /// The post-transition snapshot is captured here — under the
-    /// playback lock at the moment of the swap — so the `track-transitioned`
-    /// event describes the song that actually played even if the listener
-    /// manually changes tracks before the position emitter drains the
-    /// transition.
     fn stamp_transition(
         &mut self,
         from_song_id: String,
@@ -1036,7 +769,6 @@ impl PlaybackController {
         });
     }
 
-    /// Clear a pending background load when decode/start fails for the given song.
     pub fn cancel_loading_if_matching(&mut self, song_id: &str) -> bool {
         if self.loading_song_id.as_deref() == Some(song_id) {
             self.loading_song_id = None;
@@ -1045,12 +777,6 @@ impl PlaybackController {
         false
     }
 
-    /// Clear an installed track when output-device startup fails after
-    /// `InstallReady` has already called `start_track` / `start_track_streaming`.
-    /// Unlike `cancel_loading_if_matching`, this handles the post-install case
-    /// where `loading_song_id` is already `None` but `current_track` holds the
-    /// song that cannot play without an output device. Returns `true` when the
-    /// installed track matched and was cleared.
     pub fn clear_track_if_matching(&mut self, song_id: &str) -> bool {
         if self
             .current_track
@@ -1063,9 +789,6 @@ impl PlaybackController {
         false
     }
 
-    /// Invalidate current and/or pending loads that match any of `song_ids`.
-    /// Used after integrity cleanup deletes DB rows so the realtime path cannot
-    /// keep rendering deleted media. Returns `true` when any state changed.
     pub fn invalidate_songs(&mut self, song_ids: &[String]) -> bool {
         let mut changed = false;
         for song_id in song_ids {
@@ -1097,8 +820,6 @@ impl PlaybackController {
         }
     }
 
-    /// Called from the audio output thread when every streaming consumer has
-    /// reached EOF and drained its ring buffer.
     pub(crate) fn finalize_streaming_natural_end(&mut self) {
         let Some(track) = self.current_track.as_mut() else {
             return;
@@ -1117,15 +838,11 @@ impl PlaybackController {
         }
     }
 
-    /// Check whether the current decoded (non-streaming) track has
-    /// reached its end. The render callback calls this after advancing
-    /// `render_frame` to decide whether a gapless swap should occur.
     pub(crate) fn current_track_reached_eof(&self) -> bool {
         let Some(track) = self.current_track.as_ref() else {
             return false;
         };
         if let Some(streaming) = &track.streaming {
-            // Streaming tracks use `all_eof_and_drained` on the ring buffer.
             return streaming.all_eof_and_drained();
         }
         // Guard against a zero-channel track, which would panic on the
@@ -1138,20 +855,6 @@ impl PlaybackController {
         track.render_frame >= total_frames as u64
     }
 
-    /// Whether the current track is actively playing — i.e. the user
-    /// has not paused and no pause fade-out is in progress. The gapless swap
-    /// path checks this before advancing to the prepared next track so that a
-    /// track reaching EOF during a user-initiated pause (or while paused with
-    /// `render_frame` already at EOF) does not auto-advance. Without this
-    /// guard, pausing near the end of a track would still swap to the
-    /// preloaded next track once the fade-out renders the final frames,
-    /// defeating the user's intent to stop at the current song.
-    ///
-    /// A `FadingIn` state (user just pressed play/resume) also counts as
-    /// playing, even if `snapshot()` has set `is_playing = false` because
-    /// the track is at EOF. Without this, a user who pauses near EOF and
-    /// then resumes would be stuck — the track is at EOF, `is_playing` is
-    /// false, and the gapless swap is permanently suppressed.
     pub(crate) fn current_track_is_playing(&self) -> bool {
         let Some(track) = self.current_track.as_ref() else {
             return false;
@@ -1162,29 +865,15 @@ impl PlaybackController {
         track.is_playing || matches!(self.fade, FadeState::FadingIn { .. })
     }
 
-    /// Perform a gapless swap from the current track to the prepared
-    /// track. Called by the realtime callback when the current track reaches
-    /// EOF and a prepared track is available. Returns `true` if the swap
-    /// occurred.
-    ///
-    /// This is the only path that consumes `prepared_track`. The new track
-    /// starts playing immediately at `render_frame = 0` with `is_playing =
-    /// true`, and a `CompletedTransition` is stamped for the position emitter
-    /// to drain.
     pub(crate) fn perform_gapless_swap(&mut self) -> bool {
         let Some(prepared) = self.prepared_track.take() else {
             return false;
         };
         let Some(current) = self.current_track.as_ref() else {
-            // No current track — shouldn't happen, but be defensive.
             self.prepared_track = Some(prepared);
             return false;
         };
 
-        // The prepared track's audio was already normalized to the output
-        // format by the preload scheduler, so sample_rate and channels match
-        // the current track. We construct a new LoadedTrack with the
-        // prepared audio.
         let from_song_id = current.song_id.clone();
         let to_song_id = prepared.song_id.clone();
         let preload_generation = prepared.preload_generation;
@@ -1203,37 +892,20 @@ impl PlaybackController {
             streaming: None,
         });
 
-        // Clear transport state carried over from the previous track. A
-        // FadingOut must never carry into the successor, but preserve the
-        // deliberate fade-in described above. `is_buffering` is only set for
-        // streaming tracks, but clearing it defensively guards against stale
-        // state.
         if !preserve_fade_in {
             self.fade = FadeState::None;
         }
         self.is_buffering = false;
 
-        // Bump the transport generation so the frontend's stale-event
-        // filter rejects any delayed `playback-position` event from the old
-        // song. The frontend only discards events with a *lower* generation,
-        // so without this bump a same-generation position event for song-a
-        // could arrive after the new-song snapshot and be accepted, reverting
-        // the clock and queue reconciliation back to song-a.
+        // Bump transport generation so delayed position events from the
+        // previous song are rejected by the frontend's stale-event filter.
         self.bump_transport_generation();
 
-        // Stamp the transition for the position emitter to drain.
         self.stamp_transition(from_song_id, to_song_id, preload_generation);
 
         true
     }
 
-    /// Promote the incoming track from an active crossfade to the
-    /// current track. Called by the realtime callback when the overlap
-    /// completes. The incoming track starts at `render_frame =
-    /// incoming_frame_offset` (the number of overlap source frames already
-    /// consumed), so subsequent callbacks continue seamlessly from the
-    /// promoted source. A `CompletedTransition` is stamped for the position
-    /// emitter to drain.
     pub(crate) fn promote_crossfade_track(
         &mut self,
         prepared: PreparedTrack,
@@ -1259,20 +931,13 @@ impl PlaybackController {
         self.fade = FadeState::None;
         self.is_buffering = false;
 
-        // Bump the transport generation so the frontend's stale-event
-        // filter rejects any delayed `playback-position` event from the old
-        // song. Without this bump, a same-generation position event for song-a
-        // could arrive after the new-song snapshot and be accepted, reverting
-        // the clock and queue reconciliation back to song-a. This mirrors the
-        // gapless swap path (`perform_gapless_swap`).
+        // Bump transport generation so delayed position events from the
+        // previous song are rejected by the frontend's stale-event filter.
         self.bump_transport_generation();
 
         self.stamp_transition(from_song_id, to_song_id, preload_generation);
     }
 
-    /// If a fade-out has elapsed past `FADE_DURATION`, finalize it: set
-    /// `is_playing = false` and clear the fade state.  Called before
-    /// `snapshot()` so the snapshot correctly reports the paused state.
     pub(crate) fn finalize_fade_if_complete(&mut self) {
         if let FadeState::FadingOut { start } = self.fade {
             if start.elapsed() >= FADE_DURATION {
@@ -1284,11 +949,6 @@ impl PlaybackController {
         }
     }
 
-    /// Compute the fade gain to apply to the rendered buffer.  Returns `None`
-    /// if no fade is active, or `Some(gain)` with the gain to multiply into
-    /// every output sample.
-    ///
-    /// For fade-ins, resets `fade` to `None` once the envelope completes.
     pub(crate) fn take_fade_gain(&mut self) -> Option<f32> {
         match self.fade {
             FadeState::None => None,
@@ -1304,8 +964,6 @@ impl PlaybackController {
             FadeState::FadingOut { start } => {
                 let elapsed = start.elapsed();
                 if elapsed >= FADE_DURATION {
-                    // Already finalized by finalize_fade_if_complete; this
-                    // branch is a safety net.
                     self.fade = FadeState::None;
                     Some(0.0)
                 } else {
@@ -1330,7 +988,6 @@ impl LoadedTrack {
         self.original_audio.duration_ms
     }
 
-    /// Position derived solely from `render_frame` — the authoritative clock.
     fn position_ms(&self) -> u64 {
         let sample_rate = self.original_audio.sample_rate_hz as u64;
         if sample_rate == 0 {
@@ -1344,9 +1001,6 @@ impl LoadedTrack {
         }
     }
 
-    /// Read-only access to the current position for the reconnect path
-    /// (PR #7). Mirrors [`position_ms`](Self::position_ms) but is `pub(crate)`
-    /// so `services::playback` can capture the timeline before a source swap.
     pub(crate) fn position_ms_for_reconnect(&self) -> u64 {
         self.position_ms()
     }
@@ -1382,9 +1036,6 @@ pub struct TrackTransitionedEvent {
     pub state: PlaybackStateSnapshot,
 }
 
-/// Payload for the `remote-playback-reconnect` event (PR #7, issue #151).
-/// Emitted before each re-resolve attempt so PR #8 can render a
-/// "reconnecting…" state.
 #[derive(Debug, Clone, Serialize)]
 pub struct RemotePlaybackReconnectEvent {
     pub song_id: String,
@@ -1394,10 +1045,6 @@ pub struct RemotePlaybackReconnectEvent {
     pub reason: String,
 }
 
-/// Payload for the `remote-playback-resync` event (PR #7, issue #151).
-/// Emitted when a reconnected source could not seek to the exact preserved
-/// position and snapped to a preceding resumable boundary.
-/// `actual_position_ms` is always `<= requested_position_ms`.
 #[derive(Debug, Clone, Serialize)]
 pub struct RemotePlaybackResyncEvent {
     pub song_id: String,
@@ -1405,9 +1052,6 @@ pub struct RemotePlaybackResyncEvent {
     pub actual_position_ms: u64,
 }
 
-/// Payload for the `remote-playback-failed` event (PR #7, issue #151).
-/// Emitted after the reconnect attempt budget is exhausted or a permanent
-/// error occurs.
 #[derive(Debug, Clone, Serialize)]
 pub struct RemotePlaybackFailedEvent {
     pub song_id: String,
@@ -1739,9 +1383,6 @@ mod tests {
 
     #[test]
     fn install_prepared_track_rejects_stale_preload_request_generation() {
-        // #88 race-condition fix: an old preload thread that passed its
-        // shutdown check before the flag was set but sends PrepareNext after
-        // the coordinator processed CancelPreparedNext must be rejected.
         let mut controller = super::PlaybackController::default();
         let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
 
@@ -1770,10 +1411,6 @@ mod tests {
 
     #[test]
     fn install_prepared_track_accepts_when_source_rate_differs_from_output() {
-        // The prepared track is normalized to the OUTPUT format, not the
-        // current track's SOURCE format. This test verifies the fix for the
-        // original bug where the check compared against the current track's
-        // source format instead of the output format.
         let mut controller = super::PlaybackController::default();
         let decoded = super::DecodedAudio {
             sample_rate_hz: 48_000,
@@ -1783,8 +1420,6 @@ mod tests {
         };
         controller.start_track("song-a".to_owned(), decoded, 0);
 
-        // 44.1 kHz. The old (buggy) check would compare 48000 != 44100 and
-        // reject; the fix compares against the output format (44100 == 44100).
         let output_fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
         let prepared = make_prepared("song-b", 0, output_fmt);
         assert!(controller
@@ -1801,7 +1436,6 @@ mod tests {
         assert!(controller.install_prepared_track(prepared, fmt).is_ok());
         assert!(controller.prepared_track.is_some());
 
-        // stamp expected generation to 1.
         assert!(controller.cancel_prepared_track(super::PreloadRequestGeneration(1)));
         assert!(controller.prepared_track.is_none());
         assert_eq!(
@@ -1866,12 +1500,6 @@ mod tests {
 
     #[test]
     fn perform_gapless_swap_bumps_transport_generation() {
-        // A gapless swap replaces song-a with song-b but must bump the
-        // transport generation so the frontend's stale-event filter rejects
-        // delayed `playback-position` events from song-a. Without the bump,
-        // a same-generation position event for the old song could arrive
-        // after the new-song snapshot and be accepted, reverting the clock
-        // and queue reconciliation back to song-a.
         let mut controller = super::PlaybackController::default();
         let fmt = super::OutputFormatSnapshot::new(1, 44_100, 2);
 
@@ -1889,7 +1517,6 @@ mod tests {
 
         assert!(controller.perform_gapless_swap());
 
-        // rejected by the frontend's generation filter.
         assert!(
             controller.transport_generation > gen_before,
             "gapless swap must bump transport_generation (was {gen_before}, is {})",
@@ -1919,7 +1546,6 @@ mod tests {
         assert!(controller.install_prepared_track(prepared, fmt).is_ok());
         assert!(controller.prepared_track.is_some());
 
-        // track is not the prepared one.
         let decoded = super::DecodedAudio {
             sample_rate_hz: 44_100,
             channels: 2,
@@ -1981,9 +1607,6 @@ mod tests {
         controller.play(0).unwrap();
         controller.pause(0).unwrap();
 
-        // During the fade-out, is_playing is still true on the track, but
-        // the FadingOut state means the user has paused — the helper must
-        // return false so the gapless swap is suppressed.
         assert!(
             !controller.current_track_is_playing(),
             "should not be playing during a fade-out"
@@ -2001,11 +1624,6 @@ mod tests {
 
     #[test]
     fn current_track_is_playing_true_again_after_resume_from_pause() {
-        // After pausing (fade-out) and then resuming (play), the
-        // helper must return true again so the gapless swap can proceed if
-        // the track is at EOF. Without this, a user who pauses near EOF
-        // and then resumes would be stuck — the track is at EOF but the
-        // gapless swap is permanently suppressed.
         let mut controller = super::PlaybackController::default();
         let decoded = super::DecodedAudio {
             sample_rate_hz: 44_100,
@@ -2020,7 +1638,6 @@ mod tests {
         controller.pause(0).unwrap();
         assert!(!controller.current_track_is_playing());
 
-        // must return true (FadingIn is not FadingOut).
         controller.play(0).unwrap();
         assert!(
             controller.current_track_is_playing(),
@@ -2028,10 +1645,6 @@ mod tests {
         );
     }
 
-    // Transport commands issued while a track is loading (current_track
-    // is None but loading_song_id is Some) must be benign no-ops returning the
-    // loading snapshot, not user-visible errors. The error remains for the
-    // truly-idle case to surface real caller bugs.
     #[test]
     fn play_during_loading_is_no_op_returning_loading_snapshot() {
         let mut controller = super::PlaybackController::default();
@@ -2080,11 +1693,6 @@ mod tests {
         assert!(controller.seek(0, 0).is_err());
     }
 
-    // rewrote the crossfade implementation but shipped with fewer
-    // state-machine regression tests than the original #89 branch. The tests
-    // below cover seek-abort, pause-preserve, manual-load cancellation,
-    // stem-attach ownership guards, and promotion invariants.
-
     fn make_decoded() -> super::DecodedAudio {
         super::DecodedAudio {
             sample_rate_hz: 44_100,
@@ -2127,7 +1735,6 @@ mod tests {
         assert!(controller.active_crossfade.is_some());
         assert!(controller.prepared_track.is_none());
 
-        // Seek aborts the crossfade and restores the prepared track.
         controller.seek(1_000, 0).unwrap();
 
         assert!(
@@ -2167,16 +1774,12 @@ mod tests {
 
     #[test]
     fn start_track_cancels_active_crossfade() {
-        // A manual track load during an active crossfade must cancel both
-        // the active crossfade and the prepared track. A stale crossfade
-        // must not mix the new track against the old prepared payload on
-        // the next callback.
         let mut controller = super::PlaybackController::default();
         controller.start_track("song-a".to_owned(), make_decoded(), 0);
         controller.play(0).unwrap();
 
         controller.active_crossfade = Some(make_crossfade_active("song-b", 44_100));
-        controller.prepared_track = None; // consumed by the active crossfade
+        controller.prepared_track = None;
 
         controller.start_track("song-c".to_owned(), make_decoded(), 0);
 
@@ -2349,12 +1952,6 @@ mod tests {
 
     #[test]
     fn promote_crossfade_track_bumps_transport_generation() {
-        // A crossfade promotion replaces song-a with song-b but must bump the
-        // transport generation so the frontend's stale-event filter rejects
-        // delayed `playback-position` events from song-a. Without the bump, a
-        // same-generation position event for the old song could arrive after
-        // the new-song snapshot and be accepted, reverting the clock and
-        // queue reconciliation back to song-a.
         let mut controller = super::PlaybackController::default();
         controller.start_track("song-a".to_owned(), make_decoded(), 0);
         controller.play(0).unwrap();

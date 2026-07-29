@@ -1,10 +1,3 @@
-//! Waveform peak computation for the seekbar visualizer.
-//!
-//! `compute_waveform_peaks` reduces a fully decoded track to `buckets` peak
-//! values in `0.0..=1.0`. The output is deterministic, allocation-free beyond
-//! the output buffer, and never touches playback state — it runs on a
-//! background blocking task owned by the singleflight layer.
-
 use crate::audio::decode::DecodedAudio;
 use std::sync::Arc;
 use thiserror::Error;
@@ -35,9 +28,8 @@ pub enum WaveformError {
 /// total_frames - 1)`) is sampled so the output length remains exact. Empty
 /// audio returns `buckets` zeros.
 ///
-/// Values are NOT normalized by the song-wide maximum — stored peaks represent
-/// actual post-decode PCM amplitude so quiet and loud regions retain their
-/// relationship.
+/// Values are NOT normalized by the song-wide maximum; stored peaks represent
+/// actual post-decode PCM amplitude.
 pub fn compute_waveform_peaks(
     audio: &DecodedAudio,
     buckets: usize,
@@ -77,8 +69,6 @@ pub fn compute_waveform_peaks(
             let nearest = start_frame.min(total_frames - 1);
             max_abs_peak(&audio.samples, nearest, nearest + 1, channels)
         };
-        // Non-finite already sanitized to 0 by max_abs_peak; clamp the final
-        // value to the validated output range.
         peaks.push(peak.clamp(0.0, 1.0));
     }
 

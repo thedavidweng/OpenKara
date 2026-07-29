@@ -190,7 +190,6 @@ where
         let decoded = match decoder.decode(&packet) {
             Ok(decoded) => decoded,
             Err(SymphoniaError::DecodeError(_)) => {
-                // Tolerate malformed packets — skip and continue decoding.
                 eprintln!(
                     "warning: skipping malformed audio packet at offset {} in {source_label}",
                     packet.pts
@@ -277,8 +276,6 @@ mod tests {
 
     #[test]
     fn truncated_file_returns_error_or_partial() {
-        // A truncated file should either return an error or partial samples,
-        // but must NOT panic.
         let path = fixture_dir().join("fixture.wav");
         let Ok(audio) = decode_file(&path) else {
             return; // File missing in CI — skip.

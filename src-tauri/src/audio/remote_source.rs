@@ -8,22 +8,14 @@ use std::sync::{
 use std::time::Duration;
 use symphonia::core::io::MediaSource;
 
-/// Tracks download bandwidth and signals when the connection is slow.
-///
-/// Shared between the fetch thread (which updates it) and the playback system
-/// (which reads it to decide whether to enable proxy mode).
 pub struct BandwidthMonitor {
-    /// Bytes per second, exponentially weighted moving average.
     bytes_per_sec: AtomicU64,
     is_slow: Arc<AtomicBool>,
     slow_threshold: AtomicU64,
-    /// Request latency in microseconds, EWMA (alpha=0.3).
     latency_us: AtomicU64,
 }
 
 impl BandwidthMonitor {
-    /// Create a new monitor. `slow_threshold_bps` is in bytes per second.
-    /// Default threshold: 16384 (128 kbps).
     pub fn new(slow_threshold_bps: u64) -> Self {
         Self {
             bytes_per_sec: AtomicU64::new(0),
@@ -96,28 +88,18 @@ impl BandwidthMonitor {
     }
 }
 
-/// Commands sent from the `RemoteMediaSource` to the background fetch thread.
 pub enum FetchCommand {
-    /// Fetch the given byte range from the remote URL.
     Fetch { offset: u64, length: u64 },
-    /// Update the current read position for prefetch tracking.
     UpdatePosition { position: u64 },
-    /// Shut down the fetch thread.
     Shutdown,
 }
 
-/// Events reported from the fetch thread back to the caller.
 pub enum FetchEvent {
-    /// URL expired (403/410). Caller should refresh and provide a new URL.
     UrlExpired,
-    /// Consecutive failures exceeded the threshold.
     ConsecutiveFailures { count: u32 },
-    /// Server does not support Range requests. Caller should fall back to
-    /// full-file download.
     RangeNotSupported,
 }
 
-/// Configuration for exponential backoff retry.
 #[derive(Debug, Clone)]
 pub struct RetryConfig {
     pub initial_delay: Duration,
@@ -137,7 +119,6 @@ impl Default for RetryConfig {
     }
 }
 
-/// Abstraction over HTTP range fetching, enabling test injection.
 pub trait HttpFetcher: Send + 'static {
     fn fetch_range(&self, url: &str, offset: u64, length: u64) -> Result<Vec<u8>, FetchError>;
 }
@@ -148,50 +129,18 @@ impl HttpFetcher for Box<dyn HttpFetcher> {
     }
 }
 
-/// An `HttpFetcher` backed by a pre-configured URL and auth headers, suitable
-/// for use with remote storage providers (Google Drive, Dropbox, WebDAV).
-///
-/// For Dropbox (POST-based API), the file path is stored in `api_arg_header`
-/// and requests use POST instead of GET.
-///
-/// ## Credential refresh (defect #10 fix)
-///
-/// Token refresh is single-flight and generation-tracked:
-/// - On an authentication-expiry response (401), ONE refresh is run shared by
-///   concurrent requests. Waiting requests observe the new credential
-///   generation and retry without triggering a second refresh.
-/// - A successful authenticated request advances the credential generation so
-///   a FUTURE expiry (after the new token later expires) can refresh again.
-///   This replaces the old `refresh_attempted: AtomicBool` which allowed only
-///   one refresh for the entire fetcher lifetime and never reset.
-/// - 403 (PermissionDenied) is NOT misclassified as token expiry: only 401
-///   triggers a refresh attempt. 403 is returned as a permanent error so the
-///   caller does not retry.
 pub struct ProviderFetcher {
     url: String,
     headers: std::sync::Mutex<Vec<(String, String)>>,
     use_post: bool,
     api_arg_header: Option<String>,
     token_refresh: Option<Box<dyn Fn() -> Result<String, FetchError> + Send + Sync>>,
-    /// Monotonic credential generation. Incremented after every successful
-    /// refresh and after every successful authenticated request. A request
-    /// that observes a generation change while waiting on a single-flight
-    /// refresh retries with the new token instead of refreshing again.
     credential_generation: AtomicU64,
-    /// Single-flight refresh guard. When `Some`, a refresh is in progress;
-    /// concurrent requests wait on the contained generation value to learn
-    /// whether the refresh succeeded (generation advanced) or failed.
     refresh_in_flight: std::sync::Mutex<Option<u64>>,
-    /// Condvar paired with `refresh_in_flight`. The refresh leader notifies
-    /// all waiters after it clears the slot; waiters block on this instead
-    /// of busy-spinning, so they don't time out before the OAuth round-trip
-    /// completes.
     refresh_condvar: std::sync::Condvar,
-    /// Reusable HTTP client — avoids creating a new client per request.
     client: reqwest::blocking::Client,
 }
 
-/// Connect timeout for the streaming range fetcher's HTTP client.
 const STREAMING_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Per-request timeout for the streaming range fetcher's HTTP client.
@@ -206,10 +155,6 @@ const STREAMING_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 /// killed (issue #204).
 const STREAMING_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Build the blocking HTTP client used for streaming range fetches with an
-/// explicit connect and per-request (idle) timeout. Falls back to a default
-/// client only if the builder fails (e.g. a TLS backend init error); the
-/// timeouts are the whole point, so the fallback is a last resort.
 fn build_streaming_client(
     connect_timeout: Duration,
     read_timeout: Duration,
@@ -248,8 +193,6 @@ impl ProviderFetcher {
         }
     }
 
-    /// Test-only constructor that injects a short-timeout client so the stall
-    /// path can be exercised without waiting the production timeout.
     #[cfg(test)]
     fn with_read_timeout_for_test(
         url: String,
@@ -270,11 +213,6 @@ impl ProviderFetcher {
         self
     }
 
-    /// Register a callback that returns a fresh access token. Called on HTTP
-    /// 401 (authentication expired) to refresh credentials and retry without
-    /// falling back to full-file download. The refresh is single-flight: one
-    /// concurrent refresh is run, and waiting requests observe the new
-    /// credential generation.
     pub fn with_token_refresh(
         mut self,
         refresh: impl Fn() -> Result<String, FetchError> + Send + Sync + 'static,
@@ -290,11 +228,6 @@ impl ProviderFetcher {
         }
     }
 
-    /// Run a single-flight credential refresh. If a refresh is already in
-    /// progress, wait for it to complete and return whether the **refresh
-    /// epoch** advanced (only the leader success path advances it). Ordinary
-    /// successful range requests must NOT advance the refresh epoch — that
-    /// would let waiters mistake an unrelated 200 for a successful refresh.
     fn single_flight_refresh(&self) -> Result<bool, FetchError> {
         let Some(refresh) = self.token_refresh.as_ref() else {
             return Ok(false);
@@ -310,7 +243,6 @@ impl ProviderFetcher {
                 drop(in_flight);
                 return Ok(self.wait_for_refresh(active_epoch));
             }
-            // Claim the slot with the epoch the leader observed.
             *in_flight = Some(my_epoch);
         }
 
@@ -327,12 +259,10 @@ impl ProviderFetcher {
             match &refresh_result {
                 Ok(new_token) => {
                     self.update_auth_header(new_token);
-                    // ONLY the refresh leader success path advances the epoch.
+                    // Only the refresh leader success path advances the epoch.
                     self.credential_generation.fetch_add(1, Ordering::AcqRel);
                 }
-                Err(_) => {
-                    // Epoch stays unchanged so waiters observe failure.
-                }
+                Err(_) => {}
             }
             *in_flight = None;
             self.refresh_condvar.notify_all();
@@ -343,9 +273,6 @@ impl ProviderFetcher {
         }
     }
 
-    /// Wait for an in-progress refresh to complete. Returns `true` if the
-    /// refresh epoch advanced past `active_epoch` (leader success), `false`
-    /// if the slot cleared without an epoch change (leader failure).
     fn wait_for_refresh(&self, active_epoch: u64) -> bool {
         let mut in_flight = self
             .refresh_in_flight
@@ -435,19 +362,11 @@ impl HttpFetcher for ProviderFetcher {
     }
 }
 
-/// A media source that fetches byte ranges on demand from a remote URL.
-/// Implements `Read + Seek + MediaSource` so symphonia can use it directly.
-///
-/// Data is fetched via HTTP Range requests through a background fetch thread,
-/// cached in a `ChunkedCache` on disk. Reads block until the requested range
-/// is available.
 pub struct RemoteMediaSource {
     cache: Arc<ChunkedCache>,
     read_position: u64,
     fetch_tx: mpsc::Sender<FetchCommand>,
-    /// Minimum block size for fetch requests (bytes).
     min_fetch_size: u64,
-    /// Bytes that must be cached before the first read returns (startup buffering).
     startup_bytes: u64,
     startup_satisfied: bool,
 }
@@ -464,16 +383,12 @@ impl RemoteMediaSource {
         }
     }
 
-    /// Set the number of bytes that must be available before the first read
-    /// returns (startup buffering). For a 128kbps MP3, 1s ≈ 16KB.
     pub fn with_startup_buffer(mut self, bytes: u64) -> Self {
         self.startup_bytes = bytes;
         self.startup_satisfied = bytes == 0;
         self
     }
 
-    /// Request a fetch for the range covering `offset..offset+length`.
-    /// Coalesces small requests into minimum block size.
     fn request_fetch(&self, offset: u64, length: u64) {
         let fetch_length = length.max(self.min_fetch_size);
         let _ = self.fetch_tx.send(FetchCommand::Fetch {
@@ -498,7 +413,6 @@ impl Read for RemoteMediaSource {
             return Ok(0);
         }
 
-        // Startup buffering: ensure enough data is cached before first read.
         if !self.startup_satisfied {
             let startup_end = (offset + self.startup_bytes).min(self.cache.file_size());
             let startup_length = startup_end.saturating_sub(offset);
@@ -578,11 +492,6 @@ enum FetchOutcome {
     Failed(FetchError),
 }
 
-/// Semaphore for limiting concurrent HTTP downloads across multiple fetch threads.
-///
-/// When streaming multiple stems in parallel, each stem has its own fetch thread.
-/// Without coordination, all threads could saturate the network simultaneously.
-/// This semaphore limits the total number of concurrent HTTP requests.
 pub struct DownloadSemaphore {
     max_concurrent: usize,
     active: std::sync::atomic::AtomicUsize,
@@ -596,14 +505,6 @@ impl DownloadSemaphore {
         }
     }
 
-    /// Try to acquire a slot. Returns `true` if a slot was acquired, `false` if
-    /// at capacity. Call `release()` when the download completes.
-    ///
-    /// Uses `fetch_update` so the check-and-increment is atomic and retries on
-    /// CAS contention. A single non-retrying compare_exchange can spuriously
-    /// fail (and deny an available slot) when another thread acquires between
-    /// the load and the CAS — fetch_update keeps retrying as long as the
-    /// condition is still satisfiable.
     pub fn try_acquire(&self) -> bool {
         self.active
             .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |current| {
@@ -616,9 +517,6 @@ impl DownloadSemaphore {
             .is_ok()
     }
 
-    /// Release a previously acquired slot.  No-op if no slot is held (prevents
-    /// underflow from wrapping to `usize::MAX` and permanently blocking
-    /// downloads).
     pub fn release(&self) {
         let _ = self
             .active
@@ -630,12 +528,6 @@ impl DownloadSemaphore {
     pub const DEFAULT_MAX_CONCURRENT: usize = 2;
 }
 
-/// Spawn a background fetch thread that receives `FetchCommand`s and fulfills
-/// them via HTTP Range requests. Returns the command sender, event receiver,
-/// and the join handle.
-///
-/// The fetch thread runs until it receives `FetchCommand::Shutdown` or the
-/// sender is dropped.
 pub fn spawn_fetch_thread(
     url: String,
     cache: Arc<ChunkedCache>,
@@ -657,10 +549,6 @@ pub fn spawn_fetch_thread(
     )
 }
 
-/// Spawn a fetch thread with a custom `HttpFetcher` and `RetryConfig` (for testing).
-/// `on_range_written` is called after each successful range write so the
-/// caller can persist download progress to the cache catalog. Pass `None`
-/// when persistence is not needed (e.g. tests).
 pub fn spawn_fetch_thread_with_fetcher(
     url: String,
     cache: Arc<ChunkedCache>,
@@ -822,7 +710,7 @@ fn fetch_loop(
                     }
                     FetchOutcome::RangeNotSupported => {
                         let _ = event_tx.send(FetchEvent::RangeNotSupported);
-                        return; // No point continuing — server can't serve ranges.
+                        return;
                     }
                     FetchOutcome::Failed(e) => {
                         consecutive_failures += 1;
@@ -876,20 +764,12 @@ fn fetch_loop(
     }
 }
 
-/// Prefetch factor: how many round-trips of data to buffer ahead.
 const PREFETCH_FACTOR: f64 = 4.0;
 
-/// Minimum prefetch size in bytes (floor for fast connections with tiny latency).
 const MIN_PREFETCH_BYTES: u64 = 64 * 1024;
 
-/// Maximum prefetch size in bytes (ceiling to avoid over-buffering).
 const MAX_PREFETCH_BYTES: u64 = 512 * 1024;
 
-/// Estimate how many bytes to prefetch ahead of the given position.
-///
-/// Adaptive strategy: `prefetch = max(factor * latency * throughput, latency * throughput)`
-/// where `factor` scales with connection quality. High-latency connections
-/// get more data buffered to absorb jitter; fast connections use the minimum.
 fn estimate_prefetch_bytes(cache: &ChunkedCache, position: u64, monitor: &BandwidthMonitor) -> u64 {
     let file_size = cache.file_size();
     let remaining = file_size.saturating_sub(position);
@@ -897,12 +777,10 @@ fn estimate_prefetch_bytes(cache: &ChunkedCache, position: u64, monitor: &Bandwi
     let throughput = monitor.bytes_per_sec().max(1);
     let latency_secs = monitor.latency_us() as f64 / 1_000_000.0;
 
-    // If we have no latency data yet, fall back to a conservative 80KB.
     if latency_secs <= 0.0 {
         return remaining.min(80 * 1024);
     }
 
-    // Adaptive: prefetch ≈ factor × latency × throughput.
     let adaptive = (PREFETCH_FACTOR * latency_secs * throughput as f64) as u64;
     remaining.min(adaptive.clamp(MIN_PREFETCH_BYTES, MAX_PREFETCH_BYTES))
 }
@@ -916,12 +794,6 @@ fn fetch_range_with_retry(
     config: &RetryConfig,
     monitor: &BandwidthMonitor,
 ) -> FetchOutcome {
-    // TODO: unify with shared policy (net_policy::RetryDriver). The streaming
-    // hot path uses its own non-jittered exponential backoff because range
-    // fetches are latency-sensitive and the shared driver's full-jitter would
-    // add variance to playback buffering. The classification + jitter helpers
-    // in net_policy are shared via `classify_fetch_status` below; the full
-    // RetryDriver adoption is deferred to avoid disrupting the hot path.
     let mut delay = config.initial_delay;
 
     for attempt in 0..=config.max_retries {
@@ -967,12 +839,8 @@ pub enum FetchError {
     HttpStatus(u16),
     RateLimited(Option<Duration>),
     Cache(String),
-    /// An IO error while streaming the response body — includes a per-read
-    /// idle-timeout on a stalled/half-open connection (issue #204). Treated as
-    /// a transient failure so `fetch_range_with_retry` retries and, past the
-    /// threshold, emits `ConsecutiveFailures` to drive reconnect.
+    /// Stalled/half-open connection per-read idle timeout (issue #204).
     Io(io::Error),
-    /// The server does not support Range requests (HTTP 416 or missing Accept-Ranges).
     RangeNotSupported,
 }
 
@@ -995,20 +863,9 @@ impl std::fmt::Display for FetchError {
     }
 }
 
-/// Maximum bytes buffered for a single streaming range response. Range chunks
-/// are at most `MAX_PREFETCH_BYTES` (512 KiB); this ceiling only guards against
-/// a server that ignores the Range header and streams a huge body, which the
-/// old `response.bytes()` would have buffered without any bound.
 const MAX_RANGE_RESPONSE_BYTES: u64 = 64 * 1024 * 1024;
 
-/// Read a range response body into memory with a per-read idle timeout.
-///
-/// reqwest's blocking `Read` impl applies the client's configured `timeout` as
-/// a fresh deadline for each read once the body is streaming, so a stalled or
-/// half-open connection trips a bounded timeout (surfaced as `FetchError::Io`)
-/// instead of parking the fetch thread forever (issue #204). A slow-but-steady
-/// weak link keeps making progress and is not killed by a single total-body
-/// deadline. `expected_length` sizes the initial buffer.
+/// Per-read idle timeout for streaming range bodies (issue #204).
 fn read_range_body(
     response: &mut reqwest::blocking::Response,
     expected_length: u64,
@@ -1051,7 +908,6 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
-    /// Mock HTTP fetcher that returns pre-configured responses.
     struct MockFetcher {
         responses: std::sync::Mutex<Vec<Result<Vec<u8>, FetchError>>>,
         call_count: AtomicU32,
@@ -1109,8 +965,6 @@ mod tests {
 
         let cache_clone = Arc::clone(&cache);
         let fetcher_thread = std::thread::spawn(move || {
-            // Simulate fetch: wait for command, then write data.
-            // May receive UpdatePosition first, so loop until we get Fetch.
             while let Ok(cmd) = rx.recv_timeout(Duration::from_secs(2)) {
                 if let FetchCommand::Fetch { offset, length: _ } = cmd {
                     let data = vec![42u8; 50];
@@ -1168,16 +1022,13 @@ mod tests {
         let (tx, _rx) = mpsc::channel();
         let mut source = RemoteMediaSource::new(cache, tx);
 
-        // Read 50 bytes from start.
         let mut buf = vec![0u8; 50];
         source.read_exact(&mut buf).unwrap();
         assert_eq!(buf, data[..50]);
         assert_eq!(source.read_position, 50);
 
-        // Seek to 100.
         source.seek(SeekFrom::Start(100)).unwrap();
 
-        // Read 50 bytes from 100.
         source.read_exact(&mut buf).unwrap();
         assert_eq!(buf, data[100..150]);
         assert_eq!(source.read_position, 150);
@@ -1191,7 +1042,6 @@ mod tests {
         let cache = Arc::new(ChunkedCache::open(&dir, "retry1", 100).unwrap());
         let data = vec![7u8; 100];
 
-        // First call fails, second succeeds.
         let mock = MockFetcher::new(vec![Err(FetchError::HttpStatus(500)), Ok(data.clone())]);
 
         let (_tx, event_rx, _monitor, handle) = spawn_fetch_thread_with_fetcher(
@@ -1207,14 +1057,12 @@ mod tests {
             None,
         );
 
-        // Send fetch command and wait for it to complete.
         _tx.send(FetchCommand::Fetch {
             offset: 0,
             length: 100,
         })
         .unwrap();
 
-        // Wait for the fetch thread to process.
         std::thread::sleep(Duration::from_millis(200));
         let _ = _tx.send(FetchCommand::Shutdown);
         handle.join().unwrap();
@@ -1224,7 +1072,6 @@ mod tests {
         cache.read_at(0, &mut buf).unwrap();
         assert_eq!(buf, data);
 
-        // No events should have been emitted (only 1 failure, threshold is 5).
         assert!(event_rx.try_recv().is_err());
 
         cleanup(&dir);
@@ -1260,7 +1107,6 @@ mod tests {
         let _ = tx.send(FetchCommand::Shutdown);
         handle.join().unwrap();
 
-        // Should receive UrlExpired event.
         let event = event_rx.recv_timeout(Duration::from_secs(1)).unwrap();
         assert!(matches!(event, FetchEvent::UrlExpired));
 
@@ -1272,7 +1118,6 @@ mod tests {
         let dir = temp_dir("consec_fail");
         let cache = Arc::new(ChunkedCache::open(&dir, "consec1", 100).unwrap());
 
-        // All calls fail.
         let mock = MockFetcher::new(vec![
             Err(FetchError::HttpStatus(500)),
             Err(FetchError::HttpStatus(500)),
@@ -1294,7 +1139,6 @@ mod tests {
             None,
         );
 
-        // Send 5 fetch commands.
         for i in 0..5u64 {
             tx.send(FetchCommand::Fetch {
                 offset: i * 100,
@@ -1307,7 +1151,6 @@ mod tests {
         let _ = tx.send(FetchCommand::Shutdown);
         handle.join().unwrap();
 
-        // Should receive ConsecutiveFailures event.
         let event = event_rx.recv_timeout(Duration::from_secs(1)).unwrap();
         assert!(matches!(
             event,
@@ -1323,7 +1166,6 @@ mod tests {
         let cache = Arc::new(ChunkedCache::open(&dir, "rl1", 100).unwrap());
         let data = vec![9u8; 100];
 
-        // First call: rate limited with Retry-After. Second: success.
         let mock = MockFetcher::new(vec![
             Err(FetchError::RateLimited(Some(Duration::from_millis(50)))),
             Ok(data.clone()),
@@ -1353,7 +1195,6 @@ mod tests {
         handle.join().unwrap();
 
         assert!(cache.is_cached(0, 100));
-        // No failure events (rate limit retry succeeded).
         assert!(event_rx.try_recv().is_err());
 
         cleanup(&dir);
@@ -1369,7 +1210,6 @@ mod tests {
         let fetcher_thread = std::thread::spawn(move || {
             while let Ok(cmd) = rx.recv_timeout(Duration::from_secs(2)) {
                 if let FetchCommand::Fetch { offset, length } = cmd {
-                    // Simulate slow fetch — write data after a delay.
                     std::thread::sleep(Duration::from_millis(50));
                     let data = vec![55u8; length as usize];
                     cache_clone.write_at(offset, &data).unwrap();
@@ -1395,15 +1235,12 @@ mod tests {
         let cache = ChunkedCache::open(&dir, "pf1", 1_000_000).unwrap();
         let monitor = BandwidthMonitor::new(BandwidthMonitor::DEFAULT_SLOW_THRESHOLD);
 
-        // No latency data yet → falls back to 80KB.
         let bytes = estimate_prefetch_bytes(&cache, 0, &monitor);
         assert_eq!(bytes, 80 * 1024);
 
-        // Near end: only remaining bytes.
         let bytes = estimate_prefetch_bytes(&cache, 999_900, &monitor);
         assert_eq!(bytes, 100);
 
-        // At end: 0.
         let bytes = estimate_prefetch_bytes(&cache, 1_000_000, &monitor);
         assert_eq!(bytes, 0);
 
@@ -1416,12 +1253,9 @@ mod tests {
         let cache = ChunkedCache::open(&dir, "pf2", 1_000_000).unwrap();
         let monitor = BandwidthMonitor::new(BandwidthMonitor::DEFAULT_SLOW_THRESHOLD);
 
-        // Simulate: 100ms latency, 100KB/s throughput.
         monitor.record_fetch(10_000, Duration::from_millis(100));
 
         let bytes = estimate_prefetch_bytes(&cache, 0, &monitor);
-        // Expected: factor(4) × 0.1s × 100_000 B/s = 40_000.
-        // Clamped to MIN_PREFETCH_BYTES (64KB) since 40KB < 64KB.
         assert!(bytes >= 64 * 1024, "expected >= 64KB, got {bytes}");
         assert!(bytes <= 512 * 1024, "expected <= 512KB, got {bytes}");
 
@@ -1443,7 +1277,6 @@ mod tests {
         let cache = Arc::new(ChunkedCache::open(&dir, "bo1", 100).unwrap());
         let data = vec![1u8; 100];
 
-        // Fail 3 times, then succeed.
         let mock = MockFetcher::new(vec![
             Err(FetchError::HttpStatus(500)),
             Err(FetchError::HttpStatus(500)),
@@ -1480,17 +1313,14 @@ mod tests {
 
     #[test]
     fn bandwidth_monitor_records_speed() {
-        let monitor = BandwidthMonitor::new(16_384); // 128kbps threshold
+        let monitor = BandwidthMonitor::new(16_384);
 
-        // Simulate fast fetches: 100KB in 100ms = 1MB/s.
         for _ in 0..5 {
             monitor.record_fetch(100_000, Duration::from_millis(100));
         }
         assert!(monitor.bytes_per_sec() > 500_000);
         assert!(!monitor.is_slow());
 
-        // Simulate many slow fetches: 100 bytes in 1s = 100 B/s.
-        // EWMA with alpha=0.3 needs ~10 iterations to converge.
         for _ in 0..15 {
             monitor.record_fetch(100, Duration::from_secs(1));
         }
@@ -1501,11 +1331,9 @@ mod tests {
     fn bandwidth_monitor_threshold_update() {
         let monitor = BandwidthMonitor::new(16_384);
 
-        // Fast fetch.
         monitor.record_fetch(100_000, Duration::from_millis(100));
         assert!(!monitor.is_slow());
 
-        // Raise threshold to 10MB/s — now it should be slow.
         monitor.set_slow_threshold(10_000_000);
         assert!(monitor.is_slow());
     }
@@ -1513,7 +1341,6 @@ mod tests {
     #[test]
     fn bandwidth_monitor_zero_elapsed() {
         let monitor = BandwidthMonitor::new(16_384);
-        // Zero-duration fetch should not panic or produce infinite bps.
         monitor.record_fetch(1000, Duration::ZERO);
         assert_eq!(monitor.bytes_per_sec(), 0);
     }
@@ -1548,11 +1375,9 @@ mod tests {
         let _ = tx.send(FetchCommand::Shutdown);
         handle.join().unwrap();
 
-        // Should receive RangeNotSupported event.
         let event = event_rx.recv_timeout(Duration::from_secs(1)).unwrap();
         assert!(matches!(event, FetchEvent::RangeNotSupported));
 
-        // Fetch thread exits immediately — no data cached.
         assert!(!cache.is_cached(0, 100));
 
         cleanup(&dir);
@@ -1567,9 +1392,6 @@ mod tests {
         assert_eq!(result, vec![42u8; 10]);
     }
 
-    /// R10: Fast scrubbing must not queue stale fetches. When many Fetch
-    /// commands accumulate, the fetch loop should drain stale ones and only
-    /// process the most recent.
     #[test]
     fn fast_scrubbing_drains_stale_fetch_commands() {
         use std::sync::mpsc;
@@ -1577,19 +1399,13 @@ mod tests {
         let dir = temp_dir("stale_drain");
         let cache = Arc::new(ChunkedCache::open(&dir, "stale", 10_000).unwrap());
 
-        // Create an unbounded channel. The fetch_loop drains stale Fetch
-        // commands after each fetch completes.
         let (tx, rx) = mpsc::channel();
         let (event_tx, _event_rx) = mpsc::channel();
         let monitor = BandwidthMonitor::new(BandwidthMonitor::DEFAULT_SLOW_THRESHOLD);
 
-        // Queue 10 stale Fetch commands + 1 UpdatePosition.
-        // The fetch loop should drain the stale Fetches and only process the
-        // first one (the rest are discarded).
         let call_count = Arc::new(AtomicU32::new(0));
         let call_count_clone = Arc::clone(&call_count);
 
-        // We need to run fetch_loop in a thread because it blocks on rx.recv().
         let cache_clone = Arc::clone(&cache);
         let handle = std::thread::spawn(move || {
             let fetcher = CountingFetcher {
@@ -1607,13 +1423,11 @@ mod tests {
             );
         });
 
-        // Send a batch of commands simulating fast scrubbing.
         tx.send(FetchCommand::Fetch {
             offset: 0,
             length: 100,
         })
         .unwrap();
-        // Queue stale fetches — these should be drained after the first fetch.
         for i in 1..10u64 {
             tx.send(FetchCommand::Fetch {
                 offset: i * 100,
@@ -1621,20 +1435,14 @@ mod tests {
             })
             .unwrap();
         }
-        // A position update should survive the drain.
         tx.send(FetchCommand::UpdatePosition { position: 500 })
             .unwrap();
 
-        // Give the fetch loop time to process.
         std::thread::sleep(Duration::from_millis(500));
 
-        // Shutdown.
         let _ = tx.send(FetchCommand::Shutdown);
         handle.join().unwrap();
 
-        // Only the first Fetch should have been processed (stale ones drained).
-        // The count might be 1 or 2 depending on timing (the drain loop may
-        // re-process one more), but it must be far less than 10.
         let count = call_count.load(Ordering::Relaxed);
         assert!(
             count <= 2,
@@ -1648,18 +1456,13 @@ mod tests {
     fn download_semaphore_limits_concurrency() {
         let sem = super::DownloadSemaphore::new(2);
 
-        // Should acquire first two slots.
         assert!(sem.try_acquire());
         assert!(sem.try_acquire());
-
-        // Third should fail.
         assert!(!sem.try_acquire());
 
-        // Release one — now we can acquire again.
         sem.release();
         assert!(sem.try_acquire());
 
-        // Clean up.
         sem.release();
         sem.release();
     }
@@ -1669,8 +1472,6 @@ mod tests {
         let sem = super::DownloadSemaphore::new(1);
         assert!(sem.try_acquire());
         sem.release();
-        // Extra release is a no-op — doesn't underflow to usize::MAX.
-        // The semaphore should still work correctly.
         sem.release();
         assert!(sem.try_acquire());
         sem.release();
@@ -1679,16 +1480,13 @@ mod tests {
     #[test]
     fn download_semaphore_spurious_release_does_not_block() {
         let sem = super::DownloadSemaphore::new(1);
-        // Multiple spurious releases without any acquire.
         sem.release();
         sem.release();
         sem.release();
-        // Semaphore should still allow acquisition.
         assert!(sem.try_acquire());
         sem.release();
     }
 
-    /// Helper fetcher that counts how many fetch_range calls were made.
     struct CountingFetcher {
         count: Arc<AtomicU32>,
     }
@@ -1705,8 +1503,6 @@ mod tests {
         }
     }
 
-    // ---- Credential refresh single-flight tests (defect #10) ----
-
     #[test]
     fn provider_fetcher_refreshes_on_401_and_retries() {
         let refresh_count = Arc::new(AtomicU32::new(0));
@@ -1715,13 +1511,11 @@ mod tests {
         let new_token = "new-token".to_owned();
 
         let mut server = mockito::Server::new();
-        // The first request with the old token returns 401.
         let _m1 = server
             .mock("GET", "/file")
             .match_header("Authorization", format!("Bearer {old_token}").as_str())
             .with_status(401)
             .create();
-        // After refresh, the request with the new token returns 206.
         let _m2 = server
             .mock("GET", "/file")
             .match_header("Authorization", format!("Bearer {new_token}").as_str())
@@ -1783,22 +1577,17 @@ mod tests {
 
     #[test]
     fn provider_fetcher_can_refresh_again_after_success() {
-        // Defect #10: the old refresh_attempted flag prevented a second refresh
-        // for the fetcher's entire lifetime. The generation-tracked approach
-        // allows a future expiry to refresh again after a successful request.
         let refresh_count = Arc::new(AtomicU32::new(0));
         let refresh_count_clone = Arc::clone(&refresh_count);
         let token1 = "token-1".to_owned();
         let token2 = "token-2".to_owned();
 
         let mut server = mockito::Server::new();
-        // First request: 401 → refresh to token-2.
         server
             .mock("GET", "/file")
             .match_header("Authorization", format!("Bearer {token1}").as_str())
             .with_status(401)
             .create();
-        // Second request with token-2: 206 success.
         let m_success = server
             .mock("GET", "/file")
             .match_header("Authorization", format!("Bearer {token2}").as_str())
@@ -1817,23 +1606,17 @@ mod tests {
             Ok(token2.clone())
         });
 
-        // First fetch: 401 → refresh → 206.
         let result1 = fetcher.fetch_range("", 0, 100);
         assert!(result1.is_ok(), "first fetch with refresh should succeed");
         assert_eq!(refresh_count.load(Ordering::Relaxed), 1);
 
-        // The refresh epoch advances only on leader success (the 401→refresh
-        // path above), not on ordinary successful range responses.
         assert!(
             fetcher.credential_generation.load(Ordering::Relaxed) > 0,
             "refresh epoch advanced after successful credential refresh"
         );
 
-        // Suppress unused mock warning.
         m_success.assert();
     }
-
-    // ---- streaming range fetcher timeout tests (issue #204) ----
 
     /// A single-connection mock server that accepts the request, sends 206
     /// headers promising a body, then never writes the body — a half-open /
@@ -1864,7 +1647,6 @@ mod tests {
                       Content-Length: 1000000\r\n\r\n",
                 );
                 let _ = stream.flush();
-                // Hold the connection open without a body until told to stop.
                 while !stop_thread.load(Ordering::Relaxed) {
                     std::thread::sleep(Duration::from_millis(10));
                 }
@@ -1888,9 +1670,6 @@ mod tests {
 
     #[test]
     fn provider_fetcher_times_out_on_stalled_body_instead_of_hanging() {
-        // Acceptance (#204): a half-open connection that accepts the Range
-        // request then never writes the body must make `fetch_range` return an
-        // error within a bounded time (~ the read timeout), not block forever.
         let server = StallingRangeServer::spawn();
         let fetcher = ProviderFetcher::with_read_timeout_for_test(
             server.url.clone(),
@@ -1916,10 +1695,6 @@ mod tests {
 
     #[test]
     fn timed_out_fetch_drives_consecutive_failures_and_thread_exits() {
-        // Acceptance (#204): a timed-out range fetch surfaces as a normal
-        // failure, so `fetch_range_with_retry` runs and, past the threshold,
-        // `ConsecutiveFailures` is emitted to drive reconnect — and the fetch
-        // thread exits cleanly on Shutdown (no leaked thread/socket).
         let dir = temp_dir("io_timeout_consec");
         let cache = Arc::new(ChunkedCache::open(&dir, "io1", 100).unwrap());
 
@@ -1966,8 +1741,6 @@ mod tests {
             FetchEvent::ConsecutiveFailures { count: 5 }
         ));
 
-        // The thread must join promptly after Shutdown — the timed-out fetches
-        // returned instead of parking the thread, so no thread/socket leaks.
         tx.send(FetchCommand::Shutdown).unwrap();
         handle.join().expect("fetch thread exits after Shutdown");
 

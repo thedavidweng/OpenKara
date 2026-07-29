@@ -9,12 +9,8 @@
 
 use std::f32::consts::FRAC_PI_2;
 
-/// Minimum effective overlap in milliseconds. If the calculated overlap
-/// is shorter than this, the transition falls back to gapless switch.
 pub const CROSSFADE_MIN_MS: u32 = 500;
 
-/// Maximum chunk size (in device frames) processed in one iteration of the
-/// callback. The incoming scratch buffer is preallocated to this size.
 pub const CROSSFADE_SCRATCH_FRAMES: usize = 4096;
 
 /// Compute the equal-power gains for a given overlap frame index.
@@ -93,9 +89,6 @@ pub fn effective_overlap_frames(
     Some(effective)
 }
 
-/// Convert source-rate frame count to device (output) frame count.
-/// Used to unify all overlap timing into a single frame domain before
-/// calling `effective_overlap_frames`.
 pub fn source_to_device_frames(source_frames: u64, src_rate: u32, device_rate: u32) -> u64 {
     if src_rate == device_rate {
         source_frames
@@ -135,7 +128,6 @@ mod tests {
 
     #[test]
     fn equal_power_identity_holds() {
-        // cos^2 + sin^2 = 1 for all frames
         for i in 0..200 {
             let (out, inc) = equal_power_gains(i, 200);
             let sum_sq = out * out + inc * inc;

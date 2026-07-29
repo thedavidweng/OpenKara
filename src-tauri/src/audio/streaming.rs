@@ -20,12 +20,6 @@ use symphonia::core::{
 
 use super::decode::DecodeError;
 
-/// Configuration for low-bitrate proxy mode.
-///
-/// When enabled, decoded audio is downsampled to `target_sample_rate` and
-/// converted to mono before being pushed into the ring buffer. This reduces
-/// the data rate in the buffer by roughly `(original_rate / target_rate) * channels`,
-/// allowing playback to continue on slow network connections.
 #[derive(Debug, Clone)]
 pub struct ProxyConfig {
     pub enabled: bool,
@@ -42,7 +36,6 @@ impl ProxyConfig {
         }
     }
 
-    /// Low-bitrate proxy: mono 22050 Hz (~4x data reduction from stereo 44100).
     pub fn low_bitrate() -> Self {
         Self {
             enabled: true,
@@ -52,8 +45,6 @@ impl ProxyConfig {
     }
 }
 
-/// Downsample interleaved f32 samples from one rate/channels to another using
-/// linear interpolation. Returns the resampled samples.
 fn resample_interleaved(
     samples: &[f32],
     from_rate: u32,
@@ -89,9 +80,6 @@ fn resample_interleaved(
     out
 }
 
-/// Shared seek target between the consumer (output callback) and the producer
-/// (decode thread). Stores the target frame position, or `NONE` when no seek
-/// is pending.
 pub struct SeekTarget(AtomicI64);
 
 impl Default for SeekTarget {
@@ -124,40 +112,25 @@ impl std::fmt::Debug for SeekTarget {
     }
 }
 
-/// Target buffer duration in seconds. 2 seconds provides enough headroom for
-/// most decode latencies while keeping memory bounded.
 const BUFFER_SECONDS: u32 = 2;
 
-/// Minimum water mark in samples — below this the consumer should report
-/// underrun and the producer should prioritise refilling.
 const LOW_WATER_SAMPLES: usize = 4_410; // ~100ms at 44.1 kHz
 
-/// High water mark — when the producer has filled this many samples it should
-/// yield to avoid overrunning the consumer.
 const HIGH_WATER_SAMPLES: usize = 88_200; // ~2s at 44.1 kHz (== BUFFER_SECONDS)
 
-/// Capacity of the ring buffer in samples (interleaved f32).
-/// `BUFFER_SECONDS × sample_rate × channels`.
 pub fn ring_capacity(sample_rate: u32, channels: usize) -> usize {
     BUFFER_SECONDS as usize * sample_rate as usize * channels
 }
 
-/// Consumer side of a streaming audio track, held by the cpal callback.
 pub struct AudioConsumer {
     cons: ringbuf::HeapCons<f32>,
     pending_samples: VecDeque<f32>,
     pub sample_rate_hz: u32,
     pub channels: usize,
     is_eof: Arc<AtomicBool>,
-    /// Set by the producer after a seek to signal the consumer should drain
-    /// stale samples from the ring buffer before reading new ones.
     needs_flush: Arc<AtomicBool>,
     seek_target: Arc<SeekTarget>,
-    /// Pre-allocated scratch buffer for `acknowledge_flush` to avoid heap
-    /// allocation on the realtime audio thread.
     flush_scratch: Vec<f32>,
-    /// Atomic flag set by the consumer when flush is acknowledged.
-    /// Lock-free — safe to set from the realtime audio callback thread.
     flush_done: Arc<AtomicBool>,
 }
 
@@ -185,20 +158,15 @@ impl AudioConsumer {
         (frames as u64 * 1000) / self.sample_rate_hz as u64
     }
 
-    /// Number of source frames (not interleaved samples) available to read.
     pub fn available_src_frames(&self) -> usize {
         let ch = self.channels.max(1);
         self.available_samples() / ch
     }
 
-    /// Whether the buffer is below the low-water mark.
-    /// EOF streams are never treated as underrun — the decode thread is done.
     pub fn is_below_low_water(&self) -> bool {
         !self.is_eof() && self.available_samples() < LOW_WATER_SAMPLES
     }
 
-    /// Whether the buffer is above the high-water mark.
-    /// EOF streams are always considered "ready" so playback can drain and finish.
     pub fn is_above_high_water(&self) -> bool {
         self.is_eof() || self.available_samples() >= HIGH_WATER_SAMPLES
     }
@@ -217,8 +185,6 @@ impl AudioConsumer {
     pub fn acknowledge_flush(&mut self) {
         self.needs_flush.store(false, Ordering::Relaxed);
         self.pending_samples.clear();
-        // Reuse the pre-allocated scratch buffer to avoid heap allocation
-        // on the realtime audio thread.
         let occupied = self.cons.occupied_len();
         self.flush_scratch.resize(occupied, 0.0);
         let _ = self.cons.pop_slice(&mut self.flush_scratch);
@@ -229,9 +195,6 @@ impl AudioConsumer {
         &self.seek_target
     }
 
-    /// Pop up to `max_samples` interleaved samples into `output`.
-    /// Returns the number of samples actually popped (may be less if the
-    /// buffer doesn't have enough).
     pub fn pop_samples(&mut self, output: &mut [f32]) -> usize {
         let pending_count = self.pending_samples.len().min(output.len());
         if pending_count > 0 {
@@ -248,24 +211,16 @@ impl AudioConsumer {
     }
 }
 
-/// Producer side of a streaming audio track, held by the decode thread.
 pub struct AudioProducer {
     prod: ringbuf::HeapProd<f32>,
     is_eof: Arc<AtomicBool>,
-    /// Set after a seek so the consumer drains stale data.
     needs_flush: Arc<AtomicBool>,
     seek_target: Arc<SeekTarget>,
-    /// Shared flush epoch — incremented on each flush so the consumer can
-    /// track which flush it has acknowledged.
     flush_epoch: Arc<AtomicU64>,
-    /// Atomic flag set by the consumer when flush is acknowledged.
-    /// Lock-free — avoids mutex acquisition on the realtime audio callback.
     flush_done: Arc<AtomicBool>,
 }
 
 impl AudioProducer {
-    /// Push interleaved samples into the ring buffer.
-    /// Returns the number of samples actually pushed.
     pub fn push_samples(&mut self, samples: &[f32]) -> usize {
         self.prod.push_slice(samples)
     }
@@ -282,11 +237,6 @@ impl AudioProducer {
         self.is_eof.store(true, Ordering::Relaxed);
     }
 
-    /// After a seek, signal the consumer to drain stale samples.
-    ///
-    /// Increments the flush epoch and polls (with bounded timeout) for
-    /// the ring buffer to drain. Uses an atomic flag + short sleeps instead
-    /// of a condvar to keep the realtime audio callback lock-free.
     pub fn signal_flush(&self) {
         self.flush_epoch.fetch_add(1, Ordering::Relaxed);
         // Clear flush_done before publishing needs_flush. If needs_flush is set
@@ -299,8 +249,6 @@ impl AudioProducer {
         self.flush_done.store(false, Ordering::Release);
         self.needs_flush.store(true, Ordering::Release);
 
-        // Sleep in short intervals to avoid busy-waiting while staying
-        // responsive. Total timeout is 100ms (matches the old condvar timeout).
         let deadline = std::time::Instant::now() + Duration::from_millis(100);
         while std::time::Instant::now() < deadline {
             if self.flush_done.load(Ordering::Acquire) && self.prod.occupied_len() == 0 {
@@ -320,7 +268,6 @@ impl AudioProducer {
 }
 
 fn ring_capacity_from_prod(prod: &ringbuf::HeapProd<f32>) -> usize {
-    // vacant_len + occupied_len == capacity
     prod.vacant_len() + prod.occupied_len()
 }
 
@@ -333,8 +280,6 @@ pub enum StreamingTrack {
         vocals: AudioConsumer,
         accompaniment: AudioConsumer,
     },
-    /// Boxed to keep the enum size reasonable — `AudioConsumer` carries
-    /// pre-allocated scratch buffers and sync primitives that add up.
     FourStem {
         vocals: Box<AudioConsumer>,
         drums: Box<AudioConsumer>,
@@ -382,15 +327,6 @@ impl StreamingTrack {
             .all(|c| c.is_eof() && c.available_samples() == 0)
     }
 
-    /// Acknowledge a pending flush on every consumer that has one queued.
-    ///
-    /// Moved onto the enum so output.rs does not pattern-match on the variant
-    /// shape — adding a new stem layout only touches this one impl block.
-    ///
-    /// Matches on the variant directly instead of going through
-    /// `consumers_mut()` (which allocates a `Vec`). This method is called
-    /// from the realtime CPAL audio callback; allocations there cause
-    /// allocator stalls and audible glitches.
     pub fn acknowledge_flush_if_needed(&mut self) {
         match self {
             StreamingTrack::Single { consumer } => {
@@ -431,25 +367,6 @@ impl StreamingTrack {
         }
     }
 
-    /// True when *any* consumer is below its low-water mark.
-    ///
-    /// All-or-nothing buffering policy. Multi-stem rendering
-    /// requires every stem to stay frame-synchronized with the shared source
-    /// clock. If we allowed playback to continue while one stem is below the
-    /// low-water mark, the render callback would mix rendered audio from
-    /// buffered stems with silence (or stale data) from the depleted stem,
-    /// producing audible artifacts and — because the source clock advances —
-    /// permanent drift between stems that can never self-heal.
-    ///
-    /// Muting the entire stream when *any* required stem is below low water
-    /// guarantees that when playback resumes (all stems above high water),
-    /// every consumer is at the same source-clock position. This is the
-    /// simplest correctness strategy for synchronised multi-stem playback.
-    ///
-    /// Matches on the variant directly instead of going through `consumers()`
-    /// (which allocates a `Vec`). This method is called from the realtime
-    /// CPAL audio callback; allocations there cause allocator stalls and
-    /// audible glitches.
     pub fn any_consumer_below_low_water(&self) -> bool {
         match self {
             StreamingTrack::Single { consumer } => consumer.is_below_low_water(),
@@ -471,12 +388,6 @@ impl StreamingTrack {
         }
     }
 
-    /// True when *all* consumers are above their high-water mark.
-    ///
-    /// Matches on the variant directly instead of going through `consumers()`
-    /// (which allocates a `Vec`). This method is called from the realtime
-    /// CPAL audio callback; allocations there cause allocator stalls and
-    /// audible glitches.
     pub fn all_consumers_above_high_water(&self) -> bool {
         match self {
             StreamingTrack::Single { consumer } => consumer.is_above_high_water(),
@@ -527,21 +438,16 @@ pub fn create_stream_pair(sample_rate: u32, channels: usize) -> (AudioProducer, 
             is_eof,
             needs_flush,
             seek_target,
-            // Pre-allocate to ring buffer capacity so the first seek's
-            // acknowledge_flush does not trigger a heap allocation on the
-            // realtime audio thread.
             flush_scratch: Vec::with_capacity(capacity),
             flush_done,
         },
     )
 }
 
-/// How many frames (not interleaved samples) correspond to `ms` at `sample_rate`.
 pub fn ms_to_frames(ms: u64, sample_rate: u32) -> u64 {
     ms.saturating_mul(sample_rate as u64) / 1000
 }
 
-/// How many milliseconds correspond to `frames` at `sample_rate`.
 pub fn frames_to_ms(frames: u64, sample_rate: u32) -> u64 {
     if sample_rate == 0 {
         return 0;
@@ -552,17 +458,9 @@ pub fn frames_to_ms(frames: u64, sample_rate: u32) -> u64 {
 pub struct StreamMetadata {
     pub sample_rate_hz: u32,
     pub channels: usize,
-    /// Duration is optional so playback can start immediately.
-    /// When `None`, the container did not expose frame count metadata and
-    /// the duration should be resolved asynchronously after playback begins.
     pub duration_ms: Option<u64>,
 }
 
-/// Probe an audio file for metadata without decoding the full PCM data.
-///
-/// Returns `duration_ms: None` when the container doesn't expose
-/// `n_frames` instead of blocking on a full decode. Playback can start
-/// immediately and the duration can be resolved asynchronously.
 pub fn probe_stream_metadata(path: &Path) -> Result<StreamMetadata, DecodeError> {
     let file = File::open(path)
         .map_err(|e| DecodeError::FileOpenFailed(format!("{}: {}", path.display(), e)))?;
@@ -624,8 +522,6 @@ pub fn probe_stream_metadata(path: &Path) -> Result<StreamMetadata, DecodeError>
     let sample_rate = sample_rate.ok_or(DecodeError::MissingSampleRate)?;
     let channels = channels.ok_or(DecodeError::MissingChannels)?;
 
-    // Try to get duration from container metadata only.
-    // Do NOT fall back to full decode — return None so playback starts immediately.
     let duration_ms = if let (Some(n_frames), Some(tb)) = (n_frames, time_base) {
         let time = tb.calc_time(Timestamp::new(n_frames as i64));
         time.map(|t| t.as_millis() as u64)
@@ -640,10 +536,6 @@ pub fn probe_stream_metadata(path: &Path) -> Result<StreamMetadata, DecodeError>
     })
 }
 
-/// Spawn a decode producer thread that reads from `path` and pushes
-/// interleaved f32 samples into the ring buffer.
-///
-/// Returns `(consumer, metadata, join_handle)`.
 pub fn spawn_decode_producer(
     path: &Path,
 ) -> Result<
@@ -657,9 +549,6 @@ pub fn spawn_decode_producer(
     spawn_decode_producer_with_proxy(path, ProxyConfig::none())
 }
 
-/// Like `spawn_decode_producer`, but with optional proxy mode for low-bitrate
-/// streaming. When proxy is enabled, decoded audio is downsampled before being
-/// pushed into the ring buffer, and the consumer reports the proxy sample rate.
 pub fn spawn_decode_producer_with_proxy(
     path: &Path,
     proxy: ProxyConfig,
@@ -673,7 +562,6 @@ pub fn spawn_decode_producer_with_proxy(
 > {
     let metadata = probe_stream_metadata(path)?;
 
-    // If proxy is enabled, the ring buffer and consumer use the proxy parameters.
     let (ring_rate, ring_channels) = if proxy.enabled {
         (proxy.target_sample_rate_hz, proxy.target_channels)
     } else {
@@ -693,9 +581,6 @@ pub fn spawn_decode_producer_with_proxy(
     Ok((cons, metadata, handle))
 }
 
-/// Spawn a decode producer from a `RemoteMediaSource` (or any `MediaSource`).
-/// The caller provides pre-probed metadata since the source may not support
-/// seeking back to re-probe.
 pub fn spawn_decode_producer_from_source(
     source: Box<dyn symphonia::core::io::MediaSource>,
     extension: Option<&str>,
@@ -732,9 +617,6 @@ pub struct MultiStemResult {
     pub decode_handles: Vec<JoinHandle<Result<(), DecodeError>>>,
 }
 
-/// Spawn decode producers for multiple stem files (e.g., vocals, drums, bass, other).
-/// Returns a `StreamingTrack` with the appropriate variant based on the number of stems,
-/// along with metadata and join handles for each decode thread.
 pub fn spawn_multi_stem_decode_producers(
     paths: &[std::path::PathBuf],
 ) -> Result<MultiStemResult, DecodeError> {
@@ -752,10 +634,6 @@ pub fn spawn_multi_stem_decode_producers_with_proxy(
         )));
     }
 
-    // Probe every stem path first, before creating any stream pairs or
-    // spawning decode threads. A later mismatch must not leave orphaned
-    // decode threads running against dropped consumers — they have no
-    // cancellation path and would decode against closed/full ring buffers.
     let mut metadata_vec = Vec::with_capacity(paths.len());
     for path in paths {
         let meta = probe_stream_metadata(path)?;
@@ -793,7 +671,6 @@ pub fn spawn_multi_stem_decode_producers_with_proxy(
         }
     }
 
-    // Metadata is consistent — safe to create stream pairs and spawn.
     let mut consumers = Vec::with_capacity(paths.len());
     let mut handles = Vec::with_capacity(paths.len());
     for (path, meta) in paths.iter().zip(metadata_vec.iter()) {
@@ -846,8 +723,6 @@ pub fn spawn_multi_stem_decode_producers_with_proxy(
     })
 }
 
-/// Decode a file and push samples into the producer. Runs on the decode thread.
-/// Handles seek requests via the shared `seek_target` and signals EOF via `is_eof`.
 fn decode_into_producer(
     path: &Path,
     prod: &mut AudioProducer,
@@ -877,8 +752,6 @@ fn decode_into_producer(
     )
 }
 
-/// Decode from a `MediaSourceStream` into the producer. Used for both local
-/// files and remote sources (e.g., `RemoteMediaSource`).
 fn decode_mss_into_producer(
     mss: MediaSourceStream,
     hint: Hint,
@@ -966,14 +839,10 @@ fn decode_mss_into_producer(
             Err(e) => return Err(DecodeError::DecodeFailed(format!("from {label}: {e}"))),
         };
 
-        // Copy decoded samples into an interleaved f32 vector. The decoded
-        // buffer borrows the decoder's internal storage, so it must be copied
-        // out before the next decode call overwrites it.
         let mut samples_vec: Vec<f32> = Vec::with_capacity(decoded.samples_interleaved());
         decoded.copy_to_vec_interleaved(&mut samples_vec);
         let samples = samples_vec.as_slice();
 
-        // Apply proxy resampling if enabled.
         let resampled;
         let push_samples: &[f32] = if proxy.enabled {
             resampled = resample_interleaved(
@@ -1008,9 +877,7 @@ mod tests {
 
     #[test]
     fn ring_capacity_matches_target_duration() {
-        // 44.1 kHz stereo, 2 seconds = 2 * 44100 * 2 = 176_400 samples
         assert_eq!(ring_capacity(44_100, 2), 176_400);
-        // 48 kHz mono, 2 seconds = 2 * 48000 * 1 = 96_000
         assert_eq!(ring_capacity(48_000, 1), 96_000);
     }
 
@@ -1091,7 +958,6 @@ mod tests {
         let (mut consumer, metadata, handle) =
             spawn_decode_producer(&path).expect("spawn_decode_producer should succeed");
 
-        // Metadata should match the fixture
         assert_eq!(metadata.sample_rate_hz, 44_100);
         assert_eq!(metadata.channels, 2);
         let duration = metadata
@@ -1104,7 +970,6 @@ mod tests {
             .expect("decode thread should not panic")
             .expect("decode should succeed");
 
-        // fixture.wav is 1 second of 44.1 kHz stereo = 88200 interleaved samples
         assert_eq!(consumer.available_samples(), 88_200);
         assert_eq!(consumer.available_ms(), 1000);
 
@@ -1249,7 +1114,6 @@ mod tests {
             0,
         );
 
-        // Wait for decode to fill the buffer
         handle
             .join()
             .expect("decode thread should not panic")
@@ -1312,7 +1176,6 @@ mod tests {
             0,
         );
 
-        // Wait for full decode
         handle.join().expect("thread join").expect("decode ok");
 
         let device_rate = metadata.sample_rate_hz;
@@ -1401,7 +1264,6 @@ mod tests {
                 .expect("decode should succeed");
         }
 
-        // Both consumers should have the full 1-second audio
         assert_eq!(vocals.available_samples(), 88_200);
         assert_eq!(accompaniment.available_samples(), 88_200);
         assert!(vocals.is_eof());
@@ -1512,7 +1374,6 @@ mod tests {
         assert_eq!(consumer.sample_rate_hz, 22_050);
         assert_eq!(consumer.channels, 1);
 
-        // fixture.wav is 1s: 44100 stereo → 22050 mono = 22050 samples.
         assert_eq!(consumer.available_samples(), 22_050);
         assert_eq!(consumer.available_ms(), 1000);
     }
@@ -1551,10 +1412,6 @@ mod tests {
         assert_eq!(consumer.available_ms(), 1_000);
     }
 
-    /// Verify that post-seek samples are not drained by the flush
-    /// that clears stale pre-seek data. The producer's signal_flush waits
-    /// for the ring buffer to drain before the decode thread pushes new
-    /// samples, so the consumer only drains stale data.
     #[test]
     fn seek_flush_preserves_post_seek_samples() {
         let (mut prod, mut cons) = create_stream_pair(44_100, 2);
@@ -1590,8 +1447,6 @@ mod tests {
         assert_eq!(output[499], 2499.0, "last post-seek sample should be 2499");
     }
 
-    /// Verify that probe_stream_metadata returns duration as Option.
-    /// WAV files have container-level duration, so it should be Some.
     #[test]
     fn probe_returns_some_duration_when_container_has_metadata() {
         use std::path::PathBuf;
@@ -1611,8 +1466,6 @@ mod tests {
         assert!(dur > 0, "duration should be positive");
     }
 
-    /// Verify that StreamMetadata.duration_ms is Option to allow
-    /// immediate playback start when duration is unknown.
     #[test]
     fn stream_metadata_duration_is_optional() {
         let metadata = StreamMetadata {
