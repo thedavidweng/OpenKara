@@ -256,13 +256,10 @@ impl ProviderFetcher {
                 .refresh_in_flight
                 .lock()
                 .unwrap_or_else(|e| e.into_inner());
-            match &refresh_result {
-                Ok(new_token) => {
-                    self.update_auth_header(new_token);
-                    // Only the refresh leader success path advances the epoch.
-                    self.credential_generation.fetch_add(1, Ordering::AcqRel);
-                }
-                Err(_) => {}
+            if let Ok(new_token) = &refresh_result {
+                self.update_auth_header(new_token);
+                // Only the refresh leader success path advances the epoch.
+                self.credential_generation.fetch_add(1, Ordering::AcqRel);
             }
             *in_flight = None;
             self.refresh_condvar.notify_all();

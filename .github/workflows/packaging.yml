@@ -107,9 +107,11 @@ jobs:
 
           # Check whether packaging-impacting categories are present.
           cats=$(jq -r '.categories | join(",")' classification.json)
-          echo "packaging_inputs=$(echo "$cats" | grep -q 'packaging_inputs' && echo true || echo false)" >> "$GITHUB_OUTPUT"
-          echo "packaging_workflow=$(echo "$cats" | grep -q 'packaging_workflow' && echo true || echo false)" >> "$GITHUB_OUTPUT"
-          echo "release_metadata=$(echo "$cats" | grep -q 'release_metadata' && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          {
+            echo "packaging_inputs=$(echo "$cats" | grep -q 'packaging_inputs' && echo true || echo false)"
+            echo "packaging_workflow=$(echo "$cats" | grep -q 'packaging_workflow' && echo true || echo false)"
+            echo "release_metadata=$(echo "$cats" | grep -q 'release_metadata' && echo true || echo false)"
+          } >> "$GITHUB_OUTPUT"
 
   validate-winget:
     name: Validate WinGet manifests

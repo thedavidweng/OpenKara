@@ -209,10 +209,8 @@ pub(crate) fn kind_from_http_status(status: reqwest::StatusCode) -> RemoteErrorK
 /// error kind; everything else is treated as a local IO failure (not a remote
 /// kind, but reported as NetworkUnavailable so the operation retries).
 pub(crate) fn kind_from_io_error(error: &std::io::Error) -> RemoteErrorKind {
-    if error.kind() == std::io::ErrorKind::Other {
-        if error.raw_os_error() == Some(28) {
-            return RemoteErrorKind::DiskFull;
-        }
+    if error.kind() == std::io::ErrorKind::Other && error.raw_os_error() == Some(28) {
+        return RemoteErrorKind::DiskFull;
     }
     RemoteErrorKind::NetworkUnavailable
 }

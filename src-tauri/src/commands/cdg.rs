@@ -700,8 +700,6 @@ mod tests {
         let cdg = slot.playback.as_mut().unwrap();
         let local_cursor_before = cdg.local.next_packet_index;
 
-        if cdg.song_id != "song-1" || cdg.transport_generation != 999 {}
-
         assert_eq!(cdg.local.next_packet_index, local_cursor_before);
     }
 
