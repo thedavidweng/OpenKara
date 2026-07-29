@@ -235,4 +235,66 @@ describe("Sidebar", () => {
       },
     ] as Song[];
   });
+
+  test("hides separate-all when every separable song is completed in two-stem mode", () => {
+    mockLibraryState.songs = [
+      {
+        hash: "song-3",
+        file_path: "music/song-3.mp3",
+        audio_source_kind: "original",
+        cdg_path: null,
+        media_g_container: null,
+        instrumental: false,
+        title: "Song 3",
+        artist: null,
+        album: null,
+        duration_ms: 1000,
+        cover_art: null,
+        has_cover_art: false,
+        artwork_thumb_path: null,
+        imported_at: 0,
+        original_ext: "mp3",
+      },
+    ] as Song[];
+    mockLibraryState.separationStatuses = {
+      "song-3": {
+        song_id: "song-3",
+        state: "completed",
+        percent: 100,
+        cache_hit: false,
+        vocals_path: "music/song-3_vocals.wav",
+        accomp_path: "music/song-3_accomp.wav",
+        drums_path: null,
+        bass_path: null,
+        other_path: null,
+        model_variant: null,
+        error: null,
+      },
+    };
+
+    const markup = renderToStaticMarkup(<Sidebar />);
+
+    expect(markup).not.toContain("sidebar.separateAll");
+
+    mockLibraryState.songs = [
+      {
+        hash: "song-1",
+        file_path: "media-g/song-1.mp3",
+        audio_source_kind: "original",
+        cdg_path: "media-g/song-1.cdg",
+        media_g_container: "paired" as const,
+        instrumental: false,
+        title: "Song",
+        artist: null,
+        album: null,
+        duration_ms: 1000,
+        cover_art: null,
+        has_cover_art: false,
+        artwork_thumb_path: null,
+        imported_at: 0,
+        original_ext: "mp3",
+      },
+    ] as Song[];
+    mockLibraryState.separationStatuses = {};
+  });
 });
