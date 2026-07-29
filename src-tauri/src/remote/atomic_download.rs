@@ -6,14 +6,6 @@
 //! final path is never visible to readers in a truncated or corrupt state,
 //! even if the process is killed mid-download or the network drops.
 //!
-//! ## Why a shared helper
-//!
-//! PR #1 inlined this pattern for stem sets. Media, stems, artwork, CDG, and
-//! database pulls all need the same guarantees, so the logic lives here once.
-//! Provider `download_file` internals are NOT modified here — resumable
-//! transfers are PR #5's job. This helper always downloads the full file to a
-//! temp path; resume-from-offset is out of scope.
-//!
 //! ## Database-specific integrity
 //!
 //! [`atomic_database_pull`] adds SQLite-specific checks on top of the generic
@@ -48,19 +40,10 @@ pub const REMOTE_INTEGRITY_FAILED: &str = "remote_integrity_failed";
 
 /// Options describing a single atomic download + validation + rename.
 pub(crate) struct AtomicDownloadOptions<'a> {
-    /// Remote-relative path passed to `provider.download_file`.
     pub relative_path: &'a str,
-    /// Final destination path. The temp file is created as a sibling
-    /// `<destination>.part.<operation_id>` so the rename stays on the same
-    /// filesystem (required for atomicity).
     pub destination: &'a Path,
-    /// Expected byte length. When `Some`, the temp file is rejected if its
-    /// length differs. When `None`, the size check is skipped.
     pub expected_size: Option<u64>,
-    /// Expected hex SHA-256 digest. When `Some`, the temp file is rejected if
-    /// its SHA-256 differs. When `None`, the digest check is skipped.
     pub expected_digest: Option<&'a str>,
-    /// Operation identifier used for temp file naming and log correlation.
     pub operation_id: &'a str,
 }
 
@@ -131,7 +114,6 @@ pub(crate) fn atomic_download(
 ) -> CommandResult<()> {
     let temp_path = part_path(opts.destination, opts.operation_id);
 
-    // Ensure the parent directory exists (e.g. a fresh stem directory).
     if let Some(parent) = temp_path.parent() {
         fs::create_dir_all(parent).map_err(|e| {
             internal_error(format!(
@@ -147,7 +129,6 @@ pub(crate) fn atomic_download(
 
     let result = run_atomic_download(provider, opts, &temp_path);
 
-    // On failure, remove the temp file so no partial download lingers.
     if result.is_err() {
         let _ = fs::remove_file(&temp_path);
     }
@@ -165,7 +146,6 @@ fn run_atomic_download(
         .download_file(opts.relative_path, temp_path)
         .map_err(AtomicDownloadError::DownloadFailed)?;
 
-    // 2. Size check.
     if let Some(expected_size) = opts.expected_size {
         let actual = fs::metadata(temp_path).map(|m| m.len()).map_err(|e| {
             AtomicDownloadError::Io(std::io::Error::other(format!(
@@ -182,7 +162,6 @@ fn run_atomic_download(
         }
     }
 
-    // 3. Digest check.
     if let Some(expected_digest) = opts.expected_digest {
         let actual = sha256_file(temp_path)?;
         if !digests_equal(&actual, expected_digest) {
@@ -231,7 +210,6 @@ fn durable_part_len(temp_path: &Path, floor: u64, expected_size: u64) -> u64 {
         .min(expected_size)
 }
 
-/// Build the temp path `<destination>.part.<operation_id>`.
 fn part_path(destination: &Path, operation_id: &str) -> PathBuf {
     let file_name = destination
         .file_name()
@@ -240,47 +218,17 @@ fn part_path(destination: &Path, operation_id: &str) -> PathBuf {
     destination.with_file_name(file_name)
 }
 
-// ---------------------------------------------------------------------------
-// Resumable downloads (PR#5)
-//
-// `resumable_atomic_download` extends `atomic_download` with resume-from-offset
-// for providers that support Range requests (`range_download = true`). Progress
-// is persisted in `remote_transfer_parts` after each chunk so a restart can
-// resume from the verified offset.
-//
-// Resume safety: before resuming, the provider_revision is checked against the
-// persisted value. A changed revision means the remote object was replaced —
-// the partial file is discarded and a fresh download starts. This prevents
-// concatenating bytes from two different object versions.
-//
-// The temp file is opened in append mode for resumed chunks and truncated for
-// a fresh start. The final size/digest/integrity checks are identical to
-// `atomic_download` — a resumed file that fails validation is rejected just
-// like a fresh one.
-// ---------------------------------------------------------------------------
-
-/// Chunk size for resumable downloads. 8 MiB balances memory, round-trip
-/// count, and the granularity of resume progress.
 const RESUMABLE_DOWNLOAD_CHUNK_SIZE: u64 = 8 * 1024 * 1024;
 
 /// Options for a resumable atomic download. Extends [`AtomicDownloadOptions`]
 /// with a control DB connection and provider revision for resume validation.
 #[allow(dead_code)]
 pub(crate) struct ResumableDownloadOptions<'a> {
-    /// Remote-relative path passed to `provider.download_file` / `download_range`.
     pub relative_path: &'a str,
-    /// Final destination path.
     pub destination: &'a Path,
-    /// Expected byte length. Required for resumable downloads so the driver
-    /// knows when the transfer is complete.
     pub expected_size: u64,
-    /// Expected hex SHA-256 digest. When `Some`, the temp file is rejected if
-    /// its SHA-256 differs.
     pub expected_digest: Option<&'a str>,
-    /// Operation identifier used for temp file naming and transfer-part
-    /// persistence.
     pub operation_id: &'a str,
-    /// Control DB connection for persisting transfer progress.
     pub control_db: &'a Connection,
     /// Current provider revision of the remote object (for resume validation).
     /// When `None`, resume is disabled (a fresh download always starts).
@@ -304,7 +252,6 @@ pub(crate) fn resumable_atomic_download(
 ) -> CommandResult<()> {
     let temp_path = part_path(opts.destination, opts.operation_id);
 
-    // Ensure the parent directory exists.
     if let Some(parent) = temp_path.parent() {
         fs::create_dir_all(parent).map_err(|e| {
             internal_error(format!(
@@ -323,7 +270,6 @@ pub(crate) fn resumable_atomic_download(
                     && p.direction == crate::remote::control_db::TransferDirection::Download
             });
 
-    // Validate the persisted provider_revision before resuming.
     let can_resume = caps.range_download
         && existing_part.is_some()
         && existing_part
@@ -361,9 +307,6 @@ pub(crate) fn resumable_atomic_download(
         let _ =
             crate::remote::control_db::delete_transfer_parts(opts.control_db, opts.operation_id);
     } else if result.as_ref().err().is_some_and(|e| {
-        // Permanent failures (integrity, permission) invalidate the partial.
-        // Transient network failures KEEP the partial and the transfer row so
-        // a restart can resume from the verified offset.
         let msg = e.message.to_ascii_lowercase();
         msg.contains("integrity")
             || msg.contains("digest")
@@ -389,7 +332,6 @@ pub(crate) fn resumable_atomic_download(
             },
         );
     }
-    // Transient failure: leave partial + transfer row intact for resume.
 
     result
 }
@@ -507,8 +449,6 @@ fn download_to_part_resumable(
     Ok(())
 }
 
-/// Run a resumable download: resume from the verified offset using
-/// `download_range`, persisting progress after each chunk.
 #[allow(dead_code)]
 fn run_resumable_download(
     provider: &dyn RemoteProvider,
@@ -545,7 +485,6 @@ fn run_resumable_download(
         offset = offset.max(file_len).min(total);
     }
 
-    // Download remaining chunks via Range requests.
     while offset < total {
         let length = RESUMABLE_DOWNLOAD_CHUNK_SIZE.min(total - offset);
         let chunk_start = offset;
@@ -586,14 +525,12 @@ fn run_resumable_download(
         // fewer bytes than requested (short response) or a full-body
         // response for offset == 0.
         if verified_bytes == 0 {
-            // No progress — avoid an infinite loop.
             return Err(internal_error(format!(
                 "resumable download made no progress at offset {offset}"
             )));
         }
         offset += verified_bytes;
 
-        // Persist progress so a restart can resume from this offset.
         let now = crate::remote::types::current_unix_time_ms();
         crate::remote::control_db::upsert_transfer_part(
             opts.control_db,
@@ -620,8 +557,6 @@ fn run_resumable_download(
     )
 }
 
-/// Validate the temp file's size and digest, fsync, then atomically rename it
-/// over the destination. Shared by the resumable and non-resumable paths.
 #[allow(dead_code)]
 fn validate_and_rename(
     temp_path: &Path,
@@ -629,7 +564,6 @@ fn validate_and_rename(
     expected_size: u64,
     expected_digest: Option<&str>,
 ) -> CommandResult<()> {
-    // Size check.
     let actual = fs::metadata(temp_path).map(|m| m.len()).map_err(|e| {
         internal_error(format!(
             "failed to stat temp file {}: {e}",
@@ -644,7 +578,6 @@ fn validate_and_rename(
         .into());
     }
 
-    // Digest check.
     if let Some(expected_digest) = expected_digest {
         let actual = sha256_file(temp_path)?;
         if !digests_equal(&actual, expected_digest) {
@@ -656,7 +589,6 @@ fn validate_and_rename(
         }
     }
 
-    // fsync + rename + fsync parent.
     fsync_file(temp_path)?;
     fs::rename(temp_path, destination).map_err(|e| {
         AtomicDownloadError::Io(std::io::Error::other(format!(
@@ -727,17 +659,9 @@ fn fsync_parent(path: &Path) -> CommandResult<()> {
 /// `openkara.db`. The previous verified database is preserved as
 /// `openkara.db.lkg`.
 pub(crate) struct DatabasePullOptions<'a> {
-    /// Operation identifier for temp file naming and logging.
     pub operation_id: &'a str,
-    /// Expected byte length of the candidate, when known. When `None` the size
-    /// check is skipped but integrity checks still run.
     pub expected_size: Option<u64>,
-    /// Expected hex SHA-256 of the candidate, sourced from the repository
-    /// manifest's `database_sha256`. When `None` the digest check is skipped
-    /// but integrity checks still run.
     pub expected_digest: Option<&'a str>,
-    /// Library id, used to update the control DB repository state after
-    /// activation succeeds.
     pub library_id: &'a str,
     /// Relative remote path of the database file to download. For manifest-based
     /// repositories this is `.openkara/databases/<generation>.sqlite`. For
@@ -753,10 +677,8 @@ pub(crate) struct DatabasePullOptions<'a> {
 /// digest/revision and tests can inspect the outcome.
 #[derive(Debug, Clone)]
 pub(crate) struct DatabasePullResult {
-    /// SHA-256 hex digest of the newly activated `openkara.db`.
     #[allow(dead_code)]
     pub new_digest: String,
-    /// Final size in bytes of the activated database.
     #[allow(dead_code)]
     pub new_size: u64,
 }
@@ -792,7 +714,6 @@ pub(crate) fn atomic_database_pull(
     let destination = library_root.database_path();
     let temp_path = part_path(&destination, opts.operation_id);
 
-    // Ensure the working-copy root directory exists.
     fs::create_dir_all(library_root.root()).map_err(|e| {
         internal_error(format!(
             "failed to create library root {}: {e}",
@@ -834,8 +755,6 @@ fn run_database_pull(
     temp_path: &Path,
     opts: &DatabasePullOptions,
 ) -> CommandResult<DatabasePullResult> {
-    // 1. Download the candidate to the temp path. Prefer Range resume when
-    // size is known and the provider supports it.
     if let Some(expected_size) = opts.expected_size {
         if provider.capabilities().range_download {
             download_to_part_resumable(
@@ -849,7 +768,6 @@ fn run_database_pull(
             )
             .map_err(AtomicDownloadError::DownloadFailed)?;
         } else {
-            // Non-resumable: start clean.
             let _ = fs::remove_file(temp_path);
             provider
                 .download_file(opts.remote_database_path, temp_path)
@@ -862,7 +780,6 @@ fn run_database_pull(
             .map_err(AtomicDownloadError::DownloadFailed)?;
     }
 
-    // 2. Size check (when known).
     let actual_size = fs::metadata(temp_path).map(|m| m.len()).map_err(|e| {
         AtomicDownloadError::Io(std::io::Error::other(format!(
             "failed to stat candidate {}: {e}",
@@ -879,8 +796,6 @@ fn run_database_pull(
         }
     }
 
-    // 3. Compute SHA-256 of the candidate and compare against the manifest's
-    //    database_sha256 when provided.
     let candidate_digest = sha256_file(temp_path)?;
     if let Some(expected_digest) = opts.expected_digest {
         if !digests_equal(&candidate_digest, expected_digest) {
@@ -892,8 +807,6 @@ fn run_database_pull(
         }
     }
 
-    // 4–9. Shared activation: integrity + schema + fsync + LKG + rename.
-    // Bootstrap uses the same helper so both paths stay equivalent.
     activate_verified_database_candidate(temp_path, destination)?;
 
     // 10. Update local repository state only after activation succeeds.
@@ -930,7 +843,6 @@ pub(crate) fn activate_verified_database_candidate(
     candidate: &Path,
     destination: &Path,
 ) -> CommandResult<()> {
-    // Integrity: quick_check + foreign_key_check.
     verify_sqlite_integrity(candidate)?;
 
     // Schema compatibility: songs table must exist with a hash column.
@@ -939,7 +851,6 @@ pub(crate) fn activate_verified_database_candidate(
     // Durable bytes before rename.
     fsync_file(candidate)?;
 
-    // Preserve the current verified database as last-known-good.
     let lkg_path = last_known_good_path(destination);
     let mut preserved_lkg = false;
     if destination.exists() {
@@ -954,7 +865,6 @@ pub(crate) fn activate_verified_database_candidate(
         preserved_lkg = true;
     }
 
-    // Atomically rename candidate -> destination.
     if let Err(e) = fs::rename(candidate, destination) {
         // The rename failed after we moved the old DB aside. Restore the
         // last-known-good so the working copy is not left without a database.
@@ -975,7 +885,6 @@ pub(crate) fn activate_verified_database_candidate(
     Ok(())
 }
 
-/// Path of the last-known-good database: `<db>.lkg`.
 fn last_known_good_path(db_path: &Path) -> PathBuf {
     let file_name = db_path
         .file_name()
@@ -1007,7 +916,6 @@ fn verify_sqlite_integrity(candidate: &Path) -> CommandResult<()> {
         )));
     }
 
-    // foreign_key_check returns zero rows when all FK constraints hold.
     let fk_violations: Vec<(String, i64, String, String)> = conn
         .prepare("PRAGMA foreign_key_check;")
         .map_err(|e| integrity_error(format!("foreign_key_check prepare failed: {e}")))?
@@ -1069,16 +977,12 @@ fn verify_schema_compatibility(candidate: &Path) -> CommandResult<()> {
     Ok(())
 }
 
-/// Build a `remote_integrity_failed` error carrying the sanitized code string.
 fn integrity_error(detail: impl std::fmt::Display) -> CommandError {
     // The full typed error enum is PR #4's job. PR #3 uses this stable code
     // string so recovery and UI can branch without coupling to a future enum.
     internal_error(format!("{REMOTE_INTEGRITY_FAILED}: {detail}"))
 }
 
-/// Update the control DB repository state after a successful database pull.
-/// Sets `local_db_digest` to the new digest, `local_state = Clean`, and
-/// advances `committed_generation` to the manifest's generation.
 fn update_repository_state_after_pull(
     connection: &Connection,
     library_id: &str,
@@ -1198,8 +1102,6 @@ fn remove_stale_part_files_recursive(
             Err(_) => continue,
         };
         if file_type.is_dir() {
-            // Recurse into subdirectories (media, stems, artwork, etc.).
-            // Skip the library marker and hidden directories.
             remove_stale_part_files_recursive(&path, removed, protected_operation_ids)?;
             continue;
         }
@@ -1218,7 +1120,6 @@ fn remove_stale_part_files_recursive(
                 .as_deref()
                 .is_some_and(|id| protected_operation_ids.contains(id));
             if is_protected {
-                // Resumable partial — preserve for cross-process resume.
                 continue;
             }
             if fs::remove_file(&path).is_ok() {
@@ -1260,31 +1161,18 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
 
-    // ---- Test fake provider ----
-
-    /// A scriptable fake provider. Each download invocation pops the next
-    /// behavior from a queue so tests can simulate connection drops, short
-    /// bodies, wrong sizes, corrupt pages, etc.
     struct FakeProvider {
         files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
-        /// Queue of behaviors per download attempt (by relative_path).
         behaviors: Arc<Mutex<Vec<DownloadBehavior>>>,
         sizes: Arc<Mutex<HashMap<String, u64>>>,
     }
 
     #[derive(Clone)]
     enum DownloadBehavior {
-        /// Write the full stored bytes successfully.
         Success,
-        /// Fail before writing anything (simulates connection drop before
-        /// headers).
         FailBeforeWrite,
-        /// Write only the first N bytes then fail (simulates mid-body drop).
         PartialThenFail(usize),
-        /// Write a short body and succeed (simulates a server returning a
-        /// truncated body with success status).
         ShortBody(usize),
-        /// Write bytes that differ from the stored content (wrong digest).
         WrongDigest,
     }
 
@@ -1386,7 +1274,6 @@ mod tests {
                             "fake provider: file {relative_path} not found"
                         )))
                     })?;
-                    // Flip the first byte so the digest differs.
                     let mut modified = data.clone();
                     if !modified.is_empty() {
                         modified[0] ^= 0xff;
@@ -1446,8 +1333,6 @@ mod tests {
         crate::cache::initialize_library_database(path).expect("initialize library db");
     }
 
-    // ---- atomic_download (generic asset) tests ----
-
     #[test]
     fn atomic_download_writes_valid_file_to_destination() {
         let dir = TempDir::new().expect("temp dir");
@@ -1468,7 +1353,6 @@ mod tests {
         .expect("download succeeds");
 
         assert_eq!(std::fs::read(&dest).unwrap(), b"hello world");
-        // No temp file lingers.
         assert!(!part_path(&dest, "op-1").exists());
     }
 
@@ -1573,7 +1457,6 @@ mod tests {
         let dest = dir.path().join("media/song.mp3");
         let provider = FakeProvider::new();
         provider.store_file("media/song.mp3", b"hello world".to_vec());
-        // Simulate disk-full: write partial bytes then fail.
         provider.queue_behavior(DownloadBehavior::PartialThenFail(5));
 
         let result = atomic_download(
@@ -1591,20 +1474,15 @@ mod tests {
         assert!(!dest.exists(), "no truncated final file after disk-full");
     }
 
-    // ---- atomic_database_pull tests ----
-
     #[test]
     fn database_pull_installs_valid_candidate_and_preserves_lkg() {
         let (lib_dir, root) = fresh_library_root();
         let (_db_dir, conn) = fresh_control_db();
-        // Seed an existing working DB.
         make_valid_library_db(&root.database_path());
         let old_bytes = std::fs::read(root.database_path()).unwrap();
 
-        // Build a new valid candidate DB.
         let candidate_path = lib_dir.path().join("candidate.db");
         make_valid_library_db(&candidate_path);
-        // Modify it so the digest differs from the old one.
         {
             let c = Connection::open(&candidate_path).unwrap();
             c.execute_batch("CREATE TABLE IF NOT EXISTS pr3_marker (x INTEGER);")
@@ -1631,15 +1509,11 @@ mod tests {
         )
         .expect("pull succeeds");
 
-        // Active DB is the new candidate.
         let active = std::fs::read(root.database_path()).unwrap();
         assert_eq!(active, candidate_bytes);
-        // LKG is the old verified DB.
         let lkg = std::fs::read(last_known_good_path(&root.database_path())).unwrap();
         assert_eq!(lkg, old_bytes);
-        // No temp lingers.
         assert!(!part_path(&root.database_path(), "pull-1").exists());
-        // Control DB state updated.
         let state = crate::remote::control_db::get_repository_state(&conn, "lib-1")
             .unwrap()
             .unwrap();
@@ -1657,11 +1531,9 @@ mod tests {
         make_valid_library_db(&root.database_path());
         let old_bytes = std::fs::read(root.database_path()).unwrap();
 
-        // Build a corrupt candidate: valid header then garbage.
         let candidate_path = lib_dir.path().join("candidate.db");
         make_valid_library_db(&candidate_path);
         let mut corrupt = std::fs::read(&candidate_path).unwrap();
-        // Overwrite a page in the middle to break integrity.
         let mid = corrupt.len() / 2;
         let end = (mid + 64).min(corrupt.len());
         for byte in &mut corrupt[mid..end] {
@@ -1686,13 +1558,9 @@ mod tests {
         );
 
         assert!(result.is_err(), "corrupt candidate must be rejected");
-        // Active DB is still the old verified version.
         let active = std::fs::read(root.database_path()).unwrap();
         assert_eq!(active, old_bytes, "active DB unchanged");
-        // No LKG was created (nothing to preserve from the failed pull — the
-        // old DB stayed in place).
         assert!(!last_known_good_path(&root.database_path()).exists());
-        // No temp lingers.
         assert!(!part_path(&root.database_path(), "pull-1").exists());
     }
 
@@ -1703,7 +1571,6 @@ mod tests {
         make_valid_library_db(&root.database_path());
         let old_bytes = std::fs::read(root.database_path()).unwrap();
 
-        // Build a candidate with no `songs` table.
         let candidate_path = lib_dir.path().join("candidate.db");
         {
             let c = Connection::open(&candidate_path).unwrap();
@@ -1807,7 +1674,6 @@ mod tests {
     fn database_pull_first_pull_no_lkg_created() {
         let (_lib_dir, root) = fresh_library_root();
         let (_db_dir, conn) = fresh_control_db();
-        // No existing working DB on first pull.
         assert!(!root.database_path().exists());
 
         let candidate_path = root.root().join("candidate.db");
@@ -1839,8 +1705,6 @@ mod tests {
         );
     }
 
-    // ---- Restart reconciliation tests ----
-
     #[test]
     fn reconcile_after_restart_updates_stale_digest_only_from_clean_state() {
         let (_lib_dir, root) = fresh_library_root();
@@ -1848,8 +1712,6 @@ mod tests {
         make_valid_library_db(&root.database_path());
         let digest = sha256_file(&root.database_path()).unwrap();
 
-        // A verified pull starts from Clean. A crash after rename but before
-        // state update leaves Clean plus the previous digest.
         upsert_repository_state(
             &conn,
             &RepositoryStateRow {
@@ -1951,8 +1813,6 @@ mod tests {
         assert!(updated.is_none(), "no update when digest already matches");
     }
 
-    // ---- Stale partial recovery tests ----
-
     #[test]
     fn remove_stale_part_files_deletes_part_files_only() {
         let dir = TempDir::new().expect("temp dir");
@@ -2003,8 +1863,6 @@ mod tests {
         assert_eq!(removed.len(), 1);
     }
 
-    // ---- Helper tests ----
-
     #[test]
     fn part_path_naming() {
         let dest = Path::new("/tmp/lib/openkara.db");
@@ -2023,26 +1881,15 @@ mod tests {
     }
 
     fn sha256_bytes(data: &[u8]) -> String {
-        // Helper for computing expected digests in tests.
         let mut hasher = Sha256::new();
         hasher.update(data);
         hash::hex_lower(hasher.finalize())
     }
 
-    // ---- Resumable download tests (PR#5) ----
-
-    /// A fake provider that supports `download_range` for resumable downloads.
-    /// It serves byte ranges from an in-memory store and tracks how many
-    /// range requests were made so tests can verify resume behavior.
     struct ResumableFakeProvider {
         files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
         revisions: Arc<Mutex<HashMap<String, String>>>,
-        /// Fail the Nth range request (0-indexed) by returning an error.
         fail_on_range: Arc<Mutex<Option<usize>>>,
-        /// On the Nth range request (0-indexed), stream only the first M bytes
-        /// of the requested chunk to the destination file, then fail — modeling
-        /// a streaming provider interrupted mid-chunk (issue #205 sub-chunk
-        /// resume). `(call_index, partial_bytes)`.
         partial_then_fail: Arc<Mutex<Option<(usize, u64)>>>,
         range_call_count: Arc<Mutex<usize>>,
     }
@@ -2158,9 +2005,6 @@ mod tests {
                 ));
             }
             let chunk = &data[start..end];
-            // A streaming provider interrupted mid-chunk has already written
-            // the bytes received so far. Model that: write only the first
-            // `partial_bytes` to the file, then fail with a transient error.
             let partial = {
                 let guard = self.partial_then_fail.lock().unwrap();
                 guard.and_then(|(idx, bytes)| (idx == call_index).then_some(bytes))
@@ -2169,7 +2013,6 @@ mod tests {
                 Some(bytes) => &chunk[..(bytes as usize).min(chunk.len())],
                 None => chunk,
             };
-            // Append the bytes to the destination file at the given offset.
             use std::io::Seek;
             let mut file = std::fs::OpenOptions::new()
                 .create(true)
@@ -2250,7 +2093,6 @@ mod tests {
         .expect("download succeeds");
 
         assert_eq!(std::fs::read(&dest).unwrap(), data);
-        // Transfer part deleted on success.
         assert!(
             crate::remote::control_db::list_transfer_parts(&conn, "op-1")
                 .unwrap()
@@ -2263,16 +2105,13 @@ mod tests {
         let dir = TempDir::new().expect("temp dir");
         let dest = dir.path().join("media/song.mp3");
         let provider = ResumableFakeProvider::new();
-        // 20 MiB file so multiple chunks are needed.
         let data = vec![0xABu8; 20 * 1024 * 1024];
         provider.store_file("media/song.mp3", data.clone(), "rev-1");
 
         let (_db_dir, conn) = fresh_control_db();
 
-        // Seed a transfer part at offset 8 MiB (one chunk done).
         let temp_path = part_path(&dest, "op-1");
         std::fs::create_dir_all(temp_path.parent().unwrap()).unwrap();
-        // Write the first 8 MiB to the temp file so the resume can append.
         std::fs::write(&temp_path, &data[..8 * 1024 * 1024]).unwrap();
         crate::remote::control_db::upsert_transfer_part(
             &conn,
@@ -2306,8 +2145,6 @@ mod tests {
         .expect("resume succeeds");
 
         assert_eq!(std::fs::read(&dest).unwrap(), data);
-        // The provider should have been called for the remaining chunks
-        // (offset 8 MiB onward), not the first 8 MiB.
         assert!(
             provider.range_call_count() > 0,
             "range requests made for remaining chunks"
@@ -2328,7 +2165,6 @@ mod tests {
 
         let (_db_dir, conn) = fresh_control_db();
 
-        // Seed a transfer part with a STALE revision.
         crate::remote::control_db::upsert_transfer_part(
             &conn,
             &crate::remote::control_db::TransferPartRow {
@@ -2361,7 +2197,6 @@ mod tests {
         .expect("fresh download succeeds");
 
         assert_eq!(std::fs::read(&dest).unwrap(), data);
-        // No range calls — fresh download via download_file.
         assert_eq!(provider.range_call_count(), 0);
     }
 
@@ -2372,12 +2207,10 @@ mod tests {
         let provider = ResumableFakeProvider::new();
         let data = vec![0xCDu8; 20 * 1024 * 1024];
         provider.store_file("media/song.mp3", data.clone(), "rev-1");
-        // Fail the first range request.
         provider.fail_on_range(0);
 
         let (_db_dir, conn) = fresh_control_db();
 
-        // Seed a transfer part at offset 8 MiB.
         let temp_path = part_path(&dest, "op-1");
         std::fs::create_dir_all(temp_path.parent().unwrap()).unwrap();
         std::fs::write(&temp_path, &data[..8 * 1024 * 1024]).unwrap();
@@ -2411,8 +2244,6 @@ mod tests {
             },
         );
         assert!(result.is_err(), "range failure should propagate");
-        // Transient range failures retain both the transfer part and the
-        // partial file so a restart can resume from the verified offset.
         let parts = crate::remote::control_db::list_transfer_parts(&conn, "op-1").unwrap();
         assert_eq!(parts.len(), 1, "transfer part retained after failure");
         assert!(
@@ -2427,21 +2258,15 @@ mod tests {
 
     #[test]
     fn resumable_download_resumes_from_sub_chunk_offset_and_verifies_digest() {
-        // Acceptance (#205 criterion 2): a mid-chunk interruption after N bytes
-        // must resume from ~N bytes written (not the chunk start), and the
-        // completed download must verify against the expected digest.
         let dir = TempDir::new().expect("temp dir");
         let dest = dir.path().join("media/song.mp3");
         let provider = ResumableFakeProvider::new();
-        // 20 MiB file → chunked at 8 MiB. Seed one full chunk (8 MiB) done.
         let data = vec![0x5Au8; 20 * 1024 * 1024];
         let digest = sha256_bytes(&data);
         provider.store_file("media/song.mp3", data.clone(), "rev-1");
 
         let chunk_start = 8 * 1024 * 1024u64;
-        let partial = 3 * 1024 * 1024u64; // 3 MiB into the second chunk.
-                                          // The first range request writes only 3 MiB of its 8 MiB chunk, then
-                                          // fails — modeling a streaming provider dropped mid-chunk.
+        let partial = 3 * 1024 * 1024u64;
         provider.partial_then_fail(0, partial);
 
         let (_db_dir, conn) = fresh_control_db();
@@ -2466,7 +2291,6 @@ mod tests {
         )
         .unwrap();
 
-        // First attempt: interrupted mid-chunk after `partial` bytes.
         let result = resumable_atomic_download(
             &provider,
             ResumableDownloadOptions {
@@ -2481,8 +2305,6 @@ mod tests {
         );
         assert!(result.is_err(), "mid-chunk interruption should propagate");
 
-        // Sub-chunk progress persisted: the offset advanced past the chunk
-        // start by the partially-written bytes (not left at the chunk start).
         let parts = crate::remote::control_db::list_transfer_parts(&conn, "op-1").unwrap();
         assert_eq!(parts.len(), 1, "transfer part retained after failure");
         assert_eq!(
@@ -2496,7 +2318,6 @@ mod tests {
             "durable bytes on disk match the persisted offset"
         );
 
-        // Second attempt: resumes from the sub-chunk offset and completes.
         resumable_atomic_download(
             &provider,
             ResumableDownloadOptions {

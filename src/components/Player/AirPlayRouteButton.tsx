@@ -18,7 +18,6 @@ function buildHostBounds(element: HTMLDivElement): AirPlayRoutePickerBounds {
 
 interface AirPlayRouteButtonProps {
   className?: string;
-  // Landing-page preview: preserve the AirPlay slot without mounting AppKit.
   previewMode?: boolean;
 }
 
@@ -59,9 +58,7 @@ export function AirPlayRouteButton({
     return () => {
       window.removeEventListener("resize", syncBounds);
       resizeObserver?.disconnect();
-      void syncAirPlayRoutePicker(null).catch(() => {
-        // Best effort teardown only.
-      });
+      void syncAirPlayRoutePicker(null).catch(() => {});
     };
   }, [platform, previewMode]);
 

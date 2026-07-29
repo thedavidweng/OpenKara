@@ -39,7 +39,6 @@ describe("QueueButton", () => {
     expect(markup).toContain("playback-bar-action-button");
     expect(markup).toContain('data-playback-action="queue"');
     expect(markup).toContain('aria-pressed="false"');
-    // 18px icon via lucide size prop renders as width="18" height="18"
     expect(markup).toContain('width="18"');
     expect(markup).toContain('height="18"');
     expect(markup).not.toContain("min-h-11");

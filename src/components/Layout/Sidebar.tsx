@@ -82,10 +82,10 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
     separableSongs.every((s) => {
       const status = separationStatuses[s.hash];
       if (!status) return false;
-      if (status.state === "running") return true; // being processed, count as matching
+      if (status.state === "running") return true;
       if (status.state !== "completed") return false;
       if (stemMode === "four_stem") return !!status.drums_path;
-      return true; // any completed is fine for two_stem
+      return true;
     });
 
   const needsUpgrade =
@@ -122,7 +122,6 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
         <SearchBox />
       </div>
 
-      {/* Filter tabs */}
       {activePlaylistId && (
         <div className="shrink-0 flex items-center gap-2 border-b border-[color-mix(in_srgb,var(--color-border)_86%,transparent)] px-4 py-2">
           <button
@@ -189,7 +188,6 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
         </div>
       )}
 
-      {/* PLAYLISTS section */}
       <div
         className={`shrink-0 space-y-0.5 px-2 ${previewMode ? "mt-3" : "mt-4"}`}
       >
@@ -241,7 +239,6 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
         )}
       </div>
 
-      {/* Song list */}
       {!activePlaylistId && (
         <div className="mt-4 flex flex-1 flex-col overflow-hidden px-2">
           <div className="flex items-center justify-between px-2 pb-1">
@@ -259,7 +256,6 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
         </div>
       )}
 
-      {/* Batch separation controls */}
       {!(shouldHideButton && !isBatchRunning && batchSeparation == null) && (
         <div className="shrink-0 border-t border-[var(--color-border)] px-3 py-3">
           {isBatchRunning ? (
@@ -273,7 +269,6 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
               })}
             </div>
           ) : batchSeparation != null ? (
-            // Completed/cancelled state (shown briefly before clearing)
             <div className="text-center text-[11px] text-[var(--color-text-dim)]">
               {t("sidebar.separationComplete", {
                 done: batchSeparation.completed,

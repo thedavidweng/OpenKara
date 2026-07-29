@@ -67,9 +67,6 @@ pub async fn fetch_lyrics(
             .map_err(|error| internal_error(format!("fetch_lyrics task failed: {error}")))?
         }
         FetchLyricsPhase1::NeedOnline { query, song_hash } => {
-            // Reuse the shared HTTP clients from AppState so connection pools
-            // persist across song switches instead of a fresh TLS handshake
-            // per fetch.
             let lrclib_client = &state.inner().lrclib_client;
             let lrcapi_client = &state.inner().lrcapi_client;
             let providers = [
@@ -121,9 +118,6 @@ fn fetch_lyrics_phase1(state: &AppState, song_id: &str) -> CommandResult<FetchLy
         .map_err(database_error)?
         .ok_or(LyricsError::SongNotFound(song_id.to_string()))?;
 
-    // Cache hit — return immediately (no DB write, no remote sync needed).
-    // Negative cache (Absent) entries expire after NEGATIVE_CACHE_TTL_SECS so
-    // lyrics added to LRCLIB/LrcAPI later can be discovered on re-fetch.
     if let Some(cached) =
         cache::lyrics::get_lyrics_cache_entry(&connection, song_id).map_err(database_error)?
     {
@@ -248,9 +242,6 @@ pub fn fetch_lyrics_from_connection(
         .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?
         .ok_or(LyricsError::SongNotFound(song_id.to_string()))?;
 
-    // Lyrics are cached by the stable song hash so repeat fetches can skip both
-    // network and filesystem fallbacks once a synced source has been resolved.
-    // Negative cache (Absent) entries expire after NEGATIVE_CACHE_TTL_SECS.
     if let Some(cached) = cache::lyrics::get_lyrics_cache_entry(connection, song_id)
         .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?
     {
@@ -277,8 +268,6 @@ pub fn fetch_lyrics_from_connection(
         TimedLyricsProvider::LrcApi(lrcapi_client),
     ];
 
-    // Online requests are opportunistic: if they fail, we still want embedded
-    // and sidecar sources to rescue the fetch instead of failing the whole song.
     let Some(fetched) = lyrics::fetch::fetch_lyrics_for_song(&providers, &song, &resolved_path)
         .map_err(|e| LyricsError::Internal(e.to_string()))?
     else {
@@ -675,8 +664,6 @@ pub async fn fetch_lyrics_online(
     match phase1 {
         FetchOnlinePhase1::NoQuery(payload) => Ok(payload),
         FetchOnlinePhase1::Fetch { query, song_hash } => {
-            // Reuse the shared HTTP clients from AppState for connection pool
-            // reuse across calls.
             let lrclib_client = &state.inner().lrclib_client;
             let lrcapi_client = &state.inner().lrcapi_client;
             let providers = [
@@ -784,7 +771,6 @@ fn apply_online_lyrics_result(
                     .map_err(|e| LyricsError::DatabaseUnavailable(e.to_string()))?
                 {
                     if !is_auto_upgradable_source(&existing.source) {
-                        // Preserve the user-authored/provided entry untouched.
                         return payload_from_cached_entry(song_hash.to_owned(), existing);
                     }
                 }
@@ -903,7 +889,6 @@ mod tests {
     #[test]
     fn negative_cache_expired_after_ttl() {
         let now = current_unix_timestamp().unwrap();
-        // 8 days ago — past the 7-day TTL.
         let entry = absent_entry(now - 8 * 24 * 60 * 60);
         assert!(is_negative_cache_expired(&entry));
     }
@@ -911,7 +896,6 @@ mod tests {
     #[test]
     fn negative_cache_not_expired_within_ttl() {
         let now = current_unix_timestamp().unwrap();
-        // 1 day ago — within the 7-day TTL.
         let entry = absent_entry(now - 24 * 60 * 60);
         assert!(!is_negative_cache_expired(&entry));
     }
@@ -986,7 +970,6 @@ mod tests {
             apply_online_lyrics_result(&conn, "song-manual", synced_online_result(), false)
                 .expect("apply should succeed");
 
-        // The returned payload and the cache entry both stay Manual.
         assert_eq!(payload.source, Some(LyricsSource::Manual));
         assert_eq!(payload.raw_lrc, manual_lrc);
 
@@ -1027,7 +1010,6 @@ mod tests {
         insert_song(&conn, "song-manual");
         seed_entry(&conn, "song-manual", LyricsSource::Manual, "Hand written\n");
 
-        // The explicit "fetch lyrics online" action overwrites the manual entry.
         let payload =
             apply_online_lyrics_result(&conn, "song-manual", synced_online_result(), true)
                 .expect("apply should succeed");
@@ -1052,7 +1034,6 @@ mod tests {
             "Embedded plain line\n",
         );
 
-        // Embedded lyrics are derived, not user-authored — auto-upgrade applies.
         let payload =
             apply_online_lyrics_result(&conn, "song-embedded", synced_online_result(), false)
                 .expect("apply should succeed");

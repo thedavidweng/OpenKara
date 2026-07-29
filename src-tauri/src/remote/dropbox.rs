@@ -276,7 +276,6 @@ fn dropbox_refresh_access_token(
     Ok(secret.access_token.clone())
 }
 
-/// Used as a callback by `ProviderFetcher` for automatic token renewal on 403.
 fn refresh_dropbox_token(
     app_data_dir: &Path,
     library: &RegisteredLibrary,
@@ -698,15 +697,6 @@ fn dropbox_upload_file_bytes(
     })
 }
 
-/// Upload bytes to a Dropbox path with compare-and-swap semantics.
-///
-/// - `expected_revision = Some(rev)`: uses `mode: { ".tag": "update", "rev": rev }`.
-///   Dropbox returns HTTP 409 with a `conflict` payload when the current rev
-///   differs — mapped to [`RemoteErrorKind::RemoteConflict`].
-/// - `expected_revision = None`: uses `mode: add` (conditional-create). A
-///   pre-existing file yields HTTP 409 → `RemoteConflict`.
-///
-/// Returns the metadata (size + rev) of the committed object.
 fn dropbox_conditional_upload(
     app_data_dir: &Path,
     secret: &mut DropboxSecret,
@@ -718,8 +708,6 @@ fn dropbox_conditional_upload(
         .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
     let mode = match expected_revision {
         Some(rev) => serde_json::json!({ ".tag": "update", "rev": rev }),
-        // `mode: add` fails with HTTP 409 if the file already exists — this is
-        // the conditional-create semantics (first publication / migration).
         None => serde_json::json!({ ".tag": "add" }),
     };
     let response = dropbox_authorized_request(app_data_dir, secret, Method::POST, url)
@@ -742,7 +730,6 @@ fn dropbox_conditional_upload(
 
     if !response.status().is_success() {
         let status = response.status();
-        // HTTP 409 is Dropbox's conflict signal for mode=add/update mismatches.
         if status == StatusCode::CONFLICT {
             return Err(RemoteError::new(
                 RemoteErrorKind::RemoteConflict,
@@ -764,28 +751,8 @@ fn dropbox_conditional_upload(
     Ok(metadata)
 }
 
-// ---------------------------------------------------------------------------
-// Resumable upload session (PR#5)
-//
-// Dropbox supports multi-part uploads via the upload_session endpoints:
-//   start  → returns a session_id
-//   append → appends chunks with a cursor {session_id, offset}
-//   finish → final chunk + commit metadata (path, mode, etc.)
-//
-// The session_id and committed offset are persisted in
-// `remote_transfer_parts` so a restart can resume from the verified offset
-// (append_v2 with the correct cursor offset). A changed provider_revision
-// invalidates the partial transfer — a new session is started.
-//
-// See: https://www.dropbox.com/developers/documentation/http/documentation
-// ---------------------------------------------------------------------------
-
-/// Chunk size for Dropbox resumable uploads. Dropbox recommends chunks between
-/// 150 KB and 150 MB; we use 8 MiB to balance memory and round-trip count.
 const DROPBOX_RESUMABLE_CHUNK_SIZE: usize = 8 * 1024 * 1024;
 
-/// Start a Dropbox upload session. Returns the `session_id` to persist in
-/// `remote_transfer_parts.provider_session_id`.
 pub(crate) fn dropbox_upload_session_start(
     app_data_dir: &Path,
     secret: &mut DropboxSecret,
@@ -855,8 +822,6 @@ pub(crate) fn dropbox_upload_session_append(
     Ok(())
 }
 
-/// Finish a Dropbox upload session: upload the final chunk and commit the
-/// file at `path` with `mode: overwrite`. Returns the committed metadata.
 pub(crate) fn dropbox_upload_session_finish(
     app_data_dir: &Path,
     secret: &mut DropboxSecret,
@@ -900,13 +865,6 @@ pub(crate) fn dropbox_upload_session_finish(
     })
 }
 
-/// Upload `bytes` to `commit_path` using a resumable upload session. Splits
-/// the data into chunks, persists progress via `progress` after each chunk,
-/// and returns the committed metadata.
-///
-/// `existing_session` is `(session_id, offset)` from a prior interrupted run
-/// (read from `remote_transfer_parts`). When present, the upload resumes from
-/// the verified offset instead of starting a new session.
 pub(crate) fn dropbox_resumable_upload(
     app_data_dir: &Path,
     secret: &mut DropboxSecret,
@@ -924,7 +882,6 @@ pub(crate) fn dropbox_resumable_upload(
             (sid.to_owned(), off)
         }
         _ => {
-            // Start a new session with the first chunk.
             let first_chunk_end = (DROPBOX_RESUMABLE_CHUNK_SIZE).min(bytes.len());
             let session_id =
                 dropbox_upload_session_start(app_data_dir, secret, &bytes[..first_chunk_end])?;
@@ -934,13 +891,11 @@ pub(crate) fn dropbox_resumable_upload(
         }
     };
 
-    // Append intermediate chunks.
     while offset < total {
         let chunk_end = (offset as usize + DROPBOX_RESUMABLE_CHUNK_SIZE).min(bytes.len());
         let chunk = &bytes[offset as usize..chunk_end];
 
         if chunk_end == bytes.len() {
-            // Final chunk — finish the session and commit.
             let metadata = dropbox_upload_session_finish(
                 app_data_dir,
                 secret,
@@ -975,8 +930,6 @@ pub(crate) fn dropbox_download_file(
 
     let url = dropbox_content_url("/2/files/download")?;
     let path_owned = path.to_owned();
-    // Rebuild the authorized request on every attempt so the shared network
-    // policy can retry transport failures and rate-limits.
     let mut response = send_with_retry("download Dropbox file", || {
         let builder = dropbox_authorized_request(app_data_dir, secret, Method::POST, url.clone())
             .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?
@@ -1001,10 +954,6 @@ pub(crate) fn dropbox_download_file(
             )))
         })?;
     }
-    // Stream to disk as bytes arrive rather than buffering the whole file with
-    // `response.bytes()`, so the client timeout acts as a per-read idle timeout
-    // and slow links complete instead of failing at a single total-body
-    // deadline (issue #205).
     let mut file = fs::File::create(destination).map_err(|error| {
         CommandError::from(LibraryError::Internal(format!(
             "failed to create {}: {error}",
@@ -1122,9 +1071,6 @@ impl super::bootstrap::RemoteBootstrapStorage for DropboxBootstrapStorage<'_> {
         use super::bootstrap::CommittedDatabaseProbe;
         use crate::remote::manifest::{RepositoryManifest, MANIFEST_PATH};
 
-        // Prefer the repository manifest: the generation-specific database is
-        // the committed source of truth once a repository has been published
-        // through the transactional protocol.
         let manifest_remote_path = dropbox_join_path(self.remote_root_path, MANIFEST_PATH);
         if let Some(metadata) =
             dropbox_get_metadata(self.app_data_dir, &mut self.secret, &manifest_remote_path)?
@@ -1275,11 +1221,6 @@ impl RemoteProvider for DropboxProvider<'_> {
     fn capabilities(&self) -> RemoteProviderCapabilities {
         RemoteProviderCapabilities {
             conditional_replace: true,
-            // Dropbox upload_session (start/append/finish) supports resumable
-            // uploads with a persisted session_id + offset, and the content
-            // download endpoint honors the Range header. The trait methods
-            // `resumable_upload_bytes` and `download_range` are wired to the
-            // helper functions below, so we advertise both capabilities.
             resumable_upload: true,
             range_download: true,
             revision_metadata: true,
@@ -1376,7 +1317,6 @@ impl RemoteProvider for DropboxProvider<'_> {
                 let digest_ok = row.expected_digest.as_deref() == Some(expected_digest.as_str());
                 let size_ok = row.expected_size == Some(total as i64);
                 if !digest_ok || !size_ok {
-                    // Invalidate the mismatched session before starting fresh.
                     let _ = delete_transfer_parts(control_db, operation_id);
                     return None;
                 }
@@ -1446,8 +1386,6 @@ impl RemoteProvider for DropboxProvider<'_> {
         let remote_path = dropbox_join_path(root_path, relative_path);
         let url = dropbox_content_url("/2/files/download")
             .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
-        // Dropbox's content download endpoint honors a standard HTTP Range
-        // header: bytes=<start>-<end> (inclusive end).
         let range_value = format!("bytes={}-{}", offset, offset + length - 1);
         let mut response =
             dropbox_authorized_request(self.app_data_dir, &mut secret, Method::POST, url)

@@ -1,9 +1,5 @@
 //! Machine-readable remote error kinds.
 //!
-//! Provider HTTP responses and IO failures are mapped to a small, stable set
-//! of error kinds so the operation executor, recovery, and UI can branch on
-//! the cause without parsing free-text messages.
-//!
 //! ## Sanitization
 //!
 //! Error details NEVER include OAuth tokens, passwords, request URLs containing
@@ -22,37 +18,21 @@ use crate::commands::error::CommandError;
 /// to last-writer-wins.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct RemoteProviderCapabilities {
-    /// The provider can enforce compare-and-swap on a single object via
-    /// `conditional_replace` (ETag/If-Match, Dropbox rev, etc.).
     pub conditional_replace: bool,
-    /// The provider supports resumable uploads with offset query/resume.
-    /// PR#5 fills this `true` where supported; PR#4 leaves it `false`.
     // used by PR#5: resumable uploads
     pub resumable_upload: bool,
-    /// The provider supports HTTP Range downloads.
     pub range_download: bool,
-    /// The provider exposes stable revision metadata (ETag / rev /
-    /// headRevisionId) usable for change detection.
     pub revision_metadata: bool,
     /// The provider can move objects server-side (rename without re-upload).
     pub server_side_move: bool,
 }
 
-/// Metadata for a remote object returned by `stat`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RemoteObjectMetadata {
-    /// Byte length of the object, when known.
     pub size_bytes: Option<u64>,
-    /// Provider-specific revision token (ETag, Dropbox rev, Google Drive
-    /// headRevisionId). Used as the `expected_revision` for
-    /// `conditional_replace`.
     pub revision: Option<String>,
 }
 
-/// Machine-readable error kind for remote operations.
-///
-/// Maps to the `error_code` column in `remote_operations` via
-/// [`RemoteErrorKind::code`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RemoteErrorKind {
     /// A compare-and-swap precondition failed — another device committed a
@@ -63,21 +43,12 @@ pub(crate) enum RemoteErrorKind {
     /// replacement) for a safe write. Fail closed rather than downgrading to
     /// last-writer-wins.
     ProviderCapabilityUnavailable,
-    /// A downloaded or uploaded object failed an integrity check (size, digest,
-    /// or SQLite integrity).
     RemoteIntegrityFailed,
-    /// The network is unreachable or the request timed out.
     NetworkUnavailable,
-    /// The provider rate-limited the request (HTTP 429 or retry-after).
     RateLimited,
-    /// OAuth credentials expired or were revoked. The repository should
-    /// transition to `ReauthRequired`.
     AuthenticationExpired,
-    /// The authenticated user lacks permission for the operation.
     PermissionDenied,
-    /// The local disk is full.
     DiskFull,
-    /// The operation was cancelled by the user or a coalescing decision.
     OperationCancelled,
     /// The playback request that initiated this operation is no longer
     /// current — the user skipped to a different song (or a newer request
@@ -90,8 +61,6 @@ pub(crate) enum RemoteErrorKind {
 }
 
 impl RemoteErrorKind {
-    /// Stable, machine-readable code string persisted to
-    /// `remote_operations.error_code` and emitted to IPC consumers.
     pub(crate) fn code(self) -> &'static str {
         match self {
             RemoteErrorKind::RemoteConflict => "remote_conflict",
@@ -144,9 +113,6 @@ pub(crate) struct RemoteError {
     pub code: String,
     pub detail: Option<String>,
     pub retryable: bool,
-    /// Optional `Retry-After` delay parsed from the response. Honored by the
-    /// shared retry driver when present and bounded; `None` means the driver
-    /// falls back to full-jitter backoff.
     // used by PR#5: shared network retry policy
     pub retry_after: Option<std::time::Duration>,
 }
@@ -172,14 +138,10 @@ impl RemoteError {
         }
     }
 
-    /// Serialize to the `(error_code, error_detail)` pair stored in
-    /// `remote_operations`.
     pub(crate) fn to_db_columns(&self) -> (Option<String>, Option<String>) {
         (Some(self.code.clone()), self.detail.clone())
     }
 
-    /// Reconstruct from the stored columns. Returns `None` when the code is
-    /// absent or unrecognized (e.g. a row written by an older version).
     #[allow(dead_code)]
     pub(crate) fn from_db_columns(
         error_code: Option<&str>,
@@ -196,7 +158,6 @@ impl RemoteError {
         })
     }
 
-    /// Convert to a `CommandError` for the IPC/command layer.
     pub(crate) fn to_command_error(&self) -> CommandError {
         let message = match &self.detail {
             Some(detail) => format!("{}: {detail}", self.kind.code()),
@@ -229,18 +190,6 @@ impl From<RemoteError> for CommandError {
     }
 }
 
-/// Map an HTTP status code to a `RemoteErrorKind`. Used by provider
-/// implementations when a request fails with a known status.
-///
-/// - 401 → AuthenticationExpired
-/// - 403 → PermissionDenied
-/// - 404 → PermissionDenied (treat missing-as-forbidden for safe writes; the
-///   caller distinguishes "absent" via `stat` returning `None`)
-/// - 408 → NetworkUnavailable (request timeout)
-/// - 409, 412 → RemoteConflict (precondition failed)
-/// - 425 → NetworkUnavailable (too early)
-/// - 429 → RateLimited
-/// - 5xx → NetworkUnavailable (server error, retryable)
 pub(crate) fn kind_from_http_status(status: reqwest::StatusCode) -> RemoteErrorKind {
     match status.as_u16() {
         401 => RemoteErrorKind::AuthenticationExpired,
@@ -261,9 +210,6 @@ pub(crate) fn kind_from_http_status(status: reqwest::StatusCode) -> RemoteErrorK
 /// kind, but reported as NetworkUnavailable so the operation retries).
 pub(crate) fn kind_from_io_error(error: &std::io::Error) -> RemoteErrorKind {
     if error.kind() == std::io::ErrorKind::Other {
-        // `ErrorKind::Other` may wrap ENOSPC on some platforms via
-        // `std::io::Error::other`; check the raw OS error number for ENOSPC
-        // (28 on most Unix systems).
         if error.raw_os_error() == Some(28) {
             return RemoteErrorKind::DiskFull;
         }
@@ -278,19 +224,12 @@ pub(crate) fn remote_error_from_status(status: reqwest::StatusCode, context: &st
     RemoteError::new(kind, format!("{context} failed with HTTP {status}"))
 }
 
-/// Validate a `Content-Range` header against the requested byte range.
-///
-/// The header format is `bytes <start>-<end>/<total>` (or `bytes */<total>`
-/// for an unsatisfied range). This verifies that `start` and `end` match
-/// the requested `offset` and `offset + length - 1`.
 pub(crate) fn verify_content_range(header: &str, offset: u64, length: u64) -> RemoteResult<()> {
     let expected_start = offset;
     let expected_end = offset + length - 1;
 
-    // Strip the "bytes " prefix.
     let rest = header.strip_prefix("bytes").unwrap_or(header).trim();
 
-    // Handle unsatisfied range: "*/<total>"
     if rest.starts_with('*') {
         return Err(RemoteError::new(
             RemoteErrorKind::RemoteIntegrityFailed,
@@ -301,7 +240,6 @@ pub(crate) fn verify_content_range(header: &str, offset: u64, length: u64) -> Re
         ));
     }
 
-    // Parse "<start>-<end>/<total>"
     let (range_part, _total_part) = rest.split_once('/').unwrap_or((rest, ""));
     let (start_str, end_str) = range_part.split_once('-').ok_or_else(|| {
         RemoteError::new(
@@ -334,7 +272,6 @@ pub(crate) fn verify_content_range(header: &str, offset: u64, length: u64) -> Re
     Ok(())
 }
 
-/// Result alias for operations that produce a typed `RemoteError`.
 pub(crate) type RemoteResult<T> = std::result::Result<T, RemoteError>;
 
 #[cfg(test)]

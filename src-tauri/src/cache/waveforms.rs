@@ -1,8 +1,6 @@
 use rusqlite::{params, Connection};
 use std::sync::Arc;
 
-/// Effective bucket count bounds enforced by the migration CHECK constraint
-/// and every public API in this module.
 pub const MIN_BUCKETS: usize = 24;
 pub const MAX_BUCKETS: usize = 1000;
 
@@ -112,7 +110,6 @@ fn decode_peaks(blob: &[u8], buckets: usize) -> Option<Vec<f32>> {
     Some(peaks)
 }
 
-/// Delete all cached waveforms for a song (used by tests and integrity tools).
 pub fn delete_waveforms_for_song(
     connection: &Connection,
     song_hash: &str,
@@ -231,7 +228,6 @@ mod tests {
     fn invalid_blob_length_is_deleted_and_misses() {
         let conn = test_db();
         insert_song(&conn, "hash-1");
-        // Insert a BLOB that is too short for the declared bucket count.
         conn.execute(
             "INSERT INTO waveforms (song_hash, buckets, peaks) VALUES (?1, ?2, ?3)",
             params!["hash-1", 200_i64, vec![0u8; 100]],
@@ -241,7 +237,6 @@ mod tests {
         let first = get_cached_waveform(&conn, "hash-1", 200).expect("get");
         assert!(first.is_none(), "invalid row should miss");
 
-        // The invalid row should have been deleted.
         let remaining: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM waveforms WHERE song_hash = ?1 AND buckets = ?2",
@@ -256,7 +251,6 @@ mod tests {
     fn non_finite_values_in_blob_are_rejected() {
         let conn = test_db();
         insert_song(&conn, "hash-1");
-        // Manually craft a BLOB with a NaN.
         let mut blob = Vec::new();
         for _ in 0..199 {
             blob.extend_from_slice(&0.5f32.to_le_bytes());
@@ -295,11 +289,9 @@ mod tests {
     fn out_of_range_bucket_count_returns_none() {
         let conn = test_db();
         insert_song(&conn, "hash-1");
-        // Below minimum.
         assert!(get_cached_waveform(&conn, "hash-1", MIN_BUCKETS - 1)
             .expect("get")
             .is_none());
-        // Above maximum.
         assert!(get_cached_waveform(&conn, "hash-1", MAX_BUCKETS + 1)
             .expect("get")
             .is_none());

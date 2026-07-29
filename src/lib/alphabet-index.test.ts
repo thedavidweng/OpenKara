@@ -72,7 +72,6 @@ describe("bucketForSortKey", () => {
   });
 
   test("normalizes to NFC before segmenting", () => {
-    // É as a single composed character (NFC) vs decomposed (NFD)
     const nfc = "Élan".normalize("NFC");
     const nfd = "Élan".normalize("NFD");
     expect(bucketForSortKey(nfc)).toBe(bucketForSortKey(nfd));

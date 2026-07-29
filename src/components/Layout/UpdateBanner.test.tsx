@@ -72,7 +72,6 @@ describe("UpdateBanner", () => {
   });
 
   test("stays silent and never checks on a non-updatable install", async () => {
-    // e.g. a Linux .deb/Flatpak: self_update_supported resolves false.
     mockInvoke.mockResolvedValue(false);
     mockCheck.mockResolvedValue(updateAvailable());
     const { container } = render(<UpdateBanner />);

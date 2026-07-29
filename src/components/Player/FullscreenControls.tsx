@@ -151,8 +151,6 @@ export function FullscreenControls() {
     };
   }, []);
 
-  // Hide the OS cursor along with the controls so it does not linger as a
-  // bright dot on a projected audience screen.
   useEffect(() => {
     const previousCursor = document.body.style.cursor;
     document.body.style.cursor = idle ? "none" : "";

@@ -1,8 +1,8 @@
 interface SpringConfig {
-  stiffness: number; // higher = snappier
-  damping: number; // higher = less bounce
+  stiffness: number;
+  damping: number;
   mass: number;
-  precision: number; // settle threshold
+  precision: number;
 }
 
 const DEFAULT_CONFIG: SpringConfig = {
@@ -44,7 +44,6 @@ export class Spring {
     const dampingForce = -damping * this.velocity;
     const acceleration = (springForce + dampingForce) / mass;
 
-    // Semi-implicit Euler integration
     this.velocity += acceleration * dt;
     this.position += this.velocity * dt;
 

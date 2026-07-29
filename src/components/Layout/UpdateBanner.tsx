@@ -25,16 +25,13 @@ export function UpdateBanner() {
     let cancelled = false;
     void (async () => {
       try {
-        // Non-updatable installs (Linux .deb/Flatpak, dev builds) stay silent.
         if (!(await invoke<boolean>("self_update_supported"))) return;
         const update = await check();
         if (cancelled || !update) return;
         updateRef.current = update;
         setVersion(update.version);
         setPhase("available");
-      } catch {
-        // Silent by design: no network, dev build, or non-updatable install.
-      }
+      } catch {}
     })();
     return () => {
       cancelled = true;

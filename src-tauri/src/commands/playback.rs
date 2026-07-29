@@ -15,9 +15,6 @@ use tauri::{AppHandle, State};
 
 pub use crate::services::playback::play_song_from_library;
 
-/// Default bucket count when the frontend does not specify one. Chosen to
-/// match the spec's default and to roughly match a typical seek rail width
-/// divided by 3px per bucket.
 const DEFAULT_WAVEFORM_BUCKETS: usize = 200;
 
 async fn send_and_await(
@@ -211,8 +208,6 @@ pub async fn set_preload_candidate(
         return Ok(());
     };
 
-    // spawn_preload_next spawns its own std::thread and returns immediately,
-    // so we can call it directly without spawn_blocking.
     services::next_track::spawn_preload_next(
         inner,
         app_data_dir,
@@ -257,10 +252,6 @@ pub async fn get_waveform(
 
     let library_root = state.library_root()?;
 
-    // 3. Open the library DB in a short blocking task and fetch the song.
-    //    This is separate from the singleflight computation so an unknown
-    //    song or a remote source returns immediately without entering the
-    //    singleflight map.
     let song_lookup = {
         let library_root = library_root.clone();
         let hash = hash.clone();
@@ -324,7 +315,6 @@ pub async fn get_waveform(
                 Ok(Err(_)) | Err(_) => Err(SANITIZED_WAVEFORM_ERROR.to_owned()),
             };
             for waiter in waiters {
-                // A closed receiver (caller cancelled) is silently ignored.
                 let _ = waiter.send(payload.clone());
             }
         });

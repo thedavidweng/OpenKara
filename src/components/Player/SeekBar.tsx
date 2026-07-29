@@ -182,7 +182,6 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
       return;
     }
 
-    // The bar width is derived from the bucket count and the rail width
     const barWidth = cssWidth / peaks.length;
     const midY = cssHeight / 2;
     const maxBarHeight = cssHeight / 2;
@@ -191,7 +190,6 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
       const peak = peaks[i];
       const barHeight = Math.max(1, peak * maxBarHeight);
       const x = i * barWidth;
-      // Centered vertically — symmetrical waveform.
       ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
       ctx.fillRect(
         x,
@@ -324,7 +322,6 @@ export function SeekBar({ density = "relaxed" }: SeekBarProps = {}) {
           }`}
           style={{ width: `${displayPercent}%` }}
         >
-          {/* Playhead dot — visible on hover and during drag */}
           <div
             className={`absolute -right-1.5 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-[var(--color-control-primary)] shadow-sm transition-opacity ${
               isDragging ? "opacity-100" : "opacity-0 group-hover:opacity-100"

@@ -75,13 +75,6 @@ fn sync_bound_remote<R: tauri::Runtime>(
         }
     }
 
-    // Collect songs to delete from the remote mirror. DB deletes are wrapped
-    // in a transaction so a mid-loop failure rolls back all prior DB deletes,
-    // keeping the remote database consistent. Cloud file deletes happen after
-    // the transaction commits — if they fail, the result is orphaned cloud
-    // files (wasted storage) rather than DB entries pointing at missing files.
-    // We also pre-collect which songs have stem entries so we can delete cloud
-    // stem files in phase 2 (the DB row will be gone by then).
     let songs_to_delete: Vec<&Song> = remote_songs
         .iter()
         .filter(|remote_song| match desired_kinds.get(&remote_song.hash) {
@@ -90,9 +83,6 @@ fn sync_bound_remote<R: tauri::Runtime>(
         })
         .collect();
 
-    // Pre-collect which songs have stem cache entries (before the transaction
-    // deletes the DB rows). Used in phase 2 to decide whether to delete cloud
-    // stem directories.
     let mut has_stem_entry: std::collections::HashSet<String> = std::collections::HashSet::new();
     // Pre-collect artwork derivative paths (before the transaction deletes the
     // DB rows) so phase 2 can delete the on-disk derivative files. Two songs
@@ -145,8 +135,6 @@ fn sync_bound_remote<R: tauri::Runtime>(
             let _ =
                 remote_delete_relative_path(&state.shell.app_data_dir, &remote_library, cdg_path);
         }
-        // Delete cloud stems if the song had a stem entry (pre-collected
-        // before the transaction deleted the DB row).
         if has_stem_entry.contains(&song.hash) {
             let _ = remote_delete_relative_path(
                 &state.shell.app_data_dir,
@@ -187,21 +175,12 @@ fn sync_bound_remote<R: tauri::Runtime>(
         .collect();
     maybe_publish_songs_to_bound_remote(state, app_handle, &desired_song_ids, None)?;
 
-    // Commit the remote database via the transactional manifest executor.
-    // The mirror sync has already updated the remote working-copy DB with
-    // the desired song set; the executor handles the candidate DB copy,
-    // integrity check, manifest CAS, and verification.
     let remote_library =
         load_registered_remote_library(&state.shell.app_data_dir, remote_library.id())?;
     commit_mirror_via_executor(state, &remote_library)?;
     Ok(())
 }
 
-/// Commit the mirror sync via the transactional manifest executor.
-///
-/// Similar to `commit_via_executor` in publish.rs but for a mirror operation
-/// (whole-library re-sync). Creates a `mirror-<library-id>-<timestamp>`
-/// operation row and drives it through the executor.
 fn commit_mirror_via_executor(
     state: &AppState,
     remote_library: &RegisteredLibrary,
@@ -219,7 +198,6 @@ fn commit_mirror_via_executor(
     let library_id = remote_library.id();
     let now = crate::remote::types::current_unix_time_ms();
 
-    // Resolve or generate stable repository_id and writer_id.
     let (repository_id, writer_id) = {
         let conn = state.remote.control_db.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
@@ -268,7 +246,6 @@ fn commit_mirror_via_executor(
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
 
-        // Check for an existing pending mirror operation.
         if get_operation(&conn, &operation_id)?.is_none() {
             let repo_state = get_repository_state(&conn, library_id)?;
             let expected_generation = repo_state

@@ -51,7 +51,6 @@ const monitors = [
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Restore default implementation (overridden by some tests)
   mockGetCurrentWebviewWindow.mockReturnValue({
     label: "fullscreen-player",
     close: mockCloseCurrent,
@@ -93,7 +92,6 @@ describe("closeFullscreenPlayer", () => {
     });
     mockGetByLabel.mockResolvedValue(null);
 
-    // Should not throw
     await closeFullscreenPlayer();
 
     expect(mockCloseCurrent).not.toHaveBeenCalled();
@@ -106,7 +104,6 @@ describe("closeFullscreenPlayer", () => {
     });
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    // Should not throw
     await closeFullscreenPlayer();
 
     expect(consoleSpy).toHaveBeenCalledWith(

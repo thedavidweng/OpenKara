@@ -361,8 +361,6 @@ describe("FullscreenControls auto-hide", () => {
 
     expect(footer.getAttribute("data-idle")).toBe("true");
     expect(footer.className).toContain("opacity-0");
-    // The cursor hides with the controls so it cannot linger as a bright dot
-    // on a projected audience screen.
     expect(document.body.style.cursor).toBe("none");
 
     act(() => {

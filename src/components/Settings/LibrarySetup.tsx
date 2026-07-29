@@ -339,11 +339,6 @@ export function LibrarySetup({ onComplete }: LibrarySetupProps) {
                   />
                 </div>
               )}
-              {/* Height follows the window instead of a fixed 22rem, which
-                  was shorter than the viewport on every desktop size and left
-                  the list looking cut off with empty space below it. The bottom
-                  fade is the scroll affordance: without it the clipped row reads
-                  as a broken layout rather than "more below". */}
               <div className="max-h-[60vh] space-y-3 overflow-y-auto [mask-image:linear-gradient(to_bottom,#000_calc(100%-2.5rem),transparent)]">
                 {SUPPORTED_LANGUAGES.filter((lang) => {
                   const q = languageFilter.trim().toLowerCase();

@@ -73,7 +73,6 @@ describe("ModelBootstrapBanner", () => {
     render(<ModelBootstrapBanner />);
 
     expect(screen.getByText("bootstrap.downloadFailed")).toBeTruthy();
-    // Copy no longer asserts "separation unavailable" when a retry path exists.
     expect(screen.queryByText("bootstrap.separationUnavailable")).toBeNull();
     expect(screen.getByText("bootstrap.downloadFailedHint")).toBeTruthy();
     expect(

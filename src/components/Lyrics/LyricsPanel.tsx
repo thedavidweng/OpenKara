@@ -383,10 +383,6 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
               : undefined
           }
         >
-          {/* Audience windows own the whole screen: a half-viewport spacer at
-              each end lets the first and last lines center like every other
-              line, instead of clamping them against the viewport edge. Paged
-              plain text must fill the viewport exactly, so it gets neither. */}
           {isAudience && !shouldRenderAudiencePlainTextPages ? (
             <div className="h-[50vh] w-full shrink-0" />
           ) : null}
@@ -427,7 +423,6 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
               </div>
             );
           })}
-          {/* Keep the last lyric line readable above floating controls */}
           {shouldRenderAudiencePlainTextPages ? null : (
             <div
               className={`w-full shrink-0 ${isAudience ? "h-[50vh]" : "h-[30vh]"}`}
@@ -482,8 +477,6 @@ export function LyricsPanel({ presentation = "standard" }: LyricsPanelProps) {
       ) : null}
       {!isAudience && !isPlainText ? (
         <div className="pointer-events-none absolute inset-x-0 top-4 z-10 flex justify-center px-6">
-          {/* Top-center keeps Follow clear of the bottom offset/font controls
-              and the top-right romanize/edit cluster. Same reveal mechanics. */}
           <Tooltip label={t("lyrics.followPlaying")}>
             <button
               type="button"

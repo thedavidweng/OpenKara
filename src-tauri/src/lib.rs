@@ -44,9 +44,6 @@ pub fn derive_startup_model_bootstrap(
     active_variant: config::ModelVariant,
     expected_sha256: &str,
 ) -> anyhow::Result<StartupModelBootstrapPlan> {
-    // Startup readiness must mean "the active variant has a verified model",
-    // not merely "some file exists at the managed path". That distinction is
-    // what prevents re-downloading already-installed models on every launch.
     let descriptor = separator::bootstrap::descriptor_for(active_variant);
     let managed_model_path = separator::bootstrap::managed_model_path_for(app_data_dir, descriptor);
     let resolution = separator::bootstrap::resolve_model_installation(

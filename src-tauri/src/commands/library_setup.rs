@@ -132,15 +132,6 @@ fn store_active_library(
     Ok(())
 }
 
-/// Clear every in-memory state holder that is scoped to the active library.
-///
-/// Called when the active library changes (`activate_library`) or is removed
-/// with no successor (`remove_library`).
-///
-/// Ordering: clear playback first (stop the current track), then CDG (which
-/// is bound to the current track), then remote upload statuses (which are
-/// per-library). A failed DB transaction never reaches this function — it
-/// is only called after the config change is persisted.
 fn clear_library_scoped_runtime_state(state: &State<'_, AppState>) -> CommandResult<()> {
     {
         let mut playback = state

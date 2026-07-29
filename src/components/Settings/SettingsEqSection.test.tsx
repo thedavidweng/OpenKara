@@ -103,9 +103,7 @@ describe("SettingsEqSection", () => {
     expect(markup).toContain("Mid");
     expect(markup).toContain("High mid");
     expect(markup).toContain("Treble");
-    // Hz captions remain as the secondary label.
     expect(markup).toContain("60 Hz");
-    // dB scale ruler anchors the -12..+12 range.
     expect(markup).toContain("-12 dB");
     expect(markup).toContain("+12 dB");
   });
@@ -114,7 +112,6 @@ describe("SettingsEqSection", () => {
     const value = createSettingsOverlayTestContextValue({
       state: {
         eqEnabled: true,
-        // Matches the Bass Boost preset exactly.
         eqGainsDb: [6, 3, 0, 0, 1],
       },
     });
@@ -129,7 +126,6 @@ describe("SettingsEqSection", () => {
     expect(bassBoost.getAttribute("aria-pressed")).toBe("true");
     const flat = screen.getByRole("button", { name: "Flat" });
     expect(flat.getAttribute("aria-pressed")).toBe("false");
-    // A matching preset means no "Custom" indicator.
     expect(screen.queryByText("Custom")).toBeNull();
   });
 

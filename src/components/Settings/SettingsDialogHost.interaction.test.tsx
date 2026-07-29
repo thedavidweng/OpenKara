@@ -68,12 +68,10 @@ describe("SettingsDialogHost interactions", () => {
     container = rendered.container;
     root = rendered.root;
 
-    // ConfirmationDialog portals to document.body.
     const confirmButton = document.body.querySelector(
       "button:not(:first-of-type)",
     ) as HTMLButtonElement;
     expect(confirmButton).not.toBeNull();
-    // The confirm button is the second button (after cancel).
     const buttons = document.body.querySelectorAll("button");
     const confirmBtn = buttons[buttons.length - 1] as HTMLButtonElement;
 

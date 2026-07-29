@@ -33,11 +33,6 @@ function focusableElements(container: HTMLElement): HTMLElement[] {
   );
 }
 
-/**
- * Gives a modal dialog the keyboard contract that aria-modal promises:
- * focus starts inside it, Tab stays inside it, Escape dismisses only the
- * topmost dialog, and closing returns focus to the invoking control.
- */
 export function useModalDialog({
   dialogRef,
   initialFocusRef,

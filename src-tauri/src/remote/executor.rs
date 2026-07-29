@@ -52,22 +52,15 @@ use std::{
 };
 use uuid::Uuid;
 
-/// Context required to execute a publish operation. All dependencies are
-/// injected so tests can substitute fakes.
 pub(crate) struct PublishContext<'a> {
     pub control_db: &'a Connection,
     pub provider: &'a dyn RemoteProvider,
-    /// Working-copy root of the remote library (where `openkara.db` lives).
     pub working_copy_root: &'a Path,
     pub library_id: &'a str,
-    /// Stable installation UUID used as `writer_id` in the manifest.
     pub writer_id: &'a str,
-    /// Stable repository UUID used as `repository_id` in the manifest. For a
-    /// first publication this is generated and persisted by the caller.
     pub repository_id: &'a str,
 }
 
-/// Outcome of a publish execution, for inspection by callers and tests.
 #[derive(Debug, Clone)]
 pub(crate) struct PublishOutcome {
     #[allow(dead_code)]
@@ -124,7 +117,6 @@ fn run_publish_protocol(
 ) -> Result<PublishOutcome, RemoteError> {
     let now = current_unix_time_ms();
 
-    // --- Step 1: Read and validate the current manifest + provider revision ---
     transition_state(
         ctx,
         op,
@@ -164,7 +156,6 @@ fn run_publish_protocol(
         ));
     }
 
-    // --- Step 2: Require expected_generation matches ---
     let expected_generation = op.expected_generation.unwrap_or(0);
     let current_generation = current_manifest.as_ref().map(|m| m.generation).unwrap_or(0);
     let target_generation = expected_generation + 1;
@@ -198,7 +189,6 @@ fn run_publish_protocol(
                 }
             }
         }
-        // The remote advanced independently — conflict.
         return Err(RemoteError::new(
             RemoteErrorKind::RemoteConflict,
             format!(
@@ -244,11 +234,6 @@ fn run_publish_protocol(
         None
     };
 
-    // --- Steps 5-6: Freeze an immutable candidate or resume the exact bytes ---
-    //
-    // Once identity is persisted, missing or mismatched bytes are an integrity
-    // failure. Rebuilding from the current working DB would silently absorb
-    // later local mutations into this older operation.
     transition_state(
         ctx,
         op,
@@ -399,7 +384,6 @@ fn run_publish_protocol(
         (relative, path, digest, size, asset_fingerprint, updated)
     };
 
-    // --- Step 7: Upload candidate to an operation-scoped generation object ---
     let db_remote_path = database_path_for_operation(target_generation, &op.operation_id);
     let candidate_bytes = std::fs::read(&candidate_path).map_err(|e| {
         RemoteError::new(
@@ -441,7 +425,6 @@ fn run_publish_protocol(
         "candidate_uploaded",
     )?;
 
-    // --- Step 8: Stat-verify the candidate database metadata ---
     let candidate_meta = ctx
         .provider
         .stat(&db_remote_path)
@@ -478,7 +461,6 @@ fn run_publish_protocol(
         ));
     }
 
-    // --- Step 9: Build the next manifest ---
     let manifest = RepositoryManifest {
         schema_version: CURRENT_SCHEMA_VERSION,
         repository_id: ctx.repository_id.to_owned(),
@@ -494,7 +476,6 @@ fn run_publish_protocol(
         .to_json()
         .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
 
-    // --- Step 10: Replace the manifest via conditional_replace (CAS) ---
     let committed_meta = ctx.provider.conditional_replace(
         crate::remote::manifest::MANIFEST_PATH,
         ConditionalSource::Bytes(manifest_json.into_bytes()),
@@ -503,7 +484,6 @@ fn run_publish_protocol(
     // A CAS failure is a conflict — do NOT retry as unconditional.
     // The RemoteError is propagated as-is via the `?` operator.
 
-    // --- Step 11: Re-read the manifest and verify ---
     transition_state(
         ctx,
         &op,
@@ -709,7 +689,6 @@ struct AssetPathRow {
 }
 
 impl AssetPathRow {
-    /// Yield every non-empty referenced path in a deterministic order.
     fn referenced_paths(&self) -> Vec<&str> {
         let mut out: Vec<&str> = Vec::new();
         for field in [
@@ -952,8 +931,6 @@ fn upload_candidate_database(
     const RESUMABLE_UPLOAD_THRESHOLD: u64 = 8 * 1024 * 1024;
     let caps = provider.capabilities();
     if caps.resumable_upload && expected_size >= RESUMABLE_UPLOAD_THRESHOLD {
-        // Persist digest on the transfer row before the upload so resume
-        // identity is content-bound even if the process dies mid-chunk.
         let now = current_unix_time_ms();
         let existing = crate::remote::control_db::list_transfer_parts(control_db, operation_id)
             .unwrap_or_default()
@@ -966,7 +943,6 @@ fn upload_candidate_database(
             let digest_ok = row.expected_digest.as_deref() == Some(expected_digest);
             let size_ok = row.expected_size == Some(expected_size as i64);
             if !digest_ok || !size_ok {
-                // Immutable identity changed — invalidate the old session.
                 let _ = crate::remote::control_db::delete_transfer_parts(control_db, operation_id);
             }
         } else {
@@ -999,9 +975,6 @@ fn upload_candidate_database(
     Ok(())
 }
 
-/// Download the just-uploaded generation database and verify its SHA-256
-/// matches the immutable candidate. Rejects hybrid objects produced by a
-/// mismatched resumable session.
 fn verify_remote_candidate_digest(
     provider: &dyn RemoteProvider,
     remote_relative_path: &str,
@@ -1104,8 +1077,6 @@ fn is_accepted_commit_for_operation(
     true
 }
 
-/// Transition the operation to a new state, persisting to the control DB and
-/// updating the payload percent/detail.
 fn transition_state(
     ctx: &PublishContext<'_>,
     op: &OperationRow,
@@ -1114,8 +1085,6 @@ fn transition_state(
     percent: u8,
     detail: &str,
 ) -> Result<(), RemoteError> {
-    // Preserve recovery fields (candidate identity, song_ids, protocol_step)
-    // while updating progress projection.
     let mut payload = OperationPayload::from_json(&op.payload_json).unwrap_or_default();
     payload.percent = percent;
     payload.detail = Some(detail.to_owned());
@@ -1185,7 +1154,6 @@ fn record_completed(
         .unchecked_transaction()
         .map_err(|e| database_error(format!("failed to begin completion transaction: {e}")))?;
 
-    // 1. Mark this operation completed.
     let mut updated = op.clone();
     updated.state = OperationState::Completed;
     updated.target_generation = Some(outcome.target_generation);
@@ -1195,7 +1163,6 @@ fn record_completed(
     updated.updated_at_ms = now;
     upsert_operation(&tx, &updated)?;
 
-    // 2. Remaining non-terminal publish intent for this library.
     let remaining: Vec<OperationRow> = list_operations_for_library(&tx, ctx.library_id)?
         .into_iter()
         .filter(|row| {
@@ -1205,7 +1172,6 @@ fn record_completed(
         })
         .collect();
 
-    // Prefer CAS-boundary survivor, else earliest created non-terminal publish.
     let next_active = {
         let mut cas: Vec<&OperationRow> = remaining
             .iter()
@@ -1244,7 +1210,6 @@ fn record_completed(
         (LocalState::Dirty, None)
     };
 
-    // 3. Repository row (same TX as operation completion).
     let repo_row = match get_repository_state(&tx, ctx.library_id)? {
         Some(mut row) => {
             row.committed_generation = outcome.target_generation;
@@ -1281,7 +1246,6 @@ fn record_completed(
     };
     upsert_repository_state(&tx, &repo_row)?;
 
-    // 4. Schedule deferred GC inside the same TX when possible.
     schedule_gc_on_conn(&tx, ctx.library_id, outcome.target_generation, now)?;
 
     tx.commit()
@@ -1299,8 +1263,6 @@ fn record_completed(
     Ok(())
 }
 
-/// Record a failure: map the error kind to the appropriate operation state
-/// and repository local_state.
 fn record_failure(
     ctx: &PublishContext<'_>,
     op: &OperationRow,
@@ -1317,7 +1279,6 @@ fn record_failure(
         | RemoteErrorKind::RemoteIntegrityFailed
         | RemoteErrorKind::DiskFull => (OperationState::Failed, LocalState::Dirty),
         RemoteErrorKind::NetworkUnavailable | RemoteErrorKind::RateLimited => {
-            // Retryable: keep the operation in retry_wait.
             (OperationState::RetryWait, LocalState::Publishing)
         }
         RemoteErrorKind::OperationCancelled => (OperationState::Cancelled, LocalState::Dirty),
@@ -1342,7 +1303,6 @@ fn record_failure(
     updated.updated_at_ms = now;
     upsert_operation(ctx.control_db, &updated)?;
 
-    // Update the repository state.
     let repo_row = match get_repository_state(ctx.control_db, ctx.library_id)? {
         Some(mut row) => {
             row.local_state = new_local_state;
@@ -1458,7 +1418,6 @@ pub(crate) fn execute_gc(
     // them (the manifest advanced at least two generations ago).
     let retain_floor = committed_generation.saturating_sub(1);
 
-    // Read the current manifest to confirm the committed generation.
     let manifest = read_manifest(provider)?;
     if let Some(ref m) = manifest {
         if m.generation < committed_generation {
@@ -1566,15 +1525,10 @@ pub(crate) fn execute_gc(
     Ok(())
 }
 
-/// Retry backoff for retryable errors (network/rate-limit).
 const RETRY_BACKOFF_MS: i64 = 30_000;
 
-/// Safety delay before retrying a GC operation after a transient delete
-/// failure. GC is low-priority background work, so the delay is longer
-/// than the publish retry backoff.
 const GC_RETRY_BACKOFF_MS: i64 = 60_000;
 
-/// Current wall-clock milliseconds.
 fn current_unix_time_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1582,24 +1536,13 @@ fn current_unix_time_ms() -> i64 {
         .as_millis() as i64
 }
 
-/// Generate a stable installation UUID for `writer_id`.
 pub(crate) fn generate_writer_id() -> String {
     Uuid::new_v4().to_string()
 }
 
-/// Generate a stable repository UUID for `repository_id`.
 pub(crate) fn generate_repository_id() -> String {
     Uuid::new_v4().to_string()
 }
-
-// ---------------------------------------------------------------------------
-// Conflict handling
-//
-// The executor is the single source of truth for conflict resolution logic.
-// `remote::sync::conflict` owns everything around it - locating the active
-// repository, pulling the winning remote database to a candidate path - so
-// these stay free of command-layer concerns.
-// ---------------------------------------------------------------------------
 
 /// Action: keep the local pending changes as a new generation after rebasing
 /// onto the winning remote generation.
@@ -1627,12 +1570,9 @@ pub(crate) fn conflict_keep_local_as_new_generation(
         ));
     }
 
-    // Read the winning remote manifest to get the new base generation.
     let remote_manifest = read_manifest(ctx.provider)?
         .ok_or_else(|| internal_error("no remote manifest found during conflict resolution"))?;
 
-    // Disjoint-song check: compare song hashes in the local working DB vs the
-    // conflict-candidate DB.
     let local_db_path = ctx.working_copy_root.join("openkara.db");
     let local_songs = song_hashes_in_db(&local_db_path)?;
     let remote_songs = song_hashes_in_db(conflict_candidate_db)?;
@@ -1645,7 +1585,7 @@ pub(crate) fn conflict_keep_local_as_new_generation(
         .filter(|s| !s.is_empty())
         .map(str::to_owned)
         .collect();
-    let _ = local_changed; // used for diagnostics below
+    let _ = local_changed;
 
     let remote_only: Vec<String> = remote_songs
         .iter()
@@ -1668,7 +1608,6 @@ pub(crate) fn conflict_keep_local_as_new_generation(
         .iter()
         .any(|s| remote_only.contains(s) || local_only.contains(s));
 
-    // Check repository-global settings: compare settings table content.
     let settings_match = settings_tables_match(&local_db_path, conflict_candidate_db)?;
 
     if overlap || !settings_match {
@@ -1678,8 +1617,6 @@ pub(crate) fn conflict_keep_local_as_new_generation(
         ));
     }
 
-    // Rebase: update the operation's expected_generation to the remote
-    // generation and re-run the publish protocol.
     let now = current_unix_time_ms();
     let mut updated = op.clone();
     updated.expected_generation = Some(remote_manifest.generation);
@@ -1689,12 +1626,9 @@ pub(crate) fn conflict_keep_local_as_new_generation(
     updated.updated_at_ms = now;
     upsert_operation(ctx.control_db, &updated)?;
 
-    // Re-execute the publish protocol with the new base.
     execute_publish(ctx, operation_id)
 }
 
-/// Action: discard the local pending operation and activate the verified
-/// remote database.
 pub(crate) fn conflict_use_remote(
     ctx: &PublishContext<'_>,
     operation_id: &str,
@@ -1711,15 +1645,11 @@ pub(crate) fn conflict_use_remote(
 
     let now = current_unix_time_ms();
 
-    // Mark the operation cancelled.
     let mut updated = op.clone();
     updated.state = OperationState::Cancelled;
     updated.updated_at_ms = now;
     upsert_operation(ctx.control_db, &updated)?;
 
-    // Activate the verified remote database: copy the conflict candidate over
-    // the working DB. The conflict candidate already passed integrity checks
-    // when it was pulled.
     let working_db = ctx.working_copy_root.join("openkara.db");
     std::fs::copy(conflict_candidate_db, &working_db)
         .map_err(|e| internal_error(format!("failed to activate remote database: {e}")))?;
@@ -1728,7 +1658,6 @@ pub(crate) fn conflict_use_remote(
     let remote_manifest = read_manifest(ctx.provider)?
         .ok_or_else(|| internal_error("no remote manifest found during conflict resolution"))?;
 
-    // Update repository state to Clean at the remote generation.
     let repo_row = match get_repository_state(ctx.control_db, ctx.library_id)? {
         Some(mut row) => {
             row.committed_generation = remote_manifest.generation;
@@ -1773,16 +1702,10 @@ pub(crate) fn pull_conflict_candidate(
             .map_err(|e| internal_error(format!("failed to create conflict candidate dir: {e}")))?;
     }
     provider.download_file(&manifest.database_path, destination)?;
-    // Verify integrity of the pulled candidate.
     verify_sqlite_integrity_pub(destination)?;
     Ok(manifest)
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/// Read the set of song hashes from a SQLite database's `songs` table.
 fn song_hashes_in_db(db_path: &Path) -> CommandResult<std::collections::HashSet<String>> {
     if !db_path.exists() {
         return Ok(std::collections::HashSet::new());
@@ -1799,21 +1722,17 @@ fn song_hashes_in_db(db_path: &Path) -> CommandResult<std::collections::HashSet<
     Ok(hashes)
 }
 
-/// Compare the `settings` table content between two databases. Returns true
-/// when the row counts and a hash of all rows match.
 fn settings_tables_match(local_db: &Path, remote_db: &Path) -> CommandResult<bool> {
     let local_hash = settings_table_hash(local_db)?;
     let remote_hash = settings_table_hash(remote_db)?;
     Ok(local_hash == remote_hash)
 }
 
-/// Compute a deterministic hash of the `settings` table rows (key + value).
 fn settings_table_hash(db_path: &Path) -> CommandResult<Option<String>> {
     if !db_path.exists() {
         return Ok(None);
     }
     let conn = open_readonly(db_path)?;
-    // Check if the settings table exists.
     let exists: bool = conn
         .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='settings' LIMIT 1;")
         .map_err(|e| internal_error(format!("settings check prepare failed: {e}")))?
@@ -1870,17 +1789,11 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
 
-    /// A fake provider backed by an in-memory map. Supports conditional_replace
-    /// with ETag-based CAS semantics.
     struct FakeProvider {
         files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
         revisions: Arc<Mutex<HashMap<String, String>>>,
-        /// When true, conditional_replace returns ProviderCapabilityUnavailable.
         no_cas: bool,
-        /// Working copy root for reading files during upload_file.
         working_copy_root: Option<PathBuf>,
-        /// Test hook: replace one remote asset immediately after a generation
-        /// database upload, simulating a race before manifest CAS.
         mutate_asset_on_candidate_upload: Option<(String, Vec<u8>, String)>,
     }
 
@@ -1970,7 +1883,6 @@ mod tests {
         }
 
         fn upload_file(&self, path: &str) -> CommandResult<()> {
-            // Read from the working copy root and store in the fake's map.
             if let Some(ref root) = self.working_copy_root {
                 let local_path = root.join(path);
                 if local_path.exists() {
@@ -1989,7 +1901,6 @@ mod tests {
                         .lock()
                         .unwrap()
                         .insert(path.to_owned(), rev.clone());
-                    // Store size for stat verification.
                     let _ = size;
                     if path.starts_with(".openkara/databases/") {
                         if let Some((asset_path, bytes, revision)) =
@@ -2028,7 +1939,6 @@ mod tests {
             let mut revisions = self.revisions.lock().unwrap();
             let current_rev = revisions.get(path).cloned();
 
-            // Check the precondition.
             match expected_revision {
                 Some(expected) => {
                     if current_rev.as_deref() != Some(expected) {
@@ -2042,7 +1952,6 @@ mod tests {
                     }
                 }
                 None => {
-                    // Conditional-create: fail if the object already exists.
                     if current_rev.is_some() {
                         return Err(RemoteError::new(
                             RemoteErrorKind::RemoteConflict,
@@ -2082,10 +1991,6 @@ mod tests {
         }
     }
 
-    /// Create a valid SQLite database at the given path with a `songs` table
-    /// that has the asset-path columns the verifier queries. Songs are inserted
-    /// with NULL paths so the verifier has nothing to check (matching a
-    /// freshly-bootstrapped repository with no published assets yet).
     fn make_valid_db(path: &Path) {
         let conn = Connection::open(path).unwrap();
         conn.execute_batch(
@@ -2111,15 +2016,12 @@ mod tests {
         .unwrap();
     }
 
-    /// Create a fresh control DB in a temp dir.
     fn fresh_control_db() -> (TempDir, Connection) {
         let dir = TempDir::new().unwrap();
         let conn = open_control_db(&dir.path().join("remote-state.db")).unwrap();
         (dir, conn)
     }
 
-    /// Create a PublishContext with the given control DB, provider, and a
-    /// temp working copy root containing a valid `openkara.db`.
     fn make_context<'a>(
         control_db: &'a Connection,
         provider: &'a dyn RemoteProvider,
@@ -2138,7 +2040,6 @@ mod tests {
         }
     }
 
-    /// Create a pending publish operation row.
     fn make_pending_op(conn: &Connection, library_id: &str, expected_gen: i64) -> String {
         let op_id = format!("publish-test-{}", expected_gen);
         let now = crate::remote::types::current_unix_time_ms();
@@ -2219,7 +2120,6 @@ mod tests {
 
         execute_publish(&ctx, &op_id).expect("publish should succeed");
 
-        // Verify the manifest was written.
         let manifest_bytes = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
         assert!(manifest_bytes.is_some(), "manifest should be written");
         let manifest: RepositoryManifest =
@@ -2228,14 +2128,12 @@ mod tests {
         assert_eq!(manifest.repository_id, "repo-uuid-1");
         assert_eq!(manifest.writer_id, "writer-uuid-1");
 
-        // Verify the operation is completed.
         let op = crate::remote::control_db::get_operation(&conn, &op_id)
             .unwrap()
             .unwrap();
         assert_eq!(op.state, OperationState::Completed);
         assert_eq!(op.target_generation, Some(1));
 
-        // Verify the repository state.
         let state = crate::remote::control_db::get_repository_state(&conn, "lib-1")
             .unwrap()
             .unwrap();
@@ -2252,12 +2150,10 @@ mod tests {
 
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
 
-        // First publish: generation 0 → 1.
         let op1 = make_pending_op(&conn, "lib-1", 0);
         let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
         execute_publish(&ctx, &op1).expect("first publish");
 
-        // Second publish: generation 1 → 2.
         let op2 = make_pending_op(&conn, "lib-1", 1);
         execute_publish(&ctx, &op2).expect("second publish");
 
@@ -2282,7 +2178,6 @@ mod tests {
 
         assert!(result.is_err());
 
-        // Verify the operation is failed, not completed.
         let op = crate::remote::control_db::get_operation(&conn, &op_id)
             .unwrap()
             .unwrap();
@@ -2302,8 +2197,6 @@ mod tests {
 
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
 
-        // Simulate a remote that already has generation 2 (another device
-        // published while we were offline). We write a manifest at gen 2.
         let manifest = RepositoryManifest {
             schema_version: CURRENT_SCHEMA_VERSION,
             repository_id: "repo-1".to_owned(),
@@ -2321,21 +2214,18 @@ mod tests {
             "rev-gen-2",
         );
 
-        // Our operation expects generation 0 (we're stale).
         let op_id = make_pending_op(&conn, "lib-1", 0);
         let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
         let result = execute_publish(&ctx, &op_id);
 
         assert!(result.is_err());
 
-        // Verify the operation is conflicted.
         let op = crate::remote::control_db::get_operation(&conn, &op_id)
             .unwrap()
             .unwrap();
         assert_eq!(op.state, OperationState::Conflicted);
         assert_eq!(op.error_code.as_deref(), Some("remote_conflict"));
 
-        // Verify the repository state is conflicted.
         let state = crate::remote::control_db::get_repository_state(&conn, "lib-1")
             .unwrap()
             .unwrap();
@@ -2354,16 +2244,12 @@ mod tests {
 
         let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
 
-        // First execution succeeds.
         execute_publish(&ctx, &op_id).expect("first publish");
 
-        // Count files before second execution.
         let files_before = provider.files.lock().unwrap().len();
 
-        // Second execution should be a no-op (operation is completed).
         execute_publish(&ctx, &op_id).expect("second call is no-op");
 
-        // No new files should have been written.
         let files_after = provider.files.lock().unwrap().len();
         assert_eq!(files_before, files_after);
     }
@@ -2381,7 +2267,6 @@ mod tests {
         let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
         execute_publish(&ctx, &op_id).expect("publish should succeed");
 
-        // Verify the manifest references the correct database path.
         let manifest_bytes = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
         let manifest: RepositoryManifest =
             serde_json::from_slice(&manifest_bytes.unwrap()).unwrap();
@@ -2391,8 +2276,6 @@ mod tests {
         );
         assert_ne!(manifest.database_path, ".openkara/databases/1.sqlite");
 
-        // Verify the database was uploaded to the exact immutable path named
-        // by the committed manifest.
         let db_bytes = provider
             .files
             .lock()
@@ -2401,7 +2284,6 @@ mod tests {
             .cloned();
         assert!(db_bytes.is_some(), "candidate database should be uploaded");
 
-        // Verify the digest in the manifest matches the uploaded database.
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(db_bytes.unwrap());
@@ -2422,7 +2304,6 @@ mod tests {
         let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
         execute_publish(&ctx, &op_id).expect("publish should succeed");
 
-        // Verify a GC operation was scheduled with a safety delay.
         let all_ops = crate::remote::control_db::list_operations_in_states(
             &conn,
             &[OperationState::Pending, OperationState::RetryWait],
@@ -2474,10 +2355,6 @@ mod tests {
         assert_eq!(state.writer_id.as_deref(), Some("writer-uuid-y"));
     }
 
-    // ---- Asset verification (publication-protocol steps 3-4) ----
-
-    /// Insert a song row with a `file_path` referencing a media asset, and
-    /// create the matching local file in the working copy.
     fn insert_song_with_media(
         db_path: &Path,
         song_hash: &str,
@@ -2495,7 +2372,6 @@ mod tests {
         std::fs::write(&local, b"media-bytes").unwrap();
     }
 
-    /// Insert a song row with stem paths and create the matching local files.
     fn insert_song_with_stems(
         db_path: &Path,
         song_hash: &str,
@@ -2522,8 +2398,6 @@ mod tests {
         }
     }
 
-    /// Insert a song row with artwork derivative paths and create the local
-    /// files.
     fn insert_song_with_artwork(
         db_path: &Path,
         song_hash: &str,
@@ -2551,8 +2425,6 @@ mod tests {
         let working_root = working_dir.path().to_owned();
         make_valid_db(&working_root.join("openkara.db"));
 
-        // Song-1 references media/song-1.mp3 but the provider does NOT have it
-        // (simulating a failed or skipped upload).
         insert_song_with_media(
             &working_root.join("openkara.db"),
             "song-1",
@@ -2580,7 +2452,6 @@ mod tests {
             "missing asset must produce remote_integrity_failed"
         );
 
-        // The manifest must NOT have been committed.
         let manifest = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
         assert!(
             manifest.is_none(),
@@ -2603,8 +2474,6 @@ mod tests {
         );
 
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
-        // Simulate a truncated remote upload: store fewer bytes than the local
-        // file.
         provider.store("media/song-1.mp3", b"trunc".to_vec(), "rev-1");
 
         let op_id = make_pending_op(&conn, "lib-1", 0);
@@ -2643,8 +2512,6 @@ mod tests {
         );
 
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
-        // Upload the asset to the provider so stat succeeds with the correct
-        // size.
         provider
             .upload_file("media/song-1.mp3")
             .expect("fake upload should succeed");
@@ -2675,8 +2542,6 @@ mod tests {
         let op_id = make_pending_op(&conn, "lib-1", 0);
         persist_test_candidate(&conn, &provider, &working_root, &op_id);
 
-        // A later local mutation changes the shared working DB and references
-        // an asset that is not remote yet. The older operation must ignore it.
         insert_song_with_media(
             &working_root.join("openkara.db"),
             "song-2",
@@ -2733,8 +2598,6 @@ mod tests {
         let op_id = make_pending_op(&conn, "lib-1", 0);
         persist_test_candidate(&conn, &provider, &working_root, &op_id);
 
-        // Same byte length, different bytes and revision. Size-only retry logic
-        // would miss this; the persisted metadata fingerprint must reject it.
         provider.store("media/song-1.mp3", b"other-bytes".to_vec(), "rev-replaced");
 
         let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
@@ -2877,7 +2740,6 @@ mod tests {
 
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
 
-        // Pre-existing manifest at generation 1 (another device published).
         let existing_manifest = RepositoryManifest {
             schema_version: CURRENT_SCHEMA_VERSION,
             repository_id: "repo-1".to_owned(),
@@ -2895,7 +2757,6 @@ mod tests {
             "rev-gen-1",
         );
 
-        // Our publish references an asset the provider does not have.
         insert_song_with_media(
             &working_root.join("openkara.db"),
             "song-1",
@@ -2908,7 +2769,6 @@ mod tests {
         let result = execute_publish(&ctx, &op_id);
         assert!(result.is_err(), "publish must fail");
 
-        // The existing manifest must be unchanged — still generation 1.
         let manifest_bytes = provider.files.lock().unwrap().get(MANIFEST_PATH).cloned();
         let manifest: RepositoryManifest =
             serde_json::from_slice(&manifest_bytes.unwrap()).unwrap();
@@ -2936,7 +2796,6 @@ mod tests {
         );
 
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
-        // Only upload vocals; accompaniment is missing remotely.
         provider.upload_file(vocals).expect("upload vocals");
 
         let op_id = make_pending_op(&conn, "lib-1", 0);
@@ -2973,7 +2832,6 @@ mod tests {
         );
 
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
-        // Upload only the thumbnail; preview is missing.
         provider.upload_file(thumb).expect("upload thumb");
 
         let op_id = make_pending_op(&conn, "lib-1", 0);
@@ -2992,14 +2850,11 @@ mod tests {
 
     #[test]
     fn executor_skips_verification_for_empty_path_columns() {
-        // A song with NULL/empty path columns (e.g. a freshly imported song
-        // before any assets are uploaded) must not cause verification to fail.
         let (_db_dir, conn) = fresh_control_db();
         let working_dir = TempDir::new().unwrap();
         let working_root = working_dir.path().to_owned();
         make_valid_db(&working_root.join("openkara.db"));
 
-        // The default song-1 from make_valid_db has NULL paths.
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
         let op_id = make_pending_op(&conn, "lib-1", 0);
         let ctx = make_context(&conn, &provider, &working_root, "lib-1", "repo-1", "w-1");
@@ -3019,14 +2874,11 @@ mod tests {
             "bare dir is not a file"
         );
         assert!(validate_asset_path("stems").is_err());
-        // Valid paths pass.
         assert!(validate_asset_path("media/song.mp3").is_ok());
         assert!(validate_asset_path("stems/song-1/vocals.ogg").is_ok());
         assert!(validate_asset_path("artwork/thumb_abc_80.webp").is_ok());
         assert!(validate_asset_path("media-g/song.zip").is_ok());
     }
-
-    // ---- GC executor tests ----
 
     #[test]
     fn gc_deletes_old_database_generations() {
@@ -3037,8 +2889,6 @@ mod tests {
 
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
 
-        // Simulate a repository at generation 5 with old generations 1-3
-        // present remotely.
         let manifest = RepositoryManifest {
             schema_version: CURRENT_SCHEMA_VERSION,
             repository_id: "repo-1".to_owned(),
@@ -3063,8 +2913,6 @@ mod tests {
             );
         }
 
-        // Schedule a GC for generation 5. retain_floor = 4, so generations
-        // 1..=3 should be deleted, 4 and 5 retained.
         let now = current_unix_time_ms();
         let gc_op_id = format!("gc-lib-1-{now}");
         let gc_row = OperationRow {
@@ -3095,7 +2943,6 @@ mod tests {
 
         execute_gc(&provider, &conn, "lib-1", &gc_op_id).expect("GC should succeed");
 
-        // Generations 1-3 should be deleted.
         for gen in 1..=3 {
             assert!(
                 provider
@@ -3107,7 +2954,6 @@ mod tests {
                 "generation {gen} should be deleted"
             );
         }
-        // Generations 4 and 5 should be retained.
         for gen in 4..=5 {
             assert!(
                 provider
@@ -3120,7 +2966,6 @@ mod tests {
             );
         }
 
-        // The GC operation should be marked completed.
         let op = get_operation(&conn, &gc_op_id).unwrap().unwrap();
         assert_eq!(op.state, OperationState::Completed);
     }
@@ -3134,7 +2979,6 @@ mod tests {
 
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
 
-        // Manifest is at generation 3, but the GC was scheduled for generation 5.
         let manifest = RepositoryManifest {
             schema_version: CURRENT_SCHEMA_VERSION,
             repository_id: "repo-1".to_owned(),
@@ -3187,8 +3031,6 @@ mod tests {
 
         execute_gc(&provider, &conn, "lib-1", &gc_op_id).expect("GC should not error");
 
-        // Generation 1 should NOT be deleted — the manifest hasn't advanced
-        // to 5 yet.
         assert!(
             provider
                 .files
@@ -3212,7 +3054,6 @@ mod tests {
 
         let provider = FakeProvider::new().with_working_copy_root(working_root.clone());
 
-        // Manifest at generation 2.
         let manifest = RepositoryManifest {
             schema_version: CURRENT_SCHEMA_VERSION,
             repository_id: "repo-1".to_owned(),
@@ -3270,8 +3111,6 @@ mod tests {
 
         execute_gc(&provider, &conn, "lib-1", &gc_op_id).expect("GC should succeed");
 
-        // retain_floor = 1, so the loop is 1..1 (empty). Both gen 1 and 2
-        // are retained.
         assert!(
             provider
                 .files

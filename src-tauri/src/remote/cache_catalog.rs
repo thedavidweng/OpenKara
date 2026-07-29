@@ -3,14 +3,7 @@
 //! The `remote_cache_entries` table in the control DB is the authoritative
 //! catalog. On-disk data files are content-addressed by the SHA-256 of the
 //! identity tuple `(library_id, relative_path, provider_revision,
-//! expected_size)`. This replaces the old `ChunkedCache`-only manager that:
-//!
-//! - deleted the range index on completion (forgetting completion across
-//!   restart),
-//! - counted only entries opened in the current process,
-//! - defaulted to `u64::MAX` (unbounded) when no limit was set, and
-//! - keyed caches by `format!("remote-{}", song.hash)`, which reused bytes
-//!   from an older provider revision when the remote object was replaced.
+//! expected_size)`.
 //!
 //! ## Startup reconciliation
 //!
@@ -48,23 +41,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// staying large enough that a typical karaoke session does not thrash.
 pub const DEFAULT_CACHE_BYTES_LIMIT: u64 = 2 * 1024 * 1024 * 1024;
 
-/// Identity tuple that uniquely identifies a remote cacheable file. Two files
-/// with the same identity are byte-for-byte interchangeable; a changed
-/// `provider_revision` or `expected_size` yields a different `cache_key`.
 #[derive(Debug, Clone)]
 pub struct CacheIdentity {
     pub library_id: String,
     pub relative_path: String,
-    /// Provider revision token (ETag / Dropbox rev / Google Drive
-    /// headRevisionId). When unavailable, the caller may substitute a content
-    /// digest after the first full download.
     pub provider_revision: Option<String>,
     pub expected_size: u64,
 }
 
 impl CacheIdentity {
-    /// Compute the stable SHA-256 hex digest of the identity tuple. This is
-    /// used as both the `cache_key` primary key and the on-disk filename.
     pub fn cache_key(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(b"library_id=");
@@ -81,7 +66,6 @@ impl CacheIdentity {
     }
 }
 
-/// Snapshot of cache usage returned by `get_remote_cache_usage`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheUsage {
     pub used_bytes: u64,
@@ -129,9 +113,6 @@ fn current_unix_time_ms() -> i64 {
         .as_millis() as i64
 }
 
-/// JSON shape for `downloaded_ranges_json`: an array of `[start, length]`
-/// pairs. This is separate from `RangeSet`'s own serde format so the catalog
-/// schema stays stable even if `RangeSet`'s serialization changes.
 #[derive(Serialize, Deserialize)]
 struct RangesJson(Vec<[u64; 2]>);
 
@@ -192,7 +173,6 @@ impl CacheCatalog {
         Ok(manager)
     }
 
-    /// The configured byte budget. Exposed for the usage IPC command.
     pub fn limit_bytes(&self) -> u64 {
         self.max_bytes
     }
@@ -214,8 +194,6 @@ impl CacheCatalog {
 
         let rows = control_db::list_cache_entries(&conn)?;
 
-        // Track the set of valid data filenames so orphaned files can be
-        // detected.
         let mut known_files: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         for row in &rows {
@@ -273,7 +251,6 @@ impl CacheCatalog {
         Ok(rows.iter().map(|r| r.expected_size as u64).sum())
     }
 
-    /// Number of catalog entries (reconciled).
     pub fn entry_count(&self) -> CommandResult<usize> {
         let conn = self
             .control_db
@@ -283,7 +260,6 @@ impl CacheCatalog {
         Ok(rows.len())
     }
 
-    /// Number of pinned entries.
     pub fn pinned_count(&self) -> CommandResult<usize> {
         let conn = self
             .control_db
@@ -293,7 +269,6 @@ impl CacheCatalog {
         Ok(rows.iter().filter(|r| r.pinned_count > 0).count())
     }
 
-    /// Usage snapshot for the IPC command.
     pub fn usage(&self) -> CommandResult<CacheUsage> {
         Ok(CacheUsage {
             used_bytes: self.total_bytes()?,
@@ -303,7 +278,6 @@ impl CacheCatalog {
         })
     }
 
-    /// The on-disk data filename for a cache key.
     fn data_filename(cache_key: &str) -> String {
         format!("{cache_key}.cache")
     }
@@ -319,13 +293,11 @@ impl CacheCatalog {
     pub fn get_or_create(&mut self, identity: &CacheIdentity) -> CommandResult<Arc<ChunkedCache>> {
         let cache_key = identity.cache_key();
 
-        // Fast path: an in-memory handle already exists.
         if let Some(cache) = self.caches.get(&cache_key) {
             self.touch_access(&cache_key)?;
             return Ok(Arc::clone(cache));
         }
 
-        // Verify the catalog row + data file before reuse.
         let verified = self.verify_entry(&cache_key, identity)?;
 
         if !verified {
@@ -333,18 +305,10 @@ impl CacheCatalog {
             self.discard_entry(&cache_key)?;
         }
 
-        // Reserve space and evict if needed before creating a NEW entry. A
-        // verified hit is already counted in the catalog, so evicting for it
-        // would double-count and could delete the entry being reused.
         if !verified {
             self.evict_if_needed(identity.expected_size)?;
         }
 
-        // Create or open the on-disk file + in-memory handle. When the entry
-        // was verified (catalog hit), initialize the ChunkedCache with the
-        // persisted ranges from the catalog so completion and partial state
-        // survive restart. The `.index` sidecar is no longer the source of
-        // truth for ranges — the catalog is.
         let cache = if verified {
             let conn = self
                 .control_db
@@ -367,12 +331,9 @@ impl CacheCatalog {
         };
         let cache = Arc::new(cache);
 
-        // Persist the catalog row (upsert so a verified hit keeps its ranges).
         if verified {
-            // The entry was verified — just touch the access time.
             self.touch_access(&cache_key)?;
         } else {
-            // Fresh entry — insert the catalog row.
             let now = current_unix_time_ms();
             let data_filename = Self::data_filename(&cache_key);
             let row = CacheEntryRow {
@@ -449,7 +410,6 @@ impl CacheCatalog {
                 if !actual.eq_ignore_ascii_case(expected_digest) {
                     return Ok(false);
                 }
-                // Digest matches — mark as verified for this session.
                 control_db::update_cache_entry_ranges(
                     &conn,
                     cache_key,
@@ -477,21 +437,17 @@ impl CacheCatalog {
         Ok(true)
     }
 
-    /// Discard a catalog row and its data file. Used when verification fails.
     fn discard_entry(&self, cache_key: &str) -> CommandResult<()> {
         let conn = self
             .control_db
             .lock()
             .map_err(|_| internal_error("control DB lock was poisoned"))?;
-        // Remove the catalog row first; if the file deletion fails the
-        // orphaned file is cleaned on the next startup scan.
         let _ = control_db::delete_cache_entry(&conn, cache_key);
         let data_path = self.cache_dir.join(Self::data_filename(cache_key));
         let _ = fs::remove_file(&data_path);
         Ok(())
     }
 
-    /// Bump `last_access_at_ms` (wall-clock LRU touch).
     fn touch_access(&self, cache_key: &str) -> CommandResult<()> {
         let conn = self
             .control_db
@@ -500,9 +456,6 @@ impl CacheCatalog {
         control_db::touch_cache_entry_access(&conn, cache_key, current_unix_time_ms())
     }
 
-    /// Persist the current downloaded ranges + completion state for an entry.
-    /// Called after each range write so a restart can resume from the
-    /// persisted ranges.
     pub fn persist_ranges(&self, cache_key: &str) -> CommandResult<()> {
         let cache = self
             .caches
@@ -512,10 +465,6 @@ impl CacheCatalog {
         let complete = cache.is_complete();
         let json = ranges_to_json(&ranges)?;
 
-        // When the entry becomes complete, compute and store the content
-        // digest so future verifications can re-hash cheaply. Mark
-        // verified_at_ms = None so the next reuse re-verifies the full file
-        // (defense against unclean shutdown corruption).
         let (digest, verified_at) = if complete {
             let digest = sha256_file(cache.path())?;
             (Some(digest), None)
@@ -562,7 +511,6 @@ impl CacheCatalog {
         })
     }
 
-    /// Decrement the pin count for an entry. Called by `CachePinGuard::drop`.
     fn unpin(&mut self, cache_key: &str) -> CommandResult<()> {
         let conn = self
             .control_db
@@ -572,9 +520,6 @@ impl CacheCatalog {
         Ok(())
     }
 
-    /// Evict unpinned entries with the oldest `last_access_at_ms` until adding
-    /// `needed_bytes` would fit under the budget. Atomically removes the
-    /// catalog row first, then the data file.
     fn evict_if_needed(&mut self, needed_bytes: u64) -> CommandResult<()> {
         let conn = self
             .control_db
@@ -588,7 +533,6 @@ impl CacheCatalog {
             return Ok(());
         }
 
-        // Evict unpinned entries, oldest access first.
         let mut evictable: Vec<&CacheEntryRow> =
             rows.iter().filter(|r| r.pinned_count == 0).collect();
         evictable.sort_by_key(|r| r.last_access_at_ms);
@@ -598,7 +542,6 @@ impl CacheCatalog {
             if freed.saturating_add(needed_bytes) <= self.max_bytes {
                 break;
             }
-            // Remove the catalog row first (transactional), then the file.
             let conn = self
                 .control_db
                 .lock()
@@ -614,10 +557,6 @@ impl CacheCatalog {
         Ok(())
     }
 
-    /// Evict all unpinned entries. Pinned entries are left in the catalog so
-    /// they survive until playback releases them (their pin count drops to 0),
-    /// at which point a subsequent clear or eviction removes them. Returns the
-    /// number of entries evicted.
     pub fn clear_unpinned(&mut self) -> CommandResult<usize> {
         let conn = self
             .control_db
@@ -636,8 +575,6 @@ impl CacheCatalog {
         Ok(count)
     }
 
-    /// Remove an entry explicitly (catalog row + data file). Used by tests and
-    /// the discard path.
     pub fn remove(&mut self, cache_key: &str) -> CommandResult<()> {
         let conn = self
             .control_db
@@ -651,7 +588,6 @@ impl CacheCatalog {
         Ok(())
     }
 
-    /// Save all in-memory range state to the catalog. Called at shutdown.
     pub fn persist_all(&self) -> CommandResult<()> {
         for (cache_key, cache) in &self.caches {
             let ranges = cache.downloaded();
@@ -679,9 +615,6 @@ impl CacheCatalog {
         Ok(())
     }
 
-    /// Look up the catalog row for a cache key. Used by the revision-aware
-    /// `ensure_remote_file_cached` to check whether a complete, verified entry
-    /// already exists.
     pub fn get_entry(&self, cache_key: &str) -> CommandResult<Option<CacheEntryRow>> {
         let conn = self
             .control_db
@@ -691,8 +624,6 @@ impl CacheCatalog {
     }
 }
 
-/// Map a `CacheError` to a `CommandError`. A disk-full write error is mapped
-/// to a clear disk-space message so the caller can surface a specific error.
 fn cache_error_to_command(error: CacheError) -> CommandError {
     match error {
         CacheError::Io(ref e) if is_disk_full(e) => internal_error(format!(
@@ -702,13 +633,10 @@ fn cache_error_to_command(error: CacheError) -> CommandError {
     }
 }
 
-/// Detect ENOSPC (disk full) from an `io::Error`. `ErrorKind::Other` may wrap
-/// the raw OS error on some platforms.
 fn is_disk_full(error: &std::io::Error) -> bool {
     if error.kind() == std::io::ErrorKind::Other && error.raw_os_error() == Some(28) {
         return true;
     }
-    // Some platforms report `StorageFull` directly.
     #[cfg(unix)]
     if error.raw_os_error() == Some(28) {
         return true;
@@ -723,7 +651,6 @@ mod tests {
     use rusqlite::params;
     use tempfile::TempDir;
 
-    /// Build a fresh catalog backed by a temp control DB and temp cache dir.
     fn fresh_catalog(
         max_bytes: u64,
     ) -> (
@@ -754,8 +681,6 @@ mod tests {
         }
     }
 
-    // ---- complete and partial entries reopen correctly after restart ----
-
     #[test]
     fn complete_entry_reopens_verified_after_restart() {
         let (_db_dir, cache_dir, control_db, catalog_arc) =
@@ -772,7 +697,6 @@ mod tests {
             catalog.persist_ranges(&id.cache_key()).unwrap();
         }
 
-        // Simulate restart: drop the in-memory handles and reopen.
         drop(catalog_arc);
         let catalog = CacheCatalog::open(
             cache_dir.path().to_path_buf(),
@@ -783,8 +707,6 @@ mod tests {
 
         let row = catalog.get_entry(&id.cache_key()).unwrap().unwrap();
         assert!(row.complete);
-        // Reopening should verify (re-hash) the complete entry and mark it
-        // verified.
         let mut catalog = catalog;
         let cache2 = catalog.get_or_create(&id).unwrap();
         assert!(cache2.is_complete());
@@ -830,13 +752,10 @@ mod tests {
         assert!(!row.complete);
     }
 
-    // ---- orphaned data file with no catalog row is removed on startup ----
-
     #[test]
     fn orphaned_data_file_removed_on_startup() {
         let (_db_dir, cache_dir, control_db, _catalog_arc) =
             fresh_catalog(DEFAULT_CACHE_BYTES_LIMIT);
-        // Drop the catalog so only the orphan file remains.
         drop(_catalog_arc);
         let orphan = cache_dir.path().join("orphan.cache");
         fs::write(&orphan, b"junk").unwrap();
@@ -854,8 +773,6 @@ mod tests {
             "orphaned data file must be removed on startup scan"
         );
     }
-
-    // ---- changed provider revision is NOT reused ----
 
     #[test]
     fn changed_revision_creates_new_entry() {
@@ -893,13 +810,10 @@ mod tests {
             "new revision must not reuse old entry's data"
         );
 
-        // Old entry remains until evicted.
         let catalog = catalog_arc.lock().unwrap();
         assert!(catalog.get_entry(&key_v1).unwrap().is_some());
         assert!(catalog.get_entry(&key_v2).unwrap().is_some());
     }
-
-    // ---- mismatched size is rejected ----
 
     #[test]
     fn mismatched_size_is_rejected() {
@@ -921,7 +835,6 @@ mod tests {
         }
         drop(catalog_arc);
 
-        // Corrupt the data file: truncate it so the length no longer matches.
         let data_path = cache_dir.path().join(format!("{}.cache", id.cache_key()));
         let _ = fs::write(&data_path, b"short");
 
@@ -932,7 +845,6 @@ mod tests {
         )
         .expect("reopen");
 
-        // The stale row should have been discarded during reconciliation.
         let row = catalog.get_entry(&id.cache_key()).unwrap();
         assert!(
             row.is_none(),
@@ -940,14 +852,10 @@ mod tests {
         );
     }
 
-    // ---- default budget is 2 GiB ----
-
     #[test]
     fn default_budget_is_2_gib() {
         assert_eq!(DEFAULT_CACHE_BYTES_LIMIT, 2 * 1024 * 1024 * 1024);
     }
-
-    // ---- startup accounting includes pre-existing disk files ----
 
     #[test]
     fn startup_accounting_includes_preexisting_files() {
@@ -981,8 +889,6 @@ mod tests {
         assert_eq!(usage.entry_count, 1);
     }
 
-    // ---- LRU uses persistent timestamps ----
-
     #[test]
     fn lru_evicts_oldest_access_first() {
         let (_db_dir, _cache_dir, _control_db, catalog_arc) = fresh_catalog(250);
@@ -1003,7 +909,6 @@ mod tests {
                 .unwrap();
         }
 
-        // Sleep so B's access timestamp is strictly greater than A's.
         std::thread::sleep(std::time::Duration::from_millis(20));
 
         let cache_b = {
@@ -1019,7 +924,6 @@ mod tests {
                 .unwrap();
         }
 
-        // Adding a third 100-byte entry (total 300 > 250) forces eviction.
         let id_c = identity("lib-1", "media/c.mp3", Some("rev-1"), 100);
         {
             let mut catalog = catalog_arc.lock().unwrap();
@@ -1027,7 +931,6 @@ mod tests {
         }
 
         let catalog = catalog_arc.lock().unwrap();
-        // A (oldest) should be evicted; B and C remain.
         assert!(
             catalog.get_entry(&id_a.cache_key()).unwrap().is_none(),
             "oldest entry must be evicted first"
@@ -1082,8 +985,6 @@ mod tests {
         assert!(catalog.get_entry(&id_c.cache_key()).unwrap().is_some());
     }
 
-    // ---- pinned entries are never evicted ----
-
     #[test]
     fn pinned_entry_surves_eviction() {
         let (_db_dir, _cache_dir, _control_db, catalog_arc) = fresh_catalog(200);
@@ -1104,7 +1005,6 @@ mod tests {
                 .unwrap();
         }
 
-        // Pin A.
         let _guard = CacheCatalog::pin_cache_entry(&catalog_arc, &id_a.cache_key()).unwrap();
 
         let cache_b = {
@@ -1120,8 +1020,6 @@ mod tests {
                 .unwrap();
         }
 
-        // Adding a third entry would exceed budget; A is pinned so B (the
-        // next oldest unpinned) is evicted instead.
         let id_c = identity("lib-1", "media/c.mp3", Some("rev-1"), 100);
         {
             let mut catalog = catalog_arc.lock().unwrap();
@@ -1134,8 +1032,6 @@ mod tests {
             "pinned entry must survive eviction"
         );
     }
-
-    // ---- clearing cache defers pinned deletion ----
 
     #[test]
     fn clear_cache_keeps_pinned_entries() {
@@ -1191,9 +1087,6 @@ mod tests {
             );
         }
 
-        // Dropping the guard makes A eligible for a future clear. The guard's
-        // Drop impl locks the manager, so the manager lock above must be
-        // released first (the block scope ensures this).
         drop(_guard);
         let evicted2 = {
             let mut catalog = catalog_arc.lock().unwrap();
@@ -1201,8 +1094,6 @@ mod tests {
         };
         assert_eq!(evicted2, 1, "deferred pinned entry is evicted after unpin");
     }
-
-    // ---- corrupted range metadata is rejected ----
 
     #[test]
     fn corrupted_ranges_beyond_file_length_rejected() {
@@ -1224,7 +1115,6 @@ mod tests {
         }
         drop(catalog_arc);
 
-        // Corrupt the downloaded_ranges_json to claim a range beyond the file.
         let conn = control_db.lock().unwrap();
         conn.execute(
             "UPDATE remote_cache_entries SET downloaded_ranges_json = ?2 WHERE cache_key = ?1",
@@ -1240,16 +1130,12 @@ mod tests {
         )
         .expect("reopen");
 
-        // The corrupted entry should be rejected on verification (get_or_create
-        // discards it and creates a fresh one).
         let cache2 = catalog.get_or_create(&id).unwrap();
         assert!(
             !cache2.is_cached(0, 999),
             "corrupted ranges must not be trusted"
         );
     }
-
-    // ---- cache key is deterministic ----
 
     #[test]
     fn cache_key_is_deterministic() {

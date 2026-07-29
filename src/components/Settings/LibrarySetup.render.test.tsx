@@ -218,7 +218,6 @@ describe("LibrarySetup destructive error surfaces", () => {
     mockCreateLocalLibrary.mockResolvedValue(undefined);
     await clickButtonContaining("Create new local library");
 
-    // Stem mode is the last step: the model choice is not a first-run question.
     expect(container.innerHTML).not.toContain("settings.modelVariant.htdemucs");
 
     await clickButtonContaining("setup.back");

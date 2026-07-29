@@ -95,11 +95,8 @@ export function VolumeSliders({
   } | null>(null);
   const [accompDragValue, setAccompDragValue] = useState<number | null>(null);
 
-  // Floating popup: portal to body so stage overflow / settings z-index cannot clip it.
   const popupRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  // Anchors to the accompaniment mute button (not the whole row) so the
-  // popup icon column lines up with the Music control on the playback bar.
   const accompMuteButtonRef = useRef<HTMLButtonElement>(null);
   const tightAnchorRef = useRef<HTMLDivElement>(null);
   const [popupPos, setPopupPos] = useState<{
@@ -128,7 +125,6 @@ export function VolumeSliders({
     }
     updatePopupPosition();
     window.addEventListener("resize", updatePopupPosition);
-    // Capture scroll from nested stage/settings panes.
     window.addEventListener("scroll", updatePopupPosition, true);
     return () => {
       window.removeEventListener("resize", updatePopupPosition);
@@ -550,7 +546,6 @@ interface StemSliderProps {
   onIconClick?: () => void;
   disabled?: boolean;
   sliderWidthClass?: string;
-  // Optional ref to the mute icon button (popup positioning anchor).
   muteButtonRef?: React.RefObject<HTMLButtonElement | null>;
 }
 

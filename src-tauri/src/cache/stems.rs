@@ -100,9 +100,6 @@ pub fn get_valid_cached_stem_entry(
     Ok(None)
 }
 
-/// Prepare a clean stem cache directory for a streaming separation run.
-/// Any previous final files, temporary files, and obsolete checkpoint data
-/// are removed. Interrupted runs restart from chunk 0.
 pub fn prepare_stem_directory(stems_base: &Path, song_hash: &str) -> Result<PathBuf> {
     let stem_directory = stem_directory(stems_base, song_hash);
 
@@ -220,8 +217,6 @@ fn upsert_stem_cache_entry(
     Ok(())
 }
 
-/// Test-only helper to insert a stem cache entry directly into the database
-/// without going through the full separation pipeline.
 #[cfg(test)]
 pub fn upsert_stem_entry_test(connection: &Connection, entry: &StemCacheEntry) {
     upsert_stem_cache_entry(connection, entry).expect("test stem entry upsert should succeed");
@@ -281,7 +276,6 @@ pub fn delete_stem_cache_entry_db_only(connection: &Connection, song_hash: &str)
     Ok(())
 }
 
-/// Delete all stem cache entries from the database and remove all stem files from disk.
 pub fn delete_all_stem_cache_entries(
     connection: &Connection,
     library_root: &LibraryRoot,
@@ -361,9 +355,6 @@ fn ensure_song_exists(connection: &Connection, song_hash: &str) -> Result<()> {
     Ok(())
 }
 
-/// Downgrade a single 4-stem entry to 2-stem by mixing drums+bass+other into an
-/// accompaniment file and deleting the individual stem files.
-/// Returns the updated `StemCacheEntry` and the number of bytes freed.
 pub fn downgrade_to_two_stem(
     connection: &Connection,
     library_root: &LibraryRoot,
@@ -518,7 +509,6 @@ pub fn downgrade_to_two_stem(
     Ok((updated_entry, freed_bytes))
 }
 
-/// Downgrade all 4-stem entries to 2-stem.
 pub fn batch_downgrade_to_two_stem(
     connection: &Connection,
     library_root: &LibraryRoot,
@@ -654,8 +644,6 @@ mod tests {
     use super::*;
     use crate::audio::decode::DecodedAudio;
 
-    /// Verify that stem downgrade uses max() of all stem lengths and
-    /// validates sample_rate/channels match.
     #[test]
     fn downgrade_mix_uses_max_stem_length() {
         let drums = DecodedAudio {
@@ -694,18 +682,14 @@ mod tests {
         }
 
         assert_eq!(mixed.len(), 150);
-        // First 100: drums(1.0) + bass(2.0) + other(3.0) = 6.0
         assert_eq!(mixed[0], 6.0);
         assert_eq!(mixed[99], 6.0);
-        // 100-119: drums(0.0) + bass(2.0) + other(3.0) = 5.0
         assert_eq!(mixed[100], 5.0);
         assert_eq!(mixed[119], 5.0);
-        // 120-149: drums(0.0) + bass(2.0) + other(0.0) = 2.0
         assert_eq!(mixed[120], 2.0);
         assert_eq!(mixed[149], 2.0);
     }
 
-    /// Verify that mismatched sample rates are rejected.
     #[test]
     fn downgrade_rejects_mismatched_sample_rates() {
         let drums = DecodedAudio {
@@ -735,7 +719,6 @@ mod tests {
         );
     }
 
-    /// Verify that mismatched channel counts are rejected.
     #[test]
     fn downgrade_rejects_mismatched_channels() {
         let drums = DecodedAudio {

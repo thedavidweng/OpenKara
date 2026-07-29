@@ -12,7 +12,6 @@ function line(
 
 describe("splitCompanionRomanization", () => {
   test("lifts same-timestamp romaji shadows out of the lyric list", () => {
-    // Verbatim shape of the embedded LRC for imase - NIGHT DANCER.
     const split = splitCompanionRomanization([
       line(850, "どうでもいいような 夜だけど"),
       line(850, "doudemoiiyouna yorudakedo"),
@@ -136,8 +135,6 @@ describe("splitCompanionRomanization", () => {
   });
 
   test("keeps word-timed lines as lyrics even when they are Latin", () => {
-    // A karaoke-timed Latin line owns word highlighting; collapsing it into an
-    // annotation would silently drop that timing.
     const timed = line(850, "doudemoiiyouna yorudakedo", [
       { time_ms: 850, end_ms: 1200, text: "doudemoiiyouna" },
     ]);

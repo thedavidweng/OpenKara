@@ -58,26 +58,6 @@ export function startCdgPositionSync(
   });
 }
 
-/**
- * Shared in-flight coordinator for probe + hot-loop CDG frame IPC.
- * At most one `getCdgFrame` is outstanding for the local timeline; a newer
- * desired request is coalesced and issued when the in-flight one completes.
- *
- * Concurrency model — two independent staleness mechanisms:
- * - `serial` advances ONLY on `invalidate()`, which is called for explicit
- *   lifecycle events: unmount cleanup and empty-song (null `songId`) reset.
- *   It does NOT advance on non-null song/generation changes — those are
- *   caught by `isCurrent`. `serial` drops late results whose serial no longer
- *   matches, so an in-flight response arriving after an invalidate is ignored.
- * - `isCurrent(req)` checks the request against the live player snapshot
- *   (song id + transport generation) and drops results whose song/generation
- *   no longer matches, even when the serial is unchanged. This catches
- *   non-null song/generation transitions that did not route through
- *   `invalidate()`.
- * Because `serial` is not bumped on `request()`, a newer request for the same
- * song does NOT invalidate an in-flight response — under slow IPC this avoids
- * dropping every frame when requests arrive faster than responses.
- */
 export type CdgFrameRequest = {
   songId: string;
   transportGeneration: number;
@@ -108,22 +88,10 @@ export function createCdgFrameCoordinator(deps: {
     transportGeneration: number;
     hasCdg: boolean;
     hasFrame: boolean;
-    /**
-     * Backend CDG availability, reported when the frame probe consulted
-     * `getCdgStatus` (i.e. on a 0-byte response). Absent on the hasCdg=true
-     * and IPC-failure fallback paths.
-     */
     availability?: CdgAvailability;
     errorCode?: CdgErrorCode | null;
   }) => void;
   onError: (args: { songId: string; transportGeneration: number }) => void;
-  /**
-   * Is this request still relevant? Checks the request against the live player
-   * snapshot (song id + transport generation) and returns false once the
-   * song/generation has moved on. This is independent of `serial`: it catches
-   * song/generation transitions that did not route through `invalidate()`,
-   * while `serial` only handles invalidate-driven drops.
-   */
   isCurrent: (req: CdgFrameRequest) => boolean;
 }): CdgFrameCoordinator {
   let serial = 0;

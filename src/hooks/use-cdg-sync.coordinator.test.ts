@@ -19,13 +19,9 @@ function frameEnvelope(
 ): ArrayBuffer {
   const header = new ArrayBuffer(32);
   const view = new DataView(header);
-  view.setUint32(0, 0x43444746, true); // 'CDGF' magic-ish; parser may not check
-  // Match parseCdgFrameResponse layout used in production.
-  // We'll use the real parser expectations from cdg-protocol.
+  view.setUint32(0, 0x43444746, true); // 'CDGF'
   const buf = new ArrayBuffer(32 + 4);
   const u8 = new Uint8Array(buf);
-  // protocol: see parseCdgFrameResponse — set hasRgba bit etc.
-  // Simpler: mock getCdgFrame to return empty ArrayBuffer and only test concurrency.
   void transportGeneration;
   void frameVersion;
   void u8;
@@ -75,7 +71,6 @@ describe("createCdgFrameCoordinator", () => {
       lastFrameVersion: 1,
     });
 
-    // Second request is coalesced; only one IPC while first is pending.
     expect(getCdgFrame).toHaveBeenCalledTimes(1);
     expect(coordinator.isInFlight()).toBe(true);
 
@@ -169,8 +164,6 @@ describe("createCdgFrameCoordinator", () => {
       positionMs: 0,
       lastFrameVersion: 0,
     });
-    // Force a new serial before older resolves by invalidating mid-flight,
-    // then issue a new request.
     coordinator.invalidate();
     coordinator.request({
       songId: "song-2",
@@ -179,7 +172,6 @@ describe("createCdgFrameCoordinator", () => {
       lastFrameVersion: 0,
     });
 
-    // Resolve older first (stale).
     older.resolve(new ArrayBuffer(0));
     for (let i = 0; i < 4; i++) {
       await Promise.resolve();

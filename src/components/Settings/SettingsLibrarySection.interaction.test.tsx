@@ -85,7 +85,6 @@ describe("SettingsLibrarySection interactions", () => {
     container = rendered.container;
     root = rendered.root;
 
-    // The integrity check button has title "settings.integrity.checkButton".
     const integrityButton = container.querySelector(
       'button[title*="integrity.checkButton"]',
     ) as HTMLButtonElement;

@@ -106,24 +106,21 @@ describe("cover-art", () => {
     const png = [0x89, 0x50, 0x4e, 0x47];
 
     const thumbUrl1 = retainCoverArtUrl("song-size", jpeg, "thumb");
-    retainCoverArtUrl("song-size", jpeg, "thumb"); // second retain for refcount=2
+    retainCoverArtUrl("song-size", jpeg, "thumb");
     const previewUrl = retainCoverArtUrl("song-size", png, "preview");
 
     expect(thumbUrl1).toBe("blob:image/jpeg");
     expect(previewUrl).toBe("blob:image/png");
     expect(thumbUrl1).not.toBe(previewUrl);
 
-    // Releasing one thumb ref (refcount 2→1) does not revoke either URL.
     releaseCoverArtUrl("song-size", "thumb");
     expect(URL.revokeObjectURL).not.toHaveBeenCalledWith(thumbUrl1);
     expect(URL.revokeObjectURL).not.toHaveBeenCalledWith(previewUrl);
 
-    // Final thumb release revokes the thumb URL but not the preview URL.
     releaseCoverArtUrl("song-size", "thumb");
     expect(URL.revokeObjectURL).toHaveBeenCalledWith(thumbUrl1);
     expect(URL.revokeObjectURL).not.toHaveBeenCalledWith(previewUrl);
 
-    // Final preview release revokes the preview URL.
     releaseCoverArtUrl("song-size", "preview");
     expect(URL.revokeObjectURL).toHaveBeenCalledWith(previewUrl);
   });
@@ -135,13 +132,11 @@ describe("cover-art", () => {
     const first = retainCoverArtUrl("song-replace", jpeg, "thumb");
     expect(first).toBe("blob:image/jpeg");
 
-    // New bytes under the same key → old URL revoked, new URL created.
     const second = retainCoverArtUrl("song-replace", png, "thumb");
     expect(second).toBe("blob:image/png");
     expect(second).not.toBe(first);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith(first);
 
-    // Releasing the replacement cleans up the new URL.
     releaseCoverArtUrl("song-replace", "thumb");
     expect(URL.revokeObjectURL).toHaveBeenCalledWith(second);
   });
@@ -154,11 +149,9 @@ describe("cover-art", () => {
     const urlB = retainCoverArtUrl("song-guard", png, "thumb");
     expect(urlA).not.toBe(urlB);
 
-    // Old cleanup fires with the stale url — must be a no-op.
     releaseCoverArtUrl("song-guard", "thumb", urlA);
     expect(URL.revokeObjectURL).not.toHaveBeenCalledWith(urlB);
 
-    // New cleanup fires with the current url — releases normally.
     releaseCoverArtUrl("song-guard", "thumb", urlB);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith(urlB);
   });
@@ -196,7 +189,6 @@ describe("cover-art", () => {
     retainCoverArtUrl("song-release-size", jpeg, "original");
 
     releaseCoverArtUrl("song-release-size", "thumb");
-    // Only the thumb URL should be revoked; original still held.
     expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
 
     releaseCoverArtUrl("song-release-size", "original");

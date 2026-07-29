@@ -105,19 +105,16 @@ describe("MainContentView queue animation", () => {
       root.render(<MainContentView />);
     });
 
-    // Open the queue — dispatches "show".
     mockQueueState.isOpen = true;
     act(() => {
       root.render(<MainContentView />);
     });
 
-    // Close the queue — dispatches "hide" (visible → exiting).
     mockQueueState.isOpen = false;
     act(() => {
       root.render(<MainContentView />);
     });
 
-    // Fire animation end — dispatches "exited" (exiting → hidden).
     const queueWrapper = host.querySelector(".animate-slide-out-right");
     expect(queueWrapper).toBeTruthy();
     act(() => {

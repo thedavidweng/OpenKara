@@ -142,8 +142,6 @@ export function SongList() {
     if (displaySongs.length > 0) {
       virtualizer.scrollToIndex(0, { align: "start" });
     }
-    // When displaySongs is empty the component renders <EmptyLibrary />, so
-    // there is no scroll container to reset — no else branch is needed.
   }, [
     librarySortMode,
     activePlaylistId,

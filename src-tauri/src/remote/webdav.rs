@@ -76,7 +76,6 @@ pub(crate) fn remote_path_display_from_url(url: &str) -> String {
 
 pub(crate) fn webdav_client() -> CommandResult<Client> {
     use crate::remote::net_policy::RetryPolicy;
-    // WebDAV needs limited redirects in addition to the shared policy timeouts.
     let policy = RetryPolicy::default();
     let request_timeout = policy.read_timeout.max(policy.attempt_deadline);
     Client::builder()
@@ -109,9 +108,6 @@ pub(crate) fn webdav_send(
     if let Some(bytes) = body {
         request = request.body(bytes);
     }
-    // Single-shot send. Callers that can rebuild the request should prefer
-    // `crate::remote::send_with_retry` for transport retries; WebDAV helpers
-    // still apply the shared connect/read timeouts via `webdav_client`.
     request.send().map_err(|_error| {
         tracing::trace!("WebDAV request to {url} failed");
         CommandError::from(LibraryError::Internal(
@@ -254,11 +250,6 @@ pub(crate) fn download_webdav_file(
         .get(ETAG)
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned);
-    // Stream the body to disk as it arrives instead of buffering the whole
-    // file with `response.bytes()`. The buffered call imposed a single
-    // total-body deadline; streaming makes the client timeout a per-read idle
-    // timeout, so slow-but-steady links complete instead of failing at the
-    // deadline (issue #205).
     let mut file = fs::File::create(destination).map_err(|error| {
         CommandError::from(LibraryError::Internal(format!(
             "failed to create {}: {error}",
@@ -343,7 +334,6 @@ pub(crate) fn webdav_conditional_put(
     if let Some(etag) = expected_revision {
         request = request.header("If-Match", etag);
     } else {
-        // Conditional-create: fail if the resource already exists.
         request = request.header("If-None-Match", "*");
     }
     let response = request.body(bytes).send().map_err(|_e| {
@@ -355,7 +345,6 @@ pub(crate) fn webdav_conditional_put(
 
     let status = response.status();
     if !status.is_success() {
-        // 412 Precondition Failed is the CAS-conflict signal.
         if status == StatusCode::PRECONDITION_FAILED {
             return Err(RemoteError::new(
                 RemoteErrorKind::RemoteConflict,
@@ -395,7 +384,6 @@ pub(crate) fn webdav_conditional_put(
 // caller discards it and starts a new staging upload.
 // ---------------------------------------------------------------------------
 
-/// Build the staging URL for an operation-scoped partial upload.
 pub(crate) fn webdav_staging_url(
     root_url: &str,
     operation_id: &str,
@@ -410,7 +398,6 @@ pub(crate) fn webdav_staging_url(
     )
 }
 
-/// Upload bytes to the staging path. Returns the staging URL on success.
 pub(crate) fn webdav_staged_upload(
     client: &Client,
     root_url: &str,
@@ -421,15 +408,12 @@ pub(crate) fn webdav_staged_upload(
     password: &str,
 ) -> CommandResult<String> {
     let staging_url = webdav_staging_url(root_url, operation_id, relative_path)?;
-    // Ensure the staging collection chain exists.
     let server_url = {
         let parsed = Url::parse(root_url).map_err(|error| {
             CommandError::from(LibraryError::Internal(format!(
                 "invalid WebDAV root URL: {error}"
             )))
         })?;
-        // The server URL is the scheme + host + first path segment (the
-        // share root). For staging we ensure the full chain.
         let staging_dir_url = join_url(root_url, &format!(".openkara/staging/{operation_id}/"))?;
         ensure_webdav_collection_chain(
             client,
@@ -445,9 +429,6 @@ pub(crate) fn webdav_staged_upload(
     Ok(staging_url)
 }
 
-/// Move a staged object to its final URL using a server-side MOVE. Most WebDAV
-/// servers support MOVE; the destination is specified via the `Destination`
-/// header.
 pub(crate) fn webdav_move_staged_to_final(
     client: &Client,
     staging_url: &str,
@@ -484,8 +465,6 @@ pub(crate) fn webdav_move_staged_to_final(
         .map(str::to_owned))
 }
 
-/// Stat a WebDAV object: HEAD request returning size (Content-Length) and
-/// revision (ETag). Returns `Ok(None)` on 404.
 pub(crate) fn webdav_stat(
     client: &Client,
     url: &str,
@@ -681,7 +660,6 @@ impl super::bootstrap::RemoteBootstrapStorage for WebDavBootstrapStorage<'_> {
         use super::bootstrap::CommittedDatabaseProbe;
         use crate::remote::manifest::{RepositoryManifest, MANIFEST_PATH};
 
-        // Prefer the repository manifest when present.
         let manifest_url = join_url(&self.secret.root_url, MANIFEST_PATH)?;
         if webdav_exists(
             &self.client,
@@ -907,11 +885,6 @@ impl<'a> WebDAVProvider<'a> {
 
 impl RemoteProvider for WebDAVProvider<'_> {
     fn capabilities(&self) -> RemoteProviderCapabilities {
-        // WebDAV supports conditional replacement when the server returns stable
-        // ETags and honors If-Match/If-None-Match. We report the capability
-        // optimistically; the actual CAS enforcement depends on the server.
-        // If `stat` returns no ETag for the manifest path, the executor fails
-        // closed before reaching `conditional_replace`.
         RemoteProviderCapabilities {
             conditional_replace: true,
             // PR#5: WebDAV servers vary in partial-PUT / Content-Range
@@ -923,9 +896,6 @@ impl RemoteProvider for WebDAVProvider<'_> {
             resumable_upload: false,
             range_download: true,
             revision_metadata: true,
-            // PR#5: Most WebDAV servers support MOVE (RFC 4918 §9.9). We
-            // report this optimistically; the staged-upload path falls back
-            // to a direct PUT if MOVE is unavailable.
             server_side_move: true,
         }
     }
@@ -949,7 +919,6 @@ impl RemoteProvider for WebDAVProvider<'_> {
         let bytes = source
             .read_bytes()
             .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
-        // Ensure the parent collection exists for a first-create path.
         if expected_revision.is_none() {
             if let Some(parent) = Path::new(relative_path).parent() {
                 let parent_path = parent.to_string_lossy().replace('\\', "/");
@@ -1025,7 +994,6 @@ impl RemoteProvider for WebDAVProvider<'_> {
         let url = join_url(&self.secret.root_url, relative_path)
             .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
 
-        // RFC 7233 Range request: bytes=<start>-<end> (inclusive end).
         let end = offset
             .checked_add(length)
             .and_then(|value| value.checked_sub(1))
@@ -1620,9 +1588,6 @@ mod tests {
     #[test]
     fn download_webdav_file_streams_full_body_to_disk() {
         // Regression for issue #205: the full-file download now streams the
-        // body to disk instead of buffering it with `response.bytes()`. Verify
-        // the streamed file matches the source byte-for-byte through the real
-        // provider helper.
         let server = TestWebDavServer::start();
         let client = webdav_client().unwrap();
         let url = join_url(&server.base_url, "song.bin").unwrap();

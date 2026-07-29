@@ -63,7 +63,6 @@ describe("FullscreenPlayerView", () => {
     expect(markup).toContain('data-presentation="audience"');
     expect(markup).toContain("playback-stage");
     expect(markup).toContain("fullscreen-controls");
-    // No bottom inset is reserved for the auto-hiding controls.
     expect(markup).not.toContain("data-bottom-inset");
   });
 

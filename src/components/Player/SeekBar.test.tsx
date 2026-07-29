@@ -246,7 +246,6 @@ describe("SeekBar", () => {
 
     expect(canvasMock.ctx.setTransform).toHaveBeenCalled();
     expect(canvasMock.ctx.clearRect).toHaveBeenCalled();
-    // One fillRect per peak bar.
     expect(canvasMock.ctx.fillRect.mock.calls.length).toBeGreaterThanOrEqual(4);
   });
 
@@ -275,7 +274,6 @@ describe("SeekBar", () => {
       await Promise.resolve();
     });
 
-    // Error path clears peaks; no throw, canvas may clear.
     expect(host.querySelector("[data-waveform-canvas]")).toBeTruthy();
   });
 
@@ -287,7 +285,6 @@ describe("SeekBar", () => {
     });
 
     expect(mockGetWaveform).not.toHaveBeenCalled();
-    // duration falls back to 0
     const endLabel = host.querySelectorAll("span")[1];
     expect(endLabel?.textContent).toMatch(/0:00/);
   });
@@ -340,7 +337,6 @@ describe("SeekBar", () => {
     expect(canvasMock.ctx.fillRect).not.toHaveBeenCalled();
     expect(mockGetWaveform).toHaveBeenCalledWith("song-2", 133);
 
-    // Late resolve for song-2 should paint only the new peaks.
     await act(async () => {
       resolveSong2?.({ peaks: [0.1, 0.2], buckets: 2 });
       await Promise.resolve();
@@ -386,7 +382,6 @@ describe("SeekBar", () => {
     const rail = host.querySelector("[role='slider']") as HTMLElement;
     stubRailGeometry(rail, 200, 12);
 
-    // Resolve the obsolete song-1 fetch after the switch.
     await act(async () => {
       resolveSong1?.({ peaks: [1, 1, 1, 1, 1], buckets: 5 });
       await Promise.resolve();
@@ -516,15 +511,12 @@ describe("SeekBar", () => {
     });
     const fillsBefore = canvasMock.ctx.fillRect.mock.calls.length;
 
-    // Simulate a rail resize → debounced measure → redraw effect.
     await act(async () => {
       resizeCallback?.([], {} as ResizeObserver);
       // Flush the 150ms resize debounce.
       await new Promise((r) => setTimeout(r, 200));
     });
 
-    // Redraw path should run again (may clear if geometry zero, but with stub...).
-    // After resize, getBoundingClientRect is still stubbed so peaks re-draw.
     expect(canvasMock.ctx.fillRect.mock.calls.length).toBeGreaterThanOrEqual(
       fillsBefore,
     );
@@ -549,13 +541,11 @@ describe("SeekBar", () => {
       root.unmount();
     });
 
-    // Resolve after unmount — cancelled flag should drop the result.
     await act(async () => {
       resolveWaveform({ peaks: [1, 1, 1], buckets: 3 });
       await Promise.resolve();
     });
 
-    // No throw; canvas was unmounted so no extra fills required.
     expect(mockGetWaveform).toHaveBeenCalled();
   });
 
@@ -617,10 +607,8 @@ describe("SeekBar", () => {
       await Promise.resolve();
     });
 
-    // Initial 2x DPR fetch at bucket 600.
     expect(mockGetWaveform).toHaveBeenCalledWith("song-1", 600);
 
-    // Migrate to a 1x display with identical CSS geometry.
     Object.defineProperty(window, "devicePixelRatio", {
       configurable: true,
       value: 1,
@@ -714,7 +702,6 @@ describe("SeekBar", () => {
       await Promise.resolve();
     });
 
-    // No refetch (same bucket count).
     expect(mockGetWaveform).not.toHaveBeenCalled();
     // Backing store updated to the new physical dimensions:
     // round(299 * 2.001) = 598, round(12 * 2.001) = 24.
@@ -730,10 +717,8 @@ describe("SeekBar", () => {
       await Promise.resolve();
     });
 
-    // Initial query is tuned to the starting 2x DPR.
     expect(mediaQueryDpr).toBe(2);
 
-    // Migrate to 3x — the effect re-runs and re-registers at 3dppx.
     Object.defineProperty(window, "devicePixelRatio", {
       configurable: true,
       value: 3,

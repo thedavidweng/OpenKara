@@ -1,26 +1,5 @@
 //! Comprehensive fault-injection test suite for the remote reliability matrix
 //! (PR #8, issue #151).
-//!
-//! This module consolidates the full reliability test matrix in one place so
-//! the coverage is auditable and the shared `FaultInjectionProvider` harness
-//! is reusable. The individual subsystem test modules (`atomic_download`,
-//! `manifest`, `executor`, `cache_catalog`, `reconnect`) retain their own
-//! focused unit tests; this module covers the cross-cutting fault scenarios
-//! from the issue test matrix that span multiple subsystems.
-//!
-//! ## `FaultInjectionProvider`
-//!
-//! A single scriptable provider that can be configured to:
-//! - Fail on the Nth request with a specific error kind
-//!   (transient/permanent/credential).
-//! - Fail on a specific range fetch.
-//! - Return corrupted data (wrong digest).
-//! - Simulate slow responses (delay).
-//! - Simulate mid-transfer disconnect.
-//!
-//! It implements `RemoteProvider` so it plugs into `atomic_download`,
-//! `resumable_atomic_download`, `execute_publish`, and the reconnect
-//! coordinator without changing production code.
 
 #![cfg(test)]
 
@@ -55,57 +34,30 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tempfile::TempDir;
 
-// ---------------------------------------------------------------------------
-// FaultInjectionProvider
-// ---------------------------------------------------------------------------
-
-/// A scriptable fault-injection provider. Each behavior is configured via the
-/// builder methods so a test can compose multiple fault modes (e.g. "fail the
-/// first download with 503, then succeed").
 struct FaultInjectionProvider {
     files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     revisions: Arc<Mutex<HashMap<String, String>>>,
-    /// Queue of download behaviors. Each `download_file` / `download_range`
-    /// call pops the next behavior. An empty queue means "succeed".
     download_behaviors: Arc<Mutex<Vec<FaultBehavior>>>,
-    /// Fail the Nth range request (0-indexed) with a transient error.
     fail_on_range_index: Arc<Mutex<Option<usize>>>,
-    /// Number of range requests made so far.
     range_call_count: Arc<Mutex<usize>>,
-    /// Remaining upload failures (candidate DB / asset uploads). Each
-    /// `upload_file` decrements this and fails while > 0.
     upload_fail_remaining: Arc<Mutex<usize>>,
-    /// When true, `conditional_replace` returns `ProviderCapabilityUnavailable`.
     no_cas: bool,
-    /// When true, `conditional_replace` always returns `RemoteConflict`
-    /// regardless of the expected revision (simulates a concurrent writer).
     always_conflict: bool,
-    /// Fail the next N conditional_replace calls with a transient network
-    /// error (crash window: after candidate upload, before/during CAS).
     cas_network_fail_remaining: Arc<Mutex<usize>>,
-    /// Working copy root for reading files during `upload_file`.
     working_copy_root: Option<PathBuf>,
-    /// Recorded sleep delays observed by the retry driver (for backoff tests).
     #[allow(dead_code)]
     recorded_delays: Arc<Mutex<Vec<Duration>>>,
-    /// Credential generation counter, incremented by `refresh_credentials`.
     credential_generation: Arc<Mutex<u64>>,
 }
 
 #[derive(Clone)]
 #[allow(dead_code)]
 enum FaultBehavior {
-    /// Write the full stored bytes successfully.
     Success,
-    /// Fail before writing anything (simulates connection drop / 503).
     FailBeforeWrite(RemoteErrorKind),
-    /// Write only the first N bytes then fail (mid-body disconnect).
     PartialThenFail(usize, RemoteErrorKind),
-    /// Write a short body and succeed (truncated body with success status).
     ShortBody(usize),
-    /// Write bytes that differ from the stored content (wrong digest).
     WrongDigest,
-    /// Sleep for the configured duration before succeeding (slow response).
     Slow(Duration),
 }
 #[allow(dead_code)]
@@ -142,13 +94,10 @@ impl FaultInjectionProvider {
         self
     }
 
-    /// Fail the next `count` `upload_file` calls with a transient network error.
     fn fail_next_uploads(&self, count: usize) {
         *self.upload_fail_remaining.lock().unwrap() = count;
     }
 
-    /// Fail the next `count` CAS calls with a transient network error, then
-    /// allow CAS to succeed.
     fn fail_next_cas_network(&self, count: usize) {
         *self.cas_network_fail_remaining.lock().unwrap() = count;
     }
@@ -168,7 +117,6 @@ impl FaultInjectionProvider {
         self.download_behaviors.lock().unwrap().push(behavior);
     }
 
-    /// Queue N consecutive `FailBeforeWrite` behaviors with the given kind.
     fn queue_failures(&self, count: usize, kind: RemoteErrorKind) {
         for _ in 0..count {
             self.queue_behavior(FaultBehavior::FailBeforeWrite(kind));
@@ -217,8 +165,6 @@ impl FaultInjectionProvider {
 }
 
 fn command_error_from_kind(kind: RemoteErrorKind, detail: &str) -> CommandError {
-    // Map to CommandError so atomic_download's DownloadFailed path carries
-    // the kind information in the message for test assertions.
     CommandError::from(LibraryError::Internal(format!("{}: {detail}", kind.code())))
 }
 
@@ -513,10 +459,6 @@ impl RemoteProvider for FaultInjectionProvider {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Test helpers
-// ---------------------------------------------------------------------------
-
 fn sha256_hex(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(data);
@@ -531,9 +473,6 @@ fn fresh_control_db() -> (TempDir, Connection) {
 
 fn make_valid_db(path: &Path) {
     let conn = Connection::open(path).unwrap();
-    // Schema must match what verify_referenced_assets queries (songs path
-    // columns + optional stems join). Keep the fixture empty of asset paths
-    // so publish can proceed without remote media for pure protocol tests.
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS songs (
             hash TEXT PRIMARY KEY,
@@ -627,7 +566,6 @@ fn make_context<'a>(
     }
 }
 
-/// A recording event sink for reconnect tests.
 struct RecordingSink {
     events: Mutex<Vec<ReconnectEvent>>,
 }
@@ -646,20 +584,13 @@ impl EventSink for RecordingSink {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Test matrix (issue #151)
-// ---------------------------------------------------------------------------
-
 #[test]
 fn t1_transient_failure_during_download_retry_succeeds() {
-    // Download fails with a transient error on the first attempt, succeeds on
-    // retry. Assert the file is complete and verified.
     let dir = TempDir::new().expect("temp dir");
     let dest = dir.path().join("media/song.mp3");
     let provider = FaultInjectionProvider::new();
     let data = b"hello world, fault injection".to_vec();
     provider.store_file("media/song.mp3", data.clone(), "rev-1");
-    // First attempt: transient failure (503 → NetworkUnavailable).
     provider.queue_behavior(FaultBehavior::FailBeforeWrite(
         RemoteErrorKind::NetworkUnavailable,
     ));
@@ -676,7 +607,6 @@ fn t1_transient_failure_during_download_retry_succeeds() {
     );
     assert!(result.is_err(), "first attempt should fail");
 
-    // Retry with a fresh behavior queue (Success is the default).
     let result2 = atomic_download(
         &provider,
         AtomicDownloadOptions {
@@ -689,14 +619,11 @@ fn t1_transient_failure_during_download_retry_succeeds() {
     );
     result2.expect("retry should succeed");
     assert_eq!(std::fs::read(&dest).unwrap(), data);
-    // No temp file lingers.
     assert!(!dir.path().join("media/song.mp3.part.t1").exists());
 }
 
 #[test]
 fn t2_permanent_failure_during_download_no_partial_file() {
-    // Download fails with a permanent error (404 → PermissionDenied). Assert
-    // no final-path file exists and temp files are cleaned.
     let dir = TempDir::new().expect("temp dir");
     let dest = dir.path().join("media/song.mp3");
     let provider = FaultInjectionProvider::new();
@@ -725,20 +652,15 @@ fn t2_permanent_failure_during_download_no_partial_file() {
 
 #[test]
 fn t3_credential_expiry_mid_transfer_refresh_then_retry_succeeds() {
-    // 401 on first attempt → credential refresh → 200 on retry. Assert the
-    // complete file lands at the destination.
     let dir = TempDir::new().expect("temp dir");
     let dest = dir.path().join("media/song.mp3");
     let provider = FaultInjectionProvider::new();
     let data = b"credential refresh retry payload".to_vec();
     provider.store_file("media/song.mp3", data.clone(), "rev-1");
-    // First attempt: credential expired (401 → AuthenticationExpired).
     provider.queue_behavior(FaultBehavior::FailBeforeWrite(
         RemoteErrorKind::AuthenticationExpired,
     ));
 
-    // Simulate the credential refresh: the provider's refresh_credentials
-    // bumps the generation. A real caller would refresh then retry.
     let result = atomic_download(
         &provider,
         AtomicDownloadOptions {
@@ -751,12 +673,10 @@ fn t3_credential_expiry_mid_transfer_refresh_then_retry_succeeds() {
     );
     assert!(result.is_err(), "first attempt should fail with auth error");
 
-    // Refresh credentials (simulated).
     assert_eq!(provider.credential_generation(), 0);
     provider.refresh_credentials();
     assert_eq!(provider.credential_generation(), 1);
 
-    // Retry succeeds (default behavior is Success).
     atomic_download(
         &provider,
         AtomicDownloadOptions {
@@ -773,8 +693,6 @@ fn t3_credential_expiry_mid_transfer_refresh_then_retry_succeeds() {
 
 #[test]
 fn t4_corrupted_download_rejected_by_digest_verification() {
-    // Provider returns data that does not match the expected digest. Assert
-    // the file is rejected (no final-path file) and a retry re-downloads.
     let dir = TempDir::new().expect("temp dir");
     let dest = dir.path().join("media/song.mp3");
     let provider = FaultInjectionProvider::new();
@@ -796,7 +714,6 @@ fn t4_corrupted_download_rejected_by_digest_verification() {
     assert!(result.is_err(), "corrupted download must be rejected");
     assert!(!dest.exists(), "no final file on digest mismatch");
 
-    // Retry with correct data (default Success behavior).
     atomic_download(
         &provider,
         AtomicDownloadOptions {
@@ -813,19 +730,15 @@ fn t4_corrupted_download_rejected_by_digest_verification() {
 
 #[test]
 fn t5_mid_transfer_disconnect_resumable_download_completes() {
-    // Disconnect at 50% → resume → assert complete file with correct digest.
     let dir = TempDir::new().expect("temp dir");
     let dest = dir.path().join("media/song.mp3");
     let provider = FaultInjectionProvider::new();
-    // 16 MiB file so multiple chunks are needed.
     let data = vec![0xABu8; 16 * 1024 * 1024];
     provider.store_file("media/song.mp3", data.clone(), "rev-1");
     let expected_digest = sha256_hex(&data);
 
     let (_db_dir, conn) = fresh_control_db();
 
-    // Seed a transfer part at offset 8 MiB (50% done) and write the first
-    // half to the temp file so resume can append.
     let temp_path = dir.path().join("media/song.mp3.part.t5");
     std::fs::create_dir_all(temp_path.parent().unwrap()).unwrap();
     std::fs::write(&temp_path, &data[..8 * 1024 * 1024]).unwrap();
@@ -861,7 +774,6 @@ fn t5_mid_transfer_disconnect_resumable_download_completes() {
     .expect("resumable download should complete after mid-transfer disconnect");
 
     assert_eq!(std::fs::read(&dest).unwrap(), data);
-    // Transfer part deleted on success.
     assert!(crate::remote::control_db::list_transfer_parts(&conn, "t5")
         .unwrap()
         .is_empty());
@@ -869,16 +781,12 @@ fn t5_mid_transfer_disconnect_resumable_download_completes() {
 
 #[test]
 fn t6_cas_conflict_on_publish_conflict_surfaced() {
-    // Publish hits a CAS conflict. Assert RemoteErrorKind::Conflict is
-    // returned and the remote manifest is unchanged.
     let (_db_dir, conn) = fresh_control_db();
     let working_dir = TempDir::new().expect("working dir");
     let working_root = working_dir.path().to_owned();
     make_valid_db(&working_root.join("openkara.db"));
     seed_repository_state(&conn, "lib-1");
 
-    // Simulate a remote that already has a manifest at generation 2 (another
-    // device published while we were offline).
     let provider = FaultInjectionProvider::new().with_working_copy_root(working_root.clone());
     let manifest = RepositoryManifest {
         schema_version: CURRENT_SCHEMA_VERSION,
@@ -897,7 +805,6 @@ fn t6_cas_conflict_on_publish_conflict_surfaced() {
         "rev-gen-2",
     );
 
-    // Our operation expects generation 0 (we are stale).
     let op_id = make_pending_op(&conn, "lib-1", 0);
     let ctx = make_context(
         &conn,
@@ -916,7 +823,6 @@ fn t6_cas_conflict_on_publish_conflict_surfaced() {
     assert_eq!(op.state, OperationState::Conflicted);
     assert_eq!(op.error_code.as_deref(), Some("remote_conflict"));
 
-    // The remote manifest must be unchanged (still generation 2).
     let remote_manifest = read_manifest(&provider).unwrap().unwrap();
     assert_eq!(remote_manifest.generation, 2);
     assert_eq!(remote_manifest.writer_id, "other-device");
@@ -924,16 +830,11 @@ fn t6_cas_conflict_on_publish_conflict_surfaced() {
 
 #[test]
 fn t7_stale_request_aborts_download_no_rename() {
-    // The stale-guard fires mid-download. Assert no rename and temps cleaned.
-    // We simulate this by failing the download (the stale-guard in production
-    // aborts the orchestrator before the rename; here we verify the atomic
-    // download leaves no final file when the download fails mid-body).
     let dir = TempDir::new().expect("temp dir");
     let dest = dir.path().join("media/song.mp3");
     let provider = FaultInjectionProvider::new();
     let data = b"stale request test data".to_vec();
     provider.store_file("media/song.mp3", data.clone(), "rev-1");
-    // Mid-body disconnect (stale-guard aborts mid-download in production).
     provider.queue_behavior(FaultBehavior::PartialThenFail(
         5,
         RemoteErrorKind::StaleRequest,
@@ -959,8 +860,6 @@ fn t7_stale_request_aborts_download_no_rename() {
 
 #[test]
 fn t8_reconnect_on_transient_playback_failure_timeline_preserved() {
-    // Playback source fails with a transient error → reconnect → assert the
-    // position is preserved (the new source is seeked to the old position).
     let sink = RecordingSink::new();
     let calls = Arc::new(Mutex::new(0u32));
     let calls_clone = Arc::clone(&calls);
@@ -970,12 +869,10 @@ fn t8_reconnect_on_transient_playback_failure_timeline_preserved() {
         *c += 1;
         drop(c);
         if n == 0 {
-            // First attempt: transient failure (503).
             Err(ReconnectError::Transient)
         } else {
-            // Second attempt: succeed with a source seeked to the position.
             Ok(ReresolvedSource {
-                source: 0u32, // dummy source token
+                source: 0u32,
                 from_cache: false,
                 runtime: RemoteStreamingRuntime {
                     cache_pin_guard: None,
@@ -984,7 +881,6 @@ fn t8_reconnect_on_transient_playback_failure_timeline_preserved() {
             })
         }
     };
-    // Seek closure: records the position the new source was seeked to.
     let seeked_position = Arc::new(Mutex::new(0u64));
     let seeked_clone = Arc::clone(&seeked_position);
     let seek_source = move |_: &mut u32, position_ms: u64| {
@@ -1022,7 +918,6 @@ fn t8_reconnect_on_transient_playback_failure_timeline_preserved() {
     assert_eq!(*seeked_position.lock().unwrap(), 42_000);
 
     let events = sink.events.lock().unwrap();
-    // Two Reconnecting events (attempt 1 fails, attempt 2 succeeds).
     assert_eq!(events.len(), 2);
     assert!(matches!(
         events[0],
@@ -1036,15 +931,12 @@ fn t8_reconnect_on_transient_playback_failure_timeline_preserved() {
 
 #[test]
 fn t9_cache_eviction_under_budget_pressure_lru_pinned_survive() {
-    // Fill the cache beyond the 2 GiB budget → assert LRU eviction removes
-    // oldest unpinned entries; assert pinned entries survive.
     use crate::remote::cache_catalog::{CacheCatalog, CacheIdentity, DEFAULT_CACHE_BYTES_LIMIT};
 
     let db_dir = TempDir::new().expect("db temp dir");
     let cache_dir = TempDir::new().expect("cache temp dir");
     let conn = open_control_db(&db_dir.path().join("remote-state.db")).expect("open db");
     let control_db = Arc::new(Mutex::new(conn));
-    // Small budget so eviction triggers quickly.
     let budget: u64 = 300;
     let catalog = CacheCatalog::open(
         cache_dir.path().to_path_buf(),
@@ -1067,7 +959,6 @@ fn t9_cache_eviction_under_budget_pressure_lru_pinned_survive() {
         expected_size: 100,
     };
 
-    // Insert A (oldest).
     let cache_a = {
         let mut cat = catalog_arc.lock().unwrap();
         cat.get_or_create(&id_a).unwrap()
@@ -1079,13 +970,10 @@ fn t9_cache_eviction_under_budget_pressure_lru_pinned_survive() {
         .persist_ranges(&id_a.cache_key())
         .unwrap();
 
-    // Pin A so it survives eviction.
     let _guard = CacheCatalog::pin_cache_entry(&catalog_arc, &id_a.cache_key()).unwrap();
 
-    // Sleep so B's access timestamp is strictly greater than A's.
     std::thread::sleep(Duration::from_millis(20));
 
-    // Insert B (newer, unpinned).
     let cache_b = {
         let mut cat = catalog_arc.lock().unwrap();
         cat.get_or_create(&id_b).unwrap()
@@ -1097,8 +985,6 @@ fn t9_cache_eviction_under_budget_pressure_lru_pinned_survive() {
         .persist_ranges(&id_b.cache_key())
         .unwrap();
 
-    // Insert C (300 budget, A=100 pinned + B=100 + C=100 = 300 exactly at
-    // budget; no eviction yet).
     let id_c = CacheIdentity {
         library_id: "lib-1".to_owned(),
         relative_path: "media/c.mp3".to_owned(),
@@ -1110,8 +996,6 @@ fn t9_cache_eviction_under_budget_pressure_lru_pinned_survive() {
         cat.get_or_create(&id_c).unwrap();
     }
 
-    // Insert D (forces eviction: 300 budget, A=100 pinned + B=100 + C=100 +
-    // D=100 = 400 > 300). B is the oldest unpinned → evicted.
     let id_d = CacheIdentity {
         library_id: "lib-1".to_owned(),
         relative_path: "media/d.mp3".to_owned(),
@@ -1123,8 +1007,6 @@ fn t9_cache_eviction_under_budget_pressure_lru_pinned_survive() {
         cat.get_or_create(&id_d).unwrap();
     }
 
-    // A is pinned → survives. B (oldest unpinned) should have been evicted
-    // to make room. C and D remain.
     let cat = catalog_arc.lock().unwrap();
     assert!(
         cat.get_entry(&id_a.cache_key()).unwrap().is_some(),
@@ -1137,14 +1019,11 @@ fn t9_cache_eviction_under_budget_pressure_lru_pinned_survive() {
     assert!(cat.get_entry(&id_c.cache_key()).unwrap().is_some());
     assert!(cat.get_entry(&id_d.cache_key()).unwrap().is_some());
 
-    // Sanity: the default budget is 2 GiB.
     assert_eq!(DEFAULT_CACHE_BYTES_LIMIT, 2 * 1024 * 1024 * 1024);
 }
 
 #[test]
 fn t10_startup_recovery_after_crash_mid_download() {
-    // Write a partial download + catalog entry; simulate crash (close DB);
-    // reopen → assert the partial entry is reconciled and resumable.
     use crate::remote::cache_catalog::CacheCatalog;
 
     let db_dir = TempDir::new().expect("db temp dir");
@@ -1159,7 +1038,6 @@ fn t10_startup_recovery_after_crash_mid_download() {
     .expect("open catalog");
     let catalog_arc = Arc::new(Mutex::new(catalog));
 
-    // Insert a partial entry (50 of 200 bytes).
     let id = crate::remote::cache_catalog::CacheIdentity {
         library_id: "lib-1".to_owned(),
         relative_path: "media/x.mp3".to_owned(),
@@ -1177,10 +1055,8 @@ fn t10_startup_recovery_after_crash_mid_download() {
         .persist_ranges(&id.cache_key())
         .unwrap();
 
-    // Simulate crash: drop all handles.
     drop(catalog_arc);
 
-    // Reopen — reconciliation runs on open.
     let mut catalog = CacheCatalog::open(
         cache_dir.path().to_path_buf(),
         Arc::clone(&control_db),
@@ -1188,9 +1064,6 @@ fn t10_startup_recovery_after_crash_mid_download() {
     )
     .expect("reopen after crash");
 
-    // The partial entry should be reconciled: the catalog row should still
-    // exist (file length 200 matches expected_size because ChunkedCache
-    // pre-allocates), and the ranges should be intact so resume can continue.
     let cache2 = catalog.get_or_create(&id).unwrap();
     assert!(
         cache2.is_cached(0, 50),
@@ -1201,8 +1074,6 @@ fn t10_startup_recovery_after_crash_mid_download() {
 
 #[test]
 fn t11_orphaned_data_file_cleanup_on_startup() {
-    // Create a data file with no catalog entry; open cache → assert the file
-    // is deleted on the startup scan.
     use crate::remote::cache_catalog::CacheCatalog;
 
     let db_dir = TempDir::new().expect("db temp dir");
@@ -1217,7 +1088,6 @@ fn t11_orphaned_data_file_cleanup_on_startup() {
     .expect("open catalog");
     drop(catalog);
 
-    // Drop an orphaned .cache file with no catalog row.
     let orphan = cache_dir.path().join("orphan-data.cache");
     std::fs::write(&orphan, b"junk bytes").unwrap();
     assert!(orphan.exists());
@@ -1237,13 +1107,9 @@ fn t11_orphaned_data_file_cleanup_on_startup() {
 
 #[test]
 fn t12_network_retry_with_backoff_increasing_delays() {
-    // Configure 3 consecutive transient failures; assert the RetryDriver
-    // retries with increasing delays (use seeded RNG for deterministic
-    // delays) and eventually succeeds on the 4th attempt.
     let provider = FaultInjectionProvider::new();
     let data = b"backoff retry test".to_vec();
     provider.store_file("media/song.mp3", data.clone(), "rev-1");
-    // Queue 3 transient failures then the default (Success).
     provider.queue_failures(3, RemoteErrorKind::NetworkUnavailable);
 
     let policy = RetryPolicy {
@@ -1273,8 +1139,6 @@ fn t12_network_retry_with_backoff_increasing_delays() {
         let mut count = attempt_clone.lock().unwrap();
         *count += 1;
         drop(count);
-        // The first 3 attempts fail transiently; the 4th succeeds.
-        // download_file pops behaviors; we call it directly here.
         let dir = TempDir::new().expect("temp dir");
         let dest = dir.path().join("song.mp3");
         let download_result = provider.download_file("media/song.mp3", &dest);
@@ -1291,12 +1155,8 @@ fn t12_network_retry_with_backoff_increasing_delays() {
 
     let final_bytes = result.expect("retry should eventually succeed");
     assert_eq!(final_bytes, data);
-    // 3 retries → 3 delays recorded.
     let delays = recorded.lock().unwrap().clone();
     assert_eq!(delays.len(), 3, "one delay per retry");
-    // Delays must be non-decreasing (full-jitter caps grow exponentially).
-    // With a seeded RNG the exact values are deterministic; assert the cap
-    // sequence is increasing and each delay is within its cap.
     for (i, &delay) in delays.iter().enumerate() {
         let cap = {
             let mut cap = policy.initial_delay;
@@ -1313,26 +1173,17 @@ fn t12_network_retry_with_backoff_increasing_delays() {
             "delay {delay:?} at retry {i} must be within cap {cap:?}"
         );
     }
-    // The cap for retry 2 must be >= the cap for retry 1 (monotonic growth).
     let cap1 = full_jitter_delay(&policy, 0, &SeededJitter::new(0)).max(Duration::ZERO);
-    let _ = cap1; // referenced for completeness
+    let _ = cap1;
     assert!(
         delays[1] >= Duration::ZERO && delays[2] >= Duration::ZERO,
         "all delays must be non-negative"
     );
-    // Verify the attempt count: 4 total (3 failures + 1 success).
     assert_eq!(*attempt_count.lock().unwrap(), 4);
 }
 
-// ---------------------------------------------------------------------------
-// Publication crash windows (issue #151)
-// ---------------------------------------------------------------------------
-
 #[test]
 fn t13_crash_after_candidate_upload_before_cas_preserves_remote_generation() {
-    // Crash window 6: candidate uploaded, CAS not yet applied. A network
-    // failure on CAS must leave the remote generation unchanged and keep the
-    // local operation retryable / dirty — never silently overwrite.
     let (_db_dir, conn) = fresh_control_db();
     let working_dir = TempDir::new().expect("working dir");
     let working_root = working_dir.path().to_owned();
@@ -1361,7 +1212,6 @@ fn t13_crash_after_candidate_upload_before_cas_preserves_remote_generation() {
         err.message
     );
 
-    // No manifest committed — generation still absent.
     assert!(
         read_manifest(&provider).unwrap().is_none(),
         "manifest must not advance when CAS fails"
@@ -1380,8 +1230,6 @@ fn t13_crash_after_candidate_upload_before_cas_preserves_remote_generation() {
 
 #[test]
 fn t14_retry_after_cas_network_failure_converges() {
-    // Same crash window as t13, but the next attempt succeeds. The operation
-    // must complete and advance the remote generation exactly once.
     let (_db_dir, conn) = fresh_control_db();
     let working_dir = TempDir::new().expect("working dir");
     let working_root = working_dir.path().to_owned();
@@ -1402,7 +1250,6 @@ fn t14_retry_after_cas_network_failure_converges() {
     );
     let _ = execute_publish(&ctx, &op_id).expect_err("first attempt fails at CAS");
 
-    // Reset the op to Pending for the retry (simulates recovery).
     let mut op = crate::remote::control_db::get_operation(&conn, &op_id)
         .unwrap()
         .unwrap();
@@ -1425,10 +1272,6 @@ fn t14_retry_after_cas_network_failure_converges() {
 
 #[test]
 fn t15_crash_after_cas_before_local_completion_recovers_own_commit() {
-    // Crash windows 7–8: CAS succeeded remotely, process died before
-    // record_completed. Recovery re-enters execute_publish with the same
-    // expected_generation and must accept our own writer_id commit instead
-    // of surfacing RemoteConflict.
     let (_db_dir, conn) = fresh_control_db();
     let working_dir = TempDir::new().expect("working dir");
     let working_root = working_dir.path().to_owned();
@@ -1437,9 +1280,6 @@ fn t15_crash_after_cas_before_local_completion_recovers_own_commit() {
 
     let provider = FaultInjectionProvider::new().with_working_copy_root(working_root.clone());
 
-    // Simulate: CAS already committed generation 1 by this writer for a
-    // known operation. Local op still expects generation 0 and retains the
-    // immutable candidate identity used at CAS time.
     let db_bytes = std::fs::read(working_root.join("openkara.db")).unwrap();
     let digest = sha256_hex(&db_bytes);
     let db_size = std::fs::metadata(working_root.join("openkara.db"))
@@ -1501,15 +1341,12 @@ fn t15_crash_after_cas_before_local_completion_recovers_own_commit() {
     assert_eq!(repo.local_state, LocalState::Clean);
     assert_eq!(repo.local_db_digest.as_deref(), Some(digest.as_str()));
 
-    // Remote generation must remain 1 — no double-publish.
     let remote_manifest = read_manifest(&provider).unwrap().unwrap();
     assert_eq!(remote_manifest.generation, 1);
 }
 
 #[test]
 fn t16_candidate_upload_failure_leaves_dirty_and_retryable() {
-    // Crash window 5: candidate upload fails. Local mutation must remain
-    // (working DB untouched), remote generation must not advance, op retryable.
     let (_db_dir, conn) = fresh_control_db();
     let working_dir = TempDir::new().expect("working dir");
     let working_root = working_dir.path().to_owned();
@@ -1518,7 +1355,6 @@ fn t16_candidate_upload_failure_leaves_dirty_and_retryable() {
     let pre_digest = sha256_hex(&std::fs::read(&working_db).unwrap());
     seed_repository_state(&conn, "lib-1");
 
-    // Mark dirty as mutation would.
     let mut repo = crate::remote::control_db::get_repository_state(&conn, "lib-1")
         .unwrap()
         .unwrap();
@@ -1557,8 +1393,6 @@ fn t16_candidate_upload_failure_leaves_dirty_and_retryable() {
 
 #[test]
 fn t17_concurrent_writers_one_winner_one_conflict_no_overwrite() {
-    // Two independent control planes against one fake provider: both read
-    // generation N; exactly one CAS to N+1 succeeds; the other is conflicted.
     let (_db_a, conn_a) = fresh_control_db();
     let (_db_b, conn_b) = fresh_control_db();
     let working_dir = TempDir::new().expect("working dir");
@@ -1572,7 +1406,6 @@ fn t17_concurrent_writers_one_winner_one_conflict_no_overwrite() {
 
     let op_a = make_pending_op(&conn_a, "lib-shared", 0);
     let op_b = {
-        // Unique op id for B (make_pending_op uses generation in id).
         let op_id = "fault-op-b-0".to_owned();
         let now = crate::remote::types::current_unix_time_ms();
         let payload = OperationPayload {
@@ -1638,12 +1471,10 @@ fn t17_concurrent_writers_one_winner_one_conflict_no_overwrite() {
         .unwrap();
     assert_eq!(op_b_row.state, OperationState::Conflicted);
 
-    // Winner's generation must not be overwritten by the loser.
     let after = read_manifest(&provider).unwrap().unwrap();
     assert_eq!(after.generation, 1);
     assert_eq!(after.writer_id, "writer-a");
 
-    // Retrying the loser must still not overwrite.
     let mut op_b_row = op_b_row;
     op_b_row.state = OperationState::Pending;
     op_b_row.error_code = None;
@@ -1656,8 +1487,6 @@ fn t17_concurrent_writers_one_winner_one_conflict_no_overwrite() {
 
 #[test]
 fn t18_transfer_identity_digest_change_invalidates_session() {
-    // Changed digest invalidates resume: a transfer part with a different
-    // expected digest must not produce a hybrid object.
     let (_db_dir, conn) = fresh_control_db();
     let dir = TempDir::new().expect("temp");
     let temp = dir.path().join("candidate.part.op-x");
@@ -1677,11 +1506,6 @@ fn t18_transfer_identity_digest_change_invalidates_session() {
     };
     upsert_transfer_part(&conn, &part).unwrap();
 
-    // New candidate with different digest: resume identity check must reject
-    // reusing the old session. We assert the helper contract used by the
-    // executor: same op_id + relative_path + direction but mismatched digest
-    // is treated as a new transfer (session id cleared by callers that rebuild
-    // candidates). Here we verify the control-DB row can be replaced atomically.
     let new_part = TransferPartRow {
         operation_id: "op-x".to_owned(),
         relative_path: ".openkara/databases/1.sqlite".to_owned(),
@@ -1689,7 +1513,7 @@ fn t18_transfer_identity_digest_change_invalidates_session() {
         expected_size: Some(100),
         expected_digest: Some("digest-new".to_owned()),
         provider_revision: None,
-        provider_session_id: None, // session invalidated
+        provider_session_id: None,
         transferred_bytes: 0,
         state: "pending".to_owned(),
         updated_at_ms: 2000,

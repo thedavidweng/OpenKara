@@ -8,7 +8,6 @@ import {
   ensureArrayBuffer,
 } from "./cdg-protocol";
 
-/** Build a 32-byte little-endian header for tests. Returns an ArrayBuffer. */
 function buildHeader(
   transportGeneration: bigint,
   frameVersion: bigint,
@@ -16,18 +15,14 @@ function buildHeader(
   flags: number,
 ): ArrayBuffer {
   const header = new Uint8Array(CDG_PROTOCOL_HEADER_SIZE);
-  // Magic "OKCG"
   header[0] = 0x4f;
   header[1] = 0x4b;
   header[2] = 0x43;
   header[3] = 0x47;
-  // Version 1 (u16 LE)
   header[4] = 1;
   header[5] = 0;
-  // Flags (u16 LE)
   header[6] = flags & 0xff;
   header[7] = (flags >> 8) & 0xff;
-  // transportGeneration (u64 LE)
   const dv = new DataView(header.buffer);
   dv.setBigUint64(8, transportGeneration, true);
   dv.setBigUint64(16, frameVersion, true);
@@ -56,7 +51,6 @@ describe("parseCdgFrameResponse", () => {
     const header = buildHeader(1n, 5n, 200n, 0x01);
     const full = new Uint8Array(CDG_PROTOCOL_HEADER_SIZE + CDG_RGBA_SIZE);
     full.set(new Uint8Array(header), 0);
-    // Set a distinctive byte in the RGBA region.
     full[CDG_PROTOCOL_HEADER_SIZE] = 0xab;
     full[CDG_PROTOCOL_HEADER_SIZE + 1] = 0xcd;
 

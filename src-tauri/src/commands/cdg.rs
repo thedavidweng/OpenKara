@@ -9,30 +9,22 @@ use tauri::{ipc::Response, State};
 
 /// Save a checkpoint every 30 seconds (300 packets/s * 30s = 9000 packets).
 const CHECKPOINT_INTERVAL_PACKETS: usize = 9_000;
-/// Maximum number of checkpoints per timeline. Once full, stop adding later
-/// checkpoints; never evict a checkpoint during active playback.
 const MAX_CHECKPOINTS: usize = 256;
 
-/// Exclusive-cursor checkpoint: a snapshot saved after processing packet
-/// index `i` uses `next_packet_index = i + 1`.
 #[derive(Clone)]
 pub struct CdgCheckpoint {
     pub next_packet_index: usize,
     pub renderer: CdgRendererSnapshot,
 }
 
-/// Identifies which presentation clock owns a timeline.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CdgTimelineKind {
     Local,
     AirPlay,
 }
 
-/// Mutable per-timeline state. Local and AirPlay each own a separate
-/// instance so they can advance independently without cross-contamination.
 pub struct CdgTimelineState {
     pub renderer: CdgRenderer,
-    /// Exclusive packet cursor: renderer contains packets [0, next_packet_index).
     pub next_packet_index: usize,
     pub cached_frame: Option<Arc<[u8]>>,
     pub frame_version: u64,
@@ -130,7 +122,6 @@ impl CdgPlaybackState {
         self.airplay.cached_frame = None;
     }
 
-    /// Update transport generation without resetting renderer pixels or cursor.
     pub fn update_transport_generation(&mut self, generation: u64) {
         self.transport_generation = generation;
     }
@@ -149,14 +140,6 @@ pub enum CdgFrameUpdate {
     },
 }
 
-/// Advance the selected timeline to the position implied by `position_ms`.
-///
-/// - Reposition only the selected timeline.
-/// - Convert indexed pixels to RGBA only when visible state changed, no
-///   cached frame exists, or a reset/seek requires a new authoritative frame.
-/// - Increment only that timeline's `frame_version`, and only when its
-///   cached frame changes.
-/// - `NoChange` does not clone the cached RGBA buffer.
 pub fn advance_cdg_timeline(
     state: &mut CdgPlaybackState,
     timeline: CdgTimelineKind,
@@ -212,8 +195,6 @@ pub fn advance_cdg_timeline(
     }
 }
 
-/// Reposition a timeline to `target_index` using checkpoint restore + replay
-/// for backward seeks, or reset + replay from zero when no checkpoint exists.
 fn reposition_timeline(ts: &mut CdgTimelineState, packets: &[CdgPacket], target_index: usize) {
     let checkpoint = ts
         .checkpoints
@@ -238,7 +219,6 @@ fn reposition_timeline(ts: &mut CdgTimelineState, packets: &[CdgPacket], target_
     }
 }
 
-/// This is only called on the reset path (no existing checkpoint).
 fn rebuild_checkpoints(ts: &mut CdgTimelineState, packets: &[CdgPacket], target_index: usize) {
     let mut snap_renderer = CdgRenderer::new();
     let mut cursor = 0usize;
@@ -583,29 +563,24 @@ mod tests {
 
     #[test]
     fn checkpoint_seek_equivalence() {
-        // Build enough packets to trigger checkpoints.
         let mut packets = Vec::new();
-        // Set color 1 to white.
         let mut color_data = [0u8; 16];
         color_data[2] = 0x3F;
         color_data[3] = 0x3F;
-        packets.push(cdg_packet(30, color_data)); // ColorsLow
-                                                  // Memory preset with color 1.
+        packets.push(cdg_packet(30, color_data));
         packets.push(cdg_packet(1, {
             let mut d = [0u8; 16];
             d[0] = 1;
             d
         }));
-        // Add packets to exceed CHECKPOINT_INTERVAL.
         for _ in 2..(CHECKPOINT_INTERVAL_PACKETS + 10) {
             packets.push(cdg_packet(1, {
                 let mut d = [0u8; 16];
                 d[0] = 0;
-                d[1] = 1; // repeat != 0, filtered
+                d[1] = 1;
                 d
             }));
         }
-        // Add an XOR packet after the checkpoint boundary.
         packets.push(cdg_packet(38, {
             let mut d = [0u8; 16];
             d[0] = 1;
@@ -618,28 +593,22 @@ mod tests {
 
         let packets_arc: Arc<[CdgPacket]> = Arc::from(packets.into_boxed_slice());
 
-        // Sequential decode from 0 to target.
         let mut seq_renderer = CdgRenderer::new();
         seq_renderer.process_range(&packets_arc, 0, packets_arc.len());
         let _seq_rgba = seq_renderer.to_rgba();
 
-        // Checkpoint restore + replay.
         let mut state = CdgPlaybackState::new("s".to_owned(), 1, Arc::clone(&packets_arc));
-        // Advance forward to build checkpoints.
         let _ = advance_cdg_timeline(
             &mut state,
             CdgTimelineKind::Local,
             (packets_arc.len() as u64 * 1000) / 300,
         );
-        // Seek backward to a position after the checkpoint.
         let target_ms = ((CHECKPOINT_INTERVAL_PACKETS as u64 + 5) * 1000) / 300;
         state.mark_seek();
         let update = advance_cdg_timeline(&mut state, CdgTimelineKind::Local, target_ms);
 
         match update {
             CdgFrameUpdate::Frame { rgba, .. } => {
-                // The checkpoint-replayed frame at this cursor should match
-                // sequential decode at the same cursor.
                 let mut seq2 = CdgRenderer::new();
                 seq2.process_range(&packets_arc, 0, (target_ms as u128 * 300 / 1000) as usize);
                 let seq2_rgba = seq2.to_rgba();
@@ -651,14 +620,12 @@ mod tests {
 
     #[test]
     fn ten_minute_simulation_no_backward_resets() {
-        // 10 minutes at 33ms polling = ~18,181 polls.
-        // At 300 packets/s, 10 min = 180,000 packets.
         let packet_count = 180_000usize;
         let packets: Vec<CdgPacket> = (0..packet_count)
             .map(|i| {
                 let mut d = [0u8; 16];
                 d[0] = (i % 16) as u8;
-                d[1] = if i % 100 == 0 { 0 } else { 1 }; // mostly filtered repeats
+                d[1] = if i % 100 == 0 { 0 } else { 1 };
                 cdg_packet(1, d)
             })
             .collect();
@@ -682,12 +649,10 @@ mod tests {
             }
         }
 
-        // No backward resets: the cursor should never go backward.
         assert_eq!(
             state.local.next_packet_index,
             (18_180 * 33 * 300 / 1000).min(packet_count)
         );
-        // RGBA conversion count should be much less than poll count.
         assert!(
             rgba_conversion_count < poll_count,
             "RGBA conversions ({rgba_conversion_count}) should be less than polls ({poll_count})"
@@ -701,7 +666,6 @@ mod tests {
 
         let mut state = CdgPlaybackState::new("s".to_owned(), 1, Arc::clone(&packets_arc));
 
-        // Only advance Local; AirPlay should have zero conversions.
         for i in 0..100 {
             let _ = advance_cdg_timeline(&mut state, CdgTimelineKind::Local, i * 33);
         }
@@ -731,23 +695,18 @@ mod tests {
         };
 
         let cdg_state = Arc::new(Mutex::new(Some(slot)));
-        // Manually inject CDG state for this test.
         let mut guard = cdg_state.lock().unwrap();
         let slot = guard.as_mut().unwrap();
         let cdg = slot.playback.as_mut().unwrap();
         let local_cursor_before = cdg.local.next_packet_index;
 
-        // Stale generation.
-        if cdg.song_id != "song-1" || cdg.transport_generation != 999 {
-            // This is the expected path — no mutation.
-        }
+        if cdg.song_id != "song-1" || cdg.transport_generation != 999 {}
 
         assert_eq!(cdg.local.next_packet_index, local_cursor_before);
     }
 
     #[test]
     fn checkpoint_count_stays_bounded() {
-        // Verify that checkpoints never exceed MAX_CHECKPOINTS (256).
         let packet_count = MAX_CHECKPOINTS * CHECKPOINT_INTERVAL_PACKETS * 2;
         let packets: Vec<CdgPacket> = (0..packet_count)
             .map(|i| {
@@ -765,7 +724,6 @@ mod tests {
 
         let mut state = CdgPlaybackState::new("s".to_owned(), 1, Arc::clone(&packets_arc));
 
-        // Advance through the entire packet range.
         let total_ms = (packet_count as u64 * 1000) / 300;
         let _ = advance_cdg_timeline(&mut state, CdgTimelineKind::Local, total_ms);
 
@@ -783,19 +741,19 @@ mod tests {
             cdg_packet(1, {
                 let mut d = [0u8; 16];
                 d[0] = 0;
-                d[1] = 0; // repeat=0, first
+                d[1] = 0;
                 d
             }),
             cdg_packet(1, {
                 let mut d = [0u8; 16];
                 d[0] = 1;
-                d[1] = 0; // repeat=0, first (color change)
+                d[1] = 0;
                 d
             }),
             cdg_packet(1, {
                 let mut d = [0u8; 16];
                 d[0] = 1;
-                d[1] = 1; // repeat=1, filtered (no change)
+                d[1] = 1;
                 d
             }),
         ];
@@ -803,20 +761,17 @@ mod tests {
 
         let mut state = CdgPlaybackState::new("s".to_owned(), 1, Arc::clone(&packets_arc));
 
-        // First advance: needs_reset → Frame.
         let v1 = match advance_cdg_timeline(&mut state, CdgTimelineKind::Local, 0) {
             CdgFrameUpdate::Frame { frame_version, .. } => frame_version,
             _ => panic!("expected Frame"),
         };
 
-        // Second advance: new packet → Frame (color change).
         let v2 = match advance_cdg_timeline(&mut state, CdgTimelineKind::Local, 10) {
             CdgFrameUpdate::Frame { frame_version, .. } => frame_version,
             _ => panic!("expected Frame"),
         };
         assert!(v2 > v1, "frame version must be monotonic");
 
-        // Third advance: filtered repeat → NoChange.
         let v3 = match advance_cdg_timeline(&mut state, CdgTimelineKind::Local, 20) {
             CdgFrameUpdate::NoChange { frame_version, .. } => frame_version,
             other => panic!("expected NoChange, got {:?}", other),

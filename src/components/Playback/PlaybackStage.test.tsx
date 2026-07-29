@@ -198,8 +198,6 @@ describe("PlaybackStage", () => {
         artist: null,
         album: null,
         duration_ms: 1000,
-        // No inlined cover_art: the backdrop is fetched on-demand and flips
-        // stageAmbience false→true a second into playback.
         cover_art: null,
         has_cover_art: true,
         artwork_thumb_path: null,
@@ -231,7 +229,6 @@ describe("PlaybackStage", () => {
     expect(viewportBefore).toBeTruthy();
     viewportBefore.scrollTop = 240;
 
-    // The async cover-art preview lands mid-playback → ambience flips on.
     await act(async () => {
       resolveFetch([0xff, 0xd8, 0x00]);
       await Promise.resolve();

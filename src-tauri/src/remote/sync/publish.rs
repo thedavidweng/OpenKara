@@ -119,10 +119,6 @@ fn publish_artwork_derivatives(
         }
     };
 
-    // Publish under paths addressed by the derivative bytes themselves.
-    // The local cache may use a cover-addressed filename, but encoder changes
-    // can produce different WebP bytes for the same cover. Byte-addressed remote
-    // paths prevent a losing writer from overwriting committed artwork.
     let remote_thumb = match artwork::copy_artwork_derivative_content_addressed(
         local_root,
         remote_root,
@@ -542,7 +538,6 @@ fn publish_song_internal<R: tauri::Runtime>(
                 load_registered_remote_library(&state.shell.app_data_dir, &op.library_id)?;
             (op, library)
         } else {
-            // Explicit re-publish: fall back to active remote.
             drop(conn);
             let config = load_app_config(&state.shell.app_data_dir)?;
             let library = resolve_active_remote(&config).ok_or_else(|| {
@@ -616,7 +611,6 @@ fn publish_song_internal<R: tauri::Runtime>(
     // A unrecovered.
     reconcile_cas_boundary_ops(state, &remote_library_id, &remote_library, &remote_root)?;
 
-    // Preferred op may have completed during CAS reconcile, or still be live.
     let preferred_still_live = {
         let conn = state.remote.control_db.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
@@ -652,7 +646,6 @@ fn publish_song_internal<R: tauri::Runtime>(
                 return project_upload_status_from_operation(state, &leftover_id, song_id, None);
             }
             None => {
-                // Preferred was CAS-boundary and completed; nothing left.
                 return project_upload_status_from_operation(
                     state,
                     &resolved_op.operation_id,
@@ -784,7 +777,6 @@ fn publish_song_internal<R: tauri::Runtime>(
                 None,
             )?;
             emit_upload_complete(app_handle, &completed);
-            // Emit complete for each song in the batch so UI clears all rows.
             for sid in song_ids_to_publish.iter().skip(1) {
                 let snap = UploadStatusSnapshot {
                     song_id: sid.clone(),
@@ -1112,7 +1104,6 @@ pub(crate) fn merge_pending_ops_for_publish(
             if !is_mergeable_publish_state(other.state) {
                 continue;
             }
-            // Leave CAS-boundary ops alone for individual reconcile.
             if may_have_crossed_cas_boundary(&other) {
                 continue;
             }
@@ -1144,7 +1135,6 @@ pub(crate) fn merge_pending_ops_for_publish(
             ));
             other.updated_at_ms = now;
             upsert_operation(&tx, &other)?;
-            // Secondary transfer sessions are abandoned with the cancelled op.
             let _ = crate::remote::control_db::delete_transfer_parts(&tx, &other.operation_id);
             merged_secondary = true;
         }
@@ -1197,7 +1187,6 @@ pub(crate) fn merge_pending_ops_for_publish(
         primary.updated_at_ms = now;
         upsert_operation(&tx, &primary)?;
 
-        // Rebind active_operation_id so status/UI track the survivor.
         if let Some(mut repo) = get_repository_state(&tx, library_id)? {
             repo.active_operation_id = Some(primary_op_id.to_owned());
             if repo.local_state == LocalState::Clean {
@@ -1215,8 +1204,6 @@ pub(crate) fn merge_pending_ops_for_publish(
         song_ids
     };
 
-    // Best-effort: remove abandoned candidate files outside the control TX.
-    // Missing files are fine; the identity was already cleared durably.
     if let Some(root) = working_copy_root {
         for rel in candidate_paths_to_delete {
             let path = root.join(rel);
@@ -1325,7 +1312,6 @@ fn commit_via_executor(
         let conn = state.remote.control_db.lock().map_err(|_| {
             crate::commands::error::state_lock_error("control DB lock was poisoned")
         })?;
-        // Refuse terminal operations here as well.
         if let Some(op) = crate::remote::control_db::get_operation(&conn, operation_id)? {
             if op.state.is_terminal() {
                 return Err(CommandError::from(LibraryError::Internal(format!(
@@ -1610,7 +1596,6 @@ mod merge_tests {
             &op("op-a", "lib-1", &["song-a"], OperationState::Pending),
         )
         .unwrap();
-        // Prepared: local mutation not yet committed — must survive merge.
         upsert_operation(
             &conn,
             &op("op-prepared", "lib-1", &[], OperationState::Prepared),
@@ -1633,9 +1618,6 @@ mod merge_tests {
 
     #[test]
     fn merge_does_not_absorb_cas_boundary_primary_or_clear_candidate() {
-        // Post-CAS / frozen ops must reconcile alone so accepted-commit can
-        // match their immutable candidate. Merging B would expand payload and
-        // clear candidate identity → false completion of A+B.
         let dir = tempfile::TempDir::new().unwrap();
         let work = dir.path().join("work");
         std::fs::create_dir_all(work.join(".openkara/candidates")).unwrap();
@@ -1688,9 +1670,6 @@ mod merge_tests {
 
     #[test]
     fn merge_absorbs_rate_limited_retry_wait_and_inherits_backoff() {
-        // Shared working DB: B's rows are already in openkara.db. Skipping B
-        // would freeze them under A while B stays durable-uncommitted.
-        // Correct: merge B into A and wait on max next_attempt_at_ms.
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("remote-state.db");
         let conn = open_control_db(&path).unwrap();
@@ -1733,7 +1712,7 @@ mod merge_tests {
         let mut pending = op("op-early", "lib-1", &["song-b"], OperationState::Pending);
         pending.created_at_ms = 1;
         let mut cas = cas;
-        cas.created_at_ms = 100; // later than pending
+        cas.created_at_ms = 100;
         let primary = super::select_library_publish_primary(&[pending, cas]).unwrap();
         assert_eq!(primary.operation_id, "op-cas");
     }

@@ -145,7 +145,6 @@ describe("SettingsLibrarySection", () => {
       </SettingsOverlayContext>,
     );
 
-    // Match SettingsStemModeSection / SettingsModelVariantSection selected tokens.
     expect(markup).toContain("border-[var(--color-accent)]");
     expect(markup).toContain("bg-[var(--color-accent)]/15");
     expect(markup).toContain("text-[var(--color-accent)]");

@@ -21,7 +21,7 @@ describe("ensureArrayBuffer", () => {
 
   test("converts Uint8Array with byteOffset to a standalone ArrayBuffer", () => {
     const backing = new Uint8Array([0, 0, 1, 2, 3, 0, 0]);
-    const view = new Uint8Array(backing.buffer, 2, 3); // [1, 2, 3]
+    const view = new Uint8Array(backing.buffer, 2, 3);
     const result = ensureArrayBuffer(view);
 
     expect(result).toBeInstanceOf(ArrayBuffer);
@@ -172,11 +172,8 @@ describe("startCdgPositionSync", () => {
       };
     });
 
-    // bucket 0 -> 1
     listener!(33, 32);
-    // bucket 1 -> 2
     listener!(66, 65);
-    // bucket 2 -> 3
     listener!(99, 98);
 
     expect(tick).toHaveBeenCalledTimes(3);

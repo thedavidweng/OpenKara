@@ -153,7 +153,6 @@ describe("VolumeSliders stem popup portal", () => {
     const popupRails = Array.from(
       popup!.querySelectorAll("input.audio-level-slider"),
     ) as HTMLInputElement[];
-    // Drums + Bass + Other — longer master rail + trailing optical margin.
     expect(popupRails.length).toBe(3);
     for (const rail of popupRails) {
       expect(rail.className).toContain("w-[104px]");
@@ -270,7 +269,6 @@ describe("VolumeSliders stem popup portal", () => {
       root.render(<VolumeSliders density="relaxed" />);
     });
 
-    // A new separated song arrives with an even mix.
     mockPlayerState.snapshot.has_stems = true;
     mockPlayerState.snapshot.stem_volumes = {
       vocals: 1,

@@ -177,7 +177,6 @@ describe("createUserScrollGuard", () => {
     container.dispatchEvent(new Event("scroll"));
     expect(guard.isActive()).toBe(false);
 
-    // Engine finished the resume snap.
     endLyricsAutoScrollUnlockSuppress();
 
     container.dispatchEvent(new WheelEvent("wheel", { deltaY: 20 }));
@@ -197,7 +196,6 @@ describe("createUserScrollGuard", () => {
     container.dispatchEvent(new Event("scroll"));
     expect(guard.isActive()).toBe(false);
 
-    // Second clear while already locked is a no-op for onActiveChange.
     const onActiveChange = vi.fn();
     const guard2 = createUserScrollGuard(container, PAUSE_MS, {
       onActiveChange,
@@ -499,7 +497,6 @@ describe("tickLyricsEngineScroll", () => {
     scrollState.targetScrollTopRef.current = 40;
     scrollState.prevActiveIndexRef.current = 0;
 
-    // Host marked seek; clock has not jumped yet (async transport in flight).
     tickLyricsEngineScroll({
       container,
       lines: [{ time_ms: 0 }, { time_ms: 15000 }],
@@ -584,10 +581,8 @@ describe("tickLyricsEngineScroll", () => {
       audienceMode: true,
     });
 
-    // Scroll snaps to the clicked line (now the active line).
     expect(container.scrollTop).toBe(170);
     expect(scrollSpring.getPosition()).toBe(170);
-    // Guard is unlocked with idle re-lock, not cleared.
     expect(unlockCalled).toBe(true);
     expect(guardActive).toBe(true);
   });
@@ -612,7 +607,6 @@ describe("tickLyricsEngineScroll", () => {
 
     requestLyricsAutoScrollResume();
 
-    // Clock has not jumped yet (seek still in flight) — resume must still work.
     tickLyricsEngineScroll({
       container,
       lines: [{ time_ms: 0 }, { time_ms: 15000 }],
@@ -626,7 +620,6 @@ describe("tickLyricsEngineScroll", () => {
     expect(guardActive).toBe(false);
     expect(container.scrollTop).toBe(0);
 
-    // Seek lands; keep auto-scrolling on later line changes.
     tickLyricsEngineScroll({
       container,
       lines: [{ time_ms: 0 }, { time_ms: 15000 }],
@@ -640,7 +633,6 @@ describe("tickLyricsEngineScroll", () => {
     expect(container.scrollTop).toBe(170);
     expect(scrollSpring.getPosition()).toBe(170);
 
-    // Settled spring must still re-assert scrollTop if the browser moves it.
     container.scrollTop = 0;
     tickLyricsEngineScroll({
       container,
@@ -683,7 +675,6 @@ describe("tickLyricsEngineScroll", () => {
     const { container, scrollSpring, scrollState } = makeScrollFixture();
     const lines = [{ time_ms: 0 }, { time_ms: 30_000 }];
 
-    // Playing line 0; spring already settled on the correct target.
     scrollSpring.jumpTo(0);
     scrollState.targetScrollTopRef.current = 0;
     scrollState.prevActiveIndexRef.current = 0;
@@ -692,7 +683,6 @@ describe("tickLyricsEngineScroll", () => {
       peekLyricsAutoScrollResumeGeneration();
     container.scrollTop = 0;
 
-    // User browses far away while still on line 0.
     container.scrollTop = 180;
     scrollSpring.jumpTo(180);
     scrollState.targetScrollTopRef.current = 180;
@@ -708,7 +698,6 @@ describe("tickLyricsEngineScroll", () => {
       destroy: () => {},
     };
 
-    // Idle timeout → re-lock + resume generation (what createUserScrollGuard does).
     guardActive = false;
     requestLyricsAutoScrollResume();
 
@@ -793,7 +782,6 @@ describe("tickLyricsEngineScroll", () => {
       lastResumeGenerationRef: { current: 0 },
     };
 
-    // Seek jump to line 1
     tickLyricsEngineScroll({
       container,
       lines: [{ time_ms: 0 }, { time_ms: 1000 }, { time_ms: 2000 }],
@@ -806,7 +794,6 @@ describe("tickLyricsEngineScroll", () => {
     expect(container.scrollTop).toBe(170);
     expect(scrollState.prevActiveIndexRef.current).toBe(1);
 
-    // Natural advance still on line 1
     tickLyricsEngineScroll({
       container,
       lines: [{ time_ms: 0 }, { time_ms: 1000 }, { time_ms: 2000 }],
@@ -818,7 +805,6 @@ describe("tickLyricsEngineScroll", () => {
     });
     expect(scrollState.prevActiveIndexRef.current).toBe(1);
 
-    // Next line — must keep auto-scrolling after the seek
     tickLyricsEngineScroll({
       container,
       lines: [{ time_ms: 0 }, { time_ms: 1000 }, { time_ms: 2000 }],

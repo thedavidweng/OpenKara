@@ -279,7 +279,6 @@ fn google_drive_refresh_access_token(
     Ok(secret.access_token.clone())
 }
 
-/// Used as a callback by `ProviderFetcher` for automatic token renewal on 403.
 fn refresh_google_drive_token(
     app_data_dir: &Path,
     library: &RegisteredLibrary,
@@ -542,30 +541,8 @@ fn google_drive_upload_file_bytes(
     })
 }
 
-// ---------------------------------------------------------------------------
-// Resumable upload (PR#5)
-//
-// Google Drive supports resumable uploads via `uploadType=resumable`:
-//   1. POST metadata to the resumable URI with `X-Upload-Content-Type` and
-//      `X-Upload-Content-Length` headers. The response's `Location` header is
-//      the session URL (persisted in `remote_transfer_parts.provider_session_id`).
-//   2. PUT chunks to the session URL with `Content-Range: bytes <start>-<end>/<total>`.
-//   3. Status query: PUT with `Content-Range: bytes */*` returns 308 with a
-//      `Range: bytes=0-<committed>` header indicating the committed offset.
-//
-// On resume after restart, query the committed offset and resume from there.
-// A changed provider_revision invalidates the partial transfer.
-//
-// See: https://developers.google.com/drive/api/guides/manage-uploads#resumable
-// ---------------------------------------------------------------------------
-
-/// Chunk size for Google Drive resumable uploads. Google recommends 8 MiB for
-/// most files; we use 8 MiB to match the Dropbox chunk size.
 const GOOGLE_DRIVE_RESUMABLE_CHUNK_SIZE: usize = 8 * 1024 * 1024;
 
-/// Initiate a resumable upload session for a new file. Returns the session URL
-/// (from the `Location` header) to persist in
-/// `remote_transfer_parts.provider_session_id`.
 pub(crate) fn google_drive_begin_resumable_upload(
     app_data_dir: &Path,
     secret: &mut GoogleDriveSecret,
@@ -602,9 +579,6 @@ pub(crate) fn google_drive_begin_resumable_upload(
         })
 }
 
-/// Initiate a resumable upload session for updating an existing file (by
-/// `file_id`). Used when the file already exists and we want to overwrite it
-/// resumably.
 pub(crate) fn google_drive_begin_resumable_upload_existing(
     app_data_dir: &Path,
     secret: &mut GoogleDriveSecret,
@@ -638,10 +612,6 @@ pub(crate) fn google_drive_begin_resumable_upload_existing(
         })
 }
 
-/// Query the committed offset of a resumable upload session. Sends a PUT with
-/// `Content-Range: bytes */*` and an empty body. Google Drive responds with
-/// 308 (Permanent Redirect) and a `Range: bytes=0-<committed>` header, or 200
-/// if the upload is complete.
 pub(crate) fn google_drive_query_resumable_offset(
     session_url: &str,
     access_token: &str,
@@ -660,7 +630,6 @@ pub(crate) fn google_drive_query_resumable_offset(
             )))
         })?;
     let status = response.status().as_u16();
-    // 200/201 = upload complete; 308 = partial upload with Range header.
     if status == 200 || status == 201 {
         return Ok(total_size);
     }
@@ -669,7 +638,6 @@ pub(crate) fn google_drive_query_resumable_offset(
             "Google Drive resumable status query returned unexpected status {status}"
         ))));
     }
-    // Parse the Range header: "bytes=0-<committed>".
     let range_header = response
         .headers()
         .get("Range")
@@ -679,7 +647,6 @@ pub(crate) fn google_drive_query_resumable_offset(
                 "Google Drive resumable status query returned 308 without Range header".to_owned(),
             ))
         })?;
-    // Format: "bytes=0-123" → committed offset is 124 (last byte + 1).
     let committed = range_header
         .strip_prefix("bytes=0-")
         .and_then(|s| s.parse::<u64>().ok())
@@ -692,8 +659,6 @@ pub(crate) fn google_drive_query_resumable_offset(
     Ok(committed)
 }
 
-/// Upload a single chunk to a resumable upload session. `start` is the byte
-/// offset within the file; `chunk` is the chunk bytes.
 pub(crate) fn google_drive_upload_chunk(
     session_url: &str,
     access_token: &str,
@@ -716,7 +681,6 @@ pub(crate) fn google_drive_upload_chunk(
             )))
         })?;
     let status = response.status().as_u16();
-    // 200/201 = upload complete; 308 = chunk accepted, more pending.
     if status == 200 || status == 201 || status == 308 {
         Ok(())
     } else {
@@ -726,12 +690,6 @@ pub(crate) fn google_drive_upload_chunk(
     }
 }
 
-/// Upload `bytes` to a Google Drive file using a resumable upload session.
-/// `existing_session` is `(session_url, offset)` from a prior interrupted run.
-/// `progress` is called after each chunk with `(session_url, committed_offset)`.
-///
-/// For a new file, pass `parent_id` + `file_name`. For an existing file,
-/// pass `file_id` (the session is initiated against the existing file).
 pub(crate) fn google_drive_resumable_upload(
     app_data_dir: &Path,
     secret: &mut GoogleDriveSecret,
@@ -747,13 +705,10 @@ pub(crate) fn google_drive_resumable_upload(
 
     let (session_url, mut offset) = match existing_session {
         Some((url, off)) if off > 0 && off < total => {
-            // Resume: query the committed offset from the server to verify
-            // our persisted offset is correct.
             let server_offset = google_drive_query_resumable_offset(url, &token, total)?;
             (url.to_owned(), server_offset)
         }
         _ => {
-            // Start a new session.
             let url = if let Some(fid) = file_id {
                 google_drive_begin_resumable_upload_existing(app_data_dir, secret, fid, total)?
             } else {
@@ -774,7 +729,6 @@ pub(crate) fn google_drive_resumable_upload(
         }
     };
 
-    // Upload chunks.
     while offset < total {
         let chunk_end = (offset as usize + GOOGLE_DRIVE_RESUMABLE_CHUNK_SIZE).min(bytes.len());
         let chunk = &bytes[offset as usize..chunk_end];
@@ -783,9 +737,6 @@ pub(crate) fn google_drive_resumable_upload(
         progress(&session_url, offset);
     }
 
-    // The final chunk (or a status query) returns the file metadata. Query
-    // the session to retrieve the committed file metadata.
-    // For a complete upload, a final status query returns 200 with metadata.
     let final_response = crate::remote::net_policy::shared_http_client()
         .put(&session_url)
         .bearer_auth(&token)
@@ -841,10 +792,6 @@ pub(crate) fn google_drive_download_file(
             )))
         })?;
     }
-    // Stream to disk as bytes arrive rather than buffering the whole file with
-    // `response.bytes()`, so the client timeout acts as a per-read idle timeout
-    // and slow links complete instead of failing at a single total-body
-    // deadline (issue #205).
     let mut file = fs::File::create(destination).map_err(|error| {
         CommandError::from(LibraryError::Internal(format!(
             "failed to create {}: {error}",
@@ -1228,8 +1175,6 @@ impl super::bootstrap::RemoteBootstrapStorage for GoogleDriveBootstrapStorage<'_
     }
 
     fn upload_marker(&mut self, _marker_bytes: &[u8]) -> CommandResult<()> {
-        // Marker bytes are written to the Local Working Copy by the shared
-        // protocol; upload the local relative path to Drive.
         google_drive_upload_relative_file_to_remote(
             self.app_data_dir,
             self.library,
@@ -1245,7 +1190,6 @@ impl super::bootstrap::RemoteBootstrapStorage for GoogleDriveBootstrapStorage<'_
         use super::bootstrap::CommittedDatabaseProbe;
         use crate::remote::manifest::{RepositoryManifest, MANIFEST_PATH};
 
-        // Prefer the repository manifest when present.
         if let Some(manifest_entry) = google_drive_find_relative_entry(
             self.app_data_dir,
             &mut self.secret,
@@ -1418,11 +1362,6 @@ impl RemoteProvider for GoogleDriveProvider<'_> {
         // than silently downgrading to last-writer-wins.
         RemoteProviderCapabilities {
             conditional_replace: false,
-            // Google Drive supports resumable uploads via
-            // `uploadType=resumable` (session URL + offset query) and Range
-            // requests on the `files.get?alt=media` endpoint. The trait
-            // methods `resumable_upload_bytes` and `download_range` are wired
-            // to the helper functions below.
             resumable_upload: true,
             range_download: true,
             revision_metadata: true,
@@ -1631,9 +1570,6 @@ impl RemoteProvider for GoogleDriveProvider<'_> {
                 .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?;
         let file_id = existing_file.as_ref().map(|f| f.id.clone());
 
-        // Look for an interrupted session persisted in the control DB so a
-        // restart can resume from the committed offset instead of restarting
-        // the upload from byte 0.
         let existing_session = list_transfer_parts(control_db, operation_id)
             .map_err(|e| RemoteError::new(RemoteErrorKind::NetworkUnavailable, e.message))?
             .into_iter()

@@ -5,16 +5,6 @@
 //! transfer offsets, and the verified cache catalog. It stays outside every
 //! portable library and is NEVER uploaded to a cloud provider.
 //!
-//! ## Why a separate database
-//!
-//! Library SQLite databases are portable: they travel inside the remote
-//! repository working copy and are synced to cloud storage. Persisting
-//! operation state, retry schedules, or cache metadata there would leak
-//! machine-local concerns into the portable set and risk clobbering another
-//! device's control state on sync. A dedicated local-only database keeps the
-//! control plane private to this machine while the library DB remains the
-//! shared content address.
-//!
 //! ## Storage safety
 //!
 //! Only sanitized machine-readable error codes are persisted. OAuth access
@@ -43,16 +33,8 @@ use std::path::{Path, PathBuf};
 const REMOTE_STATE_MIGRATIONS: [&str; 1] =
     [include_str!("../../migrations/remote_state/001_init.sql")];
 
-/// Filename of the control database inside the app data directory.
 pub const CONTROL_DB_FILENAME: &str = "remote-state.db";
 
-// ---------------------------------------------------------------------------
-// Typed enums mirroring the CHECK constraints
-// ---------------------------------------------------------------------------
-
-/// Repository cleanliness state for a remote library.
-///
-/// Mirrors the `local_state` CHECK constraint on `remote_repository_state`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LocalState {
@@ -88,9 +70,6 @@ impl LocalState {
     }
 }
 
-/// Kind of remote operation recorded in `remote_operations`.
-///
-/// Mirrors the `operation_kind` CHECK constraint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OperationKind {
@@ -126,9 +105,6 @@ impl OperationKind {
     }
 }
 
-/// Lifecycle state of a remote operation.
-///
-/// Mirrors the `state` CHECK constraint on `remote_operations`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OperationState {
@@ -190,9 +166,6 @@ impl OperationState {
     }
 }
 
-/// Transfer direction for a `remote_transfer_parts` row.
-///
-/// Mirrors the `direction` CHECK constraint.
 // used by PR#5: resumable uploads/downloads
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -222,26 +195,6 @@ impl TransferDirection {
     }
 }
 
-// ---------------------------------------------------------------------------
-// payload_json contract
-// ---------------------------------------------------------------------------
-
-/// Stable JSON shape stored in `remote_operations.payload_json` for publish
-/// operations. New optional fields use `#[serde(default)]` so recovery and
-/// `get_all_upload_statuses` can still read rows written by older versions.
-///
-/// ```json
-/// {
-///   "song_ids": ["hash-a"],
-///   "percent": 42,
-///   "detail": "Uploading stems",
-///   "protocol_step": "assets_done",
-///   "candidate_relative_path": ".openkara/candidates/<op>.sqlite",
-///   "candidate_size": 1234,
-///   "candidate_sha256": "...",
-///   "candidate_assets_fingerprint": "..."
-/// }
-/// ```
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct OperationPayload {
     /// Song hashes affected by this operation. For publish operations this is
@@ -249,10 +202,8 @@ pub struct OperationPayload {
     /// of the asset-upload phase — an empty list cannot re-upload assets.
     #[serde(default)]
     pub song_ids: Vec<String>,
-    /// Completion percentage (0-100) for progress projection.
     #[serde(default)]
     pub percent: u8,
-    /// Human-readable detail string for the upload status snapshot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
     /// Current publication protocol step. Used by recovery to resume the
@@ -264,10 +215,8 @@ pub struct OperationPayload {
     /// Survives retries; never rebuilt from a different working DB while set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub candidate_relative_path: Option<String>,
-    /// Byte length of the immutable candidate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub candidate_size: Option<u64>,
-    /// Hex SHA-256 of the immutable candidate. Upload sessions bind to this.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub candidate_sha256: Option<String>,
     /// SHA-256 of the canonical path → (remote size, remote revision) map
@@ -288,11 +237,6 @@ impl OperationPayload {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Row types
-// ---------------------------------------------------------------------------
-
-/// Row of `remote_repository_state`.
 #[derive(Debug, Clone)]
 pub struct RepositoryStateRow {
     pub library_id: String,
@@ -314,7 +258,6 @@ pub struct RepositoryStateRow {
     pub writer_id: Option<String>,
 }
 
-/// Row of `remote_operations`.
 #[derive(Debug, Clone)]
 pub struct OperationRow {
     pub operation_id: String,
@@ -334,7 +277,6 @@ pub struct OperationRow {
     pub updated_at_ms: i64,
 }
 
-/// Row of `remote_transfer_parts`.
 // used by PR#5: resumable uploads/downloads
 #[derive(Debug, Clone)]
 pub struct TransferPartRow {
@@ -350,7 +292,6 @@ pub struct TransferPartRow {
     pub updated_at_ms: i64,
 }
 
-/// Row of `remote_cache_entries`.
 #[derive(Debug, Clone)]
 pub struct CacheEntryRow {
     pub cache_key: String,
@@ -367,11 +308,6 @@ pub struct CacheEntryRow {
     pub data_path: String,
 }
 
-// ---------------------------------------------------------------------------
-// Connection management + migrations
-// ---------------------------------------------------------------------------
-
-/// Path of the control database inside the app data directory.
 pub fn control_db_path(app_data_dir: &Path) -> PathBuf {
     app_data_dir.join(CONTROL_DB_FILENAME)
 }
@@ -453,7 +389,6 @@ fn apply_migration_002_manifest_columns(connection: &Connection) -> CommandResul
     Ok(())
 }
 
-/// Query the current journal mode. Used by tests to assert WAL is enabled.
 // also used by PR#5 for transfer diagnostics
 #[allow(dead_code)]
 pub fn journal_mode(connection: &Connection) -> CommandResult<String> {
@@ -462,11 +397,6 @@ pub fn journal_mode(connection: &Connection) -> CommandResult<String> {
         .map_err(|e| database_error(format!("failed to query journal mode: {e}")))
 }
 
-// ---------------------------------------------------------------------------
-// remote_repository_state CRUD
-// ---------------------------------------------------------------------------
-
-/// Insert or replace a repository state row.
 pub fn upsert_repository_state(
     connection: &Connection,
     row: &RepositoryStateRow,
@@ -510,7 +440,6 @@ pub fn upsert_repository_state(
     Ok(())
 }
 
-/// Load a repository state row by library_id.
 pub fn get_repository_state(
     connection: &Connection,
     library_id: &str,
@@ -559,11 +488,6 @@ fn map_repository_state_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Reposit
     })
 }
 
-// ---------------------------------------------------------------------------
-// remote_operations CRUD
-// ---------------------------------------------------------------------------
-
-/// Insert or replace an operation row.
 pub fn upsert_operation(connection: &Connection, row: &OperationRow) -> CommandResult<()> {
     connection
         .execute(
@@ -609,7 +533,6 @@ pub fn upsert_operation(connection: &Connection, row: &OperationRow) -> CommandR
     Ok(())
 }
 
-/// Load an operation row by operation_id.
 pub fn get_operation(
     connection: &Connection,
     operation_id: &str,
@@ -651,7 +574,6 @@ pub fn get_latest_publish_operation_for_song(
                 .unwrap_or(false)
         })
         .collect();
-    // Sort by updated_at_ms descending — most recent first.
     matching.sort_by_key(|b| std::cmp::Reverse(b.updated_at_ms));
     Ok(matching.into_iter().next())
 }
@@ -724,7 +646,6 @@ pub fn bind_song_ids_mark_pending_and_dirty_tx(
     Ok(())
 }
 
-/// Load all operation rows.
 pub fn list_operations(connection: &Connection) -> CommandResult<Vec<OperationRow>> {
     let mut stmt = connection
         .prepare(
@@ -743,7 +664,6 @@ pub fn list_operations(connection: &Connection) -> CommandResult<Vec<OperationRo
     Ok(rows)
 }
 
-/// Load all operation rows for a given library.
 // used by PR#4: operation executor
 pub fn list_operations_for_library(
     connection: &Connection,
@@ -766,7 +686,6 @@ pub fn list_operations_for_library(
     Ok(rows)
 }
 
-/// Load all operation rows matching one of the given states.
 pub fn list_operations_in_states(
     connection: &Connection,
     states: &[OperationState],
@@ -841,11 +760,6 @@ fn map_operation_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<OperationRow> 
     })
 }
 
-// ---------------------------------------------------------------------------
-// remote_transfer_parts CRUD
-// ---------------------------------------------------------------------------
-
-/// Insert or replace a transfer part row.
 // used by PR#5: resumable uploads/downloads
 pub fn upsert_transfer_part(connection: &Connection, row: &TransferPartRow) -> CommandResult<()> {
     connection
@@ -880,7 +794,6 @@ pub fn upsert_transfer_part(connection: &Connection, row: &TransferPartRow) -> C
     Ok(())
 }
 
-/// Load all transfer parts for an operation.
 // used by PR#5: resumable uploads/downloads
 pub fn list_transfer_parts(
     connection: &Connection,
@@ -963,11 +876,6 @@ pub fn delete_transfer_parts(connection: &Connection, operation_id: &str) -> Com
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// remote_cache_entries CRUD
-// ---------------------------------------------------------------------------
-
-/// Insert or replace a cache entry row.
 pub fn upsert_cache_entry(connection: &Connection, row: &CacheEntryRow) -> CommandResult<()> {
     connection
         .execute(
@@ -1007,7 +915,6 @@ pub fn upsert_cache_entry(connection: &Connection, row: &CacheEntryRow) -> Comma
     Ok(())
 }
 
-/// Load a cache entry row by its primary key (`cache_key`).
 pub fn get_cache_entry(
     connection: &Connection,
     cache_key: &str,
@@ -1027,8 +934,6 @@ pub fn get_cache_entry(
     Ok(row)
 }
 
-/// Load all cache entry rows. Used by the startup reconciliation scan and by
-/// the usage/clear-cache IPC commands.
 pub fn list_cache_entries(connection: &Connection) -> CommandResult<Vec<CacheEntryRow>> {
     let mut stmt = connection
         .prepare(
@@ -1061,9 +966,6 @@ pub fn delete_cache_entry(connection: &Connection, cache_key: &str) -> CommandRe
     Ok(())
 }
 
-/// Update the downloaded ranges JSON, complete flag, content digest, and
-/// verified timestamp for a cache entry. Called after each range write so a
-/// restart can resume from the persisted ranges.
 pub fn update_cache_entry_ranges(
     connection: &Connection,
     cache_key: &str,
@@ -1092,7 +994,6 @@ pub fn update_cache_entry_ranges(
     Ok(())
 }
 
-/// Bump `last_access_at_ms` for a cache entry (wall-clock LRU touch).
 pub fn touch_cache_entry_access(
     connection: &Connection,
     cache_key: &str,
@@ -1192,10 +1093,6 @@ fn map_cache_entry_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CacheEntryRo
     })
 }
 
-/// Compute the SHA-256 hex digest of a file's contents.
-///
-/// Used to record the working DB digest before and after a local mutation so
-/// recovery can detect whether a `prepared` operation's local edit committed.
 pub fn sha256_file(path: &Path) -> CommandResult<String> {
     let bytes = std::fs::read(path).map_err(|e| {
         internal_error(format!("failed to read {} for digest: {e}", path.display()))
@@ -1236,12 +1133,9 @@ mod tests {
         let dir = TempDir::new().expect("temp dir");
         let path = dir.path().join("remote-state.db");
         let conn = open_control_db(&path).expect("first open");
-        // Re-running migrations on an already-migrated DB must not error.
         apply_migrations(&conn).expect("second migration is a no-op");
-        // Re-opening also re-runs migrations and must succeed.
         drop(conn);
         let conn2 = open_control_db(&path).expect("reopen");
-        // Tables still exist and are usable.
         let row = RepositoryStateRow {
             library_id: "lib-1".to_owned(),
             committed_generation: 0,
@@ -1387,7 +1281,6 @@ mod tests {
         let path = dir.path().join("test.bin");
         std::fs::write(&path, b"hello").expect("write");
         let digest = sha256_file(&path).expect("digest");
-        // SHA-256 of "hello"
         assert_eq!(
             digest,
             "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
@@ -1427,7 +1320,6 @@ mod tests {
             "expected library_id mismatch error, got: {}",
             err.message
         );
-        // Operation must remain Prepared — not projected onto wrong library.
         let op = get_operation(&conn, "op-a").unwrap().unwrap();
         assert_eq!(op.state, OperationState::Prepared);
         assert!(get_repository_state(&conn, "lib-b").unwrap().is_none());

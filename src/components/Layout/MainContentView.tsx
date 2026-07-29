@@ -59,7 +59,6 @@ export function MainContentView({
       className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--color-sidebar)]"
       data-main-content-visual-variant="unified"
     >
-      {/* Stage pocket: color edge only (no border/shadow); chrome shows through soft arcs. */}
       <div
         className={`relative flex min-h-0 flex-1 overflow-hidden ${settingsOpen ? "bg-[var(--color-surface-muted)]" : "bg-[var(--color-surface)]"}`}
         data-shell-content-pocket="true"

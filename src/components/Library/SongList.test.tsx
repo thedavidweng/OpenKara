@@ -455,11 +455,6 @@ function makeSong(overrides: Partial<Song> = {}): Song {
   };
 }
 
-/**
- * Install a window.matchMedia mock. When `legacy` is true the MediaQueryList
- * omits addEventListener/removeEventListener so the legacy addListener fallback
- * path is exercised.
- */
 function installMatchMedia(matches: boolean, legacy: boolean) {
   const listeners: ((e: MediaQueryListEvent) => void)[] = [];
   const mql = {

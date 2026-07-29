@@ -232,15 +232,12 @@ describe("LyricsPanel contextual reveal", () => {
   });
 
   test("Follow control restores pointer-events inside the none overlay", () => {
-    // Timed lines only — plain-text lyrics omit the Follow control.
     mockLyricsState.lines = [
       line({ time_ms: 0, text: "line one", words: null }),
       line({ time_ms: 2000, text: "line two", words: null }),
     ];
     mockLyricsState.rawLrc = "[00:00.00]line one\n[00:02.00]line two";
 
-    // Parent overlay is pointer-events-none so lyrics stay scrollable; the
-    // Follow button must re-enable hit testing like the bottom utility controls.
     const markup = renderToStaticMarkup(<LyricsPanel />);
     expect(markup).toContain('data-testid="lyrics-follow-playing"');
     expect(markup).toMatch(
@@ -548,7 +545,6 @@ describe("LyricsPanel contextual reveal", () => {
   });
 
   test("clears AirPlay plain-text page pending when song changes during pending", async () => {
-    // Plain-text lyrics + active AirPlay lyrics mode → pending guard is active.
     mockLyricsState.lines = [
       line({ time_ms: 0, text: "line one", words: null }),
       line({ time_ms: 0, text: "line two", words: null }),
@@ -571,12 +567,10 @@ describe("LyricsPanel contextual reveal", () => {
     document.body.appendChild(container);
     const root = createRoot(container);
 
-    // First render with song-1 — pending is set but song hasn't changed yet.
     await act(async () => {
       root.render(<LyricsPanel />);
     });
 
-    // Change the song while pending — guard should clear pending.
     mockPlayerState.snapshot = {
       song_id: "song-2",
       is_playing: true,
@@ -621,7 +615,6 @@ describe("LyricsPanel contextual reveal", () => {
       root.render(<LyricsPanel presentation="audience" />);
     });
 
-    // Audience presentation always clears the pending flag.
     expect(mockPlayerState.clearAirPlayPlainTextPagePending).toHaveBeenCalled();
 
     await act(async () => {

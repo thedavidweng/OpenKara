@@ -135,7 +135,6 @@ describe("SettingsAboutSection", () => {
     await waitFor(() => {
       expect(mockGetDebugInfo).toHaveBeenCalled();
     });
-    // The section renders its labels/button regardless of fetch outcome.
     expect(
       screen.getByRole("button", { name: "settings.about.copyDebugInfo" }),
     ).toBeTruthy();

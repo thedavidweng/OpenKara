@@ -156,9 +156,6 @@ export function SettingsRuntimeSection() {
               ? t("settings.runtime.checking")
               : t("settings.runtime.checkButton")}
           </button>
-          {/* Only a genuine up_to_date verdict may claim the runtime is
-              current. Reporting "up to date" for not_installed is what made a
-              failed install look like a healthy one. */}
           {report?.state === "up_to_date" && !updateAvailable ? (
             <span className="text-[11px] text-[var(--color-text-dim)]">
               {t("settings.runtime.upToDate")}

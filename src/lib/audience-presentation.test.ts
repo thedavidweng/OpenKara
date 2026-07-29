@@ -18,7 +18,6 @@ describe("buildAudiencePresentationSpec", () => {
   });
 
   test("clamps out-of-range steps", () => {
-    // Steps beyond [-2, 2] should clamp to the boundary values
     expect(buildAudiencePresentationSpec(-10).fontSizePx).toBe(48);
     expect(buildAudiencePresentationSpec(10).fontSizePx).toBe(96);
   });
@@ -65,7 +64,6 @@ describe("colorToCss", () => {
   });
 
   test("rounds fractional channel values", () => {
-    // 72/255 ≈ 0.282..., should round to 72
     expect(
       colorToCss({ red: 72 / 255, green: 72 / 255, blue: 72 / 255, alpha: 1 }),
     ).toBe("rgba(72, 72, 72, 1)");

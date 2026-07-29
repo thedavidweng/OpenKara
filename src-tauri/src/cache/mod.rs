@@ -12,8 +12,6 @@ use std::{
 use tauri::Manager;
 
 const DATABASE_FILENAME: &str = "openkara.sqlite3";
-// Keep the SQL in the migrations directory so tests and runtime initialization
-// execute the exact same schema definition.
 const MIGRATIONS: [&str; 6] = [
     include_str!("../../migrations/001_init.sql"),
     include_str!("../../migrations/002_stems.sql"),
@@ -237,7 +235,6 @@ fn migrate_legacy_song_schema(connection: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// Initialize a database at an explicit path (for use inside a LibraryRoot).
 pub fn initialize_library_database(database_path: &Path) -> anyhow::Result<()> {
     let connection = open_database(database_path)?;
     apply_migrations(&connection).context("failed to apply SQLite migrations")?;
@@ -459,9 +456,6 @@ pub fn replace_cover_art_and_derivatives(
     Ok((old_thumb, old_preview))
 }
 
-/// Internal record of cover art bytes and their derivative file paths.
-/// Used by artwork generation/lazy-repair paths to avoid a full `Song` read
-/// and to keep derivative paths out of Rust/TypeScript IPC.
 #[derive(Debug, Clone, Default)]
 pub struct ArtworkRecord {
     pub cover_art: Option<Vec<u8>>,
@@ -526,9 +520,6 @@ pub fn update_artwork_derivative_paths_if_cover_matches(
     Ok(changed > 0)
 }
 
-/// Count how many song rows reference a given artwork derivative path.
-/// Used by deletion to avoid removing a derivative file still referenced
-/// by another song row (e.g. two songs sharing the same cover art bytes).
 pub fn count_artwork_path_references(
     connection: &Connection,
     path: &str,
@@ -809,7 +800,6 @@ mod tests {
 
         apply_migrations(&connection).expect("legacy schema migration should succeed");
 
-        // The rebuild must not silently drop the per-song language value.
         let language: Option<String> = connection
             .query_row(
                 "SELECT language FROM songs WHERE hash = 'song-ja'",
@@ -819,8 +809,6 @@ mod tests {
             .expect("migrated song row should load");
         assert_eq!(language.as_deref(), Some("ja"));
 
-        // list_songs selects the `language` column; before the fix the rebuilt
-        // table lacked it and this query failed with "no such column: language".
         let songs = list_songs(&connection).expect("list_songs should succeed after rebuild");
         assert_eq!(songs.len(), 1);
         assert_eq!(songs[0].language.as_deref(), Some("ja"));
@@ -843,13 +831,10 @@ mod tests {
             names
         }
 
-        // Fresh install: apply migrations against an empty database.
         let fresh = Connection::open_in_memory().expect("fresh in-memory database should open");
         apply_migrations(&fresh).expect("fresh migrations should succeed");
         let fresh_columns = song_columns(&fresh);
 
-        // Legacy upgrade: a 0.x database that forces migrate_legacy_song_schema
-        // to rebuild the songs table.
         let legacy = Connection::open_in_memory().expect("legacy in-memory database should open");
         legacy
             .execute_batch(
@@ -1034,8 +1019,6 @@ mod tests {
         assert_eq!(results.len(), 1);
     }
 
-    /// search_songs should use FTS5 MATCH, not LIKE %q%.
-    /// FTS5 MATCH requires an exact FTS5 table to exist.
     #[test]
     fn search_songs_uses_fts5_index() {
         let conn = test_db();
@@ -1050,7 +1033,6 @@ mod tests {
         assert_eq!(fts_count, 1, "songs_fts FTS5 virtual table should exist");
     }
 
-    /// FTS5 search should match partial terms via prefix queries.
     #[test]
     fn search_songs_fts5_prefix_matching() {
         let conn = test_db();
@@ -1063,7 +1045,6 @@ mod tests {
         assert_eq!(results[0].hash, "fts-test");
     }
 
-    /// FTS5 search should stay in sync after updates.
     #[test]
     fn search_songs_fts5_syncs_after_update() {
         let conn = test_db();
@@ -1163,8 +1144,6 @@ mod tests {
         assert!(retrieved.original_ext.is_none());
     }
 
-    /// list_songs should not include cover_art BLOB in IPC payload.
-    /// Instead, has_cover_art indicates whether cover art exists.
     #[test]
     fn list_songs_excludes_cover_art_blob() {
         let conn = test_db();
@@ -1184,7 +1163,6 @@ mod tests {
         );
     }
 
-    /// list_songs with no cover art should report has_cover_art = false.
     #[test]
     fn list_songs_reports_no_cover_art() {
         let conn = test_db();
@@ -1200,7 +1178,6 @@ mod tests {
         );
     }
 
-    /// search_songs should also exclude cover_art BLOB.
     #[test]
     fn search_songs_excludes_cover_art_blob() {
         let conn = test_db();
@@ -1218,7 +1195,6 @@ mod tests {
         assert!(results[0].has_cover_art, "has_cover_art should be true");
     }
 
-    /// get_cover_art returns the raw BLOB on demand.
     #[test]
     fn get_cover_art_returns_blob_on_demand() {
         let conn = test_db();
@@ -1231,7 +1207,6 @@ mod tests {
         assert_eq!(result.as_deref(), Some(art.as_slice()));
     }
 
-    /// get_cover_art returns None for songs without cover art.
     #[test]
     fn get_cover_art_returns_none_for_missing() {
         let conn = test_db();
@@ -1278,7 +1253,6 @@ mod tests {
         );
     }
 
-    /// Item 1: get_song_by_hash still returns full cover_art.
     #[test]
     fn get_song_by_hash_still_returns_cover_art() {
         let conn = test_db();

@@ -151,8 +151,6 @@ describe("Sidebar preview mode", () => {
   it("does not call batchSeparate when handleSeparateAll is triggered in preview mode", () => {
     const { container } = render(<Sidebar previewMode />);
 
-    // The separate-all button is rendered when songs are separable and not all separated.
-    // In preview mode, clicking it should be a no-op.
     const separateBtn = container.querySelector("[data-separate-all-trigger]");
     if (separateBtn) {
       fireEvent.click(separateBtn);
@@ -161,7 +159,6 @@ describe("Sidebar preview mode", () => {
   });
 
   it("does not call batchSeparate on upgrade confirm in preview mode", () => {
-    // Force the upgrade dialog to show by setting four_stem mode with completed two-stem separations
     mockSettingsState.stemMode = "four_stem";
     mockLibraryState.separationStatuses = {
       "song-1": { state: "completed", drums_path: null },
@@ -169,14 +166,12 @@ describe("Sidebar preview mode", () => {
 
     const { container } = render(<Sidebar previewMode />);
 
-    // The upgrade dialog should render. Click confirm.
     const confirmBtn = container.querySelector('[data-testid="confirm-btn"]');
     if (confirmBtn) {
       fireEvent.click(confirmBtn);
       expect(api.batchSeparate).not.toHaveBeenCalled();
     }
 
-    // Reset
     mockSettingsState.stemMode = "two_stem";
     mockLibraryState.separationStatuses = {};
   });

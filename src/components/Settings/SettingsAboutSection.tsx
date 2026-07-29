@@ -30,10 +30,7 @@ export function SettingsAboutSection() {
           setInfo(value);
         }
       })
-      .catch(() => {
-        // About is display-only; a failed fetch just leaves placeholders. The
-        // copy button still fetches fresh on demand.
-      });
+      .catch(() => {});
     return () => {
       cancelled = true;
     };

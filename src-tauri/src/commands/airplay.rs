@@ -131,10 +131,6 @@ struct AirPlayBridgeWordToken {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AirPlayBridgeLyricLine {
-    // RATIONALE: The native AirPlay bridge consumes a JSON scene with fixed
-    // `timeMs` keys. Reusing the shared IPC lyric structs here would serialize
-    // nested timestamps as `time_ms`, which silently downgrades timed lyrics to
-    // plain text on TV. Keep this DTO separate even if it looks redundant.
     time_ms: u64,
     text: String,
     words: Option<Vec<AirPlayBridgeWordToken>>,
@@ -157,9 +153,6 @@ struct AirPlayAudienceRuntimePayload {
     song_id: Option<String>,
     is_playing: bool,
     position_ms: u64,
-    // RATIONALE: Native rendering must consume backend-derived runtime timing
-    // directly. Re-deriving these values in Obj-C from loosely shaped scene
-    // data already caused drift and incorrect "plain text" detection.
     adjusted_ms: i64,
     is_plain_text: bool,
     lyrics_match_current_song: bool,
@@ -514,19 +507,14 @@ fn spawn_airplay_audience_coordinator(
     cdg_state: Arc<Mutex<Option<CdgPlaybackSlot>>>,
     stream_generation: Arc<AtomicU64>,
 ) {
-    thread::spawn(move || {
-        loop {
-            // RATIONALE: AirPlay must advance from backend playback time, not the
-            // occlusion-prone main-window JS loop. Otherwise macOS can throttle the
-            // source window and regress TV lyrics/CDG back to slideshow cadence.
-            thread::sleep(stream_tick_interval());
+    thread::spawn(move || loop {
+        thread::sleep(stream_tick_interval());
 
-            let Some(runtime) = build_current_runtime_payload(&playback, &stream_generation) else {
-                continue;
-            };
-            let cdg_frame = build_current_cdg_frame(&cdg_state, &runtime);
-            let _ = native::sync_audience_runtime(&runtime, cdg_frame.as_deref());
-        }
+        let Some(runtime) = build_current_runtime_payload(&playback, &stream_generation) else {
+            continue;
+        };
+        let cdg_frame = build_current_cdg_frame(&cdg_state, &runtime);
+        let _ = native::sync_audience_runtime(&runtime, cdg_frame.as_deref());
     });
 }
 
@@ -561,8 +549,6 @@ fn emit_airplay_state(event: &AirPlayOutputStateEvent) {
         })
         .unwrap_or((None, None));
 
-    // Store the latest output phase so the AirPlay coordinator can gate
-    // CDG decoding on active native phases only.
     if let Ok(mut runtime_state) = airplay_runtime_state().lock() {
         runtime_state.latest_output_phase = Some(event.phase);
     }
@@ -714,10 +700,6 @@ mod native {
 
         match bounds {
             Some(bounds) => {
-                // RATIONALE: In the native split shell the DOM host lives in the
-                // current child WKWebView, not the top-level NSWindow view. Using
-                // the invoking webview keeps AppKit coordinates aligned with the
-                // DOM bounds that the frontend reports.
                 webview
                     // SAFETY: `with_webview` hands back the live platform
                     // webview pointer for the duration of the closure, and the
@@ -903,10 +885,6 @@ pub fn sync_airplay_audience_state(
             .load(Ordering::SeqCst),
     );
 
-    // RATIONALE: `sync_airplay_audience_state` is configuration sync only.
-    // It must not call a CDG render/advance function. The 33ms coordinator
-    // is the only owner of the AirPlay timeline and advances CDG from
-    // backend source `position_ms`.
     native::sync_audience_config(&scene_config)?;
     native::sync_audience_runtime(&runtime, None)
 }

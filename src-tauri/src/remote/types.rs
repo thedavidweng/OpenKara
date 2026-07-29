@@ -188,7 +188,6 @@ pub(crate) struct GoogleDriveFileMetadata {
     pub(crate) head_revision_id: Option<String>,
     #[serde(default, rename = "modifiedTime")]
     pub(crate) modified_time: Option<String>,
-    /// Google Drive returns this as a string in the JSON response.
     #[serde(
         default,
         rename = "size",
@@ -272,9 +271,6 @@ pub struct UploadStatusSnapshot {
     pub error: Option<CommandError>,
 }
 
-/// Replaces an Option-triple (google_drive/dropbox/webdav) so exactly one
-/// provider's credentials/tokens are present — the same shape used when binding
-/// Repository Credentials during Register / Reauthorize.
 #[derive(Debug, Clone)]
 pub(crate) enum ProviderSessionData {
     GoogleDrive(GoogleDriveSessionData),
@@ -438,8 +434,6 @@ pub(crate) fn load_remote_root(
     cache::initialize_library_database(&root.database_path())
         .map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
 
-    // Ensure the directory structure exists even if the cached copy was created
-    // before the remote repository folder layout stabilized.
     let _ = app_data_dir;
     Ok(root)
 }

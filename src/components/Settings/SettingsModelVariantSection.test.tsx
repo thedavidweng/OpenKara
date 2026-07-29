@@ -127,7 +127,6 @@ describe("SettingsModelVariantSection", () => {
     });
 
     expect(html).toContain("settings.runtime.corrupt");
-    // Installing/repairing the runtime belongs to the ONNX Runtime card.
     expect(html).not.toContain("settings.runtime.retryButton");
     expect(html).not.toContain("settings.runtime.installButton");
   });
@@ -137,8 +136,6 @@ describe("SettingsModelVariantSection", () => {
       runtimeStatus: { ...readyRuntime, state: "missing" },
     });
 
-    // The old behavior replaced this whole card with a runtime install CTA,
-    // which is why there was no way to check for model updates.
     expect(html).toContain("settings.modelVariant.htdemucs");
     expect(html).toContain("settings.modelVariant.htdemucsFt");
     expect(html).toContain("settings.modelUpdate.checkButton");

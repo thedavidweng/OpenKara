@@ -7,7 +7,6 @@ import type { CoverArtBytes } from "@/types/ipc";
 interface CoverArtThumbnailProps {
   songHash: string;
   coverArt?: CoverArtBytes | null;
-  // On-disk 80x80 WebP thumbnail; served via the asset protocol when present.
   thumbnailPath?: string | null;
   alt: string;
   className?: string;

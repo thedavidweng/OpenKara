@@ -82,7 +82,6 @@ function usePlaybackPositionSubscription(
           if (!cancelled) onPosition(e.payload);
         },
       );
-      // If unmount happened before listen() resolved, clean up now.
       if (cancelled) {
         unlisten();
         return;
@@ -188,7 +187,6 @@ function useSeparationEvents(enabled: boolean) {
         },
       );
 
-      // Cancelled runs reset the row to idle with no error toast.
       const cancelledUnlisten = await listen<SeparationCancelledEvent>(
         "separation-cancelled",
         (e) => {
@@ -323,9 +321,6 @@ function useTrackTransitionedQueueReconcile(enabled: boolean) {
   );
 }
 
-/** The effect depends only on the resolved next-candidate ID, not the full
- * queue array, so unrelated queue edits (adding/removing tail entries) do
- * not cancel and re-decode an already-prepared next track. */
 function usePreloadCandidateEffect(enabled: boolean) {
   const currentSongId = usePlayerStore((s) => s.snapshot?.song_id) ?? null;
   const queue = useQueueStore((s) => s.queue);

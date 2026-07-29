@@ -48,7 +48,7 @@ describe("LyricsLineRuntime", () => {
     const runtime = new LyricsLineRuntime();
     const wrapper = document.createElement("div");
     runtime.registerWrapper(0, wrapper);
-    runtime.unregisterWrapper(0); // leaves springs, clears wrapperEl
+    runtime.unregisterWrapper(0);
 
     runtime.tick({
       activeLineIndex: 0,

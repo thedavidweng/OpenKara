@@ -126,8 +126,6 @@ impl ModelVariant {
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionProviderPreference {
     Cpu,
-    // XNNPACK uses NEON on ARM64 and AVX2/AVX-512 on x86-64 for conv/matmul,
-    // avoids CoreML AOT compile overhead, and ships inside the existing ORT dylib.
     Xnnpack,
     #[serde(alias = "directml")]
     DirectMl,
@@ -175,7 +173,6 @@ impl Default for ExecutionProviderPreference {
 }
 
 impl ExecutionProviderPreference {
-    /// DirectML is Windows-only; CPU and XNNPACK are available everywhere.
     fn available_for(platform: ExecutionProviderPlatform) -> &'static [Self] {
         match platform {
             ExecutionProviderPlatform::Windows => &[Self::Cpu, Self::Xnnpack, Self::DirectMl],
@@ -563,8 +560,6 @@ impl AppConfig {
         self.lyrics_font_step.unwrap_or(0)
     }
 
-    /// A stale known cross-platform value (e.g. `directml` on macOS) is
-    /// normalized without writing to disk.
     fn effective_execution_provider_for(
         &self,
         platform: ExecutionProviderPlatform,
@@ -583,8 +578,6 @@ impl AppConfig {
         self.eq_enabled.unwrap_or(false)
     }
 
-    /// Returns the per-band EQ gains, clamped to -12.0..=12.0 dB.
-    /// Non-finite values are replaced with 0.0.
     pub fn effective_eq_gains_db(&self) -> [f32; 5] {
         let mut gains = self.eq_gains_db.unwrap_or([0.0; 5]);
         for g in gains.iter_mut() {
@@ -604,7 +597,6 @@ impl AppConfig {
         self.crossfade_enabled.unwrap_or(false)
     }
 
-    /// Clamped to 500..=10_000.
     pub fn effective_crossfade_duration_ms(&self) -> u32 {
         self.crossfade_duration_ms
             .unwrap_or(3_000)
@@ -639,8 +631,6 @@ pub fn load_config(app_data_dir: &Path) -> Result<Option<AppConfig>> {
     let mut config: AppConfig = match serde_json::from_str(&contents) {
         Ok(config) => config,
         Err(parse_err) => {
-            // A corrupt config must never brick the app. Preserve the bad
-            // bytes for diagnostics, then recover with defaults.
             match quarantine_corrupt_config(&config_path) {
                 Ok(backup) => eprintln!(
                     "warning: config at {} is corrupt ({parse_err}); moved aside to {} and starting with defaults",
@@ -698,8 +688,6 @@ pub fn save_config(app_data_dir: &Path, config: &AppConfig) -> Result<()> {
 fn write_atomically(path: &Path, contents: &[u8]) -> Result<()> {
     let tmp_path = temp_path_for(path);
 
-    // Remove a stale temp left by a previously interrupted save so we always
-    // start from a fresh file.
     let _ = fs::remove_file(&tmp_path);
 
     let write_result = (|| -> Result<()> {
@@ -707,8 +695,6 @@ fn write_atomically(path: &Path, contents: &[u8]) -> Result<()> {
             .with_context(|| format!("failed to create temp config {}", tmp_path.display()))?;
         file.write_all(contents)
             .with_context(|| format!("failed to write temp config {}", tmp_path.display()))?;
-        // fsync the bytes so they are durable before the rename makes the temp
-        // the live config.
         file.sync_all()
             .with_context(|| format!("failed to fsync temp config {}", tmp_path.display()))?;
         Ok(())
@@ -769,9 +755,6 @@ fn fsync_parent_dir(path: &Path) {
     let _ = path;
 }
 
-/// Move a corrupt config file aside to a timestamped sibling
-/// (`<name>.corrupt-<unix-millis>`) so the next save can write a clean file
-/// while the bad bytes remain for diagnostics. Returns the backup path.
 fn quarantine_corrupt_config(config_path: &Path) -> std::io::Result<PathBuf> {
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -867,15 +850,11 @@ mod tests {
         assert_eq!(loaded.lyrics_font_step, Some(1));
     }
 
-    /// The `ExecutionProviderPlatform` seam exists so the policy table can be
-    /// exercised for every platform from any host. The table was reachable but
-    /// unexercised, which is why the non-host variants read as dead code.
     #[test]
     fn execution_provider_policy_holds_for_every_platform() {
         use ExecutionProviderPlatform as Platform;
         use ExecutionProviderPreference as Ep;
 
-        // DirectML is Windows-only.
         assert!(Ep::DirectMl.is_available_for(Platform::Windows));
         for platform in [
             Platform::MacosAppleSilicon,
@@ -889,7 +868,6 @@ mod tests {
             );
         }
 
-        // CPU and XNNPACK are available everywhere.
         for platform in [
             Platform::Windows,
             Platform::MacosAppleSilicon,
@@ -912,7 +890,6 @@ mod tests {
             );
         }
 
-        // Every default must be one the platform actually offers.
         for platform in [
             Platform::Windows,
             Platform::MacosAppleSilicon,
@@ -1145,8 +1122,6 @@ mod tests {
         );
     }
 
-    // These exercise the pure platform parameter so they pass on every host.
-
     #[test]
     fn execution_provider_available_table_is_exact_and_ordered() {
         use ExecutionProviderPlatform::*;
@@ -1329,9 +1304,6 @@ mod tests {
 
     #[test]
     fn effective_eq_gains_clamps_out_of_range_persisted_values() {
-        // A manually-edited config file could contain values outside the
-        // valid range. The effective accessor clamps them rather than
-        // panicking, so the app stays usable.
         let config = AppConfig {
             eq_gains_db: Some([20.0, -20.0, 0.0, 100.0, -100.0]),
             ..Default::default()
@@ -1460,8 +1432,6 @@ mod tests {
         assert_eq!(loaded.effective_theme_preference(), ThemePreference::Dark);
     }
 
-    // ── Crossfade config hydration ───────────────────────────────────────
-
     #[test]
     fn effective_crossfade_defaults_to_disabled_3000ms() {
         let config = AppConfig::default();
@@ -1507,8 +1477,6 @@ mod tests {
 
     // ── Atomic write + corruption recovery (issue #208) ──────────────────
 
-    /// Collect the sibling files created next to `config.json` so tests can
-    /// assert quarantine backups exist and no temp files linger.
     fn sibling_file_names(dir: &Path) -> Vec<String> {
         fs::read_dir(dir)
             .unwrap()
@@ -1517,8 +1485,6 @@ mod tests {
             .collect()
     }
 
-    /// (a) A corrupt config must not error: `load_config` returns `Ok(None)`
-    /// and moves the bad file aside to a `config.json.corrupt-*` backup.
     #[test]
     fn load_recovers_from_corrupt_config_and_quarantines_it() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1528,7 +1494,6 @@ mod tests {
         let loaded = load_config(tmp.path()).unwrap();
         assert!(loaded.is_none(), "corrupt config recovers to defaults");
 
-        // The bad file is moved aside, not left in place.
         assert!(
             !config_path.exists(),
             "corrupt config.json is moved out of the way"
@@ -1542,8 +1507,6 @@ mod tests {
         );
     }
 
-    /// A 0-length config (the classic truncate-then-crash outcome of a
-    /// non-atomic write) is treated as corrupt and recovered.
     #[test]
     fn load_recovers_from_empty_config_file() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1558,8 +1521,6 @@ mod tests {
             .any(|name| name.starts_with("config.json.corrupt-")));
     }
 
-    /// After recovery the app can save a fresh config that loads cleanly, so
-    /// the corruption is self-healing rather than a permanent boot brick.
     #[test]
     fn save_after_corruption_recovery_round_trips() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1576,15 +1537,9 @@ mod tests {
         assert_eq!(reloaded.stem_mode, Some(StemMode::TwoStem));
     }
 
-    /// (b) A save interrupted before the rename (its bytes only ever reach the
-    /// temp file) leaves the previous valid config.json fully intact. We
-    /// simulate the crash window by writing a garbage temp sibling and never
-    /// renaming it, then asserting the committed config is unchanged.
     #[test]
     fn interrupted_save_leaves_previous_config_intact() {
         let tmp = tempfile::tempdir().unwrap();
-
-        // Commit a known-good config.
         let good = AppConfig {
             stem_mode: Some(StemMode::FourStem),
             ..AppConfig::default()
@@ -1592,12 +1547,9 @@ mod tests {
         save_config(tmp.path(), &good).unwrap();
         let good_bytes = fs::read(tmp.path().join(CONFIG_FILENAME)).unwrap();
 
-        // Simulate a save killed after the temp write but before the rename:
-        // a partial/garbage temp file exists next to config.json.
         let leftover_tmp = temp_path_for(&tmp.path().join(CONFIG_FILENAME));
         fs::write(&leftover_tmp, "half-written garbage {").unwrap();
 
-        // The committed config is byte-for-byte unchanged and still loads.
         assert_eq!(
             fs::read(tmp.path().join(CONFIG_FILENAME)).unwrap(),
             good_bytes,
@@ -1607,7 +1559,6 @@ mod tests {
         assert_eq!(loaded.stem_mode, Some(StemMode::FourStem));
     }
 
-    /// A successful atomic save leaves no `.tmp` residue behind.
     #[test]
     fn atomic_save_leaves_no_temp_file() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1620,8 +1571,6 @@ mod tests {
         assert!(leftovers.is_empty(), "no temp file lingers: {leftovers:?}");
     }
 
-    /// Overwriting an existing config atomically replaces it in place with no
-    /// intermediate truncated state and no leftover temp file.
     #[test]
     fn atomic_save_overwrites_existing_config() {
         let tmp = tempfile::tempdir().unwrap();

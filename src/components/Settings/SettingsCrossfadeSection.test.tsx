@@ -300,7 +300,6 @@ describe("SettingsCrossfadeSection", () => {
     );
 
     const slider = screen.getByRole("slider");
-    // Change to the same value — should be a no-op (early return).
     act(() => {
       fireEvent.change(slider, { target: { value: "3000" } });
     });
@@ -375,7 +374,6 @@ describe("SettingsCrossfadeSection", () => {
       fireEvent.change(slider, { target: { value: "6000" } });
     });
 
-    // Unmount before the debounce timer fires.
     unmount();
 
     act(() => {
@@ -387,8 +385,6 @@ describe("SettingsCrossfadeSection", () => {
   });
 
   test("default context actions are callable no-ops", async () => {
-    // Covers the default setCrossfadeEnabled/setCrossfadeDurationMs
-    // implementations in SettingsOverlay.context.ts.
     const value = createSettingsOverlayTestContextValue({
       state: {
         crossfadeEnabled: false,

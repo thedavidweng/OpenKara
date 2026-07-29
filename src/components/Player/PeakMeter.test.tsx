@@ -118,7 +118,6 @@ describe("PeakMeter", () => {
     render(<PeakMeter width={120} height={24} />);
     await vi.advanceTimersByTimeAsync(100);
     const firstCallCount = canvasMock.ctx.fillRect.mock.calls.length;
-    // Advance past one poll cycle — writeIndex is the same so no redraw.
     await vi.advanceTimersByTimeAsync(34);
     const secondCallCount = canvasMock.ctx.fillRect.mock.calls.length;
     expect(secondCallCount).toBe(firstCallCount);
@@ -134,14 +133,12 @@ describe("PeakMeter", () => {
     canvasMock.ctx.fillRect.mockClear();
     canvasMock.ctx.clearRect.mockClear();
 
-    // Ring stops advancing (playback stopped) but still returns last peaks.
     mockGetAudioPeaks.mockResolvedValue({
       writeIndex: 5,
       peaks: [[0.5, 0.5]],
     });
     await vi.advanceTimersByTimeAsync(600);
     expect(canvasMock.ctx.clearRect).toHaveBeenCalled();
-    // Flat baseline path draws a single mid-line fill, not live peak bars.
     expect(canvasMock.ctx.fillRect).toHaveBeenCalled();
   });
 
@@ -176,7 +173,6 @@ describe("PeakMeter", () => {
     });
     render(<PeakMeter width={300} height={40} />);
     await vi.advanceTimersByTimeAsync(100);
-    // Each peak pair produces 2 fillRect calls (left + right).
     expect(canvasMock.ctx.fillRect.mock.calls.length).toBeGreaterThanOrEqual(
       20,
     );
@@ -188,13 +184,11 @@ describe("PeakMeter", () => {
     await vi.advanceTimersByTimeAsync(100);
     const callsBefore = mockGetAudioPeaks.mock.calls.length;
     unmount();
-    // Advance past several poll cycles — no more calls should happen.
     await vi.advanceTimersByTimeAsync(200);
     expect(mockGetAudioPeaks.mock.calls.length).toBe(callsBefore);
   });
 
   it("coalesces rapid ticks into at most one concurrent IPC call", async () => {
-    // A slow backend: every getAudioPeaks() stays pending until we resolve it.
     type Resolver = (value: {
       writeIndex: number;
       peaks: Array<[number, number]>;
@@ -208,7 +202,6 @@ describe("PeakMeter", () => {
     );
 
     render(<PeakMeter width={120} height={24} />);
-    // Mount poll starts one in-flight call.
     await vi.advanceTimersByTimeAsync(0);
     expect(resolvers.length).toBe(1);
 
@@ -217,7 +210,6 @@ describe("PeakMeter", () => {
     await vi.advanceTimersByTimeAsync(34);
     expect(resolvers.length).toBe(1);
 
-    // Resolving the in-flight call clears it; the coalesced rerun fires once.
     resolvers[0]!({ writeIndex: 1, peaks: [[0.5, 0.5]] });
     await vi.advanceTimersByTimeAsync(0);
     expect(resolvers.length).toBe(2);
@@ -249,7 +241,6 @@ describe("PeakMeter", () => {
     expect(resolvers.length).toBe(1);
 
     const beforeDraw = canvasMock.ctx.fillRect.mock.calls.length;
-    // The delayed response resolves and must draw (writeIndex advanced).
     resolvers[0]!({ writeIndex: 7, peaks: [[0.8, 0.8]] });
     await vi.advanceTimersByTimeAsync(0);
     expect(canvasMock.ctx.fillRect.mock.calls.length).toBeGreaterThan(
@@ -277,7 +268,6 @@ describe("PeakMeter", () => {
     unmount();
     const beforeDraw = canvasMock.ctx.fillRect.mock.calls.length;
 
-    // A late resolution after unmount must not draw.
     resolvers[0]!({ writeIndex: 9, peaks: [[0.9, 0.9]] });
     await vi.advanceTimersByTimeAsync(0);
     await Promise.resolve();
@@ -308,18 +298,13 @@ describe("PeakMeter", () => {
       peaks: [[0.3, 0.4]],
     });
     render(<PeakMeter width={120} height={24} />);
-    // Let the initial poll land and record the advance time.
     await vi.advanceTimersByTimeAsync(100);
     const initialCount = canvasMock.ctx.clearRect.mock.calls.length;
-    // Advance past the 500 ms grace period plus the 400 ms decay animation
     await vi.advanceTimersByTimeAsync(1000);
-    // The flat-line fallback should have drawn (clearRect + fillRect for
-    // the baseline), not on every subsequent tick.
     const afterFlatLine = canvasMock.ctx.clearRect.mock.calls.length;
     expect(afterFlatLine).toBeGreaterThan(initialCount);
     expect(canvasMock.ctx.fillRect).toHaveBeenCalled();
 
-    // Advance further — no additional redraws should occur while idle.
     await vi.advanceTimersByTimeAsync(1000);
     expect(canvasMock.ctx.clearRect.mock.calls.length).toBe(afterFlatLine);
   });
@@ -330,18 +315,13 @@ describe("PeakMeter", () => {
       peaks: [[0.3, 0.4]],
     });
     render(<PeakMeter width={120} height={24} />);
-    // Let the initial poll land — it sees static non-empty peaks and starts
-    // the grace period (lastAdvanceRef := now) but does not flat-line yet.
     await vi.advanceTimersByTimeAsync(100);
     const initialCount = canvasMock.ctx.clearRect.mock.calls.length;
-    // Advance past the 500 ms grace period plus the 400 ms decay animation.
     await vi.advanceTimersByTimeAsync(1000);
-    // The flat-line fallback should have drawn (clearRect + baseline fillRect).
     const afterFlatLine = canvasMock.ctx.clearRect.mock.calls.length;
     expect(afterFlatLine).toBeGreaterThan(initialCount);
     expect(canvasMock.ctx.fillRect).toHaveBeenCalled();
 
-    // Advance further — no additional redraws should occur while idle.
     await vi.advanceTimersByTimeAsync(1000);
     expect(canvasMock.ctx.clearRect.mock.calls.length).toBe(afterFlatLine);
   });
@@ -352,23 +332,17 @@ describe("PeakMeter", () => {
       peaks: [[0.8, 0.8]],
     });
     render(<PeakMeter width={120} height={24} />);
-    // Initial poll draws the waveform.
     await vi.advanceTimersByTimeAsync(100);
     const afterInitial = canvasMock.ctx.clearRect.mock.calls.length;
 
-    // Advance past the 500 ms grace period — decay starts.
     await vi.advanceTimersByTimeAsync(500);
-    // During decay (first 200 ms of the 400 ms decay), the canvas should
-    // be redrawing on each poll with scaled-down peaks.
     const duringDecay = canvasMock.ctx.clearRect.mock.calls.length;
     expect(duringDecay).toBeGreaterThan(afterInitial);
 
-    // Advance past the full decay duration — flat line should be drawn.
     await vi.advanceTimersByTimeAsync(500);
     const afterFlatLine = canvasMock.ctx.clearRect.mock.calls.length;
     expect(afterFlatLine).toBeGreaterThan(duringDecay);
 
-    // No more redraws after flat-line is reached.
     await vi.advanceTimersByTimeAsync(1000);
     expect(canvasMock.ctx.clearRect.mock.calls.length).toBe(afterFlatLine);
   });

@@ -193,8 +193,6 @@ describe("PlaybackBar", () => {
   });
 
   test("master icon-to-rail gap uses the token-provided value at every density", () => {
-    // The master mute icon + slider group uses an inline style gap from
-    // layoutTokens.masterVolumeGap. We assert the rendered style attribute.
     const relaxed = renderToStaticMarkup(
       <PlaybackBar densityOverride="relaxed" />,
     );

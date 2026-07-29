@@ -1,8 +1,3 @@
-//! IPC adapter for library integrity audit and cleanup commands.
-//!
-//! Domain logic lives in `crate::library::integrity`. This module only binds
-//! Tauri state, opens the DB, and wraps the domain functions.
-
 use crate::{
     audio::coordinator::PlaybackCommand,
     cache,
@@ -12,8 +7,6 @@ use crate::{
 };
 use tauri::{async_runtime, State};
 
-/// Audit the active managed library for missing/empty referenced files and
-/// unreferenced managed files. Returns a deterministic, sorted report.
 #[tauri::command]
 pub async fn check_library_integrity(
     state: State<'_, AppState>,
@@ -27,12 +20,6 @@ pub async fn check_library_integrity(
     Ok(report)
 }
 
-/// Remove database entries for songs whose primary media is missing or empty.
-/// Revalidates each song at mutation time in a single transaction.
-///
-/// After a successful commit, asks the PlaybackCoordinator to invalidate any
-/// current/loading tracks that match deleted hashes (and clears CDG). A failed
-/// DB transaction never touches playback state.
 #[tauri::command]
 pub async fn remove_missing_library_entries(
     state: State<'_, AppState>,
@@ -47,9 +34,6 @@ pub async fn remove_missing_library_entries(
     .map_err(|e| internal_error(format!("cleanup task failed: {e}")))?
     .map_err(|e| database_error(format!("integrity cleanup failed: {e}")))?;
 
-    // Only reconcile playback after a successful DB mutation. The database
-    // commit is authoritative: a stopped coordinator must not report this
-    // already-completed destructive action as failed to the caller.
     if !result.deleted_song_hashes.is_empty() {
         let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
         let command = PlaybackCommand::InvalidateDeletedSongs {

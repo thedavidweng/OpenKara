@@ -13,18 +13,6 @@ export const LOCAL_AUDIENCE_ROMANIZE_SYNC_REQUEST_EVENT =
 export const FULLSCREEN_PLAYER_WINDOW_LABEL = "fullscreen-player";
 export const MAIN_WINDOW_LABEL = "main";
 
-/**
- * Authoritative romanization snapshot projected from the main window to the
- * fullscreen audience window. `revision` is monotonic per main-window runtime
- * instance; the receiver discards any payload whose revision is older than
- * the latest retained revision.
- *
- * `lyricsIdentity` is an exact deterministic serialization of the ordered
- * source lyrics used to compute `romanizedLines`. The same `songId` may
- * temporarily reference different lyric content in the two WebViews (e.g.
- * local lyrics vs an online-upgraded set), so identity must not collapse to
- * songId or line count.
- */
 export interface LocalAudienceRomanizeState {
   revision: number;
   songId: string | null;
@@ -34,22 +22,11 @@ export interface LocalAudienceRomanizeState {
   romanizedLines: string[];
 }
 
-/**
- * Explicit set request sent from the fullscreen control to the main window.
- * The desired boolean is sent (not a toggle) so the main window can validate
- * the request against its current authoritative state without ambiguity.
- */
 export interface LocalAudienceRomanizeSetRequest {
   songId: string;
   showRomanized: boolean;
 }
 
-/**
- * Deterministic serialization of the ordered source lyrics used for
- * romanization. Returns null for empty lyrics so the receiver can treat a
- * null identity as "no romanization available yet" without matching it
- * against stale content.
- */
 export function buildLyricsIdentity(lines: LyricLine[]): string | null {
   if (lines.length === 0) return null;
   return JSON.stringify(lines.map((line) => [line.time_ms, line.text]));

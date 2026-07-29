@@ -49,7 +49,6 @@ fn resolve_durable_state_for_status_update(
             if matches!(existing.state, OperationState::RetryWait) {
                 return OperationState::RetryWait;
             }
-            // Preserve Conflicted/Cancelled if somehow re-marked.
             if matches!(
                 existing.state,
                 OperationState::Conflicted | OperationState::Cancelled
@@ -217,8 +216,6 @@ pub(crate) fn project_upload_status_from_durable(
     Ok(snapshot)
 }
 
-/// Update status for an exact operation identity. Refuses to reopen terminal
-/// operations (Completed/Failed/Conflicted/Cancelled).
 pub(crate) fn mark_upload_status_for_operation(
     state: &AppState,
     operation_id: &str,
@@ -359,10 +356,6 @@ pub(crate) fn mark_upload_status(
             )?
         };
 
-        // If the control plane already owns a retry/conflict outcome, refuse
-        // to write a demoting Failed through this path. Callers after the
-        // executor should use project_upload_status_from_durable instead;
-        // this guard is belt-and-suspenders.
         if matches!(upload_state, UploadState::Failed) {
             if let Some(ref existing) = existing {
                 if matches!(
@@ -408,17 +401,11 @@ pub(crate) fn mark_upload_status(
         durable_state_for_snapshot = operation_state_to_upload_state(op_state);
         let (error_code, error_detail) = sanitize_error(error.as_ref());
 
-        // Preserve a scheduled retry window when we keep RetryWait (either
-        // from the executor or from a retryable failure write).
         let next_attempt_at_ms = if matches!(op_state, OperationState::RetryWait) {
             existing
                 .as_ref()
                 .and_then(|e| e.next_attempt_at_ms)
-                .or_else(|| {
-                    // First transition to RetryWait from this path (e.g. asset
-                    // upload network fault before the executor ran).
-                    Some(now + 30_000)
-                })
+                .or_else(|| Some(now + 30_000))
         } else {
             existing.as_ref().and_then(|e| e.next_attempt_at_ms)
         };
@@ -460,7 +447,6 @@ pub(crate) fn mark_upload_status(
         error: error.clone(),
     };
 
-    // Update the in-memory projection.
     let mut guard = state
         .remote
         .remote_upload_statuses
@@ -470,8 +456,6 @@ pub(crate) fn mark_upload_status(
     Ok(snapshot)
 }
 
-/// Current time in milliseconds. Centralized so tests could inject a clock
-/// in the future.
 fn control_db_now_ms() -> i64 {
     crate::remote::types::current_unix_time_ms()
 }
@@ -482,8 +466,6 @@ fn sanitize_error(error: Option<&CommandError>) -> (Option<String>, Option<Strin
     match error {
         Some(err) => {
             let code = format!("{:?}", err.code);
-            // The error message is already sanitized by the command error
-            // layer (static user-facing messages). We store it as the detail.
             (Some(code), Some(err.message.clone()))
         }
         None => (None, None),
@@ -556,8 +538,6 @@ pub fn get_all_upload_statuses(state: &AppState) -> CommandResult<Vec<UploadStat
         .map(operation_to_snapshot)
         .collect();
 
-    // Sync the in-memory projection so subsequent event delivery has a
-    // baseline to diff against.
     let mut guard = state
         .remote
         .remote_upload_statuses
@@ -632,7 +612,6 @@ mod tests {
         )
         .unwrap();
 
-        // Simulate restart: clear the in-memory projection.
         state.remote.remote_upload_statuses.lock().unwrap().clear();
 
         let statuses = get_all_upload_statuses(&state).unwrap();
@@ -647,7 +626,6 @@ mod tests {
         let dir = TempDir::new().expect("temp dir");
         let path = dir.path().join("remote-state.db");
 
-        // Write a row using one connection (simulates a prior session).
         {
             let conn = open_control_db(&path).unwrap();
             upsert_operation(
@@ -673,7 +651,6 @@ mod tests {
             .unwrap();
         }
 
-        // Reopen (simulates restart) and read.
         let conn = open_control_db(&path).unwrap();
         let mut state = AppState::test_fixture();
         state.remote.control_db = Arc::new(Mutex::new(conn));
@@ -689,7 +666,6 @@ mod tests {
     fn mark_upload_status_without_library_does_not_persist() {
         let (state, _dir) = test_state_with_control_db();
 
-        // No remote_library_id — should not create a durable row.
         mark_upload_status(&state, "song-1", None, UploadState::Running, 0, None, None).unwrap();
 
         let conn = state.remote.control_db.lock().unwrap();
@@ -701,7 +677,6 @@ mod tests {
     fn mark_upload_status_failed_does_not_demote_retry_wait() {
         let (state, _dir) = test_state_with_control_db();
         let now = control_db_now_ms();
-        // Executor already scheduled a durable retry for a network fault.
         upsert_operation(
             &state.remote.control_db.lock().unwrap(),
             &OperationRow {
@@ -724,7 +699,6 @@ mod tests {
         )
         .unwrap();
 
-        // Post-executor UI path must project only — never write Failed over RetryWait.
         let snapshot = project_upload_status_from_durable(
             &state,
             "song-1",
@@ -743,8 +717,6 @@ mod tests {
             "RetryWait projects as non-terminal Running for UI"
         );
 
-        // Belt-and-suspenders: even a mistaken mark_upload_status(Failed) must
-        // not demote durable RetryWait.
         mark_upload_status(
             &state,
             "song-1",
@@ -822,8 +794,6 @@ mod tests {
     fn get_all_upload_statuses_filters_batch_rows_with_empty_song_ids() {
         let (state, _dir) = test_state_with_control_db();
 
-        // Insert a batch outbox entry with empty song_ids (as produced by
-        // prepare_and_mutate before song_ids are known).
         let now = control_db_now_ms();
         upsert_operation(
             &state.remote.control_db.lock().unwrap(),
@@ -847,7 +817,6 @@ mod tests {
         )
         .unwrap();
 
-        // Insert a real per-song upload row.
         mark_upload_status(
             &state,
             "song-1",
@@ -860,8 +829,6 @@ mod tests {
         .unwrap();
 
         let statuses = get_all_upload_statuses(&state).unwrap();
-        // Only the per-song row should appear; the batch placeholder is
-        // filtered out.
         assert_eq!(statuses.len(), 1);
         assert_eq!(statuses[0].song_id, "song-1");
     }

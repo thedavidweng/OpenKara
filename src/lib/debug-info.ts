@@ -1,14 +1,6 @@
 import { getDebugInfo } from "@/lib/tauri";
 import type { DebugInfo } from "@/types/ipc";
 
-/**
- * Render a {@link DebugInfo} snapshot as fixed-English plain text suitable for
- * pasting into a bug report.
- *
- * The text is intentionally NOT localized: a maintainer triaging an issue
- * should read the same labels regardless of the reporter's app language. The
- * Settings → About section localizes its own on-screen labels separately.
- */
 export function formatDebugInfo(info: DebugInfo): string {
   const model = info.model_installed
     ? `installed ${info.model_installed_version ?? "unknown"}`

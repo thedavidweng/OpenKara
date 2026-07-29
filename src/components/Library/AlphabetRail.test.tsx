@@ -176,7 +176,6 @@ describe("AlphabetRail", () => {
     const container = screen.getByRole("navigation");
     fireEvent.keyDown(container, { key: "a" });
     expect(onNavigate).toHaveBeenCalledTimes(1);
-    // Second press of the same letter should navigate again, not be deduped
     fireEvent.keyDown(container, { key: "a" });
     expect(onNavigate).toHaveBeenCalledTimes(2);
   });
@@ -206,7 +205,6 @@ describe("AlphabetRail", () => {
     const { rerender } = render(
       <AlphabetRail indexByBucket={index1} onNavigate={onNavigate} />,
     );
-    // Activate B
     const buttons = screen.getAllByRole("button");
     fireEvent.click(buttons[1]);
     expect(buttons[1].getAttribute("aria-current")).toBe("true");
@@ -223,7 +221,6 @@ describe("AlphabetRail", () => {
     const index = makeIndex([["B", 5]]);
     render(<AlphabetRail indexByBucket={index} onNavigate={vi.fn()} />);
     const container = screen.getByRole("navigation");
-    // B is the first mapped bucket → initial roving. ArrowUp → A.
     fireEvent.keyDown(container, { key: "ArrowUp" });
     const buttons = screen.getAllByRole("button");
     expect(buttons[0].getAttribute("tabindex")).toBe("0");
@@ -337,7 +334,6 @@ describe("AlphabetRail", () => {
     ]);
     render(<AlphabetRail indexByBucket={index} onNavigate={onNavigate} />);
     const container = setupPointerContainer();
-    // Start drag on A (clientY=0 → bucket A).
     fireEvent.pointerDown(container, { button: 0, pointerId: 1, clientY: 0 });
     expect(onNavigate).toHaveBeenCalledWith(0, "A");
     // Drag to M (clientY=125 → fraction ≈ 0.463 → raw floor(12.5) = 12 → M).
@@ -350,7 +346,6 @@ describe("AlphabetRail", () => {
     const index = makeIndex([["A", 0]]);
     render(<AlphabetRail indexByBucket={index} onNavigate={onNavigate} />);
     const container = setupPointerContainer();
-    // No preceding pointerDown → activePointerIdRef is null → ignored.
     fireEvent.pointerMove(container, { pointerId: 1, clientY: 125 });
     expect(onNavigate).not.toHaveBeenCalled();
   });
@@ -363,9 +358,7 @@ describe("AlphabetRail", () => {
     ]);
     render(<AlphabetRail indexByBucket={index} onNavigate={onNavigate} />);
     const container = setupPointerContainer();
-    // Start drag on A (clientY=0 → bucket A).
     fireEvent.pointerDown(container, { button: 0, pointerId: 1, clientY: 0 });
-    // Drag to B (clientY=15 → bucket B).
     fireEvent.pointerMove(container, { pointerId: 1, clientY: 15 });
     fireEvent.pointerUp(container, { pointerId: 1 });
     expect(container.releasePointerCapture).toHaveBeenCalledWith(1);
@@ -380,12 +373,10 @@ describe("AlphabetRail", () => {
     const index = makeIndex([["A", 0]]);
     render(<AlphabetRail indexByBucket={index} onNavigate={onNavigate} />);
     const container = setupPointerContainer();
-    // A simple tap: pointerdown, pointerup (no move), then synthetic click.
     fireEvent.pointerDown(container, { button: 0, pointerId: 1, clientY: 0 });
     fireEvent.pointerUp(container, { pointerId: 1 });
     const buttonA = screen.getAllByRole("button")[0];
     fireEvent.click(buttonA);
-    // The current-section marker must persist after a simple tap.
     expect(buttonA.getAttribute("aria-current")).toBe("true");
   });
 
@@ -479,7 +470,6 @@ describe("AlphabetRail", () => {
 
   test("empty index map starts with null roving and keyboard uses pos 0", () => {
     const onNavigate = vi.fn();
-    // Empty map → useEffect sets rovingBucket to null → keydown takes the :0 branch.
     const index = new Map();
     render(<AlphabetRail indexByBucket={index} onNavigate={onNavigate} />);
     const container = screen.getByRole("navigation");

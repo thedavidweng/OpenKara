@@ -20,15 +20,9 @@ use std::{
 use tauri::{Emitter, Manager, Runtime};
 
 pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std::error::Error>> {
-    // Install file logging first so every diagnostic below reaches the rolling
-    // log file. A failure here must not brick startup — logging is a
-    // best-effort aid, not a launch precondition — so we fall back to plain
-    // stderr and carry on.
     match app.path().app_log_dir() {
         Ok(log_dir) => {
             if let Err(err) = crate::logging::init(&log_dir) {
-                // Logging failed to install, so `tracing` is a no-op here —
-                // fall back to raw stderr or the message is lost entirely.
                 eprintln!("warning: failed to initialize file logging: {err:#}");
             } else {
                 tracing::info!(
@@ -38,7 +32,6 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
             }
         }
         Err(err) => {
-            // No log directory means no subscriber; raw stderr is all we have.
             eprintln!("warning: could not resolve log directory; file logging disabled: {err:#}");
         }
     }
@@ -59,10 +52,6 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         )
     })?;
 
-    // ONNX Runtime activation transaction: promote a staged candidate (or
-    // roll back an interrupted activation), then load the active runtime.
-    // The slot swap persists an activation-pending marker BEFORE the dynamic
-    // load so a crash here is detected and rolled back on the next launch.
     match separator::runtime_bootstrap::begin_startup(&app_data_dir) {
         Ok(Some(plan)) => {
             match separator::model::ensure_runtime_loaded_from_path(&plan.library_path) {
@@ -81,10 +70,6 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
                         plan.library_path.display()
                     );
                     if !plan.proving_candidate && !plan.is_legacy {
-                        // An established active runtime that no longer loads
-                        // (ABI break, OS upgrade) must not keep reporting
-                        // Ready: roll back to a previous generation when one
-                        // exists, otherwise surface an honest failure state.
                         let failed_id = plan
                             .record
                             .as_ref()
@@ -179,11 +164,6 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         }
     };
 
-    // Crash recovery: if a mirror operation was interrupted mid-sync, the
-    // config's active_library_id may still point at the remote library.
-    // Restore the original from the pending marker before proceeding.
-    // The pending_mirror_restore flag distinguishes "interrupted sync with
-    // original active_library_id = None" from "no pending sync at all".
     let app_config = if let Some(mut config) = app_config {
         if config.pending_mirror_restore {
             let original_id = config.pending_mirror_restore_active_library_id.take();
@@ -209,17 +189,11 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
 
     let playback = Arc::new(Mutex::new({
         let mut controller = PlaybackController::default();
-        // Initialize EQ config from the persisted config so the output
-        // callback starts with the correct enabled/gains state from the
-        // first callback, without waiting for a settings command.
         if let Some(config) = app_config.as_ref() {
             let eq_enabled = config.effective_eq_enabled();
             let eq_gains_db = config.effective_eq_gains_db();
             controller.set_eq_enabled(eq_enabled);
             controller.set_eq_gains(eq_gains_db);
-            // Initialize crossfade config from the persisted config so the
-            // output callback starts with the correct enabled/duration state
-            // from the first callback, without waiting for a settings command.
             let crossfade_enabled = config.effective_crossfade_enabled();
             let crossfade_duration_ms = config.effective_crossfade_duration_ms();
             let _ = controller.set_crossfade_enabled(crossfade_enabled);
@@ -238,7 +212,6 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
     app.manage(window_shell_state);
     let shutdown = Arc::new(AtomicBool::new(false));
 
-    // Construct domain states first — they are the source of truth for shared Arc references.
     let library = Arc::new(Mutex::new(load_library(app_config.as_ref())));
     let (playback_state, command_rx) = PlaybackState::new(Arc::clone(&playback));
     let airplay_state = AirPlayState {
@@ -272,8 +245,6 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
     let catalog_cache_for_updates = Arc::clone(&shell_state.catalog_cache);
     let runtime_status_for_updates = Arc::clone(&shell_state.runtime_bootstrap_status);
 
-    // Register domain states — commands can extract State<'_, PlaybackState> etc.
-    // Clone before manage() since ensure_output_thread needs refs below.
     let playback_state_for_output = playback_state.clone();
     let airplay_state_for_output = airplay_state.clone();
 
@@ -287,7 +258,6 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
         lrcapi_client: crate::lyrics::lrcapi::LrcApiClient::new_default(),
     };
 
-    // Extract coordinator runtime Arcs before managing moves the states.
     let coordinator_runtime = CoordinatorRuntime {
         app_handle: app.handle().clone(),
         playback: Arc::clone(&playback),
@@ -308,15 +278,8 @@ pub fn setup_app<R: Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std:
     app.manage(shell_state);
     app.manage(app_state.clone());
 
-    // Start the durable operation executor. This spawns a background thread
-    // that periodically retries pending/retry_wait operations (e.g. uploads
-    // that failed during a previous session). Without this, operations left
-    // in RetryWait by the startup recovery pass would never be re-executed.
     spawn_durable_operation_executor(app_state);
 
-    // Spawn the PlaybackCoordinator before pre-warming the output thread.
-    // The coordinator serializes all control-plane mutations; the receiver
-    // is moved into the worker and only the sender remains in managed state.
     spawn_coordinator(coordinator_runtime, command_rx);
 
     if let Err(err) = crate::services::playback::ensure_output_thread_inner(
@@ -404,8 +367,6 @@ fn spawn_window_reveal_watchdog<R: Runtime>(app: &tauri::App<R>) {
     thread::spawn(move || {
         thread::sleep(WINDOW_REVEAL_WATCHDOG);
 
-        // An unreadable visibility state must not be the reason the app stays
-        // invisible, so a failed query counts as hidden.
         if window.is_visible().unwrap_or(false) {
             return;
         }
@@ -420,10 +381,6 @@ fn spawn_window_reveal_watchdog<R: Runtime>(app: &tauri::App<R>) {
     });
 }
 
-/// Background startup check for runtime updates, governed by the update
-/// policy. `notify` surfaces availability through the lifecycle state;
-/// `auto_download` also stages the candidate for next-launch activation.
-/// A failed check is logged and changes nothing.
 fn spawn_runtime_update_check_worker<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     app_data_dir: PathBuf,
@@ -432,7 +389,6 @@ fn spawn_runtime_update_check_worker<R: Runtime>(
     policy: config::UpdatePolicy,
 ) {
     tauri::async_runtime::spawn(async move {
-        // Give startup I/O a head start; the check is not urgent.
         tokio::time::sleep(std::time::Duration::from_secs(15)).await;
 
         let _ = tauri::async_runtime::spawn_blocking(move || {
@@ -593,24 +549,6 @@ fn spawn_playback_position_emitter<R: Runtime>(
         loop {
             thread::sleep(Duration::from_millis(PLAYBACK_POSITION_POLL_INTERVAL_MS));
 
-            // Drain any completed gapless transition before taking the
-            // snapshot. The realtime callback stamps a `CompletedTransition`
-            // after a gapless swap; we emit `track-transitioned` here so the
-            // frontend can reconcile its queue head before the next position
-            // event arrives with the new song_id.
-            // Drain any completed gapless transition and capture the
-            // authoritative post-transition snapshot in the same lock so the
-            // event's `state` field reflects the new song. Emit
-            // `track-transitioned` with the full payload, then the normal
-            // position event.
-            // The transition carries its own snapshot captured at the
-            // moment the track switched (inside `stamp_transition`). We use
-            // that snapshot for the event's `state` field rather than a fresh
-            // `controller.snapshot()`, so if the listener manually picked a
-            // different song in the brief gap between the swap and this
-            // notification, the event still describes the song that actually
-            // played and the frontend's `transport_generation` guard rejects
-            // it instead of reconciling the queue against the wrong song.
             let pending_transition = match playback.lock() {
                 Ok(mut controller) => controller.drain_pending_transition(),
                 Err(_) => break,
@@ -625,9 +563,6 @@ fn spawn_playback_position_emitter<R: Runtime>(
                         state: transition.snapshot.clone(),
                     },
                 );
-                // Force the next position event to emit regardless of delta —
-                // the song_id has changed and the frontend needs the new
-                // snapshot immediately.
                 last_emitted_position = None;
                 last_emitted_state = None;
                 last_emitted_is_playing = None;
@@ -792,9 +727,6 @@ pub(crate) fn spawn_model_bootstrap_worker<R: Runtime>(
 fn run_remote_recovery(remote_state: &RemoteState, app_data_dir: &std::path::Path) {
     use crate::remote::recovery::{run_recovery, Clock, FileDigestResolver};
 
-    // Rebuild control-DB operations from library outbox rows that were
-    // committed with the local mutation but never projected (crash between
-    // library commit and remote-state.db write).
     project_library_outboxes_into_control_db(remote_state, app_data_dir);
 
     let recovery_result = {
@@ -806,8 +738,6 @@ fn run_remote_recovery(remote_state: &RemoteState, app_data_dir: &std::path::Pat
             }
         };
 
-        // Resolve the working DB path for a library via the config. This is
-        // used to compute the current digest for `prepared` operations.
         let app_data_dir_owned = app_data_dir.to_path_buf();
         let resolver = FileDigestResolver::new(move |library_id: &str| {
             let config = crate::config::load_config(&app_data_dir_owned)
@@ -828,11 +758,6 @@ fn run_remote_recovery(remote_state: &RemoteState, app_data_dir: &std::path::Pat
         tracing::warn!("remote control DB recovery failed: {:?}", error);
     }
 
-    // Remove stale `*.part.*` temp files left by interrupted downloads in
-    // every remote library working copy. This runs after the control-DB
-    // recovery pass so the working copies are clean before library startup.
-    // Part files belonging to operations with valid transfer rows are
-    // preserved (resumable); orphaned part files are deleted.
     let control_db_path = crate::remote::control_db::control_db_path(app_data_dir);
     if let Ok(part_cleanup_conn) = crate::remote::control_db::open_control_db(&control_db_path) {
         recover_stale_part_files_for_all_libraries(app_data_dir, &part_cleanup_conn);
@@ -1046,10 +971,6 @@ fn project_library_outboxes_into_control_db(
     }
 }
 
-/// Scan every registered remote library's working copy for stale
-/// `*.part.*` temp files and remove them (best-effort). Part files
-/// belonging to operations with valid transfer rows in the control DB
-/// are preserved (resumable).
 fn recover_stale_part_files_for_all_libraries(
     app_data_dir: &std::path::Path,
     control_db: &rusqlite::Connection,
@@ -1077,18 +998,8 @@ fn recover_stale_part_files_for_all_libraries(
     }
 }
 
-/// Spawn a background thread that periodically retries pending and
-/// retry_wait durable operations. This ensures that operations left in a
-/// non-terminal state by a previous session (or by a transient failure
-/// during the current session) are eventually re-executed.
-///
-/// The thread runs an immediate pass on startup (to handle operations
-/// transitioned to RetryWait by `run_remote_recovery`), then polls every
-/// 30 seconds. Rate-limited operations (next_attempt_at_ms in the future)
-/// are skipped by `retry_pending_operations` itself.
 fn spawn_durable_operation_executor(app_state: AppState) {
     std::thread::spawn(move || {
-        // Immediate pass on startup.
         if let Err(error) = crate::remote::recovery::retry_pending_operations(&app_state) {
             tracing::warn!(
                 "durable operation executor initial pass failed: {:?}",
@@ -1096,7 +1007,6 @@ fn spawn_durable_operation_executor(app_state: AppState) {
             );
         }
 
-        // Periodic retry loop. Polls every 30 seconds.
         let poll_interval = std::time::Duration::from_secs(30);
         loop {
             std::thread::sleep(poll_interval);
@@ -1131,7 +1041,6 @@ mod residual_outbox_tests {
 
     #[test]
     fn payload_subset_of_outbox_is_not_safe() {
-        // Terminal payload only [A] must not authorize deleting outbox [A,B].
         let outbox = vec!["a".to_owned(), "b".to_owned()];
         let payload = vec!["a".to_owned()];
         assert!(!residual_outbox_safe_to_drop(

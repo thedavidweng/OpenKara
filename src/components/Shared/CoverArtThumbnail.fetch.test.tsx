@@ -133,7 +133,6 @@ describe("CoverArtThumbnail async fetch", () => {
       />,
     );
 
-    // The placeholder dot should be rendered (no img element).
     expect(container.querySelector("img")).toBeNull();
     expect(container.querySelector('[aria-hidden="true"]')).not.toBeNull();
   });

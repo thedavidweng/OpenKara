@@ -112,7 +112,6 @@ pub(crate) fn sync_remote_database_from_provider(
     // the repository has been migrated to the manifest protocol.
     let provider_revision = remote_database_revision(app_data_dir, library)?;
     if !remote_database_revision_is_stale(library.remote_revision(), provider_revision.as_deref()) {
-        // Already up to date — no download needed.
         return Ok(library.clone());
     }
     pull_remote_database_atomically(
@@ -138,7 +137,6 @@ fn reconcile_after_restart(
         ))
     })?;
     if !root_path.join(".openkara-library").exists() {
-        // First-time setup — no working copy to reconcile against.
         return Ok(());
     }
     let root = crate::library_root::LibraryRoot::open(&root_path)
@@ -172,9 +170,6 @@ pub(crate) fn prepare_remote_database_for_mutation(
 
     let provider_revision = remote_database_revision(app_data_dir, library)?;
     if remote_database_revision_is_stale(library.remote_revision(), provider_revision.as_deref()) {
-        // The remote advanced. Pull a verified candidate atomically. On
-        // network/pull failure, fall back to the existing local DB so the
-        // mutation can proceed offline instead of blocking the user.
         return pull_remote_database_atomically(
             control_db_conn,
             app_data_dir,
@@ -196,8 +191,6 @@ pub(crate) fn prepare_remote_database_for_mutation(
 fn should_allow_automatic_pull(control_db_conn: &Connection, library: &RegisteredLibrary) -> bool {
     match get_repository_state(control_db_conn, library.id()) {
         Ok(Some(state)) => matches!(state.local_state, LocalState::Clean),
-        // No state row yet (e.g. a library registered before the control DB
-        // existed): allow the pull so first-time refresh works.
         Ok(None) => true,
         // If the control DB is unreadable, fail closed. Do not allow an
         // automatic pull over the working copy — the local database may
@@ -359,7 +352,6 @@ pub fn ensure_remote_file_cached(app_data_dir: &Path, relative_path: &str) -> Co
                     && std::path::Path::new(&row.data_path).is_absolute()
                     && std::fs::metadata(&row.data_path).is_ok()
                 {
-                    // Complete + verified catalog entry — the file is cached.
                     return Ok(());
                 }
                 // For the working-copy destination path (not the streaming
@@ -391,9 +383,6 @@ pub fn ensure_remote_file_cached(app_data_dir: &Path, relative_path: &str) -> Co
         }
     }
 
-    // Download to a temp file, validate size when known, then atomically
-    // rename. This replaces the old direct-to-destination download that
-    // could leave a truncated file at the final path (defect #5).
     let expected_size = remote_size;
     let operation_id = format!("cache-{}", current_unix_time_ms());
     crate::remote::atomic_download::atomic_download(
@@ -529,8 +518,6 @@ mod tests {
         assert!(error.message.contains("Reauthorize remote repository"));
     }
 
-    // ---- Dirty working-copy protection tests ----
-
     #[test]
     fn should_allow_automatic_pull_when_clean() {
         let (_dir, conn) = fresh_control_db();
@@ -594,7 +581,6 @@ mod tests {
         let (_dir, conn) = fresh_control_db();
         let library = make_remote_library("lib-1");
 
-        // No state row — allow so first-time refresh works.
         assert!(should_allow_automatic_pull(&conn, &library));
     }
 }

@@ -117,8 +117,6 @@ describe("SettingsRemoteDiagnosticsSection", () => {
   });
 
   test("offers both exits from a conflict and re-reads the state after", async () => {
-    // A conflicted repository used to be a dead end: the state rendered in red
-    // and nothing acted on it.
     mockGetRemoteDiagnostics.mockResolvedValue({
       has_active_remote: true,
       local_state: "conflicted",

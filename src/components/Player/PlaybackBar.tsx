@@ -128,8 +128,6 @@ export function PlaybackBar({
         >
           <PlayControls density={density} previewMode={previewMode} />
           <SeekBar density={density} />
-          {/* Reconnect indicator overlays the seek bar area so it does not
-              disturb the 2-column grid layout. */}
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <RemoteReconnectIndicator />
           </div>
