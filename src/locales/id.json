@@ -437,7 +437,7 @@
     },
     "eq": {
       "label": "Ekualiser",
-      "description": "Ekualiser 5 pita dengan preamp otomatis dan limiter lembut.",
+      "description": "Ekualiser 5 pita dengan limiter lembut.",
       "enable": "Aktifkan ekualiser",
       "reset": "Atur ulang semua pita ke 0 dB",
       "band60": "60 Hz",

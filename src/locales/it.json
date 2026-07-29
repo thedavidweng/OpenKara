@@ -439,7 +439,7 @@
     },
     "eq": {
       "label": "Equalizzatore",
-      "description": "Equalizzatore a 5 bande con preamplificazione automatica e limitatore morbido.",
+      "description": "Equalizzatore a 5 bande con limitatore morbido.",
       "enable": "Abilita equalizzatore",
       "reset": "Reimposta tutte le bande a 0 dB",
       "band60": "60 Hz",

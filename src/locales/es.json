@@ -439,7 +439,7 @@
     },
     "eq": {
       "label": "Ecualizador",
-      "description": "Ecualizador de 5 bandas con preamplificación automática y limitador suave.",
+      "description": "Ecualizador de 5 bandas con limitador suave.",
       "enable": "Activar ecualizador",
       "reset": "Restablecer todas las bandas a 0 dB",
       "band60": "60 Hz",

@@ -442,7 +442,7 @@
     },
     "eq": {
       "label": "Equalizer",
-      "description": "5-band equalizer with automatic preamp and soft limiter.",
+      "description": "5-band equalizer with soft limiter.",
       "enable": "Enable equalizer",
       "reset": "Reset all bands to 0 dB",
       "band60": "60 Hz",

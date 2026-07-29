@@ -1,4 +1,4 @@
-//! Five-band peaking EQ with auto preamp and a bounded soft limiter.
+//! Five-band peaking EQ with a bounded soft limiter.
 //!
 //! The `EqProcessor` is owned by the CPAL output closure beside
 //! `ResamplerCache`; it is **not** stored behind the playback mutex. A new
@@ -11,7 +11,7 @@
 //!
 //! ```text
 //! existing source/stem mix + master/stem gains
-//! → EQ dry/wet processor + auto preamp
+//! → EQ dry/wet processor
 //! → soft limiter
 //! → existing play/pause/seek fade
 //! → output/AirPlay forwarding
@@ -34,10 +34,6 @@ const BYPASS_SMOOTH_MS: f32 = 20.0;
 /// coefficient instability near Nyquist.
 const NYQUIST_RATIO_LIMIT: f32 = 0.45;
 pub const LIMITER_THRESHOLD: f32 = 0.95;
-
-fn db_to_linear(db: f32) -> f32 {
-    10.0f32.powf(db / 20.0)
-}
 
 /// Continuous, slope-matched soft limiter.
 ///
@@ -74,9 +70,6 @@ pub struct EqProcessor {
     /// targets change so the 50 ms linear ramp is wall-clock accurate and
     /// independent of CPAL callback size.
     gain_steps_db: [f32; 5],
-    target_preamp: f32,
-    current_preamp: f32,
-    preamp_step: f32,
     wet_mix: f32,
     target_wet_mix: f32,
     wet_step: f32,
@@ -122,9 +115,6 @@ impl EqProcessor {
             target_gains_db: [0.0; 5],
             current_gains_db: [0.0; 5],
             gain_steps_db: [0.0; 5],
-            target_preamp: 1.0,
-            current_preamp: 1.0,
-            preamp_step: 0.0,
             wet_mix: 0.0,
             target_wet_mix: 0.0,
             wet_step: 0.0,
@@ -139,7 +129,6 @@ impl EqProcessor {
         self.enabled = enabled;
         self.target_wet_mix = if enabled { 1.0 } else { 0.0 };
         self.recompute_wet_step();
-        self.update_preamp_target();
     }
 
     /// Returns true when the EQ is fully bypassed: wet mix is zero and not
@@ -157,29 +146,6 @@ impl EqProcessor {
     pub fn set_gains(&mut self, gains_db: [f32; 5]) {
         self.target_gains_db = gains_db;
         self.recompute_gain_steps();
-        self.update_preamp_target();
-    }
-
-    /// Auto preamp target supplies headroom for positive gain: it is
-    /// `db_to_linear(-max(0, max_positive_gain))` computed over bands that
-    /// are actually active at the current sample rate. Bands at or above the
-    /// Nyquist guard are skipped by the filter, so including their gain
-    /// here would apply unnecessary attenuation (e.g. +12 dB on the 14 kHz
-    /// band at a 22050 Hz sample rate produces no boost but still drops
-    /// overall volume by -12 dB). Smoothed over the same 50 ms interval as
-    /// the gains.
-    fn update_preamp_target(&mut self) {
-        let nyquist_limit = self.sample_rate_hz * NYQUIST_RATIO_LIMIT;
-        let max_positive = self
-            .target_gains_db
-            .iter()
-            .copied()
-            .enumerate()
-            .filter(|(i, _)| EQ_BAND_FREQUENCIES_HZ[*i] < nyquist_limit)
-            .map(|(_, g)| g)
-            .fold(0.0f32, |acc, g| if g > acc { g } else { acc });
-        self.target_preamp = db_to_linear(-max_positive.max(0.0));
-        self.recompute_preamp_step();
     }
 
     /// Fixed per-frame step for a linear ramp of `duration_ms` at the current
@@ -200,15 +166,6 @@ impl EqProcessor {
                 EQ_SMOOTH_MS,
             );
         }
-    }
-
-    fn recompute_preamp_step(&mut self) {
-        self.preamp_step = Self::linear_step(
-            self.current_preamp,
-            self.target_preamp,
-            self.sample_rate_hz,
-            EQ_SMOOTH_MS,
-        );
     }
 
     fn recompute_wet_step(&mut self) {
@@ -269,13 +226,6 @@ impl EqProcessor {
                     self.current_gains_db[band] += step;
                 }
             }
-            let preamp_diff = self.target_preamp - self.current_preamp;
-            if self.preamp_step == 0.0 || self.preamp_step.abs() >= preamp_diff.abs() {
-                self.current_preamp = self.target_preamp;
-                self.preamp_step = 0.0;
-            } else {
-                self.current_preamp += self.preamp_step;
-            }
             let wet_diff = self.target_wet_mix - self.wet_mix;
             if self.wet_step == 0.0 || self.wet_step.abs() >= wet_diff.abs() {
                 self.wet_mix = self.target_wet_mix;
@@ -293,9 +243,8 @@ impl EqProcessor {
             // from the last ramp tick, so recomputing them is wasted CPU on
             // every audio frame while settings are unchanged. The filter run
             // below still executes with the last-valid coefficients.
-            let all_steps_settled = self.gain_steps_db.iter().all(|&s| s == 0.0)
-                && self.preamp_step == 0.0
-                && self.wet_step == 0.0;
+            let all_steps_settled =
+                self.gain_steps_db.iter().all(|&s| s == 0.0) && self.wet_step == 0.0;
 
             if !all_steps_settled {
                 // Recompute coefficients for this frame from the advanced smoothed
@@ -340,9 +289,8 @@ impl EqProcessor {
                 }
             }
 
-            // Snapshot the per-frame scalar gains so the inner channel loop
+            // Snapshot the per-frame wet/dry scalars so the inner channel loop
             // can borrow `self.filters` mutably without aliasing.
-            let preamp = self.current_preamp;
             let wet_mix = self.wet_mix;
             let dry_gain = 1.0 - wet_mix;
 
@@ -358,7 +306,6 @@ impl EqProcessor {
                         wet = filter.run(wet);
                     }
                 }
-                wet *= preamp;
                 output[idx] = dry * dry_gain + wet * wet_mix;
             }
         }
@@ -507,6 +454,25 @@ mod tests {
         );
     }
 
+    #[test]
+    fn positive_band_gain_increases_in_band_amplitude() {
+        let mut proc = EqProcessor::new(48_000, 2);
+        proc.set_enabled(true);
+        proc.set_gains([12.0, 0.0, 0.0, 0.0, 0.0]);
+        let frames = 48_000;
+
+        let in_band_rms = run_tone_rms(&mut proc, 60.0_f32, 48_000, frames);
+
+        let mut flat = EqProcessor::new(48_000, 2);
+        flat.set_enabled(true);
+        let flat_rms = run_tone_rms(&mut flat, 60.0_f32, 48_000, frames);
+
+        assert!(
+            in_band_rms > flat_rms * 3.0,
+            "+12 dB at 60 Hz should increase 60 Hz RMS: boosted={in_band_rms}, flat={flat_rms}"
+        );
+    }
+
     fn run_tone_rms(proc: &mut EqProcessor, freq: f32, sample_rate: u32, frames: usize) -> f32 {
         let channels = 2;
         let mut buf = vec![0.0f32; frames * channels];
@@ -532,70 +498,6 @@ mod tests {
         let half = buf.len() / 2;
         let sum: f32 = buf[half..].iter().map(|&s| s * s).sum();
         (sum / (buf.len() - half) as f32).sqrt()
-    }
-
-    #[test]
-    fn auto_preamp_target_reduces_wet_gain_for_positive_boost() {
-        let mut proc = EqProcessor::new(44_100, 2);
-        proc.set_enabled(true);
-        proc.set_gains([0.0, 0.0, 0.0, 0.0, 12.0]);
-        let expected = db_to_linear(-12.0);
-        assert!(
-            (proc.target_preamp - expected).abs() < 1e-5,
-            "preamp target should be {expected}, got {}",
-            proc.target_preamp
-        );
-    }
-
-    #[test]
-    fn auto_preamp_target_is_unity_when_no_positive_gain() {
-        let mut proc = EqProcessor::new(44_100, 2);
-        proc.set_enabled(true);
-        proc.set_gains([-6.0, -3.0, 0.0, -12.0, -1.0]);
-        assert!(
-            (proc.target_preamp - 1.0).abs() < 1e-6,
-            "preamp should be unity when no positive gain, got {}",
-            proc.target_preamp
-        );
-    }
-
-    #[test]
-    fn preamp_smooths_over_50ms() {
-        let mut proc = EqProcessor::new(48_000, 2);
-        proc.set_enabled(true);
-        proc.set_gains([12.0, 0.0, 0.0, 0.0, 0.0]);
-        let frames = 2400;
-        let mut buf = vec![0.5f32; frames * 2];
-        let len = buf.len();
-        proc.process(&mut buf, len);
-        assert!(
-            (proc.current_preamp - proc.target_preamp).abs() < 1e-3,
-            "preamp should reach target after 50ms, current={}, target={}",
-            proc.current_preamp,
-            proc.target_preamp
-        );
-    }
-
-    #[test]
-    fn auto_preamp_ignores_bands_above_nyquist_guard_at_low_sample_rates() {
-        // 22.05 kHz: the 14 kHz band is skipped by the filter, so boosting it
-        // must not pull down the auto preamp. Only the active bands count.
-        let mut proc = EqProcessor::new(22_050, 2);
-        proc.set_enabled(true);
-        proc.set_gains([0.0, 0.0, 0.0, 0.0, 12.0]);
-        assert!(
-            (proc.target_preamp - 1.0).abs() < 1e-6,
-            "boosting the skipped 14 kHz band at 22.05 kHz should not attenuate, got {}",
-            proc.target_preamp
-        );
-        // Boosting an active band at the same sample rate still applies preamp.
-        proc.set_gains([0.0, 0.0, 12.0, 0.0, 0.0]);
-        let expected = db_to_linear(-12.0);
-        assert!(
-            (proc.target_preamp - expected).abs() < 1e-5,
-            "boosting active 910 Hz band should preamp to {expected}, got {}",
-            proc.target_preamp
-        );
     }
 
     #[test]
@@ -831,7 +733,6 @@ mod tests {
     #[derive(Debug, Clone, Copy, PartialEq)]
     struct ParamSnapshot {
         current_gains_db: [f32; 5],
-        current_preamp: f32,
         wet_mix: f32,
     }
 
@@ -839,7 +740,6 @@ mod tests {
         fn snapshot(&self) -> ParamSnapshot {
             ParamSnapshot {
                 current_gains_db: self.current_gains_db,
-                current_preamp: self.current_preamp,
                 wet_mix: self.wet_mix,
             }
         }
@@ -966,30 +866,6 @@ mod tests {
             (proc.current_gains_db[0] - 12.0).abs() < 1e-2,
             "gain should reach +12 dB after exactly {ramp_frames} frames, got {}",
             proc.current_gains_db[0]
-        );
-    }
-
-    #[test]
-    fn auto_preamp_reaches_target_at_exact_frame_boundary() {
-        let sample_rate = 48_000u32;
-        let channels = 2;
-        let ramp_frames = (EQ_SMOOTH_MS * sample_rate as f32 / 1000.0) as usize;
-
-        let mut proc = EqProcessor::new(sample_rate, channels);
-        proc.set_enabled(true);
-        let mut settle = vec![0.0f32; 48_000 * channels];
-        let settle_len = settle.len();
-        proc.process(&mut settle, settle_len);
-        proc.set_gains([12.0, 0.0, 0.0, 0.0, 0.0]);
-
-        let mut buf = vec![0.5f32; ramp_frames * channels];
-        let len = buf.len();
-        proc.process(&mut buf, len);
-        assert!(
-            (proc.current_preamp - proc.target_preamp).abs() < 1e-3,
-            "preamp should reach target after exactly {ramp_frames} frames, current={}, target={}",
-            proc.current_preamp,
-            proc.target_preamp
         );
     }
 

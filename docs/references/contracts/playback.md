@@ -56,14 +56,14 @@
 ```text
 source-domain mix bus (all stems popped over the same [frame, frame+budget) range,
   mixed with per-stem gains, resampled once to device rate)
-→ EQ dry/wet processor + auto preamp
+→ EQ dry/wet processor
 → soft limiter
 → existing play/pause/seek fade
 → peak envelope accumulator (512-frame window → lock-free ring)
 → output/AirPlay forwarding
 ```
 
-`EqProcessor` 由 CPAL output 闭包拥有（与 `ResamplerCache` 并列），不存储在 playback mutex 后面。回调在已持有 controller 锁时比较 `eq_revision`，通过 `apply_config` 将配置同步到本地 processor。增益、前置增益和 dry/wet 过渡按渲染帧数平滑推进（50 ms EQ / 20 ms bypass），零长度/buffering 回调不推进状态。
+`EqProcessor` 由 CPAL output 闭包拥有（与 `ResamplerCache` 并列），不存储在 playback mutex 后面。回调在已持有 controller 锁时比较 `eq_revision`，通过 `apply_config` 将配置同步到本地 processor。增益和 dry/wet 过渡按渲染帧数平滑推进（50 ms EQ / 20 ms bypass），零长度/buffering 回调不推进状态。
 
 ## Inputs / outputs / required dependencies
 
@@ -430,7 +430,7 @@ playing ↔ playing（pause/resume，通过 isPlaying 区分）
 6. backend CDG helper 负责 sidecar / explicit path / Media+G ZIP 的 CDG packet 加载、transport lifecycle（loading / ready / error / seek reset）和 parser diagnostics
 7. `stems` cache 为 `load_stems` 提供已缓存路径
 8. `biquad` crate 提供五段 peaking EQ biquad 滤波器系数
-9. `EqProcessor` 在实时输出回调中执行 EQ dry/wet 混合 + auto preamp + soft limiter
+9. `EqProcessor` 在实时输出回调中执行 EQ dry/wet 混合 + soft limiter
 
 ### Render order
 
@@ -439,14 +439,14 @@ playing ↔ playing（pause/resume，通过 isPlaying 区分）
 ```text
 source-domain mix bus (all stems popped over the same [frame, frame+budget) range,
   mixed with per-stem gains, resampled once to device rate)
-→ EQ dry/wet processor + auto preamp
+→ EQ dry/wet processor
 → soft limiter
 → existing play/pause/seek fade
 → peak envelope accumulator (512-frame window → lock-free ring)
 → output/AirPlay forwarding
 ```
 
-EQ 平滑（gain、preamp、bypass dry/wet）仅在已渲染样本上推进，trailing padding 不推进滤波器状态。Peak 累加在 fade 之后、输出转发之前执行，只统计已渲染样本。
+EQ 平滑（gain、bypass dry/wet）仅在已渲染样本上推进，trailing padding 不推进滤波器状态。Peak 累加在 fade 之后、输出转发之前执行，只统计已渲染样本。
 
 ### Multi-stem mix bus (#143)
 

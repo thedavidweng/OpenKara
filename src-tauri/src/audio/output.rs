@@ -525,9 +525,9 @@ pub fn render_output_buffer(
         )
     };
 
-    // EQ + auto preamp + soft limiter. The render order is:
+    // EQ + soft limiter. The render order is:
     //   source/stem mix + master/stem gains (above)
-    //   → EQ dry/wet processor + auto preamp
+    //   → EQ dry/wet processor
     //   → soft limiter
     //   → existing play/pause/seek fade (below)
     //   → output/AirPlay forwarding
