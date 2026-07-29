@@ -212,6 +212,7 @@ describe("LyricsPanel contextual reveal", () => {
     mockLyricsState.isRomanizing = false;
     mockLyricsState.showRomanized = false;
     mockLyricsState.toggleRomanized.mockReset();
+    mockLyricsState.toggleLyricsAlignment.mockReset();
     mockLyricsState.songId = "song-1";
     mockLyricsState.adjustOffset.mockReset();
     mockSettingsState.lyricsFontStep = 0;
@@ -626,5 +627,34 @@ describe("LyricsPanel contextual reveal", () => {
     await act(async () => {
       root.unmount();
     });
+  });
+
+  test("clicking the alignment button toggles lyrics alignment", () => {
+    mockLyricsState.lines = [
+      line({ time_ms: 0, text: "line one", words: null }),
+    ];
+    mockLyricsState.rawLrc = "[00:00.00]line one";
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    act(() => {
+      root.render(<LyricsPanel />);
+    });
+
+    const button = host.querySelector(
+      "[aria-label='Switch to centered lyrics']",
+    ) as HTMLButtonElement;
+    expect(button).toBeTruthy();
+    act(() => {
+      button.click();
+    });
+
+    expect(mockLyricsState.toggleLyricsAlignment).toHaveBeenCalled();
+
+    act(() => {
+      root.unmount();
+    });
+    host.remove();
   });
 });
