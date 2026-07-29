@@ -602,6 +602,10 @@
       "reportHint": "Zgłaszasz błąd? Skopiuj te informacje do zgłoszenia i dołącz pokazany powyżej plik dziennika.",
       "copyDebugInfo": "Kopiuj informacje debugowania",
       "copied": "Skopiowano!"
+    },
+    "hideUpgradeAll": {
+      "hide": "Ukryj „Uaktualnij wszystkie do 4-stem”",
+      "description": "Ukryj przycisk panelu bocznego, który ponownie rozdziela wszystkie utwory w trybie 4-stem."
     }
   },
   "bootstrap": {

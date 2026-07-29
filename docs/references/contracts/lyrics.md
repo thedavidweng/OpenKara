@@ -191,6 +191,7 @@
   "model_variant": "htdemucs",
   "language": "en",
   "hide_batch_separate": false,
+  "hide_upgrade_all": false,
   "lyrics_font_step": 1,
   "library_sort_mode": "recently_imported"
 }

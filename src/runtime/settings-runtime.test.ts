@@ -9,6 +9,7 @@ describe("loadStartupSettings", () => {
       language: "ja",
       hide_batch_separate: false,
       cover_art_backdrop: true,
+      hide_upgrade_all: false,
       lyrics_font_step: 0,
     };
 
@@ -37,6 +38,7 @@ describe("loadStartupSettings", () => {
       language: null,
       hide_batch_separate: false,
       cover_art_backdrop: true,
+      hide_upgrade_all: false,
       lyrics_font_step: 0,
       execution_provider: "xnnpack",
       available_execution_providers: ["cpu", "xnnpack"],
@@ -66,6 +68,7 @@ describe("loadStartupSettings", () => {
       language: "zh-CN",
       hide_batch_separate: true,
       cover_art_backdrop: false,
+      hide_upgrade_all: true,
       lyrics_font_step: 2,
       execution_provider: "cpu",
       available_execution_providers: ["cpu"],

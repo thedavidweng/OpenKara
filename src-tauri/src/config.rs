@@ -524,6 +524,8 @@ pub struct AppConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cover_art_backdrop: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub hide_upgrade_all: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub model_variant: Option<ModelVariant>,
     // Lyrics font size is a per-machine display preference, so it belongs in
     // config.json with the rest of app settings rather than in the lyrics table.
@@ -891,6 +893,7 @@ mod tests {
             language: None,
             hide_batch_separate: None,
             cover_art_backdrop: None,
+            hide_upgrade_all: None,
             model_variant: None,
             lyrics_font_step: Some(1),
             execution_provider: None,
@@ -988,6 +991,7 @@ mod tests {
             language: None,
             hide_batch_separate: None,
             cover_art_backdrop: None,
+            hide_upgrade_all: None,
             model_variant: None,
             lyrics_font_step: None,
             execution_provider: None,
@@ -1022,6 +1026,7 @@ mod tests {
             language: None,
             hide_batch_separate: None,
             cover_art_backdrop: None,
+            hide_upgrade_all: None,
             model_variant: None,
             lyrics_font_step: None,
             execution_provider: None,
@@ -1050,6 +1055,7 @@ mod tests {
             language: None,
             hide_batch_separate: None,
             cover_art_backdrop: None,
+            hide_upgrade_all: None,
             model_variant: None,
             lyrics_font_step: None,
             execution_provider: None,
@@ -1094,6 +1100,7 @@ mod tests {
             language: Some("zh-CN".to_owned()),
             hide_batch_separate: Some(true),
             cover_art_backdrop: None,
+            hide_upgrade_all: None,
             model_variant: Some(ModelVariant::HtdemucsFt),
             lyrics_font_step: Some(1),
             execution_provider: None,

@@ -76,6 +76,10 @@ export function setCoverArtBackdrop(value: boolean): Promise<AppSettings> {
   return invoke<AppSettings>("set_cover_art_backdrop", { value });
 }
 
+export function setHideUpgradeAll(value: boolean): Promise<AppSettings> {
+  return invoke<AppSettings>("set_hide_upgrade_all", { value });
+}
+
 export function setExecutionProvider(
   provider: ExecutionProvider,
 ): Promise<AppSettings> {

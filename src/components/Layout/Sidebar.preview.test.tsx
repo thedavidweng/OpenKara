@@ -33,6 +33,7 @@ const { mockLibraryState, mockSettingsState, mockPlaylistState } = vi.hoisted(
     },
     mockSettingsState: {
       hideBatchSeparate: false,
+      hideUpgradeAll: false,
       stemMode: "two_stem" as "two_stem" | "four_stem",
     },
     mockPlaylistState: {

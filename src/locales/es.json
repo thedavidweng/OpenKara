@@ -601,6 +601,10 @@
       "reportHint": "¿Vas a informar de un error? Copia esta información en tu informe y adjunta el archivo de registro que se muestra arriba.",
       "copyDebugInfo": "Copiar información de depuración",
       "copied": "¡Copiado!"
+    },
+    "hideUpgradeAll": {
+      "hide": "Ocultar «Actualizar todo a 4-pistas»",
+      "description": "Oculta el botón de la barra lateral que vuelve a separar todas las canciones en modo 4-pistas."
     }
   },
   "bootstrap": {

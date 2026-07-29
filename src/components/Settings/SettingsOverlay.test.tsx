@@ -46,6 +46,7 @@ vi.mock("@/stores/settings-store", () => ({
           modelVariant: "htdemucs",
           language: "en",
           hideBatchSeparate: false,
+          hideUpgradeAll: false,
           lyricsFontStep: 0,
           executionProvider: "xnnpack" as const,
           availableExecutionProviders: ["cpu" as const, "xnnpack" as const],

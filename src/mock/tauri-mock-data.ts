@@ -109,6 +109,7 @@ export const MOCK_DATA: MockData = {
     language: "en",
     hide_batch_separate: false,
     cover_art_backdrop: false,
+    hide_upgrade_all: false,
     lyrics_font_step: 0,
     execution_provider: "cpu",
     available_execution_providers: ["cpu"],

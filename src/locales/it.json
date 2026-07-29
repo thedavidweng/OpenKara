@@ -601,6 +601,10 @@
       "reportHint": "Segnali un bug? Copia queste informazioni nella segnalazione e allega il file di log mostrato sopra.",
       "copyDebugInfo": "Copia info di debug",
       "copied": "Copiato!"
+    },
+    "hideUpgradeAll": {
+      "hide": "Nascondi “Aggiorna tutto a 4-stem”",
+      "description": "Nascondi il pulsante della barra laterale che ripete la separazione di tutte le canzoni in modalità 4-stem."
     }
   },
   "bootstrap": {

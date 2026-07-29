@@ -36,6 +36,7 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
   const batchSeparation = useLibraryStore((s) => s.batchSeparation);
 
   const hideBatchSeparate = useSettingsStore((s) => s.hideBatchSeparate);
+  const hideUpgradeAll = useSettingsStore((s) => s.hideUpgradeAll);
   const stemMode = useSettingsStore((s) => s.stemMode);
   const [showUpgradeConfirm, setShowUpgradeConfirm] = useState(false);
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
@@ -90,10 +91,13 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
   const needsUpgrade =
     allSeparated && !allMatchCurrentMode && stemMode === "four_stem";
 
+  const showUpgradeButton = needsUpgrade && !hideUpgradeAll;
+
   const shouldHideButton =
     hideBatchSeparate ||
     separableSongs.length === 0 ||
-    (allSeparated && allMatchCurrentMode);
+    (allSeparated && allMatchCurrentMode) ||
+    (needsUpgrade && hideUpgradeAll);
 
   const handleSeparateAll = () => {
     if (previewMode) {
@@ -279,7 +283,7 @@ export function Sidebar({ header, previewMode = false }: SidebarProps = {}) {
               {batchSeparation.failed > 0 &&
                 `, ${t("sidebar.failed", { count: batchSeparation.failed })}`}
             </div>
-          ) : needsUpgrade ? (
+          ) : showUpgradeButton ? (
             <button
               onClick={() => setShowUpgradeConfirm(true)}
               className={`motion-surface flex w-full items-center justify-center gap-2 ${batchActionClassName} text-[var(--color-text)] hover:text-[var(--color-text)]`}

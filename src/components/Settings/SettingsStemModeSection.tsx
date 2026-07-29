@@ -64,6 +64,26 @@ export function SettingsStemModeSection() {
           onClick={() => selectMode("four_stem")}
         />
       </div>
+
+      <div className="space-y-2 border-t border-[var(--color-border)] pt-4">
+        <label className="flex items-center gap-3">
+          <input
+            type="checkbox"
+            checked={state.hideUpgradeAll}
+            onChange={(event) =>
+              void actions.toggleHideUpgradeAll(event.target.checked)
+            }
+            disabled={meta.isInitializing}
+            className="h-4 w-4 rounded border-[var(--color-border-light)] bg-[var(--color-surface)] accent-[var(--color-accent)]"
+          />
+          <span className="text-[13px] text-[var(--color-text)]">
+            {t("settings.hideUpgradeAll.hide")}
+          </span>
+        </label>
+        <p className="text-[11px] text-[var(--color-text-dim)]">
+          {t("settings.hideUpgradeAll.description")}
+        </p>
+      </div>
     </SettingsSectionCard>
   );
 }

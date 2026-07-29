@@ -421,6 +421,10 @@
       "hide": "Hide “Separate All”",
       "description": "Hide the sidebar button that separates all songs."
     },
+    "hideUpgradeAll": {
+      "hide": "Hide “Upgrade All to 4-stem”",
+      "description": "Hide the sidebar button that re-separates all songs into 4-stem mode."
+    },
     "coverArtBackdrop": {
       "hide": "Disable blurred album art backdrop",
       "description": "Removes the blurred album cover behind lyrics."

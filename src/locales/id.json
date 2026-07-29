@@ -599,6 +599,10 @@
       "reportHint": "Melaporkan bug? Salin info ini ke laporan Anda dan lampirkan berkas log yang ditampilkan di atas.",
       "copyDebugInfo": "Salin info debug",
       "copied": "Disalin!"
+    },
+    "hideUpgradeAll": {
+      "hide": "Sembunyikan \"Upgrade Semua ke 4-stem\"",
+      "description": "Sembunyikan tombol bilah samping yang memisahkan ulang semua lagu ke mode 4-stem."
     }
   },
   "bootstrap": {

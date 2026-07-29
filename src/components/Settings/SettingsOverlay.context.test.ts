@@ -8,6 +8,7 @@ const mockGetAppSettingsSnapshot = vi.hoisted(() =>
     language: "ja",
     hideBatchSeparate: true,
     coverArtBackdrop: true,
+    hideUpgradeAll: true,
     lyricsFontStep: 2,
     executionProvider: "cpu",
     availableExecutionProviders: ["cpu"],

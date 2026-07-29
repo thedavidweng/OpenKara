@@ -471,7 +471,7 @@ mod tests {
             "repository_id": "repo",
             "generation": 1,
             "database_path": ".openkara/databases/1.sqlite",
-            "database_size": 100,
+            "database_size_bytes": 100,
             "committed_at_ms": 0,
             "writer_id": "w"
         }"#;

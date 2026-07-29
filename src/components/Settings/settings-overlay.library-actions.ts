@@ -67,6 +67,7 @@ export function createLibrarySettingsActions(
   | "setExecutionProvider"
   | "toggleHideBatchSeparate"
   | "toggleCoverArtBackdrop"
+  | "toggleHideUpgradeAll"
   | "setEqEnabled"
   | "setEqGains"
   | "resetEqGains"
@@ -325,6 +326,18 @@ export function createLibrarySettingsActions(
 
       try {
         const settings = await dependencies.api.setCoverArtBackdrop(value);
+        dependencies.settingsStore.hydrateAppSettings(settings);
+      } catch (error) {
+        dependencies.notifyError(error);
+      }
+    },
+
+    toggleHideUpgradeAll: async (value) => {
+      patchState({ hideUpgradeAll: value });
+      dependencies.settingsStore.patchAppSettings({ hideUpgradeAll: value });
+
+      try {
+        const settings = await dependencies.api.setHideUpgradeAll(value);
         dependencies.settingsStore.hydrateAppSettings(settings);
       } catch (error) {
         dependencies.notifyError(error);

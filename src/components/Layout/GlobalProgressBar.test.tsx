@@ -162,7 +162,8 @@ describe("GlobalProgressBar", () => {
 
     const markup = renderToStaticMarkup(<GlobalProgressBar />);
 
-    expect(markup).toContain("progress.separating:Separate Song");
+    expect(markup).toContain("sidebar.separating");
+    expect(markup).toContain("Separate Song");
     expect(markup).toContain("progress.uploadingToRemote:Upload Song");
     expect(markup).toContain("motion-surface");
   });

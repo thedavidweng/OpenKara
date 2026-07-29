@@ -421,6 +421,10 @@
       "hide": "隐藏“全部分离”按钮",
       "description": "隐藏侧栏中用于分离全部歌曲的按钮。"
     },
+    "hideUpgradeAll": {
+      "hide": "隐藏“全部升级为4轨”按钮",
+      "description": "隐藏侧栏中用于将全部歌曲重新分离为4轨模式的按钮。"
+    },
     "coverArtBackdrop": {
       "hide": "禁用模糊专辑封面背景",
       "description": "移除歌词后的模糊专辑封面。"

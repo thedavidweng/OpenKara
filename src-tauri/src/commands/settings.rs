@@ -18,6 +18,7 @@ pub struct AppSettings {
     pub language: Option<String>,
     pub hide_batch_separate: bool,
     pub cover_art_backdrop: bool,
+    pub hide_upgrade_all: bool,
     pub lyrics_font_step: i8,
     pub execution_provider: String,
     pub available_execution_providers: Vec<&'static str>,
@@ -44,6 +45,7 @@ fn settings_from_config(config: &AppConfig) -> AppSettings {
         language: config.language.clone(),
         hide_batch_separate: config.hide_batch_separate.unwrap_or(false),
         cover_art_backdrop: config.cover_art_backdrop.unwrap_or(true),
+        hide_upgrade_all: config.hide_upgrade_all.unwrap_or(false),
         lyrics_font_step: config.effective_lyrics_font_step(),
         execution_provider: ep.as_str().to_owned(),
         available_execution_providers: ExecutionProviderPreference::available_for_current_platform(
@@ -178,6 +180,21 @@ pub fn set_cover_art_backdrop(app_handle: AppHandle, value: bool) -> CommandResu
         .map_err(|e| internal_error(format!("failed to load config: {e}")))?
         .unwrap_or_default();
     config.cover_art_backdrop = Some(value);
+    config::save_config(&app_data_dir, &config)
+        .map_err(|e| internal_error(format!("failed to save config: {e}")))?;
+    Ok(settings_from_config(&config))
+}
+
+#[tauri::command]
+pub fn set_hide_upgrade_all(app_handle: AppHandle, value: bool) -> CommandResult<AppSettings> {
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| internal_error(format!("failed to get app data dir: {e}")))?;
+    let mut config = config::load_config(&app_data_dir)
+        .map_err(|e| internal_error(format!("failed to load config: {e}")))?
+        .unwrap_or_default();
+    config.hide_upgrade_all = Some(value);
     config::save_config(&app_data_dir, &config)
         .map_err(|e| internal_error(format!("failed to save config: {e}")))?;
     Ok(settings_from_config(&config))

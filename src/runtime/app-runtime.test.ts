@@ -9,6 +9,7 @@ describe("app runtime settings hydration", () => {
       language: "zh-CN",
       hide_batch_separate: true,
       cover_art_backdrop: true,
+      hide_upgrade_all: true,
       lyrics_font_step: 1,
       theme_preference: "dark",
     });
@@ -29,6 +30,7 @@ describe("app runtime settings hydration", () => {
       language: "zh-CN",
       hide_batch_separate: true,
       cover_art_backdrop: true,
+      hide_upgrade_all: true,
       lyrics_font_step: 1,
       theme_preference: "dark",
     });
@@ -43,6 +45,7 @@ describe("app runtime settings hydration", () => {
       language: null,
       hide_batch_separate: false,
       cover_art_backdrop: true,
+      hide_upgrade_all: false,
       lyrics_font_step: 0,
       execution_provider: "xnnpack",
       available_execution_providers: ["cpu", "xnnpack"],

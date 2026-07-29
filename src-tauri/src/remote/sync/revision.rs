@@ -211,7 +211,7 @@ fn should_allow_automatic_pull(control_db_conn: &Connection, library: &Registere
 /// Reads the repository manifest (`.openkara-repository.json`) to discover the
 /// committed generation, then downloads the generation-specific database from
 /// `.openkara/databases/<generation>.sqlite` with size and SHA-256 verification
-/// against the manifest's `database_size` and `database_sha256`. On success,
+/// against the manifest's `database_size_bytes` and `database_sha256`. On success,
 /// updates the stored revision and `committed_generation` in the control DB.
 ///
 /// For legacy repositories (no manifest yet), falls back to pulling

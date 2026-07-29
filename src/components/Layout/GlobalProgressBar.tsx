@@ -229,15 +229,20 @@ function useActiveTasks(modelDownloadCompleteFlash: boolean): ActiveTask[] {
   }
 
   if (batchSeparation == null) {
-    const runningSep = Object.values(separationStatuses).find(
+    const runningSeps = Object.values(separationStatuses).filter(
       (s) => s.state === "running",
     );
-    if (runningSep) {
+    if (runningSeps.length > 0) {
+      const runningSep = runningSeps[0];
       const song = songs.find((s) => s.hash === runningSep.song_id);
       const title = songDisplayTitle(song);
       tasks.push({
         key: `sep-${runningSep.song_id}`,
-        label: t("progress.separating", { title }),
+        label: t("sidebar.separating", {
+          current: 1,
+          total: runningSeps.length,
+        }),
+        detail: title,
         percent: runningSep.percent,
         onCancel: () =>
           api.cancelSeparation(runningSep.song_id).catch(notifyError),

@@ -600,6 +600,10 @@
       "reportHint": "Een fout melden? Kopieer deze info naar je melding en voeg het hierboven getoonde logbestand toe.",
       "copyDebugInfo": "Foutopsporingsinfo kopiëren",
       "copied": "Gekopieerd!"
+    },
+    "hideUpgradeAll": {
+      "hide": "“Alles naar 4-stem upgraden” verbergen",
+      "description": "Verberg de zijbalkknop die alle nummers opnieuw scheidt in 4-stem modus."
     }
   },
   "bootstrap": {

@@ -155,6 +155,19 @@ describe("locale copy", () => {
     );
   });
 
+  test("uses the approved hide upgrade-all copy", () => {
+    expect(en.settings.hideUpgradeAll.hide).toBe(
+      "Hide “Upgrade All to 4-stem”",
+    );
+    expect(en.settings.hideUpgradeAll.description).toBe(
+      "Hide the sidebar button that re-separates all songs into 4-stem mode.",
+    );
+    expect(zh.settings.hideUpgradeAll.hide).toBe("隐藏“全部升级为4轨”按钮");
+    expect(zh.settings.hideUpgradeAll.description).toBe(
+      "隐藏侧栏中用于将全部歌曲重新分离为4轨模式的按钮。",
+    );
+  });
+
   test("uses an action label for the multi-select instrumental menu item", () => {
     expect(en.library.markInstrumentalSelected).toBe(
       "Mark as Instrumental ({{count}})",

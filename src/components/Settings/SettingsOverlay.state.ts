@@ -53,6 +53,7 @@ export function createInitialSettingsOverlaySnapshot(
       language: initialSettings.language ?? "en",
       hideBatchSeparate: initialSettings.hideBatchSeparate,
       coverArtBackdrop: initialSettings.coverArtBackdrop,
+      hideUpgradeAll: initialSettings.hideUpgradeAll,
       executionProvider: initialSettings.executionProvider,
       availableExecutionProviders: initialSettings.availableExecutionProviders,
       eqEnabled: initialSettings.eqEnabled,
@@ -336,6 +337,7 @@ export function createSettingsOverlayActions(
           language: settingsResult.value.language ?? "en",
           hideBatchSeparate: settingsResult.value.hide_batch_separate,
           coverArtBackdrop: settingsResult.value.cover_art_backdrop,
+          hideUpgradeAll: settingsResult.value.hide_upgrade_all,
           executionProvider: settingsResult.value.execution_provider,
           availableExecutionProviders:
             settingsResult.value.available_execution_providers,

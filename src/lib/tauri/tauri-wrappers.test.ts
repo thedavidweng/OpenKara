@@ -435,6 +435,7 @@ describe("settings", () => {
     language: null,
     hide_batch_separate: false,
     cover_art_backdrop: true,
+    hide_upgrade_all: false,
     lyrics_font_step: 0,
     execution_provider: "cpu" as const,
     available_execution_providers: ["cpu" as const],
@@ -585,6 +586,15 @@ describe("settings", () => {
     const returned = await settings.setCoverArtBackdrop(false);
     expect(mockInvoke).toHaveBeenCalledWith("set_cover_art_backdrop", {
       value: false,
+    });
+    expect(returned).toBe(appSettings);
+  });
+
+  test("setHideUpgradeAll invokes set_hide_upgrade_all", async () => {
+    mockInvoke.mockResolvedValueOnce(appSettings);
+    const returned = await settings.setHideUpgradeAll(true);
+    expect(mockInvoke).toHaveBeenCalledWith("set_hide_upgrade_all", {
+      value: true,
     });
     expect(returned).toBe(appSettings);
   });

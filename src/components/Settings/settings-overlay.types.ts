@@ -77,6 +77,7 @@ export interface SettingsOverlayState {
   language: string;
   hideBatchSeparate: boolean;
   coverArtBackdrop: boolean;
+  hideUpgradeAll: boolean;
   executionProvider: ExecutionProvider;
   availableExecutionProviders: ExecutionProvider[];
   eqEnabled: boolean;
@@ -128,6 +129,7 @@ export interface SettingsOverlayActions {
   updateModel: (variant: ModelVariant) => Promise<void>;
   toggleHideBatchSeparate: (value: boolean) => Promise<void>;
   toggleCoverArtBackdrop: (value: boolean) => Promise<void>;
+  toggleHideUpgradeAll: (value: boolean) => Promise<void>;
   setEqEnabled: (enabled: boolean) => Promise<void>;
   setEqGains: (
     gainsDb: [number, number, number, number, number],
@@ -193,6 +195,7 @@ export interface SettingsOverlayControllerDependencies {
     | "setExecutionProvider"
     | "setHideBatchSeparate"
     | "setCoverArtBackdrop"
+    | "setHideUpgradeAll"
     | "setLanguage"
     | "setModelVariant"
     | "setStemMode"

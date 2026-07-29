@@ -600,6 +600,10 @@
       "reportHint": "Hata mı bildiriyorsunuz? Bu bilgileri raporunuza kopyalayın ve yukarıda gösterilen günlük dosyasını ekleyin.",
       "copyDebugInfo": "Hata ayıklama bilgisini kopyala",
       "copied": "Kopyalandı!"
+    },
+    "hideUpgradeAll": {
+      "hide": "“Tümünü 4-stem’e yükselt”i gizle",
+      "description": "Tüm şarkıları 4-stem modunda yeniden ayıran kenar çubuğu düğmesini gizler."
     }
   },
   "bootstrap": {

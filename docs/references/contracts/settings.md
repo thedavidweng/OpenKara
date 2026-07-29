@@ -13,6 +13,7 @@ Field or command semantic changes must update this document before changing UI c
 | `language` | `string       | null` | UI language code, `null` = system default |
 | `hide_batch_separate` | `boolean` | Hide batch-separate action in UI |
 | `cover_art_backdrop` | `boolean` | Show blurred cover-art backdrop in player |
+| `hide_upgrade_all` | `boolean` | Hide "Upgrade All to 4-stem" action in UI |
 | `lyrics_font_step` | `i8` | Range `[-2, 2]`, 0 = default |
 | `execution_provider` | `string` | Active ONNX Runtime execution provider |
 | `available_execution_providers` | `Vec<string>` | Providers available on current platform |
@@ -74,6 +75,7 @@ stays explicitly dark regardless of the primary preference.
 - `set_language(language: String) -> AppSettings`
 - `set_hide_batch_separate(value: bool) -> AppSettings`
 - `set_cover_art_backdrop(value: bool) -> AppSettings`
+- `set_hide_upgrade_all(value: bool) -> AppSettings`
 - `set_lyrics_font_step(step: i8) -> AppSettings`
 - `set_execution_provider(provider: String) -> AppSettings`
 - `set_eq_enabled(enabled: bool) -> AppSettings`

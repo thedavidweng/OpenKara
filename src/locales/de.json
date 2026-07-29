@@ -600,6 +600,10 @@
       "reportHint": "Melden Sie einen Fehler? Kopieren Sie diese Infos in Ihren Bericht und hängen Sie die oben angezeigte Protokolldatei an.",
       "copyDebugInfo": "Debug-Infos kopieren",
       "copied": "Kopiert!"
+    },
+    "hideUpgradeAll": {
+      "hide": "„Alle auf 4-Stemm aktualisieren“ ausblenden",
+      "description": "Blendet die Seitenleisten-Schaltfläche aus, die alle Songs erneut im 4-Stemm-Modus trennt."
     }
   },
   "bootstrap": {

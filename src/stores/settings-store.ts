@@ -22,6 +22,7 @@ export interface AppSettingsSnapshot {
   language: string | null;
   hideBatchSeparate: boolean;
   coverArtBackdrop: boolean;
+  hideUpgradeAll: boolean;
   lyricsFontStep: number;
   executionProvider: ExecutionProvider;
   availableExecutionProviders: ExecutionProvider[];
@@ -42,6 +43,7 @@ interface SettingsState {
   language: AppSettingsSnapshot["language"];
   hideBatchSeparate: AppSettingsSnapshot["hideBatchSeparate"];
   coverArtBackdrop: AppSettingsSnapshot["coverArtBackdrop"];
+  hideUpgradeAll: AppSettingsSnapshot["hideUpgradeAll"];
   lyricsFontStep: AppSettingsSnapshot["lyricsFontStep"];
   executionProvider: AppSettingsSnapshot["executionProvider"];
   availableExecutionProviders: AppSettingsSnapshot["availableExecutionProviders"];
@@ -85,6 +87,7 @@ export const DEFAULT_APP_SETTINGS: AppSettingsSnapshot = {
   language: null,
   hideBatchSeparate: false,
   coverArtBackdrop: true,
+  hideUpgradeAll: false,
   lyricsFontStep: 0,
   executionProvider: "cpu",
   availableExecutionProviders: ["cpu"],
@@ -105,6 +108,7 @@ function toAppSettingsSnapshot(settings: AppSettings): AppSettingsSnapshot {
     language: settings.language,
     hideBatchSeparate: settings.hide_batch_separate,
     coverArtBackdrop: settings.cover_art_backdrop,
+    hideUpgradeAll: settings.hide_upgrade_all,
     lyricsFontStep: settings.lyrics_font_step,
     executionProvider: settings.execution_provider,
     availableExecutionProviders: settings.available_execution_providers,
@@ -128,6 +132,7 @@ function selectAppSettingsSnapshot(
     language: state.language,
     hideBatchSeparate: state.hideBatchSeparate,
     coverArtBackdrop: state.coverArtBackdrop,
+    hideUpgradeAll: state.hideUpgradeAll,
     lyricsFontStep: state.lyricsFontStep,
     executionProvider: state.executionProvider,
     availableExecutionProviders: state.availableExecutionProviders,
@@ -164,6 +169,7 @@ function applySettingsSyncSnapshot(
     language: snapshot.language,
     hideBatchSeparate: snapshot.hideBatchSeparate,
     coverArtBackdrop: snapshot.coverArtBackdrop,
+    hideUpgradeAll: snapshot.hideUpgradeAll,
     lyricsFontStep: snapshot.lyricsFontStep,
     executionProvider: snapshot.executionProvider,
     availableExecutionProviders: snapshot.availableExecutionProviders,

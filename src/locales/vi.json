@@ -599,6 +599,10 @@
       "reportHint": "Đang báo lỗi? Hãy sao chép thông tin này vào báo cáo và đính kèm tệp nhật ký hiển thị ở trên.",
       "copyDebugInfo": "Sao chép thông tin gỡ lỗi",
       "copied": "Đã sao chép!"
+    },
+    "hideUpgradeAll": {
+      "hide": "Ẩn “Nâng cấp tất cả lên 4-stem”",
+      "description": "Ẩn nút ở thanh bên dùng để tách lại tất cả bài hát sang chế độ 4-stem."
     }
   },
   "bootstrap": {

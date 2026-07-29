@@ -65,6 +65,7 @@ export function createSettingsOverlayTestContextValue(
       updateModel: async () => {},
       toggleHideBatchSeparate: async () => {},
       toggleCoverArtBackdrop: async () => {},
+      toggleHideUpgradeAll: async () => {},
       setEqEnabled: async () => {},
       setEqGains: async () => {},
       resetEqGains: async () => {},

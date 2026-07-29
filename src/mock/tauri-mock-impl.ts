@@ -583,6 +583,13 @@ export function createTauriMock(data: any): TauriMockResult {
       };
       return settingsSnapshot;
     },
+    set_hide_upgrade_all: (args: any) => {
+      settingsSnapshot = {
+        ...settingsSnapshot,
+        hide_upgrade_all: (args && args.value) || false,
+      };
+      return settingsSnapshot;
+    },
     set_eq_enabled: (args: any) => {
       settingsSnapshot = {
         ...settingsSnapshot,

@@ -601,6 +601,10 @@
       "reportHint": "Vous signalez un bogue ? Copiez ces informations dans votre rapport et joignez le fichier journal indiqué ci-dessus.",
       "copyDebugInfo": "Copier les infos de débogage",
       "copied": "Copié !"
+    },
+    "hideUpgradeAll": {
+      "hide": "Masquer « Tout mettre à niveau en 4-pistes »",
+      "description": "Masque le bouton de la barre latérale qui re-sépare toutes les chansons en mode 4-pistes."
     }
   },
   "bootstrap": {

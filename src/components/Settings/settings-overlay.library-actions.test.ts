@@ -74,6 +74,7 @@ function createAppSettings() {
     language: "en",
     hide_batch_separate: false,
     cover_art_backdrop: false,
+    hide_upgrade_all: false,
     lyrics_font_step: 0,
     execution_provider: "xnnpack" as const,
     available_execution_providers: ["cpu", "xnnpack"] as const,
@@ -109,6 +110,7 @@ function createHarness(overrides?: {
       language: "en",
       hideBatchSeparate: false,
       coverArtBackdrop: false,
+      hideUpgradeAll: false,
       executionProvider: "xnnpack",
       availableExecutionProviders: ["cpu", "xnnpack"],
       eqEnabled: false,
@@ -152,6 +154,7 @@ function createHarness(overrides?: {
       setExecutionProvider: vi.fn(),
       setHideBatchSeparate: vi.fn(),
       setCoverArtBackdrop: vi.fn(),
+      setHideUpgradeAll: vi.fn(),
       createLibrary: vi.fn(),
       deleteAllCachedLyrics: vi.fn(),
       deleteAllStems: vi.fn(),
@@ -202,6 +205,7 @@ function createHarness(overrides?: {
         language: "en",
         hideBatchSeparate: false,
         coverArtBackdrop: false,
+        hideUpgradeAll: false,
         lyricsFontStep: 0,
         executionProvider: "xnnpack" as const,
         availableExecutionProviders: ["cpu", "xnnpack"] as ExecutionProvider[],
@@ -735,6 +739,43 @@ describe("createLibrarySettingsActions", () => {
       );
 
       await harness.actions.toggleHideBatchSeparate(false);
+
+      expect(harness.dependencies.notifyError).toHaveBeenCalled();
+    });
+  });
+
+  describe("toggleHideUpgradeAll", () => {
+    test("patches state, updates settings store, and calls api", async () => {
+      const harness = createHarness();
+      const appSettings = {
+        ...createAppSettings(),
+        hide_upgrade_all: true,
+      };
+      harness.dependencies.api.setHideUpgradeAll.mockResolvedValue(appSettings);
+
+      await harness.actions.toggleHideUpgradeAll(true);
+
+      expect(harness.patchState).toHaveBeenCalledWith({
+        hideUpgradeAll: true,
+      });
+      expect(
+        harness.dependencies.settingsStore.patchAppSettings,
+      ).toHaveBeenCalledWith({ hideUpgradeAll: true });
+      expect(harness.dependencies.api.setHideUpgradeAll).toHaveBeenCalledWith(
+        true,
+      );
+      expect(
+        harness.dependencies.settingsStore.hydrateAppSettings,
+      ).toHaveBeenCalledWith(appSettings);
+    });
+
+    test("calls notifyError on failure", async () => {
+      const harness = createHarness();
+      harness.dependencies.api.setHideUpgradeAll.mockRejectedValue(
+        new Error("upgrade fail"),
+      );
+
+      await harness.actions.toggleHideUpgradeAll(false);
 
       expect(harness.dependencies.notifyError).toHaveBeenCalled();
     });

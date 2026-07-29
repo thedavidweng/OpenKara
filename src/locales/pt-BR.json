@@ -601,6 +601,10 @@
       "reportHint": "Reportando um bug? Copie estas informações para o seu relatório e anexe o arquivo de log mostrado acima.",
       "copyDebugInfo": "Copiar informações de depuração",
       "copied": "Copiado!"
+    },
+    "hideUpgradeAll": {
+      "hide": "Ocultar “Atualizar tudo para 4-stem”",
+      "description": "Oculta o botão da barra lateral que separa novamente todas as músicas no modo 4-stem."
     }
   },
   "bootstrap": {
