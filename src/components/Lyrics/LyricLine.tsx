@@ -438,7 +438,7 @@ export const LyricLine = memo(function LyricLine({
       <button
         type="button"
         onClick={handleClick}
-        className={`${lineClassName} appearance-none border-0 bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]`}
+        className={`${lineClassName} w-full appearance-none border-0 bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]`}
         style={lineStyle}
       >
         {lineContent}
