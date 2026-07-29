@@ -9,14 +9,12 @@ export async function getMonitors() {
 }
 
 export async function openFullscreenPlayer(monitorIndex?: number) {
-  // Close existing fullscreen player window if it exists
   const existing = await WebviewWindow.getByLabel("fullscreen-player");
   if (existing) {
     await existing.close();
   }
 
   const monitors = await availableMonitors();
-  // Default to secondary monitor if available, else primary
   const target =
     monitors[monitorIndex ?? (monitors.length > 1 ? 1 : 0)] ?? monitors[0];
   if (!target) {

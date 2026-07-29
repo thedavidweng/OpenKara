@@ -13,22 +13,7 @@ type Phase =
   | "ready"
   | "failed";
 
-/**
- * In-app updater banner (#255). On launch it first asks the Rust side whether
- * this install can self-update (`self_update_supported`): only the AppImage
- * (Linux), `.app`/DMG (macOS), and NSIS (Windows) bundles emit signed updater
- * artifacts, so a Linux `.deb`/Flatpak or a dev binary reports `false` and the
- * banner stays silent there — the plugin's `check()` has no install-format
- * guard and would otherwise offer a `.deb` install the AppImage payload, which
- * only fails on install. When the install is updatable it checks once for a
- * signed release newer than the running build and — only when one exists —
- * surfaces a dismissible strip to download, install, and relaunch.
- *
- * A karaoke session must never be interrupted by an updater error, so every
- * failure path is silent: a rejected probe or `check()` (offline, dev build, or
- * a non-updatable install) simply leaves the banner unrendered — no toast, no
- * modal. An install failure downgrades to an inline, dismissible message.
- */
+// In-app updater banner (#255).
 export function UpdateBanner() {
   const { t } = useTranslation();
   const [phase, setPhase] = useState<Phase>("hidden");
@@ -165,7 +150,6 @@ export function UpdateBanner() {
     );
   }
 
-  // phase === "available"
   return (
     <div className={containerClass}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

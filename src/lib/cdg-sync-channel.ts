@@ -3,17 +3,9 @@ export interface CdgSyncStatusPayload {
   hasCdg: boolean;
 }
 
-/**
- * Frame payload broadcast over the sync channel. Carries the RGBA bytes plus
- * the frame version and transport generation so receivers can skip redundant
- * redraws and detect stale frames.
- */
 export interface CdgSyncFramePayload {
-  /** RGBA frame bytes (288×192×4 = 221,184 bytes). */
   rgba: Uint8Array;
-  /** Frame version from the backend. */
   frameVersion: number;
-  /** Transport generation from the backend. */
   transportGeneration: number;
 }
 

@@ -1,34 +1,3 @@
-//! Shared Remote Repository bootstrap protocol.
-//!
-//! Provider adapters implement [`RemoteBootstrapStorage`] (HTTP/path ops only).
-//! The deep module here owns CreateOrOpen vs RequireExisting policy.
-//!
-//! ## Refresh Repository vs Reauthorize Repository
-//!
-//! - **Refresh Repository** (`sync_active_remote_library` / revision pull) reuses
-//!   already-bound Repository Credentials and pulls the latest Remote Revision
-//!   into the Local Working Copy. It does not re-run OAuth or rewrite secrets.
-//! - **Reauthorize Repository** re-runs provider auth, rebinds Repository
-//!   Credentials, then bootstraps with [`BootstrapMode::RequireExisting`] so a
-//!   wrong folder cannot be silently initialized as a new empty library.
-//! - **Register Repository** (first attach) uses [`BootstrapMode::CreateOrOpen`]
-//!   to create the marker + layout directories and seed `openkara.db` when the
-//!   remote root is empty.
-//!
-//! ## Legacy migration
-//!
-//! Repositories created before the manifest protocol store the database at
-//! `openkara.db` in the remote root and have no `.openkara-repository.json`
-//! manifest. Bootstrap probes the manifest first; only repositories without a
-//! manifest use the legacy root database path. On first publication the
-//! executor treats a missing manifest as generation 0 and publishes
-//! generation 1. A deferred GC later removes the legacy root `openkara.db`
-//! once the migration is safely committed.
-//!
-//! Empty repository creation (CreateOrOpen with no remote database) may still
-//! seed a root `openkara.db`. That seed is a one-time bootstrap artifact, not
-//! the ongoing publication path.
-
 use crate::{
     cache,
     commands::error::{internal_error, CommandError, CommandResult},

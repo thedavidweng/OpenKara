@@ -1,9 +1,3 @@
-//! Library import write path: classify paths, copy media into LibraryRoot, upsert songs.
-//!
-//! Callers open a `Connection` + `LibraryRoot`. Remote Pre-Mutation Refresh /
-//! Publish Song hooks stay at the command/remote layer — this module only
-//! mutates the local library storage and files.
-
 mod cover;
 mod expand;
 mod ingest;
@@ -31,11 +25,6 @@ use expand::{build_selected_cdg_lookup, classify_import_paths};
 use ingest::{build_and_store_media_g_zip, build_and_store_song, try_extract_embedded_lyrics};
 use rayon::prelude::*;
 
-/// Generate and persist derivative paths only after the song upsert commits.
-/// If derivative generation fails, clear any paths retained from a previous
-/// cover so an old thumbnail can never be paired with newly imported cover
-/// bytes. Any files generated immediately before a failed path update are
-/// removed only when reference counting proves they are unreferenced.
 fn persist_artwork_derivatives_after_upsert(
     connection: &Connection,
     library: &LibraryRoot,
@@ -123,9 +112,6 @@ pub fn import_songs_from_paths_with_options(
         })
         .collect();
 
-    // Collect consumed CDG source paths from successful imports.
-    // Uses the original source paths (not library-relative) so the standalone
-    // CDG check below can match against classified.cdg_paths.
     let mut consumed_cdg_paths = HashSet::new();
 
     for (audio_path, result) in prepared {

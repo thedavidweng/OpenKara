@@ -14,7 +14,6 @@ async function getRomanizer() {
   return romanizerPromise;
 }
 
-/// Synchronous romanization fallback for non-worker environments (tests).
 async function romanizeLinesDirect(
   lines: readonly string[],
   language?: SongLanguage | null,
@@ -27,7 +26,6 @@ async function romanizeLinesDirect(
   return romanizeLinesWith(romanizer, lines, language);
 }
 
-/// Item 7: Lazy-initialized Web Worker for romanization.
 let worker: Worker | null = null;
 
 function getWorker(): Worker | null {
@@ -66,7 +64,6 @@ export async function romanizeLyricsLines(
           requestId,
         });
       }
-      // Stale responses are silently ignored.
     };
     w.addEventListener("message", handler);
     w.postMessage({ requestId, lines, language });

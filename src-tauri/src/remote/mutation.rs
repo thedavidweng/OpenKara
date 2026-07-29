@@ -1,61 +1,3 @@
-//! Remote-mutation orchestration: wraps local DB mutations with the
-//! Pre-Mutation Refresh / Pre-Publish Conflict / Publish Changes protocol
-//! defined in `docs/references/contracts/library.md` and `CONTEXT.md`.
-//!
-//! # Durable outbox contract
-//!
-//! Every local mutation that publishes to a remote follows this sequence:
-//! 1. Acquire the per-library commit lock (same lock as publish freeze/CAS).
-//! 2. Pre-mutation refresh (may pull when repository is Clean).
-//! 3. Write a durable `prepared` operation row in remote-state.db.
-//! 4. Open the **operation library** SQLite database (from
-//!    `prepared.library_id`, never a drifted active root) and begin a TX.
-//! 5. Run the mutation on that transaction connection.
-//! 6. Write `remote_publish_outbox` with the full song ID set on the **same**
-//!    transaction (fail closed — never commit songs without the change set).
-//! 7. Commit the library transaction (songs + outbox are atomic).
-//! 8. Project the outbox into control DB (`Pending` + `Dirty`) via a SQLite
-//!    transaction; on success delete the library outbox row.
-//! 9. Release the commit lock, then start background publication with the
-//!    exact `operation_id`.
-//!
-//! Holding the commit lock across steps 1–8 serializes refresh, local mutation,
-//! and candidate freeze so neither a concurrent Clean-state DB replace nor a
-//! late mutation can race publication.
-//!
-//! A crash after step 7 leaves songs + outbox; startup rebuilds control DB
-//! from unprojected outbox rows. A crash before step 7 rolls back both.
-//!
-//! # Why six entry points, not one
-//!
-//! Collapsing these into a single `run_mutation(closure, manifest)` that
-//! inspects a manifest to decide whether to prepare / sync_db / publish_song /
-//! publish_songs / mirror would *not* deepen this module — it would replace a
-//! typed interface with an untyped manifest, moving the caller's choice from
-//! "pick the right fn" to "construct the right manifest struct" with less type
-//! safety and no internal decision the module can make on its own.
-//!
-//! Each entry point encodes a real protocol variant that the caller knows
-//! and the module cannot infer:
-//!
-//! | Wrapper                              | prepare | publish         | When                                   |
-//! |--------------------------------------|---------|-----------------|----------------------------------------|
-//! | `run_imported_songs_mutation`        | yes     | songs (imported)| additive import; publish via executor  |
-//! | `run_updated_songs_mutation`         | yes     | songs (extracted)| metadata update; publish via executor |
-//! | `run_song_database_mutation`         | yes     | single song     | single-song DB-level change            |
-//! | `run_song_database_mutation_with_result` | yes | song from result| same, song id only known after mutation|
-//! | `run_songs_database_mutation`        | yes     | songs (extracted)| multi-song DB-level change            |
-//! | `run_active_library_mirror_mutation` | no      | mirror          | whole-library re-sync (e.g. maintenance)|
-//! | `run_database_then_library_mirror_mutation` | yes | mirror     | DB change + whole-library re-sync      |
-//!
-//! Publication is driven by the durable operation executor (manifest CAS).
-//! There is no separate root `openkara.db` upload step after local mutation.
-//!
-//! The deletion test confirms the set earns its keep: inlining
-//! `prepare → mutate → publish` at 18 call sites would scatter the
-//! Pre-Mutation Refresh / Pre-Publish Conflict protocol across the
-//! command layer. The typed wrappers concentrate it here.
-
 use crate::{
     commands::error::{database_error, CommandResult},
     library::Song,
@@ -65,12 +7,6 @@ use crate::{
 use rusqlite::Connection;
 use tauri::AppHandle;
 
-// ---------------------------------------------------------------------------
-// sync_backend: production delegates to sync::, test uses thread-local mock
-// ---------------------------------------------------------------------------
-
-/// Handle returned by `record_prepared_operation` so the caller can transition
-/// the durable row to `pending` after the local mutation commits.
 pub struct PreparedOperation {
     pub operation_id: String,
     pub library_id: String,
@@ -98,8 +34,6 @@ mod sync_backend {
         )
     }
 
-    /// Pre-mutation refresh for an **explicit** library id (never re-resolves
-    /// the currently active library under a held commit lock).
     pub fn prepare_for_library(state: &AppState, library_id: &str) -> CommandResult<()> {
         let library = sync::load_registered_remote_library(&state.shell.app_data_dir, library_id)?;
         let control_db_conn = state.remote.control_db.lock().map_err(|_| {
@@ -146,9 +80,6 @@ mod sync_backend {
 
     // --- Durable outbox state recording (PR#2) ---
 
-    /// Record a `prepared` operation for an **explicit** library id.
-    /// Never re-resolves the currently active library — callers pass the
-    /// library they already locked.
     pub fn record_prepared_operation_for_library(
         state: &AppState,
         library_id: &str,
@@ -156,7 +87,6 @@ mod sync_backend {
     ) -> CommandResult<Option<PreparedOperation>> {
         let library = sync::load_registered_remote_library(&state.shell.app_data_dir, library_id)?;
 
-        // Resolve the working DB path to compute the pre-mutation digest.
         let db_path = library
             .working_copy_root()
             .and_then(|root| crate::library_root::LibraryRoot::open(&root).ok())
@@ -178,7 +108,6 @@ mod sync_backend {
             }
         };
 
-        // Read the current expected generation from the repository state row.
         let expected_generation = {
             let conn = state.remote.control_db.lock().map_err(|_| {
                 crate::commands::error::state_lock_error("control DB lock was poisoned")
@@ -188,16 +117,7 @@ mod sync_backend {
                 .unwrap_or(0)
         };
 
-        let operation_id = {
-            // Use a UUID for every mutation so each durable outbox row is
-            // independent and cannot be overwritten by a subsequent mutation
-            // for the same song. The old scheme used publish-{song_id} which
-            // caused terminal rows to be reused on re-publish (silently
-            // skipping the actual upload). Batch mutations use the same UUID
-            // scheme — no more publish-batch-{timestamp} that could collide
-            // in the same millisecond.
-            uuid::Uuid::new_v4().to_string()
-        };
+        let operation_id = uuid::Uuid::new_v4().to_string();
         let now = crate::remote::types::current_unix_time_ms();
 
         let payload = OperationPayload {
@@ -241,8 +161,6 @@ mod sync_backend {
         }))
     }
 
-    /// Record a `prepared` operation for the currently active remote library.
-    /// Prefer `record_prepared_operation_for_library` under a commit lock.
     pub fn record_prepared_operation(
         state: &AppState,
         song_ids: &[String],
@@ -253,7 +171,6 @@ mod sync_backend {
         record_prepared_operation_for_library(state, &library_id, song_ids)
     }
 
-    /// Cancel a prepared operation that has no recoverable song identity.
     pub fn cancel_prepared_operation(
         state: &AppState,
         prepared: &PreparedOperation,
@@ -270,7 +187,6 @@ mod sync_backend {
         Ok(())
     }
 
-    /// SQLite transaction: bind song IDs + Pending + Dirty + active_operation_id.
     pub fn bind_song_ids_mark_pending_and_dirty(
         state: &AppState,
         prepared: &PreparedOperation,
@@ -326,7 +242,6 @@ mod sync_backend {
     }
 
     pub fn active_remote_library_id(_state: &AppState) -> CommandResult<Option<String>> {
-        // Tests have no bound remote — mutation path stays local-only.
         Ok(None)
     }
 
@@ -374,10 +289,6 @@ mod sync_backend {
     }
 
     // --- Durable outbox state recording (PR#2) ---
-    //
-    // In tests, the test fixture has no active remote library, so these are
-    // no-ops. The existing call-sequence assertions remain intact because the
-    // durable recording does not add any SyncCall entries.
 
     pub fn record_prepared_operation_for_library(
         _state: &AppState,
@@ -391,7 +302,6 @@ mod sync_backend {
         _state: &AppState,
         _song_ids: &[String],
     ) -> CommandResult<Option<super::PreparedOperation>> {
-        // Tests have no bound remote — skip durable outbox.
         Ok(None)
     }
 
@@ -419,13 +329,6 @@ mod sync_backend {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Mutation functions
-// ---------------------------------------------------------------------------
-
-/// Project a library outbox row into remote-state.db (Pending + Dirty TX).
-/// On success, delete the library outbox row. Every error propagates so the
-/// outbox stays unprojected and retryable.
 fn project_outbox_to_control_db(
     state: &AppState,
     prepared: &PreparedOperation,
@@ -452,20 +355,10 @@ fn project_outbox_to_control_db(
     Ok(())
 }
 
-/// Resolve the bound remote library id for the active library, if any.
-/// Used only to acquire the per-library commit lock before prepare/mutation.
 fn peek_active_remote_library_id(state: &AppState) -> CommandResult<Option<String>> {
     sync_backend::active_remote_library_id(state)
 }
 
-/// Hold the per-library commit lock across:
-/// pre-mutation refresh → Prepared row → library mutation+outbox → control
-/// projection. Mutex is not re-entrant, so the lock is acquired exactly once
-/// here and inner helpers must not re-lock.
-///
-/// Library identity is resolved **once** before the lock and then passed as an
-/// explicit parameter through prepare/record — never re-read as "active"
-/// under the lock (activate_library can race otherwise).
 fn with_serialized_remote_mutation<T, F>(
     state: &AppState,
     prepared_song_ids: &[String],
@@ -498,7 +391,6 @@ where
         let result = body(prepared.as_ref())?;
         Ok((result, prepared))
     } else {
-        // Local-only: no remote lock, prepare is a no-op when unbound.
         sync_backend::prepare(state)?;
         let prepared = sync_backend::record_prepared_operation(state, prepared_song_ids)?;
         let result = body(prepared.as_ref())?;
@@ -526,7 +418,6 @@ where
     F: FnOnce(&Connection) -> CommandResult<T>,
     S: FnOnce(&T) -> Vec<String>,
 {
-    // Local-only / unit-test path: no durable publish outbox required.
     if prepared.is_none() {
         if let Ok(library) = state.library_root() {
             let conn = crate::cache::open_database(&library.database_path())
@@ -608,7 +499,6 @@ fn mutate_import_with_atomic_outbox<F>(
 where
     F: FnOnce(&Connection, &LibraryRoot) -> crate::library::ImportSongsResult,
 {
-    // Local-only / unit-test: no outbox transaction required.
     if prepared.is_none() {
         let library = match state.library_root() {
             Ok(lib) => lib,
@@ -826,9 +716,6 @@ where
     R: tauri::Runtime,
     F: FnOnce() -> CommandResult<T>,
 {
-    // Mirror-only: no Pre-Mutation Refresh — a mirror is itself a full
-    // re-sync and is used for maintenance operations that rebuild remote
-    // state from the local working copy.
     let result = mutation()?;
     sync_backend::mirror(state, app_handle)?;
     Ok(result)
@@ -843,9 +730,6 @@ where
     R: tauri::Runtime,
     F: FnOnce() -> CommandResult<T>,
 {
-    // Mirror path does not use the publish outbox (mirror creates its own op).
-    // Still serialize prepare + mutation under the commit lock so a Clean-state
-    // refresh cannot race another publisher on the same library.
     let (result, prepared) = with_serialized_remote_mutation(state, &[], |_prepared| mutation())?;
     if let Some(ref prepared) = prepared {
         sync_backend::cancel_prepared_operation(state, prepared)?;
@@ -900,16 +784,11 @@ mod tests {
         let state = test_state();
         let handle = test_app_handle();
 
-        // Test fixture has no library root for real TX; without remote, prepare
-        // is a no-op and we only assert the call sequence when a library exists.
-        // Here prepared is None so publication is skipped unless we mock remote.
-        // Keep the API contract: closure receives (conn, library).
         let result =
             run_imported_songs_mutation(&state, &handle, |_conn, _lib| ImportSongsResult {
                 imported: vec![song("a"), song("b")],
                 failed: vec![],
             });
-        // AppState test fixture may lack a real library — accept either path.
         if let Ok(result) = result {
             assert_eq!(result.imported.len(), 2);
             assert!(calls().contains(&SyncCall::Prepare));
@@ -928,8 +807,6 @@ mod tests {
             |_conn| Ok(42u32),
             |_| vec!["x".into(), "y".into()],
         );
-        // Without a real library root the atomic TX path errors — sequence tests
-        // that need a filesystem library use integration fixtures elsewhere.
         if let Ok(result) = result {
             assert_eq!(result, 42);
             assert!(calls().contains(&SyncCall::Prepare));
@@ -955,7 +832,6 @@ mod tests {
 
         run_song_database_mutation(&state, &handle, "s1", |_conn| Ok("val")).unwrap();
 
-        // Test fixture has no active remote → prepared is None → publish_song path.
         assert_eq!(
             calls(),
             vec![SyncCall::Prepare, SyncCall::PublishSong("s1".into()),]

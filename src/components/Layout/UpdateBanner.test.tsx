@@ -28,12 +28,10 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: mockInvoke }));
 vi.mock("@tauri-apps/plugin-updater", () => ({ check: mockCheck }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: mockRelaunch }));
 
-/** A resolved `check()` value stand-in wired to the shared install mock. */
 function updateAvailable(version = "1.2.3") {
   return { version, downloadAndInstall: mockDownloadAndInstall };
 }
 
-/** Let the launch `check()` promise (and its `.then`/`.catch`) settle. */
 async function flushCheck() {
   await waitFor(() => expect(mockCheck).toHaveBeenCalled());
   await Promise.resolve();

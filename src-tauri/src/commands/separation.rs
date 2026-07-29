@@ -1,9 +1,3 @@
-//! IPC adapters for stem separation.
-//!
-//! Lifecycle orchestration lives in `services::separation`. This module only
-//! wires Tauri commands to that service and re-exports IPC-facing types so
-//! existing import paths (`commands::separation::*`) remain stable.
-
 use crate::{
     commands::error::CommandResult,
     config::StemMode,
@@ -12,7 +6,6 @@ use crate::{
 };
 use tauri::{AppHandle, State};
 
-// Re-export contract types and helpers for callers/tests that import from commands.
 pub use crate::services::separation::{
     completed_status, completed_status_with_model, failed_status, get_separation_status_from_map,
     idle_status, running_status, SeparationCancelledEvent, SeparationCompleteEvent,
@@ -97,17 +90,12 @@ pub fn get_separation_status(
     separation::get_separation_status_from_map(&state.separation.separation_statuses, &song_id)
 }
 
-/// Request cancellation of a running single-song separation. No-op success if
-/// the song is not currently separating.
 #[tauri::command]
 pub fn cancel_separation(state: State<'_, AppState>, song_id: String) -> CommandResult<()> {
     separation::request_cancel(&state.separation.separation_cancels, &song_id);
     Ok(())
 }
 
-/// Returns separation statuses for all songs that have cached stems in the database.
-/// Called once at startup to hydrate the frontend store so that previously separated
-/// songs show as "completed" instead of "idle".
 #[tauri::command]
 pub fn get_all_separation_statuses(
     state: State<'_, AppState>,

@@ -65,9 +65,6 @@ pub fn write_ogg_with_preserved_metadata(
 pub fn read_tagged_file_from_path(path: &Path) -> Result<lofty::file::TaggedFile> {
     Probe::open(path)
         .with_context(|| format!("failed to open audio file at {}", path.display()))?
-        // Real-world libraries often contain MP4-family audio mislabeled as
-        // .aac, so metadata reads must sniff the container instead of trusting
-        // the extension.
         .guess_file_type()
         .with_context(|| format!("failed to inspect audio metadata from {}", path.display()))?
         .read()

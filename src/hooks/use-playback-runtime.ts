@@ -105,24 +105,12 @@ function usePlaybackPositionEvents(enabled: boolean) {
   usePlaybackPositionSubscription(enabled, applyPlaybackPositionEvent);
 }
 
-/**
- * Resolves a song title from the library at event time. Reading the store here
- * instead of subscribing keeps the listener effect from re-registering on every
- * library change.
- */
 function songTitleFor(songId: string): string {
   return songDisplayTitle(
     useLibraryStore.getState().songs.find((song) => song.hash === songId),
   );
 }
 
-/**
- * A batch emits a per-song terminal event for every song it separates, on top
- * of its own summary event. Notifying per song would fire dozens of native
- * pop-ups for the exact scenario this feature exists to keep calm, so the batch
- * summary is the only alert during a batch. Mirrors the same branch the
- * in-app progress bar takes.
- */
 function batchInProgress(): boolean {
   return useLibraryStore.getState().batchSeparation != null;
 }

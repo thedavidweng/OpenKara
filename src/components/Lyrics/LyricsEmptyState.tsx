@@ -6,7 +6,7 @@ import { useLyricsStore } from "@/stores/lyrics-store";
 
 interface LyricsEmptyStateProps {
   presentation?: "standard" | "audience";
-  /** When true, outer area passes pointer events through for window dragging (macOS). */
+  // When true, outer area passes pointer events through for window dragging (macOS).
   pointerEventsCoexistWithDragRegion?: boolean;
 }
 

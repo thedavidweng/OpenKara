@@ -51,17 +51,11 @@ impl AirPlayAudioTap {
         self.epoch.fetch_add(1, Ordering::SeqCst) + 1
     }
 
-    /// Takes ownership of `samples` to avoid heap allocation on the realtime
-    /// audio callback thread. Caller passes its pre-allocated scratch buffer and
-    /// replaces it with a fresh Vec for the next callback.
     pub fn push_interleaved(&self, sample_rate: u32, channels: u16, samples: Vec<f32>) {
         if samples.is_empty() {
             return;
         }
 
-        // Use try_lock() instead of blocking lock() on the realtime audio
-        // callback thread. If drain_pending holds the lock, dropping samples is
-        // preferable to blocking the callback and causing audible glitches.
         let Ok(mut buffer) = self.buffer.try_lock() else {
             return;
         };
@@ -266,15 +260,12 @@ fn build_file_response(
         _ => "application/octet-stream",
     };
 
-    // Determine file size from metadata rather than reading the whole file.
     let metadata = fs::metadata(file_path)
         .with_context(|| format!("failed to stat requested asset {}", file_path.display()))?;
     let total_len = metadata.len();
 
     let requested_range = range_header.and_then(|header| parse_byte_range(header, total_len));
 
-    // For Range requests, seek to the start and read only the requested
-    // byte range instead of reading the entire file into memory.
     let (status, response_body, content_range) = if let Some(range) = requested_range {
         let mut file = fs::File::open(file_path)
             .with_context(|| format!("failed to open requested asset {}", file_path.display()))?;
@@ -317,7 +308,7 @@ fn build_file_response(
     response.add_header(
         Header::from_bytes("Accept-Ranges", "bytes").expect("static ASCII header name is valid"),
     );
-    let _ = head_only; // HEAD responses share the same headers as GET
+    let _ = head_only;
     if let Some(content_range) = content_range {
         response.add_header(
             Header::from_bytes("Content-Range", content_range.as_bytes())
@@ -337,9 +328,6 @@ mod tests {
     use super::*;
     use std::{sync::Arc, thread, time::Duration};
 
-    /// push_interleaved must use try_lock() on the audio callback thread so
-    /// that contention with drain_pending drops samples instead of blocking.
-    /// Blocking the realtime callback causes audible glitches.
     #[test]
     fn push_interleaved_drops_samples_when_lock_is_contended() {
         let tap = Arc::new(AirPlayAudioTap::new(4));
@@ -371,7 +359,6 @@ mod tests {
         );
     }
 
-    /// push_interleaved successfully enqueues when the lock is available.
     #[test]
     fn push_interleaved_enqueues_when_lock_available() {
         let tap = AirPlayAudioTap::new(4);
@@ -384,8 +371,6 @@ mod tests {
         assert_eq!(drained[0].channels, 2);
     }
 
-    /// Range requests must read only the requested byte range from disk,
-    /// not the entire file.
     #[test]
     fn range_request_reads_only_requested_bytes() {
         let dir = std::env::temp_dir().join(format!("airplay_r11_{}", std::process::id()));
@@ -416,7 +401,6 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// Full (non-Range) requests should still return the complete file.
     #[test]
     fn full_request_returns_entire_file() {
         let dir = std::env::temp_dir().join(format!("airplay_r11_full_{}", std::process::id()));
@@ -641,9 +625,6 @@ fn rank_publish_ip_candidate(candidate: &PublishIpCandidate) -> Option<(u8, u32)
     }
 
     if let Some(index) = interface_index(name, "en") {
-        // macOS exposes built-in Wi‑Fi as en0 on the common hardware path.
-        // Preferring it ahead of other active en* interfaces keeps the AirPlay
-        // publish address stable on laptops that also have docks/adapters.
         return Some(if index == 0 { (0, index) } else { (1, index) });
     }
 

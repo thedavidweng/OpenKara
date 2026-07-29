@@ -21,8 +21,6 @@ static RUNTIME_DOWNLOAD_IN_PROGRESS: std::sync::atomic::AtomicBool =
 pub const RUNTIME_BOOTSTRAP_READY_EVENT: &str = "runtime-bootstrap-ready";
 pub const RUNTIME_BOOTSTRAP_ERROR_EVENT: &str = "runtime-bootstrap-error";
 
-/// Reported when a pre-slot legacy install is active. The legacy library's
-/// exact version is unknown by design — its pinned constants are gone.
 pub const LEGACY_RUNTIME_VERSION: &str = "legacy";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -45,10 +43,6 @@ pub struct RuntimeBootstrapStatusSnapshot {
     pub runtime_path: String,
     pub downloaded_bytes: Option<u64>,
     pub total_bytes: Option<u64>,
-    /// Upstream version of the ACTIVE runtime (`v1.27.1`), `legacy` for a
-    /// pre-slot install, or the pinned catalog version when nothing is
-    /// installed yet. Never a single global constant: each platform reports
-    /// the artifact it actually has.
     pub version: String,
     pub active_artifact_id: Option<String>,
     pub target_triple: String,
@@ -64,9 +58,6 @@ fn pinned_runtime_version() -> String {
         .unwrap_or_else(|_| "unknown".to_owned())
 }
 
-/// Derive the disk-truth snapshot from the runtime inventory. Transient
-/// states (downloading, update-available) are layered on by the flows that
-/// own them.
 pub fn snapshot_from_inventory(inventory: &RuntimeInventory) -> RuntimeBootstrapStatusSnapshot {
     let (state, runtime_path, version, active_artifact_id, error) =
         match (&inventory.active, &inventory.legacy_path) {
@@ -156,7 +147,6 @@ pub fn ensure_runtime_ready(
     let snapshot = get_runtime_bootstrap_status_from_state(status)?;
 
     match snapshot.state {
-        // States with a loaded, working active runtime.
         RuntimeBootstrapState::Ready
         | RuntimeBootstrapState::UpdateAvailable
         | RuntimeBootstrapState::DownloadingCandidate
@@ -225,9 +215,6 @@ fn report_download_progress(
     emit(RUNTIME_BOOTSTRAP_PROGRESS_EVENT, snapshot);
 }
 
-/// Resolve the catalog runtime a download should install: the freshest
-/// verified catalog when `check_*_updates` cached one newer than the
-/// embedded snapshot, otherwise the embedded pin.
 fn download_runtime_source(
     catalog_cache: &Arc<Mutex<Option<VerifiedCatalog>>>,
 ) -> CommandResult<(VerifiedCatalog, ())> {
@@ -242,9 +229,6 @@ fn download_runtime_source(
     Ok((catalog, ()))
 }
 
-/// First-install path: download, verify, activate, and load the runtime in
-/// this process. Only valid while no runtime is loaded — updates go through
-/// the candidate flow instead.
 pub fn install_and_load_runtime_blocking(
     app_data_dir: &Path,
     catalog: &VerifiedCatalog,
@@ -293,9 +277,6 @@ pub fn install_and_load_runtime_blocking(
     Ok(installed.library_path)
 }
 
-/// Update path: download and verify the runtime into its artifact directory
-/// and stage it as the next-launch candidate. The running process keeps its
-/// loaded runtime — activation happens at the next startup.
 pub fn download_and_stage_candidate_blocking(
     app_data_dir: &Path,
     catalog: &VerifiedCatalog,
@@ -356,8 +337,6 @@ pub fn download_and_stage_candidate_blocking(
     Ok(())
 }
 
-/// Separation gate: make a runtime loadable now, installing it first when
-/// nothing is on disk. Used by the blocking separation path.
 pub fn ensure_runtime_ready_or_install_blocking(
     app_data_dir: &Path,
     status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
@@ -414,10 +393,6 @@ pub fn ensure_runtime_ready_or_install_blocking(
     })
 }
 
-/// Install the runtime. First install downloads and loads immediately; when
-/// a runtime is already active (or a legacy install is loaded), the download
-/// is staged as a next-launch candidate instead — a loaded runtime is never
-/// replaced in place.
 #[tauri::command]
 pub fn download_runtime(
     state: State<'_, AppState>,
@@ -509,9 +484,6 @@ pub struct RuntimeUpdateReport {
     pub restart_required: bool,
 }
 
-/// Check the stable catalog for a runtime update for this target. Mirrors
-/// the model update semantics and shares the same verified-catalog cache. A
-/// failed check never affects the readiness of the installed runtime.
 #[tauri::command]
 pub async fn check_runtime_updates(
     state: State<'_, AppState>,
@@ -602,8 +574,6 @@ pub fn delete_runtime(state: State<'_, AppState>) -> CommandResult<()> {
     Ok(())
 }
 
-/// Sync the runtime bootstrap status from disk. Called after settings changes
-/// or startup to ensure the UI reflects the current state.
 pub fn sync_runtime_bootstrap_status(
     app_data_dir: &std::path::Path,
     status: &Arc<Mutex<RuntimeBootstrapStatusSnapshot>>,
@@ -693,9 +663,6 @@ mod tests {
 
     #[test]
     fn report_download_progress_stores_and_emits_the_snapshot() {
-        // The separation-triggered first install used to only store the
-        // in-flight snapshot without emitting it, leaving the UI stuck at "0%".
-        // This guards that progress now both persists AND reaches the frontend.
         let base = snapshot_from_inventory(&empty_inventory());
         let status = Arc::new(Mutex::new(base.clone()));
         let mut events: Vec<(&'static str, RuntimeBootstrapStatusSnapshot)> = Vec::new();

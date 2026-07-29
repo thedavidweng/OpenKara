@@ -30,8 +30,6 @@ fn downloads_in_progress() -> &'static Mutex<HashSet<String>> {
 pub enum ModelBootstrapState {
     Pending,
     Downloading,
-    /// Managed ONNX exists but its digest does not match the pinned release.
-    /// The file is kept so the user can remove it from Settings.
     Outdated,
     Ready,
     Failed,
@@ -110,9 +108,6 @@ pub fn ensure_active_model_ready_or_install_blocking(
     ensure_active_model_ready_or_install_blocking_with_resolution(app_data_dir, status, emit, true)
 }
 
-/// Same production download/install path as separation, restricted to the
-/// app-data model. The packaged-app release smoke uses this to reject a false
-/// pass from `src-tauri/models` on a build machine.
 pub fn ensure_active_managed_model_ready_or_install_blocking(
     app_data_dir: &Path,
     status: &Arc<Mutex<ModelBootstrapStatusSnapshot>>,
@@ -218,8 +213,6 @@ pub fn sync_active_model_bootstrap_status(
     app_data_dir: &Path,
     status: &Arc<Mutex<ModelBootstrapStatusSnapshot>>,
 ) -> CommandResult<ModelBootstrapStatusSnapshot> {
-    // Recompute bootstrap state from the active variant whenever settings change
-    // so the UI reflects the model that separation will actually use next.
     let active_variant = config::load_config(app_data_dir)
         .map_err(|error| internal_error(format!("failed to load config: {error}")))?
         .unwrap_or_default()
@@ -313,13 +306,9 @@ pub fn failed_status(
 pub struct ModelStatusSnapshot {
     pub variant: String,
     pub downloaded: bool,
-    /// True when `models/<variant>.onnx` exists but its SHA-256 does not match the pinned release.
     pub legacy_install_present: bool,
     pub file_size_bytes: Option<u64>,
-    /// Upstream release tag of the verified installed model (from its
-    /// identity record, or the embedded pin when the file matches it).
     pub installed_version: Option<String>,
-    /// Upstream release tag pinned by the embedded catalog snapshot.
     pub pinned_version: String,
 }
 
@@ -381,9 +370,6 @@ pub struct ModelUpdateReport {
     pub models: Vec<ModelUpdateCheckSnapshot>,
 }
 
-/// Resolve the descriptor a download should install: the freshest verified
-/// catalog when `check_model_updates` cached one newer than the embedded
-/// snapshot, otherwise the embedded pin.
 fn download_descriptor_for(
     catalog_cache: &Arc<Mutex<Option<separator::catalog::VerifiedCatalog>>>,
     variant: ModelVariant,
@@ -401,8 +387,6 @@ fn download_descriptor_for(
     Ok(embedded.clone())
 }
 
-/// Check the stable catalog for model updates. A failed check is an ordinary
-/// command error and never affects the readiness of installed models.
 #[tauri::command]
 pub async fn check_model_updates(state: State<'_, AppState>) -> CommandResult<ModelUpdateReport> {
     let app_data_dir = state.shell.app_data_dir.clone();
@@ -485,8 +469,6 @@ pub fn download_model(
 
     let model_variant = ModelVariant::parse(&variant)
         .ok_or_else(|| internal_error(format!("invalid model variant: {variant}")))?;
-    // Resolve against the freshest verified catalog so this command serves
-    // both first installs and updates to a newer generation.
     let descriptor = download_descriptor_for(&state.shell.catalog_cache, model_variant)?;
     let model_path =
         separator::bootstrap::managed_model_path_for(&state.shell.app_data_dir, &descriptor);
@@ -578,8 +560,6 @@ pub fn download_model(
         })
         .await;
 
-        // Remove the variant from the in-progress set so future download
-        // requests can proceed.
         if let Ok(mut in_progress) = downloads_in_progress().lock() {
             in_progress.remove(&task_variant_key);
         }

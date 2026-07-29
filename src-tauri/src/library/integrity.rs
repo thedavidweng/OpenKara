@@ -1,14 +1,3 @@
-//! Library integrity audit and cleanup.
-//!
-//! Audits the active managed library for missing/empty referenced files and
-//! unreferenced managed files. Presents a deterministic report. After explicit
-//! confirmation, removes selected database entries only when their primary
-//! media is still missing or empty at mutation time.
-//!
-//! This is a fast metadata audit. It does not hash/decode media, watch source
-//! folders, restore files, import filesystem orphans, or delete orphaned files
-//! automatically.
-
 use crate::{
     cache,
     library::{artwork, delete},
@@ -255,9 +244,6 @@ struct AuditRow {
     other_path: Option<String>,
 }
 
-/// Opens a fresh connection, queries all songs with a LEFT JOIN on stems,
-/// classifies each asset, scans managed directories for orphans, and returns
-/// a deterministic, sorted, deduplicated report.
 pub fn check_library_integrity(library: &LibraryRoot) -> Result<IntegrityReport> {
     let connection = cache::open_database(&library.database_path())?;
     run_audit(&connection, library)
@@ -267,7 +253,6 @@ fn run_audit(connection: &Connection, library: &LibraryRoot) -> Result<Integrity
     let has_artwork_thumb = cache::column_exists(connection, "songs", "artwork_thumb_path")?;
     let has_artwork_preview = cache::column_exists(connection, "songs", "artwork_preview_path")?;
 
-    // Build the query dynamically based on available columns.
     let artwork_thumb_col = if has_artwork_thumb {
         "s.artwork_thumb_path"
     } else {
@@ -327,9 +312,6 @@ fn run_audit(connection: &Connection, library: &LibraryRoot) -> Result<Integrity
 
         if is_remote {
             report.skipped_remote_songs += 1;
-            // Remote songs: primary/stem files are intentionally absent and
-            // skipped, but artwork paths are still portable managed assets that
-            // should be audited for missing/empty files and excluded from orphans.
             classify_artwork_optional(
                 library,
                 &row.hash,
@@ -353,7 +335,6 @@ fn run_audit(connection: &Connection, library: &LibraryRoot) -> Result<Integrity
 
         report.checked_local_songs += 1;
 
-        // Primary media (required for local originals).
         match row.file_path.as_ref() {
             Some(path) => {
                 record_referenced_path(&mut referenced_paths, path, PRIMARY_MEDIA_DIRS);
@@ -598,16 +579,12 @@ fn scan_for_orphans(
 ) -> Result<()> {
     for dir_name in MANAGED_TOP_LEVEL_DIRS {
         let dir = library.root().join(dir_name);
-        // Do not use Path::exists() / metadata() here — both follow symlinks
-        // and would let a replaced managed root point outside the library.
         let meta = match fs::symlink_metadata(&dir) {
             Ok(m) => m,
             Err(_) => continue, // missing root is fine
         };
         let file_type = meta.file_type();
         if file_type.is_symlink() {
-            // Report the managed-root relative path and skip traversal.
-            // MANAGED_TOP_LEVEL_DIRS is &[&str]; iterate yields &&str.
             if !referenced.contains(*dir_name) {
                 report.orphaned_managed_files.push((*dir_name).to_string());
             }
@@ -646,7 +623,6 @@ fn scan_directory(
         let file_type = metadata.file_type();
 
         if file_type.is_symlink() {
-            // Symlinks are reported as orphans and never traversed.
             if let Ok(relative) = library.to_relative(&path) {
                 if !referenced.contains(&relative) {
                     report.orphaned_managed_files.push(relative);
@@ -662,7 +638,6 @@ fn scan_directory(
 
         if file_type.is_file() {
             if let Ok(relative) = library.to_relative(&path) {
-                // Exclude the library marker and database.
                 if relative == ".openkara-library" || relative == "openkara.db" {
                     continue;
                 }
@@ -719,8 +694,6 @@ fn sort_and_dedup(report: &mut IntegrityReport) {
     report.orphaned_managed_files.dedup();
 }
 
-/// Revalidates each song at mutation time. Uses a single transaction for
-/// atomicity. Returns deleted and skipped hashes, sorted.
 pub fn remove_missing_library_entries(
     connection: &Connection,
     library: &LibraryRoot,
@@ -755,20 +728,16 @@ pub fn remove_missing_library_entries(
             let song = match cache::get_song_by_hash(connection, hash)? {
                 Some(s) => s,
                 None => {
-                    // Unknown or already deleted.
                     skipped.push(hash.clone());
                     continue;
                 }
             };
 
-            // Only delete local originals.
             if song.audio_source_kind != "original" {
                 skipped.push(hash.clone());
                 continue;
             }
 
-            // Revalidate: primary media must still be missing/non-regular/invalid
-            // or a zero-byte regular file.
             let should_delete = match song.file_path.as_ref() {
                 None => true,
                 Some(path) => match resolve_safe_path(library, path, PRIMARY_MEDIA_DIRS) {
@@ -778,7 +747,6 @@ pub fn remove_missing_library_entries(
             };
 
             if !should_delete {
-                // File was restored — skip.
                 skipped.push(hash.clone());
                 continue;
             }
@@ -788,7 +756,6 @@ pub fn remove_missing_library_entries(
             if let Some(cdg_path) = song.cdg_path.as_deref().filter(|path| !path.is_empty()) {
                 cdg_paths_to_clean.push(cdg_path.to_owned());
             }
-            // Delete DB rows (safe inside transaction).
             delete::delete_song_rows_from_database(connection, library, hash)?;
             deleted.push(hash.clone());
         }
@@ -1109,7 +1076,6 @@ mod tests {
         add_song(&conn, "hash1", Some("media/hash1.mp3"), "original");
         add_song(&conn, "hash2", Some("media/hash2.mp3"), "original");
         drop(conn);
-        // hash1 file is missing, hash2 file exists
         create_media_file(&library, "media/hash2.mp3", b"audio");
 
         let conn = cache::open_database(&library.database_path()).unwrap();
@@ -1124,7 +1090,6 @@ mod tests {
         assert_eq!(result.deleted_song_hashes, vec!["hash1"]);
         assert_eq!(result.skipped_song_hashes, vec!["hash2"]);
 
-        // Verify hash1 is gone from DB
         let conn = cache::open_database(&library.database_path()).unwrap();
         assert!(cache::get_song_by_hash(&conn, "hash1").unwrap().is_none());
         assert!(cache::get_song_by_hash(&conn, "hash2").unwrap().is_some());
@@ -1306,7 +1271,6 @@ mod tests {
         let conn = cache::open_database(&library.database_path()).unwrap();
         add_song(&conn, "hash1", Some("media/hash1.mp3"), "original");
         drop(conn);
-        // File is missing during audit but restored before cleanup
         create_media_file(&library, "media/hash1.mp3", b"restored");
 
         let conn = cache::open_database(&library.database_path()).unwrap();
@@ -1383,11 +1347,6 @@ mod tests {
         assert!(library.resolve(&thumb).exists());
     }
 
-    /// Add artwork columns to the songs table so tests can exercise artwork
-    /// auditing. `cache::open_database` already applies these columns via
-    /// `apply_migrations`, so this helper is now a no-op guard that only adds
-    /// them if they are somehow missing (e.g. a future test that opens a raw
-    /// connection without running migrations).
     fn add_artwork_columns(connection: &Connection) {
         if !cache::column_exists(connection, "songs", "artwork_thumb_path").unwrap_or(false) {
             connection
@@ -1417,7 +1376,6 @@ mod tests {
         let report = check_library_integrity(&library).unwrap();
         assert_eq!(report.skipped_remote_songs, 1);
         assert_eq!(report.checked_local_songs, 0);
-        // Missing artwork thumb should be reported as a missing optional asset.
         assert_eq!(report.missing_optional_assets.len(), 1);
         assert_eq!(report.missing_optional_assets[0].song_hash, "hash1");
         assert_eq!(
@@ -1595,8 +1553,6 @@ mod tests {
         add_song(&conn, "hash1", Some("media/hash1.mp3"), "original");
         drop(conn);
         create_media_file(&library, "media/hash1.mp3", b"audio");
-        // A temp-named file in media/ (not artwork/) should be reported as an
-        // orphan, not silently excluded by the temp-file check.
         create_media_file(&library, "media/tmp-upload.mp3", b"temp");
 
         let report = check_library_integrity(&library).unwrap();
@@ -1612,8 +1568,6 @@ mod tests {
         add_song(&conn, "hash1", Some("media/hash1.mp3"), "original");
         drop(conn);
         create_media_file(&library, "media/hash1.mp3", b"audio");
-        // A recent temp file under artwork/ matching the unique_temp_path
-        // convention (.{name}.{pid}.{counter}.tmp) should be excluded.
         create_media_file(&library, "artwork/.thumb_abc_80.webp.12345.0.tmp", b"temp");
 
         let report = check_library_integrity(&library).unwrap();
@@ -1629,12 +1583,9 @@ mod tests {
         add_song(&conn, "hash1", Some("media/hash1.mp3"), "original");
         drop(conn);
         create_media_file(&library, "media/hash1.mp3", b"audio");
-        // A temp file under artwork/ matching the unique_temp_path convention
-        // but older than 24 hours should be reported as an orphan (stale temp).
         let temp_path = library.root().join("artwork/.thumb_stale.webp.99999.0.tmp");
         fs::create_dir_all(temp_path.parent().unwrap()).unwrap();
         fs::write(&temp_path, b"stale").unwrap();
-        // Set mtime to 25 hours ago to exceed the 24h boundary.
         let past = std::time::SystemTime::now() - std::time::Duration::from_secs(25 * 3600);
         filetime::set_file_mtime(&temp_path, filetime::FileTime::from_system_time(past)).unwrap();
 
@@ -1654,7 +1605,6 @@ mod tests {
         add_song(&conn, "hash1", Some("media/hash1.mp3"), "original");
         drop(conn);
         create_media_file(&library, "media/hash1.mp3", b"audio");
-        // A temp file just under 24h (23h59m) should still be excluded.
         let temp_path = library.root().join("artwork/.thumb_fresh.webp.99999.1.tmp");
         fs::create_dir_all(temp_path.parent().unwrap()).unwrap();
         fs::write(&temp_path, b"fresh").unwrap();
@@ -1673,23 +1623,14 @@ mod tests {
 
     #[test]
     fn audit_reports_broad_temp_pattern_as_orphan() {
-        // A hidden file ending in .tmp but NOT matching the exact
-        // .{name}.{pid}.{counter}.tmp convention should be reported as an
-        // orphan, not silently excluded. The old broad filter (starts_with('.')
-        // && ends_with(".tmp")) would have wrongly excluded these.
         let (_temp, library) = create_test_library();
         let conn = cache::open_database(&library.database_path()).unwrap();
         add_song(&conn, "hash1", Some("media/hash1.mp3"), "original");
         drop(conn);
         create_media_file(&library, "media/hash1.mp3", b"audio");
-        // .foo.tmp — no pid/counter components.
         create_media_file(&library, "artwork/.foo.tmp", b"temp");
-        // .foo.bar.tmp — only one numeric-looking component, not two.
         create_media_file(&library, "artwork/.foo.bar.tmp", b"temp");
-        // .foo.abc.def.tmp — pid/counter are non-numeric.
         create_media_file(&library, "artwork/.foo.abc.def.tmp", b"temp");
-        // .notes.tmp — arbitrary hidden .tmp file that does not follow the
-        // unique_temp_path convention; must be reported as an orphan.
         create_media_file(&library, "artwork/.notes.tmp", b"temp");
 
         let report = check_library_integrity(&library).unwrap();
@@ -1721,11 +1662,6 @@ mod tests {
 
     #[test]
     fn audit_reports_nested_temp_artwork_file_as_orphan() {
-        // A temp file in a subdirectory of artwork/ that matches the filename
-        // convention must still be reported as an orphan. The writer only
-        // places temp files as direct children of artwork/, so a nested path
-        // is not a legitimate temp file and must not receive the 24-hour
-        // grace period.
         let (_temp, library) = create_test_library();
         let conn = cache::open_database(&library.database_path()).unwrap();
         add_song(&conn, "hash1", Some("media/hash1.mp3"), "original");
@@ -1741,12 +1677,6 @@ mod tests {
             "nested temp file under artwork/ must be reported as orphan, not excluded"
         );
     }
-
-    // Unit predicate tests for is_temp_artwork_file / matches_temp_artwork_filename
-    // live beside the writer in artwork.rs (single source of truth). The tests
-    // below cover the integration behavior: matching files under 24h are
-    // excluded from the orphan report, and arbitrary/nested .tmp files are
-    // reported.
 
     #[test]
     fn audit_does_not_follow_top_level_managed_root_symlink() {

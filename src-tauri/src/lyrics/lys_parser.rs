@@ -7,7 +7,6 @@ use super::parser::{LyricLine, WordToken};
 static PROP_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\[(\d)\]").unwrap());
 static WORD_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(.*?)\((\d+),(\d+)\)").unwrap());
 
-/// Parse a LYS (Lyricify Syllable) string into lyric lines.
 pub fn parse_lys(lys: &str) -> Result<Vec<LyricLine>> {
     let mut lines = Vec::new();
 
@@ -34,7 +33,6 @@ pub fn parse_lys(lys: &str) -> Result<Vec<LyricLine>> {
             let duration_ms: u64 = caps[3].parse().unwrap_or(0);
             search_start = m.end();
 
-            // Check for trailing ) right after the match (outer bg parentheses)
             if search_start < content_bytes.len() && content_bytes[search_start] == b')' {
                 text.push(')');
                 search_start += 1;
@@ -196,7 +194,6 @@ mod tests {
 
     #[test]
     fn parse_lys_background_detection_via_parens() {
-        // prop=0, but first word starts with ( and last ends with )
         let lys = "[0](Again(3000,500))\n";
         let lines = parse_lys(lys).expect("should parse");
         assert_eq!(lines.len(), 1);

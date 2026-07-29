@@ -78,7 +78,6 @@ export function bucketForSortKey(value: string | null): AlphabetBucket {
     return "#";
   }
 
-  // Non-Han: NFD decompose, strip combining marks, uppercase, take first code point.
   const decomposed = grapheme.normalize("NFD").replace(MARK_REGEX, "");
   if (decomposed.length === 0) return "#";
   const codePoint = decomposed.codePointAt(0);
@@ -88,11 +87,6 @@ export function bucketForSortKey(value: string | null): AlphabetBucket {
   return "#";
 }
 
-/**
- * Build a map from each alphabet bucket to the first index in the sorted song
- * array that falls into that bucket. Iterates the already-sorted array once.
- * Does not re-sort, mutate, or copy songs.
- */
 export function buildAlphabetIndex(
   songs: readonly Song[],
   mode: "title_asc" | "artist_asc",
@@ -151,5 +145,4 @@ export function resolveBucket(
   return null;
 }
 
-// Re-export LibrarySortMode for type narrowing in components.
 export type { LibrarySortMode };

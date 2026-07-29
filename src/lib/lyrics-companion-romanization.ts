@@ -18,15 +18,8 @@ import type { LyricLine } from "@/types/ipc";
  * is enabled.
  */
 export interface CompanionRomanizationSplit {
-  /** Primary lyric lines with companion transcriptions removed. */
   lines: LyricLine[];
-  /** Romanization per primary line; "" where none was found. */
   romanizedLines: string[];
-  /**
-   * True when every primary line that needs romanization got one from the
-   * source. Callers use this to decide whether the extracted set can serve as
-   * a complete romanization cache or the romanizer still has gaps to fill.
-   */
   complete: boolean;
 }
 

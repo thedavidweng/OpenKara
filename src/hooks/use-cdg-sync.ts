@@ -83,15 +83,10 @@ export type CdgFrameRequest = {
   transportGeneration: number;
   positionMs: number;
   lastFrameVersion: number;
-  /** Monotonic serial at request enqueue time. */
   serial: number;
 };
 
 export type CdgFrameCoordinator = {
-  /**
-   * Enqueue a desired frame request. Returns `void`; callers cannot rely on a
-   * return value to detect drops. Use `isInFlight()` for test assertions.
-   */
   request: (req: Omit<CdgFrameRequest, "serial">) => void;
   invalidate: () => void;
   isInFlight: () => boolean;
@@ -100,12 +95,6 @@ export type CdgFrameCoordinator = {
 
 export function createCdgFrameCoordinator(deps: {
   getCdgFrame: typeof api.getCdgFrame;
-  /**
-   * Query the backend CDG status for a song/generation. Used to distinguish a
-   * genuine audio-only song (availability "none") from a backend CDG error
-   * state (empty/invalid/unreadable/broken ZIP) when the frame probe returns a
-   * 0-byte response.
-   */
   getCdgStatus: typeof api.getCdgStatus;
   onFrame: (args: {
     songId: string;
@@ -117,7 +106,6 @@ export function createCdgFrameCoordinator(deps: {
   onProbeResolved: (args: {
     songId: string;
     transportGeneration: number;
-    /** Whether the backend has an active CDG slot for this song. */
     hasCdg: boolean;
     hasFrame: boolean;
     /**

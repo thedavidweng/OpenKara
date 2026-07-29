@@ -1,14 +1,9 @@
-//! IPC adapter for playlist / singer-rotation commands.
-//!
-//! Domain write path lives in `crate::library::playlist`.
-
 use crate::cache;
 use crate::commands::error::{database_error, CommandResult};
 use crate::library::playlist;
 use crate::AppState;
 use tauri::State;
 
-// Re-export domain types so existing `commands::playlist::…` paths keep working.
 pub use crate::library::playlist::{Playlist, PlaylistSong, RotationState};
 
 fn get_connection(state: &AppState) -> CommandResult<rusqlite::Connection> {

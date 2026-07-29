@@ -105,7 +105,6 @@ impl LrcApiClient {
         })
     }
 
-    /// Async variant of `fetch_by_track` for use in async Tauri commands.
     pub async fn fetch_by_track_async(
         &self,
         query: &LyricsLookupQuery,

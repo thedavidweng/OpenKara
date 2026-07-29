@@ -7,12 +7,7 @@ import type { CoverArtBytes } from "@/types/ipc";
 interface CoverArtThumbnailProps {
   songHash: string;
   coverArt?: CoverArtBytes | null;
-  /**
-   * Absolute path of the on-disk 80x80 WebP derivative, from
-   * `Song.artwork_thumb_path`. When present the image is served straight off
-   * disk through the asset protocol, so the grid pays no IPC round trip, no
-   * byte copy, and no blob lifetime bookkeeping per row.
-   */
+  // On-disk 80x80 WebP thumbnail; served via the asset protocol when present.
   thumbnailPath?: string | null;
   alt: string;
   className?: string;
@@ -47,9 +42,7 @@ export function CoverArtThumbnail({
         const full = await getCoverArt(songHash);
         if (cancelled) return;
         setFetchedBytes(full);
-      } catch {
-        // ignore — the placeholder will render
-      }
+      } catch {}
     })();
     return () => {
       cancelled = true;

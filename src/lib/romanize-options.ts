@@ -33,14 +33,6 @@ export const OPTIONS_BY_LANGUAGE: Record<SongLanguage, RomanizeOptions> = {
   tamil: { script: "tamil" },
 };
 
-/**
- * Romanize lyric lines with an already-created {@link Romanizer}.
- *
- * Shared by the main-thread fallback (`lyrics-romanizer.ts`) and the Web
- * Worker (`romanize.worker.ts`) so the script-pinning logic lives in exactly
- * one place. Callers still own the lazy engine load and the top-level Latin
- * short-circuit (so a pure-Latin array never loads an engine).
- */
 export async function romanizeLinesWith(
   romanizer: Romanizer,
   lines: readonly string[],

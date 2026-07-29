@@ -1,20 +1,14 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 
-/// Size of one CD+G subchannel packet in bytes.
 const PACKET_SIZE: usize = 24;
 
-/// The command byte value that identifies a valid CD+G packet (masked with 0x3F).
 const CDG_COMMAND: u8 = 0x09;
 
-/// A single CD+G subchannel packet (24 bytes from the CD subcode).
 #[derive(Clone, Debug)]
 pub struct CdgPacket {
-    /// Must be 0x09 (masked) for a valid CDG command.
     pub command: u8,
-    /// The instruction type (masked with 0x3F to get the actual instruction).
     pub instruction: u8,
-    /// 16 bytes of instruction-specific data.
     pub data: [u8; 16],
 }
 
@@ -23,8 +17,6 @@ impl CdgPacket {
         (self.command & 0x3F) == CDG_COMMAND
     }
 
-    /// Whether this packet contains a valid CDG command AND a recognized
-    /// CDG instruction (1, 2, 6, 20, 24, 28, 30, 31, or 38).
     pub fn is_cdg_command(&self) -> bool {
         if !self.is_cdg() {
             return false;
@@ -73,7 +65,6 @@ pub fn parse_cdg_file(path: &Path) -> Result<Vec<CdgPacket>> {
     Ok(parse_cdg_bytes(&bytes))
 }
 
-/// Parse raw bytes into packets, preserving trailing-byte diagnostics.
 pub fn parse_cdg_bytes_with_diagnostics(bytes: &[u8]) -> CdgParseResult {
     let packet_count = bytes.len() / PACKET_SIZE;
     let trailing = bytes.len() % PACKET_SIZE;
@@ -128,9 +119,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.cdg");
         let mut raw = [0u8; 24];
-        raw[0] = 0x09; // valid CDG command
-        raw[1] = 0x01; // MemoryPreset instruction
-        raw[4] = 0x05; // color = 5 in data[0]
+        raw[0] = 0x09;
+        raw[1] = 0x01;
+        raw[4] = 0x05;
         std::fs::write(&path, raw).unwrap();
 
         let packets = parse_cdg_file(&path).unwrap();
@@ -145,9 +136,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.cdg");
         let mut raw = [0u8; 48];
-        raw[0] = 0x00; // not a CDG command
-        raw[24] = 0x09; // valid CDG
-        raw[25] = 0x06; // TileBlock
+        raw[0] = 0x00;
+        raw[24] = 0x09;
+        raw[25] = 0x06;
         std::fs::write(&path, raw).unwrap();
 
         let packets = parse_cdg_file(&path).unwrap();
@@ -158,7 +149,7 @@ mod tests {
 
     #[test]
     fn trailing_bytes_ignored_but_diagnosed() {
-        let raw = [0u8; 34]; // 24 bytes + 10 trailing
+        let raw = [0u8; 34];
         let result = parse_cdg_bytes_with_diagnostics(&raw);
         assert_eq!(result.packets.len(), 1);
         assert_eq!(
@@ -182,7 +173,7 @@ mod tests {
     fn has_cdg_commands_detects_valid_instructions() {
         let mut raw = [0u8; 24];
         raw[0] = 0x09;
-        raw[1] = 0x01; // MemoryPreset
+        raw[1] = 0x01;
         let result = parse_cdg_bytes_with_diagnostics(&raw);
         assert!(result.has_cdg_commands());
     }
@@ -190,9 +181,9 @@ mod tests {
     #[test]
     fn no_cdg_commands_when_only_non_cdg_packets() {
         let mut raw = [0u8; 48];
-        raw[0] = 0x00; // not CDG
-        raw[24] = 0x09; // CDG command but unknown instruction
-        raw[25] = 0x99; // not a recognized instruction
+        raw[0] = 0x00;
+        raw[24] = 0x09;
+        raw[25] = 0x99;
         let result = parse_cdg_bytes_with_diagnostics(&raw);
         assert!(!result.has_cdg_commands());
     }

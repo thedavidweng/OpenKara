@@ -7,11 +7,6 @@ import {
 } from "@tauri-apps/api/menu";
 import type { ContextMenuItem } from "@/components/Library/ContextMenu";
 
-/**
- * Build a Tauri native `Menu` from a `ContextMenuItem[]` tree and show it as a
- * popup at the given screen position.  Returns once the user has selected an
- * item (or dismissed the menu).
- */
 export async function showNativeContextMenu(
   items: ContextMenuItem[],
   x: number,

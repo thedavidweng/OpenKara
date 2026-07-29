@@ -1,8 +1,3 @@
-//! Debug-info export: a single structured snapshot that a user can copy from
-//! Settings → About (every platform) or the macOS Help menu's "Copy Debug
-//! Info". Both surfaces call [`get_debug_info`], so there is exactly one
-//! data-generation path — the front-end only renders the plain-text form.
-
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
@@ -12,55 +7,33 @@ use crate::commands::runtime_bootstrap::RuntimeBootstrapState;
 use crate::config::{self, ExecutionProviderPreference, ModelVariant};
 use crate::{separator, AppState};
 
-/// Compile-time git short SHA, injected by `build.rs`. `"unknown"` when the
-/// build happened outside a git checkout.
 const BUILD_SHA: &str = match option_env!("GIT_BUILD_HASH") {
     Some(sha) => sha,
     None => "unknown",
 };
 
-/// Everything a bug report needs, in one snapshot. Serialized to the
-/// front-end, which owns the plain-text formatting shared by every copy
-/// surface.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DebugInfo {
-    /// Application version from the bundle (`package.version`).
     pub app_version: String,
-    /// Git short SHA the binary was built from, or `"unknown"`.
     pub build_sha: String,
-    /// Operating system family (`macos` / `windows` / `linux`).
     pub os: String,
-    /// CPU architecture (`aarch64` / `x86_64`).
     pub arch: String,
-    /// Embedded catalog generation the binary ships with.
     pub catalog_generation: u64,
-    /// Embedded catalog release id the binary ships with.
     pub catalog_release_id: String,
-    /// Active separation model variant.
     pub model_variant: String,
-    /// Bootstrap state of the active model (`ready` / `pending` / …).
     pub model_state: String,
-    /// Whether the active model is installed and verified.
     pub model_installed: bool,
-    /// Installed model upstream tag, when known.
     pub model_installed_version: Option<String>,
-    /// Upstream tag pinned by the embedded catalog for the active variant.
     pub model_pinned_version: String,
     /// Where the active variant's model file is expected on disk. Surfaced so a
     /// user on a slow connection can place a verified download there by hand
     /// instead of guessing the app data layout (#270).
     pub model_path: String,
-    /// Bootstrap state of the ONNX Runtime (`ready` / `missing` / …).
     pub runtime_state: String,
-    /// Active runtime upstream version (or the pinned version when absent).
     pub runtime_version: String,
-    /// Active runtime artifact id, when a slot install is active.
     pub runtime_artifact_id: Option<String>,
-    /// Runtime target triple this build resolves against.
     pub runtime_target_triple: String,
-    /// Current execution-provider preference.
     pub execution_provider: String,
-    /// Path pattern of the rolling log file the user can attach.
     pub log_file: String,
 }
 
@@ -90,8 +63,6 @@ fn runtime_state_label(state: &RuntimeBootstrapState) -> &'static str {
     }
 }
 
-/// Pure assembler kept separate from the Tauri command so it is unit-testable
-/// without an `AppHandle`.
 pub fn assemble_debug_info(
     app_version: String,
     build_sha: &str,
@@ -156,8 +127,6 @@ pub fn get_debug_info(
 
     let catalog = separator::catalog::embedded_catalog();
 
-    // Model: derive installed/version from the managed path for the active
-    // variant, and the runtime bootstrap state for the human-facing status.
     let descriptor = separator::bootstrap::descriptor_for(variant);
     let managed_model_path =
         separator::bootstrap::managed_model_path_for(&app_data_dir, descriptor);
@@ -268,8 +237,6 @@ mod tests {
     #[test]
     fn serializes_to_snake_case_json() {
         let json = serde_json::to_value(sample()).expect("debug info serializes");
-        // The front-end reads these exact keys; a rename would silently break
-        // the About section and the debug-info paste.
         for key in [
             "app_version",
             "build_sha",

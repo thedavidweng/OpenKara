@@ -26,11 +26,6 @@ interface AudiencePlainTextPagingInput {
   shouldRender: boolean;
   pageIdentity: string;
   audiencePresentationSpec: AudiencePresentationSpec;
-  /**
-   * Invalidation token that changes when romanized text visibility or
-   * content changes the measured height of each lyric row. The hook
-   * re-measures page boundaries whenever this token changes.
-   */
   layoutVersion?: string;
 }
 

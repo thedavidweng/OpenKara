@@ -3,14 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useRemotePlaybackStore } from "@/stores/remote-playback-store";
 import { usePlayerStore } from "@/stores/player-store";
 
-/**
- * Reconnect indicator for remote playback (PR #8, issue #151).
- *
- * Renders a compact "reconnecting…" / "resync" / "failed" badge in the
- * playback bar when the backend reconnect coordinator is active for the
- * current song. The indicator auto-resets to idle when the user switches
- * songs or playback stops.
- */
+// Reconnect indicator for remote playback (PR #8, issue #151).
 export function RemoteReconnectIndicator() {
   const { t } = useTranslation();
   const reconnectState = useRemotePlaybackStore((s) => s.reconnectState);
@@ -76,7 +69,6 @@ export function RemoteReconnectIndicator() {
     );
   }
 
-  // failed
   return (
     <span
       role="alert"

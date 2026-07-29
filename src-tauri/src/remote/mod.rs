@@ -1,8 +1,3 @@
-//! Remote Repository domain: providers, auth sessions, registry, sync, and mutations.
-//!
-//! IPC entry points live in `crate::commands::remote_library` as thin adapters.
-//! Domain callers (import, lyrics, separation, playback_source, etc.) import from here.
-
 pub(crate) mod atomic_download;
 mod auth;
 mod auth_binding;
@@ -30,9 +25,6 @@ use crate::{
     commands::error::CommandResult, config::RegisteredLibrary, library::error::LibraryError,
 };
 
-/// Extension trait for `reqwest::RequestBuilder` that wraps `.send()` with
-/// safe error handling: error details are logged at trace level for debugging,
-/// while the user-facing error message is static and contains no sensitive data.
 pub(crate) trait RequestSendExt {
     type Response;
     fn send_network(
@@ -48,9 +40,7 @@ impl RequestSendExt for reqwest::blocking::RequestBuilder {
         op: &'static str,
     ) -> std::result::Result<reqwest::blocking::Response, crate::commands::error::CommandError>
     {
-        // Single attempt. Callers that can rebuild the request should prefer
-        // `net_policy::run_with_default_retry` so transport failures and
-        // rate-limits are retried with the shared production policy.
+        // Single attempt; rebuildable requests should use `net_policy::run_with_default_retry`.
         self.send().map_err(|error| {
             tracing::trace!("{op} request failed: {error}");
             crate::commands::error::CommandError::from(LibraryError::Internal(format!(
@@ -60,12 +50,6 @@ impl RequestSendExt for reqwest::blocking::RequestBuilder {
     }
 }
 
-/// Send a rebuildable HTTP request with the shared production retry policy.
-///
-/// `build` is invoked once per attempt so the driver can retry after
-/// transport failures, 429, and 5xx. Permanent HTTP failures (400/403/404/
-/// 409/412) are returned as successful `Response` values so the caller can
-/// classify them.
 pub(crate) fn send_with_retry<F>(
     op: &'static str,
     mut build: F,
@@ -96,8 +80,7 @@ where
                         .get(reqwest::header::RETRY_AFTER)
                         .and_then(|value| value.to_str().ok())
                         .and_then(parse_retry_after);
-                    // Drop the response body so the connection can be reused
-                    // on the next attempt.
+                    // Drop the body so the connection can be reused.
                     drop(response);
                     AttemptOutcome::Err(remote_error_with_retry_after(
                         kind,
@@ -105,7 +88,6 @@ where
                         retry_after,
                     ))
                 } else {
-                    // Permanent failure — hand the response to the caller.
                     AttemptOutcome::Ok(response)
                 }
             }

@@ -1,5 +1,3 @@
-//! Playlist and singer-rotation write/read path against an open library connection.
-
 use crate::commands::error::{database_error, CommandResult};
 use rusqlite::{Connection, TransactionBehavior};
 use serde::{Deserialize, Serialize};
@@ -323,8 +321,6 @@ mod tests {
 
     #[test]
     fn duration_since_unwrap_or_default_handles_pre_epoch() {
-        // Simulate a pre-epoch SystemTime by constructing one.
-        // SystemTime::UNIX_EPOCH - 1 second would fail duration_since.
         let pre_epoch = std::time::UNIX_EPOCH - std::time::Duration::from_secs(1);
         let result = pre_epoch
             .duration_since(std::time::UNIX_EPOCH)

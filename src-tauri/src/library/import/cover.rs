@@ -94,7 +94,6 @@ pub(super) fn extract_embedded_cover_art_for_song(
         if Some(old_path.as_str()) == thumb_path.as_deref()
             || Some(old_path.as_str()) == preview_path.as_deref()
         {
-            // Same digest — the file is still in use by this song.
             continue;
         }
         let _ = artwork::delete_artwork_derivative_if_unreferenced(connection, library, &old_path);

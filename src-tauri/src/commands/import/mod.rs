@@ -1,8 +1,3 @@
-//! IPC adapter for library import / song write commands.
-//!
-//! Domain write path lives in `crate::library`. This module only binds
-//! Tauri state, opens the DB, and wraps remote mutation hooks.
-
 pub use crate::library::import::{
     collect_expandable_import_paths, extract_embedded_cover_art_from_connection,
     get_library_from_connection, import_songs_from_paths, import_songs_from_paths_with_options,
@@ -176,8 +171,6 @@ fn absolutize_thumbnail_paths(app_handle: &AppHandle, songs: &mut [Song], librar
     resolve_thumbnail_paths(songs, library);
 }
 
-/// The rewrite half of [`absolutize_thumbnail_paths`], split out so the seam it
-/// implements can be pinned by a test without a Tauri runtime.
 fn resolve_thumbnail_paths(songs: &mut [Song], library: &LibraryRoot) {
     for song in songs {
         song.artwork_thumb_path = song
@@ -255,9 +248,6 @@ pub async fn get_cover_art(
 
         match size {
             CoverArtSize::Original => {
-                // Lazy repair: regenerate missing derivatives when the
-                // original cover art is read. Non-fatal — the original is
-                // authoritative and returned regardless.
                 if let Some(cover_art) = record.cover_art.as_deref() {
                     let needs_repair = record.artwork_thumb_path.is_none()
                         || record.artwork_preview_path.is_none();
@@ -314,9 +304,6 @@ pub async fn get_cover_art(
                     }
                 }
 
-                // Lazy repair: regenerate both derivatives from the
-                // original bytes, then update paths only if the cover art
-                // BLOB still matches (concurrent replacement safe).
                 let Some(cover_art) = record.cover_art.as_deref() else {
                     return Ok(None);
                 };
@@ -508,7 +495,6 @@ pub fn get_song_properties(
     let library = state.library_root()?;
     let connection = cache::open_database(&library.database_path()).map_err(database_error)?;
 
-    // Ensure remote working-copy files exist before probing (command-layer only).
     let song = cache::get_song_by_hash(&connection, &song_id)
         .map_err(database_error)?
         .ok_or_else(|| database_error(format!("song with hash {song_id} not found")))?;

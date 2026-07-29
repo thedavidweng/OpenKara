@@ -8,7 +8,6 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: mockInvoke,
 }));
 
-// Import all modules after the mock is installed
 import * as library from "./library";
 import * as playback from "./playback";
 import * as settings from "./settings";
@@ -23,8 +22,6 @@ import * as cdg from "./cdg";
 beforeEach(() => {
   mockInvoke.mockReset();
 });
-
-// ─── library.ts ─────────────────────────────────────────
 
 describe("library", () => {
   test("importSongs invokes import_songs with paths and options", async () => {
@@ -237,8 +234,6 @@ describe("library", () => {
   });
 });
 
-// ─── playback.ts ────────────────────────────────────────
-
 describe("playback", () => {
   const snapshot = {
     song_id: "song-1",
@@ -425,8 +420,6 @@ describe("playback", () => {
     expect(returned).toBeUndefined();
   });
 });
-
-// ─── settings.ts ────────────────────────────────────────
 
 describe("settings", () => {
   const appSettings = {
@@ -669,8 +662,6 @@ describe("settings", () => {
   });
 });
 
-// ─── lyrics.ts ──────────────────────────────────────────
-
 describe("lyrics", () => {
   const lyricsPayload = {
     song_id: "song-1",
@@ -749,8 +740,6 @@ describe("lyrics", () => {
   });
 });
 
-// ─── separation.ts ──────────────────────────────────────
-
 describe("separation", () => {
   const sepStatus = {
     song_id: "song-1",
@@ -817,8 +806,6 @@ describe("separation", () => {
     expect(returned).toBe(sepStatus);
   });
 });
-
-// ─── maintenance.ts ─────────────────────────────────────
 
 describe("maintenance", () => {
   test("deleteAllStems invokes delete_all_stems", async () => {
@@ -909,8 +896,6 @@ describe("maintenance", () => {
     expect(returned).toBe(8192);
   });
 });
-
-// ─── playlist.ts ────────────────────────────────────────
 
 describe("playlist", () => {
   const mockPlaylist = {
@@ -1057,8 +1042,6 @@ describe("playlist", () => {
   });
 });
 
-// ─── library-setup.ts ───────────────────────────────────
-
 describe("library-setup", () => {
   const registrySnapshot = {
     active_library_id: "lib-1",
@@ -1177,8 +1160,6 @@ describe("library-setup", () => {
     expect(returned).toBeUndefined();
   });
 });
-
-// ─── remote-repository.ts ───────────────────────────────
 
 describe("remote-repository", () => {
   const authStart = {
@@ -1422,8 +1403,6 @@ describe("remote-repository", () => {
     expect(returned).toBe(result);
   });
 });
-
-// ─── cdg.ts ─────────────────────────────────────────────
 
 describe("cdg", () => {
   test("getCdgFrame invokes get_cdg_frame with all parameters", async () => {

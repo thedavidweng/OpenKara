@@ -30,22 +30,15 @@ const SCROLL_SPRING = { stiffness: 170, damping: 28, mass: 1 };
 // into a single re-anchor snap once the viewport settles (#202).
 const RESIZE_REANCHOR_DEBOUNCE_MS = 120;
 
-/**
- * Unified lyrics runtime (AMLL LyricPlayer shape):
- * each rAF the host pushes setCurrentTime from the playback clock, then the
- * engine updates line/word sync, karaoke fill, springs, and auto-scroll.
- */
 export function useLyricsEngine(input: {
   containerRef: RefObject<HTMLDivElement | null>;
   isPlainText: boolean;
   lyricsFontStep: number;
   presentation: "standard" | "audience";
   songId: string | null | undefined;
-  /** True when the scroll viewport is in the DOM (not loading/empty). */
   viewportActive: boolean;
   layoutVersion?: string;
   lineRuntime?: LyricsLineRuntime;
-  /** Fires when the user unlocks/re-locks auto-follow (for the Follow button). */
   onUserScrollActiveChange?: (active: boolean) => void;
 }): void {
   const {

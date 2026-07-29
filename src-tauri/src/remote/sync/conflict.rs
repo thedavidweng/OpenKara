@@ -1,15 +1,3 @@
-//! Exit paths from a Pre-Publish Conflict.
-//!
-//! The executor has implemented the two resolution strategies since the
-//! publish protocol landed, but nothing ever called them: the repository could
-//! enter `Conflicted`, Settings would render the word in red, and there was no
-//! way back. A safety stop with no exit is not a safety stop.
-//!
-//! This module is the seam between the commands layer and
-//! `executor::conflict_*`. It owns everything the executor deliberately does
-//! not: locating the active remote repository, pulling the winning remote
-//! database to a candidate path, and cleaning that candidate up afterwards.
-
 use std::path::PathBuf;
 
 use crate::commands::error::{CommandError, CommandResult};
@@ -24,19 +12,13 @@ use crate::remote::provider::create_provider;
 use crate::remote::types::load_app_config;
 use crate::AppState;
 
-/// What the user chose when told their repository changed underneath them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConflictResolution {
-    /// Rebase the local pending changes onto the winning remote generation and
-    /// publish them. Refused by the executor when the two sides touch the same
-    /// songs — an automatic merge there would silently pick a winner.
     KeepLocal,
-    /// Discard the local pending operation and adopt the remote database.
     UseRemote,
 }
 
-/// Resolve the conflict blocking the active remote repository.
 pub fn resolve_active_remote_conflict(
     state: &AppState,
     resolution: ConflictResolution,
@@ -130,9 +112,6 @@ mod tests {
 
     #[test]
     fn candidate_never_lands_on_the_working_database() {
-        // The whole point of a candidate is that the user's pending changes
-        // survive until they pick a side, so this path must not collide with
-        // the working copy's own database.
         let root = std::path::Path::new("/tmp/repo");
         let candidate = candidate_path(root, "op-1");
 

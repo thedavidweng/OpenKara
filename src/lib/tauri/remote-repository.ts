@@ -129,12 +129,6 @@ export function clearRemoteCache(): Promise<number> {
 
 export type RemoteConflictResolution = "keep_local" | "use_remote";
 
-/**
- * Take one of the two exits from a Pre-Publish Conflict. `keep_local` rebases
- * the pending local changes onto the winning remote generation; the backend
- * refuses it when both sides touched the same songs. `use_remote` discards the
- * pending operation and adopts the remote database.
- */
 export function resolveRemoteConflict(
   resolution: RemoteConflictResolution,
 ): Promise<void> {

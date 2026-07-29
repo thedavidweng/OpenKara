@@ -90,7 +90,6 @@ pub fn fetch_lyrics_for_song(
         return Ok(None);
     }
 
-    // Local-first: embedded and sidecar lyrics must not wait on network timeouts.
     if let Some(local) = fetch_lyrics_for_song_local(song, resolved_audio_path)? {
         return Ok(Some(local));
     }
@@ -104,9 +103,6 @@ pub fn fetch_lyrics_for_song(
     Ok(None)
 }
 
-/// Local-only lyrics fetch: reads embedded tags and sidecar files without any
-/// network calls. Used by async IPC commands that handle the online fetch
-/// separately via `fetch_online_timed_lyrics_async`.
 pub fn fetch_lyrics_for_song_local(
     song: &Song,
     resolved_audio_path: &Path,
@@ -115,7 +111,6 @@ pub fn fetch_lyrics_for_song_local(
         return Ok(None);
     }
 
-    // Local-first: embedded and sidecar lyrics must not wait on network timeouts.
     if let Some(embedded_lyrics) = read_embedded_lyrics(resolved_audio_path)? {
         return Ok(Some(LyricsFetchResult {
             source: LyricsSource::Embedded,
@@ -196,9 +191,6 @@ pub fn fetch_online_timed_lyrics(
     }
 }
 
-// Async variants used by async Tauri commands so network I/O does not occupy
-// a `spawn_blocking` worker thread for the full request duration.
-
 #[derive(Debug, Clone, Copy)]
 pub enum TimedLyricsProviderAsync<'a> {
     LrcLib(&'a LrcLibClient),
@@ -244,9 +236,6 @@ impl TimedLyricsProviderAsync<'_> {
     }
 }
 
-/// Async variant of `fetch_online_timed_lyrics` for use in async Tauri
-/// commands. Avoids occupying a `spawn_blocking` thread for the duration of
-/// the network request.
 pub async fn fetch_online_timed_lyrics_async(
     providers: &[TimedLyricsProviderAsync<'_>],
     query: &LyricsLookupQuery,
@@ -395,8 +384,6 @@ fn read_sidecar_lyrics(path: &Path) -> Result<Option<(String, LyricsSource)>> {
     Ok(None)
 }
 
-/// Detect format and parse lyrics automatically.
-/// TTML if starts with "<?xml" or "<tt", LYS if matches "^\[\d\]", otherwise LRC.
 pub fn parse_lyrics_auto(raw: &str) -> Result<Vec<crate::lyrics::parser::LyricLine>> {
     let trimmed = raw.trim();
 
@@ -485,8 +472,6 @@ mod tests {
 
     #[test]
     fn parse_lyrics_auto_lrc_with_l_bracket_digit_not_confused_with_lys() {
-        // "[00:10.00]Hello" starts with [digit but is LRC, not LYS:
-        // the LYS parser fails (no parenthesized timestamps) and falls back to LRC.
         let lrc = "[00:10.00]Hello world\n";
         let lines = parse_lyrics_auto(lrc).expect("should fall back to LRC");
         assert_eq!(lines.len(), 1);

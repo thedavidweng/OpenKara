@@ -1,19 +1,6 @@
-//! Library-database publish outbox.
-//!
-//! The change set for a remote publish is written into the **library** SQLite
-//! database in the **same transaction** as the local song mutation. Startup
-//! recovery can then rebuild a missing control-DB operation from this outbox
-//! when the process dies between the library commit and the remote-state.db
-//! projection.
-//!
-//! This table is machine-local control metadata. It must never be published as
-//! part of a generation candidate: freeze clears it, and successful control
-//! projection deletes the local row.
-
 use crate::commands::error::{database_error, CommandResult};
 use rusqlite::{params, Connection, OptionalExtension};
 
-/// One durable publish intent stored next to the songs it covers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LibraryPublishOutboxRow {
     pub operation_id: String,
@@ -24,8 +11,6 @@ pub struct LibraryPublishOutboxRow {
     pub projected_at_ms: Option<i64>,
 }
 
-/// Insert or replace an outbox row. Caller must hold a library DB transaction
-/// that also contains the song mutation. Errors must propagate (fail closed).
 pub fn upsert_library_publish_outbox(
     connection: &Connection,
     row: &LibraryPublishOutboxRow,
@@ -57,7 +42,6 @@ pub fn upsert_library_publish_outbox(
     Ok(())
 }
 
-/// Delete one outbox row after successful control-DB projection.
 pub fn delete_library_publish_outbox(
     connection: &Connection,
     operation_id: &str,
@@ -71,8 +55,6 @@ pub fn delete_library_publish_outbox(
     Ok(())
 }
 
-/// Remove every outbox row. Used when freezing a generation candidate so
-/// machine-local control metadata never ships with the portable library DB.
 pub fn clear_all_library_publish_outbox(connection: &Connection) -> CommandResult<()> {
     // Table may be missing on very old candidates; ignore missing-table.
     match connection.execute("DELETE FROM remote_publish_outbox", []) {
@@ -90,7 +72,6 @@ pub fn clear_all_library_publish_outbox(connection: &Connection) -> CommandResul
     }
 }
 
-/// List outbox rows that have not yet been projected into the control DB.
 pub fn list_unprojected_library_outbox(
     connection: &Connection,
 ) -> CommandResult<Vec<LibraryPublishOutboxRow>> {
@@ -111,7 +92,6 @@ pub fn list_unprojected_library_outbox(
     Ok(rows)
 }
 
-/// Load a single outbox row (tests / diagnostics).
 #[allow(dead_code)]
 pub fn get_library_publish_outbox(
     connection: &Connection,
@@ -179,7 +159,6 @@ mod tests {
     fn outbox_survives_same_transaction_as_mutation_commit() {
         let (_dir, conn) = open_library_db();
         let tx = conn.unchecked_transaction().unwrap();
-        // Simulate a song write + outbox in one TX.
         tx.execute(
             "INSERT INTO songs (hash, audio_source_kind, imported_at) VALUES ('s1', 'original', 1)",
             [],
@@ -231,7 +210,6 @@ mod tests {
                 },
             )
             .unwrap();
-            // Drop without commit — both song and outbox must vanish.
             drop(tx);
         }
         let count: i64 = conn
@@ -264,9 +242,7 @@ mod tests {
         assert!(list_unprojected_library_outbox(&conn).unwrap().is_empty());
     }
 
-    // -----------------------------------------------------------------------
     // Fault-injection windows required by #175 acceptance
-    // -----------------------------------------------------------------------
 
     use crate::remote::control_db::{
         bind_song_ids_mark_pending_and_dirty_tx, get_operation, get_repository_state,
@@ -301,8 +277,6 @@ mod tests {
         }
     }
 
-    /// Window: after song mutation, before outbox insert — TX not committed.
-    /// Simulated by failing outbox write; song and outbox must both be absent.
     #[test]
     fn fault_after_song_before_outbox_rolls_back_both() {
         let (_dir, conn) = open_library_db();
@@ -312,8 +286,6 @@ mod tests {
             [],
         )
         .unwrap();
-        // Simulate outbox insert failure before commit by rolling back.
-        // Real path: upsert_library_publish_outbox returns Err → no commit.
         drop(tx);
 
         let count: i64 = conn
@@ -328,9 +300,6 @@ mod tests {
         );
     }
 
-    /// Window: after outbox insert, before control projection.
-    /// Library committed with song_ids; control still Prepared(empty).
-    /// Recovery rebuilds Pending + full song ID set from outbox.
     #[test]
     fn fault_after_outbox_before_control_projection_recovers_song_ids() {
         let (_lib_dir, lib_conn) = open_library_db();
@@ -340,7 +309,6 @@ mod tests {
         let library_id = "lib-1";
         upsert_operation(&control, &prepared_row(op_id, library_id)).unwrap();
 
-        // Library commit succeeded: songs + outbox.
         let tx = lib_conn.unchecked_transaction().unwrap();
         tx.execute(
             "INSERT INTO songs (hash, audio_source_kind, imported_at) VALUES ('s-a', 'original', 1)",
@@ -365,9 +333,6 @@ mod tests {
         )
         .unwrap();
         tx.commit().unwrap();
-        // Crash before control projection.
-
-        // Restart: project unprojected outbox.
         let rows = list_unprojected_library_outbox(&lib_conn).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].song_ids, vec!["s-a", "s-b"]);
@@ -386,8 +351,6 @@ mod tests {
             .is_empty());
     }
 
-    /// Window: after operation upsert, before Dirty update — control TX
-    /// must roll back both, leaving outbox unprojected for retry.
     #[test]
     fn fault_mid_control_projection_tx_leaves_outbox_retryable() {
         let (_lib_dir, lib_conn) = open_library_db();
@@ -408,7 +371,6 @@ mod tests {
         )
         .unwrap();
 
-        // Simulate mid-control-TX crash: update op to Pending but never Dirty.
         {
             let tx = control.unchecked_transaction().unwrap();
             let mut op = get_operation(&tx, op_id).unwrap().unwrap();
@@ -417,17 +379,14 @@ mod tests {
             op.payload_json = payload.to_json().unwrap();
             op.state = OperationState::Pending;
             upsert_operation(&tx, &op).unwrap();
-            // Crash before Dirty / commit.
             drop(tx);
         }
 
-        // Control must still show Prepared (empty) because TX rolled back.
         let op = get_operation(&control, op_id).unwrap().unwrap();
         assert_eq!(op.state, OperationState::Prepared);
         let payload = OperationPayload::from_json(&op.payload_json).unwrap();
         assert!(payload.song_ids.is_empty());
 
-        // Outbox still unprojected — recovery retries full projection.
         let rows = list_unprojected_library_outbox(&lib_conn).unwrap();
         assert_eq!(rows.len(), 1);
         bind_song_ids_mark_pending_and_dirty_tx(&control, op_id, library_id, &rows[0].song_ids)
@@ -445,9 +404,6 @@ mod tests {
         );
     }
 
-    /// Window: after successful control projection, before outbox delete.
-    /// Control is Pending+Dirty; outbox remains. Restart re-binds (idempotent)
-    /// and deletes outbox. Never mark projected on failure.
     #[test]
     fn fault_after_control_projection_before_outbox_delete_is_idempotent() {
         let (_lib_dir, lib_conn) = open_library_db();
@@ -468,14 +424,11 @@ mod tests {
         )
         .unwrap();
 
-        // Control projection succeeded.
         bind_song_ids_mark_pending_and_dirty_tx(&control, op_id, library_id, &["s-y".to_owned()])
             .unwrap();
-        // Crash before delete_library_publish_outbox.
 
         assert_eq!(list_unprojected_library_outbox(&lib_conn).unwrap().len(), 1);
 
-        // Restart: re-project (idempotent) then delete.
         bind_song_ids_mark_pending_and_dirty_tx(&control, op_id, library_id, &["s-y".to_owned()])
             .unwrap();
         delete_library_publish_outbox(&lib_conn, op_id).unwrap();
@@ -489,12 +442,10 @@ mod tests {
             .is_empty());
     }
 
-    /// Fail-closed: projection failure must NOT delete outbox or pretend projected.
     #[test]
     fn projection_failure_must_not_delete_outbox() {
         let (_lib_dir, lib_conn) = open_library_db();
         let (_ctl_dir, control) = open_control();
-        // No prepared operation exists — bind must fail.
         upsert_library_publish_outbox(
             &lib_conn,
             &LibraryPublishOutboxRow {
@@ -515,12 +466,10 @@ mod tests {
             &["s-z".to_owned()],
         );
         assert!(err.is_err());
-        // Must remain unprojected for retry — never mark projected_at or delete.
         assert_eq!(list_unprojected_library_outbox(&lib_conn).unwrap().len(), 1);
         assert!(get_operation(&control, "missing-op").unwrap().is_none());
     }
 
-    /// Candidate freeze must strip machine-local outbox from the published DB.
     #[test]
     fn candidate_copy_must_clear_outbox() {
         let (_dir, conn) = open_library_db();
@@ -536,7 +485,6 @@ mod tests {
             },
         )
         .unwrap();
-        // Simulate freeze sanitization on the candidate file.
         clear_all_library_publish_outbox(&conn).unwrap();
         assert!(
             list_unprojected_library_outbox(&conn).unwrap().is_empty(),

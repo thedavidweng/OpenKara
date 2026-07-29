@@ -20,13 +20,6 @@ struct LibraryMarker {
     identifier: String,
 }
 
-/// A self-contained karaoke library directory.
-///
-/// All paths stored in the database are relative to the library root and use
-/// forward slashes regardless of the host OS. The `resolve` method converts
-/// them back to absolute platform paths at runtime. This is a portability rule,
-/// not just formatting preference: it keeps a library movable across machines,
-/// drives, and operating systems without rewriting database rows.
 #[derive(Debug, Clone)]
 pub struct LibraryRoot {
     root: PathBuf,
@@ -75,7 +68,6 @@ impl LibraryRoot {
             );
         }
 
-        // Ensure subdirectories exist (may have been created by an older version).
         fs::create_dir_all(path.join(MEDIA_DIRECTORY))
             .context("failed to ensure media directory exists")?;
         fs::create_dir_all(path.join(MEDIA_G_DIRECTORY))
@@ -131,8 +123,6 @@ impl LibraryRoot {
     }
 
     pub fn resolve(&self, relative: &str) -> PathBuf {
-        // Database paths always use forward slashes.  On Windows we need to
-        // convert them to the native separator before joining.
         let native = if cfg!(windows) {
             relative.replace('/', "\\")
         } else {
@@ -150,8 +140,6 @@ impl LibraryRoot {
             )
         })?;
 
-        // Keep DB paths OS-agnostic so a library created on one machine can be
-        // copied to another without path migrations.
         let normalised = relative
             .components()
             .map(|c| c.as_os_str().to_string_lossy().into_owned())

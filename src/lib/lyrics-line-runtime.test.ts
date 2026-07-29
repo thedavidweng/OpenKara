@@ -66,7 +66,6 @@ describe("LyricsLineRuntime", () => {
       dt: 0.016,
       isPlainText: false,
     });
-    // null wrapperEl must not throw; element was unregistered.
     expect(wrapper.style.transform).toBe("");
   });
 
@@ -85,7 +84,6 @@ describe("LyricsLineRuntime", () => {
       isPlainText: false,
     });
 
-    // New element receives transforms; springs were not reset by re-register.
     expect(second.style.transform).toContain("scale(");
     expect(first.style.transform).toBe("");
   });

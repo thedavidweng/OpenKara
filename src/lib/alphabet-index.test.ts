@@ -30,8 +30,6 @@ function makeSong(overrides: Partial<Song> = {}): Song {
   };
 }
 
-// ─── bucketForSortKey ──────────────────────────────────────
-
 describe("bucketForSortKey", () => {
   test("maps A–Z letters to their uppercase bucket", () => {
     expect(bucketForSortKey("Apple")).toBe("A");
@@ -61,11 +59,8 @@ describe("bucketForSortKey", () => {
   });
 
   test("maps basic Han characters via pinyin first initial", () => {
-    // 北京 → B
     expect(bucketForSortKey("北京之夜")).toBe("B");
-    // 苹果 → P
     expect(bucketForSortKey("苹果")).toBe("P");
-    // 中 → Z
     expect(bucketForSortKey("中国")).toBe("Z");
   });
 
@@ -88,8 +83,6 @@ describe("bucketForSortKey", () => {
     expect(bucketForSortKey("\u3000北京\u3000")).toBe("B");
   });
 });
-
-// ─── buildAlphabetIndex ────────────────────────────────────
 
 describe("buildAlphabetIndex", () => {
   test("stores only the first index for each bucket in title_asc mode", () => {
@@ -148,8 +141,6 @@ describe("buildAlphabetIndex", () => {
   });
 });
 
-// ─── resolveBucket ─────────────────────────────────────────
-
 describe("resolveBucket", () => {
   test("returns exact index when bucket is mapped", () => {
     const index = new Map<AlphabetBucket, number>([
@@ -166,7 +157,6 @@ describe("resolveBucket", () => {
       ["A", 0],
       ["Z", 25],
     ]);
-    // C is not mapped; A (distance 2) is nearer than Z (distance 23)
     const result = resolveBucket(index, "C");
     expect(result).toEqual({ index: 0, bucket: "A" });
   });
@@ -176,7 +166,6 @@ describe("resolveBucket", () => {
       ["A", 0],
       ["C", 2],
     ]);
-    // B is equidistant from A (d=1) and C (d=1); tie goes to following (C)
     const result = resolveBucket(index, "B");
     expect(result).toEqual({ index: 2, bucket: "C" });
   });
@@ -186,7 +175,6 @@ describe("resolveBucket", () => {
       ["W", 22],
       ["#", 26],
     ]);
-    // X is not mapped; W (distance 1) is nearer than # (distance 2)
     const result = resolveBucket(index, "X");
     expect(result).toEqual({ index: 22, bucket: "W" });
   });
@@ -196,7 +184,6 @@ describe("resolveBucket", () => {
       ["A", 0],
       ["M", 13],
     ]);
-    // Z is not mapped; no following bucket, should fall back to M
     const result = resolveBucket(index, "Z");
     expect(result).toEqual({ index: 13, bucket: "M" });
   });
@@ -214,14 +201,12 @@ describe("resolveBucket", () => {
 
   test("falls backward from A when A is not mapped", () => {
     const index = new Map<AlphabetBucket, number>([["M", 13]]);
-    // A is not mapped; no following bucket until M
     const result = resolveBucket(index, "A");
     expect(result).toEqual({ index: 13, bucket: "M" });
   });
 
   test("falls forward from # when # is not mapped", () => {
     const index = new Map<AlphabetBucket, number>([["A", 0]]);
-    // # is last; no following bucket, should fall back to A
     const result = resolveBucket(index, "#");
     expect(result).toEqual({ index: 0, bucket: "A" });
   });

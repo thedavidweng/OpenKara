@@ -75,7 +75,6 @@ export function useLocalAudienceRomanizeReceiver(): void {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [songId, lines]);
 
-  // Register the state listener and emit the initial sync request.
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | null = null;

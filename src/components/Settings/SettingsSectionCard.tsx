@@ -24,7 +24,7 @@ export function SettingsSectionCard({
           copy stays on the description line.
         */}
         <label
-          className={`text-[13px] font-semibold tracking-tight ${
+          className={`text-[13px] font-semibold tracking-tight break-words ${
             isDanger
               ? "text-[var(--color-destructive)]"
               : "text-[var(--color-text)]"
@@ -33,7 +33,7 @@ export function SettingsSectionCard({
           {title}
         </label>
         {description && (
-          <p className="text-[12px] text-[var(--color-text-dim)]">
+          <p className="text-[12px] text-[var(--color-text-dim)] break-words">
             {description}
           </p>
         )}

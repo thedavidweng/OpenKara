@@ -252,8 +252,6 @@ pub fn parse_ttml(ttml: &str) -> Result<Vec<LyricLine>> {
     Ok(lines)
 }
 
-/// Parse TTML timestamp formats into milliseconds.
-/// Supports: MM:SS.fff, HH:MM:SS.fff, SS.fff, Ns (seconds with 's' suffix)
 fn parse_ttml_timestamp(ts: &str) -> Option<u64> {
     let ts = ts.trim();
 
@@ -391,7 +389,6 @@ mod tests {
 </tt>"#;
         let lines = parse_ttml(ttml).expect("should parse");
         assert_eq!(lines.len(), 1);
-        // Text should only contain the timed words, not the translation
         assert_eq!(lines[0].text, "Hello world");
         let words = lines[0].words.as_ref().expect("should have words");
         assert_eq!(words.len(), 2);

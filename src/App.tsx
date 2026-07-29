@@ -12,8 +12,6 @@ import { useSettingsStore } from "@/stores/settings-store";
 
 interface AppProps {
   initialLibraryReady?: boolean | null;
-  /** When true, AppLayout renders in preview mode (blocked interactions,
-   *  hidden UI elements). Used by the website embedded preview. */
   previewMode?: boolean;
 }
 

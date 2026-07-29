@@ -27,7 +27,7 @@ interface TooltipProps {
   children: ReactNode;
   label: string;
   shortcut?: string;
-  /** Override provider delay for low-frequency explanatory tooltips. */
+  // Override provider delay for low-frequency explanatory tooltips.
   delayDuration?: number;
   disabled?: boolean;
 }

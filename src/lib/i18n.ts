@@ -1,15 +1,6 @@
 import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
 
-/**
- * Native display names for the locales we actually ship. This curated map is
- * the ONLY place a human-readable language name lives, and it must stay in
- * lock-step with the JSON files in `src/locales/*.json`: a test
- * (src/locales/locales.test.ts) fails if a file has no name here, or a name
- * here has no file. Translators add their entry when they add their JSON file
- * (see TRANSLATING.md, which lists the canonical native name for every planned
- * language so nobody has to invent one).
- */
 export const NATIVE_LANGUAGE_NAMES: Record<string, string> = {
   en: "English",
   "zh-CN": "简体中文",
@@ -72,7 +63,6 @@ for (const [path, data] of Object.entries(localeModules)) {
   translations[codeFromPath(path)] = data;
 }
 
-/** BCP-47 codes of every locale file actually present, unordered. */
 const LOADED_LOCALE_CODES = Object.keys(translations);
 
 function orderIndex(code: string): number {
@@ -80,12 +70,6 @@ function orderIndex(code: string): number {
   return index === -1 ? Number.POSITIVE_INFINITY : index;
 }
 
-/**
- * The languages offered in every picker (onboarding + settings). Derived from
- * the loaded files so adding `src/locales/<code>.json` (plus a name above) is
- * the only step. Ordered by LANGUAGE_PRIORITY, any unlisted file last
- * (alphabetical) as a safe deterministic fallback.
- */
 export const SUPPORTED_LANGUAGES = LOADED_LOCALE_CODES.slice()
   .sort((a, b) => orderIndex(a) - orderIndex(b) || a.localeCompare(b))
   .map((code) => ({ code, name: NATIVE_LANGUAGE_NAMES[code] ?? code }));

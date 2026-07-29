@@ -6,14 +6,7 @@ import { notifyError } from "@/lib/errors";
 import * as api from "@/lib/tauri";
 import type { CacheUsage } from "@/types/ipc";
 
-/**
- * Remote streaming cache settings section (PR #8, issue #151).
- *
- * Shows the current cache usage (used bytes, limit, entry count, pinned
- * count) and provides a "Clear cache" button that evicts all unpinned
- * entries. Pinned entries (files in active use by playback) remain until
- * playback releases them.
- */
+// Remote streaming cache settings section (PR #8, issue #151).
 export function SettingsRemoteCacheSection() {
   const { t } = useTranslation();
   const [usage, setUsage] = useState<CacheUsage | null>(null);

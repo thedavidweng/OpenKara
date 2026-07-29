@@ -1,43 +1,7 @@
 //! Versioned remote repository manifest.
 //!
-//! The manifest (`.openkara-repository.json`) is the ONLY visibility switch
-//! for a repository generation. A database file at
-//! `.openkara/databases/<generation>.sqlite` is not visible to readers until
-//! the manifest references it. This makes publication atomic from a reader's
-//! perspective: before the manifest advances, the previous generation remains
-//! the visible one, and a database/manifest failure leaves uploaded assets
-//! unreachable in staging rather than visible through a half-committed
-//! database.
-//!
-//! ## Schema version
-//!
-//! `schemaVersion` is 1. Bump it when the manifest shape changes in a
-//! backward-incompatible way. Readers reject manifests with an unknown
-//! schema version rather than guessing at fields.
-//!
-//! Minimum compatible OpenKara version: the release that introduced
-//! `schemaVersion` 1 (PR #4 / issue #151). Older clients that predate the
-//! manifest retain a temporary legacy-read path (read `openkara.db` directly
-//! when no manifest is present).
-//!
-//! ## Remote layout
-//!
-//! ```text
-//! .openkara-library
-//! .openkara-repository.json
-//! .openkara/
-//!   databases/
-//!     <generation>/
-//!       <operation-hash>.sqlite
-//!     <generation>.sqlite  # legacy read/GC compatibility
-//!   staging/
-//!     <operation-id>/...
-//!   tombstones/
-//!     ...
-//! media/...
-//! stems/...
-//! artwork/...
-//! ```
+//! The manifest is the only visibility switch: a database file is not visible
+//! until the manifest references it. (PR #4 / issue #151)
 
 use crate::commands::error::{internal_error, CommandResult};
 use crate::remote::provider::RemoteProvider;
@@ -45,55 +9,30 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 
-/// Relative path of the manifest at the remote repository root.
 pub(crate) const MANIFEST_PATH: &str = ".openkara-repository.json";
 
-/// Current manifest schema version. Bump when the shape changes
-/// incompatibly.
 pub(crate) const CURRENT_SCHEMA_VERSION: u32 = 1;
 
-/// The committed remote repository manifest. The manifest is the only
-/// visibility switch for a generation: a database file is not visible to
-/// readers until the manifest references it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct RepositoryManifest {
-    /// Manifest schema version. Readers reject unknown versions.
     pub schema_version: u32,
-    /// Stable UUID identifying the repository. Set on first publication and
-    /// never changed.
     pub repository_id: String,
-    /// Monotonically increasing generation number. Each successful
-    /// publication advances this by 1.
     pub generation: i64,
-    /// Relative path of the committed database for this generation.
     pub database_path: String,
-    /// Byte length of the committed database.
     pub database_size_bytes: u64,
-    /// Hex SHA-256 of the committed database bytes.
     pub database_sha256: String,
-    /// Wall-clock milliseconds when this generation was committed.
     pub committed_at_ms: i64,
-    /// Installation UUID of the writer that committed this generation. Used
-    /// for diagnostics; not a security principal.
     pub writer_id: String,
-    /// Durable publish operation that produced this generation. Required for
-    /// post-CAS crash recovery so an accepted-commit shortcut cannot claim a
-    /// different operation's CAS (e.g. after coalescing expanded the payload).
-    /// Empty when reading manifests written before this field existed.
     #[serde(default)]
     pub operation_id: String,
 }
 
 impl RepositoryManifest {
-    /// Serialize to canonical JSON. Keys are emitted in the struct order so
-    /// the on-wire representation is stable across builds.
     pub(crate) fn to_json(&self) -> CommandResult<String> {
         serde_json::to_string(self)
             .map_err(|e| internal_error(format!("failed to serialize manifest: {e}")))
     }
 
-    /// Parse and validate a manifest JSON blob. Rejects unknown schema
-    /// versions and empty required fields.
     pub(crate) fn from_json(json: &str) -> CommandResult<Self> {
         let manifest: RepositoryManifest = serde_json::from_str(json)
             .map_err(|e| internal_error(format!("failed to parse repository manifest: {e}")))?;
@@ -102,11 +41,6 @@ impl RepositoryManifest {
     }
 }
 
-/// Read the manifest from the remote repository root. Returns `Ok(None)` when
-/// no manifest exists (legacy repository or first publication).
-///
-/// The provider's `download_file` is used to fetch the manifest into a temp
-/// buffer; a 404 / missing file maps to `None`. Any other error is propagated.
 pub(crate) fn read_manifest(
     provider: &dyn RemoteProvider,
 ) -> CommandResult<Option<RepositoryManifest>> {
@@ -123,7 +57,6 @@ pub(crate) fn read_manifest(
     // `download_file` errors on a missing file for some providers. Use `stat`
     // first when available to distinguish "absent" from "error".
     if let Some(metadata) = provider.stat(MANIFEST_PATH)? {
-        // The manifest exists — download and parse it.
         if metadata.size_bytes == Some(0) {
             // An empty manifest blob is treated as absent (defensive).
             let _ = std::fs::remove_file(&temp_path);
@@ -140,14 +73,11 @@ pub(crate) fn read_manifest(
             .map_err(|e| internal_error(format!("repository manifest is not valid UTF-8: {e}")))?;
         Ok(Some(RepositoryManifest::from_json(json)?))
     } else {
-        // No manifest entry — legacy repository or first publication.
         let _ = std::fs::remove_file(&temp_path);
         Ok(None)
     }
 }
 
-/// Current wall-clock milliseconds. Local helper to avoid pulling in the
-/// types module for a single call.
 fn current_unix_time_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -155,9 +85,6 @@ fn current_unix_time_ms() -> i64 {
         .as_millis() as i64
 }
 
-/// Validate a parsed manifest. Rejects unknown schema versions, non-positive
-/// generations (generation 0 is reserved for "no manifest yet"), and empty
-/// required string fields.
 pub(crate) fn validate_manifest(manifest: &RepositoryManifest) -> CommandResult<()> {
     if manifest.schema_version != CURRENT_SCHEMA_VERSION {
         return Err(internal_error(format!(
@@ -195,27 +122,16 @@ pub(crate) fn validate_manifest(manifest: &RepositoryManifest) -> CommandResult<
     Ok(())
 }
 
-/// Build the legacy relative database path for a generation:
-/// `.openkara/databases/<generation>.sqlite`.
-///
-/// New publications use [`database_path_for_operation`]. This helper remains
-/// for reading and collecting repositories written before operation-scoped
-/// database objects were introduced.
 pub(crate) fn database_path_for_generation(generation: i64) -> String {
     format!(".openkara/databases/{generation}.sqlite")
 }
 
-/// Directory containing every immutable candidate that raced for a generation.
 pub(crate) fn database_directory_for_generation(generation: i64) -> String {
     format!(".openkara/databases/{generation}")
 }
 
-/// Build an operation-scoped immutable database path.
-///
-/// Two concurrent writers expecting the same generation must never upload to
-/// the same object before manifest CAS. Hashing the durable operation identity
-/// gives each writer a path-safe unique object while keeping the manifest schema
-/// unchanged and backward compatible.
+/// Two concurrent writers must never upload to the same object before
+/// manifest CAS. (PR #4)
 pub(crate) fn database_path_for_operation(generation: i64, operation_id: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(operation_id.as_bytes());
@@ -270,8 +186,6 @@ fn validate_database_path(path: &str, generation: i64) -> CommandResult<()> {
     Ok(())
 }
 
-/// Build the relative staging directory path for an operation:
-/// `.openkara/staging/<operation-id>`.
 #[allow(dead_code)]
 pub(crate) fn staging_dir_for_operation(operation_id: &str) -> String {
     format!(".openkara/staging/{operation_id}")
@@ -284,7 +198,6 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
 
-    /// A minimal fake provider backed by an in-memory map for manifest tests.
     struct FakeProvider {
         files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
         revisions: Arc<Mutex<HashMap<String, String>>>,
@@ -465,7 +378,6 @@ mod tests {
 
     #[test]
     fn from_json_rejects_missing_field() {
-        // Missing database_sha256.
         let json = r#"{
             "schema_version": 1,
             "repository_id": "repo",

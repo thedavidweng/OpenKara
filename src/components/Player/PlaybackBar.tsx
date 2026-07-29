@@ -23,7 +23,6 @@ import { usePlayerStore } from "@/stores/player-store";
 
 interface PlaybackBarProps {
   densityOverride?: PlaybackBarDensity;
-  /** Forwarded to PlayControls so the play/pause toggle works in the preview. */
   previewMode?: boolean;
 }
 

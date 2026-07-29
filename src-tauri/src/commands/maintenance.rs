@@ -28,7 +28,6 @@ pub fn delete_all_stems(
         let deleted_count = cache::stems::delete_all_stem_cache_entries(&connection, &library_root)
             .map_err(|e| internal_error(format!("failed to delete all stems: {e}")))?;
 
-        // Clear in-memory separation statuses so the frontend reflects the change.
         if let Ok(mut statuses) = state.separation.separation_statuses.lock() {
             statuses.clear();
         }
@@ -69,7 +68,6 @@ pub fn downgrade_all_to_two_stem(
                 cache::stems::batch_downgrade_to_two_stem(&connection, &library_root)
                     .map_err(|e| internal_error(format!("failed to downgrade stems: {e}")))?;
 
-            // Clear individual stem paths for downgraded songs.
             if let Ok(mut statuses) = state.separation.separation_statuses.lock() {
                 for status in statuses.values_mut() {
                     if status.drums_path.is_some() {

@@ -2,16 +2,6 @@ import { useEffect, useRef } from "react";
 import { getAudioPeaks } from "@/lib/tauri/playback";
 import type { AudioPeakSnapshot } from "@/types/ipc";
 
-/**
- * Realtime stereo peak envelope visualizer.
- *
- * Polls the Rust `get_audio_peaks` command at 30 Hz and renders the latest
- * peak pairs on a DPR-aware canvas. The backend publishes one pair per 512
- * rendered frames; the ring retains the last 256 pairs (~3 s at 44.1 kHz).
- *
- * The canvas is purely a visual observability channel — it never blocks
- * playback and degrades gracefully when no audio is playing (flat line).
- */
 export function PeakMeter({
   width = 240,
   height = 40,
@@ -26,7 +16,6 @@ export function PeakMeter({
   const lastAdvanceRef = useRef<number | null>(null);
   const flatLineDrawnRef = useRef(false);
   const lastPeaksRef = useRef<AudioPeakSnapshot | null>(null);
-  // When decay started (performance.now ms). null while not decaying.
   const decayStartRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -65,7 +54,6 @@ export function PeakMeter({
 
       const barWidth = 3;
       const maxBars = Math.floor((width + barGap) / (barWidth + barGap));
-      // Take the most recent peaks (right-aligned, scrolling).
       const startIdx = Math.max(0, peaks.length - maxBars);
       const visiblePeaks = peaks.slice(startIdx);
       const barCount = visiblePeaks.length;

@@ -24,11 +24,6 @@ use super::{
     webdav,
 };
 
-/// Begin a Remote Provider auth session.
-///
-/// Each adapter owns how credentials are collected (OAuth browser flow vs
-/// WebDAV password check). The resulting session stores a single
-/// [`ProviderSessionData`] variant rather than an Option-triple.
 pub(crate) fn begin_remote_auth(
     state: &AppState,
     provider: RemoteLibraryProvider,

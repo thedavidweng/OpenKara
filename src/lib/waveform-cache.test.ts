@@ -25,11 +25,9 @@ describe("bucketsForRailWidth", () => {
   });
 
   test("scales bucket count by DPR at the same CSS width", () => {
-    // 600 CSS px: 1x → 200, 2x → 400, 3x → 600.
     expect(bucketsForRailWidth(600, 1)).toBe(200);
     expect(bucketsForRailWidth(600, 2)).toBe(400);
     expect(bucketsForRailWidth(600, 3)).toBe(600);
-    // Clamp still applies on the physical sampling width.
     expect(bucketsForRailWidth(30, 1)).toBe(24); // 10 → clamp 24
     expect(bucketsForRailWidth(30, 2)).toBe(24); // 20 → clamp 24
     expect(bucketsForRailWidth(4000, 1)).toBe(1000);
@@ -39,7 +37,6 @@ describe("bucketsForRailWidth", () => {
   test("quantizes so small DPR-only deltas are no-ops", () => {
     expect(bucketsForRailWidth(299, 1)).toBe(100);
     expect(bucketsForRailWidth(299, 1.005)).toBe(100);
-    // A larger DPR step crosses a bucket boundary and would refetch.
     expect(bucketsForRailWidth(299, 1.02)).toBe(102);
   });
 });
@@ -50,11 +47,9 @@ describe("waveform LRU", () => {
       setWaveformCache(`song-${i}`, 200, [0.1]);
     }
     expect(waveformCacheSizeForTests()).toBe(96);
-    // Touch song-0 so it is no longer the oldest.
     expect(getWaveformCache("song-0", 200)?.peaks).toEqual([0.1]);
     setWaveformCache("song-new", 200, [0.9]);
     expect(waveformCacheSizeForTests()).toBe(96);
-    // song-1 was oldest after promoting song-0.
     expect(getWaveformCache("song-1", 200)).toBeNull();
     expect(getWaveformCache("song-0", 200)?.peaks).toEqual([0.1]);
     expect(getWaveformCache("song-new", 200)?.peaks).toEqual([0.9]);

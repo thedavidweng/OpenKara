@@ -24,17 +24,11 @@ use std::{
 
 use crate::lyrics::fetch::LyricsSource;
 
-/// Result of building and storing a song, optionally tracking a consumed CDG path.
 pub(super) struct SongBuildResult {
     pub song: Song,
-    /// The original source CDG path that was consumed by this song, if any.
     pub consumed_cdg_source: Option<PathBuf>,
 }
 
-/// Generate artwork derivatives from cover art bytes if present.
-/// Returns (thumb_path, preview_path), both None on failure or when no cover art.
-/// Derivative failure is non-fatal: the caller persists the original and sets
-/// both paths to NULL.
 pub(super) fn try_generate_artwork_derivatives(
     library: &LibraryRoot,
     cover_art: &Option<Vec<u8>>,
@@ -51,8 +45,6 @@ pub(super) fn try_generate_artwork_derivatives(
     }
 }
 
-/// Convenience wrapper for callers that already have a `Song` (e.g. ZIP import
-/// path that builds the song before upsert). Reads cover_art from the song.
 pub(super) fn try_generate_artwork_derivatives_for_song(
     song: &Song,
     library: &LibraryRoot,
@@ -131,8 +123,6 @@ pub(super) fn build_and_store_media_g_pair(
         .with_context(|| format!("failed to read audio file at {}", source.display()))?;
     let cdg_bytes = fs::read(cdg_source)
         .with_context(|| format!("failed to read CDG file at {}", cdg_source.display()))?;
-    // Media+G assets deliberately live under one shared convention so paired
-    // files and MP3+G ZIPs behave the same way as they do in OpenKJ/Siglos libraries.
     let hash = media_g::media_g_hash(&audio_bytes, &cdg_bytes);
     let imported_at = current_unix_timestamp()?;
     let ext = source.extension().and_then(|e| e.to_str()).unwrap_or("bin");
@@ -392,9 +382,6 @@ mod tests {
     use super::*;
     use crate::library::Song;
 
-    /// R8: Verify that `try_extract_embedded_lyrics` does not panic when the
-    /// song has a `None` file_path. Before the fix, this would call `.unwrap()`
-    /// on `song.file_path.as_deref()` and panic.
     #[test]
     fn try_extract_embedded_lyrics_with_none_file_path_does_not_panic() {
         let connection =
@@ -425,7 +412,6 @@ mod tests {
         let library =
             crate::library_root::LibraryRoot::create(&dir).expect("should create test library");
 
-        // Should return without panicking when file_path is None.
         try_extract_embedded_lyrics(&connection, &song, &library);
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -442,10 +428,6 @@ mod tests {
         dir
     }
 
-    /// #206 acceptance: when the copy is aborted after the temp file is created
-    /// (here the promotion rename fails because a directory occupies the
-    /// canonical path), the temp is cleaned up and the canonical path is never
-    /// replaced by a partial file.
     #[test]
     fn copy_atomic_cleans_temp_and_never_writes_partial_dest_on_promotion_failure() {
         let dir = scratch_dir("copyatomic_promote_fail");
@@ -455,8 +437,6 @@ mod tests {
         let source = dir.join("source.bin");
         fs::write(&source, b"the complete source payload").expect("source write");
 
-        // A directory at the canonical path forces `fs::rename` to fail after the
-        // temp file has been fully written and fsynced.
         let dest = media.join("deadbeef.bin");
         fs::create_dir_all(&dest).expect("dest directory stand-in");
 
@@ -464,7 +444,6 @@ mod tests {
         assert!(result.is_err(), "promotion onto a directory must fail");
         assert!(dest.is_dir(), "canonical path must be left untouched");
 
-        // The temp file must have been removed: only the `dest` directory remains.
         let remaining: Vec<_> = fs::read_dir(&media)
             .expect("read media dir")
             .filter_map(|entry| entry.ok())
@@ -479,9 +458,6 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// #206 acceptance (unix): when the copy fails while reading the source
-    /// (a directory used as a source yields EISDIR partway), no file is left at
-    /// the canonical destination and any temp file is cleaned up.
     #[cfg(unix)]
     #[test]
     fn copy_atomic_leaves_no_dest_and_cleans_temp_on_read_failure() {
@@ -489,8 +465,6 @@ mod tests {
         let media = dir.join("media");
         fs::create_dir_all(&media).expect("media dir");
 
-        // Using a directory as the copy source: opening it may succeed but the
-        // read fails, aborting the copy after the temp file exists.
         let source = dir.join("unreadable_source");
         fs::create_dir_all(&source).expect("source directory");
         let dest = media.join("deadbeef.bin");
@@ -528,7 +502,6 @@ mod tests {
         let payload: Vec<u8> = (0..4096_u32).map(|i| (i % 251) as u8).collect();
         fs::write(&source, &payload).expect("source write");
 
-        // Simulate a truncated leftover at the canonical path.
         let dest = media.join("deadbeef.bin");
         fs::write(&dest, &payload[..128]).expect("truncated dest write");
         assert!(fs::metadata(&dest).unwrap().len() < payload.len() as u64);
@@ -550,7 +523,6 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// A complete existing copy (same size) is trusted and left untouched.
     #[test]
     fn import_media_file_trusts_intact_existing_destination() {
         let dir = scratch_dir("import_trust_intact");
@@ -568,7 +540,6 @@ mod tests {
         import_media_file(&source, &dest).expect("import of an intact copy should succeed");
 
         assert_eq!(fs::read(&dest).unwrap(), payload);
-        // No temp files should have been created for a trusted copy.
         let extra_files = fs::read_dir(&media)
             .unwrap()
             .filter_map(|entry| entry.ok())

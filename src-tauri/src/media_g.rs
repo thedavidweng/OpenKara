@@ -127,8 +127,6 @@ pub fn inspect_zip_for_media_g(path: &Path) -> Result<ZipMediaGAsset> {
 
 pub fn media_g_hash(audio_bytes: &[u8], cdg_bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
-    // Hash the logical pair instead of the transport container so a ZIP and a
-    // loose file pair for the same karaoke asset resolve to the same library ID.
     hasher.update(b"audio\0");
     hasher.update(audio_bytes);
     hasher.update(b"cdg\0");

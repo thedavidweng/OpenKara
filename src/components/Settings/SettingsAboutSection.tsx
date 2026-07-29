@@ -11,19 +11,12 @@ const COPIED_RESET_MS = 2000;
 function AboutRow({ label, value }: { label: string; value: string }) {
   return (
     <>
-      <dt className="text-[var(--color-text-dim)]">{label}</dt>
-      <dd className="break-words text-[var(--color-text)]">{value}</dd>
+      <dt className="break-words text-[var(--color-text-dim)]">{label}</dt>
+      <dd className="min-w-0 break-words text-[var(--color-text)]">{value}</dd>
     </>
   );
 }
 
-/**
- * Cross-platform About panel: shows the app version + build SHA, catalog
- * generation, model/runtime status, execution provider, and the log-file
- * path, plus a "Copy debug info" button. This is the version/diagnostic
- * surface for Windows and Linux (which have no native menu) and complements
- * the macOS Help menu — both copy paths share {@link copyDebugInfo}.
- */
 export function SettingsAboutSection() {
   const { t } = useTranslation();
   const [info, setInfo] = useState<DebugInfo | null>(null);
@@ -79,7 +72,7 @@ export function SettingsAboutSection() {
       title={t("settings.about.label")}
       description={t("settings.about.description")}
     >
-      <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-[12px]">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[12px]">
         <AboutRow label={t("settings.about.version")} value={version} />
         <AboutRow label={t("settings.about.system")} value={system} />
         <AboutRow label={t("settings.about.catalog")} value={catalog} />
@@ -93,7 +86,7 @@ export function SettingsAboutSection() {
         <AboutRow label={t("settings.about.logFile")} value={logFile} />
       </dl>
 
-      <p className="text-[11px] text-[var(--color-text-dim)]">
+      <p className="break-words text-[11px] text-[var(--color-text-dim)]">
         {t("settings.about.reportHint")}
       </p>
 

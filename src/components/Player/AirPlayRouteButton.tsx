@@ -18,7 +18,7 @@ function buildHostBounds(element: HTMLDivElement): AirPlayRoutePickerBounds {
 
 interface AirPlayRouteButtonProps {
   className?: string;
-  /** Landing-page preview: preserve the AirPlay slot without mounting AppKit. */
+  // Landing-page preview: preserve the AirPlay slot without mounting AppKit.
   previewMode?: boolean;
 }
 

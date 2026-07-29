@@ -29,7 +29,6 @@ pub(crate) fn copy_file_if_present(source: Option<&Path>, destination: &Path) ->
     Ok(())
 }
 
-// Directory copy is unused by content-addressed file publish; keep for tools.
 #[allow(dead_code)]
 pub(crate) fn copy_directory_recursive(source: &Path, destination: &Path) -> CommandResult<()> {
     if !source.exists() {

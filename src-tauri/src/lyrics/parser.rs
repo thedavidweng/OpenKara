@@ -25,8 +25,6 @@ pub struct LrcMetadata {
     pub offset_ms: Option<i64>,
 }
 
-/// Extract metadata tags from an LRC string: `[ar:Artist]`, `[ti:Title]`,
-/// `[al:Album]`, `[offset:+/-ms]`.
 pub fn parse_lrc_metadata(lrc: &str) -> LrcMetadata {
     let mut meta = LrcMetadata::default();
     for line in lrc.lines() {
@@ -99,12 +97,7 @@ pub fn parse_lrc(lrc: &str) -> Result<Vec<LyricLine>> {
     Ok(parsed_lines)
 }
 
-/// Scans `text` for `<mm:ss.xx>` inline word-timing tags.
-/// Returns `None` if no valid word tokens are found (standard LRC line).
-/// Returns `Some((plain_text, tokens))` where `plain_text` is the text with
-/// all `<>` tags stripped, and `tokens` is the list of `WordToken`s.
 pub fn parse_word_tokens(text: &str) -> Option<(String, Vec<WordToken>)> {
-    // Quick pre-check: must contain at least one '<'
     if !text.contains('<') {
         return None;
     }
@@ -132,7 +125,6 @@ pub fn parse_word_tokens(text: &str) -> Option<(String, Vec<WordToken>)> {
                         continue;
                     }
                     _ => {
-                        // Not a valid timestamp tag — treat the '<' as literal text
                         plain.push('<');
                         remaining = stripped;
                         continue;
@@ -280,7 +272,6 @@ mod tests {
 
     #[test]
     fn parses_timestamp_with_colon_separator() {
-        // mm:ss:xx — colon used instead of dot
         let ms = parse_timestamp_tag("00:30:75")
             .expect("should not error")
             .expect("should be Some");
@@ -348,7 +339,6 @@ mod tests {
 
     #[test]
     fn parse_lrc_metadata_lines_are_skipped_by_parse_lrc() {
-        // Metadata tags like [ar:...] should not produce lyric lines
         let lrc = "[ar:Artist]\n[ti:Title]\n[00:10.00]Actual lyric\n";
         let lines = parse_lrc(lrc).expect("should parse");
         assert_eq!(lines.len(), 1);
@@ -364,7 +354,6 @@ mod tests {
 
     #[test]
     fn parse_lrc_multiple_timestamps_same_line() {
-        // Two timestamps on one line should produce two lyric lines
         let lrc = "[00:10.00][00:20.00]Repeated lyric\n";
         let lines = parse_lrc(lrc).expect("should parse");
         assert_eq!(lines.len(), 2);

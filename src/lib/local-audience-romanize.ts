@@ -55,7 +55,6 @@ export function buildLyricsIdentity(lines: LyricLine[]): string | null {
   return JSON.stringify(lines.map((line) => [line.time_ms, line.text]));
 }
 
-/** Project the authoritative state to the fullscreen audience window. */
 export async function emitLocalAudienceRomanizeState(
   state: LocalAudienceRomanizeState,
 ): Promise<void> {
@@ -66,14 +65,12 @@ export async function emitLocalAudienceRomanizeState(
   );
 }
 
-/** Send an explicit set request from the fullscreen control to the main window. */
 export async function emitLocalAudienceRomanizeSetRequest(
   request: LocalAudienceRomanizeSetRequest,
 ): Promise<void> {
   await emitTo(MAIN_WINDOW_LABEL, LOCAL_AUDIENCE_ROMANIZE_SET_EVENT, request);
 }
 
-/** Request the current authoritative snapshot from the main window. */
 export async function emitLocalAudienceRomanizeSyncRequest(): Promise<void> {
   await emit(LOCAL_AUDIENCE_ROMANIZE_SYNC_REQUEST_EVENT, {});
 }

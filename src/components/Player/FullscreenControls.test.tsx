@@ -257,7 +257,6 @@ describe("FullscreenControls Romanize button", () => {
 
     const button = getRomanizeButton();
     expect(button.getAttribute("aria-pressed")).toBe("true");
-    // Selected styling uses the accent background.
     expect(button.className).toContain("var(--color-accent)");
   });
 
@@ -269,7 +268,6 @@ describe("FullscreenControls Romanize button", () => {
 
     const button = getRomanizeButton();
     expect(button.disabled).toBe(true);
-    // The LoaderCircle icon is rendered as an svg with class animate-spin.
     expect(button.querySelector("svg.animate-spin")).not.toBeNull();
   });
 

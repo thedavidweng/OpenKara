@@ -6,10 +6,6 @@ interface EventSubscription {
   handler: (payload: unknown) => void;
 }
 
-/**
- * Optional `onCleanup` runs before unlisteners are called (for clearing
- * scheduled timers, etc.).
- */
 export function useEventSubscriptions(
   subscriptions: EventSubscription[],
   enabled: boolean,

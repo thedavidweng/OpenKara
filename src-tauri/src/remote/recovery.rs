@@ -1,33 +1,3 @@
-//! Startup recovery for the durable remote control plane.
-//!
-//! On app startup, after the control DB is migrated and BEFORE remote
-//! libraries are loaded for use, a recovery pass transitions interrupted
-//! operations to safe states. Actual re-execution of operations is deferred to
-//! PR#4/#5 — this module only performs state transitions and scheduling.
-//!
-//! ## Recovery rules
-//!
-//! - `running`, `committing`, `verifying`: these were interrupted mid-flight
-//!   and must not be assumed complete. Transition to `retry_wait` (or
-//!   `pending` if no attempt backoff is needed) with `next_attempt_at_ms` set
-//!   to a near-future time.
-//! - `prepared` mutation intents: inspect the working DB digest vs
-//!   `source_db_digest`:
-//!   - unchanged → the mutation never committed locally; mark `cancelled`.
-//!   - changed → the local mutation committed but publication didn't finish;
-//!     promote to `pending` and mark `remote_repository_state.local_state =
-//!     'dirty'`.
-//!   - If `expected_generation` differs from the currently-known
-//!     `committed_generation`, mark `conflicted`.
-//! - `completed` operations stay `completed` and are not re-queued.
-//!
-//! ## Shutdown safety
-//!
-//! Because operations are durable, app shutdown does NOT delete rows or
-//! pretend to finish active operations. The next startup's recovery pass
-//! transitions any interrupted operations to safe retry states. No atexit
-//! hooks are needed.
-
 use crate::commands::error::CommandResult;
 use crate::remote::control_db::{
     self, get_repository_state, list_operations_in_states, upsert_operation,

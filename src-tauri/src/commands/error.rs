@@ -124,9 +124,6 @@ impl From<crate::separator::error::SeparationError> for CommandError {
                 true,
                 FallbackAction::Retry,
             ),
-            // Cancellation is routed to a `separation-cancelled` event before it
-            // reaches the frontend, so this mapping only exists to keep the
-            // conversion total; the resulting error is never surfaced.
             Cancelled => CommandError::new(
                 ErrorCode::SeparationFailed,
                 err.to_string(),

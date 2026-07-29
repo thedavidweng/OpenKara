@@ -1,11 +1,3 @@
-//! Auth + registry binding seam for Remote Providers.
-//!
-//! File ops live on [`super::provider::RemoteProvider`]. Auth/registry work
-//! happens *before* a stored secret exists, so this module owns the sibling
-//! surface: create/resolve a remote root from an in-progress session, and bind
-//! Repository Credentials into the system store (shared by Register and
-//! Reauthorize).
-
 use super::{
     dropbox::{
         dropbox_ensure_folder_with_token, normalize_dropbox_root_path, store_dropbox_secret,
@@ -25,8 +17,6 @@ use crate::{
 use std::path::Path;
 
 impl ProviderSessionData {
-    /// Mutates session state when the provider needs to remember the new root
-    /// (e.g. Google Drive folder id).
     pub(crate) fn create_remote_root(&mut self, display_name: &str) -> CommandResult<String> {
         match self {
             Self::GoogleDrive(google) => {
@@ -63,7 +53,6 @@ impl ProviderSessionData {
         }
     }
 
-    /// Does not create folders on the remote.
     pub(crate) fn resolve_remote_root(
         &self,
         existing_locator: Option<&str>,
@@ -87,8 +76,6 @@ impl ProviderSessionData {
         }
     }
 
-    /// Shared by Register Repository and Reauthorize Repository so both paths
-    /// bind secrets through one adapter-owned implementation.
     pub(crate) fn bind_repository_credentials(
         &self,
         app_data_dir: &Path,
@@ -178,7 +165,6 @@ impl ProviderSessionData {
     }
 }
 
-/// Only affects user-facing refresh-token error copy.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum BindContext {
     Register,

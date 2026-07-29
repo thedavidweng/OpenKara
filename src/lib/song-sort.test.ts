@@ -93,8 +93,6 @@ describe("sortSongs / compareSongs", () => {
     ];
     const sorted = sortSongs(songs, "title_asc");
     expect(sorted[0].hash).toBe("b");
-    // The two missing-title songs tie on title; with no artist either, hash
-    // decides: "a" before "z".
     expect(sorted.map((s) => s.hash)).toEqual(["b", "a", "z"]);
   });
 

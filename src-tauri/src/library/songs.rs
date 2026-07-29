@@ -1,8 +1,3 @@
-//! Song metadata and flag write path against an open library connection.
-//!
-//! Remote mutation wrappers (prepare / publish / mirror) stay at the command
-//! layer; these helpers only touch SQLite via `cache`.
-
 use crate::{
     audio::decode,
     cache,

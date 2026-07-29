@@ -96,9 +96,6 @@ impl LrcLibClient {
         Ok(Some(lyrics))
     }
 
-    /// Async variant of `fetch_by_track` for use in async Tauri commands.
-    /// Avoids occupying a `spawn_blocking` thread for the duration of the
-    /// network request.
     pub async fn fetch_by_track_async(
         &self,
         query: &LyricsLookupQuery,

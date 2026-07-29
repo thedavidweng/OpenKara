@@ -1,17 +1,13 @@
 use super::CdgPacket;
 
-/// Full CDG display dimensions (including border).
 const FULL_WIDTH: usize = 300;
 const FULL_HEIGHT: usize = 216;
 
-/// Visible (cropped) display dimensions.
 pub const VISIBLE_WIDTH: usize = 288;
 pub const VISIBLE_HEIGHT: usize = 192;
 
-/// Visible RGBA frame byte length.
 pub const CDG_RGBA_LEN: usize = VISIBLE_WIDTH * VISIBLE_HEIGHT * 4;
 
-/// Border size on each side.
 const BORDER_X: usize = 6;
 const BORDER_Y: usize = 12;
 
@@ -26,17 +22,9 @@ const CMD_COLORS_LOW: u8 = 30;
 const CMD_COLORS_HIGH: u8 = 31;
 const CMD_TILE_BLOCK_XOR: u8 = 38;
 
-/// Maximum horizontal fine offset (FFmpeg/VLC/PyKaraoke bound).
 const MAX_H_OFFSET: usize = 5;
-/// Maximum vertical fine offset (FFmpeg/VLC/PyKaraoke bound).
 const MAX_V_OFFSET: usize = 11;
 
-/// Immutable snapshot of decoder state for checkpoint save/restore.
-///
-/// RATIONALE: Checkpoints belong to `CdgTimelineState`, not the renderer.
-/// The renderer exposes `snapshot()` / `restore()` so the timeline can
-/// decide when to save and which snapshot to restore without reaching
-/// into private decoder fields.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CdgRendererSnapshot {
     pixels: Vec<u8>,
@@ -47,22 +35,11 @@ pub struct CdgRendererSnapshot {
     transparent_color: Option<u8>,
 }
 
-/// CDG renderer maintaining a 300x216 indexed-color frame buffer.
-///
-/// The renderer owns only decoder state. It is a deterministic state
-/// machine: feeding the same packet sequence from `reset()` always
-/// produces the same indexed pixels, palette, offsets, and transparency.
-/// Checkpoint policy and the playback cursor live in `CdgTimelineState`.
 pub struct CdgRenderer {
-    /// 4-bit indexed color per pixel (values 0..15).
     pixels: Vec<u8>,
-    /// RGBA palette (16 entries, 4 bytes each).
     palette: [[u8; 4]; 16],
-    /// Whether the last command was a MemoryPreset (for repeat filtering).
     last_was_memory_preset: bool,
-    /// Current horizontal scroll fine offset in pixels (clamped 0..=5).
     h_offset: usize,
-    /// Current vertical scroll fine offset in pixels (clamped 0..=11).
     v_offset: usize,
     /// Transparent palette index from instruction 28 (Define Transparent Color).
     /// `None` means no transparency (all pixels opaque).
@@ -206,7 +183,6 @@ impl CdgRenderer {
         let mut changed = false;
         for y in 0..FULL_HEIGHT {
             if !(BORDER_Y..FULL_HEIGHT - BORDER_Y).contains(&y) {
-                // Full row is border
                 for x in 0..FULL_WIDTH {
                     let idx = y * FULL_WIDTH + x;
                     if self.pixels[idx] != color {
@@ -215,7 +191,6 @@ impl CdgRenderer {
                     }
                 }
             } else {
-                // Left and right border columns
                 for x in 0..BORDER_X {
                     let idx = y * FULL_WIDTH + x;
                     if self.pixels[idx] != color {
@@ -331,10 +306,7 @@ impl CdgRenderer {
         for y in 0..FULL_HEIGHT {
             for x in 0..FULL_WIDTH {
                 let dst = y * FULL_WIDTH + x;
-                // Source is 6 pixels in the opposite direction of the scroll.
                 let src_x = if direction < 0 {
-                    // Left scroll: source is x + 6. Vacated columns are on the
-                    // right edge (x >= FULL_WIDTH - 6).
                     if x + 6 < FULL_WIDTH {
                         Some(x + 6)
                     } else if copy {
@@ -343,8 +315,6 @@ impl CdgRenderer {
                         None
                     }
                 } else {
-                    // Right scroll: source is x - 6. Vacated columns are on the
-                    // left edge (x < 6).
                     if x >= 6 {
                         Some(x - 6)
                     } else if copy {
@@ -369,10 +339,7 @@ impl CdgRenderer {
     fn scroll_vertical(&mut self, direction: i32, copy: bool, color: u8) {
         let mut new_pixels = vec![0u8; FULL_WIDTH * FULL_HEIGHT];
         for y in 0..FULL_HEIGHT {
-            // Source is 12 rows in the opposite direction of the scroll.
             let src_y = if direction < 0 {
-                // Up scroll: source is y + 12. Vacated rows are at the bottom
-                // (y >= FULL_HEIGHT - 12).
                 if y + 12 < FULL_HEIGHT {
                     Some(y + 12)
                 } else if copy {
@@ -381,8 +348,6 @@ impl CdgRenderer {
                     None
                 }
             } else {
-                // Down scroll: source is y - 12. Vacated rows are at the top
-                // (y < 12).
                 if y >= 12 {
                     Some(y - 12)
                 } else if copy {

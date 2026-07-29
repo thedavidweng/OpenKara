@@ -40,16 +40,13 @@ export function endLyricsAutoScrollUnlockSuppress(): void {
   autoScrollUnlockSuppressed = false;
 }
 
-/** Test-only: reset module-level resume / suppress latches between cases. */
 export function resetLyricsEngineScrollControlForTests(): void {
   autoScrollResumeGeneration = 0;
   autoScrollUnlockSuppressed = false;
 }
 
 export interface UserScrollGuard {
-  /** True while the user has unlocked auto-follow (browsing lyrics freely). */
   isActive: () => boolean;
-  /** Re-lock auto-follow immediately (Follow button / seek resetScroll). */
   clear: () => void;
   /**
    * Unlock auto-follow and arm the idle re-lock timer, without requiring a

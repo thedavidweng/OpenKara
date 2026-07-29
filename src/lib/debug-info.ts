@@ -32,12 +32,6 @@ interface CopyDebugInfoDependencies {
   writeText?: (text: string) => Promise<void>;
 }
 
-/**
- * Fetch the current debug info and copy its plain-text form to the clipboard.
- *
- * Shared by the Settings → About button and the macOS Help menu's "Copy Debug
- * Info" so both surfaces produce byte-identical output from one code path.
- */
 export async function copyDebugInfo({
   fetchDebugInfo = getDebugInfo,
   writeText = (text: string) => navigator.clipboard.writeText(text),

@@ -12,11 +12,6 @@ import {
 import { useLyricsStore } from "@/stores/lyrics-store";
 import { usePlayerStore, selectCurrentPositionMs } from "@/stores/player-store";
 
-/**
- * Pointer-idle window before the controls fade, matching the convention every
- * video player uses: the timer keys off pointer *movement* only, so it does
- * not matter whether playback is running or where the pointer rests.
- */
 const CONTROLS_IDLE_MS = 3000;
 
 export function FullscreenControls() {
@@ -50,7 +45,6 @@ export function FullscreenControls() {
     };
 
     wake();
-    // Pointer events so pen and touch wake the controls too.
     window.addEventListener("pointermove", wake);
     window.addEventListener("pointerdown", wake);
     const controls = containerRef.current;

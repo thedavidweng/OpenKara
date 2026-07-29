@@ -5,7 +5,6 @@ import type { PlaybackBarDensity } from "./playback-bar-layout";
 
 interface PlayControlsProps {
   density?: PlaybackBarDensity;
-  /** When true, the play/pause toggle is clickable inside the website preview. */
   previewMode?: boolean;
 }
 

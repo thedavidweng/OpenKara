@@ -26,18 +26,7 @@ import {
 } from "./playback-bar-layout";
 
 const STEM_POPUP_GAP_PX = 12;
-/**
- * Popup surface uses Tailwind `p-4` (16px). Position so the *content* icon
- * column lines up with the accompaniment mute button's left edge:
- *   panel.left = muteButton.left - PAD
- */
 const STEM_POPUP_PAD_PX = 16;
-/**
- * Extra trailing margin on popup rails. Icons sit inside a 44px hit target so
- * the glyph has ~13px inset; the range thumb sits at the rail's end. Equal
- * box padding alone still looks right-heavy — this restores the pre-portal
- * `mr-[14px]` optical balance between left glyph inset and right thumb gap.
- */
 const STEM_POPUP_RAIL_TRAIL_CLASS = "mr-[14px]";
 
 interface VolumeSlidersProps {
@@ -109,12 +98,9 @@ export function VolumeSliders({
   // Floating popup: portal to body so stage overflow / settings z-index cannot clip it.
   const popupRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  /**
-   * Anchors to the accompaniment *mute button* (not the whole row), so the
-   * popup icon column lines up with the Music control on the playback bar.
-   */
+  // Anchors to the accompaniment mute button (not the whole row) so the
+  // popup icon column lines up with the Music control on the playback bar.
   const accompMuteButtonRef = useRef<HTMLButtonElement>(null);
-  /** Tight-density mixer trigger doubles as the position anchor. */
   const tightAnchorRef = useRef<HTMLDivElement>(null);
   const [popupPos, setPopupPos] = useState<{
     left: number;
@@ -130,7 +116,6 @@ export function VolumeSliders({
     }
     const rect = anchor.getBoundingClientRect();
     setPopupPos({
-      // Align popup content icons with the mute button: subtract surface pad.
       left: rect.left - STEM_POPUP_PAD_PX,
       bottom: window.innerHeight - rect.top + STEM_POPUP_GAP_PX,
     });
@@ -184,7 +169,6 @@ export function VolumeSliders({
     [setStemVolume],
   );
 
-  // Accompaniment resting display value = max of the three sub-stems
   const accompValue = Math.max(
     stemVolumes.drums,
     stemVolumes.bass,
@@ -241,7 +225,6 @@ export function VolumeSliders({
     setAccompDragValue(null);
   }, [songId]);
 
-  // Hand the display back to the store once it catches up with the gesture.
   useEffect(() => {
     if (accompGestureBaseRef.current !== null) {
       return;
@@ -338,12 +321,6 @@ export function VolumeSliders({
 
   const layoutTokens = getPlaybackBarLayoutTokens(density);
   const inlineSliderWidthClass = layoutTokens.inlineStemVolumeWidthClass;
-  /*
-   * Popup rails: longer master-rail token + trailing optical margin. The
-   * trail margin is what makes left/right look equal — box p-4 alone is not
-   * enough because icon glyphs inset inside 44px buttons while thumbs sit
-   * flush on the rail end. Inline accompaniment keeps the stem token only.
-   */
   const popupSliderWidthClass = `${layoutTokens.masterVolumeWidthClass} ${STEM_POPUP_RAIL_TRAIL_CLASS}`;
   const collapsedMode = density === "tight";
   const triggerLabel = isExpanded
@@ -562,9 +539,9 @@ type StemIconButtonVariant = "playback_bar" | "panel";
 
 interface StemSliderProps {
   icon: LucideIcon;
-  iconButtonVariant?: StemIconButtonVariant; // default "panel"
+  iconButtonVariant?: StemIconButtonVariant;
   playbackActionName?: "vocals-mute" | "accompaniment-mute";
-  panelIconSize?: 14 | 16 | 18; // default 18 (matches inline playback-bar icons)
+  panelIconSize?: 14 | 16 | 18;
   label: string;
   value: number;
   onChange: (value: number) => void;
@@ -573,7 +550,7 @@ interface StemSliderProps {
   onIconClick?: () => void;
   disabled?: boolean;
   sliderWidthClass?: string;
-  /** Optional ref to the mute icon button (popup positioning anchor). */
+  // Optional ref to the mute icon button (popup positioning anchor).
   muteButtonRef?: React.RefObject<HTMLButtonElement | null>;
 }
 

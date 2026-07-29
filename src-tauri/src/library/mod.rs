@@ -1,12 +1,3 @@
-//! Deep library module: song domain model + local write path.
-//!
-//! - Domain types: [`Song`], import/delete result shapes
-//! - Write path: [`import`], [`delete`], [`songs`], [`playlist`]
-//! - Storage adapter: `crate::cache` (SQL only)
-//!
-//! IPC commands and remote Pre-Mutation Refresh / Publish Song wrappers live
-//! outside this module and call into these APIs with `Connection` + `LibraryRoot`.
-
 pub mod artwork;
 pub mod delete;
 pub mod error;
@@ -83,7 +74,6 @@ pub struct ImportSongsResult {
     pub failed: Vec<ImportFailure>,
 }
 
-// Re-export the main write-path entry points for locality at the module root.
 pub use delete::{
     delete_song_files_from_working_copy, delete_song_from_library, delete_song_rows_from_database,
     delete_stem_files_from_working_copy,

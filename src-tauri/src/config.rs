@@ -12,24 +12,16 @@ use std::{
 
 const CONFIG_FILENAME: &str = "config.json";
 
-/// Per-process counter appended to atomic-write temp file names so two saves
-/// racing within the same nanosecond never target the same temp path (and thus
-/// never interleave bytes into one temp that is then renamed over the config).
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum StemMode {
     TwoStem,
-    /// The default: the model natively outputs four stems, and writing all
-    /// four costs no extra inference time — only disk, which the optional
-    /// compress-to-two-stem maintenance action can reclaim (#182).
     #[default]
     FourStem,
 }
 
-/// Library sort order persisted through the settings authority. The frontend
-/// comparator mirrors these exact total orders; see `src/lib/song-sort.ts`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum LibrarySortMode {
@@ -49,15 +41,10 @@ impl LibrarySortMode {
     }
 }
 
-/// How runtime/model updates from the infrastructure catalog are handled.
-/// Activation of a staged runtime always requires a restart regardless of
-/// policy; the policy only governs checking and downloading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdatePolicy {
     Manual,
-    /// Check on startup and surface available updates without downloading.
-    /// The conservative default until release data justifies auto-download.
     #[default]
     Notify,
     AutoDownload,
@@ -135,10 +122,6 @@ impl ModelVariant {
     }
 }
 
-/// Hardware acceleration preference for ONNX Runtime inference.
-///
-/// The persisted value is always explicit. When config does not yet contain an
-/// execution provider, the app chooses a platform default at runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionProviderPreference {
@@ -150,14 +133,9 @@ pub enum ExecutionProviderPreference {
     DirectMl,
 }
 
-/// Platform seam used to test the execution-provider policy table without
-/// depending on the host running the test. Private: not an IPC type.
-/// Variants for platforms other than the compile target are only constructed
-/// in tests, so silence the non-test dead-code warning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
 enum ExecutionProviderPlatform {
-    /// Apple Silicon: XNNPACK's NEON kernels beat the ORT CPU EP here.
     MacosAppleSilicon,
     MacosIntel,
     Windows,
@@ -252,7 +230,6 @@ impl ExecutionProviderPreference {
         }
     }
 
-    /// Used by the frontend to populate the settings dropdown.
     pub fn available_for_current_platform() -> Vec<&'static str> {
         Self::available_for(ExecutionProviderPlatform::current())
             .iter()
@@ -502,12 +479,8 @@ impl RegisteredLibrary {
     }
 }
 
-/// This is the only file that stays outside the portable library directory.
-/// It tracks user preferences and the registered library set.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
-    /// Legacy single-library path. Kept only for migration from older config
-    /// files and omitted from new saves once the registry exists.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub library_path: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -520,58 +493,34 @@ pub struct AppConfig {
     pub language: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hide_batch_separate: Option<bool>,
-    /// When false, the lyrics stage renders without the blurred album-art backdrop.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cover_art_backdrop: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hide_upgrade_all: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model_variant: Option<ModelVariant>,
-    // Lyrics font size is a per-machine display preference, so it belongs in
-    // config.json with the rest of app settings rather than in the lyrics table.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lyrics_font_step: Option<i8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub execution_provider: Option<ExecutionProviderPreference>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub eq_enabled: Option<bool>,
-    /// Per-band EQ gains in dB for the five fixed bands
-    /// (60, 230, 910, 3600, 14000 Hz). Each gain is clamped to
-    /// -12.0..=12.0 dB on read.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub eq_gains_db: Option<[f32; 5]>,
-    /// Only applies to fully decoded local tracks — streaming
-    /// and stems tracks always use gapless transition.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub crossfade_enabled: Option<bool>,
-    /// Crossfade overlap duration in milliseconds. Clamped to
-    /// 500..=10_000 on read.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub crossfade_duration_ms: Option<u32>,
-    /// Persisted so the selected order survives restarts and is shared
-    /// across WebViews via the settings sync snapshot.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub library_sort_mode: Option<LibrarySortMode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub theme_preference: Option<ThemePreference>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub update_policy: Option<UpdatePolicy>,
-    /// When set, the cache directory is trimmed to stay under this limit,
-    /// deleting the least-recently-used files. When absent the cache defaults
-    /// to a finite 2 GiB budget (see `DEFAULT_CACHE_BYTES_LIMIT`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote_cache_bytes_limit: Option<u64>,
-    /// Crash-recovery marker for mirror operations. `mirror_local_library_to_remote`
-    /// temporarily swaps `active_library_id` to the remote library for the sync
-    /// duration. If the app crashes mid-sync, this flag is true so startup
-    /// knows to restore `pending_mirror_restore_active_library_id` (which may
-    /// be None if the original active library was unset). Cleared after a
-    /// successful sync or on startup recovery.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub pending_mirror_restore: bool,
-    /// Only meaningful when `pending_mirror_restore` is true. May be None
-    /// if the original active library was unset — that is a valid restore
-    /// target, not an absence of a pending operation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pending_mirror_restore_active_library_id: Option<String>,
 }

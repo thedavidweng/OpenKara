@@ -201,7 +201,6 @@ pub(crate) fn register_remote_library(
     cache::initialize_library_database(&library_root.database_path())
         .map_err(|e| CommandError::from(LibraryError::DatabaseUnavailable(e.to_string())))?;
 
-    // Shared Register/Reauthorize credential binding path (adapter-owned).
     let connection_config = provider_session.bind_repository_credentials(
         app_data_dir,
         &library_id,
@@ -323,7 +322,6 @@ pub(crate) fn reauthorize_remote_library(
             "remote repository is missing a local working copy".to_string(),
         ))
     })?;
-    // Shared Register/Reauthorize credential binding path (adapter-owned).
     let connection_config = provider_session.bind_repository_credentials(
         app_data_dir,
         &library_id,

@@ -1,11 +1,3 @@
-//! Release-CI-only smoke mode for the installed Windows application.
-//!
-//! The executable is built into an NSIS installer and then invoked from its
-//! installed location. It deliberately uses the production app-data runtime
-//! and model bootstrap helpers instead of `src-tauri/generated` or
-//! `src-tauri/models`, which catches first-install and cold-restart regressions
-//! that a source-tree smoke cannot observe.
-
 use crate::{
     commands::{bootstrap, runtime_bootstrap, unix_timestamp},
     config,
@@ -69,8 +61,6 @@ struct InstalledAppSmokeReport {
     local_audio_smoke: Option<LocalAudioSmokeReport>,
 }
 
-/// Runs only when the feature-gated marker is the first command line option.
-/// Returning `Ok(false)` keeps every normal Tauri invocation unchanged.
 pub fn maybe_run_from_cli() -> Result<bool> {
     let mut arguments = env::args();
     let _program = arguments.next();
@@ -223,9 +213,6 @@ fn run(config: AutomationSmokeConfig) -> Result<()> {
     Ok(())
 }
 
-/// Mirrors the runtime/model portion of `app_runtime::setup_app` in a fresh
-/// process, before the blocking separation bootstrap executes. This verifies
-/// the persisted slot state and managed model are usable after a restart.
 fn verify_cold_start_state(
     app_data_dir: &Path,
     active_variant: config::ModelVariant,

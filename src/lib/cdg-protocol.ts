@@ -1,38 +1,20 @@
-/** Magic bytes identifying the CDG binary protocol. */
 const PROTOCOL_MAGIC = [0x4f, 0x4b, 0x43, 0x47]; // "OKCG"
-/** Header size in bytes. */
 export const CDG_PROTOCOL_HEADER_SIZE = 32;
-/** Flag bit 0: RGBA payload present. */
 const FLAG_RGBA_PRESENT = 0x01;
 
-/** CDG visible frame dimensions. */
 export const CDG_WIDTH = 288;
 export const CDG_HEIGHT = 192;
-/** RGBA frame size in bytes (288 * 192 * 4). */
 export const CDG_RGBA_SIZE = CDG_WIDTH * CDG_HEIGHT * 4;
 
-/** Parsed CDG frame envelope. */
 export interface CdgFrameEnvelope {
-  /** Protocol version from the header. */
   protocolVersion: number;
-  /** Whether an RGBA payload is included. */
   hasRgba: boolean;
-  /** Transport generation from the backend. */
   transportGeneration: number;
-  /** Monotonically increasing frame version for this timeline. */
   frameVersion: number;
-  /** Exclusive packet cursor (packets processed so far). */
   packetIndex: number;
-  /** RGBA frame data (221,184 bytes), or null if no payload. */
   rgba: Uint8Array | null;
 }
 
-/**
- * Parse a binary CDG frame response into a structured envelope.
- *
- * Returns `null` for empty responses (no active CDG / stale / error).
- * Throws if the response is too short or has an invalid magic bytes.
- */
 export function parseCdgFrameResponse(
   data: ArrayBuffer,
 ): CdgFrameEnvelope | null {
@@ -48,7 +30,6 @@ export function parseCdgFrameResponse(
 
   const view = new DataView(data);
 
-  // Verify magic bytes.
   for (let i = 0; i < 4; i++) {
     if (view.getUint8(i) !== PROTOCOL_MAGIC[i]) {
       throw new Error("CDG protocol: invalid magic bytes");

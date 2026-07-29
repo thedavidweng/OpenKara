@@ -44,8 +44,6 @@ pub fn build_backend_performance_report(
     song_id: &str,
     seek_iterations: usize,
 ) -> Result<PerformanceReport> {
-    // Playback is an eager full decode into memory, so cold-path variance is
-    // concentrated in the decode step instead of the DB lookup or controller swap.
     let mut track_load = measure_track_load_breakdown(connection, library_root, song_id, 1_000)?;
 
     let seek_samples = measure_seek_latencies(
@@ -65,10 +63,6 @@ pub fn build_backend_performance_report(
             seek_latency_max_ms: seek_samples.iter().copied().fold(0.0_f64, f64::max),
             seek_samples: seek_samples.len(),
         },
-        // The frontend sync loop is implemented by the UI agent, not Rust. The
-        // backend still defines the timing floor: lyrics can only react as often
-        // as `playback-position` is emitted, so the emitter cadence is the raw
-        // jitter budget that downstream interpolation has to beat.
         lyrics_sync: LyricsSyncPerformanceReport {
             position_event_interval_ms: PLAYBACK_POSITION_POLL_INTERVAL_MS,
             jitter_budget_ms: PLAYBACK_POSITION_POLL_INTERVAL_MS,

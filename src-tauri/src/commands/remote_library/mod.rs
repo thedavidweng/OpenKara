@@ -1,8 +1,3 @@
-//! Thin IPC adapters for the Remote Repository domain.
-//!
-//! Domain logic lives in `crate::remote`. This module only binds Tauri command
-//! signatures and app-data path resolution to those domain entry points.
-
 use crate::{
     commands::error::{internal_error, CommandResult},
     config::RemoteLibraryProvider,
@@ -15,8 +10,6 @@ pub use remote::{
     UploadState, UploadStatusSnapshot,
 };
 
-/// Re-export the cache usage snapshot type so the IPC command signature stays
-/// stable even if the internal module path changes.
 pub use remote::cache_catalog::CacheUsage;
 
 /// Diagnostic snapshot of the remote repository state for the active remote
@@ -25,34 +18,21 @@ pub use remote::cache_catalog::CacheUsage;
 /// operation outcomes in the settings diagnostics panel.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct RemoteDiagnostics {
-    /// `true` when an active remote library is registered.
     pub has_active_remote: bool,
     /// Stable repository UUID from the manifest protocol (PR #4). `None` for
     /// legacy repositories or local libraries.
     pub repository_id: Option<String>,
-    /// Stable writer (installation) UUID. For diagnostics only.
     pub writer_id: Option<String>,
-    /// Committed remote generation (monotonically increasing). 0 when no
-    /// publication has completed yet.
     pub committed_generation: i64,
-    /// Local base generation — the generation the local working copy was last
-    /// synced from.
     pub local_base_generation: i64,
-    /// Local repository cleanliness state. `Clean`, `Dirty`, or `Conflicted`.
     pub local_state: String,
-    /// SHA-256 digest of the local working database, if known.
     pub local_db_digest: Option<String>,
-    /// Active operation ID, if a publish/GC is in progress.
     pub active_operation_id: Option<String>,
-    /// Wall-clock ms of the last successful publication.
     pub last_success_at_ms: Option<i64>,
-    /// Last error code (e.g. `remote_conflict`, `network_unavailable`).
     pub last_error_code: Option<String>,
-    /// Recent operations (most recent first, capped at 20).
     pub recent_operations: Vec<RemoteOperationDiagnostic>,
 }
 
-/// Diagnostic view of a single remote operation row.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct RemoteOperationDiagnostic {
     pub operation_id: String,
@@ -180,13 +160,6 @@ pub fn sync_active_remote_library(state: State<'_, AppState>) -> CommandResult<(
     remote::sync_active_remote_library(&state)
 }
 
-/// Take one of the two exits from a Pre-Publish Conflict.
-///
-/// `keep_local` rebases the pending local changes onto the winning remote
-/// generation and republishes them; the executor refuses it when both sides
-/// touched the same songs, because an automatic merge there would silently
-/// pick a winner. `use_remote` discards the pending operation and adopts the
-/// remote database.
 #[tauri::command]
 pub fn resolve_remote_conflict(
     state: State<'_, AppState>,
@@ -220,9 +193,6 @@ pub fn get_all_upload_statuses(
     remote::get_all_upload_statuses(&state)
 }
 
-/// Report remote streaming cache usage: total bytes used, the configured byte
-/// limit, the number of catalog entries, and how many are currently pinned
-/// (in use by playback and exempt from eviction).
 #[tauri::command]
 pub fn get_remote_cache_usage(state: State<'_, AppState>) -> CommandResult<CacheUsage> {
     let manager = state
@@ -233,10 +203,6 @@ pub fn get_remote_cache_usage(state: State<'_, AppState>) -> CommandResult<Cache
     manager.usage()
 }
 
-/// Evict all unpinned remote cache entries. Pinned entries (files in active
-/// use by playback) are left in the catalog until playback releases them, at
-/// which point a subsequent clear or LRU eviction removes them. Returns the
-/// number of entries evicted.
 #[tauri::command]
 pub fn clear_remote_cache(state: State<'_, AppState>) -> CommandResult<usize> {
     let mut manager = state
@@ -316,9 +282,7 @@ pub fn get_remote_diagnostics(
         None => (0, 0, "clean".to_owned(), None, None, None, None, None, None),
     };
 
-    // Load recent operations for this library (most recent first, capped at 20).
     let mut ops = control_db::list_operations_for_library(&conn, &library_id)?;
-    // Sort by updated_at_ms descending (newest first).
     ops.sort_by_key(|op| std::cmp::Reverse(op.updated_at_ms));
     ops.truncate(20);
     let recent_operations = ops
