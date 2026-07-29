@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Languages, LoaderCircle } from "lucide-react";
+import { AlignCenter, AlignLeft, Languages, LoaderCircle } from "lucide-react";
 import { PeakMeter } from "./PeakMeter";
 import { PlayControls } from "./PlayControls";
 import { SeekBar } from "./SeekBar";
@@ -70,15 +70,27 @@ export function FullscreenControls() {
   const isRomanizing = useLyricsStore((s) => s.isRomanizing);
   const lyricSongId = useLyricsStore((s) => s.songId);
   const hasLyrics = useLyricsStore((s) => s.lines.length > 0);
+  const setRomanizedVisibility = useLyricsStore(
+    (s) => s.setRomanizedVisibility,
+  );
+  const lyricsAlignment = useLyricsStore((s) => s.lyricsAlignment);
+  const toggleLyricsAlignment = useLyricsStore((s) => s.toggleLyricsAlignment);
   const romanizeDisabled = !hasLyrics || !lyricSongId || isRomanizing;
 
   const handleRomanizeClick = () => {
     if (!lyricSongId || romanizeDisabled) return;
+    const next = !showRomanized;
+    setRomanizedVisibility(next);
     const request: LocalAudienceRomanizeSetRequest = {
       songId: lyricSongId,
-      showRomanized: !showRomanized,
+      showRomanized: next,
     };
     void emitLocalAudienceRomanizeSetRequest(request).catch(() => {});
+  };
+
+  const handleAlignmentClick = () => {
+    if (!lyricSongId || !hasLyrics) return;
+    toggleLyricsAlignment();
   };
 
   useEffect(() => {
@@ -186,6 +198,29 @@ export function FullscreenControls() {
             <LoaderCircle size={14} className="animate-spin" />
           ) : (
             <Languages size={14} />
+          )}
+        </button>
+        <button
+          type="button"
+          data-testid="fullscreen-alignment-button"
+          onClick={handleAlignmentClick}
+          aria-label={
+            lyricsAlignment === "left"
+              ? "Switch to centered lyrics"
+              : "Switch to left-aligned lyrics"
+          }
+          aria-pressed={lyricsAlignment === "left"}
+          disabled={!hasLyrics || !lyricSongId}
+          className={`motion-icon-button rounded-full border p-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]/50 ${
+            lyricsAlignment === "left"
+              ? "border-[color-mix(in_srgb,var(--color-accent)_40%,var(--color-border-light))] bg-[color-mix(in_srgb,var(--color-accent)_18%,var(--color-sidebar))] text-[var(--color-control-primary)]"
+              : "border-[var(--color-border-light)] bg-[var(--color-sidebar)] text-[var(--color-text-dim)] hover:border-[color-mix(in_srgb,var(--color-accent)_28%,var(--color-border-light))] hover:bg-[var(--color-hover)] hover:text-[var(--color-control-primary)]"
+          }`}
+        >
+          {lyricsAlignment === "left" ? (
+            <AlignLeft size={14} />
+          ) : (
+            <AlignCenter size={14} />
           )}
         </button>
       </div>

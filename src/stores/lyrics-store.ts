@@ -79,6 +79,7 @@ interface LyricsState {
   romanizedLinesIdentity: string | null;
   isRomanizing: boolean;
   showRomanized: boolean;
+  lyricsAlignment: "center" | "left";
 
   fetchLyrics: (songId: string) => Promise<void>;
   setOffset: (songId: string, ms: number) => Promise<void>;
@@ -91,6 +92,8 @@ interface LyricsState {
   setRomanizedVisibility: (show: boolean) => void;
   applyRemoteRomanizeState: (state: LocalAudienceRomanizeState) => void;
   romanizeCurrentLyrics: () => Promise<void>;
+  setLyricsAlignment: (alignment: "center" | "left") => void;
+  toggleLyricsAlignment: () => void;
   clear: () => void;
 }
 
@@ -107,6 +110,7 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
   romanizedLinesIdentity: null,
   isRomanizing: false,
   showRomanized: false,
+  lyricsAlignment: "left",
 
   fetchLyrics: async (songId) => {
     const gen = ++fetchGeneration;
@@ -272,6 +276,13 @@ export const useLyricsStore = create<LyricsState>((set, get) => ({
       romanizedLinesIdentity: state.lyricsIdentity,
     });
   },
+
+  setLyricsAlignment: (alignment) => set({ lyricsAlignment: alignment }),
+
+  toggleLyricsAlignment: () =>
+    set((state) => ({
+      lyricsAlignment: state.lyricsAlignment === "left" ? "center" : "left",
+    })),
 
   romanizeCurrentLyrics: async () => {
     const { lines, isRomanizing } = get();

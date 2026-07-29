@@ -33,12 +33,23 @@ const {
     isRomanizing: false,
     songId: null as string | null,
     lines: [] as { time_ms: number; text: string }[],
+    lyricsAlignment: "left" as "center" | "left",
+    setRomanizedVisibility: (show: boolean) => {
+      mockLyricsStore.showRomanized = show;
+    },
+    toggleLyricsAlignment: () => {
+      mockLyricsStore.lyricsAlignment =
+        mockLyricsStore.lyricsAlignment === "left" ? "center" : "left";
+    },
     subscribe: vi.fn(),
     getState: () => ({
       showRomanized: mockLyricsStore.showRomanized,
       isRomanizing: mockLyricsStore.isRomanizing,
       songId: mockLyricsStore.songId,
       lines: mockLyricsStore.lines,
+      lyricsAlignment: mockLyricsStore.lyricsAlignment,
+      setRomanizedVisibility: mockLyricsStore.setRomanizedVisibility,
+      toggleLyricsAlignment: mockLyricsStore.toggleLyricsAlignment,
     }),
   },
   mockT: vi.fn((key: string) => key),
@@ -288,7 +299,7 @@ describe("FullscreenControls Romanize button", () => {
     });
   });
 
-  test("clicking does not optimistically mutate the fullscreen projection", async () => {
+  test("clicking immediately updates the fullscreen projection", async () => {
     mockLyricsStore.showRomanized = false;
     await act(async () => {
       root.render(<FullscreenControls />);
@@ -298,7 +309,7 @@ describe("FullscreenControls Romanize button", () => {
       getRomanizeButton().click();
     });
 
-    expect(mockLyricsStore.showRomanized).toBe(false);
+    expect(mockLyricsStore.showRomanized).toBe(true);
   });
 });
 
@@ -405,5 +416,67 @@ describe("FullscreenControls auto-hide", () => {
     });
 
     expect(getFooter().getAttribute("data-idle")).toBe("true");
+  });
+});
+
+describe("FullscreenControls alignment button", () => {
+  let container: HTMLDivElement;
+  let root: ReturnType<typeof createRoot>;
+
+  beforeEach(() => {
+    mockLyricsStore.showRomanized = false;
+    mockLyricsStore.isRomanizing = false;
+    mockLyricsStore.songId = "song-1";
+    mockLyricsStore.lines = [{ time_ms: 0, text: "hello" }];
+    mockLyricsStore.lyricsAlignment = "left";
+    mockLyricsStore.toggleLyricsAlignment = vi.fn(() => {
+      mockLyricsStore.lyricsAlignment =
+        mockLyricsStore.lyricsAlignment === "left" ? "center" : "left";
+    });
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  function getAlignmentButton(): HTMLButtonElement {
+    const button = container.querySelector<HTMLButtonElement>(
+      '[data-testid="fullscreen-alignment-button"]',
+    );
+    if (!button) throw new Error("alignment button not rendered");
+    return button;
+  }
+
+  test("toggles lyrics alignment when lyrics are available", async () => {
+    await act(async () => {
+      root.render(<FullscreenControls />);
+    });
+
+    await act(async () => {
+      getAlignmentButton().click();
+    });
+
+    expect(mockLyricsStore.toggleLyricsAlignment).toHaveBeenCalled();
+  });
+
+  test("is disabled and does not toggle when no lyrics are available", async () => {
+    mockLyricsStore.lines = [];
+    mockLyricsStore.songId = null;
+
+    await act(async () => {
+      root.render(<FullscreenControls />);
+    });
+
+    expect(getAlignmentButton().disabled).toBe(true);
+
+    await act(async () => {
+      getAlignmentButton().click();
+    });
+
+    expect(mockLyricsStore.toggleLyricsAlignment).not.toHaveBeenCalled();
   });
 });

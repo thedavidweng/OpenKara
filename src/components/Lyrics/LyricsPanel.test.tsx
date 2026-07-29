@@ -70,7 +70,9 @@ const {
     romanizedLines: [],
     isRomanizing: false,
     showRomanized: false,
+    lyricsAlignment: "left" as "center" | "left",
     toggleRomanized: vi.fn(),
+    toggleLyricsAlignment: vi.fn(),
     songId: "song-1",
     adjustOffset: vi.fn(),
   } as {
@@ -83,7 +85,9 @@ const {
     romanizedLines: string[];
     isRomanizing: boolean;
     showRomanized: boolean;
+    lyricsAlignment: "center" | "left";
     toggleRomanized: ReturnType<typeof vi.fn>;
+    toggleLyricsAlignment: ReturnType<typeof vi.fn>;
     songId: string;
     adjustOffset: ReturnType<typeof vi.fn>;
   },
@@ -208,6 +212,7 @@ describe("LyricsPanel contextual reveal", () => {
     mockLyricsState.isRomanizing = false;
     mockLyricsState.showRomanized = false;
     mockLyricsState.toggleRomanized.mockReset();
+    mockLyricsState.toggleLyricsAlignment.mockReset();
     mockLyricsState.songId = "song-1";
     mockLyricsState.adjustOffset.mockReset();
     mockSettingsState.lyricsFontStep = 0;
@@ -385,7 +390,7 @@ describe("LyricsPanel contextual reveal", () => {
       <LyricsPanel presentation="audience" />,
     );
 
-    expect(markup).toContain("max-width:min(92vw, 1600px)");
+    expect(markup).toContain("max-width:100%");
     expect(markup).toContain("min-h-full");
     expect(markup).not.toContain("contextual-reveal absolute right-4 top-4");
     expect(markup).not.toContain("absolute inset-x-0 bottom-0");
@@ -622,5 +627,34 @@ describe("LyricsPanel contextual reveal", () => {
     await act(async () => {
       root.unmount();
     });
+  });
+
+  test("clicking the alignment button toggles lyrics alignment", () => {
+    mockLyricsState.lines = [
+      line({ time_ms: 0, text: "line one", words: null }),
+    ];
+    mockLyricsState.rawLrc = "[00:00.00]line one";
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    act(() => {
+      root.render(<LyricsPanel />);
+    });
+
+    const button = host.querySelector(
+      "[aria-label='Switch to centered lyrics']",
+    ) as HTMLButtonElement;
+    expect(button).toBeTruthy();
+    act(() => {
+      button.click();
+    });
+
+    expect(mockLyricsState.toggleLyricsAlignment).toHaveBeenCalled();
+
+    act(() => {
+      root.unmount();
+    });
+    host.remove();
   });
 });

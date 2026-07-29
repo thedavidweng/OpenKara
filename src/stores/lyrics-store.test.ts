@@ -59,6 +59,7 @@ const DEFAULT_STATE = {
   romanizedLinesIdentity: null,
   isRomanizing: false,
   showRomanized: false,
+  lyricsAlignment: "left" as const,
 };
 
 function resetStore() {
@@ -1130,5 +1131,29 @@ describe("lyrics-store stale Worker result after song change", () => {
     await promise;
 
     expect(useLyricsStore.getState().romanizedLines).toEqual([]);
+  });
+});
+
+describe("lyrics-store lyricsAlignment", () => {
+  beforeEach(resetStore);
+
+  test("setLyricsAlignment updates the alignment", () => {
+    expect(useLyricsStore.getState().lyricsAlignment).toBe("left");
+
+    useLyricsStore.getState().setLyricsAlignment("center");
+    expect(useLyricsStore.getState().lyricsAlignment).toBe("center");
+
+    useLyricsStore.getState().setLyricsAlignment("left");
+    expect(useLyricsStore.getState().lyricsAlignment).toBe("left");
+  });
+
+  test("toggleLyricsAlignment switches between left and center", () => {
+    useLyricsStore.setState({ lyricsAlignment: "left" });
+
+    useLyricsStore.getState().toggleLyricsAlignment();
+    expect(useLyricsStore.getState().lyricsAlignment).toBe("center");
+
+    useLyricsStore.getState().toggleLyricsAlignment();
+    expect(useLyricsStore.getState().lyricsAlignment).toBe("left");
   });
 });
