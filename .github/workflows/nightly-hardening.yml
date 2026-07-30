@@ -13,14 +13,17 @@ env:
 
 jobs:
   windows-matrix:
-    name: Windows ${{ matrix.test }}
+    name: Windows UI ${{ matrix.test }}
     strategy:
       fail-fast: false
       matrix:
-        test:
-          - accessibility
-          - contrast
-          - dpi
+        include:
+          - test: accessibility
+            files: tests/e2e/accessibility.spec.ts
+          - test: smoke
+            files: tests/e2e/smoke.spec.ts
+          - test: ui
+            files: tests/e2e
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -29,12 +32,46 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Run ${{ matrix.test }} test
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 11.13.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install chromium webkit
+
+      - name: Run ${{ matrix.test }} tests
         shell: pwsh
         env:
-          TEST_NAME: ${{ matrix.test }}
+          TEST_TYPE: ${{ matrix.test }}
+          TEST_FILES: ${{ matrix.files }}
         run: |
-          Write-Host "TODO: run Windows $env:TEST_NAME hardening test and write a report artifact"
+          $ErrorActionPreference = "Stop"
+          $base = "tests/e2e"
+          switch ($env:TEST_TYPE) {
+            "accessibility" {
+              pnpm exec playwright test $env:TEST_FILES
+            }
+            "smoke" {
+              pnpm exec playwright test $env:TEST_FILES
+            }
+            "ui" {
+              $files = (Get-ChildItem -Path $base -Filter "*.spec.ts" | Where-Object { $_.Name -ne "accessibility.spec.ts" -and $_.Name -ne "smoke.spec.ts" }).FullName
+              pnpm exec playwright test $files
+            }
+            default {
+              throw "Unknown test type: $env:TEST_TYPE"
+            }
+          }
 
   macos-smoke:
     name: macOS smoke
@@ -46,9 +83,61 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Run macOS smoke
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+
+      - name: Restore Rust cache
+        uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: ${{ github.workflow }}-macos-smoke
+          workspaces: ./src-tauri -> target
+          cache-bin: false
+          key: macos-smoke
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download runtime and model
+        shell: bash
+        env:
+          OPENKARA_ORT_TARGET: aarch64-apple-darwin
+        run: ./scripts/setup.sh
+
+      - name: Record catalog artifact identities
+        shell: bash
         run: |
-          echo "TODO: build OpenKara on macOS and run a basic smoke test"
+          echo "Staged runtime:" && cat src-tauri/generated/onnxruntime/manifest.json
+          echo "Pinned model:" && node scripts/resolve-model.mjs
+
+      - name: Run real separation smoke
+        shell: bash
+        env:
+          OPENKARA_SMOKE_EP: cpu
+        run: |
+          set -euo pipefail
+          input_dir="${RUNNER_TEMP}/openkara-smoke-input"
+          output_dir="${RUNNER_TEMP}/openkara-smoke-output"
+          mkdir -p "${input_dir}" "${output_dir}"
+          cp src-tauri/tests/fixtures/audio/fixture.wav "${input_dir}/fixture.wav"
+          ./scripts/run-local-smoke.sh "${input_dir}" "${output_dir}"
+
+      - name: Upload macOS smoke reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nightly-macos-smoke-reports
+          path: |
+            ${{ runner.temp }}/openkara-smoke-output/local-audio-smoke-report.*
+          if-no-files-found: warn
+          retention-days: 7
 
   windows-installed-app:
     name: Windows installed app smoke
@@ -73,15 +162,44 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Download validation artifacts
+      - name: Download all nightly reports
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: nightly-*-validation
           path: ${{ runner.temp }}/nightly-reports
+          pattern: nightly-*
 
       - name: Aggregate reports
+        shell: pwsh
+        env:
+          REPORTS_DIR: ${{ runner.temp }}/nightly-reports
         run: |
-          echo "TODO: aggregate nightly reports into nightly-aggregate.json"
+          $ErrorActionPreference = "Stop"
+          $aggregate = @()
+
+          $validationFiles = Get-ChildItem -Path $env:REPORTS_DIR -Recurse -Filter "installed-app-smoke-validation.json"
+          foreach ($file in $validationFiles) {
+            $validation = Get-Content $file.FullName | ConvertFrom-Json
+            $aggregate += [ordered]@{
+              kind = "windows-installed-app"
+              path = $file.FullName
+              pass_count = $validation.pass_count
+              fail_count = $validation.fail_count
+              total = $validation.assertions.Count
+            }
+          }
+
+          $localAudioFiles = Get-ChildItem -Path $env:REPORTS_DIR -Recurse -Filter "local-audio-smoke-report.json"
+          foreach ($file in $localAudioFiles) {
+            $report = Get-Content $file.FullName | ConvertFrom-Json
+            $aggregate += [ordered]@{
+              kind = "local-audio-smoke"
+              path = $file.FullName
+              separation_passed = $report.summary.separation_passed
+              separation_failed = $report.summary.separation_failed
+            }
+          }
+
+          $aggregate | ConvertTo-Json -AsArray -Depth 10 | Set-Content -Path "nightly-aggregate.json" -Encoding utf8
 
       - name: Upload nightly aggregate
         if: always()
