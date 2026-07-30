@@ -443,7 +443,8 @@ jobs:
 
           node scripts/validate-installed-app-smoke.mjs `
             (Join-Path $prepareOutput "installed-app-smoke-report.json") `
-            (Join-Path $restartOutput "installed-app-smoke-report.json")
+            (Join-Path $restartOutput "installed-app-smoke-report.json") `
+            $restartOutput
 
       - name: Upload installed-app smoke reports
         if: always()
@@ -452,6 +453,7 @@ jobs:
           name: release-windows-installed-app-smoke
           path: |
             ${{ runner.temp }}/openkara-installed-app-smoke/**/installed-app-smoke-report.json
+            ${{ runner.temp }}/openkara-installed-app-smoke/**/installed-app-smoke-validation.json
             ${{ runner.temp }}/openkara-installed-app-smoke/restart/local-audio-smoke-report.*
             ${{ runner.temp }}/OpenKara-installed-smoke/**/OpenKara.exe
           if-no-files-found: warn
