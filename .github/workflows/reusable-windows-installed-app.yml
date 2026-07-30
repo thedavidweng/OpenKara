@@ -76,10 +76,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          CANDIDATE_INSTALLER_DIR: ${{ runner.temp }}/installer
         run: |
           Write-Host "TODO: download previous stable *setup.exe from $env:GH_REPO releases"
           Write-Host "TODO: install previous stable NSIS/MSI to $env:RUNNER_TEMP/OpenKara-installed-smoke"
-          Write-Host "TODO: install candidate from ${{ runner.temp }}/installer/*setup.exe over the same directory"
+          Write-Host "TODO: install candidate from $env:CANDIDATE_INSTALLER_DIR/*setup.exe over the same directory"
 
       - name: Build automation driver
         shell: pwsh
@@ -143,11 +144,13 @@ jobs:
           path: ${{ runner.temp }}/smoke-reports
 
       - name: Validate installed app smoke
+        env:
+          SMOKE_REPORTS_DIR: ${{ runner.temp }}/smoke-reports
         run: |
           node scripts/validate-installed-app-smoke.mjs \
-            "${{ runner.temp }}/smoke-reports/prepare/installed-app-smoke-report.json" \
-            "${{ runner.temp }}/smoke-reports/restart/installed-app-smoke-report.json" \
-            "${{ runner.temp }}/smoke-reports"
+            "$SMOKE_REPORTS_DIR/prepare/installed-app-smoke-report.json" \
+            "$SMOKE_REPORTS_DIR/restart/installed-app-smoke-report.json" \
+            "$SMOKE_REPORTS_DIR"
 
       - name: Upload validation report
         if: always()
