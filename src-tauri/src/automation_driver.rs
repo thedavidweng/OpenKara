@@ -101,16 +101,50 @@ pub fn run_scenario(config: &ScenarioConfig) -> Result<AutomationReport> {
     );
 
     if let (Ok(runtime), Ok(model)) = (&runtime_identity, &model_identity) {
-        record_oka284_assertions(&mut builder, runtime, model);
+        if let Err(error) =
+            record_oka284_assertions(&mut builder, &config.app_data_dir, runtime, model)
+        {
+            tracing::error!("OKA-284 cross-check failed: {error:#}");
+            builder.add_error(
+                &format!("OKA-284 cross-check failed: {error:#}"),
+                Some("identity".into()),
+                None,
+            );
+        }
     }
 
     let audio_step = builder.begin_step("audio", "Audio output summary");
-    let audio_summary = restart_report
-        .as_ref()
-        .ok()
-        .and_then(|r| r.local_audio_smoke.as_ref())
-        .map_or_else(AudioSummary::default, build_audio_summary);
-    builder.end_step(audio_step, StepStatus::Passed, None::<String>);
+    let (audio_summary, audio_status, audio_error) = match restart_report.as_ref() {
+        Err(error) => (
+            AudioSummary::default(),
+            StepStatus::Skipped,
+            Some(format!("restart step failed: {error}")),
+        ),
+        Ok(report) => match report.local_audio_smoke.as_ref() {
+            None => (
+                AudioSummary::default(),
+                StepStatus::Failed,
+                Some("no local audio smoke produced on restart".into()),
+            ),
+            Some(smoke) => {
+                let summary = build_audio_summary(smoke);
+                if summary.sample_rate > 0
+                    && summary.channel_count > 0
+                    && summary.non_silent_samples
+                {
+                    (summary, StepStatus::Passed, None)
+                } else {
+                    (
+                        summary,
+                        StepStatus::Failed,
+                        Some("audio output is missing, silent, or has no valid WAV header".into()),
+                    )
+                }
+            }
+        },
+    };
+    builder.audio = audio_summary;
+    builder.end_step(audio_step, audio_status, audio_error);
 
     let database_path = config.app_data_dir.join("openkara.sqlite3");
     builder.database = DatabaseSummary {
@@ -120,7 +154,6 @@ pub fn run_scenario(config: &ScenarioConfig) -> Result<AutomationReport> {
 
     builder.runtime = runtime_identity.unwrap_or_default();
     builder.model = model_identity.unwrap_or_default();
-    builder.audio = audio_summary;
 
     if !prepare_ok || !restart_ok {
         builder.add_error(
@@ -163,6 +196,13 @@ pub fn run_scenario(config: &ScenarioConfig) -> Result<AutomationReport> {
     );
 
     let report = builder.finish(&config.execution_provider, &config.locale, &config.theme);
+    let report_path = AutomationReport::report_path(&config.output_dir);
+    report.write(&report_path).with_context(|| {
+        format!(
+            "failed to write canonical automation report {}",
+            report_path.display()
+        )
+    })?;
 
     if report.status != ReportStatus::Passed {
         bail!(
@@ -316,6 +356,39 @@ fn record_smoke_assertions(
             &smoke.report_json_path.display().to_string(),
         );
     }
+
+    if matches!(report.phase, AutomationSmokePhase::Restart) {
+        let unexpected_runtime_download =
+            has_event(&report.runtime_events, "runtime-bootstrap-progress");
+        builder.add_assertion(
+            "OKA-284-RUNTIME-COLD-RESTART",
+            "no runtime-bootstrap-progress on restart",
+            if unexpected_runtime_download {
+                "unexpected download"
+            } else {
+                "no unexpected download"
+            },
+            !unexpected_runtime_download,
+            &report.app_data_dir,
+        );
+
+        let unexpected_model_download = has_event(&report.model_events, "model-bootstrap-progress");
+        builder.add_assertion(
+            "OKA-284-MODEL-COLD-RESTART",
+            "no model-bootstrap-progress on restart",
+            if unexpected_model_download {
+                "unexpected download"
+            } else {
+                "no unexpected download"
+            },
+            !unexpected_model_download,
+            &report.app_data_dir,
+        );
+    }
+}
+
+fn has_event<T>(events: &[crate::automation_smoke::BootstrapEvent<T>], name: &str) -> bool {
+    events.iter().any(|event| event.event == name)
 }
 
 fn state_string<T: Serialize>(value: &T) -> String {
@@ -327,34 +400,266 @@ fn state_string<T: Serialize>(value: &T) -> String {
 
 fn record_oka284_assertions(
     builder: &mut ReportBuilder,
+    app_data_dir: &std::path::Path,
     runtime: &RuntimeIdentity,
     model: &ModelIdentity,
-) {
+) -> anyhow::Result<()> {
+    use crate::separator::artifacts::sha256_file;
+    use crate::separator::bootstrap::{descriptor_for, managed_model_path_for};
+    use crate::separator::catalog::{embedded_catalog, read_installed_identity, resolve_model};
+    use crate::separator::runtime_bootstrap::runtime_inventory;
+    use crate::separator::verified_manifest::verified_manifest_matches;
+
+    // `runtime` and `model` are the identities already recorded in the report;
+    // the cross-checks below re-read the installed artifacts and the catalog.
+    let _ = (runtime, model);
+
+    // -----------------------------------------------------------------------
+    // Runtime cross-checks
+    // -----------------------------------------------------------------------
+    let inventory = runtime_inventory(app_data_dir);
+    let active = inventory
+        .active
+        .as_ref()
+        .context("no active runtime installed for OKA-284 cross-check")?;
+
+    let record = &active.record;
+
+    let catalog = embedded_catalog();
+    let catalog_runtime = catalog
+        .manifest
+        .artifacts
+        .runtimes
+        .iter()
+        .find(|r| r.artifact_id == record.artifact_id)
+        .with_context(|| format!("no catalog runtime for artifact {}", record.artifact_id))?;
+
+    builder.add_assertion(
+        "OKA-284-RUNTIME-ARTIFACT-ID",
+        &catalog_runtime.artifact_id,
+        &record.artifact_id,
+        catalog_runtime.artifact_id == record.artifact_id,
+        "",
+    );
+    builder.add_assertion(
+        "OKA-284-RUNTIME-CATALOG-SCHEMA",
+        &catalog.manifest.schema_version,
+        &record.catalog_schema,
+        catalog.manifest.schema_version == record.catalog_schema,
+        "",
+    );
+    builder.add_assertion(
+        "OKA-284-RUNTIME-GENERATION",
+        &catalog.generation.to_string(),
+        &record.generation.to_string(),
+        catalog.generation == record.generation,
+        "",
+    );
+    builder.add_assertion(
+        "OKA-284-RUNTIME-RELEASE-ID",
+        &catalog.release_id,
+        &record.release_id,
+        catalog.release_id == record.release_id,
+        "",
+    );
     builder.add_assertion(
         "OKA-284-RUNTIME-ARCHIVE-DIGEST",
-        "64-hex sha256",
-        &runtime.archive_sha256,
-        is_sha256_hex(&runtime.archive_sha256),
+        &catalog_runtime.archive_digest,
+        &record.archive_sha256,
+        catalog_runtime.archive_digest == record.archive_sha256,
         "",
     );
+
+    let library_name = active
+        .library_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("<unknown>");
+    let actual_library_digest = sha256_file(&active.library_path).with_context(|| {
+        format!(
+            "failed to hash runtime library {}",
+            active.library_path.display()
+        )
+    })?;
+
+    let catalog_library_digest = catalog_runtime
+        .extracted_file_digests
+        .get(library_name)
+        .map(|d| d.sha256.as_str())
+        .unwrap_or("<missing in catalog>");
+    let record_library_digest = record
+        .files
+        .iter()
+        .find(|f| f.path == library_name)
+        .map(|f| f.sha256.as_str())
+        .unwrap_or("<missing in record>");
+
+    // actual vs catalog
+    builder.add_assertion(
+        "OKA-284-RUNTIME-FILE-DIGEST-CATALOG",
+        catalog_library_digest,
+        &actual_library_digest,
+        catalog_library_digest == actual_library_digest,
+        &active.library_path.display().to_string(),
+    );
+    // actual vs record
     builder.add_assertion(
         "OKA-284-RUNTIME-FILE-DIGEST",
-        "64-hex sha256",
-        &runtime.extracted_library_sha256,
-        is_sha256_hex(&runtime.extracted_library_sha256),
-        "",
+        record_library_digest,
+        &actual_library_digest,
+        record_library_digest == actual_library_digest,
+        &active.library_path.display().to_string(),
+    );
+    // record vs catalog
+    builder.add_assertion(
+        "OKA-284-RUNTIME-FILE-DIGEST-CROSS",
+        catalog_library_digest,
+        record_library_digest,
+        catalog_library_digest == record_library_digest,
+        &active.library_path.display().to_string(),
+    );
+
+    let active_library_name = library_name.to_owned();
+    for file in &record.files {
+        if file.path == active_library_name {
+            continue;
+        }
+        let file_path = active.dir.join(&file.path);
+        let catalog_digest = catalog_runtime
+            .extracted_file_digests
+            .get(&file.path)
+            .map(|d| d.sha256.as_str());
+        let expected = match catalog_digest {
+            Some(d) if d == file.sha256 => file.sha256.clone(),
+            Some(d) => format!("record:{} catalog:{}", file.sha256, d),
+            None => file.sha256.clone(),
+        };
+        let (observed, pass) = if file_path.exists() {
+            match sha256_file(&file_path) {
+                Ok(digest) => {
+                    let ok = digest == file.sha256
+                        && catalog_runtime
+                            .extracted_file_digests
+                            .get(&file.path)
+                            .map_or(true, |d| d.sha256 == digest);
+                    (digest, ok)
+                }
+                Err(_) => (String::new(), false),
+            }
+        } else {
+            ("missing".to_owned(), false)
+        };
+        builder.add_assertion(
+            &format!("OKA-284-RUNTIME-COMPANION-{}", file.path),
+            &expected,
+            &observed,
+            pass,
+            &file_path.display().to_string(),
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Model cross-checks
+    // -----------------------------------------------------------------------
+    let variant = crate::config::load_config(app_data_dir)
+        .ok()
+        .flatten()
+        .map(|c| c.effective_model_variant())
+        .unwrap_or_default();
+    let descriptor = descriptor_for(variant);
+    let model_path = managed_model_path_for(app_data_dir, descriptor);
+
+    let record = read_installed_identity(&model_path).with_context(|| {
+        format!(
+            "model identity is missing or invalid at {}",
+            model_path.display()
+        )
+    })?;
+    let catalog_model = resolve_model(&catalog.manifest, variant)
+        .with_context(|| format!("no catalog model for variant {}", variant.as_str()))?;
+
+    let actual_onnx_digest = sha256_file(&model_path)
+        .with_context(|| format!("failed to hash model {}", model_path.display()))?;
+
+    builder.add_assertion(
+        "OKA-284-MODEL-ARTIFACT-ID",
+        &catalog_model.artifact_id,
+        &record.artifact_id,
+        catalog_model.artifact_id == record.artifact_id,
+        &model_path.display().to_string(),
     );
     builder.add_assertion(
-        "OKA-284-MODEL-FILE-DIGEST",
-        "64-hex sha256",
-        &model.extracted_onnx_sha256,
-        is_sha256_hex(&model.extracted_onnx_sha256),
-        &model.verification_manifest,
+        "OKA-284-MODEL-CATALOG-SCHEMA",
+        &catalog.manifest.schema_version,
+        &record.catalog_schema,
+        catalog.manifest.schema_version == record.catalog_schema,
+        &model_path.display().to_string(),
     );
-}
+    builder.add_assertion(
+        "OKA-284-MODEL-GENERATION",
+        &catalog.generation.to_string(),
+        &record.generation.to_string(),
+        catalog.generation == record.generation,
+        &model_path.display().to_string(),
+    );
+    builder.add_assertion(
+        "OKA-284-MODEL-RELEASE-ID",
+        &catalog.release_id,
+        &record.release_id,
+        catalog.release_id == record.release_id,
+        &model_path.display().to_string(),
+    );
 
-fn is_sha256_hex(value: &str) -> bool {
-    value.len() == 64 && value.chars().all(|c| c.is_ascii_hexdigit())
+    let expected_archive = format!(
+        "catalog:{} descriptor:{}",
+        catalog_model.archive_digest, descriptor.download_sha256
+    );
+    builder.add_assertion(
+        "OKA-284-MODEL-ARCHIVE-DIGEST",
+        &expected_archive,
+        &record.archive_sha256,
+        catalog_model.archive_digest == record.archive_sha256
+            && descriptor.download_sha256 == record.archive_sha256,
+        &model_path.display().to_string(),
+    );
+
+    let (primary_path, primary_digest) = catalog_model.primary_model_file()?;
+    let record_file_digest = record
+        .files
+        .iter()
+        .find(|f| f.path == primary_path || f.path == descriptor.filename)
+        .map(|f| f.sha256.as_str())
+        .unwrap_or("<missing in record>");
+    let expected_file = format!(
+        "catalog:{} descriptor:{} record:{}",
+        primary_digest.sha256, descriptor.file_sha256, record_file_digest
+    );
+    let file_pass = primary_digest.sha256 == actual_onnx_digest
+        && descriptor.file_sha256 == actual_onnx_digest
+        && record_file_digest == actual_onnx_digest;
+    let record_present = record_file_digest != "<missing in record>";
+    builder.add_assertion(
+        "OKA-284-MODEL-FILE-DIGEST",
+        &expected_file,
+        &actual_onnx_digest,
+        file_pass && record_present,
+        &model_path.display().to_string(),
+    );
+
+    let manifest_ok = verified_manifest_matches(&model_path, &actual_onnx_digest)
+        .with_context(|| format!("failed to verify manifest for {}", model_path.display()))?;
+    let manifest_path = crate::separator::verified_manifest::verified_manifest_path(&model_path)
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    builder.add_assertion(
+        "OKA-284-MODEL-VERIFICATION-MANIFEST",
+        "true",
+        &manifest_ok.to_string(),
+        manifest_ok,
+        &manifest_path,
+    );
+
+    Ok(())
 }
 
 fn compute_runtime_identity(app_data_dir: &Path) -> Result<RuntimeIdentity> {

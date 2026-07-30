@@ -1,0 +1,93 @@
+name: Nightly hardening
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  windows-matrix:
+    name: Windows ${{ matrix.test }}
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+          - accessibility
+          - contrast
+          - dpi
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run ${{ matrix.test }} test
+        shell: pwsh
+        env:
+          TEST_NAME: ${{ matrix.test }}
+        run: |
+          Write-Host "TODO: run Windows $env:TEST_NAME hardening test and write a report artifact"
+
+  macos-smoke:
+    name: macOS smoke
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run macOS smoke
+        run: |
+          echo "TODO: build OpenKara on macOS and run a basic smoke test"
+
+  windows-installed-app:
+    name: Windows installed app smoke
+    uses: ./.github/workflows/reusable-windows-installed-app.yml
+    with:
+      openkara_version: "0.0.0-nightly"
+      artifact_prefix: nightly-windows-installed-app
+      scenario: clean-install
+      retention_days: 7
+
+  aggregate-reports:
+    name: Aggregate nightly reports
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs:
+      - windows-matrix
+      - macos-smoke
+      - windows-installed-app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download validation artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: nightly-*-validation
+          path: ${{ runner.temp }}/nightly-reports
+
+      - name: Aggregate reports
+        run: |
+          echo "TODO: aggregate nightly reports into nightly-aggregate.json"
+
+      - name: Upload nightly aggregate
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nightly-aggregate
+          path: nightly-aggregate.json
+          if-no-files-found: warn
+          retention-days: 7
