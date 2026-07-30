@@ -6,7 +6,7 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use rusqlite::Connection;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{fs, path::Path, time::Instant};
 
 pub const PLAYBACK_DB_LOOKUP_LATENCY_THRESHOLD_MS: f64 = 25.0;
@@ -15,13 +15,13 @@ pub const PLAYBACK_FULL_DECODE_LATENCY_THRESHOLD_MS: f64 = 1_000.0;
 pub const SEEK_LATENCY_THRESHOLD_MS: f64 = 200.0;
 pub const LYRICS_JITTER_THRESHOLD_MS: u64 = 50;
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PerformanceReport {
     pub playback: PlaybackPerformanceReport,
     pub lyrics_sync: LyricsSyncPerformanceReport,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlaybackPerformanceReport {
     pub track_db_lookup_latency_ms: f64,
     pub track_metadata_probe_latency_ms: f64,
@@ -32,7 +32,7 @@ pub struct PlaybackPerformanceReport {
     pub seek_samples: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LyricsSyncPerformanceReport {
     pub position_event_interval_ms: u64,
     pub jitter_budget_ms: u64,

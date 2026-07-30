@@ -5,7 +5,7 @@ use crate::{
     config::{self, ModelVariant},
     separator, AppState,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -25,7 +25,7 @@ fn downloads_in_progress() -> &'static Mutex<HashSet<String>> {
     DOWNLOADS_IN_PROGRESS.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelBootstrapState {
     Pending,
@@ -35,7 +35,7 @@ pub enum ModelBootstrapState {
     Failed,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelBootstrapStatusSnapshot {
     pub state: ModelBootstrapState,
     pub model_path: String,

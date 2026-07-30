@@ -7,7 +7,7 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use rusqlite::Connection;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     env, fs,
@@ -35,7 +35,7 @@ pub struct LocalAudioSmokeConfig {
     pub seek_iterations: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SmokeStepStatus {
     Passed,
@@ -43,7 +43,7 @@ pub enum SmokeStepStatus {
     Failed,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LocalAudioSmokeSummary {
     pub discovered_files: usize,
     pub imported: usize,
@@ -55,14 +55,14 @@ pub struct LocalAudioSmokeSummary {
     pub separation_skipped: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SmokeModelStatus {
     pub status: SmokeStepStatus,
     pub path: Option<String>,
     pub message: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LocalAudioSmokeSongReport {
     pub source_path: String,
     pub song_id: Option<String>,
@@ -77,7 +77,7 @@ pub struct LocalAudioSmokeSongReport {
     pub vocals_path: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LocalAudioSmokeReport {
     pub generated_at: i64,
     pub input_dir: String,

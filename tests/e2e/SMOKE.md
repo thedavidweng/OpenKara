@@ -25,39 +25,36 @@ backend required). Coverage includes:
 
 ## Automated (Release-only native and installed-app smoke)
 
-The GitHub Actions **Release** workflow includes a `Release separation smoke`
-job before any publish matrix job starts. It runs only when a maintainer
-manually triggers the Release workflow for a version, not on regular push or
-pull request CI.
+The GitHub Actions **Release** workflow runs the **installed-app smoke** job
+before any publish matrix job starts. The job is fully automated and does not
+need a maintainer to trigger it.
 
-The non-Windows native smoke job:
+The smoke gate builds the `openkara_automation_driver` binary with the
+`automation-smoke` Cargo feature. The driver runs a scenario that:
 
-- downloads ONNX Runtime via `./scripts/setup.sh`
-- downloads and verifies the pinned `htdemucs.onnx` model via the same script
-- copies `src-tauri/tests/fixtures/audio/fixture.wav` into a temporary input
-  directory
-- runs `./scripts/run-local-smoke.sh`
-- fails the release if the generated report has zero successful separations,
-  any failed separations, or any skipped separations
+1. Prepares a fresh app-data directory and downloads and verifies the Runtime
+   and model through the production app-data bootstrap path.
+2. Restarts from the prepared app-data directory, imports the WAV fixture,
+   probes playback, separates it, and checks both stem artifacts.
 
-This is the automated coverage for the full backend path: runtime bootstrap,
-model availability, local import, playback probing, and real stem separation.
+The driver writes a canonical `automation-report.json` for the scenario, plus
+legacy `installed-app-smoke-report.json` files for compatibility with the
+existing validator. It exits with a non-zero status and fails the release if
+any assertion is not met.
 
-The same workflow also runs **Release Windows installed-app smoke** before the
-publish matrix. It builds an NSIS candidate containing a release-CI-only test
-entry point, installs the preceding stable Windows release, upgrades that
-installation to the candidate, and executes the installed `.exe` twice against
-fresh app data:
-
-1. The first process downloads and verifies the Runtime and model through the
-   production app-data bootstrap path.
-2. The second process follows the cold-start activation path, imports the WAV
-   fixture, probes playback, separates it, and checks both stem artifacts.
-
-The machine-readable reports assert that the second process did not download
+The machine-readable reports assert that the restart process did not download
 the Runtime or model again. This is the release acceptance for the Windows
 install, upgrade, download, restart, and separation lifecycle; it is not part
 of ordinary PR CI.
+
+To run the driver locally after building it:
+
+```bash
+pnpm automation:driver:run -- --scenario clean-install \
+  --app-data-dir /tmp/oka-smoke/app-data \
+  --input-dir src-tauri/tests/fixtures/audio \
+  --output-dir /tmp/oka-smoke/output
+```
 
 ## Exploratory Desktop Checks
 

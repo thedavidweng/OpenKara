@@ -5,7 +5,7 @@ use crate::{
     AppState,
 };
 use anyhow::Context;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -23,7 +23,7 @@ pub const RUNTIME_BOOTSTRAP_ERROR_EVENT: &str = "runtime-bootstrap-error";
 
 pub const LEGACY_RUNTIME_VERSION: &str = "legacy";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeBootstrapState {
     Missing,
@@ -37,7 +37,7 @@ pub enum RuntimeBootstrapState {
     Failed,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeBootstrapStatusSnapshot {
     pub state: RuntimeBootstrapState,
     pub runtime_path: String,

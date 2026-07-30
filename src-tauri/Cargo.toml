@@ -1,6 +1,6 @@
 [package]
 name = "openkara"
-version = "0.9.1"
+version = "0.10.0"
 description = "OpenKara desktop shell"
 authors = ["OpenKara contributors"]
 license = "Apache-2.0"
@@ -22,6 +22,11 @@ automation-smoke = []
 [[bin]]
 name = "openkara"
 path = "src/main.rs"
+
+[[bin]]
+name = "openkara_automation_driver"
+path = "src/bin/openkara_automation_driver.rs"
+required-features = ["automation-smoke"]
 
 [build-dependencies]
 cc = "1.2.61"

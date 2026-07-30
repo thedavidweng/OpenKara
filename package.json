@@ -29,6 +29,8 @@
     "test:e2e": "pnpm test:ui-smoke",
     "test:e2e:ui": "pnpm test:ui-smoke:ui",
     "test:automation:schemas": "vitest run tests/automation-report-schema.test.ts",
+    "automation:driver:build": "cd src-tauri && cargo build --features automation-smoke --bin openkara_automation_driver",
+    "automation:driver:run": "cd src-tauri && cargo run --features automation-smoke --bin openkara_automation_driver",
     "tauri": "pnpm version:sync && tauri",
     "docs:dev": "vite --config website/vite.config.ts",
     "docs:build": "vite build --config website/vite.config.ts",

@@ -61,6 +61,10 @@ pub fn open_database(database_path: &Path) -> anyhow::Result<Connection> {
     Ok(conn)
 }
 
+pub fn schema_version() -> i64 {
+    MIGRATIONS.len() as i64
+}
+
 pub fn apply_migrations(connection: &Connection) -> rusqlite::Result<()> {
     for migration in MIGRATIONS {
         connection.execute_batch(migration)?;
