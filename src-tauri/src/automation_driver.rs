@@ -410,10 +410,6 @@ fn record_oka284_assertions(
     use crate::separator::runtime_bootstrap::runtime_inventory;
     use crate::separator::verified_manifest::verified_manifest_matches;
 
-    // `runtime` and `model` are the identities already recorded in the report;
-    // the cross-checks below re-read the installed artifacts and the catalog.
-    let _ = (runtime, model);
-
     // -----------------------------------------------------------------------
     // Runtime cross-checks
     // -----------------------------------------------------------------------
@@ -469,6 +465,13 @@ fn record_oka284_assertions(
         catalog_runtime.archive_digest == record.archive_sha256,
         "",
     );
+    builder.add_assertion(
+        "OKA-284-RUNTIME-ARCHIVE-REPORT-CONSISTENCY",
+        &runtime.archive_sha256,
+        &record.archive_sha256,
+        runtime.archive_sha256 == record.archive_sha256,
+        "",
+    );
 
     let library_name = active
         .library_path
@@ -481,6 +484,14 @@ fn record_oka284_assertions(
             active.library_path.display()
         )
     })?;
+
+    builder.add_assertion(
+        "OKA-284-RUNTIME-LIBRARY-REPORT-CONSISTENCY",
+        &runtime.extracted_library_sha256,
+        &actual_library_digest,
+        runtime.extracted_library_sha256 == actual_library_digest,
+        &active.library_path.display().to_string(),
+    );
 
     let catalog_library_digest = catalog_runtime
         .extracted_file_digests
@@ -582,6 +593,14 @@ fn record_oka284_assertions(
         .with_context(|| format!("failed to hash model {}", model_path.display()))?;
 
     builder.add_assertion(
+        "OKA-284-MODEL-ONNX-REPORT-CONSISTENCY",
+        &model.extracted_onnx_sha256,
+        &actual_onnx_digest,
+        model.extracted_onnx_sha256 == actual_onnx_digest,
+        &model_path.display().to_string(),
+    );
+
+    builder.add_assertion(
         "OKA-284-MODEL-ARTIFACT-ID",
         &catalog_model.artifact_id,
         &record.artifact_id,
@@ -620,6 +639,13 @@ fn record_oka284_assertions(
         &record.archive_sha256,
         catalog_model.archive_digest == record.archive_sha256
             && descriptor.download_sha256 == record.archive_sha256,
+        &model_path.display().to_string(),
+    );
+    builder.add_assertion(
+        "OKA-284-MODEL-ARCHIVE-REPORT-CONSISTENCY",
+        &model.archive_sha256,
+        &record.archive_sha256,
+        model.archive_sha256 == record.archive_sha256,
         &model_path.display().to_string(),
     );
 
