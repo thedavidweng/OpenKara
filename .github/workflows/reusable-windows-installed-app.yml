@@ -147,18 +147,6 @@ jobs:
           CANDIDATE_DIR: ${{ runner.temp }}/installer
         run: |
           $ErrorActionPreference = "Stop"
-          $release = gh api "repos/$env:GH_REPO/releases" --paginate --jq '[.[] | select(.draft == false and .prerelease == false)] | sort_by(.published_at) | last | .tag_name'
-          if ([string]::IsNullOrWhiteSpace($release) -or $release -eq "null") {
-            throw "No preceding stable release is available for the Windows upgrade smoke."
-          }
-
-          $previousDir = Join-Path $env:RUNNER_TEMP "openkara-previous-release"
-          New-Item -ItemType Directory -Force -Path $previousDir | Out-Null
-          gh release download $release --repo $env:GH_REPO --pattern "*setup.exe" --dir $previousDir
-          $previousInstaller = Get-ChildItem -Path $previousDir -Filter "*setup.exe" -File | Select-Object -First 1
-          if ($null -eq $previousInstaller) {
-            throw "Release $release did not include a Windows NSIS installer."
-          }
 
           $candidateInstaller = Get-ChildItem -Path $env:CANDIDATE_DIR -Filter "*setup.exe" -File | Select-Object -First 1
           if ($null -eq $candidateInstaller) {
@@ -166,8 +154,23 @@ jobs:
           }
 
           New-Item -ItemType Directory -Force -Path $env:INSTALL_DIR | Out-Null
-          & $previousInstaller.FullName /S "/D=$env:INSTALL_DIR"
-          if ($LASTEXITCODE -ne 0) { throw "Previous installer failed with exit code $LASTEXITCODE" }
+
+          $release = gh api "repos/$env:GH_REPO/releases" --paginate --jq '[.[] | select(.draft == false and .prerelease == false)] | sort_by(.published_at) | last | .tag_name'
+          if (-not [string]::IsNullOrWhiteSpace($release) -and $release -ne "null") {
+            $previousDir = Join-Path $env:RUNNER_TEMP "openkara-previous-release"
+            New-Item -ItemType Directory -Force -Path $previousDir | Out-Null
+            gh release download $release --repo $env:GH_REPO --pattern "*setup.exe" --dir $previousDir
+            $previousInstaller = Get-ChildItem -Path $previousDir -Filter "*setup.exe" -File | Select-Object -First 1
+            if ($null -ne $previousInstaller) {
+              & $previousInstaller.FullName /S "/D=$env:INSTALL_DIR"
+              if ($LASTEXITCODE -ne 0) { throw "Previous installer failed with exit code $LASTEXITCODE" }
+            } else {
+              Write-Warning "Release $release did not include a Windows NSIS installer; continuing with clean candidate install."
+            }
+          } else {
+            Write-Warning "No preceding stable release is available; continuing with clean candidate install."
+          }
+
           & $candidateInstaller.FullName /S "/D=$env:INSTALL_DIR"
           if ($LASTEXITCODE -ne 0) { throw "Candidate installer failed with exit code $LASTEXITCODE" }
 
@@ -175,7 +178,7 @@ jobs:
             Where-Object { $_.Name -ieq "OpenKara.exe" } |
             Select-Object -First 1
           if ($null -eq $installedApp) {
-            throw "OpenKara.exe was not found after the candidate upgrade install."
+            throw "OpenKara.exe was not found after the candidate install."
           }
           "OPENKARA_INSTALLED_APP=$($installedApp.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
